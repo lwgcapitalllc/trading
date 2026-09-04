@@ -21,12 +21,12 @@ Each stage produces one artefact. The stage is not done until the artefact exist
 
 | # | Stage | Artefact | Gate — how you know it is done |
 |---|---|---|---|
-| 1 | **Spec** | `docs/MPC_<NAME>_SPEC.md` | Rules written with no discretion left in them |
-| 2 | **Pine strategy** | `strategies/tradingview/mpc_<name>_strategy.pine` | Compiles in TradingView, runs in the Strategy Tester |
-| 3 | **Pine export twin** | `strategies/tradingview/mpc_<name>_strategy_export.pine` | Compiles; plots the per-bar decision stream (`px_*`) and every input (`cfg_*`) |
+| 1 | **Spec** | `docs/<NAME>_SPEC.md` | Rules written with no discretion left in them |
+| 2 | **Pine strategy** | `strategies/tradingview/<name>_strategy.pine` | Compiles in TradingView, runs in the Strategy Tester |
+| 3 | **Pine export twin** | `strategies/tradingview/<name>_strategy_export.pine` | Compiles; plots the per-bar decision stream (`px_*`) and every input (`cfg_*`) |
 | 4 | **A real CSV export** | a `.csv` on disk from "Export chart data" | Has thousands of bars and the `px_*` / `cfg_*` columns |
-| 5 | **Python port** | `strategies/python/mpc_<name>/` | Imports; declares `LAB_STRATEGY`; ships `mpc_<name>.meta.json` |
-| 6 | **Parity harness** | `strategies/python/mpc_<name>/tools/compare_<name>.py` | **Exit 0** on the stage-4 CSV |
+| 5 | **Python port** | `strategies/python/<name>/` | Imports; declares `LAB_STRATEGY`; ships `<name>.meta.json` |
+| 6 | **Parity harness** | `strategies/python/<name>/tools/compare_<name>.py` | **Exit 0** on the stage-4 CSV |
 
 **Only after stage 6 is green can you trust a sweep, an optimization, or a backtest number.**
 
@@ -81,14 +81,14 @@ said it was only a model.
 ## Where things live — the naming is load-bearing
 
 ```
-docs/MPC_<NAME>_SPEC.md                                  the rules
-docs/MPC_<NAME>_OPTIMIZATION.md                          one entry per sweep, so nothing is re-measured
-strategies/tradingview/mpc_<name>_strategy.pine                      what you trade
-strategies/tradingview/mpc_<name>_strategy_export.pine               its instrumented twin
-strategies/python/mpc_<name>/config.py                   every input, as a dataclass
-strategies/python/mpc_<name>/strategy.py                 declares LAB_STRATEGY
-strategies/python/mpc_<name>/mpc_<name>.meta.json        labels + tooltips for the lab UI
-strategies/python/mpc_<name>/tools/compare_<name>.py     the parity gate
+docs/<NAME>_SPEC.md                                  the rules
+docs/<NAME>_OPTIMIZATION.md                          one entry per sweep, so nothing is re-measured
+strategies/tradingview/<name>_strategy.pine                      what you trade
+strategies/tradingview/<name>_strategy_export.pine               its instrumented twin
+strategies/python/<name>/config.py                   every input, as a dataclass
+strategies/python/<name>/strategy.py                 declares LAB_STRATEGY
+strategies/python/<name>/<name>.meta.json        labels + tooltips for the lab UI
+strategies/python/<name>/tools/compare_<name>.py     the parity gate
 ```
 
 ⚠ **A parameter's label in the lab must be the Pine input's title, and its description must be

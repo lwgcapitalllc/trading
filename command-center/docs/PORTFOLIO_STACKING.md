@@ -23,8 +23,8 @@ money — the account does. A leg *asks* the account to enter; the account decid
 ```
 Portfolio "Gold Stack"   account $40k · cap = 10% open risk · LucidFlex $50k Eval
 ├── leg 1  SOS Fade   XAUUSD 15m   wants 10% per trade
-├── leg 2  MPC <next>     XAUUSD 5m    wants  5% per trade
-└── leg 3  MPC <next>     EURUSD 1h    wants  5% per trade
+├── leg 2  <next>     XAUUSD 5m    wants  5% per trade
+└── leg 3  <next>     EURUSD 1h    wants  5% per trade
         every leg asks ONE account to size its trades against ONE live risk budget
         one balance · one open-risk total · one drawdown · one PASS/DISCARD verdict
 ```

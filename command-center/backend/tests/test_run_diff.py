@@ -78,7 +78,7 @@ def lab(tmp_path, monkeypatch):
     conn = sqlite3.connect(db)
     conn.execute(
         "INSERT OR REPLACE INTO strategies (id, name, class_name, source_path, scanned_at, runner) "
-        "VALUES ('sos_fade','SOS Fade','MpcSosFade','strategies/python/sos_fade',1,'python')"
+        "VALUES ('sos_fade','SOS Fade','SosFadeStrategy','strategies/python/sos_fade',1,'python')"
     )
     conn.commit()
     conn.close()

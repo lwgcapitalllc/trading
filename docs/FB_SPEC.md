@@ -436,11 +436,11 @@ Per `docs/STRATEGY_WORKFLOW.md`, unchanged:
 | # | Artefact |
 |---|---|
 | 1 | this file |
-| 2 | `indicators/mpc_fb_strategy.pine` — compiles, runs in the Strategy Tester |
-| 3 | `indicators/mpc_fb_strategy_export.pine` — plots `px_*` decisions and `cfg_*` inputs |
+| 2 | `strategies/tradingview/fb_strategy.pine` — compiles, runs in the Strategy Tester |
+| 3 | `strategies/tradingview/fb_strategy_export.pine` — plots `px_*` decisions and `cfg_*` inputs |
 | 4 | **a real CSV export — the one step only Aaron can do** |
-| 5 | `strategies/python/mpc_fb/` |
-| 6 | `strategies/python/mpc_fb/tools/compare_fb.py` — **exit 0** |
+| 5 | `strategies/python/fb/` |
+| 6 | `strategies/python/fb/tools/compare_fb.py` — **exit 0** |
 
 ⚠ **The export twin is at risk on this one.** Pine caps a script at 64 `plot()` calls and the SOS Fade
 export block is already near it. A three-timeframe strategy with a three-event trigger and a stack
