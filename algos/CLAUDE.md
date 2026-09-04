@@ -2759,40 +2759,45 @@ full-exit paths built on 2026-09-01/02 are not exercised by it and stay unproven
 the warnings and what does NOT change are in the bot's own `config.json` → `_re_entry_on_2026_09_02`
 — **not restated here**, because a second copy of a decision is how two files come to disagree.
 
-### 🔴 The rename broke both silent watchers, and the guide that described them stayed right (2026-09-04)
+### 🔴 The de-brand left both silent watchers pointing at a bot that no longer exists (2026-09-04)
 
-**`SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` were still registered against `mpc_sos_fade_demo`** for
-an hour after the instance folder was renamed. Their task XMLs in `algos/scheduler/` carried the old
-key in `<Arguments>`, the rename swept prose and code and never opened them, and
-`scripts/bootstrap_vps.ps1` would have reinstalled the broken pair onto a rebuilt box.
-
-🔴 **`SCHEDULER_GUIDE.md`'s table said `--bot sos_fade_demo` and was CORRECT the whole time.** The
-table is a LABEL; the XML is the line that consumes it, and only one of them reaches Windows. That
-is rule 7 arriving in the one place this repo had not thought to look — a scheduler argument is
-code that lives in a data file, so neither the doc sweep nor the code sweep owned it.
+`SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` are registered from `algos/scheduler/*.xml`, and both XMLs
+still passed `--bot mpc_sos_fade_demo` after the rename. **`SCHEDULER_GUIDE.md`'s table was already
+correct** — it listed both under the new key — so the page a person reads and the file that actually
+registers the task disagreed, and only the table had been renamed. **That is rule 7 with the label
+and its consumer one directory apart: the table is a CLAIM about the XML sitting beside it.**
 
 🔴 **THE ROOT CAUSE IS AN EXTENSION LIST, AND IT IS THE THING TO CHECK ON THE NEXT RENAME.** The
 sweep that did the de-brand walked 23 text extensions and `.xml` was not one of them, so a Windows
 task definition was never opened. **A rename is only as complete as the file types its sweep can
-see, and a clean run tells you nothing about which types it skipped** — the report counts what it
-changed, never what it never looked at.
+see, and nothing about a clean run tells you which types it skipped** — the report counts what it
+changed, never what it never looked at. ⚠ **`scripts/bootstrap_vps.ps1` would have reinstalled the
+broken pair onto a rebuilt box**, so this survived a rebuild as well as a pull.
 
-⚠ **The failure was loud, and only by luck of WHICH call failed first.** `watch_reentry.py` resolves
-the instance directory from the key, so a missing bot raised `FileNotFoundError`, which its top-level
-handler turns into a Telegram message and a health record. **Had the lookup returned an empty ledger
-instead of raising, it would have graded zero re-entries and reported nothing — and a watcher that
-finds nothing is byte-identical to a quiet month.** Rule 1, one refactor away.
+🔴 **The failure mode is the exact one this pair exists to prevent.** `watch_reentry.py` derives the
+instance directory from the key it is handed, so the missing bot made it raise — and its health
+record, *the evidence that it ran*, was written into a freshly created
+`instances/mpc_sos_fade_demo/`. **So the real bot's health stream shows a GAP, which this file tells
+you to read as "the watcher stopped", while the task itself reports success.** Both halves of the
+*"the evidence is the record, never the quiet"* design were defeated by one stale string.
 
-🔴 **THE HEALTH RECORD — THE THING THAT IS SUPPOSED TO PROVE THE WATCHER RAN — WENT TO THE WRONG
-BOT.** It is written to `<instance>/ledger` derived from the SAME bad key, so the run at 01:23
-CREATED a phantom `instances/mpc_sos_fade_demo/` folder and filed its own failure there. **The real
-bot's health stream shows a GAP for that hour, which is exactly the signal this design defines as
-"the watcher has stopped".** ⚠ **A watcher that writes its liveness record to a path derived from
-the thing it is watching cannot report that it is watching the wrong thing.** The evidence and the
-subject have to fail independently, or the record is worth nothing on the one occasion it matters.
+🔴 **The generalisation is worth more than the fix: a watcher that writes its liveness record to a
+path derived from the thing it is watching cannot report that it is watching the wrong thing.** The
+evidence and the subject have to be able to fail independently, or the record proves nothing on the
+one occasion it matters.
 
-✅ Both XMLs fixed, both tasks re-registered from them, the phantom folder deleted, and the 00:23
-record — written before the rename and stamped with the old name — left exactly as it was.
+⚠ **It was loud only by luck of WHICH call failed first.** The missing `config.json` raised, and the
+top-level handler turned that into a Telegram message. **Had the lookup returned an empty ledger
+instead, it would have graded zero re-entries and reported nothing — and a watcher that finds
+nothing is byte-identical to a quiet month.** Rule 1, one refactor away.
+
+✅ **It announced itself anyway, and that is the half that worked.** The error reached Telegram on
+the 01:23 run. The 00:23 run had succeeded (2,789 rows) because the instance folder had not been
+renamed yet, so the two records an hour apart are the whole story.
+
+✅ Both XMLs fixed, both tasks re-registered from them and verified by reading back what Windows
+holds, both watchers dry-run clean under the new key, and the phantom folder deleted. The 00:23
+record — written before the rename and stamped with the old name — was left exactly as it was.
 
 ### The pending-order layer (added 2026-07-30) — four MT5 behaviours to know
 
