@@ -2653,6 +2653,7 @@ the list, looks deployable, and cannot start.** Its execution layer does not imp
 | What the live path calls | `sos_fade` | `extreme_leg` |
 |---|---|---|
 | one per-bar `step(sig, seq) -> Decision` | ✅ | ❌ four calls — `resolve` / `arm_breakeven` / `enter` / `record_blocks`, sequenced by the caller, and `enter` returns a bare bool |
+| a route that OPENS at market | ✅ **since 2026-09-03** | ✅ **no longer a blocker** — see *The bridge can OPEN AT MARKET* above |
 | `request_close(reason)` | ✅ | ❌ absent |
 | `snapshot_position()` / `restore_position(snap)` | ✅ | ❌ absent |
 | account-budget clamp at the sizing seam | ✅ | ❌ sizes in its own `_qty(risk)` |
@@ -2680,6 +2681,64 @@ the moment of assignment.
 ⚠ **Do not read "no instance directory" as the blocker.** That is the symptom. The blocker is four
 missing methods, and a config file written before they exist is a bot that lies about being
 runnable.
+
+### ✅ The bridge can OPEN AT MARKET, and the flag that asked for it finally has a consumer (2026-09-03)
+
+**`_place` branches on `pend.market`.** Until now its only placement call was
+`place_pending_limit`, so **a strategy that enters at market could not be a live bot at all** —
+which is what blocked `extreme_leg`.
+
+🔴 **THE FLAG EXISTED AND NOTHING READ IT.** `_Pending.market` has meant *do not wait for price,
+fill at the next open* since the re-entry landed; the EMULATOR honours it
+(`sos_fade/execution.py`) and **no file under `algos/live/` referenced it — grepped, not
+assumed.** So a strategy could mark an entry as market and this bridge would quietly rest a limit
+at a price that may never come back: two books, different trades, nothing raised. **Rule 7 with
+the consuming line simply missing.**
+
+⚠ **It was NOT live-reachable, and that was luck rather than design.** The only setting that sets
+it is the reclaim entry mode, which the live bot has on `Retest` with the feature off — both
+CHECKED in its config. **Latent, not active.**
+
+🔴 **BOTH BROKER CALLS RETURN `(ticket, price)` AND THE TWO PRICES MEAN OPPOSITE THINGS.**
+`place_order` returns where it FILLED; `place_pending_limit` returns the price it is RESTING AT,
+which has not been reached. The first version unpacked the second element for both, recording an
+unfilled order as filled at a price nobody traded. **An identical shape carrying two meanings is
+what made it invisible** — and it was caught by its own test rather than by reading.
+
+🔴 **A MARKET FILL IS NOT RECORDED IN `_rest`, and that is the whole bookkeeping difference.**
+`_rest` means *an order of ours is waiting at the venue*. A market order has already filled, so
+recording it there would make `_observe_vanished` read a live position as an order that
+disappeared, and `_cancel_all_rest` would try to cancel a position.
+
+⚠ **Nothing adopts the position at the placement site either.** `_observe_open` adopts whatever it
+finds on the next reconcile and remains the ONE adoption path — a second one is how two code paths
+start disagreeing about the same trade. The position is not unprotected meanwhile: its stop went
+to the broker WITH the order, the same guarantee the limit path relies on (D4).
+
+⚠ **BOTH branches are handed `lots` from `_plan`.** Nothing on this path re-derives a size, so the
+2026-08-07 single-seam rule holds for the market route too — pinned by a test asserting the two
+routes produce an IDENTICAL lot count from identical inputs.
+
+⚠ **`tp=0.0`, like the limit path.** Every strategy here manages its own targets; a broker-side TP
+would close a position the emulator still holds.
+
+✅ **`mt5_ops.place_order` gained the volume guard its sibling already had** — an ASYMMETRY rather
+than a decision, invisible for as long as nothing called the market form. It REFUSES below the
+minimum and never rounds UP (rule 17); rounding 0.004 up to a 0.01 minimum is 2.5x the authorised
+risk. Its log lines now name the volume SENT rather than the one requested (rule 3).
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and `place_order` itself had ZERO production
+callers before today, so treat the first market entry as a FIRST RUN, not a regression risk.
+
+⚠ **It reaches the running bot by `git pull` plus a RESTART** (`algos/` is not in the frozen
+snapshot). The live bot cannot reach the new branch — its config cannot set the flag — so this is
+additive for it, which is why it may land while it trades.
+
+**Tests: 9 in `test_live_bridge.py`, 3 in `test_mt5_ops_pending.py`; 8 mutations watched RED.**
+🔴 **One "surviving" mutation was the HARNESS, not the test** — its `-k` filter did not select the
+target, so the test never ran and the report read exactly like a vacuous test. **A mutation run
+that does not assert its target was SELECTED can report a false survivor**, which sends you to
+weaken a test that was working.
 
 ### `SYS_BROKERCOSTS` — the broker re-quotes its overnight rate and nothing said so (2026-09-03)
 

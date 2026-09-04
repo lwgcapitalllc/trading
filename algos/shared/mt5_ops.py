@@ -433,11 +433,28 @@ class BotMT5:
                 )
                 return None, None
 
+        # 🔴 **THE SAME VOLUME GUARD `place_pending_limit` HAS, AND ITS ABSENCE HERE WAS AN
+        # ASYMMETRY RATHER THAN A DECISION.** Both functions send an order; only one checked that
+        # the size was one the venue accepts. It never bit because nothing in the live path called
+        # this one until 2026-09-03 — which is exactly the shape of a gap that surfaces on the day
+        # it is first used.
+        #
+        # ⚠ **It REFUSES below the minimum and never rounds UP** (rule 17, and `normalize_volume`
+        # rounds DOWN to the step). Rounding 0.004 up to a 0.01 minimum is 2.5x the risk the
+        # strategy authorised — a bigger position than anything asked for, arriving silently.
+        vol = self.normalize_volume(lots, sym)
+        if vol <= 0:
+            self.log.warning(
+                f"Market order refused: {lots} lots rounds below the {sym} minimum "
+                f"({si.volume_min if si else '?'}). Position too small to place — NOT rounding up."
+            )
+            return None, None
+
         result = mt5.order_send(
             {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": sym,
-                "volume": lots,
+                "volume": vol,
                 "type": order_type,
                 "price": price,
                 "sl": round(sl, digits),
@@ -451,13 +468,15 @@ class BotMT5:
         )
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(
+                # `vol`, never `lots` — rule 3: a record says what was SENT, not what was asked
+                # for. They differ whenever the request did not land on the venue's volume step.
                 f"ORDER FILLED | ticket={result.order} | "
-                f"{direction} {lots}L @ {result.price:.{digits}f} | "
+                f"{direction} {vol}L @ {result.price:.{digits}f} | "
                 f"SL={sl:.{digits}f} TP={tp:.{digits}f}"
             )
             return result.order, result.price
         self.log.error(
-            f"Order failed ({sym} {direction} {lots}L @ {price}): {refusal_detail(result)}"
+            f"Order failed ({sym} {direction} {vol}L @ {price}): {refusal_detail(result)}"
         )
         return None, None
 

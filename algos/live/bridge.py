@@ -1947,12 +1947,51 @@ class OrderBridge:
     def _place(self, slot, lots: float, pend, sig, plan=None) -> None:
         direction = slot[1]
         side = "bullish" if direction > 0 else "bearish"
-        ticket = self._exec(
-            lambda: self._mt5.place_pending_limit(side, lots, pend.edge, pend.sl),
-            f"place {slot_label(slot)} limit {lots}L @ {pend.edge} SL {pend.sl}",
-        )
-        if isinstance(ticket, tuple):
-            ticket = ticket[0]
+        # 🔴 **A MARKET entry is a different ORDER, never a different SIZE.** Both branches below
+        # are handed `lots` from `_plan` — the one seam that converts the strategy's units into a
+        # lot count — so nothing here re-derives a size and the 2026-08-07 single-seam rule holds
+        # for both. What differs is only how the order reaches the venue, and what it leaves
+        # behind afterwards.
+        #
+        # ⚠ **`market` was a strategy field with NO CONSUMER until 2026-09-03.** The emulator
+        # honoured it (`sos_fade/execution.py`, filling at the open) and nothing under
+        # `algos/live/` read it at all, so a strategy could mark an entry "do not wait for price"
+        # and this bridge would quietly rest a limit at a price that might never come back —
+        # two books, different trades, nothing raised. That is rule 7 with the consuming line
+        # missing, and this branch is that line.
+        #
+        # ⚠ **It stays UNREACHABLE for the SOS Fade bot**, whose config has the only setting that
+        # sets this flag on `Retest` with the feature off. This is additive for the running bot,
+        # which is why it may land while it trades.
+        at_market = bool(getattr(pend, "market", False))
+        if at_market:
+            sent = self._exec(
+                # `tp=0.0` — every strategy here manages its own targets and banks them itself,
+                # exactly as the limit path does. A broker-side TP would close a position the
+                # emulator still holds.
+                lambda: self._mt5.place_order(side, lots, pend.sl, 0.0),
+                f"place {slot_label(slot)} MARKET {lots}L SL {pend.sl}",
+            )
+        else:
+            sent = self._exec(
+                lambda: self._mt5.place_pending_limit(side, lots, pend.edge, pend.sl),
+                f"place {slot_label(slot)} limit {lots}L @ {pend.edge} SL {pend.sl}",
+            )
+        ticket = sent
+        # The fill price, MARKET ONLY. `None` means "no fill to report", never "filled at zero"
+        # (rule 1).
+        #
+        # 🔴 **BOTH broker calls return `(ticket, price)`, and the two prices mean OPPOSITE
+        # things.** `place_order` returns where it FILLED; `place_pending_limit` returns the price
+        # it is RESTING AT, which has not been reached. Unpacking the second element for both —
+        # which the first version of this did — records an unfilled order as filled, at a price
+        # nobody traded. **The identical shape carrying two meanings is what makes it invisible.**
+        # Caught by its own test rather than by reading.
+        fill_price = None
+        if isinstance(sent, tuple):
+            ticket = sent[0]
+            if at_market and len(sent) > 1:
+                fill_price = sent[1]
         if ticket is UNKNOWN:
             # 🔴 The send did not confirm AND the order book could not be read, so an order may
             # or may not be resting under our magic right now. The one thing that must not
@@ -1974,14 +2013,36 @@ class OrderBridge:
             )
             return
         if ticket:
-            self._rest[slot] = _Rest(ticket, pend.edge, lots, pend.sl)
+            if at_market:
+                # 🔴 **NOT recorded in `_rest`, and that is the whole difference.** `_rest` means
+                # "an order of ours is waiting at the venue". A market order is already FILLED, so
+                # recording it there would make `_observe_vanished` treat a live position as an
+                # order that disappeared, and `_cancel_all_rest` would try to cancel a position.
+                #
+                # ⚠ **Nothing adopts the position here either.** `_observe_open` adopts whatever
+                # it finds on the next reconcile, and it is the ONE place that does — a second
+                # adoption path is how two code paths start disagreeing about the same trade.
+                # The position is not unprotected meanwhile: its stop went to the broker WITH the
+                # order, which is the same guarantee the limit path relies on (D4).
+                self._log.info(
+                    f"MARKET ENTRY FILLED | T{ticket} {side} {lots}L @ "
+                    f"{fill_price if fill_price is not None else 'unreported'} | SL={pend.sl}"
+                )
+            else:
+                self._rest[slot] = _Rest(ticket, pend.edge, lots, pend.sl)
             self._ledger.event(
                 "order_placed",
                 dir=direction,
                 intent=slot[0],
                 ticket=ticket,
                 lots=lots,
+                # ⚠ For a MARKET order `pend.edge` is the ESTIMATE the size was computed from
+                # (the arming bar's close), never where it filled. Both are recorded, and the
+                # fill is `None` on the limit path rather than a fabricated copy of the estimate
+                # — a record must not make an unfilled order look filled (rule 3).
                 price=pend.edge,
+                fill_price=fill_price,
+                at_market=at_market,
                 stop=pend.sl,
                 sos_bar=getattr(pend, "sos_bar", None),
                 # The sizing WORKING is now part of the record, not just the

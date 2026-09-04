@@ -56,6 +56,9 @@ class _Pend:
     tp1: float = 0.0
     tp2: float = 0.0
     sos_bar: int = 7
+    # Mirrors production's `_Pending.market`, default False — so every existing test in this file
+    # describes the resting-limit path exactly as it did before the market route existed.
+    market: bool = False
 
 
 class _Pos:
@@ -90,6 +93,11 @@ class _FakeMt5Ops:
         self.actions: list = []
         self._ticket = 900
         self.deal = (0.0, 0.0)
+        # Where a MARKET order fills. Deliberately settable and deliberately NOT equal to the
+        # price a caller asks for: a market order fills at the venue's price, not at the estimate
+        # the size was computed from, and a fake that filled at `pend.edge` would hide every bug
+        # that confuses the two.
+        self.fill_price = None
         self.spec = spec
         self.free = free
         self.leverage = leverage
@@ -208,6 +216,21 @@ class _FakeMt5Ops:
             _Order(self._ticket, price=price, sl=sl, volume=lots, buy=direction == "bullish")
         )
         return self._ticket, price
+
+    # ⚠ **A market order FILLS, so this appends a POSITION and never an order** — the same
+    # reasoning as `place_pending_limit` above, one step further along. A fake that recorded the
+    # call and left `self.positions` empty would let a test assert "the bridge sent a market
+    # order" while `_observe_open` had nothing to adopt, i.e. it would describe a broker that
+    # accepts market orders and never fills them. Rule 13: a double that cannot do what
+    # production does is testing a system we do not have.
+    def place_order(self, direction, lots, sl, tp=0.0, comment="", symbol=None):
+        self._ticket += 1
+        self.actions.append(("market", direction, lots, sl))
+        fill = self.fill_price if self.fill_price is not None else 100.0
+        self.positions.append(
+            _Pos(self._ticket, 0 if direction == "bullish" else 1, fill, lots, sl)
+        )
+        return self._ticket, fill
 
     def modify_pending(self, ticket, price, sl, tp=0.0, symbol=None):
         self.actions.append(("modify", ticket, price, sl))
@@ -2468,3 +2491,120 @@ def test_running_OUT_of_room_says_so_ONCE_and_the_RECOVERY_speaks(monkeypatch):
     kinds = [k for k, _ in ledger.rows]
     assert kinds.count("event:account_room_exhausted") == 1
     assert kinds.count("event:account_room_restored") == 1
+
+
+# ── the MARKET entry route (added 2026-09-03) ─────────────────────────────────
+#
+# 🔴 Until this route existed, `_place` called `place_pending_limit` and nothing else, while the
+# strategy layer could already mark an entry "fill at market" — a flag the emulator honoured and
+# NOTHING under `algos/live/` read. A strategy that entered at market could not be a live bot at
+# all, and one that set the flag would have had a limit rested for it in silence.
+
+
+def _placed(ledger):
+    """The kwargs of the one `order_placed` record.
+
+    ⚠ REFUSES when there is not exactly one, rather than taking the first. A test asserting on
+    "the placement" while two were made is describing a run it has not looked at.
+    """
+    hits = [kw for kind, kw in ledger.rows if kind == "event:order_placed"]
+    assert len(hits) == 1, f"expected one order_placed, got {len(hits)}"
+    return hits[0]
+
+
+def test_a_market_entry_sends_a_MARKET_order_and_not_a_limit():
+    """MUTATION: drop the `at_market` branch in `_place` and this goes red."""
+    b, ops, _, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248, market=True))
+    b.sync(_Dec(), _Sig())
+    kinds = [a[0] for a in ops.actions]
+    assert "market" in kinds, ops.actions
+    assert "place" not in kinds, "a market entry must not also rest a limit"
+
+
+def test_a_market_entry_is_sized_through_THE_SAME_SEAM_as_a_limit():
+    """🔴 The 2026-08-07 single-seam rule, extended to the new route.
+
+    Same strategy units, same stop, same account: the lot count must be identical whichever way
+    the order reaches the venue. A market path that derived its own size would be a second place
+    a lot count is produced, which is the defect `_plan` exists to make impossible.
+    MUTATION: size the market branch off `pend.qty` directly and this goes red at 24.79 vs 0.24.
+    """
+    args = (1, 4286.75448, 24.79, 4294.82248)
+    b1, ops1, _, _ = _sizing_bridge(_Pend(*args))
+    b1.sync(_Dec(), _Sig())
+    b2, ops2, _, _ = _sizing_bridge(_Pend(*args, market=True))
+    b2.sync(_Dec(), _Sig())
+    limit_lots = next(a[2] for a in ops1.actions if a[0] == "place")
+    market_lots = next(a[2] for a in ops2.actions if a[0] == "market")
+    assert market_lots == limit_lots == 0.24
+
+
+def test_a_market_entry_is_NOT_recorded_as_a_resting_order():
+    """🔴 The whole bookkeeping difference, and the one that would corrupt state silently.
+
+    `_rest` means "an order of ours is waiting at the venue". A market order has already filled,
+    so recording it there would make `_observe_vanished` read a live position as an order that
+    disappeared, and `_cancel_all_rest` would try to cancel a position.
+    MUTATION: write `_rest[slot]` in the market branch too and this goes red.
+    """
+    b, _, _, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248, market=True))
+    b.sync(_Dec(), _Sig())
+    assert b._rest[live_bridge.PRIMARY_LONG] is None
+
+
+def test_the_position_a_market_entry_opened_is_adopted_normally():
+    """It must reconcile through `_observe_open` like any other fill — one adoption path.
+
+    MUTATION: make the fake's `place_order` record the call without appending a position and this
+    goes red, which is the point of that fake behaving like a broker.
+    """
+    b, ops, ledger, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248, market=True))
+    b.sync(_Dec(), _Sig())  # places at market; the position now exists
+    b.sync(_Dec(), _Sig())  # the next reconcile adopts it
+    assert b._pos_ticket is not None
+    assert b._pos_dir == 1
+    assert "event:trade_opened" in ledger.kinds() or b._pos_ticket is not None
+
+
+def test_the_record_keeps_the_ESTIMATE_and_the_FILL_apart():
+    """Rule 3: what was requested is not what was received.
+
+    A market order is SIZED off an estimate (the arming bar's close) and FILLS wherever the venue
+    is. Recording only one of them, or copying the estimate into the fill, would make a record
+    that cannot show slippage ever happened.
+    MUTATION: set `fill_price=pend.edge` in the market branch and this goes red.
+    """
+    b, ops, ledger, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248, market=True))
+    ops.fill_price = 4290.5  # the venue fills away from the estimate
+    b.sync(_Dec(), _Sig())
+    rec = _placed(ledger)
+    assert rec["at_market"] is True
+    assert rec["price"] == 4286.75448  # the estimate it was sized off
+    assert rec["fill_price"] == 4290.5  # where it actually filled
+    assert rec["price"] != rec["fill_price"]
+
+
+def test_a_RESTING_limit_records_no_fill_price_rather_than_a_fabricated_one():
+    """The other half of rule 3 — an unfilled order must not look filled.
+
+    MUTATION: default `fill_price` to `pend.edge` instead of None and this goes red.
+    """
+    b, _, ledger, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248))
+    b.sync(_Dec(), _Sig())
+    rec = _placed(ledger)
+    assert rec["at_market"] is False
+    assert rec["fill_price"] is None
+
+
+def test_the_resting_limit_path_is_untouched_by_the_market_route():
+    """The regression guard for the bot that is trading RIGHT NOW.
+
+    Its config cannot set the market flag, so every order it places must still be a limit, still
+    be recorded in `_rest`, and still carry the price it rested at.
+    """
+    b, ops, _, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248))
+    b.sync(_Dec(), _Sig())
+    kinds = [a[0] for a in ops.actions]
+    assert "place" in kinds and "market" not in kinds
+    rest = b._rest[live_bridge.PRIMARY_LONG]
+    assert rest is not None and rest.price == 4286.75448

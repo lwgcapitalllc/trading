@@ -650,3 +650,45 @@ def test_the_strict_read_separates_empty_from_unreadable(mt5ops):
     # ...while the lenient reader still flattens both, which is why callers that ACT use the
     # strict one. Pinned so the two cannot quietly converge.
     assert bot.get_pending_orders() == []
+
+
+# ── the MARKET order's volume guard (added 2026-09-03) ────────────────────────
+#
+# 🔴 `place_pending_limit` normalised its volume and `place_order` did not — an ASYMMETRY rather
+# than a decision. It never bit because nothing in the live path called the market form until the
+# market-entry route landed, which is exactly the shape of a gap that surfaces on first use.
+
+
+def test_a_sub_minimum_market_order_is_refused_and_never_rounded_UP(mt5ops):
+    """🔴 Rule 17. Rounding 0.004 up to a 0.01 minimum is 2.5x the risk the strategy authorised —
+    a bigger position than anything asked for, arriving silently.
+
+    MUTATION: drop the `vol <= 0` guard in `place_order` and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    log = _Log()
+    ticket, price = _bot(mt5_ops, log).place_order("bullish", 0.004, sl=3190.0, tp=0.0)
+    assert (ticket, price) == (None, None)
+    assert log.saw("minimum") or log.saw("NOT rounding up")
+
+
+def test_a_market_order_SENDS_the_normalised_volume_not_the_requested_one(mt5ops):
+    """Rule 3: a record — and a wire — says what was SENT, not what was asked for.
+
+    0.037 lots on a 0.01 step is 0.03. Sending 0.037 gets a bare retcode from the venue.
+    MUTATION: send `lots` instead of `vol` and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    _bot(mt5_ops, _Log()).place_order("bullish", 0.037, sl=3190.0, tp=0.0)
+    assert fake.sent[-1]["volume"] == 0.03, fake.sent[-1]
+
+
+def test_the_market_order_refusal_names_the_number_it_refused(mt5ops):
+    """A refusal that does not say what was too small sends the reader to guess.
+
+    MUTATION: drop the lots and the minimum from the message and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    log = _Log()
+    _bot(mt5_ops, log).place_order("bullish", 0.004, sl=3190.0, tp=0.0)
+    assert log.saw("0.004") and log.saw("0.01")
