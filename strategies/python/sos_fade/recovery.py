@@ -1,4 +1,4 @@
-"""Loss-recovery wiring — turns A+'s own losses into recovery trades in the same book.
+"""Loss-recovery wiring — turns SOS Fade's own losses into recovery trades in the same book.
 
 The RULE is not here. It lives in `strategies/python/loss_recovery/`, defined against a
 `LossEvent` protocol so any strategy in this repo can drive it; `execution.Trade` satisfies that
@@ -8,12 +8,12 @@ onto that engine's config, runs it, and converts what comes back into `Trade` ro
 anywhere downstream.
 
 🔴 **The one approximation, stated plainly because it is easy to forget and impossible to see in
-the output.** The recovery sizes off the RUNNING balance — every A+ trade and every earlier
-recovery trade that has already closed is in it. A+ does NOT size off the recovery. So the two
+the output.** The recovery sizes off the RUNNING balance — every SOS Fade trade and every earlier
+recovery trade that has already closed is in it. SOS Fade does NOT size off the recovery. So the two
 share a balance in one direction only.
 
-That is a deliberate trade, not an oversight. Making A+ size off the recovery would mean a
-lab-only toggle silently moved every A+ trade, every parity number and every figure in the
+That is a deliberate trade, not an oversight. Making SOS Fade size off the recovery would mean a
+lab-only toggle silently moved every SOS Fade trade, every parity number and every figure in the
 optimization log — a feature that can rewrite the shipped book is worth more care than this one
 earns.
 
@@ -26,7 +26,7 @@ compounds differs.
 
 ⚠ **Neither figure settles anything, and do not quote the second as this rule's worth.** The 59.9%
 also assumes one balance carrying NO risk budget. Put a 10% account cap on it — the number this
-bot already runs — and 23 of that run's 160 A+ entries opened while a recovery was still holding
+bot already runs — and 23 of that run's 160 SOS Fade entries opened while a recovery was still holding
 risk, which turns the leg NEGATIVE. The honest range is +45% to -15%, decided by an allocator that
 does not exist on the live side. Full bracket, and what would settle it:
 `strategies/python/loss_recovery/CLAUDE.md`.
@@ -139,7 +139,7 @@ def apply(strategy, df) -> List[Trade]:
     # The engine owns the loss filter, so it is handed the full book rather than a pre-filtered
     # one — a caller cannot then accidentally supply a list somebody else already filtered on a
     # different scratch band and get a silently different population. Recovery rows are excluded
-    # because a recovery trade's own loss is not an A+ loss, and recovering a recovery is a rule
+    # because a recovery trade's own loss is not an SOS Fade loss, and recovering a recovery is a rule
     # nobody has measured.
     source = [t for t in ex.trades if t.kind != RECOVERY_KIND]
     if not source:
@@ -155,7 +155,7 @@ def apply(strategy, df) -> List[Trade]:
     frac = cfg.exec_recovery_risk_frac
 
     # Walk the balance forward through every trade that has already CLOSED when each recovery
-    # opens — A+ trades and earlier recovery trades alike. A heap rather than a sorted list
+    # opens — SOS Fade trades and earlier recovery trades alike. A heap rather than a sorted list
     # because recovery closes are discovered as we go, so the sequence is not known up front.
     closes = [(t.exit_index, t.pnl_usd) for t in ex.trades]
     heapq.heapify(closes)

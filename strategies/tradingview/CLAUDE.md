@@ -34,7 +34,7 @@ has been asking for since 2026-08-12 now exists and has been run on all fourteen
 `strategies/` and `engines/`; the rules below moved verbatim.
 
 
-## `recovery_strategy.pine` — the A+ book plus a LOSS RECOVERY leg (new 2026-08-19)
+## `recovery_strategy.pine` — the SOS Fade book plus a LOSS RECOVERY leg (new 2026-08-19)
 
 **A FORK of `sos_fade_strategy.pine`, not an edit to it, and the reason is mechanical.** A recovery
 trade is open AT THE SAME TIME as a primary. That file's bookkeeping assumes one position:
@@ -184,7 +184,7 @@ quoting any figure off this chart.
 
 🔴 **THE RULE THIS FORK DRAWS WAS SEARCHED ON 2026-08-19 AND NOTHING CHANGED — so the fork's
 inputs are still the measured ones.** Nine stop placements and six exit ladders were replayed over
-A+'s 62 real losses on 186,910 M15 bars, both legs costed. The shipped rule (break-leg stop, lock
+SOS Fade's 62 real losses on 186,910 M15 bars, both legs costed. The shipped rule (break-leg stop, lock
 +1R at +1R, trail confirmed swings) won. ⚠ **The one challenger that beat it on the headline — a
 stop on the CHoCH BAR's own extreme, +24.4R against +16.2R on a 7x tighter stop — goes to −7.4R
 once its five best trades are deleted, and holds for four bars.** ⚠ **Aaron's own idea (rest the
@@ -195,7 +195,7 @@ R should have RAISED. Full grid: `strategies/python/sos_fade/sos_fade_optimizati
 Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
 ## `extreme_leg_strategy.pine` — the run INTO the shift of structure (new 2026-08-24)
 
-The counterpart to A+: that bot waits for the shift and fades the retracement, this one takes the
+The counterpart to SOS Fade: that bot waits for the shift and fades the retracement, this one takes the
 move that CREATES the shift — extreme up to the swing whose break IS the shift. **Prose, defaults
 and the numbers behind them: `docs/extreme_leg_strategy.md`. The study that produced the rules
 is `../../docs/PRE_SOS_LEG_STUDY.md`.** Only what is true of THIS directory lives here.
@@ -617,7 +617,7 @@ permanently or not to have the feature. It is **0 → 4** in both files (the bas
 `execScaleAdds`, whose `maxval` is 3).
 
 🔴 **A RAISED CEILING IS SAFE ONLY IF SOMETHING ELSE REFUSES THE STACK, AND THAT WAS CHECKED RATHER
-THAN ASSUMED.** All four `strategy.entry` calls that OPEN a trade in that file (two A+, two B-LEG)
+THAN ASSUMED.** All four `strategy.entry` calls that OPEN a trade in that file (two SOS Fade, two B-LEG)
 are gated on `strategy.position_size == 0`, so the base entry cannot stack on itself whatever
 `pyramiding` says; the only other entries are the `L-ADD*` / `S-ADD*` ids, each gated on
 `execScaleIn`. **With the toggle off the file trades exactly as before** — verified on the Python
@@ -773,7 +773,7 @@ The other half of the standardisation: *"as I move to strategies, nothing seems 
 than the logic of the strategy."* Same blocked marker, same missed callout, same position box,
 same entry triangles, on every file.
 
-| annotation | A+ | B-LEG | BOS | D | H4 | M15 |
+| annotation | SOS Fade | B-LEG | BOS | D | H4 | M15 |
 |---|---|---|---|---|---|---|
 | position box / result bands | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
 | entry callout, recoloured on close | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
@@ -784,7 +784,7 @@ same entry triangles, on every file.
 **D gained the entry triangles.** `plotshape` is a GLOBAL-SCOPE call, so it cannot live inside
 the fill block and the fill edge is written out at top level instead — the SAME test the fill
 block uses, so a triangle can never appear on a bar the tracker did not treat as a fill. Gated
-on `execShowPosBox` like A+, because the triangles are part of the position drawing.
+on `execShowPosBox` like SOS Fade, because the triangles are part of the position drawing.
 ⚠ **They are not redundant with the boxes**: a scratch paints a risk block a few pixels tall and
 reads as no trade at all, which is exactly when you need to see where it opened.
 
@@ -801,13 +801,13 @@ the day a refusal is reported from anywhere but those two blocks. `hTrigDir` is 
 `hTrigCode` instead.
 
 ⚠ **No dedupe, and that is not an omission.** A trigger fires at most once per H4 window
-(`firedWindow`), so one refusal is already one bar. A+ needs its `sosBar + code` key because a
+(`firedWindow`), so one refusal is already one bar. SOS Fade needs its `sosBar + code` key because a
 setup there can stay refused for twenty consecutive bars. ⚠ **`hTrigBar == bar_index` is what
 scopes it** — the four `hTrig*` fields are `var` and keep the last trigger's values for ever.
 
 ### 🔴 The missed-setup callout is NOT portable to BOS, D or H4, and this file already said so
 
-A+'s callout scores a **2-of-3 confluence sequence** — arm (sweep or divergence), SOS, then the
+SOS Fade's callout scores a **2-of-3 confluence sequence** — arm (sweep or divergence), SOS, then the
 retrace zone — and reports which one was missing. **`bos_strategy.pine` DELETED those four
 inputs on 2026-07-31 with the reason written down**: *"The BOS arm is a break of structure, so
 there is no sweep→SOS clock to bound and no 2-of-3 sequence to score."* The same is true of D (a
@@ -854,11 +854,11 @@ constants and a liquidity exemption because they all say FVG. Naming a group for
 
 ### Collapsing, and why it is the same edit as grouping
 
-⚠ **Do not regroup a file and collapse it in two passes.** 76 of A+'s 156 inputs are fib,
+⚠ **Do not regroup a file and collapse it in two passes.** 76 of SOS Fade's 156 inputs are fib,
 session and liquidity sub-settings Aaron has said he will never configure; each family
 collapses to ONE draw toggle with the rest hardcoded at today's values. Moving them into
 new groups and then deleting them is the risky work done twice, on the panel that decides
-what he trades. **One pass per file: collapse, then group what survives.** A+ goes
+what he trades. **One pass per file: collapse, then group what survives.** SOS Fade goes
 156 → about 75.
 
 ⚠ **Collapse means HIDE THE SUB-SETTINGS, never remove the on/off.** Aaron, 2026-08-12:
@@ -973,7 +973,7 @@ partial filled.
 Aaron, 2026-08-12: *"the colors of the labels that show if a trade had won or lost, if it broke
 even, if it was blocked, what was the max drawdown, where the price went, the long and short
 positions — all those colors are not consistent across all the pines. They should be the same
-colors. Use MPC, the A+ strategy as a standard."*
+colors. Use MPC, the SOS Fade strategy as a standard."*
 
 **Every colour a TRADE is drawn in is copied from `sos_fade_strategy.pine`. Change a value by changing
 it there first and copying it down** — never by picking one in a fork.
@@ -991,41 +991,41 @@ it there first and copying it down** — never by picking one in a fork.
 | blocked setup | `#FF2E9A` @12 / @0 | pink |
 | label text | `#101014` @0 | dark on every bright fill |
 
-### 🔴 A+ carries TWO palettes and that is what the forks got wrong
+### 🔴 SOS Fade carries TWO palettes and that is what the forks got wrong
 
-The one real finding of the pass. A+ has a **TABLE** palette (`#00E676` / `#FF5252` / `#ffde59` —
+The one real finding of the pass. SOS Fade has a **TABLE** palette (`#00E676` / `#FF5252` / `#ffde59` —
 the JARVIS status panel's bull / bear / armed text) and a **POSITION** palette (`#26A69A` /
 `#EF5350` / `#FF9800` — every trade drawing). They are different greens and different reds on
 purpose.
 
 **`d_strategy.pine` applied the TABLE palette to its TRADES.** A D winner drew in the green
-A+ uses for a table row and never in the green A+ uses for a winner; its breakeven was
-`#ffde59`, which is A+'s *"Armed"* highlight. Nothing was wrong with either palette — the file
+SOS Fade uses for a table row and never in the green SOS Fade uses for a winner; its breakeven was
+`#ffde59`, which is SOS Fade's *"Armed"* highlight. Nothing was wrong with either palette — the file
 was reading the wrong one, and both are still there. Its state panel keeps the table colours,
 which is where they belong.
 
 ⚠ **`h4_sweep_strategy.pine` had NO colour constants at all** — every value was a hex literal
 at its use site, which is exactly why it drifted without anyone being able to see that it had.
-The hues were mostly already A+'s; the **transparencies** were not, so the same green read as a
+The hues were mostly already SOS Fade's; the **transparencies** were not, so the same green read as a
 different shade per file. It has a named block now.
 
 ⚠ **Three deliberate behaviour corrections came with it, all label-only.** D coloured its open
-callout by DIRECTION (A+ paints it grey — the result is not known yet, and direction is already
+callout by DIRECTION (SOS Fade paints it grey — the result is not known yet, and direction is already
 in the label text and the triangle); D never recoloured its leader LINE on close, so a grey line
 ran into a green label; and D used white label text where every other file uses `#101014`.
 
 🔴 **H4 had NO breakeven state, so a +0.02R scratch drew as a full WIN and a −0.02R scratch as a
 full LOSS** — the two loudest colours on the chart for a trade that made nothing. It grades
 against a band now. ⚠ **The band is a CONSTANT (`H4_BE_BAND = 0.15`), not an input**, because
-adding an input resets every saved value on the chart and it has never been tuned here; A+
+adding an input resets every saved value on the chart and it has never been tuned here; SOS Fade
 exposes it as `execBeBandR`. Promote it when the rest of H4's annotations are brought up.
 
 ### ⚠ The one collision, left OPEN rather than silently resolved
 
-**A+ itself uses `#FF9800` for two different things: BREAKEVEN and the missed-setup callout.**
+**SOS Fade itself uses `#FF9800` for two different things: BREAKEVEN and the missed-setup callout.**
 H4 then uses the same orange for its trigger line and label. They are different objects in
 different places, so it is not wrong — but on a chart showing both, orange has two meanings.
-Recorded rather than fixed, because resolving it means changing A+, which changes the standard
+Recorded rather than fixed, because resolving it means changing SOS Fade, which changes the standard
 and every chart running it. **Aaron's call, not a tidy-up.**
 
 ### What is NOT in this pass
@@ -1437,7 +1437,7 @@ height is something you can look at on the chart.
 ⚠ **Pink is now the only refusal you can buy back by changing a setting**, which is what pink should
 have meant all along. ⚠ **Colours are `sos_fade_strategy.pine`'s and mean the same there** — orange
 2-of-3 callout, pink TRADE BLOCKED — so one glance reads the same on either chart. ⚠ **That orange
-is also this file's BREAKEVEN colour**, an overlap A+ has too; it is tolerable only because the two
+is also this file's BREAKEVEN colour**, an overlap SOS Fade has too; it is tolerable only because the two
 never share an object (breakeven orange is always a filled trade band, missed orange is always a tag
 with no trade under it). **Do not use it for a third thing.**
 
@@ -1984,10 +1984,10 @@ Every comment that pointed at the file was retargeted rather than left dangling.
 
 ## Key paths & entry points
 
-- `strategies/tradingview/sos_fade_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_jarvis.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
+- `strategies/tradingview/sos_fade_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_jarvis.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (SOS Fade sequence entries, fib TP ladder, %-risk sizing). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
 - `strategies/tradingview/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
 - `strategies/tradingview/h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
-- `strategies/tradingview/b_leg_strategy.pine` — a FORK of `sos_fade_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
+- `strategies/tradingview/b_leg_strategy.pine` — a FORK of `sos_fade_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the SOS Fade bot. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
 
 - `strategies/tradingview/realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `sos_fade_strategy.pine`: it embeds `mpc_jarvis.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/realign/` (its own CLAUDE.md); spec: `docs/REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
 - `strategies/tradingview/realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.

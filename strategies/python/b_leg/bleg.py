@@ -1,14 +1,14 @@
 """BLegTracker — the B-LEG setup state machine.
 
 A line-for-line port of the B LEG SETUP block in `strategies/tradingview/b_leg_strategy.pine`
-(~3683-3758). The B LEG is the SOS whose retrace arrived LATE: an A+ SOS fires, price
-expands and prints a continuation BOS BEFORE it ever retraces, so the A+ reversal leg
+(~3683-3758). The B LEG is the SOS whose retrace arrived LATE: an SOS Fade SOS fires, price
+expands and prints a continuation BOS BEFORE it ever retraces, so the SOS Fade reversal leg
 dies at 2/3 (no 0.5/0.618 latch). On a higher timeframe that is ONE clean leg and the
 retrace DOES arrive, later — into the Sniper-Zone band (0.382-0.5) frozen at the ORIGINAL
 SOS. This tracker freezes that band and waits for price to trade back into it.
 
-It runs fully PARALLEL to the A+ sequence: it only READS structure (`Signals`) and the
-`bleg_arm_*` flags the sequence captured (`SeqState`), and never writes A+ state. Feed
+It runs fully PARALLEL to the SOS Fade sequence: it only READS structure (`Signals`) and the
+`bleg_arm_*` flags the sequence captured (`SeqState`), and never writes SOS Fade state. Feed
 one bar per `update(sig, seq)`, in order.
 
 Per bar the block does four things, in this order (matching the Pine):

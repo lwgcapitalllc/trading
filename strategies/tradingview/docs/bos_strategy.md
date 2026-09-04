@@ -14,11 +14,11 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //  BOS STRATEGY — the break-of-structure CONTINUATION setup
 // ============================================================================
 // Spec: docs/BOS_SPEC.md. Third strategy off the shared MPC-JARVIS engine,
-// alongside sos_fade_strategy.pine (A+ SOS fade) and b_leg_strategy.pine.
+// alongside sos_fade_strategy.pine (SOS Fade SOS fade) and b_leg_strategy.pine.
 //
 // The engine block above the "STRATEGY EXECUTION" header is copied from
 // sos_fade_strategy.pine and its LOGIC is byte-identical — do not let it drift. The
-// A+ SEQUENCE TRACKER, the B-LEG tracker and the missed-setup callout were NOT
+// SOS Fade SEQUENCE TRACKER, the B-LEG tracker and the missed-setup callout were NOT
 // copied: this strategy reads none of them, and the compile-token budget in this
 // script family has already hit CE10117 and CE10295 twice.
 //
@@ -28,10 +28,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // which lands inside that range. The two files now differ in exactly three
 // places, all of them intended:
 //   1. this header + the strategy() title,
-//   2. exec-input PLACEMENT — the parent declares its A+/B-LEG inputs up top;
+//   2. exec-input PLACEMENT — the parent declares its SOS Fade/B-LEG inputs up top;
 //      this file declares its own BOS inputs down in the execution layer, and
 //      keeps execConfSZ inline next to the Sniper engine that reads it,
-//   3. the ~512-line A+ SEQUENCE / B-LEG tracker block, deliberately absent.
+//   3. the ~512-line SOS Fade SEQUENCE / B-LEG tracker block, deliberately absent.
 // Everything else — structure, fib, FVG, liquidity, sessions, RSI divergence,
 // sniper — is identical, and that is the part that must stay identical.
 //
@@ -39,7 +39,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // What comes after it is where the money is: the market prints one or more BREAK
 // OF STRUCTURE events in that same direction until another SOS ends the run.
 // Each BOS is a fresh continuation leg, and each leg gives a retracement you can
-// buy (or sell) into. A+ fades the shift; this rides what the shift started.
+// buy (or sell) into. SOS Fade fades the shift; this rides what the shift started.
 // Not every BOS is real — some are the last poke before the reversal — so this
 // is deliberately a FILTERED setup (F1-F10), not a "take them all" setup.
 //
@@ -121,8 +121,8 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // on almost every leg, so F4 killed the setup a few bars before its own limit
 // would have filled. It now defaults OFF with that written on its tooltip.
 //
-// IT IS THE A+ WITH THE ARM SWAPPED. Targets, staging, trail and sizing are the
-// A+ ladder unchanged; the entry is now a plain fib by default. Three things
+// IT IS THE SOS Fade WITH THE ARM SWAPPED. Targets, staging, trail and sizing are the
+// SOS Fade ladder unchanged; the entry is now a plain fib by default. Three things
 // differ from sos_fade_strategy.pine:
 //   • the arm is a BOS after an SOS, not a sweep-or-divergence before one,
 //   • liquidity sweeps are not used at all — no sweep arming, no sweep confluence,
@@ -251,13 +251,13 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // a %-of-price floor does not scale down. 0.1% of gold at $3,300 is $3.30, wider
 // than most WHOLE 5m bars, so one flat floor silently erased nearly every gap
 // below 15m. 900 seconds = 15m.
-// 2026-07-31 — the 15m+ floor is now the assistant's 0.04, NOT the A+'s 0.1.
+// 2026-07-31 — the 15m+ floor is now the assistant's 0.04, NOT the SOS Fade's 0.1.
 // Aaron found a gap the chart clearly drew that this strategy refused to see. At
 // gold $4,155 the two floors are $1.66 and $4.16 — the assistant draws anything
 // over the first, the strategy discarded anything under the second, so a real gap
 // inside the entry band was invisible to the entry ladder. The 0.1 was never a
 // decision made FOR this file; it was inherited from sos_fade_strategy.pine, where it
-// is load-bearing (the A+ 15m baseline and the sos_fade parity pin). Nothing
+// is load-bearing (the SOS Fade 15m baseline and the sos_fade parity pin). Nothing
 // in THIS file depends on it — there is no BOS parity harness and no BOS baseline
 // worth preserving — so it is matched to the chart the setup is read off.
 // ⚠ This MOVES every result this file has ever produced. See the header.
@@ -280,9 +280,9 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //============================================================
 //  (DELETED 2026-07-31 — two whole groups that did nothing here)
 //============================================================
-// "A+ Setup"  (aplusWindow) and "A+ Debug"  (debugShow23 / debugShow23Disarmed /
+// "SOS Fade Setup"  (aplusWindow) and "SOS Fade Debug"  (debugShow23 / debugShow23Disarmed /
 // debug23Filter / debugDays) both belonged to machinery this file never copied:
-// the A+ SEQUENCE TRACKER and the missed-setup callout. Five inputs sat in the
+// the SOS Fade SEQUENCE TRACKER and the missed-setup callout. Five inputs sat in the
 // settings panel with nothing reading them. The BOS arm is a break of structure,
 // so there is no sweep→SOS clock to bound and no 2-of-3 sequence to score.
 ```
@@ -295,10 +295,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //============================================================
 ```
 
-## [12] (`divVeto` deleted 2026-07-31 — it was the A+'s veto switch and nothing 
+## [12] (`divVeto` deleted 2026-07-31 — it was the SOS Fade's veto switch and nothing 
 
 ```
-// (`divVeto` deleted 2026-07-31 — it was the A+'s veto switch and nothing here
+// (`divVeto` deleted 2026-07-31 — it was the SOS Fade's veto switch and nothing here
 //  read it. The BOS veto is "F5 · Divergence blocks a new entry" in Strategy
 //  Execution; the two levels below are what it reads.)
 ```
@@ -571,10 +571,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // confirmed divPivotLen bars after the extreme (non-repainting by design).
 ```
 
-## [39] Live confluence flags for the A+ setup row
+## [39] Live confluence flags for the SOS Fade setup row
 
 ```
-// Live confluence flags for the A+ setup row
+// Live confluence flags for the SOS Fade setup row
 // Divergence relevance is tied to structure, not just a bar count. A divergence
 // that fired several legs ago — with BOS/SOS events since — is stale even if
 // still within the bar window: price has already moved on, and citing it as a
@@ -696,7 +696,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // Inbound touch of the 0.5 level during the RETRACEMENT toward the entry zone —
-// the A+ sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
+// the SOS Fade sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
 // same price on the way back OUT (as TP1) and is gated behind 0.618.
 ```
 
@@ -755,7 +755,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // Cycle Fib TRACKING always runs — its discount zone doubles as the HTF POI for
-// the A+ sequence on ANY timeframe. Only the DRAWING is gated to 5m-and-under
+// the SOS Fade sequence on ANY timeframe. Only the DRAWING is gated to 5m-and-under
 // charts (macroFibAllowed), where the fib's scale fits the chart.
 ```
 
@@ -836,9 +836,9 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //  STRATEGY EXECUTION — BOS continuation entries + the shared exit ladder
 //============================================================
 // This is the ONLY block that is not part of the mpc_jarvis.pine engine.
-// Spec: docs/BOS_SPEC.md. It is the A+ strategy with the ARM swapped:
+// Spec: docs/BOS_SPEC.md. It is the SOS Fade strategy with the ARM swapped:
 //
-//   A+   : sweep-or-divergence -> SOS -> fade the shift.
+//   SOS Fade   : sweep-or-divergence -> SOS -> fade the shift.
 //   BOS  : SOS sets a regime -> each later BOS in that direction is a fresh
 //          continuation leg -> buy/sell its retrace.
 //
@@ -847,14 +847,14 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //   2. divergence is a KILL, not a veto-with-exemption — it blocks the entry,
 //      pulls a resting limit, and (optionally) closes an open trade,
 //   3. the stop model is a dropdown (spec §6) instead of a fib-level dropdown.
-// Entries, targets, staging, trail and sizing are the A+ ladder, unchanged.
+// Entries, targets, staging, trail and sizing are the SOS Fade ladder, unchanged.
 //
 // ── Two legs, two fibs (spec §2) ─────────────────────────────────────────────
 //   BREAK leg     = bos_low -> bos_high, frozen at the BOS bar. Its 0.382-0.5
 //                   pocket is the drawn Sniper Zone.
 //   EXPANSION leg = bos_low -> the running extreme after the break. This is what
 //                   the drawn External fib measures, and its 0.5-0.886 band is
-//                   the A+ entry band. DEFAULT anchor — the band the whole A+
+//                   the SOS Fade entry band. DEFAULT anchor — the band the whole SOS Fade
 //                   entry machinery already prices off.
 // `bosFibAnchor` picks which one prices the trade. The levels are computed here
 // from fibo_ash / fibo_asl directly rather than read off fiboP*, so the entry
@@ -866,7 +866,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //   the latch set by break #1's round trip would kill breaks #2 and #3 on their
 //   arm bar. It is re-implemented per-anchor here (bos*_half + a return to the
 //   anchor's own 0.0), which is what the spec means by "on the anchor leg".
-// • `execMinStopMode` / `execMinStopVal` are carried over from the A+ risk block
+// • `execMinStopMode` / `execMinStopVal` are carried over from the SOS Fade risk block
 //   and are NOT in the spec's §8 input list. They default Off, so the baseline
 //   run is exactly the spec's baseline; they exist so the same tuning lever is
 //   available on all three bots.
@@ -1006,11 +1006,11 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // still believes never retraced.
 ```
 
-## [75] STAGE 3 — ENTRY: the A+ ladder, unchanged, on the BOS leg
+## [75] STAGE 3 — ENTRY: the SOS Fade ladder, unchanged, on the BOS leg
 
 ```
 //============================================================
-//  STAGE 3 — ENTRY: the A+ ladder, unchanged, on the BOS leg
+//  STAGE 3 — ENTRY: the SOS Fade ladder, unchanged, on the BOS leg
 //============================================================
 // A resting LIMIT at the entry price. The tap is the entry — we never wait for a
 // bar to close inside the band (a wick fills the order, and the order survives
@@ -1021,7 +1021,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // Sniper Zone) prices every entry, and a leg with neither does not trade.
 // `bosEntryFib` is inert in that configuration — see its tooltip.
 //
-// With `bosUseFvg` ON the A+ ladder takes over and the first source that prices
+// With `bosUseFvg` ON the SOS Fade ladder takes over and the first source that prices
 // the leg wins:
 //   1. FVG edge (clamped to lTop; whole gap past lTop with execFvgDeepOnly on)
 //   2. deep-fib re-price — Method 3

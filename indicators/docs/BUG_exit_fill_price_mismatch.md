@@ -217,7 +217,7 @@ gates green at every warmup from 100 up:
 
 | gate | export | warmups | result |
 |---|---|---|---|
-| `compare_strategy.py` (A+) | `VANTAGE_XAUUSD, 15_fd236.csv`, **21,691 bars**, 2025-08-31 → 2026-07-31 | 100 / 200 / 500 / 1000 / 2000 | **exit 0** |
+| `compare_strategy.py` (SOS Fade) | `VANTAGE_XAUUSD, 15_fd236.csv`, **21,691 bars**, 2025-08-31 → 2026-07-31 | 100 / 200 / 500 / 1000 / 2000 | **exit 0** |
 | `compare_bleg.py` (B-LEG) | `VANTAGE_XAUUSD, 15_1b2f3.csv`, **21,691 bars**, same window | 100 / 200 / 500 / 1000 / 2000 | **exit 0** |
 
 No truncation warning on either, so the ~100-bar skip is genuine engine cold start rather than a
@@ -243,8 +243,8 @@ at breakeven (entry ± `execBeBufTk`) instead of the real SL?
 
 | export | entries | stop at the real SL | **staged on the fill bar (bug)** |
 |---|---|---|---|
-| A+ **before** (2026-07-29, 21,494 bars) | 26 | 22 | **4** |
-| A+ **after** (full history, 21,691 bars) | 27 | 27 | **0** |
+| SOS Fade **before** (2026-07-29, 21,494 bars) | 26 | 22 | **4** |
+| SOS Fade **after** (full history, 21,691 bars) | 27 | 27 | **0** |
 | B-LEG **after** (full history) | 5 | 5 | **0** |
 
 **All four affected candles are inside the new window**, so every one can be read before and after
@@ -265,9 +265,9 @@ was never the honest number). The fourth had the wrong stop, never went near it,
 price now corresponds to an order the strategy actually placed.
 
 ⚠ **The B-LEG fork has zero affected entries in any window** — before OR after. Its TP1 is the
-broken swing extreme, far further from the entry than the A+ ladder's next fib, so its fill bar
+broken swing extreme, far further from the entry than the SOS Fade ladder's next fib, so its fill bar
 rarely reaches it. That is exposure, not proof: the fix there is verified by construction (the code
-is identical to the A+) and by parity, not by a caught case.
+is identical to the SOS Fade) and by parity, not by a caught case.
 
 ---
 

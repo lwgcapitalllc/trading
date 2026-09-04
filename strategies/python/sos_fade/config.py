@@ -1,4 +1,4 @@
-"""SosFadeConfig — every input toggle the A+ strategy trades on, with the SAME name
+"""SosFadeConfig — every input toggle the SOS Fade strategy trades on, with the SAME name
 and SAME default as `strategies/tradingview/sos_fade_strategy.pine`.
 
 **Toggle parity is a hard requirement** (see docs/SOS_FADE_SPEC.md): the regression
@@ -8,7 +8,7 @@ brother pick reproduces bar-for-bar. A new toggle in the Pine is a new field her
 
 Scope: this carries the toggles that change a TRADE DECISION or the divergence
 veto/active state — the execution group (`GRP_EXEC`), the divergence group
-(`GRP_DIV`) that feeds the veto, and the A+ staleness window (`GRP_APLUS`). Purely
+(`GRP_DIV`) that feeds the veto, and the SOS Fade staleness window (`GRP_APLUS`). Purely
 cosmetic Pine inputs (debug labels, position boxes, the stats table styling) do not
 touch the decision stream and are deliberately not declared. `exec_scratch_r` is the
 one Result-Stats input kept, because it classifies a closed trade's R as WIN / LOSS
@@ -33,11 +33,11 @@ class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (sos_fade_strategy.pine 4159-4183) ──────────────
     exec_longs: bool = True            # "Trade longs"
     exec_shorts: bool = True           # "Trade Shorts"
-    exec_aplus: bool = True            # "Trade A+ setups" (Pine execAplus)
-    #   On (default) = the A+ reversal sequence arms normally. Off = no A+ entry ever fires —
+    exec_aplus: bool = True            # "Trade SOS Fade setups" (Pine execAplus)
+    #   On (default) = the SOS Fade reversal sequence arms normally. Off = no SOS Fade entry ever fires —
     #   pair with `exec_bleg` ON in the B-LEG bot to read that setup's results in isolation.
     exec_bleg: bool = False            # "Trade B-Leg setups" (Pine execBLeg)
-    #   The A+ bot never trades a B leg, so this stays False here; `b_leg.BLegConfig`
+    #   The SOS Fade bot never trades a B leg, so this stays False here; `b_leg.BLegConfig`
     #   overrides it to True to match `strategies/tradingview/b_leg_strategy.pine`'s own default.
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
@@ -187,7 +187,7 @@ class SosFadeConfig:
     exec_risk_pct: float = 10.0        # "Risk % per trade"
     exec_sl_level: str = "0.886"       # "Stop fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
     #   **Defaulted "1.0" → "0.886" on 2026-07-27** (Aaron's call, and how his TradingView chart is
-    #   configured), in lockstep with both A+ Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886
+    #   configured), in lockstep with both SOS Fade Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886
     #   entry band, so the stop sits just past the deepest price a limit may rest at. Evidence: the
     #   2026-07-27 parity run went GREEN at it, and Run 6 rode it over the broker's whole intraday
     #   history — 188 trades, 107.7R, 293x, −54.9% maxDD, no degenerate stop.
@@ -243,7 +243,7 @@ class SosFadeConfig:
     #   sweep below). It had been "Off" so that the shipped baseline and every historical result
     #   stayed unchanged — **that is no longer true, and it is the cost of this change**: a run
     #   replayed at defaults from today refuses trades that older runs took, so every figure in
-    #   this folder measured at "Off" describes a different configuration. The A+ baseline moves
+    #   this folder measured at "Off" describes a different configuration. The SOS Fade baseline moves
     #   from **183 trades / +134.75R** to **181 / +136.75R** over 7.9 years.
     #
     #   **MEASURED over 186,220 M15 bars (2018-09-13 → 2026-08-04), 23 configs, one real replay
@@ -332,7 +332,7 @@ class SosFadeConfig:
     #   0.0 to reproduce one. That is not a formality here: the floor removes 5 entries, and with
     #   one position slot a removed entry changes which LATER setup gets the slot, so a stored
     #   figure does not merely shift by the refused trades' R.
-    #   ⚠ **The A+/B-LEG overlap audit is STALE until `backtest/tools/overlap_audit.py` is re-run** —
+    #   ⚠ **The SOS Fade/B-LEG overlap audit is STALE until `backtest/tools/overlap_audit.py` is re-run** —
     #   it was measured on the entry logic that took 245.
     #   ⚠ **The live bot does not have this until somebody PROMOTES.** A pull cannot move it.
     #   ⚠ **An export taken before today has no `cfg_min_atr` column, and the comparator reads an
@@ -692,7 +692,7 @@ class SosFadeConfig:
     #   ✅ **The queue effect did NOT materialise, and it was CHECKED rather than assumed — the
     #   trade count is 159 in every row, including the "Always" run that cut 26 trades.** So the
     #   naive re-pricing and the real replay agree to the cent here. ⚠ **That is a fact about THIS
-    #   window, not a licence to re-price instead of replaying**: A+ takes ~2 trades a month, so a
+    #   window, not a licence to re-price instead of replaying**: SOS Fade takes ~2 trades a month, so a
     #   slot freed 60 hours early usually contains no setup — whereas an ENTRY-side filter frees
     #   the slot exactly when a setup exists, which is how the min-stop guard's cheap estimate got
     #   its sign wrong (+1.84R estimated, −1.84R replayed).
@@ -709,7 +709,7 @@ class SosFadeConfig:
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
     exec_secondary: bool = True        # "Secondary re-entries" — the fast-feed sniper re-entry
-    #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
+    #   OFF = primary only, one entry per 15m SOS Fade leg (keeps compare_strategy.py parity).
     #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from a faster one. It
     #   NEEDS run_dual and a second, faster feed, which is the whole reason the default matters — see the
     #   "not every path can run it" warning below before assuming a number came from this book.
@@ -1374,7 +1374,7 @@ class SosFadeConfig:
     #   trades room having never been signalled, with nothing anywhere reporting the gap.
     #   `backtest/tools/alert_rate.py` is the end-to-end check; re-run it after moving this.
 
-    # ── GRP_APLUS — A+ sequence (156) ───────────────────────────────────────────
+    # ── GRP_APLUS — SOS Fade sequence (156) ───────────────────────────────────────────
     aplus_window: int = 4320           # "Max time: sweep → SOS (minutes)" — staleness backstop
 
     # ── GRP_DIV — RSI divergence: feeds the veto + the live DIV confluence (169-180) ─
@@ -1418,11 +1418,11 @@ class SosFadeConfig:
     # of its own live in `strategies/python/loss_recovery/CLAUDE.md`. This block is the wiring
     # that lets the lab and the Command Center turn it on; the engine is that package.
     #
-    # 🔴 **Turning this ON cannot change one A+ trade.** The recovery reads A+'s finished losses
+    # 🔴 **Turning this ON cannot change one SOS Fade trade.** The recovery reads SOS Fade's finished losses
     # and appends its own trades tagged `kind="recovery"`; it never gates, delays or re-sizes an
-    # A+ entry. That is deliberate — a lab-only feature that could move the shipped book would
+    # SOS Fade entry. That is deliberate — a lab-only feature that could move the shipped book would
     # put every parity number at the mercy of a toggle. The cost of that choice is stated on
-    # `recovery.py::apply` and must not be quietly forgotten: A+ sizes as though the recovery did
+    # `recovery.py::apply` and must not be quietly forgotten: SOS Fade sizes as though the recovery did
     # not exist, so the two share a balance in ONE direction only.
     #
     # ⚠ **No Pine twin exists for this**, so `compare_strategy.py` can never gate it. With the
@@ -1435,7 +1435,7 @@ class SosFadeConfig:
     #   reading anything into it.
     exec_recovery_risk_frac: float = 0.25   # "  ↳ Size vs a normal trade"
     #   MEASURED by a 5% sweep: 0.25 is the largest size that does not raise max drawdown above
-    #   what A+ already runs (48.3% vs 48.8%) and sits at the peak of the efficiency curve. The
+    #   what SOS Fade already runs (48.3% vs 48.8%) and sits at the peak of the efficiency curve. The
     #   curve is flat from 0.20 to 0.55, so this is a plateau rather than a knife edge.
     exec_recovery_lock_at_r: float = 1.0    # "  ↳ Secure the trade at (R)"
     exec_recovery_lock_to_r: float = 1.0    # "  ↳ Move the stop to (R)"
@@ -1459,7 +1459,7 @@ class SosFadeConfig:
 
 
     # ── the SHORT-HOLD variant (2026-08-24) ──────────────────────────────────────
-    # A second way of trading the SAME A+ setups: take them for a fixed, small number of R and
+    # A second way of trading the SAME SOS Fade setups: take them for a fixed, small number of R and
     # close, instead of banking a little and riding the rest. It exists because the runner's whole
     # result lives in a tail — MEASURED 2026-08-24, the setups that reach the 0.5-0.886 band with
     # every confluence but a gap need an 8R-to-12R target before any rule on them turns positive,
@@ -1473,8 +1473,8 @@ class SosFadeConfig:
     #
     # ⚠ **The variant was measured as MARGINAL and is off for that reason, not because it is
     # unfinished.** The best real replay of this pool made +22.5R over 109 trades in 6.6 years at
-    # +0.207R each, against A+'s +130.8R over 158 — and it was NEGATIVE from 2024 onward (+34.6R
-    # over 2020-2023, -12.0R over 2024-2026). Stacking it under A+ on one account raised the end
+    # +0.207R each, against SOS Fade's +130.8R over 158 — and it was NEGATIVE from 2024 onward (+34.6R
+    # over 2020-2023, -12.0R over 2024-2026). Stacking it under SOS Fade on one account raised the end
     # balance and made the drawdown DEEPER (-50% → -56% at 2.5%), with days-under-water no better
     # at any weight. **It is a switch to experiment with, not a leg to deploy.** Full numbers:
     # `backtest/tools/nogap_scalp_audit.py`, `ob_leg_replay.py`, `drawdown_fill.py`.
@@ -1491,12 +1491,12 @@ class SosFadeConfig:
     #   RECOMMENDATION THIS FIELD WAS BUILT ON. Read this before setting it.**
     #
     #   The case FOR a 0.702 cap was strong and came from three independent readings. In the real
-    #   replay of this pool under the A+ exit rules (2026-08-24, 2020-01-01 → 2026-08-06, ECN):
+    #   replay of this pool under the SOS Fade exit rules (2026-08-24, 2020-01-01 → 2026-08-06, ECN):
     #       0.5  - 0.618   74 trades   +0.31R each
     #       0.618- 0.702   14 trades   +0.97R each
     #       0.702- 0.786   10 trades   -0.53R each
     #       deeper          6 trades   -1.42R each
-    #   The same dead band shows in the SHIPPED A+ book, which nothing here fitted: A+'s own 28
+    #   The same dead band shows in the SHIPPED SOS Fade book, which nothing here fitted: SOS Fade's own 28
     #   trades resting in 0.702-0.786 make +0.23R each against +1.50 and +2.42 either side.
     #
     #   Then the cap was APPLIED, on a matched basis, and it cost money:
@@ -1520,7 +1520,7 @@ class SosFadeConfig:
     #   one convention for "a target in R", not two.
     #
     #   ⚠ **The fib ladder is what makes the runner scratch on this pool, which is why a short-hold
-    #   rule cannot simply reuse it.** MEASURED 2026-08-24: of 134 block-leg trades under the A+
+    #   rule cannot simply reuse it.** MEASURED 2026-08-24: of 134 block-leg trades under the SOS Fade
     #   exits, 37 reached the first rung, moved the stop to entry and came back for nothing.
     #   ⚠ 2.0 is the measured best of 0.5/0.75/1.0/1.25/1.5/2.0/2.5/3.0R on the filtered pool, and
     #   the first target on the unfiltered pool that is not a loss. Below 1.5R nothing works: the

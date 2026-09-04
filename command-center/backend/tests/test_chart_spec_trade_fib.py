@@ -20,7 +20,7 @@ nothing in it that can disagree with the strategy.
 from services.chart_spec import _trade_fib
 
 # A real bull leg (high 110 / low 100, so every price is 110 - 10*ratio): 0.0 = the high anchor,
-# 1.0 = the low one. These are the A+ bot's own eight ratios at genuine prices — a fixture with
+# 1.0 = the low one. These are the SOS Fade bot's own eight ratios at genuine prices — a fixture with
 # hand-rounded prices would make every derived ratio here wrong by a hair and prove nothing.
 _BULL = [
     [0.0, 110.0],
@@ -102,7 +102,7 @@ def test_the_leg_start_is_carried_as_startTime_and_omitted_when_absent():
 
 
 def test_an_entry_ON_a_level_reports_that_level_s_ratio():
-    """The common case: the A+ entry model rests the limit AT a fib on most setups, so a chart
+    """The common case: the SOS Fade entry model rests the limit AT a fib on most setups, so a chart
     reading 0.618 where the strategy snapped to 0.618 is the first thing that would be noticed
     if this were wrong."""
     assert _trade_fib(_point(), 103.82, 101.5)["entryRatio"] == 0.618

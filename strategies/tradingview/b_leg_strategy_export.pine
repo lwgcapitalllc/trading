@@ -27,7 +27,7 @@ bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = G
 bool  execLongs   = input.bool(true,  "Trade longs",                    group = G3, tooltip = "Lets long setups trade. Off = shorts only.")
 bool  execShorts  = input.bool(true,  "Trade shorts",                   group = G3, tooltip = "Lets short setups trade. Off = longs only.")
 bool  execBLeg    = input.bool(true,  "Trade B-Leg setups",             group = G3, tooltip = "The main setup in this bot. It arms when a reversal setup dies on a continuation break before it pulled back, then rests a limit where that late pullback is expected.")
-bool  execAplus   = input.bool(true,  "A+ has priority (stand the B-leg down)", group = G3, tooltip = "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own.")
+bool  execAplus   = input.bool(true,  "SOS Fade has priority (stand the B-leg down)", group = G3, tooltip = "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own.")
 float execRiskPct = input.float(10,   "Risk % per trade",              group = G3, tooltip = "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk.", minval = 0.1, maxval = 100, step = 0.1)
 
 // ── 4 · What arms it ────────────────────────────────────────────
@@ -142,9 +142,9 @@ color fvgBearColor = color.new(color.gray, 80)
 // Minimum gap size floor: a gap must be at least this % of price to count.
 // No Auto-Threshold volatility scaling — a fixed floor, now user-tunable.
 
-// [doc 7] A+ SETUP SEQUENCE INPUTS  -> docs/b_leg_strategy.md
+// [doc 7] SOS FADE SEQUENCE INPUTS  -> docs/b_leg_strategy.md
 
-// [doc 8] A+ DEBUG (bar-replay diagnostics — no effect on trades)  -> docs/b_leg_strategy.md
+// [doc 8] SOS Fade DEBUG (bar-replay diagnostics — no effect on trades)  -> docs/b_leg_strategy.md
 
 // [doc 9] RSI DIVERGENCE INPUTS  -> docs/b_leg_strategy.md
 bool showDiv = showDivInput
@@ -1874,7 +1874,7 @@ if showDiv and not na(divPhRsi)
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
 
-// [doc 38] Live confluence flags for the A+ setup row  -> docs/b_leg_strategy.md
+// [doc 38] Live confluence flags for the SOS Fade setup row  -> docs/b_leg_strategy.md
 var int lastExtBreakBar = na
 if extBreakThisBar
     lastExtBreakBar := bar_index
@@ -1886,7 +1886,7 @@ bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and
 bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
 
 // (The veto itself — longVetoA / shortVetoA — is built further down, next to
-//  the A+ stage machine, because it needs the SOS bar. See the note there.)
+//  the SOS Fade stage machine, because it needs the SOS bar. See the note there.)
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
@@ -2428,7 +2428,7 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
         // [doc 51] Gate: coloring only activates once 0.618 is reached.  -> docs/b_leg_strategy.md
         bool fibo618Reached = fibo_dir == 1 ? low <= fiboP3 : high >= fiboP3
 
-        // Inbound 0.5 touch — ungated; A+ EARLY entry tier as price retraces in
+        // Inbound 0.5 touch — ungated; SOS FADE EARLY entry tier as price retraces in
         fiboHalfReached := f_checkTouch(fiboHalfReached, fiboP2, fibo_dir == 1 ? low <= fiboP2 : high >= fiboP2)
 
         if fibo618Reached
@@ -3124,14 +3124,14 @@ if showSessL and liq_ldl != "" and not na(liq_ldl_bar) and liq_ldl_bar > recentS
 if showSessL and liq_nyl != "" and not na(liq_nyl_bar) and liq_nyl_bar > recentSSL_bar
     recentSSL := "NY Low",   recentSSL_bar := liq_nyl_bar
 
-// [doc 64] A+ SETUP SEQUENCE — sweep → SOS → fib entry, IN ORDER  -> docs/b_leg_strategy.md
+// [doc 64] SOS FADE SEQUENCE — sweep → SOS → fib entry, IN ORDER  -> docs/b_leg_strategy.md
 
 var int  aplusL_sweepBar = na
 var int  aplusL_sosBar   = na
 var bool aplusL_poi      = false
 var int  aplusL_armTime  = na    // timestamp the sweep/div arm fired — window is measured in TIME, not bars
-var bool aplusL_half     = false // A+-owned 0.5 latch — survives fib redraw at session gap
-var bool aplusL_618      = false // A+-owned 0.618 latch
+var bool aplusL_half     = false // SOS Fade-owned 0.5 latch — survives fib redraw at session gap
+var bool aplusL_618      = false // SOS Fade-owned 0.618 latch
 var int  aplusS_sweepBar = na
 var int  aplusS_sosBar   = na
 var bool aplusS_poi      = false
@@ -3342,7 +3342,7 @@ if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not n
     aplusS_armTime := na
     armHolderS := ""
 
-// Sequence death. Opposite SOS kills the A+ tracking on that side — the trend
+// Sequence death. Opposite SOS kills the SOS Fade tracking on that side — the trend
 // it was riding just reversed.
 if st.bear_sos and not sessionGapBar
     aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_poi := false, aplusL_armTime := na
@@ -3351,7 +3351,7 @@ if st.bull_sos and not sessionGapBar
     aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_poi := false, aplusS_armTime := na
     armHolderS := ""
 
-// [doc 77] A+ leg resolution: completion (TP3), invalidation (close past 1.0 or fib  -> docs/b_leg_strategy.md
+// [doc 77] SOS Fade leg resolution: completion (TP3), invalidation (close past 1.0 or fib  -> docs/b_leg_strategy.md
 bool bLegArmL = not na(aplusL_sosBar) and not sessionGapBar and st.bull_bos and not st.bull_sos and not aplusL_half and not aplusL_618 and fibo_dir == 1 and not fibo7Touched
 bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and not st.bear_sos and not aplusS_half and not aplusS_618 and fibo_dir == -1 and not fibo7Touched
 if not na(aplusL_sosBar) and not sessionGapBar
@@ -3455,7 +3455,7 @@ if not na(aplusS_sosBar)
 else if not na(aplusS_sweepBar)
     aplusS_stage := 1
 
-// [doc 83] ── A+ veto, SOS-aware ──────────────────────────────────────────────────  -> docs/b_leg_strategy.md
+// [doc 83] ── SOS Fade veto, SOS-aware ──────────────────────────────────────────────────  -> docs/b_leg_strategy.md
 bool longVetoA  = showDiv and divVeto and (divRsi >= divExtremeOB or (bearDivActive and (na(aplusL_sosBar) or lastBearDivBar <= aplusL_sosBar)))
 bool shortVetoA = showDiv and divVeto and (divRsi <= divExtremeOS or (bullDivActive and (na(aplusS_sosBar) or lastBullDivBar <= aplusS_sosBar)))
 
@@ -3495,10 +3495,10 @@ f_drawTable() =>
 
         int r = 1
 
-        // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
+        // Everything below (SOS FADE, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
         // Market Structure mode — only EXT/INT print then.
         if true
-            // [doc 86] A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3  -> docs/b_leg_strategy.md
+            // [doc 86] SOS FADE — the reversal sequence ONLY (sweep → SOS → entry). Once TP3  -> docs/b_leg_strategy.md
             bool aplusL_ok = aplusL_stage > 0 and not longVetoA
             bool aplusS_ok = aplusS_stage > 0 and not shortVetoA
             bool aplusL_blocked = aplusL_stage > 0 and longVetoA
@@ -3514,21 +3514,21 @@ f_drawTable() =>
                 string poiTag = seqPoi ? " + POI" : ""
                 string divTag = seqDiv ? " + DIV" : ""
                 if seqStage == 4 and seqFvg
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
+                    f_jRow3(jarvisTable, r, "SOS FADE", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
                 else if seqStage == 4
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
+                    f_jRow3(jarvisTable, r, "SOS FADE", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
                 else if seqStage == 3
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
+                    f_jRow3(jarvisTable, r, "SOS FADE", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
                 else if seqStage == 2
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
+                    f_jRow3(jarvisTable, r, "SOS FADE", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
                 else
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
+                    f_jRow3(jarvisTable, r, "SOS FADE", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
                 r := r + 1
             else if aplusL_blocked or aplusS_blocked
-                f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+                f_jRow3(jarvisTable, r, "SOS FADE", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
                 r := r + 1
             else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
+                f_jRow3(jarvisTable, r, "SOS FADE", "Pass", JARVIS_NEUTRAL, "No sequence")
                 r := r + 1
 
             // WEEKLY — Established Context (last closed week vs the one before)
@@ -3573,7 +3573,7 @@ if barstate.islast
       text_halign = text.align_center)
 
 
-// [doc 89] STRATEGY EXECUTION — A+ sequence entries + scaled fib-target exits  -> docs/b_leg_strategy.md
+// [doc 89] STRATEGY EXECUTION — SOS Fade sequence entries + scaled fib-target exits  -> docs/b_leg_strategy.md
 
 // [doc 90] INPUTS MOVED 2026-07-28 — every Strategy Execution input now lives in ON  -> docs/b_leg_strategy.md
 
@@ -3625,7 +3625,7 @@ type TradeLbl
     bool   bLeg = false // this trade came from the B LEG — drawn BLUE, not by-result
 var TradeLbl tlbl = TradeLbl.new()
 
-// B-LEG callout colour — blue, so B-leg trades stand out from the A+ grey/green/
+// B-LEG callout colour — blue, so B-leg trades stand out from the SOS Fade grey/green/
 // red/orange scheme. Kept even after close (the R is still in the text).
 color BLEG_BLUE   = color.new(#2962FF, 12)
 color BLEG_BLUE_L = color.new(#2962FF, 0)
@@ -3820,7 +3820,7 @@ f_blkWhy(int c) =>
     switch c
         1 => "'Trade the B leg' is OFF — this fork's only entry type is disabled, so nothing here can trade."
         2 => "'Trade longs' / 'Trade shorts' is OFF for this side."
-        3 => "A+ has priority — the main reversal setup armed on this side, so the B leg stood down. Turn 'A+ has priority' off to let it trade on its own merit."
+        3 => "SOS Fade has priority — the main reversal setup armed on this side, so the B leg stood down. Turn 'SOS Fade has priority' off to let it trade on its own merit."
         4 => "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close."
         5 => "The frozen band does not price a ladder — the stop is not beyond the entry, TP1 is not past it, or TP2 sits nearer than TP1. This is a property of the band, not of a setting you chose."
         => ""
@@ -3847,13 +3847,13 @@ int  sBlkCode  = f_blkCode(not execBLeg, not execShorts, shortArmed, lateDayBloc
 f_blkTag(blkKeys, 0, true,  lBlkReady, lBlkCode, bLegL_bar, bLegL_top, _dbg23Lo - _dbg23Atr)
 f_blkTag(blkKeys, 1, false, sBlkReady, sBlkCode, bLegS_bar, bLegS_bot, _dbg23Hi + _dbg23Atr)
 
-// [doc 115] ── Long: A+ ENTRY DISABLED in the B-LEG fork ───────────────────────────  -> docs/b_leg_strategy.md
+// [doc 115] ── Long: SOS Fade ENTRY DISABLED in the B-LEG fork ───────────────────────────  -> docs/b_leg_strategy.md
 if longArmed
     strategy.cancel("Long")
 else if strategy.position_size == 0 and not bLegLongArm
     strategy.cancel("Long")
 
-// ── Short: A+ ENTRY DISABLED in the B-LEG fork (mirror of the Long block) ────
+// ── Short: SOS Fade ENTRY DISABLED in the B-LEG fork (mirror of the Long block) ────
 if shortArmed
     strategy.cancel("Short")
 else if strategy.position_size == 0 and not bLegShortArm

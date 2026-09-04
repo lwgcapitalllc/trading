@@ -372,7 +372,7 @@ def init_db() -> None:
             # The short word the price chart puts on this strategy's PRIMARY trades — its own name
             # for its setup. NULL means the package never declared one, and the chart then falls
             # back to a neutral word rather than to another strategy's. It was hard-coded to the
-            # A+ bot's word for every strategy on every chart until 2026-09-02, which put "A+" on
+            # SOS Fade bot's word for every strategy on every chart until 2026-09-02, which put "SOS Fade" on
             # trades three other bots took. Declared by the package (LAB_STRATEGY["chart_tag"]),
             # never set by hand, and it is a LABEL — nothing about the run reads it.
             "ALTER TABLE strategies ADD COLUMN chart_tag TEXT",
@@ -1342,7 +1342,7 @@ def _seed_rulesets(conn: sqlite3.Connection) -> None:
     # ruin bar and would grade A).
     #
     # 55% is Aaron's stated tolerance (2026-07-30), chosen against his own measured numbers: on the
-    # A+ SOS Fade run the worst-5% of simulations draws down 53.2% and the worst-1% draws down
+    # SOS Fade SOS Fade run the worst-5% of simulations draws down 53.2% and the worst-1% draws down
     # 62.1%, so 55% accepts the 5% tail and explicitly does not accept the 1% tail. NOT the
     # 15% on `personal_forex_demo` — that figure is a PROP-FIRM rule and Aaron's instruction is that
     # it must never be applied to forex.

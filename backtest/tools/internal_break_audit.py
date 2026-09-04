@@ -8,7 +8,7 @@ Aaron's observation, 2026-08-23, made from the price chart on a losing re-entry:
      as price goes positive we should just get out of the trade — because it never gets a TP1
      in that case."
 
-CONFIRMED on that trade before this tool was written: the A+ primary long of 2025-08-18 13:30
+CONFIRMED on that trade before this tool was written: the SOS Fade primary long of 2025-08-18 13:30
 was preceded by a BEARISH internal break at 13:00 — one bar earlier — and it lost a full -1R
 having never touched TP1 (best price 3340.11 against a 3345.07 rung).
 

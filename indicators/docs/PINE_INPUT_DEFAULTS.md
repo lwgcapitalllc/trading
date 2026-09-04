@@ -55,11 +55,11 @@ and the only column the reorder is expected to change.
 | 16 | bool | 9 | Fair Value Gaps | FVG: middle bar must close past the gap (15m+) | `true` | `fvgReqCloseHTF` | 129 |
 | 17 | int | 1 | Fair Value Gaps | Max Active FVGs | `7` | `fvgMaxCount` | 131 |
 | 18 | bool | 10 | Fair Value Gaps | FVG: keep until broken through (not on tap) | `true` | `fvgKeepUntilBroken` | 132 |
-| 19 | int | 2 | A+ Setup | Max time: sweep → SOS (minutes) | `4320` | `aplusWindow` | 143 |
-| 20 | bool | 11 | A+ Debug | Show missed setups (2 of 3 or better) | `true` | `debugShow23` | 149 |
-| 21 | bool | 12 | A+ Debug | …include ones armed by a disabled source | `false` | `debugShow23Disarmed` | 150 |
-| 22 | string | 4 | A+ Debug | Which misses to draw | `"Near misses only"` | `debug23Filter` | 151 |
-| 23 | int | 3 | A+ Debug | Only draw debug callouts from the last N days (0 = all) | `3` | `debugDays` | 152 |
+| 19 | int | 2 | SOS Fade Setup | Max time: sweep → SOS (minutes) | `4320` | `aplusWindow` | 143 |
+| 20 | bool | 11 | SOS Fade Debug | Show missed setups (2 of 3 or better) | `true` | `debugShow23` | 149 |
+| 21 | bool | 12 | SOS Fade Debug | …include ones armed by a disabled source | `false` | `debugShow23Disarmed` | 150 |
+| 22 | string | 4 | SOS Fade Debug | Which misses to draw | `"Near misses only"` | `debug23Filter` | 151 |
+| 23 | int | 3 | SOS Fade Debug | Only draw debug callouts from the last N days (0 = all) | `3` | `debugDays` | 152 |
 | 24 | bool | 13 | RSI Divergence | Track RSI divergence (REQUIRED — arms setups + veto) | `true` | `showDivInput` | 158 |
 | 25 | bool | 14 | RSI Divergence | Show divergence history | `true` | `showDivHistory` | 160 |
 | 26 | int | 4 | RSI Divergence | RSI length | `14` | `divRsiLen` | 162 |
@@ -146,7 +146,7 @@ and the only column the reorder is expected to change.
 | 107 | bool | 39 | Sniper Fib | Sniper Zone | `false` | `showSniperFib` | 352 |
 | 108 | bool | 40 | Strategy Execution | Trade longs | `true` | `execLongs` | 389 |
 | 109 | bool | 41 | Strategy Execution | Trade shorts | `true` | `execShorts` | 390 |
-| 110 | bool | 42 | Strategy Execution | Trade A+ setups | `true` | `execAplus` | 391 |
+| 110 | bool | 42 | Strategy Execution | Trade SOS Fade setups | `true` | `execAplus` | 391 |
 | 111 | bool | 43 | Strategy Execution | Trade B-Leg setups | `false` | `execBLeg` | 392 |
 | 112 | float | 3 | Strategy Execution |    ↳ B-Leg: days to watch for the late retrace | `1.25` | `bLegMaxDays` | 393 |
 | 113 | bool | 44 | Strategy Execution | Arm on liquidity sweep | `true` | `execArmSweep` | 396 |
@@ -189,7 +189,7 @@ and the only column the reorder is expected to change.
 | 150 | bool | 62 | Liquidity Levels | Equal Highs/Lows (EQH/EQL) | `true` | `eqShowInput` | 1823 |
 | 151 | bool | 63 | Liquidity Levels |    ↳ A gap on an EQ level survives the FVG cap | `true` | `eqExemptFvg` | 1824 |
 | 152 | float | 14 | Result Stats | Breakeven band (R) | `0.15` | `execBeBandR` | 4113 |
-| 153 | bool | 64 | A+ Debug | Mark blocked trades on chart (pink) | `true` | `showBlockTag` | 4595 |
+| 153 | bool | 64 | SOS Fade Debug | Mark blocked trades on chart (pink) | `true` | `showBlockTag` | 4595 |
 | 154 | string | 38 | Strategy Execution | Time stop | `"Before TP1 only"` | `execTimeStopMode` | 5048 |
 | 155 | float | 15 | Strategy Execution |    ↳ Time stop (hours) | `36.0` | `execTimeStopHrs` | 5049 |
 | 156 | bool | 65 | Diagnostic Log | Log every trade + miss to Pine Logs | `true` | `execDiagLog` | 5115 |
@@ -214,11 +214,11 @@ and the only column the reorder is expected to change.
 | 14 | float | 1 | Fair Value Gaps | FVG Min Gap (% of price) | `0.1` | `fvgThreshPct` | 110 |
 | 15 | int | 1 | Fair Value Gaps | Max Active FVGs | `7` | `fvgMaxCount` | 111 |
 | 16 | bool | 9 | Fair Value Gaps | FVG: keep until broken through (not on tap) | `true` | `fvgKeepUntilBroken` | 112 |
-| 17 | int | 2 | A+ Setup | Max time: sweep → SOS (minutes) | `4320` | `aplusWindow` | 123 |
-| 18 | bool | 10 | A+ Debug | Show missed setups (2 of 3 or better) | `true` | `debugShow23` | 129 |
-| 19 | bool | 11 | A+ Debug | …include ones armed by a disabled source | `false` | `debugShow23Disarmed` | 130 |
-| 20 | string | 4 | A+ Debug | Which misses to draw | `"Near misses only"` | `debug23Filter` | 131 |
-| 21 | int | 3 | A+ Debug | Only draw debug callouts from the last N days (0 = all) | `3` | `debugDays` | 132 |
+| 17 | int | 2 | SOS Fade Setup | Max time: sweep → SOS (minutes) | `4320` | `aplusWindow` | 123 |
+| 18 | bool | 10 | SOS Fade Debug | Show missed setups (2 of 3 or better) | `true` | `debugShow23` | 129 |
+| 19 | bool | 11 | SOS Fade Debug | …include ones armed by a disabled source | `false` | `debugShow23Disarmed` | 130 |
+| 20 | string | 4 | SOS Fade Debug | Which misses to draw | `"Near misses only"` | `debug23Filter` | 131 |
+| 21 | int | 3 | SOS Fade Debug | Only draw debug callouts from the last N days (0 = all) | `3` | `debugDays` | 132 |
 | 22 | bool | 12 | RSI Divergence | Track RSI divergence (REQUIRED — arms setups + veto) | `true` | `showDivInput` | 138 |
 | 23 | bool | 13 | RSI Divergence | Show divergence history | `true` | `showDivHistory` | 140 |
 | 24 | int | 4 | RSI Divergence | RSI length | `14` | `divRsiLen` | 142 |
@@ -332,7 +332,7 @@ and the only column the reorder is expected to change.
 | 132 | bool | 47 | Sniper Fib | Sniper Zone | `false` | `showSniperFib` | 356 |
 | 133 | bool | 48 | Strategy Execution | Trade longs | `true` | `execLongs` | 395 |
 | 134 | bool | 49 | Strategy Execution | Trade shorts | `true` | `execShorts` | 396 |
-| 135 | bool | 50 | Strategy Execution | A+ has priority (stand the B-leg down) | `true` | `execAplus` | 397 |
+| 135 | bool | 50 | Strategy Execution | SOS Fade has priority (stand the B-leg down) | `true` | `execAplus` | 397 |
 | 136 | bool | 51 | Strategy Execution | Trade B-Leg setups | `true` | `execBLeg` | 398 |
 | 137 | float | 2 | Strategy Execution |    ↳ Days to watch for the late retrace | `4.0` | `bLegMaxDays` | 399 |
 | 138 | bool | 52 | Strategy Execution | Arm on liquidity sweep | `true` | `execArmSweep` | 402 |

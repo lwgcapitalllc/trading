@@ -67,11 +67,11 @@
       "name": "exec_aplus",
       "group": "What arms a setup",
       "widget": "toggle",
-      "label": "Trade A+ setups",
-      "short": "A+ setups",
+      "label": "Trade SOS Fade setups",
+      "short": "SOS Fade setups",
       "options": {
-        "off": "No A+",
-        "on": "A+ on"
+        "off": "No SOS Fade",
+        "on": "SOS Fade on"
       },
       "desc": "On = the main reversal setup trades normally. Off = it never fires, so you can read the B leg on its own."
     },

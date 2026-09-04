@@ -55,7 +55,7 @@ def test_taken_records_full_life():
             timestamp="2024-01-02T09:40:00",
             instrument="MNQ",
             direction=1,
-            setup_score="A+",
+            setup_score="SOS Fade",
             setup_reason="range break + 1 confirm",
             stop_distance=5.0,
         )

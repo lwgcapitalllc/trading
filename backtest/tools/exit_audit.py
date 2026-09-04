@@ -39,7 +39,7 @@ the move went*, never as *what a target would have filled*.
 ⚠ **`exec_secondary` is PINNED OFF and this is a single-stream replay.** The 1-minute re-entry
 needs `run_dual` and a second bar frame; replaying single-stream with it on would silently return
 a primary-only book, which is this repo's most-repeated defect. It is 8 trades in 7.9 years and
-none of them are A+ primaries, so the answer here is about the primary book either way — but say
+none of them are SOS Fade primaries, so the answer here is about the primary book either way — but say
 so rather than letting the default decide quietly.
 
 Usage:

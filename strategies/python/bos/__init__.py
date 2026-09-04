@@ -1,12 +1,12 @@
 """BOS — the break-of-structure CONTINUATION setup, the third bot off the shared engine.
 
-A+ fades the shift of structure; this rides what the shift started. An SOS opens a regime, and
+SOS Fade fades the shift of structure; this rides what the shift started. An SOS opens a regime, and
 every later BOS in that direction is a fresh continuation leg whose retracement is the entry.
 Ported from `strategies/tradingview/bos_strategy.pine`. Full rules: `CLAUDE.md` in this package.
 
     BosConfig       — SosFadeConfig superset + the BOS setup's own inputs
     BosTracker      — regime / arm / anchor-fib / death state machine (BosState)
-    BosExecution    — the BOS order layer (A+ exit ladder + a third TP rung)
+    BosExecution    — the BOS order layer (SOS Fade exit ladder + a third TP rung)
     BosStrategy  — the driver
 
 🔴 **NOTHING IN THIS PACKAGE IS PARITY-VALIDATED YET.** `tools/compare_bos.py` exists and has
@@ -62,7 +62,7 @@ LAB_STRATEGY = {
     "category": "continuation",
     "self_sizing": True,
     # This bot's own word for its setup, worn by its trades on the price chart. Until
-    # 2026-09-02 that chip was hard-coded to the A+ bot's word on EVERY strategy's chart, so
+    # 2026-09-02 that chip was hard-coded to the SOS Fade bot's word on EVERY strategy's chart, so
     # every other bot's trades carried a label belonging to a fourth. 🔴 **It is what tells the
     # legs apart on a STACK**, where several strategies' trades share one chart — that is the
     # case it exists for. ⚠ A LABEL and nothing else: no run, no cost and no decision reads it,

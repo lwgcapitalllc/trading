@@ -1,10 +1,10 @@
-"""The SHORT-HOLD variant — take an A+ setup for a fixed R and close, instead of riding it.
+"""The SHORT-HOLD variant — take an SOS Fade setup for a fixed R and close, instead of riding it.
 
 Three rules, all behind one toggle that ships OFF: refuse an entry resting deeper than a fib,
 close the whole position at a multiple of risk, and (optionally) refuse a New York hour window.
 
 **Why the tests are weighted the way they are.** The variant was measured MARGINAL (+22.5R over
-109 trades in 6.6 years against A+'s +130.8R over 158, and negative from 2024 on), so the risk
+109 trades in 6.6 years against SOS Fade's +130.8R over 158, and negative from 2024 on), so the risk
 here is not that it under-performs — that is already known and written down. The risk is that it
 leaks into the shipped path, which is the LIVE bot's source. So the first block below is entirely
 about the toggle being off, and every rule is asserted twice: it fires when on, and it cannot fire

@@ -9,7 +9,7 @@ detection (it consumes `engines/market_structure/`), no MT5 ops, no UI, no chart
 **2026-07-10 addition — `half_reached` (NOT yet parity-re-validated):** the Structure fib now emits
 `half_reached` — the INBOUND 0.5 (TP1-price) tap during the retrace, UNGATED (not behind 0.618) and
 tested on the retracement side, so it is distinct from the TP1 target (same price, outbound, gated). It
-is a first-touch latch reset each new leg, and it feeds only the new A+ setup's EARLY entry tier. Ported
+is a first-touch latch reset each new leg, and it feeds only the new SOS Fade setup's EARLY entry tier. Ported
 from `mpc_jarvis.pine` (the new `fiboHalfReached` var); `fib_export.pine` gained a `px_fibo_half_reached`
 column and `compare_fib.py` compares it (optional, so older exports still validate). Unit-tested (2 new
 tests, green) and **parity CONFIRMED (exit 0):** on a fresh combined `VANTAGE_XAUUSD, 5m` export
@@ -147,7 +147,7 @@ fib_events.origin_changed    # a new leg started this bar (all touches reset)
 fib_events.touched           # list[FibTouch] first-reached THIS bar (edge-triggered events)
 fib_events.levels            # dict{name: price} — every level's current price (state)
 fib_events.touched_so_far    # set[str] — cumulative touched names on this leg
-fib_events.half_reached      # inbound 0.5 tapped this leg (ungated) — A+ EARLY tier (state latch)
+fib_events.half_reached      # inbound 0.5 tapped this leg (ungated) — SOS FADE EARLY tier (state latch)
 fib_events.ash / .asl        # the leg's two anchors — the prices every level was measured from
 fib_events.ash_loc / .asl_loc  # …and the BARS they sit on (all four None while inactive)
 # FibTouch = (level, ratio, price, role)  role: "entry" (retrace side) | "target" (profit side)

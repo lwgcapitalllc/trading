@@ -183,7 +183,7 @@ class Ledger:
     def bar(self, dec, sig, seq, extra: Optional[dict] = None) -> None:
         """One closed bar's decision. Fields are read defensively (`getattr`) so a strategy
         with a different `Decision` shape logs what it has instead of crashing the bot — this
-        module must not know what an A+ stage is in order to keep working."""
+        module must not know what an SOS Fade stage is in order to keep working."""
         self._write(
             DECISIONS,
             "bar",

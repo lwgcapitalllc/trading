@@ -17,16 +17,16 @@ it as a prior strong enough to skip a measurement.
 
 ## 0. What this is, in one line
 
-**It is the A+ SOS Fade with a harder arm and a much longer target.** The entry geometry, the stop
+**It is the SOS Fade SOS Fade with a harder arm and a much longer target.** The entry geometry, the stop
 logic and the sizing are the ones this repo already ships. Three things differ:
 
-| | A+ SOS Fade (`sos_fade`) | FB |
+| | SOS Fade SOS Fade (`sos_fade`) | FB |
 |---|---|---|
 | **Arm** | liquidity sweep or divergence → SOS | a **failed** LTF break — SOS, then the SOS's own origin gets swept, then a second SOS the same way |
 | **Target** | fib TP ladder off the entry leg (TP1/TP2/TP3) | the nearest **un-swept higher-timeframe liquidity pool** — held for days to weeks |
 | **Book** | one position, one slot | up to N **stacked** positions on one HTF idea, but never more than **one at risk** |
 
-Everything else — the fib entry band, the stop at the leg origin, the staged stop, R sizing — is A+
+Everything else — the fib entry band, the stop at the leg origin, the staged stop, R sizing — is SOS Fade
 behaviour and should be inherited, not rewritten. If a rule below appears to invent new geometry,
 that is a defect in this doc; flag it rather than building it.
 
@@ -206,7 +206,7 @@ Three shaping rules:
   (default **1.0**). Riz says "aggressively" every time he describes it, and an aggressive break is
   the only part of his trigger that is a *measurement* rather than a shape.
 
-✅ **The A+ version, and it is worth building as a flag rather than a separate strategy.**
+✅ **The SOS Fade version, and it is worth building as a flag rather than a separate strategy.**
 `fb_htf_stack` (default **False**): require the same A/B/C sequence to have completed on
 `fb_stack_tf` (default **1H**) within `fb_stack_window` bars, before the entry-timeframe one. Riz
 names this as his highest-conviction shape. It will be rare. **Measure trade count before believing
@@ -237,7 +237,7 @@ inherited onto gold is the 54.82-lot incident's exact shape.
 
 `entry` → **below `swept_low` − `fb_stop_buffer`** (default **0.05 × ATR(14)**).
 
-- `exec_min_stop_mode` is **inherited from A+ and stays ON at 0.08 "% of price"**. A stop this tight
+- `exec_min_stop_mode` is **inherited from SOS Fade and stays ON at 0.08 "% of price"**. A stop this tight
   is precisely where `qty = risk / stop_distance` detonates.
 - If the resulting stop is wider than `fb_max_stop_atr` × ATR(14) (default **2.0**), **refuse the
   trade** (block code 6). Never shrink the stop to fit — a resized order is not the trade the
@@ -307,9 +307,9 @@ this spec — see §7.
 | `fb_risk_pct` | **0.5** | his funded figure |
 | `fb_max_attempts_day` | **3** | his rule; he blew an account ignoring it |
 | `fb_max_stack` | **3** | §4.10 |
-| `fb_time_stop_mode` | **"Off"** | ⚠ A+ defaults this to `"Before TP1 only"` at 36h. **This strategy holds for weeks by design and must pin it Off**, or the whole thesis is cut at hour 36. |
+| `fb_time_stop_mode` | **"Off"** | ⚠ SOS Fade defaults this to `"Before TP1 only"` at 36h. **This strategy holds for weeks by design and must pin it Off**, or the whole thesis is cut at hour 36. |
 
-⚠ **`exec_secondary` must be pinned `False`.** It is a 1-minute re-entry designed for A+'s exit
+⚠ **`exec_secondary` must be pinned `False`.** It is a 1-minute re-entry designed for SOS Fade's exit
 ladder and there is no 1m stream in a swing book.
 
 ---
@@ -339,7 +339,7 @@ tell "refused" from "never saw it".
 fb_bias_tf                 "4H"        anchor timeframe
 fb_trap_tf                 "15m"       where the failed break is read  (was 5m — corrected §4.6)
 fb_fill_tf                 "5m"        where the fill is refined; 1m allowed, noisier
-fb_stack_tf                "1H"        the A+ stacked-trap timeframe (his highest-conviction shape)
+fb_stack_tf                "1H"        the SOS Fade stacked-trap timeframe (his highest-conviction shape)
 fb_target_tf               "1D"        where the final target is read from
 
 fb_sweep_window            48          bars, §4.3
@@ -377,7 +377,7 @@ fb_stack_risk_free         True
 fb_risk_pct                0.5
 fb_max_attempts_day        3
 
-exec_min_stop_mode         "% of price" / 0.08     inherited from A+, stays ON
+exec_min_stop_mode         "% of price" / 0.08     inherited from SOS Fade, stays ON
 exec_time_stop_mode        "Off"                   ⚠ pinned, not inherited
 exec_secondary             False                   ⚠ pinned
 ```
@@ -394,7 +394,7 @@ cannot carry is a field the gate can never check — that is what killed the fir
 | Structure, fib, liquidity, EQH/EQL, FVG, OB, candlestick engines | ✅ built, Pine-parity validated |
 | Discount/premium filter | ✅ the fib's `P2`, already there |
 | Fib-band entry, leg-origin stop, staged stop, R sizing | ✅ `sos_fade`'s exit ladder, inheritable |
-| Multi-timeframe read (4H bias + 5m trigger + 1D target) | ⚠ **partial** — `run_dual` exists for A+ 15m/1m and has exactly one caller; `backtest/optimizer.run_sweep` replays a SINGLE frame and **refuses** a dual-stream strategy. A three-stream strategy cannot be swept today. |
+| Multi-timeframe read (4H bias + 5m trigger + 1D target) | ⚠ **partial** — `run_dual` exists for SOS Fade 15m/1m and has exactly one caller; `backtest/optimizer.run_sweep` replays a SINGLE frame and **refuses** a dual-stream strategy. A three-stream strategy cannot be swept today. |
 | **Institutional-number grid** | ❌ **new** — small, ~40 lines, plus a Pine overlay. `mpc_jarvis.pine` is at the compile-token ceiling, so the paste needs a matching dead-code trim. |
 | **Failed-break trigger (§4.6)** | ❌ **new** — the core. A three-event state machine over `ExternalEvents`. |
 | **Target picker (§4.9)** | ❌ **new** — reads the liquidity engine; modest. |
@@ -442,9 +442,9 @@ Per `docs/STRATEGY_WORKFLOW.md`, unchanged:
 | 5 | `strategies/python/mpc_fb/` |
 | 6 | `strategies/python/mpc_fb/tools/compare_fb.py` — **exit 0** |
 
-⚠ **The export twin is at risk on this one.** Pine caps a script at 64 `plot()` calls and the A+
+⚠ **The export twin is at risk on this one.** Pine caps a script at 64 `plot()` calls and the SOS Fade
 export block is already near it. A three-timeframe strategy with a three-event trigger and a stack
-of three positions needs more decision columns than A+ does. **Plan the `px_*` column budget before
+of three positions needs more decision columns than SOS Fade does. **Plan the `px_*` column budget before
 writing the Pine**, not after.
 
 ⚠ **A green gate proves nothing about a branch neither side entered.** If the export is taken with
@@ -458,7 +458,7 @@ the exit code.
 
 **Sample size is the binding constraint and it is worse than B-LEG's.** Riz's $140,000 came from
 roughly a dozen HTF ideas on ONE pair in twelve months. This setup is designed to fire a few times a
-month at best, and the *stacked* A+ version will fire a handful of times a year. This repo has
+month at best, and the *stacked* SOS Fade version will fire a handful of times a year. This repo has
 already learned twice what that means: B-LEG's 50 trades over 6.5 years gave a 95% CI on mean R of
 −0.40 to +0.37, which is a measurement that has not started. **Expect the same shape here, and do
 not accept a total R as evidence without its error bars and its largest-trade-removed figure.**

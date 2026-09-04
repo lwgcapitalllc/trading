@@ -63,7 +63,7 @@ class LegSpec:
     df: Any
     cost_profile: Any = None
     source: str | None = None
-    # The SECOND bar frame, for a strategy that trades on two (the A+ bot's re-entry fills on a
+    # The SECOND bar frame, for a strategy that trades on two (the SOS Fade bot's re-entry fills on a
     # faster clock than its primary). `None` for the single-frame legs, which is most of them.
     # ⚠ It must cover the SAME window as `df`: the leg merges the two itself, and a fast frame
     # that starts later simply produces no re-entries over the part it does not reach — a
@@ -188,7 +188,7 @@ def run_stack(
     )
     # ⚠ `getattr` with a default, never a direct read: `blocks` / `misses` are OPTIONAL on a
     # strategy's execution (`b_leg` records neither by construction — those codes describe why
-    # an A+ setup was refused, and A+ never trades in that fork), so requiring them would refuse a
+    # an SOS Fade setup was refused, and SOS Fade never trades in that fork), so requiring them would refuse a
     # legitimate leg. An empty list and an absent attribute mean the same thing HERE — nothing was
     # recorded — which is the one place in this repo where collapsing them is right, because a
     # strategy that records none is a strategy with no such rule rather than one that could not be

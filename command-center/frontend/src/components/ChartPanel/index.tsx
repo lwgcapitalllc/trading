@@ -2927,9 +2927,9 @@ export default function ChartPanel({
           kind: tr.kind,
           // 🔴 Off the TRADE, never off the spec. A stack merges N legs' trades into one list, so
           // a spec-level tag would put ONE strategy's word on every leg's chips — which is the
-          // hard-coded-`A+` defect this replaces, one level down and harder to see, because the
+          // hard-coded-`SOS Fade` defect this replaces, one level down and harder to see, because the
           // chips would look per-strategy and not be. Absent ⇒ the renderer falls back to
-          // `PRIMARY_TAG`, which is the A+ bot's word and was every strategy's until 2026-09-02.
+          // `PRIMARY_TAG`, which is the SOS Fade bot's word and was every strategy's until 2026-09-02.
           tag: tr.tag,
           // What the trade this one FOLLOWED did — decides `BE+` vs `SL+` on a re-entry. Absent on
           // every primary, and on any run stored before the field existed.

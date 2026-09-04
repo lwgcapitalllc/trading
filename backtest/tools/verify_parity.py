@@ -40,12 +40,12 @@ _ROOT = Path(__file__).resolve().parents[2]
 # sit on top of them) — the same dependency order you sync in.
 #
 # The veto exists because the two STRATEGY exports overlap: `b_leg_strategy_export.pine`
-# plots `px_stages` too (the B leg arms off the A+ sequence, so its stages are part of the
-# B-LEG decision stream). Marker alone would run the A+ check against a B-LEG export, which
-# fails on trades the A+ bot cannot make — a red that means nothing. `bl_bits` exists only in
-# the B-LEG export, so it is the A+ check's veto and the B-LEG check's marker. Deliberately
-# NOT solved by re-marking the A+ check on a B-LEG-absent column like `px_block`: that column
-# only landed 2026-07-25, so every older A+ export would silently stop being checked.
+# plots `px_stages` too (the B leg arms off the SOS Fade sequence, so its stages are part of the
+# B-LEG decision stream). Marker alone would run the SOS Fade check against a B-LEG export, which
+# fails on trades the SOS Fade bot cannot make — a red that means nothing. `bl_bits` exists only in
+# the B-LEG export, so it is the SOS Fade check's veto and the B-LEG check's marker. Deliberately
+# NOT solved by re-marking the SOS Fade check on a B-LEG-absent column like `px_block`: that column
+# only landed 2026-07-25, so every older SOS Fade export would silently stop being checked.
 _CHECKS: List[Tuple[str, str, str, str, List[str]]] = [
     ("market_structure", "engines/market_structure/tools/compare_tradingview.py", "px_ash", "", []),
     ("order_blocks", "engines/order_blocks/tools/compare_ob.py", "px_ob_bull_count", "", []),
@@ -64,7 +64,7 @@ _CHECKS: List[Tuple[str, str, str, str, List[str]]] = [
         [],
     ),
     (
-        "strategy A+ (bot)",
+        "strategy SOS Fade (bot)",
         "strategies/python/sos_fade/tools/compare_strategy.py",
         "px_stages",
         "bl_bits",

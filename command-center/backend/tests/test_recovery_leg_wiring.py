@@ -175,7 +175,7 @@ def test_a_rule_that_needs_a_source_cannot_be_run_alone():
 
 def test_an_ordinary_strategy_is_NOT_refused():
     """A guard that refuses everything passes its own refusal test and breaks the app."""
-    refuse_if_needs_source({"id": "sos_fade", "name": "A+ SOS Fade", "requires_source": 0})
+    refuse_if_needs_source({"id": "sos_fade", "name": "SOS Fade SOS Fade", "requires_source": 0})
 
 
 def test_a_missing_strategy_is_left_to_the_404():
@@ -219,7 +219,7 @@ def test_every_endpoint_that_STARTS_a_job_from_a_strategy_id_refuses_a_dependent
 
 
 # ── one strategy plus a recovery IS a stack ───────────────────────────────────────────
-# 🔴 The minimum was counted in STRATEGY IDS, so A+ plus a recovery on A+ — one id, two legs, the
+# 🔴 The minimum was counted in STRATEGY IDS, so SOS Fade plus a recovery on SOS Fade — one id, two legs, the
 # single most likely stack anybody builds and the exact case this leg was built for — was refused
 # with "a stack needs at least 2 strategies". Nothing was broken; the feature just could not be
 # reached, which is the failure shape rule 9 is about.

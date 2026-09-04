@@ -2,7 +2,7 @@
 
 The two things that can go wrong here without raising anything are (a) the 15m aggregator
 leaking a forming bar, which is lookahead that makes every result better, and (b) an
-inherited A+ default arriving uninvited. Both get the most tests.
+inherited SOS Fade default arriving uninvited. Both get the most tests.
 """
 
 from __future__ import annotations

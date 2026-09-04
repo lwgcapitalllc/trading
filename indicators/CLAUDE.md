@@ -360,7 +360,7 @@ is $0.74**, so at a $0.22 spread **30% of R is gone before the trade starts**, a
 rest stops under **$0.31** — untradeable. The leg-origin stop's median is $1.73 (12.7% of R). **Net
 of the spread the ranking INVERTS**, +0.265R against +0.276R. ⚠ **Standing rule: rank on expectancy
 NET of the spread, never on expectancy** — on this strategy the two orderings disagree at the top and
-the gross one picks the configuration you cannot trade. It is also the collapsing-stop hazard the A+
+the gross one picks the configuration you cannot trade. It is also the collapsing-stop hazard the SOS Fade
 file already records, arriving by a third route: there it inflated sum-R through position sizing,
 here it inflates win rate through an unpayable stop.
 
@@ -522,7 +522,7 @@ read BEFORE the shift that overwrites them — at that instant they still descri
 counter extreme gives roughly 0.5R / 0.75R / 0.95R / 1.2R.** All four were directionally right
 and only one cleared 1R. The cause is structural rather than bad luck: **an SOS confirms at the
 TOP of the reclaim leg**, so the entry is at the expensive end and the stop is the whole leg away
-— the same problem A+ solves by resting a limit on the retrace instead of buying the break. A
+— the same problem SOS Fade solves by resting a limit on the retrace instead of buying the break. A
 `Retrace` entry mode is therefore shipped alongside, but `SOS close` is the DEFAULT so the tool
 can be checked against the four reference setups before the entry is changed. Which one pays is
 a measurement, not an argument.
@@ -583,7 +583,7 @@ a chart bug into a trading bug.
 
 **RESTYLED TO `sos_fade_strategy.pine`'s CONVENTIONS the same day** (Aaron: *"follow the mpc strategy
 styling for all inputs and debugging annotations and take profits too"*). Same five input groups
-— `D Setup` for the sequence gates (as A+ uses `A+ Setup`), `Strategy Execution` for everything
+— `D Setup` for the sequence gates (as SOS Fade uses `SOS Fade Setup`), `Strategy Execution` for everything
 that decides what a trade DOES, plus `D Debug`, `Result Stats` and `Diagnostic Log`. Same
 `d`-prefix / `exec`-prefix split, same `"   ↳ "` sub-input with `active =` on its parent, same
 tooltip rule: what it does, ON vs OFF, and the one fact that changes the decision — never a
@@ -603,10 +603,10 @@ slice of the remainder every bar. This file ships a real 50/25 scale-out, so it 
 generalisation is worth more than the fix: **a latent bug held off by a DEFAULT is not fixed, and
 copying the code without copying the default is how it gets discovered.** ⚠ `execTp1Pct`/
 `execTp2Pct` are 50/25 here rather than mpc's 0/0 — riding the whole position to the runner
-tested best on the A+ bot over 6.6 years, which is a fact about THAT strategy, so it is stated in
+tested best on the SOS Fade bot over 6.6 years, which is a fact about THAT strategy, so it is stated in
 the tooltip rather than copied as a default. ✅ **`execMinStopMode` is now present and ON at
 `% of price` 0.08**, which the first build did not have at all: three of the four stop anchors
-can land arbitrarily close to the entry, and `qty = risk / dist` is what detonated A+ Run 4 and
+can land arbitrarily close to the entry, and `qty = risk / dist` is what detonated SOS Fade Run 4 and
 BOS Run 1.
 
 **The debug layer follows the same file too**: a pink `SETUP BLOCKED` tag with seven reason codes
@@ -795,7 +795,7 @@ land at 4,028 / 4,044 / 4,060 and **all three fill on 21 Aug**, so the 4,060 →
 happens. **7.53R left on the table on the one trade the strategy exists to catch.** That is the
 `0.3×1 + 0.3×2 + 0.4×3` arithmetic ceiling the 8.3-year run already found BINDING (max R
 **+2.11**, 16 trades on it); the chart supplies the size of the miss. ⚠ **So "catch the entire
-run" is an EXIT change, not an entry one, and it is the answer A+ already reached** — that bot
+run" is an EXIT change, not an entry one, and it is the answer SOS Fade already reached** — that bot
 ships both rungs at **0/0** and rides to the runner trail because its money lives in the tail.
 D pairs a continuation premise with a scale-out exit. ⚠ **Do not read 9.62R as achievable**: a
 structure trail exits on the turn, not the high, so 5–7R is the honest expectation.
@@ -829,7 +829,7 @@ to have DEVELOPED — so if price is already on the pro-trend side of the sessio
 after the break, the entry fires with `ctrExt` a bar or two old. That is the smallest stop this
 strategy can make and `qty = risk / dist` makes it the largest position. Aaron's example based
 for a dozen-plus bars, so it did not bite. The only guard is `execMinStopMode` at 0.08% —
-**$3.20 on $4,000 gold, measured on A+ and never here.** Check for any trade whose 1R is under
+**$3.20 on $4,000 gold, measured on SOS Fade and never here.** Check for any trade whose 1R is under
 about $5; the fix would be a minimum shakeout length, not a bigger floor.
 
 ### 2026-08-06 (later still) — the JARVIS REV row stuck on TAKE PROFIT after a 0.5 entry
@@ -837,12 +837,12 @@ about $5; the fix would be a minimum shakeout length, not a bigger floor.
 🔴 **A short entered at 0.5 banked TP3 and the row never cleared — it sat on `TAKE PROFIT SHORT ·
 TP3 · close the rest` indefinitely.** `mpc_jarvis.pine` only; nothing here reaches a trade.
 
-**Two flags describe one event and only one of them survives a shallow entry.** The A+ leg's
+**Two flags describe one event and only one of them survives a shallow entry.** The SOS Fade leg's
 completion death reads the DRAWN FIB's `fibo7Touched`, and that flag is gated — the fib block
 checks its three TP levels inside `if fibo618EverReached`. An EARLY 0.5 entry never reaches
 0.618, so on that leg `fibo618EverReached` stays false, `fibo7Touched` can NEVER be set, and the
 completion death is **unreachable**. The leg then survives until an opposite SOS or a
-continuation BOS happens along, which can be hours. Meanwhile the A+ engine's own `aplusX_tp0`
+continuation BOS happens along, which can be hours. Meanwhile the SOS Fade engine's own `aplusX_tp0`
 fires perfectly well on that same leg, because its gate is `aplusX_618[1] or aplusX_half[1]` —
 half is enough. **The row knew the trade was finished and the death did not.**
 
@@ -873,7 +873,7 @@ closed` instead. **A new death is a new alert, whatever the alert block looks li
 ⚠ **NOT COMPILED** — there is no local Pine compiler and this file has hit CE10117; the change is
 two boolean terms, one local and one ternary, so it is small but not free. No input was added,
 renamed or reordered, so **no "Reset settings to defaults" is needed.** ⚠ No parity harness can
-see this: the A+ sequence tracker exists only in `mpc_jarvis.pine` and `sos_fade_strategy.pine`. ✅
+see this: the SOS Fade sequence tracker exists only in `mpc_jarvis.pine` and `sos_fade_strategy.pine`. ✅
 **Checked rather than assumed — `sos_fade_strategy.pine` and `b_leg_strategy.pine` carry ZERO
 references to `aplusL_tp0`/`aplusS_tp0` and have no TAKE PROFIT row**: their restored table is the
 EXT/INT structure pair only, so the stuck row cannot occur there and neither file was touched.
@@ -889,7 +889,7 @@ never from memory. All doc references removed in the same pass.
 **The session windows were forked and nobody had noticed.** `sos_fade_strategy.pine` has carried the
 DST-aware windows since **2026-07-12** (`317dbef`) — two weeks BEFORE `mpc_jarvis.pine` got them
 (`b25789d`, 07-26) — but `b_leg_strategy.pine` and `b_leg_strategy_export.pine` never did, so
-the A+ and B-LEG forks disagreed about when a session opens. That breaks this file's own standing
+the SOS Fade and B-LEG forks disagreed about when a session opens. That breaks this file's own standing
 rule: an engine-block change in the parent flows to the fork line-for-line.
 
 | | old (fixed offset) | new (own city, DST-aware) |
@@ -899,7 +899,7 @@ rule: an engine-block change in the parent flows to the fork line-for-line.
 | New York | `0900-1800` GMT-4 | `0800-1700` **America/New_York** |
 
 **It is trade-affecting in principle, not cosmetic** — session H/L feed `recentBSL`/`recentSSL`
-(`sos_fade_strategy.pine:3121-3126`), which is what `execArmSweep` arms A+ on, and that toggle is ON in the
+(`sos_fade_strategy.pine:3121-3126`), which is what `execArmSweep` arms SOS Fade on, and that toggle is ON in the
 shipped prime combo. The path is narrow (`showSessH = liq_dh == ""` makes session levels a FALLBACK
 used only when no day level exists) but narrow is not none. **Measured, not assumed: neither bot
 moves** — `compare_strategy.py --warmup 100` and `compare_bleg.py --warmup 100` both still exit 0.
@@ -988,7 +988,7 @@ decision, now written on the daily tooltip so nobody "fixes" it later.
 **Why the old defaults were not the target.** The file shipped with every filter and every entry
 confirmation OFF so the run measured the raw BOS idea. That is a MEASUREMENT baseline. The standing
 direction for this strategy is **quality over quantity — the confluences ARE the quality lever**, and
-frequency comes from stacking A+, B-LEG and this one on one account, never from loosening this one.
+frequency comes from stacking SOS Fade, B-LEG and this one on one account, never from loosening this one.
 Reading the old defaults as "keep it loose, it takes more trades" inverts the intent. The filters that
 are still open questions (F1/F3/F4/F5/F6/F8) stay OFF, to be turned on one at a time and judged on
 expectancy and drawdown — **not on how many trades survive.**
@@ -1009,7 +1009,7 @@ reached); its tooltip says so. The entry ZONE is not set by that dropdown — th
 
 ---
 
-## 2026-07-29 — the FVG floor is now SPLIT BY TIMEFRAME (A+, its export, and BOS)
+## 2026-07-29 — the FVG floor is now SPLIT BY TIMEFRAME (SOS Fade, its export, and BOS)
 
 **The bug Aaron found.** `mpc_jarvis.pine` draws fair value gaps on a 5m chart
 that `sos_fade_strategy.pine` does not. Cause: the assistant's minimum-gap floor is
@@ -1038,7 +1038,7 @@ strategy HARDCODED the middle-bar close-cleared test on.
 | middle-bar close test | forced **off** | `fvgReqCloseHTF`, default **on** |
 
 **15m and above is bit-identical to before, deliberately.** The HTF floor stays
-0.1 and is NOT set to the assistant's 0.04, and the close test stays on. A+ is
+0.1 and is NOT set to the assistant's 0.04, and the close test stays on. SOS Fade is
 traded on 15m, so its baseline, its 188-trade history and the `sos_fade`
 parity pin (`EngineConfig.fvg_require_close = True`) must not move. Matching the
 assistant at 15m too is a one-number change if it is ever wanted — but it is a
@@ -1055,7 +1055,7 @@ input, and it hides better.
 **NOT applied to `b_leg_strategy.pine` / `b_leg_strategy_export.pine`.**
 They carry the identical FVG block and are now the only strategy files without
 the split. The standing "engine changes flow line-for-line to the fork" rule says
-they should get it; it was left out only because the request scoped A+ and BOS.
+they should get it; it was left out only because the request scoped SOS Fade and BOS.
 
 **Pre-existing drift found while checking this, NOT caused by it.**
 `sos_fade_strategy_export.pine` is missing `execMinStopMode` / `execMinStopVal`
@@ -1070,17 +1070,17 @@ while the mode is "Off" (the default), wrong the moment it is not.
 
 **New file `strategies/tradingview/bos_strategy.pine`** (3875 lines), built to `docs/BOS_SPEC.md`. It
 trades the CONTINUATION: an SOS sets a regime, and every BOS after it in that direction is a fresh
-leg whose retrace is bought/sold. A+ fades the shift; this rides what the shift started.
+leg whose retrace is bought/sold. SOS Fade fades the shift; this rides what the shift started.
 
 **How it was assembled.** Engine block = **lines 1-3028 of `sos_fade_strategy.pine`, byte-identical**
 (everything through the liquidity `recentSSL`/`recentBSL` block), then the watermark, then a new
-execution layer. **Not copied:** the A+ SEQUENCE tracker, the B-LEG tracker, the missed-setup callout
+execution layer. **Not copied:** the SOS Fade SEQUENCE tracker, the B-LEG tracker, the missed-setup callout
 and its `MissW` machinery — nothing here reads them, and the compile-token budget in this family has
 already hit CE10117 and CE10295 twice. Net effect vs the parent: ~510 lines of tracker out, ~250 of
 execution in. Regenerate with `head -3028 sos_fade_strategy.pine`, the parent's watermark block, then this
 file's execution layer.
 
-**Two default flips vs the A+, both named in the spec:** `execConfSZ` OFF→**ON** (the Sniper Zone is
+**Two default flips vs the SOS Fade, both named in the spec:** `execConfSZ` OFF→**ON** (the Sniper Zone is
 entry method 3 here) and `execFvg50` OFF→**ON**. Note `execConfSZ` also gates `_snTrack`, and
 `_snBullBOS`/`_snBearBOS` sit behind `showFibo` — so **"Show External Fib" is still trade-critical**
 in this file even though the fib LEVELS are no longer read off it (see below).
@@ -1089,7 +1089,7 @@ in this file even though the fib LEVELS are no longer read off it (see below).
 over the anchor leg's own extreme/origin — identical arithmetic to the engine's `fiboP*`, just
 anchored per-setup. `bosFibAnchor` picks the EXPANSION leg (default — `fibo_ash`/`fibo_asl`, the drawn
 External fib's own anchors, so the band moves until the pullback confirms) or the frozen BREAK leg
-(`bos_high`/`bos_low`). This is what makes the "Break leg" option possible at all; the A+ could only
+(`bos_high`/`bos_low`). This is what makes the "Break leg" option possible at all; the SOS Fade could only
 ever price off the one drawn fib.
 
 **Three deviations from the spec, all flagged in the file header and in the spec's new §10a.** The
@@ -1099,7 +1099,7 @@ breaks #2 and #3 on their arm bar — every continuation after the first would b
 tracks the anchor's own 0.5 tap and its own return to 0.0 instead. The other two: the divergence
 CLOSE fires on a confirmed divergence only (not extreme RSI — that is the normal state of a healthy
 long, and closing on it flattens the runner on every winner), and `execMinStopMode`/`execMinStopVal`
-are carried over from the A+ though §8 does not list them (default Off, so the baseline is unmoved).
+are carried over from the SOS Fade though §8 does not list them (default Off, so the baseline is unmoved).
 
 **Not yet compiled on TradingView and not yet backtested.** There is no local Pine compiler; the file
 is statically checked only (no identifier collisions with the engine block, every referenced engine
@@ -1131,15 +1131,15 @@ Four changes, now byte-identical across all six Pine copies of the engine (`mpc_
 
 ---
 
-## The 2026-07-12 A+ divergence retro-link
+## The 2026-07-12 SOS Fade divergence retro-link
 
 An RSI divergence pivot only confirms `divPivotLen` (5) bars **after** the extreme it marks. On a fast V-reversal the SOS fires inside that lag, so by the time the divergence arms Stage 1 the SOS is already in the past — and Stage 2 only looks forward. The setup stuck at 1/3 forever, and in `sos_fade_strategy.pine` that meant a divergence-armed setup could never place a trade.
 
 Fix: remember the last bull/bear SOS bar, and when a divergence arms, adopt an SOS that already fired **at or after** the divergence's pivot bar, provided it is still inside the staleness window. The sequence really did run div → SOS; we just learned about the div late.
 
-This lives ONLY in the two files that carry the A+ sequence — `mpc_jarvis.pine` and `sos_fade_strategy.pine`. The structure engine, the three export builds and every Python engine have no A+ block, so nothing else needed it and no parity harness was affected (no re-run required).
+This lives ONLY in the two files that carry the SOS Fade sequence — `mpc_jarvis.pine` and `sos_fade_strategy.pine`. The structure engine, the three export builds and every Python engine have no SOS Fade block, so nothing else needed it and no parity harness was affected (no re-run required).
 
-**The two A+ blocks are NOT byte-identical, and that is expected.** Only `process()` is held byte-identical between the two files. `mpc_jarvis.pine`'s A+ block has since moved on: its staleness window is measured in **minutes** (`aplusWindow * 60000`), arming is gated behind `aplusL_canArm`, and it has a session-gap detector. `sos_fade_strategy.pine` is an earlier generation — the window is in **bars** — so the retro-link there compares bar numbers, not timestamps. The strategy also needed a second change: its execution layer snapshots the arm source (`sosL_swp` / `sosL_div`) *on the SOS bar*, which never runs for a retro-linked SOS, so that snapshot is taken at retro-link time instead, measured against the SOS bar. Without it the table would show 2/3 but no trade would fire.
+**The two SOS Fade blocks are NOT byte-identical, and that is expected.** Only `process()` is held byte-identical between the two files. `mpc_jarvis.pine`'s SOS Fade block has since moved on: its staleness window is measured in **minutes** (`aplusWindow * 60000`), arming is gated behind `aplusL_canArm`, and it has a session-gap detector. `sos_fade_strategy.pine` is an earlier generation — the window is in **bars** — so the retro-link there compares bar numbers, not timestamps. The strategy also needed a second change: its execution layer snapshots the arm source (`sosL_swp` / `sosL_div`) *on the SOS bar*, which never runs for a retro-linked SOS, so that snapshot is taken at retro-link time instead, measured against the SOS bar. Without it the table would show 2/3 but no trade would fire.
 
 ---
 
@@ -1179,7 +1179,7 @@ The trade annotations were rebuilt so a chart can be read without decoding text,
 
 ## 2026-07-24 — the B-LEG fork + 500x leverage pin
 
-**New file `strategies/tradingview/b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/b_leg/`.
+**New file `strategies/tradingview/b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or SOS Fade block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/b_leg/`.
 
 **500x leverage pinned in the `strategy()` call** to match Aaron's demo account. `sos_fade_strategy.pine`, `sos_fade_strategy_export.pine` and `b_leg_strategy.pine` now carry `margin_long = 0.2, margin_short = 0.2` (margin % = 100 / leverage → 500x = 0.2%), and the two `tradingview/` research strategies (`ny_orb.pine`, `london_breakout.pine`) got the same. Like `slippage = 0`, this only sets the Strategy Tester Properties defaults so a fresh paste reproduces Aaron's account — it is not signal logic and does not touch the `px_*`/`cfg_*` decision stream, so `compare_strategy.py` parity is unaffected.
 
@@ -1191,9 +1191,9 @@ A setup refused by one of the strategy's own toggles used to be **invisible ever
 placed, so nothing is drawn, no row reaches the trade list, and the Strategy Tester cannot know it
 existed. That made it impossible to judge whether a blocking rule protects the account or costs it.
 
-**New in both A+ files.** A pink `▲/▼ TRADE BLOCKED` label with the reason in its hover tooltip and a
+**New in both SOS Fade files.** A pink `▲/▼ TRADE BLOCKED` label with the reason in its hover tooltip and a
 dotted leader down to the price the limit would have rested at. Input `showBlockTag` ("Mark blocked
-trades on chart (pink)", group `A+ Debug`, default ON). Cosmetic only — it reads state and places no
+trades on chart (pink)", group `SOS Fade Debug`, default ON). Cosmetic only — it reads state and places no
 orders.
 
 **Six reasons, reported by PRECEDENCE** (`f_blkCode` returns the first rule that would refuse the
@@ -1302,21 +1302,21 @@ brought `b_leg_strategy.pine` and both Python bots up to it, and closed the expo
 - `execTp2StopMode` — "TP1 price" (default) / "Breakeven" / "One trail step behind": the stop FLOOR
   the instant TP2 fills, before the trail engages. The trail may tighten past it, never loosen it.
 - `execSlLevel` — the stop's fib, 0.618 … **1.0** (default = the leg origin, i.e. unchanged).
-- `execAplus` — trade A+ setups at all, so the B leg can be read in isolation.
+- `execAplus` — trade SOS Fade setups at all, so the B leg can be read in isolation.
 
 The brother's tooltip names the tested best combo: **Structure trail + buffer 20 + floor = TP1 price**.
 
 **Ported into `b_leg_strategy.pine`:** `execRunnerTrail`, `execStructTrailBufTk`,
 `execTp2StopMode` and the `lStage2Floor` / `sStage2Floor` + structure-trail exit block, line-for-line
-off the parent. Plus `execAplus`, relabelled **"A+ has priority (stand the B-leg down)"** — in this
-fork A+ never places an order, so the flag doesn't disable an entry path, it drops the priority gate.
+off the parent. Plus `execAplus`, relabelled **"SOS Fade has priority (stand the B-leg down)"** — in this
+fork SOS Fade never places an order, so the flag doesn't disable an entry path, it drops the priority gate.
 That gate has been the file's own first-listed tuning candidate since 2026-07-24 and is now a toggle.
 
 **Deliberately NOT ported to the B-leg fork**, with reasons, so nobody "fixes" it later:
-- `execSlLevel` — the B leg's stop is its frozen band's origin, not a fib on the A+ leg. The dropdown
+- `execSlLevel` — the B leg's stop is its frozen band's origin, not a fib on the SOS Fade leg. The dropdown
   has nothing to select there.
-- The pink blocked-trade markers. Their codes answer "why was this **A+** setup refused". In a fork
-  where A+ never trades, those tags read as the opposite of what they mean. A B-LEG block tag needs
+- The pink blocked-trade markers. Their codes answer "why was this **SOS Fade** setup refused". In a fork
+  where SOS Fade never trades, those tags read as the opposite of what they mean. A B-LEG block tag needs
   its own code set — new design work, not a port.
 
 **The export hole this closed — the important part.** `execRunnerTrail` shipped defaulting to
@@ -1347,7 +1347,7 @@ no `cfg_exitmode` (i.e. taken before this change) instead of guessing.
 same day: **`strategies/tradingview/b_leg_strategy_export.pine`** = that file with the body byte-identical
 (only the line-40 `strategy()` title differs) + an appended PARITY EXPORT block, diffed by
 `strategies/python/b_leg/tools/compare_bleg.py` and registered in `backtest/tools/verify_parity.py`.
-It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this fork), the band's 0.5 edge,
+It plots the B-LEG arm (NOT `longArmed` — SOS Fade never places an order in this fork), the band's 0.5 edge,
 the band-derived TP1/TP2, and the tracker's own `bl_*` state, which is the column set that matters:
 every new B-LEG rule lives in the tracker, and a band-maths bug shows as a wrong price many bars before
 it becomes a wrong trade. **Ran GREEN (exit 0) on its first real export the same day** — 21,231 bars, ~90 distinct frozen bands and 5 graded trades diffed. That run also found a bug in the HARNESS (entry direction read off `Fill.qty`'s sign instead of the signed `Fill.dir`), which the offline round-trip test could never catch because its encoder shared the same mistake — a round trip proves the two halves agree, never that either is right.

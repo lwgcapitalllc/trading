@@ -1,6 +1,6 @@
 """Secondary (1m sniper) re-entry — the 1-minute side of the SOS Fade bot.
 
-The primary A+ trade is a 15m setup (see `execution.py`). The SECONDARY is a re-entry
+The primary SOS Fade trade is a 15m setup (see `execution.py`). The SECONDARY is a re-entry
 on the *same* 15m leg, sniped off the 1-minute chart: after the primary has traded and
 gone flat, while the 15m divergence + SOS are still live and price is back in the
 0.618-0.886 zone, a Structure shift of structure in the trade direction rests a tight limit at

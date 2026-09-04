@@ -3,7 +3,7 @@
     BarState --(5m structure + liquidity)--> LegState --ExtremeLegExecution--> a trade
              --(bars aggregated to 15m)-----> the trend and the swing being aimed at
 
-The A+ bot waits for the shift of structure and fades the retracement after it. This takes the
+The SOS Fade bot waits for the shift of structure and fades the retracement after it. This takes the
 move that CREATES that shift: stop beyond the extreme, target part of the way to the swing whose
 break IS the shift. It is the earlier leg, which is why the two are not expected to be in the
 market on the same swing.

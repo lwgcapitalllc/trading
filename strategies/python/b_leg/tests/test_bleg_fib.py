@@ -7,7 +7,7 @@ absent on every B-LEG run while the bot was the more fib-native of the two.
 The load-bearing test here is the CONVENTION one. This bot's own vocabulary calls its entry band
 "the 0.382-0.5 pocket", measuring up from the leg ORIGIN; a drawn fib measures down from the leg
 EXTREME. Both name the same two prices. Recording the wrong one puts a real-looking ladder on the
-chart whose rungs sit at the wrong retracements — the exact failure the A+ ladder cannot have,
+chart whose rungs sit at the wrong retracements — the exact failure the SOS Fade ladder cannot have,
 because there the strategy reads its levels off an engine that already chose a convention.
 """
 
@@ -61,13 +61,13 @@ def test_the_band_far_edge_is_recorded_as_0_618_not_0_382():
 
 
 def test_the_ladder_matches_the_a_plus_bot_rung_for_rung():
-    """Both bots' fibs are drawn on ONE chart, so a ratio has to mean one thing. If the A+ ladder
+    """Both bots' fibs are drawn on ONE chart, so a ratio has to mean one thing. If the SOS Fade ladder
     ever gains or loses a rung this fails, rather than the two silently drifting apart."""
     assert _FIB_RATIOS == tuple(r for r, _ in _APLUS_RATIOS)
 
 
 def test_an_undatable_leg_records_nothing_rather_than_a_fib_with_no_start():
-    """All-or-nothing, like the A+ bot. A leg whose swing predates the replay window has no honest
+    """All-or-nothing, like the SOS Fade bot. A leg whose swing predates the replay window has no honest
     start time here, and a ladder drawn from the entry bar would misreport where the leg began."""
     assert _band_fib(ext=1100.0, inv=1000.0, direction=1, leg_ms=None) is None
     assert _band_fib(ext=None, inv=1000.0, direction=1, leg_ms=1) is None

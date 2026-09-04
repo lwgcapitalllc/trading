@@ -141,7 +141,7 @@ class PortfolioAccount:
         # backwards. Every other check above asks "can the account afford this?"; this one asks
         # "will the broker accept it at all?" — a question with a hard answer that no amount of
         # equity changes. MEASURED 2026-09-02 on PU Prime `XAUUSD.p`: the ceiling is 100 lots,
-        # and a 6.6-year replay of the live A+ config from $10,000 asks for more on **25 of its
+        # and a 6.6-year replay of the live SOS Fade config from $10,000 asks for more on **25 of its
         # 205 trades**, topping out at **742.60 lots — 7.4x what the venue will take**. Those
         # orders do not get filled small; they get REJECTED, so a replay that books them is
         # describing an account nobody can have.
@@ -155,7 +155,7 @@ class PortfolioAccount:
         # at the ORDER is still wrong; clamping at the DECISION is not. (Aaron's call, 2026-09-02.)
         #
         # ⚠ **It changes what a replay reports above ~$927,000 of balance and nothing below it.**
-        # That is the first trade in the A+ book that touches the ceiling. Runs stored before this
+        # That is the first trade in the SOS Fade book that touches the ceiling. Runs stored before this
         # existed did not model it, so a long compounding run will no longer reproduce its old
         # number — deliberately, because the old number was untradeable past that point.
         #
@@ -464,7 +464,7 @@ class PortfolioAccount:
         DIVIDES by the stop distance to get a qty, the account re-MULTIPLIES), so the two differ in
         the last bit and a bare `<` refuses an entry nothing was competing for.
 
-        MEASURED before this existed: A+ at 10% under a 10% cap with the floor at 10% was refused
+        MEASURED before this existed: SOS Fade at 10% under a 10% cap with the floor at 10% was refused
         **3,650 times over 7.9 years and took 31 trades instead of 181** — a book that reads like a
         savage allocator and is a rounding error. The shrink test has carried this tolerance since
         the same defect was found there; the floor test was left on `<`, and nobody had set a floor
@@ -580,7 +580,7 @@ class SoloAccount(PortfolioAccount):
     passthrough (2026-09-02).** `room()` is infinite, so the budget never binds; `max_lots` is not
     part of the budget and does bind, because a broker refusing a 742-lot order does not care that
     the account could afford it. A solo replay that never asks for more than `max_lots` is
-    byte-identical to its old self — MEASURED: the A+ book does not touch the ceiling until the
+    byte-identical to its old self — MEASURED: the SOS Fade book does not touch the ceiling until the
     balance passes ~$927,000.
 
     ⚠ **The parity anchor therefore needs `max_lots=None`, and the harness has to pass it.** The

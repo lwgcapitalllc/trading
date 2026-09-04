@@ -865,7 +865,7 @@ def test_tp2_stop_mode_one_trail_step_behind_beats_breakeven_on_a_big_run():
 
 
 def test_aplus_off_disarms_every_a_plus_entry():
-    """`exec_aplus` False = the A+ sequence never arms, so nothing is ever placed."""
+    """`exec_aplus` False = the SOS Fade sequence never arms, so nothing is ever placed."""
     ex = Execution(_cfg(exec_aplus=False))
     dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     assert dec.long_armed is False
@@ -998,7 +998,7 @@ def test_the_shipped_default_is_the_measured_guard_not_off():
     three tightest stops in 7.9 years were all full −1.00R losers.
 
     ⚠ **The consequence this test exists to make loud: a run replayed at DEFAULTS from today is
-    not comparable to one replayed at defaults before it.** Every A+ figure in this folder measured
+    not comparable to one replayed at defaults before it.** Every SOS Fade figure in this folder measured
     at "Off" describes a different configuration. Pin the mode explicitly when reproducing one.
 
     ⚠ It must stay in lockstep with `strategies/tradingview/sos_fade_strategy.pine`'s `execMinStopMode` /

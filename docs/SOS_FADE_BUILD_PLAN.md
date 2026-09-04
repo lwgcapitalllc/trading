@@ -6,7 +6,7 @@ demo account.
 **Method:** S.Y.S.T.E.M. (`docs/BOT_DEVELOPMENT_METHOD.md`) under the strategy framework
 (`docs/LWG_Strategy_Framework.md`).
 **Status:** building — spec approved, Phase-0 probe done, **A0 (data layer) + A1 (replay loop) landed
-2026-07-15**, **B-Y (the A+ strategy) landed 2026-07-15** (`strategies/python/sos_fade/`, 18 offline
+2026-07-15**, **B-Y (the SOS Fade strategy) landed 2026-07-15** (`strategies/python/sos_fade/`, 18 offline
 tests). **Parity harness BUILT 2026-07-15** — `strategies/tradingview/sos_fade_strategy_export.pine` (strategy +
 appended decision-stream plot block), `strategies/python/sos_fade/tools/compare_strategy.py` (the
 diff tool, round-trip-tested), and the `/audit-strategy` slash command. **Next: RUN the parity gate —
@@ -17,7 +17,7 @@ Only that run confirms the intrabar fill assumption. See build order.
 
 ## What the strategy is (one paragraph)
 
-A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage A+ sequence:
+A counter-trend reversal that fades exhaustion at HTF liquidity. Three-stage SOS Fade sequence:
 **Arm** (RSI divergence, default — or a liquidity sweep) → **SOS** (a same-side external structure
 break in the trade direction, inside a staleness window) → **Zone + FVG** (price retraces into the
 0.5–0.886 fib band and a live FVG overlaps it). Entry is a resting limit at the FVG's near edge,
@@ -50,7 +50,7 @@ Account #700119432 (PUPrime-Demo). Broker symbol is `XAUUSD.s` (`.s` suffix).
 - **Ticks** (`copy_ticks_range`, real bid/ask): 2yr back = 192k/day, 1000d = 232k/day, ~5yr = 105k/day
   (a single-day probe at 1460d hit a thin/weekend day and read 0 — tick history is deep but patchy,
   so never treat one empty day as the edge).
-- **Spread** on gold ~$0.33 (33 points) — small against the A+ strategy's multi-dollar fib targets.
+- **Spread** on gold ~$0.33 (33 points) — small against the SOS Fade strategy's multi-dollar fib targets.
 - **"Suspicious" M5 gaps** are largely the daily 17:00-NY 1-hour gold break — the exact gap we
   flatten before — not data holes.
 - **History depth:** 15m ≈ 2yr of bars; 5m ≈ 8 months of bars (extendable via ticks); parity at 5m
@@ -75,7 +75,7 @@ Python strategy reuses it).
 The runner is built once. The bot is one of many that will run on it.
 
 ### B-Y build (landed 2026-07-15) — `strategies/python/sos_fade/`
-Five modules, a line-for-line port of `sos_fade_strategy.pine`'s A+ block + execution layer:
+Five modules, a line-for-line port of `sos_fade_strategy.pine`'s SOS Fade block + execution layer:
 - `config.py` — `SosFadeConfig`: every trade-affecting Pine input toggle, same name + default (toggle parity).
 - `signals.py` — `SignalAdapter`: replay `BarState` → the Pine-named per-bar inputs. Two non-trivial
   reconstructions: `recentSSL`/`recentBSL` (H4>Day>session priority off the liquidity sweep events) and
@@ -126,9 +126,9 @@ lab's existing lens.
 
 ## Deliverable B — The SOS Fade bot (S.Y.S.T.E.M.)
 
-- **S — Spec.** One page of exact, machine-followable rules for the A+ sequence, stop, TP ladder,
+- **S — Spec.** One page of exact, machine-followable rules for the SOS Fade sequence, stop, TP ladder,
   sizing, and the flat-by-close rule. *Sign-off gate — nothing is built until this is approved.*
-- **Y — Build.** The A+ state machine + execution, on the engines. First add the missing
+- **Y — Build.** The SOS Fade state machine + execution, on the engines. First add the missing
   `algos/shared/` shims (fibonacci, fvg, rsi_divergence, liquidity, sessions — only structure has
   one today).
 - **Parity gate (LWG-specific).** `compare_strategy.py`: replay a TradingView export through the
@@ -243,9 +243,9 @@ A parity failure is the harness doing its job — it catches a Pine change the P
 
 ## Build order (how A and B interleave)
 
-1. **B-S** — write + approve the A+ spec.
+1. **B-S** — write + approve the SOS Fade spec.
 2. **A0 + A1** — data layer and replay loop (needs the engine shims from B-Y, so shims come here).
-3. **B-Y** — the A+ state machine + execution.
+3. **B-Y** — the SOS Fade state machine + execution.
 4. **A2 + A3** — fill/cost model + output adapter → first end-to-end backtest.
 5. **Parity gate** — `compare_strategy.py` green before any result is trusted.
 6. **A4** — local optimizer.

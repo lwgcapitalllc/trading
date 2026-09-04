@@ -107,7 +107,7 @@ Two engine-behaviour decisions are locked and should not be re-litigated. **Liqu
 
 **Bot suite reset (2026-06-22).** All four first-attempt MT5 bots deleted — code, data and VPS side — to rebuild backtest-first. Deployment plumbing preserved in `algos/docs/BOT_DEPLOYMENT_INFRA.md`.
 
-**Engine extraction (2026-07-02 → 2026-07-19).** The eight roadmap engines, then fair-value-gaps, RSI-divergence and equal-highs-lows pulled later to feed the A+ setup. Each shipped only after its `compare_*.py` gate ran green on a real TradingView export.
+**Engine extraction (2026-07-02 → 2026-07-19).** The eight roadmap engines, then fair-value-gaps, RSI-divergence and equal-highs-lows pulled later to feed the SOS Fade setup. Each shipped only after its `compare_*.py` gate ran green on a real TradingView export.
 
 **The Python backtest runner (`backtest/`, complete 2026-07-16).** Broker-data layer with disk cache, bar-replay loop over the engines, tick-level fill and cost model, lab output adapter, multi-core optimizer. **Broker history floors enforced 2026-07-26** — MT5 silently returns coarser bars when a symbol lacks history at the requested timeframe, so the floor is measured by probing the live terminal and a window before it is refused.
 
@@ -131,13 +131,13 @@ Five strategies are registered in `lab.db`. Verified by direct query 2026-08-12:
 
 | Strategy | File | Runner | State |
 |---|---|---|---|
-| **SOS Fade** (A+) | `strategies/python/sos_fade/` | python | **THE LIVE BOT.** Pine-parity green. The reversal leg of the suite. Ships at `exec_risk_pct = 12.5` in the headline run: **164 trades, 832× over 6.5 years, 64.2% max drawdown.** Trades roughly twice a month by design. |
-| **B-LEG** | `strategies/python/b_leg/` | python | The late-retrace setup, split out to run parallel to A+. **99 trades / +17.87R** over 6.5 years at today's defaults, drawdown −5.15R charged. A jitter audit finished positive on all 12 seeds. Registered as `b_leg_demo` and **BENCHED** — its parity gate has not been re-run since its defaults moved on 2026-08-06. |
+| **SOS Fade** (SOS Fade) | `strategies/python/sos_fade/` | python | **THE LIVE BOT.** Pine-parity green. The reversal leg of the suite. Ships at `exec_risk_pct = 12.5` in the headline run: **164 trades, 832× over 6.5 years, 64.2% max drawdown.** Trades roughly twice a month by design. |
+| **B-LEG** | `strategies/python/b_leg/` | python | The late-retrace setup, split out to run parallel to SOS Fade. **99 trades / +17.87R** over 6.5 years at today's defaults, drawdown −5.15R charged. A jitter audit finished positive on all 12 seeds. Registered as `b_leg_demo` and **BENCHED** — its parity gate has not been re-run since its defaults moved on 2026-08-06. |
 | **BOS** | `strategies/python/bos/` | python | Break-of-structure continuation, built 2026-08-07. Pine-parity green — but **about the shipped defaults only**: the gap entry is off there, so the FVG ladder, the Sniper Zone and five block codes were never exercised, and 6 trades closed in the window. |
 | **ORB** | `strategies/ninjatrader/ORB.cs` | ninjatrader | The only NT8 strategy. Reshaped to unit size, emits `engine_trades.csv`. 2 runs, both Tier 3. |
 | **LondonBreakout** | `strategies/mt5/LondonBreakout.mq5` | mt5 | Instrument-agnostic Asian-range → London breakout. 8 runs from the 2026-06-18 sweep; six Tier 2, two Tier 3. Its v3 unit-size reshape has still never produced `engine_trades.csv` from a VPS run. |
 
-**The suite is carved up by LEG, not by signal.** The strategies share a confluence source on purpose and each takes a different part of the move. A+ catches the reversal; B-LEG catches setups that take a long time to play out; BOS catches the legs in between. **Re-measured 2026-09-01 over 157,004 M15 bars: A+ and B-LEG held a position at the same time on 45 bars — 0.5% of A+'s hold time — and ZERO of those were same-side.** That does not make them independent (both read one structure stream on one instrument), and it does not retire the account-level allocator.
+**The suite is carved up by LEG, not by signal.** The strategies share a confluence source on purpose and each takes a different part of the move. SOS Fade catches the reversal; B-LEG catches setups that take a long time to play out; BOS catches the legs in between. **Re-measured 2026-09-01 over 157,004 M15 bars: SOS Fade and B-LEG held a position at the same time on 45 bars — 0.5% of SOS Fade's hold time — and ZERO of those were same-side.** That does not make them independent (both read one structure stream on one instrument), and it does not retire the account-level allocator.
 
 Also on disk: three Pine strategies with no Python port yet — `mpc_d` and `mpc_h4_sweep` have export twins, and `smc_session_sweep` (renamed 2026-08-15 from `m15_playbook`) has **no twin, no compile and no measurement** — plus `ny_orb.pine` in TradingView research.
 

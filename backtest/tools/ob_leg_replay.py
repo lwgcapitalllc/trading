@@ -15,7 +15,7 @@ rather than letting a reader assume the replay confirms the reconstruction:
   * a fixed **2R target** — a primary's rungs are FIB levels (`_place_entries`), not R multiples;
   * the **10:00-12:00 New York** exclusion — the only time gate is the final-hour one.
 
-So this answers *what does the block leg make under the A+ exit rules*, which is a different and
+So this answers *what does the block leg make under the SOS Fade exit rules*, which is a different and
 narrower question than *what does a 2R scalp on this pool make*. Building the second one means
 code, and it should not be built until this run says the pool is worth it.
 
@@ -28,7 +28,7 @@ difference column becomes the thing that lies.
 so a dollar column would compound the better one and read as a bigger edge than it is.
 
 ⚠ **The two rows are not additive.** The block leg stands down on any setup a gap ever qualified
-for, so it cannot take an A+ trade — but both would run on ONE account with no live allocator, so
+for, so it cannot take an SOS Fade trade — but both would run on ONE account with no live allocator, so
 their drawdowns can land on top of each other.
 
 Usage:
@@ -172,7 +172,7 @@ def main(argv=None) -> int:
 
     rows = []
     for label, ov in (
-        ("A+ gap leg (shipped)", {}),
+        ("SOS Fade gap leg (shipped)", {}),
         ("order-block leg (no gap)", {"exec_poi_source": "Order block (no FVG)"}),
     ):
         print(f"replaying {label} ...", flush=True)

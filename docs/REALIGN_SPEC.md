@@ -111,14 +111,14 @@ overridden.** This is the `b_leg` pattern: that fork replaces TP1, TP2 and the S
 band prices and inherits everything from the staging down. Here only the STOP is replaced.
 
 **The fib leg is the deviation** — anchored on the pre-deviation high (step 2) and the deviation
-low. On that leg `0.0` is the high, so the A+ rungs land exactly where this setup wants them:
+low. On that leg `0.0` is the high, so the SOS Fade rungs land exactly where this setup wants them:
 
 | | |
 |---|---|
 | **Stop** | **OVERRIDDEN** — the internal structure low from step 5, not `exec_sl_level`. `exec_sl_deep` does not apply. |
-| **TP1 / TP2** | A+ rule unchanged: chosen automatically by entry depth. Deep → TP1 0.5, TP2 0.382. Shallow → TP1 0.382, TP2 **0.0 = the pre-deviation high**. |
+| **TP1 / TP2** | SOS Fade rule unchanged: chosen automatically by entry depth. Deep → TP1 0.5, TP2 0.382. Shallow → TP1 0.382, TP2 **0.0 = the pre-deviation high**. |
 | **Rung sizes** | `exec_tp1_pct` / `exec_tp2_pct`, default **0 / 0** — bank nothing, ride the runner. 0 does not disable the target: touching TP1 still stages the stop, touching TP2 still installs the floor. |
-| **Staging** | A+ unchanged: (0) full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, the floor, then the trail. |
+| **Staging** | SOS Fade unchanged: (0) full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, the floor, then the trail. |
 | **TP2 floor** | `exec_tp2_stop_mode`, default `"TP1 price"`. |
 | **Runner trail** | `exec_runner_trail`, default `"Structure + % ratchet"`, `exec_trail_pct` 1.0, `exec_struct_trail_buf_tk` 20. |
 | **Time stop** | `exec_time_stop_mode` `"Before TP1 only"`, `exec_time_stop_hrs` 36.0. |
@@ -147,7 +147,7 @@ ever check it.
 | `realign_long_source` | `"swing"` | LONG trigger stream — coarse. Measured: `internal` is negative |
 | `realign_short_source` | `"swing"` | SHORT trigger stream. MEASURED BY REPLAY: `internal` gives −13.26R against +20.22R |
 
-Plus the whole inherited A+ exec block.
+Plus the whole inherited SOS Fade exec block.
 
 ⚠ `realign_require_internal_bear` was **measured free** — on/off gave an identical 94 setups and an
 identical hit rate, because after a 15m bearish SOS the 5m always goes bearish before it turns. It
@@ -173,7 +173,7 @@ scored against random entries matched on direction, stop distance and reward:ris
 
 **The edge grows MONOTONICALLY with the target, and that shape is the finding.** This is not a
 hit-rate edge — at 1R it is nothing. It is a *when it works it runs* edge, which is exactly the
-fat-tail shape the A+ ladder exists to harvest and the reason the runner is the right exit here.
+fat-tail shape the SOS Fade ladder exists to harvest and the reason the runner is the right exit here.
 One +2.1σ cell on its own would be noise-shopping; five target choices trending the same way is not.
 
 **Long side, same rule, same window:** 1R −6.7% (−1.4σ), 2R −4.1% (−0.9σ), 3R −0.6% (−0.1σ),
@@ -231,7 +231,7 @@ at a time.
 
 ## Measured by REAL REPLAY — the first end-to-end result
 
-`strategies/python/realign/`, 467,352 M5 bars (2020-01-02 → 2026-08-06), full A+ exit
+`strategies/python/realign/`, 467,352 M5 bars (2020-01-02 → 2026-08-06), full SOS Fade exit
 ladder, one position slot, $10,000 start, **no costs charged**.
 
 | config | trades | total | avg | maxDD | equity |
@@ -253,7 +253,7 @@ of anything exit-sensitive from a replay.**
 ⚠ The time stop was tested as the cause and REFUTED — shorts-on-`internal` are worse with
 it off (−14.06R), so the ladder's target placement is the mechanism, not the clock.
 
-⚠ **No costs in these figures, and this fork cannot inherit A+'s cost profile.** A+ enters
+⚠ **No costs in these figures, and this fork cannot inherit SOS Fade's cost profile.** SOS Fade enters
 on a resting limit and measures ~0 spread cost under `bid_ask_fills`; this fork enters at
 MARKET and pays the spread both ways. Charge it before quoting any of these numbers.
 

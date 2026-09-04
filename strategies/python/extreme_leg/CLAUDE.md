@@ -1,7 +1,7 @@
 # CLAUDE.md — Extreme Leg (Python port)
 
 **Purpose:** The Python side of `strategies/tradingview/extreme_leg_strategy.pine` — the leg
-that runs INTO the shift of structure, which is the move the A+ bot's setup begins after.
+that runs INTO the shift of structure, which is the move the SOS Fade bot's setup begins after.
 **Scope:** This package only. The strategy's design and the evidence behind each default live in
 `strategies/tradingview/docs/extreme_leg_strategy.md`; the porting process lives in
 `docs/STRATEGY_WORKFLOW.md`. Neither is restated here.
@@ -243,7 +243,7 @@ was RUN. A dict that looks right is rule 7 exactly: a label is a claim about cod
 
 ⚠ **The two remaining unlabelled settings are deliberate** — what a lot is worth and which
 instrument. TradingView puts both on the Strategy Properties tab rather than in an input, so no
-export column can carry them; the A+ bot exposes the same pair the same way.
+export column can carry them; the SOS Fade bot exposes the same pair the same way.
 
 ## The tests, and what they are worth
 
@@ -280,20 +280,20 @@ moving those numbers.
 
 ---
 
-## It is a TOP-LEVEL row on the Strategies page, not a child of the A+ bot (2026-09-02)
+## It is a TOP-LEVEL row on the Strategies page, not a child of the SOS Fade bot (2026-09-02)
 
 **Aaron's call, and the reasoning is worth keeping because the version it replaced was not wrong.**
 This package declared `display_under: "sos_fade"` until today, on the grounds that the suite is
-carved up by LEG off one structure stream and this is the leg BEFORE the one A+ trades. That is
+carved up by LEG off one structure stream and this is the leg BEFORE the one SOS Fade trades. That is
 still true. It is still the wrong thing to draw as an indent.
 
 🔴 **AN INDENT READS AS "CHILD OF", AND THIS BOT IS A SIBLING.** It has its own Pine source, its own
 parity gate, its own config, and it runs standalone, in any stack, on any instrument. Measured over
-6.6 years it holds ZERO same-side overlap with A+, correlates +0.035 month to month, and on one
+6.6 years it holds ZERO same-side overlap with SOS Fade, correlates +0.035 month to month, and on one
 shared account the two refuse each other essentially never.
 
 🔴 **What made it misread is that ONE VISUAL LEVEL WAS CARRYING TWO RELATIONSHIPS.** `loss_recovery`
-sits under A+ as well and genuinely cannot run without it — it arms off that bot's closed losses and
+sits under SOS Fade as well and genuinely cannot run without it — it arms off that bot's closed losses and
 declares `requires_source`, so the page refuses to run it alone. A row that cannot exist without its
 parent and a row that competes with it as an equal were drawn identically, and nothing on screen
 separated them.
@@ -343,14 +343,14 @@ reader looks — it timestamps every refusal and every shrink.
 tests while describing an account nobody has, so they are written against the real
 `PortfolioAccount`.
 
-### What it does stacked against the live A+ bot — MEASURED 2026-09-02
+### What it does stacked against the live SOS Fade bot — MEASURED 2026-09-02
 
 470,995 PU Prime `XAUUSD.p` M5 bars + 157,004 M15, one $10,000 account, 10% cap.
 **At a matched 5% per trade each: +190.30R together, and every leg posts the SAME R shared as solo
 — zero contention, not one decision moved.** At the two configs' own defaults (10% and 1%) it is
 +191.30R with the budget binding twice in 6.6 years.
 
-🔴 **READ THE RISK COLUMN BEFORE THE R COLUMN. The first mixed stack ran A+ at 10% against this bot
+🔴 **READ THE RISK COLUMN BEFORE THE R COLUMN. The first mixed stack ran SOS Fade at 10% against this bot
 at 1% — a 10:1 gap that came from each config's default and that the tool printed NOWHERE.** The
 bigger leg then fills the budget alone and the smaller one reads as harmless, which is a fact about
 the SETTINGS and not about the strategies. `stack_run.py` prints per-leg risk now and `--risk-pct`
@@ -373,11 +373,11 @@ columns and never reads this side's defaults.
 edge rather than describing headroom. Anything higher and they start refusing each other.
 
 ⚠ **A shrunk entry is INVISIBLE IN R.** R is measured against each trade's own risk, so a trade cut
-to half size reports the same R — the A+ leg's shared and solo R are identical despite being
+to half size reports the same R — the SOS Fade leg's shared and solo R are identical despite being
 shrunk once. This repo's standing rule is to compare R rather than dollars, and this is the one
 place R cannot see what the cap did. Read the contention log for that.
 
-⚠ **The A+ leg in ANY stack is not the live A+**: its 1-minute re-entry is pinned off, because a
+⚠ **The SOS Fade leg in ANY stack is not the live SOS Fade**: its 1-minute re-entry is pinned off, because a
 leg is one bar frame. Its figures here sit below the live bot's by construction.
 
 ---
@@ -484,7 +484,7 @@ the classifier walks its whole frame on every call.
 ✅ **THE CLASH AUDIT WAS RE-RUN THE MOMENT THE CUT WENT ON (2026-09-02), AND THE ANSWER HOLDS.**
 Switching it on drops 19 trades, so the previous day's figures stopped describing this bot within a
 day of being written. Re-measured over the same 470,995 PU Prime `XAUUSD.p` M5 bars: **1,049 shared
-bars** with the live A+ bot — 3.5% of A+'s hold time, down from 1,066 / 3.6% — of which **ZERO are
+bars** with the live SOS Fade bot — 3.5% of SOS Fade's hold time, down from 1,066 / 3.6% — of which **ZERO are
 same-side**, 6 trade pairs touch at all, none same-direction, and no same-direction entry lands
 within four hours of the other's in 6.6 years. Monthly R correlation +0.035 over 79 months.
 ⚠ **It does not retire the account-level allocator**: peak concurrent positions is still 2.
@@ -520,13 +520,13 @@ above, and it is not a reason to skip stage 4.
 strategy that records none ships zeros and the price chart **degrades in silence** to a plain
 entry→exit rectangle. Its own comment says so out loud — *"All optional — a runner/trade that
 doesn't carry them degrades to the plain entry→exit box"* — and this bot was the one hitting it.
-Aaron, looking at two of its trades beside the A+ bot's: *"they should be the exact same style as
+Aaron, looking at two of its trades beside the SOS Fade bot's: *"they should be the exact same style as
 sos fade trades and annotations where applicable."*
 
 **MEASURED on all 115 trades of run `29444bb4cbea` before the fix**: the best price, the deepest
 price, the exit-fill ledger and the target ladder were empty on **every single one**; only the stop
 was recorded. So the chips built from them — best, deepest, the exit marker, the target lines — had
-nothing to draw from, and the faint bands that make an A+ trade read as layered had no extremes to
+nothing to draw from, and the faint bands that make an SOS Fade trade read as layered had no extremes to
 span.
 
 ⚠ **It is the ONLY strategy here that was affected, and that was CHECKED rather than assumed.**
@@ -551,11 +551,11 @@ difference.
 🔴 **NEITHER EXTREME MAY SIT BEYOND A LEVEL THAT CLOSED THE TRADE.** The widen runs before the
 bar's exits resolve, so the raw range includes price *after* the position is flat — and the chart
 draws these as its `DD` and `Best` chips, so an unbounded extreme puts a marker outside the trade's
-own stop or target line. **MEASURED on the A+ bot when it hit this: 77 of 77 stopped-out trades
+own stop or target line. **MEASURED on the SOS Fade bot when it hit this: 77 of 77 stopped-out trades
 reported a deepest price beyond their stop, one of them 2.22R against a 1.0R loss.** It is not an
 intrabar-ordering guess — a bracket is triggered BY the move that reaches it.
 
-⚠ **BOTH sides are bounded here, and that is the one place this differs from the A+ bot.** There the
+⚠ **BOTH sides are bounded here, and that is the one place this differs from the SOS Fade bot.** There the
 favourable side is deliberately left alone, because its first target is PARTIAL and the runner stays
 open, so price beyond it is still the trade's move. **This bot's target closes the whole position**,
 which makes the favourable side determinate in exactly the way the adverse side is. ⚠ **Copying
@@ -568,7 +568,7 @@ collapses that drawdown to the exit and the trade reads as though it never went 
 
 ⚠ **The entry bar contributes NOTHING, and that is a fact about this entry rather than a
 simplification.** This bot enters at market on the bar's CLOSE, so no part of that bar's range
-happens after the fill — none of it is the trade's move, and both extremes seed AT the fill. The A+
+happens after the fill — none of it is the trade's move, and both extremes seed AT the fill. The SOS Fade
 bot seeds asymmetrically for the opposite reason: its entry is a resting limit filled mid-bar, so
 the rest of that bar IS its move.
 
@@ -588,16 +588,16 @@ unknown rather than as a target.
 the numbers means replaying the strategy. Re-run it. A run that HAS them but a cached `chart_spec.json`
 needs **Reload charts**.
 
-## Its chips say XLEG, not A+ (2026-09-02)
+## Its chips say XLEG, not SOS Fade (2026-09-02)
 
-`LAB_STRATEGY["chart_tag"]`. 🔴 **The price chart hard-coded `A+` — the A+ bot's own word for ITS
+`LAB_STRATEGY["chart_tag"]`. 🔴 **The price chart hard-coded `SOS Fade` — the SOS Fade bot's own word for ITS
 setup — onto every strategy's primary trades**, so this bot's trades wore a label belonging to a
 different bot. The panel's own comment had named the cost and the fix since it was written; this is
 that fix. ⚠ **A LABEL and nothing else** — no run, no cost and no decision reads it, so changing it
 repaints chips and moves no trade. ⚠ **Keep it SHORT**: it is drawn in a chip beside the entry price
-and a long word pushes the price off the marker. ⚠ **Undeclared is still `A+`**, because a package
-that has not declared one must not lose its chip entirely — so a chart reading `A+` now means
-EITHER the A+ bot or a strategy that has yet to declare its own word.
+and a long word pushes the price off the marker. ⚠ **Undeclared is still `SOS Fade`**, because a package
+that has not declared one must not lose its chip entirely — so a chart reading `SOS Fade` now means
+EITHER the SOS Fade bot or a strategy that has yet to declare its own word.
 
 ---
 

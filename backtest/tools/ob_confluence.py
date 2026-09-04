@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ob_confluence.py — of the trades A+ ALREADY takes, are the ones whose gap sat on an order
+"""ob_confluence.py — of the trades SOS Fade ALREADY takes, are the ones whose gap sat on an order
 block any better?
 
 Aaron, 2026-08-09, after five order-block angles all measured null or negative (`Order block`

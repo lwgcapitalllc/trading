@@ -2,7 +2,7 @@
 """nogap_scalp_audit.py — what a SHORT-HOLD variant could take out of the setups the gap
 requirement refuses.
 
-Aaron's question (2026-08-23): the A+ runner is built to HOLD — it banks a little and rides the
+Aaron's question (2026-08-23): the SOS Fade runner is built to HOLD — it banks a little and rides the
 rest for as long as the structure allows, which is why swap matters to it. The setups that reach
 the 0.5-0.886 band with every other confluence present and NO fair-value gap to rest a limit on
 are a different animal: he wants to know whether they can be taken for a fixed, small number of R
@@ -160,7 +160,7 @@ class Setup:
 
 
 def collect(df, warmup: int, blocks: dict, verbose: bool = True):
-    """Replay A+ at its SHIPPED settings and return the code-3 misses with their geometry.
+    """Replay SOS Fade at its SHIPPED settings and return the code-3 misses with their geometry.
 
     The geometry is logged on EVERY bar and looked up afterwards by the miss's own
     `zone_time_ms`, rather than snapshotted inside the watch. A watch can open, tag the zone and
@@ -801,7 +801,7 @@ def main(argv=None) -> int:
     print(
         f"  {len(setups)} setups reached the band with every confluence but the gap"
         + (f"  [pool: {args.pool}, of {n_all}]" if args.pool != "all" else "")
-        + f"   ({n_trades} A+ trades in the same window)"
+        + f"   ({n_trades} SOS Fade trades in the same window)"
     )
     if no_geo:
         print(f"  ⚠ {no_geo} dropped — no fib geometry recorded at the zone-entry bar")
@@ -864,7 +864,7 @@ def main(argv=None) -> int:
     # ── 2b. THE CONTROL ──────────────────────────────────────────────────────
     # A number about this pool means nothing on its own — the honest question is not "is 0.54R a
     # lot" but "is it what a setup WITH a gap does". Same walk, same bars, same R definition, run
-    # over the A+ bot's own trades at the stop each was really sized against. Anything this
+    # over the SOS Fade bot's own trades at the stop each was really sized against. Anything this
     # section and the one above disagree about is a fact about the gap, because nothing else
     # differs between them.
     ctrl = []
@@ -888,10 +888,10 @@ def main(argv=None) -> int:
             walk(tape, cs, (t.entry_index, t.entry_price, st, t.stop_distance), args.horizon)
         )
     print(
-        f"\n2b. THE CONTROL — the same question asked of the {len(ctrl)} A+ trades that DID "
+        f"\n2b. THE CONTROL — the same question asked of the {len(ctrl)} SOS Fade trades that DID "
         f"have a gap"
     )
-    print(f"   {'reached':>9} {'no gap':>16} {'gap (A+)':>16}")
+    print(f"   {'reached':>9} {'no gap':>16} {'gap (SOS Fade)':>16}")
     for lvl in (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 5.0):
         a = sum(1 for r in rs if r["mfe_r"] >= lvl)
         b = sum(1 for r in ctrl if r["mfe_r"] >= lvl)
@@ -1336,7 +1336,9 @@ def main(argv=None) -> int:
         )
 
     # ── 7. ENTRY GATES ───────────────────────────────────────────────────────
-    print("\n7. ENTRY GATES — the two refusals the A+ bot already applies, read at the FILL bar")
+    print(
+        "\n7. ENTRY GATES — the two refusals the SOS Fade bot already applies, read at the FILL bar"
+    )
     print(f"      {'gates':<38} {'trades':>7} {'best rule':<44} {'net R':>8}")
     for gname, no_late, veto in (
         ("none", False, False),

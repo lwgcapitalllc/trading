@@ -14,7 +14,7 @@ candles match TradingView's — that is `backtest/tools/compare_feeds.py`). Logi
 replays TradingView's own bars, so the broker feed is irrelevant here.
 
 WHY IT IS A SEPARATE TOOL rather than a flag on compare_strategy.py: the two bots diff
-DIFFERENT fields. In the B-LEG fork A+ never places an order (it only holds priority), so
+DIFFERENT fields. In the B-LEG fork SOS Fade never places an order (it only holds priority), so
 `px_dec_bits`'s arm bits are the B-LEG arm, `px_edge` is the frozen band's 0.5 edge rather
 than an FVG edge, and TP1/TP2 are computed off the band instead of read from fib levels.
 Diffing `long_armed` here would test a decision that never happens. What IS shared — the
@@ -23,7 +23,7 @@ packed cfg_* decoding — is imported, not duplicated.
 Usage:
     python compare_bleg.py <export.csv> [--warmup N] [--price-tol 0.01] [--r-tol 0.02]
 
-Stdlib + pandas, same as the A+ harness.
+Stdlib + pandas, same as the SOS Fade harness.
 """
 
 from __future__ import annotations
@@ -67,14 +67,14 @@ from sos_fade.tools.compare_strategy import (  # noqa: E402
 #
 # 🔴 **IT IS A FLOOR, NOT THE ANSWER, AND SIZING THE WHOLE TAIL TO IT LEFT THIS GATE RED
 # (2026-09-03).** The swing lookahead covers unconfirmed PIVOTS. It does not cover this fork's
-# other unsettled dependency: it inherits A+'s DAY-HIGH liquidity line, which is time-based, and on
+# other unsettled dependency: it inherits SOS Fade's DAY-HIGH liquidity line, which is time-based, and on
 # a fresh export the two sides disagreed **65 bars** from the end — four times outside a 15-bar
 # tail. Python placed a new Day High at 2026-09-03 00:45 and swept it while Pine still pointed at
 # the previous one; ~230 COMPLETED day boundaries in the same export agreed exactly, which is what
-# says settling rather than a bug. `unsettled_tail` (A+'s, imported rather than copied) returns the
+# says settling rather than a bug. `unsettled_tail` (SOS Fade's, imported rather than copied) returns the
 # export's final calendar day floored by this constant.
 #
-# ⚠ **A+ hit this first and the lesson generalises both ways: a sibling gate's tail constant is
+# ⚠ **SOS Fade hit this first and the lesson generalises both ways: a sibling gate's tail constant is
 # sized to ITS unsettled dependency and does not transfer.** Neither does a bar count fitted to one
 # export — that hides the next real drift beginning inside the tail.
 UNCONFIRMED_TAIL = BLegStrategy.engine_config().major_length
@@ -83,10 +83,10 @@ UNCONFIRMED_TAIL = BLegStrategy.engine_config().major_length
 def config_from_export(df: pd.DataFrame, base: Optional[BLegConfig] = None) -> BLegConfig:
     """Decode a BLegConfig from the export's cfg_* columns.
 
-    Delegates every shared column to the A+ decoder (one packing scheme, one decoder —
+    Delegates every shared column to the SOS Fade decoder (one packing scheme, one decoder —
     both export Pines plot cfg_* identically on purpose), then reads this fork's only
     extra input. `allow_bleg=True` because the B-LEG export always ships execBLeg ON:
-    the A+ decoder refuses that, correctly, since the A+ bot cannot make those trades.
+    the SOS Fade decoder refuses that, correctly, since the SOS Fade bot cannot make those trades.
     """
     cfg = _config_from_export(df, base or BLegConfig(), allow_bleg=True)
     if len(df) == 0:
@@ -133,8 +133,8 @@ def _expand(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# What gets diffed. The B-LEG's own arm + band prices, the shared trade stream, and the A+
-# stages (the B leg arms off the A+ sequence's death, so an A+ stage drift is where a B-LEG
+# What gets diffed. The B-LEG's own arm + band prices, the shared trade stream, and the SOS Fade
+# stages (the B leg arms off the SOS Fade sequence's death, so an SOS Fade stage drift is where a B-LEG
 # mismatch USUALLY originates — diffing it turns "a trade differs" into "the upstream moved").
 _BOOL = ["px_long_armed", "px_short_armed", "bl_l_on", "bl_l_tap", "bl_s_on", "bl_s_tap"]
 _INT = ["px_l_stage", "px_s_stage", "px_entry_dir", "bl_l_bar", "bl_s_bar"]
@@ -255,7 +255,7 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
               f"Pass --tail 0 to diff them anyway.")
     # ⚠ REFUSE rather than clamp. Clamping to `max(warmup, n - tail)` reads as safer and is not:
     # it turns an over-wide tail into an empty loop and a confident PARITY OK over zero bars.
-    # A+'s gate shipped that bug for one afternoon; this is the same guard, not a second one.
+    # SOS Fade's gate shipped that bug for one afternoon; this is the same guard, not a second one.
     if n - tail <= warmup:
         raise NothingToCompare(
             f"warmup {warmup} + tail {tail} leaves no bars of the {n} in this export to diff. "
@@ -319,7 +319,7 @@ def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
     # The EQ/FVG coupling comes off the export, not off this fork's pin — the two Pines genuinely
-    # disagree about it (A+ ships it on, this fork off), so reading it is what makes the agreement
+    # disagree about it (SOS Fade ships it on, this fork off), so reading it is what makes the agreement
     # measured rather than two defaults that happen to line up. Shared decoder, same as cfg_*.
     eng = _engine_config_from_export(df, BLegStrategy.engine_config(), eq_exempt)
     # keep all bars aligned to CSV rows

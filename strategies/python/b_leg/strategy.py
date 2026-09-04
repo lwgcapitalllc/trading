@@ -1,6 +1,6 @@
 """BLegStrategy — the top-level B-LEG driver.
 
-Same data flow as the A+ bot, with the B-LEG tracker spliced in between the sequence and
+Same data flow as the SOS Fade bot, with the B-LEG tracker spliced in between the sequence and
 the execution:
 
     BarState --SignalAdapter--> Signals --SosFadeSequence--> SeqState
@@ -91,7 +91,7 @@ class BLegStrategy(SosFadeStrategy):
     def run(self, df, engine_config=None, warmup: int = 0) -> "BLegStrategy":
         """Replay a canonical bar frame end-to-end. The B-LEG's staleness cap is in bars-per-
         day, so the tracker needs the timeframe — inferred from the frame's bar spacing (the
-        data is the source of truth, same as the tick-mode bar_ms inference in the A+ driver)."""
+        data is the source of truth, same as the tick-mode bar_ms inference in the SOS Fade driver)."""
         from backtest.replay import EngineStack, iter_bars
 
         if len(df.index) > 1:
@@ -115,4 +115,4 @@ class BLegStrategy(SosFadeStrategy):
 
     def run_dual(self, *args, **kwargs):
         raise NotImplementedError(
-            "BLegStrategy has no 1m secondary re-entry — use run(). run_dual is A+-only.")
+            "BLegStrategy has no 1m secondary re-entry — use run(). run_dual is SOS Fade-only.")

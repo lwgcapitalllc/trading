@@ -10,7 +10,7 @@ it, and over a run that compounds thousands of times an early gain is rounding b
 Measured on run `236e206d0142`, the identical trades are worth **+3.8%** that way against **+44.8%**
 on one compounding balance. **A real account is one balance. That toggle answers a question nobody
 asked, and it always will — the design is deliberate, so that flipping it cannot move a
-parity-gated A+ trade.**
+parity-gated SOS Fade trade.**
 
 This tool answers the real one. Both legs go through `backtest/portfolio/` — one balance every leg
 sizes against, one live risk budget they compete for, one merged clock, and a contention log of
@@ -200,10 +200,10 @@ def main() -> int:
         type=float,
         default=None,
         help="override the strategy's own per-trade risk %%. 🔴 The lever that decides "
-        "this whole question: A+ ships at 10%% and the cap defaults to 10%%, so "
-        "A+ ALONE fills the budget and any second leg can only subtract. Lower "
+        "this whole question: SOS Fade ships at 10%% and the cap defaults to 10%%, so "
+        "SOS Fade ALONE fills the budget and any second leg can only subtract. Lower "
         "this (or raise the cap) to ask whether the recovery is worth ROOM, "
-        "rather than whether it is worth taking room off A+.",
+        "rather than whether it is worth taking room off SOS Fade.",
     )
     ap.add_argument(
         "--on-contention",
@@ -218,12 +218,12 @@ def main() -> int:
     ap.add_argument(
         "--priority",
         action="store_true",
-        help="give A+ PRECEDENCE: its risk stays reserved even while it is flat, and the "
+        help="give SOS Fade PRECEDENCE: its risk stays reserved even while it is flat, and the "
         "recovery leg gets only what is genuinely spare. Without this the legs are equals "
         "and whoever asks first takes the budget — which under --on-contention refuse cost "
-        "A+ 176 refusals and a third of its edge. 🔴 With A+ at the cap there IS no spare "
+        "SOS Fade 176 refusals and a third of its edge. 🔴 With SOS Fade at the cap there IS no spare "
         "room, so the recovery leg never trades: that is the honest answer to 'is it worth "
-        "taking room off A+', and the way to run it is to raise the cap instead.",
+        "taking room off SOS Fade', and the way to run it is to raise the cap instead.",
     )
     ap.add_argument(
         "--size",
@@ -256,7 +256,7 @@ def main() -> int:
     print(f"{args.symbol} {args.tf}m  {args.start} → {args.end}   {len(df):,} bars")
     print(
         f"cost profile: {args.profile}   account cap: {args.risk_cap_pct:g}%   "
-        f"A+ risk: {cfg.exec_risk_pct:g}%   "
+        f"SOS Fade risk: {cfg.exec_risk_pct:g}%   "
         f"recovery size: {rule.risk_fraction:g}x of that "
         f"(= {cfg.exec_risk_pct * rule.risk_fraction:g}%)"
     )
@@ -264,7 +264,7 @@ def main() -> int:
     if head > args.risk_cap_pct:
         print(
             f"⚠ both legs at full size want {head:g}% against a {args.risk_cap_pct:g}% cap — "
-            f"the budget CANNOT hold them, so every overlap shrinks A+ by construction."
+            f"the budget CANNOT hold them, so every overlap shrinks SOS Fade by construction."
         )
     print()
 
@@ -274,7 +274,7 @@ def main() -> int:
     bp, dp = curve(solo_p, cap)
     br, dr = curve(solo_r, cap)
     print(
-        f"{'SOLO  A+ alone':38} {len(solo_p):4} trades   ${bp:14,.0f}  {bp / cap:9,.0f}x  "
+        f"{'SOLO  SOS Fade alone':38} {len(solo_p):4} trades   ${bp:14,.0f}  {bp / cap:9,.0f}x  "
         f"maxDD {dp:5.1f}%   {total_r(solo_p):+8.2f}R"
     )
     print(
@@ -301,14 +301,14 @@ def main() -> int:
     # decides WHICH TRADE you end up in, not how much is at risk.
     #
     # ⚠ This was previously expressed as an entry FLOOR and could not be made to work: the floor
-    # is one number for the whole account while these legs risk different amounts (A+ 10%,
-    # recovery 2.5%), so any floor high enough to make A+ all-or-nothing also refused every
+    # is one number for the whole account while these legs risk different amounts (SOS Fade 10%,
+    # recovery 2.5%), so any floor high enough to make SOS Fade all-or-nothing also refused every
     # recovery entry whatever the room — measured at 64 refusals, 0 trades, and the same table at
     # a 10% and a 12.5% cap, which reads like an allocator verdict and is a size ban. Asking the
     # account "was this granted in full?" needs no per-leg number at all.
     #
     # ⚠ **Neither rule touches the peak open risk.** That number is set by the balance FALLING
-    # under a reservation already granted, and MEASURED: A+ alone with no second leg in the run
+    # under a reservation already granted, and MEASURED: SOS Fade alone with no second leg in the run
     # produces the identical 2,984 over-cap ticks and the identical 10.9140% peak. A contention
     # rule cannot move it, because it is not about contention.
     refuse = args.on_contention == "refuse"
@@ -335,7 +335,7 @@ def main() -> int:
     shared_r = res.per_leg[RECOVERY]
     bsh, dsh = curve(res.trades, cap)
     only_p, dop = curve(shared_p, cap)
-    print(f"{'SHARED  A+ leg':38} {len(shared_p):4} trades{'':40}{total_r(shared_p):+8.2f}R")
+    print(f"{'SHARED  SOS Fade leg':38} {len(shared_p):4} trades{'':40}{total_r(shared_p):+8.2f}R")
     print(f"{'SHARED  recovery leg':38} {len(shared_r):4} trades{'':40}{total_r(shared_r):+8.2f}R")
     print(
         f"{'SHARED  one balance, one budget':38} {len(res.trades):4} trades   "
@@ -346,7 +346,7 @@ def main() -> int:
         f"({100 * (bsh / bp - 1):+.1f}%)"
     )
     print(
-        f"drawdown {dp:.1f}% → {dsh:.1f}%   (A+'s own trades inside the shared run: "
+        f"drawdown {dp:.1f}% → {dsh:.1f}%   (SOS Fade's own trades inside the shared run: "
         f"${only_p:,.0f}, maxDD {dop:.1f}%)"
     )
 
@@ -365,7 +365,7 @@ def main() -> int:
         print(f"  {name:9} shared {total_r(sh):+8.2f}R vs solo {total_r(so):+8.2f}R   {verdict}")
 
     print(
-        f"\nPRECEDENCE: {'A+ FIRST (its risk stays reserved while flat)' if args.priority else 'NONE — the legs are equals, first to ask wins'}"
+        f"\nPRECEDENCE: {'SOS Fade FIRST (its risk stays reserved while flat)' if args.priority else 'NONE — the legs are equals, first to ask wins'}"
         f"\nCONCURRENCY RULE: {args.on_contention.upper()}"
         + (
             "  (an entry that cannot be granted in FULL is refused outright)"

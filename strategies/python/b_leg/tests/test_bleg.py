@@ -135,8 +135,8 @@ def test_longs_and_shorts_off_means_no_trades():
 
 
 def test_this_fork_records_no_blocked_setups():
-    """The A+ bot's blocked-setup markers are deliberately NOT ported here: their reason codes
-    answer "why was this A+ setup refused", and A+ never places an order in this fork — so the
+    """The SOS Fade bot's blocked-setup markers are deliberately NOT ported here: their reason codes
+    answer "why was this SOS Fade setup refused", and SOS Fade never places an order in this fork — so the
     tags would report the opposite of what a reader assumes. The fork gets none by CONSTRUCTION
     (recording hangs off the parent's `_place_entries`, which `BLegExecution` overrides); this
     pins that, so restoring the parent's entry path can't quietly switch them on."""
@@ -145,8 +145,8 @@ def test_this_fork_records_no_blocked_setups():
 
 
 def test_this_fork_records_no_missed_setups():
-    """Same call, same reason — the missed-setup confluences score how far an **A+** setup got,
-    and A+ never trades here. Unlike the blocks this one is NOT free: the miss watch runs from
+    """Same call, same reason — the missed-setup confluences score how far an **SOS Fade** setup got,
+    and SOS Fade never trades here. Unlike the blocks this one is NOT free: the miss watch runs from
     `step()`, which this fork delegates straight to the parent, so it takes the explicit
     `_records_misses = False` opt-out. Pin it — a flag is much easier to flip by accident than
     an overridden method."""
@@ -157,7 +157,7 @@ def test_this_fork_records_no_missed_setups():
 # ── the re-defaulted exit/staleness levers (2026-08-06) ───────────────────────────
 def test_this_fork_redefaults_the_time_stop_and_the_parent_keeps_its_own():
     """`exec_time_stop_hrs` is a FORK PIN. Both forks measured this lever on their own trades
-    and got different answers — A+ sat on a 24h-40h plateau and ships 36, this fork sits on a
+    and got different answers — SOS Fade sat on a 24h-40h plateau and ships 36, this fork sits on a
     4h-12h one and ships 8 — so inheriting would silently move every B-LEG exit to a number
     measured on a different strategy. The mode is deliberately NOT pinned: "Before TP1 only"
     is right on both.
@@ -169,7 +169,7 @@ def test_this_fork_redefaults_the_time_stop_and_the_parent_keeps_its_own():
 
     assert BLegConfig().exec_time_stop_hrs == 8.0
     assert SosFadeConfig().exec_time_stop_hrs == 36.0, \
-        "the A+ parent must KEEP 36 — its own plateau is 24h-40h, measured on A+ trades"
+        "the SOS Fade parent must KEEP 36 — its own plateau is 24h-40h, measured on SOS Fade trades"
     assert BLegConfig().exec_time_stop_mode == "Before TP1 only"
     assert SosFadeConfig().exec_time_stop_mode == "Before TP1 only", \
         "the MODE is shared on purpose — only the hours fork"
@@ -179,7 +179,7 @@ def test_the_time_stop_only_ever_fires_before_tp1():
     """The whole case for 8 hours rests on this: the lever cuts DEAD trades, never winners.
     If the stage gate were ever dropped the clock would start closing runners and the measured
     +17.56R would describe a strategy nobody shipped — which is exactly what `"Always"` does
-    on the A+ fork (+97.32R against +142.17R).
+    on the SOS Fade fork (+97.32R against +142.17R).
 
     Read off the Pine rather than asserted about the Python, because the Pine is the half that
     has no test suite of its own and the `lStage == 0` term is the one a tidy-up would remove.
@@ -215,7 +215,7 @@ def test_this_fork_redefaults_the_trail_step_and_the_staleness_cap():
 
     assert BLegConfig().exec_trail_pct == 0.05
     assert SosFadeConfig().exec_trail_pct == 1.0, \
-        "the A+ parent must KEEP 1.0 — its own sweep says the opposite (0.25% -> 43.6R vs 109.3R)"
+        "the SOS Fade parent must KEEP 1.0 — its own sweep says the opposite (0.25% -> 43.6R vs 109.3R)"
     assert BLegConfig().bleg_max_days == 4.0
 
 

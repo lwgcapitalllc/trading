@@ -65,7 +65,7 @@ def test_a_write_failure_never_raises(tmp_path, monkeypatch):
 
 
 def test_bar_records_read_a_decision_defensively(tmp_path):
-    """The ledger must not know what an A+ stage IS. A strategy with a different Decision shape
+    """The ledger must not know what an SOS Fade stage IS. A strategy with a different Decision shape
     logs what it has rather than crashing the bot."""
 
     class _Bare:

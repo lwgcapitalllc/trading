@@ -149,11 +149,11 @@ class StructureFibEvents:
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
     touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg
     reset_active: bool = False                        # TP3 (0.0) hit -> leg spent/hidden until new leg
-    half_reached: bool = False                        # inbound 0.5 tapped this leg (ungated) — A+ EARLY tier
+    half_reached: bool = False                        # inbound 0.5 tapped this leg (ungated) — SOS FADE EARLY tier
     # The leg's own anchors (Pine `fibo_ash` / `fibo_asl`) — the two prices every level above was
     # measured from. REPORTING ONLY: they are the engine's existing internal state, surfaced
     # unchanged, so nothing about detection or the level maths moves and `compare_fib.py` is
-    # unaffected. A consumer needs them to price a ratio that has no level of its own (the A+
+    # unaffected. A consumer needs them to price a ratio that has no level of its own (the SOS Fade
     # bot's Custom SL) without re-deriving anchors from two levels and a direction.
     # Both None whenever `active` is False, which is what keeps a derived price on the same leg
     # as the entry — Pine gets that for free by computing inside its fib block.

@@ -1,11 +1,11 @@
 """SOS Fade — the reversal strategy ported from strategies/tradingview/sos_fade_strategy.pine.
 
 Reads the canonical engine stack's per-bar `BarState` (backtest.replay) and turns the
-A+ sequence into orders. Public API grows as Deliverable B lands:
+SOS Fade sequence into orders. Public API grows as Deliverable B lands:
 
     SosFadeConfig      — every Pine input toggle (toggle parity), with Pine defaults
     Signals          — one bar's Pine-named inputs; SignalAdapter builds them
-    SeqState         — the A+ sequence's per-bar output; SosFadeSequence runs it
+    SeqState         — the SOS Fade sequence's per-bar output; SosFadeSequence runs it
 
 Build status: config + signal adapter + sequence state machine landed. Execution
 (orders / fills / stop-staging) and the top-level driver are next.
@@ -62,11 +62,11 @@ LAB_STRATEGY = {
     # which propose unit-size trades and let the engine size them against a firm's ladder.
     "self_sizing": True,
     # This bot's own word for its setup, worn by its trades on the price chart. Until
-    # 2026-09-02 that chip was hard-coded to the A+ bot's word on EVERY strategy's chart, so
+    # 2026-09-02 that chip was hard-coded to the SOS Fade bot's word on EVERY strategy's chart, so
     # every other bot's trades carried a label belonging to a fourth. 🔴 **It is what tells the
     # legs apart on a STACK**, where several strategies' trades share one chart — that is the
     # case it exists for. ⚠ A LABEL and nothing else: no run, no cost and no decision reads it,
     # so changing it repaints chips and moves no trade. ⚠ Keep it SHORT — it is drawn beside
     # the entry price and a long word pushes the price off the marker. ⚠ the grade this bot's own Pine calls its setup.
-    "chart_tag": "A+",
+    "chart_tag": "SOS FADE",
 }

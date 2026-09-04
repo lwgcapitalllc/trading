@@ -104,11 +104,11 @@ from how much risk the account has room for *right now*, and layered gates decid
 a trade is allowed at all ("The gates" below). How big each trade is set two ways,
 depending on what the account is for:
 
-- **Bullet accounts (eval, pass fast):** take only the cleanest setups (A / A+ on the
+- **Bullet accounts (eval, pass fast):** take only the cleanest setups (A / SOS Fade on the
   confluence score, ~90% win) at the **maximum size the scaling table allows**, with one
   hard guard — a single stop-out can never breach the floor (always keep room for the next
   trade). Speed comes from setup *quality*, not from over-betting; many cheap evals run in
-  parallel do the rest. A single-account pass is ~85%+ when filtered to A/A+, not the ~40%
+  parallel do the rest. A single-account pass is ~85%+ when filtered to A/SOS Fade, not the ~40%
   coin flip that max-sizing generic trades would give.
 - **Funded & live accounts (consistency, survive to payout):** risk a **fixed fraction of
   the room left to the drawdown floor**, recomputed every trade — **room ÷ 7** (each loss
@@ -449,7 +449,7 @@ different questions.
 - Re-entry and time-of-day rules are the two easiest ways to fool yourself — cap
   re-entries, require a real reason for time rules, prove both on untuned data.
 - Sizing is set by the engine from the room left now, never a fixed per-trade slider:
-  max-size on A/A+ setups for bullet evals, fraction-of-room (÷7) for funded/live.
+  max-size on A/SOS Fade setups for bullet evals, fraction-of-room (÷7) for funded/live.
 - Gates stop trading (time cutoff, daily loss/profit limit, consistency limit), never a
   fixed trade count.
 - The stop comes from the strategy (it's the edge); the engine sizes around it, never invents it.

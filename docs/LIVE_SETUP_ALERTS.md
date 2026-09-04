@@ -7,7 +7,7 @@ report what became of it, including the setups that never became trades.
 reads it. It does NOT change strategy logic, engines, the order bridge, or the backtest lab.
 **Nothing here may move a trade decision.**
 **Status:** SPEC — rewritten 2026-08-13 around a STRATEGY-AGNOSTIC contract at Aaron's request.
-The 2026-08-03 version specced this for the A+ bot alone and is superseded; what it measured is
+The 2026-08-03 version specced this for the SOS Fade bot alone and is superseded; what it measured is
 kept below, corrected.
 **Created:** 2026-08-03. **Rewritten:** 2026-08-13.
 **Parent:** `docs/LIVE_TRADING_PIPELINE.md` — this extends its step 7 (Telegram alerts), which
@@ -259,7 +259,7 @@ this — the same mechanism that makes a trade exit reply to its entry.
 
 ### 5.1 Watching (the root) — Aaron's 2-of-3
 
-Fires when a setup first appears. **7.7/month on A+** — not the 4.9 an earlier draft claimed; see the correction in §3.
+Fires when a setup first appears. **7.7/month on SOS Fade** — not the 4.9 an earlier draft claimed; see the correction in §3.
 
 ```
 👀 SETUP FORMING · SHORT

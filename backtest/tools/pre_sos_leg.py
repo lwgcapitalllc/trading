@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """pre_sos_leg.py — the leg BEFORE the shift of structure. Is it tradeable?
 
-Aaron's question (2026-08-24): the live A+ bot waits for the shift of structure and then fades
+Aaron's question (2026-08-24): the live SOS Fade bot waits for the shift of structure and then fades
 the retracement. The move it never takes is the one that CREATES the shift — from the extreme up
 to the swing whose break IS the shift. Stop under the extreme, target the swing, get in and get
 out. "How do we measure the extreme?"

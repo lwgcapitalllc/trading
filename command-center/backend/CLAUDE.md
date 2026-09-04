@@ -345,7 +345,7 @@ Columns on `rulesets`: `ruleset_type`, `daily_loss_cap`, `weekly_loss_cap`, `dai
 
 Seeded rulesets (18 rows): 4 prop firms = 14 prop rows — LucidFlex, FundedNext, Tradeify each at 50k/100k × eval/funded (12 rows), plus Apex EOD eval-only at 50k/100k (2 rows; funded/PA not yet seeded) — plus 2 personal demo rows (`personal_forex_demo`, `personal_futures_demo`; ruleset_type `personal`, account_tier `demo`), `unconstrained`, and `personal_forex_risk`. Personal demo rules on a $10k balance: $500 daily loss cap, $1,000 daily profit target, fail at 15% drawdown from peak (`max_drawdown_from_peak_pct`) or 3 consecutive capped-loss days (`max_consecutive_loss_days`) — stored now, enforced in a later evaluator pass. `max_loss_eod = 0` is the sentinel for "no trailing EOD rule" on personal rows (the column is NOT NULL); the evaluator must treat it as rule-absent. All seeded via the per-id idempotent pattern (`_PROP_SEED_ROWS` + `_seed_apex_eod_eval`). The core KPIs of all 14 prop rows (account size, target, drawdown type/amount/lock, consistency, min trading days, contract scaling, funded split, doc links) are documented for hand-off in `command-center/docs/PROP_RULESET_KPIS.md`, which also carries the firm doc links, the saved sync query (`scripts/prop_kpi_audit.py`), and a verification prompt; re-run that prompt to re-check the firms and keep the doc in sync with the DB. Display names: the firm name lives in the UI group header only; `name` carries the program/challenge ("LucidFlex $50k Evaluation", "Select $50k Evaluation", "Futures Flex $50k Challenge", "EOD $50k Evaluation") — canonical map in `_RULESET_DISPLAY_NAMES`, re-applied on every `init_db`. The firm behind the `lucidflex_*` ids is Lucid (Lucid Trading); LucidFlex is its program name.
 
-**The two forex rows are a PAIR, and the difference is the whole point (2026-07-30).** `unconstrained` states no limit, which makes it the honest raw-behaviour view AND ungradeable — every grade in `services/grading.py` is a statement about drawdown vs a limit, and there is no defensible default to substitute (see the ruin walk-back in `grading.compute_grade`). `personal_forex_risk` ("Personal Forex — 55% Drawdown") is the same row with the one bar stated, so the same run returns a letter. 55% is **Aaron's stated tolerance**, picked against his own measured numbers on the A+ SOS Fade run: worst-5% of simulations draws down 53.2%, worst-1% draws down 62.1% — so 55% accepts the 5% tail and explicitly does not accept the 1% tail. Every other limit on it is deliberately absent (no daily cap, no loss-streak rule, no profit target), because at 10–12.5% risk per trade a daily cap fires constantly and the verdict stops being about drawdown.
+**The two forex rows are a PAIR, and the difference is the whole point (2026-07-30).** `unconstrained` states no limit, which makes it the honest raw-behaviour view AND ungradeable — every grade in `services/grading.py` is a statement about drawdown vs a limit, and there is no defensible default to substitute (see the ruin walk-back in `grading.compute_grade`). `personal_forex_risk` ("Personal Forex — 55% Drawdown") is the same row with the one bar stated, so the same run returns a letter. 55% is **Aaron's stated tolerance**, picked against his own measured numbers on the SOS Fade SOS Fade run: worst-5% of simulations draws down 53.2%, worst-1% draws down 62.1% — so 55% accepts the 5% tail and explicitly does not accept the 1% tail. Every other limit on it is deliberately absent (no daily cap, no loss-streak rule, no profit target), because at 10–12.5% risk per trade a daily cap fires constantly and the verdict stops being about drawdown.
 
 ⚠ **The 15% on `personal_forex_demo` is a PROP-FIRM figure and must never be applied to forex** (Aaron, 2026-07-29). Grading a forex run against it produces a D that says nothing about the strategy. Pinned by `tests/test_rulesets.py::test_the_forex_risk_row_does_not_inherit_the_prop_15_percent`.
 
@@ -445,7 +445,7 @@ stays NULL for them.
 
 ⚠ **It is a BASIS field for `mcp__lab__compare_runs`, and the obvious test misses it.** R is
 identical either side of a ceiling — profit and risk both scale with the quantity — so a
-comparison in R shows nothing while balance, drawdown and CAGR all move. MEASURED on the live A+
+comparison in R shows nothing while balance, drawdown and CAGR all move. MEASURED on the live SOS Fade
 bot over 6.6 years: same 205 trades, same +107.36R, closing balance $11,528,822 uncapped against
 $10,752,175 at 100 lots.
 
@@ -2852,7 +2852,7 @@ TIME.** `StackRequest` carried neither `cost_layers` nor `broker_profile`, so a 
 to **zero**. Nothing failed, nothing was empty, and the number that came out was simply the
 frictionless one sitting where the answer goes. ⚠ **Stored stacks are NOT re-priced**: their rows
 keep the NULL that honestly says they predate the columns, and re-running one is how it gets
-charged. ⚠ **The gap is not small.** MEASURED on one matched pair — the A+ and extreme-leg stack on
+charged. ⚠ **The gap is not small.** MEASURED on one matched pair — the SOS Fade and extreme-leg stack on
 PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23, $2,000 opening, 10% cap, identical in every other
 input — free book **+215.17R → $4,704,587**, ECN costs charged **+204.50R → $2,911,177**. That is
 **−5.0% of the edge and −38.1% of the closing balance**, because the shortfall compounds. ⚠ **The
@@ -3021,7 +3021,7 @@ instruction, and an ordinary strategy passed the guard and was refused by the hi
 
 ## 🔴 A stack's minimum is two LEGS, not two strategies (2026-08-21)
 
-`_validate_stack_strategies` counted `strategy_ids`, so **A+ plus a recovery on A+ — one id, two
+`_validate_stack_strategies` counted `strategy_ids`, so **SOS Fade plus a recovery on SOS Fade — one id, two
 legs, the single most likely stack anybody builds and the exact case the recovery leg was built
 for — was refused with *"a stack needs at least 2 strategies"*.** Nothing was broken; the feature
 simply could not be reached from the UI at all. That is rule 9's failure shape: a feature nobody
@@ -3070,7 +3070,7 @@ gone missing. `test_every_declared_parent_IS_a_real_strategy` is the only thing 
 
 🔴 **THE EXTREME LEG WAS MOVED BACK OUT TO THE TOP LEVEL ON 2026-09-02 (Aaron: "move it to
 root"), AND THE REASON GENERALISES TO WHOEVER DECLARES THIS FIELD NEXT.** It had nested under the
-A+ bot on the same leg-of-one-move argument B-LEG uses, and that argument was true. **An indent
+SOS Fade bot on the same leg-of-one-move argument B-LEG uses, and that argument was true. **An indent
 reads as "child of", and that bot is a SIBLING** — its own Pine source, its own parity gate, and it
 runs standalone in any stack on any instrument. What made it misread is that ONE VISUAL LEVEL WAS
 CARRYING TWO RELATIONSHIPS: `loss_recovery` sits at that same indent and genuinely cannot run
@@ -3287,7 +3287,7 @@ simply silent (never a lie, never an empty UI):
    TradingView. **Reporting only** — nothing reads a record back, so it cannot move a decision and
    `compare_strategy.py`'s `px_*` stream is untouched. `b_leg` records none by construction (its
    `BLegExecution` overrides `_place_entries`, where the recording hangs) — deliberate: those codes
-   describe why an **A+** setup was refused, and A+ never trades in that fork.
+   describe why an **SOS Fade** setup was refused, and SOS Fade never trades in that fork.
 2. **`backtest/output.py`** — `build_blocked_setups()` turns them into the lab's row shape;
    `build_results` returns them as `blocked_setups` (always present, `[]` when there are none).
    Strategy-agnostic duck-type: `dir`/`time_ms`/`edge` plus parallel `labels`/`reasons` sequences,
@@ -4023,7 +4023,7 @@ a second claim about one leg, which is the failure this repo has now met four ti
 costs, Optimize modal params, the SSH dot, the lab-vs-Pine parameter names). What a price ladder
 CANNOT state is where the fill landed on it, and that is the question:
 
-- **`entryRatio`** — the fill as a ratio (0.702 = it entered at the 70.2% retrace). On the A+ bot
+- **`entryRatio`** — the fill as a ratio (0.702 = it entered at the 70.2% retrace). On the SOS Fade bot
   this reproduces the entry model without being told about it: an entry snapped to a fib by
   `_fib_snap` reads exactly 0.618 / 0.702 / 0.786, and a gap-edge entry reads between two rungs.
 - **`deepestRatio`** — the same for the deepest ADVERSE price of the hold, i.e. how far the
@@ -4052,7 +4052,7 @@ rather than this ladder — so a B-LEG run made before that date shows no switch
 not *Reload charts*. Nothing here changed to support it: this function is strategy-agnostic, reads
 only `levels` and `start_ms`, and its two derived ratios are pure geometry — which is why a second
 bot's ladder arrived with no backend edit at all. ⚠ **`entryRatio` reads exactly `0.5` on every
-B-LEG trade** (its entry IS that rung, by construction), where on the A+ bot the same field varies
+B-LEG trade** (its entry IS that rung, by construction), where on the SOS Fade bot the same field varies
 and reproduces the entry model; do not read a constant there as a stuck value. The chart's Trade
 fibs toggle is listed off whether any trade carries one, so
 absence removes the switch instead of offering an empty layer. Existing runs need **Reload charts**
@@ -4382,7 +4382,7 @@ than swapped.
 `strategies.chart_tag` (TEXT, nullable), declared by the package as `LAB_STRATEGY["chart_tag"]`,
 carried by the scanner, read by `chart_spec._chart_tag` and shipped as `spec.tradeTag`.
 
-🔴 **The price chart hard-coded `A+` — `sos_fade`'s word for ITS setup — onto every strategy's
+🔴 **The price chart hard-coded `SOS Fade` — `sos_fade`'s word for ITS setup — onto every strategy's
 PRIMARY trades**, so three other bots' charts carried a fourth bot's label. `overlays.ts` had named
 the cost and the fix in a comment since it was written (*"the honest fix is a per-strategy tag
 travelling on the spec, and that needs a column on the strategies table for a chart LABEL"*); this
@@ -4394,9 +4394,9 @@ confidently as a right one**, which is rule 7 in its quietest form.
 - ⚠ **`None` is an ANSWER — the package declared none — and the key is then ABSENT from the spec,
   never `""`.** The panel falls back to `PRIMARY_TAG` on absent; an empty string would read as
   *this strategy asked for a blank chip* in some checks and as no tag in others.
-- ⚠ **Undeclared still renders `A+`, deliberately.** Untagged is not an option (telling the books
+- ⚠ **Undeclared still renders `SOS Fade`, deliberately.** Untagged is not an option (telling the books
   apart at a glance is the point), and a neutral fallback would strip the CORRECT tag off the live
-  A+ bot's charts. **So a chart reading `A+` means EITHER that bot or one that has not declared its
+  SOS Fade bot's charts. **So a chart reading `SOS Fade` means EITHER that bot or one that has not declared its
   own word yet.**
 - 🔴 **IT RIDES THE TRADE, NEVER THE SPEC, AND A STACK IS WHY.** `build_stack_chart_spec` merges N
   legs' trades into ONE list and stamps each with its `layer`; a spec-level tag cannot survive that
@@ -4404,7 +4404,7 @@ confidently as a right one**, which is rule 7 in its quietest form.
   same defect one level down and HARDER to see** — the chips would look per-strategy without being
   it, which is exactly what a reader stacks two bots to tell apart. The first implementation here
   did put it on the spec, and it was caught by asking what a stack does with it.
-- **Five of six packages declare one** (`A+`, `B-LEG`, `BOS`, `REALIGN`, `XLEG`). ⚠ **`loss_recovery`
+- **Five of six packages declare one** (`SOS Fade`, `B-LEG`, `BOS`, `REALIGN`, `XLEG`). ⚠ **`loss_recovery`
   deliberately declares NONE**: its trades carry `kind="recovery"`, so the renderer tags them `REC`
   down a different branch and a `chart_tag` there could never be read — a declared field nothing can
   assign is rule 10's shape, so it is left off rather than added for symmetry.

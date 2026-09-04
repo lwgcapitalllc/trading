@@ -139,7 +139,7 @@ def main(argv=None) -> int:
     ap.add_argument("--end", default="2026-08-06")
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
-    ap.add_argument("--risk-a", type=float, default=10.0, help="A+'s risk per trade, %%")
+    ap.add_argument("--risk-a", type=float, default=10.0, help="SOS Fade's risk per trade, %%")
     ap.add_argument("--risk-b", type=float, default=2.5, help="the second leg's risk per trade, %%")
     ap.add_argument(
         "--min-depth",
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
         print("no bars — is the MT5 agent tunnel up on localhost:8766?")
         return 1
     prof = _profile()
-    print("replaying A+ ...", flush=True)
+    print("replaying SOS Fade ...", flush=True)
     a = _replay(df, args.warmup, args.capital, prof)
     print("replaying the second leg ...", flush=True)
     b = _replay(df, args.warmup, args.capital, prof, **_LEG_B)
@@ -168,22 +168,22 @@ def main(argv=None) -> int:
     W = 96
     print("\n" + "=" * W)
     print(
-        f"DOES THE SECOND LEG PAY DURING A+'s DRAWDOWNS?   {df.index[0].date()} -> "
+        f"DOES THE SECOND LEG PAY DURING SOS Fade's DRAWDOWNS?   {df.index[0].date()} -> "
         f"{df.index[-1].date()}"
     )
     print(
-        f"  A+ {len(a)} trades {sum(t.r for t in a):+.1f}R    "
+        f"  SOS Fade {len(a)} trades {sum(t.r for t in a):+.1f}R    "
         f"second leg {len(b)} trades {sum(t.r for t in b):+.1f}R"
     )
     print("=" * W)
 
     eps = _episodes(a, args.min_depth)
     print(
-        f"\n1. A+'s DRAWDOWN EPISODES ({args.min_depth:.0f}R or deeper), and what the second "
+        f"\n1. SOS Fade's DRAWDOWN EPISODES ({args.min_depth:.0f}R or deeper), and what the second "
         f"leg did inside each"
     )
     print(
-        f"   {'from':<11}{'to':<11}{'days':>6}{'A+ R':>8}{'A+ trades':>11}"
+        f"   {'from':<11}{'to':<11}{'days':>6}{'SOS Fade R':>8}{'SOS Fade trades':>11}"
         f"{'leg-2 R':>9}{'leg-2 trades':>14}"
     )
     helped = hurt = 0
@@ -211,7 +211,7 @@ def main(argv=None) -> int:
     )
     print(
         f"   (it made {sum(t.r for t in b):+.1f}R over the whole window, so "
-        f"{tot_b_in:+.1f}R of that landed while A+ was under water)"
+        f"{tot_b_in:+.1f}R of that landed while SOS Fade was under water)"
     )
 
     print("\n2. MONTH BY MONTH — a leg that helps in a few episodes and correlates overall")
@@ -235,23 +235,27 @@ def main(argv=None) -> int:
     b_pos_in_down = sum(1 for m in down if mb.get(m, 0.0) > 0)
     print(f"   {n} months   correlation of monthly R: {corr:+.2f}")
     print(
-        f"   A+ was DOWN in {len(down)} months; the second leg made {b_in_down:+.1f}R across "
+        f"   SOS Fade was DOWN in {len(down)} months; the second leg made {b_in_down:+.1f}R across "
         f"them and was positive in {b_pos_in_down} of them"
     )
     flat = [m for m in months if ma.get(m, 0.0) == 0]
     print(
-        f"   A+ traded NOTHING in {len(flat)} months; the second leg made "
+        f"   SOS Fade traded NOTHING in {len(flat)} months; the second leg made "
         f"{sum(mb.get(m, 0.0) for m in flat):+.1f}R in those"
     )
 
-    print(f"\n3. BOTH ON ONE ACCOUNT — A+ at {args.risk_a}%, the second leg at {args.risk_b}%")
+    print(
+        f"\n3. BOTH ON ONE ACCOUNT — SOS Fade at {args.risk_a}%, the second leg at {args.risk_b}%"
+    )
     print("   ⚠ sequenced by exit and compounded consecutively; see the module note. This says")
     print("     whether run_stack is worth running, it does not replace it.")
     pa = sorted(((t.exit_ms, t.r) for t in a))
     pb = sorted(((t.exit_ms, t.r) for t in b))
     print(f"   {'':<30}{'end':>10}{'worst drawdown':>16}{'days under water':>18}")
     solo_e, solo_d = _curve(pa, args.risk_a)
-    print(f"   {'A+ alone':<30}{solo_e:>9.2f}x{solo_d:>15.0%}{_underwater(pa, args.risk_a):>17.0f}")
+    print(
+        f"   {'SOS Fade alone':<30}{solo_e:>9.2f}x{solo_d:>15.0%}{_underwater(pa, args.risk_a):>17.0f}"
+    )
     # Swept rather than shown at one weight: the question is not "does 2.5% help" but "is there
     # ANY weight at which a second leg shortens the flat spells instead of just adding leverage".
     for rb in (0.5, 1.0, 2.5, 5.0, args.risk_b):

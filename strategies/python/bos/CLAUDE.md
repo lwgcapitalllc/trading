@@ -5,7 +5,7 @@
 has ever been run here. Read its warning first: this bot's gate is narrow, so tuning a parameter
 whose branch no gate reaches moves the Python away from a Pine nobody has checked it against.
 **Scope:** This package only. It does NOT cover the engines it replays (`engines/`), the
-backtest infrastructure (`backtest/`), the lab that runs it (`command-center/`), or the A+ bot
+backtest infrastructure (`backtest/`), the lab that runs it (`command-center/`), or the SOS Fade bot
 it subclasses (`strategies/python/sos_fade/` — read that one's `## The exit ladder` before
 touching an exit).
 **Status:** 🟢 **PARITY GREEN 2026-08-07 — and read the coverage caveat below before quoting
@@ -14,7 +14,7 @@ anything.** Built 2026-08-07 from `strategies/tradingview/bos_strategy_export.pi
 at warmups 900 / 1000 / 2000 / 3000. ⚠ **It is green about the SHIPPED defaults only** — the
 run had `bos_use_fvg` OFF, so the entire gap-entry ladder is still unverified, and 6 trades
 closed inside the window. See *The parity run* below.
-**Last reviewed:** 2026-08-16 (latest) — 38 of the 40 `desc` fields moved again when every input tooltip in all 29 Pine files was cut to one or two plain sentences (rule: `strategies/tradingview/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*). ⚠ **This bot had ALREADY had the pass described below on 2026-08-10 and still moved 38 fields, which is the point worth keeping: a one-off tidy of one file drifts again the moment the standard is set repo-wide.** The rule now lives in one place and the Pine is its source. Strings only — no name, type, default or order changed. Earlier: 2026-08-10 — 🟢 **THE STRATEGY DETAIL PAGE COPY IS SHORT AND PLAIN NOW.** All 40 `desc` fields in `bos.meta.json`, plus `edge` and `steps`, rewritten to *what it does, what each choice means, and the one fact that changes the decision*; the measurement dumps are gone from the UI and stay in this file and `docs/BOS_OPTIMIZATION.md`. **The warnings that change a decision are KEPT in plain words** — the ATR stop is the default because a level-based one shrinks with the move and lands inside the spread, a deep entry must not be paired with a tighter stop, and nothing here is parity-checked yet. ⚠ **A desc is byte-identical to its Pine tooltip, so `bos_strategy.pine` and its export changed in the same commit — strings only; every input's name, type, title, default and order is unchanged against HEAD.** Earlier: 2026-08-10 — 🔴 **THIS FORK WOULD HAVE DIED ON ITS FIRST BAR, AND ITS OWN PARITY TEST IS WHAT CAUGHT IT.** The parent's `_entry_edges` gained a required `seq` parameter on 2026-08-10 (for `exec_nogap_arm`, which gates the A+ no-FVG fallback). `BosExecution` OVERRIDES `_entry_edges`, and the parent calls it BY NAME from `step()` — so the 2-arg override raised `TypeError: _entry_edges() takes 2 positional arguments but 3 were given` on the first bar of every run. The signature is matched now and **`seq` is deliberately UNREAD here**: this fork's setup has no SOS arm at all, so honouring that lever would gate a BOS entry on a confluence its own Pine never looks for. ⚠ **The parameter is kept rather than dropped** — dropping it is the failure that just happened. ⚠ **The transferable half is about how it surfaced: nothing in the A+ change mentioned this package, and no amount of reading the diff would have named it. `test_compare_bos.py` failed the moment the suite ran.** A fork that subclasses a bot under active development inherits its SIGNATURES as well as its defaults, and only a test that actually drives a bar can see the difference. Earlier: 2026-08-07 — the rebuild, the volume fix, and the first real gate run.
+**Last reviewed:** 2026-08-16 (latest) — 38 of the 40 `desc` fields moved again when every input tooltip in all 29 Pine files was cut to one or two plain sentences (rule: `strategies/tradingview/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*). ⚠ **This bot had ALREADY had the pass described below on 2026-08-10 and still moved 38 fields, which is the point worth keeping: a one-off tidy of one file drifts again the moment the standard is set repo-wide.** The rule now lives in one place and the Pine is its source. Strings only — no name, type, default or order changed. Earlier: 2026-08-10 — 🟢 **THE STRATEGY DETAIL PAGE COPY IS SHORT AND PLAIN NOW.** All 40 `desc` fields in `bos.meta.json`, plus `edge` and `steps`, rewritten to *what it does, what each choice means, and the one fact that changes the decision*; the measurement dumps are gone from the UI and stay in this file and `docs/BOS_OPTIMIZATION.md`. **The warnings that change a decision are KEPT in plain words** — the ATR stop is the default because a level-based one shrinks with the move and lands inside the spread, a deep entry must not be paired with a tighter stop, and nothing here is parity-checked yet. ⚠ **A desc is byte-identical to its Pine tooltip, so `bos_strategy.pine` and its export changed in the same commit — strings only; every input's name, type, title, default and order is unchanged against HEAD.** Earlier: 2026-08-10 — 🔴 **THIS FORK WOULD HAVE DIED ON ITS FIRST BAR, AND ITS OWN PARITY TEST IS WHAT CAUGHT IT.** The parent's `_entry_edges` gained a required `seq` parameter on 2026-08-10 (for `exec_nogap_arm`, which gates the SOS Fade no-FVG fallback). `BosExecution` OVERRIDES `_entry_edges`, and the parent calls it BY NAME from `step()` — so the 2-arg override raised `TypeError: _entry_edges() takes 2 positional arguments but 3 were given` on the first bar of every run. The signature is matched now and **`seq` is deliberately UNREAD here**: this fork's setup has no SOS arm at all, so honouring that lever would gate a BOS entry on a confluence its own Pine never looks for. ⚠ **The parameter is kept rather than dropped** — dropping it is the failure that just happened. ⚠ **The transferable half is about how it surfaced: nothing in the SOS Fade change mentioned this package, and no amount of reading the diff would have named it. `test_compare_bos.py` failed the moment the suite ran.** A fork that subclasses a bot under active development inherits its SIGNATURES as well as its defaults, and only a test that actually drives a bar can see the difference. Earlier: 2026-08-07 — the rebuild, the volume fix, and the first real gate run.
 
 ---
 
@@ -75,7 +75,7 @@ gate — the 2026-08-07 CSV cannot drive it.**
 A shift of structure (SOS) tells you the trend has turned. What comes after it is where the
 money is: the market prints one or more BREAK OF STRUCTURE events in that same direction until
 another SOS ends the run, and each BOS is a fresh continuation leg giving a retracement you can
-buy or sell into. **A+ fades the shift; this rides what the shift started.**
+buy or sell into. **SOS Fade fades the shift; this rides what the shift started.**
 
 At the 2026-08-07 defaults: every BOS in the regime arms a leg, a limit rests at fib **0.786**
 of that leg's retrace, the stop is **1.3 × ATR(14)**, price must be closing on the trend's own
@@ -133,20 +133,20 @@ tool says so. Re-add those two plots to the Pine before trusting a gap-priced pa
 
 ---
 
-## The three things that differ from the A+ bot, and nothing else
+## The three things that differ from the SOS Fade bot, and nothing else
 
 The Pine's own header states them, and they are the only reason this is not just a config of
 `sos_fade`:
 
 1. **The arm is a BOS after an SOS** — no sweep arming, no sweep confluence.
-2. **Divergence is a KILL, not a veto-with-exemption.** The A+ veto is judged at the SOS and
+2. **Divergence is a KILL, not a veto-with-exemption.** The SOS Fade veto is judged at the SOS and
    carries an exemption, so a divergence that armed the fade cannot then refuse it. A
    continuation setup has the opposite relationship to divergence — an opposing one is the
    fakeout signature — so it is LIVE, re-read on every bar the limit rests. A divergence
    appearing during the retrace PULLS the order; one going stale lets it be placed again.
 3. **The stop model is a dropdown** (`bos_sl_model`), not a fib-level dropdown.
 
-Plus one thing the A+ ladder does not have at all: **a THIRD take-profit rung.** The A+ is
+Plus one thing the SOS Fade ladder does not have at all: **a THIRD take-profit rung.** The SOS Fade is
 TP1 / TP2 / runner; this adds TP3 at fib 0.000 and defaults it to 100%, so at the shipped
 settings there is **no runner**. `_remaining_brackets` is overridden for exactly that.
 
@@ -156,8 +156,8 @@ Everything else — fills, staging, the trail, %-risk sizing, R grading — is t
 
 ## ⚠ The config pins, and why each one exists
 
-`BosConfig` is a `SosFadeConfig` superset, so **every A+ default it does not re-declare is
-inherited** — including ones added to the A+ after this fork's Pine was written. Four pins are
+`BosConfig` is a `SosFadeConfig` superset, so **every SOS Fade default it does not re-declare is
+inherited** — including ones added to the SOS Fade after this fork's Pine was written. Four pins are
 load-bearing:
 
 | pin | inherited value | what would happen |
@@ -165,7 +165,7 @@ load-bearing:
 | `exec_fib_nearest=False` | `True` | the parent's 2026-08-02 entry model rests a gap on a DIFFERENT fib from Method 3. `bos_strategy.pine` has no such input, so every gap entry would sit at a level the Pine never chose — **and the export has no column to catch it with** |
 | `exec_deep_fib=True` | `False` | the parent turned Method 3 off when its new model replaced it; this fork's Pine still ships it ON and has none of those rules |
 | `exec_secondary=False` | `True` | the re-entry needs a second bar stream through `run_dual`, which this fork does not have and `backtest.optimizer.run_sweep` cannot supply — **every BOS sweep would refuse** |
-| `exec_time_stop_mode="Off"` | `"Before TP1 only"` | the 36h plateau was measured on A+ trades; a continuation trade is a different hold |
+| `exec_time_stop_mode="Off"` | `"Before TP1 only"` | the 36h plateau was measured on SOS Fade trades; a continuation trade is a different hold |
 
 **The standing rule: a default is read by every caller, including the ones that cannot honour
 it.** Before changing anything in `SosFadeConfig`, check what this fork inherits.
@@ -289,7 +289,7 @@ checking is not a comparator. Before trusting a parity column, ask what it is co
 
 ## What is deliberately NOT here
 
-- **No missed-setup watch.** The parent's answers "how far did this **A+** setup get" — it
+- **No missed-setup watch.** The parent's answers "how far did this **SOS Fade** setup get" — it
   counts the sweep arm, the SOS and the 0.5–0.886 zone, none of which this setup has. A BOS
   version is new design work; the tracker's per-leg death REASON is the raw material.
 - **No `run_dual`.** There is no BOS fast-feed leg in any Pine.
@@ -298,12 +298,12 @@ checking is not a comparator. Before trusting a parity column, ask what it is co
 
 ---
 
-## Engine pins — and this fork disagrees with the A+ on three of five
+## Engine pins — and this fork disagrees with the SOS Fade on three of five
 
 `BosStrategy.engine_config()` pins `fvg_max_count=8`, `fvg_threshold_pct=0.04`,
 `fvg_require_close=False`, `show_internal=False`, `eq_exempt_fvg=False`.
 
-The first three differ from the A+ bot's (7 / 0.1 / True) because the two Pines genuinely
+The first three differ from the SOS Fade bot's (7 / 0.1 / True) because the two Pines genuinely
 disagree — this fork keeps the same gap set `mpc_jarvis.pine` DRAWS, so a gap on the chart is
 a gap the strategy holds. **All three make this fork hold MORE gaps**, so inheriting the
 parent's pins would silently narrow the set — and at the shipped defaults (`bos_use_fvg` off)

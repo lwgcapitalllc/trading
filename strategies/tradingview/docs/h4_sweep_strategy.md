@@ -33,7 +33,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // (docs/H4_SWEEP_STUDY.md, Part 2) measured the SAME event set through both exits: a fixed
 // 2R ceiling makes +0.117 expected R and a runner makes +0.409. The ceiling was throwing
 // away two thirds of the edge, because a handful of trades that run a very long way carry
-// the whole book — best single trade +25.4R, top five 71% of the profit. A+ Run 9 measured
+// the whole book — best single trade +25.4R, top five 71% of the profit. SOS Fade Run 9 measured
 // the identical shape on a different strategy (11 of 164 trades carried 106R of 109R), so
 // this is the second independent time a fixed target has been the thing capping what pays.
 // Raising 1:2 to 1:3 or 1:5 does not fix it; it moves the ceiling.
@@ -104,7 +104,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // gap, not a sweep, and (b) the counterfactual is destroyed — you could never measure
 // how many candles the location filter refused, which is the only way to learn
 // whether it helps. The CANDLESTICK block below is self-contained for exactly this
-// reason: wiring it into A+ later is copying one block and passing a different
+// reason: wiring it into SOS Fade later is copying one block and passing a different
 // location, not untangling it from H4 logic it was written inside.
 //
 // ── WHAT CAME FROM THE "SWEEP AND ENGULF" SCRIPT, AND WHAT DID NOT ───────────
@@ -215,7 +215,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 ```
 // ── 2 · Market structure ────────────────────────────────────────
 // ⚠ THIS SECTION IS PURE DRAWING IN THIS FILE, AND THAT IS THE ONE THING TO KNOW ABOUT IT.
-// Every other strategy here READS the structure engine — A+ prices its fibs off it, D's whole
+// Every other strategy here READS the structure engine — SOS Fade prices its fibs off it, D's whole
 // sequence is built out of SOS events. This one does not: it trades an H4 liquidity sweep
 // confirmed by a candlestick pattern, and it consumes no swing, no BOS and no SOS. The engine
 // was ported in on 2026-08-12 so that section 2 is identical on all five charts (Aaron: "on all
@@ -229,15 +229,15 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ════════════════════════════════════════════════════════════════════════════
 //  THE ANNOTATION PALETTE — copied from sos_fade_strategy.pine, never chosen here
 // ════════════════════════════════════════════════════════════════════════════
-// ⚠ EVERY COLOUR A TRADE IS DRAWN IN IS THE A+ BOT'S (Aaron, 2026-08-12): "all those colors
-// are not consistent across all the pines. They should be the same colors. Use MPC, the A+
+// ⚠ EVERY COLOUR A TRADE IS DRAWN IN IS THE SOS Fade BOT'S (Aaron, 2026-08-12): "all those colors
+// are not consistent across all the pines. They should be the same colors. Use MPC, the SOS Fade
 // strategy as a standard." One result means one colour on every chart in this repo, so a
 // reader moving between strategies never has to re-learn what green is. **Change a value
 // here only by changing `sos_fade_strategy.pine` first and copying it down.**
 //
 // This file previously had NO colour constants at all — every value was a hex literal at its
 // use site, which is why it drifted without anybody being able to see that it had. The hues
-// were mostly already A+'s; the TRANSPARENCIES were not, so the same green read as a
+// were mostly already SOS Fade's; the TRANSPARENCIES were not, so the same green read as a
 // different shade on each file.
 ```
 
@@ -247,18 +247,18 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // 🔴 THIS FILE HAD NO BREAKEVEN STATE AT ALL, so a +0.02R scratch drew as a full WIN and a
 // −0.02R scratch as a full LOSS — the two loudest colours on the chart, for a trade that
 // made nothing. Every other strategy here grades against a band and paints the middle
-// orange. A+ exposes the band as an input (`execBeBandR`); this is its DEFAULT as a
+// orange. SOS Fade exposes the band as an input (`execBeBandR`); this is its DEFAULT as a
 // constant instead, because adding an input mid-paste resets every saved value on the
 // chart and the value has never been tuned on this strategy anyway. Promote it to an input
-// when the rest of this file's annotations are brought up to A+'s set.
+// when the rest of this file's annotations are brought up to SOS Fade's set.
 ```
 
-## [6] ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS A+'s BREAKEVE
+## [6] ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS SOS Fade's BREAKEVE
 
 ```
-// ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS A+'s BREAKEVEN COLOUR. That
+// ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS SOS Fade's BREAKEVEN COLOUR. That
 // collision is REAL and is left alone deliberately: recolouring the trigger is a choice
-// about this strategy's own chart, not a copy of A+, and A+ has no trigger to copy from.
+// about this strategy's own chart, not a copy of SOS Fade, and SOS Fade has no trigger to copy from.
 // It is recorded in indicators/CLAUDE.md as an open question rather than silently resolved.
 ```
 
@@ -407,7 +407,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //  CANDLESTICKS — ported from repo32, self-contained, location-agnostic
 // ════════════════════════════════════════════════════════════════════════════
 // Runs on whatever timeframe it is called from. It knows nothing about sweeps, fibs
-// or gaps and must not learn: this block is meant to be lifted into the A+ file
+// or gaps and must not learn: this block is meant to be lifted into the SOS Fade file
 // unchanged and handed a different location.
 //
 // Returns a CODE rather than a name so the tuple crossing request.security stays
@@ -566,7 +566,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // f_ratchet — the runner's trail, ported from `f_swingRatchet` in sos_fade_strategy.pine with
-// the one change this file forces: A+ anchors on the last confirmed swing, and there is no
+// the one change this file forces: SOS Fade anchors on the last confirmed swing, and there is no
 // structure engine here, so the anchor is the breakeven stop. From that anchor the stop
 // climbs one `pct`-of-price step for every step of favourable move.
 // It returns the ANCHOR until the move is one full step past it, so the trail can never be
@@ -667,8 +667,8 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // the trap the export twin's own header records. The tag and the export's px_blk therefore
 // cannot tell different stories, because they read one variable.
 //
-// ⚠ NO DEDUPE, unlike A+'s marker, and it is not an omission: a trigger fires at most ONCE per
-// H4 window (`firedWindow`), so one refusal is already one bar. A+ needs its sosBar+code key
+// ⚠ NO DEDUPE, unlike SOS Fade's marker, and it is not an omission: a trigger fires at most ONCE per
+// H4 window (`firedWindow`), so one refusal is already one bar. SOS Fade needs its sosBar+code key
 // because a setup there can stay refused for twenty consecutive bars.
 //
 // ⚠ `hTrigBar == bar_index` is what scopes it to THIS bar. The four `hTrig*` fields are `var`
@@ -685,7 +685,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // close happened while the trade did not exist — reading its extreme as favourable
 // movement is how `BUG_exit_fill_price_mismatch.md` promoted a stop to breakeven on a move
 // the position was never in, which then sits on the wrong side of the market and blows the
-// trade out at the next bar's open. A+ guards this with `position_size[1]`; that test is
+// trade out at the next bar's open. SOS Fade guards this with `position_size[1]`; that test is
 // wrong here, because with fills on the close `position_size` is still 0 when the script
 // runs on the entry bar, so `[1]` would also skip the first REAL bar of the trade.
 // Every later bar counts: the trade held through all of it.
@@ -716,7 +716,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ⚠ TP1 STOPS BEING RE-ISSUED ONCE TOUCHED. `strategy.exit` with an id whose order already
 // FILLED places a NEW order rather than modifying the old one, so a re-issued rung would
 // bank another slice of the runner every bar, at a limit the market is already past. The
-// A+ file re-issues its rungs unconditionally and gets away with it only because its rungs
+// SOS Fade file re-issues its rungs unconditionally and gets away with it only because its rungs
 // ship at 0% and the call is skipped entirely — do not copy that shape here.
 ```
 

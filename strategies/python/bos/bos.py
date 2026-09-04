@@ -178,7 +178,7 @@ class BosTracker:
 
     # ── per-bar ──────────────────────────────────────────────────────────────────
     def update(self, sig, bar) -> BosState:
-        """One bar. `sig` is the A+ `Signals` (structure + fib + divergence); `bar` is the
+        """One bar. `sig` is the SOS Fade `Signals` (structure + fib + divergence); `bar` is the
         `ReplayBar`, needed only for its volume."""
         cfg = self._cfg
 

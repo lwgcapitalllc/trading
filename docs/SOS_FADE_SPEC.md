@@ -5,7 +5,7 @@
 (`compare_strategy.py`) proves the port matches these rules on real data.
 **Status:** APPROVED 2026-07-15 — build started (A0 data layer first).
 
-The strategy trades **only** the A+ reversal sequence. It is symbol- and timeframe-agnostic:
+The strategy trades **only** the SOS Fade reversal sequence. It is symbol- and timeframe-agnostic:
 everything below is generic logic; instrument facts and account rules are injected by the layers
 below it. (`CONT` continuation setups are tracked for the table but **not traded** — out of scope.)
 
@@ -30,7 +30,7 @@ the regression harness in the build plan.
 
 ---
 
-## The A+ sequence (per side; long shown, short is the mirror)
+## The SOS Fade sequence (per side; long shown, short is the mirror)
 
 A **sequence**, not a checklist — each stage counts only if the previous one is done. State is held
 per side (`aplusL_*` / `aplusS_*`).

@@ -44,7 +44,7 @@ class ExtremeLegConfig:
     # affordability refusal anywhere, so this scales the LOT and nothing else — the trade list and
     # every R figure in this package's CLAUDE.md are unchanged. What DOES move is every dollar and
     # drawdown-percentage figure, and every STACKED result: the shared-account run that reported
-    # zero contention was measured at 5% for BOTH legs against a 10% cap, and the live A+ bot runs
+    # zero contention was measured at 5% for BOTH legs against a 10% cap, and the live SOS Fade bot runs
     # at 10%. Two legs at 5% saturate that cap exactly; 10 + 5 does not fit it at all.
     exec_risk_pct: float = 5.0
     fixed_qty: float = 1.0

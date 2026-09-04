@@ -2,7 +2,7 @@
 
 **Tool:** `backtest/tools/pre_sos_leg.py`
 **Run:** 2026-08-24, Vantage XAUUSD, 187,386 M15 bars + 562,071 M5 bars, 2018-09-13 → 2026-08-23
-**Question:** the live A+ bot waits for the shift of structure and fades the retracement. Is the
+**Question:** the live SOS Fade bot waits for the shift of structure and fades the retracement. Is the
 move that CREATES the shift — extreme up to the swing that breaks — worth taking on its own?
 
 ```
@@ -272,8 +272,8 @@ It is guarded: a rename raises on the first bar rather than quietly scoring noth
 
 ## 7. What this would be, if it were built
 
-It is a different LEG of the same move the A+ bot already trades, which is exactly the carve-up
-`CLAUDE.md` → *Trading Philosophy* describes: A+ takes the reversal, this would take the run into
+It is a different LEG of the same move the SOS Fade bot already trades, which is exactly the carve-up
+`CLAUDE.md` → *Trading Philosophy* describes: SOS Fade takes the reversal, this would take the run into
 it. **Their per-year records point in opposite directions in 2023 and 2024** — the live strategy
 made +8.4R and +2.2R in the two years this study lost — which is a hint of low correlation and
 nothing more at these sample sizes. ⚠ It is one instrument off one structure stream, so it is

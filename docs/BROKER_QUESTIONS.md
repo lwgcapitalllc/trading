@@ -1,8 +1,8 @@
-# Broker questions — PU Prime account type for the live A+ bot
+# Broker questions — PU Prime account type for the live SOS Fade bot
 
 **Purpose:** The questions to put to PU Prime before funding a live account, why each one is
 being asked, and what to do with the answer.
-**Scope:** PU Prime, XAUUSD, the `sos_fade` A+ bot. Not a general broker checklist.
+**Scope:** PU Prime, XAUUSD, the `sos_fade` SOS Fade bot. Not a general broker checklist.
 **Status:** Largely closed by measurement — **Q1, Q2, Q3 and Q5 are answered from our own terminals**
 and nothing was ever sent to support. Q4 (swap-free) and Q6 (limit handling by tier) are still human
 questions and are the only reason to send the message below.

@@ -94,7 +94,7 @@ def test_the_two_enums_wearing_a_bit_decode_to_the_non_default_side():
 
 def test_the_engine_pins_come_off_the_export_not_off_the_strategy():
     """`fvg_max_count` / `fvg_threshold_pct` / `fvg_require_close` are not in the decision
-    stream, so an unpinned one is a silent parity trap — and this fork disagrees with the A+
+    stream, so an unpinned one is a silent parity trap — and this fork disagrees with the SOS Fade
     bot on all three. Taking them from the export is what makes a tweaked run checkable."""
     eng = cb.engine_config_from_export(_row(cfg_fvg_max=5, cfg_fvg_thresh=0.2))
     assert eng.fvg_max_count == 5

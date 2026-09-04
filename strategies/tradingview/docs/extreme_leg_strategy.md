@@ -11,9 +11,9 @@ is not a preference — it is the frame the trigger is measured on.
 
 ---
 
-## What it trades, and how it differs from A+
+## What it trades, and how it differs from SOS Fade
 
-The live A+ bot waits for the shift of structure and then fades the retracement into it. This
+The live SOS Fade bot waits for the shift of structure and then fades the retracement into it. This
 takes the move that CREATES the shift: from the extreme up to the swing whose break IS the shift.
 Same structure stream, different part of the leg — the carve-up the root `CLAUDE.md` describes
 under *Trading Philosophy*.
@@ -277,7 +277,7 @@ the two years that had them that costs real money. It buys back more than it cos
 
 - The rule set was found by testing ~20 combinations and reporting what scored. It survived a time
   split, a knob sweep and a change of broker feed; it is not out-of-sample.
-- It reads the same structure stream as A+ on the same instrument, so the two are **not**
+- It reads the same structure stream as SOS Fade on the same instrument, so the two are **not**
   independent. `backtest/tools/overlap_audit.py` has not been run against it.
 
 ---
@@ -416,8 +416,8 @@ positive years twice.
 hours. That was the closest thing to an overlap number this strategy had while it was a study only.
 
 ✅ **THE REAL OVERLAP AUDIT HAS NOW RUN — 2026-09-01, once the Python package existed.** Against the
-LIVE A+ bot over 470,995 M5 bars of PU Prime `XAUUSD.p` (2020-01-01 → 2026-08-23): the two held a
-position at the same time on **1,066 bars, 3.6% of A+'s hold time, and ZERO of them same-side**. 7
+LIVE SOS Fade bot over 470,995 M5 bars of PU Prime `XAUUSD.p` (2020-01-01 → 2026-08-23): the two held a
+position at the same time on **1,066 bars, 3.6% of SOS Fade's hold time, and ZERO of them same-side**. 7
 trade pairs touch at all, none same-direction, and not one same-direction entry lands within four
 hours of the other's in 6.6 years. Monthly R correlation **+0.025** over 79 months.
 ⚠ **The 5.76% above is NOT that number and the two must not be compared** — it is this bot's own
@@ -425,7 +425,7 @@ hold time over a longer window and a different broker, measured with nothing to 
 ⚠ **It does not retire the account-level risk cap**: peak concurrent positions is 2, so one account
 would have carried 2× the per-trade risk on those 1,066 bars — **24× more shared bars than the
 benched B-LEG contributes**.
-⚠ **It is a weaker claim than the A+/B-LEG audit, and the reason is the line below**: with no
+⚠ **It is a weaker claim than the SOS Fade/B-LEG audit, and the reason is the line below**: with no
 TradingView export these are the PYTHON port's trades, so the audit describes the port rather than a
 proven twin of this file. Re-run it after the gate goes green: `backtest/tools/overlap_audit.py
 --a sos_fade --b extreme_leg --tf-b 5 --symbol XAUUSD.p --server PUPrime-Demo`.

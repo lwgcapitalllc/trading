@@ -70,7 +70,7 @@ The engine runs Wilder's RSI (`ta.rsi(close, rsi_len)`, default length 14) and f
 
 Each confirmed pivot becomes the new "previous" for the next comparison (whether or not it fired a
 divergence). A divergence stays **live confluence** (`bull_active` / `bear_active`) for `valid_bars`
-bars (default 100) after its pivot bar — that is the flag the A+ setup row reads.
+bars (default 100) after its pivot bar — that is the flag the SOS Fade setup row reads.
 
 Three Pine details are kept exactly (see the module docstring), because dropping any would diverge
 from the chart:
@@ -209,7 +209,7 @@ abs tolerance (default 1e-2) to absorb CSV rounding; the pulses, flags and ages 
 
 - Pine source of truth: `indicators/engines/mpc_jarvis.pine` RSI DIVERGENCE block + `GRP_DIV` inputs.
 - Parity export build: `indicators/engines/rsi_div_export.pine`.
-- Consumer (not yet built): the A+ setup sequence — reads `bull_active` / `bear_active` as a
+- Consumer (not yet built): the SOS Fade setup sequence — reads `bull_active` / `bear_active` as a
   confluence tag on its READY/EARLY row. See `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 - Sibling in shape (also standalone, events-not-visuals off the same indicator):
   `engines/fair_value_gaps/CLAUDE.md`.

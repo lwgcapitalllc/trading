@@ -271,12 +271,12 @@ class ExtremeLegExecution:
         bar's exits resolve, so the raw range includes price AFTER the position is flat — and the
         chart draws the deepest and best prices as its `DD` and `Best` chips, so an unbounded
         extreme puts a marker outside the trade's own stop or target line. That exact defect was
-        MEASURED on the A+ bot: 77 of 77 stopped-out trades reported a deepest price beyond their
+        MEASURED on the SOS Fade bot: 77 of 77 stopped-out trades reported a deepest price beyond their
         stop, one of them 2.22R against a 1.0R loss. It is not an intrabar-ordering guess — a
         bracket is triggered BY the move that reaches it, so anything past it happened at or after
         the fill.
 
-        ⚠ **BOTH sides are bounded here, and that is the one place this differs from the A+ bot.**
+        ⚠ **BOTH sides are bounded here, and that is the one place this differs from the SOS Fade bot.**
         There the favourable side is deliberately left alone, because its first target is PARTIAL
         and the runner stays open, so price beyond it is still the trade's move. This bot's target
         closes the whole position, which makes the favourable side determinate in exactly the way
@@ -443,7 +443,7 @@ class ExtremeLegExecution:
                 # Excursion seeds BOTH sides at the fill, and that is a fact about THIS entry
                 # rather than a simplification. This bot enters at market on the bar's CLOSE, so
                 # no part of the entry bar's range happens after the fill — none of it is the
-                # trade's move. ⚠ The A+ bot seeds asymmetrically because its entry is a resting
+                # trade's move. ⚠ The SOS Fade bot seeds asymmetrically because its entry is a resting
                 # limit filled mid-bar, where the rest of the bar IS the trade's move; do not
                 # copy that shape here, and do not copy this one there.
                 ext_high=entry, ext_low=entry,

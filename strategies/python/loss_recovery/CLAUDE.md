@@ -83,7 +83,7 @@ this section said to expect ~48%. The run was right; the comparison was not. Sam
 (`exec_risk_pct` 10, quarter size), one variable at a time, drawdown on the strategy's own
 compounding dollar balance:
 
-| window | costs | A+ alone | + recovery | change |
+| window | costs | SOS Fade alone | + recovery | change |
 |---|---|---|---|---|
 | 2018-09-14 → 2026-08-14 | none | 45.6% | 44.2% | −1.4 pt |
 | 2018-09-14 → 2026-08-14 | `puprime_ecn` | 50.2% | 50.3% | **+0.1 pt** |
@@ -108,16 +108,16 @@ in this file.** The same book, added up two ways:
 
 | | balance multiple | maxDD |
 |---|---|---|
-| A+ alone, as the lab runs it | 4,921x | 45.6% |
+| SOS Fade alone, as the lab runs it | 4,921x | 45.6% |
 | **+ recovery, as the lab runs it** | **5,107x (+3.8%)** | 37.8% |
-| A+ alone, one shared compounding balance | 6,026x | 45.6% |
+| SOS Fade alone, one shared compounding balance | 6,026x | 45.6% |
 | **+ recovery, one shared compounding balance** | **9,636x (+59.9%)** | 42.2% |
 
 **+3.8% against +59.9% for the identical trades.** The recovery leg is worth **+5.04R
 account-weighted** either way; what differs is whether that R gets to COMPOUND.
 
 🔴 **The cause is a deliberate design choice in the wiring, not a bug** —
-`sos_fade/recovery.py` sizes the recovery off the running balance but never lets A+ size off
+`sos_fade/recovery.py` sizes the recovery off the running balance but never lets SOS Fade size off
 the recovery, so a lab toggle cannot move a parity-gated book. The cost is that recovery profit
 sits BESIDE the curve instead of lifting it, and over a run that grows 5,000x an early gain is
 rounding by the end. ⚠ **That adapter's own note called this understatement "small". It is not —
@@ -131,18 +131,18 @@ is the assumption that turns out to decide everything.
 ### 🔴 Put ONE RISK BUDGET on that balance and the sign flips. This is the real state of the question.
 
 **MEASURED 2026-08-20, same run, re-priced onto one balance at a 10% account cap.** A recovery
-holds risk for a median of ~4 days, and **23 of this run's 160 A+ entries opened while one was
-already holding**. A+ risks the full 10% and the cap IS 10%, so every one of those 23 competes.
+holds risk for a median of ~4 days, and **23 of this run's 160 SOS Fade entries opened while one was
+already holding**. SOS Fade risks the full 10% and the cap IS 10%, so every one of those 23 competes.
 
-| | multiple | maxDD | vs A+ alone |
+| | multiple | maxDD | vs SOS Fade alone |
 |---|---|---|---|
-| A+ alone, one balance | 4,921x | 45.6% | — |
+| SOS Fade alone, one balance | 4,921x | 45.6% | — |
 | + recovery, every entry granted in full | 7,125x | 42.1% | **+44.8%** |
-| + recovery, A+ shrunk to the room left | 4,191x | 39.9% | **−14.8%** |
-| + recovery, A+ refused outright | 116x | 43.3% | −97.6% |
+| + recovery, SOS Fade shrunk to the room left | 4,191x | 39.9% | **−14.8%** |
+| + recovery, SOS Fade refused outright | 116x | 43.3% | −97.6% |
 
 🔴 **The plausible range spans +45% to −15%, and which end you land on is decided entirely by an
-allocator that DOES NOT EXIST on the live side.** MEASURED on this run: an A+ trade averages
+allocator that DOES NOT EXIST on the live side.** MEASURED on this run: an SOS Fade trade averages
 **+0.882R** and a recovery averages **+0.095R account-weighted** — **9.3x** — so giving budget to
 the second at the first's expense is a bad swap the moment the cap binds. **"How would
 this have behaved?" has no answer yet, and the width of that range IS the finding.**
@@ -153,7 +153,7 @@ frees the position slot and a freed slot admits a setup the book does not contai
 in particular is an artifact of deleting compounding winners, not a forecast. Read the three as a
 BRACKET on how much the contention matters, never as results.
 
-⚠ **The middle row is PESSIMISTIC on its own terms**: reservations fall to zero at breakeven, A+
+⚠ **The middle row is PESSIMISTIC on its own terms**: reservations fall to zero at breakeven, SOS Fade
 reaches breakeven in a median of one bar, and a recovery reserves nothing once it locks at +1R. So
 the real shrink binds far less often than 23 times. **That is a reason to go and measure it, not a
 reason to assume the top row.**
@@ -180,24 +180,24 @@ trade believed it had (its booked risk ÷ its own risk rate) and score it agains
 WHEN PLACED and the balance moves before it fills — on closes, on partial exits, and on costs
 booked as they happen. So the test is which model each trade TRACKS, and it flipped completely.
 
-**MEASURED, 186,910 M15 bars 2018-09-14 → 2026-08-14, `puprime_ecn`, A+ 10%, recovery 25% of that:**
+**MEASURED, 186,910 M15 bars 2018-09-14 → 2026-08-14, `puprime_ecn`, SOS Fade 10%, recovery 25% of that:**
 
-| account cap | A+ alone | + recovery leg | verdict |
+| account cap | SOS Fade alone | + recovery leg | verdict |
 |---|---|---|---|
-| **10%** (A+ alone already fills it) | $13,199,534 · 50.2% | **$9,251,114 · 50.4%** | **−29.9%** |
+| **10%** (SOS Fade alone already fills it) | $13,199,534 · 50.2% | **$9,251,114 · 50.4%** | **−29.9%** |
 | **12.5%** (room made for it) | $13,199,534 · 50.2% | **$17,074,731 · 50.4%** | **+29.4%** |
 
-🔴 **The recovery leg is not the variable — HEADROOM is.** A+ risks the full 10% and the cap is
-10%, so the two legs at full size want 12.5% of a 10% budget: **every overlap shrinks A+ by
-construction, and 25 of its 181 entries were shrunk.** An A+ trade averages 9.3x a recovery trade's
+🔴 **The recovery leg is not the variable — HEADROOM is.** SOS Fade risks the full 10% and the cap is
+10%, so the two legs at full size want 12.5% of a 10% budget: **every overlap shrinks SOS Fade by
+construction, and 25 of its 181 entries were shrunk.** An SOS Fade trade averages 9.3x a recovery trade's
 account-weighted R, so trading one for the other is a bad swap. Give the recovery its own 2.5% on
 top and the same trades add +29.4%. **The question is not "is the recovery worth taking" — it is
-"is it worth 2.5% of account risk that A+ is not already using".**
+"is it worth 2.5% of account risk that SOS Fade is not already using".**
 
 **The concurrency rule is SHARE, and it is stated in the run's own output.** `PortfolioAccount`
 grants `min(desired, room)`; that is the canonical account in this repo and a second allocator is
 forbidden. ⚠ **`--on-contention refuse` REFUSES TO RUN rather than fake it**: the account carries
-ONE entry floor for every leg while these legs risk different amounts, so any floor that makes A+
+ONE entry floor for every leg while these legs risk different amounts, so any floor that makes SOS Fade
 all-or-nothing also bans every 2.5% recovery entry outright — measured, 64 refusals and 0 trades,
 identical at a 10% and a 12.5% cap. A refusal rule needs a PER-LEG floor on the shared account.
 
@@ -206,7 +206,7 @@ the balance at that moment; the reservation is then a fixed dollar figure while 
 moving, so a later loss shrinks the denominator under a grant already made. Nothing was ever
 granted over the cap.
 
-⚠ **A+'s R moved −0.10R (127.11 → 127.01) on the shrink path and is UNEXPLAINED.** R is normalised
+⚠ **SOS Fade's R moved −0.10R (127.11 → 127.01) on the shrink path and is UNEXPLAINED.** R is normalised
 to each trade's own risk, so a pure sizing change must leave it byte-identical — the recovery leg's
 R does, to the cent. 0.10R is 0.08% of the book and far under this strategy's 15.06R jitter floor,
 so it changes no conclusion, but it is a real disagreement with an invariant and it is written down
@@ -222,36 +222,36 @@ construction.
 
 Aaron's constraint, verbatim: *"I dont want my exposed risk ever over 10% at a time."* So this
 sweep holds TOTAL risk at 10% and moves only the SPLIT, rather than sweeping a recovery size
-against a fixed A+. 186,910 M15 bars, 2018-09-14 → 2026-08-14, `puprime_ecn`, rule SHARE. Every
-`A+ alone` row is that same run's own solo control, so no two rows come from different code paths.
+against a fixed SOS Fade. 186,910 M15 bars, 2018-09-14 → 2026-08-14, `puprime_ecn`, rule SHARE. Every
+`SOS Fade alone` row is that same run's own solo control, so no two rows come from different code paths.
 
 | plan | final balance | maxDD |
 |---|---|---|
-| A+ 6% alone | $1,720,547 | 32.4% |
-| A+ 7% alone | $3,088,653 | 37.2% |
-| A+ 6% + recovery 4% | $2,589,198 | 38.4% |
-| A+ 7% + recovery 3% | $4,223,442 | 40.5% |
-| A+ 8% alone | $5,256,114 | 41.7% |
-| **A+ 8% + recovery 2%** | **$6,506,262** | **42.5%** |
-| A+ 9% + recovery 1% | $9,502,543 | 45.8% |
-| A+ 9% alone | $8,518,854 | 46.1% |
-| A+ 10% alone | $13,199,534 | 50.2% |
+| SOS Fade 6% alone | $1,720,547 | 32.4% |
+| SOS Fade 7% alone | $3,088,653 | 37.2% |
+| SOS Fade 6% + recovery 4% | $2,589,198 | 38.4% |
+| SOS Fade 7% + recovery 3% | $4,223,442 | 40.5% |
+| SOS Fade 8% alone | $5,256,114 | 41.7% |
+| **SOS Fade 8% + recovery 2%** | **$6,506,262** | **42.5%** |
+| SOS Fade 9% + recovery 1% | $9,502,543 | 45.8% |
+| SOS Fade 9% alone | $8,518,854 | 46.1% |
+| SOS Fade 10% alone | $13,199,534 | 50.2% |
 
 **Two pairs DOMINATE outright — more money AND less drawdown — so they read without interpolation,
 without a risk-adjusted metric, and without arguing about which axis matters:**
 
-- **A+ 9% + recovery 1% beats A+ 9% alone**: $9.50M vs $8.52M, at 45.8% vs 46.1%.
-- **A+ 7% alone beats A+ 6% + recovery 4%**: $3.09M vs $2.59M, at 37.2% vs 38.4%.
+- **SOS Fade 9% + recovery 1% beats SOS Fade 9% alone**: $9.50M vs $8.52M, at 45.8% vs 46.1%.
+- **SOS Fade 7% alone beats SOS Fade 6% + recovery 4%**: $3.09M vs $2.59M, at 37.2% vs 38.4%.
 
 🔴 **So the recovery earns its place as a SMALL slice and destroys value as a large one, and the
-turn is between 2% and 3%.** A quarter-size recovery under A+ at 8% is on the good side of that
-turn; **1% under A+ at 9% is better still.**
+turn is between 2% and 3%.** A quarter-size recovery under SOS Fade at 8% is on the good side of that
+turn; **1% under SOS Fade at 9% is better still.**
 
 🔴 **The headline is that the recovery is not the big lever, and this table is how you see it.**
-Under a fixed 10% ceiling A+'s own risk rate moves the result far harder than anything the recovery
-does: taking A+ ALONE from 8% to 10% goes $5,256,114 → $13,199,534, while bolting a whole 2%
+Under a fixed 10% ceiling SOS Fade's own risk rate moves the result far harder than anything the recovery
+does: taking SOS Fade ALONE from 8% to 10% goes $5,256,114 → $13,199,534, while bolting a whole 2%
 recovery leg onto the 8% version reaches $6,506,262. **The recovery buys EFFICIENCY at a given
-drawdown; it cannot buy HEADROOM.** The most money available under a hard 10% ceiling is A+ alone
+drawdown; it cannot buy HEADROOM.** The most money available under a hard 10% ceiling is SOS Fade alone
 at 10% — which is what the live bot already does — so every split here is a decision to spend money
 on drawdown, not a decision about whether the recovery rule works.
 
@@ -262,15 +262,15 @@ on the worst plan in it.** Compare the absolute column, or compare dominance pai
 
 ⚠ **The whole table is inside the noise band in R, and that caveat outranks every row above it.**
 Put the legs in comparable units (R × that leg's risk rate, i.e. percent of balance): the recovery
-contributes **14.8 / 29.5 / 44.3 / 59.1** at 9/1, 8/2, 7/3, 6/4, against an A+ jitter floor of
-15.06R × the A+ rate = **136 / 120 / 105 / 90**. That is **0.11 to 0.66 of ONE standard deviation
-of A+'s own run-to-run noise, in every cell.** The efficiency gain is real arithmetic on this
+contributes **14.8 / 29.5 / 44.3 / 59.1** at 9/1, 8/2, 7/3, 6/4, against an SOS Fade jitter floor of
+15.06R × the SOS Fade rate = **136 / 120 / 105 / 90**. That is **0.11 to 0.66 of ONE standard deviation
+of SOS Fade's own run-to-run noise, in every cell.** The efficiency gain is real arithmetic on this
 history; its SIGN is not established, and 60 recovery trades over 7.9 years will not establish it
 soon.
 
 ⚠ **The 3% and 4% cells trip the tool's own headroom warning (both legs at full size want 10% of a
 10% budget) and still report 0 shrunk, 0 refused.** That is not the warning being wrong — it is
-reservations falling to zero at breakeven, which A+ reaches in a median of one bar. **A warning
+reservations falling to zero at breakeven, which SOS Fade reaches in a median of one bar. **A warning
 about what COULD contend is not a measurement of what DID**, and the run prints both on purpose.
 
 ⚠ **Peak open risk reads 10.1% against a 10% cap in every cell**, for the reason already recorded
@@ -686,7 +686,7 @@ never sends it, so a recovery leg ticked on a parent always runs on its defaults
 needs the API. Named in `docs/RECOVERY_LEG_IN_COMMAND_CENTER.md` → stage 4.
 
 ✅ **The verdict is UNCHANGED by the new path and that is the point of running it: uncosted, at a
-10% cap, the leg still costs 28.1% — the same direction as the costed −29.9% below.** A+ was shrunk
+10% cap, the leg still costs 28.1% — the same direction as the costed −29.9% below.** SOS Fade was shrunk
 22 times, nothing was refused, peak open risk touched 10.0% against the cap, and **both legs post
 identical R shared and solo**, which is the check that says only the sizing moved. Numbers, the
 five build stages and what each refusal is for: `docs/RECOVERY_LEG_IN_COMMAND_CENTER.md`.
@@ -705,7 +705,7 @@ chart — then works with no change. **Defaults are unchanged and `exec_recovery
 measured in this file moved.
 
 ⚠ **The wiring's facts live in `strategies/python/sos_fade/CLAUDE.md`**, not here — including
-the one that matters (turning it on cannot move an A+ trade) and the one approximation it buys
+the one that matters (turning it on cannot move an SOS Fade trade) and the one approximation it buys
 (the two share a balance in one direction only). This file stays the owner of the RULE.
 
 **A resolved trade now reports how far it went AGAINST as well as how far it ran** — `max_adverse_r`
@@ -722,7 +722,7 @@ recovery in the real fixture exits locked and in profit, so the reordered walk r
 numbers there. A wiring-level version of the test was written, watched still-green, and deleted —
 same trap as the five vacuous tests above, found the same way.
 
-## It is LISTED under the A+ bot on the Strategies page (2026-08-21)
+## It is LISTED under the SOS Fade bot on the Strategies page (2026-08-21)
 
 `LAB_STRATEGY["display_under"] = "sos_fade"`. Display grouping only — a flat alphabetical list
 put a rule that cannot run alone beside four that can.

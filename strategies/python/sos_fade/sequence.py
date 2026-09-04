@@ -1,6 +1,6 @@
-"""SosFadeSequence — the A+ setup state machine.
+"""SosFadeSequence — the SOS Fade setup state machine.
 
-A line-for-line port of the A+ SETUP SEQUENCE block in `strategies/tradingview/sos_fade_strategy.pine`
+A line-for-line port of the SOS FADE SEQUENCE block in `strategies/tradingview/sos_fade_strategy.pine`
 (3708-3972) plus the execution layer's arm-source snapshot (4309-4355). It is a
 *sequence, not a checklist*: each stage counts only if the previous one is done.
 
@@ -29,7 +29,7 @@ from .signals import pois_for
 
 @dataclass
 class SeqState:
-    """The A+ sequence's per-bar output — what execution.py reads to place orders."""
+    """The SOS Fade sequence's per-bar output — what execution.py reads to place orders."""
 
     l_stage: int
     s_stage: int
@@ -58,7 +58,7 @@ class SeqState:
     # B-LEG arm capture (Pine bLegArmL/bLegArmS, sos_fade_strategy.pine ~3661) — TRUE on the bar
     # a stage-2 REV dies on a continuation BOS while still at 2/3 (no 0.5/0.618 latch). Read
     # HERE, BEFORE the leg-resolution death below clears l_sos_bar and before the half/618
-    # latch update — the exact pre-death window the Pine captures it in. Nothing in the A+
+    # latch update — the exact pre-death window the Pine captures it in. Nothing in the SOS Fade
     # path reads these, so they are parity-neutral; the B-LEG bot consumes them.
     bleg_arm_l: bool = False
     bleg_arm_s: bool = False
@@ -250,7 +250,7 @@ class SosFadeSequence:
                       and not self._s_half and not self._s_618
                       and sig.fibo_dir == -1 and not sig.fibo7_touched)
 
-        # ── A+ leg resolution: TP3 / invalidation / continuation-BOS (Pine 3854-3861) ──
+        # ── SOS Fade leg resolution: TP3 / invalidation / continuation-BOS (Pine 3854-3861) ──
         if self._l_sos_bar is not None and not gap:
             if (sig.fibo_dir == 1 and sig.fibo7_touched) or sig.fibo_dir == -1 \
                     or (sig.fibo_dir == 1 and sig.fibo_p10 is not None and sig.close < sig.fibo_p10) \
@@ -276,7 +276,7 @@ class SosFadeSequence:
                     or (sig.fibo_dir == -1 and sig.fibo_p10 is not None and sig.close > sig.fibo_p10):
                 self._cont_s_bos = None
 
-        # ── Stage-3 latch: A+-owned 0.5 / 0.618 progress (Pine 3890-3899) ──
+        # ── Stage-3 latch: SOS Fade-owned 0.5 / 0.618 progress (Pine 3890-3899) ──
         if self._l_sos_bar is not None:
             self._l_half = self._l_half or sig.fibo_half_reached
             self._l_618 = self._l_618 or sig.fibo_618_ever_reached

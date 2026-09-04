@@ -185,7 +185,7 @@ def engine_config_from_export(df: pd.DataFrame):
     """The ENGINE-construction inputs, off the same columns.
 
     They are not part of the decision stream, so an unpinned one is a silent parity trap — and
-    this fork disagrees with the A+ bot on three of them (`fvg_max_count`, `fvg_threshold_pct`,
+    this fork disagrees with the SOS Fade bot on three of them (`fvg_max_count`, `fvg_threshold_pct`,
     `fvg_require_close`). Taking them from the export rather than from
     `BosStrategy.engine_config()` is what makes a run with a tweaked FVG setting checkable.
     """

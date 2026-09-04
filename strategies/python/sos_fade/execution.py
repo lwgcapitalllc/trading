@@ -1,4 +1,4 @@
-"""Execution — turns the A+ sequence state into orders, and fills them the way
+"""Execution — turns the SOS Fade sequence state into orders, and fills them the way
 TradingView's broker emulator does.
 
 A port of the STRATEGY EXECUTION block in `strategies/tradingview/sos_fade_strategy.pine` (4112-4735):
@@ -106,7 +106,7 @@ class Decision:
     fills: List[Fill] = field(default_factory=list)
     closed_r: Optional[float] = None      # R booked on the bar a trade closed
     # The OPEN trade's frozen TP ladder, or None when flat — mirroring the Pine's
-    # `strategy.position_size > 0 ? lTP1 : ...` plot gate. The A+ bot reads its rungs off
+    # `strategy.position_size > 0 ? lTP1 : ...` plot gate. The SOS Fade bot reads its rungs off
     # fib levels the export already carries, so `compare_strategy.py` does NOT diff these;
     # the B-LEG derives them from its frozen band, so `compare_bleg.py` does. Reporting
     # only either way — no decision reads them back, so they are parity-safe.
@@ -156,7 +156,7 @@ class Trade:
     exit_price: float = 0.0
     stop_distance: float = 0.0
     exit_reason: str = ""
-    # "primary" (the 15m A+ trade) or "secondary" (a fast-feed sniper re-entry). Reporting-only — no
+    # "primary" (the 15m SOS Fade trade) or "secondary" (a fast-feed sniper re-entry). Reporting-only — no
     # decision reads it; it lets the lab/chart tell the two apart. See secondary.py.
     kind: str = "primary"
     # For a SECONDARY only, what the PRIMARY on the same setup DID — "breakeven" | "stopped" |
@@ -612,8 +612,8 @@ class Execution:
     bar paths are never routed through the resolver. Tick mode is an added branch, never a rewrite.
     """
 
-    # Whether this order layer records MISSED setups. The codes describe how far an **A+** setup
-    # got before it died, so a fork where A+ never places an order must switch this off rather
+    # Whether this order layer records MISSED setups. The codes describe how far an **SOS Fade** setup
+    # got before it died, so a fork where SOS Fade never places an order must switch this off rather
     # than report near-misses of a trade it was never going to take — the same call the B-LEG
     # fork already makes for the blocked markers, for the same reason.
     _records_misses = True
@@ -657,7 +657,7 @@ class Execution:
         # is not part of the budget and binds regardless of what the account can afford, because a
         # broker refusing a 742-lot order does not care how much equity is behind it. So a solo
         # replay is byte-identical to its old self only while it never ASKS for more than that;
-        # measured, the A+ book first touches the ceiling above ~$927,000 of balance.
+        # measured, the SOS Fade book first touches the ceiling above ~$927,000 of balance.
         # ⚠ Which means the default $1,000,000 opening balance above is ALREADY past that point:
         # anything constructing this class without an account and without a capital figure is
         # sizing under the ceiling. `tests/test_execution.py` pins both sides of it.
@@ -830,10 +830,10 @@ class Execution:
         self.blocks: List[BlockedSetup] = []
         self._blk_keys: List[Optional[Tuple[int, Tuple[int, ...]]]] = [None, None]
         # The gate booleans `_armed` computed this bar, stashed for `_record_blocks`. `_armed`
-        # stays a pure gate (the B-LEG fork reuses it as its A+-priority check), and the
+        # stays a pure gate (the B-LEG fork reuses it as its SOS Fade-priority check), and the
         # recording hangs off `_place_entries`, which that fork overrides — which is exactly
-        # why the B-LEG bot records no blocks: its codes describe why an A+ setup was refused,
-        # and A+ never trades there. See strategies/python/b_leg/CLAUDE.md.
+        # why the B-LEG bot records no blocks: its codes describe why an SOS Fade setup was refused,
+        # and SOS Fade never trades there. See strategies/python/b_leg/CLAUDE.md.
         self._blk_gates: Optional[Tuple[bool, ...]] = None
         # Missed setups (reporting only — see MissedSetup). One watch per side, plus last bar's
         # stage so the watch opens on the RISING edge into stage 2 (Pine `stage[1] < 2`).
@@ -1191,7 +1191,7 @@ class Execution:
         self._update_atr(sig)
 
         # Decision context the Pine computes EVERY bar (not just when flat), so the
-        # decision streams line up bar-for-bar: the entry edges, the A+ stage, the veto.
+        # decision streams line up bar-for-bar: the entry edges, the SOS Fade stage, the veto.
         # Before the edges, so a new break of structure re-opens the block leg on the same bar it
         # arms rather than one bar late.
         self._sync_gap_latch(seq)
@@ -1312,12 +1312,12 @@ class Execution:
 
         return dec
 
-    # ── A+ arm gate (Pine longArmed/shortArmed, 4358-4359) ───────────────────────
+    # ── SOS Fade arm gate (Pine longArmed/shortArmed, 4358-4359) ───────────────────────
     def _armed(self, sig, seq, dec, long_edge, short_edge) -> Tuple[bool, bool]:
-        """The full A+ arm decision: arm-source filter + late-day + HTF blocks + veto +
+        """The full SOS Fade arm decision: arm-source filter + late-day + HTF blocks + veto +
         the one-trade-per-leg latch. Sets `dec.long_armed`/`dec.short_armed` and RETURNS
         the pair, WITHOUT placing anything. Extracted verbatim from `_place_entries` so the
-        B-LEG fork can reuse it as its 'A+ has priority' gate — parity-preserving (this is
+        B-LEG fork can reuse it as its 'SOS Fade has priority' gate — parity-preserving (this is
         exactly what `_place_entries` used to compute inline)."""
         cfg = self._cfg
         late, htf_block_l, htf_block_s, bias_block_l, bias_block_s = self._bar_gates(sig)
@@ -1564,7 +1564,7 @@ class Execution:
         cannot acquire a silent, empty signals channel by forgetting one line.
 
         ⚠ **True here is NOT a claim that a fork's confluences are right.** A fork that turns the
-        watch back on would report A+'s three confluences, which describe a setup it does not
+        watch back on would report SOS Fade's three confluences, which describe a setup it does not
         trade. It needs its own `_setup_context` before its alerts go on.
         """
         return bool(self._records_misses)
@@ -2648,7 +2648,7 @@ class Execution:
         self._legs = []                                 # per-rung exit ledger (reporting only)
         # The traded-SOS latch is the PRIMARY's one-trade-per-15m-leg gate (and the secondary's
         # "primary already went" precondition). A secondary fill must NOT move it — its sos_bar is
-        # a shift leg, not the 15m A+ leg — so only a primary sets it.
+        # a shift leg, not the 15m SOS Fade leg — so only a primary sets it.
         if kind == "primary":
             # The leg's TIME is recorded beside its number. The number is what a single run
             # compares on; the time is what survives the re-warm a restart performs. See

@@ -1,6 +1,6 @@
 """compare_bleg.py plumbing test — offline, no TradingView needed.
 
-Same round-trip trick as the A+ harness's test: we can't diff against real Pine here (that
+Same round-trip trick as the SOS Fade harness's test: we can't diff against real Pine here (that
 needs an export), so we round-trip the TOOL. Run the B-LEG bot, serialise its OWN decisions
 + tracker state into an export-shaped CSV using the SAME packed-column scheme
 `b_leg_strategy_export.pine` plots, feed that back through `compare_bleg` and require
@@ -44,7 +44,7 @@ def _nan(v):
 def _encode_cfg(cfg: BLegConfig) -> dict:
     """Pack a BLegConfig the way b_leg_strategy_export.pine's cfg_* plots do. Note the
     SL slot of cfg_strcodes is pinned to 4 ("1.0") — the B-LEG fork has no execSlLevel
-    input, because its stop is the band ORIGIN, not a fib on the A+ leg."""
+    input, because its stop is the band ORIGIN, not a fib on the SOS Fade leg."""
     b = (int(cfg.exec_longs) + int(cfg.exec_shorts) * 2 + int(cfg.exec_arm_sweep) * 4
          + int(cfg.exec_arm_div) * 8 + int(cfg.exec_req_fvg) * 16
          + int(cfg.exec_fvg_deep_only) * 32 + int(cfg.exec_respect_veto) * 64
@@ -67,7 +67,7 @@ def _encode_cfg(cfg: BLegConfig) -> dict:
             "cfg_be_buf": cfg.exec_be_buf_tk, "cfg_sl_buf": cfg.exec_sl_buf_tk,
             "cfg_scratch_r": cfg.exec_scratch_r, "cfg_bleg_days": cfg.bleg_max_days,
             # Read off this fork's OWN engine_config(), which pins the coupling OFF where the
-            # A+ pins it on. Hardcoding a 0 here would pass just as well today and would stop
+            # SOS Fade pins it on. Hardcoding a 0 here would pass just as well today and would stop
             # catching the day the fork's Pine catches up.
             "cfg_eq_exempt": int(BLegStrategy.engine_config().eq_exempt_fvg)}
 
@@ -150,7 +150,7 @@ def test_roundtrip_parity_under_nondefault_toggles(tmp_path):
 
 
 def test_config_decode_accepts_exec_bleg_on(tmp_path):
-    """The A+ decoder REFUSES an export with execBLeg on (the A+ bot can't make those
+    """The SOS Fade decoder REFUSES an export with execBLeg on (the SOS Fade bot can't make those
     trades). The B-LEG export always ships it on, so this harness must pass
     `allow_bleg=True` — if that ever regresses, every B-LEG run dies with SystemExit."""
     p, _ = _write(tmp_path, BLegConfig(exec_bleg=True))
@@ -158,7 +158,7 @@ def test_config_decode_accepts_exec_bleg_on(tmp_path):
     assert cfg.exec_bleg is True
     assert isinstance(cfg, BLegConfig)      # the decoder returned OUR class, not the base
     with pytest.raises(SystemExit):
-        cs.config_from_export(cb.load_export(p))   # the A+ decoder still refuses it
+        cs.config_from_export(cb.load_export(p))   # the SOS Fade decoder still refuses it
 
 
 def test_detects_a_planted_tracker_mismatch(tmp_path):
@@ -180,7 +180,7 @@ def test_detects_a_planted_tracker_mismatch(tmp_path):
 
 
 def test_detects_a_planted_decision_mismatch(tmp_path):
-    """Mirror of the A+ harness's planted-mismatch test, on the shared trade stream."""
+    """Mirror of the SOS Fade harness's planted-mismatch test, on the shared trade stream."""
     p, _ = _write(tmp_path)
     df = pd.read_csv(p)
     i = 150
@@ -399,7 +399,7 @@ def test_the_tail_is_never_narrower_than_the_pivot_lookahead():
     The argument was that the trim is only defensible while it EQUALS the pivot lookahead, since
     those are the bars whose swings cannot have confirmed — one wider and the gate skips settled
     bars silently. That reasoning covered the only unsettled thing this fork was known to have.
-    It was wrong about the set: this fork inherits A+'s DAY-HIGH liquidity line, which is
+    It was wrong about the set: this fork inherits SOS Fade's DAY-HIGH liquidity line, which is
     time-based, and on a fresh export the two sides disagreed **65 bars** from the end, four times
     outside a 15-bar trim. The gate was RED for it while this test stayed green.
 
@@ -457,7 +457,7 @@ def test_the_lookahead_FLOOR_is_actually_applied_by_run_parity(tmp_path):
 def test_comparing_nothing_REFUSES_instead_of_reporting_parity(tmp_path):
     """🔴 A gate that compares zero bars and prints PARITY OK is the worst shape it has.
 
-    A+'s gate shipped exactly that for one afternoon (`--tail 99999` → `PARITY OK`). This fork
+    SOS Fade's gate shipped exactly that for one afternoon (`--tail 99999` → `PARITY OK`). This fork
     imports the same refusal; MEASURED by mutation on 2026-09-03, disabling it survived the whole
     suite, which is why this exists rather than being assumed covered by the parent's test.
     """

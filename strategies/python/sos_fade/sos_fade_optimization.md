@@ -40,7 +40,7 @@ Standing rules for anything recorded here:
 | 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
 | 22 | 2026-08-19 | 🔴 **WHERE THE SCALE-IN ADDS TAKE PROFIT** — the adds had no exit of their own, so this asked whether banking them beats riding. Two independent target families: a flat multiple of base risk (1R…8R, the control) and real structure (prev day/week H/L, H4, session H/L, and combinations). 16 configurations, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5x | **EVERY TARGET LOSES TO RIDING**, and they lose in order of how OFTEN the target fires — Ride 194.15R (0 banks), prev week 168.51R (16), prev day 157.57R (25), H4 146.09R (47). The flat-risk control produced the same monotonic curve independently, and banking at 1R (126.76R) came out **below never scaling at all**. 🔴 **The first structural table was VOID and these are RE-MEASURED** — the harness resolved its target from the LIVE bar, so `Prev day`/`H4` banked ZERO times in 8 years while resolving 1,804 and 2,438 valid targets; day/H4 levels die on a WICK and the engine steps first, so the level was gone on the exact bar it would have filled. **Weekly dies on a CLOSE through and was immune, hiding it on the only mode being watched.** ⚠ Worst trade is −2.06R in every configuration — the affordability rule already prevents the giveback a target was asked for. ⚠ **Strip the top 20 trades and banking WINS on risk-adjusted return** (prev day 14.49, H4 14.60 vs Ride 11.99): it smooths the ordinary book and pays for it out of the tail. | **`exec_scale_tp_mode` SHIPPED defaulting to `"Prev week H/L"` — Aaron's call, AGAINST the measurement.** 🔴 **DEFAULT UNDER REVIEW** — he chose it on a 4.38R gap said to be inside the 15.06R jitter; the true gap is **25.64R, outside it**. 🔴 **NOT PARITY-GATED YET** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
-| 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every A+ loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is A+'s 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
+| 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
 ⚠ **Rows 14–17 were never added to this index; their `# Run N` sections below are the authority.**
 Count the runs with `grep -c '^# Run ' `, never off this table.
@@ -94,7 +94,7 @@ Finding 5 and it has survived every re-test: the −54.9% is a **losing streak o
 (2021-11-28 → 2022-11-14, nine full stops in 20 trades), and a trade that goes to the stop it was
 given is not an exit-rule problem. **Drawdown is a position-size decision** (10% → 54.9%,
 5% → 31.9%, 3% → 20.3%) or a **portfolio** decision — and the portfolio route is blocked on the
-A+ vs B-LEG overlap audit, which is still UNRUN and is now the highest-value open item on this bot.
+SOS Fade vs B-LEG overlap audit, which is still UNRUN and is now the highest-value open item on this bot.
 
 ---
 
@@ -1204,7 +1204,7 @@ plumbing, which is the part that is easy to forget: **`cfg_exitmode`'s trail dig
 3-way and `cfg_trail_pct` was added.** Without both, the comparator silently decodes a ratcheted
 Pine as "Structure (swing)" and reports pure drift as a parity bug.
 
-⚠ **The A+ parity gate is STALE as of this run.** The last green `compare_strategy.py` was
+⚠ **The SOS Fade parity gate is STALE as of this run.** The last green `compare_strategy.py` was
 2026-07-27, which predates the ratchet. **Re-run it on a fresh export at the shipped
 `exec_tp1_pct = exec_tp2_pct = 0`** before any number from this build is trusted. `compare_bleg.py`
 is stale for the same reason.
@@ -1718,7 +1718,7 @@ nothing while it stood.
 `compare_strategy.py` — ONE commit, then re-run parity. **The export column is the load-bearing
 part:** today the Pine has the filter and the export cannot see it, so the moment it is switched on
 in TradingView the Pine refuses setups the Python still takes and `compare_strategy.py` reports
-GREEN anyway. That is the one known Pine↔Python divergence on the A+ pair and shipping the guard is
+GREEN anyway. That is the one known Pine↔Python divergence on the SOS Fade pair and shipping the guard is
 what closes it. Also decide explicitly whether `b_leg` (which inherits `_place_entries`) wants
 the same floor on its band-origin stop.
 
@@ -1956,7 +1956,7 @@ arithmetic was never the problem — the interpretation was. See Run 25.
 
 ## Verdict on the whole thread — the trade count is not inside this strategy
 
-Four routes to more A+ trades, measured on 6.5 years: drop the gap (+173 trades, +13.0R net, 40%
+Four routes to more SOS Fade trades, measured on 6.5 years: drop the gap (+173 trades, +13.0R net, 40%
 one trade, negative 2024-2026), size the extras down (negative below 6.2%), deepen the entry (fewer
 trades AND negative), loosen the gap rule (+65 trades, −32.4R). **The entry rule is not gatekeeping
 trade count out of fussiness — it IS the edge**, and with ONE position slot every marginal trade is
@@ -1964,7 +1964,7 @@ a queue, not an addition.
 
 **This is the same conclusion the account-level allocator gap in the root `CLAUDE.md` predicts, now
 measured:** trade frequency is a PORTFOLIO property. The routes that remain are more SETUPS
-(`b_leg` is built and parity-green), more instruments, or more timeframes — not a looser A+.
+(`b_leg` is built and parity-green), more instruments, or more timeframes — not a looser SOS Fade.
 
 ## What was NOT measured (all four)
 
@@ -1975,7 +1975,7 @@ measured:** trade frequency is a PORTFOLIO property. The routes that remain are 
   promising. Porting them for parity is still worth doing; sweeping them is not.
 - **A concurrency change.** Every number here assumes one position at a time. The displacement cost
   (17 / 36 / 2 trades) only exists because of that, and it is the single biggest term in §1 and §3.
-  Whether the A+ book improves with two concurrent slots is a REAL open question — and it needs the
+  Whether the SOS Fade book improves with two concurrent slots is a REAL open question — and it needs the
   account-level risk allocator that `CLAUDE.md` lists as unbuilt and as a prerequisite for running
   more than one bot live.
 
@@ -2004,7 +2004,7 @@ is the MEASUREMENT only. Do not duplicate the analysis here; update the bug file
 
 ## How it was found
 
-Aaron asked why the 2025-10-02 A+ long lost when price never reached the 0.886 stop. It didn't
+Aaron asked why the 2025-10-02 SOS Fade long lost when price never reached the 0.886 stop. It didn't
 need to — the stop had already moved to breakeven, on the entry bar, before price came back.
 
 ```
@@ -2084,10 +2084,10 @@ Then that can probably be a sweep, and that [trade] can most likely lose."*
 
 **The claim.** An SOS that closes only marginally through the broken level, and is NOT followed by
 a couple of candles continuing in the break direction, is not a real shift — it is a liquidity
-sweep wearing an SOS label. A+ arms Stage 2 on that SOS, so the "retrace into 0.5-0.886" it then
+sweep wearing an SOS label. SOS Fade arms Stage 2 on that SOS, so the "retrace into 0.5-0.886" it then
 waits for is not a retrace at all: it is the reversal continuing, and the limit fills into it.
 
-**Nothing like this exists in A+ today.** Grepped `sos_fade_strategy.pine` for displacement /
+**Nothing like this exists in SOS Fade today.** Grepped `sos_fade_strategy.pine` for displacement /
 follow-through / consecutive-close gates: there are none. The SOS arms Stage 2 the moment
 `close > ash` (or `< asl`), with no test of how far past, and no test of what the next bars did.
 
@@ -2150,30 +2150,30 @@ so the next person does not answer it with Run 10's data.
 
 ---
 
-# FVG DETECTION — 2026-08-01 — **OPEN DEFECT.** A+ does not see gaps that are on the chart
+# FVG DETECTION — 2026-08-01 — **OPEN DEFECT.** SOS Fade does not see gaps that are on the chart
 
 **Found by Aaron on a live chart** (XAUUSD, ~$4,170, Nov 27-28 2025): two fair value gaps he drew
 by hand were not drawn or held by the strategy. This is the SAME class of discrepancy already fixed
-in `bos_strategy.pine` on 2026-07-31 — and A+ was deliberately left alone at the time, so the
+in `bos_strategy.pine` on 2026-07-31 — and SOS Fade was deliberately left alone at the time, so the
 gap is still open here.
 
-**Three filters, all still at the A+ values, any of which alone explains a missing gap:**
+**Three filters, all still at the SOS Fade values, any of which alone explains a missing gap:**
 
-| input | A+ (`sos_fade_strategy.pine`) | what the chart draws (`mpc_jarvis.pine`) | effect at gold $4,170 |
+| input | SOS Fade (`sos_fade_strategy.pine`) | what the chart draws (`mpc_jarvis.pine`) | effect at gold $4,170 |
 |---|---|---|---|
-| `fvgThreshHTF` (15m+ min gap) | **0.1 %** | 0.04 % | A+ needs **$4.17**; the chart draws from **$1.67**. Every gap between those two is VISIBLE and INVISIBLE to the strategy at the same time. |
-| `fvgReqCloseHTF` (middle bar must close past the gap) | **ON** | OFF | A+ refuses a gap the chart shows whenever bar B closed inside the void. |
+| `fvgThreshHTF` (15m+ min gap) | **0.1 %** | 0.04 % | SOS Fade needs **$4.17**; the chart draws from **$1.67**. Every gap between those two is VISIBLE and INVISIBLE to the strategy at the same time. |
+| `fvgReqCloseHTF` (middle bar must close past the gap) | **ON** | OFF | SOS Fade refuses a gap the chart shows whenever bar B closed inside the void. |
 | `fvgMaxCount` | **7** | 8 | The 8th-oldest gap is evicted here and kept there. |
 
 A fourth, smaller one now exists too: the EQ engine was ported into all three strategy files on
 2026-08-01, but `eqExemptFvg` defaults **OFF** there and is hardcoded **ON** in the assistant — so a
-gap sitting on an EQH/EQL survives the cap on the chart and is evicted in A+.
+gap sitting on an EQH/EQL survives the cap on the chart and is evicted in SOS Fade.
 
 **The 0.1 % floor is the prime suspect** because it is the only one that scales with price: gold has
 run to $4,170, so the floor is now $4.17 and rising, while the gaps a 15m bar leaves have not grown
 with it. This filter gets stricter every year with no one deciding that it should.
 
-**Why A+ was NOT changed when the BOS file was.** Both values are load-bearing here and only here:
+**Why SOS Fade was NOT changed when the BOS file was.** Both values are load-bearing here and only here:
 
 1. The **110.65R baseline** and every one of Runs 1-13 were measured at 0.1 / close-test-ON.
    Changing either moves which gaps exist, so it moves which entries fire, so **every number in
@@ -2206,11 +2206,11 @@ fix is a guess.
 💡 **This got cheaper on 2026-08-01 and the note above predates it.** The command center's price
 chart now draws fair value gaps server-side (`command-center/backend/services/fvg_overlays.py`,
 Analysis dropdown, default OFF) — and it deliberately draws **`mpc_jarvis.pine`'s** gaps at cap 8
-/ no close-check / the 0.0–0.04 split floor, i.e. exactly the set A+ does NOT trade. So a run page
+/ no close-check / the 0.0–0.04 split floor, i.e. exactly the set SOS Fade does NOT trade. So a run page
 already shows both populations at once: a visible gap beside a "no FVG" block IS the discrepancy
 this section is about. Read it there against a real run before touching TradingView.
 
-**Unrelated cosmetic bug found while checking, in BOTH A+ and BOS:** `fvgKeepUntilBroken` is
+**Unrelated cosmetic bug found while checking, in BOTH SOS Fade and BOS:** `fvgKeepUntilBroken` is
 declared `input.bool(true, …)` but its tooltip opens *"OFF (default) = a gap is removed the moment
 price taps its near edge."* The default is ON. The tooltip is wrong, not the code — the behaviour is
 keep-until-broken. Fix the text, not the default.
@@ -2266,7 +2266,7 @@ decision rather than a side effect of a one-line edit.
 ## Second-order effects to check, not guess
 
 - **0.886 is never a snap target and must stay that way.** The helper's shallowest output is 0.786.
-  In A+ the default stop IS 0.886 (`exec_sl_level`), so snapping an entry there would put the stop
+  In SOS Fade the default stop IS 0.886 (`exec_sl_level`), so snapping an entry there would put the stop
   on top of the entry — the Run 4 hazard. Do not add it as a rung.
 - **`bos_strategy.pine` derives its TP ladder from where the entry landed** (`longTier` /
   `shortTier`, added 2026-08-01). Snapping every entry to a fib makes those tiers cleaner, not
@@ -2274,7 +2274,7 @@ decision rather than a side effect of a one-line edit.
   lands in the STANDARD tier, not SHALLOW. Verify that is still the intent after the change.
 - **The BOS file's new `bosEntryTop = "0.382"` option** (also 2026-08-01) adds 0.382 as a band
   ceiling. If that is on, 0.382 becomes a legitimate snap target too and the helper needs it.
-- **This moves every A+ number in this file.** It changes entry PRICES, so it changes fills, R and
+- **This moves every SOS Fade number in this file.** It changes entry PRICES, so it changes fills, R and
   drawdown on trades that already exist — a bigger blast radius than the FVG-floor item above, which
   only changes WHICH gaps qualify.
 
@@ -2323,7 +2323,7 @@ paired on `(dir, sos_bar, day)` so a trade can be classified rather than just co
 
 **Zone entry is the Pine's OWN `fiboHalfReached` latch, not a raw price test.** That matters: a first
 pass using `low <= fiboP2` directly gave 149 trades / +104.22R. The faithful definition gives
-148 / +105.22R. Use the latch — it is what the A+ stage machine already calls "in the zone", and it
+148 / +105.22R. Use the latch — it is what the SOS Fade stage machine already calls "in the zone", and it
 resets with the fib leg, which is the leg the gap is being judged against.
 
 ## The result
@@ -2533,9 +2533,9 @@ bot to three decimals, which is why it needed refuting rather than celebrating.
 
 ## 🔴 The 30m is NOT a second strategy — it is this bot through a coarser lens
 
-`backtest/tools/tf_overlap.py`, with the A+/B-LEG pair as the yardstick:
+`backtest/tools/tf_overlap.py`, with the SOS Fade/B-LEG pair as the yardstick:
 
-| | 15m vs 30m | A+ vs B-LEG |
+| | 15m vs 30m | SOS Fade vs B-LEG |
 |---|---|---|
 | shared in-market time | **37.0%** of A's | 0.5% |
 | of that, SAME direction | **95%** (1,242 of 1,305 hrs) | 1 bar of 49 |
@@ -2939,7 +2939,7 @@ throughout (113 trades refused at k=0.5), so Run 4 did not repeat.
 with the canonical `engines/regime` classifier at entry. **163 of 182 trades are TRENDING**, 18
 TRANSITIONING, 1 UNKNOWN — so the accuracy question Aaron raised is moot at this split: 90% of the
 book is one bucket. The differing bucket is **profitable** (+0.32 avgR, +5.7R), so filtering it costs
-money, and 5.7R is inside the jitter anyway. **Read it as: the A+ setup already selects for
+money, and 5.7R is inside the jitter anyway. **Read it as: the SOS Fade setup already selects for
 trending.** Session splits harder (London 51% / 1.00 avgR on n=43 against Asia 33% / 0.48 on n=45),
 but Asia is still +21.6R, so there is nothing to cut there either.
 
@@ -3608,9 +3608,9 @@ is written into its docstring. 285 strategy + 27 backend runner tests green.
 ⚠ **This is not a sweep of `SosFadeConfig`. No parameter of this bot moves, and no figure
 elsewhere in this log or in its CLAUDE.md changes.** The subject is
 `strategies/python/loss_recovery/` — a separate lab package that replays a **25%-size
-counter-trade after every A+ loss**, and is what Aaron's *"can I win the loss back the other way"*
+counter-trade after every SOS Fade loss**, and is what Aaron's *"can I win the loss back the other way"*
 question turned into. It is filed here because its entire population is **this bot's 62 real
-stop-outs**, so a change to A+'s entry rule re-populates it and this run goes stale.
+stop-outs**, so a change to SOS Fade's entry rule re-populates it and this run goes stale.
 
 **Setup for every row below:** `python backtest/tools/recovery_report.py --start 2018-09-14
 --end 2026-08-14 [--exits | --soft-curve | --stops | --search]`, XAUUSD M15, **186,910 bars**,
@@ -3790,8 +3790,8 @@ figure above is a LAB finding. `strategies/tradingview/recovery_strategy.pine` i
 eyeballing entries on a chart and **its P&L is not this rule's P&L**: TradingView holds ONE net
 position, so it closes the recovery when the primary enters the other way.
 
-⚠ **This run's whole population is A+'s 62 stop-outs at the shipped defaults with
-`exec_secondary=False`. Any change to A+'s entry rule re-populates it and this run goes stale** —
+⚠ **This run's whole population is SOS Fade's 62 stop-outs at the shipped defaults with
+`exec_secondary=False`. Any change to SOS Fade's entry rule re-populates it and this run goes stale** —
 same standing as `overlap_audit.py`.
 
 ✅ **31 tests in `strategies/python/loss_recovery/tests/`, every one watched RED by a named
@@ -3815,7 +3815,7 @@ Five ideas were replayed against that.
 **Basis, identical for every row.** XAUUSD M15, 2020-01-01 → 2026-08-23, no cost layers, 10% per
 trade compounding, 5-minute fill clock, seeded from control run `71d8aa048999` with only the named
 fields changed. Control reproduces Aaron's run `6e029942cb29` on every stored KPI: 249 trades,
-0.5863 win rate, 44 scratches, 43.34% drawdown. **The A+ leg is +139.71R (159 trades) and the gap
+0.5863 win rate, 44 scratches, 43.34% drawdown. **The SOS Fade leg is +139.71R (159 trades) and the gap
 leg +8.19R (44 trades) in EVERY row below**, which is the check that each change touched only the
 reclaim.
 
@@ -3895,7 +3895,7 @@ one lost; keep 0.25 gives 3.75 − 9.75 = −6.00R with three lost. Every row re
 
 ⚠ **The best row is +1.50R off TWO trades** — only 2 of the 27 losing reclaims ever reach 2R in
 front before failing. ⚠ **Account drawdown is 43.34% in six of the seven runs**, i.e. unchanged:
-the drawdown is driven by the A+ book, so shrinking individual re-entry losses does not move it.
+the drawdown is driven by the SOS Fade book, so shrinking individual re-entry losses does not move it.
 **Making a losing ticket smaller is not the same as making the account safer, and this row is the
 proof.**
 

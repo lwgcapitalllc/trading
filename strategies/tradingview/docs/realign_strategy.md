@@ -158,8 +158,8 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // =====================================================================================
 // ENTRY — at MARKET, on the bar the realignment confirms
 // =====================================================================================
-// ⚠ This is the repo's first market entry. A+ and B-LEG rest limits, which largely avoid
-//   the spread; this pays it BOTH WAYS. Do not carry A+'s near-zero spread cost across.
+// ⚠ This is the repo's first market entry. SOS Fade and B-LEG rest limits, which largely avoid
+//   the spread; this pays it BOTH WAYS. Do not carry SOS Fade's near-zero spread cost across.
 ```
 
 ## [9] THE EXIT LADDER

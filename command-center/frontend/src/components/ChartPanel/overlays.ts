@@ -24,7 +24,7 @@ export const TRADE = 'lwgTrade'
 
 /** The FALLBACK tag a PRIMARY trade wears when its strategy declares none of its own.
  *
- *  🔴 It was the only tag until 2026-09-02 — `A+` is `sos_fade`'s word for ITS setup, and this
+ *  🔴 It was the only tag until 2026-09-02 — `SOS Fade` is `sos_fade`'s word for ITS setup, and this
  *  panel draws every strategy's trades, so three other bots' charts carried a fourth bot's label.
  *  The fix the old note here asked for is now built: a strategy declares `chart_tag`, the scanner
  *  carries it to the strategies table, and it reaches the panel as `spec.tradeTag`.
@@ -32,10 +32,10 @@ export const TRADE = 'lwgTrade'
  *  not declared a tag yet must not lose its chip: untagged is NOT an option — Aaron's ask was to
  *  tell the books apart at a glance, and "no tag" is only readable as "primary" once you already
  *  know that is the rule.
- *  ⚠ So a chart still reading `A+` means EITHER the A+ bot OR a strategy that has not declared its
+ *  ⚠ So a chart still reading `SOS Fade` means EITHER the SOS Fade bot OR a strategy that has not declared its
  *  own word. Declaring one is a change to that strategy's package, which rule 22 gates behind its
  *  parity harness — that is why they did not all land together. */
-export const PRIMARY_TAG = 'A+'
+export const PRIMARY_TAG = 'SOS Fade'
 /** A SCALE-IN LOT, drawn by the trade renderer itself — same box, same `Furthest`/`Deepest`/
  *  exit labels, same outcome colouring. A separate overlay NAME rather than a separate
  *  template, so the `Scale-in detail` toggle can clear it without touching the trades. */
@@ -883,8 +883,8 @@ export function registerChartOverlays(): void {
       // 🔴 EVERY RUNG IS NAMED `TP1`/`TP2`, INCLUDING ONE THAT BANKS NOTHING — and the reverse was
       // tried for half a day on 2026-08-21. A rung whose size is 0 places no order and only steps
       // the stop, so it was drawn as `Stop tightens` in a neutral colour. Aaron, seeing it on every
-      // A+ trade (both rungs of a primary bank 0% at the shipped ladder, so it was the ONLY thing
-      // those charts said): *"Why is it that my A+ strategies now have annotation Stop Titans? I
+      // SOS Fade trade (both rungs of a primary bank 0% at the shipped ladder, so it was the ONLY thing
+      // those charts said): *"Why is it that my SOS Fade strategies now have annotation Stop Titans? I
       // don't even know what it is. It should just show a faint dashed line where TP1 was and where
       // TP2 was, so I could better understand why we exited at certain levels."*
       // **The number IS the information.** Whether size comes off there is a settings fact, true of
@@ -949,7 +949,7 @@ export function registerChartOverlays(): void {
       //
       // 🔴 The default is the left, and on its own it is wrong for the case this chart is full of: a
       // re-entry opens on the bar the trade before it closed, so its chips are drawn straight onto
-      // that trade's box and onto that trade's own chips. Aaron, 2026-08-23, looking at an A+ loss
+      // that trade's box and onto that trade's own chips. Aaron, 2026-08-23, looking at an SOS Fade loss
       // with its stop-loss re-entry next to it: *"if two trades line up next to each other and the
       // annotations kind of overlap, move the next trade's annotations to your right as opposed to
       // the left."* The EARLIER trade keeps the left — it is the one with clear air behind it — and

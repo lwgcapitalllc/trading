@@ -31,16 +31,16 @@ re-deriving the concept.
 
 ## 0. What this is, in one line
 
-**It is the SOS-fade (A+) strategy with the arm swapped.** Entries identical. Take profits
+**It is the SOS-fade (SOS Fade) strategy with the arm swapped.** Entries identical. Take profits
 identical. Stops, staging, trail, sizing identical. Three things differ and nothing else:
 
-| | A+ / SOS fade | BOS |
+| | SOS Fade / SOS fade | BOS |
 |---|---|---|
 | **Arm** | liquidity sweep or divergence → SOS | a **BOS** after an SOS |
 | **Liquidity sweeps** | the primary arm source | **not used at all** — no sweep arming, no sweep confluence |
 | **Divergence** | a veto that blocks entry, with a post-SOS exemption | a **kill** — blocks entry AND closes an open trade, no exemption (§4a) |
 
-Anything not in that table is the A+ behaviour, unchanged. If a rule below appears to add
+Anything not in that table is the SOS Fade behaviour, unchanged. If a rule below appears to add
 something to entries or exits, it is a mistake in this doc — flag it rather than building it.
 
 ---
@@ -50,8 +50,8 @@ something to entries or exits, it is a mistake in this doc — flag it rather th
 A shift of structure (SOS) tells you the trend has turned. What comes after it is where the money
 is: the market prints one or more **break of structure (BOS)** events in that same direction until
 another SOS ends the run. Each BOS is a fresh continuation leg, and each leg gives a retracement you
-can buy (or sell) into. **BOS trades those retracements.** It is the mirror of the A+ setup:
-A+ fades the shift, BOS rides what the shift started. Not every BOS is real — some are the last
+can buy (or sell) into. **BOS trades those retracements.** It is the mirror of the SOS Fade setup:
+SOS Fade fades the shift, BOS rides what the shift started. Not every BOS is real — some are the last
 poke before the reversal — so this is deliberately a filtered setup, not a "take them all" setup.
 
 ---
@@ -77,12 +77,12 @@ Everything the setup needs is already computed in `mpc_jarvis.pine`. Nothing new
 - **Break leg** = `bos_low → bos_high`. Its 0.382–0.5 pocket is the drawn **Sniper Zone**. Frozen at
   the BOS bar; it never moves.
 - **Expansion leg** = `bos_low → the running extreme after the break`. This is what the **drawn
-  External fib** measures, and its 0.5–0.886 band is the A+ entry band. Its 0 keeps extending while
+  External fib** measures, and its 0.5–0.886 band is the SOS Fade entry band. Its 0 keeps extending while
   the expansion runs, so the levels move until the pullback confirms.
 
 The two are the same thing until price runs past the broken high — then the expansion band sits
 higher than the SZ pocket. Both are usable and both are offered (input `bosFibAnchor`), with the
-expansion leg as the default because it is the band the whole A+ entry machinery already prices off.
+expansion leg as the default because it is the band the whole SOS Fade entry machinery already prices off.
 
 Also note: **the engine sets `bull_bos = true` on every `bull_sos` bar too** — they are not mutually
 exclusive. Every BOS test in this strategy must read `st.bull_bos and not st.bull_sos`.
@@ -110,7 +110,7 @@ On a bar where `st.bull_bos and not st.bull_sos`:
    but the counter still increments.
 
 ### Stage 2 — RETRACE
-Price must come back into the entry band of the anchor leg (§2). The A+ latches
+Price must come back into the entry band of the anchor leg (§2). The SOS Fade latches
 (`fiboHalfReached` / `fibo618EverReached`) are re-used and latched per-BOS so a fib redraw at the
 session gap cannot drop the stage.
 
@@ -147,8 +147,8 @@ one is an input so it can be swept, and the defaults below are the starting mode
 | **F4** | **The broken level must hold.** A close back through `bos_high` kills the setup. | `bosReqHold` | `true` | The whole premise of a continuation is that broken resistance becomes support. If it does not hold, the break was the fakeout. This is the single most important filter. |
 | **F5** | **Opposing divergence veto** — see §4a. | `bosRespectVeto` | `true` | **Aaron's explicit requirement.** |
 | **F6** | **Max trades per regime.** After N filled BOS trades since the last SOS, stand down until the next SOS. | `bosMaxPerRegime` | `2` | Stops the strategy stacking three losses into one chop leg. |
-| **F7** | **Final hour block.** No new entries 16:00–17:00 NY. | `execNoLateDay` | `true` | Gold closes 17:00 NY. Reused verbatim from the A+/B-LEG files. |
-| **F8** | **HTF bias.** Weekly / Daily requirement, four-way dropdown each (Ignore / Must agree / Must not oppose / Must oppose). | `execHtfWeekly`, `execHtfDaily` | `Ignore` | Reused verbatim. For a continuation, "Must agree" is the natural tuning candidate — the opposite of how the A+ reversal uses it. |
+| **F7** | **Final hour block.** No new entries 16:00–17:00 NY. | `execNoLateDay` | `true` | Gold closes 17:00 NY. Reused verbatim from the SOS Fade/B-LEG files. |
+| **F8** | **HTF bias.** Weekly / Daily requirement, four-way dropdown each (Ignore / Must agree / Must not oppose / Must oppose). | `execHtfWeekly`, `execHtfDaily` | `Ignore` | Reused verbatim. For a continuation, "Must agree" is the natural tuning candidate — the opposite of how the SOS Fade reversal uses it. |
 | **F9** | **Staleness.** The armed leg expires after N days (converted to bars). | `bosMaxDays` | `1.25` | Same construction and default as the B-LEG. |
 | **F10** | **Session VWAP, pro-trend side.** Refuse while price is not closing above VWAP (long) / below it (short). | `bosVwapReq` | **`Trend's side` (ON)** | **The only filter here that was measured before it was switched on — see §4b.** |
 
@@ -224,17 +224,17 @@ tuned chart and needs no "Reset settings to defaults".**
 
 ### 4a. The divergence KILL (required, default ON)
 
-Divergence is the one filter that gets more power here than in the A+, and Aaron's reason is the
+Divergence is the one filter that gets more power here than in the SOS Fade, and Aaron's reason is the
 whole point of the setup: **an opposing divergence means the move is overextended and setting up the
 NEXT shift of structure.** A continuation trade is the worst thing to be holding into that. So it
 does two jobs, not one:
 
 - **Blocks the entry** (and pulls a resting limit) — the veto below.
 - **Closes an open trade** — input `bosCloseOppDiv`, default **on**. This is the single addition to
-  the exit side; everything else about the exits is the A+ ladder untouched. It must therefore be
+  the exit side; everything else about the exits is the SOS Fade ladder untouched. It must therefore be
   registered in `strategies/python/sos_fade/CLAUDE.md → ## The exit ladder`, `config.py`, the
   export Pine and the compare harness in one commit, per the standing rule.
-  (Note the neighbouring `execCloseOppSOS` lever was measured **inert** in the A+ — an opposite SOS
+  (Note the neighbouring `execCloseOppSOS` lever was measured **inert** in the SOS Fade — an opposite SOS
   never fires before SL/TP has resolved the position. Divergence fires *earlier* than the SOS, which
   is exactly why this version should have something on the other end of it. Measure it, don't assume.)
 
@@ -249,7 +249,7 @@ bar. If the divergence appears while the setup is waiting for its retrace, the r
 next external break after it fired, with `divValidBars` as an outer cap) the setup may re-place its
 limit while the leg is otherwise still alive.
 
-**This is deliberately NOT the A+ rule.** The A+ has a "post-SOS exemption": a divergence printing
+**This is deliberately NOT the SOS Fade rule.** The SOS Fade has a "post-SOS exemption": a divergence printing
 after its SOS is treated as the retrace itself and does not veto. That exemption does not apply
 here and must not be copied. The reasoning is the opposite way round: for a reversal setup an
 opposing divergence during the pullback is weakness in the counter-move; for a **continuation**
@@ -258,16 +258,16 @@ fakeout signature. So: **no exemption, live veto, both directions.**
 
 ---
 
-## 5. Entry — the A+ ladder, unchanged
+## 5. Entry — the SOS Fade ladder, unchanged
 
-**Decision (Aaron, 2026-07-27): use the A+ strategy's entry methods exactly as they are. Do not
+**Decision (Aaron, 2026-07-27): use the SOS Fade strategy's entry methods exactly as they are. Do not
 invent tiers for this strategy.** The block is lifted from `sos_fade_strategy.pine` / `b_leg_strategy.pine`
 (the `longEdge` / `shortEdge` computation) and only the leg it prices off changes — the BOS leg
-instead of the SOS leg. Same code, same inputs, same names, so any behaviour proven in the A+ file
+instead of the SOS leg. Same code, same inputs, same names, so any behaviour proven in the SOS Fade file
 carries over and the three strategies stay comparable.
 
 **The two rules it already enforces** — worth stating because they are exactly what Aaron specified,
-and they are already in the A+ code, not additions:
+and they are already in the SOS Fade code, not additions:
 
 - **0.5 is the floor.** The band is 0.5 → 0.886. Every candidate price is clamped so it can never
   rest shallower than 0.5, and rejected if it falls past 0.886.
@@ -288,16 +288,16 @@ and they are already in the A+ code, not additions:
 4. **Gap straddling 0.5.** A gap with the 0.5 line inside its body → limit at 0.5. Ranks last, so it
    only ever prices a leg no better source already did. `execFvg50`.
 
-### The two default flips from the A+ file
+### The two default flips from the SOS Fade file
 
-`execConfSZ` and `execFvg50` are default **off** in the A+ file and default **on** here. Aaron named
+`execConfSZ` and `execFvg50` are default **off** in the SOS Fade file and default **on** here. Aaron named
 both as entry methods for this setup — the sniper zone explicitly, and the 0.5-with-a-gap-on-it
 entry explicitly. The mechanisms are identical; only the toggle position differs. Everything else
-keeps the A+ default.
+keeps the SOS Fade default.
 
 ### Shallow vs deep is derived, not chosen
 
-There is no entry-model input. The A+ decides the tier from **where the limit actually filled** —
+There is no entry-model input. The SOS Fade decides the tier from **where the limit actually filled** —
 at the 0.5 clamp = shallow, at 0.618 or deeper = deep — and the TP ladder reads that (§7). Same
 rule here.
 
@@ -309,7 +309,7 @@ rule here.
 
 | Option | Where the stop sits | Note |
 |---|---|---|
-| **`Fib 1.0 (leg origin)`** — default | The anchor leg's origin (`fiboP10` / `bos_low`). | The A+ behaviour. Widest, most survivable, and the level the engine itself uses to invalidate the leg. Start here so the baseline is comparable to the other two strategies. |
+| **`Fib 1.0 (leg origin)`** — default | The anchor leg's origin (`fiboP10` / `bos_low`). | The SOS Fade behaviour. Widest, most survivable, and the level the engine itself uses to invalidate the leg. Start here so the baseline is comparable to the other two strategies. |
 | `Broken swing level` | Just beyond `bos_high` (the flipped level). | The natural continuation stop: if the broken level does not hold, the trade is wrong. Much tighter, so R per trade is much larger — the primary tuning candidate. |
 | `Fib 0.886` | `fiboP6`. | Tight, sits on the far edge of the entry band. |
 | `Last confirmed swing` | `st.last_conf_low` (long) / `st.last_conf_high` (short). | Structure-based, breathes with the leg. |
@@ -333,7 +333,7 @@ not fork it. Any new lever added here must land in that table, `config.py`, the 
   - **shallow** entry → TP1 = 0.382 (`fiboP1`), TP2 = 0.0 (`fiboP7`).
   A shallow entry must never use 0.5 as TP1 — the limit rests at 0.5, so the trade would "hit TP1"
   on its own fill bar, stage to breakeven and die a scratch. (This bug is already documented in the
-  A+ file; do not re-introduce it.)
+  SOS Fade file; do not re-introduce it.)
 - **TP3** is a runner — no target, rides the trail.
 - **Sizes** `execTp1Pct` 30 / `execTp2Pct` 40 / remainder runner.
 - **Stop staging:** full stop → TP1 touched → breakeven + `execBeBufTk` → TP2 touched → the
@@ -354,7 +354,7 @@ sweep, but it is not the default because it is outside the shared ladder.
 `bosWhich` (1st only / 1st + 2nd / All) · `bosMinDispAtr` · `bosMinLegAtr` · `bosReqHold` ·
 `bosMaxPerRegime` · `bosMaxDays` · `bosFibAnchor` (Expansion leg / Break leg)
 
-**Entry** — the A+ inputs verbatim, no new ones. Only `execConfSZ` and `execFvg50` flip to on.
+**Entry** — the SOS Fade inputs verbatim, no new ones. Only `execConfSZ` and `execFvg50` flip to on.
 `execReqFVG` (on; off = off-spec) · `execFvgDeepOnly` (on) · `execDeepFib` (on) ·
 `execConfSZ` (**on**) · `execFvg50` (**on**)
 
@@ -379,12 +379,12 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
 
 - **Liquidity sweeps — excluded outright** (Aaron, 2026-07-27), not deferred. No sweep arming, no
   sweep confluence, no sweep filter. The BOS is the arm. The liquidity block can therefore be
-  stripped from the Pine along with the A+ tracker, which also buys compile-token headroom.
+  stripped from the Pine along with the SOS Fade tracker, which also buys compile-token headroom.
 - **Order-block entries.** The OB engine exists; the entry ladder here is fib / FVG / SZ only.
 - **Internal structure (iBOS) triggers.** External only.
 - **Cycle-fib POI gating.** Tracked by the engine, not read here.
 - **Multi-timeframe confirmation** (the assistant's 1m FVG entry trigger).
-- **A+ / B-LEG interaction.** This file trades BOS only and does not know about the other two.
+- **SOS Fade / B-LEG interaction.** This file trades BOS only and does not know about the other two.
   Whether they should stand each other down is a portfolio question, answered after all three have
   their own numbers.
 
@@ -393,7 +393,7 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
 ## 10. Build order
 
 1. ~~`strategies/tradingview/bos_strategy.pine`~~ — **DONE 2026-07-29.** Engine block = lines 1-3028 of
-   `sos_fade_strategy.pine`, byte-identical. The A+ sequence tracker, the B-LEG tracker and the
+   `sos_fade_strategy.pine`, byte-identical. The SOS Fade sequence tracker, the B-LEG tracker and the
    missed-setup callout were not copied (nothing here reads them, and the compile-token budget is
    why). Execution layer written to this spec. Awaiting a TradingView compile.
 2. Backtest on XAUUSD 15m, the same window the other two were measured on. Baseline first with
@@ -481,11 +481,11 @@ Three, all flagged in the Pine's own header per §0:
 - **The divergence CLOSE (§4a) fires on a confirmed opposing divergence only, not on extreme RSI.**
   The entry BLOCK still reads both, exactly as §4a specifies. An overbought RSI is the normal state
   of a healthy long continuation; closing on it would flatten the runner on every winner.
-- **`execMinStopMode` / `execMinStopVal` are carried over from the A+ risk block** and are not in
+- **`execMinStopMode` / `execMinStopVal` are carried over from the SOS Fade risk block** and are not in
   §8's input list. They default Off, so the baseline run is exactly this spec's baseline.
 
 One thing §3's Stage 2 describes that the code does NOT gate on: the retrace latch. A resting limit
-inside the band IS the retrace test — the A+ does not gate on `aplus*_half` either, and adding a
+inside the band IS the retrace test — the SOS Fade does not gate on `aplus*_half` either, and adding a
 gate here would only delay the order past the price it was meant to catch.
 
 ---

@@ -58,7 +58,7 @@ differ by 100x, and the account that looked free was more than twice the price.
 
 ### 5. Ask whether the difference is bigger than the noise
 
-Before calling a delta an edge, check it against this strategy's run-to-run spread — A+ is
+Before calling a delta an edge, check it against this strategy's run-to-run spread — SOS Fade is
 **sd 15.06R**, measured. A 1.16R gap is not an edge, and saying so is the finding. Say the
 honest version: *"strictly cheaper at identical everything else"*, never *"worth 1.16R"*.
 

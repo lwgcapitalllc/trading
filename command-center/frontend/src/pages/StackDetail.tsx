@@ -125,7 +125,7 @@ type ComboPoint = EquityPoint & { _legOwner?: string } & Partial<Record<`leg_${s
 // 🔴 This distinction is the whole reason the leg toggles are trustworthy, and it did not exist
 // until 2026-08-10. Aaron switched SOS Fade off on a shared stack and read that B-LEG had
 // made $47,758,999, then ran that same strategy standalone over the same window and got $21,064.
-// Both numbers were right. The B-LEG's trades in a SHARED book are sized off a balance A+ grew to
+// Both numbers were right. The B-LEG's trades in a SHARED book are sized off a balance SOS Fade grew to
 // ~$169M, so its last trade risks $16,925,791 where alone it risks $3,102 — 5,456x — for the
 // identical +0.014R. **Same 99 trades, same entry and stop prices, same 17.8674R, 2,266x the
 // dollars.** Composing a subset from shared trades answers "what did this leg contribute to an

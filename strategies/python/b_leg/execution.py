@@ -1,12 +1,12 @@
 """BLegExecution — the B-LEG order layer.
 
 The B-LEG trades through the EXACT SAME fill / TP-ladder / stop-staging / %-risk-sizing /
-R-grading machinery as the A+ bot — everything from `_open_position` onward is direction-
+R-grading machinery as the SOS Fade bot — everything from `_open_position` onward is direction-
 and setup-agnostic (it only reads a resting `_Pending`'s edge/sl/tp1/tp2/qty). So this is a
 thin SUBCLASS of `sos_fade.execution.Execution` that overrides only entry placement:
 
-  * A+ entries are DISABLED — the parent's A+ `_armed` gate is still computed (so the
-    "A+ has priority" stand-down holds, matching b_leg_strategy.pine), but no A+ order
+  * SOS Fade entries are DISABLED — the parent's SOS Fade `_armed` gate is still computed (so the
+    "SOS Fade has priority" stand-down holds, matching b_leg_strategy.pine), but no SOS Fade order
     is ever placed.
   * The B-LEG rests a limit at the frozen band's near (0.5) edge, with SL beyond the leg
     origin (fib 1.0) and TP1 = the broken swing extreme (2·edge − origin), TP2 = the
@@ -38,7 +38,7 @@ from sos_fade.execution import Execution, TradeFib, _Pending  # noqa: E402
 # gives: re-deriving `ext - range*ratio` inline would be a second implementation free to drift.
 from engines.fibonacci.geometry import fib_level  # noqa: E402
 
-# The ladder a recorded B-LEG fib carries, shallow -> deep. Byte-identical to the A+ bot's
+# The ladder a recorded B-LEG fib carries, shallow -> deep. Byte-identical to the SOS Fade bot's
 # `_FIB_RATIOS`, deliberately: both bots' fibs are drawn on ONE chart, so a ratio has to mean the
 # same thing on both or the reader is asked to hold two conventions at once.
 _FIB_RATIOS = (0.0, 0.382, 0.5, 0.618, 0.702, 0.786, 0.886, 1.0)
@@ -50,7 +50,7 @@ def _band_fib(ext, inv, direction, leg_ms):
     ⚠ THE CONVENTION IS THE WHOLE POINT OF THIS FUNCTION, because this bot's own vocabulary uses
     the other one. `bleg.py` and the Pine call the entry band "the 0.382-0.5 pocket", measuring UP
     from the leg ORIGIN (the Sniper Zone convention, `fib_from_origin`). A drawn fib measures DOWN
-    from the leg EXTREME (`fib_level`), which is what the A+ bot records and what `1.0 = the leg
+    from the leg EXTREME (`fib_level`), which is what the SOS Fade bot records and what `1.0 = the leg
     origin` in `BLegState`'s own docstring already assumes.
 
     Same two prices, two namings. This records the `fib_level` one, so on a chart carrying both
@@ -58,7 +58,7 @@ def _band_fib(ext, inv, direction, leg_ms):
     is that the band's far edge (`*_bot`) draws as **0.618**, not 0.382 — it is the same line the
     code calls 0.382, named from the other end of the same leg.
 
-    All-or-nothing, like the A+ bot: a partial ladder reads as "this trade had no 0.786" rather
+    All-or-nothing, like the SOS Fade bot: a partial ladder reads as "this trade had no 0.786" rather
     than "this record is incomplete"."""
     if ext is None or inv is None or leg_ms is None or ext == inv:
         return None
@@ -68,14 +68,14 @@ def _band_fib(ext, inv, direction, leg_ms):
 
 
 class BLegExecution(Execution):
-    """A+-entry-disabled, B-LEG-entry-only execution. Reuses the parent's whole broker
+    """SOS Fade-entry-disabled, B-LEG-entry-only execution. Reuses the parent's whole broker
     emulator + exit ladder; only `_place_entries` differs."""
 
     _bleg = None   # set by step() before the parent calls _place_entries
 
-    # No A+ diagnostic markers in this fork. The parent's BLOCKED codes and MISSED-setup
-    # confluences both answer "how far did this **A+** setup get before it was refused" — and
-    # here A+ never places an order, so both would report the near-misses of a trade that was
+    # No SOS Fade diagnostic markers in this fork. The parent's BLOCKED codes and MISSED-setup
+    # confluences both answer "how far did this **SOS Fade** setup get before it was refused" — and
+    # here SOS Fade never places an order, so both would report the near-misses of a trade that was
     # never on the table. The blocked markers are already excluded by construction (the recording
     # hangs off `_place_entries`, overridden below); the miss watch runs from `step()`, which this
     # fork delegates to the parent, so it needs this explicit opt-out. A B-LEG version of either
@@ -92,15 +92,15 @@ class BLegExecution(Execution):
         cfg = self._cfg
         bleg = self._bleg
 
-        # A+ priority gate: compute longArmed/shortArmed EXACTLY as the A+ bot would (this
-        # also sets dec.long_armed/short_armed), but never place an A+ order. A live A+ arm
+        # SOS Fade priority gate: compute longArmed/shortArmed EXACTLY as the SOS Fade bot would (this
+        # also sets dec.long_armed/short_armed), but never place an SOS Fade order. A live SOS Fade arm
         # on a side stands the B-LEG down there — the parent's B leg behaviour.
         long_armed, short_armed = self._armed(sig, seq, dec, long_edge, short_edge)
 
         late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18   # 16:00-17:59 NY block
 
         # B-LEG arm (Pine 4429-4430): the frozen band is live, untapped and valid, we're flat,
-        # A+ is not armed on this side, not late-day, and this band is not already traded.
+        # SOS Fade is not armed on this side, not late-day, and this band is not already traded.
         bleg_l_arm = (cfg.exec_bleg and cfg.exec_longs and not long_armed and bleg.l_on and not bleg.l_tap
                       and not late and bleg.l_top is not None and bleg.l_inv is not None
                       and bleg.l_tgt is not None and self._pos_dir == 0
@@ -111,7 +111,7 @@ class BLegExecution(Execution):
                       and (self._traded_sos_s is None or bleg.s_bar != self._traded_sos_s))
 
         # Report the B-LEG's OWN arm + entry price (this is the B-LEG bot's decision stream,
-        # not the never-placed A+ one). Overwrites what _armed / the parent step() set.
+        # not the never-placed SOS Fade one). Overwrites what _armed / the parent step() set.
         dec.long_armed, dec.short_armed = bleg_l_arm, bleg_s_arm
         dec.long_edge = bleg.l_top if bleg_l_arm else None
         dec.short_edge = bleg.s_bot if bleg_s_arm else None

@@ -1,7 +1,7 @@
 """SignalAdapter — turns a replay `BarState` into the exact Pine-named inputs the
-A+ sequence and execution layers read.
+SOS Fade sequence and execution layers read.
 
-The A+ block in `sos_fade_strategy.pine` does not read the engines directly; it reads a
+The SOS Fade block in `sos_fade_strategy.pine` does not read the engines directly; it reads a
 set of derived globals (`st.bull_sos`, `recentSSL`/`recentSSL_bar`, `fibo_dir`,
 `fiboP1..P10`, `fiboHalfReached`, `bullDivActive`, `longVeto`, `nyHour`, …). Those
 globals are computed in the indicator body from the engine outputs. This adapter
@@ -38,7 +38,7 @@ from typing import List, Optional, Tuple
 
 @dataclass
 class Signals:
-    """One bar's worth of Pine-named inputs — the seam the A+ layers read."""
+    """One bar's worth of Pine-named inputs — the seam the SOS Fade layers read."""
 
     index: int
     time_ms: int
@@ -136,7 +136,7 @@ class Signals:
     d_est_desc: str = ""
 
     # Structure break-leg endpoints (st.bull_bos_high/low + bear mirror) — the 0.0/1.0
-    # anchors of the leg an SOS broke. The A+ path does not read them (so they cannot move
+    # anchors of the leg an SOS broke. The SOS Fade path does not read them (so they cannot move
     # compare_strategy.py); the B-LEG bot's band-freeze reads them off each SOS bar.
     bull_bos_high: Optional[float] = None
     bull_bos_low: Optional[float] = None
@@ -155,7 +155,7 @@ class Signals:
     bear_bos_low_ms: Optional[int] = None
 
     # The Sniper Zone — the 0.382-0.5 pocket of the break leg, re-anchored on every BOS
-    # (Pine sniperZoneTop / sniperZoneBot / sz_bar / sz_bullish). The A+ path does not read
+    # (Pine sniperZoneTop / sniperZoneBot / sz_bar / sz_bullish). The SOS Fade path does not read
     # them (`exec_conf_sz` is unported there), so they cannot move compare_strategy.py; the
     # BOS bot's entry ladder uses the zone to price a leg that had no qualifying FVG.
     sniper_zone_top: Optional[float] = None
@@ -297,7 +297,7 @@ class SignalAdapter:
     @staticmethod
     def _liq_key(level) -> Optional[Tuple[str, str]]:
         """Map a LiquidityLevel to (slot_key, side) or None if it's not one of the
-        ten A+ pools. side ∈ {"high","low"}."""
+        ten SOS Fade pools. side ∈ {"high","low"}."""
         kind = level.kind
         side = level.side  # "high" | "low"
         if kind == "h4":

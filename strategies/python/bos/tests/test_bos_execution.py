@@ -1,6 +1,6 @@
 """Tests for the BOS order layer — the entry ladder, the stop models, the TP tiers, TP3.
 
-Weighted toward the seams where this fork DIFFERS from the A+ bot it subclasses, because that
+Weighted toward the seams where this fork DIFFERS from the SOS Fade bot it subclasses, because that
 is where an inherited default or an un-overridden method goes wrong silently: the config pins,
 the third TP rung, the live divergence kill, and the ATR-once-per-bar guard.
 """
@@ -37,7 +37,7 @@ def execution(**cfg):
 def test_the_pins_that_would_move_trades_if_inherited():
     """Three parent defaults this fork's Pine does not have, and one it cannot run at all.
 
-    `exec_fib_nearest` and the two other entry-model rules landed in the A+ on 2026-08-02 and
+    `exec_fib_nearest` and the two other entry-model rules landed in the SOS Fade on 2026-08-02 and
     price a gap at a DIFFERENT level from Method 3 — with no `execFibNearest` input in
     `bos_strategy.pine`, an inherited True would rest every gap entry somewhere the Pine
     never chose, and the export has no column to catch it with.
@@ -171,7 +171,7 @@ def test_tp3_is_the_leg_extreme_and_the_measured_move_replaces_it_only_when_furt
     assert ex._targets(2, lv, small, bull=True)[2] == pytest.approx(110.0)
 
 
-# ── TP3, the rung the A+ ladder does not have ───────────────────────────────────
+# ── TP3, the rung the SOS Fade ladder does not have ───────────────────────────────────
 def _open_a_trade(ex, qty=10.0, entry=100.0):
     ex._pos_dir = 1
     ex._qty = qty
@@ -230,7 +230,7 @@ def test_a_tp3_that_was_never_priced_does_not_swallow_the_position():
 
 # ── the divergence KILL ─────────────────────────────────────────────────────────
 def test_the_veto_is_LIVE_and_has_no_post_sos_exemption():
-    """Item 2 of the fork's three differences. The A+ veto is judged at the SOS and carries an
+    """Item 2 of the fork's three differences. The SOS Fade veto is judged at the SOS and carries an
     exemption, so a divergence that armed the fade cannot then refuse it; a continuation setup
     has the opposite relationship to divergence — an opposing one is the fakeout signature."""
     ex = execution()
@@ -240,9 +240,9 @@ def test_the_veto_is_LIVE_and_has_no_post_sos_exemption():
 
 
 def test_the_veto_reads_show_div_alone_not_the_a_plus_combination():
-    """Pine 3785 gates on `showDiv`. `Signals.veto_on` is `showDiv and divVeto` — the A+'s
+    """Pine 3785 gates on `showDiv`. `Signals.veto_on` is `showDiv and divVeto` — the SOS Fade's
     combination — and using it here would silently disable the kill for anyone who had turned
-    the A+ veto off."""
+    the SOS Fade veto off."""
     assert execution(show_div=False)._veto(_sig(bear_div_active=True)) == (False, False)
     assert execution(div_veto=False)._veto(_sig(bear_div_active=True)) == (True, False)
 

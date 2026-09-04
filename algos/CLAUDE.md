@@ -230,7 +230,7 @@ not the trade the strategy is holding) and it is not changing. But it means ever
 book of a split config is a SUBSET of the lab's book, never a rescaled copy of it**, so a lab result
 does not transfer trade-for-trade.
 
-⚠ **3. A RESTING order counts against this budget; the lab reserves at FILL.** A+ places a limit and
+⚠ **3. A RESTING order counts against this budget; the lab reserves at FILL.** SOS Fade places a limit and
 waits, sometimes for a long time. So live contention starts EARLIER and lasts LONGER than the
 replay. **A stack backtest is a FLOOR on how often a split contends, never an estimate of it.**
 
@@ -2286,7 +2286,7 @@ Its message says so and names the number to lower.
 ⚠ **NOTHING HERE HAS RUN AGAINST A BROKER.** Rule 9. And the live bot cannot reach it until a
 promote: the frozen snapshot carries `backtest/`, so the account seam's ceiling arrives with the
 strategy, while this reconciliation is `algos/` and arrives on a `git pull` plus a restart.
-**MEASURED: the live A+ config does not touch the ceiling until the balance passes ~$927,000**, so
+**MEASURED: the live SOS Fade config does not touch the ceiling until the balance passes ~$927,000**, so
 this changes nothing about what that bot trades today.
 
 **Tests: 6 in `tests/test_live_bridge.py`, each watched RED under its own mutation** — the venue
@@ -2529,11 +2529,11 @@ its own failure.
 
 ### 🔴 The account budget is now MEASURED per bar — and it REFUSES, because a live shrink is incoherent (2026-09-03)
 
-**Aaron's split: extreme leg 5%, A+ 5%, account cap 10%.** *"If at any time a bot is occupying more
+**Aaron's split: extreme leg 5%, SOS Fade 5%, account cap 10%.** *"If at any time a bot is occupying more
 than 5% then the other bot(s) will need to shrink accordingly. If no risk is available then we will
 refuse trades and send a telegram messaging saying why."*
 
-🔴 **THE SPLIT IS THE INTENT AND IT IS NOT IN FORCE — A+ WENT BACK TO 10% ON 2026-09-03, HOURS AFTER
+🔴 **THE SPLIT IS THE INTENT AND IT IS NOT IN FORCE — SOS Fade WENT BACK TO 10% ON 2026-09-03, HOURS AFTER
 MOVING TO 5%.** The 5% was making room for a second bot that **cannot be created as a config
 change**, so the split was buying nothing: one bot at 5% with the other 5% unclaimed, i.e. this
 account earning half its measured return with nothing taking the other half, for as long as the
@@ -2671,9 +2671,9 @@ cover its shipped form at all** (the chart has no engine for the market-conditio
 produced its current numbers). **Rule 9 applies twice over: nothing here has run against a broker,
 and the half that would carry the money is the half no gate reaches.**
 
-⚠ **What was done instead (2026-09-03): A+ went back to 10% and the account waits.** Holding 5% for
+⚠ **What was done instead (2026-09-03): SOS Fade went back to 10% and the account waits.** Holding 5% for
 a bot that cannot start was costing half this account's measured return for nothing. ⚠ **When the
-adapter is built, move A+ back to 5% BEFORE assigning the second bot** — the Command Center's share
+adapter is built, move SOS Fade back to 5% BEFORE assigning the second bot** — the Command Center's share
 rule refuses an assignment whose shares sum past the cap, so doing it in the other order fails at
 the moment of assignment.
 

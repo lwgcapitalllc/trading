@@ -35,7 +35,7 @@ and stop never moved. Nothing was risked above the cap. **The account financing 
 trade got smaller underneath it.**
 
 ⚠ **Verified as not-a-stacking-problem, because that was the obvious wrong answer.**
-A+ run ALONE, with no second leg in the run at all, reproduces the identical
+SOS Fade run ALONE, with no second leg in the run at all, reproduces the identical
 **2,984** over-cap ticks and the identical **10.9140%** peak. The live bot has always
 done this on its own.
 
@@ -137,7 +137,7 @@ he would not be trading into in the first place.
 
 ## MEASURED 2026-08-21 — and the answer is PROBABLY DON'T BUILD IT
 
-The first step below was taken immediately. A+ solo, 186,910 M15 bars 2018-09-14 → 2026-08-14,
+The first step below was taken immediately. SOS Fade solo, 186,910 M15 bars 2018-09-14 → 2026-08-14,
 `puprime_ecn`:
 
 | | |
@@ -164,7 +164,7 @@ cost they do not incur. Any future version of this idea is direction-aware or it
 started this is a handful of enormous positions, not the normal case — the cost is CONCENTRATED, not
 spread. That also means a rule aimed at the average would miss it entirely.
 
-⚠ **This measures A+ ALONE.** The loss-recovery leg holds a median 4.3 days and up to 29.3, so its
+⚠ **This measures SOS Fade ALONE.** The loss-recovery leg holds a median 4.3 days and up to 29.3, so its
 own carry share is plausibly much higher as a fraction of its own small P&L. NOT MEASURED. If that
 rule is ever run for real, measure its carry separately before concluding anything about it.
 

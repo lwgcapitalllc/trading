@@ -9,7 +9,7 @@ take, and the study's expectancy is an average over trades some of which the str
 never in a position to enter.
 
 `CLAUDE.md` -> *Trading Philosophy* already records the measured version of this from the
-A+ work: with one slot, an extra setup does not ADD to the book, it QUEUES in front of it,
+SOS Fade work: with one slot, an extra setup does not ADD to the book, it QUEUES in front of it,
 and the loosened runs there displaced 17, 36 and 2 real trades - one displaced winner worth
 +16.5R on its own. **That effect has never been measured for this strategy.** This tool
 measures it, and it is the honest number to tune against.

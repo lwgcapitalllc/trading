@@ -104,7 +104,7 @@ ALL_FIELDS = PRICE_FIELDS + PULSE_FIELDS + DIR_FIELDS
 # optional so this tool still runs against an older export made before those plots existed.
 STRUCT_FIELDS = FIB_PRICE_FIELDS + TOUCH_FIELDS + ["px_fib_active", "px_fib_origin", "px_fib_dir"]
 # Optional so older exports still validate: px_fib_reset_active (2026-07-08), px_fibo_half_reached
-# (2026-07-10 — the inbound-0.5 A+ EARLY tier).
+# (2026-07-10 — the inbound-0.5 SOS FADE EARLY tier).
 STRUCT_OPT_FIELDS = ["px_fib_reset_active", "px_fibo_half_reached"]
 SNIPER_FIELDS = SNIPER_PRICE_FIELDS + SNIPER_PULSE_FIELDS + ["px_sniper_dir"]
 MACRO_FIELDS = MACRO_PRICE_FIELDS + MACRO_PULSE_FIELDS + ["px_macro_dir"]

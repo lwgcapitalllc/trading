@@ -1094,7 +1094,7 @@ var bool fibo7Touched  = false
 var bool fibo10Touched = false
 var bool fibo618EverReached = false
 var bool fiboResetActive    = false   // declared + reset on origin change; TP3 setter dropped 2026-07-09
-var bool fiboHalfReached    = false   // inbound 0.5 (fiboP2) tap, UNGATED — A+ EARLY tier (mpc 2313/2443)
+var bool fiboHalfReached    = false   // inbound 0.5 (fiboP2) tap, UNGATED — SOS FADE EARLY tier (mpc 2313/2443)
 
 var float fiboP1  = na, var float fiboP2  = na, var float fiboP3  = na
 var float fiboP4  = na, var float fiboP5  = na, var float fiboP6  = na
@@ -1168,7 +1168,7 @@ if fibActive
     if not fiboOriginChanged and not fiboExtChanged
         bool fibo618Reached = fibo_dir == 1 ? low <= fiboP3 : high >= fiboP3
 
-        // Inbound 0.5 (fiboP2) tap — UNGATED A+ EARLY tier (mpc 2443). Retracement-side, latched.
+        // Inbound 0.5 (fiboP2) tap — UNGATED SOS FADE EARLY tier (mpc 2443). Retracement-side, latched.
         if not fiboHalfReached and (fibo_dir == 1 ? low <= fiboP2 : high >= fiboP2)
             fiboHalfReached := true
 

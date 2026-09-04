@@ -1,13 +1,13 @@
-"""B-LEG — the late-retrace reversal, split out to run PARALLEL to the A+ bot.
+"""B-LEG — the late-retrace reversal, split out to run PARALLEL to the SOS Fade bot.
 
 Ported from `strategies/tradingview/b_leg_strategy.pine` (Aaron's brother's B-LEG fork of the
-MPC-JARVIS strategy). It reuses the canonical engine stack + the A+ SEQUENCE tracker from
-`sos_fade` (the B-LEG arms off the A+ death) and adds only the B-LEG tracker + a thin
+MPC-JARVIS strategy). It reuses the canonical engine stack + the SOS Fade SEQUENCE tracker from
+`sos_fade` (the B-LEG arms off the SOS Fade death) and adds only the B-LEG tracker + a thin
 execution subclass. Full rules: `CLAUDE.md` in this package.
 
     BLegConfig       — SosFadeConfig superset + `bleg_max_days`
     BLegTracker      — the B-LEG band-freeze / arm / death state machine (BLegState)
-    BLegExecution    — A+-entry-disabled, B-LEG-entry-only order layer
+    BLegExecution    — SOS Fade-entry-disabled, B-LEG-entry-only order layer
     BLegStrategy  — the driver
 """
 
@@ -36,9 +36,9 @@ __all__ = [
 
 # ── Lab registration (runner="python") ───────────────────────────────────────────
 # Same opt-in contract as sos_fade: the scanner imports the package and reads this dict.
-# The lab keys the strategy off the CLASS name ("BLegStrategy"), distinct from the A+ bot,
+# The lab keys the strategy off the CLASS name ("BLegStrategy"), distinct from the SOS Fade bot,
 # so the two register and run side by side — the parallel-stack use case the B-LEG was split
-# out for. It sizes ITSELF (qty = equity·exec_risk_pct / stop_distance), like the A+ bot.
+# out for. It sizes ITSELF (qty = equity·exec_risk_pct / stop_distance), like the SOS Fade bot.
 LAB_STRATEGY = {
     "name": "B-LEG",
     "config": BLegConfig,
@@ -55,7 +55,7 @@ LAB_STRATEGY = {
     "category": "reversal",
     "self_sizing": True,
     # This bot's own word for its setup, worn by its trades on the price chart. Until
-    # 2026-09-02 that chip was hard-coded to the A+ bot's word on EVERY strategy's chart, so
+    # 2026-09-02 that chip was hard-coded to the SOS Fade bot's word on EVERY strategy's chart, so
     # every other bot's trades carried a label belonging to a fourth. 🔴 **It is what tells the
     # legs apart on a STACK**, where several strategies' trades share one chart — that is the
     # case it exists for. ⚠ A LABEL and nothing else: no run, no cost and no decision reads it,
@@ -64,7 +64,7 @@ LAB_STRATEGY = {
     "chart_tag": "B-LEG",
     # 🔴 DISPLAY GROUPING ONLY — it changes where the row is drawn and NOTHING about what this
     # bot may be run with. B-LEG runs standalone, in any stack, against any instrument, exactly
-    # as before; nothing reads this field except the strategies list. It sits under the A+ bot
+    # as before; nothing reads this field except the strategies list. It sits under the SOS Fade bot
     # because the suite is carved up by LEG off ONE structure stream (see the root CLAUDE.md's
     # trading philosophy) and a flat alphabetical list hid that relationship entirely.
     # ⚠ Rule 22 gates this file: shipped only after `tools/compare_bleg.py` ran GREEN on

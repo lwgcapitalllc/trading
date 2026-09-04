@@ -1,7 +1,7 @@
 """BosExecution — the BOS order layer.
 
 The BOS trades through the EXACT SAME fill / stop-staging / %-risk-sizing / R-grading
-machinery as the A+ bot: everything from `_open_position` onward is direction- and
+machinery as the SOS Fade bot: everything from `_open_position` onward is direction- and
 setup-agnostic (it only reads a resting `_Pending`'s edge/sl/tp/qty). So this is a SUBCLASS of
 `sos_fade.execution.Execution` that replaces only what the BOS fork genuinely changes.
 
@@ -13,12 +13,12 @@ Three things differ from `sos_fade_strategy.pine` and nothing else (the Pine's o
      exemption. It blocks the entry, PULLS a resting limit, and optionally closes an open trade.
   3. **the stop model is a dropdown** (`bos_sl_model`) instead of a fib-level dropdown.
 
-Plus one thing the A+ ladder does not have at all: **a THIRD take-profit rung**. The A+ ladder
+Plus one thing the SOS Fade ladder does not have at all: **a THIRD take-profit rung**. The SOS Fade ladder
 is TP1 / TP2 / runner; this fork adds TP3 at fib 0.000 (the leg extreme) and defaults it to
 100%, so at the shipped settings there is no runner — the whole position leaves at TP3 or at
 the ratcheting stop. `_remaining_brackets` is overridden for exactly that.
 
-Entries, staging, trail and sizing are the A+ ladder, unchanged.
+Entries, staging, trail and sizing are the SOS Fade ladder, unchanged.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from sos_fade.execution import BlockedSetup, Execution, _Pending  # noqa: E402
 
 
 # ── BOS block codes (Pine `f_blkCode` / `f_blkWhy`, 3971-3985) ────────────────────
-# The NUMBERS are the Pine's and the meanings are NOT the A+'s — code 5 is the per-regime cap
+# The NUMBERS are the Pine's and the meanings are NOT the SOS Fade's — code 5 is the per-regime cap
 # here and the HTF breakout filter there. That is why this fork carries its own tables rather
 # than reusing the parent's: two code sets sharing one dict is how a chart tag comes to name
 # the wrong rule.
@@ -71,11 +71,11 @@ _BOS_CODE_OF = {"dir_off": 1, "late": 2, "veto": 3, "htf_bias": 4,
 
 
 class BosBlockedSetup(BlockedSetup):
-    """A `BlockedSetup` reading the BOS code tables instead of the A+ ones.
+    """A `BlockedSetup` reading the BOS code tables instead of the SOS Fade ones.
 
     Subclassed rather than parameterised because `build_blocked_setups` duck-types on
     `labels` / `reasons`, so overriding the two properties is the whole change — and it keeps
-    the A+ tables unreachable from here, which is the point.
+    the SOS Fade tables unreachable from here, which is the point.
     """
 
     @property
@@ -92,7 +92,7 @@ class BosExecution(Execution):
 
     _bos = None          # set by step() before the parent reaches _entry_edges / _place_entries
     _records_misses = False
-    #   The parent's MISSED-setup watch answers "how far did this **A+** setup get before it
+    #   The parent's MISSED-setup watch answers "how far did this **SOS Fade** setup get before it
     #   died" — it counts the sweep arm, the SOS and the 0.5-0.886 zone, none of which this
     #   fork's setup has. Left on, it would report the near-misses of a trade that was never on
     #   the table. A BOS version is new design work (the tracker already records a death REASON
@@ -155,14 +155,14 @@ class BosExecution(Execution):
         """Pine `bosVetoL` / `bosVetoS` (3785-3786).
 
         ⚠ This is NOT the parent's `sos_aware_veto`, and the difference is the whole of item 2
-        in the module docstring: the A+ veto is judged at the SOS and carries an exemption, so a
+        in the module docstring: the SOS Fade veto is judged at the SOS and carries an exemption, so a
         divergence that armed the fade cannot then refuse it. A continuation setup has the
         opposite relationship to divergence — an opposing one is the fakeout signature — so this
         is LIVE, re-read on every bar the limit rests. A divergence appearing during the retrace
         therefore PULLS the order, and one going stale lets it be placed again.
 
         ⚠ It reads `show_div` alone, not `show_div and div_veto`: the Pine gates it on `showDiv`
-        only. `Signals.veto_on` is the A+'s combination and would be the wrong flag here.
+        only. `Signals.veto_on` is the SOS Fade's combination and would be the wrong flag here.
         """
         if not self._cfg.show_div:
             return False, False
@@ -174,13 +174,13 @@ class BosExecution(Execution):
         """Where a limit would rest on each side, or None.
 
         ⚠ `seq` is accepted to match the parent's signature (2026-08-10) and is DELIBERATELY
-        unread. The parent grew it for `exec_nogap_arm`, which gates the A+ no-FVG fallback on
+        unread. The parent grew it for `exec_nogap_arm`, which gates the SOS Fade no-FVG fallback on
         what armed the SOS — this fork's setup has no SOS arm at all, so honouring that lever
         here would gate a BOS entry on a confluence its own Pine never looks for. The parameter
         is kept rather than dropped because the parent calls this by name from `step()`, and a
         2-arg override is a `TypeError` on the first bar — which is exactly how this was found.
 
-        The A+ ladder verbatim, priced off the BOS anchor leg instead of the SOS leg, and the
+        The SOS Fade ladder verbatim, priced off the BOS anchor leg instead of the SOS leg, and the
         FIRST source that prices the leg wins:
 
           1. FVG edge (clamped to the band's shallow end; whole gap past it with deep-only on)
@@ -413,9 +413,9 @@ class BosExecution(Execution):
         if qty <= 0:
             return None
         pend = _Pending(1 if bull else -1, edge, qty, stop, tp1, tp2, leg.bar)
-        # TP3 rides beside the order rather than inside `_Pending`, which is the A+ ladder's
+        # TP3 rides beside the order rather than inside `_Pending`, which is the SOS Fade ladder's
         # two-rung shape and is shared with the other two bots. Widening that dataclass for a
-        # rung only this fork has would put a `tp3` field on every A+ and B-LEG order that can
+        # rung only this fork has would put a `tp3` field on every SOS Fade and B-LEG order that can
         # only ever be None.
         pend.bos_tp3 = tp3          # type: ignore[attr-defined]
         return pend
@@ -517,7 +517,7 @@ class BosExecution(Execution):
         It asserts only what price and the engine decide: a live BOS leg, a priced ladder, an
         edge to rest on, flat, and this leg not already traded.
 
-        ONE DELIBERATE DEVIATION FROM THE PINE, the same one the A+ layer takes: every rule
+        ONE DELIBERATE DEVIATION FROM THE PINE, the same one the SOS Fade layer takes: every rule
         refusing the setup is recorded, not just the first. The Pine reports one code because a
         chart tag has room for one line; the lab wants to filter by reason, and "blocked by the
         VWAP filter" must stay true when the final hour was also blocking it. The Pine's

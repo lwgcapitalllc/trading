@@ -60,7 +60,7 @@ gold, EURUSD, USDJPY, an index CFD — on a laptop with no broker.
 
     🔴 **AS OF 2026-09-02 AN OVERSIZED POSITION IS RESIZED, AND THIS BRANCH IS THE BACKSTOP
     RATHER THAN THE POLICY.** Aaron's call: a strategy asking for more lots than the venue takes
-    should trade the maximum, not skip the setup — MEASURED, 25 of the live A+ book's 205 trades
+    should trade the maximum, not skip the setup — MEASURED, 25 of the live SOS Fade book's 205 trades
     ask for more than PU Prime's 100-lot ceiling, topping out at 742.60. **The resize happens one
     layer up, where the STRATEGY decides its size** (`backtest/portfolio/account.py`, which every
     bot reaches through the same account seam), so the emulator books the capped quantity as its

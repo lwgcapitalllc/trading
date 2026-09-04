@@ -153,7 +153,7 @@ and nothing refused.**
 
 The prediction assumed refusals are the only thing that differs between the two views. They are
 not. **A screen gives each leg its own private balance, and a shared account COMPOUNDS both legs
-onto one** — so B-LEG sizes its later trades off a balance A+ has already grown, which is more
+onto one** — so B-LEG sizes its later trades off a balance SOS Fade has already grown, which is more
 money on the same trades rather than less risk. Two effects pull in opposite directions and the
 compounding one is unbounded while the refusal one is capped by how often the budget is actually
 full.

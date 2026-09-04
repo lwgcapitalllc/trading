@@ -4,12 +4,12 @@ A strict SUPERSET of `sos_fade`'s `SosFadeConfig`, for the same reason `BLegConf
 this fork trades through the SAME exit ladder, sizing and cost machinery, and only the
 ENTRY differs. Inheriting keeps the exit levers in lockstep.
 
-🔴 **THE INHERITED DEFAULTS ARE THE RISK, NOT THE NEW FIELDS.** Every A+ default this class
+🔴 **THE INHERITED DEFAULTS ARE THE RISK, NOT THE NEW FIELDS.** Every SOS Fade default this class
 does not re-declare arrives uninvited — the `BosConfig` incident (2026-08-07), where two
-A+ defaults added in the preceding five days silently broke a new fork. The pins below are
+SOS Fade defaults added in the preceding five days silently broke a new fork. The pins below are
 the result of diffing this fork against the parent field by field, and each one records WHY.
 
-⚠ The entry-side A+ fields (`exec_fib_nearest`, `exec_deep_fib`, `exec_fvg_pre_zone`,
+⚠ The entry-side SOS Fade fields (`exec_fib_nearest`, `exec_deep_fib`, `exec_fvg_pre_zone`,
 `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`) are INERT here and are
 deliberately left alone rather than pinned: this fork places no fib-priced order, so
 nothing reads them. Pinning them would imply they mean something here.

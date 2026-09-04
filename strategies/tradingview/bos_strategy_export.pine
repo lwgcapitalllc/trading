@@ -134,7 +134,7 @@ int  divPivotLen = 5
 int  divOS       = 25
 int  divOB       = 75
 int  divValidBars = 100
-// [doc 12] (`divVeto` deleted 2026-07-31 — it was the A+'s veto switch and nothing   -> docs/bos_strategy.md
+// [doc 12] (`divVeto` deleted 2026-07-31 — it was the SOS Fade's veto switch and nothing   -> docs/bos_strategy.md
 int  divExtremeOB = 80
 int  divExtremeOS = 20
 
@@ -1838,7 +1838,7 @@ if showDiv and not na(divPhRsi)
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
 
-// [doc 39] Live confluence flags for the A+ setup row  -> docs/bos_strategy.md
+// [doc 39] Live confluence flags for the SOS Fade setup row  -> docs/bos_strategy.md
 var int lastExtBreakBar = na
 if extBreakThisBar
     lastExtBreakBar := bar_index
@@ -1850,7 +1850,7 @@ bool bullDivActive = showDiv and not na(lastBullDivBar) and not bullDivStale and
 bool bearDivActive = showDiv and not na(lastBearDivBar) and not bearDivStale and bar_index - lastBearDivBar <= divValidBars
 
 // (The veto itself — longVetoA / shortVetoA — is built further down, next to
-//  the A+ stage machine, because it needs the SOS bar. See the note there.)
+//  the SOS Fade stage machine, because it needs the SOS bar. See the note there.)
 
 
 var array<SessionInfo> sessionInfos = getSessionInfos()
@@ -2392,7 +2392,7 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
         // [doc 52] Gate: coloring only activates once 0.618 is reached.  -> docs/bos_strategy.md
         bool fibo618Reached = fibo_dir == 1 ? low <= fiboP3 : high >= fiboP3
 
-        // Inbound 0.5 touch — ungated; A+ EARLY entry tier as price retraces in
+        // Inbound 0.5 touch — ungated; SOS FADE EARLY entry tier as price retraces in
         fiboHalfReached := f_checkTouch(fiboHalfReached, fiboP2, fibo_dir == 1 ? low <= fiboP2 : high >= fiboP2)
 
         if fibo618Reached
@@ -3190,7 +3190,7 @@ if bosS_on
         bosS_on := false
         bosSwhy := _wS
 
-// [doc 75] STAGE 3 — ENTRY: the A+ ladder, unchanged, on the BOS leg  -> docs/bos_strategy.md
+// [doc 75] STAGE 3 — ENTRY: the SOS Fade ladder, unchanged, on the BOS leg  -> docs/bos_strategy.md
 
 float execSlBuf = execSlBufTk * syminfo.mintick
 

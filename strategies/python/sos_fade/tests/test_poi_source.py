@@ -250,7 +250,7 @@ def test_the_stack_builds_the_order_block_engine_ONLY_when_the_config_needs_it()
     `b_leg` both call it off the class); `stack_config()` is the per-instance layer.
 
     The OFF half matters as much as the ON half — turning the engine on unconditionally would add
-    its work to every A+ and B-LEG replay for a feature they do not read.
+    its work to every SOS Fade and B-LEG replay for a feature they do not read.
     """
     default = SosFadeStrategy(config=_cfg("FVG"))
     assert default.stack_config().order_blocks is False
@@ -276,7 +276,7 @@ def test_stack_config_preserves_every_other_engine_pin():
 #
 # The mode exists so the order-block population gets its own position slot and its own
 # `exec_risk_pct` instead of competing with the gap trades for one of each. Measured as a toggle
-# on ONE slot it lost 32.11R of A+ trades to displacement while the trades it added were worth
+# on ONE slot it lost 32.11R of SOS Fade trades to displacement while the trades it added were worth
 # -7.16R, i.e. the damage was the queue and not the setups.
 #
 # Its whole contract is one sentence — trade a block ONLY where the "FVG" leg would not have

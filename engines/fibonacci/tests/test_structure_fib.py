@@ -182,11 +182,11 @@ def test_extend_changed_bar_skips_touch_checks():
     assert "TP1" in {t.level for t in ev.touched}
 
 
-# ── 2026-07-10 re-sync addition: fiboHalfReached (A+ EARLY tier) ──
+# ── 2026-07-10 re-sync addition: fiboHalfReached (SOS FADE EARLY tier) ──
 
 def test_half_reached_inbound_05_is_ungated():
     """fiboHalfReached latches on the INBOUND 0.5 (TP1 price) tap during the retrace, WITHOUT the
-    0.618 gate — the A+ EARLY entry tier. Distinct from the TP1 target, which needs the gate and
+    0.618 gate — the SOS FADE EARLY entry tier. Distinct from the TP1 target, which needs the gate and
     tests the same price on the way OUT (Pine 2443)."""
     fib = StructureFib()
     snap = _bull_snap()                              # asl=100, ash=110 -> 0.5=105.0, E1(0.618)=103.82

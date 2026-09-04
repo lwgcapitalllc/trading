@@ -10,7 +10,7 @@ The profile study established two things and this tool starts from both:
 So the question here is not "is there an edge" — it is "what geometry monetises the one
 we measured". The profile only ever varied the entry retrace, and EVERY value it tried
 (0.5 / 0.618 / 0.786) makes the stop SMALLER, which pushes cost drag the wrong way on an
-edge whose entire problem is cost. And every exit was a fixed R ceiling, which A+ Run 9
+edge whose entire problem is cost. And every exit was a fixed R ceiling, which SOS Fade Run 9
 already proved caps exactly what pays. Both of those are opened up here.
 
 It imports the event builder and the single trade implementation from
@@ -176,7 +176,7 @@ def phase_geometry(base: TradePlan):
 
 
 def phase_exit(base: TradePlan):
-    """Fixed ceilings vs runners. A+ Run 9 measured that a hard TP costs 20%+ of net
+    """Fixed ceilings vs runners. SOS Fade Run 9 measured that a hard TP costs 20%+ of net
     because the handful of trades that go far carry the book; Run 8 measured that a
     ratchet trail banked 43% → 53% of each run at identical drawdown. Both are tested
     here rather than assumed to transfer."""

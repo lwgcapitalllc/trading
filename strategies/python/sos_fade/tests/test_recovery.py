@@ -6,7 +6,7 @@ it — and `test_running_it_twice_does_not_double_the_book`, because three separ
 `finalize` and a strategy finalized twice would report a book nobody traded.
 
 Bars are the shared synthetic frame, which carries 25 real external CHoCHs, so the structure the
-recovery reads is the canonical engine's own output rather than a hand-built stand-in. The A+
+recovery reads is the canonical engine's own output rather than a hand-built stand-in. The SOS Fade
 losses are INJECTED: the point under test is the wiring, and making a synthetic frame lose in a
 particular way would be a fixture describing a market we do not have.
 """
@@ -35,7 +35,7 @@ BARS = synth_bars(40)
 
 
 def _loss(entry_index: int, exit_index: int, direction: int, r: float = -1.0) -> Trade:
-    """One finished A+ loss, shaped exactly as `Execution` books them."""
+    """One finished SOS Fade loss, shaped exactly as `Execution` books them."""
     px = float(BARS["close"].iloc[entry_index])
     risk_usd = 10_000.0
     return Trade(
@@ -96,7 +96,7 @@ def test_recovery_trades_are_tagged_so_the_book_can_be_split():
 def test_turning_it_on_cannot_move_one_aplus_trade():
     """RED by mutation: have recovery.apply re-size any source trade's `pnl_usd`.
 
-    The recovery is a lab-only toggle. If it could move A+'s book, every parity number and every
+    The recovery is a lab-only toggle. If it could move SOS Fade's book, every parity number and every
     figure in the optimization log would be at the mercy of a switch.
     """
     off = _with_losses(exec_recovery=False)

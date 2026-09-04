@@ -437,7 +437,7 @@ method extendOBs(array<OrderBlock> arr, int dir) =>
 //============================================================
   // FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
-// Detection always runs (the A+ entry check reads the gaps); the toggle hides them.
+// Detection always runs (the SOS Fade entry check reads the gaps); the toggle hides them.
 bool showFVG = true
 bool drawFVG = showTradeTools and showFVGInput
 // Detection, appearance and cap are LOCKED to the tuned defaults — no panel inputs, so
@@ -452,7 +452,7 @@ bool  fvgDirOnly   = dirOnlyInput
 color fvgBullColor = color.new(color.gray, 80)
 color fvgBearColor = color.new(color.gray, 80)
 // ── SYNCED TO sos_fade_strategy.pine 2026-08-02 (Aaron's call) ──
-// These three were the reason the indicator drew gaps the A+ bot did not see. The
+// These three were the reason the indicator drew gaps the SOS Fade bot did not see. The
 // strategy is the stricter side on all three, so the indicator was drawing a SUPERSET
 // and a visible gap beside a "no FVG" block on the bot was expected rather than a bug.
 // That is now closed: what is drawn here is what sos_fade_strategy.pine counts.
@@ -485,7 +485,7 @@ int   fvgMaxCount  = 7
 // cap exactly as an EQ-backed gap does, and dies only when price mitigates it.
 // ⚠ DIRECTION-MATCHED, deliberately. On a bearish leg only BEARISH gaps are protected —
 // the bullish gaps printing inside the same band belong to the move against the setup, and
-// the A+ entry rule cannot read them either (it requires `isBull == (fibo_dir == 1)`). So
+// the SOS Fade entry rule cannot read them either (it requires `isBull == (fibo_dir == 1)`). So
 // this pins the gaps a short is actually taken from and lets the rest queue as before.
 // ⚠ 0.382, not 0.5, is the shallow edge — the band the reader marks up by hand. It is one
 // rung shallower than the bot's own 0.5-0.886 entry zone, so a gap sitting just above 0.5
@@ -533,9 +533,9 @@ color eqhColor    = color.new(color.black, 0)
 color eqlColor    = color.new(color.black, 0)
 
 //============================================================
-  // A+ SETUP SEQUENCE INPUTS
+  // SOS FADE SEQUENCE INPUTS
 //============================================================
-// A+ SETUP logic is LOCKED to the tuned defaults — the inputs were removed so the
+// SOS FADE logic is LOCKED to the tuned defaults — the inputs were removed so the
 // sequence can't be altered from the panel (matches the FVG/EQ detection lock). Values
 // are exactly the screenshot defaults: sweeps allowed to arm, SOS time-window ignored,
 // divergence arm valid 3 days, sweep arm valid 1 day.
@@ -548,7 +548,7 @@ int  aplusSweepWindow  = 1440
   // RSI DIVERGENCE (locked defaults — not user-tunable)
 //============================================================
 bool showDivHistory   = true
-// Detection always runs (the A+ arm reads lastBull/BearDivBar); the toggle hides the
+// Detection always runs (the SOS Fade arm reads lastBull/BearDivBar); the toggle hides the
 // drawn divergence lines and labels.
 bool showDiv = true
 bool drawDiv = showTradeTools and showDivInput
@@ -610,7 +610,7 @@ int   vwapWidth = 1
 //============================================================
 // Which levels are drawn, their labels, sizing and extension are all locked — the
 // single "Liquidity Levels" toggle in Chart Tools is the whole panel surface.
-// Level tracking + sweep detection always run (the A+ sequence arms off a sweep and
+// Level tracking + sweep detection always run (the SOS Fade sequence arms off a sweep and
 // the LIQ BSL/SSL rows read it); drawLiq blanks the drawn lines and labels.
 bool i_showLiquidity = true
 bool drawLiq = showTradeTools and i_showLiquidityInput
@@ -707,7 +707,7 @@ bool hideFibsSub5m = true
 // fib is the entry map), overriding the sub-5m hide.
 bool _fibTfOk = timeframe.in_seconds() == 60 or not (hideFibsSub5m and timeframe.in_seconds() < 300)
 // showFibo = COMPUTE. The fib maths must always run: the confirmation table and the
-// whole A+ sequence read fiboP1..fiboP10, so switching the fib off may not stop it
+// whole SOS Fade sequence read fiboP1..fiboP10, so switching the fib off may not stop it
 // being calculated. drawFibo / drawSniper are what the toggles actually control —
 // they gate the drawn lines, so the level objects are deleted, not just recoloured.
 bool showFibo   = _fibTfOk
@@ -1992,7 +1992,7 @@ f_rev15() =>
     // the next SOS.
     // ── TP3 KILLS THE LEG (Aaron, 2026-08-04) — the 1m table went on tracking a setup
     // the 15m had already finished ──
-    // This engine had three deaths and the 15m chart-side A+ engine has four. The one it
+    // This engine had three deaths and the 15m chart-side SOS Fade engine has four. The one it
     // was missing is the one that fires on a WIN: `(fibo_dir == 1 and fibo7Touched)`,
     // price returning to the leg origin. So on the 15m chart the REV row read Pass the
     // moment TP3 printed, while the 1m chart — which reads THIS engine through
@@ -3863,7 +3863,7 @@ f_processFvg() =>
         // The exemption used to be a SWAP, not an addition, and that made it self-cancelling.
         // The cap was measured over EVERY gap while the drop scan skipped the exempt ones, so an
         // EQ-backed gap held a slot: keeping it evicted the newest ordinary gap in its place.
-        // Measured on 40,000 real M15 bars, that is exactly what it did — the A+ bot lost 2 setups
+        // Measured on 40,000 real M15 bars, that is exactly what it did — the SOS Fade bot lost 2 setups
         // and gained none, because the gaps it protected cost it the gaps it would have traded.
         // So `fvgMaxCount` now bounds the ORDINARY gaps only and an exempt gap rides ON TOP of
         // them. The count is what a reader already assumes it is: seven recent gaps, plus however
@@ -3994,7 +3994,7 @@ if showDiv and not na(divPhRsi)
     divPrevPriceHigh := _pHigh
     divPrevHighBar   := _pBar
 
-// Live confluence flags for the A+ setup row
+// Live confluence flags for the SOS Fade setup row
 // Divergence relevance is tied to structure, not just a bar count. A divergence
 // that fired several legs ago — with BOS/SOS events since — is stale even if
 // still within the bar window: price has already moved on, and citing it as a
@@ -4671,7 +4671,7 @@ var bool fibo10Touched = false
 var bool fibo618EverReached = false  // persists true once 0.618 was hit — gates TP checks from NEXT bar
 var bool fiboResetActive    = false  // true once TP3 has been hit — suppresses drawing until the next new leg
 // Inbound touch of the 0.5 level during the RETRACEMENT toward the entry zone —
-// the A+ sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
+// the SOS Fade sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
 // same price on the way back OUT (as TP1) and is gated behind 0.618.
 var bool fiboHalfReached    = false
 
@@ -4826,7 +4826,7 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
         // so TP level checks never fire on the same bar that 0.618 was first hit.
         bool fibo618Reached = fibo_dir == 1 ? low <= fiboP3 : high >= fiboP3
 
-        // Inbound 0.5 touch — ungated; A+ EARLY entry tier as price retraces in
+        // Inbound 0.5 touch — ungated; SOS FADE EARLY entry tier as price retraces in
         fiboHalfReached := f_checkTouch(fiboHalfReached, fiboP2, fibo_dir == 1 ? low <= fiboP2 : high >= fiboP2)
 
         if fibo618Reached
@@ -4972,7 +4972,7 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
 //
 // ⚠ VERIFIED BEFORE CUTTING: all 54 references sit in ONE contiguous region and nothing
 //   outside it reads macro_origin / macro_extreme / macro_dir. Note this is NOT true of
-//   sos_fade_strategy.pine, where those two ARE the A+ sequence's HTF POI (poiLongNow /
+//   sos_fade_strategy.pine, where those two ARE the SOS Fade sequence's HTF POI (poiLongNow /
 //   poiShortNow) — do not copy this cut across to that file.
 //
 // State of the design when it was parked, so the refinement does not start from zero:
@@ -5789,17 +5789,17 @@ if showSessL and liq_nyl != "" and not na(liq_nyl_bar) and liq_nyl_bar > recentS
     recentSSL := "NY Low",   recentSSL_bar := liq_nyl_bar
 
 //============================================================
-  // A+ SETUP SEQUENCE — sweep → SOS → fib entry, IN ORDER
+  // SOS FADE SEQUENCE — sweep → SOS → fib entry, IN ORDER
 //============================================================
-// The A+ model is a sequence, not a checklist. Each stage only counts if the
+// The SOS Fade model is a sequence, not a checklist. Each stage only counts if the
 // previous one is already done:
    // 1. SWEEP — liquidity taken at a tracked HTF pool (H4 / PD / session H-L).
       // Those levels ARE the points of interest, so a sweep firing means price
       // both reached the POI and grabbed the resting stops there.
    // 2. MSS — an external SOS that fires AFTER the sweep, within the window.
    // 3. ENTRY — the SOS leg's fib retracement:
-        // 0.5 tapped   -> A+ EARLY  (early entry tier)
-        // 0.618 reached -> A+ READY (full entry zone, E1-E3)
+        // 0.5 tapped   -> SOS FADE EARLY  (early entry tier)
+        // 0.618 reached -> SOS Fade READY (full entry zone, E1-E3)
       // A live clean FVG overlapping the entry zone is flagged as confluence.
 // The sequence dies on: opposite SOS, close past the fib 1.0 (leg invalidated),
 // or TP3 hit (cycle complete). It then waits for the next sweep.
@@ -5815,11 +5815,11 @@ var int  aplusL_swpArmT  = na
 var int  aplusL_divArmT  = na
 var int  aplusS_swpArmT  = na
 var int  aplusS_divArmT  = na
-var bool aplusL_half     = false // A+-owned 0.5 latch — survives fib redraw at session gap
-var bool aplusL_618      = false // A+-owned 0.618 latch (E1)
-var bool aplusL_702      = false // A+-owned 0.702 latch (E2)
-var bool aplusL_786      = false // A+-owned 0.786 latch (E3)
-var bool aplusL_886      = false // A+-owned 0.886 latch (E4)
+var bool aplusL_half     = false // SOS Fade-owned 0.5 latch — survives fib redraw at session gap
+var bool aplusL_618      = false // SOS Fade-owned 0.618 latch (E1)
+var bool aplusL_702      = false // SOS Fade-owned 0.702 latch (E2)
+var bool aplusL_786      = false // SOS Fade-owned 0.786 latch (E3)
+var bool aplusL_886      = false // SOS Fade-owned 0.886 latch (E4)
 var bool aplusL_fvgTap   = false // price actually traded INTO a matching FVG in the zone
 // The SAME tap, UNGATED by depth (Aaron, 2026-07-30). aplusL_fvgTap can only arm in the
 // 0.5-to-0.618 window because it means "an early entry was taken"; this one just records
@@ -5977,7 +5977,7 @@ if st.bear_sos and not na(aplusS_armTime) and (aplusIgnoreWindow or time - aplus
 // previous bar is more than 2x the normal spacing.
 
 // Clear a stale arm — sweep/div fired but no SOS followed within the window.
-// Without this, aplusL_sweepBar stays set FOREVER even after the A+ row has
+// Without this, aplusL_sweepBar stays set FOREVER even after the SOS Fade row has
 // already fallen back to "Pass" (the display checks the window; this variable
 // didn't), which permanently blocked CONT from ever arming again.
 if not aplusIgnoreWindow and not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
@@ -6009,22 +6009,22 @@ if na(aplusS_sosBar) and not sessionGapBar
     if not na(aplusS_sweepBar) and na(aplusS_swpArmT) and na(aplusS_divArmT)
         aplusS_sweepBar := na, aplusS_armTime := na
 
-// Sequence death. Opposite SOS kills the A+ tracking on that side — the trend
+// Sequence death. Opposite SOS kills the SOS Fade tracking on that side — the trend
 // it was riding just reversed. ANY SOS (either direction) also clears CONT on
 // BOTH sides — an SOS is, by definition, a fresh reversal event, never a
 // continuation. Without this, a stale CONT armed from an earlier BOS could
 // keep showing even after a brand new SOS has since fired on that very side —
-// backwards, since once an SOS prints we're back in A+ (reversal) territory
+// backwards, since once an SOS prints we're back in SOS Fade (reversal) territory
 // until a genuine new BOS re-arms CONT on the far side of that fresh leg.
 if st.bear_sos and not sessionGapBar
     aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_armTime := na, aplusL_swpArmT := na, aplusL_divArmT := na
 if st.bull_sos and not sessionGapBar
     aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_armTime := na, aplusS_swpArmT := na, aplusS_divArmT := na
-// A+ leg resolution: completion (TP3), invalidation (close past 1.0 or fib
+// SOS Fade leg resolution: completion (TP3), invalidation (close past 1.0 or fib
 // flipped), or a CONTINUATION BOS once the SOS stage was already reached. That
 // last case is the one you're describing: the SOS fires, price never completes
 // the retrace, and instead breaks structure again in the same direction — the
-// leg has moved on without ever giving the fib entry, so the A+'s premise is
+// leg has moved on without ever giving the fib entry, so the SOS Fade's premise is
 // over and tracking hands off to CONT. Critically this must exclude the SOS's
 // OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
 // too (they're not mutually exclusive), so without "not st.bull_sos" here, the
@@ -6036,7 +6036,7 @@ if st.bull_sos and not sessionGapBar
 // (TP3 done, fib flipped, 1.0 broken) is a real failure and does NOT arm a B leg.
 bool bLegArmL = not na(aplusL_sosBar) and not sessionGapBar and st.bull_bos and not st.bull_sos and not aplusL_half and not aplusL_618 and fibo_dir == 1 and not fibo7Touched
 bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and not st.bear_sos and not aplusS_half and not aplusS_618 and fibo_dir == -1 and not fibo7Touched
-// ── TP3 KILLS THE LEG OFF THE A+'S OWN LATCH, NOT THE DRAWN FIB'S (Aaron, 2026-08-06) ──
+// ── TP3 KILLS THE LEG OFF THE SOS Fade'S OWN LATCH, NOT THE DRAWN FIB'S (Aaron, 2026-08-06) ──
 // The row was seen STUCK on "TAKE PROFIT SHORT · TP3 · close the rest" long after TP3
 // printed, on a short entered at 0.5. The completion death above reads `fibo7Touched`,
 // and that flag is GATED: the fib block only checks its three TP levels inside
@@ -6044,7 +6044,7 @@ bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and 
 // fibo618EverReached stays false, fibo7Touched can NEVER be set, and the completion
 // death is unreachable — the leg then survives until an opposite SOS or a continuation
 // BOS happens along, which can be hours.
-// Meanwhile the A+ engine's OWN TP3 latch fires perfectly well on that same leg, because
+// Meanwhile the SOS Fade engine's OWN TP3 latch fires perfectly well on that same leg, because
 // its gate is `aplusX_618[1] or aplusX_half[1]` — half is enough. So the row knew the
 // trade was finished and the death did not. Two flags for one event, and only one of them
 // works after a shallow entry.
@@ -6052,7 +6052,7 @@ bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and 
 // level the drawn fib labels TP3 — so this is the identical death, read from the side
 // that can actually see it. `fibo7Touched` is KEPT: it still fires first on a deep entry
 // (it is checked in the fib block, which runs earlier in the bar), and it covers a leg
-// that returned to 0.0 without the A+ engine banking the rungs in order.
+// that returned to 0.0 without the SOS Fade engine banking the rungs in order.
 // ⚠ It kills one bar LATE — this block runs BEFORE the TP tracking that sets the latch,
 // so the row carries a finished setup for one extra bar. Same lag `f_rev15` already
 // accepts for its own `or S_tp0`, and left the same way rather than adding a second
@@ -6099,7 +6099,7 @@ bool _szTapNow = not na(sniperZoneTop) and not na(sniperZoneBot) and low <= snip
 // Direction-matched: a bearish gap for a short, a bullish gap for a long.
 // Scans the CHART's own drawn gaps — so on a 15m chart these are 15m FVGs, on a 1m
 // chart 1m FVGs. Renamed off "f_fvg1mInZone" 2026-07-30: the old name claimed 1m and
-// the A+ early entry now uses it on the 15m, where 1m would have been a lie.
+// the SOS Fade early entry now uses it on the 15m, where 1m would have been a lie.
 f_fvgInZone(bool wantBull, float zLo, float zHi) =>
     bool hit = false
     if not na(zLo) and not na(zHi) and array.size(fvgBoxes) > 0
@@ -6148,7 +6148,7 @@ bool aplusS_fvgEarlyNow = fibo_dir == -1 and f_fvgInZone(false, _apZLo, _apZHi)
 
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
-// Latch the A+'s own 0.5/0.618/0.702/0.786/0.886 progress + which confluence was
+// Latch the SOS Fade's own 0.5/0.618/0.702/0.786/0.886 progress + which confluence was
 // actually tapped, while its SOS is live. These persist through a fib-origin
 // redraw (session gap) that would otherwise reset the global touched flags.
 if not na(aplusL_sosBar)
@@ -6683,13 +6683,13 @@ if showConfTable and barstate.islast
 
     int r = 1
 
-    // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
+    // Everything below (SOS FADE, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
     // Market Structure mode — only EXT/INT print then.
     if not marketStructureOnly
-        // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
+        // SOS FADE — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
         // completes, this row goes back to Pass; what tracks afterward is the CONT
         // row below — a different trade type, displayed separately so the two can
-        // A+ setup is a REVERSAL trade — a Bull/Bear Div at the sweep is usually part
+        // SOS Fade setup is a REVERSAL trade — a Bull/Bear Div at the sweep is usually part
         // of its own confirmation, not a reason to distrust it, so no veto here.
         // (CONT is the one that gets vetoed — see below — since it's riding an
         // established trend where a fresh opposing divergence is real reversal risk.)
@@ -6699,7 +6699,7 @@ if showConfTable and barstate.islast
         // confirmation is accepted, same as CONT treats them. POI (Cycle Fib
         // discount/premium) is a separate, optional confirmation on top of this.
         // REV SETUP — 15m-locked. On the 15m chart it reads the REAL drawn fib via the
-        // chart A+ engine (aplusL_*/aplusS_* use fiboP1/P2/P7 directly), so entries and
+        // chart SOS Fade engine (aplusL_*/aplusS_* use fiboP1/P2/P7 directly), so entries and
         // scales line up EXACTLY with the FFT / E1-E4 / TP lines on your chart. Off-15m it
         // falls back to the 15m security skeleton (rStage/rDir) for observation only.
         bool   revOn15 = timeframe.in_seconds() == 900
@@ -6730,7 +6730,7 @@ if showConfTable and barstate.islast
         bool   uEarlyFvg = false
         // Which source(s) armed the winning side's Stage 1 — drives the 1/3 text
         // (Sweep / Div / Sweep+Div). Only meaningful on the 15m chart, where the real
-        // A+ engine (aplusL_*/aplusS_*) drives the row.
+        // SOS Fade engine (aplusL_*/aplusS_*) drives the row.
         bool   uArmSwp = false
         bool   uArmDiv = false
         // True once a deeper retrace has RESET this leg — the row says RE-ENTRY instead
@@ -6773,7 +6773,7 @@ if showConfTable and barstate.islast
             uDeepFvg  := revDeepFvg
             uEarlyFvg := revEarlyFvg
             // On the 1m the REV row rides the drawn aligned fib, so reuse that row's
-            // own tap latches rather than the 15m A+ ones, which aren't computed here.
+            // own tap latches rather than the 15m SOS Fade ones, which aren't computed here.
             uSz       := rev1mEntrySz
             uFvgZone  := rev1mEntryFvg
             uReentry  := revReentry

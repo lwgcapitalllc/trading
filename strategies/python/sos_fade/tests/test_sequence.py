@@ -1,6 +1,6 @@
 """Sequence + signal-adapter tests — offline, no network.
 
-They prove the A+ front half (SignalAdapter -> SosFadeSequence) (a) wires onto the real
+They prove the SOS Fade front half (SignalAdapter -> SosFadeSequence) (a) wires onto the real
 engine stack without error, (b) is a proper streaming state machine that produces the
 staged output the Pine does, and (c) reproduces two hand-checkable Pine rules in
 isolation: the Stage-1 -> Stage-2 -> death progression and the arm-source snapshot.
@@ -56,7 +56,7 @@ def test_pipeline_runs_and_produces_signals():
 
 
 def test_sequence_reaches_a_setup_stage():
-    # On a multi-day impulse series the A+ sequence must arm and advance at least to
+    # On a multi-day impulse series the SOS Fade sequence must arm and advance at least to
     # Stage 1 (a sweep or divergence) somewhere — proof the whole chain lights up.
     out = _run(synth_bars(10))
     max_stage = max(max(st.l_stage, st.s_stage) for _, st in out)
@@ -126,7 +126,7 @@ def test_stale_arm_clears_after_window():
 
 
 # ------------------------------------------------- the leg's anchor TIMES -------
-# `fibo_ash_ms` / `fibo_asl_ms` are reporting-only (nothing in the A+ path reads them), and they
+# `fibo_ash_ms` / `fibo_asl_ms` are reporting-only (nothing in the SOS Fade path reads them), and they
 # exist so a consumer downstream of this run can say WHERE the fib leg is. The engine reports its
 # anchors as bar INDICES; a bar index is relative to the window that produced it, so shipping one
 # to a chart that trimmed its candles would point at the wrong candle — hence times.

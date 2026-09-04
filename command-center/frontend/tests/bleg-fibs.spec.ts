@@ -4,7 +4,7 @@
  * The B-LEG bot is the more fib-native of the two — it rests its limit on the 0.5 of the frozen
  * SOS leg, stops at that leg's 1.0 and takes TP1 at its 0.0 — and until 2026-08-11 it recorded no
  * ladder at all, because it overrides `_place_entries` and the recording hung off the parent's.
- * So the Fibs row was ABSENT on every B-LEG run while the layer worked fine on A+ runs, which
+ * So the Fibs row was ABSENT on every B-LEG run while the layer worked fine on SOS Fade runs, which
  * reads as the feature being broken rather than as a bot that never filled the field.
  *
  * The ladder's ARITHMETIC is the strategy's and is pinned there by
@@ -18,7 +18,7 @@
  * it. A run made before this change needs re-running, not "Reload charts".
  *
  * ⚠ A fail-watch against HEAD is genuinely meaningful here, unlike a brand-new layer: the Fibs row
- * and its template both already existed and worked on A+ runs, and were absent on this run only
+ * and its template both already existed and worked on SOS Fade runs, and were absent on this run only
  * because `tradeFibCount` was 0. Check 1 was WATCHED RED against HEAD for that reason. Check 2 is
  * non-vacuous by construction — it measures the same pixels with the layer off and on.
  */

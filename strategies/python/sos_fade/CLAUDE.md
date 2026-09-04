@@ -12,9 +12,9 @@
 > rule — parents route, children explain — applied one level down, and it is the only thing that
 > keeps this file from growing back.
 
-**Purpose:** The SOS Fade strategy in Python — a line-for-line port of the A+ block +
+**Purpose:** The SOS Fade strategy in Python — a line-for-line port of the SOS Fade block +
 execution layer in `strategies/tradingview/sos_fade_strategy.pine` (Aaron's brother's "MPC-JARVIS" script). It reads
-the canonical engine stack's per-bar output and turns the A+ sequence into trades.
+the canonical engine stack's per-bar output and turns the SOS Fade sequence into trades.
 **Scope:** This strategy only — its state machine, order logic, config, and parity harness. It does
 NOT own the engines (`engines/`), the replay runner (`backtest/`), or the lab (`command-center/`).
 **Status:** Built + unit-tested + **logic-parity GREEN (exit 0) 2026-07-16** on a full-history
@@ -174,7 +174,7 @@ add the call to any future reader of `sig.fvgs` or that path becomes a way aroun
 side** rather than once, because the anchor is a function of that side's own entry edge.
 ⚠ **Two sibling forks had to PIN the old behaviour**, since neither of their Pines has this model:
 `BLegConfig` pins all five plus `exec_deep_fib=True` (it does not override `_entry_edges`, and those
-edges feed the "A+ has priority" gate, so this is NOT inert there), and `BosConfig` pins
+edges feed the "SOS Fade has priority" gate, so this is NOT inert there), and `BosConfig` pins
 `exec_deep_fib=True`. **Defaults verified mechanically against the Pine, not by eye** — all 23
 execution inputs in the panel diffed programmatically, 0 mismatches. 140 tests green (11 new).
 ✅ **PARITY RE-VALIDATED GREEN THE SAME DAY, and the run is not vacuous.**
@@ -258,7 +258,7 @@ Every "the export is stale" warning in this file is cleared, with one exception 
 then and IS now: the export had no `execMinStopMode`/`execMinStopVal` column — see the 2026-07-30
 entry above.
 Earlier: 2026-07-27 — `exec_sl_level` defaulted **"1.0" → "0.886"** in lockstep with both
-A+ Pine files (Aaron's call — it is what he trades, and Run 6 rode it over the full history). The
+SOS Fade Pine files (Aaron's call — it is what he trades, and Run 6 rode it over the full history). The
 ⚠ block below is AMENDED, not retracted: 0.886 is still inside the entry band and neither Run 4
 defect is fixed; 0.618 / 0.702 / 0.786 stay unsupported. `b_leg` PINS "1.0" rather than
 inheriting, because its own Pine still ships 1.0. Earlier the same day: `Execution` now also
@@ -310,6 +310,34 @@ on the restore** until the record is migrated. That is the designed refusal, and
 ## The name (renamed 2026-07-16 — was `mpc_aplus` / `MpcAplusStrategy`)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The name (renamed 2026-07-16 — was `mpc_aplus` / `MpcAplusStrategy`)*.
+
+### 🔴 "A+" AND "SOS Fade" WERE THE SAME STRATEGY UNDER TWO NAMES. THE DISPLAY NAME COLLAPSED 2026-09-04; THE IDENTIFIERS DELIBERATELY DID NOT
+
+Aaron, reading the two side by side: *"but A+ and sos fade is the same thing not so?"* They were —
+the Pine was titled `A+ Strategy` while this package, the lab row and the bot were all SOS Fade.
+Every human-visible mention is now **SOS Fade**: the chart chip (`SOS FADE`, joining the short
+uppercase family beside `REALIGN` and `XLEG`), the confirmation-table row, the input labels, the
+alert text and all prose.
+
+🔴 **THE CODE IDENTIFIERS AND CONFIG FIELDS WERE LEFT ALONE, AND THAT IS A MEASUREMENT RATHER THAN
+LAZINESS.** `exec_aplus` and `aplus_window` are not internal names — they are a stored CONTRACT:
+**48 saved backtest runs carry them inside their `params`, 4 strategy rows carry them in their
+schema, and the LIVE bot's own `config.json` states both.** Renaming them orphans the parameters of
+every one of those runs, and **a config key the running code has never heard of fails its parse
+every 10 seconds and buries the log** (`algos/CLAUDE.md`). It would buy a reader nothing.
+
+⚠ **So `aplusL_sosBar` and friends still say A+ and are the same thing as SOS Fade.** That is the
+one place the two names still meet, it is invisible from every screen, and it is cheaper than the
+run history.
+
+⚠ **`education/` kept its A+ too, and for the opposite reason** — there it is the SMC course's
+generic word for a top-grade setup, not this strategy. Same call as the Bank of England's
+"MPC Vote" surviving the de-brand: the letters match and the meaning does not.
+
+⚠ **A bare `A+` replacement is UNSAFE and the guard is a word boundary.** npm integrity hashes
+carry base64 like `aA+f`, and a real TradingView export is named `MPC_A+_Strategy_FX_...csv`.
+Both were caught by requiring a non-alphanumeric on each side — rewriting either corrupts a file
+nobody would think to check.
 
 ## Sizing — this bot sizes ITSELF
 
@@ -425,7 +453,7 @@ method-presence check called them supported, and the runner would have logged "S
 for a channel that can send nothing. **The empty-registry failure arriving through a base class
 rather than a literal `{}`.** `reports_setups` is therefore DERIVED from `_records_misses`, so a
 new fork cannot acquire a silent, empty channel by forgetting a line — and `True` is still not a
-claim that a fork's confluences are right: turning the watch back on would report A+'s three
+claim that a fork's confluences are right: turning the watch back on would report SOS Fade's three
 confluences for a setup it does not trade. Each fork needs its own `_setup_context` first.
 
 ✅ **The derivation was validated by an event rather than by an argument: `realign` landed on
@@ -715,7 +743,7 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1
   like from outside.** ⚠ **It is bought with drawdown: 45.6% → 50.7%.** ⚠ **+25.56R is not evidence
   either way** — the jitter audit put this strategy's run-to-run spread at **sd 15.06R**, so the
   headline is under two standard deviations and rests on one fill. ⚠ **The fat-tail defence does not
-  rescue it, and it is worth stating because this repo's own philosophy invites it**: A+ is designed
+  rescue it, and it is worth stating because this repo's own philosophy invites it**: SOS Fade is designed
   to be tail-heavy (5 of 165 trades once made 47% of everything won), so "one trade made it all" is
   not damning by itself — but the primary carries 180 trades and stays positive without any single
   one, while these ten go negative without theirs. **Ten trades cannot tell a small edge from a small
@@ -749,7 +777,7 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Secondary (1
   replays one frame, so **the optimizer, sweeps and the stress test's pooled sensitivity have no
   fill-clock stream** — they would have replayed a primary-only book and ranked it against a baseline that
   has re-entries. They **REFUSE** now, naming the fix. ⚠ **`b_leg` had to PIN it False and that
-  one is not cosmetic**: A+ never places an order in that fork so there is no primary to follow,
+  one is not cosmetic**: SOS Fade never places an order in that fork so there is no primary to follow,
   and `BLegStrategy.run_dual` raises — an inherited `True` would have killed **every B-LEG lab
   run** on a `NotImplementedError`. ✅ The live bot is unaffected: its instance config states
   `exec_secondary: false` explicitly, and `algos/live/bridge.py` refuses the config outright.
@@ -1686,7 +1714,7 @@ the minimum-stop guard's cheap estimate got its SIGN wrong (+1.84R estimated, **
 Here the naive re-pricing and the real replay agree on the delta to the cent (+4.23R at 36h),
 because the trade list genuinely did not reshuffle. ⚠ **Read that as a fact about THIS window, not
 as a general licence to re-price instead of replaying.** The reason it holds is mechanical and
-narrow: A+ takes ~2 trades a month, so a slot freed 60 hours early usually contains no setup at
+narrow: SOS Fade takes ~2 trades a month, so a slot freed 60 hours early usually contains no setup at
 all — and an ENTRY-side change like the min-stop guard frees the slot at the exact moment a setup
 exists, which is precisely when a competitor is nearby. **An exit-side lever and an entry-side
 filter are not the same risk, and the next lever still gets replayed.**
@@ -1705,7 +1733,7 @@ hold advances the clock by the whole weekend on a handful of bars, which is deli
 ⚠ **`b_leg` INHERITS it, unlike the minimum-stop guard which that fork pins Off.** The lever
 lives in the parent's `step()`, which `BLegExecution` delegates to, and both bots share ONE exit
 ladder. `strategies/tradingview/b_leg_strategy.pine` got the identical inputs in the same commit so the two
-sides cannot drift. **But the 24h–40h plateau was measured on A+ trades only** — a B leg waits for a
+sides cannot drift. **But the 24h–40h plateau was measured on SOS Fade trades only** — a B leg waits for a
 LATE retrace by construction, so treat any value there as untested until it is replayed.
 
 ⚠ **The Pine inputs are declared next to the exit block, not up in the GRP_EXEC panel**, and that
@@ -1754,9 +1782,9 @@ it. Quote the table freely now.
 ⚠ **Re-export at 4 hours after any change to this lever.** 36 is the shipped value and is
 untestable on a normal chart; 4 is the same code path and exercises it dozens of times.
 
-### ✅ CLOSED — the A+ parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)
+### ✅ CLOSED — the SOS Fade parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)
 
-Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *✅ CLOSED — the A+ parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)*.
+Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *✅ CLOSED — the SOS Fade parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)*.
 
 🔴 **They were not. `_fib_snap` is line-for-line identical on both sides, and the gap Pine rested
 on did not exist in Python at all.** Dumping the live gap list at that bar found Python holding
@@ -2003,10 +2031,10 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Deliberate deviations from the Pine (per the framework)*.
 
 🔴 **PYTHON-ONLY FIELDS — THE GATE IS BLIND TO THESE, AND THERE ARE NOW TWO (audited 2026-08-12).** A field with no Pine input has no `cfg_*` column, so `compare_strategy.py` **can never configure a non-default run of it** — the green gate says nothing whatever about these branches. This is rule 14 with a specific shape: *a gate proves nothing about a branch neither side entered*, and here one side cannot enter it at all.
-- **`exec_no_gap_arm`** — no `execNoGapArm` input exists in either A+ Pine. Any result measured with it moved was taken with one implementation only.
+- **`exec_no_gap_arm`** — no `execNoGapArm` input exists in either SOS Fade Pine. Any result measured with it moved was taken with one implementation only.
 - **`exec_poi_source`** — `execPoiSource` appears in **zero** `.pine` files. The Pine POI seam was reverted (`indicators/CLAUDE.md` records it); the Python side was not reverted with it, so this field outlived its counterpart.
 
-⚠ **Before trusting any A+ measurement, check whether it moved one of these two.** ⚠ **The fix is a decision, not a tidy-up:** either add the Pine inputs and re-export so the gate can see them, or drop the fields. Leaving them is the one option that keeps a live strategy carrying dials nothing verifies. Detail: `strategies/python/sos_fade/docs/SOS_FADE_BUILD_NOTES.md`.
+⚠ **Before trusting any SOS Fade measurement, check whether it moved one of these two.** ⚠ **The fix is a decision, not a tidy-up:** either add the Pine inputs and re-export so the gate can see them, or drop the fields. Leaving them is the one option that keeps a live strategy carrying dials nothing verifies. Detail: `strategies/python/sos_fade/docs/SOS_FADE_BUILD_NOTES.md`.
 
    **It does exactly what it promises and the swap goes to zero** — the charge falls 12.04R → 5.64R
    and what remains is pure spread. **You save 6.4R of swap and give up 76.1R of edge to do it, a
@@ -2101,9 +2129,9 @@ See `docs/SOS_FADE_BUILD_NOTES.md` → *The 2026-07-16 year run*.
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *This bot's LOSSES are another package's population — `strategies/python/loss_recovery/`*.
 
-`loss_recovery` replays a **25%-size counter-trade after every A+ stop-out**. It is not a config
+`loss_recovery` replays a **25%-size counter-trade after every SOS Fade stop-out**. It is not a config
 of this bot and changes nothing here — but its entire trade population is **this bot's 62 real
-losses**, so it is coupled in one direction: ⚠ **any change to A+'s entry rule re-populates it and
+losses**, so it is coupled in one direction: ⚠ **any change to SOS Fade's entry rule re-populates it and
 every figure it has produced goes stale**, the same standing `overlap_audit.py` has. Re-run
 `backtest/tools/recovery_report.py` after one.
 
@@ -2511,8 +2539,8 @@ stored TRADES, never the KPI row** — the KPI row of a stale replay looks entir
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 THE TWO RE-ENTRY HALVES ARE TWO FEATURES, AND ONLY ONE OF THEM EARNS (2026-08-23)*.
 
 ✅ **THE THREE ARE EXACTLY ADDITIVE, AND THAT IS THE STRUCTURAL FINDING.** 139.71 + 30.00 =
-169.71; + 8.19 = 177.89. The 159 A+ trades are **identical in all three** — same entry times,
-same fills, same R, checked trade by trade. **Neither half displaces an A+ setup or interferes
+169.71; + 8.19 = 177.89. The 159 SOS Fade trades are **identical in all three** — same entry times,
+same fills, same R, checked trade by trade. **Neither half displaces an SOS Fade setup or interferes
 with the other**, so each is a genuinely independent switch. ⚠ That is a fact about THIS config,
 not a property of the design — one position slot means displacement is always possible. **Re-run
 the three-way before trusting it after any entry-logic change.**
@@ -2529,8 +2557,8 @@ into its triggers and drop the best trade from each — a leg carried by one out
 not a strategy.**
 
 ⚠ **It did NOT smooth the drawdown, and the account-drop column is why that reads backwards.**
-The worst stretch (2022-01-26 → 2022-11-14) has A+ down 4.13R and the re-entries down another
-1.68R on top, with **five occasions where the re-entry lost immediately after the A+ it followed
+The worst stretch (2022-01-26 → 2022-11-14) has SOS Fade down 4.13R and the re-entries down another
+1.68R on top, with **five occasions where the re-entry lost immediately after the SOS Fade it followed
 lost.** In bad conditions the two are ONE position at 1.5× the size — 10% plus 5% on the same
 failing setup. The account drop improves 45.6% → 43.3% only because the extra profit compounds
 the balance; that is sequencing, never safety. **Read the R drawdown, which got 0.8R worse.**
@@ -2617,7 +2645,7 @@ not real — and is worth ~1.5R a year.
 
 ⚠ **A SMALLER LOSING TICKET IS NOT A SAFER ACCOUNT, and this run is the proof.** Account drawdown
 is **43.34% in six of the seven** stop-protection runs, i.e. unchanged, because the drawdown is
-driven by the A+ book. Halving the re-entry loss moves the number on the ticket and nothing else.
+driven by the SOS Fade book. Halving the re-entry loss moves the number on the ticket and nothing else.
 
 **Three settings landed, all defaulting to the shipped behaviour and all OFF:** the protected-stop
 trigger, how far that stop moves, and the resting-order cancel. **Only the cancel is recommended,
@@ -2649,21 +2677,21 @@ instrument's typical bar gap rather than picking a round number.
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Loss recovery — the toggle, and the one property it must never break*.
 
-🔴 **Turning it on cannot move one A+ trade, and a test pins that.** The recovery reads A+'s
+🔴 **Turning it on cannot move one SOS Fade trade, and a test pins that.** The recovery reads SOS Fade's
 finished losses and appends rows tagged `kind="recovery"`; it never gates, delays or re-sizes an
-A+ entry. That is what makes it safe to ship a lab-only toggle on the LIVE bot's config class — a
+SOS Fade entry. That is what makes it safe to ship a lab-only toggle on the LIVE bot's config class — a
 feature that could rewrite the shipped book would put every parity number and every figure in
 `sos_fade_optimization.md` at the mercy of a switch. `test_turning_it_on_cannot_move_one_aplus_trade`
 is the one to keep green; it was watched red by having `apply` re-size a source trade.
 
 🔴 **The cost of that choice was called "slight" here until it was measured, and it is most of
 the result (2026-08-20, run `236e206d0142`).** The recovery sizes off the RUNNING balance (every
-A+ and earlier recovery trade already closed is in it); A+ does not size off the recovery. **They
+SOS Fade and earlier recovery trade already closed is in it); SOS Fade does not size off the recovery. **They
 share a balance in ONE direction only**, so recovery profit sits BESIDE the curve instead of
 lifting it and never compounds. Identical trades, added up two ways: **+3.8% as the lab runs it
 against +59.9% on one shared compounding balance.** ⚠ **Neither is this rule's worth.** The
 larger figure also assumes one balance with NO risk budget on it; at the 10% account cap this bot
-already runs, 23 of that run's 160 A+ entries opened while a recovery was still holding risk and
+already runs, 23 of that run's 160 SOS Fade entries opened while a recovery was still holding risk and
 the leg turns NEGATIVE. **The honest range is +45% to −15%, decided by an allocator that does not
 exist on the live side.** Full bracket: `strategies/python/loss_recovery/CLAUDE.md` → *Put ONE RISK
 BUDGET on that balance*. It is NOT a shared-account run — `backtest/portfolio/`
@@ -2721,8 +2749,8 @@ it ON is not a parity input.
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *🔴 The toggle's warning text was WRONG in the direction that flatters the rule (rewritten 2026-08-21)*.
 
 1. **"Does not model one account" overstates the defect.** Half the sharing is real — a recovery
-   trade IS sized off a balance carrying every A+ trade that had closed by then (`recovery.py`'s
-   heap walk). What is missing is the way BACK: A+ never sizes off the recovery. Saying neither
+   trade IS sized off a balance carrying every SOS Fade trade that had closed by then (`recovery.py`'s
+   heap walk). What is missing is the way BACK: SOS Fade never sizes off the recovery. Saying neither
    direction works sends the reader looking for a bug that is not there.
 2. **"Added AFTER the main book is finished"** describes the PASS correctly and reads as though the
    rows are appended at the end of the timeline. They are interleaved by entry bar.
@@ -2799,7 +2827,7 @@ switch and the value were two separate decisions and the history is kept that wa
 ⚠ **PIN IT TO 0.0 TO REPRODUCE ANY BASELINE IN THIS FILE MEASURED BEFORE TODAY.** Not a formality:
 the floor removes 5 entries, and with one position slot a removed entry changes which LATER setup
 gets the slot, so a stored figure does not merely shift by the refused trades' R.
-⚠ **The live bot does not have it until somebody PROMOTES.** ✅ **The A+/B-LEG overlap audit was
+⚠ **The live bot does not have it until somebody PROMOTES.** ✅ **The SOS Fade/B-LEG overlap audit was
 RE-RUN on 2026-09-01** against the shipped 240-trade book, discharging the stale reading measured
 on the logic that took 245: **45 shared bars in 157,004, ZERO of them same-side**, monthly r
 +0.072. Figures and caveats live in ONE place — root `CLAUDE.md` → *Trading Philosophy*, with the
@@ -2867,9 +2895,9 @@ identity result alone could not tell the two apart.
 
 ---
 
-## Its chips say `A+` on the price chart (2026-09-02)
+## Its chips say `SOS Fade` on the price chart (2026-09-02)
 
-`LAB_STRATEGY["chart_tag"] = "A+"` — the grade its own Pine calls this setup. ⚠ **A LABEL: no run, no cost and no decision reads
+`LAB_STRATEGY["chart_tag"] = "SOS Fade"` — the grade its own Pine calls this setup. ⚠ **A LABEL: no run, no cost and no decision reads
 it**, so changing it repaints chips and moves no trade. ⚠ **Keep it SHORT** — it is drawn beside the
 entry price. Why it exists, what it does on a STACK, and why rule 22 is silent for it:
 `command-center/backend/CLAUDE.md` → *A strategy names its own setup on the chart*.

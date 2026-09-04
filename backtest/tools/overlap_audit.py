@@ -2,7 +2,7 @@
 """overlap_audit.py — do two strategies actually trade DIFFERENT legs of the move?
 
 `CLAUDE.md` → *Trading Philosophy* says the suite is carved up by LEG, not by signal:
-A+ fades the reversal, B-LEG catches the late retrace of an SOS, and "by construction
+SOS Fade fades the reversal, B-LEG catches the late retrace of an SOS, and "by construction
 they should not be in the market on the same swing at the same time." **That is design
 intent, and it has never been measured.** It is also the load-bearing assumption under
 the whole portfolio argument — if two bots fire on the same structure break in the same
@@ -69,7 +69,7 @@ _STRATEGIES = {
 
 # Same-direction entries this far apart or less are reported as a CLUSTER — the proxy for
 # "both bots read the same structure break". Four hours is comfortably wider than the retrace
-# a B-LEG waits for after an A+ entry would have fired.
+# a B-LEG waits for after an SOS Fade entry would have fired.
 #
 # ⚠ **IT IS A DURATION, NOT A BAR COUNT, AND THAT CHANGED ON 2026-09-01.** It was 16 bars,
 # which meant four hours only while both bots shared a 15-minute frame. Two bots on different
@@ -124,7 +124,7 @@ def _holds(trades, df, grid, fast_df=None) -> list[Hold]:
 
     ⚠ **When the two frames are the SAME, the grid IS that frame and this is the identity** —
     every number the tool produced before the grid existed reproduces exactly. That was the
-    constraint the design had to meet: the A+/B-LEG result is quoted in `CLAUDE.md`.
+    constraint the design had to meet: the SOS Fade/B-LEG result is quoted in `CLAUDE.md`.
 
     ⚠ The half-open [entry, exit) convention is unchanged and still applies to both sides.
     """
@@ -190,7 +190,7 @@ class Grid:
         millisecond is the same instant on every frame there will ever be.
 
         🔴 **CONTAINING, NOT THE NEXT ONE, AND THE DIFFERENCE IS ROUTINE RATHER THAN EXCEPTIONAL.**
-        A re-entry fills on a 5-minute bar while the A+/B-LEG grid is 15-minute, so most re-entry
+        A re-entry fills on a 5-minute bar while the SOS Fade/B-LEG grid is 15-minute, so most re-entry
         timestamps are simply NOT grid bar opens — 62 of them in one 6.6-year audit. `unit`'s
         fall-FORWARD is right for its own case (a coarse frame's bar open that the fine feed is
         missing) and wrong here: it would mark a trade opened at 10:05 as in the market from 10:15.
@@ -225,7 +225,7 @@ def _occupancy(holds: list[Hold], n_bars: int) -> list[int]:
     exposure — so it REFUSES instead.
 
     🔴 **THAT REFUSAL WAS REMOVED ON 2026-09-02 AND PUT BACK ON 2026-09-03, AND THE ROUND TRIP IS
-    THE LESSON.** It fired the first time A+'s re-entries were replayed, and it was read as a
+    THE LESSON.** It fired the first time SOS Fade's re-entries were replayed, and it was read as a
     discovery — *the bot holds two positions at once* — so the cell was widened to a count and the
     finding was written into the root `CLAUDE.md` with a doubled-risk warning attached. It was
     none of that. `_holds` was placing every re-entry at the wrong TIME, and several of them were
@@ -355,7 +355,7 @@ def _entry_mix(trades, fill_tf) -> str:
     """How the book SPLITS by entry kind, for a bot replayed on a fill clock.
 
     🔴 **Zero re-entries and a bot that could not fire one must not look the same**, which is the
-    whole reason the old silence here was dangerous: this tool replayed A+ on one frame for its
+    whole reason the old silence here was dangerous: this tool replayed SOS Fade on one frame for its
     entire life, so its re-entries could not fire, and the report simply did not mention them.
     Printing the split makes *0 re-entries* an answer somebody stated rather than a subject the
     report never raised. A one-frame bot gets nothing, because for it there is no split to make.
@@ -502,8 +502,8 @@ def main(argv=None) -> int:
     #
     # 🔴 **THE GRID IS THE FINER PRIMARY FRAME, NEVER A FILL CLOCK, AND THE DISTINCTION ARRIVED
     # WITH THE FILL CLOCKS (2026-09-02).** `frames` now also holds the re-entry feeds, so reading
-    # the minimum off the whole dict would have re-based the A+/B-LEG audit from 15m onto 5m
-    # purely because A+ fills its re-entries there — silently tripling every bar count in the
+    # the minimum off the whole dict would have re-based the SOS Fade/B-LEG audit from 15m onto 5m
+    # purely because SOS Fade fills its re-entries there — silently tripling every bar count in the
     # report while nothing about the bots had changed. A bot HOLDS a position across its primary
     # bars; the fill clock only decides where a resting order gets hit. Measuring occupancy on it
     # would answer a question nobody asked, in a unit no previous reading can be compared against.

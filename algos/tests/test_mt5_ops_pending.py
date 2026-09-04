@@ -374,7 +374,7 @@ def test_a_refused_market_order_does_not_log_the_word_success(mt5ops):
 
 
 def test_a_refused_pending_limit_reports_the_brokers_words(mt5ops):
-    """This is the path the A+ bot actually enters on — every entry is a resting limit."""
+    """This is the path the SOS Fade bot actually enters on — every entry is a resting limit."""
     mt5_ops, fake = mt5ops
     fake._refuse_with = _Result(_REFUSED, comment=_REFUSED_TEXT)
     log = _Log()

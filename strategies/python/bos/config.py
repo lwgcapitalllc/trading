@@ -2,7 +2,7 @@
 
 A strict SUPERSET of `sos_fade`'s `SosFadeConfig`, exactly like `BLegConfig`: the BOS
 strategy runs the SAME engine stack and the SAME exit ladder, and its ENTRY ladder is the
-A+'s (spec §5), only priced off the BOS leg instead of the SOS leg. So every A+ exit input
+SOS Fade's (spec §5), only priced off the BOS leg instead of the SOS leg. So every SOS Fade exit input
 still matters and is inherited; the new fields are the BOS setup's own (spec §8).
 
 ⚠ **EVERY FIELD HERE HAS A `bos_strategy.pine` INPUT BEHIND IT AND NOTHING ELSE DOES.**
@@ -14,7 +14,7 @@ one is unverifiable by construction, which is a large part of why that port was 
 Recover them from `1946f8b^` if the Pine ever grows the inputs; do not re-add them here first.
 
 Defaults MATCH the Pine field for field, as of the 2026-08-07 default change (Run 7 in
-`docs/BOS_OPTIMIZATION.md`). Where this fork ships a different default from the A+ Pine,
+`docs/BOS_OPTIMIZATION.md`). Where this fork ships a different default from the SOS Fade Pine,
 the value is re-declared below WITH THE REASON — an inherited default is a default nobody
 chose, and this repo has been bitten by that in both directions.
 """
@@ -39,9 +39,9 @@ class BosConfig(SosFadeConfig):
     # ── 1. WHAT TRADES (Pine execLongs / execShorts) ─────────────────────────────
     # Inherited: exec_longs / exec_shorts, both True.
 
-    # ── Inherited A+ toggles, re-defaulted to THIS fork's Pine values ─────────────
+    # ── Inherited SOS Fade toggles, re-defaulted to THIS fork's Pine values ─────────────
     exec_aplus: bool = False
-    #   There is no A+ path in this fork at all — the arm is a BOS, not a swept SOS. Pinned
+    #   There is no SOS Fade path in this fork at all — the arm is a BOS, not a swept SOS. Pinned
     #   False so the parent's `_armed` can never place an order behind this fork's back.
     exec_bleg: bool = False        # nor a B-LEG one
     exec_secondary: bool = False
@@ -53,7 +53,7 @@ class BosConfig(SosFadeConfig):
     #   `b_leg`'s pin, same reason.
     exec_conf_sz: bool = True
     #   Pine execConfSZ (line 473) — the engine-side Sniper Zone TRACKER, which this fork ships
-    #   ON where the A+ ships OFF. It only decides whether the zone is COMPUTED; whether the
+    #   ON where the SOS Fade ships OFF. It only decides whether the zone is COMPUTED; whether the
     #   zone may price an entry is `bos_use_fvg` + `exec_conf_sz2` below.
     exec_deep_fib: bool = True
     #   Pine execDeepFib (Method 3) — PINNED. The parent defaulted it True → False on
@@ -76,7 +76,7 @@ class BosConfig(SosFadeConfig):
     #   same commit that ports `f_swingRatchet` + `execTrailPct` into `bos_strategy.pine`.
     exec_time_stop_mode: str = "Off"
     #   PINNED — the parent defaulted the 36h time stop ON on 2026-08-06 and this fork's Pine has
-    #   no `execTimeStopMode` input. The plateau behind that default was measured on A+ trades;
+    #   no `execTimeStopMode` input. The plateau behind that default was measured on SOS Fade trades;
     #   a continuation trade is a different hold, so inheriting it would apply an unmeasured cut.
     exec_sl_level: str = "1.0"
     #   Unused here — the stop comes from `bos_sl_model`. Declared so the parent's `_sl_anchor`
@@ -171,14 +171,14 @@ class BosConfig(SosFadeConfig):
     #   Pine input the Python cannot express is a setting `compare_bos.py` would decode into
     #   nothing — a run taken with it ON would diverge with no field to name.
     exec_min_stop_val: float = 0.10
-    #   ⚠ NOT the A+ value (0.08). This fork's Pine ships 0.10, and at the ATR stop model it only
+    #   ⚠ NOT the SOS Fade value (0.08). This fork's Pine ships 0.10, and at the ATR stop model it only
     #   refuses ~7 setups in 168. ⚠ It is NOT free to move the stop model back to a fib without
     #   it: at "Fib 1.0" this floor cuts the book from 168 trades to 55.
 
     # ── 6. TARGETS (Pine section 6) ──────────────────────────────────────────────
     # exec_tp1_pct / exec_tp2_pct are inherited at 0.0, which is this fork's Pine default too.
     exec_tp3_pct: float = 100.0
-    #   🔴 NEW FIELD — the A+ ladder has TP1/TP2 and a runner, and this fork's Pine adds a THIRD
+    #   🔴 NEW FIELD — the SOS Fade ladder has TP1/TP2 and a runner, and this fork's Pine adds a THIRD
     #   rung at fib 0.000 (the leg extreme). Defaulted 20 → 100 on 2026-08-07, so there is NO
     #   RUNNER: the whole position exits at TP3 or at the ratcheting stop. That measured best on
     #   every axis — +137.7R vs +90.8R for 30/30/20 and +113.4R for a pure runner, at the same

@@ -1,6 +1,6 @@
 # Three exit-ladder experiments, built 2026-08-26 and STASHED 2026-08-27
 
-**If you are looking for work on the A+ bot's exit ladder that you cannot find in the code, this
+**If you are looking for work on the SOS Fade bot's exit ladder that you cannot find in the code, this
 is it. It is not gone — it is in a git stash on Aaron's Mac.** Nothing here was ever committed,
 so it exists on exactly one machine and `git log` will never show it.
 
@@ -10,7 +10,7 @@ git stash show -p stash@{N}
 git stash pop stash@{N} # or `apply`, to keep the stash while you look
 ```
 
-**Stash message:** `A+ exit ladder: vol rung + two re-entry banking levers — built and tested
+**Stash message:** `SOS Fade exit ladder: vol rung + two re-entry banking levers — built and tested
 2026-08-26, NEVER MEASURED ON — see strategies/python/sos_fade/docs/STASHED_EXIT_LADDER_EXPERIMENTS.md`
 
 ⚠ **A stash is LOCAL and it is not a backup.** It does not travel with a push, a clone, or a
@@ -21,7 +21,7 @@ still worth having in a month, it needs to be a commit or a branch instead.
 
 ## What it was
 
-Three new settings on the A+ SOS Fade bot's exit ladder, all **shipped OFF**, so with them
+Three new settings on the SOS Fade SOS Fade bot's exit ladder, all **shipped OFF**, so with them
 present and untouched the ladder behaves byte-identically to what is committed today.
 
 | The setting, as the Command Center labels it | What it does |
@@ -32,13 +32,13 @@ present and untouched the ladder behaves byte-identically to what is committed t
 
 **Why they were built (Aaron, 2026-08-26):** the two fib targets sit too far out and are hit too
 rarely to do anything about the case he was complaining about — a trade that runs a long way and
-hands most of it back. And a re-entry is a recovery trade, not a second A+ setup: *"not to make
-back what you lost and a little more? not to make more than an A+ setup."* A runner is the wrong
+hands most of it back. And a re-entry is a recovery trade, not a second SOS Fade setup: *"not to make
+back what you lost and a little more? not to make more than an SOS Fade setup."* A runner is the wrong
 instrument for that job.
 
 ## What was actually proven
 
-- **28 new tests across three files, all green**, and the whole A+ suite was 555 green with the
+- **28 new tests across three files, all green**, and the whole SOS Fade suite was 555 green with the
   work applied (measured 2026-08-27, `python3 -m pytest strategies/python/sos_fade/tests/ -q`).
 - Each test file states it was **watched RED against HEAD** (the settings did not exist, so every
   test failed at construction) and then **re-proved by mutation** against the real implementation.

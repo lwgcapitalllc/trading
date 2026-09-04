@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tf_sweep.py — does the A+ edge exist on timeframes other than 15 minutes?
+"""tf_sweep.py — does the SOS Fade edge exist on timeframes other than 15 minutes?
 
 Aaron, 2026-08-09: "does this mean you gonna run the strategy that we were thinking about, but
 just on, like, thirty minutes, one hour, four hour time frames?"

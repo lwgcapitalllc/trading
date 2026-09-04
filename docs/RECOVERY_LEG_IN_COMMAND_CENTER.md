@@ -16,7 +16,7 @@ There are two ways to run the loss-recovery rule today and **neither is the one 
 
 | | what it does | what it cannot do |
 |---|---|---|
-| `exec_recovery` on the strategy page | runs the rule over A+'s FINISHED book | never competes for the budget — cannot shrink or block an A+ trade |
+| `exec_recovery` on the strategy page | runs the rule over SOS Fade's FINISHED book | never competes for the budget — cannot shrink or block an SOS Fade trade |
 | `backtest/tools/recovery_stack.py` | two real legs, one balance, one budget | terminal only, no chart, no stored run, no KPIs |
 
 The stack page already does one balance and one risk budget — but it builds a leg from a
@@ -28,14 +28,14 @@ run goes.
 2020-01-01 → 2026-08-21, 156,802 bars, no costs, 10% cap:
 
 ```
-A+ alone            160 trades   $49,214,856   maxDD 45.6%   +141.18R
+SOS Fade alone            160 trades   $49,214,856   maxDD 45.6%   +141.18R
 recovery alone       50 trades   $     15,605  maxDD  7.5%   + 19.07R
 both, one account   210 trades   $35,397,735   maxDD 40.4%   (-28.1%)
 ```
 
-**A+ was shrunk 22 times and nothing was refused; peak open risk 10.0% against a 10% cap; both
+**SOS Fade was shrunk 22 times and nothing was refused; peak open risk 10.0% against a 10% cap; both
 legs' R identical shared vs solo.** The strategy page's own switch reports none of that, because
-under it the recovery cannot touch A+ at all.
+under it the recovery cannot touch SOS Fade at all.
 
 ---
 
@@ -142,7 +142,7 @@ the button, because a disabled button is a label and rule 7 says a label is a cl
 somewhere else.
 
 **2. The one stack this whole feature exists for could not be built.** The minimum was counted in
-STRATEGY IDS, so A+ plus a recovery on A+ — one id, two legs — was refused at three doors: the
+STRATEGY IDS, so SOS Fade plus a recovery on SOS Fade — one id, two legs — was refused at three doors: the
 Strategies page would not open the builder, the builder would not submit, and the backend answered
 *"a stack needs at least 2 strategies"*. **Nothing was broken. Every piece had been built,
 documented and tested on its own, and the whole path had never been walked** — rule 9, exactly.
@@ -164,10 +164,10 @@ no target ladder). All of it landed 2026-08-20/21.
 
 ## What must be true at the end
 
-- A stack of A+ + recovery reproduces `recovery_stack.py` on the same window **to the cent**. That
+- A stack of SOS Fade + recovery reproduces `recovery_stack.py` on the same window **to the cent**. That
   is the acceptance test, and it is the only one that proves the wiring did not become a second
   implementation.
 - Both legs' R is **identical shared vs solo**. R is normalised to each trade's own risk, so a
   pure sizing change must leave it byte-identical — a moved R is a decision that moved, which is a
   bug wearing a sizing change's clothes.
-- A stack of A+ alone is **unchanged** from before this work.
+- A stack of SOS Fade alone is **unchanged** from before this work.

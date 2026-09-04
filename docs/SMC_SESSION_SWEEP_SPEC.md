@@ -139,7 +139,7 @@ belongs in every file that carries the block.**
 
 **Every colour a trade is drawn in is `sos_fade_strategy.pine`'s.** Change a value there and copy it
 down, never pick one here. ⚠ **The TABLE palette is gone with the state panel** — if a table ever
-returns, copy A+'s table colours rather than reusing the position ones.
+returns, copy SOS Fade's table colours rather than reusing the position ones.
 
 **The panel trim, 2026-08-16** (Aaron: *"there are too many inputs now… so I could focus on the
 strategy"*). The **pool-line toggle** went and the LINE is now always drawn — it decides nothing,
@@ -233,7 +233,7 @@ all of 2024 to strip a compounding skew.
 |---|---|---|---|
 | London sweeps Asia | most traded | 30% | profit factor 3, payoff 6.8 — **the one this file implements** |
 | London sweeps Frankfurt | 60 | 26% | +31% return, payoff 5.85 |
-| NY continuation from the London POI | 19-20 | **63%** | his A+ |
+| NY continuation from the London POI | 19-20 | **63%** | his SOS Fade |
 | NY sweep of the Lull | — | **55%** | |
 | NY sweeps Asia | 3 | — | his only losing setup |
 | Frankfurt sweep continuation | 2 | — | −1.5% |

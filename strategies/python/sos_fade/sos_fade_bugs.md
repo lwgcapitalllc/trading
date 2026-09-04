@@ -31,7 +31,7 @@ Present identically in three places, which is why nothing has caught it:
 ## Symptom
 
 A trade is reported as a loss having never reached its stop loss. Aaron found it on the
-2025-10-02 A+ long: SL was 3804.82 (fib 0.886) and price never traded below 3825, yet the trade
+2025-10-02 SOS Fade long: SL was 3804.82 (fib 0.886) and price never traded below 3825, yet the trade
 closed at −0.12R.
 
 ## The mechanism, walked through the bar that caused it
@@ -119,7 +119,7 @@ the same.**
    `compare_strategy.py` to exit 0 on a fresh export. Every historical figure in the optimization
    log moves, so that file needs a stale-baseline banner the day this ships.
 4. **Check `b_leg`.** It inherits this exit ladder unchanged, and its band-entry geometry may put
-   the entry and TP1 inside one bar more or less often than A+. Unmeasured.
+   the entry and TP1 inside one bar more or less often than SOS Fade. Unmeasured.
 
 ## The wider question this raises
 

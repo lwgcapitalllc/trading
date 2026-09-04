@@ -100,7 +100,7 @@ Each step can only **shrink** the size, never grow it. Final = smallest of all.
 
 1. **Base size from the account's goal** (the risk budget; see "Sizing is set by the
    engine" in `LWG_Strategy_Framework.md` for the full rationale):
-   - **Bullet (eval, pass fast):** the max size the scaling table allows, on A/A+ setups
+   - **Bullet (eval, pass fast):** the max size the scaling table allows, on A/SOS Fade setups
      only, guarded so one stop-out can't breach the floor.
    - **Funded / live (consistency):** a fixed fraction of the room left to the drawdown
      floor — **room ÷ 7** — recomputed every trade. Contracts = budget / (stop distance ×
@@ -191,7 +191,7 @@ Editable-but-ignored boxes are misleading. Small frontend change, pairs naturall
 
 **Sizing model LOCKED (2026-06-21) — supersedes the placeholder in code.** Risk per trade
 is NOT a % of balance and NOT `daily loss limit ÷ trade count` (both ideas are dead; there
-is no fixed trade count). It is goal-driven: **bullet** = max scaling size on A/A+ setups
+is no fixed trade count). It is goal-driven: **bullet** = max scaling size on A/SOS Fade setups
 (one loss can't breach); **funded/live** = **room ÷ 7** of the distance to the drawdown
 floor, recomputed every trade. Gates (time cutoff, daily loss/profit limit, consistency
 limit, the Section-3 filters) decide *whether* a trade is taken; the engine decides *how

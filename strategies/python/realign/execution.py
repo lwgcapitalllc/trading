@@ -5,21 +5,21 @@ everything from the fill onward — the TP ladder, the three-phase stop staging,
 trail, %-risk sizing, R grading, the shared-account seam, the cost model — is inherited
 unchanged. Only ENTRY placement differs.
 
-🔴 **THE ENTRY IS A MARKET ORDER, WHICH IS NEW IN THIS REPO.** A+ and B-LEG both rest a
+🔴 **THE ENTRY IS A MARKET ORDER, WHICH IS NEW IN THIS REPO.** SOS Fade and B-LEG both rest a
 LIMIT at a named price; this fork enters at the close of the bar the realignment confirms
 on. The consequences are worth stating because two of them cut the other way from every
 existing measurement here:
 
   * There is no fill uncertainty. A resting limit fills or does not, which is what the
-    jitter audit found dominates A+'s trade-list stability (~6% of trades change on five
+    jitter audit found dominates SOS Fade's trade-list stability (~6% of trades change on five
     cents of feed difference). A market entry has none of that.
-  * It PAYS THE SPREAD, both ways. A+'s limit entries largely avoid it — measured, the
-    flat spread charge costs A+ 5.7R while the bid/ask fill model costs it nothing, since
+  * It PAYS THE SPREAD, both ways. SOS Fade's limit entries largely avoid it — measured, the
+    flat spread charge costs SOS Fade 5.7R while the bid/ask fill model costs it nothing, since
     the burden lands only on the exit side. That does NOT transfer here. Cost on this
-    fork is a real entry-side charge and must never be assumed away from A+'s numbers.
+    fork is a real entry-side charge and must never be assumed away from SOS Fade's numbers.
 
-⚠ The A+ diagnostic markers are off, same call `b_leg` makes: BLOCKED codes and MISSED
-confluences both answer "how far did this **A+** setup get", and A+ never places an order
+⚠ The SOS Fade diagnostic markers are off, same call `b_leg` makes: BLOCKED codes and MISSED
+confluences both answer "how far did this **SOS Fade** setup get", and SOS Fade never places an order
 in this fork, so both would describe a trade that was never on the table.
 """
 
@@ -105,7 +105,7 @@ class RealignExecution(Execution):
         """The inherited minimum-stop floor, read through this fork's own entry path.
 
         Mirrors `exec_min_stop_mode` / `exec_min_stop_val`. Kept as a small local helper
-        rather than reaching into the parent's A+-shaped block, which is entangled with
+        rather than reaching into the parent's SOS Fade-shaped block, which is entangled with
         fib edges this fork does not compute.
         """
         cfg = self._cfg

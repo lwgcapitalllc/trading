@@ -112,9 +112,9 @@ and every published figure for this bot describes the old one.
 
 ## 2. The risk split, and the ordering trap
 
-**Target: extreme leg 5%, A+ 5%, account cap 10%.** Aaron's split.
+**Target: extreme leg 5%, SOS Fade 5%, account cap 10%.** Aaron's split.
 
-Today A+ is at **10%** and the cap is **10%** (moved back 2026-09-03 — holding 5% for a bot that
+Today SOS Fade is at **10%** and the cap is **10%** (moved back 2026-09-03 — holding 5% for a bot that
 could not start was costing half the account's return for nothing; see
 `algos/CLAUDE.md` → *The extreme leg cannot be a bot yet*).
 
@@ -128,10 +128,10 @@ could not start was costing half the account's return for nothing; see
 The Command Center refuses any write where the shares on an account sum past its cap. **Assigning
 first is refused**, because 10 + 5 > 10.
 
-⚠ **A+'s risk is the ONE runtime-reloadable field** — it reaches the running bot on the next VPS
+⚠ **SOS Fade's risk is the ONE runtime-reloadable field** — it reaches the running bot on the next VPS
 `git pull`, no promote, no restart, applied at the next moment it is flat.
 
-⚠ **Halving A+ halves its return and its drawdown together.** Every published figure for it — the
+⚠ **Halving SOS Fade halves its return and its drawdown together.** Every published figure for it — the
 −54.9% max drawdown over 6.5 years, Run 12's finding that the drawdown is a losing streak rather
 than give-back — was measured at 10% and describes neither bot after this.
 
@@ -142,7 +142,7 @@ moves.
 
 MEASURED 2026-09-03, 470,995 M5 bars, PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23:
 
-- Shared bars: **1,049** — 3.1% of A+'s hold time, 6.0% of the extreme leg's.
+- Shared bars: **1,049** — 3.1% of SOS Fade's hold time, 6.0% of the extreme leg's.
 - Same-side: **ZERO**. All 1,049 are opposite-direction, i.e. partly hedged.
 - Trade pairs touching at all: 6, **none same-direction**. No same-direction entry within four hours
   in 6.6 years.
@@ -173,7 +173,7 @@ Each stage is committable and leaves the repo working.
    and the commanded close are the two that matter; neither can be proven live before it runs.
 6. **`scripts/run_all_tests.sh` green end to end.** A person runs it; no hook does.
 7. **Create the instance directory** from `algos/live/instance.template.json` — key, display name,
-   package, class, symbol, timeframe (**M5 — see below**), magic (a NEW number, never A+'s 770115),
+   package, class, symbol, timeframe (**M5 — see below**), magic (a NEW number, never SOS Fade's 770115),
    account 700152905, cap 10.0, risk 5.0.
 
    🔴 **The frame is not a preference and getting it wrong FAILS SILENTLY.** This strategy measures
@@ -184,7 +184,7 @@ Each stage is committable and leaves the repo working.
    it had to override the shared frame for this bot.
 8. **Register the bot** in the Command Center and assign it to the account — **after** step 9's
    first line.
-9. **Move A+ to 5% first, then assign** (§2). Confirm from the bot's own log that it applied the
+9. **Move SOS Fade to 5% first, then assign** (§2). Confirm from the bot's own log that it applied the
    change while flat.
 10. **Promote and start**, per the deploy workflow in the root CLAUDE.md. Stop by ASKING, never by
     killing. Never `taskkill /f /im python.exe`.
@@ -228,7 +228,7 @@ MT5 connection have all only ever run with one bot on this box.
 
 1. **Watch it flat.** Started, reporting the right version, not saying *"the previous run ended
    without shutting down."* Confirm both bots hold their own locks and neither sees the other's.
-2. **Watch the first refusal.** Force the budget full with A+ open and confirm the extreme leg is
+2. **Watch the first refusal.** Force the budget full with SOS Fade open and confirm the extreme leg is
    refused, with a Telegram message saying why. **This is the cap's first real exercise.**
 3. **Watch the first order.** Read the comment string off the BROKER, not off our log. Confirm the
    magic number is its own and reconciliation does not cross the two bots.
@@ -251,8 +251,8 @@ hoped about.**
 
 ## 5. The decision that is still open
 
-**Whether A+ should be at 5% at all.** The split assumes two bots deserve equal shares. Nothing has
+**Whether SOS Fade should be at 5% at all.** The split assumes two bots deserve equal shares. Nothing has
 measured that. The overlap audit says they rarely collide and never same-side, which argues the cap
-is doing little work — **and if the cap rarely binds, the split is costing A+ half its size to buy
+is doing little work — **and if the cap rarely binds, the split is costing SOS Fade half its size to buy
 protection it does not often need.** Worth measuring on the stack replay before accepting 5/5 as
 permanent.

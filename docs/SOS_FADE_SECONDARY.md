@@ -12,7 +12,7 @@ feature Aaron prototyped in `sos_fade_strategy.pine` (that Pine WIP is stashed:
 
 ## What it is (one paragraph)
 
-After the **primary** 15m A+ trade on a leg has already traded and gone flat (back to
+After the **primary** 15m SOS Fade trade on a leg has already traded and gone flat (back to
 breakeven), keep re-entering on that *same* 15m leg from the 1-minute chart. While the 15m
 divergence **and** SOS are still live and price is back inside the **0.618–0.886** zone of the
 15m fib, watch the 1m chart (same structure engine) for a **1m shift of structure** in the
@@ -43,7 +43,7 @@ Cap: **`exec_sec_once_per_setup`** (default **True**), described above. Python-o
 ⚠ **`run_dual` has exactly one caller.** `backtest/optimizer.run_sweep` replays a single frame, so
 the optimizer, sweeps and the stress test's pooled sensitivity **refuse** a config with this on
 rather than silently replaying a primary-only book and ranking it against a baseline that has
-re-entries. `algos/live/bridge.py` refuses it too. `b_leg` pins it **Off** — A+ never places an
+re-entries. `algos/live/bridge.py` refuses it too. `b_leg` pins it **Off** — SOS Fade never places an
 order in that fork, so there is no primary to re-enter behind, and its `run_dual` raises.
 
 ### 1m leg latch (records the leg a re-entry will trade)
@@ -123,7 +123,7 @@ The case for the guard is consistency, not this measurement.
 The Pine samples the 1m engine at the 15m close, so its re-entry fill is approximate. **The
 Python runs the 1m bars for real:**
 
-- **Primary** (the 15m A+ trade) stays exactly as today — armed, filled and managed on **15m**
+- **Primary** (the 15m SOS Fade trade) stays exactly as today — armed, filled and managed on **15m**
   bars. This is what keeps `compare_strategy.py` parity **green** (`exec_secondary` defaults
   off, so with it off the whole strategy is bit-identical to the validated port).
 - **Secondary** is the 1m improvement — the 1m leg latch, the arm, the limit **fill**, and the
@@ -226,7 +226,7 @@ separates them. **Zero primaries displaced**, either direction.
 book's average R per trade falls **below** baseline. A rising total with a falling average is what
 dilution looks like from outside. ⚠ **+25.56R is not evidence either way** — the jitter audit puts
 this strategy's run-to-run spread at **sd 15.06R**. ⚠ **The fat-tail defence does not rescue it:**
-A+ is designed tail-heavy, but the primary stays positive without any single trade and these ten do
+SOS Fade is designed tail-heavy, but the primary stays positive without any single trade and these ten do
 not. Ten trades cannot tell a small edge from a small negative one — the same verdict, for the same
 reason, as B-LEG.
 

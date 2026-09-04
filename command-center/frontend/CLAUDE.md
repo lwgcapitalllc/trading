@@ -2146,7 +2146,7 @@ the stack's `mode` and returns a `basis` naming which book produced the numbers:
 contribute to an account the others built* and reads as *what this leg made*. Measured on
 `st_94aeb25f0c`: B-LEG posts **99 trades and +17.8674R either way, at identical entry and stop
 prices**, and reads **$47,758,999 shared against $21,064 alone**, because inside the stack its last
-trade risks $16,925,791 of a balance A+ grew rather than $3,102 of its own.
+trade risks $16,925,791 of a balance SOS Fade grew rather than $3,102 of its own.
 
 - ⚠ **`unmeasured` still renders the Verdict card.** The leg toggles live inside it, so hiding the
   Performance panel would leave the reader in a state they cannot click their way out of. The three
@@ -2198,7 +2198,7 @@ strategy runs, stacks or deploys.
 
 🔴 **THE STACK BUILDER COUNTS LEGS, NOT TICKED STRATEGIES (2026-08-21).** `settingsReady` required
 two ticked strategies and the Strategies page's Stack button required two before it would even
-open — so **A+ with a recovery on A+, the stack this whole leg exists to make possible, was greyed
+open — so **SOS Fade with a recovery on SOS Fade, the stack this whole leg exists to make possible, was greyed
 out at both doors and refused by the backend behind them.** The count is now
 `selected.size + (shared && recoveryFor ? 1 : 0)`, matching `_validate_stack_strategies`, and the
 list-page button opens at ONE ticked strategy because the recovery is ticked inside the builder,

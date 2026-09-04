@@ -25,7 +25,7 @@ def _strategy():
     return LAB_STRATEGY["strategy"](config=cfg, initial_capital=10_000.0)
 
 
-# ── the A+ bot, which really does implement it ───────────────────────────────────────────────
+# ── the SOS Fade bot, which really does implement it ───────────────────────────────────────────────
 def test_the_live_bot_implements_the_contract():
     assert implements_contract(_strategy().execution) is True
 

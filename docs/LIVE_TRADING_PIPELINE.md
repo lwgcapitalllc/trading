@@ -37,7 +37,7 @@ new Telegram token, and version pinning so the lab and the live bot cannot colli
 
 | Piece | Where | State |
 |---|---|---|
-| SOS Fade (A+) | `strategies/python/sos_fade/` | Pine-parity GREEN 2026-07-29, 21,494 bars |
+| SOS Fade (SOS Fade) | `strategies/python/sos_fade/` | Pine-parity GREEN 2026-07-29, 21,494 bars |
 | B-LEG | `strategies/python/b_leg/` | Pine-parity GREEN 2026-07-29 |
 | Per-bar driver | `SosFadeStrategy.step(bar_state)` | Already the live seam — one closed bar in, one `Decision` out |
 | Self-sizing | `exec_risk_pct` (default 10) | The strategy computes its own lot size; the lab's sizing engine is bypassed (`self_sizing: True`) |
@@ -157,7 +157,7 @@ closes, no TP orders. The bridge is much smaller than the exit-ladder table sugg
 
 ### G3 — `mt5_ops.py` cannot place a pending limit order — **CLOSED 2026-07-30**
 
-`place_order()` sends `TRADE_ACTION_DEAL` — a market order only. The A+ entry is a **resting limit**.
+`place_order()` sends `TRADE_ACTION_DEAL` — a market order only. The SOS Fade entry is a **resting limit**.
 Missing methods: `place_pending_limit()`, `modify_pending()`, `cancel_pending()`,
 `get_pending_orders()`. Roughly 120 lines against `TRADE_ACTION_PENDING` /
 `TRADE_ACTION_MODIFY` / `TRADE_ACTION_REMOVE`, following the existing `place_order` shape.
@@ -167,7 +167,7 @@ Missing methods: `place_pending_limit()`, `modify_pending()`, `cancel_pending()`
 `BotMT5.get_candles()` does `pd.to_datetime(df["time"], unit="s", utc=True)`. MT5 returns **broker
 server time**, not UTC. This is the exact bug `broker_clock.py` was written to fix on the lab agent —
 it was 2–3 hours off, and it silently moves every session boundary the sessions, liquidity and VWAP
-engines depend on. Those are precisely the engines A+ trades off.
+engines depend on. Those are precisely the engines SOS Fade trades off.
 
 `broker_clock.to_utc()` exists and is measured, but `mt5_ops.py` does not use it. Must be wired, and
 **the offset must be re-measured on the live terminal** — `broker_clock.py`'s own docstring warns
@@ -560,7 +560,7 @@ away.** Verified by tracing the code rather than by re-reading either: `algos/sh
 config (the setting), 21 tests in `algos/tests/test_account_risk.py`.
 
 🔴 **WHAT IS ACTUALLY OPEN IS A NUMBER.** `exec_risk_pct` is **10.0** and `account_risk_cap_pct` is
-**10.0** on `sos_fade_demo`, so one full-size A+ trade fills the entire account budget and a
+**10.0** on `sos_fade_demo`, so one full-size SOS Fade trade fills the entire account budget and a
 second bot is REFUSED until that room comes back. The allocator arbitrates correctly; there is
 simply nothing to arbitrate over until the pool is split. **That is a decision about risk, not code
 to write.**
@@ -569,7 +569,7 @@ to write.**
 share.** A cap letting both trade at once would have to be 20% — stated because it is not obvious
 from the number, and the take-turns behaviour is what Aaron asked for.
 
-**Consequence for this plan is unchanged: start with ONE bot.** A+ alone needs no allocator.
+**Consequence for this plan is unchanged: start with ONE bot.** SOS Fade alone needs no allocator.
 
 **The history below is kept as written, because it records how each half arrived.**
 
@@ -580,15 +580,15 @@ room is shrunk to fit or refused. Every shrink and refusal lands in a contention
 `backtest/tools/stack_run.py`. Both strategy constructors thread `account` / `leg` through to
 `Execution`, where the seam had existed since 2026-07-17 with nothing able to pass it one.
 
-✅ **MEASURED on the first real run — 155,807 M15 bars, A+ and B-LEG, $10,000, cap 10% of the live
-balance: A+ 159 trades / +142.18R · B-LEG 99 / +17.87R · account $10,000 → $204,918,789**, with
+✅ **MEASURED on the first real run — 155,807 M15 bars, SOS Fade and B-LEG, $10,000, cap 10% of the live
+balance: SOS Fade 159 trades / +142.18R · B-LEG 99 / +17.87R · account $10,000 → $204,918,789**, with
 every leg posting the SAME R shared as solo. That equality is the control, not the headline: R is
 normalised to the trade's own risk, so with nothing refused the shared account changed the DOLLARS
 and moved no decision — which is what makes any later difference attributable to the cap.
 
 🔴 **AND NOTHING WAS EVER BLOCKED IN 6.5 YEARS.** Peak open risk touched **exactly 10.00%** with
 **2 of 2 legs holding at once**, and the contention log is empty — because risk is measured to each
-trade's CURRENT stop and A+ touches breakeven on 161 of 161 trades at a median of ONE BAR, so its
+trade's CURRENT stop and SOS Fade touches breakeven on 161 of 161 trades at a median of ONE BAR, so its
 room is released before the other leg can ever be refused. **Read that as "the allocator would
 rarely have had anything to arbitrate", never as "a cap is unnecessary"**: it is G14's shared
 bars (27 when this was written, **45** at the 2026-09-01 re-run) arriving through the budget, and the window where two bots genuinely carry 2× risk is the bar
@@ -649,10 +649,10 @@ so the only moment the difference is legible is before anything has happened —
 cap was on"* is precisely the belief that makes an uncapped second bot feel safe. Same call as
 `deadman_url`. 🔴 **SUPERSEDED SAME DAY — the live bot is CAPPED AT 10% now** (Aaron's call, ahead of
 bot #2). It read *"the live bot is unchanged: it has no cap configured, so nothing about it moves"*,
-which was true for a few hours. ⚠ **10% equals A+'s own `exec_risk_pct`, so the two bots will not
+which was true for a few hours. ⚠ **10% equals SOS Fade's own `exec_risk_pct`, so the two bots will not
 share the budget — they take turns**: one full-size position or resting limit fills it and the other
 is refused until the room returns. A cap that lets both hold at once has to be 20%. ⚠ **A RESTING
-order counts here and does NOT in `backtest/portfolio/`, which reserves at the fill** — A+ enters on
+order counts here and does NOT in `backtest/portfolio/`, which reserves at the fill** — SOS Fade enters on
 a limit that can sit for hours, so **live contention will be more frequent than the shared-account
 backtest predicts, and its empty contention log is not a forecast for this account.** ✅ The account
 was probed read-only first (0 positions, 0 orders, 0 stopless), because one stopless hand trade
@@ -681,12 +681,12 @@ the live allocator above and the caveats on B-LEG in G15.
 ### G14 — The overlap audit — **RE-MEASURED 2026-09-03 ON A FIXED TOOL, and it still passes**
 
 `backtest/tools/overlap_audit.py`, replayed over **157,004 M15 bars (2020-01-01 → 2026-08-23)** of
-PU Prime `XAUUSD.p`. A+ reproduces **200 trades / +164.27R** (156 primary + 44 re-entries) and
+PU Prime `XAUUSD.p`. SOS Fade reproduces **200 trades / +164.27R** (156 primary + 44 re-entries) and
 B-LEG **101 / +20.20R**, which is the cross-check that the tool drives the two strategies correctly
 rather than a third thing.
 
 🔴 **THIS SECTION READ *156 trades / +131.77R* UNTIL TODAY — THE PRIMARY HALF OF A BOT NOBODY RUNS.**
-The tool always called the single-frame replay while A+'s re-entries need two frames, and that
+The tool always called the single-frame replay while SOS Fade's re-entries need two frames, and that
 switch is on in the live bot's own config. Fixed 2026-09-02. ⚠ **Then the FIRST fix published wrong
 overlap figures for a day**: with the re-entries finally in the book, the tool was placing each of
 them by a bar number counted in the fill-clock frame and looking it up in the 15-minute one. Every
@@ -697,7 +697,7 @@ come from the replay, not from the placement.
 audit ran 2026-08-04. On **2026-08-06** B-LEG was re-defaulted on three axes at once —
 `bleg_max_days` 1.25 → 4.0, `exec_trail_pct` 1.0 → 0.05, `exec_time_stop_hrs` 36 → 8 — which **more
 than doubled its trade count and tripled how long a frozen band stays alive**. It happened AGAIN on
-**2026-08-26**, when the dead-market entry filter (`exec_min_atr_pct` = 0.08) landed on A+ and took
+**2026-08-26**, when the dead-market entry filter (`exec_min_atr_pct` = 0.08) landed on SOS Fade and took
 its shipped book from 245 trades to 240 — and the 2026-08-09 reading below then described neither
 bot and stood unchallenged in three files for three weeks. **A cross-cutting measurement has to be
 re-run by whoever MOVES the inputs, not by whoever wrote the conclusion.** ⚠ The second time, that
@@ -705,13 +705,13 @@ instruction was already written at the bottom of this very section and it still 
 so treat it as a step in the change, not as a reminder.
 
 **The legs still do not overlap, and on direction they now overlap not at all.** Both bots held a
-position on **46 bars out of 157,004** — 0.4% of A+'s own hold time, 1.9% of B-LEG's. **ZERO of
-those bars were same-side**; all 46 were opposite, i.e. partially hedged. Five A+ trades out of 200
+position on **46 bars out of 157,004** — 0.4% of SOS Fade's own hold time, 1.9% of B-LEG's. **ZERO of
+those bars were same-side**; all 46 were opposite, i.e. partially hedged. Five SOS Fade trades out of 200
 (2.5%) shared a bar with a B-LEG trade, and **none of those five pairs was same-direction**.
 
 **They barely fire on the same structure break either**, which was the specific worry: across 6.6
-years **exactly ONE** A+ trade has a same-direction B-LEG entry within four hours (2023-07-27, one
-bar apart; A+ −1.99R, B-LEG −1.00R). Monthly R correlation is **+0.107** across all 78 traded months
+years **exactly ONE** SOS Fade trade has a same-direction B-LEG entry within four hours (2023-07-27, one
+bar apart; SOS Fade −1.99R, B-LEG −1.00R). Monthly R correlation is **+0.107** across all 78 traded months
 (both traded in 52). ⚠ **Read that as a FLOOR on how together they move rather than as a figure** —
 a month only one bot traded contributes a zero for the other and pulls it toward 0.
 
@@ -752,21 +752,21 @@ M15 bars with spread and swap charged, IS/OOS split declared before any row ran:
 
 **Charged, the shipped config is 114 trades / +17.56R / PF 1.45 / maxDD −5.15R**, against the old
 59 / −1.73R / PF 0.94 / maxDD −16.00R. The drawdown is the headline, not the total: B-LEG used to
-carry nearly **double** A+'s peak-to-trough for none of the return, and now carries slightly less
-(−5.15R against A+'s −5.62R).
+carry nearly **double** SOS Fade's peak-to-trough for none of the return, and now carries slightly less
+(−5.15R against SOS Fade's −5.62R).
 
 ✅ **THE ERROR BAR EXISTS NOW, AND THE EDGE CLEARS IT.** `jitter_audit.py` had never been run on this
 bot; it was run 2026-08-09 over **186,128 M15 bars, ±$0.05 redrawn per bar, 12 seeds**. Baseline
 114 trades / +23.28R free, and **every one of the 12 seeds finished positive — min +21.63R, max
 +30.36R, mean +26.33R, sd 2.61R.** The baseline sits *below* the jittered median, so it is not an
-optimistic seed. In proportion the noise matches A+ almost exactly (**11.2% of total here, 10.6%
+optimistic seed. In proportion the noise matches SOS Fade almost exactly (**11.2% of total here, 10.6%
 there**), and the worst seed still clears zero by a wide margin. **The sign of this edge is not a
 feed artefact.**
 
-⚠ **B-LEG is structurally far less flip-prone than A+, and that is a difference in kind.** A+ snaps
+⚠ **B-LEG is structurally far less flip-prone than SOS Fade, and that is a difference in kind.** SOS Fade snaps
 its limit to a fib rung off a gap — discontinuous, which is why four cents moved its entry $10.08 in
 the shadow diff. B-LEG rests at its frozen band's own 0.5 edge with all four fib-entry rules pinned
-off, so its entry *moves* with the feed rather than *jumping*: **0.6 rung flips per run against A+'s
+off, so its entry *moves* with the feed rather than *jumping*: **0.6 rung flips per run against SOS Fade's
 1.4**. The trade-list churn is the same though — ~5.8 lost and ~7.9 gained per run — so expect a
 cousin of this backtest on another broker, never a twin.
 
@@ -1227,7 +1227,7 @@ them. Default `"Off"` ⇒ byte-identical to the previous build ⇒ no historical
 tests; 111 green.
 
 ✅ **CLOSED 2026-08-05 — parity proven with the guard FIRING, and shipped as the DEFAULT at
-`"% of price"` 0.08** (strategy `config.py`, both A+ Pine files, the lab meta, the instance template
+`"% of price"` 0.08** (strategy `config.py`, both SOS Fade Pine files, the lab meta, the instance template
 and the live bot). ⚠ **It shipped at 0.10 for a few hours first and that was wrong: 0.10 costs 7
 trades and 1.84R over 7.9 years, while 0.08 gains 2.00R.** The correction is written up under
 *What the value costs* below; the short version is that **a green parity gate says the two
@@ -1283,7 +1283,7 @@ set of trades from the one at risk — cheapness, not safety.
 ⚠ **Parity was proven at 0.30 and the live config ships 0.08.** Same code path, same floor formula
 (`px * val / 100`), same refusal and the same block code — only the constant differs. State it that
 way rather than claiming 0.08 was itself diffed.
-⚠ **This CHANGES which trades the bot takes** versus every result measured at `"Off"`, and the A+
+⚠ **This CHANGES which trades the bot takes** versus every result measured at `"Off"`, and the SOS Fade
 baseline moves with it: **183 trades / +134.75R → 181 / +136.75R**. `exec_min_stop_mode` defaulted
 `"Off"` precisely so no historical result moved; that protection is now spent, deliberately. **Pin
 the mode explicitly when reproducing an older run.**
@@ -1349,7 +1349,7 @@ rounded up** — the minimum would be a bigger bet than the one that was risk-ch
 `get_candles` now converts broker-server time to true UTC through `broker_clock`. **This was a live
 bug, not a precaution**: the old `pd.to_datetime(..., utc=True)` labelled broker-local seconds as
 UTC, putting every bar 2-3 hours out with a perfectly valid-looking timestamp, and the engines it
-would have broken — sessions, liquidity, VWAP — are exactly the ones A+ trades off.
+would have broken — sessions, liquidity, VWAP — are exactly the ones SOS Fade trades off.
 
 16 offline tests against a faked terminal (`algos/tests/test_mt5_ops_pending.py`), including the
 DST switch in both directions.
@@ -1450,7 +1450,7 @@ git-ignored local folder whenever the app starts. Both idempotent.
 timing.** The bot ran three days in dry run — **274 bars across 2026-07-31, 08-04 and 08-05** — and
 in that entire record `long_armed` and `short_armed` are false on **every single bar**, the stage
 never rose above **1**, no stop or target was ever set, and **not one order was suppressed**. The
-dry run blocked nothing because nothing arrived. That is not a fault: A+ takes **~161 trades over
+dry run blocked nothing because nothing arrived. That is not a fault: SOS Fade takes **~161 trades over
 6.5 years**, about **two a month**, so three empty days is the expected result and a fourth week
 would most likely have been the same. **A waiting period only buys confidence if the thing being
 waited for can happen in it.**
@@ -1530,7 +1530,7 @@ believing it works.** Offline green means the logic is right, not that the bot s
 | 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | ~~**Live `exec_risk_pct`**~~ — **ANSWERED 2026-08-05: 10%, Aaron's explicit call.** No config change was needed; the live instance already carries `exec_risk_pct = 10.0`, so this is the decision being RECORDED rather than applied. ⚠ **It is a deliberate acceptance, not an unexamined default** — 10% measured **−54.9% max drawdown** over 6.5 years, and Run 12 established that the drawdown is a losing STREAK at that risk rather than give-back, so risk % is the only lever that moves it. Nothing further is owed here; re-open it only if the account purpose changes from demo | — |
-| 4 | **A+ only, or A+ and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "A+ only" answer rested on a number that is now dead.** The overlap audit re-ran again on 2026-09-01 and B-LEG passes it more cleanly still — **0 same-side bars in 6.6 years**, one same-break cluster (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11). 🔴 **AND THERE IS NOW A THIRD CANDIDATE, WHICH CHANGES THE QUESTION: `extreme_leg` went parity GREEN 2026-09-02** and over the same 6.6 years scores **113 trades / +58.53R against B-LEG's 101 / +20.20R**, with **ZERO same-side overlap** against the live A+ bot on 1,049 shared bars and monthly r **+0.035**. ⚠ It is not a free upgrade: its gate covers **3.5 months and 7 entries**, it runs on a **5-minute** frame the live runner has never driven (G18), and it puts A+ at raised risk for **7.6× longer than B-LEG does** — 3.13% of A+'s hold time against 0.41% — so it needs the allocator more, not less. 🔴 **THIS SENTENCE CARRIED FOUR STALE FIGURES AND ONE ARITHMETIC ERROR UNTIL 2026-09-03, WHILE THE ROOT `CLAUDE.md` HELD THE CORRECTIONS THE WHOLE TIME.** It read 132 trades / +57.10R / 1,066 bars / r +0.025 — the 2026-09-01 measurement, superseded the next day when a market-condition refusal was switched on and dropped 19 trades — and it said **"24× more shared bars"**, which divided the BAR COUNTS of two audits taken on different frames. A 5-minute bar is a third of a 15-minute one, so no bar count survives crossing between them: the ratio divides the PERCENTAGES and is 7.6×, not 24×. ⚠ **A correction recorded in one file does not reach a second file that restates the same numbers** — which is this repo's own parents-route-children-explain rule arriving as a bill. **Do not restate a measurement here; link to it.** ⚠ **Its per-trade risk also moved 1% → 5% on 2026-09-02, so every stacked figure for it predates that and none of the R above does.** ⚠ It also has **no jitter audit**. The choice for bot #2 is now three-way and should be made deliberately rather than by which was measured most recently |
+| 4 | **SOS Fade only, or SOS Fade and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "SOS Fade only" answer rested on a number that is now dead.** The overlap audit re-ran again on 2026-09-01 and B-LEG passes it more cleanly still — **0 same-side bars in 6.6 years**, one same-break cluster (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11). 🔴 **AND THERE IS NOW A THIRD CANDIDATE, WHICH CHANGES THE QUESTION: `extreme_leg` went parity GREEN 2026-09-02** and over the same 6.6 years scores **113 trades / +58.53R against B-LEG's 101 / +20.20R**, with **ZERO same-side overlap** against the live SOS Fade bot on 1,049 shared bars and monthly r **+0.035**. ⚠ It is not a free upgrade: its gate covers **3.5 months and 7 entries**, it runs on a **5-minute** frame the live runner has never driven (G18), and it puts SOS Fade at raised risk for **7.6× longer than B-LEG does** — 3.13% of SOS Fade's hold time against 0.41% — so it needs the allocator more, not less. 🔴 **THIS SENTENCE CARRIED FOUR STALE FIGURES AND ONE ARITHMETIC ERROR UNTIL 2026-09-03, WHILE THE ROOT `CLAUDE.md` HELD THE CORRECTIONS THE WHOLE TIME.** It read 132 trades / +57.10R / 1,066 bars / r +0.025 — the 2026-09-01 measurement, superseded the next day when a market-condition refusal was switched on and dropped 19 trades — and it said **"24× more shared bars"**, which divided the BAR COUNTS of two audits taken on different frames. A 5-minute bar is a third of a 15-minute one, so no bar count survives crossing between them: the ratio divides the PERCENTAGES and is 7.6×, not 24×. ⚠ **A correction recorded in one file does not reach a second file that restates the same numbers** — which is this repo's own parents-route-children-explain rule arriving as a bill. **Do not restate a measurement here; link to it.** ⚠ **Its per-trade risk also moved 1% → 5% on 2026-09-02, so every stacked figure for it predates that and none of the R above does.** ⚠ It also has **no jitter audit**. The choice for bot #2 is now three-way and should be made deliberately rather than by which was measured most recently |
 
 ---
 

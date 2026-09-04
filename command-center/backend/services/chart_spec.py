@@ -164,7 +164,7 @@ def _bar_server(row: dict) -> Optional[str]:
 def _chart_tag(strategy_id: Optional[str]) -> Optional[str]:
     """The word this strategy's PRIMARY trades wear on the chart, or None.
 
-    🔴 **The panel hard-coded the A+ bot's own word for its setup and painted it on every
+    🔴 **The panel hard-coded the SOS Fade bot's own word for its setup and painted it on every
     strategy's trades**, so three other bots' charts carried a fourth bot's label. The comment
     beside it named the cost and the fix — a per-strategy tag travelling on the spec — and this is
     it. ⚠ **Declared by the package (`LAB_STRATEGY["chart_tag"]`), never written here**: a map of
@@ -500,7 +500,7 @@ def _build_trades(
                 # 🔴 The strategy's own word for its setup, ON THE TRADE and not only on the spec.
                 # A STACK merges N legs' trades into one list, so a spec-level tag cannot survive
                 # the merge and every leg's trades would wear one strategy's word — the
-                # hard-coded-`A+` defect one level down, and harder to see, because the chips would
+                # hard-coded-`SOS Fade` defect one level down, and harder to see, because the chips would
                 # look per-strategy without being it. On the trade it merges for free, like `layer`.
                 # ⚠ ABSENT when the package declared none; the panel falls back to `PRIMARY_TAG`.
                 **({"tag": tag} if tag else {}),

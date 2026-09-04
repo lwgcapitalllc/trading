@@ -1,7 +1,7 @@
 loading XAUUSD 15m  2018-09-13 -> 2026-07-29 ...
   185,783 bars  2018-09-13 00:00:00 -> 2026-07-29 05:30:00
 replaying b_leg (warmup 1000) ...
-  58 trades, 700 A+ legs reached SOS
+  58 trades, 700 SOS Fade legs reached SOS
 
 ============================================================================================================
 b_leg  XAUUSD 15m   2018-09-13 -> 2026-07-29   fill=bar   breakeven band ±0.15R

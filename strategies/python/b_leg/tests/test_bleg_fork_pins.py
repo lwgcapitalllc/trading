@@ -1,4 +1,4 @@
-"""The pins where this fork DELIBERATELY disagrees with its A+ parent.
+"""The pins where this fork DELIBERATELY disagrees with its SOS Fade parent.
 
 A pin here is never tidiness — it is a written-down record that `b_leg_strategy.pine` and
 `sos_fade_strategy.pine` genuinely differ on some input. Without it the fork silently inherits whatever
@@ -23,7 +23,7 @@ def test_the_fork_pins_the_eq_fvg_coupling_OFF_where_the_parent_pins_it_ON():
     """`eqExemptFvg` is `true` in `sos_fade_strategy.pine` and `false` in `b_leg_strategy.pine`.
 
     The coupling decides which gaps survive the FVG cap, so it decides which entries fire. This
-    fork does NOT override `_entry_edges`, and those A+ edges feed the "A+ has priority, stand the
+    fork does NOT override `_entry_edges`, and those SOS Fade edges feed the "SOS Fade has priority, stand the
     B leg down" gate — so inheriting the parent's ON would move B-LEG trades with no Pine change
     behind it, and put `compare_bleg.py` red against this fork's own export.
 
@@ -56,7 +56,7 @@ def test_the_fork_inherits_every_OTHER_engine_pin_from_the_parent():
 def test_the_fork_pins_the_secondary_OFF():
     """The parent defaulted `exec_secondary` ON on 2026-08-07 and this fork cannot honour it.
 
-    The 1m re-entry follows a 15m A+ PRIMARY that reached breakeven, and in this fork A+ never
+    The 1m re-entry follows a 15m SOS Fade PRIMARY that reached breakeven, and in this fork SOS Fade never
     places an order — `BLegStrategy.run_dual` raises outright. The lab reads this field to
     decide whether to load a 1m feed and call `run_dual`, so an INHERITED True does not change
     this bot's trades, it kills every B-LEG lab run on a NotImplementedError.
@@ -71,7 +71,7 @@ def test_the_fork_pins_the_secondary_OFF():
     # is the whole argument for the pin: a fork that leans on its parent's default is one flip away
     # from breaking, and this is the flip.
     #
-    # ⚠ What it protects is a CRASH, not a mis-priced trade. A+ never places an order in this fork,
+    # ⚠ What it protects is a CRASH, not a mis-priced trade. SOS Fade never places an order in this fork,
     # so an inherited True makes the lab load a second feed and call `run_dual`, which raises
     # NotImplementedError and kills every B-LEG run.
     assert SosFadeConfig().exec_secondary is True, (

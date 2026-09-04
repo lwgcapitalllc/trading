@@ -14,9 +14,9 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //  SOS FADE STRATEGY — backtest wrapper around the MPC-JARVIS engine
 // ============================================================================
 // Same market-structure / fib / liquidity / FVG / RSI-divergence engine as
-// mpc_jarvis.pine (kept byte-identical so the A+ sequence stays at parity),
+// mpc_jarvis.pine (kept byte-identical so the SOS Fade sequence stays at parity),
 // converted from indicator() to strategy() and given an execution layer at the
-// end of the file. It trades ONLY the confirmed A+ reversal sequence:
+// end of the file. It trades ONLY the confirmed SOS Fade reversal sequence:
 //   sweep-or-divergence  ->  SOS (shift of structure)  ->  retrace into the
 //   0.5-0.886 fib of that leg WITH a live FVG overlapping the zone.
 // Exits: SL beyond fib 1.0 (leg origin), scaled fib-target ladder 30/30/40 at
@@ -36,7 +36,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // and defaults OFF — safe to toggle freely, it never affects trade firing.
 // Kill Zones, VWAP, MV, Order Blocks and the Cycle Fib DRAWING have been deleted
 // outright (2026-07-22 / 07-24 / 07-25 / 08-02) to stay under Pine's compile
-// caps. The Cycle Fib's TRACKING survives and is not optional — it is the A+
+// caps. The Cycle Fib's TRACKING survives and is not optional — it is the SOS Fade
 // sequence's HTF POI. All of them still draw in mpc_jarvis.pine.
 // ============================================================================
 ```
@@ -145,7 +145,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // than most WHOLE 5m bars, so one flat floor silently erased nearly every gap
 // below 15m. 900 seconds = 15m.
 // The 15m-and-above value stays 0.1 and is deliberately NOT the assistant's 0.04:
-// at 15m this file's behaviour must not move — it is the A+ baseline and the
+// at 15m this file's behaviour must not move — it is the SOS Fade baseline and the
 // sos_fade parity reference. ONLY sub-15m changes.
 ```
 
@@ -155,28 +155,28 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // Middle-bar close-cleared test. mpc_jarvis.pine has this OFF at every
 // timeframe (fvgRequireClose = false); this file hardcoded it ON. Split the same
 // way as the floor: forced off below 15m so low-timeframe gaps match the
-// assistant, on at 15m+ so the A+ baseline and the Python parity pin
+// assistant, on at 15m+ so the SOS Fade baseline and the Python parity pin
 // (EngineConfig.fvg_require_close = True) are untouched.
 ```
 
-## [11] A+ SETUP SEQUENCE INPUTS
+## [11] SOS FADE SEQUENCE INPUTS
 
 ```
 //============================================================
-//  A+ SETUP SEQUENCE INPUTS
+//  SOS FADE SEQUENCE INPUTS
 //============================================================
-// (5 dead A+ inputs removed 2026-07-21 — aplusDivOnly / aplusHtfWarn /
+// (5 dead SOS Fade inputs removed 2026-07-21 — aplusDivOnly / aplusHtfWarn /
 //  aplusHtfBlock / aplusReqInt / aplusIgnoreWindow were declared but never
 //  read anywhere in this file. Deleted to buy compile tokens for the
 //  post-SOS divergence veto exemption. Arming is controlled by the
 //  execArmSweep / execArmDiv toggles in the Execution group instead.)
 ```
 
-## [12] A+ DEBUG (bar-replay diagnostics — no effect on trades)
+## [12] SOS Fade DEBUG (bar-replay diagnostics — no effect on trades)
 
 ```
 //============================================================
-//  A+ DEBUG (bar-replay diagnostics — no effect on trades)
+//  SOS Fade DEBUG (bar-replay diagnostics — no effect on trades)
 //============================================================
 ```
 
@@ -243,7 +243,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // test the Kill Zones, VWAP, Order Blocks and SVP removals were made on.
 //
 // ⚠ THE TRACKING STAYS, AND MUST NOT BE REMOVED WITH IT. The cycle's anchors
-// (macro_origin / macro_extreme, locked and extended further down) are the A+
+// (macro_origin / macro_extreme, locked and extended further down) are the SOS Fade
 // sequence's HTF POI: poiLongNow / poiShortNow are computed off them, and the
 // B-LEG log line reports its premium/discount zone off them too. Only the
 // DRAWING was deleted, so every value the strategy reads is byte-identical and
@@ -584,7 +584,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
     // The exemption used to be a SWAP, not an addition, and that made it self-cancelling.
     // The cap was measured over EVERY gap while the drop scan skipped the exempt ones, so an
     // EQ-backed gap held a slot: keeping it evicted the newest ordinary gap in its place.
-    // Measured on 40,000 real M15 bars, that is exactly what it did — the A+ bot lost 2 setups
+    // Measured on 40,000 real M15 bars, that is exactly what it did — the SOS Fade bot lost 2 setups
     // and gained none, because the gaps it protected cost it the gaps it would have traded.
     // So `fvgMaxCount` now bounds the ORDINARY gaps only and an exempt gap rides ON TOP of
     // them. The count is what a reader already assumes it is: seven recent gaps, plus however
@@ -617,10 +617,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // confirmed divPivotLen bars after the extreme (non-repainting by design).
 ```
 
-## [47] Live confluence flags for the A+ setup row
+## [47] Live confluence flags for the SOS Fade setup row
 
 ```
-// Live confluence flags for the A+ setup row
+// Live confluence flags for the SOS Fade setup row
 // Divergence relevance is tied to structure, not just a bar count. A divergence
 // that fired several legs ago — with BOS/SOS events since — is stale even if
 // still within the bar window: price has already moved on, and citing it as a
@@ -742,7 +742,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // Inbound touch of the 0.5 level during the RETRACEMENT toward the entry zone —
-// the A+ sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
+// the SOS Fade sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
 // same price on the way back OUT (as TP1) and is gated behind 0.618.
 ```
 
@@ -790,7 +790,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // (The eight line/label handles, the eight touched-flags, macro_prev_extreme and
 //  macro_prev_st_dir were REMOVED 2026-08-02 with the Cycle Fib drawing — every
 //  one of them existed only to draw or colour a line. macro_origin/_extreme and
-//  their _loc bars stay: the A+ HTF POI reads them.)
+//  their _loc bars stay: the SOS Fade HTF POI reads them.)
 ```
 
 ## [64] ── EXACT RULE (per latest instructions) ──
@@ -819,7 +819,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // Cycle Fib TRACKING always runs, on every timeframe — its discount zone IS the
-// HTF POI the A+ sequence reads. The drawing that used to sit alongside it (and
+// HTF POI the SOS Fade sequence reads. The drawing that used to sit alongside it (and
 // the timeframe cap that gated it) was removed 2026-08-02; this block is what
 // survived, and it is load-bearing.
 ```
@@ -845,7 +845,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 ```
 // (The "HIDE when price closes back above the locked top" block went with the
 //  drawing on 2026-08-02, and macro_visible with it. It only ever hid LINES — it
-//  was never read by the A+ POI or the B-LEG context line, both of which gate on
+//  was never read by the SOS Fade POI or the B-LEG context line, both of which gate on
 //  macro_origin_locked alone, so nothing the strategy reads changes.)
 ```
 
@@ -893,9 +893,9 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // RESTORED 2026-08-02 (Aaron's call — he reads it during bar replay). It was cut
 // 2026-07-24 for compile tokens (CE10117); the 28 unused toggles and the Cycle Fib
 // drawing removed earlier today freed ~207 lines, which is where the budget for it
-// came from. Recovered from `b25789d~1`, NOT rewritten from memory — this is the A+
+// came from. Recovered from `b25789d~1`, NOT rewritten from memory — this is the SOS Fade
 // file's OWN table, not the near-identical fork that survives in
-// `b_leg_strategy.pine`, so its rows describe A+ state exactly as they used to.
+// `b_leg_strategy.pine`, so its rows describe SOS Fade state exactly as they used to.
 // ⚠ COSMETIC ONLY: every line below READS state and writes none of it back, so no
 // fill, exit or stat can move. The one thing that is NOT free is compile budget — if
 // CE10117 returns, this block is the first thing to cut again.
@@ -990,26 +990,26 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // `grp` is the GROUP tag and is passed EMPTY on every row but the first of its group.
 // It cannot be latched inside this function — Pine lets a function read a global but
 // never write one (CE10088, the error `ob_export.pine` hit on 2026-07-31) — so the caller
-// owns the once-only rule. A+ SETUP and Weekly can hardcode theirs because they always
+// owns the once-only rule. SOS FADE and Weekly can hardcode theirs because they always
 // print; LIQ and the EXT/INT pair need a real latch, since either of their two rows can
 // be the one that appears. See the `gLiq` / `gMs` locals there.
 ```
 
-## [81] A+ SETUP SEQUENCE — sweep → SOS → fib entry, IN ORDER
+## [81] SOS FADE SEQUENCE — sweep → SOS → fib entry, IN ORDER
 
 ```
 //============================================================
-//  A+ SETUP SEQUENCE — sweep → SOS → fib entry, IN ORDER
+//  SOS FADE SEQUENCE — sweep → SOS → fib entry, IN ORDER
 //============================================================
-// The A+ model is a sequence, not a checklist. Each stage only counts if the
+// The SOS Fade model is a sequence, not a checklist. Each stage only counts if the
 // previous one is already done:
 //   1. SWEEP — liquidity taken at a tracked HTF pool (H4 / PD / session H-L).
 //      Those levels ARE the points of interest, so a sweep firing means price
 //      both reached the POI and grabbed the resting stops there.
 //   2. MSS — an external SOS that fires AFTER the sweep, within the window.
 //   3. ENTRY — the SOS leg's fib retracement:
-//        0.5 tapped   -> A+ EARLY  (early entry tier)
-//        0.618 reached -> A+ READY (full entry zone, E1-E3)
+//        0.5 tapped   -> SOS FADE EARLY  (early entry tier)
+//        0.618 reached -> SOS Fade READY (full entry zone, E1-E3)
 //      A live clean FVG overlapping the entry zone is flagged as confluence.
 // The sequence dies on: opposite SOS, close past the fib 1.0 (leg invalidated),
 // or TP3 hit (cycle complete). It then waits for the next sweep.
@@ -1147,7 +1147,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // Clear a stale arm — sweep/div fired but no SOS followed within the window.
-// Without this, aplusL_sweepBar stays set FOREVER even after the A+ row has
+// Without this, aplusL_sweepBar stays set FOREVER even after the SOS Fade row has
 // already fallen back to "Pass" (the display checks the window; this variable
 // didn't), which permanently blocked CONT from ever arming again.
 // Skipped on a session-gap bar: `time` jumps by far more than the normal bar
@@ -1155,14 +1155,14 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // this clear and resetting live arms across the 17:00-18:00 close.
 ```
 
-## [94] A+ leg resolution: completion (TP3), invalidation (close past 1.0 or fib
+## [94] SOS Fade leg resolution: completion (TP3), invalidation (close past 1.0 or fib
 
 ```
-// A+ leg resolution: completion (TP3), invalidation (close past 1.0 or fib
+// SOS Fade leg resolution: completion (TP3), invalidation (close past 1.0 or fib
 // flipped), or a CONTINUATION BOS once the SOS stage was already reached. That
 // last case is the one you're describing: the SOS fires, price never completes
 // the retrace, and instead breaks structure again in the same direction — the
-// leg has moved on without ever giving the fib entry, so the A+'s premise is
+// leg has moved on without ever giving the fib entry, so the SOS Fade's premise is
 // over and the leg is dropped. Critically this must exclude the SOS's
 // OWN bar: your structure engine flags bull_bos = true on every bull_sos bar
 // too (they're not mutually exclusive), so without "not st.bull_sos" here, the
@@ -1186,8 +1186,8 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // 2/3 ("no retracement"). On a higher timeframe that is ONE clean leg and the
 // retrace DOES arrive, later — into the Sniper-Zone band (0.382-0.5) frozen at
 // the ORIGINAL SOS. The B leg freezes that band and waits for price to trade
-// back into it. Runs fully PARALLEL to the A+ engine: it only READS st.* and the
-// bLegArm flags captured above, and never writes A+ state.
+// back into it. Runs fully PARALLEL to the SOS Fade engine: it only READS st.* and the
+// bLegArm flags captured above, and never writes SOS Fade state.
 ```
 
 ## [96] Freeze the SZ band on every SOS — the SAME 0.382/0.5 maths the drawn Sni
@@ -1231,15 +1231,15 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 ```
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
-// Latch the A+'s own 0.5/0.618 progress while its SOS is live. These persist
+// Latch the SOS Fade's own 0.5/0.618 progress while its SOS is live. These persist
 // through a fib-origin redraw (which happens at the session gap and would
 // otherwise reset the global fiboHalfReached/618 flags, dropping EARLY→2/3).
 ```
 
-## [100] ── A+ veto, SOS-aware ──────────────────────────────────────────────────
+## [100] ── SOS Fade veto, SOS-aware ──────────────────────────────────────────────────
 
 ```
-// ── A+ veto, SOS-aware ────────────────────────────────────────────────────
+// ── SOS Fade veto, SOS-aware ────────────────────────────────────────────────────
 // A divergence that prints AFTER the SOS does NOT veto its own setup. Once
 // stage 2 is live the setup is deliberately waiting on a retrace, and an
 // opposing divergence formed during that retrace is the pullback itself —
@@ -1307,11 +1307,11 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
         // watermark still carries the full name.
         // SOURCE → INFO (Aaron, 2026-08-04). "Source" was accurate for the LIQ pair and
         // the two bias rows, where the column really does name where the read came from,
-        // but it was never what the column held on the A+ SETUP row, which carries the
+        // but it was never what the column held on the SOS FADE row, which carries the
         // confluence tags. "Info" is the honest name for a column that is whatever that
         // row still needs to tell you.
         // The branding sits over the GROUP column and column 1's header is deliberately
-        // EMPTY — the row labels under it (A+, W, D, BSL, EXT) are named by their group
+        // EMPTY — the row labels under it (SOS Fade, W, D, BSL, EXT) are named by their group
         // tag, so a heading there would be inventing a word for a column that does not
         // need one. JARVIS is the one cyan on the table; STATUS and INFO stay yellow,
         // which is what tells the reader the branding is not a column heading.
@@ -1325,10 +1325,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
         // trading. `true` keeps the block's indentation and its `r` counter intact.
 ```
 
-## [106] A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
+## [106] SOS FADE — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
 
 ```
-            // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
+            // SOS FADE — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
             // completes, this row goes back to Pass; what tracks afterward is the CONT
             // row below — a different trade type, displayed separately so the two can
             // never be confused. Divergence/extreme-RSI veto: a side with live opposing
@@ -1380,14 +1380,14 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //============================================================
 ```
 
-## [111] STRATEGY EXECUTION — A+ sequence entries + scaled fib-target exits
+## [111] STRATEGY EXECUTION — SOS Fade sequence entries + scaled fib-target exits
 
 ```
 //============================================================
-//  STRATEGY EXECUTION — A+ sequence entries + scaled fib-target exits
+//  STRATEGY EXECUTION — SOS Fade sequence entries + scaled fib-target exits
 //============================================================
 // This is the ONLY block that is not part of the mpc_jarvis.pine engine.
-// It reads the A+ state the engine already computes and turns it into orders.
+// It reads the SOS Fade state the engine already computes and turns it into orders.
 //
 // ENTRY (per your spec): the setup must be armed all the way to the SOS
 // (aplus*_sosBar set = sweep-or-div THEN shift of structure), the fib must
@@ -1866,7 +1866,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 
 ```
 // ── B-LEG arm — the frozen SZ band is live, untapped and valid, we're flat and
-//    this band has not already been traded. A+ has priority: while a fresh A+ leg
+//    this band has not already been traded. SOS Fade has priority: while a fresh SOS Fade leg
 //    is armed on the same side it owns the "Long"/"Short" limit and the B leg
 //    stands down. Honours Trade longs/shorts + the final-hour block; it does NOT
 //    use the arm-source, FVG or veto gates (the band tap is the whole trigger).
@@ -1877,7 +1877,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 ```
 // ── B-LEG entries — rest a limit at the frozen band's near (0.5) edge, reusing
 //    the "Long"/"Short" id so the fill / exits / posBox / label all flow through
-//    the same machinery. SL beyond the leg origin (fib 1.0). Ladder reuses the A+
+//    the same machinery. SL beyond the leg origin (fib 1.0). Ladder reuses the SOS Fade
 //    shallow rungs from the frozen band: TP1 = the broken swing extreme (fib 0.0
 //    of the band = 2·edge − origin), TP2 = the expansion extreme (bLeg*_tgt), TP3
 //    = runner. pendIsBLeg* routes the fill to the B-leg "already traded" guard. ──
@@ -2184,7 +2184,7 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // REGENERATED 2026-07-30 from `sos_fade_strategy.pine`, to pick up the MINIMUM STOP DISTANCE
 // filter (`execMinStopMode` / `execMinStopVal`, Pine 423-432 + 3796-3807 + 4167-4172 +
 // 4204/4221) and the block reason code 7 that reports it. The previous copy predated all of
-// it, which was the one KNOWN Pine↔Python divergence on the A+ pair: the parent could refuse
+// it, which was the one KNOWN Pine↔Python divergence on the SOS Fade pair: the parent could refuse
 // a setup on stop distance, this export carried no column saying so, and compare_strategy.py
 // therefore reported GREEN while diffing against a config it could not read. Two new columns
 // close it — `cfg_min_stop` (the mode) and `cfg_min_stop_val` (the floor). Nothing else moved:
@@ -2371,10 +2371,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // bot OFF in that case, which is what those exports RAN — never the Python pin, which is on.
 ```
 
-## [171] DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot  _(only in sos_fade_strategy_export.pine)_
+## [171] DIAGNOSTIC (temporary — pins the SOS Fade Stage-1 arming gap vs the Python bot  _(only in sos_fade_strategy_export.pine)_
 
 ```
-// DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot at H4/
+// DIAGNOSTIC (temporary — pins the SOS Fade Stage-1 arming gap vs the Python bot at H4/
 // session boundaries; remove once parity is green). Everything the arming block at
 // ~3718 reads or sets, so Python's reconstructed liquidity can be diffed bar-for-bar.
 // Every bar field is stored (value+1) so 0 = "none" and the packing never goes negative.

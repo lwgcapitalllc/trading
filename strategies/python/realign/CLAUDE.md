@@ -9,7 +9,7 @@ realignment, **before** the external bullish SOS that later confirms it. Shorts 
 what blocks the first sweep: this bot has NO parity gate, so tuning it optimises a Python program
 against itself.
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
-the engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
+the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
 **Status:** Built + unit-tested (15 tests green) + **cross-checked against the TradingView Strategy
 Tester**. 🔴 **NOT PARITY-VALIDATED — there is no export twin, no real CSV and no
@@ -37,10 +37,10 @@ Five steps, and the false break is the whole idea:
 Shorts mirror it exactly: bearish external trend, a `bull_sos` false break, a bearish realignment.
 
 ⚠ **The entry is a MARKET order, which makes this fork structurally different from every other bot
-here.** A+, B-LEG and BOS all rest a limit at a fib-priced edge; this one takes the close of the bar
+here.** SOS Fade, B-LEG and BOS all rest a limit at a fib-priced edge; this one takes the close of the bar
 that triggers it. So `_place_entries` is overridden wholesale, no fib ladder is frozen
 (`TradeFib` is `None` on every trade, and the chart's Fibs row is correctly absent), and the
-entry-side A+ config fields are inert rather than pinned.
+entry-side SOS Fade config fields are inert rather than pinned.
 
 ---
 
@@ -166,7 +166,7 @@ Two correctness properties, both tested, both silent if broken:
 
 `RealignConfig` is a `SosFadeConfig` superset for the same reason `BLegConfig` is: one exit ladder,
 one sizing path, one cost model. **The inherited defaults are the risk, not the new fields** — the
-`BosConfig` incident (2026-08-07), where two A+ defaults added in the preceding five days silently
+`BosConfig` incident (2026-08-07), where two SOS Fade defaults added in the preceding five days silently
 broke a new fork.
 
 - **`exec_secondary` PINNED False.** The parent defaults it **True** since 2026-08-07. The 1m
@@ -177,7 +177,7 @@ broke a new fork.
 - **`show_internal` switched back ON.** The parent pins it **False**. Inheriting that blanks the
   internal stream, and with `realign_*_source = "internal"` the bot would simply never trigger on
   that side — **a wrong RESULT with no error anywhere.** Tested.
-- **The entry-side A+ fields are left alone deliberately** (`exec_fib_nearest`, `exec_deep_fib`,
+- **The entry-side SOS Fade fields are left alone deliberately** (`exec_fib_nearest`, `exec_deep_fib`,
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
 
@@ -242,7 +242,7 @@ them exercises either field. Both are untested beyond construction-time validati
 ## The exit ladder is the parent's, unchanged
 
 Stop staging, the runner trail, TP rungs and the time stop all come from `sos_fade` and move
-with it. That is the point of inheriting — but it also means **a change to the A+ ladder moves this
+with it. That is the point of inheriting — but it also means **a change to the SOS Fade ladder moves this
 bot's numbers**, and the numbers below were taken before `32b633f` (the breakeven-buffer-vs-spread
 finding). Re-measure before quoting them against a charged book.
 
@@ -317,7 +317,7 @@ exists to settle, and the parity gate does not exist.**
   nothing errors.
 - **Diff this config against `SosFadeConfig` field by field before touching either.** Inherited
   defaults arrive uninvited and this fork has already had to refuse two of them.
-- **A change to the A+ exit ladder changes this bot.** The ladder is shared, not copied.
+- **A change to the SOS Fade exit ladder changes this bot.** The ladder is shared, not copied.
 
 ## Key paths
 

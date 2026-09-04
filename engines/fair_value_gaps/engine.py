@@ -116,7 +116,7 @@ class FairValueGapEngine:
             # SELF-CANCELLING. This engine counted every gap until 2026-08-06 while the drop scan
             # skipped the exempt ones, so an exempt gap still held a slot: keeping it evicted the
             # newest ORDINARY gap in its place — a swap, not an addition. Measured in Pine over
-            # 40,000 M15 bars, that cost the A+ bot 2 setups and gained it none, because the gaps
+            # 40,000 M15 bars, that cost the SOS Fade bot 2 setups and gained it none, because the gaps
             # it protected cost it the gaps it would have traded. The live total is therefore
             # UNBOUNDED by `max_count`; it is bounded by the EQ engine instead (`max_levels` per
             # side, each dying on a close through it).

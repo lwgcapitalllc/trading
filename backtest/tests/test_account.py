@@ -311,7 +311,7 @@ def test_a_floor_equal_to_the_legs_own_risk_does_not_refuse_an_uncontested_entry
     arithmetic (the leg divides by the stop distance to get a qty, the account re-multiplies), so
     they differ in the last bit. A bare `<` then refuses an entry that nothing was competing for.
 
-    MEASURED before the tolerance existed: A+ at 10% under a 10% cap with a 10% floor was refused
+    MEASURED before the tolerance existed: SOS Fade at 10% under a 10% cap with a 10% floor was refused
     3,650 times over 7.9 years and took 31 trades instead of 181. Nothing was open; the whole
     budget was free.
     """
@@ -446,14 +446,14 @@ def test_all_or_nothing_defaults_OFF_so_no_stored_run_moves():
 # holding). So precedence has to act BEFORE the clash: a priority leg's risk stays reserved even
 # while it is FLAT, and lower legs may only use what is genuinely spare.
 #
-# 🔴 MEASURED, and it is why this exists: under `all_or_nothing` with no precedence, A+ was
+# 🔴 MEASURED, and it is why this exists: under `all_or_nothing` with no precedence, SOS Fade was
 # refused 176 times and lost a third of its edge (127.11R → 85.05R) because a leg worth $14,025
 # standalone over eight years got to the budget first. Whoever asked first won, and the legs were
 # treated as equals. They are not.
 #
 # ⚠ The consequence is deliberate and must not be "fixed" later by someone who finds it harsh:
-# with A+ at 10% under a 10% cap there is NO spare room, so a lower leg never trades at all. That
-# is the correct answer to "is it worth taking room off A+" — the honest way to run a second leg
+# with SOS Fade at 10% under a 10% cap there is NO spare room, so a lower leg never trades at all. That
+# is the correct answer to "is it worth taking room off SOS Fade" — the honest way to run a second leg
 # is to give it headroom of its own (raise the cap), not to let it bite into the first.
 #
 # ⚠ No double counting: a priority leg that is ALREADY holding has its real reservation in
@@ -471,7 +471,7 @@ def _prio_acct(balance=10_000.0, cap=0.10):
 
 
 def test_a_lower_leg_is_held_out_of_the_headroom_reserved_for_a_FLAT_priority_leg():
-    """A+ is flat and risks the whole 10% cap, so nothing is spare. The recovery leg asks for
+    """SOS Fade is flat and risks the whole 10% cap, so nothing is spare. The recovery leg asks for
     2.5% and is refused — not because the budget is in use, but because it is SPOKEN FOR."""
     a = _prio_acct()
     qty = a.request_fill(
@@ -483,7 +483,7 @@ def test_a_lower_leg_is_held_out_of_the_headroom_reserved_for_a_FLAT_priority_le
 
 
 def test_the_priority_leg_is_never_held_out_by_its_OWN_headroom():
-    """The reservation exists FOR A+. If A+ were made to respect it, the rule would lock out the
+    """The reservation exists FOR SOS Fade. If SOS Fade were made to respect it, the rule would lock out the
     leg it is protecting — which is the failure it exists to prevent, wearing the opposite mask."""
     a = _prio_acct()
     qty = a.request_fill(
@@ -494,9 +494,9 @@ def test_the_priority_leg_is_never_held_out_by_its_OWN_headroom():
 
 
 def test_a_priority_leg_that_is_ALREADY_holding_does_not_also_get_headroom():
-    """No double counting. A+ holds 600 of the 1000 cap, so 400 is genuinely spare and the
+    """No double counting. SOS Fade holds 600 of the 1000 cap, so 400 is genuinely spare and the
     recovery leg may have its 25. RED by mutation: drop the `has_position` test in `_headroom_for`
-    and this is refused, because A+'s risk is subtracted twice."""
+    and this is refused, because SOS Fade's risk is subtracted twice."""
     a = _prio_acct()
     a.request_fill("aplus", +1, entry=100.0, stop=97.0, desired_qty=200.0, point_value=1.0)  # 600
     qty = a.request_fill("recovery", +1, entry=100.0, stop=95.0, desired_qty=5.0, point_value=1.0)
@@ -505,11 +505,11 @@ def test_a_priority_leg_that_is_ALREADY_holding_does_not_also_get_headroom():
 
 
 def test_headroom_is_released_once_the_priority_leg_closes_for_good():
-    """Precedence is about the budget, not about punishing the other leg forever — when A+ is
+    """Precedence is about the budget, not about punishing the other leg forever — when SOS Fade is
     flat again the reservation is back, and when the cap has room beyond it the lower leg trades."""
     a = PortfolioAccount(
         balance=10_000.0,
-        risk_cap_pct=0.125,  # 1250: 1000 for A+, 250 spare
+        risk_cap_pct=0.125,  # 1250: 1000 for SOS Fade, 250 spare
         leg_priority={"aplus": 0, "recovery": 1},
         leg_risk_pct={"aplus": 0.10, "recovery": 0.025},
     )
@@ -521,7 +521,7 @@ def test_headroom_is_released_once_the_priority_leg_closes_for_good():
 
 def test_precedence_applies_on_the_same_bar_tie_path_too():
     """Both legs fill on the SAME bar. The tie splits the room, and the room the LOWER leg sees
-    must already have A+'s headroom taken out of it."""
+    must already have SOS Fade's headroom taken out of it."""
     a = _prio_acct()
     out = a.request_fills(
         [
@@ -553,12 +553,12 @@ def test_a_same_bar_tie_is_settled_BY_RANK_not_split_proportionally():
     version of it proved nothing, because its numbers fitted inside the cap where proportional
     splitting and rank ordering give the identical answer. It passed with the branch deleted.
 
-    Here the legs want 1500 against a 1250 cap, so the split has to bite. Proportional gives A+
-    833 of its 1000 (diluted by the leg that defers to it). By rank A+ takes its full 1000 and the
+    Here the legs want 1500 against a 1250 cap, so the split has to bite. Proportional gives SOS Fade
+    833 of its 1000 (diluted by the leg that defers to it). By rank SOS Fade takes its full 1000 and the
     recovery leg gets the genuine 250 remainder.
 
     WATCHED RED by mutation: replace `if self.leg_priority:` in `request_fills` with `if False:`
-    and A+ comes back 166.67 instead of 200.0."""
+    and SOS Fade comes back 166.67 instead of 200.0."""
     a = PortfolioAccount(
         balance=10_000.0,
         risk_cap_pct=0.125,  # cap 1250
@@ -610,7 +610,7 @@ def _lot_acct(balance=10_000_000.0, max_lots=100.0, contract_size=100.0):
 
 
 def test_an_ask_over_the_ceiling_is_RESIZED_not_refused():
-    """The whole policy in one assertion. 742.60 lots is the largest ask in the real A+ book.
+    """The whole policy in one assertion. 742.60 lots is the largest ask in the real SOS Fade book.
 
     RED when `_cap_to_max_lots` returns `desired_qty` unchanged (granted 74,260.0), and RED the
     other way when the over-max branch returns 0.0 the way the live path used to refuse.

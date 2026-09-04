@@ -452,16 +452,16 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `verify_parity.py <csv> [csv ...]`, or no args = newest CSV in `backtest/`.
   Each registry row carries a MARKER column and a **VETO** column (added 2026-07-26): a check runs
   when its marker is present and its veto is absent. The veto exists because the two STRATEGY exports
-  overlap — `b_leg_strategy_export.pine` plots `px_stages` too (the B leg arms off the A+
-  sequence), so marker-alone would run the A+ check against a B-LEG export and produce a red that
-  means nothing. `bl_bits` exists only in the B-LEG export, so it is the A+ check's veto and the
-  B-LEG check's marker. Deliberately NOT solved by re-marking A+ on an A+-only column like
-  `px_block`: that column landed 2026-07-25, so every older A+ export would silently stop being
+  overlap — `b_leg_strategy_export.pine` plots `px_stages` too (the B leg arms off the SOS Fade
+  sequence), so marker-alone would run the SOS Fade check against a B-LEG export and produce a red that
+  means nothing. `bl_bits` exists only in the B-LEG export, so it is the SOS Fade check's veto and the
+  B-LEG check's marker. Deliberately NOT solved by re-marking SOS Fade on an SOS Fade-only column like
+  `px_block`: that column landed 2026-07-25, so every older SOS Fade export would silently stop being
   checked.
 - **`tools/run_report.py`** — the "WHY did it make/lose money" run. Replays a `strategies/python/`
   bot over YEARS of broker bars and writes `trades.csv` (one row per trade, tagged with the
   `engines/regime/` label at entry, NY session/hour, and excursion in R) plus `setups.csv` (one row
-  per A+ leg that reached SOS, traded or not, with the FIRST thing that stopped it). The second file
+  per SOS Fade leg that reached SOS, traded or not, with the FIRST thing that stopped it). The second file
   is the point: a blocked or skipped setup places no order, so it leaves NO trace in any broker trade
   list — this is the only place it is countable. Reports in **R, never dollars** (a fixed-%-risk
   strategy earns exponentially more dollars at the same edge, so a dollar curve makes a flat early
@@ -506,12 +506,12 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   artefact — nothing regenerates it, so any config change makes it stale. Each folder carries a
   README stating the window, fill model, config levers at run time, and open caveats; keep that
   honest or the numbers get quoted without them. Current: `2026-07-29_xauusd_15m_full_history/`
-  (A+ and B-LEG, 2018-09-13 → 2026-07-29, bar fills).
+  (SOS Fade and B-LEG, 2018-09-13 → 2026-07-29, bar fills).
 - **`tools/overlap_audit.py`** — do two strategies actually trade DIFFERENT legs of the move? Replays
   two `strategies/python/` bots and reports the bars both held a position (split
   same-side vs opposite), which trades pair up, how far apart same-direction ENTRIES land (the direct
   test of "both fired on one structure break"), what a single account would have carried, and the
-  monthly R correlation. **Built 2026-08-04 to close the standing A+/B-LEG overlap question**, which
+  monthly R correlation. **Built 2026-08-04 to close the standing SOS Fade/B-LEG overlap question**, which
   had been design intent in three CLAUDE.md files for a year and never measured; it passed —
   27 shared bars in 155,453, one same-direction cluster in 6.5 years. ⚠ **It deliberately does NOT
   net the two into a combined equity curve**: both bots are `self_sizing`, so running them on one
@@ -527,8 +527,8 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `sos_fade`'s re-entries need two frames — and that switch is ON in the strategy's DEFAULT
   config *and* in the live bot's own instance config. So the tool built a config saying re-entries
   were on, ran a path that cannot fire one, and printed a clean report. **Nothing failed and nothing
-  was empty**: A+ simply arrived with a third of its trades missing, which looks exactly like a bot
-  whose re-entries never triggered. ⚠ **Only A+ was affected** — `b_leg` sets the switch False and
+  was empty**: SOS Fade simply arrived with a third of its trades missing, which looks exactly like a bot
+  whose re-entries never triggered. ⚠ **Only SOS Fade was affected** — `b_leg` sets the switch False and
   `extreme_leg` has no such field, both checked rather than assumed. ✅ Fixed by loading each
   bot's own fill clock as a THIRD frame and calling `run_dual`; it **refuses** rather than
   downgrading when a bot wants a fill clock it cannot supply, and `--no-secondary` SETS the flag
@@ -547,7 +547,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `Grid.unit_ms` is the only placement now; `kind` chooses the WIDTH alone.
 
   🔴 **`_occupancy` REFUSES two positions in one bot, AND ITS REFUSAL WAS ONCE DELETED FOR BEING
-  RIGHT.** The guard fired on the misplaced holds above and was read as a discovery — *A+ holds two
+  RIGHT.** The guard fired on the misplaced holds above and was read as a discovery — *SOS Fade holds two
   at once* — so the cell was widened to counts, the tests rewritten, and a doubled-risk warning put
   in the root `CLAUDE.md`. All of it was the placement bug. Placed by timestamp the same replay
   reports **0** doubled bars, and the strategy fills a re-entry only while flat
@@ -557,8 +557,8 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
   ⚠ **SAME and OPPOSITE PARTITION the overlap** — they briefly did not, as a consequence of the
   wrong model. ⚠ **The grid stays the finer PRIMARY frame and must** — `frames` also holds fill
-  clocks, and reading the minimum off the whole dict would re-base the A+/B-LEG audit from 15m onto
-  5m purely because A+ fills re-entries there. ⚠ **`overlap_counts` is PUBLIC and the test suite
+  clocks, and reading the minimum off the whole dict would re-base the SOS Fade/B-LEG audit from 15m onto
+  5m purely because SOS Fade fills re-entries there. ⚠ **`overlap_counts` is PUBLIC and the test suite
   CALLS it** rather than mirroring it.
 
   🔴 **EVERY CLASH FIGURE PUBLISHED 2026-09-02 → 2026-09-03 CARRIES THE PLACEMENT BUG** — shared
@@ -576,7 +576,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   real exposure against a 5-minute one — and that error only ever runs one way, understating overlap.
   ✅ **The same-frame case is the IDENTITY and that was proven, not argued**: the pre-change tool and
   this one give byte-identical output on the same bars, and `test_the_same_frame_maps_every_trade_onto_its_own_bar_index`
-  pins it, because the A+/B-LEG figures quoted in the root `CLAUDE.md` were measured before the grid
+  pins it, because the SOS Fade/B-LEG figures quoted in the root `CLAUDE.md` were measured before the grid
   existed. **No documented baseline moves.**
 
   ⚠ **The cluster window is a DURATION now, not a bar count.** It was 16 bars, which meant four hours
@@ -592,12 +592,12 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   🔴 **`--server` exists because the audit could not be RE-RUN without the app up.** Without it the
   bar source asks whichever MT5 terminal is attached, so a re-run offline dies at the fetch while a
   complete cache sits on disk. ⚠ **Name the server every audit was measured on** — the 2026-09-01
-  re-measurement of A+/B-LEG recorded neither the broker nor the symbol, and reproducing it took
+  re-measurement of SOS Fade/B-LEG recorded neither the broker nor the symbol, and reproducing it took
   three replays to work out that 157,004 bars is PU Prime and 156,819 is Vantage. **A basis nobody
   wrote down is a number nobody can check.**
 
-  Its first two-frame run (A+ 15m vs the extreme-leg bot 5m) is a fact about those two BOTS rather
-  than about this tool, so it lives in the root `CLAUDE.md` next to the A+/B-LEG result it belongs
+  Its first two-frame run (SOS Fade 15m vs the extreme-leg bot 5m) is a fact about those two BOTS rather
+  than about this tool, so it lives in the root `CLAUDE.md` next to the SOS Fade/B-LEG result it belongs
   beside; story and full numbers in `HISTORY.md`.
 - **`tools/jitter_audit.py`** — how much of a backtest survives a few cents of feed difference?
   Replays a `strategies/python/` bot over the same bars N times with a small random offset added to
@@ -787,7 +787,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   been read FOUR times in seven weeks and moved on three of them, with nothing to announce it.**
   ⚠ **A drift is not automatically worth re-pricing** — the 2026-09-02 reading was replayed both
   ways and came to +0.09R. See `tools/swap_audit.py` above for the measurement and the decision.
-- **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The A+ bot waits for the
+- **`tools/pre_sos_leg.py`** — **the leg BEFORE the shift of structure. The SOS Fade bot waits for the
   shift and fades the retracement; this asks whether the move that CREATES it is tradeable.** Added
   2026-08-24 on Aaron's question. Stdlib only, runs off `backtest/cache/`. Full record:
   `docs/PRE_SOS_LEG_STUDY.md`.
@@ -1057,7 +1057,7 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   the simulator can drive (an `EngineStack` plus the strategy, stepped exactly the way
   `optimizer._replay_one` steps it). **Each leg owns its own stack**, which is not an optimisation
   to remove: the two bots pin different engine inputs (`b_leg` forces `eq_exempt_fvg` off where
-  A+ forces it on), so one shared stack would replay at least one of them against a market it never
+  SOS Fade forces it on), so one shared stack would replay at least one of them against a market it never
   saw. It uses `stack_config()`, never `engine_config()` — the second is the static Pine constants
   and a config whose POI source is order blocks needs the OB engine switched on. `exec_secondary`
   is **REFUSED when the leg was handed only ONE frame**, the same call `run_sweep` makes: replaying
@@ -1066,9 +1066,9 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   (`LegSpec.df_fast`) and then it runs whole — `DualFeedLeg`, below. The refusal is now about a
   MISSING frame rather than about stacking, and it names the way out.
 
-- 🔴 **`DualFeedLeg` — a leg on TWO bar frames (2026-09-02).** A+'s re-entry fills on a faster clock
+- 🔴 **`DualFeedLeg` — a leg on TWO bar frames (2026-09-02).** SOS Fade's re-entry fills on a faster clock
   than its primary, so pinning that switch off was pinning off a third of the bot's trades:
-  MEASURED 2020-01-01 → 2026-08-23 on PU Prime `XAUUSD.p` with ECN costs charged, the A+ leg goes
+  MEASURED 2020-01-01 → 2026-08-23 on PU Prime `XAUUSD.p` with ECN costs charged, the SOS Fade leg goes
   158 → **235 trades, +183.04R** when it is given its fast frame. **A stack that cannot run the
   shipped config is not measuring the bot you own.**
   ⚠ **Defaults `None`, so NO documented baseline moves** — with no fast frame the build, the solo
@@ -1179,7 +1179,7 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
 
   ⚠ **A SHRUNK ENTRY IS INVISIBLE IN R.** R is measured against each trade's own risk, so a trade
   cut to half size reports the same R it would have at full size. On the 2026-09-02 mixed stack the
-  A+ leg's shared and solo R were identical despite one shrink. Rule 6 says compare R rather than
+  SOS Fade leg's shared and solo R were identical despite one shrink. Rule 6 says compare R rather than
   dollars, and **this is the one place R cannot see what the cap did** — read the contention log.
 - **The LAB drives the same object** (`command-center/backend/services/portfolio_runner.py`,
   2026-08-09) — it CALLS `run_stack` and owns no account model of its own. ⚠ **Anything tuned here
@@ -1192,7 +1192,7 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
 python backtest/tools/stack_run.py --start 2020-01-01 --end 2026-08-06 --balance 10000 --risk-cap 10
 ```
 
-**155,807 M15 bars, A+ and B-LEG on one $10,000 account, cap 10% of the live balance:**
+**155,807 M15 bars, SOS Fade and B-LEG on one $10,000 account, cap 10% of the live balance:**
 
 | leg | shared trades | shared R | solo trades | solo R | solo closing |
 |---|---|---|---|---|---|
@@ -1203,7 +1203,7 @@ python backtest/tools/stack_run.py --start 2020-01-01 --end 2026-08-06 --balance
 ✅ **The seam is proven NEUTRAL, which is the whole point of the first run**: every leg posts the
 SAME R shared as solo, because R is normalised to the trade's own risk and nothing was refused.
 The shared account changed the DOLLARS — one balance compounding both legs — and moved no decision.
-A+ also reproduces its documented 159 / +142.18R baseline to the cent, which is the cross-check
+SOS Fade also reproduces its documented 159 / +142.18R baseline to the cent, which is the cross-check
 that this drives the real strategies and not a third thing.
 
 🔴 **AND NOTHING WAS EVER BLOCKED IN 6.5 YEARS, WHICH IS THE FINDING.** Peak open risk touched
@@ -1240,11 +1240,11 @@ whose own risk equals the cap misses by a float's last bit, and without it the r
 every uncontested entry.
 
 🔴 **MEASURED, and the result is the argument for building PRIORITY next.** 186,910 M15 bars,
-`puprime_ecn`, A+ 10% under a 10% cap with the loss-recovery leg (`recovery_stack.py
---on-contention refuse`): **176 A+ entries refused, 0 shrunk, A+ 127.11R → 85.05R, and the account
+`puprime_ecn`, SOS Fade 10% under a 10% cap with the loss-recovery leg (`recovery_stack.py
+--on-contention refuse`): **176 SOS Fade entries refused, 0 shrunk, SOS Fade 127.11R → 85.05R, and the account
 ends $13.2M → $1.0M (−92%) with drawdown 50.2% → 55.2%.** The cause is structural rather than a
-tuning miss: **A+ risks the cap in full, so it needs the ENTIRE budget to trade at all, and the
-moment the other leg holds anything A+ is refused.** A leg worth **$14,025 standalone over eight
+tuning miss: **SOS Fade risks the cap in full, so it needs the ENTIRE budget to trade at all, and the
+moment the other leg holds anything SOS Fade is refused.** A leg worth **$14,025 standalone over eight
 years** locks out the one carrying the return. ⚠ **The account has no notion of leg PRECEDENCE** —
 whoever asks first takes the budget and the legs are treated as equals, which they are not. **Do not
 enable this rule on a real comparison until precedence exists.**
@@ -1263,15 +1263,15 @@ untouched.
 
 🔴 **MEASURED, same window and tier, and it flips the verdict on the whole rule:**
 
-| cap | precedence | A+ | recovery | combined | maxDD |
+| cap | precedence | SOS Fade | recovery | combined | maxDD |
 |---|---|---|---|---|---|
 | 10% | none | 85.05R, 176 refused | 60 trades | **$1,043,054** | 55.2% |
-| 10% | A+ first | **127.11R, 0 refused** | **0 trades, 65 refused** | $13,199,534 | 50.2% |
-| 12.5% | A+ first | 127.11R, 0 refused | 60 trades, 0 refused | **$17,074,731 (+29.4%)** | 50.4% |
+| 10% | SOS Fade first | **127.11R, 0 refused** | **0 trades, 65 refused** | $13,199,534 | 50.2% |
+| 12.5% | SOS Fade first | 127.11R, 0 refused | 60 trades, 0 refused | **$17,074,731 (+29.4%)** | 50.4% |
 
-**At a 10% cap with A+ risking 10% there is NO spare room, so a deferring leg never trades — and
-that is the honest answer to "is the recovery worth taking room off A+", not a bug to soften.**
-The rule only earns its place given headroom of its OWN. ⚠ **And the gain is +14.77R against A+'s
+**At a 10% cap with SOS Fade risking 10% there is NO spare room, so a deferring leg never trades — and
+that is the honest answer to "is the recovery worth taking room off SOS Fade", not a bug to soften.**
+The rule only earns its place given headroom of its OWN. ⚠ **And the gain is +14.77R against SOS Fade's
 own ~15R jitter floor, so the COMBINED improvement is not distinguishable from noise on this
 history** — the recovery leg's own 60-trade book having positive expectancy is a separate and
 weaker claim. ⚠ Dollar columns rank runs against each other and are NOT a forecast: the largest
@@ -1279,7 +1279,7 @@ position in these runs is 1,821 lots and the lab models no broker maximum.
 
 ⚠ **Neither contention rule touches the peak open risk, and that was checked rather than assumed.**
 The peak is set by the balance FALLING under a reservation already granted — overnight financing is
-the big one — not by contention. MEASURED: **A+ alone with no second leg in the run reproduces the
+the big one — not by contention. MEASURED: **SOS Fade alone with no second leg in the run reproduces the
 identical 2,984 over-cap ticks and the identical 10.9140% peak.** See
 `docs/CARRY_COST_AND_THE_DAILY_RISK_RESET.md`.
 
@@ -1726,7 +1726,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   its own". **That was half wrong.** `sos_fade` pinned `fvg_max_count` and `fvg_require_close` and
   never pinned `fvg_threshold_pct`, so it was silently inheriting the 0.1 — which happens to equal
   `sos_fade_strategy.pine`'s 15m floor, so the bot worked by coincidence rather than by decision. Anyone
-  reconciling that "stale" default to the engine's would have moved the A+ bot's trades with **no test
+  reconciling that "stale" default to the engine's would have moved the SOS Fade bot's trades with **no test
   failing**. Verified by doing exactly that: `compare_strategy.py` failed on the first compared bar
   (`px_edge` py=3478.99 vs pine=3475.43). Fixed the right way round — **`EngineConfig` carries ENGINE
   defaults (8 / 0.0), each strategy pins what its own Pine uses**, and
@@ -1767,7 +1767,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 - **A bar INDEX is not a shared axis whenever the bar size can differ.** Check what two runs are actually indexed on before comparing them — this bites the moment a sweep replays one strategy across timeframes. Detail: `docs/BACKTEST_BUILD_NOTES.md`.
 - **Coverage has TWO rules and they are not alternatives.** *Is the whole window fetched* and *what did we actually receive* answer different questions; keeping only the first re-pulled six and a half years of bars to obtain one day, on every request that reached the live edge. A partial fetch is only safe because `BarCache.save` MERGES rather than overwrites. Detail: `docs/BACKTEST_BUILD_NOTES.md`.
 - **Bars are UTC**, timestamped at the bar OPEN (matching MT5), columns open/high/low/close plus
-  an OPTIONAL `volume`. This line said "no volume (the A+ engines don't need it)" until
+  an OPTIONAL `volume`. This line said "no volume (the SOS Fade engines don't need it)" until
   2026-08-07 and was two generations stale: the data layer has carried volume since the
   2026-08-06 `FEED_VERSION` 3 pass, and `ReplayBar` carries it from 2026-08-07 for
   `strategies/python/bos/`, the first strategy that needs it (its session-VWAP filter).
@@ -1775,7 +1775,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   0.0.** A zero-volume bar is a real thing MT5 reports on a dead session, so filling the unknown
   with one puts a measurement where there is none, and a volume-weighted consumer averages
   straight through it without complaining. A NaN cell (one unknown bar inside an otherwise
-  populated column) is `None` for the same reason. The A+ and B-LEG paths never read it, so
+  populated column) is `None` for the same reason. The SOS Fade and B-LEG paths never read it, so
   their replays are byte-identical.
 
 ## Reading the numbers — standing caveats
@@ -1804,7 +1804,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   SINCE 2026-09-02 AND RESIZES THEM DOWN** (`portfolio/account.py` → `max_lots`, default 100 lots,
   every strategy). PU Prime's ceiling on `XAUUSD.p` is **100 lots** (min 0.01, step 0.01) —
   MEASURED live off account 700152905 that day, identical to the 2026-08-14 reading in the bot's
-  own instance config. The live A+ config replayed on its own two feeds from $10,000 asks for
+  own instance config. The live SOS Fade config replayed on its own two feeds from $10,000 asks for
   **more than 100 lots on 25 of its 205 trades (12.2%)**; the first at a balance of **$927,540**,
   the largest **742.60 lots — 7.4× the ceiling**. ⚠ **Below ~$927k nothing is touched**, which is
   why it never showed up.
@@ -1839,12 +1839,12 @@ exists because the lab's own `exec_recovery` toggle is a POST-PASS: the recovery
 running balance and the primary never sizes off the recovery, so recovery profit sits BESIDE the
 curve instead of lifting it. Identical trades, **+3.8% that way against +44.8% on one compounding
 balance**. The toggle is not wrong to be built that way — it is what stops a lab switch moving a
-parity-gated A+ trade — but **it cannot answer "what would this have done on my account", and a
+parity-gated SOS Fade trade — but **it cannot answer "what would this have done on my account", and a
 run made with it must not be read as if it did.**
 
-🔴 **The answer is decided by HEADROOM, not by the rule.** A+ risks 10% and the default cap is 10%,
-so the two legs at full size want 12.5% of a 10% budget and every overlap shrinks A+ by
-construction. MEASURED over 186,910 M15 bars at `puprime_ecn`: **−29.9% at a 10% cap (25 A+ entries
+🔴 **The answer is decided by HEADROOM, not by the rule.** SOS Fade risks 10% and the default cap is 10%,
+so the two legs at full size want 12.5% of a 10% budget and every overlap shrinks SOS Fade by
+construction. MEASURED over 186,910 M15 bars at `puprime_ecn`: **−29.9% at a 10% cap (25 SOS Fade entries
 shrunk), +29.4% at 12.5%.** `--aplus-risk-pct` and `--risk-cap-pct` are the levers; the tool prints
 a warning when the two legs cannot both fit.
 
@@ -1856,7 +1856,7 @@ control it divides by was shrinking, so the best-looking uplift in the sweep sat
 in it. Read the absolute balances, or read pairs where one plan beats another on BOTH axes.
 
 ⚠ **`--on-contention refuse` REFUSES TO RUN.** `entry_floor_pct` is ONE number for the whole
-account and these legs risk different amounts, so any floor making A+ all-or-nothing also bans
+account and these legs risk different amounts, so any floor making SOS Fade all-or-nothing also bans
 every 2.5% recovery entry — 64 refusals, 0 trades, the same output at two different caps. A real
 refusal rule needs a PER-LEG floor. Never let *cannot express this* and *here are the numbers for
 it* be the same output.
@@ -1864,7 +1864,7 @@ it* be the same output.
 ⚠ **It prints total R per leg, shared vs solo, and that check is the point.** R is normalised to
 each trade's own risk, so a pure sizing change must leave it byte-identical — a difference is
 either the cap biting (and then it is in the refusal log) or a decision moved. It has already
-found one: A+ shifts −0.10R on the shrink path, unexplained, 0.08% of the book and far under the
+found one: SOS Fade shifts −0.10R on the shrink path, unexplained, 0.08% of the book and far under the
 15.06R jitter floor. Written down rather than rounded away.
 
 ## `output.py::_tp_targets` — a rung PRICE does not say whether an order sits there (2026-08-21)
@@ -1928,7 +1928,7 @@ floor equal to a leg's own risk % is what exposed it.** That is the natural way 
 never layered* — refuse anything the budget would shrink — and it puts `granted` and `floor` on
 exactly the same number, reached by different arithmetic (a leg DIVIDES by the stop distance to get
 a qty, the account re-MULTIPLIES). They differ in the last bit, so an entry nothing was competing
-for was refused. **MEASURED: A+ at 10% under a 10% cap with a 10% floor was refused 3,650 times
+for was refused. **MEASURED: SOS Fade at 10% under a 10% cap with a 10% floor was refused 3,650 times
 over 7.9 years and took 31 trades instead of 181** — a book that reads like a savage allocator and
 is a rounding error. ⚠ **No stored run moves**: `entry_floor_pct` defaults to 0.0 and both forms
 answer identically at zero. Two tests at the boundary, both watched RED by their own mutation.
@@ -2037,7 +2037,7 @@ it booted with. Checked rather than assumed.
 
 **Aaron's split: each bot gets a share of one account, and when one is occupying more than its
 share the others SHRINK to what is left rather than being refused; with nothing left they refuse
-and say why on Telegram.** Extreme leg 5%, A+ 5%, account cap 10%.
+and say why on Telegram.** Extreme leg 5%, SOS Fade 5%, account cap 10%.
 
 **`PortfolioAccount` cannot cross an OS process boundary**, so the live side reads the BROKER and
 pushes the dollars still free onto this field each bar. Nothing about a backtest changes — the field
@@ -2139,7 +2139,7 @@ fixed R?* — and each is reusable for the next leg somebody proposes.
 RESULT.** It prices entries off fib geometry instead of running the order layer, which is what
 makes a grid affordable — and its +32.7R best cell replayed at **−6.6R**. Its bar-walk was
 validated first, and thoroughly: the excursion it computes reproduces `Trade.mfe_price` on all 158
-A+ trades to 0.0000R, with two mutations watched red. **That validation was real and it did not
+SOS Fade trades to 0.0000R, with two mutations watched red. **That validation was real and it did not
 transfer.** The arithmetic was right; the conclusion was not, because the reconstruction's pool and
 its entry price both differed from anything the engine could actually run. ⚠ **Validate the walk,
 then still replay the answer** — a grid tool proposes, it never concludes.

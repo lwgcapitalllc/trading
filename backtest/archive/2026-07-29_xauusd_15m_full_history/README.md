@@ -16,7 +16,7 @@ Everything is in here: winners, losers, scratches, and every setup that never tr
 | Window | **2018-09-13 → 2026-07-29** — 7.9 years, 185,783 bars |
 | Warm-up | first 1,000 bars, engines only, no decisions recorded |
 | Fill model | `bar` — zero-cost, matches what TradingView's Strategy Tester would show. `costs_usd` is 0 in every row. Real spread/commission is NOT modelled here. |
-| Strategies | `sos_fade` (A+ SOS Fade) and `b_leg` (B-LEG) |
+| Strategies | `sos_fade` (SOS Fade SOS Fade) and `b_leg` (B-LEG) |
 
 2018-09-13 is the **measured** floor of the broker's real 15m history, not a guess.
 MT5 answers a request for a timeframe it has no history at with coarser bars still
@@ -27,7 +27,7 @@ mid-day.)
 
 ## Headline
 
-| | A+ SOS Fade | B-LEG |
+| | SOS Fade SOS Fade | B-LEG |
 |---|---|---|
 | Trades | 188 | 58 |
 | Total | **+109.5R** | **+3.5R** |
@@ -36,10 +36,10 @@ mid-day.)
 | Win rate | 31% | 34% |
 | Avg win / avg loss | +2.78R / −0.92R | +1.56R / −1.00R |
 
-A+ carries the edge. B-LEG is roughly flat over 7.9 years and is the one that most
+SOS Fade carries the edge. B-LEG is roughly flat over 7.9 years and is the one that most
 needs the analysis. Its losing years are 2021 (−6.0R), 2022 (−3.9R) and 2023 (−3.6R).
 
-A+'s only losing years are 2018 (−1.8R, a 5-trade stub) and 2022 (−4.0R, 3 wins from 22).
+SOS Fade's only losing years are 2018 (−1.8R, a 5-trade stub) and 2022 (−4.0R, 3 wins from 22).
 
 Win rate is low by design — this is a fade strategy that scratches often at breakeven and
 pays out on a small number of large runners. Judge it on sumR, not win rate.
@@ -49,7 +49,7 @@ pays out on a small number of large runners. Judge it on sumR, not win rate.
 Per strategy folder (`sos_fade/`, `b_leg/`):
 
 - **`trades.csv`** — one row per completed trade. Every trade, not just losers.
-- **`setups.csv`** — one row per A+ leg that reached the SOS stage, whether it traded
+- **`setups.csv`** — one row per SOS Fade leg that reached the SOS stage, whether it traded
   or not. 700 rows. This is the only place a *blocked* or *skipped* setup is countable —
   no order is placed, so a broker trade list has no record of it at all.
 - **`summary.txt`** — the full stdout: totals by year, by regime, by session, by
@@ -74,9 +74,9 @@ Per strategy folder (`sos_fade/`, `b_leg/`):
 | `exit_reason` | which exit rung closed it. In this run it is only ever `L-RUN` / `S-RUN` (long/short runner), because TP1 and TP2 are both set to 0% — the whole position is the runner, so every exit comes off that one leg whether it stopped out or trailed out. Use `r` and `mfe_r` to tell those apart, not this column. |
 | `costs_usd` | always 0 under the `bar` fill model |
 
-**Start any loss analysis with `mfe_r`.** Across A+, zero losing trades in any year
+**Start any loss analysis with `mfe_r`.** Across SOS Fade, zero losing trades in any year
 "never worked" (mfe < 0.1R), and roughly half of every year's losers had shown ≥0.5R in
-profit first. Median mfe on a losing A+ trade runs 0.33R–0.68R depending on the year.
+profit first. Median mfe on a losing SOS Fade trade runs 0.33R–0.68R depending on the year.
 That points at the exit ladder, not the entry filter.
 
 ### `setups.csv` columns
@@ -94,22 +94,22 @@ That points at the exit ladder, not the entry filter.
 
 The two dominant reasons a setup never traded are `never retraced to 0.5` and
 `no FVG in the zone`. Both are entry-filter choices, and both are worth arguing about —
-across 7.9 years, 700 setups reached SOS and only 188 became A+ trades.
+across 7.9 years, 700 setups reached SOS and only 188 became SOS Fade trades.
 
 ## Caveats — read before drawing conclusions
 
 1. **The parity gates are stale.** As of 2026-07-28 the repo flags both
-   `compare_strategy.py` (A+) and `compare_bleg.py` (B-LEG) as needing a re-run on fresh
+   `compare_strategy.py` (SOS Fade) and `compare_bleg.py` (B-LEG) as needing a re-run on fresh
    TradingView exports. These numbers come from the Python bot; they have not been
    re-proven bar-for-bar identical to the Pine since the last exit-ladder change. Treat
    them as directionally right, not settled.
 2. **Zero costs.** `fill=bar` models no spread and no commission. Real fills will be
    worse. A `--fill-model tick` run exists as an option and was not used here.
-3. **Small sample per strategy.** 188 A+ trades over 7.9 years is by design — a selective
+3. **Small sample per strategy.** 188 SOS Fade trades over 7.9 years is by design — a selective
    entry that fires a couple of times a month. It still means wide error bars on the edge
    itself. Sample size is meant to arrive at the portfolio level, once several strategies
    stack on one account.
-4. **These two strategies may overlap.** A+ fades an SOS and B-LEG catches the late
+4. **These two strategies may overlap.** SOS Fade fades an SOS and B-LEG catches the late
    retrace of an SOS, so both can be triggered by the same structure break. Whether they
    are ever in the market at the same time has never been measured. Do not assume their
    R adds cleanly.

@@ -93,7 +93,7 @@ def _overlap(holds_a, holds_b, n):
 
 
 # ⚠ These three had their PREMISE moved on 2026-09-02 and moved back on 2026-09-03. `_occupancy`
-# briefly returned `(longs, shorts)` per bar, on a reading of A+ that turned out to be an artefact
+# briefly returned `(longs, shorts)` per bar, on a reading of SOS Fade that turned out to be an artefact
 # of misplaced holds — see `test_two_positions_at_once_within_ONE_strategy_are_REFUSED`. One
 # direction per bar again. Half-open ranges, the same-bar round trip and direction being carried
 # across the hold are exactly what they always pinned.
@@ -156,7 +156,7 @@ def test_overlap_beyond_the_frame_is_clipped_not_counted():
 def test_two_positions_at_once_within_ONE_strategy_are_REFUSED():
     """🔴 THIS ASSERTION HAS NOW BEEN DELETED ONCE AND PUT BACK, AND THE ROUND TRIP IS THE TEST.
 
-    It refused, correctly, for as long as every bot ran one position slot. On 2026-09-02 A+'s
+    It refused, correctly, for as long as every bot ran one position slot. On 2026-09-02 SOS Fade's
     re-entries were replayed for the first time and it fired — and it was read as a DISCOVERY (*the
     bot holds two at once*), so this case was rewritten to assert counting instead, and a
     doubled-risk warning went into the root `CLAUDE.md`.
@@ -221,7 +221,7 @@ def test_correlation_of_mirrored_series_is_minus_one():
 
 def test_the_same_frame_maps_every_trade_onto_its_own_bar_index():
     # The identity case, stated outright rather than left implied by the cases above. The
-    # A+/B-LEG numbers in CLAUDE.md were measured before the grid existed; if this ever
+    # SOS Fade/B-LEG numbers in CLAUDE.md were measured before the grid existed; if this ever
     # stops holding, those figures silently stop describing this tool.
     holds = oa._holds([_T(1, 10, 13), _T(-1, 40, 55)], _DF15, _GRID15)
     assert [(h.start, h.end) for h in holds] == [(10, 13), (40, 55)]
@@ -288,7 +288,7 @@ def test_the_cluster_window_is_a_DURATION_so_it_means_the_same_on_either_frame()
     # minutes — a stricter test reported under the old test's name.
     assert oa._CLUSTER_MINUTES == 240
     per_frame = {m: max(1, oa._CLUSTER_MINUTES // m) for m in (5, 15)}
-    assert per_frame[15] == 16, "the recorded A+/B-LEG audit used 16 bars of 15m"
+    assert per_frame[15] == 16, "the recorded SOS Fade/B-LEG audit used 16 bars of 15m"
     assert per_frame[5] == 48, "the same four hours, counted in the finer frame's bars"
 
 

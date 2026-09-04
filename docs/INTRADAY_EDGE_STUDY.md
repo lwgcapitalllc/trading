@@ -1,4 +1,4 @@
-# Intraday edge study — what stacks with the A+ SOS fade
+# Intraday edge study — what stacks with the SOS Fade SOS fade
 
 **Status:** ✅ **CLOSED 2026-08-07 — measured, with a recommendation in the last section.** Two results, and they point opposite ways: **no intraday edge on GOLD** (structural, not a tuning problem) while **the same trigger clears cost on NAS100**. Kept as the record of why. Read the Recommendation before proposing any intraday leg.
 
@@ -116,7 +116,7 @@ No gap requirement, no fib, no sweep, no structure. Three inputs: a clock, a hig
 
 1. 🔴 **It is a ~1R burst that EXHAUSTS, and that is the opposite of everything else in this repo.**
    Edge by target: **1R +4.0% · 1.5R +3.0% · 2R +0.6% · 3R −3.4%.** Every other strategy here is
-   runner-based and A+ Run 9 proved a hard TP caps what pays. **That reasoning does not transfer to
+   runner-based and SOS Fade Run 9 proved a hard TP caps what pays. **That reasoning does not transfer to
    this trigger** — here the ceiling IS the edge. Do not "improve" it with a runner without
    measuring; the table says a runner destroys it.
 2. ⚠ **Confluence does NOT help.** VWAP side, structure trend, yesterday's direction and the kill
@@ -132,7 +132,7 @@ No gap requirement, no fib, no sweep, no structure. Three inputs: a clock, a hig
    history-floor seed, no Pine parity, no strategy package. Its swap is `−5.99 long / +1.10 short`
    per the live terminal — an index CFD held overnight is a real cost this study does not charge,
    though an intraday strategy that is flat by the close mostly avoids it.
-5. ⚠ **Overlap with A+ is UNMEASURED** and it is a different instrument, which is the strongest
+5. ⚠ **Overlap with SOS Fade is UNMEASURED** and it is a different instrument, which is the strongest
    possible argument that they are uncorrelated — but that is an argument, not a measurement.
 
 ---
@@ -144,7 +144,7 @@ here that clears its own cost, and it is by a distance the simplest.**
 
 It fits the standing philosophy from a new direction: the portfolio gets its trade count from a
 SECOND INSTRUMENT rather than from loosening a filter, which is the one route to frequency Run 12
-did not close off. ~336 trades/year against A+'s ~20, on a different market, with no shared engine
+did not close off. ~336 trades/year against SOS Fade's ~20, on a different market, with no shared engine
 state — that is genuine diversification rather than a queue.
 
 Order of work, cheapest falsification first:

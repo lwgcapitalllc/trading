@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tf_overlap.py — is the 30-minute A+ a SECOND strategy, or the same bet twice?
+"""tf_overlap.py — is the 30-minute SOS Fade a SECOND strategy, or the same bet twice?
 
 Aaron, 2026-08-09. `tf_sweep.py` measured `sos_fade` on four timeframes over the same 6.5
 years and the 30m row posts essentially the SAME edge per trade as the shipped 15m bot
@@ -8,7 +8,7 @@ of the order-block thread, and it is worth exactly nothing until this question i
 
 `CLAUDE.md` → *Trading Philosophy*: "Stacking only reduces drawdown if the strategies are actually
 independent... Two 'different' strategies off one structure stream can fire together, lose
-together, and behave as one position at 2x the size." A 15m and a 30m A+ read THE SAME market
+together, and behave as one position at 2x the size." A 15m and a 30m SOS Fade read THE SAME market
 structure on THE SAME instrument with THE SAME rules. The prior here is not neutral — it is that
 they are the same bot looking through a coarser lens — so this tool exists to try to REFUTE the
 30m result, not to confirm it.

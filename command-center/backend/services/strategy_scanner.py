@@ -729,7 +729,7 @@ def _parse_python_package(
         # The short word the price chart puts on this strategy's PRIMARY trades — its own name for
         # its setup. `None` when the package never declared one, and the chart then falls back to a
         # neutral word. ⚠ It is a LABEL and nothing about a run reads it: changing it repaints
-        # chips and moves no trade. Until 2026-09-02 the chart hardcoded the A+ bot's word for
+        # chips and moves no trade. Until 2026-09-02 the chart hardcoded the SOS Fade bot's word for
         # every strategy, so three other bots' trades wore a tag belonging to a fourth.
         "chart_tag": (str(spec["chart_tag"]).strip() or None)
         if isinstance(spec.get("chart_tag"), str)

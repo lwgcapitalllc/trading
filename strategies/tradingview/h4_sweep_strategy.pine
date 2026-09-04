@@ -96,14 +96,14 @@ color POS_OPENL  = color.new(#787B86, 0)    // the neutral grey — here, the tr
 color POS_TEXT   = color.new(#101014, 0)    // dark text on every bright label fill
 // [doc 5] 🔴 THIS FILE HAD NO BREAKEVEN STATE AT ALL, so a +0.02R scratch drew as a  -> docs/h4_sweep_strategy.md
 float H4_BE_BAND = 0.15
-// [doc 6] ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS A+'s BREAKEVE  -> docs/h4_sweep_strategy.md
+// [doc 6] ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS SOS Fade's BREAKEVE  -> docs/h4_sweep_strategy.md
 color TRIG_ORANGE  = color.new(#FF9800, 0)
 color TRIG_ORANGEL = color.new(#FF9800, 15)
-// Refusals — A+'s pink, unchanged. Added 2026-08-12 with the blocked-setup tag; this file had
+// Refusals — SOS Fade's pink, unchanged. Added 2026-08-12 with the blocked-setup tag; this file had
 // the refusal CODES since the export twin landed and nothing on the chart that drew them.
 color BLK_PINK  = color.new(#FF2E9A, 12)
 color BLK_PINKL = color.new(#FF2E9A, 0)
-// The liquidity-level pair, already byte-identical to A+'s H4_ACTIVE_COLOR / H4_SWEPT_COLOR.
+// The liquidity-level pair, already byte-identical to SOS Fade's H4_ACTIVE_COLOR / H4_SWEPT_COLOR.
 color LIQ_ACTIVE = color.new(#FF6B35, 0)
 color LIQ_SWEPT  = color.new(#999999, 45)
 

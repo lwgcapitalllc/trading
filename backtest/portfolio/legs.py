@@ -7,7 +7,7 @@ turns a real bot into one — an `EngineStack` plus the strategy, stepped exactl
 the same bot run alone go down one code path.
 
 **Each leg owns its own EngineStack**, and that is not an optimisation to remove later: the two
-bots pin different engine inputs (`b_leg` forces `eq_exempt_fvg` off where the A+ forces it
+bots pin different engine inputs (`b_leg` forces `eq_exempt_fvg` off where the SOS Fade forces it
 on), so one shared stack would replay at least one of them against a market it never saw. A leg
 may also be a different symbol or timeframe, where a shared stack is not even meaningful.
 

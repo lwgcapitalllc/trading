@@ -18,7 +18,7 @@ Two of this repo's costliest incidents were ordinary-looking edits:
     a running bot trades, right now, with no promote step and no restart. The whole point of
     the snapshot is that a `git pull` cannot move a deployment — an edit here defeats that.
   * A canonical `engines/` module is imported by every consumer. A "routine tidy-up" of a
-    shared default would have silently moved the A+ bot's trades with no test failing.
+    shared default would have silently moved the SOS Fade bot's trades with no test failing.
 
 Nothing here blocks ordinary work. `deployed/` asks first, because it is the one path where
 the right answer is almost always "you meant to promote instead". Everything else just puts

@@ -1,4 +1,4 @@
-"""compare_strategy.py — the A+ LOGIC-PARITY check.
+"""compare_strategy.py — the SOS Fade LOGIC-PARITY check.
 
 Reads a TradingView "Export chart data" CSV of `sos_fade_strategy_export.pine` — the
 instrumented strategy that plots its per-bar DECISION STREAM (armed / edge / stage /
@@ -132,9 +132,9 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
                 "and the comparison would be meaningless. Re-export from the current "
                 "sos_fade_strategy_export.pine."
             )
-        # Bit 32768 (Pine execBLeg) turns on a SECOND setup type the A+ bot does not implement
+        # Bit 32768 (Pine execBLeg) turns on a SECOND setup type the SOS Fade bot does not implement
         # at all — those trades live in `strategies/python/b_leg/`. An export with it on
-        # carries B-leg entries the A+ decision stream can never reproduce.
+        # carries B-leg entries the SOS Fade decision stream can never reproduce.
         # `allow_bleg=True` is the B-LEG harness saying "that bot IS the B leg" — its export
         # always ships execBLeg on, so the refusal would block the only run that matters there.
         # The execConfSZ / execFvg50 refusals above are NOT opt-out: both change `longEdge` /
@@ -143,7 +143,7 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         if vals.get("exec_bleg") and not allow_bleg:
             raise SystemExit(
                 "This export was taken with 'Trade B-Leg setups' ON (cfg_bits bit 32768). The "
-                "B LEG is a separate bot (strategies/python/b_leg/), so this A+ comparison "
+                "B LEG is a separate bot (strategies/python/b_leg/), so this SOS Fade comparison "
                 "would diff against trades it never makes. Re-export with it OFF."
             )
     sc = get("cfg_strcodes")
@@ -798,7 +798,7 @@ def _compared_bars(args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="A+ strategy logic-parity check (Python vs Pine export)")
+    ap = argparse.ArgumentParser(description="SOS Fade strategy logic-parity check (Python vs Pine export)")
     ap.add_argument("csv", type=Path, help="sos_fade_strategy_export.pine chart-data CSV")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)")
     ap.add_argument("--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)")
@@ -812,7 +812,7 @@ def main(argv=None) -> int:
                          "if the engine pins in strategy.py::engine_config have been changed "
                          "to match what that chart's Pine ran.")
     ap.add_argument("--debug-arm", action="store_true",
-                    help="diff the A+ arming INPUTS (recentSSL / session-gap / arm-state) "
+                    help="diff the SOS Fade arming INPUTS (recentSSL / session-gap / arm-state) "
                          "against the export's dbg_* columns, to locate an arming gap")
     # Default is computed from the export (see `unsettled_tail`), NOT a constant — the region that
     # cannot have settled here is a calendar day, so it is a different number in every file.

@@ -195,7 +195,7 @@ off YouTube and a course, not MentorPeak's.
 
 ### 2.7 What is NOT part of this rename
 
-**`A+` stays.** It is the strategy's own word for its setup and appears in Pine titles, chart
+**`SOS Fade` stays.** It is the strategy's own word for its setup and appears in Pine titles, chart
 overlays and alert text. It is not a company name. Do not fold it into this job.
 
 ---

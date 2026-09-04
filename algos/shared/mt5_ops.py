@@ -369,7 +369,7 @@ class BotMT5:
         lab agent in 2026-07-15.
 
         It matters more here than anywhere else: the sessions, liquidity, VWAP and SVP engines
-        are TIME-DRIVEN, and they are precisely the engines the A+ strategy trades off. A
+        are TIME-DRIVEN, and they are precisely the engines the SOS Fade strategy trades off. A
         three-hour shift moves every session boundary and every daily level, so the live bot
         would take different trades from the backtest while both looked healthy.
 
@@ -471,7 +471,7 @@ class BotMT5:
     # Three constraints MT5 imposes that a caller must know about, because each one turns into a
     # silently-missing trade rather than an exception:
     #
-    #  1. **`TRADE_ACTION_MODIFY` cannot change VOLUME.** It moves price/SL/TP only. The A+ bot
+    #  1. **`TRADE_ACTION_MODIFY` cannot change VOLUME.** It moves price/SL/TP only. The SOS Fade bot
     #     re-sizes every bar (qty = equity·risk% / stop distance, and equity moves), so a size
     #     change means CANCEL + RE-PLACE, which is what `algos/live/bridge.py` does. Never
     #     "fix" a volume drift with a modify — MT5 accepts the call and ignores the volume.

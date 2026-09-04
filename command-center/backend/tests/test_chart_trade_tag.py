@@ -1,6 +1,6 @@
 """The word a strategy's own trades wear on the price chart.
 
-🔴 The panel hard-coded `A+` — `sos_fade`'s word for ITS setup — and painted it on EVERY
+🔴 The panel hard-coded `SOS Fade` — `sos_fade`'s word for ITS setup — and painted it on EVERY
 strategy's primary trades, so three other bots' charts carried a fourth bot's label. Nothing was
 broken and nothing went red: a wrong label renders exactly as confidently as a right one, which is
 rule 7 in its quietest form.
@@ -67,7 +67,7 @@ def _row(tmp_path, declaration: str) -> dict:
 def test_the_declaring_package_has_its_tag_carried_off_the_module():
     """Driven against the REAL package rather than a probe, so it also pins that the declaration
     actually landed. RED by dropping the `chart_tag` key from the scanner's row dict — the column
-    then stores NULL for every strategy and every chart falls back to the A+ bot's word, which is
+    then stores NULL for every strategy and every chart falls back to the SOS Fade bot's word, which is
     the behaviour this whole mechanism replaces."""
     pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "extreme_leg"
     row, err = strategy_scanner._parse_python_package(pkg, Path(cfg.MONOREPO_ROOT))
@@ -80,7 +80,7 @@ def test_a_package_that_declares_nothing_carries_None():
     strategy wear a tag its package never asked for, which is the defect with a different word in
     it.
 
-    ⚠ **It pointed at `sos_fade` until that bot declared its own `A+` on 2026-09-02, and it
+    ⚠ **It pointed at `sos_fade` until that bot declared its own `SOS Fade` on 2026-09-02, and it
     went RED — correctly.** It is repointed at `loss_recovery`, which declares none DELIBERATELY:
     its trades carry `kind="recovery"`, so the renderer tags them `REC` down a different branch and
     a `chart_tag` there could never be read. That is a real case rather than a premise edited to
@@ -154,7 +154,7 @@ def test_the_column_exists_on_a_FRESH_database_as_well_as_a_migrated_one(tmp_pat
 def test_the_builder_stamps_the_tag_on_EVERY_trade():
     """The stamping itself, at the seam the stack depends on. RED by dropping the `tag` key from
     the dict `_build_trades` appends — every trade then arrives untagged and every chart, single or
-    stacked, falls back to the A+ bot's word."""
+    stacked, falls back to the SOS Fade bot's word."""
     curve = [
         {
             "entry_ms": 1_600_000_000_000,
@@ -201,14 +201,14 @@ def test_each_LEG_of_a_stack_keeps_its_OWN_tag_through_the_merge(monkeypatch):
     """🔴 THE CASE THE WHOLE MECHANISM EXISTS FOR, and the first implementation got it wrong. A
     stack merges N legs' trades into ONE list — so a tag carried on the SPEC cannot survive, and
     every leg's trades would wear whichever single tag the merged spec happened to hold. That is
-    the hard-coded-`A+` defect one level down and HARDER to see, because the chips would look
+    the hard-coded-`SOS Fade` defect one level down and HARDER to see, because the chips would look
     per-strategy without being it, which is the exact thing a reader stacks two bots to tell apart.
 
     ⚠ **Each leg's trades are built through the REAL `_build_trades`, not hand-written with a tag
     already on them.** An earlier version of this test handed the merge pre-tagged dicts and was
     VACUOUS — it proved a dict copy preserves keys, and stayed green under the mutation it was
     written to catch. RED now by dropping the stamp: both legs come back untagged."""
-    legs = {"run_a": ("sos_fade", "A+"), "run_b": ("extreme_leg", "XLEG")}
+    legs = {"run_a": ("sos_fade", "SOS Fade"), "run_b": ("extreme_leg", "XLEG")}
     curve = [
         {
             "entry_ms": 1_600_000_000_000,
@@ -250,7 +250,7 @@ def test_each_LEG_of_a_stack_keeps_its_OWN_tag_through_the_merge(monkeypatch):
 
     merged = chart_spec.build_stack_chart_spec("st_probe")
     by_layer = {t["layer"]: t.get("tag") for t in merged["trades"]}
-    assert by_layer == {"sos_fade": "A+", "extreme_leg": "XLEG"}, (
+    assert by_layer == {"sos_fade": "SOS Fade", "extreme_leg": "XLEG"}, (
         "each leg's trades must keep their OWN strategy's word on a merged chart"
     )
 
@@ -267,7 +267,7 @@ def test_the_chart_reads_the_declaring_strategys_tag(monkeypatch):
     "row", [None, {}, {"chart_tag": None}, {"chart_tag": "  "}, {"chart_tag": 3}]
 )
 def test_anything_but_a_real_word_is_None_so_the_panel_falls_back(monkeypatch, row):
-    """The panel distinguishes ABSENT (fall back to the A+ word) from a declared tag, so a blank or
+    """The panel distinguishes ABSENT (fall back to the SOS Fade word) from a declared tag, so a blank or
     non-string value must arrive as absent rather than as a tag rendering an empty chip.
 
     RED by returning `str(tag)` unconditionally — `None` then reaches the chart as the word
@@ -328,5 +328,5 @@ def test_build_chart_spec_actually_PASSES_the_tag_to_the_builder():
     assert calls, "build_chart_spec no longer calls _build_trades — re-aim this test"
     assert all(len(c.args) >= 3 for c in calls), (
         "build_chart_spec must pass the resolved tag into _build_trades, or every trade on every "
-        "chart ships untagged and silently falls back to the A+ bot's word"
+        "chart ships untagged and silently falls back to the SOS Fade bot's word"
     )

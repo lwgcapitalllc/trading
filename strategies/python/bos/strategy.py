@@ -1,6 +1,6 @@
 """BosStrategy — the top-level BOS driver.
 
-Same data flow as the A+ bot, with the BOS tracker spliced in between the sequence and the
+Same data flow as the SOS Fade bot, with the BOS tracker spliced in between the sequence and the
 execution:
 
     BarState --SignalAdapter--> Signals --SosFadeSequence--> SeqState
@@ -9,7 +9,7 @@ execution:
 It SUBCLASSES `SosFadeStrategy` to inherit the fill-model plumbing (`_fill_model`), and
 overrides `__init__`, `engine_config`, `run` / `step`, and `run_dual`.
 
-⚠ **`SosFadeSequence` is still stepped even though no A+ trade can fire here** (`exec_aplus` is
+⚠ **`SosFadeSequence` is still stepped even though no SOS Fade trade can fire here** (`exec_aplus` is
 pinned False). It is cheap, it keeps the `Signals` -> `SeqState` seam identical to the other two
 bots, and — the real reason — `Execution.step` reads `seq.l_stage` / `seq.s_stage` into the
 decision stream on every bar. Dropping it would leave two parity columns permanently zero and
@@ -67,22 +67,22 @@ class BosStrategy(SosFadeStrategy):
         """The engine-construction params `bos_strategy.pine` runs its engines with.
 
         These are NOT in the decision stream, so they must be pinned to THIS Pine's own input
-        defaults — and three of the five differ from the A+ bot's, which is the whole reason
+        defaults — and three of the five differ from the SOS Fade bot's, which is the whole reason
         this override exists rather than inheriting:
 
-        `fvg_max_count` **8** (A+ pins 7) — this fork's Pine keeps the same cap
+        `fvg_max_count` **8** (SOS Fade pins 7) — this fork's Pine keeps the same cap
           `mpc_jarvis.pine` draws with, so a gap still on the chart is a gap the strategy
           still holds. A smaller cap evicts the oldest gap one bar sooner and drops an entry
           edge the Pine still has.
-        `fvg_threshold_pct` **0.04** (A+ pins 0.1) — the 15m floor. This Pine's tooltip states
-          the disagreement explicitly: on gold at $4,155 the A+ 0.1% demands a $4.16 gap and
+        `fvg_threshold_pct` **0.04** (SOS Fade pins 0.1) — the 15m floor. This Pine's tooltip states
+          the disagreement explicitly: on gold at $4,155 the SOS Fade 0.1% demands a $4.16 gap and
           throws away most real 15m ones, and this fork chose the indicator's 0.04% instead.
-        `fvg_require_close` **False** (A+ pins True) — `sos_fade_strategy.pine` HARDCODES the
+        `fvg_require_close` **False** (SOS Fade pins True) — `sos_fade_strategy.pine` HARDCODES the
           middle-bar close-cleared check; this fork exposes it as an input defaulting OFF, which
           is the classic FVG the chart draws.
         `show_internal` False and `eq_exempt_fvg` False match this Pine's own defaults.
 
-        ⚠ Every one of the three differences makes this fork hold MORE gaps than the A+ bot, so
+        ⚠ Every one of the three differences makes this fork hold MORE gaps than the SOS Fade bot, so
         inheriting the parent's pins would silently narrow the gap set — and at the shipped
         defaults (`bos_use_fvg` off) nothing would move at all, which is worse: the pin would
         look correct right up until somebody switched the gap entry back on.
@@ -105,7 +105,7 @@ class BosStrategy(SosFadeStrategy):
         """
         sig = self.signals.update(state)
         seq = self.sequence.update(sig)
-        # Attached rather than passed, because `Signals` is the shared A+ seam and widening it
+        # Attached rather than passed, because `Signals` is the shared SOS Fade seam and widening it
         # for a field only this fork reads would put a permanently-None column on the other two
         # bots. `bos.py::_atr_of` reads it back with a default, so a hand-built Signals in a
         # test simply behaves as "ATR unknown".
@@ -174,6 +174,6 @@ class BosStrategy(SosFadeStrategy):
 
     def run_dual(self, *args, **kwargs):
         raise NotImplementedError(
-            "BosStrategy has no 1m secondary re-entry — use run(). run_dual is A+-only, and "
+            "BosStrategy has no 1m secondary re-entry — use run(). run_dual is SOS Fade-only, and "
             "`BosConfig` pins exec_secondary=False for the same reason."
         )

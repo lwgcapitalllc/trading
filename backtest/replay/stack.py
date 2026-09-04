@@ -1,6 +1,6 @@
 """EngineStack — drives the canonical engines bar-by-bar in Pine order.
 
-One `step(bar)` call feeds a single closed bar through every engine the A+ setup
+One `step(bar)` call feeds a single closed bar through every engine the SOS Fade setup
 reads, in the exact order the Pine evaluates them:
 
     structure -> order blocks -> fib (structure/sniper/macro/internal) -> FVG

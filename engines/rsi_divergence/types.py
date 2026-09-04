@@ -14,7 +14,7 @@ No behavior lives here. Two kinds of container:
     plus the live confluence flags (`bull_active` / `bear_active`, true for `valid_bars` bars after
     a divergence's pivot) and the current RSI value (diagnostic). Colours, lines and labels are
     deliberately absent — those are TradingView visuals; the signal is the event + the live flag a
-    consumer (e.g. the A+ setup row) reads.
+    consumer (e.g. the SOS Fade setup row) reads.
 """
 
 from __future__ import annotations

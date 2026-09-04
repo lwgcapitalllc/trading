@@ -101,7 +101,7 @@ commit. A lab row saying something different from the chart is how a rule gets r
 
 | Strategy | 1 Spec | 2 Pine | 3 Export twin | 4 CSV | 5 Python | 6 Parity | Can you sweep it? |
 |---|---|---|---|---|---|---|---|
-| **A+ SOS Fade** (`sos_fade`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
+| **SOS Fade SOS Fade** (`sos_fade`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **B-LEG** (`b_leg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **BOS** (`bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
 | **D** (`mpc_d`) | ❌ deleted | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and it is GONE (2026-08-15).** Its one measurement was indistinguishable from zero and it was never going further. Both `.pine` files and `docs/D_STRATEGY_SPEC.md` removed; recover from git history. Its VOCABULARY was the second reason — "shakeout" now means one thing in this repo, and it belongs to RSO. |

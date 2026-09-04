@@ -208,7 +208,7 @@ With the data drop and no VPS, **everything that reads is fully live**:
 
 | Runner | Works without the VPS? |
 |---|---|
-| **Python** (`strategies/python/` — the A+ and B-LEG bots) | **Yes**, as long as the window you pick is inside the bars already in `backtest/cache/`. The runner is cache-first and never phones home when the cache already covers the window. |
+| **Python** (`strategies/python/` — the SOS Fade and B-LEG bots) | **Yes**, as long as the window you pick is inside the bars already in `backtest/cache/`. The runner is cache-first and never phones home when the cache already covers the window. |
 | **NinjaTrader** | No. Needs the NT8 agent and a real Strategy Analyzer on the VPS. |
 | **MT5** | No. Needs the MT5 agent and a real Strategy Tester on the VPS. |
 
@@ -297,7 +297,7 @@ above. The repo already carries a committed export:
 ```
 backtest/archive/2026-07-29_xauusd_15m_full_history/
 ├── README.md                    ← read this first; full column glossary + caveats
-├── sos_fade/                ← A+ SOS Fade: 188 trades, +109.5R
+├── sos_fade/                ← SOS Fade SOS Fade: 188 trades, +109.5R
 │   ├── trades.csv               ← every trade, winners and losers
 │   ├── setups.csv               ← every setup that reached SOS, including the 512 that never traded
 │   └── summary.txt              ← totals by year, regime, session, direction

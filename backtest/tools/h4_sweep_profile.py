@@ -609,7 +609,7 @@ def simulate_confirmed(
 
     The min-stop floor is not optional. A limit that fills close to its own stop makes
     `qty = risk / distance` explode; it has detonated two bots in this repo already
-    (A+ Run 4, BOS Run 1). Trades under the floor are dropped and counted, not clipped.
+    (SOS Fade Run 4, BOS Run 1). Trades under the floor are dropped and counted, not clipped.
     """
     plan = TradePlan(
         direction=direction,
@@ -838,7 +838,7 @@ def report(
         # The side split is not optional. Gold ran 1,200 → 4,100 across this window, so
         # "the reversal works" can just be "longs work", which is the regime talking.
         # bos Run 3 flagged the same confound and sos_fade/CLAUDE.md records its
-        # mirror image on the A+ short skew.
+        # mirror image on the SOS Fade short skew.
         for label, direction, subset in (
             ("continuation", 1, sweeps),
             ("reversal", -1, sweeps),

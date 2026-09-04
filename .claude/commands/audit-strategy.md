@@ -1,8 +1,8 @@
 ---
-description: Run the A+ strategy logic-parity check — prove the Python bot trades bar-for-bar identically to sos_fade_strategy.pine, under whatever toggles the export carried
+description: Run the SOS Fade strategy logic-parity check — prove the Python bot trades bar-for-bar identically to sos_fade_strategy.pine, under whatever toggles the export carried
 ---
 
-Run the A+ strategy LOGIC-PARITY check: prove the Python bot in `strategies/python/sos_fade/` makes the exact same per-bar decisions as `strategies/tradingview/sos_fade_strategy.pine`, on the Pine's own bars, under the exact toggles the export was run with. Nothing about the strategy is trusted until this is exit 0 — the same discipline as every engine's `compare_*.py`.
+Run the SOS Fade strategy LOGIC-PARITY check: prove the Python bot in `strategies/python/sos_fade/` makes the exact same per-bar decisions as `strategies/tradingview/sos_fade_strategy.pine`, on the Pine's own bars, under the exact toggles the export was run with. Nothing about the strategy is trusted until this is exit 0 — the same discipline as every engine's `compare_*.py`.
 
 This is LOGIC parity (same decisions on the SAME candles), NOT feed parity (do MT5's candles match TradingView's — that is `backtest/tools/compare_feeds.py`, a separate check). They never mix: this replays TradingView's own exported bars, so the broker feed is irrelevant here.
 
@@ -24,7 +24,7 @@ A CSV exported from `strategies/tradingview/sos_fade_strategy_export.pine` (that
 
 4. **Report the result. Plain English, concise.**
    - **Exit 0** → parity holds. State it plainly: the Python bot is a bar-for-bar copy under those toggles. If this is the first green, note that the intrabar fill assumption in `execution.py` (open nearer high ⇒ targets fill before the stop) is now CONFIRMED, not assumed.
-   - **Exit 1** → the tool names the FIRST diverging bar and field (e.g. `px_long_edge`, `px_l_stage`, `px_exit_tp1`). That is the actionable clue. Read the Pine around that behaviour and the matching Python (`signals.py` for inputs, `sequence.py` for the A+ stages, `execution.py` for edges/fills/stops), find the divergence, and report it. A parity failure is the harness doing its job — it caught a Pine behaviour the Python doesn't match yet.
+   - **Exit 1** → the tool names the FIRST diverging bar and field (e.g. `px_long_edge`, `px_l_stage`, `px_exit_tp1`). That is the actionable clue. Read the Pine around that behaviour and the matching Python (`signals.py` for inputs, `sequence.py` for the SOS Fade stages, `execution.py` for edges/fills/stops), find the divergence, and report it. A parity failure is the harness doing its job — it caught a Pine behaviour the Python doesn't match yet.
 
 5. **Fixing a divergence (only if asked to fix, not just report):** change the Python to match the Pine, re-run until exit 0. Never change the Pine to match the Python — the Pine is the source of truth. Add a unit test in `strategies/python/sos_fade/tests/` capturing the rule you just fixed, so it can't regress. Then remind Aaron that a real fix isn't done until `compare_strategy.py` is exit 0 on the fresh export.
 

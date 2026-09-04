@@ -262,7 +262,7 @@ bar 5319   bear break    → promotes HH @bar5308, then rescans and finds
 
 🔴 **NOT COSMETIC.** `fibo_ash := st.ash`, so a bogus active swing moves the External Fib's anchor
 and with it E1-E4, the TP ladder, the Sniper Zone and the B-LEG band. One measured case was **$8.10**
-out. The A+ cost is −1 trade and −1.47R over 6.5 years, well inside this strategy's own run-to-run
+out. The SOS Fade cost is −1 trade and −1.47R over 6.5 years, well inside this strategy's own run-to-run
 sd of 15.06R (the jitter audit) — but it is a real trade-list change, not a redraw.
 
 **The fix folds INTO the tie guard rather than sitting beside it**, because a tie is just the
@@ -463,7 +463,7 @@ when it was written, and its discipline is the reason the red was recorded rathe
 
 ⚠ **THE 15m EXPORT IS RED AND WAS RED BEFORE THIS CHANGE — a pre-existing red is still a red.** It
 is recorded here so the next reader does not spend an afternoon blaming the pivot detector for it,
-and it is NOT retired by this note. The same discipline was applied downstream: the A+ strategy gate
+and it is NOT retired by this note. The same discipline was applied downstream: the SOS Fade strategy gate
 is GREEN on `15_3ce38.csv`, and the fibonacci gate is RED at bar 31 / bar 49 on its two exports
 **identically before and after**.
 

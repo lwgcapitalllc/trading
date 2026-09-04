@@ -91,11 +91,11 @@ def test_nesting_the_B_LEG_leaves_it_runnable_on_its_own():
 
 
 def test_the_extreme_leg_is_TOP_LEVEL_and_that_is_a_decision():
-    """It was listed under the A+ bot until 2026-09-02, when Aaron moved it to root.
+    """It was listed under the SOS Fade bot until 2026-09-02, when Aaron moved it to root.
 
     🔴 The reason is worth keeping, because the original reasoning was not wrong — it was drawing
     the wrong thing. The suite IS carved up by leg off one structure stream and this IS the leg
-    before the one A+ trades; but an indent reads as "child of", and this bot is a SIBLING. It has
+    before the one SOS Fade trades; but an indent reads as "child of", and this bot is a SIBLING. It has
     its own Pine source, its own parity gate, and it runs standalone, in any stack, on any
     instrument. What made the indent misread is that `loss_recovery` sits at the same level and
     genuinely cannot run without its parent — one visual level was carrying two relationships.

@@ -239,7 +239,7 @@ def test_every_closed_trade_carries_the_four_things_a_chart_annotates():
 
 def test_the_deepest_price_is_never_beyond_the_stop_that_closed_the_trade():
     """The widen runs before the bar's exits resolve, so the raw range includes price AFTER the
-    position is flat. MEASURED on the A+ bot: 77 of 77 stopped-out trades reported a deepest price
+    position is flat. MEASURED on the SOS Fade bot: 77 of 77 stopped-out trades reported a deepest price
     beyond their own stop, and the chart drew the marker outside the stop line.
 
     RED by widening with the bar's raw low — the trade below then reports 95.0, five points past a
@@ -254,7 +254,7 @@ def test_the_deepest_price_is_never_beyond_the_stop_that_closed_the_trade():
 
 
 def test_the_best_price_is_never_beyond_the_target_that_closed_the_trade():
-    """The mirror, and it is where this bot differs from the A+ one. There the first target is
+    """The mirror, and it is where this bot differs from the SOS Fade one. There the first target is
     PARTIAL and the runner stays open, so price beyond it is still the trade's move and the
     favourable side is deliberately left alone. Here the target closes the WHOLE position, which
     makes this side determinate in exactly the way the adverse side is.
@@ -273,7 +273,7 @@ def test_the_entry_bar_contributes_no_excursion_because_the_fill_is_its_close():
     """This bot enters at market on the bar's CLOSE, so no part of the entry bar's range happens
     after the fill — none of it is the trade's move. Both sides therefore seed AT the fill.
 
-    ⚠ The A+ bot seeds asymmetrically for the opposite reason: its entry is a resting limit filled
+    ⚠ The SOS Fade bot seeds asymmetrically for the opposite reason: its entry is a resting limit filled
     mid-bar, so the rest of that bar IS its move. Copying either shape onto the other is wrong.
     RED by dropping the `ext_high=` / `ext_low=` seeds — they fall back to 0.0, and a price of zero
     then reads downstream as a measurement rather than as an unset field."""

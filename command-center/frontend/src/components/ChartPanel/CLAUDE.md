@@ -706,7 +706,7 @@ here**, so the chart shows exactly what the strategy saw.
   paragraph below. 🔴 **WHICH SIDE THE CHIP COLUMN PARKS ON IS DECIDED PER TRADE, PER FRAME (2026-08-23).** The
   default is the left, and on its own it was wrong for the case this chart is full of: a re-entry
   opens on the bar the trade before it closed, so its column was drawn straight onto that trade's
-  box and onto that trade's own column. Aaron, looking at an A+ loss with its stop-loss re-entry
+  box and onto that trade's own column. Aaron, looking at an SOS Fade loss with its stop-loss re-entry
   beside it: *"if two trades line up next to each other and the annotations kind of overlap, move
   the next trade's annotations to your right as opposed to the left."* The EARLIER trade keeps the
   left — it is the one with clear air behind it — and the one arriving into the crowd moves.
@@ -769,8 +769,8 @@ here**, so the chart shows exactly what the strategy saw.
   picking a side**: a re-entry can be armed through a precondition that asks nothing of the trade
   before it, and every run stored before that date carries no `after` at all — so the neutral tag
   is what "we cannot tell" looks like, and only a re-run turns it into `BE+` / `SL+`. ⚠ **A PRIMARY
-  now wears `A+` where it wore nothing**, because "no tag" is only readable as "primary" once you
-  already know that is the rule. 🔴 **`A+` is `sos_fade`'s own word and this panel draws every
+  now wears `SOS Fade` where it wore nothing**, because "no tag" is only readable as "primary" once you
+  already know that is the rule. 🔴 **`SOS Fade` is `sos_fade`'s own word and this panel draws every
   strategy's trades**, so on a `b_leg` chart it is the wrong word for the right trade. ✅ **FIXED
   2026-09-02 the way this paragraph asked for**: a strategy declares `chart_tag`, it rides the spec
   as `tradeTag`, and `overlays.ts::PRIMARY_TAG` survives only as the FALLBACK for a package that has
@@ -1211,8 +1211,8 @@ here**, so the chart shows exactly what the strategy saw.
   🔴 **EVERY RUNG IS NAMED `TP1`/`TP2`, AND THE REVERSE WAS TRIED AND WITHDRAWN THE SAME DAY
   (2026-08-21).** A rung whose size is 0 places no order and only steps the stop, so it was drawn
   as `Stop tightens` in a neutral colour. At sos_fade's shipped ladder **both** rungs of a
-  primary bank 0%, so that chip became the only thing every A+ chart said. Aaron: *"Why is it that
-  my A+ strategies now have annotation Stop Titans? I don't even know what it is. It should just
+  primary bank 0%, so that chip became the only thing every SOS Fade chart said. Aaron: *"Why is it that
+  my SOS Fade strategies now have annotation Stop Titans? I don't even know what it is. It should just
   show a faint dashed line where TP1 was and where TP2 was, so I could better understand why we
   exited at certain levels."* **The number IS the information.** Whether size comes off at a rung
   is a SETTINGS fact — true of every trade in the run at once — while where the rung SAT is a fact

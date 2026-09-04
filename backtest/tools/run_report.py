@@ -16,7 +16,7 @@ It emits three things:
                the R it booked. This is the file that answers "what kind of market
                loses money".
 
-  setups.csv   one row per A+ leg that reached the SOS stage, whether it traded or
+  setups.csv   one row per SOS Fade leg that reached the SOS stage, whether it traded or
                not, and what it was missing if it didn't. Blocked and skipped setups
                leave NO record in a broker trade list — no order is placed, so nothing
                exists to export. This is the only place they are countable.
@@ -116,7 +116,7 @@ def _regime_at(df, i: int, cache: dict) -> str:
 
 
 class Leg:
-    """One A+ leg that reached the SOS stage, tracked across the bars it was alive.
+    """One SOS Fade leg that reached the SOS stage, tracked across the bars it was alive.
 
     The strategy clears its own per-leg state the instant a leg dies, so a leg's story
     has to be assembled while it is running. A leg is a RUN of consecutive bars where
@@ -478,7 +478,7 @@ def main(argv=None) -> int:
         if wants_secondary
         else ", primary only (no 1m secondary in this run)"
     )
-    print(f"  {len(trades)} trades{sec_note}, {len(legs)} A+ legs reached SOS", flush=True)
+    print(f"  {len(trades)} trades{sec_note}, {len(legs)} SOS Fade legs reached SOS", flush=True)
 
     out = (
         Path(args.out)

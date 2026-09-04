@@ -82,7 +82,7 @@ def list_stacks() -> list[StackSummary]:
 
 def _validate_stack_strategies(ids: list[str], *, extra_legs: int = 0) -> list[dict]:
     # 🔴 THE MINIMUM IS TWO **LEGS**, NOT TWO STRATEGIES, AND THE DIFFERENCE IS THE WHOLE POINT OF
-    # THE RECOVERY LEG. A+ plus a recovery on A+ is one strategy id and two legs competing for one
+    # THE RECOVERY LEG. SOS Fade plus a recovery on SOS Fade is one strategy id and two legs competing for one
     # balance — the exact stack the leg was built to make possible — and counting ids refused it
     # with a message about strategies that named nothing the reader could act on. `extra_legs` is
     # what the caller adds for legs that are not strategies of their own.

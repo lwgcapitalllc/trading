@@ -1,4 +1,4 @@
-"""compare_trades.py — the A+ TRADE-LIST reconciliation.
+"""compare_trades.py — the SOS Fade TRADE-LIST reconciliation.
 
 Answers one question: **did we take the same trades TradingView took?**
 

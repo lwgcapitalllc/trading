@@ -109,7 +109,7 @@ class TradeDecision:
     signal_id: str = ""
 
     # The idea — why this is a signal at all.
-    setup_score: Optional[str] = None  # 'A+' | 'A' | … (the confluence grade; future)
+    setup_score: Optional[str] = None  # 'SOS Fade' | 'A' | … (the confluence grade; future)
     setup_reason: Optional[str] = None  # human note: "range break + 1 confirm"
     stop_distance: Optional[float] = None  # risk per contract, price points
     proposed_stop: Optional[float] = None

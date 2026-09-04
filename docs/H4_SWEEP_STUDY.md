@@ -103,7 +103,7 @@ That leaves the pivot definition's +0.151R net. It does not survive inspection:
 - **The entry price is the fragile axis.** At retrace 0.5 it is net-positive at every pivot length
   tested (2/3/4/5 → +0.151 / +0.153 / +0.172 / +0.184, both halves positive). At **retrace 0.618
   the second half goes negative at every one of them** (−0.227 / −0.318 / −0.524 / −0.760). This
-  is exactly the A+ Run 12 pattern — a result whose sign flips with the entry price.
+  is exactly the SOS Fade Run 12 pattern — a result whose sign flips with the entry price.
 - **It is the long side, on a market that tripled.** Splitting it: reversal after a LOW sweep
   (= long) is +0.243R net with both halves positive; reversal after a HIGH sweep (= short) is
   +0.077R net with the **second half at −0.066**. `bos` Run 3 flagged this exact confound —
@@ -128,7 +128,7 @@ Nothing was committed as a strategy. `backtest/tools/h4_sweep_profile.py` is the
 
 ### What the result actually argues for
 
-**Use the H4 sweep as a confluence INPUT to the A+ bot, not as a new strategy.** The measured edge
+**Use the H4 sweep as a confluence INPUT to the SOS Fade bot, not as a new strategy.** The measured edge
 is a fade of an H4 level; `sos_fade` is a fade with a real exit ladder, a min-stop guard, and
 Pine parity already earned. A thin standalone edge and a proven strategy in the same direction is
 an argument for a filter, not a sibling. It is also the cheap test: one A/B on the existing bot.
@@ -138,14 +138,14 @@ rather than at the signal:
 
 1. **Make 1R bigger relative to cost.** The whole gap is a $0.30 cost against a $4-6 stop. A wider
    stop with a proportionally smaller target moves the same gross edge above the cost line.
-2. **Harvest the runners.** This study exits at a fixed R multiple. Run 8 on the A+ bot showed the
+2. **Harvest the runners.** This study exits at a fixed R multiple. Run 8 on the SOS Fade bot showed the
    `"Structure + % ratchet"` trail moved the banked share of each run from 43% to 53% at identical
    drawdown. A fixed 2R ceiling is exactly the thing Run 9 proved caps what pays.
 
 ### Open items this raises
 
-- **The A+ overlap question, again.** Anything built from this finding is a fade of a swept level,
-  which is what the A+ bot trades. The standing overlap audit in the root `CLAUDE.md` applies before
+- **The SOS Fade overlap question, again.** Anything built from this finding is a fade of a swept level,
+  which is what the SOS Fade bot trades. The standing overlap audit in the root `CLAUDE.md` applies before
   any two of them run together.
 - **Gold only.** Every number here is XAUUSD, because that is what the cache holds. The tool takes
   `--symbol`; the same question on a non-trending instrument would separate the fade result from the
@@ -169,7 +169,7 @@ choices were doing the damage, and both were mine, not the market's:
    `leg × (1 − retrace)`, so the whole axis I searched pushed cost drag the wrong way on an edge
    whose only problem was cost. **Retrace 0.236 doubles 1R** — median stop $5.75 → **$10.34**, and
    cost drag **6.5% of 1R → 2.9%**.
-2. **Every exit was a fixed R ceiling.** A+ Run 9 already measured that a hard TP costs 20%+ of net
+2. **Every exit was a fixed R ceiling.** SOS Fade Run 9 already measured that a hard TP costs 20%+ of net
    because a handful of trades carry the book. It transfers: the same events at a fixed 2R make
    +0.117 exp R, and as a runner **+0.409**. The ceiling was throwing away two thirds of the edge.
 
@@ -206,7 +206,7 @@ Results, net of a $0.30 round-trip cost, 2018-07 → 2026-07:
 - **The horizon ladder was searched until it turned over** (4 → 8 → 12 → 24 → 36 → 48 → 72). It
   peaks at 36-48 and thins at 72, so the winner is not on the grid's edge.
 - **The min-stop guard is live and binding.** Worst trade **−1.1R**. Part 1's collapsing-stop
-  hazard (A+ Run 4, BOS Run 1) cannot reappear here.
+  hazard (SOS Fade Run 4, BOS Run 1) cannot reappear here.
 
 ## The two caveats that matter
 
@@ -226,7 +226,7 @@ instrument that trended up throughout, and the honest statement is that **this s
 separate "fading swept lows works" from "gold goes up"**. Only another instrument can.
 
 **2. Five trades carry 71% of the profit.** Best +25.4R, and the top five sum to +73.9R of the
-+104.5R total. Same shape as the A+ bot (Run 9: 11 of 164 trades carried 106R of 109R), so it is
++104.5R total. Same shape as the SOS Fade bot (Run 9: 11 of 164 trades carried 106R of 109R), so it is
 this repo's normal profile for a runner rather than a defect — but it means the expectancy has wide
 error bars and **every signal must be taken**. Skipping trades discretionarily breaks it. Excluding
 2020 entirely still leaves +75.8R over 92 trades (+0.824 exp R), so it does not rest on one year.
@@ -237,13 +237,13 @@ error bars and **every signal must be taken**. Skipping trades discretionarily b
 runner · 1% trail · 48-bar cap`. 13 trades a year at 41% win with a 13% drawdown fits the
 "few high-quality setups" philosophy better than anything else measured in this repo, and the
 trade count is genuinely additive rather than a queue: at ~13/yr it will rarely contend with the
-A+ bot for the single position slot.
+SOS Fade bot for the single position slot.
 
 Before it goes live, in this order:
 
 1. **Re-run on a second instrument.** This is the one open question that changes the answer. If the
    long-only skew is gold's drift, a second symbol shows it immediately. Needs a cache pull.
-2. **The A+ overlap audit.** This fades a swept level and so does the A+ bot. Count the bars where
+2. **The SOS Fade overlap audit.** This fades a swept level and so does the SOS Fade bot. Count the bars where
    both hold a position before either goes near a shared account.
 3. **Tick-mode validation.** Every number here is bar-mode at a flat $0.30. Confirm the winner
    against real spread and slippage, per the standing "sweep in bar mode, validate in tick mode" rule.
