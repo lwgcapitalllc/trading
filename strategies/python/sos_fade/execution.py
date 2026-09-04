@@ -618,6 +618,18 @@ class Execution:
     # fork already makes for the blocked markers, for the same reason.
     _records_misses = True
 
+    # 🔴 **HOW THIS ORDER LAYER OPENS A POSITION, DECLARED FOR `algos/live/`.** It rests a limit and
+    # waits for price, so the bridge places that order BEFORE anything fills and both books fill off
+    # it independently. **The declaration is what keeps the divergence halt alive here**: emulator
+    # holding a position against an empty broker book means a limit filled in one book and not the
+    # other — the 2026-08-07 fault — and the bridge must stop rather than open a fresh position at a
+    # price nobody endorsed. A strategy that enters AT MARKET produces the identical state one
+    # instant after its own fill, where stopping would be wrong, and nothing observable separates
+    # the two. See `strategies/python/live_contract.py` → `ENTRY_STYLES`.
+    # ⚠ Read by the LIVE path only. No replay, no cost and no decision reads it, so it cannot move
+    # a trade and the parity gate is structurally blind to it.
+    entry_style = "resting"
+
     @property
     def cfg(self):
         """The live config object. READ-ONLY accessor over `_cfg` — no behaviour, no parity

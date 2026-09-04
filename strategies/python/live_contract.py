@@ -40,6 +40,7 @@ __all__ = [
     "STRATEGY_ATTRS",
     "EXECUTION_ATTRS",
     "DECISION_FIELDS",
+    "ENTRY_STYLES",
     "LOAD_BEARING",
     "LiveDecision",
     "PassThroughSignals",
@@ -64,6 +65,7 @@ EXECUTION_ATTRS = (
     "_entry",            # fill price of the open position
     "_pend_long",        # resting long order, or None
     "_pend_short",       # resting short order, or None
+    "entry_style",       # "resting" | "market" — see ENTRY_STYLES
     "step",              # (sig, seq) -> decision
     "request_close",     # (reason) -> bool. The kill switch and the Stop button land here.
     "snapshot_position",  # () -> dict, for surviving a restart holding a position
@@ -74,6 +76,30 @@ EXECUTION_ATTRS = (
     "is_flat",
     "equity",
 )
+
+#: How a strategy OPENS a position — and therefore what `algos/live/` has to do about it.
+#:
+#: 🔴 **The two differ in WHEN the emulator fills relative to the bridge, and that is the whole
+#: distinction.** A `"resting"` strategy publishes its intent BEFORE anything fills: the bridge
+#: places a limit, price comes to it later, and both books fill independently off the same order.
+#: A `"market"` strategy has ALREADY filled by the time the bridge looks — it enters on the bar
+#: close inside its own emulator — so the bridge's job is to catch the broker up, not to place an
+#: order and wait.
+#:
+#: 🔴 **THIS MUST BE DECLARED, NEVER INFERRED, AND THE REASON IS A SAFETY PROPERTY.** "The
+#: emulator holds a position and the broker holds nothing" is the exact state `bridge._agrees`
+#: halts on, and halting is CORRECT for a resting strategy — it means a limit filled in one book
+#: and not the other, which is the 2026-08-07 divergence. The same state is ROUTINE for a market
+#: strategy, one instant old, and mirroring it is correct. **Nothing observable separates them:
+#: the position, the direction, the fill record and the empty broker book are identical.** So a
+#: bridge that guessed would either halt a working bot every trade, or silently convert a real
+#: divergence into a fresh market order at a price nobody endorsed.
+#:
+#: ⚠ **An undeclared strategy is refused by `verify_live_ready`, and the bridge's own read
+#: defaults to `"resting"`.** Both directions on purpose: nothing ships without saying which it
+#: is, and any path that somehow reaches the bridge without a declaration gets the halting
+#: behaviour rather than the order-placing one.
+ENTRY_STYLES = ("resting", "market")
 
 #: Every field the live path reads off a per-bar decision, with the default it reads it with.
 #: Read by `bridge.sync` and `ledger.bar`, all through `getattr(dec, name, default)`.
@@ -274,5 +300,14 @@ def verify_live_ready(strategy) -> List[str]:
     if hasattr(ex, "snapshot_position") and not fields:
         missing.append(
             "execution._POSITION_FIELDS (declared empty: a restart would drop the open position)")
+
+    # PRESENCE is checked above with everything else; this is the one place the contract also
+    # checks a VALUE, because a typo here is not a missing feature — it is the bridge falling back
+    # to the resting behaviour and halting a market bot on its first trade. See `ENTRY_STYLES`.
+    style = getattr(ex, "entry_style", None)
+    if style is not None and style not in ENTRY_STYLES:
+        missing.append(
+            f"execution.entry_style is {style!r}, which is not one of {ENTRY_STYLES}; "
+            f"algos/live/ would treat it as 'resting'")
 
     return missing

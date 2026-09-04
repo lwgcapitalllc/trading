@@ -198,6 +198,30 @@ already moved to breakeven is managed as though it never was. Pin it with a test
 list against what the class actually assigns while a position is open. **Restore REFUSES an
 incomplete record rather than defaulting, and that refusal is the safety property.**
 
+### Every order layer DECLARES how it opens a position (`entry_style`, 2026-09-03)
+
+🔴 **ONE OBSERVABLE STATE, TWO OPPOSITE CORRECT ANSWERS — WHICH IS WHY THIS IS DECLARED AND NEVER
+INFERRED.** *Emulator holding a position, broker holding none, an entry fill on this bar's
+decision* is exactly what a **resting** strategy looks like when its limit filled in one book and
+not the other — the 2026-08-07 divergence, where the bot must HALT. It is also exactly what a
+**market** strategy looks like one instant after its own fill, where the bot must place the
+matching order. **The position, the direction, the fill record and the empty broker book are
+identical in both cases**, so `algos/live/` asks the strategy instead of guessing.
+
+⚠ **A strategy that enters at market CANNOT be a live bot without this.** It fills inside its own
+emulator during the step, so there is nothing left to place ahead of the fill and the bridge's
+order-placing branch — which requires the emulator to be FLAT — is never reached. Before the
+declaration existed, such a bot halted on its first setup, every time.
+
+⚠ **The value is the one field the contract checks rather than merely counts.** A typo is not a
+missing feature: the bridge falls back to `"resting"` and the bot halts on trade one, so
+`verify_live_ready` refuses an unrecognised value BY NAME at startup. The fallback is the
+backstop, never the thing anything relies on — and it is the halting one on purpose.
+
+⚠ **It does NOT mean the strategy sizes its own live order.** The broker's lot count still comes
+from the single live sizing seam, against the BROKER's balance; the declaration decides which
+ORDER is sent, nothing else.
+
 ---
 
 ## Adding a new TradingView strategy

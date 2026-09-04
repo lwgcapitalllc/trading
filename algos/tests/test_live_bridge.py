@@ -299,7 +299,15 @@ class _FakeExecution:
         pend_sec=None,
         entry_kind="primary",
         current_stop=None,
+        entry_style="resting",
     ):
+        # HOW this order layer opens a position. Every real execution declares it (the contract
+        # requires it and `verify_live_ready` refuses without it), so this fake declares it too —
+        # a double that could only ever be one of the two would make the gate untestable, and one
+        # that omitted it would model a strategy production no longer has. The bridge's own
+        # `getattr` default is exercised by deleting this attribute, which is the only shape that
+        # reaches it.
+        self.entry_style = entry_style
         # `_qty` / `_filled_qty` are what the bridge reconciles the broker's SIZE against, the
         # same private coupling it already has with `_pend_long` and `_pos_dir`. They default to
         # None so every test written before banking existed describes a strategy that scales
@@ -2608,3 +2616,340 @@ def test_the_resting_limit_path_is_untouched_by_the_market_route():
     assert "place" in kinds and "market" not in kinds
     rest = b._rest[live_bridge.PRIMARY_LONG]
     assert rest is not None and rest.price == 4286.75448
+
+
+# ── the ENTRY MIRROR (added 2026-09-03) ───────────────────────────────────────
+#
+# 🔴 The route above lets the bridge SEND a market order. It could still never send one for a
+# strategy that enters at market, because such a strategy fills inside its own emulator during
+# the step — so by the time `sync` runs, `_pos_dir != 0` and the placing branch (which requires
+# the emulator to be FLAT) is never reached. `_agrees` then halted on the disagreement it had
+# just been handed. This block is that missing half.
+#
+# ⚠ **`_agrees` halting on that state is CORRECT for a resting strategy and must stay**, which is
+# why every test here has a mirror-image test asserting the resting bot still stops.
+
+
+@dataclass
+class _Fill:
+    """One fill on a decision, in the shape the bridge reads (`f.kind`, `f.order_id`, ...).
+
+    ⚠ Field names and types match `sos_fade.execution.Fill` and `extreme_leg`'s `_LiveFill`
+    exactly. A fake carrying a field production does not, or missing one it does, is the
+    fixture-more-capable-than-production trap this file has already been bitten by.
+    """
+
+    kind: str
+    order_id: str
+    price: float
+    qty: float
+    dir: int
+
+
+#: A COHERENT entry/stop pair, 8.068 apart. 24.79 units at that distance is exactly 10% of a
+#: $2,000 account — the same arithmetic the 2026-08-07 incident test uses — so a correctly sized
+#: mirror comes out at 0.24 lots and a mirror sized off the emulator's units comes out at 24.79.
+#:
+#: 🔴 **A long puts its stop BELOW and a short ABOVE, and the helper below derives that rather
+#: than taking one pair for both sides.** The older fixtures in this file pass `dir=1` with the
+#: stop above the entry, which sizing does not care about (`dist` is an absolute value) and which
+#: the market route now refuses — a market order with a wrong-side stop fills and stops out in the
+#: same instant, so an incoherent fixture here would be testing an order nobody can place.
+_HI, _LO = 4294.82248, 4286.75448
+_UNSET = object()
+
+
+def _geometry(direction):
+    """`(entry, stop)` that make sense for one side."""
+    return (_HI, _LO) if direction > 0 else (_LO, _HI)
+
+
+def _entry_fill(direction=1, price=None, qty=24.79):
+    side = "Long" if direction > 0 else "Short"
+    price = _geometry(direction)[0] if price is None else price
+    return _Fill("entry", side, price, qty, direction)
+
+
+def _market_bridge(
+    *,
+    direction=1,
+    stop=_UNSET,
+    fills=None,
+    balance=2000.0,
+    risk_pct=10.0,
+    spec=GOLD_SPEC,
+    style="market",
+    state=None,
+):
+    """A bot whose strategy has JUST opened at market: emulator in a position, broker flat."""
+    entry, coherent_stop = _geometry(direction)
+    ex = _FakeExecution(pos_dir=direction, entry_style=style)
+    ex.cfg = _Cfg(risk_pct, 1.0)
+    b, ops, ledger, notes = _bridge(ex, mt5ops=_FakeMt5Ops(spec=spec))
+    b._account_balance = lambda: balance
+    if state is not None:
+        b.state = state
+    dec = _Dec(stop=coherent_stop if stop is _UNSET else stop)
+    dec.fills = [_entry_fill(direction, price=entry)] if fills is None else fills
+    return b, ops, ledger, notes, dec
+
+
+def test_a_MARKET_strategy_that_just_opened_has_its_entry_MIRRORED_to_the_broker():
+    """🔴 The whole point: without this the bot cannot open a position at all.
+
+    MUTATION: delete the `_mirror_strategy_entry` call from `sync` and this goes red — no order
+    is sent and the bridge halts instead.
+    """
+    b, ops, _, _, dec = _market_bridge()
+    b.sync(dec, _Sig())
+    assert [a[0] for a in ops.actions] == ["market"], ops.actions
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+
+
+def test_a_RESTING_strategy_in_THE_SAME_STATE_still_HALTS():
+    """🔴 THE SAFETY PROPERTY, and the reason the style is declared rather than inferred.
+
+    Emulator in a position, broker flat, an entry fill on this bar's decision — byte for byte the
+    same inputs as the test above. For a resting strategy it means its limit filled in one book
+    and not the other, which is the 2026-08-07 divergence, and the bot must stop.
+    MUTATION: drop the `entry_style` gate from `_mirror_strategy_entry` and this goes red — the
+    bridge opens a position instead of halting.
+    """
+    b, ops, _, _, dec = _market_bridge(style="resting")
+    b.sync(dec, _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert not ops.actions, "a resting strategy's divergence must never place an order"
+
+
+def test_a_strategy_that_DECLARES_NOTHING_is_treated_as_resting():
+    """The bridge's backstop default. `verify_live_ready` refuses an undeclared strategy at
+    startup, so this can only be reached by a path that skipped the check — and the safe answer
+    there is the one that halts, never the one that opens a position.
+    MUTATION: default `_entry_style` to "market" and this goes red.
+    """
+    b, ops, _, _, dec = _market_bridge()
+    del b._ex.entry_style
+    b.sync(dec, _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert not ops.actions
+
+
+def test_the_mirrored_order_is_sized_through_THE_SAME_SEAM_and_NOT_off_the_emulators_qty():
+    """🔴 The 2026-08-07 single-seam rule, on the one route where it would be easiest to skip.
+
+    The emulator has already chosen a quantity (24.79 units) off its OWN balance. The broker's lot
+    count must still come from `_plan`, against the BROKER's balance, its volume band and the
+    account's remaining risk — none of which the emulator can see.
+    MUTATION: place `pend.qty` lots directly and this goes red at 24.79 vs 0.24.
+    """
+    b, ops, _, _, dec = _market_bridge()
+    b.sync(dec, _Sig())
+    assert next(a[2] for a in ops.actions if a[0] == "market") == 0.24
+
+
+def test_a_position_the_emulator_opened_on_an_EARLIER_bar_is_NOT_mirrored():
+    """An entry with no fill on THIS bar is not latency — it is a divergence that has already
+    survived a reconcile. Opening it now would buy at today's price a trade priced yesterday.
+
+    🔴 **It asserts that NOTHING WAS ATTEMPTED, not merely that nothing was sent, and the first
+    version of this test was vacuous for want of that.** Mirroring a stale position also produces
+    no order — it fails on an unreadable price and records a refusal — so "no order and a halt"
+    passes with the guard removed. The distinguishing fact is that a bar with no entry fill leaves
+    no refusal behind at all, and the halt therefore reads as the plain divergence it is instead
+    of blaming a price the strategy was never asked for.
+    MUTATION: mirror whenever the emulator holds a position and this goes red on the refusal.
+    """
+    b, ops, ledger, _, dec = _market_bridge(fills=[])
+    b.sync(dec, _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert not ops.actions
+    assert not [kw for kind, kw in ledger.rows if kind == "event:order_refused"], ledger.rows
+    assert "REFUSED" not in b.halt_reason, b.halt_reason
+
+
+def test_an_UNREADABLE_stop_refuses_rather_than_opening_an_unprotected_position():
+    """🔴 Rule 1 where it costs the most. A market order carries its stop WITH it, so sending one
+    with nothing to attach opens a position no order would ever close.
+    MUTATION: pass the stop through and this goes red — an order is sent.
+    """
+    b, ops, ledger, _, dec = _market_bridge(stop=None)
+    b.sync(dec, _Sig())
+    assert not ops.actions
+    codes = [kw.get("code") for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert "entry_stop_unreadable" in codes, ledger.rows
+
+
+def test_a_ZERO_stop_is_refused_because_the_terminal_reads_it_as_NO_STOP():
+    """🔴 `0.0` is not a stop at zero — MT5 reads it as *no stop attached*. Letting it through is
+    the same class of defect as an unreadable one and must not collapse into it.
+    MUTATION: test `sl is None` only and this goes red.
+    """
+    b, ops, ledger, _, dec = _market_bridge(stop=0.0)
+    b.sync(dec, _Sig())
+    assert not ops.actions
+    codes = [kw.get("code") for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert "entry_stop_absent" in codes, ledger.rows
+
+
+def test_a_WRONG_SIDE_stop_is_refused_rather_than_filled_and_stopped_in_one_instant():
+    """A long whose stop sits ABOVE its entry fills and stops out on arrival.
+    MUTATION: drop the side test and this goes red — the order is sent.
+    """
+    b, ops, ledger, _, dec = _market_bridge(direction=1, stop=_HI + 6.0)
+    b.sync(dec, _Sig())
+    assert not ops.actions
+    codes = [kw.get("code") for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert "entry_stop_wrong_side" in codes, ledger.rows
+
+
+def test_a_SHORT_is_mirrored_with_its_stop_ABOVE_the_entry():
+    """The counter-case to the one above — the side test must not refuse a correct short.
+    MUTATION: compare the two sides the same way round and this goes red.
+    """
+    b, ops, _, _, dec = _market_bridge(direction=-1)
+    b.sync(dec, _Sig())
+    assert [a[0] for a in ops.actions] == ["market"], ops.actions
+    assert ops.actions[0][1] == "bearish"
+
+
+def test_a_size_the_broker_would_REFUSE_is_not_shrunk_to_fit_and_the_halt_NAMES_it():
+    """🔴 Rule 17 on this route. The emulator has already booked the trade, so a shrunk order
+    would leave the two holding different trades that grade different R — and the honest outcome
+    is a halt that says which refusal caused it, not a generic disagreement.
+    MUTATION: place `plan.lots` regardless of `plan.ok` and this goes red.
+    """
+    b, ops, _, _, dec = _market_bridge(balance=1.0)
+    b.sync(dec, _Sig())
+    assert not ops.actions
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "REFUSED" in b.halt_reason, b.halt_reason
+
+
+def test_WARMING_mirrors_no_entry():
+    """The warm-up state exists to wait out a position the bot inherited. A bar that closes that
+    trade and opens a new one keeps the bot WARMING, so an order sent from here would be one the
+    state machine never authorised.
+    MUTATION: drop the state check and this goes red.
+    """
+    b, ops, _, _, dec = _market_bridge(state=live_bridge.BridgeState.WARMING)
+    b.sync(dec, _Sig())
+    assert not ops.actions
+
+
+def test_a_HALTED_bridge_mirrors_no_entry():
+    b, ops, _, _, dec = _market_bridge(state=live_bridge.BridgeState.HALTED)
+    b.sync(dec, _Sig())
+    assert not ops.actions
+
+
+def test_the_mirrored_position_is_adopted_by_the_ORDINARY_open_path():
+    """ONE adoption path. The mirror places and re-reads; `_observe_open` books, alerts and saves.
+    MUTATION: return the stale position list instead of re-reading and this goes red — the
+    position exists at the broker and the bridge never adopts it.
+    """
+    b, ops, ledger, notes, dec = _market_bridge()
+    b.sync(dec, _Sig())
+    assert b._pos_ticket == ops.positions[0].ticket
+    assert any(kind == "opened" for kind, _ in ledger.rows), ledger.rows
+    assert notes, "the entry alert must still be sent"
+
+
+def test_a_mirrored_entry_is_NOT_recorded_as_a_resting_order():
+    """It has already filled. Recorded in `_rest`, `_observe_vanished` would read a live position
+    as an order that disappeared and `_cancel_all_rest` would try to cancel a position."""
+    b, _, _, _, dec = _market_bridge()
+    b.sync(dec, _Sig())
+    assert b._rest[live_bridge.PRIMARY_LONG] is None
+
+
+def _reversal_bar(**kw):
+    """The bot holds a LONG at the broker; the strategy closed it and opened a SHORT in the same
+    step, so this bar's decision carries an owned exit fill AND an entry fill."""
+    b, ops, ledger, notes, dec = _market_bridge(direction=-1, **kw)
+    ops.positions.append(_Pos(901, 0, 4200.0, 0.24, 4190.0))
+    b._pos_ticket, b._pos_dir, b._pos_lots = 901, 1, 0.24
+    b._pos_entry, b._pos_stop, b._pos_risk_usd = 4200.0, 4190.0, 240.0
+    dec.fills = [_Fill("exit", "L-TP1", 4260.0, 0.24, 1)] + list(dec.fills)
+    return b, ops, ledger, notes, dec
+
+
+def test_closing_and_REOPENING_on_one_bar_HALTS_instead_of_managing_the_old_position():
+    """🔴 A SILENT mis-management until 2026-09-03, and it reaches the resting bot too.
+
+    One position slot means an entry fill can only exist beside an exit fill if the old trade
+    ENDED — so this is not the partial bank the flat-check reads it as. Left alone, the broker
+    keeps a position the strategy no longer has and `_sync_stop` ratchets it to the NEW trade's
+    stop, which belongs to the other direction. Every layer's own check passes: both books hold
+    a position, and `_agrees` compares presence.
+    MUTATION: restore the bare `if self._ex._pos_dir != 0: return positions` and this goes red —
+    no halt, and the old position's stop is moved.
+    """
+    b, ops, _, _, dec = _reversal_bar()
+    b.sync(dec, _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "same bar" in b.halt_reason, b.halt_reason
+    assert not any(a[0] == "modify_sl" for a in ops.actions), ops.actions
+
+
+def test_that_halt_STOPS_THE_BAR_rather_than_falling_through_to_the_stop_ratchet():
+    """🔴 The half that makes the halt worth raising. Every OTHER halt on this path comes from
+    `_agrees`, which stops the bar by returning False; one raised earlier falls straight through
+    to `_sync_stop` and does the exact thing it just refused.
+    MUTATION: delete the `state is HALTED` guard after the exit mirror and this goes red — the
+    old long's stop is moved to the new short's.
+    """
+    b, ops, _, _, dec = _reversal_bar()
+    b.sync(dec, _Sig())
+    assert not ops.actions, ops.actions
+
+
+def test_an_ORDINARY_partial_bank_is_still_NOT_a_reversal():
+    """The counter-case. A rung that takes half and rides the rest leaves the emulator holding a
+    position and emits NO entry fill — that must stay a bank, not a halt.
+    MUTATION: halt whenever the emulator is not flat and this goes red.
+    """
+    b, ops, _, _, dec = _reversal_bar()
+    dec.fills = [f for f in dec.fills if getattr(f, "kind", "") != "entry"]
+    b.sync(dec, _Sig())
+    assert b.state is not live_bridge.BridgeState.HALTED, b.halt_reason
+
+
+def test_a_FAST_clock_refuses_a_market_strategy_rather_than_halting_on_the_wrong_message():
+    """🔴 The mirror is wired on the primary clock only. A market strategy with a second feed
+    would reach `sync_fast` holding a position the broker does not have and halt with the RESTING
+    bot's message, blaming a limit that was never placed.
+    MUTATION: drop the check and this goes red on the halt text.
+    """
+    b, _, _, _, _dec = _market_bridge()
+    step = types.SimpleNamespace(bar=types.SimpleNamespace(index=7, timestamp_ms=1), arm=None)
+    b.sync_fast(step)
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "enters at market" in b.halt_reason, b.halt_reason
+
+
+def test_the_VENUE_ceiling_is_reconciled_BEFORE_the_strategy_sizes_anything():
+    """🔴 It used to run only inside `_plan`, i.e. only when the bridge was about to PLACE an
+    order — so a bot whose first action is a FILL sized its first trade against the configured
+    ceiling rather than `min(configured, venue)`. The room refresh is the seam the runner calls
+    before every step, which is the moment that can still change the outcome.
+    MUTATION: delete the reconcile from `refresh_account_room` and this goes red at 100 vs 50.
+    """
+
+    class _Acct:
+        max_lots = 100.0
+
+    ex = _FakeExecution()
+    ex._account = _Acct()
+    tight = SymbolSpec(
+        symbol="XAUUSD",
+        contract_size=100.0,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=50.0,
+        volume_step=0.01,
+        digits=2,
+    )
+    b, _, _, _ = _bridge(ex, mt5ops=_FakeMt5Ops(spec=tight))
+    b.refresh_account_room()
+    assert ex._account.max_lots == 50.0

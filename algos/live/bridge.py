@@ -40,7 +40,7 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # `notify` lives in algos/shared. The runner puts it on sys.path before importing this module,
 # but a test that imports the bridge alone must not have to know that — an import path is not a
@@ -85,6 +85,35 @@ class _Rest:
     price: float
     lots: float
     sl: float
+
+
+@dataclass
+class _MarketIntent:
+    """One market entry to mirror, in the shape the sizing and placement paths already read.
+
+    🔴 **AN ADAPTER, NOT A SECOND ORDER TYPE.** A resting strategy hands this bridge a pending
+    order it published BEFORE anything filled; a market strategy has already filled, so there is
+    nothing to hand over and the intent has to be READ BACK off the fill it just booked. This
+    carries it in the same field names `_plan` and `_place` take from a pending order, so **the
+    lot count still comes from the one sizing seam** and nothing here re-derives a size. That
+    single seam is the 2026-08-07 rule and it is not weakened by the order type changing.
+
+    ⚠ **`edge` is where the STRATEGY filled — the arming bar's close — never where the broker
+    will fill.** It is an input to sizing (risk = |edge - sl|) and an estimate of the price, and
+    `_place` records it as the estimate rather than as a fill for exactly that reason. What the
+    order really got is read back off the broker by `_observe_open`. Rule 3.
+
+    ⚠ **The fields are DELIBERATELY untyped-on-arrival.** They come off a decision this layer
+    does not own, so `None` reaches here and must be REFUSED by name rather than crashing on a
+    coercion — see `_market_entry_fault`.
+    """
+
+    dir: int
+    edge: Any
+    sl: Any
+    qty: Any
+    #: Read by `_place`, which branches on it to send a market order instead of a resting limit.
+    market: bool = True
 
 
 @dataclass
@@ -874,7 +903,19 @@ class OrderBridge:
         # path below then books, alerts and records the trade exactly as it does every other
         # exit. Doing it afterwards would need a second booking path for one kind of exit.
         positions = self._mirror_strategy_exit(positions, dec)
+        # ⚠ **The one halt raised ABOVE `_agrees` needs its own exit, and leaving it out is what
+        # made the bug it catches survivable.** Every other halt on this path comes FROM `_agrees`,
+        # which returns False and stops the bar by itself; a halt raised earlier would otherwise
+        # fall straight through to `_sync_stop` and do the very thing it just refused.
+        if self.state is BridgeState.HALTED:
+            return
         self._observe_close(positions, dec, sig, owner="primary")
+        # AFTER `_observe_close` and BEFORE `_observe_open`, and both halves of that are load-bearing.
+        # After the close, so a bar that ends one trade and opens another has released the ticket
+        # before this asks whether we hold one. Before the open, so the position this places is
+        # adopted, booked, alerted and saved by the SAME path every other fill goes through —
+        # `_observe_open` stays the one place a position is adopted.
+        positions = self._mirror_strategy_entry(positions, dec, sig)
         self._observe_open(positions, dec, sig)
         # AFTER `_observe_open`, which consumes the filled slot's rest when a position appears
         # perfectly ordinary fill reads as a vanished order.
@@ -941,6 +982,21 @@ class OrderBridge:
         if self.state is not BridgeState.LIVE:
             # WARMING is the 15-minute path's transition to make: it owns the warm-up position
             # whose closing is the thing being waited for. HALTED places nothing, ever.
+            return
+        if self._entry_style() == "market":
+            # 🔴 **THE ENTRY MIRROR IS WIRED ON THE PRIMARY CLOCK AND ONLY THERE.** This path runs
+            # `_agrees` too, so a market strategy with a second feed would reach it holding a
+            # position the broker does not have yet and halt with the resting strategy's message —
+            # blaming a limit that was never placed. **Refusing here is not a policy choice; it is
+            # naming a combination nobody has built.** Unreachable today (a market strategy has no
+            # re-entry to ask for a fill clock), and it is a halt rather than a silent return
+            # because a bot running two clocks with one of them inert is the worst of both.
+            self._halt(
+                "This strategy enters at market and is also running a second bar stream. The "
+                "bridge mirrors a market entry on the primary clock only, so the fill clock "
+                "would halt on a position it has no path to open. Turn the second stream off, "
+                "or build the mirror on this clock."
+            )
             return
 
         bar = getattr(step, "bar", None)
@@ -1151,6 +1207,32 @@ class OrderBridge:
         # partial and delete a runner the strategy is still managing. `_sync_partials` owns the
         # case where the trade continues; this owns only the case where it ended.
         if self._ex._pos_dir != 0:
+            # 🔴 **UNLESS A NEW POSITION OPENED ON THE SAME BAR, WHICH IS NOT A BANK AT ALL — and
+            # until 2026-09-03 this was read as one and mis-managed a live position IN SILENCE.**
+            # One position slot means an entry fill can only exist here if the old trade ENDED, so
+            # the broker is holding a trade the strategy no longer has while the bridge goes on to
+            # ratchet that position's stop to the NEW trade's — a stop belonging to a different
+            # direction, on a position nobody is managing. Nothing in any log said so, because
+            # every layer's own check passed: the emulator holds a position, the broker holds a
+            # position, `_agrees` compares PRESENCE and is content.
+            #
+            # ⚠ **It HALTS rather than closing-and-reopening, and that is a decision.** Closing
+            # the old and mirroring the new in one bar is reachable code but has fired ZERO times
+            # in 6.6 years — MEASURED over 470,995 M5 bars of the extreme leg, 113 closes and 113
+            # opens sharing no bar — so building a reversal path here would be shipping a branch
+            # to a live bot that nothing has ever run (rule 9). A halt is the honest answer to a
+            # case nobody has built, and it is what this state already produced for a RESTING bot
+            # one bar later, once the broker filled its new limit and two positions appeared.
+            #
+            # ⚠ **Pre-existing and NOT introduced by the entry mirror.** It reaches SOS Fade too:
+            # a bar that closes a trade and fills the emulator's next limit lands here identically.
+            if any(getattr(f, "kind", "") == "entry" for f in fills):
+                self._halt(
+                    "The strategy closed a trade and opened another on the same bar. The broker "
+                    "still holds the OLD position and the bridge has no path that reverses in one "
+                    "bar, so it would ratchet that position's stop to the new trade's. Close the "
+                    "open position by hand, then restart."
+                )
             return positions
         if not any(p.ticket == self._pos_ticket for p in positions):
             # Already gone — it filled a stop in the same instant, or a previous pass closed it.
@@ -1187,6 +1269,178 @@ class OrderBridge:
 
         self._ledger.event("commanded_close", ticket=self._pos_ticket, price=price, exit=label)
         # Re-read rather than assuming: the account is what says whether it is gone.
+        return self._mt5.get_open_positions()
+
+    def _entry_style(self) -> str:
+        """How this strategy OPENS a position, declared by its own order layer.
+
+        🔴 **DECLARED, NEVER INFERRED, AND THE DEFAULT IS THE HALTING ONE.** *Emulator holding a
+        position, broker holding none* is one state with two opposite meanings: for a resting
+        strategy it is the 2026-08-07 divergence and the answer is to stop; for a market strategy
+        it is one instant of latency and the answer is to place the order. **Nothing observable
+        separates them** — same direction, same entry fill on the decision, same empty book. So a
+        strategy that has not said which it is gets `"resting"`, which halts. See
+        `strategies/python/live_contract.py` → `ENTRY_STYLES`, and `verify_live_ready`, which
+        refuses an undeclared or mistyped value at STARTUP so the default is a backstop rather
+        than the thing anybody relies on.
+        """
+        return getattr(self._ex, "entry_style", "resting")
+
+    def _market_entry_fault(self, pend, direction: int):
+        """Why this market entry must NOT be sent, or `None` if it is coherent.
+
+        Returns a `SizingRefusal`, so a bad intent travels the same road a bad SIZE does — ledger
+        record, one alert per cause, and the reason attached to the side so `_agrees` can name it
+        in the halt that follows. There is exactly one refusal vocabulary here on purpose.
+
+        🔴 **A MARKET ORDER'S STOP GOES OUT WITH THE ORDER AND THERE IS NO SECOND CHANCE.** A
+        resting limit sits at the broker for hours, so a wrong stop has a whole reconcile loop in
+        which to be noticed and moved; this order fills on arrival. That is why the coherence of
+        the stop is checked HERE rather than being left to the broker's own validation.
+
+        ⚠ **`None` and `0.0` are different refusals and must stay different.** `None` is the
+        strategy unable to say (rule 1); `0.0` reaches MT5 as *no stop at all* — an unprotected
+        position — which is why it is refused rather than passed through. Neither is a small stop.
+
+        ⚠ **The wrong-SIDE test lives here and deliberately not in `order_sizing`.** Adding it to
+        the shared seam would change what the LIVE bot does today, which needs its own
+        measurement; it can only ever fire on an intent that is already broken, so it is the
+        narrow version of the check rather than the general one. **The limit path keeps the hole
+        and this names it** — there, the broker rejects the order and `_place` records a refusal,
+        which is loud; here the order would fill and stop out in the same instant.
+        """
+        from order_sizing import SizingRefusal
+
+        def _num(v):
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return None
+            return f if f == f and f not in (float("inf"), float("-inf")) else None
+
+        edge, sl, qty = _num(pend.edge), _num(pend.sl), _num(pend.qty)
+        if edge is None or edge <= 0:
+            return SizingRefusal(
+                "entry_price_unreadable",
+                f"the strategy opened a position and reports its fill price as {pend.edge!r}; "
+                f"there is no price to size the order against.",
+            )
+        if qty is None or qty <= 0:
+            return SizingRefusal(
+                "entry_qty_unreadable",
+                f"the strategy opened a position and reports its size as {pend.qty!r}.",
+            )
+        if sl is None:
+            return SizingRefusal(
+                "entry_stop_unreadable",
+                "the strategy opened a position at market and cannot say where its stop is. The "
+                "order is NOT being sent — a market order carries its stop with it, so sending "
+                "one now would open an unprotected position.",
+            )
+        if sl <= 0:
+            return SizingRefusal(
+                "entry_stop_absent",
+                f"the strategy's stop for this entry is {sl}, which reaches the terminal as NO "
+                f"STOP rather than as a stop at zero. Refusing rather than opening a position "
+                f"nothing would close.",
+            )
+        wrong_side = (direction > 0 and sl >= edge) or (direction < 0 and sl <= edge)
+        if wrong_side:
+            side = "long" if direction > 0 else "short"
+            return SizingRefusal(
+                "entry_stop_wrong_side",
+                f"a {side} at {edge} with its stop at {sl} would fill and stop out in the same "
+                f"instant. The two books have already parted; refusing is the answer.",
+            )
+        return None
+
+    def _mirror_strategy_entry(self, positions, dec, sig):
+        """Open at the broker when the STRATEGY has opened a trade the broker has not.
+
+        The mirror image of `_mirror_strategy_exit`, for a strategy that enters AT MARKET on a
+        bar's close. Such a strategy fills inside its own emulator DURING the step, so by the time
+        this bridge looks there is nothing left to place ahead of the fill — the position exists on
+        one side and not the other, and the bridge's job is to catch the broker up.
+
+        🔴 **IT RUNS ONLY FOR A STRATEGY THAT DECLARED IT ENTERS AT MARKET, AND THAT GATE IS THE
+        WHOLE SAFETY PROPERTY.** For a RESTING strategy the identical state — emulator in a
+        position, broker flat, an entry fill on this bar's decision — means its limit filled in one
+        book and not the other, which is the 2026-08-07 fault, and `_agrees` must halt on it. There
+        is nothing to tell the two apart at this layer, so this asks the strategy rather than
+        guessing. See `_entry_style`.
+
+        🔴 **THE SIZE STILL COMES FROM `_plan`, NEVER FROM THE EMULATOR'S QUANTITY.** That is the
+        one seam that converts the strategy's units into a lot count against the BROKER's balance,
+        its volume band and the account's remaining risk — none of which the emulator can see. A
+        strategy sizing off its own compounded equity is the 221x incident, and a second sizing
+        path on the live route is how it comes back.
+
+        ⚠ **A refused order leaves the two books parted, ON PURPOSE, and `_agrees` halts naming the
+        refusal.** There is no honest alternative: the emulator has ALREADY booked this trade, so
+        shrinking the order to fit would leave the two holding different trades that grade
+        different R (rule 17), and un-booking the emulator's side would be this layer editing the
+        strategy's own book. The account-level shrink that avoids most of these happens one layer
+        earlier, in the strategy's own sizing, before the fill — `refresh_account_room`.
+
+        ⚠ **It acts on an entry fill from THIS bar only.** A position the emulator opened on an
+        earlier bar is not latency, it is a divergence that has already survived a reconcile, and
+        placing it now would open at today's price a trade the strategy priced at yesterday's.
+        A failed placement therefore does not retry: it halts, exactly as a failed mirrored exit
+        does, because the two ledgers have genuinely parted.
+
+        ⚠ **WARMING places nothing.** That state exists to wait out a position the bot inherited at
+        startup, and it is decided AFTER this in `sync` — so the check is repeated here rather than
+        relied upon. A bar that closes the warm-up trade and opens a new one keeps the bot in
+        WARMING, and an order sent from here would be one the state machine had not authorised.
+
+        ⚠ **Nothing is adopted here.** `_observe_open` runs next and is the ONE place a position is
+        taken onto the books, which is why this returns a RE-READ position list rather than a
+        return code: the account is what says whether the order exists.
+        """
+        if self._entry_style() != "market":
+            return positions
+        if self.state is not BridgeState.LIVE:
+            return positions
+        if self._pos_ticket is not None or positions:
+            return positions
+        direction = self._ex._pos_dir
+        if direction == 0:
+            return positions
+
+        fill = next(
+            (f for f in (getattr(dec, "fills", ()) or ()) if getattr(f, "kind", "") == "entry"),
+            None,
+        )
+        if fill is None:
+            return positions
+
+        slot = primary_slot(direction)
+        pend = _MarketIntent(
+            dir=direction,
+            edge=getattr(fill, "price", None),
+            sl=getattr(dec, "stop", None),
+            qty=getattr(fill, "qty", None),
+        )
+        fault = self._market_entry_fault(pend, direction)
+        if fault is not None:
+            self._record_refusal(slot, fault, pend)
+            return positions
+
+        plan = self._plan(direction, pend)
+        if not plan.ok:
+            self._record_refusal(slot, plan, pend)
+            return positions
+
+        self._refused[slot] = ""
+        self._refusal_alerted[slot] = ""
+        self._log.info(
+            f"MIRRORING ENTRY | the strategy opened {'LONG' if direction > 0 else 'SHORT'} "
+            f"at {pend.edge} SL {pend.sl}; sending it to the broker at market"
+        )
+        # `_place` owns the dry-run branch (through `_exec`), the unknown-outcome latch, and the
+        # rule that a market fill is NOT recorded as a resting order. None of that is repeated
+        # here — a second placement path is how two code paths start disagreeing about one order.
+        self._place(slot, plan.lots, pend, sig, plan)
         return self._mt5.get_open_positions()
 
     def _observe_open(self, positions, dec, sig) -> None:
@@ -1590,6 +1844,20 @@ class OrderBridge:
         counted by the emulator's own `reserved()`, which `SoloAccount.room()` subtracts. Counting
         them in both places would halve this bot's share every time it held anything.
         """
+        # 🔴 **THE VENUE CEILING IS RECONCILED HERE TOO, AND A MARKET-ENTRY BOT IS WHAT EXPOSED
+        # THE GAP.** It used to run only inside `_plan`, which is reached only when the bridge is
+        # about to place an order — so a bot whose FIRST action is a fill (not a placement) sized
+        # its first trade against the CONFIGURED ceiling rather than `min(configured, venue)`, and
+        # a venue band tighter than the configured one meant a refused order and a halt on trade
+        # one. **A resting bot had a milder version of the same gap** on its first armed bar.
+        # ⚠ It only ever LOWERS and re-reads the configured value each time, so running it every
+        # bar computes the same number more often — the change is WHEN it is applied, not what it
+        # says. ⚠ A spec the terminal cannot answer leaves the configured ceiling alone (rule 1);
+        # it is not read as *no limit* and not as zero.
+        spec = self._mt5.symbol_spec()
+        if spec is not None:
+            self._reconcile_lot_ceiling(spec)
+
         account = getattr(self._ex, "_account", None)
         if account is None or not hasattr(account, "external_room"):
             return  # a strategy whose sizing does not go through the account seam

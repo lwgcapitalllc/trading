@@ -645,6 +645,33 @@ record against `_Open`'s own fields so that day fails loudly.
 🔴 **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9, and it still has no instance directory.** What
 changed is that the blockers are gone, not that it is deployed.
 
+### It DECLARES that it enters at market, and without that it could not open a position at all
+
+`entry_style = "market"`, read by `algos/live/` and by nothing else — no replay, no cost and no
+decision reads it, and the digest above is unchanged with it in place.
+
+🔴 **IT IS THE ONE THING THAT SEPARATES THIS BOT FROM A BROKEN ONE, AND NOTHING OBSERVABLE COULD
+HAVE TOLD THEM APART.** `enter()` fills inside this emulator DURING the step, so by the time the
+bridge reconciles, the position exists here and the broker holds nothing. For a strategy that rests
+a limit, that state means the limit filled in one book and not the other — the 2026-08-07
+divergence — and the bridge must HALT. Here it is one instant old and the bridge must place the
+order. **Same position, same direction, same entry fill on the decision, same empty broker book.**
+So the bridge asks; it does not guess. Rules: `strategies/CLAUDE.md` → *Every order layer DECLARES
+how it opens a position*.
+
+⚠ **The bridge's own fallback is `"resting"`, i.e. the HALTING one.** A typo here does not disable
+a feature — it stops the bot on its first setup. `verify_live_ready` refuses an unrecognised value
+by name at startup so that fallback stays a backstop.
+
+⚠ **It does NOT mean this strategy sizes its own live order.** The broker's lot count still comes
+from the live sizing seam, off the BROKER's balance and under the account's remaining risk. What
+this decides is which ORDER is sent.
+
+🔴 **THE BOT MUST NOT BE GIVEN A SECOND BAR STREAM.** The bridge mirrors a market entry on the
+primary clock only; a fill clock would reach the same disagreement with no path to open it and
+halt. It has no re-entry to ask for one, and the bridge REFUSES the combination rather than
+running one clock inert.
+
 **Tests: 18 in `tests/test_live_seams.py`, 9 mutations watched RED.** ⚠ **They parse
 `BRIDGE_OWNED_EXITS` out of the bridge's source rather than importing it** — importing
 `algos.live.bridge` from a strategy test drags in the whole live import graph, and this repo already

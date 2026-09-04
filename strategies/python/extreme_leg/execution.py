@@ -292,6 +292,18 @@ class ExtremeLegExecution(LivePositionMixin):
     #: close the position.
     _EXIT_TAGS = {"stop": "STOP", "target": "TP1"}
 
+    #: 🔴 **THIS BOT ENTERS AT MARKET ON THE BAR'S CLOSE, AND SAYING SO IS WHAT LETS IT TRADE LIVE.**
+    #: `enter()` fills inside this emulator during the step, so by the time `algos/live/` reconciles,
+    #: the position already exists here and the broker holds nothing. For a resting strategy that
+    #: state is the 2026-08-07 divergence and the bridge HALTS on it; here it is one instant old and
+    #: correct, and the bridge places the matching market order instead. **Nothing observable
+    #: separates the two states** — same position, same direction, same empty broker book — so this
+    #: is declared rather than inferred. See `strategies/python/live_contract.py` → `ENTRY_STYLES`.
+    #:
+    #: ⚠ **It does NOT mean the order is sized here.** The broker's lot count still comes from the
+    #: one live sizing seam, off the BROKER's balance; what this changes is which ORDER is sent.
+    entry_style = "market"
+
     def step(self, sig, seq) -> LiveDecision:
         """One bar, through the live contract. See `strategies/python/live_contract.py`.
 

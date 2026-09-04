@@ -2347,6 +2347,99 @@ that rungs sum within ONE ladder and never across two — still matters to
 
 ⚠ **None of this has run against a broker.** Rule 9 applies to the first one.
 
+🔴 **THE FLAT TEST WAS ALSO READING A REVERSAL AS A BANK, AND MIS-MANAGING A LIVE POSITION IN
+SILENCE (found and closed 2026-09-03).** A bar that closes one trade and opens another leaves the
+emulator holding a position, so the paragraph above sent it down the bank path: the broker kept the
+OLD position, `_observe_close` saw it still there and booked nothing, `_agrees` compares PRESENCE
+and was content — and `_sync_stop` then ratcheted that position's stop to the NEW trade's, which
+belongs to the other direction. **Nothing in any log said so, because every layer's own check
+passed.** ⚠ **It reaches the LIVE bot**: a bar that closes a trade and fills the emulator's next
+limit lands here identically. ✅ **The distinguishing fact is an ENTRY fill on the same decision** —
+one position slot means one can only exist beside an exit fill if the old trade ended.
+
+⚠ **It HALTS rather than reversing in one bar, and that is a decision.** MEASURED over 470,995 M5
+bars of the extreme leg: 113 closes, 113 opens, **zero sharing a bar**. Building a reversal path
+would ship a branch to a live bot that nothing has ever run (rule 9); the halt is the honest answer
+to a case nobody has built, and it is what this state produced anyway for a resting bot one bar
+later, once its new limit filled and two positions appeared.
+
+⚠ **The halt needed its own exit from `sync`, and leaving that out is what would have made it
+useless.** Every other halt on this path comes FROM `_agrees`, which stops the bar by returning
+False; one raised earlier falls straight through to `_sync_stop` and does the very thing it just
+refused. **A refusal that does not stop the work is not a refusal.**
+
+### Opening at MARKET — `_mirror_strategy_entry` (2026-09-03)
+
+**The mirror image of the exit path, for a strategy that enters at market on a bar's close.** Such
+a strategy fills inside its own emulator DURING the step, so by the time this bridge looks there is
+nothing left to place ahead of the fill: the position exists on one side and not the other, and the
+bridge's job is to catch the broker up. **Before this, such a bot halted on its first setup** — the
+order-placing branch requires the emulator to be FLAT and was never reached.
+
+🔴 **IT RUNS ONLY FOR A STRATEGY THAT DECLARED IT ENTERS AT MARKET, AND THAT GATE IS THE WHOLE
+SAFETY PROPERTY.** *Emulator in a position, broker flat, an entry fill on this bar's decision* is
+byte for byte the state a RESTING strategy shows when its limit filled in one book and not the
+other — the 2026-08-07 fault, where the bot must stop. **Nothing observable separates the two**, so
+the bridge reads the strategy's own declaration (`entry_style`) instead of guessing. An undeclared
+strategy defaults to the HALTING answer; `verify_live_ready` refuses an unrecognised value at
+startup so that default stays a backstop. Contract: `strategies/CLAUDE.md`.
+
+🔴 **THE SIZE STILL COMES FROM `_plan`, NEVER FROM THE EMULATOR'S QUANTITY.** That is the one seam
+converting strategy units into lots against the BROKER's balance, its volume band and the account's
+remaining risk — none of which the emulator can see. A strategy sizing off its own compounded
+equity is the 221x incident, and a second sizing path on the live route is how it comes back.
+
+🔴 **A MARKET ORDER'S STOP GOES OUT WITH THE ORDER AND THERE IS NO SECOND CHANCE**, which is why
+the intent's coherence is checked here rather than left to the broker. A resting limit sits for
+hours with a whole reconcile loop in which to notice a bad stop; this one fills on arrival. Four
+refusals, each its own code: an unreadable price, an unreadable size, **an unreadable stop (`None`,
+rule 1) and an ABSENT one (`0.0`, which reaches the terminal as *no stop at all* — the two must not
+collapse)**, and a stop on the wrong side, which would fill and stop out in the same instant.
+⚠ **The wrong-side test is deliberately NOT in the shared sizing seam** — putting it there changes
+what the live bot does today and needs its own measurement. **The limit path keeps that hole**; it
+is loud there, because the broker rejects the order and a refusal is recorded.
+
+⚠ **A refused order leaves the two books parted ON PURPOSE, and `_agrees` halts naming the
+refusal.** The emulator has ALREADY booked the trade, so shrinking the order would leave the two
+holding trades that grade different R (rule 17), and un-booking the emulator's side would be this
+layer editing the strategy's book. The shrink that avoids most of these happens one layer earlier,
+in the strategy's own sizing, before the fill.
+
+⚠ **It acts on an entry fill from THIS bar only, and a failed placement does not retry.** A
+position opened on an earlier bar is not latency — it is a divergence that has already survived a
+reconcile, and placing it now would buy at today's price a trade priced yesterday.
+
+⚠ **Nothing is adopted here.** It returns a RE-READ position list and `_observe_open` books, alerts
+and saves exactly as it does for a limit fill — one adoption path, so two code paths can never
+disagree about one trade. WARMING and HALTED place nothing.
+
+🔴 **THE FILL CLOCK REFUSES A MARKET STRATEGY OUTRIGHT.** The mirror is wired on the primary clock
+only, so a second stream would reach the same disagreement with no path to open it and halt with
+the resting bot's message, blaming a limit that was never placed. Unreachable today; it is a halt
+rather than a silent return because a bot running two clocks with one of them inert is the worst of
+both.
+
+⚠ **None of this has run against a broker.** Rule 9 applies to the first one.
+
+**Tests: 18 in `algos/tests/test_live_bridge.py`, 17 mutations watched RED on their own named
+test.** 🔴 **One was VACUOUS on its first pass and is recorded rather than quietly replaced** — the
+stale-position test asserted *no order and a halt*, and mirroring a stale position produces both
+(it fails on an unreadable price and records a refusal). It now asserts that **nothing was
+attempted**: no refusal row, and a halt reason that does not blame a price the strategy was never
+asked for.
+
+### The venue lot ceiling is reconciled BEFORE the strategy sizes, not only before an order (2026-09-03)
+
+`_reconcile_lot_ceiling` used to run inside `_plan`, i.e. only when the bridge was about to PLACE
+an order. **A bot whose first action is a FILL rather than a placement never reached it**, so its
+first trade sized against the configured ceiling instead of `min(configured, venue)` — and a venue
+band tighter than the configured one meant a refused order and a halt on trade one. It now also
+runs in `refresh_account_room`, which the runner calls before every step: the same seam, at the one
+moment that can still change the outcome. ⚠ **A resting bot had a milder version of the same gap**
+on its first armed bar. ⚠ **It only ever LOWERS and re-reads the configured value each time, so
+this computes the same number more often — what changed is WHEN it is applied.** ⚠ **A spec the
+terminal cannot answer leaves the configured ceiling alone** (rule 1): not *no limit*, not zero.
+
 ### The two clocks — `sync` and `sync_fast` (G18 stage 2, 2026-09-02)
 
 **`sync` owns the primary's two slots and any position the PRIMARY opened. `sync_fast` owns the

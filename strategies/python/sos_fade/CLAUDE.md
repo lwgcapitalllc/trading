@@ -539,6 +539,25 @@ entirely, so the delta across it spans a config change rather than this one.
 ⚠ **NONE OF THIS REACHES THE LIVE BOT UNTIL A PROMOTE.** `sos_fade_demo` is frozen on
 `de9ecafa` (promoted 2026-09-02); a pull cannot move it.
 
+## This order layer DECLARES that it rests a limit — `entry_style` (2026-09-03)
+
+One class constant, read by `algos/live/` and by nothing else. **No replay, no cost and no
+decision reads it**, so it cannot move a trade and the parity gate is structurally blind to it —
+it was still run, and is exit 0 at `--warmup 100` on `VANTAGE_XAUUSD, 15_2a817.csv` (21,610 bars
+compared).
+
+🔴 **IT IS WHAT KEEPS THIS BOT'S DIVERGENCE HALT ALIVE.** *Emulator in a position, broker flat* is
+the 2026-08-07 fault here and the bridge must stop; for a bot that enters at MARKET the identical
+state is one instant of latency and the bridge must place the order. Nothing observable separates
+the two, so the bridge asks rather than guessing. Rules: `strategies/CLAUDE.md` → *Every order
+layer DECLARES how it opens a position*.
+
+⚠ **`b_leg`, `bos` and `realign` inherit it**, which is correct — all three rest a fib-priced
+limit. ⚠ **`realign` enters at MARKET in the LAB and is not a live bot**; if it is ever made one,
+this is the line it has to override, and inheriting quietly is what would halt it on trade one.
+
+⚠ **It needs a PROMOTE to reach the running bot**, like everything else in this package.
+
 ## Closing a trade because a PERSON asked — `request_close()` (2026-09-02)
 
 **A seam, not a shipped feature.** It gives this strategy the one thing it had no way to be
