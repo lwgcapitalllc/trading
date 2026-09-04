@@ -6,17 +6,13 @@ the session that does the work.
 **Goal:** `extreme_leg` runs as a second LIVE bot on PU Prime ECN demo **700152905**, alongside
 `sos_fade_demo`, sharing one 10% account risk cap at 5% each.
 
-> ## ⚠ READ THIS FIRST — THE NAMES IN HERE WILL MOVE
+> ## ✅ NAMES UPDATED 2026-09-03 — the de-brand rename has LANDED
 >
-> `docs/DEBRAND_RENAME_PLAN.md` runs BEFORE this and renames every strategy package, class and bot
-> key. After it, `extreme_leg` is `extreme_leg`, `ExtremeLegStrategy` is
-> `ExtremeLegStrategy`, and `sos_fade_demo` is `sos_fade_demo`.
+> Verified after the rename: the package is `strategies/python/extreme_leg/`, the class is
+> `ExtremeLegStrategy`, and the live bots are `sos_fade_demo` and `b_leg_demo`. The rename session
+> caught this package, so the gap flagged in its own plan was handled.
 >
-> 🔴 **The rename plan's §2.1 does NOT list this package** — it renames the Pine file and forgets
-> the Python folder and class. Fix that there, not here.
->
-> **Re-grep every path in this file before acting on one.** The substance is unaffected; the names
-> are not.
+> ⚠ **Every path below was re-grepped against the renamed tree.** Re-check before acting anyway.
 
 ---
 
@@ -83,6 +79,52 @@ decides its exit** — the breakeven arm, the widened hold, the ladder state.
 is bound to one class's internal layout. Either the adapter reproduces those four names exactly, or
 `bridge.py` is refactored to a real interface first. **Reproducing them is faster and lies less** —
 a refactor of the order layer touches the LIVE bot and needs its own proof.
+
+### 0.3 The decision contract — MAPPED 2026-09-03, and it hides a silent failure
+
+`execution.step` returns one object, consumed in exactly two places: `ledger.bar(dec, sig, seq)`
+and `bridge.sync(dec, sig)`. Between them they read **eleven fields, every one through
+`getattr(dec, ..., default)`**:
+
+| Field | Read by | Weight |
+|---|---|---|
+| `stop` | bridge | 🔴 **moves the broker's stop** — the only field that touches money |
+| `fills` | bridge | 🔴 **books the trade** |
+| `exit_reason` | bridge | reporting |
+| `tp1`, `tp2` | both | reporting |
+| `long_armed`, `short_armed` | ledger | reporting |
+| `long_edge`, `short_edge` | ledger | reporting |
+| `l_stage`, `s_stage` | ledger | reporting |
+| `long_veto`, `short_veto` | ledger | reporting |
+
+✅ **Good news: only two of the eleven carry weight.** The decision object does not have to be a
+copy of the SOS Fade one.
+
+🔴 **BAD NEWS, AND IT IS THE MOST DANGEROUS THING IN THIS PLAN: every read is defensive, so a
+field this adapter forgets to set is INDISTINGUISHABLE from a field with nothing to report.**
+Forget `stop` and the bridge simply never ratchets the broker's stop — no error, no halt, no log
+line, and a position that rides its original stop all the way down while every dashboard looks
+healthy. **This is rule 1 arriving in a new place: "nothing to report" and "never implemented"
+must not be the same value.**
+
+⚠ **So the adapter's tests must assert these fields are POPULATED on a bar that should populate
+them** — not merely that `step` returns an object. A test that only checks the object's type
+passes against an adapter that sets nothing.
+
+### 0.4 A wrapper class is NOT available — the runner pins the class through the lab entry
+
+`runner._build_strategy` reads `LAB_STRATEGY["strategy"]` and then **refuses unless its
+`__name__` equals the instance config's `strategy_class`.** It does not look the name up in the
+module. So a separate `LiveExtremeLegStrategy` cannot be pointed at without either changing
+`LAB_STRATEGY["strategy"]` — which changes what the LAB replays — or changing the runner.
+
+**Decision: build the live seams ONTO the existing classes.** The alternative touches
+`algos/live/`, which is the code the running bot executes, and would need its own proof.
+
+⚠ **What makes this safe is the baseline, not the argument.** New methods nothing existing calls
+cannot move the replay; the one existing line that must change is the sizing seam, and that is a
+no-op unless a capped account is attached. **Both facts are checked by re-running the baseline,
+never assumed.**
 
 ---
 
@@ -163,8 +205,12 @@ perfectly healthy.
 
 Each stage is committable and leaves the repo working.
 
-1. **Baseline the replay.** Run the extreme leg's backtest and save the trade list. This is the
-   thing every later step is diffed against.
+1. ✅ **DONE 2026-09-03 — baseline locked.** `470,995` M5 bars of PU Prime `XAUUSD.p`,
+   2020-01-01 → 2026-08-23, default config, no costs, no account: **113 trades**, digest
+   `e4183861407c6b1e`. ✅ **It reproduces the published figures exactly** (470,995 bars / 113
+   trades), so the baseline is the same experiment those numbers came from. ✅ **Determinism was
+   proven rather than assumed** — a repeated six-month run gave an identical digest. **Re-run and
+   diff after every later step.**
 2. **Build the adapter** (§1). Owning CLAUDE.md in the same commit; the message names its proof.
 3. **Diff the replay against step 1.** Byte-identical, or stop and find out why.
 4. **Run its parity gate on a real export.** Rule 22 — no strategy change is committed before its
