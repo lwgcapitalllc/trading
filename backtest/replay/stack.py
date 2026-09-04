@@ -67,30 +67,30 @@ class EngineConfig:
     # internal-derived fields before the fibs read them. Default True keeps the canonical
     # behaviour the fib-parity harness (fib_export.pine, showInternal ON) was validated at.
     show_internal: bool = True
-    # fair_value_gaps. These mirror the ENGINE defaults (== `mpc_assistant.pine`, the indicator),
+    # fair_value_gaps. These mirror the ENGINE defaults (== `mpc_jarvis.pine`, the indicator),
     # NOT any one strategy — this package is strategy-agnostic and cannot encode one bot's tuning.
     # A consumer replaying a specific Pine must pin every value that Pine does not leave at the
     # engine default; see the unpinned-engine-input rule in `backtest/CLAUDE.md`.
     #
     # ⚠ `fvg_threshold_pct` is LOAD-BEARING and was 0.1 here until 2026-07-31 — not as a considered
-    # default but because `mpc_sos_fade` silently relied on it (it pins max_count and require_close
-    # and forgot this one). `mpc_strategy.pine`'s 15m floor is 0.1 while the indicator's is 0.04,
+    # default but because `sos_fade` silently relied on it (it pins max_count and require_close
+    # and forgot this one). `sos_fade_strategy.pine`'s 15m floor is 0.1 while the indicator's is 0.04,
     # so the bot now pins 0.1 explicitly and this default is free to mirror the engine again.
     # Verified the hard way: setting this to 0.0 while the bot was unpinned broke
     # `compare_strategy.py` on the first compared bar (`px_edge` 3478.99 vs 3475.43).
     fvg_max_count: int = 8
     fvg_threshold_pct: float = 0.0
-    # Middle-bar close-cleared requirement (Pine `fvgRequireClose`). `mpc_assistant.pine`
+    # Middle-bar close-cleared requirement (Pine `fvgRequireClose`). `mpc_jarvis.pine`
     # exposes it as an input defaulting OFF — the classic 3-candle FVG — which is why this
-    # defaults False. But `mpc_strategy.pine` HARDCODES the check (`close[1] > high[2]` /
+    # defaults False. But `sos_fade_strategy.pine` HARDCODES the check (`close[1] > high[2]` /
     # `close[1] < low[2]`), so a consumer replaying THAT Pine must pin this True or it will
     # hold gaps the Pine never created. Same class of trap as `fvg_max_count`: an engine
     # input the decision stream does not export, so the consumer has to know it.
     fvg_require_close: bool = False
     # Pine `eqExemptFvg` — an FVG sitting on an active EQH/EQL is exempt from the FVG cap and lives
     # until price mitigates it. OFF here because it is an input in every Pine that has it, and
-    # because turning it on CHANGES WHICH GAPS EXIST, hence which entries fire. `mpc_strategy.pine`
-    # has defaulted it ON since 2026-08-03 and `mpc_sos_fade` pins it True to match.
+    # because turning it on CHANGES WHICH GAPS EXIST, hence which entries fire. `sos_fade_strategy.pine`
+    # has defaulted it ON since 2026-08-03 and `sos_fade` pins it True to match.
     #
     # 🔴 This is what put `compare_strategy.py` RED for three days (found 2026-08-06). The Pine
     # defaulted it on while nothing here wired the EQ engine into the FVG engine at all, so the two
@@ -107,7 +107,7 @@ class EngineConfig:
     eq_atr_mult: float = 0.1
     eq_max_levels: int = 6
     # order_blocks — OPT-IN, and off by default for the same reason the EQ engine is: no strategy
-    # in this repo reads an order block today (`mpc_sos_fade`, `mpc_bleg` and `mpc_bos` all ignore
+    # in this repo reads an order block today (`sos_fade`, `b_leg` and `bos` all ignore
     # them), and an unused engine still costs a per-bar ATR, two pivot scans and a live-zone walk on
     # every replay, sweep combo and optimizer core in the repo.
     # ⚠ MEASURED rather than assumed, because "it is probably cheap" is how a default gets chosen
@@ -119,7 +119,7 @@ class EngineConfig:
     # ⚠ THERE ARE DELIBERATELY NO OB TUNING FIELDS HERE, and that is the repo's own rule rather than
     # laziness: "nothing in the config may exist without a Pine input behind it" (the BosConfig
     # lesson, 2026-08-07). Every OB constant — max_age, min_back, max_atr, dupe_overlap, disp_mult,
-    # the turn/push windows — is HARDCODED in `mpc_assistant.pine`, not exposed as an input, so a
+    # the turn/push windows — is HARDCODED in `mpc_jarvis.pine`, not exposed as an input, so a
     # field here could never be carried by an export column and no parity gate could ever check it.
     # `maxActiveOB` was the last real input and it was locked to 10 on 2026-07-31. The engine
     # defaults therefore ARE the Pine constants, and there is nothing to pin. If mpc ever re-exposes
@@ -201,7 +201,7 @@ class EngineStack:
             else None
         )
         # Same opt-in shape as `eq`, same reason — see `EngineConfig.order_blocks`. Built with no
-        # kwargs: the engine's defaults ARE mpc_assistant.pine's constants (max_active=10,
+        # kwargs: the engine's defaults ARE mpc_jarvis.pine's constants (max_active=10,
         # body_only=False, …), and that Pine is the only OB source left in the repo since the
         # strategy files dropped order blocks on 2026-07-24/25.
         self.order_blocks = OrderBlockEngine() if c.order_blocks else None
@@ -229,7 +229,7 @@ class EngineStack:
             snap.ifib_seed_ash_loc = None
 
         # Order blocks sit HERE, immediately after the structure engine and before everything else,
-        # because that is where mpc_assistant.pine runs them (`extendOBs` then the push/turn
+        # because that is where mpc_jarvis.pine runs them (`extendOBs` then the push/turn
         # creation sites, ~L2158-2790 — after `st.process`, before the internal block, EQ and FVG).
         # ⚠ The position is currently behaviour-NEUTRAL and it is worth knowing why, so nobody
         # "tidies" it later: this engine is STANDALONE (plain OHLC in, no snapshot since the

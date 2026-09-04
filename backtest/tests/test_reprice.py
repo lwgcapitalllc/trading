@@ -1,7 +1,7 @@
 """Re-pricing a stored run must produce the SAME numbers as replaying it charged.
 
 That is the whole claim, and it is the only thing worth testing here — the arithmetic reproducing
-is not the point, agreeing with the replay is. So the reference test replays `mpc_sos_fade` twice
+is not the point, agreeing with the replay is. So the reference test replays `sos_fade` twice
 over real cached bars (free, then charged), throws the charged replay's curve away, rebuilds it
 from the free run's stored record, and demands equality to the cent.
 
@@ -321,7 +321,7 @@ def test_a_short_is_credited_swap_rather_than_charged():
 # ── the reference: does it agree with a real replay? ───────────────────────────────────────────
 #
 # ⚠ **The replays below are CACHED, and the FREE one is why.** Every case here replays
-# `mpc_sos_fade` twice over two years of M15 bars — free, then charged — and the free replay is
+# `sos_fade` twice over two years of M15 bars — free, then charged — and the free replay is
 # character-for-character the same run in all four. MEASURED before caching: 8 full replays and 4
 # reads of the bar cache, 182s for this file; the four distinct replays it actually needs are the
 # free one plus one per cost layer.
@@ -351,7 +351,7 @@ def _window_df():
 def _replay(cost_kwargs: tuple = ()):
     """One replay of the reference strategy over that window. `()` is the FREE run."""
     from backtest.replay import build_strategy
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     profile = _profile(**dict(cost_kwargs)) if cost_kwargs else None
     cfg = LAB_STRATEGY["config"]()

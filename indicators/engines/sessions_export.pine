@@ -2,7 +2,7 @@
 //@version=6
 // ── PARITY-EXPORT BUILD (TRADING SESSIONS / KILL ZONES / NY RANGE) ───────────
 // Instrumented build used ONLY to validate the Python port (sessions/) against this
-// Pine source. It lifts the clock logic from mpc_assistant.pine — the session windows
+// Pine source. It lifts the clock logic from mpc_jarvis.pine — the session windows
 // inAsia/inLondon/inNY (mpc 836-838), the SESSION H/L TRACKING running extremes
 // (mpc 1638-1646), the KILL ZONES inKZ1/inKZ2/inKZ3 (mpc 1861-1866), the NY RANGE
 // opening range (mpc 1824-1856) and newDay / isMondayToFriday (mpc 808-809) — with
@@ -18,13 +18,13 @@
 // Export on a 5-minute chart (the NY opening range reads a 5m security, so 5m makes
 // high5/low5/startTime5 == the current bar exactly as mpc sees them). Export chart data
 // to CSV and diff with sessions/tools/compare_sessions.py. Do NOT let the clock logic
-// here drift from mpc_assistant.pine.
+// here drift from mpc_jarvis.pine.
 indicator("Sessions Engine EXPORT", overlay = false)
 
 //============================================================
-//  SESSION INPUTS (hardcoded to the mpc_assistant.pine defaults)
+//  SESSION INPUTS (hardcoded to the mpc_jarvis.pine defaults)
 //============================================================
-// Re-synced 2026-07-31 to the mpc paste (mpc_assistant.pine:465-478). Each window is now stated in
+// Re-synced 2026-07-31 to the mpc paste (mpc_jarvis.pine:465-478). Each window is now stated in
 // its OWN city's clock and follows that city's DST; they used to be pinned to a fixed "GMT-4".
 // Asia is unchanged in UTC (00:00-09:00 either way — Japan has no DST). London and New York move
 // one hour earlier in UTC under BST/EDT, which is a real window change for ~7 months a year.

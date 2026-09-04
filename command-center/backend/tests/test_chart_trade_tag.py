@@ -1,6 +1,6 @@
 """The word a strategy's own trades wear on the price chart.
 
-🔴 The panel hard-coded `A+` — `mpc_sos_fade`'s word for ITS setup — and painted it on EVERY
+🔴 The panel hard-coded `A+` — `sos_fade`'s word for ITS setup — and painted it on EVERY
 strategy's primary trades, so three other bots' charts carried a fourth bot's label. Nothing was
 broken and nothing went red: a wrong label renders exactly as confidently as a right one, which is
 rule 7 in its quietest form.
@@ -69,7 +69,7 @@ def test_the_declaring_package_has_its_tag_carried_off_the_module():
     actually landed. RED by dropping the `chart_tag` key from the scanner's row dict — the column
     then stores NULL for every strategy and every chart falls back to the A+ bot's word, which is
     the behaviour this whole mechanism replaces."""
-    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_extreme_leg"
+    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "extreme_leg"
     row, err = strategy_scanner._parse_python_package(pkg, Path(cfg.MONOREPO_ROOT))
     assert err is None, err
     assert row["chart_tag"] == "XLEG"
@@ -80,7 +80,7 @@ def test_a_package_that_declares_nothing_carries_None():
     strategy wear a tag its package never asked for, which is the defect with a different word in
     it.
 
-    ⚠ **It pointed at `mpc_sos_fade` until that bot declared its own `A+` on 2026-09-02, and it
+    ⚠ **It pointed at `sos_fade` until that bot declared its own `A+` on 2026-09-02, and it
     went RED — correctly.** It is repointed at `loss_recovery`, which declares none DELIBERATELY:
     its trades carry `kind="recovery"`, so the renderer tags them `REC` down a different branch and
     a `chart_tag` there could never be read. That is a real case rather than a premise edited to
@@ -208,7 +208,7 @@ def test_each_LEG_of_a_stack_keeps_its_OWN_tag_through_the_merge(monkeypatch):
     already on them.** An earlier version of this test handed the merge pre-tagged dicts and was
     VACUOUS — it proved a dict copy preserves keys, and stayed green under the mutation it was
     written to catch. RED now by dropping the stamp: both legs come back untagged."""
-    legs = {"run_a": ("mpc_sos_fade", "A+"), "run_b": ("mpc_extreme_leg", "XLEG")}
+    legs = {"run_a": ("sos_fade", "A+"), "run_b": ("extreme_leg", "XLEG")}
     curve = [
         {
             "entry_ms": 1_600_000_000_000,
@@ -250,7 +250,7 @@ def test_each_LEG_of_a_stack_keeps_its_OWN_tag_through_the_merge(monkeypatch):
 
     merged = chart_spec.build_stack_chart_spec("st_probe")
     by_layer = {t["layer"]: t.get("tag") for t in merged["trades"]}
-    assert by_layer == {"mpc_sos_fade": "A+", "mpc_extreme_leg": "XLEG"}, (
+    assert by_layer == {"sos_fade": "A+", "extreme_leg": "XLEG"}, (
         "each leg's trades must keep their OWN strategy's word on a merged chart"
     )
 
@@ -260,7 +260,7 @@ def test_the_chart_reads_the_declaring_strategys_tag(monkeypatch):
     """RED by hardcoding a tag in `_chart_tag`, or by returning the strategy id — both of which
     render as a perfectly plausible chip."""
     monkeypatch.setattr(lab_db, "get_strategy", lambda sid: {"chart_tag": "XLEG"})
-    assert chart_spec._chart_tag("mpc_extreme_leg") == "XLEG"
+    assert chart_spec._chart_tag("extreme_leg") == "XLEG"
 
 
 @pytest.mark.parametrize(

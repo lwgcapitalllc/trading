@@ -5,10 +5,10 @@
  * two labels describing a NEIGHBOURING widget rather than what this one does, neither of which
  * names the stop it produces. It also stayed live with `Stop fib level` already at `1.0`, where
  * both of its states place the stop in the same spot. The Pine has greyed it out since it was
- * written (`strategies/tradingview/mpc_strategy.pine:116` → `active = execSlLevel != "1.0"`); this
+ * written (`strategies/tradingview/sos_fade_strategy.pine:116` → `active = execSlLevel != "1.0"`); this
  * is the Python UI catching up, not a new idea.
  *
- * ⚠ IT DRIVES THE REAL `mpc_sos_fade` SCHEMA off the running backend, deliberately — the same rule
+ * ⚠ IT DRIVES THE REAL `sos_fade` SCHEMA off the running backend, deliberately — the same rule
  * `strategies.spec.ts` states at the top of itself. A hand-written fixture would pass against a
  * scanner that never whitelisted `disable_if`, which is exactly the silent hop this feature has to
  * clear (`_PARAM_META_KEYS` drops an unknown key without a word). So this suite needs the backend
@@ -24,13 +24,13 @@ import { requireRun } from './fixtures'
 
 const RUN_ID = 'paramgates01'
 
-/** A completed python run on mpc_sos_fade — the Tune page is the cheapest route to the editor
+/** A completed python run on sos_fade — the Tune page is the cheapest route to the editor
  *  that needs no VPS, no history probe and no platform lock. */
 function run(params: Record<string, unknown>) {
   return {
     run_id: RUN_ID,
-    strategy_id: 'mpc_sos_fade',
-    strategy_name: 'MPC SOS Fade',
+    strategy_id: 'sos_fade',
+    strategy_name: 'SOS Fade',
     instrument: 'XAUUSD',
     status: 'complete',
     runner: 'python',
@@ -123,7 +123,7 @@ test.describe('a toggle that cannot matter is HIDDEN', () => {
    *
    * The row used to be drawn greyed with its reason beside it, on the rule that a setting which
    * vanishes reads as one that does not exist. Aaron reversed it reading the run form: on
-   * `mpc_sos_fade` SEVENTEEN rows are greyed under the shipped defaults, so the reader hunting the
+   * `sos_fade` SEVENTEEN rows are greyed under the shipped defaults, so the reader hunting the
    * one live setting reads past a screen of dead controls first. The old rule protects a reader
    * looking for a specific row; the count says that is not the common reader.
    *
@@ -193,7 +193,7 @@ test.describe('a cost figure sits under the cost that charges it', () => {
   async function openRunModal(page: Page) {
     await page.route('**/api/backtests/history-limit*', (r) => r.fulfill({ json: null }))
     await page.goto('/strategies')
-    const row = page.locator('tbody tr').filter({ hasText: 'MPC SOS Fade' }).first()
+    const row = page.locator('tbody tr').filter({ hasText: 'SOS Fade' }).first()
     await row.getByRole('button', { name: /^Run$/ }).click()
     // The modal title is a plain div, not a heading — assert on the text.
     await expect(page.getByText('Run Backtest', { exact: true }).first()).toBeVisible()
@@ -229,7 +229,7 @@ test.describe('a cost figure sits under the cost that charges it', () => {
     await page.goto('/strategies')
     await page
       .locator('tbody tr')
-      .filter({ hasText: 'MPC SOS Fade' })
+      .filter({ hasText: 'SOS Fade' })
       .first()
       .getByRole('button', { name: /^Run$/ })
       .click()
@@ -309,7 +309,7 @@ test.describe('a settled param is hidden, not removed', () => {
  * fold agrees with the schema the scanner actually served. A mocked run would prove the mock.
  */
 test.describe('a finished run FOLDS its settled params rather than dropping them', () => {
-  // A completed full-history mpc_sos_fade run. Every one of its params is at the shipped default,
+  // A completed full-history sos_fade run. Every one of its params is at the shipped default,
   // which is what makes the count equal the whole settled set rather than "some".
   const DONE_RUN = '7a77391d6568'
 
@@ -319,7 +319,7 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
   test.beforeAll(async () => {
     await requireRun(
       DONE_RUN,
-      'a completed full-history mpc_sos_fade run with EVERY param at its shipped default — that is what makes the settled count the whole set rather than "some"'
+      'a completed full-history sos_fade run with EVERY param at its shipped default — that is what makes the settled count the whole set rather than "some"'
     )
   })
 
@@ -488,7 +488,7 @@ test.describe('the Run modal is one editable view of every setting', () => {
       })
     )
     await page.goto('/strategies')
-    const row = page.locator('tbody tr').filter({ hasText: 'MPC SOS Fade' }).first()
+    const row = page.locator('tbody tr').filter({ hasText: 'SOS Fade' }).first()
     await row.getByRole('button', { name: 'Run' }).click()
     await expect(page.getByTestId('param-compact')).toBeVisible({ timeout: 20_000 })
   }
@@ -532,7 +532,7 @@ test.describe('the Run modal is one editable view of every setting', () => {
     // MUTATION: put the Strategy section back and the first assertion goes red (two copies).
     await openModal(page)
     const modal = page.locator('div.fixed.inset-0.z-50')
-    await expect(modal.getByText('MPC SOS Fade', { exact: true })).toHaveCount(1)
+    await expect(modal.getByText('SOS Fade', { exact: true })).toHaveCount(1)
     // The bar-size presets became a select, so no `15m` button survives.
     await expect(page.getByRole('button', { name: '15m', exact: true })).toHaveCount(0)
   })

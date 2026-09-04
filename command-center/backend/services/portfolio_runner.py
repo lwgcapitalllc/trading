@@ -147,8 +147,8 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     tf = _timeframe_minutes(settings)
 
     # 🔴 ONE BAR SET PER DISTINCT FRAME, not one for the stack. A leg names its own frame since
-    # 2026-09-03 and the ones here do not agree: `mpc_extreme_leg` is measured on 5m and
-    # `mpc_sos_fade` on 15m, so a single load replayed one of the two somewhere it has never
+    # 2026-09-03 and the ones here do not agree: `extreme_leg` is measured on 5m and
+    # `sos_fade` on 15m, so a single load replayed one of the two somewhere it has never
     # been measured while the combined table said portfolio. The SIMULATOR always allowed this —
     # its merged clock steps a 5m leg three times inside a 15m leg's bar — and this app was the
     # half that could only load one frame. Same lesson as the overlap audit the day before:
@@ -342,7 +342,7 @@ def _persist(
         #
         # 🔴 Without it, switching a leg off on the stack page recomposed the remaining leg from its
         # SHARED trades — which are sized off a balance the leg it just removed had grown. Measured
-        # on `st_94aeb25f0c`: mpc_bleg posts 17.8674R either way, 99 trades, identical entry and stop
+        # on `st_94aeb25f0c`: b_leg posts 17.8674R either way, 99 trades, identical entry and stop
         # prices — and $47,758,999 shared against $21,064 alone, because the last trade risks
         # $16,925,791 of a shared balance instead of $3,102 of its own. Same R, 2,266x the dollars.
         # Reported off the screen as "how is it the b leg make forty seven million on the stack, but

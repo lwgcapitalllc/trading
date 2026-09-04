@@ -262,7 +262,7 @@ def test_the_solo_control_book_is_KEPT_not_reduced_to_two_scalars(tmp_path, monk
     so the only book a subset of a shared stack could be composed from was the SHARED one — where
     every leg is sized off a balance all of them grew.
 
-    Measured on the live stack `st_94aeb25f0c`: MPC B-LEG posts 17.8674R and 99 trades either way,
+    Measured on the live stack `st_94aeb25f0c`: B-LEG posts 17.8674R and 99 trades either way,
     at identical entry and stop prices, and reads **$47,758,999 shared against $21,064 alone**,
     because its last trade risks $16,925,791 of the shared balance instead of $3,102 of its own.
     """
@@ -271,7 +271,7 @@ def test_the_solo_control_book_is_KEPT_not_reduced_to_two_scalars(tmp_path, monk
     sdir = tmp_path / "st_solo"
     portfolio_runner._write_solo(
         sdir,
-        "mpc_bleg",
+        "b_leg",
         {
             "equity_curve": [
                 {
@@ -287,7 +287,7 @@ def test_the_solo_control_book_is_KEPT_not_reduced_to_two_scalars(tmp_path, monk
         },
     )
     monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path)
-    eq, dp = portfolio_runner.solo_book("st_solo", "mpc_bleg")
+    eq, dp = portfolio_runner.solo_book("st_solo", "b_leg")
     assert [p["profit"] for p in eq] == [500.0]
     assert [d["pnl"] for d in dp] == [500.0]
     # ⚠ R is what makes the two books comparable at all, so it has to survive the round trip.
@@ -302,7 +302,7 @@ def test_a_missing_solo_book_is_EMPTY_and_never_an_exception(tmp_path, monkeypat
     from services import portfolio_runner
 
     monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path)
-    assert portfolio_runner.solo_book("st_nothing", "mpc_bleg") == ([], [])
+    assert portfolio_runner.solo_book("st_nothing", "b_leg") == ([], [])
 
 
 def test_the_leg_serves_its_solo_book_on_a_SHARED_stack_and_not_on_a_screen(
@@ -322,11 +322,11 @@ def test_the_leg_serves_its_solo_book_on_a_SHARED_stack_and_not_on_a_screen(
     lab_db.init_db()
     lab_db.upsert_strategy(
         {
-            "id": "mpc_bleg",
-            "name": "MPC B-LEG",
+            "id": "b_leg",
+            "name": "B-LEG",
             "runner": "python",
-            "class_name": "MpcBLegStrategy",
-            "source_path": "strategies/python/mpc_bleg",
+            "class_name": "BLegStrategy",
+            "source_path": "strategies/python/b_leg",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
@@ -370,7 +370,7 @@ def test_the_leg_serves_its_solo_book_on_a_SHARED_stack_and_not_on_a_screen(
         lab_db.insert_run(
             {
                 "run_id": run_id,
-                "strategy_id": "mpc_bleg",
+                "strategy_id": "b_leg",
                 "instrument": "XAUUSD",
                 "params": {},
                 "bar_type": "Minute",
@@ -395,7 +395,7 @@ def test_the_leg_serves_its_solo_book_on_a_SHARED_stack_and_not_on_a_screen(
         # screen that happened to have one must not start reporting two answers for one leg.
         portfolio_runner._write_solo(
             portfolio_runner.stack_dir(sid),
-            "mpc_bleg",
+            "b_leg",
             {
                 "equity_curve": [
                     {
@@ -440,11 +440,11 @@ def test_r_reaches_the_API_because_the_model_declares_it(client, tmp_path, monke
     lab_db.init_db()
     lab_db.upsert_strategy(
         {
-            "id": "mpc_bleg",
-            "name": "MPC B-LEG",
+            "id": "b_leg",
+            "name": "B-LEG",
             "runner": "python",
-            "class_name": "MpcBLegStrategy",
-            "source_path": "strategies/python/mpc_bleg",
+            "class_name": "BLegStrategy",
+            "source_path": "strategies/python/b_leg",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
@@ -485,7 +485,7 @@ def test_r_reaches_the_API_because_the_model_declares_it(client, tmp_path, monke
     lab_db.insert_run(
         {
             "run_id": "r_r",
-            "strategy_id": "mpc_bleg",
+            "strategy_id": "b_leg",
             "instrument": "XAUUSD",
             "params": {},
             "bar_type": "Minute",
@@ -748,11 +748,11 @@ def _stack_with_one_complete_leg(client_db: Path, reports: Path) -> None:
     lab_db.init_db()
     lab_db.upsert_strategy(
         {
-            "id": "mpc_bleg",
-            "name": "MPC B-LEG",
+            "id": "b_leg",
+            "name": "B-LEG",
             "runner": "python",
-            "class_name": "MpcBLegStrategy",
-            "source_path": "strategies/python/mpc_bleg",
+            "class_name": "BLegStrategy",
+            "source_path": "strategies/python/b_leg",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
@@ -794,7 +794,7 @@ def _stack_with_one_complete_leg(client_db: Path, reports: Path) -> None:
     lab_db.insert_run(
         {
             "run_id": "r_rg",
-            "strategy_id": "mpc_bleg",
+            "strategy_id": "b_leg",
             "instrument": "XAUUSD",
             "params": {},
             "bar_type": "Minute",
@@ -1032,11 +1032,11 @@ def _stack_leg_with_params(db: Path, reports: Path, params: dict, mode: str = "s
     lab_db.init_db()
     lab_db.upsert_strategy(
         {
-            "id": "mpc_bleg",
-            "name": "MPC B-LEG",
+            "id": "b_leg",
+            "name": "B-LEG",
             "runner": "python",
-            "class_name": "MpcBLegStrategy",
-            "source_path": "strategies/python/mpc_bleg",
+            "class_name": "BLegStrategy",
+            "source_path": "strategies/python/b_leg",
             "scanned_at": 1,
             "param_schema": [],
             # Deliberately DIFFERENT from what the leg ran with — that difference is the whole
@@ -1081,7 +1081,7 @@ def _stack_leg_with_params(db: Path, reports: Path, params: dict, mode: str = "s
     lab_db.insert_run(
         {
             "run_id": "r_p",
-            "strategy_id": "mpc_bleg",
+            "strategy_id": "b_leg",
             "instrument": "XAUUSD",
             "params": params,
             "bar_type": "Minute",
@@ -1176,18 +1176,18 @@ def test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run(client, tmp_
     )
     lab_db.upsert_strategy(
         {
-            "id": "mpc_sos_fade",
-            "name": "MPC SOS Fade",
+            "id": "sos_fade",
+            "name": "SOS Fade",
             "runner": "python",
-            "class_name": "MpcSosFadeStrategy",
-            "source_path": "strategies/python/mpc_sos_fade",
+            "class_name": "SosFadeStrategy",
+            "source_path": "strategies/python/sos_fade",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
         }
     )
     # A standalone completed run per leg at exactly these settings — genuine reuse candidates.
-    for i, sid in enumerate(("mpc_bleg", "mpc_sos_fade")):
+    for i, sid in enumerate(("b_leg", "sos_fade")):
         lab_db.insert_run(
             {
                 "run_id": f"r_free_{i}",
@@ -1212,7 +1212,7 @@ def test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run(client, tmp_
         )
 
     body = {
-        "strategy_ids": ["mpc_bleg", "mpc_sos_fade"],
+        "strategy_ids": ["b_leg", "sos_fade"],
         "instrument": "XAUUSD",
         "bar_type": "Minute",
         "bar_value": 15,
@@ -1233,11 +1233,11 @@ def test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run(client, tmp_
 
     # Override ONE leg. The other must be untouched, or the rule is "any override disables all
     # reuse", which is a different and wrong thing.
-    forced = {**body, "params_by_strategy": {"mpc_bleg": {"exec_risk_pct": 2.5}}}
+    forced = {**body, "params_by_strategy": {"b_leg": {"exec_risk_pct": 2.5}}}
     out = client.post("/backtests/stacks/preview", json=forced).json()
     assert out["reuse_count"] == 1
     by_id = {leg["strategy_id"]: leg["action"] for leg in out["legs"]}
-    assert by_id == {"mpc_bleg": "run", "mpc_sos_fade": "reuse"}
+    assert by_id == {"b_leg": "run", "sos_fade": "reuse"}
 
 
 def test_a_CHARGED_stack_will_not_reuse_a_run_that_was_measured_FREE(client, tmp_path, monkeypatch):
@@ -1260,17 +1260,17 @@ def test_a_CHARGED_stack_will_not_reuse_a_run_that_was_measured_FREE(client, tmp
     )
     lab_db.upsert_strategy(
         {
-            "id": "mpc_sos_fade",
-            "name": "MPC SOS Fade",
+            "id": "sos_fade",
+            "name": "SOS Fade",
             "runner": "python",
-            "class_name": "MpcSosFadeStrategy",
-            "source_path": "strategies/python/mpc_sos_fade",
+            "class_name": "SosFadeStrategy",
+            "source_path": "strategies/python/sos_fade",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
         }
     )
-    for i, sid in enumerate(("mpc_bleg", "mpc_sos_fade")):
+    for i, sid in enumerate(("b_leg", "sos_fade")):
         lab_db.insert_run(
             {
                 "run_id": f"r_free_{i}",
@@ -1296,7 +1296,7 @@ def test_a_CHARGED_stack_will_not_reuse_a_run_that_was_measured_FREE(client, tmp
         )
 
     body = {
-        "strategy_ids": ["mpc_bleg", "mpc_sos_fade"],
+        "strategy_ids": ["b_leg", "sos_fade"],
         "instrument": "XAUUSD",
         "bar_type": "Minute",
         "bar_value": 15,
@@ -1342,7 +1342,7 @@ def test_the_shared_LAUNCH_can_actually_be_CALLED(client, tmp_path, monkeypatch)
     """
     monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
     lab_db.init_db()
-    for sid, cls in (("mpc_bleg", "MpcBLegStrategy"), ("mpc_sos_fade", "MpcSosFadeStrategy")):
+    for sid, cls in (("b_leg", "BLegStrategy"), ("sos_fade", "SosFadeStrategy")):
         lab_db.upsert_strategy(
             {
                 "id": sid,
@@ -1372,7 +1372,7 @@ def test_the_shared_LAUNCH_can_actually_be_CALLED(client, tmp_path, monkeypatch)
     resp = client.post(
         "/backtests/stack",
         json={
-            "strategy_ids": ["mpc_bleg", "mpc_sos_fade"],
+            "strategy_ids": ["b_leg", "sos_fade"],
             "instrument": "XAUUSD",
             "bar_type": "Minute",
             "bar_value": 15,
@@ -1421,7 +1421,7 @@ def test_the_list_carries_the_portfolios_own_result(client, tmp_path, monkeypatc
     assert row["net_pnl"] == 500.0
     assert row["trade_count"] == 1
     # And by ID, so a strategy page can find its stacks without matching a display name.
-    assert row["strategy_ids"] == ["mpc_bleg"]
+    assert row["strategy_ids"] == ["b_leg"]
 
 
 def test_a_stack_with_nothing_finished_reports_NO_result_rather_than_zero(
@@ -1441,11 +1441,11 @@ def test_a_stack_with_nothing_finished_reports_NO_result_rather_than_zero(
     lab_db.init_db()
     lab_db.upsert_strategy(
         {
-            "id": "mpc_bleg",
-            "name": "MPC B-LEG",
+            "id": "b_leg",
+            "name": "B-LEG",
             "runner": "python",
-            "class_name": "MpcBLegStrategy",
-            "source_path": "strategies/python/mpc_bleg",
+            "class_name": "BLegStrategy",
+            "source_path": "strategies/python/b_leg",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
@@ -1471,7 +1471,7 @@ def test_a_stack_with_nothing_finished_reports_NO_result_rather_than_zero(
     lab_db.insert_run(
         {
             "run_id": "r_run",
-            "strategy_id": "mpc_bleg",
+            "strategy_id": "b_leg",
             "instrument": "XAUUSD",
             "params": {},
             "bar_type": "Minute",

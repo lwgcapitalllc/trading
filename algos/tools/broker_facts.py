@@ -1,7 +1,7 @@
 """broker_facts.py — MEASURE a live broker's costs instead of assuming them.
 
-    python algos/tools/broker_facts.py --bot mpc_sos_fade_demo
-    python algos/tools/broker_facts.py --bot mpc_sos_fade_demo --sample 300
+    python algos/tools/broker_facts.py --bot sos_fade_demo
+    python algos/tools/broker_facts.py --bot sos_fade_demo --sample 300
 
 **Why this exists.** G5 in `docs/LIVE_TRADING_PIPELINE.md`: *the broker and symbol are not the
 backtest broker*. Every cost figure in this repo was measured on **VANTAGE** and the live bot

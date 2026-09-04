@@ -59,7 +59,7 @@ same way:
 ⚠ **No timestamp.** Telegram already prints the send time in each reader's own local clock. The one
 exception is a message about the PAST — the hourly log review reporting a restart three hours ago —
 which uses `alert_format.when()` and names the zone. ⚠ **Plain text, never Markdown**: a lone
-underscore in `mpc_sos_fade` makes Telegram reject the whole message.
+underscore in `sos_fade` makes Telegram reject the whole message.
 
 **The Telegram bot answers four commands: `/status`, `/balance`, `/help`, `/users`.** `/restart`,
 `/stop`, `/emergency`, `/trades`, `/resume`, `/resetweek` and `/confirm` were deleted on 2026-08-05

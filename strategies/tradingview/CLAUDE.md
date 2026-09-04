@@ -19,13 +19,13 @@ port. A new strategy starts there and moves up here when it earns a twin. ⚠ **
 the filename** — this is the same mistake the declaration rule already exists to stop.
 
 ⚠ **Every `../` link in this file was repointed in that move and each was checked to resolve.** The
-one exception is `mpc_m15_playbook.pine`, which is dead on purpose — the file was deleted on
+one exception is `m15_playbook.pine`, which is dead on purpose — the file was deleted on
 2026-08-15 and the sentence around the link says so.
 
 **Last reviewed:** 2026-09-02 — moved here from `indicators/strategies/`; nothing in any `.pine`
 changed and the three panel checks were re-run green on all fourteen at the new paths.
-2026-08-15: **`mpc_m15_playbook_strategy.pine` is now `smc_session_sweep_strategy.pine`, and
-`../../indicators/engines/mpc_m15_playbook.pine` was DELETED** (Aaron, 2026-08-15; see *The session
+2026-08-15: **`m15_playbook_strategy.pine` is now `smc_session_sweep_strategy.pine`, and
+`../../indicators/engines/m15_playbook.pine` was DELETED** (Aaron, 2026-08-15; see *The session
 sweep strategy* below). Before that it was brought onto the panel contract and the palette, then
 had two drawing bugs found on a chart. Full narrative in
 `../../indicators/docs/INDICATORS_BUILD_NOTES.md`. The `active =` declaration-order check this file
@@ -34,21 +34,21 @@ has been asking for since 2026-08-12 now exists and has been run on all fourteen
 `strategies/` and `engines/`; the rules below moved verbatim.
 
 
-## `mpc_recovery_strategy.pine` — the A+ book plus a LOSS RECOVERY leg (new 2026-08-19)
+## `recovery_strategy.pine` — the A+ book plus a LOSS RECOVERY leg (new 2026-08-19)
 
-**A FORK of `mpc_strategy.pine`, not an edit to it, and the reason is mechanical.** A recovery
+**A FORK of `sos_fade_strategy.pine`, not an edit to it, and the reason is mechanical.** A recovery
 trade is open AT THE SAME TIME as a primary. That file's bookkeeping assumes one position:
 `strategy.position_size == 0` means *"the trade closed"* at **13 arming gates** and at the
 WIN/LOSS grader (`closedR`), while `strategy.netprofit`, `strategy.position_avg_price` and
 `math.abs(strategy.position_size)` are all TOTALS feeding `openRiskUsd` — the divisor every trade
 is graded in. Open a second position there and **the primary silently stops grading its own
 trades**; nothing errors and no plot changes shape. Forking is also what this directory already
-does for variants (`mpc_b_leg_strategy.pine`, `mpc_bos_strategy.pine`).
+does for variants (`b_leg_strategy.pine`, `bos_strategy.pine`).
 
 ⚠ **NOT COMPILED.** Written against the Pine v6 reference and never run on a chart. Expect syntax
 fixes on first paste. **Nothing here has been verified by anything.**
 
-### What differs from `mpc_strategy.pine` — 294 changed lines, every one marked `[REC]`
+### What differs from `sos_fade_strategy.pine` — 294 changed lines, every one marked `[REC]`
 
 | | |
 |---|---|
@@ -61,14 +61,14 @@ fixes on first paste. **Nothing here has been verified by anything.**
 
 🔴 **THE FIRST PASTE FAILED ON `CE10095: "G9" is already defined`, and the cause is worth keeping.**
 The recovery group was numbered 9 because the panel contract's own table lists 9 as *Drawing: Fibs*
-and this file has no fibs — so 9 read as free. It was not: `mpc_strategy.pine` declares **both**
+and this file has no fibs — so 9 read as free. It was not: `sos_fade_strategy.pine` declares **both**
 `G9 = "9 · Drawing: fibs"` and `G10 = "10 · Drawing: sessions"`, and the new declaration was
 inserted directly above the existing one. ⚠ **The contract's numbering is the ADDRESS, not an
 inventory of what a given file uses** — read the file's own `var string G*` block before claiming a
 number. The recovery group is **G11 / "11 · Loss recovery"**; renumbering the two drawing groups
 instead would have moved every existing input to a new group in anyone's saved chart settings.
 ✅ Checked afterwards rather than assumed: all 24 new identifiers (`f_isRec`, `posPrimary`,
-`primaryNet`, `f_recSize`, every `rec*`) are absent from `mpc_strategy.pine`, and
+`primaryNet`, `f_recSize`, every `rec*`) are absent from `sos_fade_strategy.pine`, and
 `indicators/tools/check_active_order.py` passes.
 
 ✅ **That acceptance test PASSED on 2026-08-19** — identical book with `recEnabled` off, so all
@@ -92,7 +92,7 @@ the real one:
 | the STRANDED HANDLE | a primary can close and reopen on ONE bar — a stop and a resting limit filling together. Neither *flat now* nor *flat last bar* held, so **neither** the open branch nor the close branch fired: the box handle and `entryBar` stayed pinned to a dead trade, and each further same-bar flip pushed the anchor further back. `pbFlip` now makes a flip an explicit close **then** open, in that order. |
 | `f_isRec` in the fill loop | a recovery exit was being banked against the PRIMARY's `p.t1`, so a recovery closing in profit painted the primary green — the same blend `f_primarySize` exists to prevent. |
 
-⚠ **The stranded handle is a LATENT BUG IN `mpc_strategy.pine` TOO** — it is the shared drawing
+⚠ **The stranded handle is a LATENT BUG IN `sos_fade_strategy.pine` TOO** — it is the shared drawing
 code, not anything the recovery leg added; the recovery leg only perturbed the run into reaching
 it. It has not been fixed there, because that file is LIVE-adjacent and the change deserves its own
 pass. ⚠ **The ordering inside `f_posBox` is now bank → close → open → grow, and that order is
@@ -154,7 +154,7 @@ exception and is deliberately a `plot`** — plots are not drawings and are neve
 the only thing that still shows where an old recovery locked and how far the trail carried it.
 
 🔴 **THE FIRST THING TO CHECK ON A CHART, BEFORE ANY RECOVERY NUMBER IS BELIEVED: with
-`recEnabled` OFF this file must reproduce `mpc_strategy.pine`'s book EXACTLY** — same trade count,
+`recEnabled` OFF this file must reproduce `sos_fade_strategy.pine`'s book EXACTLY** — same trade count,
 same net, same list. If it does not, one of those 30 substitutions is wrong and every recovery
 figure is measured on a primary that is no longer the primary.
 
@@ -191,13 +191,13 @@ once its five best trades are deleted, and holds for four bars.** ⚠ **Aaron's 
 stop on the LOSING trade's entry) is 2.4x tighter and resolves in 43 bars instead of 294, exactly
 as predicted, and loses 14R** — the primary's entry is a price the market has just been trading
 around, so the stop sits in fresh congestion; median MFE falls 1.01R → 0.89R, which a 2.4x smaller
-R should have RAISED. Full grid: `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` →
+R should have RAISED. Full grid: `strategies/python/sos_fade/sos_fade_optimization.md` →
 Run 24; the rule itself: `strategies/python/loss_recovery/CLAUDE.md`.
-## `mpc_extreme_leg_strategy.pine` — the run INTO the shift of structure (new 2026-08-24)
+## `extreme_leg_strategy.pine` — the run INTO the shift of structure (new 2026-08-24)
 
 The counterpart to A+: that bot waits for the shift and fades the retracement, this one takes the
 move that CREATES the shift — extreme up to the swing whose break IS the shift. **Prose, defaults
-and the numbers behind them: `docs/mpc_extreme_leg_strategy.md`. The study that produced the rules
+and the numbers behind them: `docs/extreme_leg_strategy.md`. The study that produced the rules
 is `../../docs/PRE_SOS_LEG_STUDY.md`.** Only what is true of THIS directory lives here.
 
 ✅ **COMPILES AND RUNS** (2026-08-25). It is 1,443 lines carrying two copies of the external state
@@ -209,7 +209,7 @@ SLOT ON.** An exit that ends sooner hands the slot back, so it is worth more tha
 outcome says — scored one-trade-at-a-time the winning exit here looks marginal, and with one
 position it is the largest gain available. Two defaults moved as a result. Numbers, the
 risk-percent table and the interaction that killed the most promising change:
-`docs/mpc_extreme_leg_strategy.md`.
+`docs/extreme_leg_strategy.md`.
 
 🔴 **THEN SEARCHED EXHAUSTIVELY ON 2026-09-01 — 509,000 configurations across five searches — AND
 NOT ONE BEAT THE SHIPPED SETTINGS.** That is the finding, and it is the outcome a search is least
@@ -232,7 +232,7 @@ silently and only for part of the day.
 Refusing a transitioning market takes the worst run to 5.9R and the 5%-risk drawdown from 33.5% to
 26.4% — but `engines/regime/` has no Pine source by construction, so putting it here means a second
 implementation of a canonical engine in another language with no parity gate. That is a project.
-Every number, the four dead ends, and the risk table: `docs/mpc_extreme_leg_strategy.md`.
+Every number, the four dead ends, and the risk table: `docs/extreme_leg_strategy.md`.
 
 🔴 **ITS THREE SESSION WINDOWS WERE READ ON THE WRONG CLOCK FOR AS LONG AS THE FILE EXISTED
 (found and fixed 2026-09-01), AND THE LESSON IS ABOUT AN ABSENT ARGUMENT RATHER THAN A WRONG ONE.**
@@ -242,7 +242,7 @@ saving and all. So every window sat 4–5 hours later than its own name: two of 
 real session at all, and the one labelled "London" WAS the New York session under a wrong name.
 MEASURED over 38,747 M15 bars — the old "London" high and low equalled the house New York session's
 on **100.0%** of bars, while the other eight pairings agreed on 0.0–8.0%. ✅ Each window now names
-its own city, which is what `../../indicators/engines/mpc_assistant.pine` — the file this was ported from — has
+its own city, which is what `../../indicators/engines/mpc_jarvis.pine` — the file this was ported from — has
 always passed, and what `engines/sessions/` carries.
 ⚠ **Nothing failed, nothing repainted, and the chart looked right the whole time**: a session box
 in the wrong place still looks like a session box. The only symptom was a strategy arming on levels
@@ -257,7 +257,7 @@ file is wrong by a different number of hours on a different instrument.
 
 ✅ **IT HAS AN EXPORT TWIN SINCE 2026-09-01, AND THE TWIN IS GENERATED RATHER THAN MAINTAINED.**
 `tools/build_extreme_leg.py` now writes both files from ONE body: the strategy, and
-`mpc_extreme_leg_strategy_export.pine`, which is the same body with a different title and 62
+`extreme_leg_strategy_export.pine`, which is the same body with a different title and 62
 `plot()` columns appended. The build asserts the two bodies are byte-identical apart from that, and
 asserts the column count against Pine's 64-plot ceiling. **Every other twin in this directory is
 kept by hand, and a twin that has drifted from its parent proves parity against a file nobody
@@ -266,8 +266,8 @@ trades.** ⚠ **Edit the generator, never either `.pine`.**
 🔴 **THIS FILE TOOK EVERY LIQUIDITY LEVEL ON A WICK, AND ITS OWN PARENT DOES NOT (found by the
 first real parity run, 2026-09-02, fixed the same day).** The sweep tracker used `high > level` /
 `low < level` for all four families. `engines/liquidity/` — 100% parity-validated against
-`indicators/engines/mpc_assistant.pine` — takes a **WEEKLY** level only on a **CLOSE** through it
-and the daily and lower families on a wick (`engine.py:228`, citing `mpc_assistant.pine` line
+`indicators/engines/mpc_jarvis.pine` — takes a **WEEKLY** level only on a **CLOSE** through it
+and the daily and lower families on a wick (`engine.py:228`, citing `mpc_jarvis.pine` line
 1427). **The house engine and the parent indicator agreed with each other; this strategy file was
 the odd one out.** The tracker now takes a close-through flag, passed only for weekly.
 
@@ -297,7 +297,7 @@ from one that works.
 
 🔴 **IT IS THE FIRST FILE HERE WHOSE SECOND ENGINE INSTANCE IS GENERATED RATHER THAN FORKED.**
 `tools/derive_htf_structure.py` regenerates the 15-minute copy from the block in
-`mpc_h4_sweep_strategy.pine` — renaming the type and method, swapping the four bar globals for
+`h4_sweep_strategy.pine` — renaming the type and method, swapping the four bar globals for
 passed-in values — and `tools/build_extreme_leg.py` assembles the file around it. **This directory's
 own worst failure mode is the reason**: eleven files each carry a private fork of one state machine,
 so a bug fixed in sixteen places walked back in through a seventeenth cut from pre-fix source, and
@@ -345,7 +345,7 @@ close: one unprotected trade, held to the end of the chart.**
 
 **The standing rule for every strategy in this directory: after a `strategy.entry` call, a bare
 `strategy.position_size == 0` is a LIE for the rest of that bar.** Any block that reads the flat
-book below an entry needs a per-bar just-entered flag in its guard. `mpc_h4_sweep_strategy.pine`
+book below an entry needs a per-bar just-entered flag in its guard. `h4_sweep_strategy.pine`
 has carried that pair since it was written; the derivation of this file dropped it.
 
 ⚠ **Sizing is what turned a wrong trade into a dead account, and it is worth saying separately.**
@@ -367,7 +367,7 @@ machine in one uncompiled file, purely to draw with. **If it compiles with room 
 internal engine and make the section standard.**
 
 ⚠ **No `_export` twin, so no parity gate can ever run on it** — the same hole
-`mpc_realign_strategy.pine` has, and it means every number this file produces is a lab finding
+`realign_strategy.pine` has, and it means every number this file produces is a lab finding
 until a twin exists.
 
 ---
@@ -379,7 +379,7 @@ while the post-break rescan reads the WICK, so it resurrects a wick the break ru
 and installs it as the new active swing — earlier than and more extreme than the swing just
 confirmed. Folded INTO the existing guard, +1 line of code per site.
 
-⚠ **It moves trades, it is not a redraw.** `mpc_sos_fade` over 2020-01-01 → 2026-08-06 goes
+⚠ **It moves trades, it is not a redraw.** `sos_fade` over 2020-01-01 → 2026-08-06 goes
 159 trades / +142.18R → **158 / +140.71R**, drawdown unchanged at 5.61R — inside the 15.06R
 run-to-run sd, but real. Every strategy here was verified byte-identical to its export twin
 afterwards, since a gate comparing a patched strategy to an unpatched twin compares two engines.
@@ -399,8 +399,8 @@ here.**
 
 What matters for THIS directory:
 
-🔴 **`mpc_recovery_strategy.pine` DEMONSTRATED THE HAZARD WHILE THE FIX WAS BEING WRITTEN.** It
-was forked from `mpc_strategy.pine` on 2026-08-19 — one day before the fix — on the other machine,
+🔴 **`recovery_strategy.pine` DEMONSTRATED THE HAZARD WHILE THE FIX WAS BEING WRITTEN.** It
+was forked from `sos_fade_strategy.pine` on 2026-08-19 — one day before the fix — on the other machine,
 so it arrived carrying the defect and had to be patched on the way in. **A fork-per-strategy layout
 means a bug fixed in sixteen files can walk back in through a seventeenth that was cut from the
 pre-fix source, and nothing fails when it does.** ⚠ **Before calling a cross-cutting fix done,
@@ -419,7 +419,7 @@ base, between the two tied extremes, so their highs cannot beat an extreme alrea
 must stay byte-identical in logic or the export stops describing the strategy — and here the
 export is the only way the gate can ever see this code.
 
-🔴 **NONE OF THE TEN IS COMPILE-VERIFIED OR PARITY-GATED FOR THIS CHANGE.** `mpc_assistant.pine`
+🔴 **NONE OF THE TEN IS COMPILE-VERIFIED OR PARITY-GATED FOR THIS CHANGE.** `mpc_jarvis.pine`
 was pasted into TradingView and confirmed by Aaron; these ten were not, and no `compare_*.py`
 has run on any of them. **Paste before trusting.**
 
@@ -435,8 +435,8 @@ name until that twin was deleted on 2026-08-15.
 
 ⚠ **Every file here is half of a parity gate.** The `_export` twin is the instrumented copy a
 `compare_*.py` diffs against its Python port, and it has to move with its parent — a change to
-`mpc_strategy.pine` that does not land in `mpc_strategy_export.pine` makes the gate green about
-a file nobody trades. `mpc_realign_strategy.pine` has **no twin at all**, which is why every
+`sos_fade_strategy.pine` that does not land in `sos_fade_strategy_export.pine` makes the gate green about
+a file nobody trades. `realign_strategy.pine` has **no twin at all**, which is why every
 REALIGN number in this repo is a lab finding.
 
 ---
@@ -548,7 +548,7 @@ Show Historic Internal Structure   off
 Show Swing Point Labels            off
 ```
 
-🔴 **`mpc_d_strategy.pine` HAD TWO OF THE FOUR, AND THE MISSING PAIR WAS A MISSING ENGINE
+🔴 **`d_strategy.pine` HAD TWO OF THE FOUR, AND THE MISSING PAIR WAS A MISSING ENGINE
 RATHER THAN A MISSING INPUT.** That file embeds only the EXTERNAL half of
 `structure_engine.pine`, so there was nothing for an internal toggle to switch. Adding the
 two checkboxes alone would have shipped exactly the hazard the deleted `REQUIRED` toggles
@@ -561,13 +561,13 @@ comment-free, and the only difference is those four fib-anchor writes plus `IFIB
 is annotation only and cannot move a trade. ⚠ `showSwingLabels` also shipped **ON** in D
 against every sibling's off.
 
-🟢 **`mpc_h4_sweep_strategy.pine` GOT THE SECTION TOO (Aaron's call, 2026-08-12), AND IT IS
+🟢 **`h4_sweep_strategy.pine` GOT THE SECTION TOO (Aaron's call, 2026-08-12), AND IT IS
 THE ONE FILE WHERE THE ENGINE DECIDES NOTHING.** That file had no structure engine at all —
 it trades an H4 liquidity sweep confirmed by a candlestick pattern, consuming no swing, no BOS
 and no SOS — so honouring "the exact same" there meant porting ~1,000 lines of engine purely to
 draw with. It was recorded as an open decision rather than skipped, and answered *do it*.
 
-**Lifted from `mpc_d_strategy.pine`, not from `structure_engine.pine`**, on purpose: D's copy is
+**Lifted from `d_strategy.pine`, not from `structure_engine.pine`**, on purpose: D's copy is
 the STANDARDISED one (external half + the fib-free internal port above), so taking it means all
 five files share one block rather than four sharing one and H4 sharing a fifth. 880 → 1,921
 lines. ✅ **Checked mechanically rather than by eye — zero duplicate top-level declarations and
@@ -586,7 +586,7 @@ costs a chart annotation rather than a trade.
 
 ### Trade longs / Trade shorts — every file, both ON
 
-🔴 **`mpc_h4_sweep_strategy.pine` had NEITHER.** Added, and the wiring is the interesting
+🔴 **`h4_sweep_strategy.pine` had NEITHER.** Added, and the wiring is the interesting
 half: a refused side is **block code 5, numbered last and ranked FIRST** (a code is a wire
 format `px_blk` carries into exports already on disk, so an existing number can never be
 renumbered — only its place in the chain moves).
@@ -601,8 +601,8 @@ changes the population it was not aimed at.**
 
 ### The confirmation table
 
-Present and **default OFF** where the strategy reads one — `mpc_strategy.pine` and
-`mpc_b_leg_strategy.pine`. **Absent from BOS, D and H4 by Aaron's own instruction**, because
+Present and **default OFF** where the strategy reads one — `sos_fade_strategy.pine` and
+`b_leg_strategy.pine`. **Absent from BOS, D and H4 by Aaron's own instruction**, because
 none of them has a table for it to show; already the case in all three, so nothing was
 removed.
 
@@ -610,7 +610,7 @@ removed.
 
 ### A `strategy()` ARGUMENT CANNOT BE AN INPUT — raise it permanently and gate it in code
 
-**2026-08-16, `mpc_strategy.pine` + its export twin.** The scale-in toggle (`execScaleIn`, default
+**2026-08-16, `sos_fade_strategy.pine` + its export twin.** The scale-in toggle (`execScaleIn`, default
 OFF) needs `pyramiding > 0` to place a second entry on an open position. `strategy()` is evaluated
 **once at compile time**, so `pyramiding` can never read an input — the only options are to raise it
 permanently or not to have the feature. It is **0 → 4** in both files (the base entry plus
@@ -632,12 +632,12 @@ this class of feature can produce.
 ⚠ **The three inputs are appended after the LAST input in the file and carry `group = G6`.** The
 group decides which panel BOX they display in; DECLARATION ORDER decides which saved chart value
 they inherit. Putting them beside the other stop settings would have re-keyed every later bool, int
-and float on Aaron's live chart. Prose: `docs/mpc_strategy.md` → `## [174]`–`## [178]`.
+and float on Aaron's live chart. Prose: `docs/sos_fade_strategy.md` → `## [174]`–`## [178]`.
 
 ⚠ **NOT COMPILED, and there is no `cfg_*` column for any of the three**, so `compare_strategy.py`
 cannot configure a scale-in run — the gate would go green while comparing two different strategies.
 Measured result and the open design question (the add trigger is arithmetic only — no BOS, no
-retest): `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 19.
+retest): `strategies/python/sos_fade/sos_fade_optimization.md` → Run 19.
 
 ---
 
@@ -682,7 +682,7 @@ the live-bar bug in it; **the true gap is 25.64R, OUTSIDE the jitter**, and on t
 reversed within a minute. ⚠ **A wrong measurement does not arrive looking wrong — it arrives as a
 reasonable-looking number and quietly buys a judgement call, and the decision outlives the
 correction unless somebody goes back for it.** Full numbers:
-`strategies/python/mpc_sos_fade/CLAUDE.md` → *The adds got a TAKE PROFIT*.
+`strategies/python/sos_fade/CLAUDE.md` → *The adds got a TAKE PROFIT*.
 
 🔴 **THE `limit` MUST BE COMPUTED AT THE BAR'S CLOSE, NOT RE-RESOLVED AS PRICE TOUCHES IT.** Pine
 gets this right for free — `strategy.exit(..., limit=)` rests an order that is live on the NEXT bar
@@ -763,7 +763,7 @@ the default moved.
 cfg_scale_mode=1 / cfg_scale_adds=4 / cfg_scale_cap=2` — one that genuinely exercises the feature
 rather than reading all zeros. **The same gate on the same schema was RED before the fix**, which is
 what makes the green worth something. Full grid and the void banner:
-`strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 21.
+`strategies/python/sos_fade/sos_fade_optimization.md` → Run 21.
 
 ---
 
@@ -793,7 +793,7 @@ landed and had nothing on the chart that drew them. It reads `hTrigCode` — alr
 decision time — and re-derives nothing, so the tag and the export's `px_blk` cannot tell
 different stories.
 
-🔴 **The side had to be RECORDED rather than inferred, and `mpc_d_strategy.pine` already paid for
+🔴 **The side had to be RECORDED rather than inferred, and `d_strategy.pine` already paid for
 learning that.** D's tag read direction off the SOS on the same bar, correct only while every
 candidate arrived on one — and the moment a second entry mode existed, every candidate drew as a
 SHORT. Here the equivalent shortcut is reading `trigShort`, a per-bar local: right today, silent
@@ -808,7 +808,7 @@ scopes it** — the four `hTrig*` fields are `var` and keep the last trigger's v
 ### 🔴 The missed-setup callout is NOT portable to BOS, D or H4, and this file already said so
 
 A+'s callout scores a **2-of-3 confluence sequence** — arm (sweep or divergence), SOS, then the
-retrace zone — and reports which one was missing. **`mpc_bos_strategy.pine` DELETED those four
+retrace zone — and reports which one was missing. **`bos_strategy.pine` DELETED those four
 inputs on 2026-07-31 with the reason written down**: *"The BOS arm is a break of structure, so
 there is no sweep→SOS clock to bound and no 2-of-3 sequence to score."* The same is true of D (a
 three-SOS sequence with no partial state) and of H4 (a sweep window plus a confirmation candle —
@@ -818,7 +818,7 @@ two facts, not three).
 callout naming confluences those files do not have — the exact mistake the B-LEG block tag was
 built to avoid (*"a shared annotation is shared at the DISPLAY, never at the reasons"*).
 
-⚠ **And the cost is not symmetric.** `mpc_bos_strategy.pine` has hit **CE10117 twice**, is the
+⚠ **And the cost is not symmetric.** `bos_strategy.pine` has hit **CE10117 twice**, is the
 largest file here at 4,384 lines, and its export sits at **60 of Pine's 64 plots**. Adding ~90
 statements of `MissW` machinery to it, unverified, immediately before a five-file paste is the
 wrong trade — a file that will not compile is worse than a file missing one annotation.
@@ -839,7 +839,7 @@ trade, and in 8-12 if it can only move a pixel. This is the whole contract, and 
 chosen over the obvious alternative (group everything named "FVG" into an FVG group)
 deliberately.
 
-🔴 **THE FAIR VALUE GAP GROUP IS WHY.** In `mpc_strategy.pine` it reads as a drawing group
+🔴 **THE FAIR VALUE GAP GROUP IS WHY.** In `sos_fade_strategy.pine` it reads as a drawing group
 and it is not: `Show FVG (REQUIRED — feeds entries)`, both `FVG Min Gap` floors, the
 middle-bar close test, `Max Active FVGs` and `keep until broken` **all change WHICH GAPS
 EXIST, and therefore which entries fire** — six of its seven inputs. `eqExemptFvg` does the
@@ -907,12 +907,12 @@ its first read is a compile error.
 
 ⚠ **An input referenced by another input's `active =` must stay declared before it.**
 
-🔴 **THE REORDER BROKE THAT RULE IN `mpc_bos_strategy.pine` AND IT ONLY SHOWED UP ON THE PASTE
+🔴 **THE REORDER BROKE THAT RULE IN `bos_strategy.pine` AND IT ONLY SHOWED UP ON THE PASTE
 (`CE10272: Undeclared identifier "bosUseFvg"`, 2026-08-12).** `bosEntryFib` carries
 `active = not (bosUseFvg and execReqFVG)` and the collapse landed it ABOVE both of them. Fixed by
 moving `bosEntryFib` BELOW the whole gap block — which is where it reads better anyway, since its own
 title is *"Fallback entry level"* and it is the fallback FROM that block. ⚠ **The same defect was in
-`mpc_bos_strategy_export.pine`**, because the twin is a copy: **a compile error in a parent is a
+`bos_strategy_export.pine`**, because the twin is a copy: **a compile error in a parent is a
 compile error in its export, and only the parent gets pasted.** ✅ **The move shifts NO saved value
 and needs no extra reset** — proven rather than assumed: the four inputs it crossed are all `bool`
 and it is a `string`, so every per-type ordinal, default and title is identical to before the fix.
@@ -968,14 +968,14 @@ partial filled.
 
 ---
 
-## THE ANNOTATION PALETTE — one result, one colour, `mpc_strategy.pine` is the standard
+## THE ANNOTATION PALETTE — one result, one colour, `sos_fade_strategy.pine` is the standard
 
 Aaron, 2026-08-12: *"the colors of the labels that show if a trade had won or lost, if it broke
 even, if it was blocked, what was the max drawdown, where the price went, the long and short
 positions — all those colors are not consistent across all the pines. They should be the same
 colors. Use MPC, the A+ strategy as a standard."*
 
-**Every colour a TRADE is drawn in is copied from `mpc_strategy.pine`. Change a value by changing
+**Every colour a TRADE is drawn in is copied from `sos_fade_strategy.pine`. Change a value by changing
 it there first and copying it down** — never by picking one in a fork.
 
 | slot | colour | where |
@@ -998,13 +998,13 @@ the JARVIS status panel's bull / bear / armed text) and a **POSITION** palette (
 `#EF5350` / `#FF9800` — every trade drawing). They are different greens and different reds on
 purpose.
 
-**`mpc_d_strategy.pine` applied the TABLE palette to its TRADES.** A D winner drew in the green
+**`d_strategy.pine` applied the TABLE palette to its TRADES.** A D winner drew in the green
 A+ uses for a table row and never in the green A+ uses for a winner; its breakeven was
 `#ffde59`, which is A+'s *"Armed"* highlight. Nothing was wrong with either palette — the file
 was reading the wrong one, and both are still there. Its state panel keeps the table colours,
 which is where they belong.
 
-⚠ **`mpc_h4_sweep_strategy.pine` had NO colour constants at all** — every value was a hex literal
+⚠ **`h4_sweep_strategy.pine` had NO colour constants at all** — every value was a hex literal
 at its use site, which is exactly why it drifted without anyone being able to see that it had.
 The hues were mostly already A+'s; the **transparencies** were not, so the same green read as a
 different shade per file. It has a named block now.
@@ -1107,10 +1107,10 @@ history at the commit that deleted them.
 
 ## The session sweep strategy — the rules the 2026-08-14/15 pass left behind
 
-**`smc_session_sweep_strategy.pine`, called `mpc_m15_playbook_strategy.pine` until 2026-08-15.**
+**`smc_session_sweep_strategy.pine`, called `m15_playbook_strategy.pine` until 2026-08-15.**
 The old name named the timeframe the DIRECTION is read on, said nothing about the setup, and wore
 the `mpc_` prefix of a Pine family this file was never part of — it came from a video note, not
-from `mpc_assistant.pine`. Its `indicator()` twin, `../../indicators/engines/mpc_m15_playbook.pine`, was deleted
+from `mpc_jarvis.pine`. Its `indicator()` twin, `../../indicators/engines/m15_playbook.pine`, was deleted
 in the same pass: 270 KB of dashboard that placed no orders, so the Strategy Tester could never
 score it. ⚠ **That deleted file is where this strategy's structure-engine block was lifted from
 byte-for-byte**, so its provenance now points at `engines/market_structure/` — the canonical
@@ -1366,7 +1366,7 @@ off the ENTRY, which on any trade that travelled put it in the middle of the mov
 should be off of the bars. It should never be on top of the bars."* Anchoring at the extreme the
 trade reached is what guarantees nothing is beyond it to cover.
 
-⚠ **The gap zone is GREY and BORDERLESS, copied from `mpc_strategy.pine:225`** (`color.new(color.gray,
+⚠ **The gap zone is GREY and BORDERLESS, copied from `sos_fade_strategy.pine:225`** (`color.new(color.gray,
 80)`, `border_color = color(na)`, bull and bear identical) rather than chosen here. Aaron, 2026-08-16:
 *"no border, make it grey, same as my other fair value gaps."* **It is deliberately not
 direction-coloured**: a gap is a price RANGE the limit rests inside, and the trade block drawn on top
@@ -1404,7 +1404,7 @@ He was right, and the same line hardcoded *15-minute* for a direction timeframe 
 input. Now: the denominator is 4 or 3 depending on `pbRequireConf`, the confirmation row reads **NOT
 REQUIRED** when it is off, and every timeframe named is the one actually set.
 
-⚠ **`mpc_strategy.pine` had already solved this and the pattern was not carried over** — its
+⚠ **`sos_fade_strategy.pine` had already solved this and the pattern was not carried over** — its
 2-of-3 callout takes every gate as a PARAMETER from the caller precisely so *"the callout always
 describes the strategy you are actually running"*. **A confluence tick-list is a CLAIM about the
 config, so it has to be built from the config.** A hardcoded one is worse than no tick-list: it
@@ -1435,7 +1435,7 @@ what it was derived FROM** — the stop distance is downstream of the gap height
 height is something you can look at on the chart.
 
 ⚠ **Pink is now the only refusal you can buy back by changing a setting**, which is what pink should
-have meant all along. ⚠ **Colours are `mpc_strategy.pine`'s and mean the same there** — orange
+have meant all along. ⚠ **Colours are `sos_fade_strategy.pine`'s and mean the same there** — orange
 2-of-3 callout, pink TRADE BLOCKED — so one glance reads the same on either chart. ⚠ **That orange
 is also this file's BREAKEVEN colour**, an overlap A+ has too; it is tolerable only because the two
 never share an object (breakeven orange is always a filled trade band, missed orange is always a tag
@@ -1858,7 +1858,7 @@ what the trade is aiming at. Nothing removed them on the close, so a −1R stop-
 full-height green band running to a price nothing went near — the chart said won, the result said
 −1R. On the close the target bands are deleted, the body band is repainted entry → the REAL exit,
 and the red band is clipped to the worst price the trade actually SAW rather than the stop it never
-reached. ⚠ `mpc_strategy.pine` already carried this in writing (*"every band comes from the
+reached. ⚠ `sos_fade_strategy.pine` already carried this in writing (*"every band comes from the
 strategy's own closed-trade log… never a fib level it merely aimed at"*) and the palette pass
 copied its COLOURS without copying the rule.
 
@@ -1956,7 +1956,7 @@ file that carries the block.**
 
 ## DELETED 2026-08-15 — the D strategy, and the lessons that outlive the file
 
-`mpc_d_strategy.pine`, `mpc_d_strategy_export.pine` and `docs/MPC_D_STRATEGY_SPEC.md` were
+`d_strategy.pine`, `d_strategy_export.pine` and `docs/D_STRATEGY_SPEC.md` were
 removed at Aaron's instruction. Recover any of them from git history.
 
 **Two reasons, and the second is the one worth recording.**
@@ -1973,33 +1973,33 @@ removed at Aaron's instruction. Recover any of them from git history.
 ⚠ **Deleting the file does NOT delete what it taught, and three of its lessons are load-bearing
 elsewhere in this repo.** They are kept in place deliberately:
 
-- **The margin trap.** D's own tooltip said "10 BUSTS THE ACCOUNT". `mpc_realign_strategy.pine`
+- **The margin trap.** D's own tooltip said "10 BUSTS THE ACCOUNT". `realign_strategy.pine`
   then had to learn it again from an empty Strategy Tester report — see its entry below.
 - **The palette rule.** D applied the TABLE palette to its TRADES, so a winner drew in the wrong
   colour. That is why `## THE ANNOTATION PALETTE` exists.
-- **Record the side, never infer it.** `mpc_h4_sweep_strategy.pine` carries the block D paid for,
+- **Record the side, never infer it.** `h4_sweep_strategy.pine` carries the block D paid for,
   lifted byte-for-byte, and it stands on its own now.
 
 Every comment that pointed at the file was retargeted rather than left dangling.
 
 ## Key paths & entry points
 
-- `strategies/tradingview/mpc_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_assistant.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
-- `strategies/tradingview/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `mpc_m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
-- `strategies/tradingview/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
-- `strategies/tradingview/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
+- `strategies/tradingview/sos_fade_strategy.pine` — Aaron's brother's "MPC-JARVIS" backtest script: the same engine as `mpc_jarvis.pine`, converted from `indicator()` to `strategy()` and given an execution layer at the end (A+ sequence entries, fib TP ladder, %-risk sizing). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcstrategypine)
+- `strategies/tradingview/smc_session_sweep_strategy.pine` — **the five-step session-sweep model from the 2026-08-11 video note, as a `strategy()`** (built 2026-08-11 as `m15_playbook_strategy.pine`; brought onto the panel contract and the palette 2026-08-14; renamed 2026-08-15 — see the section above). ⚠ **NEVER COMPILED, never run, no number of any kind exists for it.** No export twin, no Python port, no `compare_*.py`. ⚠ **Section `2 · Market structure` is deliberately absent** and the reason is a real constraint rather than a skip — its engine lives inside `request.security`, so nothing can draw from it. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorssmcsessionsweepstrategypine)
+- `strategies/tradingview/h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpch4sweepstrategyexportpine)
+- `strategies/tradingview/b_leg_strategy.pine` — a FORK of `sos_fade_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. [Detail](../../indicators/docs/INDICATORS_BUILD_NOTES.md#indicatorsmpcblegstrategypine)
 
-- `strategies/tradingview/mpc_realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `mpc_strategy.pine`: it embeds `mpc_assistant.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/mpc_realign/` (its own CLAUDE.md); spec: `docs/MPC_REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `mpc_d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
-- `strategies/tradingview/mpc_realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
+- `strategies/tradingview/realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `sos_fade_strategy.pine`: it embeds `mpc_jarvis.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/realign/` (its own CLAUDE.md); spec: `docs/REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
+- `strategies/tradingview/realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
 
 ---
 
 ## `execMinAtrPct` — the dead-market floor (2026-08-26, ON at 0.08)
 
-`mpc_strategy.pine` and its export twin gained one input and one helper (`f_marketHasRange`),
+`sos_fade_strategy.pine` and its export twin gained one input and one helper (`f_marketHasRange`),
 ANDed into both entry placements. It refuses a setup when ATR(14) is smaller than the given share
 of price. Rules, measurement and why it exists live where the code that consumes it lives:
-`strategies/python/mpc_sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*.
+`strategies/python/sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*.
 
 ⚠ **It is DECLARED after the last `input.float` in the file, nowhere near the minimum-stop floor it
 belongs beside.** That reads badly and it is correct: TradingView keys a saved chart's input values

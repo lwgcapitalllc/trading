@@ -1,7 +1,7 @@
 """A live link says nothing about WHOSE account is behind it.
 
 🔴 **Written after it happened, on a live bot, and nothing objected.** On 2026-08-12 the `MT5_FFT`
-terminal was logged from the PU Prime Standard demo onto the ECN one while `mpc_sos_fade_demo` was
+terminal was logged from the PU Prime Standard demo onto the ECN one while `sos_fade_demo` was
 running. `connect()` had asserted the account at startup — once — and the terminal is a shared
 resource for the rest of the process, so every read afterwards was answered promptly and correctly
 about the wrong account. The bot **re-anchored its position sizing from $1,992.21 to $9,996.99**,

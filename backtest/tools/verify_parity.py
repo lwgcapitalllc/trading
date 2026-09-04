@@ -9,7 +9,7 @@ Two things it deliberately cannot do (a human/agent must): re-paste the Pine and
 export the CSV (only you, inside TradingView), and port a real logic change into the
 Python (that is a code edit, per drift). This just closes the loop between those two.
 
-    # after your brother updates mpc_assistant.pine / mpc_strategy.pine and you
+    # after your brother updates mpc_jarvis.pine / sos_fade_strategy.pine and you
     # re-export the CSV(s) on a 5m XAUUSD full-history chart:
     python backtest/tools/verify_parity.py "backtest/VANTAGE_XAUUSD, 5_xxxxx.csv" [more.csv ...]
     python backtest/tools/verify_parity.py            # auto-pick the newest CSV in backtest/
@@ -39,7 +39,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 # (veto "" = never vetoed). Ordered engines-first (the foundation), strategies last (they
 # sit on top of them) — the same dependency order you sync in.
 #
-# The veto exists because the two STRATEGY exports overlap: `mpc_b_leg_strategy_export.pine`
+# The veto exists because the two STRATEGY exports overlap: `b_leg_strategy_export.pine`
 # plots `px_stages` too (the B leg arms off the A+ sequence, so its stages are part of the
 # B-LEG decision stream). Marker alone would run the A+ check against a B-LEG export, which
 # fails on trades the A+ bot cannot make — a red that means nothing. `bl_bits` exists only in
@@ -65,12 +65,12 @@ _CHECKS: List[Tuple[str, str, str, str, List[str]]] = [
     ),
     (
         "strategy A+ (bot)",
-        "strategies/python/mpc_sos_fade/tools/compare_strategy.py",
+        "strategies/python/sos_fade/tools/compare_strategy.py",
         "px_stages",
         "bl_bits",
         [],
     ),
-    ("strategy B-LEG (bot)", "strategies/python/mpc_bleg/tools/compare_bleg.py", "bl_bits", "", []),
+    ("strategy B-LEG (bot)", "strategies/python/b_leg/tools/compare_bleg.py", "bl_bits", "", []),
 ]
 
 

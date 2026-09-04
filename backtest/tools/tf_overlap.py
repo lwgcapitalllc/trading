@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tf_overlap.py — is the 30-minute A+ a SECOND strategy, or the same bet twice?
 
-Aaron, 2026-08-09. `tf_sweep.py` measured `mpc_sos_fade` on four timeframes over the same 6.5
+Aaron, 2026-08-09. `tf_sweep.py` measured `sos_fade` on four timeframes over the same 6.5
 years and the 30m row posts essentially the SAME edge per trade as the shipped 15m bot
 (+0.893R vs +0.894R over 106 trades against 159). That is the first positive result to come out
 of the order-block thread, and it is worth exactly nothing until this question is answered.
@@ -99,7 +99,7 @@ def _pearson(xs, ys):
 
 def _replay(symbol, tf, start, end, capital):
     from backtest.data.source import BarSource
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     print(f"  loading {symbol} {tf}m ...", flush=True)
     df = BarSource().load(symbol, str(tf), start, end)

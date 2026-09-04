@@ -3,7 +3,7 @@ vwap/ — the session VWAP engine subsystem.
 
 Turns the bar stream into a running, volume-weighted average price line — the VWAP — anchored to
 each new trading day, plus a derived close-vs-line cross. Ported from the one-liner
-`vwapValue = ta.vwap(hlc3)` in indicators/engines/mpc_assistant.pine (line 852): a session-anchored,
+`vwapValue = ta.vwap(hlc3)` in indicators/engines/mpc_jarvis.pine (line 852): a session-anchored,
 volume-weighted mean of hlc3 that resets on the trading-day boundary (18:00 NY for XAUUSD — the same
 boundary the liquidity engine's daily level uses).
 

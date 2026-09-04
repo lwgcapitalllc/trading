@@ -29,9 +29,9 @@ _HOOK = _REPO / ".githooks" / "commit-msg"
 
 # Exactly what `ledger_sync.commit()` stages, rooted at `LOCAL_ARCHIVE`.
 SYNCED = [
-    "algos/ledger_archive/mpc_sos_fade_demo/ledger/decisions-2026-08-05.jsonl",
-    "algos/ledger_archive/mpc_sos_fade_demo/ledger/health-2026-08-05.jsonl",
-    "algos/ledger_archive/mpc_sos_fade_demo/mpc_sos_fade_demo-2026-08-05.log",
+    "algos/ledger_archive/sos_fade_demo/ledger/decisions-2026-08-05.jsonl",
+    "algos/ledger_archive/sos_fade_demo/ledger/health-2026-08-05.jsonl",
+    "algos/ledger_archive/sos_fade_demo/sos_fade_demo-2026-08-05.log",
 ]
 
 

@@ -111,7 +111,7 @@ def send_telegram(text: str, kind: str, chat_id: str = "") -> bool:
 
     Falls back to UNFORMATTED text when Telegram rejects the Markdown. Formatting is a nicety;
     delivery is the point. A single underscore in a strategy name, a symbol or a file path
-    (`mpc_sos_fade`, `MT5_FFT`, `live_config.py`) opens an italic that never closes and Telegram
+    (`sos_fade`, `MT5_FFT`, `live_config.py`) opens an italic that never closes and Telegram
     refuses the whole message — so the alert most likely to be lost is the one carrying an error,
     because error text is full of paths. Measured on the VPS side's first real send, 2026-07-31.
     """

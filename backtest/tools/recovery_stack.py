@@ -238,7 +238,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     S, C = LAB_STRATEGY["strategy"], LAB_STRATEGY["config"]
     df = BarSource().load(args.symbol, args.tf, args.start, args.end)

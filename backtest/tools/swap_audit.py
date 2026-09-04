@@ -49,7 +49,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--strategy", default="mpc_sos_fade")
+    ap.add_argument("--strategy", default="sos_fade")
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
     ap.add_argument("--start", default="2020-01-01")

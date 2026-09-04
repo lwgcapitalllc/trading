@@ -22,7 +22,7 @@ one half moved into that half's CLAUDE.md.
 **The Pine DECLARATION decides it, not the filename.** A file declaring `indicator()` goes in
 `engines/`, here; a file declaring `strategy(` goes in `strategies/tradingview/` and is NOT in
 this tree at all. Nothing else is consulted, which is the point — `structure_engine.pine` reads
-like a strategy component and is an indicator. ⚠ **`mpc_m15_playbook.pine` / `mpc_m15_playbook_strategy.pine` used to be the
+like a strategy component and is an indicator. ⚠ **`m15_playbook.pine` / `m15_playbook_strategy.pine` used to be the
 textbook example of this — a near-identical pair split across both folders on the declaration
 alone. On 2026-08-15 the indicator was DELETED and the strategy renamed to
 `smc_session_sweep_strategy.pine`**; the note that says why is in
@@ -33,7 +33,7 @@ binding on the survivors.
 | folder | declaration | count | owns |
 |---|---|---|---|
 | [`strategies/tradingview/`](../strategies/tradingview/CLAUDE.md) — **not here since 2026-09-02** | `strategy(` | 16 | the numbered input-panel contract, the trade annotations, the colour palette, and the `docs/<family>.md` prose rule |
-| [`engines/`](engines/CLAUDE.md) | `indicator()` | 17 | the `mpc_assistant` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
+| [`engines/`](engines/CLAUDE.md) | `indicator()` | 17 | the `mpc_jarvis` extraction track, the `smc_engine_v2` rebuild and its detection rules, and the third-party reference files |
 
 ⚠ **Count both with `ls`, never off this table** — the `strategy(` column read 12 for weeks while
 there were 16, and the row above is the third place in this repo that number has been wrong.
@@ -51,7 +51,7 @@ half left**, because `docs/` and `tools/` still sit here and both need an owner.
 
 **`check_active_order.py` (2026-08-15).** An input's `active =` may only name inputs declared
 ABOVE it; Pine resolves top-down and a violation is `CE10272`, which **only appears on the paste**.
-`mpc_bos_strategy.pine` shipped exactly that in the 2026-08-12 panel reorder, and its export twin
+`bos_strategy.pine` shipped exactly that in the 2026-08-12 panel reorder, and its export twin
 carried the same defect because a twin is a copy. Run it after ANY panel edit:
 
 ```bash
@@ -81,7 +81,7 @@ python3 indicators/tools/check_scope.py strategies/tradingview/*.pine
 ```
 
 **All thirteen strategy files pass as of 2026-08-25.** It exists because
-`mpc_extreme_leg_strategy.pine` builds its higher-timeframe engine by GENERATING a second copy of
+`extreme_leg_strategy.pine` builds its higher-timeframe engine by GENERATING a second copy of
 the chart-frame one, swapping the bar globals for passed-in values — and two helper methods got
 the swap without getting the parameter. ⚠ **It is deliberately narrow: the underscore prefix is
 this repo's convention for a value handed IN to a derived engine instance, so the check covers the
@@ -94,7 +94,7 @@ as its neighbour.
 🔴 **`check_flat_reset.py` (2026-08-25). This one is here because a strategy blew an account on its
 first run.** Orders are processed on the bar's close, which happens AFTER the script has finished
 running for that bar — so on the bar an entry is placed, `strategy.position_size` still reads flat
-everywhere below it. `mpc_extreme_leg_strategy.pine` cleared its stop and target under a bare flat
+everywhere below it. `extreme_leg_strategy.pine` cleared its stop and target under a bare flat
 test, which therefore fired on the entry bar and wiped both three lines after the entry set them.
 **The bracket then went out empty, and because a new entry needs a flat book the position could
 never close: one unprotected trade held to the end of the chart.** The check flags any value an
@@ -147,7 +147,7 @@ at the internal shift"* — with the stop behind the last bearish internal shift
 pre-deviation external high. It **front-runs** the external bullish SOS that later confirms it.
 
 Built end to end in one pass: a counting tool, a spec, a Python package and the Pine. Full record in
-`strategies/python/mpc_realign/CLAUDE.md` and `docs/MPC_REALIGN_SPEC.md`; the parts that generalise
+`strategies/python/realign/CLAUDE.md` and `docs/REALIGN_SPEC.md`; the parts that generalise
 past this strategy are below.
 
 🔴 **"INTERNAL STRUCTURE" HAS TWO DEFENSIBLE READINGS AND THEY GIVE OPPOSITE ANSWERS.** The engine
@@ -261,8 +261,8 @@ a swept H4 stays on the chart in grey — so H4 H and H4 L both keep their space
 apart was a hidden Asia/Ldn level sitting under ONE of them and not the other.
 
 **Fix:** the visibility term is added to each of the ten daily/weekly/session guards.
-⚠ **The two families need DIFFERENT terms and this is not cosmetic.** `mpc_assistant.pine` and
-`mpc_m15_playbook.pine` hide a mitigated label only when `showMitLiq` is off, so their test is
+⚠ **The two families need DIFFERENT terms and this is not cosmetic.** `mpc_jarvis.pine` and
+`m15_playbook.pine` hide a mitigated label only when `showMitLiq` is off, so their test is
 `(not mit or showMitLiq)`; the strategy family's `f_liqMitigate` blanks the textcolor on `newMit`
 **unconditionally**, so `i_showMitigated` does not resurrect the label there and the test is plain
 `not mit`. Using the assistant's form in the strategies would keep reserving the slot the day
@@ -281,7 +281,7 @@ was computed from another.
 ### 🟢 Mitigated levels are drawn again — and the dedupe was deferring to an invisible label
 
 Aaron: "I also want the mitigated dotted lines for the sessions that break by a candle. I had it
-before and it's gone." **`showMitLiq` false → TRUE in `mpc_assistant.pine`.** It had been the
+before and it's gone." **`showMitLiq` false → TRUE in `mpc_jarvis.pine`.** It had been the
 `Show Mitigated Liquidity Lines` input (default OFF) and the Chart Tools lock-down froze it at its
 default as a constant — **which locked in the answer nobody had asked for.** A broken level now
 freezes at the break bar, goes dotted and grey, and keeps a greyed label.
@@ -308,16 +308,16 @@ hardcoded `false` — nothing was lost there, so nothing is being restored — a
 `f_liqMitigate` still blanks a mitigated label **unconditionally**, which is the pre-2026 version:
 flipping the flag there would draw a faint unlabelled stub, the exact complaint the indicator's own
 comment records fixing. Port that label branch first if it is ever wanted.
-⚠ **`mpc_m15_playbook.pine` still has the real INPUT** (default off) and was left alone — it is a
+⚠ **`m15_playbook.pine` still has the real INPUT** (default off) and was left alone — it is a
 control, not a lock, so it can just be ticked.
 
 ---
 
 **All three changes applied to all eight files that carry the block** (the `showMitLiq` flip is the
 indicator only), identical text:
-`mpc_strategy.pine`,
-`mpc_b_leg_strategy.pine`, `mpc_bos_strategy.pine`, their three exports, `mpc_assistant.pine` and
-`mpc_m15_playbook.pine`. ✅ **The three export mirrors were re-diffed after the edit and still
+`sos_fade_strategy.pine`,
+`b_leg_strategy.pine`, `bos_strategy.pine`, their three exports, `mpc_jarvis.pine` and
+`m15_playbook.pine`. ✅ **The three export mirrors were re-diffed after the edit and still
 differ from their parents by exactly the `strategy()` title line plus their appended parity block.**
 ⚠ **NOT COMPILED** — no local Pine compiler, and these files have hit CE10117 twice; the change adds
 three locals and six two-branch `if`s inside an existing function, so **zero new main-body
@@ -326,11 +326,11 @@ so no "Reset settings to defaults" is needed.**
 
 ---
 
-## 2026-08-07 — 🟢 `mpc_bos_strategy.pine` COMPILES, AND ITS DEFAULTS MOVED OFF THE SPEC BECAUSE THE FVG ENTRY IS THE LOSING HALF
+## 2026-08-07 — 🟢 `bos_strategy.pine` COMPILES, AND ITS DEFAULTS MOVED OFF THE SPEC BECAUSE THE FVG ENTRY IS THE LOSING HALF
 
 Aaron pasted the file, it compiled (the `CE10117` risk from putting VWAP back did not materialise),
 and he asked for the parameters to be optimized into something profitable. **That exact request had
-already been run and failed** — `strategies/python/mpc_bos/` swept **82 configurations on 2026-07-31
+already been run and failed** — `strategies/python/bos/` swept **82 configurations on 2026-07-31
 and found profit factor below 1.0 in every one**, then was deleted on 2026-08-04 as an unvalidated
 port. So the grid was not re-searched. What was asked instead is what had CHANGED, and one thing
 had: the session VWAP filter added the day before, which was in none of those runs.
@@ -386,7 +386,7 @@ agrees, DIRECTIONALLY ONLY: the three numbers were not recorded, so no figure in
 a real TradingView run at these settings.** ⚠ **And there is still no `compare_bos.py`** — the last
 port was deleted for exactly that gap.
 
-Full record, grid and caveats: `docs/MPC_BOS_OPTIMIZATION.md` → Run 5. ⚠ **`docs/MPC_BOS_SPEC.md`
+Full record, grid and caveats: `docs/BOS_OPTIMIZATION.md` → Run 5. ⚠ **`docs/BOS_SPEC.md`
 §4/§5 now describe the ORIGINAL DESIGN rather than the shipped behaviour**, and its Status block says
 so — a spec that silently stops matching the file is worse than no spec.
 
@@ -401,8 +401,8 @@ under the metric you happened to write down — here that metric ignored the spr
 
 ## 2026-08-06 — 🟢 THE VWAP WENT INTO THE BOS STRATEGY INSTEAD, BECAUSE THE MEASUREMENT SAID D'S TRIGGER HAS NO EDGE
 
-Aaron asked which combination of the two continuation strategies to pursue — `mpc_bos_strategy.pine`
-(fibs + FVG) or `mpc_d_strategy.pine` (structure + fake shift + VWAP) — and asked for diagnostics
+Aaron asked which combination of the two continuation strategies to pursue — `bos_strategy.pine`
+(fibs + FVG) or `d_strategy.pine` (structure + fake shift + VWAP) — and asked for diagnostics
 rather than an opinion. **Neither has a Python port, so neither could be swept.** The question
 underneath it did not need one: replay the canonical `market_structure` + `vwap` engines over the
 cached bars, find the bar each trigger would actually be IN on, and ask whether price reaches +2R
@@ -446,9 +446,9 @@ proven otherwise, and the flattering number is the one that survives a careless 
 and expectancy GROWS with distance (+0.094R → +0.257R at 3R), which is what a runner ladder is for.
 By year, 7 of 9 positive; 2021 worst (−5.6%), 2022 and 2025 strongest. No single year carries it.
 
-**What was then built:** `bosVwapReq` (F10) in `mpc_bos_strategy.pine` — a pro-trend-side gate,
+**What was then built:** `bosVwapReq` (F10) in `bos_strategy.pine` — a pro-trend-side gate,
 default ON, ANDed into `longArmed`/`shortArmed`, with block code 7 so a refusal shows on the pink
-Blocked tag and in the diag log. Full write-up in `docs/MPC_BOS_SPEC.md` §4b.
+Blocked tag and in the diag log. Full write-up in `docs/BOS_SPEC.md` §4b.
 
 ⚠ **A STATE, not a cross**, per Aaron's standing call — and re-read on every bar the limit rests, so
 price closing back through VWAP *pulls* a resting order. A one-shot check at arming time would let a
@@ -466,7 +466,7 @@ before and after. **The paste is safe on a tuned chart and needs no "Reset setti
 Generalise it: when a new input must be READ early but must not DISTURB saved values, pick the type
 whose last declaration precedes your insertion point.
 
-⚠ **F10, not F9 — and the collision was nearly shipped.** `docs/MPC_BOS_SPEC.md` §4 already used F9
+⚠ **F10, not F9 — and the collision was nearly shipped.** `docs/BOS_SPEC.md` §4 already used F9
 for staleness (`bosMaxDays`), while the Pine's inline comments only went up to F8, so "F9" looked
 free from inside the file. Caught by reading the spec's table rather than the code's comments. **A
 gate's number is a shared label across two documents; free in one is not free.**
@@ -476,7 +476,7 @@ what came back is deliberately only the VALUE plus one `plot()` — not the sett
 styles that were cut. The old VWAP spent tokens DRAWING something nothing read; this one is read by
 the arming condition. **If CE10117 returns, delete the `plot()` first and the gate last.**
 
-⚠ **NO SLOPE TEST.** `mpc_d_strategy.pine` carries `execVwapSlope`/`execVwapSlopeBars`; only the SIDE
+⚠ **NO SLOPE TEST.** `d_strategy.pine` carries `execVwapSlope`/`execVwapSlopeBars`; only the SIDE
 test was measured. Adding an unmeasured lever beside a measured one is how the measured one stops
 being trustworthy.
 
@@ -495,13 +495,13 @@ control — and if there isn't one, the study is a description of gold, not of t
 
 ---
 
-## 2026-08-06 — `mpc_d_strategy.pine`, and why "an SOS then an opposite SOS" is not a signal
+## 2026-08-06 — `d_strategy.pine`, and why "an SOS then an opposite SOS" is not a signal
 
 Aaron specified a new setup from four hand-marked charts (two long, two short) and named it the
 **D strategy** — "D as in dog, the dirty one". The sequence: a MATURE trend, then a counter-trend
 SOS that shakes it out, then a with-trend SOS that resumes it. The third SOS is the entry; the
 stop sits beyond the extreme the shakeout reached. Full spec + the four worked examples:
-`docs/MPC_D_STRATEGY_SPEC.md`.
+`docs/D_STRATEGY_SPEC.md`.
 
 🔴 **The load-bearing finding is that the obvious implementation cannot work, and it fails
 silently by firing constantly rather than by erroring.** **An SOS strictly ALTERNATES direction
@@ -544,7 +544,7 @@ break test reads the LIVE close, so an SOS can appear and vanish intrabar.
 🔴 **It shipped as an `indicator()` and had to be converted to a `strategy()` the same day** —
 found by Aaron asking why there were no Properties to test. An indicator has no Properties tab
 and no Strategy Tester, so the thing could mark the sequence and could not be SCORED, which is
-the only reason it exists. ⚠ **The file was named `mpc_d_strategy.pine` throughout: the name is
+the only reason it exists. ⚠ **The file was named `d_strategy.pine` throughout: the name is
 not the declaration, and nothing in the repo checks that the two agree.** The conversion brought
 a real execution layer — %-of-equity sizing, a TP1/TP2/runner ladder, breakeven-at-TP1, and a
 cancel path for a resting Retrace order (stale, invalidated before the fill, or superseded by a
@@ -581,7 +581,7 @@ SEPARATELY from the exits**: a drawing call on an `na` id is a runtime error tha
 script down, and an order that stopped being issued because a BOX could not be drawn would turn
 a chart bug into a trading bug.
 
-**RESTYLED TO `mpc_strategy.pine`'s CONVENTIONS the same day** (Aaron: *"follow the mpc strategy
+**RESTYLED TO `sos_fade_strategy.pine`'s CONVENTIONS the same day** (Aaron: *"follow the mpc strategy
 styling for all inputs and debugging annotations and take profits too"*). Same five input groups
 — `D Setup` for the sequence gates (as A+ uses `A+ Setup`), `Strategy Execution` for everything
 that decides what a trade DOES, plus `D Debug`, `Result Stats` and `Diagnostic Log`. Same
@@ -595,7 +595,7 @@ every later input of that type on every chart running the script.
 **The exit ladder is a PORT, not a lookalike.** `f_dRatchet` is `f_swingRatchet` unchanged, and
 the staged stop, the three TP2 floor modes, the three trail methods, the time stop and
 close-on-opposite-SOS all keep their shapes and defaults. 🔴 **One deliberate divergence, and it
-is the interesting one: `mpc_strategy.pine` re-issues every exit rung unguarded on every bar,
+is the interesting one: `sos_fade_strategy.pine` re-issues every exit rung unguarded on every bar,
 which is safe THERE only because it ships both rungs at 0% — the rung is then skipped entirely
 and the bug is unreachable at its defaults.** Calling `strategy.exit` with an id whose order
 already FILLED places a NEW order rather than modifying it, so a re-issued TP1 banks another
@@ -753,14 +753,14 @@ own recipe**, body re-diffed to exactly line 60's title, **plot count 48 → 51*
 ungated on every bar — which is what makes the rule re-priceable offline from a run taken with
 the gate OFF — plus `cfg_vwap_slope_bars`, plus the parent's new visible VWAP plot). Block reason
 **9** added, numbered last and ranked fifth, raised by the filter only. **NOT COMPILED, NOT RUN,
-NOT MEASURED.** Full write-up: `docs/MPC_D_STRATEGY_SPEC.md` → *The VWAP entry*.
+NOT MEASURED.** Full write-up: `docs/D_STRATEGY_SPEC.md` → *The VWAP entry*.
 
 ### 2026-08-06 (later still) — the sweep was already there, and a chart said the EXIT is the problem
 
 🔴 **THE COUNTER-SOS *IS* THE LIQUIDITY SWEEP, AND SETTLING THAT DELETED A 500-LINE FEATURE
 BEFORE IT WAS WRITTEN.** Aaron describes D as *"a liquidity sweep and a fake break of
 structure"*, and the near-miss was reading that as two conditions: a liquidity-pool port
-(previous day/week high-low, H4, session high-low, EQH/EQL) lifted out of `mpc_strategy.pine`
+(previous day/week high-low, H4, session high-low, EQH/EQL) lifted out of `sos_fade_strategy.pine`
 to gate the shakeout on having *taken* something. **It is one event, not two.** The
 counter-SOS closes through the trend's last protected swing — the HL in an uptrend, the LH in
 a downtrend — and a protected swing is exactly where the stops rest. The break and the sweep
@@ -835,7 +835,7 @@ about $5; the fix would be a minimum shakeout length, not a bigger floor.
 ### 2026-08-06 (later still) — the JARVIS REV row stuck on TAKE PROFIT after a 0.5 entry
 
 🔴 **A short entered at 0.5 banked TP3 and the row never cleared — it sat on `TAKE PROFIT SHORT ·
-TP3 · close the rest` indefinitely.** `mpc_assistant.pine` only; nothing here reaches a trade.
+TP3 · close the rest` indefinitely.** `mpc_jarvis.pine` only; nothing here reaches a trade.
 
 **Two flags describe one event and only one of them survives a shallow entry.** The A+ leg's
 completion death reads the DRAWN FIB's `fibo7Touched`, and that flag is gated — the fib block
@@ -873,8 +873,8 @@ closed` instead. **A new death is a new alert, whatever the alert block looks li
 ⚠ **NOT COMPILED** — there is no local Pine compiler and this file has hit CE10117; the change is
 two boolean terms, one local and one ternary, so it is small but not free. No input was added,
 renamed or reordered, so **no "Reset settings to defaults" is needed.** ⚠ No parity harness can
-see this: the A+ sequence tracker exists only in `mpc_assistant.pine` and `mpc_strategy.pine`. ✅
-**Checked rather than assumed — `mpc_strategy.pine` and `mpc_b_leg_strategy.pine` carry ZERO
+see this: the A+ sequence tracker exists only in `mpc_jarvis.pine` and `sos_fade_strategy.pine`. ✅
+**Checked rather than assumed — `sos_fade_strategy.pine` and `b_leg_strategy.pine` carry ZERO
 references to `aplusL_tp0`/`aplusS_tp0` and have no TAKE PROFIT row**: their restored table is the
 EXT/INT structure pair only, so the stuck row cannot occur there and neither file was touched.
 
@@ -883,12 +883,12 @@ EXT/INT structure pair only, so the stuck row cannot occur there and neither fil
 ## 2026-07-31 — the harness pass: four exports validated, one file deleted, session windows finally forked back together
 
 **`mpc_jarvis_v2.pine` DELETED** (Aaron's call). It was a 2,084-line lean `indicator()`
-build superseded by `mpc_strategy_export.pine`. Last committed at **`825592a`** — recover from there,
+build superseded by `sos_fade_strategy_export.pine`. Last committed at **`825592a`** — recover from there,
 never from memory. All doc references removed in the same pass.
 
-**The session windows were forked and nobody had noticed.** `mpc_strategy.pine` has carried the
-DST-aware windows since **2026-07-12** (`317dbef`) — two weeks BEFORE `mpc_assistant.pine` got them
-(`b25789d`, 07-26) — but `mpc_b_leg_strategy.pine` and `mpc_b_leg_strategy_export.pine` never did, so
+**The session windows were forked and nobody had noticed.** `sos_fade_strategy.pine` has carried the
+DST-aware windows since **2026-07-12** (`317dbef`) — two weeks BEFORE `mpc_jarvis.pine` got them
+(`b25789d`, 07-26) — but `b_leg_strategy.pine` and `b_leg_strategy_export.pine` never did, so
 the A+ and B-LEG forks disagreed about when a session opens. That breaks this file's own standing
 rule: an engine-block change in the parent flows to the fork line-for-line.
 
@@ -899,7 +899,7 @@ rule: an engine-block change in the parent flows to the fork line-for-line.
 | New York | `0900-1800` GMT-4 | `0800-1700` **America/New_York** |
 
 **It is trade-affecting in principle, not cosmetic** — session H/L feed `recentBSL`/`recentSSL`
-(`mpc_strategy.pine:3121-3126`), which is what `execArmSweep` arms A+ on, and that toggle is ON in the
+(`sos_fade_strategy.pine:3121-3126`), which is what `execArmSweep` arms A+ on, and that toggle is ON in the
 shipped prime combo. The path is narrow (`showSessH = liq_dh == ""` makes session levels a FALLBACK
 used only when no day level exists) but narrow is not none. **Measured, not assumed: neither bot
 moves** — `compare_strategy.py --warmup 100` and `compare_bleg.py --warmup 100` both still exit 0.
@@ -916,16 +916,16 @@ boundary in this export. `svp_export.pine` was re-exported in the same pass and 
 --warmup 317` exits 0 on 12,117 bars, so the "re-expression, not a behaviour change" claim about Asia
 is now measured too.
 
-⚠ **Compile status after that pass, stated exactly.** `mpc_b_leg_strategy_export.pine` and
+⚠ **Compile status after that pass, stated exactly.** `b_leg_strategy_export.pine` and
 `svp_export.pine` both compiled — Aaron exported from them, which is stronger evidence than a paste.
-`mpc_b_leg_strategy.pine` is body-identical to its export apart from the line-40 title, so it is
-covered by construction. **`mpc_m15_playbook.pine` was never pasted after its windows were edited
+`b_leg_strategy.pine` is body-identical to its export apart from the line-40 title, so it is
+covered by construction. **`m15_playbook.pine` was never pasted after its windows were edited
 and now never will be — it was DELETED on 2026-08-15** (Aaron's call; the note is in
 `engines/CLAUDE.md`). ⚠ **It was described here as his BROTHER'S work in progress**, so the six
 edited session strings in it were never compiled by anyone and that question closes unanswered
 rather than resolved. The surviving files carrying the same block are listed below.
 
-Synced in `mpc_b_leg_strategy.pine`, `mpc_b_leg_strategy_export.pine` and `mpc_m15_playbook.pine`
+Synced in `b_leg_strategy.pine`, `b_leg_strategy_export.pine` and `m15_playbook.pine`
 (each file's own `display = display.none` preserved — only the six values changed; the third of
 those was deleted 2026-08-15).
 ⚠ **That deleted file's NY window had been `0900-1700`**, unlike every other file's `0900-1800` — a
@@ -947,7 +947,7 @@ Anchor every edit on its `*_SESSION_GROUP`.
    capped at 10 to match, and `compare_fvg.py` REFUSES an export whose `cfg_fvg_maxcount` exceeds the
    plotted slots rather than reporting partial coverage.
 2. **Its minimum-gap floor was one flat number** while mpc's is timeframe-split
-   (`mpc_assistant.pine:410-412`: `0.0` below 900s, `0.04` at 15m+). Exported on 15m the old build
+   (`mpc_jarvis.pine:410-412`: `0.0` below 900s, `0.04` at 15m+). Exported on 15m the old build
    would still have gone GREEN — both sides read the setting from `cfg_fvg_thresh` — while running a
    DIFFERENT rule from the indicator it mirrors. It now carries `fvgThreshLTF`/`fvgThreshHTF` and the
    same `timeframe.in_seconds() < 900` ternary; `cfg_fvg_thresh` plots the EFFECTIVE value, so the
@@ -973,7 +973,7 @@ CHECKED** line on success as well as failure).
 
 ---
 
-## 2026-07-31 — `mpc_bos_strategy.pine` defaults now ENCODE the spec, not the bare baseline
+## 2026-07-31 — `bos_strategy.pine` defaults now ENCODE the spec, not the bare baseline
 
 **Aaron's spec, stated 2026-07-31:** SOS opens the regime → a BOS with **clean displacement** → that
 break **leaves an FVG** → price retraces into **0.5-0.886** and taps the gap. The **Sniper Zone is
@@ -1011,12 +1011,12 @@ reached); its tooltip says so. The entry ZONE is not set by that dropdown — th
 
 ## 2026-07-29 — the FVG floor is now SPLIT BY TIMEFRAME (A+, its export, and BOS)
 
-**The bug Aaron found.** `mpc_assistant.pine` draws fair value gaps on a 5m chart
-that `mpc_strategy.pine` does not. Cause: the assistant's minimum-gap floor is
+**The bug Aaron found.** `mpc_jarvis.pine` draws fair value gaps on a 5m chart
+that `sos_fade_strategy.pine` does not. Cause: the assistant's minimum-gap floor is
 timeframe-aware and the strategy's was one flat number.
 
 ```pine
-// mpc_assistant.pine:149-151
+// mpc_jarvis.pine:149-151
 float fvgThreshLTF = 0.0
 float fvgThreshHTF = 0.04
 float fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
@@ -1030,7 +1030,7 @@ stacked on it: the assistant has `fvgRequireClose = false` everywhere, while the
 strategy HARDCODED the middle-bar close-cleared test on.
 
 **What landed.** Both are now split at the same 900-second boundary, in
-`mpc_strategy.pine`, `mpc_strategy_export.pine` and `mpc_bos_strategy.pine`:
+`sos_fade_strategy.pine`, `sos_fade_strategy_export.pine` and `bos_strategy.pine`:
 
 | | below 15m | 15m and above |
 |---|---|---|
@@ -1039,26 +1039,26 @@ strategy HARDCODED the middle-bar close-cleared test on.
 
 **15m and above is bit-identical to before, deliberately.** The HTF floor stays
 0.1 and is NOT set to the assistant's 0.04, and the close test stays on. A+ is
-traded on 15m, so its baseline, its 188-trade history and the `mpc_sos_fade`
+traded on 15m, so its baseline, its 188-trade history and the `sos_fade`
 parity pin (`EngineConfig.fvg_require_close = True`) must not move. Matching the
 assistant at 15m too is a one-number change if it is ever wanted — but it is a
 different decision, with a re-validation attached, and it was not made here.
 
 **Consequence to carry.** These are new trade-affecting inputs and
-`mpc_strategy_export.pine` has no `cfg_*` column for either. At their defaults on
+`sos_fade_strategy_export.pine` has no `cfg_*` column for either. At their defaults on
 15m that costs parity nothing (behaviour is unchanged), but **a parity run taken
 on a sub-15m chart, or with either input tuned, is meaningless until the columns
 land here and in `compare_strategy.py`.** Same trap as `execRunnerTrail` in the
 2026-07-26 entry: a default that changes behaviour is as dangerous as a new
 input, and it hides better.
 
-**NOT applied to `mpc_b_leg_strategy.pine` / `mpc_b_leg_strategy_export.pine`.**
+**NOT applied to `b_leg_strategy.pine` / `b_leg_strategy_export.pine`.**
 They carry the identical FVG block and are now the only strategy files without
 the split. The standing "engine changes flow line-for-line to the fork" rule says
 they should get it; it was left out only because the request scoped A+ and BOS.
 
 **Pre-existing drift found while checking this, NOT caused by it.**
-`mpc_strategy_export.pine` is missing `execMinStopMode` / `execMinStopVal`
+`sos_fade_strategy_export.pine` is missing `execMinStopMode` / `execMinStopVal`
 entirely — the min-stop lever landed in the parent (`7603444`) and never reached
 the export. That breaks the export's own "the title is the ONLY difference" rule.
 A parity run replays the bot with a floor the export cannot describe; harmless
@@ -1066,18 +1066,18 @@ while the mode is "Off" (the default), wrong the moment it is not.
 
 ---
 
-## 2026-07-29 — `mpc_bos_strategy.pine`, the third strategy off the shared engine
+## 2026-07-29 — `bos_strategy.pine`, the third strategy off the shared engine
 
-**New file `strategies/tradingview/mpc_bos_strategy.pine`** (3875 lines), built to `docs/MPC_BOS_SPEC.md`. It
+**New file `strategies/tradingview/bos_strategy.pine`** (3875 lines), built to `docs/BOS_SPEC.md`. It
 trades the CONTINUATION: an SOS sets a regime, and every BOS after it in that direction is a fresh
 leg whose retrace is bought/sold. A+ fades the shift; this rides what the shift started.
 
-**How it was assembled.** Engine block = **lines 1-3028 of `mpc_strategy.pine`, byte-identical**
+**How it was assembled.** Engine block = **lines 1-3028 of `sos_fade_strategy.pine`, byte-identical**
 (everything through the liquidity `recentSSL`/`recentBSL` block), then the watermark, then a new
 execution layer. **Not copied:** the A+ SEQUENCE tracker, the B-LEG tracker, the missed-setup callout
 and its `MissW` machinery — nothing here reads them, and the compile-token budget in this family has
 already hit CE10117 and CE10295 twice. Net effect vs the parent: ~510 lines of tracker out, ~250 of
-execution in. Regenerate with `head -3028 mpc_strategy.pine`, the parent's watermark block, then this
+execution in. Regenerate with `head -3028 sos_fade_strategy.pine`, the parent's watermark block, then this
 file's execution layer.
 
 **Two default flips vs the A+, both named in the spec:** `execConfSZ` OFF→**ON** (the Sniper Zone is
@@ -1105,18 +1105,18 @@ are carried over from the A+ though §8 does not list them (default Off, so the 
 is statically checked only (no identifier collisions with the engine block, every referenced engine
 symbol present, no duplicate declarations or input titles). **No number in this repo describes this
 strategy yet** — §10 steps 2-4 (baseline + the F1→F4→SL-model sweeps, the export Pine +
-`compare_bos.py`, the Python port under `strategies/python/mpc_bos/`) are all open.
+`compare_bos.py`, the Python port under `strategies/python/bos/`) are all open.
 
 **Standing rule, same as the B-LEG fork:** any change to the engine block flows in line-for-line from
-`mpc_strategy.pine`; any BOS execution change flows to the Python port once it exists.
+`sos_fade_strategy.pine`; any BOS execution change flows to the Python port once it exists.
 
 ---
 
 ## The 2026-07-12 structure re-sync (`choch_lock` removed from the break decision)
 
-Aaron's brother found a missing higher high on XAUUSD 15m (17 Jun 2026, the ~4382 spike) and had it fixed on TradingView. The fix landed in `mpc_assistant.pine` and was propagated through the entire chain. **Both symptoms were one bug:** a bullish SOS set `choch_lock`, so the next bearish break was not treated as a CHoCH — it printed as a **BOS instead of an SOS**, and since the bear-break fallback classifies the old high with `old_is_hh = is_choch ? true : (…)`, losing the CHoCH also lost the forced `true`, so the **HH never printed**.
+Aaron's brother found a missing higher high on XAUUSD 15m (17 Jun 2026, the ~4382 spike) and had it fixed on TradingView. The fix landed in `mpc_jarvis.pine` and was propagated through the entire chain. **Both symptoms were one bug:** a bullish SOS set `choch_lock`, so the next bearish break was not treated as a CHoCH — it printed as a **BOS instead of an SOS**, and since the bear-break fallback classifies the old high with `old_is_hh = is_choch ? true : (…)`, losing the CHoCH also lost the forced `true`, so the **HH never printed**.
 
-Four changes, now byte-identical across all six Pine copies of the engine (`mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine`, `mpc_strategy.pine`):
+Four changes, now byte-identical across all six Pine copies of the engine (`mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine`, `sos_fade_strategy.pine`):
 
 1. bull break — `is_choch = st.dir == -1` (the `and not st.choch_lock` gate is gone)
 2. bear break — `is_choch = st.dir == 1` (same)
@@ -1125,7 +1125,7 @@ Four changes, now byte-identical across all six Pine copies of the engine (`mpc_
 
 …and in both break paths the confirmed-swing map (`last_conf_high` / `last_conf_low`) is now written only `if not is_choch`. On a fast reversal the promoted extreme is only the new ACTIVE swing; the NEXT break in that direction classifies it. That guard is what stops a lower high overwriting a genuine higher high.
 
-`choch_lock` is now **inert** — still declared, set and released, but never read. Leave it alone. It is dead in `mpc_assistant.pine` too, and these files are kept byte-identical to it; deleting it would make the next Pine diff lie.
+`choch_lock` is now **inert** — still declared, set and released, but never read. Leave it alone. It is dead in `mpc_jarvis.pine` too, and these files are kept byte-identical to it; deleting it would make the next Pine diff lie.
 
 **Parity re-confirmed 2026-07-12 on ONE combined export.** `ob_export.pine` + `fib_export.pine` were put on a single `VANTAGE_XAUUSD, 5m` chart and exported as one CSV (9,270 bars). `structure_engine_export.pine` was **not needed on the chart** — `ob_export.pine` already carries all 23 of its `px_*` columns (strict superset), and `fib_export.pine` collides with neither, so all three compare tools (which resolve columns by name and ignore extras) ran off that single file: `compare_tradingview.py --warmup 365`, `compare_ob.py --warmup 548`, `compare_fib.py --warmup 368` — all exit 0. Warm-up differs per engine because each needs a different depth of history before it catches up with the state Pine already had at row 0.
 
@@ -1133,22 +1133,22 @@ Four changes, now byte-identical across all six Pine copies of the engine (`mpc_
 
 ## The 2026-07-12 A+ divergence retro-link
 
-An RSI divergence pivot only confirms `divPivotLen` (5) bars **after** the extreme it marks. On a fast V-reversal the SOS fires inside that lag, so by the time the divergence arms Stage 1 the SOS is already in the past — and Stage 2 only looks forward. The setup stuck at 1/3 forever, and in `mpc_strategy.pine` that meant a divergence-armed setup could never place a trade.
+An RSI divergence pivot only confirms `divPivotLen` (5) bars **after** the extreme it marks. On a fast V-reversal the SOS fires inside that lag, so by the time the divergence arms Stage 1 the SOS is already in the past — and Stage 2 only looks forward. The setup stuck at 1/3 forever, and in `sos_fade_strategy.pine` that meant a divergence-armed setup could never place a trade.
 
 Fix: remember the last bull/bear SOS bar, and when a divergence arms, adopt an SOS that already fired **at or after** the divergence's pivot bar, provided it is still inside the staleness window. The sequence really did run div → SOS; we just learned about the div late.
 
-This lives ONLY in the two files that carry the A+ sequence — `mpc_assistant.pine` and `mpc_strategy.pine`. The structure engine, the three export builds and every Python engine have no A+ block, so nothing else needed it and no parity harness was affected (no re-run required).
+This lives ONLY in the two files that carry the A+ sequence — `mpc_jarvis.pine` and `sos_fade_strategy.pine`. The structure engine, the three export builds and every Python engine have no A+ block, so nothing else needed it and no parity harness was affected (no re-run required).
 
-**The two A+ blocks are NOT byte-identical, and that is expected.** Only `process()` is held byte-identical between the two files. `mpc_assistant.pine`'s A+ block has since moved on: its staleness window is measured in **minutes** (`aplusWindow * 60000`), arming is gated behind `aplusL_canArm`, and it has a session-gap detector. `mpc_strategy.pine` is an earlier generation — the window is in **bars** — so the retro-link there compares bar numbers, not timestamps. The strategy also needed a second change: its execution layer snapshots the arm source (`sosL_swp` / `sosL_div`) *on the SOS bar*, which never runs for a retro-linked SOS, so that snapshot is taken at retro-link time instead, measured against the SOS bar. Without it the table would show 2/3 but no trade would fire.
+**The two A+ blocks are NOT byte-identical, and that is expected.** Only `process()` is held byte-identical between the two files. `mpc_jarvis.pine`'s A+ block has since moved on: its staleness window is measured in **minutes** (`aplusWindow * 60000`), arming is gated behind `aplusL_canArm`, and it has a session-gap detector. `sos_fade_strategy.pine` is an earlier generation — the window is in **bars** — so the retro-link there compares bar numbers, not timestamps. The strategy also needed a second change: its execution layer snapshots the arm source (`sosL_swp` / `sosL_div`) *on the SOS bar*, which never runs for a retro-linked SOS, so that snapshot is taken at retro-link time instead, measured against the SOS bar. Without it the table would show 2/3 but no trade would fire.
 
 ---
 
-## 2026-07-22 — `mpc_strategy.pine` readability pass + compile-budget cuts
+## 2026-07-22 — `sos_fade_strategy.pine` readability pass + compile-budget cuts
 
 The trade annotations were rebuilt so a chart can be read without decoding text, and two features were deleted to get back under Pine's compiled-token cap.
 
 **Removed to buy tokens (CE10117: 100543 > 100256).**
-- **Kill Zones & NY Range** — the whole input group, the `security` call, the boxes/plotshapes and the today-deletion logic. Both were cosmetic, default OFF, and read by nothing in the execution layer. They still live in `mpc_assistant.pine` if the drawing is ever wanted back. `nyHour` was KEPT — `lateDayBlock` reads it.
+- **Kill Zones & NY Range** — the whole input group, the `security` call, the boxes/plotshapes and the today-deletion logic. Both were cosmetic, default OFF, and read by nothing in the execution layer. They still live in `mpc_jarvis.pine` if the drawing is ever wanted back. `nyHour` was KEPT — `lateDayBlock` reads it.
 - **`debugMarkNoFvg`'s on-chart labels** — they duplicated the missed-setup callout, which already names FVG as the missing confluence. The COUNTERS (`missedNoFvgL/S`) stay; the diagnostic log still reports every one.
 
 **Trade drawing, rebuilt.** A trade scales out in up to three pieces, so one box can never describe it. On close it now paints as stacked bands, each the slice of price one piece was actually paid for: entry→TP1 fill, TP1→TP2, TP2→runner, in three depths of the SAME green. A faded red band behind them shows how far price went against the trade first. A trade that banked nothing is one red band; one that came back to entry is a lone orange line. Every band comes from `strategy.closedtrades.exit_price()` — the real fill, never a fib level it merely aimed at. TP1/TP2/TP3 tags all anchor at the same x (the trade's right edge + 4) so they stack in one column instead of scattering across the candles.
@@ -1165,27 +1165,27 @@ The trade annotations were rebuilt so a chart can be read without decoding text,
 - **A function's last statement is its return value, and every branch of it must share a type.** `f_posBox`'s closing `if / else if / else` creates a box / a box / a line, which is `CE10235`. Fixed by putting a trailing `int _pbDone = 0` after the chain so the drawing is no longer the return expression — remove that line and the script stops compiling.
 - Both of these are the same family as the existing `CE10295` workaround (wrap a big block in a function so the main body pays for one statement).
 
-## 2026-07-23 — `mpc_strategy.pine` Method 3 (deep-fib entry) + prime-combo defaults
+## 2026-07-23 — `sos_fade_strategy.pine` Method 3 (deep-fib entry) + prime-combo defaults
 
 **New GRP_EXEC input `execDeepFib`** ("Entry: deep gap enters on nearest fib (not gap edge)"). It fixes a class of missed trades: when a qualifying FVG floats DEEP in the retrace, the limit used to rest at the gap's own edge, so price often stalled at a shallower fib and turned back before the edge was ever tapped. With it on, a gap whose NEAR edge (long = gap top `_gT`, short = gap bottom `_gB`) sits deeper than 0.618 re-prices to the nearest fib just SHALLOWER — 0.618/0.702/0.786 — the level price reaches first. A gap on a fib level, or shallower than 0.618, is unchanged. Logic: helper `f_deepFibEdge()` before the Entry EDGE block, called inside the FVG loop. **ONLY the near edge's position decides it** — an earlier "gap body contains a level" gate was WRONG (it dropped exactly the deep multi-level gaps this targets) and was removed.
 
 **Defaults flipped to Aaron's "prime" combo** — the settings he hard-tests in TradingView, now the shipped defaults across the strategy Pine, the export Pine, and the Python bot: `execArmSweep` OFF→**ON**, `execArmDiv` ON→**OFF** (arm on liquidity sweeps, not divergence), `execFvgDeepOnly` OFF→**ON**, `execDeepFib` (new) → **ON**. `execReqFVG` stays ON. This combo measured ≈+237% / PF 6.2 / 85% win / 13% max DD over ~2 years of gold at 84 trades (Aaron's TradingView Strategy Tester). NOTE: this changes the Strategy Tester baseline — the OLD divergence-armed numbers no longer reproduce without flipping the toggles back.
 
-**Ported to the Python bot the same day** — `strategies/python/mpc_sos_fade/` (config `exec_deep_fib` + the four flipped defaults in `config.py`, `execution._deep_fib_edge()`, export `cfg_bits` bit 8192, `compare_strategy.py` reads it, meta.json panel entry + updated `edge`/`steps`, 4 unit tests). Parity re-run pending a fresh TradingView export.
+**Ported to the Python bot the same day** — `strategies/python/sos_fade/` (config `exec_deep_fib` + the four flipped defaults in `config.py`, `execution._deep_fib_edge()`, export `cfg_bits` bit 8192, `compare_strategy.py` reads it, meta.json panel entry + updated `edge`/`steps`, 4 unit tests). Parity re-run pending a fresh TradingView export.
 
-**Slippage pinned to 0 in the `strategy()` call.** Both `mpc_strategy.pine` and `mpc_strategy_export.pine` now declare `slippage = 0` (the two `tradingview/` research strategies too), so the Strategy Tester Properties tab defaults to zero instead of Aaron's carried-over 25-tick setting. TV slippage is a broker-emulator COST, not signal logic — a flat per-fill charge that is neither honest (a resting limit never slips) nor comparable to the zero-cost Python `fill_model="bar"` run. Real costs go in the lab's tick fill model. The breakeven buffer (`execBeBufTk`, default 30) is a strategy INPUT and is unchanged. This does not touch the decision-stream (`px_*`/`cfg_*`) columns, so `compare_strategy.py` parity is unaffected.
+**Slippage pinned to 0 in the `strategy()` call.** Both `sos_fade_strategy.pine` and `sos_fade_strategy_export.pine` now declare `slippage = 0` (the two `tradingview/` research strategies too), so the Strategy Tester Properties tab defaults to zero instead of Aaron's carried-over 25-tick setting. TV slippage is a broker-emulator COST, not signal logic — a flat per-fill charge that is neither honest (a resting limit never slips) nor comparable to the zero-cost Python `fill_model="bar"` run. Real costs go in the lab's tick fill model. The breakeven buffer (`execBeBufTk`, default 30) is a strategy INPUT and is unchanged. This does not touch the decision-stream (`px_*`/`cfg_*`) columns, so `compare_strategy.py` parity is unaffected.
 
 ---
 
 ## 2026-07-24 — the B-LEG fork + 500x leverage pin
 
-**New file `strategies/tradingview/mpc_b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/mpc_bleg/`.
+**New file `strategies/tradingview/b_leg_strategy.pine`** — the B LEG split out as its own strategy (see the Key-paths entry above for what it is, how it differs from the parent, and the lean-out). Standing rule for it: any change to the parent's engine or A+ block flows in line-for-line; any B-LEG change flows to the Python port in `strategies/python/b_leg/`.
 
-**500x leverage pinned in the `strategy()` call** to match Aaron's demo account. `mpc_strategy.pine`, `mpc_strategy_export.pine` and `mpc_b_leg_strategy.pine` now carry `margin_long = 0.2, margin_short = 0.2` (margin % = 100 / leverage → 500x = 0.2%), and the two `tradingview/` research strategies (`ny_orb.pine`, `london_breakout.pine`) got the same. Like `slippage = 0`, this only sets the Strategy Tester Properties defaults so a fresh paste reproduces Aaron's account — it is not signal logic and does not touch the `px_*`/`cfg_*` decision stream, so `compare_strategy.py` parity is unaffected.
+**500x leverage pinned in the `strategy()` call** to match Aaron's demo account. `sos_fade_strategy.pine`, `sos_fade_strategy_export.pine` and `b_leg_strategy.pine` now carry `margin_long = 0.2, margin_short = 0.2` (margin % = 100 / leverage → 500x = 0.2%), and the two `tradingview/` research strategies (`ny_orb.pine`, `london_breakout.pine`) got the same. Like `slippage = 0`, this only sets the Strategy Tester Properties defaults so a fresh paste reproduces Aaron's account — it is not signal logic and does not touch the `px_*`/`cfg_*` decision stream, so `compare_strategy.py` parity is unaffected.
 
 ---
 
-## 2026-07-25 — blocked-trade marker (`mpc_strategy.pine` + `mpc_strategy_export.pine`)
+## 2026-07-25 — blocked-trade marker (`sos_fade_strategy.pine` + `sos_fade_strategy_export.pine`)
 
 A setup refused by one of the strategy's own toggles used to be **invisible everywhere**: no order is
 placed, so nothing is drawn, no row reaches the trade list, and the Strategy Tester cannot know it
@@ -1216,7 +1216,7 @@ disagree about why a trade did not happen. This also *shrank* the diag block (th
 count them.
 
 **It broke the token cap, and three subsystems paid for it (CE10117: 101484 > 100256).** Removed from
-`mpc_strategy.pine` — **Order Blocks** (input group, `OrderBlock` type, `manageOBs`/`extendOBs`, and
+`sos_fade_strategy.pine` — **Order Blocks** (input group, `OrderBlock` type, `manageOBs`/`extendOBs`, and
 all four creation blocks: external bull/bear + internal bull/bear), **VWAP** (input group,
 `ta.vwap(hlc3)`, the `plot`), and the **Session Volume Profile / MV line** (input group + the whole
 Asia-POC block). 4935 → 4700 lines.
@@ -1227,11 +1227,11 @@ orphaned identifiers after: `showOBs`, `obBodyOnly`, `maxActiveOB`, `colBull/Bea
 `manageOBs`, `extendOBs`, `vwapValue`, `vwapColor`, `vwapWidth`, `showVwap`, `hlc3`, `SVP_SESSION`,
 `SVP_TZ`, `inSVP`, `svpRows`, `svpHistory`, `svpPOCCol`, `svp_poc*`, `GRP_OB/VWAP/SVP`). The B-LEG
 fork dropped the same three on 2026-07-24 for the same reason, so this is precedent, not a new call.
-They live on in `mpc_assistant.pine` if the drawing is ever wanted back.
+They live on in `mpc_jarvis.pine` if the drawing is ever wanted back.
 
 **`process()` is untouched**, so the byte-identical rule still holds and no parity harness is affected.
 
-**`mpc_strategy_export.pine` got the identical cuts** (4778 → 4540 lines) — its pre-cut line numbers
+**`sos_fade_strategy_export.pine` got the identical cuts** (4778 → 4540 lines) — its pre-cut line numbers
 matched the parent's exactly, so the same eight ranges applied verbatim. In the export the three were
 doubly pointless: nobody reads its chart, it exists only to emit the columns, and none of the three fed
 any of them. **All 25 `px_*` / `cfg_*` / `dbg_*` columns verified present afterward**, including the
@@ -1243,9 +1243,9 @@ depend on price).
 
 ---
 
-## 2026-07-26 — orphaned-SVP compile fix + `mpc_strategy_export.pine` regenerated
+## 2026-07-26 — orphaned-SVP compile fix + `sos_fade_strategy_export.pine` regenerated
 
-**The compile error.** Aaron's brother edited `mpc_strategy.pine` directly on TradingView and pushed
+**The compile error.** Aaron's brother edited `sos_fade_strategy.pine` directly on TradingView and pushed
 it. His copy deleted the Session Volume Profile **inputs** (`showSVP`, `svpRows`, `svpHistory`,
 `svpPOCCol`, `GRP_SVP`) but left the entire 108-line SVP computation block behind, so the script failed
 with `CE10272: Undeclared identifier "showSVP"` at the first line that read one. Removed the orphaned
@@ -1257,9 +1257,9 @@ identifiers before trusting the paste. A deleted input group with its consumer s
 locally in nobody's head and fails on the first line that reads it. The 2026-07-25 entry above lists
 the exact identifier set for all three cosmetic subsystems — use it as the checklist.
 
-**`mpc_strategy_export.pine` regenerated** (4540 → 4610 lines) by its own documented procedure: the
+**`sos_fade_strategy_export.pine` regenerated** (4540 → 4610 lines) by its own documented procedure: the
 parent's body up to the `DIAGNOSTIC LOG` header, plus the appended `PARITY EXPORT` block, then restore
-`strategy("MPC A+ Strategy Export"` on line 29. That title is now the **ONLY** difference from the
+`strategy("SOS Fade Strategy Export"` on line 29. That title is now the **ONLY** difference from the
 parent — verified by `diff` over the shared range, zero other lines. The export had drifted five
 trade-affecting changes behind (the whole **B LEG** setup + its three inputs and the `execAplus` term
 in `longArmed`; **`execFvg50`**; **`execRunnerTrail` + `execStructTrailBufTk`**, the structure-swing
@@ -1270,11 +1270,11 @@ columns verified present afterward.
 **Two things deliberately NOT done, both flagged in the export's own header:**
 - **`cfg_bits` still packs 14 booleans.** `execAplus`, `execBLeg` and `execFvg50` have no bit, and
   `execRunnerTrail` / `execStructTrailBufTk` / `execTp2StopMode` have no column. At their **defaults**
-  this costs parity nothing (`execBLeg` and `execFvg50` are OFF, and the `mpc_sos_fade` Python bot has
-  no B leg — that lives in `mpc_bleg`). Tune any of them and the column must be added here AND in
+  this costs parity nothing (`execBLeg` and `execFvg50` are OFF, and the `sos_fade` Python bot has
+  no B leg — that lives in `b_leg`). Tune any of them and the column must be added here AND in
   `compare_strategy.py` before a diff means anything.
 - **`execFvgDeepest` (the deepest-gap-on-a-fib entry toggle) is GONE and has to be rebuilt from
-  scratch if wanted.** Built repo-side 2026-07-25 across both Pine files, `mpc_sos_fade`
+  scratch if wanted.** Built repo-side 2026-07-25 across both Pine files, `sos_fade`
   (`config.py` / `execution._pick_edge` / 6 unit tests / meta.json panel / `cfg_bits` bit 16384) and
   never committed — then wiped: the brother's TradingView copy overwrote the Pine, and the working-tree
   revert that followed discarded the Python. Nothing of it survives. What it did: when TWO OR MORE
@@ -1291,8 +1291,8 @@ columns verified present afterward.
 
 ## 2026-07-26 — the exit levers ported to the B-leg fork + the export's config columns completed
 
-Aaron's brother's 2026-07-25 paste added a new **exit** family to `mpc_strategy.pine`. This pass
-brought `mpc_b_leg_strategy.pine` and both Python bots up to it, and closed the export hole it left.
+Aaron's brother's 2026-07-25 paste added a new **exit** family to `sos_fade_strategy.pine`. This pass
+brought `b_leg_strategy.pine` and both Python bots up to it, and closed the export hole it left.
 
 **What was new in the parent** (all in `GRP_EXEC`):
 - `execRunnerTrail` — "Fixed step" / **"Structure (swing)"**, the DEFAULT. Past TP2 the runner
@@ -1306,7 +1306,7 @@ brought `mpc_b_leg_strategy.pine` and both Python bots up to it, and closed the 
 
 The brother's tooltip names the tested best combo: **Structure trail + buffer 20 + floor = TP1 price**.
 
-**Ported into `mpc_b_leg_strategy.pine`:** `execRunnerTrail`, `execStructTrailBufTk`,
+**Ported into `b_leg_strategy.pine`:** `execRunnerTrail`, `execStructTrailBufTk`,
 `execTp2StopMode` and the `lStage2Floor` / `sStage2Floor` + structure-trail exit block, line-for-line
 off the parent. Plus `execAplus`, relabelled **"A+ has priority (stand the B-leg down)"** — in this
 fork A+ never places an order, so the flag doesn't disable an entry path, it drops the priority gate.
@@ -1320,7 +1320,7 @@ That gate has been the file's own first-listed tuning candidate since 2026-07-24
   its own code set — new design work, not a port.
 
 **The export hole this closed — the important part.** `execRunnerTrail` shipped defaulting to
-Structure on 2026-07-25, but `mpc_strategy_export.pine` carried no column for it. So
+Structure on 2026-07-25, but `sos_fade_strategy_export.pine` carried no column for it. So
 `compare_strategy.py` configured the Python bot to the fixed-step fallback and diffed a
 structure-trailed Pine against a grid-trailed Python: a mismatch that is pure drift, reported as if
 it were a bug. **A default that changes behaviour is exactly as dangerous as a new input, and it
@@ -1338,15 +1338,15 @@ no `cfg_exitmode` (i.e. taken before this change) instead of guessing.
 1. The Pine was running `execTp1Pct = 20` / `execTp2Pct = 20`, NOT the 30/40 shipped defaults. With no
    column for them the bot would have replayed 30/40 and the diff would have been blamed on logic.
 2. The first run's single mismatch (`px_edge` on one bar) was a genuine bug — an unpinned FVG engine
-   input. `mpc_strategy.pine` HARDCODES the middle-bar close-cleared check (lines 1686/1688) while the
+   input. `sos_fade_strategy.pine` HARDCODES the middle-bar close-cleared check (lines 1686/1688) while the
    `fair_value_gaps` engine defaults `require_close` OFF, so Python created gaps the Pine never did.
    Fixed on the Python side (`EngineConfig.fvg_require_close`, pinned True by the bot). **Never fix
    this class of gap by editing the Pine** — it is the source of truth; the pin belongs in the port.
 
-`mpc_b_leg_strategy.pine` compiles (confirmed on TradingView), and its parity harness was built the
-same day: **`strategies/tradingview/mpc_b_leg_strategy_export.pine`** = that file with the body byte-identical
+`b_leg_strategy.pine` compiles (confirmed on TradingView), and its parity harness was built the
+same day: **`strategies/tradingview/b_leg_strategy_export.pine`** = that file with the body byte-identical
 (only the line-40 `strategy()` title differs) + an appended PARITY EXPORT block, diffed by
-`strategies/python/mpc_bleg/tools/compare_bleg.py` and registered in `backtest/tools/verify_parity.py`.
+`strategies/python/b_leg/tools/compare_bleg.py` and registered in `backtest/tools/verify_parity.py`.
 It plots the B-LEG arm (NOT `longArmed` — A+ never places an order in this fork), the band's 0.5 edge,
 the band-derived TP1/TP2, and the tracker's own `bl_*` state, which is the column set that matters:
 every new B-LEG rule lives in the tracker, and a band-maths bug shows as a wrong price many bars before
@@ -1359,11 +1359,11 @@ the export's own header.
 
 ## 2026-07-27 — TP1/TP2 default 30/40 → 0/0, and the `qty_percent = 0` trap
 
-`execTp1Pct` / `execTp2Pct` now default **0** in both `mpc_strategy.pine` and
-`mpc_strategy_export.pine` (and `exec_tp1_pct`/`exec_tp2_pct` in `config.py`, in lockstep). 0 = bank
+`execTp1Pct` / `execTp2Pct` now default **0** in both `sos_fade_strategy.pine` and
+`sos_fade_strategy_export.pine` (and `exec_tp1_pct`/`exec_tp2_pct` in `config.py`, in lockstep). 0 = bank
 NOTHING at the targets; the whole position rides to the runner. This is what Aaron has actually been
 trading — his saved chart carried 1% on both rungs, which is the closest the input would take — and it
-is what `mpc_sos_fade_optimization.md` Run 1 measured as best (0/0 = 70.7R vs 47.9R at 30/40,
+is what `sos_fade_optimization.md` Run 1 measured as best (0/0 = 70.7R vs 47.9R at 30/40,
 monotonic across all 21 combos).
 
 **The trap, and why the code needed a guard, not just a new default.** `strategy.exit()` treats

@@ -1,7 +1,7 @@
 """The recovery rule as a LEG of a shared account — one balance, one risk budget.
 
 **Why this exists, stated first because the number it replaces was wrong in a way nobody could
-see.** The batch adapter (`mpc_sos_fade/recovery.py`) appends recovery trades to a finished book.
+see.** The batch adapter (`sos_fade/recovery.py`) appends recovery trades to a finished book.
 It sizes them off the running balance, but the primary never sizes off THEM, so recovery profit
 sits beside the curve instead of lifting it. Measured on run `236e206d0142`: the identical trades
 are worth **+3.8%** that way and **+44.8%** on one compounding balance. A real account is one

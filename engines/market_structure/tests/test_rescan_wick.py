@@ -21,7 +21,7 @@ tie. Here the resurrected wick is STRICTLY more extreme, so that guard cannot se
 Exact-price adjacent duplicates measured 0 across 600,000 bars — that fix works and is
 untouched.
 
-⚠ NOT cosmetic. `mpc_assistant.pine` does `fibo_ash := st.ash`, so a bogus active swing
+⚠ NOT cosmetic. `mpc_jarvis.pine` does `fibo_ash := st.ash`, so a bogus active swing
 moves the External Fib's anchor and with it E1-E4, the TP ladder, the Sniper Zone and the
 B-LEG band. One measured case was $8.10 out.
 

@@ -26,7 +26,7 @@
       "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
       "symbol_suffix": ".s",
       "account_profile": "puprime_standard",
-      "note": "The account mpc_sos_fade_demo traded from 2026-08-05 to 2026-08-12, kept because it is real and reachable and its balance history stays on it. The terminal is NOT logged into it today - MT5_FFT is on the ECN account - so assigning a bot here means logging that terminal back in first."
+      "note": "The account sos_fade_demo traded from 2026-08-05 to 2026-08-12, kept because it is real and reachable and its balance history stays on it. The terminal is NOT logged into it today - MT5_FFT is on the ECN account - so assigning a bot here means logging that terminal back in first."
     },
     {
       "account": 700119432,

@@ -75,11 +75,11 @@ from credentials import env_name, get  # noqa: E402
 # bot is `runner.py`, so `--bot <key>` in the commandline is the only thing that identifies
 # ONE of them. Keep the three registries in step.
 BOTS = {
-    "mpc_sos_fade_demo": "MPC SOS Fade",
+    "sos_fade_demo": "SOS Fade",
     # On the BENCH today (`account: null`). Registered anyway, and skipped per-pass by
     # `_is_assigned` — see the same note in `monitor.py`: registering a bot only once somebody
     # assigns it would let the Bots page arm a bot no switch is watching.
-    "mpc_bleg_demo": "MPC B-LEG",
+    "b_leg_demo": "B-LEG",
 }
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor

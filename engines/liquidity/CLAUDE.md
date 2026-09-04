@@ -8,14 +8,14 @@ line or box.
 **Scope:** Level geometry + lifecycle (create on a completed period / session close → mitigate
 (sweep or break) → evict) only. No trading decisions, no MT5 ops, no UI, no chart rendering (no
 lines, labels or colours). Session high/low is CONSUMED from `engines/sessions/`, not recomputed.
-**Status:** Production — ported from `mpc_assistant.pine`'s liquidity blocks, unit-tested (14
+**Status:** Production — ported from `mpc_jarvis.pine`'s liquidity blocks, unit-tested (14
 hand-traced tests, green), and **100% Pine-parity-validated**. The **MONTHLY level (PMH/PML) was
 removed from the source and this engine on 2026-07-09**; the check now covers 28 fields (13 level
 prices, their 12 mitigation flags, 3 boundary-roll pulses) and RE-PASSED exit 0 on a fresh
 `VANTAGE_XAUUSD, 5m` export (13,759 bars, `--htf-rollover 18 --warmup 1742` — the warm-up is now just
 the weekly cold-start, not the old monthly one). The one canonical implementation — no consumer builds
 its own.
-**Pine:** ported from `indicators/engines/mpc_assistant.pine` (DAILY/WEEKLY LEVELS, PWC, H4
+**Pine:** ported from `indicators/engines/mpc_jarvis.pine` (DAILY/WEEKLY LEVELS, PWC, H4
 LIQUIDITY SWEEP, SESSION H/L); parity harness is `indicators/engines/liquidity_export.pine`, diffed against
 this Python by `tools/compare_liquidity.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
@@ -61,7 +61,7 @@ engines/liquidity/
     └── compare_liquidity.py ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/engines/mpc_assistant.pine` — DAILY/WEEKLY LEVELS (1334-1506),
+Pine source of truth: `indicators/engines/mpc_jarvis.pine` — DAILY/WEEKLY LEVELS (1334-1506),
 PREVIOUS WEEKLY CLOSE (1508-1533), H4 LIQUIDITY SWEEP TRACKER (1535-1591), SESSION H/L TRACKING
 (1593-1760), the HTF securities (811-817) and the newDay tidy (1344 / 1402 / 1460 / 1618).
 Parity export build: `indicators/engines/liquidity_export.pine`.
@@ -86,7 +86,7 @@ level); weekly uses the **break** rule (a plain close through). Keep it exact.
 
 **Close-back guard dropped 2026-07-06.** The sweep rule used to also require price to close back the
 other side of the level (`high>lvl and close<lvl` for a high — a grab-and-reject). A re-pasted
-`mpc_assistant.pine` removed that guard: the daily/session/H4 sweeps now fire on the **wick alone**.
+`mpc_jarvis.pine` removed that guard: the daily/session/H4 sweeps now fire on the **wick alone**.
 Weekly break rule is unchanged.
 
 A level's price is **frozen at creation** and never repainted. A level created on a period roll or a
@@ -160,7 +160,7 @@ Feature toggles (`enable_daily`/`enable_weekly`/…/`enable_sessions`), `hide_mi
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s liquidity blocks back here. Keep the sweep-vs-break rule
+- Port any change to `mpc_jarvis.pine`'s liquidity blocks back here. Keep the sweep-vs-break rule
   split, the per-bar order (tidy → create → mitigate), and the previous-completed-period reads exact.
 - Keep every HTF level **non-repainting** (previous completed period only) — this is Aaron's explicit
   decision; do not "improve" it into a live-period read.
@@ -173,7 +173,7 @@ Feature toggles (`enable_daily`/`enable_weekly`/…/`enable_sessions`), `hide_mi
 - Do not recompute session high/low here — consume `engines/sessions/`'s `closed` SessionRange.
 - Do not bake in lines, labels or colours — this layer emits events.
 - Do not build a second liquidity implementation elsewhere. This is the canonical one.
-- Do not let this engine or the liquidity blocks in `mpc_assistant.pine` drift; re-run the parity
+- Do not let this engine or the liquidity blocks in `mpc_jarvis.pine` drift; re-run the parity
   check after any change to either.
 
 ---
@@ -193,7 +193,7 @@ value while Python forms its first in-window weekly level at bar 1742) — far s
 4,653-bar warm-up, which the monthly level dominated. (Pre-removal run for the record: GREEN 2026-07-05,
 33 fields, `--warmup 4653`.) The harness:
 
-1. `indicators/engines/liquidity_export.pine` — the liquidity levels lifted from `mpc_assistant.pine` with
+1. `indicators/engines/liquidity_export.pine` — the liquidity levels lifted from `mpc_jarvis.pine` with
    drawing removed, using the **non-repainting** `high[1]/low[1]/close[1]` reads, plus `px_*` columns
    for each level's price + mitigation flag and `px_*_roll` boundary pulses. Put it on the same
    `VANTAGE_XAUUSD` chart/timeframe (5m), Export chart data → CSV, drop it in
@@ -207,11 +207,11 @@ value while Python forms its first in-window weekly level at bar 1742) — far s
 
 The parity run uses `hide_mitigated_on_new_day=False` (the export drops that drawing-only tidy; it is
 covered by the unit tests). Re-run `compare_liquidity.py` after any change to the liquidity blocks in
-`mpc_assistant.pine` or here.
+`mpc_jarvis.pine` or here.
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` (liquidity blocks listed under Key paths).
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` (liquidity blocks listed under Key paths).
 - Parity export build: `indicators/engines/liquidity_export.pine`.
 - Upstream (consumed): `engines/sessions/CLAUDE.md` (session H/L).
 - Sibling / the shared non-repainting-port pattern: `engines/sessions/CLAUDE.md`,

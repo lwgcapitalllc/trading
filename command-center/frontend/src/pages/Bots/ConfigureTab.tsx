@@ -1276,7 +1276,7 @@ export function ConfigureTab() {
   // specific bot's config is a real link, and a refresh does not silently move you to
   // another bot's promote button.
   //
-  // ⚠ Keyed on `bot.key`, never the display name. `?bot=MPC%20SOS%20Fade` is a bookmark
+  // ⚠ Keyed on `bot.key`, never the display name. `?bot=SOS%20Fade` is a bookmark
   // that dies the day somebody renames the bot — and the thing it silently falls back to is
   // `bots[0]`, i.e. a DIFFERENT bot's promote button, with the URL still naming the one you
   // wanted. A stale key falls back the same way, but a key is not a label and nobody edits

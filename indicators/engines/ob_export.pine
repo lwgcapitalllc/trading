@@ -3,7 +3,7 @@
 // ============================================================================
 //  ob_export.pine — ORDER-BLOCK PARITY EXPORT BUILD
 // ============================================================================
-//  Instrumented copy of the ORDER BLOCKS blocks from `mpc_assistant.pine`, with
+//  Instrumented copy of the ORDER BLOCKS blocks from `mpc_jarvis.pine`, with
 //  the drawing reduced to invisible boxes and `px_*` / `cfg_*` plot columns
 //  added. Put it on a chart, "Export chart data" -> CSV, and diff that CSV
 //  against the Python engine with:
@@ -22,12 +22,12 @@
 //  byte-identical to mpc rather than being paraphrased around a substitute
 //  field. They are drawn with `color(na)` throughout, so nothing renders.
 //
-//  KEEP THE LOGIC BYTE-IDENTICAL TO `mpc_assistant.pine`. If the mpc OB blocks
+//  KEEP THE LOGIC BYTE-IDENTICAL TO `mpc_jarvis.pine`. If the mpc OB blocks
 //  change, re-sync this file FIRST, then re-export, then re-run compare_ob.py.
 // ============================================================================
 indicator("OB Export", overlay = true, max_boxes_count = 500, max_lines_count = 500)
 
-// ── Settings, mirroring the mpc constants (mpc_assistant.pine:97-189, 2269-2280,
+// ── Settings, mirroring the mpc constants (mpc_jarvis.pine:97-189, 2269-2280,
 //    2626-2638, 2717 area). Exposed as inputs HERE ONLY so a parity run can be
 //    taken at a non-default setting; the `cfg_ob_*` columns below carry whatever
 //    was used, and compare_ob.py configures the Python engine FROM them. That is

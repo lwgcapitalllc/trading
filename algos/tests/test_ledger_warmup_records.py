@@ -167,7 +167,7 @@ def test_a_second_warm_does_not_re_queue_the_first_ones(monkeypatch):
 
 
 def test_a_strategy_without_the_lists_is_not_a_crash(monkeypatch):
-    """`mpc_bleg` overrides `_place_entries` and records nothing by construction, and a future
+    """`b_leg` overrides `_place_entries` and records nothing by construction, and a future
     strategy may too. The clear is defensive on purpose — an AttributeError here would take out
     the warm-up, i.e. kill the bot at startup over a reporting field."""
     r, ex = _warmed_runner(monkeypatch, bars=300)  # 200 is warm()'s own floor

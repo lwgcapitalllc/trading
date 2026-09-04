@@ -3,14 +3,14 @@
 **Written 2026-09-03. Nothing here is built yet.** This is the survey and the instruction set for
 the session that does the work.
 
-**Goal:** `mpc_extreme_leg` runs as a second LIVE bot on PU Prime ECN demo **700152905**, alongside
-`mpc_sos_fade_demo`, sharing one 10% account risk cap at 5% each.
+**Goal:** `extreme_leg` runs as a second LIVE bot on PU Prime ECN demo **700152905**, alongside
+`sos_fade_demo`, sharing one 10% account risk cap at 5% each.
 
 > ## ⚠ READ THIS FIRST — THE NAMES IN HERE WILL MOVE
 >
 > `docs/DEBRAND_RENAME_PLAN.md` runs BEFORE this and renames every strategy package, class and bot
-> key. After it, `mpc_extreme_leg` is `extreme_leg`, `MpcExtremeLegStrategy` is
-> `ExtremeLegStrategy`, and `mpc_sos_fade_demo` is `sos_fade_demo`.
+> key. After it, `extreme_leg` is `extreme_leg`, `ExtremeLegStrategy` is
+> `ExtremeLegStrategy`, and `sos_fade_demo` is `sos_fade_demo`.
 >
 > 🔴 **The rename plan's §2.1 does NOT list this package** — it renames the Pine file and forgets
 > the Python folder and class. Fix that there, not here.
@@ -36,7 +36,7 @@ seq = self._st.sequence.update(sig)
 dec = self._st.execution.step(sig, seq)
 ```
 
-| | `mpc_sos_fade` | `mpc_extreme_leg` |
+| | `sos_fade` | `extreme_leg` |
 |---|---|---|
 | `.signals` | ✅ `SignalAdapter` | ❌ absent |
 | `.sequence` | ✅ `SosFadeSequence` | ❌ absent |
@@ -61,7 +61,7 @@ to call.** This is a different pipeline shape, not a missing method.
 
 Plus these methods:
 
-| What the live path calls | `mpc_sos_fade` | `mpc_extreme_leg` |
+| What the live path calls | `sos_fade` | `extreme_leg` |
 |---|---|---|
 | `step(sig, seq) -> Decision` | ✅ | ❌ |
 | `request_close(reason) -> bool` | ✅ | ❌ **absent** |
@@ -88,7 +88,7 @@ a refactor of the order layer touches the LIVE bot and needs its own proof.
 
 ## 1. What gets built
 
-**One adapter, in `strategies/python/mpc_extreme_leg/`, presenting this strategy through the
+**One adapter, in `strategies/python/extreme_leg/`, presenting this strategy through the
 interface the live path drives.** Not a change to `algos/live/`, and not a rewrite of the strategy's
 own logic — the replay path stays exactly as it is, because every number this bot has was measured
 through it.
@@ -121,7 +121,7 @@ could not start was costing half the account's return for nothing; see
 🔴 **Order matters and it fails loudly the wrong way round:**
 
 ```
-1. Move mpc_sos_fade_demo to 5%.      <- FIRST
+1. Move sos_fade_demo to 5%.      <- FIRST
 2. Assign the extreme leg at 5%.      <- SECOND
 ```
 
@@ -135,7 +135,7 @@ first is refused**, because 10 + 5 > 10.
 −54.9% max drawdown over 6.5 years, Run 12's finding that the drawdown is a losing streak rather
 than give-back — was measured at 10% and describes neither bot after this.
 
-⚠ **`mpc_bleg_demo` is benched and still states 10.0.** It cannot join this account until that
+⚠ **`b_leg_demo` is benched and still states 10.0.** It cannot join this account until that
 moves.
 
 ### What the stack is expected to do

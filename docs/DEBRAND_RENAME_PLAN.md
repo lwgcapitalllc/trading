@@ -29,8 +29,8 @@
 >
 > | Workstream | Files | Collides with |
 > |---|---|---|
-> | Live bot feed / ledger / dual-clock | `algos/live/bridge.py`, `feed.py`, `ledger.py`, `runner.py`; `strategies/python/mpc_sos_fade/strategy.py` + new `dual_clock.py`; 4 test files + new `test_dual_feed_merge.py` | §2.1 (the package rename), §4.1 (the ledger), §3 (the live bot) — **the worst possible overlap** |
-> | Extreme Leg strategy | `strategies/tradingview/mpc_extreme_leg_strategy.pine` + its doc, `tools/build_extreme_leg.py`, `backtest/tools/pre_sos_leg*.py`, two CLAUDE.md files | §2.3 (the Pine rename) |
+> | Live bot feed / ledger / dual-clock | `algos/live/bridge.py`, `feed.py`, `ledger.py`, `runner.py`; `strategies/python/sos_fade/strategy.py` + new `dual_clock.py`; 4 test files + new `test_dual_feed_merge.py` | §2.1 (the package rename), §4.1 (the ledger), §3 (the live bot) — **the worst possible overlap** |
+> | Extreme Leg strategy | `strategies/tradingview/extreme_leg_strategy.pine` + its doc, `tools/build_extreme_leg.py`, `backtest/tools/pre_sos_leg*.py`, two CLAUDE.md files | §2.3 (the Pine rename) |
 >
 > ⚠ **The live-bot workstream is the blocker that matters.** It is editing the very strategy
 > package this plan renames and the ledger this plan moves. Renaming under it would rewrite paths
@@ -111,19 +111,19 @@ grep -rio "mpc[a-z0-9_-]*" --exclude-dir=.git --exclude-dir=node_modules --exclu
 
 | Today | Becomes |
 |---|---|
-| `strategies/python/mpc_sos_fade/` | `strategies/python/sos_fade/` |
-| `strategies/python/mpc_bleg/` | `strategies/python/b_leg/` |
-| `strategies/python/mpc_bos/` | `strategies/python/bos/` |
-| `strategies/python/mpc_realign/` | `strategies/python/realign/` |
+| `strategies/python/sos_fade/` | `strategies/python/sos_fade/` |
+| `strategies/python/b_leg/` | `strategies/python/b_leg/` |
+| `strategies/python/bos/` | `strategies/python/bos/` |
+| `strategies/python/realign/` | `strategies/python/realign/` |
 | `strategies/python/loss_recovery/` | **unchanged** — already generic, and the working proof this shape is fine |
-| class `MpcSosFadeStrategy` | `SosFadeStrategy` |
-| class `MpcBLegStrategy` | `BLegStrategy` |
-| class `MpcBosStrategy` | `BosStrategy` |
-| class `MpcRealignStrategy` | `RealignStrategy` |
-| display `MPC SOS Fade` | `SOS Fade` |
-| display `MPC B-LEG` | `B-LEG` |
-| display `MPC BOS` | `BOS` |
-| display `MPC REALIGN` | `Realign` |
+| class `SosFadeStrategy` | `SosFadeStrategy` |
+| class `BLegStrategy` | `BLegStrategy` |
+| class `BosStrategy` | `BosStrategy` |
+| class `RealignStrategy` | `RealignStrategy` |
+| display `SOS Fade` | `SOS Fade` |
+| display `B-LEG` | `B-LEG` |
+| display `BOS` | `BOS` |
+| display `Realign` | `Realign` |
 
 ⚠ **The editor-metadata file renames with its folder.** The lab scanner looks for
 `<pkg>/<pkg>.meta.json` by folder name. A folder renamed without it loses every label, group and
@@ -137,8 +137,8 @@ namespace at once for exactly this reason.
 
 | Today | Becomes |
 |---|---|
-| `mpc_sos_fade_demo` | `sos_fade_demo` |
-| `mpc_bleg_demo` | `b_leg_demo` |
+| `sos_fade_demo` | `sos_fade_demo` |
+| `b_leg_demo` | `b_leg_demo` |
 
 **Settled: this happens.** §3 is what it costs.
 
@@ -146,17 +146,17 @@ namespace at once for exactly this reason.
 
 | Today | Becomes | Title today | Title becomes |
 |---|---|---|---|
-| `mpc_strategy.pine` | `sos_fade_strategy.pine` | `MPC A+ Strategy` | `SOS Fade Strategy` |
-| `mpc_strategy_export.pine` | `sos_fade_strategy_export.pine` | `MPC A+ Strategy Export` | `SOS Fade Strategy Export` |
-| `mpc_b_leg_strategy.pine` | `b_leg_strategy.pine` | `MPC B-LEG Strategy` | `B-LEG Strategy` |
-| `mpc_b_leg_strategy_export.pine` | `b_leg_strategy_export.pine` | `MPC B-LEG Strategy Export` | `B-LEG Strategy Export` |
-| `mpc_bos_strategy.pine` | `bos_strategy.pine` | `MPC BOS Strategy` | `BOS Strategy` |
-| `mpc_bos_strategy_export.pine` | `bos_strategy_export.pine` | `MPC BOS Strategy Export` | `BOS Strategy Export` |
-| `mpc_h4_sweep_strategy.pine` | `h4_sweep_strategy.pine` | `MPC H4 Sweep` | `H4 Sweep` |
-| `mpc_h4_sweep_strategy_export.pine` | `h4_sweep_strategy_export.pine` | `MPC H4 Sweep Export` | `H4 Sweep Export` |
-| `mpc_extreme_leg_strategy.pine` | `extreme_leg_strategy.pine` | `MPC Extreme Leg` | `Extreme Leg` |
-| `mpc_realign_strategy.pine` | `realign_strategy.pine` | `MPC REALIGN` | `Realign` |
-| `mpc_recovery_strategy.pine` | `recovery_strategy.pine` | `MPC A+ Strategy + Loss Recovery` | `SOS Fade + Loss Recovery` |
+| `sos_fade_strategy.pine` | `sos_fade_strategy.pine` | `SOS Fade Strategy` | `SOS Fade Strategy` |
+| `sos_fade_strategy_export.pine` | `sos_fade_strategy_export.pine` | `SOS Fade Strategy Export` | `SOS Fade Strategy Export` |
+| `b_leg_strategy.pine` | `b_leg_strategy.pine` | `B-LEG Strategy` | `B-LEG Strategy` |
+| `b_leg_strategy_export.pine` | `b_leg_strategy_export.pine` | `B-LEG Strategy Export` | `B-LEG Strategy Export` |
+| `bos_strategy.pine` | `bos_strategy.pine` | `BOS Strategy` | `BOS Strategy` |
+| `bos_strategy_export.pine` | `bos_strategy_export.pine` | `BOS Strategy Export` | `BOS Strategy Export` |
+| `h4_sweep_strategy.pine` | `h4_sweep_strategy.pine` | `H4 Sweep` | `H4 Sweep` |
+| `h4_sweep_strategy_export.pine` | `h4_sweep_strategy_export.pine` | `H4 Sweep Export` | `H4 Sweep Export` |
+| `extreme_leg_strategy.pine` | `extreme_leg_strategy.pine` | `Extreme Leg` | `Extreme Leg` |
+| `realign_strategy.pine` | `realign_strategy.pine` | `Realign` | `Realign` |
+| `recovery_strategy.pine` | `recovery_strategy.pine` | `SOS Fade + Loss Recovery` | `SOS Fade + Loss Recovery` |
 
 Their mirrors under `strategies/tradingview/docs/` rename to match.
 
@@ -164,8 +164,8 @@ Their mirrors under `strategies/tradingview/docs/` rename to match.
 
 | Today | Becomes | Note |
 |---|---|---|
-| `indicators/engines/mpc_assistant.pine` | **`indicators/engines/mpc_jarvis.pine`** | **KEEPS the MPC name.** Its declared title already reads `MPC- JARVIS` — leave the title exactly as TradingView has it; changing it changes the filename TradingView gives future exports for no gain. |
-| `indicators/engines/mss_sweeps_mpc.pine` | `mss_sweeps.pine` | drop the prefix |
+| `indicators/engines/mpc_jarvis.pine` | **`indicators/engines/mpc_jarvis.pine`** | **KEEPS the MPC name.** Its declared title already reads `MPC- JARVIS` — leave the title exactly as TradingView has it; changing it changes the filename TradingView gives future exports for no gain. |
+| `indicators/engines/mss_sweeps.pine` | `mss_sweeps.pine` | drop the prefix |
 
 🔴 **Renaming the assistant file is not a small edit: ~130 files reference it by name.** Every
 engine's docstring, `types.py`, comparison harness and CLAUDE.md names it as its Pine source, plus
@@ -175,11 +175,11 @@ renamed file, or it silently audits a path that no longer exists.**
 
 ### 2.5 Docs named after a strategy
 
-`docs/MPC_SOS_FADE_SPEC.md` · `MPC_SOS_FADE_BUILD_PLAN.md` · `MPC_SOS_FADE_SECONDARY.md` ·
-`MPC_BOS_SPEC.md` · `MPC_BOS_OPTIMIZATION.md` · `MPC_REALIGN_SPEC.md` · `MPC_FB_SPEC.md` → drop the
+`docs/SOS_FADE_SPEC.md` · `SOS_FADE_BUILD_PLAN.md` · `SOS_FADE_SECONDARY.md` ·
+`BOS_SPEC.md` · `BOS_OPTIMIZATION.md` · `REALIGN_SPEC.md` · `FB_SPEC.md` → drop the
 prefix.
 
-`strategies/python/mpc_sos_fade/mpc_sos_fade_bugs.md` and `mpc_sos_fade_optimization.md` →
+`strategies/python/sos_fade/sos_fade_bugs.md` and `sos_fade_optimization.md` →
 `sos_fade_bugs.md`, `sos_fade_optimization.md`.
 
 **Every inbound link moves with the file.** Grep for the old filenames AFTER the move, not before.
@@ -210,7 +210,7 @@ overlays and alert text. It is not a company name. Do not fold it into this job.
 
 ## 3. The live bot — why this cannot be a find-and-replace
 
-`mpc_sos_fade_demo` is ARMED and trading a PU Prime ECN demo account. The bot key is an identity,
+`sos_fade_demo` is ARMED and trading a PU Prime ECN demo account. The bot key is an identity,
 not a label, and it is load-bearing in six places:
 
 1. The instance folder name, on the Mac and on the Windows box.
@@ -248,7 +248,7 @@ from one to the other; they answer different questions.
    A resting limit is the trap: it survives a restart, carries the old comment string,
    and counts against the account-level risk cap.
 2. Stop by ASKING, never by killing:
-     ssh forexvps "echo stop > C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\stop.request"
+     ssh forexvps "echo stop > C:\trading\algos\markets\fx\instances\sos_fade_demo\stop.request"
    Wait ~30s, confirm the process is gone by commandline.
    A hard kill skips the shutdown record and makes the next startup cry wolf.
 3. Do the whole repo rename on the Mac. Commit. Push.
@@ -274,7 +274,7 @@ on every poll and buries the log.
 
 ### 4.1 The decision records — KEPT, and carried across the rename unbroken
 
-`algos/ledger_archive/mpc_sos_fade_demo/` holds **2,518 decision records over 2026-07-31 →
+`algos/ledger_archive/sos_fade_demo/` holds **2,518 decision records over 2026-07-31 →
 2026-09-01** — 1,874 bar snapshots, 290 setups a rule refused, 279 armed-but-never-filled, 71
 events, 4 trades — plus 54 health files and 23 daily logs. The 569 refusals and misses exist
 nowhere else; no broker statement contains a decision not to trade.
@@ -327,10 +327,10 @@ through those runs, and report folders on disk named after the id.
 
 ```sql
 -- back the file up first
-UPDATE backtest_runs SET strategy_id = 'sos_fade' WHERE strategy_id = 'mpc_sos_fade';
-UPDATE backtest_runs SET strategy_id = 'b_leg'    WHERE strategy_id = 'mpc_bleg';
-UPDATE backtest_runs SET strategy_id = 'bos'      WHERE strategy_id = 'mpc_bos';
-UPDATE backtest_runs SET strategy_id = 'realign'  WHERE strategy_id = 'mpc_realign';
+UPDATE backtest_runs SET strategy_id = 'sos_fade' WHERE strategy_id = 'sos_fade';
+UPDATE backtest_runs SET strategy_id = 'b_leg'    WHERE strategy_id = 'b_leg';
+UPDATE backtest_runs SET strategy_id = 'bos'      WHERE strategy_id = 'bos';
+UPDATE backtest_runs SET strategy_id = 'realign'  WHERE strategy_id = 'realign';
 DELETE FROM strategies WHERE id LIKE 'mpc_%';   -- the scanner re-creates them under new ids
 ```
 

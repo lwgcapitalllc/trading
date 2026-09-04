@@ -101,12 +101,12 @@ commit. A lab row saying something different from the chart is how a rule gets r
 
 | Strategy | 1 Spec | 2 Pine | 3 Export twin | 4 CSV | 5 Python | 6 Parity | Can you sweep it? |
 |---|---|---|---|---|---|---|---|
-| **A+ SOS Fade** (`mpc_sos_fade`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
-| **B-LEG** (`mpc_bleg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
-| **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
-| **D** (`mpc_d`) | ❌ deleted | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and it is GONE (2026-08-15).** Its one measurement was indistinguishable from zero and it was never going further. Both `.pine` files and `docs/MPC_D_STRATEGY_SPEC.md` removed; recover from git history. Its VOCABULARY was the second reason — "shakeout" now means one thing in this repo, and it belongs to RSO. |
-| **OB Fade** (`mpc_ob_fade`) | ❌ withdrawn | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and do not restart it.** Its spec was DELETED once the measurement closed the question — the record of what was tried is `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` |
-| **Extreme Leg** (`mpc_extreme_leg`) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | **Not yet — stage 4 is waiting on a human.** Stages 1/2/3/5 landed 2026-09-01: the Pine, a GENERATED export twin, and `strategies/python/mpc_extreme_leg/`. Take the export off `mpc_extreme_leg_strategy_export.pine` on a XAUUSD **5-minute** chart and run `compare_extreme_leg.py`. ⚠ Its numbers so far come from a STUDY (`backtest/tools/pre_sos_leg.py`) whose arming rule is measurably looser than the file being traded — see that package's CLAUDE.md. |
+| **A+ SOS Fade** (`sos_fade`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
+| **B-LEG** (`b_leg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
+| **BOS** (`bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
+| **D** (`mpc_d`) | ❌ deleted | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and it is GONE (2026-08-15).** Its one measurement was indistinguishable from zero and it was never going further. Both `.pine` files and `docs/D_STRATEGY_SPEC.md` removed; recover from git history. Its VOCABULARY was the second reason — "shakeout" now means one thing in this repo, and it belongs to RSO. |
+| **OB Fade** (`ob_fade`) | ❌ withdrawn | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and do not restart it.** Its spec was DELETED once the measurement closed the question — the record of what was tried is `strategies/python/sos_fade/sos_fade_optimization.md` |
+| **Extreme Leg** (`extreme_leg`) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | **Not yet — stage 4 is waiting on a human.** Stages 1/2/3/5 landed 2026-09-01: the Pine, a GENERATED export twin, and `strategies/python/extreme_leg/`. Take the export off `extreme_leg_strategy_export.pine` on a XAUUSD **5-minute** chart and run `compare_extreme_leg.py`. ⚠ Its numbers so far come from a STUDY (`backtest/tools/pre_sos_leg.py`) whose arming rule is measurably looser than the file being traded — see that package's CLAUDE.md. |
 | **H4 sweep** | study only | ✅ | ❌ | ❌ | ❌ | ❌ | No |
 
 ### BOS — green as of 2026-08-07, and what that is worth
@@ -116,14 +116,14 @@ All six stages landed on 2026-08-07. Aaron took the CSV and
 / 3000 over 7,200 closed M15 bars (2026-04-21 → 2026-08-07).
 
 ```bash
-python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 900
+python strategies/python/bos/tools/compare_bos.py '<export>.csv' --warmup 900
 ```
 
 🔴 **Stage 4 is worth the five minutes precisely because the run went RED first.** Three
 defects came out of it that 54 green unit tests could not see — a dead leg that cleared its
 own numbers where the Pine keeps them, a harness column that had been comparing a **constant**
 for its whole life, and the still-forming last bar killing the run with an error that blamed
-the bar feed. Full write-up: `strategies/python/mpc_bos/CLAUDE.md` → *The three defects the
+the bar feed. Full write-up: `strategies/python/bos/CLAUDE.md` → *The three defects the
 first real gate run found*.
 
 ⚠ **THE GREEN IS NARROW, and the tool says so.** `bos_use_fvg` is OFF at the shipped defaults,
@@ -132,7 +132,7 @@ Block codes 1/3/4/5/6 never fired, the minimum-stop floor refused nothing, and 6
 in the window. Take a second export with `bosUseFvg` ON before trusting a gap-priced result.
 
 ⚠ **Green does not backdate.** The port CHANGED to get green, so everything measured before
-2026-08-07 describes different code — all of `docs/MPC_BOS_OPTIMIZATION.md`, and everything
+2026-08-07 describes different code — all of `docs/BOS_OPTIMIZATION.md`, and everything
 `backtest/tools/bos_sweep.py` prints. That tool was *actively falsified* by one Strategy Tester
 run (20 trades / PF 2.97 from the tool against 24 / PF 1.04 from TradingView, same config) and
 nothing has re-checked it since.
@@ -145,7 +145,7 @@ about the branches both sides entered.
 cold start, not a mask: an SOS at bar 856 resets both counters, which is exactly where the
 disagreement ends.
 
-⚠ There **was** a `strategies/python/mpc_bos/` — deleted 2026-08-04 as a half-built port with no
+⚠ There **was** a `strategies/python/bos/` — deleted 2026-08-04 as a half-built port with no
 parity harness (commit `1946f8b`). The rebuild deliberately dropped its eight research dials
 that had no Pine input, because a field the export cannot carry is a field the gate can never
 check. Recover them from `1946f8b^` if the Pine ever grows the inputs.

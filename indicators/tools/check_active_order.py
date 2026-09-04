@@ -2,7 +2,7 @@
 """Every identifier inside an input's `active =` must be DECLARED ABOVE that input.
 
 Pine resolves top-down, so an `active =` that names an input declared later is
-CE10272 — and it only shows up on the paste. `mpc_bos_strategy.pine` shipped
+CE10272 — and it only shows up on the paste. `bos_strategy.pine` shipped
 exactly that in the 2026-08-12 panel reorder (`active = not (bosUseFvg and
 execReqFVG)` landed above both). Run this after any panel edit.
 

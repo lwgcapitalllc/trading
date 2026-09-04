@@ -2,7 +2,7 @@
 
 **Purpose:** Standing instructions for the XAUUSD/forex MT5 bot suite running on the Windows VPS.
 **Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `engines/regime/` internals (regime is imported via the `shared_regime.py` shim).
-**Status:** Active — **ONE BOT LIVE AND ARMED.** `mpc_sos_fade_demo` has run since 2026-07-31 and has placed real orders since 2026-08-05, on a PU Prime **ECN demo** account (700152905 / `XAUUSD.p` since 2026-08-12), under a 10% account-level risk cap. **`exec_sl_deep` was switched ON 2026-08-15 and takes effect on its next RESTART** — see below.
+**Status:** Active — **ONE BOT LIVE AND ARMED.** `sos_fade_demo` has run since 2026-07-31 and has placed real orders since 2026-08-05, on a PU Prime **ECN demo** account (700152905 / `XAUUSD.p` since 2026-08-12), under a 10% account-level risk cap. **`exec_sl_deep` was switched ON 2026-08-15 and takes effect on its next RESTART** — see below.
 
 ### `exec_sl_deep` ON (2026-08-15) — two rules, both live-path
 
@@ -11,14 +11,14 @@ smaller ride, never an improvement.** +140.0R → **+117.0R**, max DD 5.61R → 
 41.1% at `exec_risk_pct` 10); re-levered to equal drawdown it returns 3,830x against 4,868x.
 **Stated here because a reader meeting +117.0R against a +140.0R history otherwise reads a
 regression.** Aaron's call, evidence and every warning in the `_exec_sl_deep` block of
-`markets/fx/instances/mpc_sos_fade_demo/config.json`; the measurement is in
+`markets/fx/instances/sos_fade_demo/config.json`; the measurement is in
 `docs/ALGOS_BUILD_NOTES.md` → *Which stop-outs a wider stop rescues*.
 
 🔴 **A param change to a NON-reloadable field is REFUSED by the running bot, with a Telegram
 message, and that refusal is the guard working.** `RUNTIME_RELOADABLE` is `{"exec_risk_pct"}`
 alone, so the VPS `git pull` leaves this on disk and **the bot keeps trading the old rule until it
 is RESTARTED.** ⚠ A param change needs **no `promote.py`** — the frozen snapshot covers code, and
-the source-hash pin is re-checked on the restart regardless. `mpc_bleg_demo` is registered and **BENCHED** (`account: null`) pending a fresh `compare_bleg.py` parity run at its moved defaults. The four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first; the pipeline that got the first Python strategy live is `docs/LIVE_TRADING_PIPELINE.md`.
+the source-hash pin is re-checked on the restart regardless. `b_leg_demo` is registered and **BENCHED** (`account: null`) pending a fresh `compare_bleg.py` parity run at its moved defaults. The four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first; the pipeline that got the first Python strategy live is `docs/LIVE_TRADING_PIPELINE.md`.
 
 
 
@@ -247,7 +247,7 @@ arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than o
 2026-08-21 and is configurable either way. It is corrected as of 2026-09-01 and now names the
 setting. ⚠ **A refusal that names the wrong feed is worse than a vague one: it sends the next
 reader to build the wrong thing, confidently.** The setting was turned on for
-`mpc_sos_fade_demo` on 2026-08-28 (Aaron's call) and the bot **would not start** — down until the
+`sos_fade_demo` on 2026-08-28 (Aaron's call) and the bot **would not start** — down until the
 setting was put back. **The re-entry is a LAB-ONLY feature on the live side today**, whatever the
 strategy's defaults say.
 
@@ -429,7 +429,7 @@ That one returns every position whatever ticket you ask for and can NEVER return
 cannot express the case under test — a fixture that cannot fail the way production fails would
 have passed the bug (rule 13).
 ⚠ **The same limitation is why `compare_strategy.py` can never gate the re-entry** (single frame,
-no fill clock) and why `mpc_bleg` and `mpc_bos` pin it off. Three places had already recorded this
+no fill clock) and why `b_leg` and `bos` pin it off. Three places had already recorded this
 shape; the live runner was the fourth and nobody had asked it.
 
 ✅ **THE SECOND FEED EXISTS SINCE 2026-09-01 AND PLACES NOTHING — G18 stage 1.** The runner opens
@@ -933,7 +933,7 @@ is data — a feed, a clock, or a warm-up — never logic.**
 
 ⚠ **Joined on bar TIMESTAMP, never on index.** The live index counts on from wherever warm-up
 stopped and survives restarts; the lab's counts from the first row of whatever frame it was handed.
-Two unrelated integers that look comparable — the trap `strategies/python/mpc_bleg/CLAUDE.md`
+Two unrelated integers that look comparable — the trap `strategies/python/b_leg/CLAUDE.md`
 records from the B-LEG harness, where 2,409 comparisons failed at one flat offset while the logic
 was identical.
 
@@ -1003,7 +1003,7 @@ from a median; it just landed inside the band this time. The p99 already reaches
 minutes of an open session.
 ⚠ **The spread is 45% wider than every cost figure in this repo assumes.** `backtest/fills.py`'s
 `PROFILES` carried PU Prime at $0.33 from 688k ticks when this was written, which is closer, but the
-layered-cost tables in `strategies/python/mpc_sos_fade/CLAUDE.md` were all run on Vantage's $0.22 —
+layered-cost tables in `strategies/python/sos_fade/CLAUDE.md` were all run on Vantage's $0.22 —
 so the charged rows there understate this account.
 ✅ **SUPERSEDED 2026-08-06: `PROFILES` now carries $0.32** (re-measured over 1,893,438 ticks / 3
 whole days), and it is stored per ACCOUNT TIER — `_SPREAD_XAUUSD_PUPRIME_STANDARD`, because this
@@ -1013,7 +1013,7 @@ $0.33 above as current**; it is kept because the paragraph is a dated record of 
 PARAGRAPH BELONG TO IT.** Every figure above was read off a **Standard** account (`XAUUSD.s`); the
 bot moved to the **ECN** demo 700152905 / `XAUUSD.p` on 2026-08-12, and that tier measured
 **$0.12** on 2026-08-14 — 3,033,270 ticks over 5 whole days, all 23 traded hours, `broker_facts.py
---bot mpc_sos_fade_demo --history-days 6`. **2.7x tighter than anything written above.** The tier
+--bot sos_fade_demo --history-days 6`. **2.7x tighter than anything written above.** The tier
 table and what still refuses: `backtest/CLAUDE.md`. ⚠ **This is the second time a dated reading
 here has quietly become a statement about a different account** — a paragraph that names its
 account survives the move; one that says "the live demo" does not.
@@ -1544,7 +1544,7 @@ Signals**.
 `SIGNAL` → `telegram_signal_chat`, per-bot overridable exactly like the other two. **A third room
 because it is a third reflex** — read when you have time, not the moment it arrives — and because
 it is MEASURED at ~10x the volume of fills (**20.2 messages/month against 2 fills**, one every 1.5
-days, on `mpc_sos_fade` over 6.5 years). Putting that in the trades chat would bury the fills under
+days, on `sos_fade` over 6.5 years). Putting that in the trades chat would bury the fills under
 setups that mostly do not become trades, which is the failure the split already exists to prevent,
 arriving from a new direction. Fallback stays asymmetric: SIGNAL borrows the trades chat and warns
 once; **TRADE never borrows another kind's room.**
@@ -1566,7 +1566,7 @@ setups over 6.5 years. Edge-triggering alone still announces one setup two or th
 than giving one. 🔴 **The resting message names only what is OUTSTANDING, and that one line is a
 safety property, not a nicety** — an order can rest at 2 of 3 (the gap can exist before price gets
 there), so a message carrying a price must not read as *everything is met*. ⚠ **The `display` name
-comes from the RUNNER**, because a strategy only knows its class name and `MpcSosFadeStrategy` is
+comes from the RUNNER**, because a strategy only knows its class name and `SosFadeStrategy` is
 not what the same bot is called in every other message.
 
 🔴 **AND THE SAME TRIM CAUSED THE NEXT DAY'S DEFECT, so the rule it produced is the one to keep:
@@ -1854,6 +1854,38 @@ the routing table. `algos/tests/test_alert_format.py` loads it BY PATH and asser
 contract strings match and that the two render byte-identical output on the cases where hand-written
 copies diverge first — an absent fact and a whitespace-only one.
 
+### 🔴 A BOT NAME WITH AN EVEN NUMBER OF UNDERSCORES IS EATEN BY TELEGRAM, SILENTLY (2026-09-03)
+
+**Found by the de-branding rename, and it is the whole reason that rename needed a live-path pass.**
+`notify.send_telegram_id` asked Telegram to parse every message as Markdown and rescued the message
+on a 400. **The rescue only fires when the entity is UNBALANCED.** An EVEN number of underscores
+parses perfectly and Telegram applies the italics: `sos_fade_demo` arrives as `sosfadedemo`, HTTP
+200, nothing retried, nothing logged, nothing to notice.
+
+🔴 **THE OLD NAME WAS SAFE BY ACCIDENT.** `mpc_sos_fade_demo` carried THREE underscores — odd, so
+Telegram rejected it and the plain-text rescue delivered it intact. **Dropping one word turned a
+loud failure into a silent one**, in the entry and exit alerts, which are the two messages in this
+system a person actually acts on.
+
+✅ **Fixed at the seam, not on the name.** `send_telegram`/`send_telegram_id` take `markdown=True`,
+and `runner._notify` — the ONE call every bot message passes through — passes `markdown=False`.
+Everything `algos/live/alerts.py` builds is plain text BY DESIGN (its own *"Plain text, no Markdown,
+ever"* rule), so asking Telegram to parse it could only ever corrupt it. **No future bot name can
+be eaten, whatever it is called.**
+
+⚠ **The default stays `True`** — `watch_broker_costs.py` and the other watchers send real `*bold*`
+headers through this same function, so a global switch to plain text would have quietly stripped
+their formatting. **The fix belongs to the caller that knows its own text is plain.**
+
+⚠ **Escaping the name was the other candidate and is worse**: a backslash shows up literally
+whenever a message does fall back to plain text, and it leaves the next underscore-bearing field —
+a symbol, a traceback path — still exposed.
+
+**Tests: 3 in `tests/test_notify_routing.py`, both halves watched RED by mutation** (the wiring
+removed from the runner; the plain-text mode forced back to Markdown). One of them asserts the
+HAZARD rather than the fix — Telegram accepting an even count with no rescue — because the rescue
+passing is what made this invisible for as long as it existed.
+
 ### The Telegram bot lost six commands, because none of them could do anything
 
 🔴 **`/restart` and `/stop` asked you to confirm, acted on an EMPTY LIST, and reported success.**
@@ -1931,7 +1963,7 @@ say is also what a healthy day looks like.**
 
 ### Registering a bot — the five registries, and the crash if you miss one
 
-**2026-07-31: `mpc_sos_fade_demo` is registered.** It is the first bot in the rebuilt suite. Five
+**2026-07-31: `sos_fade_demo` is registered.** It is the first bot in the rebuilt suite. Five
 registries had to be filled and they are not optional — `bot_state.set_started()` does
 `BOT_ACCOUNTS[key]` unguarded and `algos/live/runner.py` calls it at the top of its loop, so a bot
 missing from ONE of them connects to MT5, warms 5,000 bars, and then dies on a bare `KeyError`:
@@ -2018,7 +2050,7 @@ Notification system: `notifications/NOTIFICATIONS_GUIDE.md`
 - **A restored stop that DIFFERS from the recorded one is never adopted.** Restore is deliberately strictly narrower than the halt it replaces — that narrowness is the safety property, not a limitation to widen later.
 - **Stops are compared against the symbol's POINT, never for exact equality.**
 - **Two failures must never share one message.** The tool written to end guesswork had itself merged *the tick never arrived* with *the sampler could not ask* — this repo's own no-vs-cannot-ask rule, broken inside its own diagnostic.
-- **`mpc_bleg_demo` MUST NOT be assigned to an account yet**, and its config says so in `_NOT_VALIDATED`. See `docs/LIVE_TRADING_PIPELINE.md` → G15.
+- **`b_leg_demo` MUST NOT be assigned to an account yet**, and its config says so in `_NOT_VALIDATED`. See `docs/LIVE_TRADING_PIPELINE.md` → G15.
 - **An unmeasured spread cannot pick an account.** Swap is identical across all three PU Prime tiers (measured on each), and the Prime↔ECN replay gap of 1.16R sits far inside this strategy's run-to-run sd of 15.06R. The ECN case is "strictly cheaper at identical everything else" — never a claim that the number moved.
 
 ---
@@ -2514,7 +2546,7 @@ below.
 
 🔴 **THE SHRINK HALF WAS BUILT, AUDITED THE SAME DAY, AND BACKED OUT. Read this before rebuilding
 it.** A live bot's order is **already resting at the broker** by the time the account seam runs:
-`mpc_sos_fade.execution` sizes a pending order from `equity * exec_risk_pct / dist` at PLACEMENT
+`sos_fade.execution` sizes a pending order from `equity * exec_risk_pct / dist` at PLACEMENT
 and never consults the account, while `request_fill` runs at the FILL. So shrinking there books a
 smaller position in the emulator than the one the broker just filled — **and `_agrees` compares
 DIRECTION and PRESENCE, not size, so it does not even halt.** Two books, silently different, with
@@ -2589,7 +2621,7 @@ restart, applied at the next moment it is FLAT. 🔴 **10% is where it waits, an
 about which number is DESCRIBED rather than about appetite: every published figure for this bot —
 the -54.9% max drawdown over 6.5 years, Run 12's finding that the drawdown is a losing STREAK at
 this risk rather than give-back — was measured at 10%. At 5% not one of them described the running
-bot.** ⚠ **`mpc_bleg_demo` is benched and still states 10.0** — if it is ever put on this account
+bot.** ⚠ **`b_leg_demo` is benched and still states 10.0** — if it is ever put on this account
 that number has to move first or the shares no longer sum to the cap.
 
 ⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and the first thing to watch is a bot being
@@ -2614,11 +2646,11 @@ test caught it. Two failures must never share one message.
 
 ### The extreme leg cannot be a bot yet — it is an ADAPTER, not an instance directory (2026-09-03)
 
-🔴 **`mpc_extreme_leg` has no instance directory, and adding one would produce a bot that appears in
+🔴 **`extreme_leg` has no instance directory, and adding one would produce a bot that appears in
 the list, looks deployable, and cannot start.** Its execution layer does not implement the contract
 `algos/live/` drives. Checked against the runner and the bridge rather than assumed:
 
-| What the live path calls | `mpc_sos_fade` | `mpc_extreme_leg` |
+| What the live path calls | `sos_fade` | `extreme_leg` |
 |---|---|---|
 | one per-bar `step(sig, seq) -> Decision` | ✅ | ❌ four calls — `resolve` / `arm_breakeven` / `enter` / `record_blocks`, sequenced by the caller, and `enter` returns a bare bool |
 | `request_close(reason)` | ✅ | ❌ absent |
@@ -2716,7 +2748,7 @@ so the dry run does not consume tomorrow's first reading.** ⚠ **A hand run is 
 run** — SSH runs it as the logged-in user and the task runs as SYSTEM, so the first genuine 06:40
 firing is still unproven.
 
-✅ **SWITCHED ON FOR `mpc_sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
+✅ **SWITCHED ON FOR `sos_fade_demo` THE SAME DAY (Aaron's call), with its take-profit moved
 50 → 0.** ⚠ **No promote, and none should be run for it** — a promote copies `strategies/`,
 `engines/` and `backtest/`, and everything this needs on the code side is in `algos/`, which
 reaches the box by `git pull`. The deployed snapshot was CHECKED rather than assumed to carry the
@@ -2731,7 +2763,7 @@ the warnings and what does NOT change are in the bot's own `config.json` → `_r
 
 `place_pending_limit` / `modify_pending` / `cancel_pending` / `cancel_all_pending` /
 `get_pending_orders` / `get_open_positions` / `normalize_volume` / `min_stop_distance`.
-Added because the file could only send MARKET orders and the MPC strategies enter on a resting
+Added because the file could only send MARKET orders and the strategies enter on a resting
 limit. Each is a broker quirk that fails silently rather than loudly:
 
 - **`MODIFY` silently ignores `volume`.** MT5 accepts the request, reports success, and leaves the

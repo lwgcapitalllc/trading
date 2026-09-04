@@ -24,7 +24,7 @@ export const TRADE = 'lwgTrade'
 
 /** The FALLBACK tag a PRIMARY trade wears when its strategy declares none of its own.
  *
- *  🔴 It was the only tag until 2026-09-02 — `A+` is `mpc_sos_fade`'s word for ITS setup, and this
+ *  🔴 It was the only tag until 2026-09-02 — `A+` is `sos_fade`'s word for ITS setup, and this
  *  panel draws every strategy's trades, so three other bots' charts carried a fourth bot's label.
  *  The fix the old note here asked for is now built: a strategy declares `chart_tag`, the scanner
  *  carries it to the strategies table, and it reaches the panel as `spec.tradeTag`.
@@ -1074,7 +1074,7 @@ export function registerChartOverlays(): void {
   // **1 sits on the first anchor (where the drag started), 0 on the second (where it ended)**.
   // Drag from a swing low up to a swing high and 1 is the low, 0 the high — the leg's ORIGIN is 1
   // and its EXTREME is 0, which is how a retracement is read (price retraces from 0 back toward 1)
-  // and what every fib in this repo means: `mpc_strategy.pine` prices the same way
+  // and what every fib in this repo means: `sos_fade_strategy.pine` prices the same way
   // (`fiboP7 = ash - range*0.0` = the extreme, `fiboP10 = ash - range*1.0` = the origin), so a
   // hand-drawn fib and the bot's own levels line up. Each configured level draws a
   // thin horizontal line spanning EXACTLY the box the user dragged (both anchor x's — width AND
@@ -1268,7 +1268,7 @@ export function registerChartOverlays(): void {
         // `labelAlign: 'right'` parks the tag at the box's RIGHT edge instead of its left. Generic,
         // not OB-specific: a box whose left edge is its ANCHOR candle has the candles sitting right
         // there, so a left-aligned tag lands on price, while the right edge of a fixed-width zone is
-        // usually empty space (mpc_assistant.pine says exactly this — `text_halign = align_right`).
+        // usually empty space (mpc_jarvis.pine says exactly this — `text_halign = align_right`).
         const right = d.labelAlign === 'right'
         figures.push({
           type: 'text',

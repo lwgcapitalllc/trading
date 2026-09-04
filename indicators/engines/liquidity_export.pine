@@ -2,7 +2,7 @@
 //@version=6
 // ── PARITY-EXPORT BUILD (LIQUIDITY LEVELS) ──────────────────────────────────
 // Instrumented build used ONLY to validate the Python port (engines/liquidity/) against this Pine
-// source. It reproduces the liquidity levels from mpc_assistant.pine — previous day/week high & low
+// source. It reproduces the liquidity levels from mpc_jarvis.pine — previous day/week high & low
 // (PDH/PDL/PWH/PWL), previous week close (PWC), the H4 sweep high/low, and the Asia/London/NY
 // session high & low — with ALL drawing (lines/labels/colours) removed and plot() columns added for
 // each level's price + its mitigation flag. (The MONTHLY level PMH/PML was removed from the source
@@ -80,7 +80,7 @@ if not na(h4l) and not h4l_mit and low < h4l
 //============================================================
 //  SESSION H/L — running extremes (verbatim from sessions_export.pine) → published on close edge
 //============================================================
-// Re-synced 2026-07-31 to the mpc paste (mpc_assistant.pine:465-478) — see the note in
+// Re-synced 2026-07-31 to the mpc paste (mpc_jarvis.pine:465-478) — see the note in
 // sessions_export.pine. Asia is UTC-identical to the old form; London and New York shift one hour
 // earlier under BST/EDT, which MOVES the Asia/London/NY session high-low levels this file exports.
 string firstSessionTime  = "0900-1800", string firstSessionTZ  = "Asia/Tokyo"        // Asia

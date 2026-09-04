@@ -187,7 +187,7 @@ def run_stack(
         cancelled=result.cancelled,
     )
     # ⚠ `getattr` with a default, never a direct read: `blocks` / `misses` are OPTIONAL on a
-    # strategy's execution (`mpc_bleg` records neither by construction — those codes describe why
+    # strategy's execution (`b_leg` records neither by construction — those codes describe why
     # an A+ setup was refused, and A+ never trades in that fork), so requiring them would refuse a
     # legitimate leg. An empty list and an absent attribute mean the same thing HERE — nothing was
     # recorded — which is the one place in this repo where collapsing them is right, because a

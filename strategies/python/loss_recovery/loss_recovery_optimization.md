@@ -19,7 +19,7 @@ Standing rules for anything recorded here:
   which gold pays a swap *credit* to hold, so it loses only 7% of gross to costs while this leg
   loses far more. **Any tool used here must charge both.**
 - ⚠ **This leg's population is the primary bot's real stop-outs**, so every figure here moves
-  when the primary's entry logic moves. Re-run after any change to `mpc_sos_fade`.
+  when the primary's entry logic moves. Re-run after any change to `sos_fade`.
 - **Re-check any winner with its best few trades deleted.** At n=62 a single cluster carries a
   result — Run 2 is the worked example, where the best-looking challenger was five trades.
 - **A result here is a measurement, not a default.** This leg still ships `enabled=False`.
@@ -30,7 +30,7 @@ Standing rules for anything recorded here:
 |---|---|
 | tooling | `backtest/tools/recovery_report.py` |
 | data | XAUUSD M15, 186,910 bars, 2018-09-14 → 2026-08-14 |
-| primary | `mpc_sos_fade` at shipped defaults with the 1m re-entry OFF, warmup 1000, bar fills |
+| primary | `sos_fade` at shipped defaults with the 1m re-entry OFF, warmup 1000, bar fills |
 | costs | **both sides** at `puprime_ecn`, the live account's tier |
 | population | the primary's 62 stop-outs |
 
@@ -39,7 +39,7 @@ Standing rules for anything recorded here:
 | # | Date | What was swept | Winner | Status |
 |---|---|---|---|---|
 | 1 | 2026-08-19 | **The size of the recovery trade**, as a fraction of the primary's risk | **25% ADOPTED as the default size.** It is two answers at once — the largest size that does not raise drawdown above what the primary already runs, and the peak of the efficiency curve. **1,913x → 2,772x at the same drawdown (48.8% → 48.3%), i.e. 1.53x what the same drawdown buys on the risk dial.** ⚠ The curve is flat from 20% to 55% (1.53 → 1.48), so it is not a knife edge. | **measured — leg still ships OFF** |
-| 2 | 2026-08-19 | **Nine stop placements and six exit ladders.** Recorded in full as Run 24 of `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` — it was filed there because the population is that bot's stop-outs | **NOTHING BEAT THE SHIPPED RULE.** A stop on the change-of-character bar's own extreme scores **+24.4R** against +16.2R on a 7x tighter stop with lower drawdown — and 🔴 **−7.4R once its best five trades are deleted**, where the shipped stop survives at +2.3R. **The one free change is a soft stop at −0.3R:** same net R, average loss −1.01R → −0.30R, win rate 58% → 37%. Everything else lost. | measured, **nothing adopted** |
+| 2 | 2026-08-19 | **Nine stop placements and six exit ladders.** Recorded in full as Run 24 of `strategies/python/sos_fade/sos_fade_optimization.md` — it was filed there because the population is that bot's stop-outs | **NOTHING BEAT THE SHIPPED RULE.** A stop on the change-of-character bar's own extreme scores **+24.4R** against +16.2R on a 7x tighter stop with lower drawdown — and 🔴 **−7.4R once its best five trades are deleted**, where the shipped stop survives at +2.3R. **The one free change is a soft stop at −0.3R:** same net R, average loss −1.01R → −0.30R, win rate 58% → 37%. Everything else lost. | measured, **nothing adopted** |
 
 🔴 **THE STANDING RESULT, and it is the first thing to say to anyone who reaches for this leg to
 make a losing streak hurt less: IT DOES NOT REDUCE DRAWDOWN. IT BUYS RETURN.** Max drawdown at
@@ -76,7 +76,7 @@ drawdown above what the bot already runs, and the peak of the efficiency curve. 
 # Run 2 — nine stop placements and six exit ladders
 
 **Date:** 2026-08-19
-**Full record:** `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → Run 24. It was
+**Full record:** `strategies/python/sos_fade/sos_fade_optimization.md` → Run 24. It was
 filed there because the population is that bot's stop-outs; it is indexed here because it is a
 sweep of THIS leg's parameters and this is where somebody will look for it.
 

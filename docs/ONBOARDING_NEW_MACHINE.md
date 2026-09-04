@@ -297,11 +297,11 @@ above. The repo already carries a committed export:
 ```
 backtest/archive/2026-07-29_xauusd_15m_full_history/
 ├── README.md                    ← read this first; full column glossary + caveats
-├── mpc_sos_fade/                ← A+ SOS Fade: 188 trades, +109.5R
+├── sos_fade/                ← A+ SOS Fade: 188 trades, +109.5R
 │   ├── trades.csv               ← every trade, winners and losers
 │   ├── setups.csv               ← every setup that reached SOS, including the 512 that never traded
 │   └── summary.txt              ← totals by year, regime, session, direction
-└── mpc_bleg/                    ← B-LEG: 58 trades, +3.5R
+└── b_leg/                    ← B-LEG: 58 trades, +3.5R
 ```
 
 XAUUSD 15m, 2018-09-13 → 2026-07-29, both strategies, winners and losers. Point Claude at

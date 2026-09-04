@@ -1,10 +1,10 @@
 loading XAUUSD 15m  2018-09-13 -> 2026-07-29 ...
   185,783 bars  2018-09-13 00:00:00 -> 2026-07-29 05:30:00
-replaying mpc_sos_fade (warmup 1000) ...
+replaying sos_fade (warmup 1000) ...
   188 trades, 700 A+ legs reached SOS
 
 ============================================================================================================
-mpc_sos_fade  XAUUSD 15m   2018-09-13 -> 2026-07-29   fill=bar   breakeven band ±0.15R
+sos_fade  XAUUSD 15m   2018-09-13 -> 2026-07-29   fill=bar   breakeven band ±0.15R
 ============================================================================================================
 
 ALL              n= 188  sumR=   109.5  avgR=  0.58  win= 59 loss= 61 be= 68  wr= 31%  avgWin= 2.78  avgLoss= -0.92
@@ -59,4 +59,4 @@ short            n= 103  sumR=    59.1  avgR=  0.57  win= 34 loss= 35 be= 34  wr
   2025                         1                       3                      42                      26                      33
   2026                         1                       3                      20                      12                      17
 
-wrote /Users/alwg/trading/backtest/archive/2026-07-29_xauusd_15m_full_history/mpc_sos_fade/trades.csv  and  /Users/alwg/trading/backtest/archive/2026-07-29_xauusd_15m_full_history/mpc_sos_fade/setups.csv
+wrote /Users/alwg/trading/backtest/archive/2026-07-29_xauusd_15m_full_history/sos_fade/trades.csv  and  /Users/alwg/trading/backtest/archive/2026-07-29_xauusd_15m_full_history/sos_fade/setups.csv

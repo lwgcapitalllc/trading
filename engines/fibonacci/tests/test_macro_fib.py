@@ -1,7 +1,7 @@
 """
 Hand-traced tests for the Macro cycle fib state machine.
 
-These pin the ported Pine behaviour (mpc_assistant.pine GRP_MACRO): the bottom locks on a bullish
+These pin the ported Pine behaviour (mpc_jarvis.pine GRP_MACRO): the bottom locks on a bullish
 SOS after a bearish SOS, the top extends on new confirmed HHs, the cycle resets when price closes
 below the locked bottom and hides when it closes above the top, and level touches are gated on
 0.618 like the Structure fib. The last test pins the subtle edge rule — a level reset and

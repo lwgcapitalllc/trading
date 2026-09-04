@@ -13,7 +13,7 @@ on the COMMAND that goes to the box, not on a filename constant — a constant c
 itself forever.
 
 **Watched RED against HEAD** (before the fix):
-  - `test_the_newest_daily_file_is_the_one_read` — read `…\\mpc_sos_fade_demo.log`.
+  - `test_the_newest_daily_file_is_the_one_read` — read `…\\sos_fade_demo.log`.
   - `test_the_view_spans_the_midnight_roll` — same, one stale file.
   - `test_a_bot_with_no_daily_files_falls_back_to_the_old_fixed_name` — passed on HEAD by
     accident (HEAD only ever reads that name), so it is pinned by mutation instead; see its
@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from routers import bots  # noqa: E402
 
-KEY = "mpc_sos_fade_demo"
+KEY = "sos_fade_demo"
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_only_this_bots_files_are_picked_up(box):
     """A shared instance directory must not leak another bot's log into this one's view."""
     box["listing"] = "\n".join(
         [
-            "mpc_bleg_demo-2026-08-24.log",
+            "b_leg_demo-2026-08-24.log",
             f"{KEY}-2026-08-23.log",
             "review-2026-08-23.log",
         ]
@@ -99,7 +99,7 @@ def test_only_this_bots_files_are_picked_up(box):
 
     cmd = _read_cmd(box)
     assert f"{KEY}-2026-08-23.log" in cmd
-    assert "mpc_bleg_demo" not in cmd
+    assert "b_leg_demo" not in cmd
     assert "review-" not in cmd
 
 

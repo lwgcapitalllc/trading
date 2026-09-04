@@ -135,7 +135,7 @@ def watch(monkeypatch):
     def run(live_state, carried=None):
         monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: live_state)
         state = {"running": True, **(carried or {})}
-        return monitor.check_bot("mpc_sos_fade_demo", {"mpc_sos_fade_demo": state}, "2026-07-31")
+        return monitor.check_bot("sos_fade_demo", {"sos_fade_demo": state}, "2026-07-31")
 
     return SimpleNamespace(run=run, sent=sent)
 
@@ -238,14 +238,14 @@ def down(monkeypatch):
 
         monkeypatch.setattr(monitor, "restart_bot", _restart)
         state = {"running": True, **(carried or {})}
-        return monitor.check_bot("mpc_sos_fade_demo", {"mpc_sos_fade_demo": state}, "2026-08-03")
+        return monitor.check_bot("sos_fade_demo", {"sos_fade_demo": state}, "2026-08-03")
 
     return SimpleNamespace(run=run, sent=sent, attempts=attempts)
 
 
 def test_a_dead_bot_is_restarted_not_just_reported(down):
     out = down.run()
-    assert down.attempts == ["mpc_sos_fade_demo"]
+    assert down.attempts == ["sos_fade_demo"]
     assert out["running"] is True
     assert out["restart_tries"] == 0
     assert any("RESTARTED" in m for m in down.sent)
@@ -468,21 +468,21 @@ def _coordinator_fn(name, proc_stdout, *, raises=False):
 
 def test_the_launcher_does_not_start_a_bot_that_is_already_running():
     """MEASURED 2026-08-04: `schtasks /run /tn SYS_STARTUP` on a box where the bot was already
-    up produced TWO `runner.py --bot mpc_sos_fade_demo` processes four minutes apart, and
+    up produced TWO `runner.py --bot sos_fade_demo` processes four minutes apart, and
     nothing anywhere reported it. They share an account, a magic number and a strategy, so both
     size a full position off the same setup — double the risk from a state neither can see."""
     fn = _coordinator_fn(
         "bot_is_running",
-        "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo 8892",
+        "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo 8892",
     )
-    assert fn("mpc_sos_fade_demo") is True
+    assert fn("sos_fade_demo") is True
 
 
 def test_a_bot_that_is_genuinely_down_is_started():
     fn = _coordinator_fn(
         "bot_is_running", "python.exe C:\\trading\\algos\\notifications\\telegram_bot.py 12780"
     )
-    assert fn("mpc_sos_fade_demo") is False
+    assert fn("sos_fade_demo") is False
 
 
 def test_a_different_bot_running_does_not_block_this_one():
@@ -491,7 +491,7 @@ def test_a_different_bot_running_does_not_block_this_one():
     fn = _coordinator_fn(
         "bot_is_running", "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot_demo 4242"
     )
-    assert fn("mpc_sos_fade_demo") is False
+    assert fn("sos_fade_demo") is False
 
 
 def test_an_unreadable_process_list_leaves_the_bot_alone():
@@ -499,7 +499,7 @@ def test_an_unreadable_process_list_leaves_the_bot_alone():
     bot is two positions on one account, while a duplicate Telegram is refused by its own
     singleton guard. `runner.py`'s guard is the backstop if this one is over-cautious."""
     fn = _coordinator_fn("bot_is_running", "", raises=True)
-    assert fn("mpc_sos_fade_demo") is True
+    assert fn("sos_fade_demo") is True
 
 
 def test_both_launch_paths_are_guarded():
@@ -530,7 +530,7 @@ def test_the_runner_refuses_to_be_a_second_copy(monkeypatch):
     import subprocess as _sp
 
     r = LiveRunner.__new__(LiveRunner)
-    r.cfg = SimpleNamespace(bot_key="mpc_sos_fade_demo", display_name="Bot")
+    r.cfg = SimpleNamespace(bot_key="sos_fade_demo", display_name="Bot")
     r.errors = []
     r.log = SimpleNamespace(
         error=lambda m: r.errors.append(m), warning=lambda m: None, info=lambda m: None
@@ -541,7 +541,7 @@ def test_the_runner_refuses_to_be_a_second_copy(monkeypatch):
         _sp,
         "run",
         lambda *a, **k: SimpleNamespace(
-            stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {other}"
+            stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo  {other}"
         ),
     )
     assert r.already_running() is True
@@ -554,14 +554,14 @@ def test_the_runner_does_not_mistake_itself_for_a_duplicate(monkeypatch):
     import subprocess as _sp
 
     r = LiveRunner.__new__(LiveRunner)
-    r.cfg = SimpleNamespace(bot_key="mpc_sos_fade_demo", display_name="Bot")
+    r.cfg = SimpleNamespace(bot_key="sos_fade_demo", display_name="Bot")
     r.log = SimpleNamespace(error=lambda m: None, warning=lambda m: None, info=lambda m: None)
 
     monkeypatch.setattr(
         _sp,
         "run",
         lambda *a, **k: SimpleNamespace(
-            stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {os.getpid()}"
+            stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo  {os.getpid()}"
         ),
     )
     assert r.already_running() is False

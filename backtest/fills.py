@@ -9,7 +9,7 @@ and it makes the choice explicit and swappable instead of burying it in the stra
 
 * `BarPathResolver` — the TradingView assumption: if the bar opened nearer its high, assume price
   travelled open→high→low→close (targets first); nearer its low, stop first. It is a GUESS. It is
-  also exactly what `mpc_strategy.pine` does, and that is the point — `compare_strategy.py` proves
+  also exactly what `sos_fade_strategy.pine` does, and that is the point — `compare_strategy.py` proves
   the Python bot thinks like the Pine, and a comparison is only meaningful when both sides get the
   SAME information. A resolver that knew more would make the bot disagree with the Pine for a
   reason that isn't a bug, and the regression gate would stop meaning anything. Bar mode is the bot
@@ -118,7 +118,7 @@ class Bar:
 class SwapModel:
     """Overnight financing, charged per lot per night held.
 
-    **Why this is not optional.** The MPC SOS Fade runner is DESIGNED to hold overnight, so swap is not a
+    **Why this is not optional.** The SOS Fade runner is DESIGNED to hold overnight, so swap is not a
     rounding error on this strategy — it is a structural cost that hits longs and shorts in opposite
     directions. Gold is ~$400k notional per lot; at ~7% annual financing that is ~$78/night, which is
     exactly what the broker quotes. A backtest without it flatters every long and understates every
@@ -261,7 +261,7 @@ class AccountProfile:
     one spread twice. They also do not agree, and the disagreement is informative rather than a
     bug: a flat charge is the market-order intuition, while a strategy whose entries and exits are
     all PRICED ORDERS feels the spread as fill timing instead. Full reasoning, with the long-vs-
-    short asymmetry worked through: `strategies/python/mpc_sos_fade/execution.py::_charge_spread`.
+    short asymmetry worked through: `strategies/python/sos_fade/execution.py::_charge_spread`.
     """
 
     name: str
@@ -664,7 +664,7 @@ class BarPathResolver:
     def targets_first(open_: float, high: float, low: float) -> bool:
         """True ⇒ assume price travelled open→high→low→close (upside reached first).
 
-        Byte-for-byte the rule in `mpc_sos_fade.execution._intrabar_targets_first`, and it must STAY
+        Byte-for-byte the rule in `sos_fade.execution._intrabar_targets_first`, and it must STAY
         that way — this is the function `compare_strategy.py`'s exit 0 rests on. Note the tie:
         equal distance resolves to targets-FIRST (`<=`, not `<`). Writing the strict form here
         silently flips every doji-ish bar's outcome and breaks parity, which is exactly what a

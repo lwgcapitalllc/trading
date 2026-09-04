@@ -2,7 +2,7 @@
 for a BOT.
 
 🔴 **Written after the anchor survived a move it had no business surviving.** On 2026-08-12
-`mpc_sos_fade_demo` was moved from the PU Prime Standard demo (anchored at $2,000, grown to
+`sos_fade_demo` was moved from the PU Prime Standard demo (anchored at $2,000, grown to
 ~$10,000) onto the ECN demo, which opens at $10,000. `ensure_starting_balance` wrote once and never
 again, so the bot would have carried the old account's $2,000 anchor onto the new one and reported
 **+399% on its first poll, for ever** — on the Bots page and in Telegram's `/balance`, the only two
@@ -31,7 +31,7 @@ for p in (str(_REPO), str(_REPO / "algos" / "shared")):
 
 import bot_state  # noqa: E402
 
-BOT = "mpc_sos_fade_demo"
+BOT = "sos_fade_demo"
 
 
 @pytest.fixture()

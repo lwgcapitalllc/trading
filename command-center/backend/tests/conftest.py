@@ -169,7 +169,7 @@ def _no_live_bot_config(request):
 
     🔴 **Found on 2026-08-12 by running a mutation, not by reading anything.** Neutering the
     account-move endpoint's password pre-check let `test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED`
-    fall through to the write, and it moved the REAL `mpc_bleg_demo` off the bench and onto the ECN
+    fall through to the write, and it moved the REAL `b_leg_demo` off the bench and onto the ECN
     account — in the working tree, on the machine running the suite. Nothing errored; it was caught
     only because `git status` was checked afterwards.
 

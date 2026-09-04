@@ -30,7 +30,7 @@ message about the PAST — the log reviewer at 21:20 reporting a restart at 18:0
 is the fact, and `when()` renders it in the box's local clock with the zone named.
 
 **Plain text, no Markdown, ever.** Every message here carries a strategy name, a symbol or a
-broker string, and those are full of underscores (`mpc_sos_fade`, `MT5_FFT`, `XAUUSD.s`). A lone
+broker string, and those are full of underscores (`sos_fade`, `MT5_FFT`, `XAUUSD.s`). A lone
 underscore opens an italic that never closes and Telegram rejects the WHOLE message — measured on
 the first real send, 2026-07-31. `notify.send_telegram` retries unformatted, but an alert should
 never need rescuing, and the alert most likely to trip it is the one carrying an exception.

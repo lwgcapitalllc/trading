@@ -1,6 +1,6 @@
 """`run_report.py` must replay the path its config asks for — or refuse.
 
-THE DEFECT THESE PIN (found 2026-08-16). `exec_secondary` (the mpc_sos_fade 1m sniper re-entry)
+THE DEFECT THESE PIN (found 2026-08-16). `exec_secondary` (the sos_fade 1m sniper re-entry)
 defaults **True** and fills on real 1m bars via `run_dual(df15, df1m)`. `run_report.py` called
 `strategy.run(df15)` unconditionally, so the flag could not do anything — and the tool still
 printed `override exec_secondary = True (was True)` and exited 0.

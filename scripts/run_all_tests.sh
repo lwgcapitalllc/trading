@@ -70,7 +70,7 @@ echo ""
 # the canonical engines import by bare name.
 #
 # ⚠ **`backtest/tests/test_reprice.py` is ~68s of that 2:00 on its own** — four full replays of
-# `mpc_sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
+# `sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
 # else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
 # conversation, and the lever is coverage rather than scheduling.
 echo "  [1/10] engines / backtest / algos / strategies / smart-money ..."

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""build_extreme_leg.py — assemble mpc_extreme_leg_strategy.pine.
+"""build_extreme_leg.py — assemble extreme_leg_strategy.pine.
 
 The file embeds the external structure state machine TWICE — once on the chart's own 5-minute bars
 (the change of character that arms the trade) and once on 15-minute bars aggregated in code (the
@@ -21,10 +21,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 STRAT = HERE.parent
-SRC = STRAT / "mpc_h4_sweep_strategy.pine"
+SRC = STRAT / "h4_sweep_strategy.pine"
 DERIVED = HERE / "_derived_structure_15.pine"
-OUT = STRAT / "mpc_extreme_leg_strategy.pine"
-OUT_EXPORT = STRAT / "mpc_extreme_leg_strategy_export.pine"
+OUT = STRAT / "extreme_leg_strategy.pine"
+OUT_EXPORT = STRAT / "extreme_leg_strategy_export.pine"
 
 START = "type SMCStructure"
 END = "// [doc 18] EXECUTION — EXTERNAL STRUCTURE"
@@ -39,15 +39,15 @@ derived = derived.split(
 
 HEAD = """// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-// [doc 1] MPC EXTREME LEG — the run INTO the shift of structure, not the fade after it  -> docs/mpc_extreme_leg_strategy.md
-strategy("MPC Extreme Leg", overlay = true, initial_capital = 10000,
+// [doc 1] EXTREME LEG — the run INTO the shift of structure, not the fade after it  -> docs/extreme_leg_strategy.md
+strategy("Extreme Leg", overlay = true, initial_capital = 10000,
   default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0,
   calc_on_every_tick = false, process_orders_on_close = true,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
 
 // [doc 2] RUN THIS ON A 5-MINUTE CHART. The 15-minute half is aggregated in code, so the
 // chart timeframe is not a preference — it is the frame the trigger is measured on.
-// [doc 3] THE INPUT PANEL — twelve numbered sections, house contract  -> docs/mpc_extreme_leg_strategy.md
+// [doc 3] THE INPUT PANEL — twelve numbered sections, house contract  -> docs/extreme_leg_strategy.md
 
 G1 = "1 · Confirmation Table"
 G2 = "2 · Market Structure"
@@ -60,7 +60,7 @@ G11 = "11 · Drawing: Liquidity"
 G12 = "12 · Debug"
 
 // ── 2 · Market structure ────────────────────────────────────────
-// [doc 4] ⚠ TWO of the house's four toggles are absent here, deliberately  -> docs/mpc_extreme_leg_strategy.md
+// [doc 4] ⚠ TWO of the house's four toggles are absent here, deliberately  -> docs/extreme_leg_strategy.md
 bool showExternal    = input.bool(true,  "Show External Structure", group = G2, display = display.none)
 bool showSwingLabels = input.bool(false, "Show Swing Point Labels", group = G2, tooltip = "Off hides the swing point labels, leaving just BOS and SOS. Nothing else changes.", display = display.none)
 bool showHtfSwing    = input.bool(true,  "Show the 15-minute swing being aimed at", group = G2, tooltip = "Draws the higher-timeframe swing the setup is measured against. The take profit sits PART of the way to it — see the take profit setting under Stop & targets.")
@@ -104,7 +104,7 @@ bool showLevels = input.bool(false, "Draw the levels", group = G11, tooltip = "D
 // ── 12 · Debug ──────────────────────────────────────────────────
 bool showDebug = input.bool(false, "Debug labels", group = G12)
 
-// [doc 5] MARKET STRUCTURE — shared settings  -> docs/mpc_extreme_leg_strategy.md
+// [doc 5] MARKET STRUCTURE — shared settings  -> docs/extreme_leg_strategy.md
 color bullColor  = color.blue
 color bearColor  = color.red
 int   majorLength = 15
@@ -133,7 +133,7 @@ if not na(st.ash_line)
 if not na(st.asl_line)
     line.set_x2(st.asl_line, bar_index)
 
-// [doc 7] THE 15-MINUTE HALF — aggregated in code, never requested  -> docs/mpc_extreme_leg_strategy.md
+// [doc 7] THE 15-MINUTE HALF — aggregated in code, never requested  -> docs/extreme_leg_strategy.md
 // ⚠ Aggregation rather than `request.security` is deliberate. The state machine has to be FED, and
 // a security call returns a value; feeding it three closed 5-minute bars at a time is the only way
 // it sees the same bars a 15-minute chart would, in the same order, with no lookahead anywhere.
@@ -243,7 +243,7 @@ f_sess(string spec, string tz) =>
 // at all, and the one labelled "London" was in fact the New York session under a wrong name.
 // MEASURED over 38,747 M15 bars: the old "London" high and low equalled the house New York
 // session's on 100.0% of bars, and the other eight pairings agreed on 0.0-8.0%.
-// The parent this was ported from — `indicators/engines/mpc_assistant.pine` — passes the timezone
+// The parent this was ported from — `indicators/engines/mpc_jarvis.pine` — passes the timezone
 // explicitly and always has; the port dropped the argument. `engines/sessions/` carries the same
 // three windows and is what every measurement behind this strategy was taken through, so the fix
 // makes the chart agree with its own parent AND with the numbers at the same time.
@@ -265,7 +265,7 @@ var int highFamilies = 0
 //
 // 🔴 `needClose` EXISTS BECAUSE THIS FILE DISAGREED WITH ITS OWN PARENT (found by the first real
 // parity run, 2026-09-02). Every family was tracked on a WICK. `engines/liquidity/` — which is
-// 100% parity-validated against `indicators/engines/mpc_assistant.pine` — takes a WEEKLY level
+// 100% parity-validated against `indicators/engines/mpc_jarvis.pine` — takes a WEEKLY level
 // only on a CLOSE through it, and the daily and lower families on a wick. The house engine and
 // the parent indicator agreed with each other; this strategy file was the odd one out.
 // ⚠ The direction was decided by the house standard, NOT by which rule made more money — the
@@ -325,7 +325,7 @@ bool highArmed = not na(highSweepBar) and bar_index - highSweepBar <= barsBack a
 if showSweeps and (lowFamNow > 0 or highFamNow > 0)
     label.new(bar_index, lowFamNow > 0 ? low : high, "swept", style = lowFamNow > 0 ? label.style_label_up : label.style_label_down, color = color.new(color.gray, 70), textcolor = color.gray, size = size.tiny)
 
-// [doc 11] THE SETUP  -> docs/mpc_extreme_leg_strategy.md
+// [doc 11] THE SETUP  -> docs/extreme_leg_strategy.md
 int lookbackBars = math.max(1, math.round(extremeMinutes / math.max(1, timeframe.in_seconds() / 60)))
 float atrNow = ta.atr(50)
 float extremeLow  = ta.lowest(low,  lookbackBars)
@@ -399,7 +399,7 @@ var bool  beArmed = false
 // two flags are the only way this bar can tell "flat" from "just entered". Without them the reset
 // at the bottom wiped the stop and the target back to na on the very bar they were set, the
 // bracket went out empty on the next bar, and the position was never protected and never closed.
-// The sibling `mpc_h4_sweep_strategy.pine` has carried the same pair since it was written.
+// The sibling `h4_sweep_strategy.pine` has carried the same pair since it was written.
 bool tookLong  = false
 bool tookShort = false
 
@@ -659,7 +659,7 @@ OUT.write_text(body)
 
 # The twin is the SAME body with a different title and the export block on the end. Nothing is
 # retyped, so "does the twin still match the strategy?" is not a question anybody has to ask.
-twin = body.replace('strategy("MPC Extreme Leg"', 'strategy("MPC Extreme Leg Export"', 1)
+twin = body.replace('strategy("Extreme Leg"', 'strategy("Extreme Leg Export"', 1)
 assert twin != body, "the strategy title moved — the twin would ship under the parent's name"
 OUT_EXPORT.write_text(twin + EXPORT)
 

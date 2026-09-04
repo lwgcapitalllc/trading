@@ -3,10 +3,10 @@
 No behaviour here. `engine.py` owns the state machine.
 
 The point of this file is that the recovery rule is defined against a PROTOCOL rather than
-against `mpc_sos_fade.Trade`. A recovery trade is triggered by "a strategy lost", which is a fact
+against `sos_fade.Trade`. A recovery trade is triggered by "a strategy lost", which is a fact
 every strategy in this repo can state, so wiring it to one strategy's concrete class would make
 the second consumer a rewrite. See CLAUDE.md → "Why this is a package and not a flag on
-mpc_sos_fade".
+sos_fade".
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Optional, Protocol, runtime_checkable
 class LossEvent(Protocol):
     """What the recovery engine needs to know about a primary trade that lost.
 
-    `mpc_sos_fade.execution.Trade` satisfies this already, and so does any dataclass with the
+    `sos_fade.execution.Trade` satisfies this already, and so does any dataclass with the
     same three names — that is the whole reason it is a Protocol. `r` is signed and expressed in
     the PRIMARY trade's own risk units; the engine only reads its sign and magnitude to decide
     whether the trade was a real loss or a scratch.
@@ -37,7 +37,7 @@ class LossEventWithEntry(LossEvent, Protocol):
     Required only by `stop_mode="loss_entry"`, which puts the recovery's stop on the losing
     trade's own entry. ⚠ A loss event without it is REFUSED rather than quietly falling back to
     the structural stop — the fallback would report a rule nobody ran, and the two stops are ~4x
-    apart. `mpc_sos_fade.execution.Trade` satisfies this unchanged.
+    apart. `sos_fade.execution.Trade` satisfies this unchanged.
     """
 
     entry_price: float

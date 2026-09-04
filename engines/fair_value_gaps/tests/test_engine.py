@@ -1,7 +1,7 @@
 """
 Hand-traced tests for the fair-value-gap state machine.
 
-These pin the ported Pine behaviour (mpc_assistant.pine FVG block, "FAIR VALUE GAPS — persist until
+These pin the ported Pine behaviour (mpc_jarvis.pine FVG block, "FAIR VALUE GAPS — persist until
 mitigated"): a 3-candle imbalance (LuxAlgo definition) — the two outer candles don't overlap
 (`low > high[2]` bull / `high < low[2]` bear) and the gap is at least `threshold_pct`% of price —
 forms a gap spanning that void; the middle-bar close-cleared check (`close[1] > high[2]` bull /

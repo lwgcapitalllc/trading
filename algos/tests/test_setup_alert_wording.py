@@ -36,7 +36,7 @@ from backtest.setups import (
 
 
 def snap(**kw) -> SetupSnapshot:
-    base = dict(key="k", strategy="MpcSosFadeStrategy", symbol="XAUUSD.p", side=1, state=WATCHING)
+    base = dict(key="k", strategy="SosFadeStrategy", symbol="XAUUSD.p", side=1, state=WATCHING)
     base.update(kw)
     return SetupSnapshot(**base)
 
@@ -195,12 +195,12 @@ def test_the_projected_stop_is_carried_because_it_is_why_the_message_is_worth_re
 
 # ── the head, and what it is allowed to fall back to ─────────────────────────────────────────
 def test_the_bots_display_name_is_used_when_it_is_given():
-    """A strategy only knows its CLASS name. `MpcSosFadeStrategy` is not what the same bot is
+    """A strategy only knows its CLASS name. `SosFadeStrategy` is not what the same bot is
     called in every other message this suite sends, and one system should not have two names for
     one bot in one chat."""
-    out = alerts.format_watching(snap(confluences=conf(False)), display="MPC SOS Fade")
-    assert "MPC SOS Fade" in out
-    assert "MpcSosFadeStrategy" not in out, out
+    out = alerts.format_watching(snap(confluences=conf(False)), display="SOS Fade")
+    assert "SOS Fade" in out
+    assert "SosFadeStrategy" not in out, out
 
 
 def test_it_falls_back_to_the_class_name_rather_than_rendering_a_nameless_setup():
@@ -208,7 +208,7 @@ def test_it_falls_back_to_the_class_name_rather_than_rendering_a_nameless_setup(
     name that is TRUE and ugly, never a blank. An unnamed setup in a chat that will one day carry
     more than one bot is a message you cannot act on."""
     out = alerts.format_watching(snap(confluences=conf(False)))
-    assert "MpcSosFadeStrategy" in out, out
+    assert "SosFadeStrategy" in out, out
 
 
 # ── the shapes a terser strategy can hand it ─────────────────────────────────────────────────

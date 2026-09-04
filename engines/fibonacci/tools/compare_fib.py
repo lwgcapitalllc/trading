@@ -5,7 +5,7 @@ compare_fib.py — parity check: TradingView Pine export vs Python Structure fib
 Purpose
 -------
 Prove the Python fibs in fibonacci/ (Structure + Sniper + Macro) produce the same level events as
-the source-of-truth fibs in mpc_assistant.pine, on real candles. It runs the REAL pipeline —
+the source-of-truth fibs in mpc_jarvis.pine, on real candles. It runs the REAL pipeline —
 market_structure's StructureEngine feeds a StructureSnapshot into StructureFib, SniperFib and
 MacroFib — on the same candles the Pine build saw, and diffs their output against the px_fib_* /
 px_sniper_* / px_macro_* columns the Pine build plotted.
@@ -54,7 +54,7 @@ from market_structure import Bar, StructureEngine
 from fibonacci import InternalFib, MacroFib, SniperFib, StructureFib, StructureSnapshot
 
 # Column suffix -> Python level name (see fib_export.pine plot titles). TP4 (-0.270) and TP5
-# (-0.618) were dropped in the 2026-07-08 mpc_assistant.pine re-paste.
+# (-0.618) were dropped in the 2026-07-08 mpc_jarvis.pine re-paste.
 _LVL = [
     ("e1", "E1"), ("e2", "E2"), ("e3", "E3"), ("e4", "E4"), ("100", "1.0"),
     ("tp1", "TP1"), ("tp2", "TP2"), ("tp3", "TP3"),
@@ -362,7 +362,7 @@ def main(argv=None):
     print("-" * 72)
     print("Tip: fib mismatches confined to early bars = warmup (structure not yet converged, or a "
           "leg that began before the export window). Persistent mismatches after a clean run of "
-          "bars = a real logic gap to fix against mpc_assistant.pine.")
+          "bars = a real logic gap to fix against mpc_jarvis.pine.")
     return 1
 
 

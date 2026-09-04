@@ -113,7 +113,7 @@ minute slice — it fails on the leap-day boundary before reaching the file swee
 
 ### 3. `backtest/tests/test_reprice.py` — eight replays for four answers
 
-Each parametrized case replayed `mpc_sos_fade` over two years of M15 bars twice — free, then
+Each parametrized case replayed `sos_fade` over two years of M15 bars twice — free, then
 charged — and the **free replay is character-for-character the same run in all four tests**. The
 bar cache was read four times to do it.
 

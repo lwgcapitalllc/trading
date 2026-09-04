@@ -181,7 +181,7 @@ def test_the_fallback_warning_is_printed_once_per_key(monkeypatch, sent, capsys)
 
 # ── unparseable Markdown must not eat the message ───────────────────────────────
 # Telegram rejects the WHOLE message when Markdown does not parse, and a single underscore is
-# enough. Bot keys, symbols and file paths are made of underscores — `mpc_sos_fade_demo`,
+# enough. Bot keys, symbols and file paths are made of underscores — `sos_fade_demo`,
 # `MT5_FFT`, `live_config.py` — so the alert most likely to be refused is the one carrying an
 # exception, whose text is full of paths. Found on the first real send, 2026-07-31.
 
@@ -206,11 +206,11 @@ def test_a_message_telegram_cannot_parse_is_resent_unformatted(monkeypatch, caps
     fake = _RejectsMarkdown()
     monkeypatch.setattr(notify, "_requests", fake)
 
-    assert notify.send_telegram("MPC SOS Fade on MT5_FFT", notify.TRADE) is True
+    assert notify.send_telegram("SOS Fade on MT5_FFT", notify.TRADE) is True
     assert len(fake.calls) == 2
     assert "parse_mode" in fake.calls[0]  # tried formatted first
     assert "parse_mode" not in fake.calls[1]  # then plain
-    assert fake.calls[1]["text"] == "MPC SOS Fade on MT5_FFT"  # text itself is never mangled
+    assert fake.calls[1]["text"] == "SOS Fade on MT5_FFT"  # text itself is never mangled
     assert "plain text" in capsys.readouterr().out
 
 
@@ -230,6 +230,67 @@ def test_a_400_that_is_not_a_parse_error_is_not_retried(monkeypatch):
     monkeypatch.setattr(notify, "_requests", _NotAMember())
     assert notify.send_telegram("hi", notify.TRADE) is False
     assert len(calls) == 1
+
+
+# ── the corruption the rescue above CANNOT catch ────────────────────────────────
+# 🔴 The rescue fires on a 400, i.e. only when the entity is UNBALANCED. An EVEN number of
+# underscores parses perfectly and Telegram eats them: `sos_fade_demo` arrives as `sosfadedemo`
+# with `fade` in italics, HTTP 200, nothing logged, nothing to notice. The old key
+# `mpc_sos_fade_demo` carried THREE underscores — odd, so it was rejected and the rescue
+# delivered it intact. **Renaming the bot to a two-underscore key turned a loud failure into a
+# silent one**, which is why the trade path stopped asking for Markdown at all (2026-09-03).
+
+
+class _AcceptsAnything:
+    """Telegram when the Markdown happens to parse: 200, no complaint, entities applied."""
+
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, json=None, timeout=None):
+        self.calls.append(json)
+        return _ok()
+
+
+def test_an_even_number_of_underscores_is_accepted_so_the_rescue_never_runs(monkeypatch):
+    """The failure mode in one test: Telegram is HAPPY, so nothing retries and nothing warns.
+    Asking for Markdown at all is what loses the underscores."""
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
+    fake = _AcceptsAnything()
+    monkeypatch.setattr(notify, "_requests", fake)
+
+    assert notify.send_telegram("ENTRY\nsos_fade_demo", notify.TRADE) is True
+    assert len(fake.calls) == 1  # no rescue - there was no error to rescue from
+    assert fake.calls[0]["parse_mode"] == "Markdown"  # and Telegram was asked to parse it
+
+
+def test_markdown_false_never_asks_telegram_to_parse_anything(monkeypatch):
+    """The fix. `algos/live/alerts.py` builds plain text by design, so the trade path sends it as
+    plain text — and no future bot name can be eaten by an accidental italic."""
+    monkeypatch.setattr(
+        credentials, "_cache", {"telegram_token": "T", "telegram_chat_id": "-100shared"}
+    )
+    fake = _AcceptsAnything()
+    monkeypatch.setattr(notify, "_requests", fake)
+
+    assert notify.send_telegram("ENTRY\nsos_fade_demo", notify.TRADE, markdown=False) is True
+    assert len(fake.calls) == 1
+    assert "parse_mode" not in fake.calls[0]
+    assert fake.calls[0]["text"] == "ENTRY\nsos_fade_demo"  # arrives exactly as written
+
+
+def test_the_live_bot_sends_its_alerts_unformatted(monkeypatch):
+    """The wiring, not just the capability — rule 7: find the line that CONSUMES the flag.
+    Every message the runner sends is built by `alerts.py`, which is plain text by design."""
+    import inspect
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "live"))
+    import runner
+
+    src = inspect.getsource(runner.LiveRunner._notify)
+    assert "markdown=False" in src
 
 
 # ── the exit replies to the entry ───────────────────────────────────────────────

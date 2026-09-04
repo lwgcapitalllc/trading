@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a strategy that clears its own bracket on the bar it opens a trade.
 
-WHAT IT CATCHES, and it cost an account on the first run of `mpc_extreme_leg_strategy.pine`:
+WHAT IT CATCHES, and it cost an account on the first run of `extreme_leg_strategy.pine`:
 with `process_orders_on_close = true` an entry is filled AFTER the script has finished running
 for that bar, so `strategy.position_size` still reads flat everywhere below the entry. A block
 guarded by nothing but `strategy.position_size == 0` therefore fires on the bar the trade was
@@ -11,7 +11,7 @@ book — a position that can never close. Nothing errors and nothing goes red.
 
 THE RULE: a variable given a live value inside a block that calls `strategy.entry`, and set back
 to `na` under a bare flat test, is that bug. The fix is a per-bar "just entered" flag in the
-reset's guard, which is what `mpc_h4_sweep_strategy.pine` has always carried.
+reset's guard, which is what `h4_sweep_strategy.pine` has always carried.
 
 DELIBERATELY NARROW. It reads top-level blocks only, it knows nothing about intervening logic,
 and it cannot tell you whether a bracket is correct — only that this one shape is absent. Its

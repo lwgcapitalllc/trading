@@ -130,8 +130,8 @@ def test_zero_net_share_is_none():
 
 def test_leg_from_result_reads_daily_pnl():
     result = {"daily_pnl": [{"date": "2026-01-01", "pnl": 25.0}], "kpis": {}}
-    leg = leg_from_result("MPC SOS Fade", result)
-    assert leg.name == "MPC SOS Fade"
+    leg = leg_from_result("SOS Fade", result)
+    assert leg.name == "SOS Fade"
     out = combine_runs([leg])
     assert out["combined_net"] == 25.0
 

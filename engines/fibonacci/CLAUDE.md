@@ -10,28 +10,28 @@ detection (it consumes `engines/market_structure/`), no MT5 ops, no UI, no chart
 `half_reached` — the INBOUND 0.5 (TP1-price) tap during the retrace, UNGATED (not behind 0.618) and
 tested on the retracement side, so it is distinct from the TP1 target (same price, outbound, gated). It
 is a first-touch latch reset each new leg, and it feeds only the new A+ setup's EARLY entry tier. Ported
-from `mpc_assistant.pine` (the new `fiboHalfReached` var); `fib_export.pine` gained a `px_fibo_half_reached`
+from `mpc_jarvis.pine` (the new `fiboHalfReached` var); `fib_export.pine` gained a `px_fibo_half_reached`
 column and `compare_fib.py` compares it (optional, so older exports still validate). Unit-tested (2 new
 tests, green) and **parity CONFIRMED (exit 0):** on a fresh combined `VANTAGE_XAUUSD, 5m` export
 (7,891 bars, `--warmup 1002`) `px_fibo_half_reached` matched Pine on every warm bar, alongside all the
 existing Structure/Sniper/Macro/Internal fields (the 1002-bar warm-up is the Macro cycle cold-start).
-A **2026-07-09 `mpc_assistant.pine` re-paste** changed three things: the Structure AND Internal fibs
+A **2026-07-09 `mpc_jarvis.pine` re-paste** changed three things: the Structure AND Internal fibs
 **dropped the TP3-hit `reset_active` latch** and **added an extend-changed guard** (skip touched-checks
 on any bar the live anchor moved), and the **Macro** now seeds its bear-SOS low-tracker on the first bar
 so the first bullish SOS can lock a cycle immediately. All three are ported and **re-validated at 100%
 Pine parity** on a fresh `VANTAGE_XAUUSD, 5m` export (13,759 bars, `--warmup 3154`, exit 0 —
 Structure + Sniper + Macro + Internal). The one canonical implementation — no consumer builds its own.
-**Pine:** ported from `indicators/engines/mpc_assistant.pine`; parity harness is `indicators/engines/fib_export.pine`, diffed against this Python by `tools/compare_fib.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-08-02 — **the Structure fib now reports the BARS its anchors sit on** (`StructureFibEvents.ash_loc` / `.asl_loc`), beside the `ash`/`asl` prices it has carried since the Custom-SL work. Same standing as those prices, word for word: existing internal state (`_ash_loc`/`_asl_loc`, which `origin_index()` already reads) surfaced unchanged, read by nothing in the level maths, so detection cannot move. A consumer needs them because **a fib is a LEG, not just a ladder of prices**: two prices say what the levels are, never where the leg is, and the first consumer — the lab price chart drawing each trade's own fib — has to start the drawing at the bar the leg BEGAN on or it hides the retracement that produced the entry. ⚠ **`compare_fib.py` could not run: no `fib_export.pine` CSV is on disk.** Rather than argue the change is inert, it was MEASURED the way the repo measures a cosmetic change — the engine was replayed at HEAD and at the working tree over **47,263 real cached M15 bars** (2023-01-02 → 2025-01-01) and every field the parity tool compares was diffed bar by bar: **0 differences** across 47,214 active bars, 377,712 level values and 1,824 touch events, with the two new fields populated on every active bar. That is the same evidence by a different route, not a substitute for the gate — re-run `compare_fib.py` on the next real export anyway. 3 new tests (45 green). Earlier: 2026-07-31 — ⚠ **THE MACRO (CYCLE) FIB IS NOW A FORK: the two Pine files disagree, and this engine deliberately follows the STRATEGY one.** `/audit-engines` found `mpc_assistant.pine` reworked its Cycle fib on 2026-07-31 in two independent ways, each of which moves every price on the ladder:
+**Pine:** ported from `indicators/engines/mpc_jarvis.pine`; parity harness is `indicators/engines/fib_export.pine`, diffed against this Python by `tools/compare_fib.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
+**Last reviewed:** 2026-08-02 — **the Structure fib now reports the BARS its anchors sit on** (`StructureFibEvents.ash_loc` / `.asl_loc`), beside the `ash`/`asl` prices it has carried since the Custom-SL work. Same standing as those prices, word for word: existing internal state (`_ash_loc`/`_asl_loc`, which `origin_index()` already reads) surfaced unchanged, read by nothing in the level maths, so detection cannot move. A consumer needs them because **a fib is a LEG, not just a ladder of prices**: two prices say what the levels are, never where the leg is, and the first consumer — the lab price chart drawing each trade's own fib — has to start the drawing at the bar the leg BEGAN on or it hides the retracement that produced the entry. ⚠ **`compare_fib.py` could not run: no `fib_export.pine` CSV is on disk.** Rather than argue the change is inert, it was MEASURED the way the repo measures a cosmetic change — the engine was replayed at HEAD and at the working tree over **47,263 real cached M15 bars** (2023-01-02 → 2025-01-01) and every field the parity tool compares was diffed bar by bar: **0 differences** across 47,214 active bars, 377,712 level values and 1,824 touch events, with the two new fields populated on every active bar. That is the same evidence by a different route, not a substitute for the gate — re-run `compare_fib.py` on the next real export anyway. 3 new tests (45 green). Earlier: 2026-07-31 — ⚠ **THE MACRO (CYCLE) FIB IS NOW A FORK: the two Pine files disagree, and this engine deliberately follows the STRATEGY one.** `/audit-engines` found `mpc_jarvis.pine` reworked its Cycle fib on 2026-07-31 in two independent ways, each of which moves every price on the ladder:
 
 1. **The bottom anchor moved.** It was `macro_ll_since_bear_sos` — the lowest low tracked since the last bearish SOS, which can reach a long way back and sit far below the break. It is now **`st.bull_bos_low`**, the low of the leg that actually broke structure: nearer, higher, tighter.
 2. **It is measured on a different timeframe.** New `macroCycleTf = 1` + `f_cycleState()`: on any chart ABOVE 1m the whole cycle state comes from a **1-minute `request.security`** (`cyc_origin`/`cyc_extreme`/`cyc_visible`); only at or below 1m does it run natively. The Pine's own comment calls this "the smaller cycle".
 
 Everything else is unchanged in both — lock on a bull SOS, extend the top on a higher confirmed high, die on a close below the origin, hide on a close above the extreme. (The touch-latch reset also moved from `macroNewHH` to `macroRangeChanged`, a minor equivalent.)
 
-**`MacroFib` was deliberately NOT changed (Aaron's call, 2026-07-31).** `strategies/tradingview/mpc_strategy.pine` — the file `strategies/python/mpc_sos_fade/` actually replays — **still carries the OLD anchor** (`macro_ll_since_bear_sos`, lines 2614-2672). So this engine is stale against the *assistant* and CORRECT against the *strategy*; porting the rework would have manufactured drift in the bot rather than removing it. Same class as the `fvg_require_close` trap in `engines/fair_value_gaps/CLAUDE.md` — **the two mpc Pine files disagree, so no single behaviour is right for both.** Stakes are low today: `mpc_sos_fade` computes the macro POI (`signals.py`, discount 0.618-0.886 long / premium 0.382+ short) and reports it through the sequence state, but **execution never reads it**, so no trade depends on it either way.
+**`MacroFib` was deliberately NOT changed (Aaron's call, 2026-07-31).** `strategies/tradingview/sos_fade_strategy.pine` — the file `strategies/python/sos_fade/` actually replays — **still carries the OLD anchor** (`macro_ll_since_bear_sos`, lines 2614-2672). So this engine is stale against the *assistant* and CORRECT against the *strategy*; porting the rework would have manufactured drift in the bot rather than removing it. Same class as the `fvg_require_close` trap in `engines/fair_value_gaps/CLAUDE.md` — **the two mpc Pine files disagree, so no single behaviour is right for both.** Stakes are low today: `sos_fade` computes the macro POI (`signals.py`, discount 0.618-0.886 long / premium 0.382+ short) and reports it through the sequence state, but **execution never reads it**, so no trade depends on it either way.
 
-**Port it when — and only when — the rework reaches `mpc_strategy.pine`.** At that point the 1-minute `request.security` becomes the real problem: this engine consumes ONE bar stream and has no lower-timeframe feed, so reproducing it needs an architectural decision (feed `EngineStack` a second M1 stream, or pin the cycle to the chart timeframe and accept the gap) — not a line edit. The other three fibs (Structure/FFT, Sniper, Internal) are **unaffected** and stay in parity. Earlier: 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** The four fibs were STALE-BY-INPUT, not stale: their own code was untouched, but the structure stream feeding them changed (more SOS fire, fewer swings confirm — and the MacroFib reads `bull_sos` + `last_conf_high` directly), and `fib_export.pine` embeds the structure block so it was re-synced first. `compare_fib.py --warmup 368` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) across all four fibs — the same single CSV that validated market_structure and order_blocks, since `fib_export.pine` + `ob_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
+**Port it when — and only when — the rework reaches `sos_fade_strategy.pine`.** At that point the 1-minute `request.security` becomes the real problem: this engine consumes ONE bar stream and has no lower-timeframe feed, so reproducing it needs an architectural decision (feed `EngineStack` a second M1 stream, or pin the cycle to the chart timeframe and accept the gap) — not a line edit. The other three fibs (Structure/FFT, Sniper, Internal) are **unaffected** and stay in parity. Earlier: 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** The four fibs were STALE-BY-INPUT, not stale: their own code was untouched, but the structure stream feeding them changed (more SOS fire, fewer swings confirm — and the MacroFib reads `bull_sos` + `last_conf_high` directly), and `fib_export.pine` embeds the structure block so it was re-synced first. `compare_fib.py --warmup 368` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) across all four fibs — the same single CSV that validated market_structure and order_blocks, since `fib_export.pine` + `ob_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
 
 ---
 
@@ -200,7 +200,7 @@ more-extreme `i_confirmed_low/high` ONLY when the snapshot carries it. In the Pi
 block sits behind `internalActive = showInternal`, so when a consumer's chart has "Show Internal
 Structure" OFF, `i_confirmed_*` is never set and the fib keeps its external anchor. Python's
 `market_structure` engine ALWAYS computes internal structure, so a consumer that runs internal-OFF (the
-mpc_sos_fade bot does) must suppress those snapshot fields — `EngineStack(EngineConfig(show_internal=False))`
+sos_fade bot does) must suppress those snapshot fields — `EngineStack(EngineConfig(show_internal=False))`
 blanks `i_confirmed_*` + `ifib_seed_*` for exactly this reason. This engine was validated with internal
 ON (`fib_export.pine`), so its default behaviour is correct; the gate lives in the stack, not here.
 
@@ -216,7 +216,7 @@ state carries bar-to-bar and cannot be recomputed from a single bar. Build one `
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s fib blocks back here line-by-line. Keep the gating
+- Port any change to `mpc_jarvis.pine`'s fib blocks back here line-by-line. Keep the gating
   exact — do not reorder or "simplify" the 0.618-gate / targets-from-next-bar / origin-reset logic,
   the Sniper's arm-on-BOS / confirm-once / break-bar-clears-confirm interaction, nor the Macro's
   lock/reset/extend cycle and its edge-vs-previous-bar touch detection.
@@ -235,7 +235,7 @@ state carries bar-to-bar and cannot be recomputed from a single bar. Build one `
 
 ## Validation (Pine ↔ Python parity)
 
-> **2026-07-09 re-paste — parity CONFIRMED (exit 0).** A newer `mpc_assistant.pine` paste dropped the
+> **2026-07-09 re-paste — parity CONFIRMED (exit 0).** A newer `mpc_jarvis.pine` paste dropped the
 > TP3-hit `reset_active` latch on the Structure AND Internal fibs, added an extend-changed guard to both
 > (skip touched-checks on any bar the live anchor moved), and gave the Macro a first-bar bear-SOS seed.
 > All three ported (engine + `fib_export.pine` harness + unit tests, 40 green) and re-validated on a fresh
@@ -244,7 +244,7 @@ state carries bar-to-bar and cannot be recomputed from a single bar. Build one `
 > set is unchanged — `px_fib_reset_active` / `px_ifib_reset_active` are now always 0 on both sides.
 >
 > **2026-07-08 re-sync — parity CONFIRMED 2026-07-09 (exit 0).** The four fibs were re-synced to the
-> re-pasted `mpc_assistant.pine` (Structure TP4/TP5 drop + internal-swing anchor + TP3 `reset_active`;
+> re-pasted `mpc_jarvis.pine` (Structure TP4/TP5 drop + internal-swing anchor + TP3 `reset_active`;
 > Macro hide-only + always-`ll_since` bottom anchor; the new Internal fib). `fib_export.pine` +
 > `compare_fib.py` were updated to match (Internal fib = touch pulses + state only, no per-level price
 > columns, to stay under TradingView's 64-plot cap). On a fresh `VANTAGE_XAUUSD, 5m` export (7,562 bars)
@@ -278,13 +278,13 @@ active — export on ≤5m".
 The first N bars always mismatch because the Pine export begins warm (chart history before the
 window) while the Python engines start cold — the same cold-start pattern as `engines/market_structure/`;
 `--warmup N` skips them (the tool prints the last mismatching bar to help pick N). Re-run
-`compare_fib.py` after any change to a fib or the fib blocks in `mpc_assistant.pine`.
+`compare_fib.py` after any change to a fib or the fib blocks in `mpc_jarvis.pine`.
 
 Wired up, mirrors `engines/market_structure/`'s flow. Two pieces:
 
 1. `indicators/engines/fib_export.pine` — the external + internal structure engine (byte-identical to
    `structure_engine_export.pine`, plus the internal-fib seed captures) + the real Structure, Sniper,
-   Macro and Internal fibs lifted from `mpc_assistant.pine` (compute + state machines, drawing removed)
+   Macro and Internal fibs lifted from `mpc_jarvis.pine` (compute + state machines, drawing removed)
    + `plot()` columns for all four fibs' outputs (`px_fib_*`, `px_sniper_*`, `px_macro_*`, `px_ifib_*`).
    Put it on a chart, export chart data to CSV, drop it in `engines/fibonacci/exports/` (git-ignored).
    Export on ≤5m to also cover Macro.
@@ -320,7 +320,7 @@ Not built yet — there is no bot consuming this engine. Wire it up together wit
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` (fib blocks `GRP_FIBO` Structure fib
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` (fib blocks `GRP_FIBO` Structure fib
   ~2318-2439, `GRP_SNIPER` Sniper zone, `GRP_MACRO` Macro ~2511-2655, `GRP_IFIB` Internal fib — seed
   at the six iBOS/iSOS sites ~1400-1609 + clear/extend/touch ~2727-2791) and its live "MPC - JARVIS"
   confirmation table, which defines the event model this engine reproduces. (Line numbers drift as the

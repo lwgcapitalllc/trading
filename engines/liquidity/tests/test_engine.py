@@ -80,7 +80,7 @@ def test_daily_high_swept_on_wick_through():
     ev = liq.update(3, ms(NY, 2024, 7, 2, 12), 109, 104, 108)
     assert ev.mitigated == []
     # wick through the level → swept, even though the bar also CLOSES above it (the close-back
-    # guard was dropped 2026-07-06 to match mpc_assistant.pine — a wick alone now sweeps)
+    # guard was dropped 2026-07-06 to match mpc_jarvis.pine — a wick alone now sweeps)
     ev = liq.update(4, ms(NY, 2024, 7, 2, 13), 112, 108, 111)
     assert [l.name for l in ev.mitigated] == ["PDH"]
     assert ev.mitigated[0].mitigated_index == 4

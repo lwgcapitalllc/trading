@@ -25,7 +25,7 @@ nothing errors. Only Aaron can say whether any chart differs.
 from Pine (no `strategy()` argument exists), it survives ordinary code saves once
 unticked, and the strategies here draw their own position boxes precisely so the
 built-in markers can be off. Applies to all six strategy files, the session sweep
-(`smc_session_sweep_strategy.pine`, called `mpc_m15_playbook_strategy.pine` until
+(`smc_session_sweep_strategy.pine`, called `m15_playbook_strategy.pine` until
 2026-08-15) included. Full note: `indicators/CLAUDE.md` → *"Trades on chart" CANNOT be
 defaulted from code*.
 
@@ -33,7 +33,7 @@ defaulted from code*.
 and the only column the reorder is expected to change.
 
 
-## mpc_strategy.pine — 156 inputs
+## sos_fade_strategy.pine — 156 inputs
 
 | # | type | ord | group | title | default | var | line |
 |---|---|---|---|---|---|---|---|
@@ -194,7 +194,7 @@ and the only column the reorder is expected to change.
 | 155 | float | 15 | Strategy Execution |    ↳ Time stop (hours) | `36.0` | `execTimeStopHrs` | 5049 |
 | 156 | bool | 65 | Diagnostic Log | Log every trade + miss to Pine Logs | `true` | `execDiagLog` | 5115 |
 
-## mpc_b_leg_strategy.pine — 172 inputs
+## b_leg_strategy.pine — 172 inputs
 
 | # | type | ord | group | title | default | var | line |
 |---|---|---|---|---|---|---|---|
@@ -371,7 +371,7 @@ and the only column the reorder is expected to change.
 | 171 | float | 13 | Strategy Execution |    ↳ Time stop (hours) | `8.0` | `execTimeStopHrs` | 4784 |
 | 172 | bool | 68 | Diagnostic Log | Log every trade + miss to Pine Logs | `true` | `execDiagLog` | 4850 |
 
-## mpc_bos_strategy.pine — 176 inputs
+## bos_strategy.pine — 176 inputs
 
 | # | type | ord | group | title | default | var | line |
 |---|---|---|---|---|---|---|---|
@@ -552,7 +552,7 @@ and the only column the reorder is expected to change.
 | 175 | float | 18 | Result Stats | Breakeven band (R) | `0.15` | `execBeBandR` | 3482 |
 | 176 | bool | 65 | Diagnostic Log | Write a text log of every trade | `true` | `execDiagLog` | 4358 |
 
-## mpc_d_strategy.pine — 49 inputs
+## d_strategy.pine — 49 inputs
 
 🔴 **DELETED 2026-08-15 — the file no longer exists and this table describes nothing shippable.**
 Left in place so a reader who finds the name elsewhere lands here rather than nowhere. Recover from
@@ -610,7 +610,7 @@ git history; reason in `strategies/tradingview/CLAUDE.md` → *DELETED 2026-08-1
 | 48 | bool | 15 | Strategy Execution | Draw the VWAP line | `true` | `execShowVwap` | 799 |
 | 49 | bool | 16 | Strategy Execution |    ↳ VWAP side: require the RECLAIM, not just the side | `true` | `execVwapReclaim` | 822 |
 
-## mpc_h4_sweep_strategy.pine — 47 inputs
+## h4_sweep_strategy.pine — 47 inputs
 
 | # | type | ord | group | title | default | var | line |
 |---|---|---|---|---|---|---|---|

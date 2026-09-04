@@ -5,7 +5,7 @@ compare_vwap.py — parity check: TradingView Pine export vs Python VWAP engine.
 Purpose
 -------
 Prove the Python engine in vwap/ produces the same session VWAP as the source-of-truth line in
-mpc_assistant.pine (`vwapValue = ta.vwap(hlc3)`), on real candles. It feeds each bar
+mpc_jarvis.pine (`vwapValue = ta.vwap(hlc3)`), on real candles. It feeds each bar
 (timestamp + high/low/close + volume) through VwapEngine and diffs the running VWAP value + the
 trading-day anchor pulse against the px_* columns the Pine build in indicators/engines/vwap_export.pine
 plotted, bar by bar.

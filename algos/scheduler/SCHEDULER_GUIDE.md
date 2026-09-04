@@ -15,8 +15,8 @@ All tasks run as `trader` user on the VPS.
 | SYS_LOGBACKUP | Scheduled | Daily 00:30 | `tools/log_backup.py` |
 | SYS_LOGREVIEW | Scheduled | Hourly | `notifications/log_review.py` |
 | SYS_LEDGERSYNC | Scheduled | Hourly, :20 | `tools/ledger_sync.py --local --alert-on-failure` |
-| SYS_REENTRYWATCH | Scheduled | Hourly, :23 | `tools/watch_reentry.py --bot mpc_sos_fade_demo` |
-| SYS_BROKERCOSTS | Scheduled | Daily 06:40 | `tools/watch_broker_costs.py --bot mpc_sos_fade_demo` |
+| SYS_REENTRYWATCH | Scheduled | Hourly, :23 | `tools/watch_reentry.py --bot sos_fade_demo` |
+| SYS_BROKERCOSTS | Scheduled | Daily 06:40 | `tools/watch_broker_costs.py --bot sos_fade_demo` |
 
 🔴 **THE THREE SILENT TASKS ARE THE ONES TO CHECK AFTER A REBUILD.** `SYS_DEADMAN`,
 `SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` all report nothing on an ordinary day, so a box that came
@@ -183,7 +183,7 @@ ssh forexvps "schtasks /run /tn SYS_STARTUP"
 
 # Stop ONE bot (never `taskkill /f /im python.exe` — that also kills the Telegram bot and
 # both backtest agents, and is what left the live bot dead for three days on 2026-07-31)
-ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot sos_fade_demo%'\" call terminate"
 
 # Restart everything
 ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul"

@@ -4,12 +4,12 @@
 //  FVG EXPORT — parity harness for engines/fair_value_gaps/
 // ============================================================================
 // Instrumented copy of the "FAIR VALUE GAPS — persist until mitigated" block from
-// mpc_assistant.pine, with ALL drawing removed (no boxes, no directional-visibility
+// mpc_jarvis.pine, with ALL drawing removed (no boxes, no directional-visibility
 // filter — those are visuals) and the four state arrays kept. It adds px_fvg_* plot
 // columns so a TradingView CSV export can be diffed bar-by-bar against the Python
 // FairValueGapEngine by engines/fair_value_gaps/tools/compare_fvg.py.
 //
-// Keep the detection + cap + mitigate logic byte-identical to mpc_assistant.pine's FVG
+// Keep the detection + cap + mitigate logic byte-identical to mpc_jarvis.pine's FVG
 // block. Do not let it drift.
 // ============================================================================
 // overlay=false: runs in its own pane so the transparent parity plots don't drag the price
@@ -18,7 +18,7 @@
 // thing that is not (the minimum-gap floor) is split at mpc's own 900-second boundary below.
 indicator("FVG Export", overlay = false, max_bars_back = 2000)
 
-// Defaults MIRROR mpc_assistant.pine:410-414 exactly.
+// Defaults MIRROR mpc_jarvis.pine:410-414 exactly.
 //
 // The size floor is TIMEFRAME-AWARE in mpc and this file now reproduces that split rather than
 // carrying one flat number. It matters: a %-of-price floor does not scale down, so 0.04% of gold at

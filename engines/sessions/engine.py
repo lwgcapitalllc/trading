@@ -7,7 +7,7 @@ is TIME-driven, not price-driven: its inputs are the bar's wall-clock timestamp 
 milliseconds, UTC — exactly Pine's `time`) and, for the running session/NY-range extremes, the
 bar's high/low.
 
-Ported from indicators/engines/mpc_assistant.pine, four blocks that all key off the clock:
+Ported from indicators/engines/mpc_jarvis.pine, four blocks that all key off the clock:
 
   - session windows inAsia/inLondon/inNY .............. Pine 836-838   (time(session, tz))
   - SESSION H/L TRACKING (running asia/london/ny H/L) . Pine 1638-1646
@@ -117,7 +117,7 @@ class SessionEngine:
     """Streaming trading-sessions / kill-zones / NY-range detector.
 
     Build one per symbol/timeframe and feed it one closed bar at a time, in order. Defaults mirror
-    the mpc_assistant.pine inputs: Tokyo 0900-1800 Asia/Tokyo, London 0800-1700 Europe/London,
+    the mpc_jarvis.pine inputs: Tokyo 0900-1800 Asia/Tokyo, London 0800-1700 Europe/London,
     New York 0800-1700 America/New_York; kill zones and the NY opening range on America/New_York time.
 
     Re-synced 2026-07-31 from the previous fixed-offset form (Tokyo 2000-0500, London 0400-1300,

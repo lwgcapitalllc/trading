@@ -5,7 +5,7 @@ compare_fvg.py — parity check: TradingView Pine export vs Python fair-value-ga
 Purpose
 -------
 Prove the Python engine in fair_value_gaps/ produces the same gaps as the source-of-truth FVG block
-in mpc_assistant.pine, on real candles. It runs FairValueGapEngine on the same candles the Pine build
+in mpc_jarvis.pine, on real candles. It runs FairValueGapEngine on the same candles the Pine build
 saw and diffs its output against the px_fvg_* columns the Pine build plotted.
 
 What is compared (per bar, after --warmup)
@@ -321,7 +321,7 @@ def main(argv=None):
     print("-" * 72)
     print("Tip: mismatches confined to early bars = warmup (a gap whose displacement began before "
           "the export window still lingering in Pine's arrays). Persistent mismatches after a clean "
-          "run of bars = a real logic gap to fix against mpc_assistant.pine.")
+          "run of bars = a real logic gap to fix against mpc_jarvis.pine.")
     return 1
 
 

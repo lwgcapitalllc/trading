@@ -608,7 +608,7 @@ function StrategyRow({
             </span>
           )}
           {/* The strategy's NAME — matches StrategyDetail's heading. Showing class_name here
-              meant the list said "MpcSosFadeStrategy" while the detail page said "MPC SOS Fade". */}
+              meant the list said "SosFadeStrategy" while the detail page said "SOS Fade". */}
           {s.name || s.class_name}
           <ChevronRight size={13} className="text-text-tertiary opacity-60" />
         </div>

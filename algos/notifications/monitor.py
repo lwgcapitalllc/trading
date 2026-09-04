@@ -66,26 +66,26 @@ LOG_STALE_SECS = 5 * 60
 # a watchdog you do not have.
 #
 # `script` is matched as a SUBSTRING of the process commandline. The bot_key is what
-# appears there (`runner.py --bot mpc_sos_fade_demo`), so it is the match — never the
+# appears there (`runner.py --bot sos_fade_demo`), so it is the match — never the
 # script filename, which is `runner.py` for every live bot and would make them
 # indistinguishable the moment a second one exists.
 BOTS = {
-    "mpc_sos_fade_demo": {
-        "name": "MPC SOS Fade",
-        "suppress_key": "mpc_sos_fade_demo",
-        "script": "mpc_sos_fade_demo",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/mpc_sos_fade_demo/mpc_sos_fade_demo.log"),
+    "sos_fade_demo": {
+        "name": "SOS Fade",
+        "suppress_key": "sos_fade_demo",
+        "script": "sos_fade_demo",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/sos_fade_demo/sos_fade_demo.log"),
     },
     # Registered while it sits on the BENCH, and that pairing is deliberate. `check_bot` skips a
     # bot with no account, so this costs nothing today — but registering it only when somebody
     # assigns it would mean the Bots page could arm a bot the watchdog does not watch, with
     # nothing to notice until it died unobserved. The registry is static and complete; whether a
     # bot is EXPECTED to be running is read from its own config, every pass.
-    "mpc_bleg_demo": {
-        "name": "MPC B-LEG",
-        "suppress_key": "mpc_bleg_demo",
-        "script": "mpc_bleg_demo",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/mpc_bleg_demo/mpc_bleg_demo.log"),
+    "b_leg_demo": {
+        "name": "B-LEG",
+        "suppress_key": "b_leg_demo",
+        "script": "b_leg_demo",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/b_leg_demo/b_leg_demo.log"),
     },
 }
 

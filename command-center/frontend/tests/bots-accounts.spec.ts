@@ -112,7 +112,7 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
           running_hash: 'abc',
           params_drift: [],
           compare:
-            v[1] === 'mpc_bleg'
+            v[1] === 'b_leg'
               ? null
               : {
                   deployed_version: 100,
@@ -142,8 +142,8 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
         json: {
           fetched_at: new Date().toISOString(),
           bots: [
-            { key: 'mpc_sos_fade', name: 'MPC SOS Fade', status: 'RUNNING', account_type: 'demo' },
-            { key: 'mpc_bleg', name: 'MPC B-LEG', status: 'STOPPED', account_type: 'demo' },
+            { key: 'sos_fade', name: 'SOS Fade', status: 'RUNNING', account_type: 'demo' },
+            { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
           ],
           scheduled_jobs: [],
           telegram: { name: 'Telegram', status: 'RUNNING' },
@@ -156,10 +156,7 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
 
 const STACKED = [
   group({
-    bots: [
-      bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10),
-      bot('mpc_bleg', 'MPC B-LEG', 770116, 10),
-    ],
+    bots: [bot('sos_fade', 'SOS Fade', 770115, 10), bot('b_leg', 'B-LEG', 770116, 10)],
     risk_cap_pct: 10,
     stacked: true,
     cap_takes_turns: true,
@@ -189,10 +186,7 @@ test('a cap disagreement is named and no cap is quoted', async ({ page }) => {
   // the chip would quote a ceiling nobody configured and the `Cap 10%` assertion below flips.
   await mock(page, [
     group({
-      bots: [
-        bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10),
-        bot('mpc_bleg', 'MPC B-LEG', 770116, null),
-      ],
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 10), bot('b_leg', 'B-LEG', 770116, null)],
       risk_cap_pct: null,
       cap_agrees: false,
       stacked: true,
@@ -211,7 +205,7 @@ test('an unreadable config blocks the save rather than writing to the rest', asy
   await mock(page, [
     group({
       bots: [
-        bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10),
+        bot('sos_fade', 'SOS Fade', 770115, 10),
         {
           key: 'broken',
           display: 'broken',
@@ -247,9 +241,9 @@ test('saving a cap says a restart is needed, never that it applied', async ({ pa
           status: 'ok',
           changed: true,
           deployed: true,
-          updated: ['mpc_sos_fade', 'mpc_bleg'],
+          updated: ['sos_fade', 'b_leg'],
           restart_required: true,
-          bots: ['mpc_sos_fade', 'mpc_bleg'],
+          bots: ['sos_fade', 'b_leg'],
           detail: `account ${ACCOUNT} risk cap → 20%`,
         },
       })
@@ -281,9 +275,9 @@ test('clearing the cap sends null, which means uncapped rather than unchanged', 
         json: {
           status: 'ok',
           changed: true,
-          updated: ['mpc_sos_fade'],
+          updated: ['sos_fade'],
           restart_required: true,
-          bots: ['mpc_sos_fade'],
+          bots: ['sos_fade'],
           detail: 'uncapped',
         },
       })
@@ -310,7 +304,7 @@ test('a single-bot account shows no stacked chip anywhere', async ({ page }) => 
   // The chip must not become decoration. MUTATION: render it whenever the group exists → red.
   await mock(page, [
     group({
-      bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10)],
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 10)],
       risk_cap_pct: 10,
     }),
   ])
@@ -331,7 +325,7 @@ const BENCHED = group({
   account: null,
   server: '',
   kind: 'bench',
-  bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)],
+  bots: [bot('b_leg', 'B-LEG', 770116, null)],
 })
 
 test('a benched bot gets its own card, not the unreadable one', async ({ page }) => {
@@ -339,7 +333,7 @@ test('a benched bot gets its own card, not the unreadable one', async ({ page })
   // One is a state somebody chose and the other is a broken file; the same card would give a
   // broken config the same controls as a resting bot.
   await mock(page, [
-    group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
     BENCHED,
   ])
   await page.goto('/bots?tab=accounts')
@@ -361,31 +355,31 @@ test('a benched bot is offered as something to add, and says where it comes from
   // MUTATION: build the candidate list from the account's own bots → the list is empty and the
   // "nothing to add" message renders instead.
   await mock(page, [
-    group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
     BENCHED,
   ])
   await page.goto('/bots?tab=accounts')
   await page.locator('[data-kind="account"] [data-testid="add-bot"]').click()
-  await expect(page.getByTestId('add-mpc_bleg')).toBeVisible()
-  await expect(page.getByTestId('add-mpc_bleg')).toContainText('not on an account')
+  await expect(page.getByTestId('add-b_leg')).toBeVisible()
+  await expect(page.getByTestId('add-b_leg')).toContainText('not on an account')
 })
 
 test('adding a bot sends its key and the account it is joining', async ({ page }) => {
   await mock(page, [
-    group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
     BENCHED,
   ])
   let sent: Record<string, unknown> | null = null
   await page.route('**/*', async (route) => {
     const u = new URL(route.request().url())
-    if (u.pathname === '/api/bots/mpc_bleg/account') {
+    if (u.pathname === '/api/bots/b_leg/account') {
       sent = route.request().postDataJSON()
       return route.fulfill({
         json: {
           status: 'ok',
           changed: true,
           deployed: true,
-          bot: 'mpc_bleg',
+          bot: 'b_leg',
           account: ACCOUNT,
           restart_required: true,
           detail: 'moved',
@@ -397,7 +391,7 @@ test('adding a bot sends its key and the account it is joining', async ({ page }
 
   await page.goto('/bots?tab=accounts')
   await page.locator('[data-kind="account"] [data-testid="add-bot"]').click()
-  await page.getByTestId('add-mpc_bleg').click()
+  await page.getByTestId('add-b_leg').click()
   await expect.poll(() => sent).toEqual({ account: ACCOUNT, deploy: true })
   // Never "added and trading" — a bot reads its account at startup.
   await expect(page.getByText(/start it to trade/i)).toBeVisible()
@@ -410,14 +404,14 @@ test('removing a bot sends null, which is the bench rather than a delete', async
   let sent: Record<string, unknown> | null = null
   await page.route('**/*', async (route) => {
     const u = new URL(route.request().url())
-    if (u.pathname === '/api/bots/mpc_bleg/account') {
+    if (u.pathname === '/api/bots/b_leg/account') {
       sent = route.request().postDataJSON()
       return route.fulfill({
         json: {
           status: 'ok',
           changed: true,
           deployed: true,
-          bot: 'mpc_bleg',
+          bot: 'b_leg',
           account: null,
           restart_required: true,
           detail: 'benched',
@@ -428,7 +422,7 @@ test('removing a bot sends null, which is the bench rather than a delete', async
   })
 
   await page.goto('/bots?tab=accounts')
-  await page.getByTestId('remove-mpc_bleg').click()
+  await page.getByTestId('remove-b_leg').click()
   await expect.poll(() => sent).toEqual({ account: null, deploy: true })
   await expect(page.getByText(/will not start until it is on one again/i)).toBeVisible()
 })
@@ -437,10 +431,10 @@ test('a RUNNING bot cannot be removed from its account', async ({ page }) => {
   // MUTATION: drop `running` from the button's `disabled` → red. Its config was read at startup,
   // so the write cannot reach the live process: the page would show it under one account while
   // it went on trading another.
-  await mock(page, STACKED) // the snapshot mock has mpc_sos_fade RUNNING, mpc_bleg STOPPED
+  await mock(page, STACKED) // the snapshot mock has sos_fade RUNNING, b_leg STOPPED
   await page.goto('/bots?tab=accounts')
-  await expect(page.getByTestId('remove-mpc_sos_fade')).toBeDisabled()
-  await expect(page.getByTestId('remove-mpc_bleg')).toBeEnabled()
+  await expect(page.getByTestId('remove-sos_fade')).toBeDisabled()
+  await expect(page.getByTestId('remove-b_leg')).toBeEnabled()
 })
 
 test('an account with nothing left to add says so instead of an empty list', async ({ page }) => {
@@ -495,7 +489,7 @@ test('a bot whose version cannot be worked out says so rather than showing a num
 }) => {
   // MUTATION: fall back to `v0` → red. `v0` is the reassuring answer to a question nobody
   // could answer, and this pill is what you check before deciding anything.
-  await mock(page, STACKED) // the version mock returns compare: null for mpc_bleg
+  await mock(page, STACKED) // the version mock returns compare: null for b_leg
   await page.goto('/bots?tab=accounts')
   await expect(page.locator('[data-testid="version-pill"][data-state="unknown"]')).toHaveCount(1)
   await expect(page.locator('[data-testid="version-pill"][data-state="unknown"]')).toContainText(
@@ -637,7 +631,7 @@ test('an unticked suffix box sends NULL, not an empty string', async ({ page }) 
 test('an account a bot still trades cannot be unregistered', async ({ page }) => {
   // MUTATION: drop the `group.bots.length > 0` guard → the button enables and this goes red.
   // The bot would go on trading an account this page can no longer describe.
-  await mock(page, [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })], [reg()])
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
   await page.goto('/bots?tab=accounts')
   await expect(page.getByTestId(`unregister-${ACCOUNT}`)).toBeDisabled()
 })
@@ -645,7 +639,7 @@ test('an account a bot still trades cannot be unregistered', async ({ page }) =>
 test('an account nobody registered still renders, with the gap named', async ({ page }) => {
   // Backwards compatibility, and it is the half that keeps the registry from being a wall: the
   // account still works, and the reader is told what this page cannot do with it.
-  await mock(page, [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })], [])
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [])
   await page.goto('/bots?tab=accounts')
   await expect(page.getByTestId('unregistered')).toBeVisible()
   await expect(page.getByTestId('password-chip')).toHaveCount(0)
@@ -692,7 +686,7 @@ test('dragging a bot onto another account moves it there', async ({ page }) => {
 
   await mock(
     page,
-    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)] })],
+    [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
     [reg({ account: ACCOUNT }), reg({ account: OTHER, label: 'ECN' })]
   )
   await page.route('**/api/bots/*/account', async (route) => {
@@ -701,7 +695,7 @@ test('dragging a bot onto another account moves it there', async ({ page }) => {
       json: {
         status: 'ok',
         changed: true,
-        bot: 'mpc_bleg',
+        bot: 'b_leg',
         account: OTHER,
         restart_required: true,
         notes: [],
@@ -711,10 +705,10 @@ test('dragging a bot onto another account moves it there', async ({ page }) => {
 
   await page.goto('/bots?tab=accounts')
   await expect(page.getByTestId('account-rail-item')).toHaveCount(2)
-  await dragBotOnto(page, 'mpc_bleg', 1)
+  await dragBotOnto(page, 'b_leg', 1)
 
   await expect.poll(() => moved).not.toBeNull()
-  expect(moved!.url).toContain('/bots/mpc_bleg/account')
+  expect(moved!.url).toContain('/bots/b_leg/account')
   expect(moved!.body.account).toBe(OTHER)
 })
 
@@ -724,9 +718,9 @@ test('a RUNNING bot cannot be dragged at all', async ({ page }) => {
   // It read its config at startup, so a write cannot reach the live process — the page would show
   // it under one account while it went on trading another. Same guard as the Remove button, and
   // the backend refuses it with a 409 regardless; this is it stated before the gesture.
-  await mock(page, [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })], [reg()])
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
   await page.goto('/bots?tab=accounts')
-  await expect(page.getByTestId('bot-row-mpc_sos_fade')).toHaveAttribute('draggable', 'false')
+  await expect(page.getByTestId('bot-row-sos_fade')).toHaveAttribute('draggable', 'false')
 })
 
 test('an account with no terminal refuses the drop rather than reporting it afterwards', async ({
@@ -741,7 +735,7 @@ test('an account with no terminal refuses the drop rather than reporting it afte
   const OTHER = 700152905
   await mock(
     page,
-    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)] })],
+    [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
     [
       reg({ account: ACCOUNT }),
       reg({
@@ -755,10 +749,10 @@ test('an account with no terminal refuses the drop rather than reporting it afte
 
   await page.goto('/bots?tab=accounts')
   // Same race as `dragBotOnto` — see the note there.
-  await page.getByTestId('bot-row-mpc_bleg').waitFor()
+  await page.getByTestId('bot-row-b_leg').waitFor()
   await page.getByTestId('account-rail-item').nth(1).waitFor()
   await page.evaluate(() => {
-    const row = document.querySelector('[data-testid="bot-row-mpc_bleg"]')!
+    const row = document.querySelector('[data-testid="bot-row-b_leg"]')!
     const target = document.querySelectorAll('[data-testid="account-rail-item"]')[1]!
     const dt = new DataTransfer()
     row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
@@ -781,7 +775,7 @@ test('the rail lists every account and only ONE detail pane is on screen', async
   // fixed height however many accounts are registered.
   await mock(
     page,
-    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10)] })],
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)] })],
     [
       reg({ account: ACCOUNT, broker: 'PU Prime', tier: 'Standard' }),
       reg({ account: 700152905, broker: 'PU Prime', tier: 'ECN' }),
@@ -839,7 +833,7 @@ test('the Move menu moves a bot, and lists an unassignable account DISABLED', as
 
   await mock(
     page,
-    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)] })],
+    [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
     [
       reg({ account: ACCOUNT }),
       reg({ account: OTHER, broker: 'PU Prime', tier: 'ECN' }),
@@ -857,7 +851,7 @@ test('the Move menu moves a bot, and lists an unassignable account DISABLED', as
       json: {
         status: 'ok',
         changed: true,
-        bot: 'mpc_bleg',
+        bot: 'b_leg',
         account: OTHER,
         restart_required: true,
         notes: [],
@@ -866,7 +860,7 @@ test('the Move menu moves a bot, and lists an unassignable account DISABLED', as
   })
 
   await page.goto('/bots?tab=accounts')
-  const menu = page.getByTestId('move-mpc_bleg')
+  const menu = page.getByTestId('move-b_leg')
   await expect(menu.locator(`option[value="${NO_TERM}"]`)).toBeDisabled()
   await expect(menu.locator(`option[value="${ACCOUNT}"]`)).toHaveCount(0) // it is already here
 
@@ -880,11 +874,11 @@ test('a RUNNING bot cannot be moved from the menu either', async ({ page }) => {
   // round the guard rather than a convenience.
   await mock(
     page,
-    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
     [reg({ account: ACCOUNT }), reg({ account: 700152905 })]
   )
   await page.goto('/bots?tab=accounts')
-  await expect(page.getByTestId('move-mpc_sos_fade')).toBeDisabled()
+  await expect(page.getByTestId('move-sos_fade')).toBeDisabled()
 })
 
 test('the tab chips carry the counts, so "how many accounts" is answered without opening the tab', async ({
@@ -897,7 +891,7 @@ test('the tab chips carry the counts, so "how many accounts" is answered without
   await mock(
     page,
     [
-      group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] }),
+      group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] }),
       group({ account: 700152905, bots: [] }),
     ], // a bot names it, nobody registered it
     [reg({ account: ACCOUNT }), reg({ account: 700119432 })]
@@ -918,14 +912,14 @@ test('a bot row opens that bot on Configure — the tab that answers a different
   // trades on it, and nothing on the page said so before.
   await mock(
     page,
-    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
     [reg({ account: ACCOUNT })]
   )
   await page.goto('/bots?tab=accounts')
 
-  await page.getByTestId('configure-mpc_sos_fade').click()
+  await page.getByTestId('configure-sos_fade').click()
   await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('configure')
-  expect(new URL(page.url()).searchParams.get('bot')).toBe('mpc_sos_fade')
+  expect(new URL(page.url()).searchParams.get('bot')).toBe('sos_fade')
 })
 
 test('the rail and the detail pane are the same height and both reach the bottom of the page', async ({
@@ -940,7 +934,7 @@ test('the rail and the detail pane are the same height and both reach the bottom
   // the details on the right the same height of the page."
   await mock(
     page,
-    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
     [reg({ account: ACCOUNT })]
   )
   await page.goto('/bots?tab=accounts')
@@ -971,7 +965,7 @@ test('the Accounts tab renders while the VPS snapshot is still loading', async (
   })
   await mock(
     page,
-    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
     [reg({ account: ACCOUNT })]
   )
   await page.route('**/api/bots/snapshot', async (route) => {
@@ -992,7 +986,7 @@ test('the Accounts tab renders while the VPS snapshot is still loading', async (
   expect((await card.boundingBox())!.y).toBeLessThan(200)
   // The State column says `—` while the snapshot is unanswered, which is the honest reading —
   // never "Stopped".
-  await expect(page.getByTestId('bot-row-mpc_sos_fade')).toContainText('—')
+  await expect(page.getByTestId('bot-row-sos_fade')).toContainText('—')
   release()
 })
 
@@ -1018,7 +1012,7 @@ test('an account whose bots are all stopped says nothing is running', async ({ p
   // then says nothing at all.
   await mock(
     page,
-    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, 10)] })],
+    [group({ bots: [bot('b_leg', 'B-LEG', 770116, 10)] })],
     [reg({ account: ACCOUNT })]
   )
   await page.goto('/bots?tab=accounts')

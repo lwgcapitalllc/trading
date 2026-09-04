@@ -2,7 +2,7 @@
 
 **Status:** Design only. Nothing built yet.
 **Author:** drafted 2026-07-17.
-**Problem:** Aaron is building more MPC strategies (independent narratives, e.g. SOS Fade + future
+**Problem:** Aaron is building more strategies (independent narratives, e.g. SOS Fade + future
 ones). He wants to run several of them **as one shared account** — one balance, one live risk budget
 they compete for — and see the combined equity curve and drawdown, then backtest, forward test,
 optimize, and stress test the whole account, not each bot alone.
@@ -22,7 +22,7 @@ money — the account does. A leg *asks* the account to enter; the account decid
 
 ```
 Portfolio "Gold Stack"   account $40k · cap = 10% open risk · LucidFlex $50k Eval
-├── leg 1  MPC SOS Fade   XAUUSD 15m   wants 10% per trade
+├── leg 1  SOS Fade   XAUUSD 15m   wants 10% per trade
 ├── leg 2  MPC <next>     XAUUSD 5m    wants  5% per trade
 └── leg 3  MPC <next>     EURUSD 1h    wants  5% per trade
         every leg asks ONE account to size its trades against ONE live risk budget
@@ -54,7 +54,7 @@ These are the trading-policy calls that shape the gate:
 
 ## 3. Core mechanism — the account is the broker
 
-Standalone, a strategy like `mpc_sos_fade` sizes itself (`qty = equity × risk% / stop_distance`) and
+Standalone, a strategy like `sos_fade` sizes itself (`qty = equity × risk% / stop_distance`) and
 always fills. In a shared account it stops doing both. A central **`PortfolioAccount`** owns the
 money and the risk, and every entry goes through it.
 
@@ -148,7 +148,7 @@ it used to compute its own qty; `account.update_stop(leg, current_stop, qty)` ea
 `account.on_close(leg, pnl)` on exit.
 
 **Standalone is a portfolio of one.** A `SoloAccount` — one leg, no cap, sizes off its own balance —
-reproduces today's behaviour exactly, so `mpc_sos_fade` run alone is unchanged and still matches the
+reproduces today's behaviour exactly, so `sos_fade` run alone is unchanged and still matches the
 Pine. The **parity harness (`compare_strategy.py`) staying exit 0 after this refactor is the gate**
 that proves the seam didn't change standalone behaviour. Same code, two accounts: one leg unconstrained
 = today; N legs with a cap = the shared portfolio.
@@ -262,5 +262,5 @@ simulation second (Phase 1).
 - **Halt granularity** — a hard account halt stops all legs mid-day. Confirm that's desired vs a
   softer "no new entries, let open trades run." **Recommend hard halt** to match a real prop account.
 - **Execution refactor risk** — routing sizing/permission/balance through the account touches
-  `mpc_sos_fade/execution.py`; the parity harness is the guard, but budget for it.
+  `sos_fade/execution.py`; the parity harness is the guard, but budget for it.
 ```

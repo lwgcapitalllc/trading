@@ -134,7 +134,7 @@ def test_every_compared_field_exists_on_the_real_Decision():
     # report the live value as a mismatch on every bar — or, worse, match None to None and
     # report a field as verified that was never looked at.
     sys.path.insert(0, str(_REPO))
-    from strategies.python.mpc_sos_fade.execution import Decision
+    from strategies.python.sos_fade.execution import Decision
 
     d = Decision(index=0)
     for f in sd._BOOL_FIELDS + sd._INT_FIELDS + sd._PRICE_FIELDS:
@@ -145,7 +145,7 @@ def test_the_uncompared_fields_are_NOT_on_the_Decision():
     # They come off the sequence object. If one ever moves onto Decision it becomes comparable,
     # and leaving it in the "not compared" footnote would understate the check from then on.
     sys.path.insert(0, str(_REPO))
-    from strategies.python.mpc_sos_fade.execution import Decision
+    from strategies.python.sos_fade.execution import Decision
 
     d = Decision(index=0)
     for f in sd._UNCOMPARED:

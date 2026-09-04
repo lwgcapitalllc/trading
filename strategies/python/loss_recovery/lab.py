@@ -72,7 +72,7 @@ def rule_config(lab: RecoveryLabConfig) -> RecoveryConfig:
 
     ⚠ `soft_stop_r` is 0-means-off on the form and None-means-off in the engine, because a UI
     needs a number where the engine wants an absence. This is the one place that translates, and
-    it mirrors `mpc_sos_fade/recovery.py` deliberately — the two adapters must agree or the same
+    it mirrors `sos_fade/recovery.py` deliberately — the two adapters must agree or the same
     setting means two things.
 
     ⚠ `horizon_days` is a measurement bound and MUST stay above `max_days`, or the time stop never

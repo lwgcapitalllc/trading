@@ -211,7 +211,7 @@ def test_the_stored_run_records_the_RESOLVED_symbol(client):
     typed name while the runner replayed another symbol is a row nothing can audit."""
     client.post("/strategies/scan")
     strat = next(
-        s for s in client.get("/strategies").json() if s["class_name"] == "MpcSosFadeStrategy"
+        s for s in client.get("/strategies").json() if s["class_name"] == "SosFadeStrategy"
     )
 
     r = client.post(

@@ -18,7 +18,7 @@ The setup, long (short is the exact mirror — see `invert()`):
 filter, no discount filter. Outcomes are "which came first, stop or target" on a bar walk,
 which is optimistic on the bars that touch both. Every number here is a rough count.
 
-🔴 WHAT IS DELIBERATELY MISSING, because leaving it out is the honest version. `docs/MPC_FB_SPEC.md`
+🔴 WHAT IS DELIBERATELY MISSING, because leaving it out is the honest version. `docs/FB_SPEC.md`
 gates RSO on a 4H bias and an HTF discount filter. Both are HIGHER-TIMEFRAME reads, and
 `backtest/optimizer.run_sweep` replays a SINGLE frame — so a three-stream version cannot be swept
 today. This tool measures the TRIGGER alone. A trigger prior is not a strategy result, and this
@@ -49,12 +49,12 @@ readings of the origin level. The funnel says exactly where and it is not a codi
 
 One SOS per 220 bars. Two inside 32 is not a rare setup, it is an arithmetic near-impossibility,
 and dropping to the internal stream makes it WORSE rather than better (575 < 847) — so the
-obvious fix is not a fix. This is the same shape `strategies/python/mpc_realign/CLAUDE.md` already
+obvious fix is not a fix. This is the same shape `strategies/python/realign/CLAUDE.md` already
 records: *"a single-engine M15 run gives only 9 setups in 5.6 years… the two-frame build is not a
 refinement; without it there is no strategy to measure."*
 
 ⚠ **AARON'S OWN INDICATOR ALREADY SOLVES THIS AND THE SPEC DID NOT COPY IT.**
-`indicators/engines/mss_sweeps_mpc.pine` fires on a **RECLAIM** — price wicks through the armed
+`indicators/engines/mss_sweeps.pine` fires on a **RECLAIM** — price wicks through the armed
 level and simply CLOSES BACK — not on a second structure break. A reclaim happens on the next bar
 or two; a second SOS may never happen at all. That one substitution is the difference between a
 live indicator that signals and this scan's zero. **Before any RSO code is written, §4.6's event C
@@ -162,10 +162,10 @@ def structure_breaks(b: Bars, origin_mode: str = "swing") -> tuple[dict, dict]:
     ⚠ `origin_mode` was thought to be the whole argument. MEASURED 2026-08-16, IT IS NOT — see
     the 🔴 block at the top of this file. Both readings produce ZERO entries.
 
-    `"leg"` is what `docs/MPC_FB_SPEC.md` §4.6 asks for: `origin = bull_bos_low`, which the engine
+    `"leg"` is what `docs/FB_SPEC.md` §4.6 asks for: `origin = bull_bos_low`, which the engine
     documents as *"the swing low the impulse launched from"* — the FAR end of the whole break leg.
     `"swing"` is the PROTECTED SWING, the most recent pullback-confirmed swing low standing when
-    the break fired. That is the level `indicators/engines/mss_sweeps_mpc.pine` actually arms
+    the break fired. That is the level `indicators/engines/mss_sweeps.pine` actually arms
     ("the iHL under a bull iBOS"). It is much closer to price, and it moved the shake-out count
     from 16 to 24 out of ~847 — a real improvement on a step that was never the binding one.
     """
@@ -468,8 +468,8 @@ def main() -> None:
         "--origin",
         choices=["swing", "leg"],
         default="swing",
-        help="swing = the protected swing the break left behind (what mss_sweeps_mpc arms); "
-        "leg = MPC_FB_SPEC \u00a74.6's bull_bos_low, which measured ZERO entries",
+        help="swing = the protected swing the break left behind (what mss_sweeps arms); "
+        "leg = FB_SPEC \u00a74.6's bull_bos_low, which measured ZERO entries",
     )
     p.add_argument("--side", choices=["long", "short", "both"], default="both")
     p.add_argument("--control", type=int, default=0, help="reps per setup (try 40)")

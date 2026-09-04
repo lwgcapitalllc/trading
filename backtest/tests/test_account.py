@@ -841,7 +841,7 @@ def test_a_STATED_room_REFUSES_a_fill_it_cannot_cover_rather_than_shrinking_it()
 
     A stacked lab account may shrink because it is the only book — the leg opens at the granted
     size and nothing else has an opinion. The LIVE caller's order is already RESTING AT THE
-    BROKER by the time this runs: `mpc_sos_fade.execution` sizes a pending order from
+    BROKER by the time this runs: `sos_fade.execution` sizes a pending order from
     `equity * exec_risk_pct / dist` at PLACEMENT and never consults the account, and this gate
     runs at the FILL. So a shrink books a smaller position in the emulator than the one the
     broker just filled — and `bridge._agrees` compares DIRECTION and PRESENCE, not size, so it

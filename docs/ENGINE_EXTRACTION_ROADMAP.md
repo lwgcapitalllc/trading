@@ -1,13 +1,13 @@
 # Engine Extraction Roadmap
 
 **Purpose:** Track which parts of the TradingView SMC indicator still need to become their own Python engines.
-**Source indicator:** `indicators/engines/mpc_assistant.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
+**Source indicator:** `indicators/engines/mpc_jarvis.pine` (full-featured SMC: structure, order blocks, sessions, kill zones, VWAP, liquidity, fibs, SVP).
 **Status:** ✅ **COMPLETE — the extraction roadmap has nothing left on it.** Kept, and heavily referenced (9 files, including `.claude/commands/audit-engines.md` and 7 engine CLAUDE.md files), because it is the record of HOW each engine was extracted and what each parity gate was run on. Finished work, still load-bearing.
 
-**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **5 off-roadmap engines done — news, fair_value_gaps, rsi_divergence, equal_highs_lows, candlesticks — for 13 in total** (⚠ corrected 2026-08-12: this line said "1 off-roadmap engine" and had not been updated as four more landed; count with `ls engines`, never from this sentence) — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_assistant.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **A+ SETUP SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
-**Last reviewed:** 2026-08-20 — audit of `700f7f6` + `2952fea` (the tied-extreme swing-label fix). 🔴 **The market_structure sync chain WAS triggered** (a real detection change: on a tied extreme the post-break rescan now keeps the ORIGINAL anchor instead of moving to the later bar, so `bull_bos_l_loc` / `bear_bos_h_loc` change on tie bars). ✅ **All five chain members are already in sync** — `mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all carry both guards, all 17 Pine copies carry them (verified by count, not by trusting the commit message), and the `algos/shared/` shim needs no edit because the fix adds no public field. ✅ **Only ONE Python file in the repo contains the scan** (`engines/market_structure/engine.py`) — the "strategies import the engine and embed no copy" claim is verified, not assumed. **No engine is stale and no new un-extracted block appeared.**
+**Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **5 off-roadmap engines done — news, fair_value_gaps, rsi_divergence, equal_highs_lows, candlesticks — for 13 in total** (⚠ corrected 2026-08-12: this line said "1 off-roadmap engine" and had not been updated as four more landed; count with `ls engines`, never from this sentence) — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_jarvis.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **A+ SETUP SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
+**Last reviewed:** 2026-08-20 — audit of `700f7f6` + `2952fea` (the tied-extreme swing-label fix). 🔴 **The market_structure sync chain WAS triggered** (a real detection change: on a tied extreme the post-break rescan now keeps the ORIGINAL anchor instead of moving to the later bar, so `bull_bos_l_loc` / `bear_bos_h_loc` change on tie bars). ✅ **All five chain members are already in sync** — `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all carry both guards, all 17 Pine copies carry them (verified by count, not by trusting the commit message), and the `algos/shared/` shim needs no edit because the fix adds no public field. ✅ **Only ONE Python file in the repo contains the scan** (`engines/market_structure/engine.py`) — the "strategies import the engine and embed no copy" claim is verified, not assumed. **No engine is stale and no new un-extracted block appeared.**
 
-✅ **ONE HARNESS WAS DRIFTED — FIXED 2026-08-20, AWAITING A COMPILE. COUNTING THE GUARDS IS WHAT MISSED IT.** `indicators/engines/fib_export.pine` carries both tie guards — so a per-file guard COUNT says it is patched — but its embedded structure block **has never contained the fallback-promotion `else` branch** that landed in the 2026-07-08 structure re-sync (`f2a8411`) and that `mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all have (`git log -S'fallback_is_hh'` on that path returns nothing — it never had it, this is not a regression from today). ⚠ **The guard itself is NOT inert, and an earlier draft of this entry said it was — that was wrong.** The file DOES promote on the normal path (`st.last_conf_high := st.ash`, before the guard), so on every bar carrying an active swing high the guard reads a correctly-promoted value and behaves exactly as in the reference. `indicators/engines/CLAUDE.md` already recorded that the ordering was checked per file, and that check was right as far as it went. **The divergence is narrower and older than "the guard is inert": it is the `st.ash IS na` path only** — where the reference promotes `last_conf_high := highest_val` and prints an HH/LH label, and this harness promoted nothing and printed nothing, leaving a stale `last_conf_high` for the guard to compare against. ⚠ **`ob_export.pine` does NOT embed this scan at all** (zero `lowest_val`), so it is not affected — checked, not assumed. ⚠ **Consequence to weigh before the next `compare_fib.py` run: the fib gate grades Python fibonacci against a Pine whose STRUCTURE differs from canonical**, so a green there is a green against the wrong upstream on any bar the fallback branch would have fired. **The standing lesson: a guard COUNT proves presence, never placement — and placement was the whole difficulty of this fix.**
+✅ **ONE HARNESS WAS DRIFTED — FIXED 2026-08-20, AWAITING A COMPILE. COUNTING THE GUARDS IS WHAT MISSED IT.** `indicators/engines/fib_export.pine` carries both tie guards — so a per-file guard COUNT says it is patched — but its embedded structure block **has never contained the fallback-promotion `else` branch** that landed in the 2026-07-08 structure re-sync (`f2a8411`) and that `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all have (`git log -S'fallback_is_hh'` on that path returns nothing — it never had it, this is not a regression from today). ⚠ **The guard itself is NOT inert, and an earlier draft of this entry said it was — that was wrong.** The file DOES promote on the normal path (`st.last_conf_high := st.ash`, before the guard), so on every bar carrying an active swing high the guard reads a correctly-promoted value and behaves exactly as in the reference. `indicators/engines/CLAUDE.md` already recorded that the ordering was checked per file, and that check was right as far as it went. **The divergence is narrower and older than "the guard is inert": it is the `st.ash IS na` path only** — where the reference promotes `last_conf_high := highest_val` and prints an HH/LH label, and this harness promoted nothing and printed nothing, leaving a stale `last_conf_high` for the guard to compare against. ⚠ **`ob_export.pine` does NOT embed this scan at all** (zero `lowest_val`), so it is not affected — checked, not assumed. ⚠ **Consequence to weigh before the next `compare_fib.py` run: the fib gate grades Python fibonacci against a Pine whose STRUCTURE differs from canonical**, so a green there is a green against the wrong upstream on any bar the fallback branch would have fired. **The standing lesson: a guard COUNT proves presence, never placement — and placement was the whole difficulty of this fix.**
 
 **The fix applied (2026-08-20):** the missing fallback branch was added AND the block was reordered to the reference's order — the extreme scan now runs BEFORE the promotion block rather than after it, because the fallback branch reads `highest_val`/`highest_loc` and could not otherwise see them. ⚠ **The reorder is behaviour-preserving and that was checked, not argued**: the scan reads only `high[i]` and `st.last_conf_low_loc`, and the promotion block writes neither. After the patch the two `process()` methods diff to **zero logic differences** — the only remaining lines are the `f_swingCol` colour helper and the `showExternal` display toggle, neither of which exists in the harness by design. Guard placement now verifies OK across **all 17** Pine files. ⚠ **UNCOMPILED — this file has not been through TradingView**, and it must be before `compare_fib.py` is trusted again; the fibonacci gate is stale until a fresh export off the patched harness exists.
 
@@ -19,11 +19,11 @@
 
 **Superseded — the reason the commit gave, which was wrong:** The commit records *"a sweep of the machine found no structure export at all"* — that is **wrong**: `engines/market_structure/exports/` holds three exports carrying `px_ash`/`px_asl`/`px_dir` AND all eight break-leg columns, and `compare_tradingview.py --warmup 1600` on the newest (`VANTAGE_XAUUSD, 5_9c376.csv`, 9,270 bars) exits **0, fully green**. ⚠ **That green does not validate the fix, and reading it as a pass would be the mistake.** Every export here is from **July**, generated by the PRE-fix harness, so a green means only that post-fix Python still matches pre-fix Pine — i.e. **the tie path was never exercised on those bars.** The fix's own measurement puts ties at roughly 1 per 25,000 bars; 9,270 bars is too small to expect even one. **The gate is green on the untouched 99.99% and silent on the branch that changed** — Rule 14 exactly. To actually close Rule 22: put the PATCHED `structure_engine_export.pine` on a chart, export a fresh CSV, re-run the tool.
 
-⚠ **The LIVE bot does not have this fix.** `mpc_sos_fade_demo`'s frozen `deployed/` snapshot on the VPS carries the pre-fix engine (verified over SSH with a positive control, so the negative is real). A `git pull` cannot move it — only `promote.py` can. **Trades are NOT affected** (the fix's own replay found break-leg prices and break counts identical, 0 differences); what differs is duplicate swing LABELS. So this is a promote-when-convenient, not an incident.
+⚠ **The LIVE bot does not have this fix.** `sos_fade_demo`'s frozen `deployed/` snapshot on the VPS carries the pre-fix engine (verified over SSH with a positive control, so the negative is real). A `git pull` cannot move it — only `promote.py` can. **Trades are NOT affected** (the fix's own replay found break-leg prices and break counts identical, 0 differences); what differs is duplicate swing LABELS. So this is a promote-when-convenient, not an incident.
 
 **Previously reviewed:** 2026-08-12. ✅ **The "THREE ENGINES STALE" alarm below was RESOLVED the same day it was raised** — `a1b726d` (2026-07-31) re-synced `fair_value_gaps`, `fibonacci` and `liquidity` and validated them on two real exports. It is left in place because the write-up under it is the useful part, but **read it as history: there is no open staleness here.** ⚠ **A red banner that outlives its fix is worse than no banner** — the next reader either acts on a closed problem or learns to scroll past the red, and both cost more than the alarm ever saved. The original entry follows.
 
-**Original entry, 2026-07-31:** 🔴 **THREE ENGINES STALE after 10 uncaught commits** (diff `48c183f..HEAD`, 2,468+/738- on `mpc_assistant.pine`; `48c183f` is the 2026-07-17 paste the 2026-07-19 grand export validated). ✅ **The market-structure sync chain was NOT triggered** — `process()` and `processMTF()` are byte-identical apart from five appended label-hiding lines, internal structure changed only its break-line COLOURS, and `structure_engine.pine` still diffs clean against mpc. 🔴 **`engines/order_blocks/` needs a RE-PORT, not a re-sync** — structure breaks no longer create blocks at all (`f_obMake` + all four creation sites commented out); blocks are now born at `ta.pivot(2,2)` TURNS from two sources (an impulsive engulfing PUSH read 10 bars late, and the turn itself), gated by a 1.0×ATR departure test, a 0.5 overlap dedupe and a 2.0×ATR height ceiling, with mitigation redefined to wick-tap / close-inside-then-out / close-through, an `OB_MAX_AGE = 500` cap and `maxActiveOB` 2 → 10. 🔴 **`engines/sessions/` STALE — the three session windows moved** (Tokyo `2000-0500` GMT-4 → `0900-1800` Asia/Tokyo; London `0400-1300` GMT-4 → `0800-1700` Europe/London; NY `0900-1800` GMT-4 → `0800-1700` America/New_York). Tokyo is UTC-identical year-round, but London and NY were pinned to a FIXED GMT-4 and now follow real DST, so under BST/EDT both shift **one hour earlier** — roughly seven months a year. Kill zones and the NY opening range are unchanged. Cascade: **`engines/liquidity/` STALE-BY-INPUT** (session H/L), **`engines/session_volume_profile/` UNAFFECTED** (Asia only, and Asia is value-identical). 🔴 **`engines/fibonacci/` MacroFib STALE** — the cycle origin moved from `macro_ll_since_bear_sos` to the break leg's own `bull_bos_low`, and a new `macroCycleTf = 1` + `f_cycleState()` sources the whole cycle from a **1-minute `request.security`** on every higher chart, which the single-stream Python engine cannot reproduce without a design decision. Structure/Sniper/Internal fibs unaffected. **Default drift:** `fvgMaxCount` 10 → 8 (FVG detection itself is byte-identical, so parity holds — sync the Python default). Every other engine input was frozen into a constant **at its existing value** (the 121→24 student-panel lockdown), and detection is now always-on with new `draw*` flags gating drawing only. **STALE HARNESSES:** `ob_export.pine`, `sessions_export.pine`, `liquidity_export.pine`, `fib_export.pine`. **IN PARITY:** market_structure, equal_highs_lows, rsi_divergence, vwap, session_volume_profile, fair_value_gaps (detection), fibonacci Structure/Sniper/Internal, regime, news. Two new blocks appeared and **both are strategy-tier** — a B-LEG tracker + BLEG SZ box (already built as `mpc_b_leg_strategy.pine` / `strategies/python/mpc_bleg/`; worth a drift check against this copy) and an A+ REV SETUP rework (split sweep/divergence expiry windows, `aplusDivOnly` true→false, a deep-level re-entry ladder, a LEVELS row, five-tier alerts). No new un-extracted engine-tier block. See "Audit findings — 2026-07-31" below. Previously 2026-07-14 — ✅ **ALL ENGINES RE-VALIDATED ON ONE FRESH COMBINED EXPORT.** After the FVG re-sync + order_blocks 6→2 default sync below, a single fresh `VANTAGE_XAUUSD, 5m` export (`…5ead0.csv`, 10,364 bars) carrying the fvg/ob/structure/fib/liquidity harness columns drove all five compare tools to exit 0: `compare_fvg.py --max-count 6 --threshold-pct 0.1 --warmup 886`, `compare_ob.py --warmup 353` (cap 2 default — confirms the new default on fresh data), `compare_tradingview.py --warmup 887`, `compare_fib.py --warmup 887`, `compare_liquidity.py --htf-rollover 18 --warmup 1562` (fresh post-change confirmation). `rsi_divergence` was already green on `…b07c0.csv` (unchanged Pine). **Every engine is in 100% Pine parity; FVG + order_blocks are committable.** The audit that preceded this: clean working tree across 8 commits since the `choch_lock` re-sync (`8f6b5ca`), diff `8f6b5ca..HEAD` on `mpc_assistant.pine` = 477 lines (330+/147-). 🔴 **`engines/fair_value_gaps/` is STALE — the FVG detection AND lifecycle were redefined.** Detection dropped the "clean 3-candle impulse" rule (three same-direction, progressively-closing candles) for the **LuxAlgo imbalance** definition — bar A / bar C don't overlap, the middle bar's close cleared the gap — and the size floor moved from a `fvgMinTicks` (default 0) tick filter to a **hardcoded 0.1%-of-price** threshold (`fvgThreshPct = 0.1`). Mitigation flipped from "delete on a **tap of the near edge**" to "delete only when a candle **CLOSES fully past the far edge**" (a wick in no longer kills the gap). `fvgMaxCount` default also 3→6. Engine STALE, harness `indicators/engines/fvg_export.pine` STALE, re-run `compare_fvg.py`. **market_structure sync chain NOT triggered** (zero hunks in `process`/detection; only `showSwingLabels` default true→false, visual). **`engines/liquidity/` heavily restructured but appears value-identical on intraday** — needs a confirmatory `compare_liquidity.py` re-run, not a code change: PDH/PDL & PWH/PWL security fetches refactored (branch on chart TF, but intraday value = previous completed period, unchanged), `f_originHigh/Low` now start each line at the candle that formed the level (visual line-origin only), a `showMitLiq` toggle + `f_liqMitigate` gained a `showMit` param (mitigation DETECTION untouched — only whether broken lines stay drawn). **`engines/order_blocks/` — `maxActiveOB` default 6→2** (parameterized FIFO cap, still user-tunable; sync the Python default when convenient, not a parity break). Everything else IN PARITY: sessions/vwap/fibonacci/svp/rsi_divergence/regime/news saw only input-default or display-scope flips (`showVwap` true→false, `showHistoricSessions` false→true, `hideFibsSub5m` false→true, `showMacroFib`/`showIFib`/`showDiv`/`showDivHistory` defaults, master `showTradeTools`/`showFibTool` true). The large A+ SETUP block rework (renamed **REV SETUP** in the table, divergence-late **retro-link** to a prior SOS, Div-Only arming, ignore-time-window option, E2/E3/E4 0.702/0.786/0.886 latches, precise FVG/SZ "tapped-into" tests, an EARLY-tier `alert()`, CONT rows commented out) is all **strategy-tier — not an engine**. No new un-extracted block. See "Audit findings — 2026-07-14" below. Previously 2026-07-12 — ✅ **RE-SYNC APPLIED AND PINE-PARITY CONFIRMED.** The `choch_lock` chain break found by the second audit of the day has been fixed end-to-end per Aaron's "accept mpc as source of truth, accept the risk" call: all four detection changes are now byte-identical across `mpc_assistant.pine`, `structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine` and `mpc_strategy.pine`, and ported into `engines/market_structure/engine.py` (+ `types.py` label-domain widening to ASH/ASL). 64/64 tests green. **Root cause confirmed on Aaron's 17-Jun-2026 XAUUSD 15m chart: `choch_lock` suppressed the CHoCH, which both mislabelled the break as a BOS AND — via `old_is_hh = is_choch ? true : …` — suppressed the higher high. One bug, two symptoms; the removal was the fix, not a side effect.** ✅ **All three parity checks re-run on one fresh combined `VANTAGE_XAUUSD, 5m` export (9270 bars) and green:** `compare_tradingview.py --warmup 365`, `compare_ob.py --warmup 548`, `compare_fib.py --warmup 368` — all exit 0. `engines/fibonacci/` and `engines/order_blocks/` were STALE-BY-INPUT and are re-validated. **Safe to commit.** See "Re-sync applied — 2026-07-12" below. The audit that found it: (a fresh working-tree re-paste vs commit `7e0b30e`, 66-line diff — 24+/42-. 🔴 **THE MARKET_STRUCTURE SYNC CHAIN WAS TRIGGERED — first time since 2026-07-08.** Two real detection changes in mpc's `process`: (1) **`choch_lock` no longer gates CHoCH** (`is_choch = st.dir == -1 and not st.choch_lock` → `is_choch = st.dir == -1`, bull 648 / bear 772) — the flag is still declared/set/released but nothing reads it, so it is now inert in mpc while `structure_engine.pine`, `structure_engine_export.pine` and `engine.py` all still gate on it; (2) **`last_conf_high`/`last_conf_low` no longer update on a CHoCH** (now wrapped in `if not is_choch`, bull 697 / bear 820) — on an SOS the pullback extreme prints as an ACTIVE swing (ASH/ASL) and is confirmed only by the NEXT opposite break. **STALE as one unit: `indicators/engines/structure_engine.pine`, `indicators/engines/structure_engine_export.pine`, `engines/market_structure/engine.py`.** Cascade: **`engines/fibonacci/` (MacroFib reads `bull_sos` + `last_conf_high`) and `engines/order_blocks/` (creates OBs on `bull_sos`/`bear_sos`) are STALE-BY-INPUT** — their own code is fine, but their inputs and their structure-embedding harnesses (`fib_export.pine`, `ob_export.pine`) are not. **Public-API note:** `broken_high_label`/`broken_low_label` are typed `"HH"|"LH"` / `"HL"|"LL"`; mpc now prints ASH/ASL on a CHoCH, widening that domain. `strategies/tradingview/mpc_strategy.pine` (the brother's backtest) also still carries the OLD `choch_lock` logic. The RSI-divergence 3-day-history source bug flagged in the audit below got **worse** (moved from the drawing layer into the detection `if`) but stays inert on intraday → `engines/rsi_divergence/` is still 100% parity. See "Audit findings — 2026-07-12 (SECOND — choch_lock removal)" below. Previously today: fresh working-tree re-paste vs commit `5c477ac`, 308-line diff — 202+/106-. **NO engine was stale; market_structure sync chain NOT triggered.** The paste was (a) the `marketStructureOnly` master toggle REPLACED by two positive master switches — `showTradeTools` (FVG/OBs/sessions/KZ/liquidity/VWAP/MV) and `showFibTool` (external/internal/cycle fib) — with `marketStructureOnly` now *derived* (`not showTradeTools and not showFibTool`); plus a `hideFibsSub5m` timeframe gate on the fib drawing/compute. Same effective defaults as before (everything non-structure off) — purely visual; (b) RSI-divergence inputs **frozen into hardcoded constants** (`divRsiLen` 14, `divPivotLen` 5, `divOS` 25, `divOB` 75, `divValidBars` 100, `divVeto` true, extremes 80/20) — these match `engines/rsi_divergence/` defaults EXACTLY, so the 5c477ac sync is confirmed correct and nothing further is needed; the div drawings became a FIFO-capped array (`divMaxCount` 10) instead of a single deleted-on-stale line — visual; (c) a heavy A+ SETUP SEQUENCE rework (staleness window bars→MINUTES, a session-gap guard, daily-sweep age cap, arm-only-when-idle, A+-owned 0.5/0.618 latches, HTF-bias warn/block, Sniper Zone accepted as location confirmation alongside FVG, optional INT trigger, divergence veto REMOVED from A+) — all **strategy-tier**, the A+ machine is not an engine. **ONE SOURCE BUG flagged (not an engine issue):** the new "Show Divergence History" 3-day filter tests `time[divPivotLen] >= time - 259200000`, which measures the pivot's age as `divPivotLen` bars — always ~25 minutes on a 5m chart — so the toggle is inert on every intraday timeframe. See "Audit findings — 2026-07-12" below. Previously: 2026-07-11 (SECOND audit of the day — a fresh working-tree re-paste vs commit `21cbe43`, 484-line diff. **NO engine is stale; market_structure sync chain NOT triggered; no `*_export.pine` harness or `compare_*.py` needs re-running.** The paste is (a) a new `marketStructureOnly` master DISPLAY toggle that force-hides every non-structure feature — each `show*` flag renamed `<flag>Input` and gated `marketStructureOnly ? false : …Input` — purely visual; (b) a heavy rework of the A+ SETUP SEQUENCE (edge-triggered arming on new sweep OR new divergence, stale-arm clearing, a separate CONT continuation trade type with its own row + chart labels, a divergence/extreme-RSI VETO, FVG now REQUIRED for READY) — all **strategy-tier**, the A+ machine is not an engine; (c) a divergence-staleness rule (`bullDivStale`/`bearDivStale`: a div goes stale on the next external break) + drawing-deletion — **strategy-tier composition** of RSI+structure, not the standalone RSI engine's job. **ONE engine-relevant nit:** the RSI-divergence input DEFAULTS drifted `divOS` 30→25 and `divOB` 70→75 — detection formula unchanged (still `<= divOS` / `>= divOB`), so the engine is parity-valid, but its default params should be synced 30→25 / 70→75 (and `compare_rsi_div.py` re-run at the new defaults) when convenient. See "Audit findings — 2026-07-11 (marketStructureOnly + A+/CONT rework)" below. Earlier today: RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export.)
+**Original entry, 2026-07-31:** 🔴 **THREE ENGINES STALE after 10 uncaught commits** (diff `48c183f..HEAD`, 2,468+/738- on `mpc_jarvis.pine`; `48c183f` is the 2026-07-17 paste the 2026-07-19 grand export validated). ✅ **The market-structure sync chain was NOT triggered** — `process()` and `processMTF()` are byte-identical apart from five appended label-hiding lines, internal structure changed only its break-line COLOURS, and `structure_engine.pine` still diffs clean against mpc. 🔴 **`engines/order_blocks/` needs a RE-PORT, not a re-sync** — structure breaks no longer create blocks at all (`f_obMake` + all four creation sites commented out); blocks are now born at `ta.pivot(2,2)` TURNS from two sources (an impulsive engulfing PUSH read 10 bars late, and the turn itself), gated by a 1.0×ATR departure test, a 0.5 overlap dedupe and a 2.0×ATR height ceiling, with mitigation redefined to wick-tap / close-inside-then-out / close-through, an `OB_MAX_AGE = 500` cap and `maxActiveOB` 2 → 10. 🔴 **`engines/sessions/` STALE — the three session windows moved** (Tokyo `2000-0500` GMT-4 → `0900-1800` Asia/Tokyo; London `0400-1300` GMT-4 → `0800-1700` Europe/London; NY `0900-1800` GMT-4 → `0800-1700` America/New_York). Tokyo is UTC-identical year-round, but London and NY were pinned to a FIXED GMT-4 and now follow real DST, so under BST/EDT both shift **one hour earlier** — roughly seven months a year. Kill zones and the NY opening range are unchanged. Cascade: **`engines/liquidity/` STALE-BY-INPUT** (session H/L), **`engines/session_volume_profile/` UNAFFECTED** (Asia only, and Asia is value-identical). 🔴 **`engines/fibonacci/` MacroFib STALE** — the cycle origin moved from `macro_ll_since_bear_sos` to the break leg's own `bull_bos_low`, and a new `macroCycleTf = 1` + `f_cycleState()` sources the whole cycle from a **1-minute `request.security`** on every higher chart, which the single-stream Python engine cannot reproduce without a design decision. Structure/Sniper/Internal fibs unaffected. **Default drift:** `fvgMaxCount` 10 → 8 (FVG detection itself is byte-identical, so parity holds — sync the Python default). Every other engine input was frozen into a constant **at its existing value** (the 121→24 student-panel lockdown), and detection is now always-on with new `draw*` flags gating drawing only. **STALE HARNESSES:** `ob_export.pine`, `sessions_export.pine`, `liquidity_export.pine`, `fib_export.pine`. **IN PARITY:** market_structure, equal_highs_lows, rsi_divergence, vwap, session_volume_profile, fair_value_gaps (detection), fibonacci Structure/Sniper/Internal, regime, news. Two new blocks appeared and **both are strategy-tier** — a B-LEG tracker + BLEG SZ box (already built as `b_leg_strategy.pine` / `strategies/python/b_leg/`; worth a drift check against this copy) and an A+ REV SETUP rework (split sweep/divergence expiry windows, `aplusDivOnly` true→false, a deep-level re-entry ladder, a LEVELS row, five-tier alerts). No new un-extracted engine-tier block. See "Audit findings — 2026-07-31" below. Previously 2026-07-14 — ✅ **ALL ENGINES RE-VALIDATED ON ONE FRESH COMBINED EXPORT.** After the FVG re-sync + order_blocks 6→2 default sync below, a single fresh `VANTAGE_XAUUSD, 5m` export (`…5ead0.csv`, 10,364 bars) carrying the fvg/ob/structure/fib/liquidity harness columns drove all five compare tools to exit 0: `compare_fvg.py --max-count 6 --threshold-pct 0.1 --warmup 886`, `compare_ob.py --warmup 353` (cap 2 default — confirms the new default on fresh data), `compare_tradingview.py --warmup 887`, `compare_fib.py --warmup 887`, `compare_liquidity.py --htf-rollover 18 --warmup 1562` (fresh post-change confirmation). `rsi_divergence` was already green on `…b07c0.csv` (unchanged Pine). **Every engine is in 100% Pine parity; FVG + order_blocks are committable.** The audit that preceded this: clean working tree across 8 commits since the `choch_lock` re-sync (`8f6b5ca`), diff `8f6b5ca..HEAD` on `mpc_jarvis.pine` = 477 lines (330+/147-). 🔴 **`engines/fair_value_gaps/` is STALE — the FVG detection AND lifecycle were redefined.** Detection dropped the "clean 3-candle impulse" rule (three same-direction, progressively-closing candles) for the **LuxAlgo imbalance** definition — bar A / bar C don't overlap, the middle bar's close cleared the gap — and the size floor moved from a `fvgMinTicks` (default 0) tick filter to a **hardcoded 0.1%-of-price** threshold (`fvgThreshPct = 0.1`). Mitigation flipped from "delete on a **tap of the near edge**" to "delete only when a candle **CLOSES fully past the far edge**" (a wick in no longer kills the gap). `fvgMaxCount` default also 3→6. Engine STALE, harness `indicators/engines/fvg_export.pine` STALE, re-run `compare_fvg.py`. **market_structure sync chain NOT triggered** (zero hunks in `process`/detection; only `showSwingLabels` default true→false, visual). **`engines/liquidity/` heavily restructured but appears value-identical on intraday** — needs a confirmatory `compare_liquidity.py` re-run, not a code change: PDH/PDL & PWH/PWL security fetches refactored (branch on chart TF, but intraday value = previous completed period, unchanged), `f_originHigh/Low` now start each line at the candle that formed the level (visual line-origin only), a `showMitLiq` toggle + `f_liqMitigate` gained a `showMit` param (mitigation DETECTION untouched — only whether broken lines stay drawn). **`engines/order_blocks/` — `maxActiveOB` default 6→2** (parameterized FIFO cap, still user-tunable; sync the Python default when convenient, not a parity break). Everything else IN PARITY: sessions/vwap/fibonacci/svp/rsi_divergence/regime/news saw only input-default or display-scope flips (`showVwap` true→false, `showHistoricSessions` false→true, `hideFibsSub5m` false→true, `showMacroFib`/`showIFib`/`showDiv`/`showDivHistory` defaults, master `showTradeTools`/`showFibTool` true). The large A+ SETUP block rework (renamed **REV SETUP** in the table, divergence-late **retro-link** to a prior SOS, Div-Only arming, ignore-time-window option, E2/E3/E4 0.702/0.786/0.886 latches, precise FVG/SZ "tapped-into" tests, an EARLY-tier `alert()`, CONT rows commented out) is all **strategy-tier — not an engine**. No new un-extracted block. See "Audit findings — 2026-07-14" below. Previously 2026-07-12 — ✅ **RE-SYNC APPLIED AND PINE-PARITY CONFIRMED.** The `choch_lock` chain break found by the second audit of the day has been fixed end-to-end per Aaron's "accept mpc as source of truth, accept the risk" call: all four detection changes are now byte-identical across `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine` and `sos_fade_strategy.pine`, and ported into `engines/market_structure/engine.py` (+ `types.py` label-domain widening to ASH/ASL). 64/64 tests green. **Root cause confirmed on Aaron's 17-Jun-2026 XAUUSD 15m chart: `choch_lock` suppressed the CHoCH, which both mislabelled the break as a BOS AND — via `old_is_hh = is_choch ? true : …` — suppressed the higher high. One bug, two symptoms; the removal was the fix, not a side effect.** ✅ **All three parity checks re-run on one fresh combined `VANTAGE_XAUUSD, 5m` export (9270 bars) and green:** `compare_tradingview.py --warmup 365`, `compare_ob.py --warmup 548`, `compare_fib.py --warmup 368` — all exit 0. `engines/fibonacci/` and `engines/order_blocks/` were STALE-BY-INPUT and are re-validated. **Safe to commit.** See "Re-sync applied — 2026-07-12" below. The audit that found it: (a fresh working-tree re-paste vs commit `7e0b30e`, 66-line diff — 24+/42-. 🔴 **THE MARKET_STRUCTURE SYNC CHAIN WAS TRIGGERED — first time since 2026-07-08.** Two real detection changes in mpc's `process`: (1) **`choch_lock` no longer gates CHoCH** (`is_choch = st.dir == -1 and not st.choch_lock` → `is_choch = st.dir == -1`, bull 648 / bear 772) — the flag is still declared/set/released but nothing reads it, so it is now inert in mpc while `structure_engine.pine`, `structure_engine_export.pine` and `engine.py` all still gate on it; (2) **`last_conf_high`/`last_conf_low` no longer update on a CHoCH** (now wrapped in `if not is_choch`, bull 697 / bear 820) — on an SOS the pullback extreme prints as an ACTIVE swing (ASH/ASL) and is confirmed only by the NEXT opposite break. **STALE as one unit: `indicators/engines/structure_engine.pine`, `indicators/engines/structure_engine_export.pine`, `engines/market_structure/engine.py`.** Cascade: **`engines/fibonacci/` (MacroFib reads `bull_sos` + `last_conf_high`) and `engines/order_blocks/` (creates OBs on `bull_sos`/`bear_sos`) are STALE-BY-INPUT** — their own code is fine, but their inputs and their structure-embedding harnesses (`fib_export.pine`, `ob_export.pine`) are not. **Public-API note:** `broken_high_label`/`broken_low_label` are typed `"HH"|"LH"` / `"HL"|"LL"`; mpc now prints ASH/ASL on a CHoCH, widening that domain. `strategies/tradingview/sos_fade_strategy.pine` (the brother's backtest) also still carries the OLD `choch_lock` logic. The RSI-divergence 3-day-history source bug flagged in the audit below got **worse** (moved from the drawing layer into the detection `if`) but stays inert on intraday → `engines/rsi_divergence/` is still 100% parity. See "Audit findings — 2026-07-12 (SECOND — choch_lock removal)" below. Previously today: fresh working-tree re-paste vs commit `5c477ac`, 308-line diff — 202+/106-. **NO engine was stale; market_structure sync chain NOT triggered.** The paste was (a) the `marketStructureOnly` master toggle REPLACED by two positive master switches — `showTradeTools` (FVG/OBs/sessions/KZ/liquidity/VWAP/MV) and `showFibTool` (external/internal/cycle fib) — with `marketStructureOnly` now *derived* (`not showTradeTools and not showFibTool`); plus a `hideFibsSub5m` timeframe gate on the fib drawing/compute. Same effective defaults as before (everything non-structure off) — purely visual; (b) RSI-divergence inputs **frozen into hardcoded constants** (`divRsiLen` 14, `divPivotLen` 5, `divOS` 25, `divOB` 75, `divValidBars` 100, `divVeto` true, extremes 80/20) — these match `engines/rsi_divergence/` defaults EXACTLY, so the 5c477ac sync is confirmed correct and nothing further is needed; the div drawings became a FIFO-capped array (`divMaxCount` 10) instead of a single deleted-on-stale line — visual; (c) a heavy A+ SETUP SEQUENCE rework (staleness window bars→MINUTES, a session-gap guard, daily-sweep age cap, arm-only-when-idle, A+-owned 0.5/0.618 latches, HTF-bias warn/block, Sniper Zone accepted as location confirmation alongside FVG, optional INT trigger, divergence veto REMOVED from A+) — all **strategy-tier**, the A+ machine is not an engine. **ONE SOURCE BUG flagged (not an engine issue):** the new "Show Divergence History" 3-day filter tests `time[divPivotLen] >= time - 259200000`, which measures the pivot's age as `divPivotLen` bars — always ~25 minutes on a 5m chart — so the toggle is inert on every intraday timeframe. See "Audit findings — 2026-07-12" below. Previously: 2026-07-11 (SECOND audit of the day — a fresh working-tree re-paste vs commit `21cbe43`, 484-line diff. **NO engine is stale; market_structure sync chain NOT triggered; no `*_export.pine` harness or `compare_*.py` needs re-running.** The paste is (a) a new `marketStructureOnly` master DISPLAY toggle that force-hides every non-structure feature — each `show*` flag renamed `<flag>Input` and gated `marketStructureOnly ? false : …Input` — purely visual; (b) a heavy rework of the A+ SETUP SEQUENCE (edge-triggered arming on new sweep OR new divergence, stale-arm clearing, a separate CONT continuation trade type with its own row + chart labels, a divergence/extreme-RSI VETO, FVG now REQUIRED for READY) — all **strategy-tier**, the A+ machine is not an engine; (c) a divergence-staleness rule (`bullDivStale`/`bearDivStale`: a div goes stale on the next external break) + drawing-deletion — **strategy-tier composition** of RSI+structure, not the standalone RSI engine's job. **ONE engine-relevant nit:** the RSI-divergence input DEFAULTS drifted `divOS` 30→25 and `divOB` 70→75 — detection formula unchanged (still `<= divOS` / `>= divOB`), so the engine is parity-valid, but its default params should be synced 30→25 / 70→75 (and `compare_rsi_div.py` re-run at the new defaults) when convenient. See "Audit findings — 2026-07-11 (marketStructureOnly + A+/CONT rework)" below. Earlier today: RSI Divergence detector BUILT + PARITY-VALIDATED as `engines/rsi_divergence/` — engine + harness + compare tool + 9 tests green; `compare_rsi_div.py --warmup 1630` exit 0 on a real `VANTAGE_XAUUSD, 5m` export.)
 
 ---
 
@@ -48,8 +48,8 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`engines/order_blocks/`** — bull/bear OB zones off external + internal breaks, with mitigation + FIFO eviction. Sibling of `engines/fibonacci/` (consumes `engines/market_structure/` directly). Ported line-by-line, 12 unit tests, 100% Pine parity on two independent real exports — `VANTAGE_XAUUSD, 5m` (`--warmup 594`) and `VANTAGE_XAUUSD, 15m` (`--warmup 207`), confirming it's timeframe-agnostic (harness: `indicators/engines/ob_export.pine` + `engines/order_blocks/tools/compare_ob.py`). Re-validated after the 2026-07-08 structure re-sync: engine untouched, but its harness `ob_export.pine` (which embeds the structure engine) was re-synced with the two f2a8411 changes, then re-validated 2026-07-09 on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars; all OB fields match, `--warmup 1133`, exit 0).
 - **`engines/sessions/`** — Tokyo/London/NY session windows + running session H/L, the three NY kill zones, and the NY opening range. The first **time-driven** engine (input = the bar's UTC timestamp + high/low, not just OHLC); standalone (depends on nothing). Ported line-by-line, 17 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (all 18 fields, `--warmup 263`), re-confirmed on a 15m export for the 16 timeframe-agnostic fields (harness: `indicators/engines/sessions_export.pine` + `engines/sessions/tools/compare_sessions.py`). Unblocks the session-scoped parts of Liquidity (session H/L levels) and VWAP (session anchor).
 - **`engines/liquidity/`** — the prices price runs toward and grabs: prev day/week/month H/L (PDH/PDL/PWH/PWL/PMH/PML), previous-week-close (PWC), the H4 sweep (SSH/BSL), and Asia/London/NY session H/L, with mitigation (sweep vs break) tracking. Consumes `engines/sessions/` for session H/L (composes it); reconstructs the day/week/month/H4 levels from the bar stream. **Non-repainting by Aaron's explicit decision (2026-07-05): every HTF level uses the PREVIOUS completed period only — the engine never forecasts the current period's high/low.** Ported, 15 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (11,457 bars; all 33 fields — 15 level prices, their mitigation flags, 4 boundary-roll pulses — match, `--htf-rollover 18 --warmup 4653`, exit 0; harness: `indicators/engines/liquidity_export.pine` + `engines/liquidity/tools/compare_liquidity.py`). Calibrated boundary: XAUUSD session opens 18:00 NY (baked in as the default).
-- **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_assistant.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/engines/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
-- **`engines/session_volume_profile/`** — the Session Volume Profile: on each **Asia** session close, a 50-row volume profile over the session range whose highest-volume row gives the **POC** (the "MV" line), plus the MV confirmation (price straddling the POC). Composes `engines/sessions/` for the Asia window/edges (like liquidity) and needs the **volume** feed (like VWAP). Two Pine quirks ported exactly: the session-close bar is folded into the profile, and the bull/bear two-array newest-first summation is kept (float addition is not associative — collapsing it could flip a near-tie POC row). Ported from `mpc_assistant.pine` (SVP block 2554, MV slot 2772), 12 unit tests, **100% Pine parity**. The row count was re-synced **100 → 50** on 2026-07-09 (mpc line 317) and re-validated on a fresh `VANTAGE_XAUUSD, 5m` export (13,147 bars; all 3 fields — POC price + form pulse + sweep state — match, `--warmup 251`, exit 0; harness: `indicators/engines/svp_export.pine` + `engines/session_volume_profile/tools/compare_svp.py`). The POC uses an **exact** (1e-6) tolerance — it is a deterministic formula on the copied session H/L + integer volume, so it is bit-identical, unlike VWAP's cumulative value.
+- **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_jarvis.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/engines/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
+- **`engines/session_volume_profile/`** — the Session Volume Profile: on each **Asia** session close, a 50-row volume profile over the session range whose highest-volume row gives the **POC** (the "MV" line), plus the MV confirmation (price straddling the POC). Composes `engines/sessions/` for the Asia window/edges (like liquidity) and needs the **volume** feed (like VWAP). Two Pine quirks ported exactly: the session-close bar is folded into the profile, and the bull/bear two-array newest-first summation is kept (float addition is not associative — collapsing it could flip a near-tie POC row). Ported from `mpc_jarvis.pine` (SVP block 2554, MV slot 2772), 12 unit tests, **100% Pine parity**. The row count was re-synced **100 → 50** on 2026-07-09 (mpc line 317) and re-validated on a fresh `VANTAGE_XAUUSD, 5m` export (13,147 bars; all 3 fields — POC price + form pulse + sweep state — match, `--warmup 251`, exit 0; harness: `indicators/engines/svp_export.pine` + `engines/session_volume_profile/tools/compare_svp.py`). The POC uses an **exact** (1e-6) tolerance — it is a deterministic formula on the copied session H/L + integer volume, so it is bit-identical, unlike VWAP's cumulative value.
 - **`engines/rsi_divergence/`** — Wilder-RSI regular-divergence detector (standalone; sibling of FVG). Ported line-by-line, 9 tests, **100% Pine parity** (`compare_rsi_div.py --warmup 1630`, exit 0). Feeds the A+ setup "+ DIV" tag.
 - **`engines/equal_highs_lows/`** — EQH/EQL liquidity-level detector (standalone; sibling of FVG + RSI-divergence). Two consecutive same-side strict price pivots within an ATR(50)×mult band → a level (EQH `max` / EQL `min`), FIFO cap per side, close-through mitigation. Ported line-by-line from the mpc EQ block, **7 unit tests green (built 2026-07-18)**. **Pine-parity VALIDATED 2026-07-19 (exit 0)** on a 16,639-bar `VANTAGE_XAUUSD, 5m` grand export — the run caught + fixed a real pivot-tie bug (Pine allows a LEFT tie / strict RIGHT; the last bar of an equal run is the pivot). The Pine's `eqExemptFvg` FVG↔EQ coupling is MODELLED (FVG `update()` takes `eq_levels`/`eq_tol`; consumer runs EQ→FVG) — see the 2026-07-18/07-19 notes.
 
@@ -157,7 +157,7 @@ Checked by diffing the code, not by reading the commit message:
 
 | Link | Verdict |
 |---|---|
-| 1. `mpc_assistant.pine` structure block | patched, 4 sites (2 in `process`, 2 in `processMTF`) |
+| 1. `mpc_jarvis.pine` structure block | patched, 4 sites (2 in `process`, 2 in `processMTF`) |
 | 2. `structure_engine.pine` | **byte-identical to link 1** — 395 code lines each, zero differences in `process` |
 | 3. `structure_engine_export.pine` | identical logic; the only 15 differences are `f_swingCol()` label colour (13) and two `showExternal` visibility blocks — **visual, per this command's own rule** |
 | 4. `engines/market_structure/engine.py` | both sites present, same condition and same placement (AFTER the promotion, which is where the previous attempt at this fix got it wrong) |
@@ -234,7 +234,7 @@ diverge as shipped, 0 with the sub-15m pair.**
 
 ✅ Both harnesses now REFUSE a sub-15m export instead of reporting a mismatch list, because
 that list read exactly like a broken entry rule. Detail:
-`strategies/python/mpc_sos_fade/CLAUDE.md`.
+`strategies/python/sos_fade/CLAUDE.md`.
 
 ⚠ **The structure engine's green is unaffected** — that engine has no timeframe-dependent
 input, and the M5 export gated it legitimately. **B-LEG's green stands and was re-measured**
@@ -270,14 +270,14 @@ how these two files were taken.
 
 ### ✅ The LIVE bot is unaffected, and it was checked rather than assumed
 
-`algos/markets/fx/instances/mpc_sos_fade_demo/deployed/` carries its own frozen `engines/`, and that
+`algos/markets/fx/instances/sos_fade_demo/deployed/` carries its own frozen `engines/`, and that
 copy does **not** contain the guard. A `git pull` on the VPS cannot move it; only `promote.py` can.
 **All three gates are green now, so rule 22 no longer blocks a promote — but a green gate is not a
 decision to promote.** That is Aaron's call, and it moves what a live account trades.
 
 ### Everything else — IN PARITY, nothing new to extract
 
-Coverage scan of all 7,152 lines of `mpc_assistant.pine`: every functional block still maps to a
+Coverage scan of all 7,152 lines of `mpc_jarvis.pine`: every functional block still maps to a
 canonical engine (structure, order blocks, FVG, EQH/EQL, RSI divergence, sessions/kill zones/NY
 range, VWAP, liquidity, fibs, SVP). The A+ and B-LEG sequences are strategy-tier as before;
 Continuation is still disabled; Internal Fib is still deleted from the Pine. **No new un-extracted
@@ -287,7 +287,7 @@ block.** `engines/market_structure/tests` 17 green.
 
 ## Audit findings — 2026-07-31 (10 commits since the last validated paste; clean tree, diff `48c183f..HEAD`) 🔴 3 ENGINES STALE
 
-Working tree clean. Audited the cumulative diff of `indicators/engines/mpc_assistant.pine` from `48c183f`
+Working tree clean. Audited the cumulative diff of `indicators/engines/mpc_jarvis.pine` from `48c183f`
 (2026-07-17 — the paste every engine was last validated against, on the 2026-07-19 grand export) to
 `HEAD` (`9c34f04`): **3,206 lines, 2,468+/738-** across 10 commits. Report only; no engine code changed.
 
@@ -336,7 +336,7 @@ This is a re-port, not a re-sync. Nothing about the old definition survives:
 rewritten.** `engines/order_blocks/` now implements the turn-anchored definition end to end. Three
 things made this the safest of the stale items to do immediately: **nothing consumes it** (not
 `EngineStack`, not either bot), **there is no two-Pine fork** (the strategy files dropped order
-blocks entirely on 2026-07-24/25, so `mpc_assistant.pine` is the only source), and the engine
+blocks entirely on 2026-07-24/25, so `mpc_jarvis.pine` is the only source), and the engine
 **became STANDALONE** — `StructureSnapshot` is deleted and `update()` takes plain OHLC, so it no
 longer depends on `engines/market_structure/` at all. `indicators/engines/ob_export.pine` shrank 1148 → ~300
 lines because it no longer has to EMBED the structure engine, which removes its single biggest
@@ -396,14 +396,14 @@ So only the three session windows moved.
 machines. Harness `indicators/engines/fib_export.pine` (2026-07-12) is stale for the macro columns.
 
 **RESOLVED 2026-07-31 — Aaron's call: LEAVE the engine as it is, and document the fork.** The
-decisive fact, found while scoping the port: **`strategies/tradingview/mpc_strategy.pine` still carries the OLD
+decisive fact, found while scoping the port: **`strategies/tradingview/sos_fade_strategy.pine` still carries the OLD
 anchor** (`macro_ll_since_bear_sos`, lines 2614-2672). That is the file
-`strategies/python/mpc_sos_fade/` replays, so `MacroFib` is stale against the *assistant* but
+`strategies/python/sos_fade/` replays, so `MacroFib` is stale against the *assistant* but
 **correct against the strategy** — porting the rework would have manufactured drift in the bot
 instead of removing it. Same shape as the `fvg_require_close` trap: the two mpc Pine files disagree,
-so no single behaviour is right for both. Low stakes today either way — `mpc_sos_fade` computes the
+so no single behaviour is right for both. Low stakes today either way — `sos_fade` computes the
 macro POI and reports it through the sequence state, but **execution never reads it**, so no trade
-depends on it. **Port it when the rework reaches `mpc_strategy.pine`, not before** — and note the
+depends on it. **Port it when the rework reaches `sos_fade_strategy.pine`, not before** — and note the
 1-minute `request.security` is the real work at that point, not the anchor line.
 
 ### Default drift — not parity breaks, but sync them
@@ -447,8 +447,8 @@ reach past the historical buffer.
 
 1. **B-LEG tracker + "BLEG SZ" box** (`bLegL_*`/`bLegS_*`, `bLegArmL/S`, band = 0.382–0.5 of the SOS
    leg, invalidation at the leg origin, `BLEG_MAX = 120` bars, drawn on 15m only, plus a B LEG row in
-   the JARVIS table). New to `mpc_assistant.pine`, but this setup is **already built** as
-   `strategies/tradingview/mpc_b_leg_strategy.pine` and `strategies/python/mpc_bleg/`. ⚠ **Worth a drift check:**
+   the JARVIS table). New to `mpc_jarvis.pine`, but this setup is **already built** as
+   `strategies/tradingview/b_leg_strategy.pine` and `strategies/python/b_leg/`. ⚠ **Worth a drift check:**
    the assistant's copy was written independently of the fork, so the two may not agree on band edges
    or invalidation.
 2. **A+ REV SETUP rework** — per-source arm timestamps with SEPARATE expiry windows
@@ -504,9 +504,9 @@ misleading green.** (1) It plotted **6 slots against a cap of 8**, so the two ne
 Pine and invisible to the diff — every earlier FVG "exit 0" covered the oldest six only. Now 10 slots,
 and `compare_fvg.py` REFUSES an export whose `cfg_fvg_maxcount` exceeds the plotted slots. (2) Its
 minimum-gap floor was one flat number, but mpc's is timeframe-split (`0.0` below 900s, `0.04` at 15m+,
-`mpc_assistant.pine:410-412`). On this 15m export the old build would still have gone green — both
+`mpc_jarvis.pine:410-412`). On this 15m export the old build would still have gone green — both
 sides read the setting from `cfg_fvg_thresh` — while running a DIFFERENT rule from the indicator it
-mirrors, and proving nothing about the 15m gap set `mpc_strategy.pine` actually trades.
+mirrors, and proving nothing about the 15m gap set `sos_fade_strategy.pine` actually trades.
 
 ### Second export — 5m, and the NY opening range is now covered too
 
@@ -540,14 +540,14 @@ four changeovers; 5m proves the ≤5m NY opening range and re-proves the rest on
 
 ### 🔴 Found while confirming sync: the B-LEG Pine fork never got the session windows
 
-`mpc_strategy.pine` has carried the NEW windows since **2026-07-12** (`317dbef`) — two weeks BEFORE
-`mpc_assistant.pine` got them (`b25789d`, 07-26). But **`mpc_b_leg_strategy.pine` and
-`mpc_b_leg_strategy_export.pine` are still on the old fixed `GMT-4` strings**, so the A+ and B-LEG
+`sos_fade_strategy.pine` has carried the NEW windows since **2026-07-12** (`317dbef`) — two weeks BEFORE
+`mpc_jarvis.pine` got them (`b25789d`, 07-26). But **`b_leg_strategy.pine` and
+`b_leg_strategy_export.pine` are still on the old fixed `GMT-4` strings**, so the A+ and B-LEG
 forks now disagree about when a session opens. That breaks the standing rule in
 `indicators/CLAUDE.md`: any engine-block change in the parent flows to the fork line-for-line.
 
 **It is trade-affecting in principle, not cosmetic.** Session H/L feed `recentBSL`/`recentSSL`
-(`mpc_strategy.pine:3121-3126`), which is what `execArmSweep` arms A+ on — and `execArmSweep` is ON
+(`sos_fade_strategy.pine:3121-3126`), which is what `execArmSweep` arms A+ on — and `execArmSweep` is ON
 by default in the shipped "prime" combo. The path is narrow because `showSessH = liq_dh == ""` makes
 session levels a FALLBACK used only when no day level exists, but narrow is not none.
 
@@ -556,20 +556,20 @@ session levels a FALLBACK used only when no day level exists, but narrow is not 
 existing 2026-07-29 exports. So the window change does not alter either decision stream over those
 windows, and no backtest number is invalidated. Worth knowing WHY that is reassuring rather than
 conclusive: the A+ Python bot consumes these windows for real (`EngineStack` builds `SessionEngine()`
-with no args, and `mpc_sos_fade/sequence.py` reads `recent_ssl`/`recent_bsl`), so it was silently
+with no args, and `sos_fade/sequence.py` reads `recent_ssl`/`recent_bsl`), so it was silently
 running OLD windows against a Pine on NEW ones from 07-12 until this pass. The green says the
 fallback path did not fire differently on that data — not that it never can.
 
-**✅ FIXED the same day — all five files synced.** `mpc_b_leg_strategy.pine`,
-`mpc_b_leg_strategy_export.pine` and `mpc_m15_playbook.pine` now carry
+**✅ FIXED the same day — all five files synced.** `b_leg_strategy.pine`,
+`b_leg_strategy_export.pine` and `m15_playbook.pine` now carry
 Tokyo `0900-1800` Asia/Tokyo · London `0800-1700` Europe/London · New York `0800-1700`
-America/New_York, matching `mpc_assistant.pine:464-478` and `mpc_strategy.pine:185-200`. Each file's
+America/New_York, matching `mpc_jarvis.pine:464-478` and `sos_fade_strategy.pine:185-200`. Each file's
 own `display = display.none` was preserved — only the six values changed per file. `svp_export.pine`
 was re-stated too, purely for consistency: `"2000-0500" GMT-4` and `"0900-1800" Asia/Tokyo` are the
 same 00:00-09:00 UTC window year-round, which is the same equivalence that left
 `engines/session_volume_profile/` unaffected.
 
-⚠ **`mpc_m15_playbook.pine`'s NY window was `0900-1700`, not the `0900-1800` every other file had** —
+⚠ **`m15_playbook.pine`'s NY window was `0900-1700`, not the `0900-1800` every other file had** —
 a pre-existing difference of unknown origin, now folded into the common `0800-1700` America/New_York.
 It is not a bot and nothing replays it, but if that shorter window was deliberate, this changed it.
 ⚠ **That file was DELETED on 2026-08-15** (Aaron's call), so this open question closes unanswered
@@ -584,12 +584,12 @@ the New York rule ran. Anchoring each edit on its `*_SESSION_GROUP` is what make
 **Both bots re-verified after the change:** `compare_strategy.py --warmup 100` and
 `compare_bleg.py --warmup 100` still exit 0, and 529 tests stay green.
 
-### 🔴 Also found and fixed: `mpc_sos_fade` was relying on an unpinned engine default
+### 🔴 Also found and fixed: `sos_fade` was relying on an unpinned engine default
 
 The roadmap previously called `backtest/replay/stack.py`'s `EngineConfig` FVG values "two generations
-stale, harmless because every real consumer pins". **Half of that was wrong.** `mpc_sos_fade` pins
+stale, harmless because every real consumer pins". **Half of that was wrong.** `sos_fade` pins
 `fvg_max_count` and `fvg_require_close` — and **not** `fvg_threshold_pct`. It was silently inheriting
-`stack.py`'s `0.1`, which happens to be `mpc_strategy.pine`'s 15m floor, so the bot worked by
+`stack.py`'s `0.1`, which happens to be `sos_fade_strategy.pine`'s 15m floor, so the bot worked by
 coincidence rather than by decision. Proven by removing it: `compare_strategy.py` failed on the very
 first compared bar (`px_edge` py=3478.99 vs pine=3475.43). Anyone "tidying" that default to match the
 engine would have moved the A+ bot's trades with no test failing.
@@ -598,9 +598,9 @@ Fixed the right way round — shared infra carries ENGINE defaults, each bot pin
 
 | | was | now |
 |---|---|---|
-| `stack.py` `fvg_max_count` | 6 | **8** (engine / `mpc_assistant.pine`) |
+| `stack.py` `fvg_max_count` | 6 | **8** (engine / `mpc_jarvis.pine`) |
 | `stack.py` `fvg_threshold_pct` | 0.1 | **0.0** (engine, the sub-15m floor) |
-| `mpc_sos_fade.engine_config()` | 3 pins | **4 pins** — `fvg_threshold_pct=0.1` added explicitly |
+| `sos_fade.engine_config()` | 3 pins | **4 pins** — `fvg_threshold_pct=0.1` added explicitly |
 
 `test_engine_config_pins_every_input_the_pine_moved_off_its_default` now asserts all four, so the
 shared default is free to move again without silently dragging the bot with it. This is the same
@@ -634,10 +634,10 @@ is the cheap follow-up if it ever matters.
 
 **Both follow-ups flagged here were CLOSED the same day** — see the two sections above.
 `backtest/replay/stack.py`'s `EngineConfig` was reconciled (and the "harmless, every real consumer
-pins its own" claim turned out to be half wrong — `mpc_sos_fade` never pinned `fvg_threshold_pct`).
+pins its own" claim turned out to be half wrong — `sos_fade` never pinned `fvg_threshold_pct`).
 The stale session windows were synced in every remaining file, and `mpc_jarvis_v2.pine`
 was DELETED rather than synced (2026-07-31, Aaron's call — superseded by
-`strategies/tradingview/mpc_strategy_export.pine`; last committed at `825592a`).
+`strategies/tradingview/sos_fade_strategy_export.pine`; last committed at `825592a`).
 
 ---
 
@@ -688,7 +688,7 @@ Pine." Two things landed (NOT yet committed; EQ + FVG Pine-parity re-runs PENDIN
    `engines/equal_highs_lows/CLAUDE.md`.
 
 2. **`engines/fair_value_gaps/` REAL DRIFT FIXED.** The `fvgRequireClose` gate
-   `(not fvgRequireClose or close[1] > high[2])` landed in `mpc_assistant.pine` on **2026-07-17**
+   `(not fvgRequireClose or close[1] > high[2])` landed in `mpc_jarvis.pine` on **2026-07-17**
    (commit `a0b8e1d`, "Implement feature X…"), AFTER the last FVG validation (07-14). So the Python
    engine AND `fvg_export.pine` had silently gone stale: both HARDCODED the middle-bar close check,
    while the mpc DEFAULT (`fvgRequireClose = false`) SKIPS it — i.e. on a default mpc chart the engine
@@ -707,7 +707,7 @@ levels + tolerance. `fvg_export.pine` now EMBEDS the EQ compute + `f_fvgNearEq` 
 (byte-for-byte mpc) and carries `cfg_eq_*` columns; `compare_fvg.py` runs the Python EQ engine from
 those cfg columns and feeds the FVG cap — so the coupling is validated against mpc, not just asserted.
 2 new FVG unit tests pin the exemption (and that no-EQ stays plain FIFO). **Follow-up:**
-`backtest/replay/EngineStack` does not yet wire EQ→FVG (exemption off there); the mpc_sos_fade strategy
+`backtest/replay/EngineStack` does not yet wire EQ→FVG (exemption off there); the sos_fade strategy
 parity is unaffected while it stays off.
 
 **Lesson:** a single-commit audit can miss a drift that entered in an earlier, vaguely-messaged commit.
@@ -718,7 +718,7 @@ diff of one commit does not.
 
 ## Re-sync applied — 2026-07-12 (chain 2→3→4 brought back in line) ✅ PARITY CONFIRMED
 
-Aaron's call: **accept `mpc_assistant.pine` as source of truth and port it as written**, `choch_lock`
+Aaron's call: **accept `mpc_jarvis.pine` as source of truth and port it as written**, `choch_lock`
 removal included, risk accepted. The audit below stands as the record of *what* changed; this section
 records *what was done about it*.
 
@@ -733,8 +733,8 @@ the matching half: on a fast reversal the promoted extreme is only ACTIVE (ASH/A
 lower high can no longer overwrite a genuine higher high.
 
 **Applied — the same four changes, byte-identical, in every Pine copy of the structure engine:**
-`mpc_assistant.pine` (source), `structure_engine.pine`, `structure_engine_export.pine`,
-`ob_export.pine`, `fib_export.pine`, `mpc_strategy.pine`. Verified: `diff` of mpc's structure block
+`mpc_jarvis.pine` (source), `structure_engine.pine`, `structure_engine_export.pine`,
+`ob_export.pine`, `fib_export.pine`, `sos_fade_strategy.pine`. Verified: `diff` of mpc's structure block
 (402–909) against `structure_engine.pine` (57–564) is now **empty — byte-for-byte identical**.
 `choch_lock` remains declared/set/released but unread in all six, exactly as mpc leaves it; the dead
 code is kept deliberately so the files stay identical to source.
@@ -777,7 +777,7 @@ The single-CSV multi-indicator trick is the same one used for the 2026-07-09 liq
 
 ## Audit findings — 2026-07-14 (8 commits since the `choch_lock` re-sync; clean tree, diff `8f6b5ca..HEAD`) 🔴 FVG STALE
 
-Working tree clean. Audited the cumulative diff of `indicators/engines/mpc_assistant.pine` from `8f6b5ca` (the
+Working tree clean. Audited the cumulative diff of `indicators/engines/mpc_jarvis.pine` from `8f6b5ca` (the
 last full engine audit + re-sync) to `HEAD` (`f9c947c`): **477 lines, 330+/147-** across 8 commits
 (`2cc1ac7` retro-link, `62fc274` div-only/ignore-window, `35437f0`+`2a172c2`+`ceff9ff` FVG, `bc6014e`
 liquidity pool-refresh, `f139cc6` input defaults, `f9c947c` REV SETUP alert). **One engine is STALE
@@ -861,7 +861,7 @@ copies + `engines/market_structure/engine.py` + the shim stay current.
 - **rsi_divergence** — `showDivInput` false→true, `showDivHistory` false→true; detection byte-unchanged;
   the intraday-inert 3-day-history bug from prior audits is untouched. 100% parity holds.
 - **svp / regime / news** — zero hunks. Not affected.
-- **Master toggles** — `showTradeTools`/`showFibTool` default false→true; live in `mpc_assistant.pine`
+- **Master toggles** — `showTradeTools`/`showFibTool` default false→true; live in `mpc_jarvis.pine`
   only (the `*_export.pine` harnesses have their own toggles), so parity exports are unaffected.
 
 ### A+ SETUP SEQUENCE — STRATEGY-tier rework, NOT an engine (renamed "REV SETUP" in the table)
@@ -947,7 +947,7 @@ sync rule calls for.
 `structure_engine.pine`, `structure_engine_export.pine`, `ob_export.pine`, `fib_export.pine` — all four
 carry the old `choch_lock`-gated `is_choch` and the unconditional `last_conf_*` update.
 
-⚠️ **Also carrying the OLD logic: `strategies/tradingview/mpc_strategy.pine`** (the brother's MPC-JARVIS backtest
+⚠️ **Also carrying the OLD logic: `strategies/tradingview/sos_fade_strategy.pine`** (the brother's MPC-JARVIS backtest
 script). It embeds the same structure engine and its trades read **only** the BOS/SOS/iBOS/iSOS breaks —
 so its backtest results no longer match what the chart now prints. Not an engine, but flagging it: it is
 a real consumer of the changed logic.
@@ -1016,7 +1016,7 @@ an existing engine; **no new un-extracted block appeared.**
 `show*` flag was re-derived from a `marketStructureOnly ? false : <flag>Input` ternary to a plain
 `showTradeTools and <flag>Input` / `showFibTool and <flag>Input` conjunction. **Same effective defaults
 as before** (everything non-structure already defaulted off), and these flags live only in
-`mpc_assistant.pine` — the standalone `*_export.pine` harnesses have their own toggles, so parity exports
+`mpc_jarvis.pine` — the standalone `*_export.pine` harnesses have their own toggles, so parity exports
 are untouched. Every gated engine — order_blocks, fair_value_gaps, sessions/kill-zones/NY-range, vwap,
 liquidity, svp, fibonacci (external/internal/macro/sniper) — is **not affected**.
 
@@ -1115,7 +1115,7 @@ renamed `<flag>Input` (e.g. `showOBs`→`showOBsInput`, `showFVG`→`showFVGInpu
 `showSVP`) and the live flag re-derived inline as `marketStructureOnly ? false : <flag>Input`; three
 downstream flags with no `active=` dependents (`showSniperFib`, `showKillZones`, `showNYRange`) get a plain
 `:=` override in a dedicated block. This force-hides every non-structure drawing when on (the default). It
-gates DISPLAY only — no detection, no event stream, and it lives only in `mpc_assistant.pine` (the
+gates DISPLAY only — no detection, no event stream, and it lives only in `mpc_jarvis.pine` (the
 standalone `*_export.pine` harnesses don't have it, so parity exports are unaffected). Every engine that
 these flags gate — order_blocks, fair_value_gaps, rsi_divergence, sessions/kill-zones/NY-range, vwap,
 liquidity, fibonacci (external/internal/macro/sniper), svp — is **not affected**.
@@ -1220,7 +1220,7 @@ extracted, it gets its own `rsi_divergence` engine + a parity harness (`rsi_div_
 
 ---
 
-## Audit findings — 2026-07-10 (fresh re-paste of `mpc_assistant.pine`, staged, uncommitted)
+## Audit findings — 2026-07-10 (fresh re-paste of `mpc_jarvis.pine`, staged, uncommitted)
 
 Staged diff vs commit `d367b6d` (the last audit's commit). 524-line diff (381+/143-). **No engine is
 stale.** This paste is mostly visual polish plus two genuinely new computed features (FVG + the A+ setup
@@ -1309,7 +1309,7 @@ committed.
 
 ---
 
-## Audit findings — 2026-07-09 (fresh re-paste of `mpc_assistant.pine`, uncommitted)
+## Audit findings — 2026-07-09 (fresh re-paste of `mpc_jarvis.pine`, uncommitted)
 
 Working-tree diff vs commit `f2a8411` (its last commit; HEAD is `eecd3f7`). 184-line diff. This paste
 came AFTER the 2026-07-08 re-sync was completed & committed, so it re-opens drift. Most of it is one
@@ -1397,9 +1397,9 @@ this audit — report only.**
 
 ---
 
-## Audit findings — 2026-07-08 (fresh, larger re-paste of `mpc_assistant.pine`)
+## Audit findings — 2026-07-08 (fresh, larger re-paste of `mpc_jarvis.pine`)
 
-Working-tree diff of `indicators/engines/mpc_assistant.pine` vs commit `de54b6b` (HEAD; its mpc copy ==
+Working-tree diff of `indicators/engines/mpc_jarvis.pine` vs commit `de54b6b` (HEAD; its mpc copy ==
 `6f76bed`). This is a big re-paste (1721 lines). Most of it is still visual — the JARVIS table rebuilt
 to a 3-col Weekly/Daily HTF-bias layout, a new watermark, table position/size inputs, `showExternal` /
 `showHistoricalInternal` / `showHistoricSessions` / `showIFib` toggles, `showOBs`/`showKZ`/`showVwap`
@@ -1521,9 +1521,9 @@ matching `*_export.pine` harness updated first) before it is committed.
 
 ---
 
-## Audit findings — 2026-07-06 (re-pasted `mpc_assistant.pine`) — SUPERSEDED by 2026-07-08 above
+## Audit findings — 2026-07-06 (re-pasted `mpc_jarvis.pine`) — SUPERSEDED by 2026-07-08 above
 
-Working-tree diff of `indicators/engines/mpc_assistant.pine` vs commit `6f76bed` (its last commit). Most of
+Working-tree diff of `indicators/engines/mpc_jarvis.pine` vs commit `6f76bed` (its last commit). Most of
 the diff is visual — a reworked JARVIS confirmation table (3-col, most-recent BSL/SSL + per-fib
 one-way stage tracking), a bottom watermark, new show/hide toggles (`showExternal`, `showConfTable`,
 `showIFib`), `showOBs`/`showKZandNYR`/`showVwap` flipped to default-off, `fiboLineExtend`/`iFibExtend`
@@ -1544,8 +1544,8 @@ re-run has now RUN:
   the same bar the cycle locks (the top is set to the swing high price just broke, so `close>top` is
   already true on the birth bar), so the cycle never survives to a second bar and never displays. On
   ~4 months of data it never once held (pre-re-paste it held 2,502 bars). Suspected bug in
-  `mpc_assistant.pine`, not the port. Awaiting Aaron + brother review before the Python change,
-  `fib_export.pine`, its tests and the re-pasted `mpc_assistant.pine`/`structure_engine.pine` are
+  `mpc_jarvis.pine`, not the port. Awaiting Aaron + brother review before the Python change,
+  `fib_export.pine`, its tests and the re-pasted `mpc_jarvis.pine`/`structure_engine.pine` are
   committed.
 
 **NEW — Internal Fib** → not extracted (see "Still to build" above).
@@ -1592,7 +1592,7 @@ Each engine fix must re-run its `compare_*.py` Pine-parity check on a fresh Trad
 
 ## Off-roadmap engines (not from the SMC indicator)
 
-These do not come from `mpc_assistant.pine`, so they follow the engine *shape* (time-driven,
+These do not come from `mpc_jarvis.pine`, so they follow the engine *shape* (time-driven,
 streaming, events-not-visuals, `algos/shared/` shim) but **not** step 3 (Pine parity) — there is no
 Pine source to diff against. Validated by unit tests + a live check instead.
 

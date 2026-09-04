@@ -9,7 +9,7 @@ One container, no behaviour:
 
 WHAT IS PINE-VALIDATED
 ----------------------
-All four fields are ported from indicators/engines/mpc_assistant.pine and checked at Pine parity:
+All four fields are ported from indicators/engines/mpc_jarvis.pine and checked at Pine parity:
   * `poc` + `formed` come from the SESSION VOLUME PROFILE block (line ~2554): the POC price the
     profile resolves on each Asia session close, and the FIFO history it is pushed into (`mv_pocPrice`
     always reads the most recent).

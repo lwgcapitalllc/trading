@@ -89,7 +89,7 @@ VPS_HOST = cfg.SSH_ALIAS
 # rest default off the bot key, because that is genuinely how `algos/live/` names things —
 # but every one can be overridden for a bot that does not follow the convention.
 #
-# ⚠ `BOT_MPC_SOS_FADE` IS NOT A REAL SCHEDULED TASK. `task` is a task name because that is
+# ⚠ `BOT_SOS_FADE` IS NOT A REAL SCHEDULED TASK. `task` is a task name because that is
 # how the retired panel was keyed, but the live bot has no `BOT_*` task of its own: it boots
 # through SYS_STARTUP → startup_coordinator.py, and the command center starts it through
 # that same coordinator over WMI. `_parse_tasks` therefore never returns a status for it,
@@ -106,7 +106,7 @@ class BotReg:
     """Every fact this router needs about one registered bot.
 
     `key` is also the string matched against the VPS process commandline
-    (`runner.py --bot mpc_sos_fade_demo`) — the script name identifies the FLEET, only the
+    (`runner.py --bot sos_fade_demo`) — the script name identifies the FLEET, only the
     key identifies the bot, because every live bot IS `runner.py`.
     """
 
@@ -161,9 +161,9 @@ class BotReg:
 
 _BOTS: list[BotReg] = [
     BotReg(
-        task="BOT_MPC_SOS_FADE",
-        key="mpc_sos_fade_demo",
-        display="MPC SOS Fade",
+        task="BOT_SOS_FADE",
+        key="sos_fade_demo",
+        display="SOS Fade",
         account_type="demo",
     ),
     # ON THE BENCH (`account: null` in its instance config), and registered here anyway — that
@@ -177,7 +177,7 @@ _BOTS: list[BotReg] = [
     # ⚠ It is deliberately NOT in `algos/notifications/monitor.py` or `deadman.py`. Those alarm
     # on a bot that is not running, which is this bot's normal state — registering it there would
     # ring the one alarm that has to stay quiet until it means something.
-    BotReg(task="BOT_MPC_BLEG", key="mpc_bleg_demo", display="MPC B-LEG", account_type="demo"),
+    BotReg(task="BOT_B_LEG", key="b_leg_demo", display="B-LEG", account_type="demo"),
 ]
 
 # ── Derived views. Never edit one of these — add a BotReg above. ──────────────
@@ -1897,7 +1897,7 @@ def _resolve_bot(ref: str) -> tuple[str, str]:
 
     The key is tried FIRST and is the identifier new callers should use. Every route here
     was keyed on the DISPLAY NAME — a label, chosen for a human, and therefore the one field
-    somebody will eventually change: renaming "MPC SOS Fade" would have broken every
+    somebody will eventually change: renaming "SOS Fade" would have broken every
     bookmark, the Configure tab's `?bot=` selection, and any script anyone had written,
     while the bot itself was untouched. The key is what identifies the process on the VPS
     (`runner.py --bot <key>`), so it is already the stable name; it just was not reachable
@@ -1950,7 +1950,7 @@ def _bot_state_path(bot_key: str) -> str | None:
     """The VPS `bot_state.json` holding this bot's entry, resolved from the SAME registry the
     snapshot fetch uses.
 
-    `get_bot_version` used to name `state_mpc_sos_fade` outright, so every OTHER bot got a
+    `get_bot_version` used to name `state_sos_fade` outright, so every OTHER bot got a
     blank `running_hash` — which reads as "the live process agrees with the deployment
     record" and makes the *restart pending* warning permanently impossible to trigger. The
     fleet strip on the Configure tab then reports a confident **0 restart pending** across a

@@ -26,7 +26,7 @@ same run that is **7,106 levels** — the same order as the gap layer's 2,822 an
 579 — and it answers the question actually being asked, which is *what liquidity was in play when
 this setup fired, and had it already been swept?*
 
-⚠ **This is therefore NOT the same view as the indicator's.** `mpc_assistant.pine` draws the ~13
+⚠ **This is therefore NOT the same view as the indicator's.** `mpc_jarvis.pine` draws the ~13
 levels that are live RIGHT NOW and nothing else; it never shows you a level from 2021, because
 there is no 2021 on a live chart. This layer shows the historical set at the bars that matter. The
 two agree about what a level IS and disagree about which ones are on screen, and that difference is
@@ -41,7 +41,7 @@ with one switch because it only ever draws the live set.
 
 SWEPT IS THE POINT, AND IT IS DRAWN THE WAY THE INDICATOR DRAWS IT
 ------------------------------------------------------------------
-`showMitLiq` went TRUE in `mpc_assistant.pine` on 2026-08-07: a level price has taken is not deleted,
+`showMitLiq` went TRUE in `mpc_jarvis.pine` on 2026-08-07: a level price has taken is not deleted,
 it FREEZES at the break bar, turns dotted and greys out. That is the whole feature here — a swept
 level is where a pool was taken, which is the read — so a taken level is emitted dotted, grey, and
 ending at the bar it was taken on.
@@ -88,7 +88,7 @@ _KIND_GROUP = {
 }
 
 # ── Colours ──
-# mpc_assistant.pine draws the daily, weekly and session levels in BLACK (`i_dailyColor` etc.) and
+# mpc_jarvis.pine draws the daily, weekly and session levels in BLACK (`i_dailyColor` etc.) and
 # the H4 pair in `#FF6B35`. The H4 orange is reproduced exactly — it is the colour Aaron reads those
 # levels in. The black is NOT, and that is a deliberate deviation rather than an oversight: this
 # chart renders on a dark background, where black is invisible, so the two black tiers take a hue
@@ -129,7 +129,7 @@ def sweep_label_for(side: str, engine_label: Optional[str]) -> Optional[str]:
 
     BSL = buy-side liquidity, the pool of stops resting ABOVE a high; SSL = sell-side, below a low.
     So a swept HIGH is BSL and a swept LOW is SSL — definitional, not a measurement, and it is the
-    vocabulary `mpc_assistant.pine`'s own liquidity rows use for EVERY tier (`liq_dh := "BSL"`,
+    vocabulary `mpc_jarvis.pine`'s own liquidity rows use for EVERY tier (`liq_dh := "BSL"`,
     `liq_ash := "BSL"`, …).
 
     The engine models `sweep_label` on the **h4 kind only**, because that is the one tier whose Pine

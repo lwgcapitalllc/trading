@@ -5,7 +5,7 @@ to the live runner so the re-entry can eventually run live. The merge — *which
 when* — is the part that is easy to get wrong and impossible to see afterwards: a fast bar
 stepped against the wrong 15m context produces a perfectly ordinary-looking trade at a slightly
 wrong price, for ever, with nothing in any output able to show it. So the rule has ONE
-implementation (`strategies/python/mpc_sos_fade/dual_clock.DualClock`, driven by the lab's
+implementation (`strategies/python/sos_fade/dual_clock.DualClock`, driven by the lab's
 `run_dual` and by this runner alike) and these tests pin the live driver to it.
 
 ⚠ **The lab and the live driver receive bars DIFFERENTLY, and that is the whole risk.** The lab
@@ -90,7 +90,7 @@ def _bars(df):
 
 def _clock(strategy=None):
     """A `DualClock` over a stub strategy — the merge needs no engines to be exercised."""
-    from mpc_sos_fade.dual_clock import DualClock
+    from sos_fade.dual_clock import DualClock
 
     st = strategy or _stub_strategy()
     stack = SimpleNamespace(step=lambda bar: SimpleNamespace(bar=bar))
@@ -488,7 +488,7 @@ def test_the_REAL_strategy_with_the_re_entry_ON_gets_a_real_second_feed():
     MUTATION: make the strategy's `fast_feed_minutes` answer `None` regardless of the setting and
     this goes red — with the seam refusal, which is the message a broken contract should produce.
     """
-    from mpc_sos_fade import LAB_STRATEGY
+    from sos_fade import LAB_STRATEGY
 
     cfg = LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_secondary=True)
     strategy = LAB_STRATEGY["strategy"](cfg, initial_capital=10_000.0)

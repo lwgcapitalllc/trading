@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(cfg.MONOREPO_ROOT) / "strategies" / "python"))
 
 def _req(**kw) -> StackRequest:
     base = dict(
-        strategy_ids=["mpc_sos_fade", "mpc_bleg"],
+        strategy_ids=["sos_fade", "b_leg"],
         instrument="XAUUSD",
         start_date="2024-01-01",
         end_date="2024-06-01",
@@ -45,7 +45,7 @@ def _req(**kw) -> StackRequest:
 def test_the_rule_may_not_be_stacked_as_a_strategy_of_its_own():
     """It has no setups. Picked as an ordinary leg it reads nothing and returns an empty book,
     which looks exactly like a rule that found no setups."""
-    req = _req(strategy_ids=["mpc_sos_fade", "loss_recovery"])
+    req = _req(strategy_ids=["sos_fade", "loss_recovery"])
     with pytest.raises(HTTPException) as e:
         _validate_recovery_leg(req, req.strategy_ids)
     assert e.value.status_code == 400
@@ -55,7 +55,7 @@ def test_the_rule_may_not_be_stacked_as_a_strategy_of_its_own():
 def test_a_recovery_leg_is_refused_on_a_SCREEN():
     """A screen gives every leg its own full account, so the recovery could never take room off
     its parent — the only question it exists to answer."""
-    req = _req(mode="screen", recovery_parent="mpc_sos_fade")
+    req = _req(mode="screen", recovery_parent="sos_fade")
     with pytest.raises(HTTPException) as e:
         _validate_recovery_leg(req, req.strategy_ids)
     assert "SHARED" in e.value.detail
@@ -79,7 +79,7 @@ def test_params_with_no_parent_are_refused_rather_than_ignored():
 
 def test_a_valid_recovery_request_passes():
     """The direction that must not be refused — otherwise the feature is unreachable."""
-    req = _req(recovery_parent="mpc_sos_fade", recovery_params={"rec_risk_frac": 0.25})
+    req = _req(recovery_parent="sos_fade", recovery_params={"rec_risk_frac": 0.25})
     _validate_recovery_leg(req, req.strategy_ids)
 
 
@@ -104,7 +104,7 @@ def test_the_scanner_marks_the_rule_as_needing_a_source():
 def test_an_ordinary_strategy_does_NOT_require_a_source():
     """The half that would go unnoticed: a flag defaulting True would hide every real strategy
     from every picker."""
-    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+    pkg = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "sos_fade"
     row, err = strategy_scanner._parse_python_package(pkg, Path(cfg.MONOREPO_ROOT))
     assert err is None, err
     assert row["requires_source"] is False
@@ -175,7 +175,7 @@ def test_a_rule_that_needs_a_source_cannot_be_run_alone():
 
 def test_an_ordinary_strategy_is_NOT_refused():
     """A guard that refuses everything passes its own refusal test and breaks the app."""
-    refuse_if_needs_source({"id": "mpc_sos_fade", "name": "A+ SOS Fade", "requires_source": 0})
+    refuse_if_needs_source({"id": "sos_fade", "name": "A+ SOS Fade", "requires_source": 0})
 
 
 def test_a_missing_strategy_is_left_to_the_404():
@@ -224,12 +224,12 @@ def test_every_endpoint_that_STARTS_a_job_from_a_strategy_id_refuses_a_dependent
 # with "a stack needs at least 2 strategies". Nothing was broken; the feature just could not be
 # reached, which is the failure shape rule 9 is about.
 def test_one_strategy_plus_a_recovery_leg_is_enough():
-    _validate_stack_strategies(["mpc_sos_fade"], extra_legs=1)
+    _validate_stack_strategies(["sos_fade"], extra_legs=1)
 
 
 def test_one_strategy_on_its_own_is_still_refused():
     with pytest.raises(HTTPException) as e:
-        _validate_stack_strategies(["mpc_sos_fade"])
+        _validate_stack_strategies(["sos_fade"])
     assert e.value.status_code == 400
     # It has to name the way out, or the reader is told a rule and not a remedy.
     assert "loss recovery" in e.value.detail

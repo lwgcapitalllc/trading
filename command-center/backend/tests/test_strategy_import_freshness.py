@@ -120,7 +120,7 @@ def test_the_hash_and_the_defaults_describe_the_same_version(tmp_path):
 
 
 def test_purge_drops_the_whole_namespace_not_one_package(tmp_path):
-    """mpc_bleg imports mpc_sos_fade and sorts BEFORE it, so a per-package purge would re-import the
+    """b_leg imports sos_fade and sorts BEFORE it, so a per-package purge would re-import the
     dependent against a still-stale dependency — a mixed reading, which is what this is preventing.
     """
     _write_pkg(tmp_path, "aaa_dependent", "x")

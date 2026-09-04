@@ -132,7 +132,7 @@ low placed 0 at the low and 1 at the high — the ladder mirrored, and every ret
 wrong side of the move. It is now **1 on the first click (the leg's ORIGIN), 0 on the second (its
 EXTREME)**: `p1 + (p0 - p1) * ratio`. That is how a retracement is read — price retraces from 0 back
 toward 1 — and, more to the point, it is what every other fib in this repo means:
-`mpc_strategy.pine` prices its levels off the same convention (`fiboP7 = ash - range*0.0` is the
+`sos_fade_strategy.pine` prices its levels off the same convention (`fiboP7 = ash - range*0.0` is the
 extreme, `fiboP10 = ash - range*1.0` is the origin), so a hand-drawn fib and the bot's own levels
 were reading opposite. One line of maths; extensions past 1 / below 0 still fall out of it for free,
 now on the sides TradingView puts them on. Earlier: 2026-08-01 — **Step (`◀ Loss 12/60 ▶`), a header pill that walks the markers.**
@@ -151,7 +151,7 @@ when several overlap), so the layer answers "where were the gaps when this fired
 a 33k-bar chart with every gap the run ever saw — measured on the shipped 142-trade run: 215 anchor
 bars → 655 boxes. It needed **no new overlay template and no new effect** — it is a plain `box` group,
 and the only new panel concept is `ANALYSIS_GROUPS`, the list of overlay groups that belong in the
-Analysis dropdown rather than Structure. ⚠ The gaps are the INDICATOR's (`mpc_assistant.pine`), which
+Analysis dropdown rather than Structure. ⚠ The gaps are the INDICATOR's (`mpc_jarvis.pine`), which
 is a stricter-vs-looser fork from what the bot's own entry rule counted — see the bullet below.
 Earlier: 2026-07-30 (**scroll-left paging now SHOWS itself** — the blank strip you scroll
 into is shaded and labelled `Loading earlier bars…` from the oldest loaded bar back, so a page in
@@ -293,7 +293,7 @@ as a trade that kept losing after it was closed.
 
 ⚠ **It is also not a preference — the number was wrong.** The bot widened the hold's worst price
 with the whole closing bar before resolving that bar's exits, so a stop-out kept the bar's far end.
-Fixed at source (`strategies/python/mpc_sos_fade/execution.py` → `_widen_hold`), where 77 of 77
+Fixed at source (`strategies/python/sos_fade/execution.py` → `_widen_hold`), where 77 of 77
 stopped-out trades on run `976aff9ec279` were affected. **This guard is what makes every run STORED
 BEFORE that fix read right too, because nothing backfills them.**
 
@@ -770,8 +770,8 @@ here**, so the chart shows exactly what the strategy saw.
   before it, and every run stored before that date carries no `after` at all — so the neutral tag
   is what "we cannot tell" looks like, and only a re-run turns it into `BE+` / `SL+`. ⚠ **A PRIMARY
   now wears `A+` where it wore nothing**, because "no tag" is only readable as "primary" once you
-  already know that is the rule. 🔴 **`A+` is `mpc_sos_fade`'s own word and this panel draws every
-  strategy's trades**, so on a `mpc_bleg` chart it is the wrong word for the right trade. ✅ **FIXED
+  already know that is the rule. 🔴 **`A+` is `sos_fade`'s own word and this panel draws every
+  strategy's trades**, so on a `b_leg` chart it is the wrong word for the right trade. ✅ **FIXED
   2026-09-02 the way this paragraph asked for**: a strategy declares `chart_tag`, it rides the spec
   as `tradeTag`, and `overlays.ts::PRIMARY_TAG` survives only as the FALLBACK for a package that has
   not declared one. 🔴 **THE TAG IS READ OFF THE TRADE (`tr.tag`), NEVER OFF `spec.tradeTag`** — a
@@ -788,7 +788,7 @@ here**, so the chart shows exactly what the strategy saw.
   absence as a distinct SHAPE turns "we recorded less" into "this is different", and nothing on the
   chart lets a reader tell the two apart** — the same defect as the `SEC`-only-on-the-rich-path one
   just above, arriving from the DATA side instead of the drawing side. ⚠ **The fix was entirely on the
-  data side and not one line of the drawing changed**: `mpc_sos_fade/recovery.py` now carries the
+  data side and not one line of the drawing changed**: `sos_fade/recovery.py` now carries the
   excursion, and the identical figures render it. ⚠ **A recovery trade legitimately shows NO
   `TP1`/`TP2`** — that rule has no target ladder, it locks at +1R and trails — so that absence IS the
   picture rather than another thin record. ⚠ **A run STORED before this lands keeps the thin record**:
@@ -978,9 +978,9 @@ here**, so the chart shows exactly what the strategy saw.
     count on the row, exactly like Blocked and Missed. Adding a second analysis layer is one string.
   - **It sits LAST in Analysis** because it is the context around the three rows above it, not a
     fourth kind of signal — "and show me what the gaps looked like there".
-  - **The gaps are `mpc_assistant.pine`'s, not the strategy's**, and the fork is real: the indicator
+  - **The gaps are `mpc_jarvis.pine`'s, not the strategy's**, and the fork is real: the indicator
     runs `fvgMaxCount 8 / fvgRequireClose false / 0.0 below 15m, 0.04 at and above`, while
-    `mpc_sos_fade` pins `7 / True / 0.1`. A drawn gap is therefore one the INDICATOR shows, which is
+    `sos_fade` pins `7 / True / 0.1`. A drawn gap is therefore one the INDICATOR shows, which is
     not always one the bot's entry rule counted (the bot sees strictly fewer). See
     `backend/CLAUDE.md` → *Fair value gaps* — do not "fix" it by repointing the emitter.
   - **Box geometry mirrors the Pine box**: created at `bar_index - 1`, extended every surviving bar,
@@ -1031,7 +1031,7 @@ here**, so the chart shows exactly what the strategy saw.
   server-side under the same anchor rule as the gaps and blocks, and each level is an `hline`.
   **A swept level is drawn DOTTED and GREY, ending at the bar it was taken on, labelled
   `PDH swept · BSL`; a live one is solid in its tier's colour with a bare name.** That styling IS the
-  feature — it mirrors `mpc_assistant.pine`, where `showMitLiq` went TRUE on 2026-08-07 so a broken
+  feature — it mirrors `mpc_jarvis.pine`, where `showMitLiq` went TRUE on 2026-08-07 so a broken
   level freezes and greys rather than vanishing.
   - **Three rows in Analysis rather than one**, which is the first time a layer here has taken more
     than one. The tiers differ by an order of magnitude: **H4 is 58% of all levels** (measured —
@@ -1155,12 +1155,12 @@ here**, so the chart shows exactly what the strategy saw.
     because they draw the same thing; these are split because one is the reader's work and one is
     the run's record.
   - 🟢 **It serves TWO bots since 2026-08-11, and the panel did not change to gain the second.**
-    `mpc_bleg` recorded no ladder until then — `tradeFibCount` was 0, so the row correctly hid
+    `b_leg` recorded no ladder until then — `tradeFibCount` was 0, so the row correctly hid
     itself and a B-LEG run offered no Fibs at all while being the more fib-native of the two bots.
     Nothing here was edited: the template reads `(ratio, price)` pairs and knows nothing about which
     strategy produced them, which is the payoff on having built it strategy-agnostic.
   - ⚠ **BOTH bots' ladders are measured from the leg EXTREME, and that is a decision rather than an
-    accident.** `mpc_bleg`'s own code calls its entry band *the 0.382-0.5 pocket*, measuring from the
+    accident.** `b_leg`'s own code calls its entry band *the 0.382-0.5 pocket*, measuring from the
     leg ORIGIN — the opposite end. Recording it that way would have shifted every rung onto a
     different retracement while still looking like an ordinary fib. **The visible consequence: on a
     B-LEG trade the band's far edge draws as 0.618, not 0.382.** Same line, named from the other end
@@ -1210,7 +1210,7 @@ here**, so the chart shows exactly what the strategy saw.
   anyway — which is the cost the gate existed to save. Aaron's call.
   🔴 **EVERY RUNG IS NAMED `TP1`/`TP2`, AND THE REVERSE WAS TRIED AND WITHDRAWN THE SAME DAY
   (2026-08-21).** A rung whose size is 0 places no order and only steps the stop, so it was drawn
-  as `Stop tightens` in a neutral colour. At mpc_sos_fade's shipped ladder **both** rungs of a
+  as `Stop tightens` in a neutral colour. At sos_fade's shipped ladder **both** rungs of a
   primary bank 0%, so that chip became the only thing every A+ chart said. Aaron: *"Why is it that
   my A+ strategies now have annotation Stop Titans? I don't even know what it is. It should just
   show a faint dashed line where TP1 was and where TP2 was, so I could better understand why we
@@ -1417,7 +1417,7 @@ here**, so the chart shows exactly what the strategy saw.
   `p1 + (p0 - p1) * ratio`. Drag from a swing low up to a swing high and 1 is the low, 0 the high.
   It shipped the other way round (`p0 + (p1 - p0) * ratio`, 0 on the first click), which is the whole
   ladder backwards: a retracement is read from its EXTREME (0) back toward its ORIGIN (1), and it is
-  what every fib in this repo means — `mpc_strategy.pine` prices the same way (`fiboP7 = ash -
+  what every fib in this repo means — `sos_fade_strategy.pine` prices the same way (`fiboP7 = ash -
   range*0.0` = the extreme, `fiboP10 = ash - range*1.0` = the origin), so a hand-drawn fib and the
   bot's own levels now line up instead of mirroring each other.
   **Delete (gotcha):**

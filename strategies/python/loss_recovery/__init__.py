@@ -2,7 +2,7 @@
 
 Generic by construction: the trigger is "a primary trade lost", which every strategy here can
 state, so the engine is defined against the `LossEvent` protocol rather than any one strategy's
-Trade class. `mpc_sos_fade.execution.Trade` satisfies it as-is.
+Trade class. `sos_fade.execution.Trade` satisfies it as-is.
 
     from loss_recovery import LossRecoveryEngine, RecoveryConfig
 
@@ -65,5 +65,5 @@ LAB_STRATEGY = {
     # alphabetical list put a rule that cannot run alone beside four that can. The stack builder
     # still offers it under ANY ticked parent — `recovery_parent` is what decides that, and it is
     # read off the request, never from here.
-    "display_under": "mpc_sos_fade",
+    "display_under": "sos_fade",
 }

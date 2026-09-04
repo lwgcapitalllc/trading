@@ -70,7 +70,7 @@ class SetupSnapshot:
     ⚠ **`key` must be stable for the setup's whole life and unique across sides, strategies and
     bots.** It is the Telegram thread id AND the dedupe key, and both jobs fail differently if it
     moves: a changing key starts a new thread every bar, and a colliding one files two setups'
-    outcomes under one root. For `mpc_sos_fade` it is strategy + side + the SOS bar — the identity
+    outcomes under one root. For `sos_fade` it is strategy + side + the SOS bar — the identity
     `_MissWatch` already keys on.
 
     ⚠ **`zone` and `entry` answer different questions and neither substitutes for the other.**
@@ -198,8 +198,8 @@ def implements_contract(obj: object) -> bool:
     shape, and would swallow a genuine error inside a real implementation as "not implemented".
 
     🔴 **`reports_setups = False` opts a subclass OUT, and it exists because INHERITANCE CREATED
-    THE EXACT FAILURE THIS MODULE WARNS ABOUT.** `mpc_bleg` and `mpc_bos` subclass
-    `mpc_sos_fade`'s `Execution` and both set `_records_misses = False`, which is what populates
+    THE EXACT FAILURE THIS MODULE WARNS ABOUT.** `b_leg` and `bos` subclass
+    `sos_fade`'s `Execution` and both set `_records_misses = False`, which is what populates
     the setup context — so they inherited a `live_setups()` that returns `[]` on every bar
     forever. A method-presence check said True, the runner would have announced "Setup alerts: ON"
     for those bots, and the channel would have sent nothing: an empty registry answering

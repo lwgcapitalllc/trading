@@ -313,7 +313,7 @@ def test_the_shipped_template_loads(tmp_path, monkeypatch):
     template["account"] = 123
     (tmp_path / "b1" / "config.json").write_text(json.dumps(template))
     cfg = live_config.load("b1")
-    assert cfg.strategy_class == "MpcSosFadeStrategy"
+    assert cfg.strategy_class == "SosFadeStrategy"
     assert cfg.timeframe == "M15"
 
 

@@ -33,8 +33,8 @@ from backtest.setups import (
     SetupSnapshot,
 )
 
-STRAT, SYM = "MpcSosFadeStrategy", "XAUUSD.p"
-DISPLAY = "MPC SOS Fade"
+STRAT, SYM = "SosFadeStrategy", "XAUUSD.p"
+DISPLAY = "SOS Fade"
 
 
 def snap(**kw) -> SetupSnapshot:

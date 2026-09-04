@@ -1,8 +1,8 @@
 # BUG: exit fills at a price matching no stop or target — ✅ CLOSED
 
 **Status:** ✅ **FIXED AND VALIDATED 2026-08-01.** Root cause found, reproduced on real bars, fixed
-in all five strategy Pine files and in `strategies/python/mpc_sos_fade/execution.py` (which
-`mpc_bleg` reuses), **both parity gates exit 0 on full-history post-fix exports**, and the bug's
+in all five strategy Pine files and in `strategies/python/sos_fade/execution.py` (which
+`b_leg` reuses), **both parity gates exit 0 on full-history post-fix exports**, and the bug's
 fingerprint is measurably gone from the bars (4 affected entries → 0). 534 tests green.
 **Found:** 2026-07-14, on `VANTAGE_XAUUSD, 15m`, by eye off the price chart, by Aaron's brother.
 **Severity:** Medium — see *Blast radius*. It cost almost nothing in realised P&L; what it cost
@@ -23,7 +23,7 @@ never involved.
 >    this file, the next person who spots it re-opens a fixed bug.
 >
 > Delete it once the re-baselining is done AND the residue note has lived in
-> `strategies/python/mpc_sos_fade/CLAUDE.md` long enough to stand alone.
+> `strategies/python/sos_fade/CLAUDE.md` long enough to stand alone.
 
 ---
 
@@ -115,8 +115,8 @@ makes staging consistent with that rule instead of contradicting it.
 | `execution.py` `step_secondary` | same rule on the 1m sniper (`filled_dir is None`) |
 | `execution.py` `_open_position` | `_max_fav = fill_price`; excursion seeded **asymmetrically** |
 
-Pine files touched: `mpc_strategy`, `mpc_strategy_export`, `mpc_b_leg_strategy`,
-`mpc_b_leg_strategy_export`, `mpc_bos_strategy` — **four changed lines each, and ZERO new main-body
+Pine files touched: `sos_fade_strategy`, `sos_fade_strategy_export`, `b_leg_strategy`,
+`b_leg_strategy_export`, `bos_strategy` — **four changed lines each, and ZERO new main-body
 statements.** That last part is deliberate: this family already sits near Pine's statement cap
 (CE10295), which is why the gate is written as a bare `position_size[1]` condition rather than the
 helper bool it started as. Both export pairs re-diffed against their parents — identical up to the
@@ -304,7 +304,7 @@ Also see *Deliberately NOT done* above: the "a stop may never be placed through 
 would remove the residue, changes real behaviour, has to land in all five Pine files, and therefore
 needs its own change and its own measurement.
 
-The durable copy of this note lives in `strategies/python/mpc_sos_fade/CLAUDE.md` →
+The durable copy of this note lives in `strategies/python/sos_fade/CLAUDE.md` →
 `### Wrong-side stop fills`, and it is summarised in the root `CLAUDE.md` "Never Do" list.
 
 ---
@@ -316,8 +316,8 @@ The durable copy of this note lives in `strategies/python/mpc_sos_fade/CLAUDE.md
    lines plus the 5 exits that follow, across 3 trades, and **zero** divergence in `px_dec_bits` /
    `px_edge` / `px_entry_price` / `px_stages` — the fix never touched entry logic.
 2. **Re-baseline every published number.** 110.65R, Run 8's 43% → 53% run-capture, the whole
-   `mpc_sos_fade_optimization.md` log and both `backtest/archive/` snapshots were all measured
+   `sos_fade_optimization.md` log and both `backtest/archive/` snapshots were all measured
    through this bug. The exit-ladder conclusions are the most exposed: the bug kills trades one bar
    after entry, before the ladder ever engages.
-3. **`mpc_bos_strategy.pine`** got the same fix but has never been compiled or backtested, so
+3. **`bos_strategy.pine`** got the same fix but has never been compiled or backtested, so
    nothing there is validated either way.

@@ -1,7 +1,7 @@
 """cost_tiers.py — replay one strategy under several BROKER ACCOUNT TIERS and compare.
 
     python backtest/tools/cost_tiers.py
-    python backtest/tools/cost_tiers.py --strategy mpc_sos_fade --start 2020-01-01
+    python backtest/tools/cost_tiers.py --strategy sos_fade --start 2020-01-01
     python backtest/tools/cost_tiers.py --tier puprime_ecn --spread 0.12
 
 **Why this exists.** `docs/LIVE_TRADING_PIPELINE.md` → G5a answers "which PU Prime account type"
@@ -51,8 +51,8 @@ if str(_ROOT) not in sys.path:
 # Same registry shape as jitter_audit.py / overlap_audit.py / run_report.py — a package that
 # declares LAB_STRATEGY runs here for free. Keep them in step when a third Python strategy lands.
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
 }
 
 
@@ -119,7 +119,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--strategy", default="sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
     ap.add_argument(

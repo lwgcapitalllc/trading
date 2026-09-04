@@ -59,8 +59,8 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
 }
 
 # What would have to change for a miss of this code to become a trade. Reporting only — nothing
@@ -82,7 +82,7 @@ def _pct(n: int, total: int) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Setups that never traded, and the lever for each.")
-    ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--strategy", default="sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
     ap.add_argument("--start", default="2020-01-01")

@@ -215,7 +215,7 @@ def test_backfill_never_invents_a_platform_sharpe_for_python_runs(fresh_db, tmp_
 #
 # The metric answers "was the edge clustered in one window, or repeatable?". Weighted by dollars
 # it answers a different question on a compounding account: the last quarter must hold nearly all
-# the dollars however evenly the edge is spread, which is what made mpc_sos_fade d2ab68f9e884
+# the dollars however evenly the edge is spread, which is what made sos_fade d2ab68f9e884
 # read 88.9% ("edge clustered — overfit risk") on a run whose returns are spread.
 
 

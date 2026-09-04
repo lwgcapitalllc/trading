@@ -1,7 +1,7 @@
 """
 The price chart's session windows are the INDICATOR's, and they were not.
 
-🔴 Fixed 2026-08-08 (Aaron confirmed `mpc_assistant.pine` is the correct source). `chart_spec`
+🔴 Fixed 2026-08-08 (Aaron confirmed `mpc_jarvis.pine` is the correct source). `chart_spec`
 shaded Tokyo `09:00-15:00` and London `08:00-16:30` against the indicator's `09:00-18:00` and
 `08:00-17:00` — so two of the three session boxes on a backtest chart were SHORTER than the boxes
 on the TradingView chart the run is read against, and nothing on either screen said so. New York
@@ -48,7 +48,7 @@ def _hhmm(minute_of_day: int) -> str:
 
 def test_the_chart_windows_are_the_engines_windows():
     """🔴 The fix. Every shaded session on the price chart must span the window the canonical engine
-    tracks, because that engine is the port of `mpc_assistant.pine`'s session block — so a box on
+    tracks, because that engine is the port of `mpc_jarvis.pine`'s session block — so a box on
     this chart and a box on the TradingView chart describe the same hours.
 
     WATCHED RED against HEAD: reverting `_FX_SESSIONS` fails naming Tokyo (15:00 against 18:00) and

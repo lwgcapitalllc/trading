@@ -133,7 +133,7 @@ def test_the_message_carries_BOTH_numbers_on_every_side():
     """The broker's reading and the lab's are different questions and a reader acts on the
     second. Reporting only the move would leave "so what is being charged?" unanswered."""
     v = watch.assess(READING, {"long": -81.18, "short": 31.29}, LAB)
-    text = watch.summarise(v, "mpc_sos_fade_demo", "puprime_ecn")
+    text = watch.summarise(v, "sos_fade_demo", "puprime_ecn")
     assert "-80.54" in text and "+32.67" in text  # the broker now
     assert "-79.60" in text and "+30.25" in text  # what backtests charge
     assert "puprime_ecn" in text and "XAUUSD.p" in text
@@ -178,13 +178,13 @@ def test_a_missing_state_file_reads_as_NO_previous_reading(tmp_path):
 # is perfectly correct, the second turns the tool's own failure back into the silence it exists
 # to break.
 def test_the_account_profile_is_found_where_the_live_bot_actually_puts_it():
-    """🔴 MEASURED: it refused on `mpc_sos_fade_demo`'s own config, which plainly names a tier —
+    """🔴 MEASURED: it refused on `sos_fade_demo`'s own config, which plainly names a tier —
     the key sits under the strategy params, not at the top level. RED if only the top level is
     read. ⚠ Asserted against the REAL config on disk, not a fixture: a fixture would have been
     written to the shape I assumed, which is exactly how this shipped."""
     import broker_facts
 
-    cfg = broker_facts.load_instance("mpc_sos_fade_demo")
+    cfg = broker_facts.load_instance("sos_fade_demo")
     key = watch.profile_key_for(cfg)
     assert key == "puprime_ecn"
     assert watch.lab_swap(key)["long"] is not watch.UNMEASURED
@@ -205,7 +205,7 @@ def test_a_terminal_that_CANNOT_BE_READ_still_raises_the_alarm(monkeypatch):
 
     monkeypatch.setattr(watch, "read_live", cannot_attach)
 
-    rc = watch.main(["--bot", "mpc_sos_fade_demo"])
+    rc = watch.main(["--bot", "sos_fade_demo"])
     assert rc == 1, "a watch that cannot run must not report success"
     assert len(sent) == 1, "the failure was silent — the alarm cannot fire"
     assert "NOT RUNNING" in sent[0]
@@ -222,7 +222,7 @@ def test_an_ordinary_exception_still_raises_the_alarm(monkeypatch):
         watch, "read_live", lambda cfg: (_ for _ in ()).throw(RuntimeError("the terminal lied"))
     )
 
-    assert watch.main(["--bot", "mpc_sos_fade_demo"]) == 1
+    assert watch.main(["--bot", "sos_fade_demo"]) == 1
     assert len(sent) == 1 and "the terminal lied" in sent[0]
 
 

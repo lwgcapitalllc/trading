@@ -8,7 +8,7 @@ vs 10.0") and the live flag, not the dotted line the indicator draws.
 **Scope:** Wilder's RSI + strict RSI pivots + the regular-divergence rule + the live-confluence
 window only. No trading decisions, no structure detection (this engine is standalone — it reads
 price + RSI directly), no MT5 ops, no UI, no chart rendering (no lines, no labels, no colours).
-**Status:** BUILT + PARITY-VALIDATED — ported line-by-line from `mpc_assistant.pine`'s "RSI
+**Status:** BUILT + PARITY-VALIDATED — ported line-by-line from `mpc_jarvis.pine`'s "RSI
 DIVERGENCE" block, unit-tested (9 tests, green), and **100% Pine parity confirmed** on a real
 `VANTAGE_XAUUSD, 5m` export (`compare_rsi_div.py --warmup 1630`, exit 0, 9,830 bars — every field
 matched on all 8,200 warm bars — 2026-07-11, at the then-defaults divOS 30 / divOB 70). The one
@@ -28,7 +28,7 @@ STRICT extreme on the RIGHT (the last bar of an equal run is the pivot); this en
 (`_pivot_high_rsi` rejects if any LEFT bar is strictly higher OR any RIGHT bar is `>=` it, mirror for
 lows). Re-validated exit 0 on the 2026-07-19 16,639-bar grand export with ZERO tie exceptions remaining.
 Detection formula unchanged (parameterized threshold); only the default constant moved.
-**Pine:** ported from `indicators/engines/mpc_assistant.pine`'s RSI DIVERGENCE block (+ the `GRP_DIV`
+**Pine:** ported from `indicators/engines/mpc_jarvis.pine`'s RSI DIVERGENCE block (+ the `GRP_DIV`
 inputs); parity harness is `indicators/engines/rsi_div_export.pine`, diffed against this Python by
 `tools/compare_rsi_div.py`.
 **Last reviewed:** 2026-07-19 (built + unit-tested + Pine-parity-validated exit 0; pivot-tie bug fixed).
@@ -50,7 +50,7 @@ engines/rsi_divergence/
 └── exports/                 ← drop folder for the TradingView CSV (git-ignored)
 ```
 
-Pine source of truth: `mpc_assistant.pine`'s `GRP_DIV` inputs + the "RSI DIVERGENCE" compute block.
+Pine source of truth: `mpc_jarvis.pine`'s `GRP_DIV` inputs + the "RSI DIVERGENCE" compute block.
 Parity export build: `indicators/engines/rsi_div_export.pine`.
 
 ---
@@ -148,7 +148,7 @@ ev.pivot_high_rsi  # RSI pivot high confirmed THIS bar (Pine divPhRsi), else Non
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s RSI DIVERGENCE block back here line-by-line. Keep the
+- Port any change to `mpc_jarvis.pine`'s RSI DIVERGENCE block back here line-by-line. Keep the
   Wilder RSI (SMA-seeded RMA), the strict pivot window, the price anchor `low[pivot_len]` /
   `high[pivot_len]`, the divergence rule (direction + oversold/overbought gate), the compare-then-
   latch order and the `valid_bars` window exact — do not "clean up" or reorder them.
@@ -159,7 +159,7 @@ ev.pivot_high_rsi  # RSI pivot high confirmed THIS bar (Pine divPhRsi), else Non
 - Do not bake in colours, dotted lines, or labels — those are TradingView drawing concerns; this
   layer emits events.
 - Do not build a second RSI-divergence implementation elsewhere. This is the canonical one.
-- Do not let this engine or the RSI DIVERGENCE block in `mpc_assistant.pine` drift; re-run the parity
+- Do not let this engine or the RSI DIVERGENCE block in `mpc_jarvis.pine` drift; re-run the parity
   check after any change to either.
 - Do not trust this on live money until the Pine-parity export check below is green — it is green as
   of 2026-07-11; re-run it after any change to this engine or the mpc block.
@@ -183,7 +183,7 @@ pivots/divergences (its first-bar ages are 471 / 1902), so the cold-started Pyth
 once its Wilder RMA has settled and its own in-window divergences supersede Pine's off-window ones.
 The harness:
 
-1. `indicators/engines/rsi_div_export.pine` — the RSI DIVERGENCE compute block from `mpc_assistant.pine`
+1. `indicators/engines/rsi_div_export.pine` — the RSI DIVERGENCE compute block from `mpc_jarvis.pine`
    (drawing removed) + `plot()` columns: `px_div_rsi`, `px_div_pl` / `px_div_ph` (the confirmed RSI
    pivots), `px_div_bull` / `px_div_bear` (this-bar divergence pulses), `px_div_bull_active` /
    `px_div_bear_active` (the live flags), and `px_div_bull_age` / `px_div_bear_age` (bars since the
@@ -207,7 +207,7 @@ abs tolerance (default 1e-2) to absorb CSV rounding; the pulses, flags and ages 
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` RSI DIVERGENCE block + `GRP_DIV` inputs.
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` RSI DIVERGENCE block + `GRP_DIV` inputs.
 - Parity export build: `indicators/engines/rsi_div_export.pine`.
 - Consumer (not yet built): the A+ setup sequence — reads `bull_active` / `bear_active` as a
   confluence tag on its READY/EARLY row. See `docs/ENGINE_EXTRACTION_ROADMAP.md`.

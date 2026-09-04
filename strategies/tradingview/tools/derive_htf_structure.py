@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """derive_htf_structure.py — build the HTF instance of the structure state machine MECHANICALLY.
 
-`mpc_extreme_leg_strategy.pine` needs TWO instances of the external structure engine: one on the
+`extreme_leg_strategy.pine` needs TWO instances of the external structure engine: one on the
 chart's own bars (the 5-minute change of character that arms the trade) and one on 15-minute bars
 aggregated in code (the trend and the swing that is the target).
 
@@ -54,7 +54,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve()
 STRAT = HERE.parents[1]
-SOURCE = STRAT / "mpc_h4_sweep_strategy.pine"
+SOURCE = STRAT / "h4_sweep_strategy.pine"
 OUT = HERE.parent / "_derived_structure_15.pine"
 
 # The standardised block: the type declaration through the end of `method process`. Taken from the

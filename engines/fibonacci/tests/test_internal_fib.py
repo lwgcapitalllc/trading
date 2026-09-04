@@ -1,7 +1,7 @@
 """
 Hand-traced tests for the Internal fib state machine (the 4th fib, GRP_IFIB).
 
-These pin the ported Pine behaviour (mpc_assistant.pine's Internal Fib block): the fib seeds off an
+These pin the ported Pine behaviour (mpc_jarvis.pine's Internal Fib block): the fib seeds off an
 internal-structure leg (an iBOS/iSOS, delivered as the snapshot's ifib_seed_*), extends its moving
 anchor live, registers first touches on the same 0.618 gate as the other fibs (skipping the checks
 on any bar the moving anchor itself changed — Pine iFibExtChanged), and is wiped by ANY external

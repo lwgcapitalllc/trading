@@ -3,7 +3,7 @@ order_blocks/types.py — plain data containers for the order-block engine.
 
 No behavior lives here. Two kinds of container:
 
-  OrderBlock — one supply/demand zone. Mirrors mpc_assistant.pine's `OrderBlock` type (the
+  OrderBlock — one supply/demand zone. Mirrors mpc_jarvis.pine's `OrderBlock` type (the
     drawing-only `box bg` field is dropped; top / bottom / is_bullish / from_break / entered kept,
     plus provenance fields — origin_index, created_index, id — so a consumer can match a created OB
     to the bar it is later mitigated on).

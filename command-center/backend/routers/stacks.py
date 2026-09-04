@@ -109,7 +109,7 @@ def _leg_bar_value(req, strategy_id: str) -> int:
     """The frame THIS leg runs on: its own if the caller named one, else the stack's.
 
     🔴 Until 2026-09-03 there was no per-leg answer and every leg ran on the stack's ONE frame.
-    That is not a display fault: `mpc_extreme_leg` is measured on 5m and `mpc_sos_fade` on 15m,
+    That is not a display fault: `extreme_leg` is measured on 5m and `sos_fade` on 15m,
     so stacking them replayed one of the two on a frame nobody has ever measured it on, and the
     combined table read as a portfolio result. The form declares each leg's frame now; this is
     the one place that resolves it, so the history check, the reuse lookup, the stored row and

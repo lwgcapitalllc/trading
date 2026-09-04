@@ -4,7 +4,7 @@ fair_value_gaps/engine.py — the fair-value-gap state machine.
 One stateful streaming engine, fed one closed bar at a time (index + OHLC). It maintains the single
 live gap list and returns the gaps formed / mitigated / evicted on that bar.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine's FVG block ("FAIR VALUE GAPS — persist until
+Ported line-by-line from indicators/engines/mpc_jarvis.pine's FVG block ("FAIR VALUE GAPS — persist until
 mitigated"). The Pine keeps five parallel `var array` structures (fvgBoxes / fvgTops / fvgBots /
 fvgIsBull / fvgBorn) and runs two blocks each bar:
 
@@ -47,7 +47,7 @@ class FairValueGapEngine:
     """Streaming fair-value-gap detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_assistant.pine's default FVG settings: max_count = 8 gaps total, threshold_pct = 0.0
+    Mirrors mpc_jarvis.pine's default FVG settings: max_count = 8 gaps total, threshold_pct = 0.0
     (the sub-15m value the Pine uses — no minimum gap; on 15m+ the Pine passes 0.04), and
     require_close = False (the Pine default `fvgRequireClose`: the classic 3-candle FVG where bars A
     and C simply don't overlap; the middle-bar close-cleared check is OPTIONAL). Match these to the

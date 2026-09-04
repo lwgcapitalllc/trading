@@ -248,7 +248,7 @@ def test_the_reentry_fill_clock_matches_the_strategy_that_owns_it():
     root = Path(__file__).resolve().parents[3]
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    from strategies.python.mpc_sos_fade.config import SosFadeConfig
+    from strategies.python.sos_fade.config import SosFadeConfig
 
     spec = run_feeds.EXTRA_FEEDS[run_feeds.SECONDARY_FLAG]
     assert spec.default == SosFadeConfig().exec_sec_fill_tf_min

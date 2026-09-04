@@ -1,7 +1,7 @@
 # SMC Knowledge Base — Master Snapshot
 
 **What this is.** One self-contained reference for the entire SMC engine course *and* how it
-maps onto the MPC assistant indicator and this repo's build/backtest stack. Built so future
+maps onto the MPC JARVIS indicator and this repo's build/backtest stack. Built so future
 SMC questions can be answered from this file alone — no need to re-read `education/smc/`
 end to end. If a detail here needs the source, the pointer is in the [Source Map](#source-map).
 
@@ -30,7 +30,7 @@ chart; 1m = execution/timing; 5m = cross-check.** All session times below are **
 7. [Invalidation & overrides](#7--invalidation--overrides)
 8. [Risk model](#8--risk-model)
 9. [The backtested edge (the proof)](#9--the-backtested-edge-the-proof)
-10. [Mapping to the MPC assistant indicator](#10--mapping-to-the-mpc-assistant-indicator)
+10. [Mapping to the MPC JARVIS indicator](#10--mapping-to-the-mpc-assistant-indicator)
 11. [Build & backtest path](#11--build--backtest-path)
 12. [Source map](#source-map)
 
@@ -354,9 +354,9 @@ buffer**; **drop NY-sweep-Asia**. Low win rate is fine — the 6R average win ca
 
 ---
 
-## 10 — Mapping to the MPC assistant indicator
+## 10 — Mapping to the MPC JARVIS indicator
 
-The indicator (`indicators/engines/mpc_assistant.pine`) and its extracted `engines/` already detect **every
+The indicator (`indicators/engines/mpc_jarvis.pine`) and its extracted `engines/` already detect **every
 ingredient** these plays need. The course plays are essentially the indicator's existing **REV / A+ /
 CONT** sequences **+ session-window gating + bias/premium-discount gating**.
 
@@ -410,7 +410,7 @@ doesn't:**
 
 ## 11 — Build & backtest path
 
-**The scaffold already exists** — copy the `strategies/python/mpc_sos_fade/` pattern:
+**The scaffold already exists** — copy the `strategies/python/sos_fade/` pattern:
 1. A setup **state machine** (`sequence.py` / `signals.py`) that reads per-bar engine output.
 2. It consumes `backtest/replay/EngineStack.step(bar) → BarState` (structure, 4 fibs, FVG, RSI,
    liquidity, sessions).
@@ -453,11 +453,11 @@ most profit.
 | Backtest data synopsis | `education/smc/05-my-full-trading-strategy/transcripts/25-full-data-synopsis.txt` |
 | Risk management | `education/smc/03-risk-management/` |
 | Visual playbook (8 plays + 4 confluence categories) | `education/smc/playbooks/` (see its `README.md`) |
-| The indicator | `indicators/engines/mpc_assistant.pine`; strategy twin `strategies/tradingview/mpc_strategy.pine` |
+| The indicator | `indicators/engines/mpc_jarvis.pine`; strategy twin `strategies/tradingview/sos_fade_strategy.pine` |
 | Canonical detectors | `engines/*/` (each has its own `CLAUDE.md`) |
 | Per-bar strategy API | `backtest/replay/stack.py` (`EngineStack` / `BarState`) |
-| Existing setup-as-strategy template | `strategies/python/mpc_sos_fade/` |
-| Existing setups' Pine logic | `mpc_assistant.pine` REV/A+ ~L4070–4666; MTF `f_mtfStruct` ~L1425; sweep tag ~L4045 |
+| Existing setup-as-strategy template | `strategies/python/sos_fade/` |
+| Existing setups' Pine logic | `mpc_jarvis.pine` REV/A+ ~L4070–4666; MTF `f_mtfStruct` ~L1425; sweep tag ~L4045 |
 
 *Rebuild this file if the course library, the playbook, or the indicator's setup logic changes
 materially.*

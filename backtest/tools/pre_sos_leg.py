@@ -35,7 +35,7 @@ too, so the EDGE is unaffected while the absolute expectancy is the low end.
 
 🔴 THE ARMING RULE HERE IS SLIGHTLY LOOSER THAN THE ONE THE STRATEGY SHIPS, MEASURED 2026-09-01,
 AND EVERY NUMBER THIS TOOL HAS PRODUCED CARRIES IT. Two differences, both in when a sweep counts
-as fresh, both found by diffing this tool against `strategies/tradingview/mpc_extreme_leg_strategy.pine`:
+as fresh, both found by diffing this tool against `strategies/tradingview/extreme_leg_strategy.pine`:
 
   1. WHEN THE SWEEP IS STAMPED. This tool feeds the liquidity engine the BASE frame and dates a
      sweep at that bar's CLOSE (see `replay_base`), so a level taken early in a 15-minute candle is
@@ -50,7 +50,7 @@ as fresh, both found by diffing this tool against `strategies/tradingview/mpc_ex
 ⚠ NEITHER INVALIDATES A RESULT AND BOTH CHANGE WHAT ONE DESCRIBES. The grid, the timeframe answer,
 the two filters and the cost bill were all taken through this tool, so they describe an arming rule
 marginally looser than the file being traded. The thing that settles it is the parity gate on the
-port (`strategies/python/mpc_extreme_leg/tools/compare_extreme_leg.py`), not another run of this.
+port (`strategies/python/extreme_leg/tools/compare_extreme_leg.py`), not another run of this.
 ⚠ DO NOT "FIX" THIS TOOL TO MATCH. Changing it silently re-bases every number already recorded
 against it, and a study is allowed to be a study — what it may not be is undocumented.
 

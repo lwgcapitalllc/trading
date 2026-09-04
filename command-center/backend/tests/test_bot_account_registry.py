@@ -374,7 +374,7 @@ def test_unregistering_an_account_a_bot_still_trades_is_REFUSED(client, registry
         kind="account",
         bots=[
             ba.AccountBot(
-                key="mpc_sos_fade_demo",
+                key="sos_fade_demo",
                 display="A",
                 symbol="XAUUSD.p",
                 magic=1,
@@ -386,7 +386,7 @@ def test_unregistering_an_account_a_bot_still_trades_is_REFUSED(client, registry
 
     r = client.delete("/bots/accounts/registry/700152905")
     assert r.status_code == 409
-    assert "mpc_sos_fade_demo" in r.json()["detail"]
+    assert "sos_fade_demo" in r.json()["detail"]
     assert reg.account_by_number(registry, 700152905) is not None
 
 
@@ -411,6 +411,6 @@ def test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED(
     monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: set())
 
-    r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700152905, "deploy": False})
+    r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})
     assert r.status_code == 409
     assert "password" in r.json()["detail"].lower()

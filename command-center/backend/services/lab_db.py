@@ -24,7 +24,7 @@ def _restamp_profit_concentration(conn: sqlite3.Connection) -> None:
 
     Until 2026-07-31 the metric weighted each day by DOLLARS, which on a compounding account
     measures the growth rather than the clustering it exists to detect: the final quarter holds
-    nearly all the dollars however evenly the edge is spread. mpc_sos_fade run d2ab68f9e884 was
+    nearly all the dollars however evenly the edge is spread. sos_fade run d2ab68f9e884 was
     stored at 88.94% ("edge clustered — overfit risk") and is 40.0% on the return basis. Fixed at
     the source in services/metrics.profit_concentration_pct, but the figure is STORED, so every
     existing row keeps the stale number without this.
@@ -345,7 +345,7 @@ def init_db() -> None:
             "ALTER TABLE strategies ADD COLUMN avoid_news INTEGER NOT NULL DEFAULT 0",
             # Who decides position size. 0 (default) = the strategy proposes UNIT-size trades and
             # the dynamic sizing engine sizes them per ruleset (ORB, LondonBreakout — the gated
-            # layer). 1 = the strategy sizes itself off its own risk % (mpc_sos_fade), so the
+            # layer). 1 = the strategy sizes itself off its own risk % (sos_fade), so the
             # engine must NOT re-size it: doing so throws the strategy's real size away and leaves
             # the KPI cards disagreeing with the equity chart on the same page.
             "ALTER TABLE strategies ADD COLUMN self_sizing INTEGER NOT NULL DEFAULT 0",
@@ -362,7 +362,7 @@ def init_db() -> None:
             # 🔴 Can this strategy price the spread by MOVING THE FILL, or only as a flat charge?
             # 1 (default) = it models bid/ask fills, which is what "costs ON" charges. 0 = it
             # prices the spread as a flat round-trip fee and refuses a moved-fill profile at
-            # construction, so a charged run would die mid-job (`mpc_extreme_leg`). The cost
+            # construction, so a charged run would die mid-job (`extreme_leg`). The cost
             # resolver reads this and charges that strategy the FLAT spread instead — same three
             # costs billed, one of them modelled the other way — because the alternative shipped
             # for a week was a strategy that could not be run charged AT ALL while the switch

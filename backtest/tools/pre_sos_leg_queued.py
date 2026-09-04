@@ -3,7 +3,7 @@
 
 WHY THIS EXISTS. `pre_sos_leg.py` says so in its own docstring: it is a study, not a
 backtest, with "no position slot, no queueing". It scores every setup it finds, each on
-its own, as though the account could hold all of them at once. `mpc_extreme_leg_strategy.pine`
+its own, as though the account could hold all of them at once. `extreme_leg_strategy.pine`
 holds exactly one. So the study's setup count is an UPPER BOUND on what the strategy can
 take, and the study's expectancy is an average over trades some of which the strategy is
 never in a position to enter.

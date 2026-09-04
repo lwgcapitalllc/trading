@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bos_sweep.py — measure mpc_bos_strategy.pine over the full bar cache.
+"""bos_sweep.py — measure bos_strategy.pine over the full bar cache.
 
 🔴 FALSIFIED 2026-08-07, THE DAY IT WAS WRITTEN. DO NOT QUOTE ITS NUMBERS.
 
@@ -18,21 +18,21 @@ stop, the structure trail, or how the position leaves at TP3.
 
 It is kept because the METHOD is sound and reusable and fixing it is cheaper than rewriting it.
 Every result HERE is still unverified, and the 2026-08-07 parity green does NOT change that.
-`strategies/python/mpc_bos/tools/compare_bos.py` now exits 0 against a real export — but it
-validates `strategies/python/mpc_bos/`, which is a DIFFERENT implementation from this file's
+`strategies/python/bos/tools/compare_bos.py` now exits 0 against a real export — but it
+validates `strategies/python/bos/`, which is a DIFFERENT implementation from this file's
 model. Nothing has re-checked this tool since the Strategy Tester falsified it. Use the ported
 strategy for anything that has to be right. (This line named `backtest/tools/compare_bos.py`
 until 2026-08-07; a parity harness belongs to the STRATEGY, beside `compare_strategy.py` and
 `compare_bleg.py`, not to this package.)
-Full record: docs/MPC_BOS_OPTIMIZATION.md -> Run 8.
+Full record: docs/BOS_OPTIMIZATION.md -> Run 8.
 
 ⚠ The docstring below already said this was a MODEL rather than the strategy. That was true, it
 was not enough, and the reason is worth carrying: a table of numbers reads as a finding no matter
 what sentence sits under it. The check that falsified this was ONE Strategy Tester run.
 
 
-This is the tool that chose the defaults `strategies/tradingview/mpc_bos_strategy.pine` ships with today
-(2026-08-07, Run 7 in `docs/MPC_BOS_OPTIMIZATION.md`). It exists so that answer is reproducible
+This is the tool that chose the defaults `strategies/tradingview/bos_strategy.pine` ships with today
+(2026-08-07, Run 7 in `docs/BOS_OPTIMIZATION.md`). It exists so that answer is reproducible
 rather than asserted.
 
     python backtest/tools/bos_sweep.py sensitivity   # one lever at a time from the shipped config
@@ -427,7 +427,7 @@ SHIPPED = dict(
     min_stop_pct=0.10,
 )
 
-# what `mpc_bos_strategy.pine` shipped before Run 7, kept so the improvement stays checkable
+# what `bos_strategy.pine` shipped before Run 7, kept so the improvement stays checkable
 PRE_RUN7 = dict(SHIPPED, stop="1.0", min_stop_pct=0.0)
 
 RISK = 0.10

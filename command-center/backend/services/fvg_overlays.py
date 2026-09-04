@@ -22,18 +22,18 @@ The anchors come straight off the spec (`trades[].entryTime`, `blocks[].time`, `
 this module knows nothing about what a trade or a block IS. Give it different anchors and it draws
 gaps at those instead.
 
-THE GAPS ARE mpc_assistant.pine's, NOT THE STRATEGY'S
+THE GAPS ARE mpc_jarvis.pine's, NOT THE STRATEGY'S
 ----------------------------------------------------
-The settings below mirror `indicators/engines/mpc_assistant.pine` — the indicator the charts are read
-against — locked constants, not panel inputs (`mpc_assistant.pine:407-414`, `:420-423`):
+The settings below mirror `indicators/engines/mpc_jarvis.pine` — the indicator the charts are read
+against — locked constants, not panel inputs (`mpc_jarvis.pine:407-414`, `:420-423`):
 
     fvgMaxCount      = 8
     fvgRequireClose  = false
     fvgThreshPct     = timeframe.in_seconds() < 900 ? 0.0 : 0.04     ← timeframe-SPLIT
     eqExemptFvg      = true   (eqPivotLen 2, eqAtrMult 0.1, eqMax 6)
 
-⚠ **`mpc_strategy.pine` — and therefore the Python bots — run a DIFFERENT set.**
-`strategies/python/mpc_sos_fade/strategy.py` pins `fvg_max_count=7, fvg_require_close=True,
+⚠ **`sos_fade_strategy.pine` — and therefore the Python bots — run a DIFFERENT set.**
+`strategies/python/sos_fade/strategy.py` pins `fvg_max_count=7, fvg_require_close=True,
 fvg_threshold_pct=0.1`, because the strategy file hardcodes the middle-bar close check and carries
 its own count. So a gap drawn here is a gap **the indicator shows**, which is not always a gap the
 bot's entry rule counted (the bot sees strictly fewer: `require_close` only ever removes gaps, and
@@ -68,7 +68,7 @@ if str(_ENGINES) not in sys.path:
 # toggle into the Analysis dropdown and defaults it OFF).
 GROUP_FVG = "Fair Value Gaps"
 
-# ── mpc_assistant.pine's locked FVG + EQ constants (mpc_assistant.pine:407-414, :420-423) ──
+# ── mpc_jarvis.pine's locked FVG + EQ constants (mpc_jarvis.pine:407-414, :420-423) ──
 MPC_MAX_COUNT = 8  # fvgMaxCount
 MPC_REQUIRE_CLOSE = False  # fvgRequireClose
 MPC_THRESH_LTF = 0.0  # fvgThreshLTF — below 15m
@@ -99,7 +99,7 @@ _TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1"
 
 
 def mpc_threshold_pct(timeframe: str) -> float:
-    """The minimum-gap floor mpc_assistant would run on this timeframe.
+    """The minimum-gap floor mpc_jarvis would run on this timeframe.
 
     `fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF` — 0.0 below 15m,
     0.04 at 15m and above. An unrecognised timeframe falls to the HTF branch: over-filtering drops a
@@ -149,7 +149,7 @@ def build_fvg_overlays(
     trade-entry / blocked / missed timestamps. `timeframe` picks mpc's timeframe-split gap floor.
 
     The keyword arguments exist so a parity test can replay an export whose Pine build ran different
-    settings; production callers pass none of them and get mpc_assistant's. Returns a list of
+    settings; production callers pass none of them and get mpc_jarvis's. Returns a list of
     ChartOverlay `box` dicts, all in one group. Best-effort: any failure returns [] so the rest of
     the chart still renders.
     """

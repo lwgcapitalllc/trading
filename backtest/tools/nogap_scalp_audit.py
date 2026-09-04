@@ -76,7 +76,7 @@ if _FIB not in sys.path:
 
 from geometry import fib_level  # noqa: E402
 
-from strategies.python.mpc_sos_fade.execution import (  # noqa: E402
+from strategies.python.sos_fade.execution import (  # noqa: E402
     _intrabar_targets_first,
 )
 
@@ -167,7 +167,7 @@ def collect(df, warmup: int, blocks: dict, verbose: bool = True):
     die on the same bar, so anything hooked to the open/close pair loses the geometry for exactly
     the fastest setups — the ones a short-hold variant most wants to see.
     """
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     cfg = LAB_STRATEGY["config"](fill_model="bar", symbol="XAUUSD", exec_secondary=False)
     strat = LAB_STRATEGY["strategy"](config=cfg, initial_capital=10_000.0)
@@ -205,7 +205,7 @@ def collect(df, warmup: int, blocks: dict, verbose: bool = True):
 
     ex._record_misses = _hooked
     if verbose:
-        print(f"replaying mpc_sos_fade at shipped settings (warmup {warmup}) ...", flush=True)
+        print(f"replaying sos_fade at shipped settings (warmup {warmup}) ...", flush=True)
     strat.run(df, warmup=warmup)
 
     setups, no_geo = [], 0
@@ -243,7 +243,7 @@ def collect_blocks(df, warmup: int, verbose: bool = True) -> dict:
 
     🔴 **It needs its own replay and that is the whole point of this function.** The order-block
     engine is only built into the stack when the strategy's point-of-interest setting asks for
-    something other than gaps (`MpcSosFadeStrategy._engine_config`), and the shipped setting asks
+    something other than gaps (`SosFadeStrategy._engine_config`), and the shipped setting asks
     for gaps — so at shipped settings `obs_available` is False on every one of the 155,807 bars
     and every "is there a block here" question comes back False. MEASURED before this existed:
     the first version of this audit reported "no order block in the zone on any of the 146
@@ -256,7 +256,7 @@ def collect_blocks(df, warmup: int, verbose: bool = True) -> dict:
     Neither is downstream of which point of interest an entry rests on. What DOES move is the
     trade list — so nothing from this replay is used except where the blocks were.
     """
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     cfg = LAB_STRATEGY["config"](
         fill_model="bar", symbol="XAUUSD", exec_secondary=False, exec_poi_source="Either"

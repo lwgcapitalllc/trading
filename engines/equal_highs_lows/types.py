@@ -6,7 +6,7 @@ No behavior lives here. Two kinds of container:
   EqLevel — one active equal-highs (EQH) or equal-lows (EQL) level: the horizontal price a pair of
     near-equal consecutive swing pivots print, marking a stacked liquidity pool (EQH = buy-side
     resting above; EQL = sell-side below). Mirrors the line the Pine draws from the FIRST pivot
-    (`eqPrev*Bar`) rightward until price CLOSES through it, in mpc_assistant.pine's "EQUAL HIGHS /
+    (`eqPrev*Bar`) rightward until price CLOSES through it, in mpc_jarvis.pine's "EQUAL HIGHS /
     LOWS" block; the drawing-only `line`/`label` handles are dropped. The level PRICE is the outer of
     the two pivots — `max` of the two highs for an EQH, `min` of the two lows for an EQL.
 

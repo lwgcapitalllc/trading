@@ -156,7 +156,7 @@ def test_a_bearish_turn_draws_its_own_block():
 def test_the_box_is_a_fixed_stub_running_forward_from_the_anchor_candle():
     """`left = origin`, `right = origin + OB_STUB`. This is the rule that most obviously differs
     from the gap layer, where a box tracks the live bar: an order block is a fixed-width zone by
-    construction (mpc_assistant.pine:170-181), which is what makes a set of them scan as one family
+    construction (mpc_jarvis.pine:170-181), which is what makes a set of them scan as one family
     of levels rather than a ragged row."""
     ((left, right),) = _spans(build_ob_overlays(_FEED, [50 * BAR_MS])).values()
     assert (left, right) == (_ORIGIN, _ORIGIN + 30)
@@ -197,7 +197,7 @@ def test_the_box_is_clamped_to_the_last_candle():
     assert right == n - 1
 
 
-# ── The settings are mpc_assistant's ─────────────────────────────────────────
+# ── The settings are mpc_jarvis's ─────────────────────────────────────────
 
 
 def test_the_style_is_mpcs_orange_outline_with_the_OB_tag():

@@ -25,11 +25,11 @@ created **2,567** blocks and **579** of them were live at an anchor. So the filt
 work here as it does for gaps (655 boxes from 215 anchor bars there), and the two layers together sit
 at a readable ~1,200 boxes instead of ~3,200.
 
-THE BLOCKS ARE mpc_assistant.pine's — AND HERE THERE IS NO FORK
+THE BLOCKS ARE mpc_jarvis.pine's — AND HERE THERE IS NO FORK
 --------------------------------------------------------------
 Unlike the fair value gaps, this needs no "the bot ran different settings" warning: the strategy
-files DROPPED order blocks entirely on 2026-07-24/25, so `mpc_assistant.pine` is the only source and
-the engine defaults ARE its constants. Nothing in `mpc_sos_fade` reads a block, which also means a
+files DROPPED order blocks entirely on 2026-07-24/25, so `mpc_jarvis.pine` is the only source and
+the engine defaults ARE its constants. Nothing in `sos_fade` reads a block, which also means a
 drawn block never explains an entry — it is context the reader brings, not a rule the bot applied.
 
 The one Pine input deliberately not modelled is `obDirOnly` ("Trend-Aligned Zones Only", default
@@ -68,12 +68,12 @@ if str(_ENGINES) not in sys.path:
 # toggle into the Analysis dropdown and defaults it OFF).
 GROUP_OB = "Order Blocks"
 
-# ── mpc_assistant.pine's locked OB drawing constants (mpc_assistant.pine:140-183) ──
+# ── mpc_jarvis.pine's locked OB drawing constants (mpc_jarvis.pine:140-183) ──
 MPC_OB_STUB = 30  # OB_STUB — the box's minimum width in bars
 
 # One deep orange for BOTH directions — `OB_ACCENT #E65100`, drawn as an OUTLINE with a whisper of
 # fill (`colBullOB`/`colBearOB` = 94% transparent, `OB_EDGE` = 25%). The blue/red directional
-# experiment was tried and REVERTED (mpc_assistant.pine:140-143), so bull and bear look identical
+# experiment was tried and REVERTED (mpc_jarvis.pine:140-143), so bull and bear look identical
 # here exactly as they do on the indicator; the "OB" tag is what names the shape. That also keeps
 # this layer visually distinct from the borderless grey FVG boxes sitting beside it.
 _FILL = "rgba(230,81,0,0.06)"
@@ -123,7 +123,7 @@ def build_ob_overlays(
     every OB constant is bar-counted or ATR-relative, so the engine needs no per-timeframe branch.
 
     `stub_bars` and `**engine_kwargs` exist so a parity test can replay an export whose Pine build
-    ran different settings; production callers pass neither and get mpc_assistant's. Returns a list
+    ran different settings; production callers pass neither and get mpc_jarvis's. Returns a list
     of ChartOverlay `box` dicts, all in one group. Best-effort: any failure returns [] so the rest of
     the chart still renders.
     """

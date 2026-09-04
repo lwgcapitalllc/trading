@@ -613,7 +613,7 @@ def test_a_shared_account_and_a_ceiling_together_are_REFUSED():
 
 def test_a_solo_ceiling_does_not_RENAME_the_leg():
     """🔴 The quiet one. Passing an account used to force the leg key to the CLASS NAME, so
-    stating a ceiling would have re-filed every trade under 'MpcSosFadeStrategy' instead of the
+    stating a ceiling would have re-filed every trade under 'SosFadeStrategy' instead of the
     strategy's own default — changing recorded output for a setting that is about size.
     RED on restoring `kwargs['leg'] = leg or strategy_cls.__name__`."""
     built = build_strategy(_FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0, max_lots=5.0)

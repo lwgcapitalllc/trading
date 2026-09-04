@@ -30,7 +30,7 @@ early year look like a broken edge when it was the same edge on a smaller accoun
 Usage:
     python backtest/tools/run_report.py                       # XAUUSD 15m, full broker history
     python backtest/tools/run_report.py --start 2022-05-09 --end 2026-07-25
-    python backtest/tools/run_report.py --strategy mpc_bleg --out /tmp/bleg
+    python backtest/tools/run_report.py --strategy b_leg --out /tmp/bleg
 """
 
 from __future__ import annotations
@@ -56,9 +56,9 @@ NY = ZoneInfo("America/New_York")
 # (the lab's own contract), so we read the class + config from there rather than
 # hardcoding either — a new Python strategy becomes runnable here for free.
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
-    "mpc_realign": "strategies.python.mpc_realign",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
+    "realign": "strategies.python.realign",
 }
 
 
@@ -313,7 +313,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--strategy", default="sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15", help="target timeframe in minutes")
     ap.add_argument(
@@ -412,14 +412,14 @@ def main(argv=None) -> int:
     # ── which REPLAY PATH ────────────────────────────────────────────────────────
     # 🔴 `exec_secondary` fills and manages on real 1m bars through `run_dual(df15, df1m)`.
     # `run(df15)` cannot execute one no matter what the flag says, and until 2026-08-16 this
-    # tool always called `run()` — so every run it has ever produced for `mpc_sos_fade` was
+    # tool always called `run()` — so every run it has ever produced for `sos_fade` was
     # primary-only while the config said `exec_secondary=True` (its DEFAULT). It printed
     # "override exec_secondary = True" and exited 0. MEASURED on full history, 2018-09-14 →
     # 2026-08-14: the dual path books 8 secondary trades worth +25.5R that the 15m-only path
     # cannot see (189 trades / 164.4R vs 182 / 140.0R).
     #
     # ⚠ THIS MOVES DOCUMENTED BASELINES. Any figure in
-    # `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` produced by this tool at
+    # `strategies/python/sos_fade/sos_fade_optimization.md` produced by this tool at
     # the default config is a PRIMARY-ONLY number. They are not wrong as a matched set — every
     # combo in a sweep was missing the secondary equally, so the RANKINGS stand — but the
     # absolute totals understate. Re-run before quoting one as this bot's result.

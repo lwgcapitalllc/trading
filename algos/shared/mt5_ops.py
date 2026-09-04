@@ -31,7 +31,7 @@ CLASS BotMT5:
         partial_close(ticket, lots, direction) — True / False / UNKNOWN; REFUSES a size the
                                   broker cannot express exactly, never rounds it to fit
 
-    Order execution — pending / resting limits (the MPC strategies enter this way):
+    Order execution — pending / resting limits (the strategies enter this way):
         place_pending_limit(dir, lots, price, sl, tp, comment)
         modify_pending(ticket, price, sl, tp)   — price/SL/TP only, NEVER volume
         cancel_pending(ticket) / cancel_all_pending()
@@ -464,7 +464,7 @@ class BotMT5:
     # ── Pending (resting limit) orders ────────────────────────────────────────
     #
     # Added 2026-07-30 for the live runner. `place_order` above sends a MARKET order, which is
-    # all the first bot suite ever needed — but the MPC strategies enter on a RESTING LIMIT at a
+    # all the first bot suite ever needed — but the strategies enter on a RESTING LIMIT at a
     # fib/FVG edge, and a market order at signal time is a different trade entirely (it pays the
     # spread at the wrong price and fills where the strategy never wanted to be).
     #

@@ -20,7 +20,7 @@ def _cfg(key, *, account=700107749, magic=770115, cap=None, risk=10.0, name=None
         "server": "PUPrime-Demo",
         "symbol": "XAUUSD.s",
         "magic": magic,
-        "strategy_package": "mpc_sos_fade",
+        "strategy_package": "sos_fade",
         "account_risk_cap_pct": cap,
         "strategy_params": {"exec_risk_pct": risk},
     }
@@ -318,7 +318,7 @@ def test_moving_a_bot_to_an_account_nobody_trades_is_a_404(client, monkeypatch):
     from routers import bots as bots_router
 
     monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
-    r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 999999})
+    r = client.patch("/bots/b_leg_demo/account", json={"account": 999999})
     assert r.status_code == 404
 
 
@@ -333,7 +333,7 @@ def test_a_RUNNING_bot_refuses_to_be_moved(client, monkeypatch):
     from routers import bots as bots_router
 
     monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: True)
-    r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700107749})
+    r = client.patch("/bots/b_leg_demo/account", json={"account": 700107749})
     assert r.status_code == 409
     assert "running" in r.json()["detail"]
 
@@ -472,7 +472,7 @@ def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeyp
         "_account_groups",
         lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=10.0)],
     )
-    r = client.patch("/bots/mpc_bleg_demo/account", json={"account": 700152905, "deploy": False})
+    r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})
     assert r.status_code == 409
     assert "add up to" in r.json()["detail"]
 
@@ -485,10 +485,10 @@ def test_RAISING_a_bots_own_risk_past_the_room_left_is_refused(client, monkeypat
     monkeypatch.setattr(
         bots_router,
         "_account_groups",
-        lambda: [_group(_bot("mpc_sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
+        lambda: [_group(_bot("sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
     )
     r = client.patch(
-        "/bots/mpc_sos_fade_demo/runtime",
+        "/bots/sos_fade_demo/runtime",
         json={"values": {"exec_risk_pct": 9.0}, "deploy": False},
     )
     assert r.status_code == 409
@@ -503,7 +503,7 @@ def test_LOWERING_a_bots_own_risk_is_always_allowed(client, monkeypatch):
     monkeypatch.setattr(
         bots_router,
         "_account_groups",
-        lambda: [_group(_bot("mpc_sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
+        lambda: [_group(_bot("sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
     )
     # Stopped before the write: this test is about the CHECK not firing, and letting it
     # through would edit the LIVE bot's own config on the machine running the suite.
@@ -512,8 +512,8 @@ def test_LOWERING_a_bots_own_risk_is_always_allowed(client, monkeypatch):
         bots_router, "_write_instance_config", lambda key, data: written.append(key)
     )
     r = client.patch(
-        "/bots/mpc_sos_fade_demo/runtime",
+        "/bots/sos_fade_demo/runtime",
         json={"values": {"exec_risk_pct": 2.0}, "deploy": False},
     )
-    assert written == ["mpc_sos_fade_demo"], "it should have reached the write"
+    assert written == ["sos_fade_demo"], "it should have reached the write"
     assert "add up to" not in str(r.json().get("detail", ""))

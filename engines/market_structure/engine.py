@@ -295,7 +295,7 @@ class StructureEngine:
 
     # Live pullback state — surfaces st.pb_mode / st.pb_extreme / st.pb_extreme_loc so a
     # consumer (the Structure fib) can follow the in-progress pullback extreme exactly as
-    # mpc_assistant.pine does (fibo_ash := st.pb_extreme while pb_mode == 1, etc.). These are
+    # mpc_jarvis.pine does (fibo_ash := st.pb_extreme while pb_mode == 1, etc.). These are
     # read-only getters over existing state — no behavior change to the state machine.
     @property
     def pullback_mode(self) -> int:
@@ -893,7 +893,7 @@ class StructureEngine:
                 # Neither an active pullback high nor a confirmed ASH was available to
                 # promote — use the actual highest point since the last confirmed low so a
                 # genuine swing high still gets confirmed instead of silently vanishing.
-                # Pine: mpc_assistant.pine lines 777-787 / structure_engine.pine else-branch.
+                # Pine: mpc_jarvis.pine lines 777-787 / structure_engine.pine else-branch.
                 if highest_val != st.last_conf_high:
                     fallback_is_hh = st.last_conf_high is None or highest_val >= st.last_conf_high
                     st.broken_high_label = "HH" if fallback_is_hh else "LH"
@@ -1066,7 +1066,7 @@ class StructureEngine:
                     events.new_swing_high_price = ist.sw_price
                     events.new_swing_high_index = ist.sw_loc
                     # Capture the confirmed internal high for the External fib's anchor adoption
-                    # (Pine i_confirmed_high_price/loc, mpc_assistant.pine 1299-1300).
+                    # (Pine i_confirmed_high_price/loc, mpc_jarvis.pine 1299-1300).
                     events.i_confirmed_high_price = ist.sw_price
                     events.i_confirmed_high_loc = ist.sw_loc
                     ist.mode = 0
@@ -1117,7 +1117,7 @@ class StructureEngine:
                     events.new_swing_low_price = ist.sw_price
                     events.new_swing_low_index = ist.sw_loc
                     # Capture the confirmed internal low for the External fib's anchor adoption
-                    # (Pine i_confirmed_low_price/loc, mpc_assistant.pine 1349-1350).
+                    # (Pine i_confirmed_low_price/loc, mpc_jarvis.pine 1349-1350).
                     events.i_confirmed_low_price = ist.sw_price
                     events.i_confirmed_low_loc = ist.sw_loc
                     ist.mode = 0
@@ -1155,7 +1155,7 @@ class StructureEngine:
                     events.demoted_low_index = ist.tracked_ext_loc
 
                 # Internal-fib seed — bull iBOS: bottom = i_last_hl (just set), top = the high
-                # broken (i_sw_price), dir 1 (mpc_assistant.pine 1400-1403).
+                # broken (i_sw_price), dir 1 (mpc_jarvis.pine 1400-1403).
                 if ist.last_hl is not None and ist.sw_price is not None:
                     events.ifib_seed_dir = 1
                     events.ifib_seed_asl = ist.last_hl
@@ -1195,7 +1195,7 @@ class StructureEngine:
                     events.demoted_high_index = ist.tracked_ext_loc
 
                 # Internal-fib seed — bear iBOS: bottom = the low broken (i_sw_price), top =
-                # i_last_lh (just set), dir -1 (mpc_assistant.pine 1442-1445).
+                # i_last_lh (just set), dir -1 (mpc_jarvis.pine 1442-1445).
                 if ist.sw_price is not None and ist.last_lh is not None:
                     events.ifib_seed_dir = -1
                     events.ifib_seed_asl = ist.sw_price
@@ -1237,7 +1237,7 @@ class StructureEngine:
                 events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 # Internal-fib seed — bear iSOS: bottom = the watched extreme (i_tracked_ext),
-                # top = i_sw_price (the iLH confirmed as ASH), dir -1 (mpc_assistant.pine 1486-1489).
+                # top = i_sw_price (the iLH confirmed as ASH), dir -1 (mpc_jarvis.pine 1486-1489).
                 if ist.tracked_ext is not None and ist.sw_price is not None:
                     events.ifib_seed_dir = -1
                     events.ifib_seed_asl = ist.tracked_ext
@@ -1275,7 +1275,7 @@ class StructureEngine:
                 events.int_break_origin_loc = ist.sw_loc  # Pine := i_sw_loc (pre-reset)
 
                 # Internal-fib seed — bull iSOS: bottom = i_sw_price (the iHL), top = the iLH
-                # being broken (i_last_lh), dir 1 (mpc_assistant.pine 1525-1528).
+                # being broken (i_last_lh), dir 1 (mpc_jarvis.pine 1525-1528).
                 if ist.sw_price is not None and ist.last_lh is not None:
                     events.ifib_seed_dir = 1
                     events.ifib_seed_asl = ist.sw_price

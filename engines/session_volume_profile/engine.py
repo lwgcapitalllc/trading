@@ -4,7 +4,7 @@ session_volume_profile/engine.py — the Session Volume Profile (SVP) / Asia POC
 One stateful streaming engine, fed one closed bar at a time (index + UTC timestamp + high/low/close/
 open + volume), returning that bar's SVP EVENTS: the current Asia POC price, whether a fresh POC
 formed on this bar, and the MV confirmation (has price tapped the POC since it formed). Ported
-line-by-line from the SESSION VOLUME PROFILE block in indicators/engines/mpc_assistant.pine (line ~2554) plus
+line-by-line from the SESSION VOLUME PROFILE block in indicators/engines/mpc_jarvis.pine (line ~2554) plus
 its confirmation-table "MV slot" (line ~2772).
 
 What a Session Volume Profile is

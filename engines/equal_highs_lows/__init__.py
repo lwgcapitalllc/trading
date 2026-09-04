@@ -7,7 +7,7 @@ liquidity resting above; EQL = sell-side below) and lives until price CLOSES thr
 and price-driven — no upstream engine, no volume, no timestamp; a sibling of `fair_value_gaps` and
 `rsi_divergence`. Events, not visuals: the dotted line/label the indicator draws is out of scope.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine's "EQUAL HIGHS / LOWS" block. This is the one
+Ported line-by-line from indicators/engines/mpc_jarvis.pine's "EQUAL HIGHS / LOWS" block. This is the one
 canonical implementation — no consumer builds its own.
 
     from equal_highs_lows import EqualHighsLowsEngine

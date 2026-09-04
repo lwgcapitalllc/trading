@@ -19,9 +19,9 @@ Measured 2026-08-06: `exec_time_stop_mode` was flipped `"Off"` → `"Before TP1 
 
 **The fix is to make the two halves read the same thing: drop the cached modules, then import.**
 
-⚠ **Purge the whole `strategies.python` namespace, never one package.** `mpc_bleg` imports
-`mpc_sos_fade`'s execution module, and packages are scanned in alphabetical order — so purging one
-at a time would re-import `mpc_bleg` against a still-cached, still-stale `mpc_sos_fade` and produce
+⚠ **Purge the whole `strategies.python` namespace, never one package.** `b_leg` imports
+`sos_fade`'s execution module, and packages are scanned in alphabetical order — so purging one
+at a time would re-import `b_leg` against a still-cached, still-stale `sos_fade` and produce
 exactly the mixed reading this module exists to prevent. Purge once, then import the set.
 
 ⚠ **Dropping a module from `sys.modules` does not invalidate references anything already holds.** A

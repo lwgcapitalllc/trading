@@ -73,7 +73,7 @@ from backtest.tools.pre_sos_leg import (  # noqa: E402
     walk_breakeven,
 )
 
-# ⚠ MUST TRACK `strategies/tradingview/mpc_extreme_leg_strategy.pine`'s INPUT DEFAULTS. Same
+# ⚠ MUST TRACK `strategies/tradingview/extreme_leg_strategy.pine`'s INPUT DEFAULTS. Same
 # warning as `pre_sos_leg_tune.py`: if these drift, every table below still prints the word
 # "shipped" beside a configuration nobody runs.
 SHIPPED = {

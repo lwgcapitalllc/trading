@@ -22,15 +22,15 @@ from routers import bots
 # The section NAME is derived from the registry, never spelled out here — the whole point
 # of the 2026-08-04 registry change is that a bot is declared once. A literal in the test
 # would keep passing while the fetch command asked for a different section entirely.
-_SECTION = bots._BOTS[0].state_section  # e.g. "state_mpc_sos_fade_demo"
+_SECTION = bots._BOTS[0].state_section  # e.g. "state_sos_fade_demo"
 _MARKER = f"==={_SECTION.upper()}==="
 
 
 def _state_blob() -> str:
     return json.dumps(
         {
-            "mpc_sos_fade_demo": {
-                "name": "MPC SOS Fade",
+            "sos_fade_demo": {
+                "name": "SOS Fade",
                 "status": "live",
                 "started": 1785471363.6,
                 "account": 700107749,
@@ -56,7 +56,7 @@ def test_a_section_marker_glued_to_the_previous_line_is_still_found():
 def test_bot_state_is_read_out_of_its_section():
     raw = f"{_MARKER}\n{_state_blob()}\n===TELEGRAM_START===\n"
     states = bots._parse_bot_states(bots._parse_sections(raw, "head"))
-    assert states["mpc_sos_fade_demo"]["balance"] == 2000.0
+    assert states["sos_fade_demo"]["balance"] == 2000.0
 
 
 def test_a_bot_that_has_never_run_leaves_the_later_sections_intact():
@@ -92,8 +92,8 @@ def test_schtasks_paths_resolve_to_task_names():
 def test_the_bot_key_is_what_identifies_the_process():
     """`runner.py --bot <key>` — the key is on the commandline. Matching on the script name
     would make every live bot indistinguishable the moment there are two."""
-    snap = {"procs": r"python  C:\trading\algos\live\runner.py --bot mpc_sos_fade_demo"}
-    assert bots._is_python_running(snap, "mpc_sos_fade_demo")
+    snap = {"procs": r"python  C:\trading\algos\live\runner.py --bot sos_fade_demo"}
+    assert bots._is_python_running(snap, "sos_fade_demo")
     assert not bots._is_python_running(snap, "some_other_bot")
 
 

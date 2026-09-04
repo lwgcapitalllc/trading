@@ -23,7 +23,7 @@ Scoring, and why each column is here:
                reading — the stop is a few dollars of gold and a fixed cost is a large
                slice of 1R.
   1st / 2nd    the halves. A sign flip is regime, not edge; this repo has been fooled by
-               one before (mpc_bos Runs 3-4) and rows that flip are flagged, not ranked.
+               one before (bos Runs 3-4) and rows that flip are flagged, not ranked.
   sum R        total, in R. Never dollars — a fixed-%-risk strategy compounds, so a
                dollar ranking measures recency.
   equity ×     what `--risk-pct` of equity per trade compounds to over the window, and

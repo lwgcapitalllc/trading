@@ -156,7 +156,7 @@ def ledger_write(bot: str, row: dict) -> Path:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--bot", required=True, help="instance key, e.g. mpc_sos_fade_demo")
+    ap.add_argument("--bot", required=True, help="instance key, e.g. sos_fade_demo")
     ap.add_argument(
         "--keep", type=int, help="the ONE ticket the bot is managing; it is never closed"
     )

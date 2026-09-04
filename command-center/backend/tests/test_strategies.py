@@ -3,9 +3,9 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) + Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
-mpc_bleg 2026-07-24, mpc_bos deleted 2026-08-04 and re-added 2026-08-07,
-mpc_realign 2026-08-13, the loss-recovery leg 2026-08-21, mpc_extreme_leg 2026-09-01).
+2026-06-22) + Python packages, each declaring LAB_STRATEGY (sos_fade 2026-07-16,
+b_leg 2026-07-24, bos deleted 2026-08-04 and re-added 2026-08-07,
+realign 2026-08-13, the loss-recovery leg 2026-08-21, extreme_leg 2026-09-01).
 ⚠ The count used to be written out here as a number and it said FOUR while the roster below
 held six — a second statement of the same fact, in the same file, going stale exactly the way
 the callout further down warns about. `len(EXPECTED_CLASS_NAMES)` is the count. NT8 and Python strategies get a suggested_instrument; MT5 does
@@ -17,7 +17,7 @@ not. Param types span int/double/bool (NT8), string (MT5), and all four off a da
 instead of three failing tests that each have to be traced back to the same cause.
 
 ⚠ **That is only true of the counts INSIDE this file.** `1946f8b` deleted the unfinished
-`mpc_bos` port and its message says "and its roster line with it" — meaning the one in
+`bos` port and its message says "and its roster line with it" — meaning the one in
 `backtest/tools/run_report.py`, which that commit correctly called "the ONLY live
 reference". This roster is a SECOND one, in another subsystem, and it was missed: three
 tests here failed from that day until 2026-08-05. **A roster stated once per file is still
@@ -30,31 +30,31 @@ import textwrap
 EXPECTED_CLASS_NAMES = {
     "ORB",
     "LondonBreakout",
-    "MpcSosFadeStrategy",
-    "MpcBLegStrategy",
-    # Re-added 2026-08-08 with the `mpc_bos` port's Python side (2026-08-07). This roster has now
+    "SosFadeStrategy",
+    "BLegStrategy",
+    # Re-added 2026-08-08 with the `bos` port's Python side (2026-08-07). This roster has now
     # gone stale in BOTH directions — a deleted strategy left behind, then a new one not added —
     # which is the callout above earning its keep for the second time.
-    "MpcBosStrategy",
+    "BosStrategy",
     # Added 2026-08-21 with the loss-recovery LEG. FOURTH time these three tests have gone red for
     # this one cause. ⚠ This entry is not like the others: `RecoveryLeg` is a RULE, not a strategy
     # — it has no setups and arms off another leg's closed trades, so it carries
     # `requires_source` and every picker filters it out. It is still SCANNED and still needs a row
     # in `strategies`, because a stack leg's run row references one.
     "RecoveryLeg",
-    # Added 2026-08-14. `strategies/python/mpc_realign` landed 2026-08-13 (e87c304) and its
+    # Added 2026-08-14. `strategies/python/realign` landed 2026-08-13 (e87c304) and its
     # roster line did not — the THIRD time these three tests have gone red for this one cause,
-    # and the second time in the "new strategy not added" direction. `MpcRealignStrategy`
-    # subclasses `MpcSosFadeStrategy`, so grepping for the base class name would not have found
+    # and the second time in the "new strategy not added" direction. `RealignStrategy`
+    # subclasses `SosFadeStrategy`, so grepping for the base class name would not have found
     # it either: the thing to grep for is `LAB_STRATEGY`, which is what the scanner reads.
-    "MpcRealignStrategy",
-    # Added 2026-09-01 with `strategies/python/mpc_extreme_leg` — the FIFTH time these three tests
+    "RealignStrategy",
+    # Added 2026-09-01 with `strategies/python/extreme_leg` — the FIFTH time these three tests
     # have gone red for this one cause, and the third in the "new strategy not added" direction.
     # ⚠ It went red on the SAME COMMIT that added the package this time, rather than days later,
     # and only because the whole suite was run before committing. The callout at the top of this
     # file is the fix that keeps not working: a roster stated once per file is still stated N times
     # across the repo, and nothing makes anyone read this one.
-    "MpcExtremeLegStrategy",
+    "ExtremeLegStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\

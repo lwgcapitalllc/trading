@@ -7,11 +7,11 @@
 //      (byte-identical to structure_engine.pine). Produces the st.* the fibs anchor on; validated
 //      at 100% Python↔Pine parity.
 //   2. The INTERNAL market-structure block — lifted from structure_engine_export.pine (validated
-//      internal detection) PLUS the two mpc_assistant.pine captures the fibs need: the confirmed-
+//      internal detection) PLUS the two mpc_jarvis.pine captures the fibs need: the confirmed-
 //      internal-swing anchors (i_confirmed_high/low_*, used by the Structure fib) and the iFib_*
 //      seed anchors at each iBOS/iSOS (used by the Internal fib).
 //   3. The four FIB blocks — Structure (GRP_FIBO), Sniper (GRP_SNIPER), Macro (GRP_MACRO) and the
-//      new Internal (GRP_IFIB) — lifted from mpc_assistant.pine (compute + touched state machines;
+//      new Internal (GRP_IFIB) — lifted from mpc_jarvis.pine (compute + touched state machines;
 //      drawing removed). These are the source of truth the Python ports are checked against, so the
 //      comparison is Python-vs-real-Pine, not Python-vs-a-rewrite.
 //
@@ -396,7 +396,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             // the swing just confirmed. So it can resurrect a bar that pierced the level, closed back
             // inside and was correctly refused, and install it as the new active swing: EARLIER than
             // and LOWER than the swing just labelled. Full mechanism + the measurements:
-            // `indicators/engines/mpc_assistant.pine`, same block.
+            // `indicators/engines/mpc_jarvis.pine`, same block.
             if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
                 lowest_val := st.last_conf_low
                 lowest_loc := st.last_conf_low_loc
@@ -583,7 +583,7 @@ st.process(ph, pl, "", bullColor, bearColor)
 //============================================================
 //  EXECUTION — INTERNAL STRUCTURE
 //  Lifted from structure_engine_export.pine (byte-identical, validated internal detection) PLUS
-//  the two mpc_assistant.pine capture additions the Internal fib needs: i_confirmed_high/low_*
+//  the two mpc_jarvis.pine capture additions the Internal fib needs: i_confirmed_high/low_*
 //  (at each iSH/iSL confirm) and the iFib_* seed anchors (at each of the six iBOS/iSOS sites).
 //  Detection logic is unchanged — only the capture lines and iFib state vars are added.
 //============================================================
@@ -636,7 +636,7 @@ var int   i_sos_watch_ll_loc= na
 
 float i_lbl_y_offset = syminfo.mintick * 100
 
-// ── iFib state (mpc_assistant.pine) — confirmed-internal-swing anchors + the internal fib itself ──
+// ── iFib state (mpc_jarvis.pine) — confirmed-internal-swing anchors + the internal fib itself ──
 var float i_confirmed_low_price  = na
 var int   i_confirmed_low_loc    = na
 var float i_confirmed_high_price = na
@@ -1058,12 +1058,12 @@ if showInternal and not na(i_sw_line)
     line.set_x2(i_sw_line, bar_index)
 
 //============================================================
-//  STRUCTURE FIBONACCI  (lifted from mpc_assistant.pine GRP_FIBO, ~2009-2114)
+//  STRUCTURE FIBONACCI  (lifted from mpc_jarvis.pine GRP_FIBO, ~2009-2114)
 //  Compute + touched state machine ONLY — every line.new/label.new drawing removed. Reads the
 //  external structure engine's st.* above (byte-identical to structure_engine.pine). This is the
 //  SOURCE-OF-TRUTH fib logic; the Python port in fibonacci/ is validated against the px_fib_*
 //  plots at the bottom of this file via fibonacci/tools/compare_fib.py.
-//  The ONLY deviation from mpc_assistant.pine is fiboOriginChanged uses ':=' (outer var) instead
+//  The ONLY deviation from mpc_jarvis.pine is fiboOriginChanged uses ':=' (outer var) instead
 //  of '=' so its value is observable by the px_fib_origin plot — this does not change the touched
 //  state machine, which reads the same value in the same scope right after.
 //============================================================
@@ -1207,11 +1207,11 @@ if fibActive
     fiboPrevAsl := fibo_asl
 
 //============================================================
-//  SNIPER FIB  (lifted from mpc_assistant.pine GRP_SNIPER ~2510-2551 + zone-touch ~2788-2797)
+//  SNIPER FIB  (lifted from mpc_jarvis.pine GRP_SNIPER ~2510-2551 + zone-touch ~2788-2797)
 //  Compute + zone-touch state ONLY — every box/line/label draw removed. Reads the external
 //  structure engine's st.* above. This is the SOURCE-OF-TRUTH Sniper logic the Python SniperFib
 //  in fibonacci/ is validated against, via the px_sniper_* plots below.
-//  Two deviations from mpc_assistant.pine, both drawing-only, neither changes zone state:
+//  Two deviations from mpc_jarvis.pine, both drawing-only, neither changes zone state:
 //    - the box/line/label arrays are gone; only sniperZoneTop/Bot/Active (+ a sniperDir for the
 //      export) are kept — those are the whole state machine.
 //    - the display string sz_status is replaced by a per-bar bool sniperConfirmedNow so the
@@ -1246,10 +1246,10 @@ if _snBearBOS or _snBullBOS
     sniperConfirmedNow := false
 
 //============================================================
-//  MACRO CYCLE FIB  (lifted from mpc_assistant.pine GRP_MACRO ~2290-2432)
+//  MACRO CYCLE FIB  (lifted from mpc_jarvis.pine GRP_MACRO ~2290-2432)
 //  State machine + touched tracking ONLY — every line/label draw removed. Reads the external
 //  structure engine's st.* above. SOURCE OF TRUTH for the Python MacroFib in fibonacci/, checked
-//  via the px_macro_* plots below. Deviations from mpc_assistant.pine, all drawing-only, none
+//  via the px_macro_* plots below. Deviations from mpc_jarvis.pine, all drawing-only, none
 //  change state: line/label vars + all line.new/label.new/delete removed; the drawing-only
 //  macro_*_time fields dropped (never read by the state machine); showMacroFib hardcoded true.
 //  macroFibAllowed is KEPT — export on a <=5m chart or the whole block never runs.
@@ -1402,7 +1402,7 @@ float macroL = macroActive ? macro_origin  : na
 float macroR = macroActive ? macroH - macroL : na
 
 //============================================================
-//  INTERNAL FIB  (lifted from mpc_assistant.pine: seed at the six iBOS/iSOS sites above +
+//  INTERNAL FIB  (lifted from mpc_jarvis.pine: seed at the six iBOS/iSOS sites above +
 //  clear/extend/touched tracking ~2727-2791). Compute + touched state ONLY — drawing removed.
 //  SOURCE OF TRUTH for the Python InternalFib in fibonacci/, checked via the px_ifib_* plots.
 //  The seed anchors (iFib_asl/ash/dir) are set inside the internal-structure block above.

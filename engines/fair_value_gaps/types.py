@@ -4,7 +4,7 @@ fair_value_gaps/types.py — plain data containers for the FVG engine.
 No behavior lives here. Two kinds of container:
 
   FairValueGap — one fair value gap: the price void left by a clean 3-candle displacement.
-    Mirrors the parallel Pine arrays in mpc_assistant.pine's FVG block (fvgTops / fvgBots /
+    Mirrors the parallel Pine arrays in mpc_jarvis.pine's FVG block (fvgTops / fvgBots /
     fvgIsBull / fvgBorn) collapsed into one object; the drawing-only `box` handle is dropped.
     `top`/`bottom` are the gap's price edges (top > bottom always); `born_index` is the bar it
     formed on; `id` is a stable id so a consumer can match a formed gap to its later mitigation.

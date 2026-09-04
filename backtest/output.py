@@ -7,7 +7,7 @@ reads a Python run without knowing it is one.
 
 Strategy-agnostic by design: the input is a sequence of any object carrying the
 `backtest`-wide trade attributes (dir, entry/exit index+ms+price, qty, pnl_usd,
-stop_distance, exit_reason) — `strategies.python.mpc_sos_fade.execution.Trade` satisfies it,
+stop_distance, exit_reason) — `strategies.python.sos_fade.execution.Trade` satisfies it,
 and so must any future Python strategy. This module owns NO strategy logic and no fill
 logic; it is pure reporting arithmetic over trades someone else already produced.
 
@@ -168,7 +168,7 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                 #
                 # Each lot is TRADE-SHAPED — its own entry, its own excursion, its own exit and its
                 # own P&L — because a lot IS a position and a reader asks it the same questions. See
-                # `mpc_sos_fade.execution.Trade.adds`.
+                # `sos_fade.execution.Trade.adds`.
                 # ⚠ Everything past `qty` is PER-LOT OPTIONAL and copied only when the strategy
                 # recorded it. A run stored before 2026-08-19, and any strategy that adds without
                 # tracking its lots, carries the three original keys — and a lot that nothing closed
@@ -456,7 +456,7 @@ def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
     A blocked setup places no order, so it appears in no trade list and no equity curve —
     this is the only channel it reaches the lab through. Strategy-agnostic like everything
     else here: the input is any object carrying `dir` / `time_ms` / `edge` plus parallel
-    `labels` and `reasons` sequences (`mpc_sos_fade.execution.BlockedSetup` satisfies it),
+    `labels` and `reasons` sequences (`sos_fade.execution.BlockedSetup` satisfies it),
     and a strategy that records none simply produces `[]`.
 
     A setup can be refused by SEVERAL rules at once, so `reasons` is a LIST — that is what
@@ -502,7 +502,7 @@ def build_missed_setups(missed: Optional[Sequence[Any]]) -> list[dict]:
     Strategy-agnostic in the same way `build_blocked_setups` is: the input is any object
     carrying `dir` / `time_ms` / `edge` / `met` / `near`, parallel `labels` and `reasons`
     sequences, and a `met_lines` list of already-formatted strings
-    (`mpc_sos_fade.execution.MissedSetup` satisfies it). Nothing here knows what a
+    (`sos_fade.execution.MissedSetup` satisfies it). Nothing here knows what a
     "confluence" is — `met`/`of` are just a score, and every string is the strategy's own.
 
     `reasons` is a LIST purely so a miss and a block read identically downstream; a miss has

@@ -43,7 +43,7 @@ from credentials import telegram_credentials
 #
 # SIGNAL is the third room, added 2026-08-13. A pre-trade setup alert is a third reflex again:
 # read when you have time rather than the moment it arrives, and MEASURED at roughly five times
-# the volume of fills (11/month against 2/month on `mpc_sos_fade` over 6.5 years — see
+# the volume of fills (11/month against 2/month on `sos_fade` over 6.5 years — see
 # `docs/LIVE_SETUP_ALERTS.md` §3). Putting that in the trades chat would bury the fills under
 # setups that mostly do not become trades, which is the exact failure the split already exists to
 # prevent, arriving from a new direction.
@@ -101,7 +101,7 @@ def chat_for(kind: str, override: str = ""):
 
 
 def send_telegram(
-    text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None
+    text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None, markdown=True
 ) -> bool:
     """Send `text` to the chat this `kind` routes to. Returns True on success.
 
@@ -127,10 +127,12 @@ def send_telegram(
     starts before the file is written picks it up on the next message instead of staying mute
     for its whole session.
     """
-    return send_telegram_id(text, kind, chat_id, token_key, reply_to) is not None
+    return send_telegram_id(text, kind, chat_id, token_key, reply_to, markdown) is not None
 
 
-def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None):
+def send_telegram_id(
+    text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None, markdown=True
+):
     """Same send, but returns Telegram's `message_id` (or None on failure).
 
     The id is what lets a later message REPLY to this one — the trade exit replies to the trade
@@ -176,15 +178,26 @@ def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "
             body["reply_to_message_id"] = reply
         return _requests.post(url, json=body, timeout=5)
 
+    # 🔴 `markdown=False` is DELIVERY-CRITICAL, not cosmetic, and the rescue below cannot stand
+    # in for it. The rescue only fires on a Telegram 400, i.e. only when the entity is UNBALANCED.
+    # A name carrying an EVEN number of underscores parses "successfully" and Telegram silently
+    # eats them: `sos_fade_demo` renders as `sos` + italic(`fade`) + `demo`, underscores gone,
+    # HTTP 200, nothing logged. The old `mpc_sos_fade_demo` had three underscores — odd, so it
+    # was rejected and the rescue delivered it intact, which is why this was never seen.
+    # **The rename to a two-underscore key is what turned a loud failure into a silent one**
+    # (2026-09-03). Every message `algos/live/alerts.py` builds is plain text by design — see its
+    # "Plain text, no Markdown, ever" rule — so that path asks for no parsing at all and cannot
+    # be corrupted by whatever a bot is named next.
+    mode = "Markdown" if markdown else None
     try:
-        r = _post("Markdown", reply_to)
+        r = _post(mode, reply_to)
         if reply_to and r.status_code == 400 and "replied" in r.text:
             # The entry message was deleted. Losing the thread link is a cosmetic loss; losing
             # the trade alert is not.
             print("notify: reply target is gone, sending standalone")
             reply_to = None
-            r = _post("Markdown", None)
-        if r.status_code == 400 and "parse entities" in r.text:
+            r = _post(mode, None)
+        if markdown and r.status_code == 400 and "parse entities" in r.text:
             # Markdown is a nicety; DELIVERY is the point. An underscore in a bot key, a symbol
             # or a file path inside an exception opens an italic that never closes, and Telegram
             # rejects the WHOLE message — so the alert that never arrives is the one reporting a

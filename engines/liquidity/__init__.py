@@ -7,7 +7,7 @@ high/low sweep targets (SSH/BSL), and each finished session's high/low (Asia/Lon
 create / mitigate (sweep-or-break) / evict events, not lines or boxes. (The MONTHLY level PMH/PML was
 removed from the source and this engine on 2026-07-09.)
 
-Ported from indicators/engines/mpc_assistant.pine's liquidity blocks (DAILY/WEEKLY LEVELS, PWC, H4 LIQUIDITY
+Ported from indicators/engines/mpc_jarvis.pine's liquidity blocks (DAILY/WEEKLY LEVELS, PWC, H4 LIQUIDITY
 SWEEP TRACKER, SESSION H/L TRACKING). The session H/L is consumed from the canonical sessions engine
 (engines/sessions/), which this engine composes and drives internally; the day/week/H4 levels are
 reconstructed from the bar stream.

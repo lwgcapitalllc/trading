@@ -1,6 +1,6 @@
 """The promote preview must refuse a configuration that would kill the bot on restart.
 
-🔴 **WHY THIS FILE EXISTS.** On 2026-08-28 the re-entry was switched on for `mpc_sos_fade_demo`,
+🔴 **WHY THIS FILE EXISTS.** On 2026-08-28 the re-entry was switched on for `sos_fade_demo`,
 `promote.py --dry-run` printed *"verified: the snapshot imports and builds with the promoted
 parameters"*, and the bot would not come back up — down until the setting was reverted. Importing
 and building is not running: every startup refusal lives in `algos/live/`, which the staged
@@ -23,7 +23,7 @@ sys.path.insert(0, str(_REPO / "algos" / "live"))
 
 import promote  # noqa: E402
 
-BOT_CONFIG = _REPO / "algos" / "markets" / "fx" / "instances" / "mpc_sos_fade_demo" / "config.json"
+BOT_CONFIG = _REPO / "algos" / "markets" / "fx" / "instances" / "sos_fade_demo" / "config.json"
 
 
 def _live_params():
@@ -42,8 +42,8 @@ def _cfg(tmp_path, **over):
         bot_key="test_bot",
         symbol="XAUUSD.p",
         timeframe="M15",
-        strategy_package="mpc_sos_fade",
-        strategy_class="MpcSosFadeStrategy",
+        strategy_package="sos_fade",
+        strategy_class="SosFadeStrategy",
         strategy_params=params,
         deployed_dir=tmp_path / "deployed",
     )

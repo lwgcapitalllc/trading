@@ -4,7 +4,7 @@ fibonacci/geometry.py — the one reusable fib geometry core.
 Every fib in the source indicator (Structure, Sniper, Macro) draws the SAME geometry: given a
 high anchor, a low anchor, and a direction, each ratio maps to a price. They differ only in
 which two points anchor them and which ratios they draw — never in the math below. This module
-is that shared math, ported from mpc_assistant.pine:
+is that shared math, ported from mpc_jarvis.pine:
 
     fiboRange      = fibo_ash - fibo_asl
     fiboStartIndex = fibo_dir == 1 ? fibo_asl_loc : fibo_ash_loc

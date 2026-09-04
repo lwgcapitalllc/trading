@@ -193,7 +193,7 @@ def profit_concentration_pct(
     MEASURED IN RETURNS WHENEVER THE RUN COMPOUNDED (fixed 2026-07-31). Weighted by dollars, this
     reports the compounding rather than the clustering: on an account that grows 85x, the final
     quarter must hold nearly all the dollars however evenly the edge is spread. Measured on
-    mpc_sos_fade run d2ab68f9e884 — dollar quarters of $9k / $49k / $71k / $1,039k read 88.9%
+    sos_fade run d2ab68f9e884 — dollar quarters of $9k / $49k / $71k / $1,039k read 88.9%
     ("edge clustered — overfit risk"), while the same trades as returns on the equity each was
     taken with read 40.0% ("spread across the test"). The warning was describing the account.
 
@@ -302,7 +302,7 @@ def max_drawdown_pct(equity_curve: Optional[list[dict]]) -> Optional[float]:
     """The worst drawdown as a percent of the equity it fell FROM (the running peak).
 
     **Not the same episode as the deepest DOLLAR drawdown, and the two must never be conflated.**
-    On the shipped mpc_sos_fade run the biggest dollar drop is $109,665 from a $330,303 peak
+    On the shipped sos_fade run the biggest dollar drop is $109,665 from a $330,303 peak
     (33.2%), while the worst percentage drop is 54.9% — $16,748 → $7,551, only $9,198. Dividing
     the dollar figure by a static account size is what once printed "Max DD 1096.7%" on this
     strategy; dividing it by the FINAL equity is what makes 55.9% look like 12% on the runs list.
@@ -332,7 +332,7 @@ def max_drawdown_pct(equity_curve: Optional[list[dict]]) -> Optional[float]:
 # A trade this far below the run's own typical loss neither won nor lost meaningfully.
 #
 # 0.15 was picked off the measured shape of run f866873aa862 and then found to be the number
-# `mpc_strategy.pine` already uses for the same idea — `exec_scratch_r = 0.15`, "Scratch band (R)",
+# `sos_fade_strategy.pine` already uses for the same idea — `exec_scratch_r = 0.15`, "Scratch band (R)",
 # which grades a closed trade WIN / LOSS / SCRATCH on its stats table. The agreement is not a
 # coincidence: for a fixed-risk strategy the median full loss IS 1R, so "0.15 of the median loss"
 # and "0.15R" are the same bar. That Pine input is a stats-table setting and never reaches the

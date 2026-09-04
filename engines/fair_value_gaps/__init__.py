@@ -6,7 +6,7 @@ Turns the bar stream into fair-value-gap LEVEL EVENTS — a price void left by a
 and the directional visibility filter are out of scope; this is the trading-signal layer, not the
 drawing layer.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine's FVG block. Standalone and OHLC-only — it
+Ported line-by-line from indicators/engines/mpc_jarvis.pine's FVG block. Standalone and OHLC-only — it
 depends on no other engine (a sibling of order_blocks in shape, but it reads price patterns
 directly, not structure). The optional directional filter in the Pine is drawing-only, so it is not
 reproduced here; each emitted gap carries its `is_bullish` flag and the consumer decides alignment.

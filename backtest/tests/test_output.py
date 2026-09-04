@@ -628,7 +628,7 @@ def test_a_lot_that_recorded_nothing_past_its_fill_is_not_given_zeroes():
 
 
 # ── the exit RUNGS a trade reports ────────────────────────────────────────────
-# A rung price alone does not say whether the trade places an ORDER there. At mpc_sos_fade's
+# A rung price alone does not say whether the trade places an ORDER there. At sos_fade's
 # shipped settings the second rung banks 0% of the position on every trade — nothing is ever sold
 # at that price and a touch only steps the stop — yet the chart drew it as `TP2` on every trade of
 # every run until 2026-08-21. See `command-center/backend/tests/test_chart_spec_tp_rungs.py` for

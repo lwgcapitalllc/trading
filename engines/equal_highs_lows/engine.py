@@ -6,7 +6,7 @@ ATR(50) (for the equality tolerance), detects strict price pivots, forms an EQH/
 consecutive same-side pivots land within tolerance of each other, and mitigates a level when price
 CLOSES through it.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine's "EQUAL HIGHS / LOWS (EQH / EQL)" block
+Ported line-by-line from indicators/engines/mpc_jarvis.pine's "EQUAL HIGHS / LOWS (EQH / EQL)" block
 (+ the `GRP_EQ` inputs). The Pine runs, each bar:
 
   eqAtr = ta.atr(50)
@@ -113,7 +113,7 @@ class EqualHighsLowsEngine:
     """Streaming Equal Highs/Lows detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_assistant.pine's default `GRP_EQ` settings: pivot width 2, tolerance 0.1×ATR(50),
+    Mirrors mpc_jarvis.pine's default `GRP_EQ` settings: pivot width 2, tolerance 0.1×ATR(50),
     up to 6 active levels per side (oldest evicted first).
     """
 

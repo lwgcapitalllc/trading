@@ -6,16 +6,16 @@ VWAP — plus the derived close-vs-line cross. The signal is the value and the c
 **Scope:** The VWAP value + its trading-day anchor + a derived cross only. No trading decisions, no
 MT5 ops, no UI, no chart rendering (no line, colours or fill). First engine that needs a **volume**
 column in the feed.
-**Status:** Production — ported from `mpc_assistant.pine`'s `ta.vwap(hlc3)` line, unit-tested (13
+**Status:** Production — ported from `mpc_jarvis.pine`'s `ta.vwap(hlc3)` line, unit-tested (13
 hand-traced tests, green), and **100% Pine-parity-validated on a real `VANTAGE_XAUUSD, 5m` export**
 (6,973 bars): both fields — the VWAP value and the trading-day anchor pulse — match on every warm bar
 (`--htf-rollover 18 --warmup 90`, exit 0). The one canonical implementation — no consumer builds its
 own.
-**Pine:** ported from `indicators/engines/mpc_assistant.pine` line 852 (`vwapValue = ta.vwap(hlc3)`); parity
+**Pine:** ported from `indicators/engines/mpc_jarvis.pine` line 852 (`vwapValue = ta.vwap(hlc3)`); parity
 harness is `indicators/engines/vwap_export.pine`, diffed against this Python by `tools/compare_vwap.py`. Pine
 stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the
 engine's half.
-**Consumers:** `strategies/python/mpc_bos/` since 2026-08-07 — the FIRST strategy consumer this
+**Consumers:** `strategies/python/bos/` since 2026-08-07 — the FIRST strategy consumer this
 engine has had, and the first thing in the repo's strategy layer to need a volume column. It reads
 `VwapEvents.value` for its F10 filter (refuse a setup while price is not closing on the trend's own
 side of the line) and reads nothing else. ⚠ **That makes this engine trade-affecting now**, where
@@ -25,7 +25,7 @@ still unconsumed — the BOS filter is a STATE, deliberately, and asks only whic
 implementation of this engine, and it would not be the line anyone is looking at on the chart.
 **Last reviewed:** 2026-08-07 — gained its first consumer (above); no code change. The one thing a
 consumer must handle is `value = None`, which this engine returns whenever the session has seen no
-volume yet. It means **cannot compute**, never zero, and `mpc_bos` reads it as a REFUSAL on both
+volume yet. It means **cannot compute**, never zero, and `bos` reads it as a REFUSAL on both
 sides for exactly that reason. Earlier: 2026-07-05
 
 ---
@@ -89,7 +89,7 @@ engines/vwap/
     └── compare_vwap.py      ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/engines/mpc_assistant.pine` line 852 (`vwapValue = ta.vwap(hlc3)`).
+Pine source of truth: `indicators/engines/mpc_jarvis.pine` line 852 (`vwapValue = ta.vwap(hlc3)`).
 Parity export build: `indicators/engines/vwap_export.pine`.
 
 ---
@@ -131,7 +131,7 @@ vw.value()  # current VWAP (read)
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s VWAP line back here. Keep the source `hlc3`, the
+- Port any change to `mpc_jarvis.pine`'s VWAP line back here. Keep the source `hlc3`, the
   volume weighting, and the trading-day anchor exact.
 - Keep the anchor calibration in step with `engines/liquidity/`'s daily boundary — both cut the
   trading day on the same instrument session; if one is recalibrated, check the other.
@@ -142,7 +142,7 @@ vw.value()  # current VWAP (read)
 - Do not bake in a drawn line, colours or fill — this layer emits a value + events.
 - Do not silently promote the derived cross fields into "Pine-validated" — the source has no cross.
 - Do not build a second VWAP implementation elsewhere. This is the canonical one.
-- Do not let this engine or the VWAP line in `mpc_assistant.pine` drift; re-run the parity check
+- Do not let this engine or the VWAP line in `mpc_jarvis.pine` drift; re-run the parity check
   after any change to either.
 
 ---
@@ -176,11 +176,11 @@ Pine's own accumulation drift apart at the float-rounding level (~1 part per mil
 (1e-6), not the exact-price match the copied-value level engines (liquidity, sessions) can use. This
 is expected and correct — the structural match is 100%.
 
-Re-run `compare_vwap.py` after any change to the VWAP line in `mpc_assistant.pine` or here.
+Re-run `compare_vwap.py` after any change to the VWAP line in `mpc_jarvis.pine` or here.
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` line 852.
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` line 852.
 - Parity export build: `indicators/engines/vwap_export.pine`.
 - Anchor twin (same trading-day boundary): `engines/liquidity/CLAUDE.md`.
 - Sibling engines / the shared porting pattern: `engines/sessions/CLAUDE.md`,

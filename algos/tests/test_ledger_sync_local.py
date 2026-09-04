@@ -61,7 +61,7 @@ def repo(tmp_path, monkeypatch):
     developer's — a test that inspected it would pass or fail on whatever happened to be open.
     """
     r = tmp_path / "trading"
-    (r / "algos" / "ledger_archive" / "mpc_sos_fade_demo" / "ledger").mkdir(parents=True)
+    (r / "algos" / "ledger_archive" / "sos_fade_demo" / "ledger").mkdir(parents=True)
     _git(r.parent, "init", "-q", str(r))
     _git(r, "config", "user.email", "t@t")
     _git(r, "config", "user.name", "t")
@@ -83,7 +83,7 @@ def test_a_clean_tree_has_no_foreign_changes(repo):
 
 def test_a_ledger_file_is_NOT_foreign(repo):
     """The archive is exactly what this job is allowed to be changing."""
-    p = repo / "algos" / "ledger_archive" / "mpc_sos_fade_demo" / "ledger" / "decisions-x.jsonl"
+    p = repo / "algos" / "ledger_archive" / "sos_fade_demo" / "ledger" / "decisions-x.jsonl"
     p.write_text('{"a":1}\n')
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "add")

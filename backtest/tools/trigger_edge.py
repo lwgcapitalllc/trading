@@ -6,7 +6,7 @@ Not a backtest and deliberately not a strategy. It replays the canonical engines
 question: from there, does price reach +NR before -1R? No sizing, no TP ladder, no costs.
 R is each trigger's own structural stop, so triggers are compared on their own terms.
 
-WHY IT EXISTS. `mpc_bos_strategy.pine` and `mpc_d_strategy.pine` are both continuation
+WHY IT EXISTS. `bos_strategy.pine` and `d_strategy.pine` are both continuation
 setups and neither has a Python port, so neither can be swept by backtest/optimizer.py.
 The question "which one is worth building on" does not need a port — it needs the trigger
 population and an honest control.
@@ -31,7 +31,7 @@ on is look-ahead until proven otherwise — see `prev_side` below.
 ⚠ Stdlib only, on purpose — no pandas, so it runs on a bare interpreter.
 
 Findings 2026-08-06, 186,384 true-M15 XAUUSD bars (2018-09-13 -> 2026-08-07), written up in
-docs/MPC_BOS_SPEC.md §4b and indicators/CLAUDE.md:
+docs/BOS_SPEC.md §4b and indicators/CLAUDE.md:
     CONT (with-trend BOS -> 0.5 retrace)   n=778  +4.4% over control (+2.5 sigma)
     CONT + pro-trend VWAP side             n=404  +6.8% over control (+2.8 sigma), stop 38% tighter
     D    (counter-SOS -> VWAP reclaim)     n=833  -0.4% over control — indistinguishable from random

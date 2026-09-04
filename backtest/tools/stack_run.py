@@ -31,7 +31,7 @@ stacked backtest stops predicting the stacked account.
 
 Usage:
     python backtest/tools/stack_run.py
-    python backtest/tools/stack_run.py --legs mpc_sos_fade,mpc_bleg --risk-cap 10
+    python backtest/tools/stack_run.py --legs sos_fade,b_leg --risk-cap 10
     python backtest/tools/stack_run.py --start 2020-01-01 --balance 10000 --risk-cap 12
 """
 
@@ -52,10 +52,10 @@ from backtest.portfolio import LegSpec, contention_summary, run_stack  # noqa: E
 # Same registry shape as run_report.py and overlap_audit.py — a package that declares
 # LAB_STRATEGY is runnable here for free. Keep the three in step when a strategy lands.
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
-    "mpc_bos": "strategies.python.mpc_bos",
-    "mpc_extreme_leg": "strategies.python.mpc_extreme_leg",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
+    "bos": "strategies.python.bos",
+    "extreme_leg": "strategies.python.extreme_leg",
 }
 
 
@@ -64,7 +64,7 @@ def _spec(key: str, df, symbol: str, risk_pct: float | None = None) -> LegSpec:
     lab = mod.LAB_STRATEGY
     ConfigCls = lab["config"]
     # ⚠ Only the fields this strategy DECLARES. `LAB_STRATEGY` is an OPEN CONTRACT — a config
-    # may predate a kwarg, and `mpc_extreme_leg` has no `fill_model` at all (its fills are bar
+    # may predate a kwarg, and `extreme_leg` has no `fill_model` at all (its fills are bar
     # fills with no switch). Passing every field unconditionally is a TypeError three lines into
     # the run; passing them conditionally by name is what `overlap_audit.py` already does, and
     # keeping the two tools the same shape is the point of the note on `_STRATEGIES`.
@@ -73,7 +73,7 @@ def _spec(key: str, df, symbol: str, risk_pct: float | None = None) -> LegSpec:
     cfg = ConfigCls(**{k: v for k, v in wanted.items() if k in have})
     # 🔴 PER-TRADE RISK IS A BASIS FIELD AND IT WAS INVISIBLE HERE UNTIL 2026-09-02.
     # Each leg was built at its OWN config default and the number was printed nowhere, so the
-    # first mixed stack silently ran `mpc_sos_fade` at 10% against `mpc_extreme_leg` at 1% — a
+    # first mixed stack silently ran `sos_fade` at 10% against `extreme_leg` at 1% — a
     # 10:1 asymmetry nobody chose. The bigger leg then fills the shared budget on its own and
     # the smaller one reads as harmless, which is a fact about the SETTINGS rather than about
     # the strategies. It is printed in the leg table now, and `--risk-pct` matches them when
@@ -103,7 +103,7 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--legs",
-        default="mpc_sos_fade,mpc_bleg",
+        default="sos_fade,b_leg",
         help=f"comma-separated, from {sorted(_STRATEGIES)}",
     )
     ap.add_argument("--symbol", default="XAUUSD")

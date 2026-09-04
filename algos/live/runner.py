@@ -5,8 +5,8 @@
 
 **Run it:**
 
-    python algos/live/runner.py --bot mpc_sos_fade_demo --dry-run     # places nothing
-    python algos/live/runner.py --bot mpc_sos_fade_demo --live        # places orders
+    python algos/live/runner.py --bot sos_fade_demo --dry-run     # places nothing
+    python algos/live/runner.py --bot sos_fade_demo --live        # places orders
 
 `--dry-run` is the DEFAULT and `--live` must be typed. Nothing about arming a bot that sends
 real orders should be reachable by forgetting a flag.
@@ -14,7 +14,7 @@ real orders should be reachable by forgetting a flag.
 **Why the strategy object is built once and kept.** The canonical engines are stateful streaming
 state machines — structure, fibs, liquidity, sessions all accumulate. Rebuilding them per bar
 would restart the market's history every 15 minutes. So warmup replays N historical bars through
-the same `MpcSosFadeStrategy` the backtest uses, and every live bar is one more `step()` on it.
+the same `SosFadeStrategy` the backtest uses, and every live bar is one more `step()` on it.
 The bot is running the identical object the lab replays, which is what makes a live result
 comparable to a backtest result at all.
 
@@ -213,7 +213,7 @@ class LiveRunner:
         # distinguishable from "configured but not reachable". See `_build_fast_feed`.
         self.fast_feed = None
         # The merge. Owns which bar steps when, and it is the SAME object the lab's `run_dual`
-        # drives — see `strategies/python/mpc_sos_fade/dual_clock.py` for why there is only one.
+        # drives — see `strategies/python/sos_fade/dual_clock.py` for why there is only one.
         self.clock = None
         # Fast bars pulled from the broker but not yet stepped, because the 15m stream has not
         # caught up to them. Live only: the lab has both frames in hand.
@@ -341,6 +341,12 @@ class LiveRunner:
                 chat_id=per_bot.get(kind, self.cfg.telegram_health_chat),
                 token_key=self.cfg.telegram_token_key,
                 reply_to=reply_to,
+                # 🔴 Everything this bot sends is built by `alerts.py`, which is plain text BY
+                # DESIGN ("Plain text, no Markdown, ever" — a name, a symbol or a traceback is
+                # full of underscores). Asking Telegram to parse it can only corrupt it, and it
+                # does so SILENTLY when the underscore count happens to be even: `sos_fade_demo`
+                # arrives as `sosfadedemo`. See the block in `notify.send_telegram_id`.
+                markdown=False,
             )
         except Exception as e:
             self.log.warning(f"Telegram send failed: {e}")
@@ -499,7 +505,7 @@ class LiveRunner:
                 f"{type(self.strategy).__name__} asked for a {self.fast_feed.timeframe} fill "
                 f"clock but provides no make_dual_clock(), so there is nothing to merge the two "
                 f"streams with. A strategy that needs a second feed owns the merge — see "
-                f"strategies/python/mpc_sos_fade/dual_clock.py."
+                f"strategies/python/sos_fade/dual_clock.py."
             )
         return make(self.stack, tf_primary_ms=self.feed.bar_seconds * 1000)
 
@@ -738,7 +744,7 @@ class LiveRunner:
         # because `warm()` sets `_bar_index` from the last warm bar's own index. The offset
         # changes no decision (every comparison on this feed is between two of its own indices)
         # and it makes the recorded `entry_index` of a re-entry disagree with the lab's by one
-        # for ever. **That is the B-LEG harness trap** — `strategies/python/mpc_bleg/CLAUDE.md`
+        # for ever. **That is the B-LEG harness trap** — `strategies/python/b_leg/CLAUDE.md`
         # records 2,409 comparisons failing at one flat offset while the logic was identical —
         # and the point of fixing it is that a future shadow diff on this feed can then join at all.
         self._fast_index = -1
@@ -1223,7 +1229,7 @@ class LiveRunner:
         position at startup, which is the only reason this is survivable at all.
 
         **Measured 2026-08-04:** `schtasks /run /tn SYS_STARTUP` on a box where the bot was
-        already up produced exactly this — two `runner.py --bot mpc_sos_fade_demo` processes,
+        already up produced exactly this — two `runner.py --bot sos_fade_demo` processes,
         four minutes apart, with nothing anywhere reporting it. `startup_coordinator` now skips
         a running bot, which is the primary fix; this is the backstop, and it is the one that
         covers the paths the coordinator does not own — the command center, the watchdog, and a

@@ -1,7 +1,7 @@
 """
 Tests for the Equal Highs/Lows (EQH/EQL) state machine.
 
-These pin the ported Pine behaviour (mpc_assistant.pine "EQUAL HIGHS / LOWS"): ATR(50) Wilder
+These pin the ported Pine behaviour (mpc_jarvis.pine "EQUAL HIGHS / LOWS"): ATR(50) Wilder
 tolerance, strict price pivots (ta.pivothigh/ta.pivotlow) confirmed pivot_len bars late, a level
 formed when two consecutive same-side pivots land within tolerance (price = outer of the pair),
 FIFO eviction past the per-side cap, and close-through mitigation.

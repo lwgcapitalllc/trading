@@ -48,13 +48,13 @@ const ID = 'st_period01'
 // ⚠ Balances are the running account AFTER each trade across BOTH legs in date order, which is the
 // shape the page composes from. Opening balance $10,000.
 const TRADES = {
-  mpc_sos_fade: [
+  sos_fade: [
     { date: '2024-02-01', profit: 1000, r: 2 },
     { date: '2024-05-01', profit: 2000, r: 3 },
     { date: '2024-08-01', profit: -500, r: -1 },
     { date: '2024-11-01', profit: 1500, r: 2 },
   ],
-  mpc_bleg: [
+  b_leg: [
     { date: '2024-03-01', profit: 500, r: 1 },
     { date: '2024-06-01', profit: -200, r: -1 },
     { date: '2024-09-01', profit: 800, r: 2 },
@@ -110,7 +110,7 @@ function detail() {
     created_at: '2026-09-03T10:00:00Z',
     completed_at: '2026-09-03T10:20:00Z',
     regime_timeline: [],
-    strategies: [legOf('mpc_sos_fade', 'MPC SOS Fade'), legOf('mpc_bleg', 'MPC B-LEG')],
+    strategies: [legOf('sos_fade', 'SOS Fade'), legOf('b_leg', 'B-LEG')],
     mode: 'screen',
     account_size: null,
     risk_cap_pct: null,
@@ -153,12 +153,12 @@ test.describe('a stack can be read over a PERIOD', () => {
     // 2024-06-01 → 2024-12-31 keeps A's 08-01 and 11-01 (2 of 4) and B's 06-01, 09-01, 12-01
     // (3 of 4). R follows: A −1+2 = +1R against +6R whole-run, B −1+2+1 = +2R against +3R.
     await page.goto(`${UI}/backtests/stacks/${ID}`)
-    await expect(rowFor(page, 'MPC SOS Fade')).toContainText('+6.00R')
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('+3.00R')
+    await expect(rowFor(page, 'SOS Fade')).toContainText('+6.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('+3.00R')
 
     await page.goto(`${UI}/backtests/stacks/${ID}?from=2024-06-01&to=2024-12-31`)
-    await expect(rowFor(page, 'MPC SOS Fade')).toContainText('+1.00R')
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('+2.00R')
+    await expect(rowFor(page, 'SOS Fade')).toContainText('+1.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('+2.00R')
   })
 
   test('the TRADES column narrows with the R beside it', async ({ page }) => {
@@ -169,12 +169,12 @@ test.describe('a stack can be read over a PERIOD', () => {
     // touching in one row, one filtered and one not, with nothing on screen to say which. It
     // survived the first version of this suite because every check here asserted on R alone.
     await page.goto(`${UI}/backtests/stacks/${ID}`)
-    await expect(rowFor(page, 'MPC SOS Fade').locator('td').nth(5)).toHaveText('4')
-    await expect(rowFor(page, 'MPC B-LEG').locator('td').nth(5)).toHaveText('4')
+    await expect(rowFor(page, 'SOS Fade').locator('td').nth(5)).toHaveText('4')
+    await expect(rowFor(page, 'B-LEG').locator('td').nth(5)).toHaveText('4')
 
     await page.goto(`${UI}/backtests/stacks/${ID}?from=2024-06-01&to=2024-12-31`)
-    await expect(rowFor(page, 'MPC SOS Fade').locator('td').nth(5)).toHaveText('2')
-    await expect(rowFor(page, 'MPC B-LEG').locator('td').nth(5)).toHaveText('3')
+    await expect(rowFor(page, 'SOS Fade').locator('td').nth(5)).toHaveText('2')
+    await expect(rowFor(page, 'B-LEG').locator('td').nth(5)).toHaveText('3')
   })
 
   test('the PORTFOLIO total narrows too, not just the rows', async ({ page }) => {
@@ -193,19 +193,19 @@ test.describe('a stack can be read over a PERIOD', () => {
     // MUTATION: hold the window in component state instead of the URL → red on reload.
     // ⚠ It is also what makes a window sendable to somebody else, which is how these get discussed.
     await page.goto(`${UI}/backtests/stacks/${ID}?from=2024-06-01&to=2024-12-31`)
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('+2.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('+2.00R')
     await page.reload()
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('+2.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('+2.00R')
   })
 
   test('clearing the window puts the whole stack back', async ({ page }) => {
     // MUTATION: make `active` true whenever a window is merely SET → the cleared page rebuilds
     // through the rebase instead of returning the untouched book. Red on the R going back.
     await page.goto(`${UI}/backtests/stacks/${ID}?from=2024-06-01&to=2024-12-31`)
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('+2.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('+2.00R')
     await page.goto(`${UI}/backtests/stacks/${ID}`)
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('+3.00R')
-    await expect(rowFor(page, 'MPC SOS Fade')).toContainText('+6.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('+3.00R')
+    await expect(rowFor(page, 'SOS Fade')).toContainText('+6.00R')
   })
 
   test('a window a leg never traded in reads as zero, not as its whole run', async ({ page }) => {
@@ -213,7 +213,7 @@ test.describe('a stack can be read over a PERIOD', () => {
     // 🔴 A leg that stood still is an ANSWER. Falling back to its full-run figure would put its
     // best year on a row inside a window it never traded, and nothing on screen would disagree.
     await page.goto(`${UI}/backtests/stacks/${ID}?from=2024-02-01&to=2024-02-28`)
-    await expect(rowFor(page, 'MPC SOS Fade')).toContainText('+2.00R')
-    await expect(rowFor(page, 'MPC B-LEG')).toContainText('0.00R')
+    await expect(rowFor(page, 'SOS Fade')).toContainText('+2.00R')
+    await expect(rowFor(page, 'B-LEG')).toContainText('0.00R')
   })
 })

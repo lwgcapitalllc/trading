@@ -118,7 +118,7 @@ Two things this does NOT excuse, and which must still be said plainly when they'
 
 See `README.md` for the full repo map and subsystem list.
 
-`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. Engines under `engines/` are canonical shared libraries, and their dependency map is: `market_structure/` is the base and `fibonacci/` is its one downstream consumer (public `StructureSnapshot` only, never its internals). **`order_blocks/` was downstream too until 2026-07-31 and is now STANDALONE** — the mpc rework stopped creating blocks on structure breaks, so it takes plain OHLC and consumes no engine at all; `sessions/` is standalone and time-driven; `liquidity/` and `session_volume_profile/` compose `sessions/`; `vwap/` and `news/` are standalone and time-driven; `vwap/` and `session_volume_profile/` are the two engines that need the bar's **volume**; `fair_value_gaps/` is standalone and OHLC-driven (no upstream engine, no volume, no timestamp — pure price-pattern detection); `rsi_divergence/` is likewise standalone (needs close for Wilder's RSI + the bar's high/low for the price anchor — no upstream engine, no volume, no timestamp); `equal_highs_lows/` is likewise standalone (needs high/low/close for ATR(50) + strict price pivots — no upstream engine, no volume, no timestamp); `candlesticks/` is likewise standalone (needs OHLC only — no upstream engine, no volume, no timestamp — and is the only engine here ported from a THIRD-PARTY indicator rather than from `mpc_assistant.pine`). `engines/regime/` and `engines/market_structure/` are imported by `algos/` via thin shims in `algos/shared/`. **`command-center/` imports six directly** (bare-name, public API only, never a second implementation): `regime/` and `news/` for tagging and the news filter, and `market_structure/` + `fair_value_gaps/` + `equal_highs_lows/` + `order_blocks/` for the backtest PRICE CHART's overlay layers (`backend/services/structure_overlays.py`, `fvg_overlays.py`, `ob_overlays.py`). Those four are **display** consumers — no strategy reads them, so a change there moves what a chart shows and never a trade — but they are consumers, and an engine's own CLAUDE.md must say so rather than claiming nothing imports it. Every other engine gets its `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS strategy folders — ⚠ **but only its `.cs`, `.mq5` and `python/` halves.** Since 2026-09-02 it also holds `tradingview/`, the Pine `strategy()` source, and **nothing there is scanned, registered or deployed by anything**: the scanner globs `.cs` and `.mq5` only and has never globbed `.pine`. Those files reach the lab by being PORTED to `python/`, gate and all. 🔴 **A Pine strategy INLINES its engine rather than importing one, so it is not a consumer of `engines/` and nothing under `indicators/` is a consumer of it either** — that is why the move cost nothing, and it is also why an inlined copy and its canonical source are now two trees apart with nothing enforcing that they agree. Per-engine detail lives in each engine's CLAUDE.md — do not restate it here.
+`algos/`, `smart-money/`, and `command-center/` are fully independent from each other. Engines under `engines/` are canonical shared libraries, and their dependency map is: `market_structure/` is the base and `fibonacci/` is its one downstream consumer (public `StructureSnapshot` only, never its internals). **`order_blocks/` was downstream too until 2026-07-31 and is now STANDALONE** — the mpc rework stopped creating blocks on structure breaks, so it takes plain OHLC and consumes no engine at all; `sessions/` is standalone and time-driven; `liquidity/` and `session_volume_profile/` compose `sessions/`; `vwap/` and `news/` are standalone and time-driven; `vwap/` and `session_volume_profile/` are the two engines that need the bar's **volume**; `fair_value_gaps/` is standalone and OHLC-driven (no upstream engine, no volume, no timestamp — pure price-pattern detection); `rsi_divergence/` is likewise standalone (needs close for Wilder's RSI + the bar's high/low for the price anchor — no upstream engine, no volume, no timestamp); `equal_highs_lows/` is likewise standalone (needs high/low/close for ATR(50) + strict price pivots — no upstream engine, no volume, no timestamp); `candlesticks/` is likewise standalone (needs OHLC only — no upstream engine, no volume, no timestamp — and is the only engine here ported from a THIRD-PARTY indicator rather than from `mpc_jarvis.pine`). `engines/regime/` and `engines/market_structure/` are imported by `algos/` via thin shims in `algos/shared/`. **`command-center/` imports six directly** (bare-name, public API only, never a second implementation): `regime/` and `news/` for tagging and the news filter, and `market_structure/` + `fair_value_gaps/` + `equal_highs_lows/` + `order_blocks/` for the backtest PRICE CHART's overlay layers (`backend/services/structure_overlays.py`, `fvg_overlays.py`, `ob_overlays.py`). Those four are **display** consumers — no strategy reads them, so a change there moves what a chart shows and never a trade — but they are consumers, and an engine's own CLAUDE.md must say so rather than claiming nothing imports it. Every other engine gets its `algos/shared/` shim when a bot first uses it. `strategies/` is consumed by `command-center/` (scanner + deploy) and deployed to the VPS strategy folders — ⚠ **but only its `.cs`, `.mq5` and `python/` halves.** Since 2026-09-02 it also holds `tradingview/`, the Pine `strategy()` source, and **nothing there is scanned, registered or deployed by anything**: the scanner globs `.cs` and `.mq5` only and has never globbed `.pine`. Those files reach the lab by being PORTED to `python/`, gate and all. 🔴 **A Pine strategy INLINES its engine rather than importing one, so it is not a consumer of `engines/` and nothing under `indicators/` is a consumer of it either** — that is why the move cost nothing, and it is also why an inlined copy and its canonical source are now two trees apart with nothing enforcing that they agree. Per-engine detail lives in each engine's CLAUDE.md — do not restate it here.
 
 ---
 
@@ -141,14 +141,14 @@ See `README.md` for the full repo map and subsystem list.
 
 | Subsystem | What it is | What to know before you touch it |
 |---|---|---|
-| `algos/` | Live MT5 trading bots on a Windows VPS | **`mpc_sos_fade_demo` is LIVE and ARMED** — PU Prime **ECN 700152905**, `XAUUSD.p`, account risk cap 10%. `mpc_bleg_demo` is registered and BENCHED. A live bot imports from a frozen `deployed/` snapshot, so a `git pull` cannot move it — only `promote.py` can. A fleet kill switch and an account-mismatch halt both exist and both LATCH. |
+| `algos/` | Live MT5 trading bots on a Windows VPS | **`sos_fade_demo` is LIVE and ARMED** — PU Prime **ECN 700152905**, `XAUUSD.p`, account risk cap 10%. `b_leg_demo` is registered and BENCHED. A live bot imports from a frozen `deployed/` snapshot, so a `git pull` cannot move it — only `promote.py` can. A fleet kill switch and an account-mismatch halt both exist and both LATCH. |
 | `command-center/` | React + FastAPI local ops platform — monitors bots over SSH, runs and grades backtests | A bot is registered ONCE (`routers/bots.py::BotReg`) and addressed by its KEY, never its display name. A broker ACCOUNT is a first-class row too. The Smart Money UI is flagged OFF behind one boolean. |
 | `backtest/` | Strategy- and instrument-agnostic Python bar-replay runner — data, fills, costs, optimizer, portfolio stacks | An unmeasured cost REFUSES rather than borrowing a sibling tier's number. Swap, commission and — since 2026-08-14 — **ECN's spread** have been measured; **Prime and Cent still refuse, and ECN's figure may not be copied onto them.** History floors are measured per broker, never hardcoded. |
 | `smart-money/` | Scans and profiles consistent crypto/forex traders for a copy-trade candidate pool | Runs locally on Mac. Stages 1–2 and 5 live; 3–4 blocked on API keys. |
 
 ### The engines — canonical, one implementation each
 
-Ported from `indicators/engines/mpc_assistant.pine` and gated by a `compare_*.py` parity check on a real
+Ported from `indicators/engines/mpc_jarvis.pine` and gated by a `compare_*.py` parity check on a real
 TradingView export — except `regime/` and `news/`, which have no Pine source, and `candlesticks/`,
 which is ported from a third-party indicator. **Never build a second implementation of any of
 them** — see *Never Do*. The dependency map is in *Repo Structure* above. Per-engine detail is in
@@ -174,8 +174,8 @@ each engine's own CLAUDE.md and is not restated here.
 
 | Subsystem | What it is |
 |---|---|
-| `strategies/` | Strategy source by runner platform — NT8 `.cs`, MT5 `.mq5`, Python packages, and since **2026-09-02** the Pine `strategy()` files in `tradingview/` (moved in from `indicators/strategies/`; the two scratch ideas dropped to `tradingview/research/`). ⚠ **Nothing under `tradingview/` is scanned or deployed** — the lab's scanner globs `.cs` and `.mq5` only. Python ports with a GREEN parity gate: `mpc_sos_fade`, `mpc_bleg`, and `mpc_bos` (**narrow** — the gap ladder never ran). **`mpc_realign` has NO gate at all** — no export twin, no CSV, no `compare_realign.py` — so every number it has produced is a lab finding. The end-to-end process, and which step only a human can do, is `docs/STRATEGY_WORKFLOW.md`. |
-| `indicators/` | Pine INDICATOR source. Split by DECLARATION since 2026-08-13, and since **2026-09-02 the two halves are in two different trees**: `indicators/engines/` holds the 17 `indicator()` files, and the 16 `strategy(` files moved out to `strategies/tradingview/` — Pine runs only on TradingView, so a `strategy()` file is strategy source and belongs beside the MT5, NinjaTrader and Python strategies. Nothing in any `.pine` changed in that move. ⚠ **Count them with `ls`, never from this line** — it read 16 while there were 18, and one was then deleted. **The declaration decides it, never the filename** — `structure_engine.pine` reads like a strategy component and is an indicator. Includes the from-scratch `smc_engine_v2.pine` rebuild — mid-build, and a **separate track** from the `mpc_assistant.pine` the Python engines were ported from. Do not confuse the two. |
+| `strategies/` | Strategy source by runner platform — NT8 `.cs`, MT5 `.mq5`, Python packages, and since **2026-09-02** the Pine `strategy()` files in `tradingview/` (moved in from `indicators/strategies/`; the two scratch ideas dropped to `tradingview/research/`). ⚠ **Nothing under `tradingview/` is scanned or deployed** — the lab's scanner globs `.cs` and `.mq5` only. Python ports with a GREEN parity gate: `sos_fade`, `b_leg`, and `bos` (**narrow** — the gap ladder never ran). **`realign` has NO gate at all** — no export twin, no CSV, no `compare_realign.py` — so every number it has produced is a lab finding. The end-to-end process, and which step only a human can do, is `docs/STRATEGY_WORKFLOW.md`. |
+| `indicators/` | Pine INDICATOR source. Split by DECLARATION since 2026-08-13, and since **2026-09-02 the two halves are in two different trees**: `indicators/engines/` holds the 17 `indicator()` files, and the 16 `strategy(` files moved out to `strategies/tradingview/` — Pine runs only on TradingView, so a `strategy()` file is strategy source and belongs beside the MT5, NinjaTrader and Python strategies. Nothing in any `.pine` changed in that move. ⚠ **Count them with `ls`, never from this line** — it read 16 while there were 18, and one was then deleted. **The declaration decides it, never the filename** — `structure_engine.pine` reads like a strategy component and is an indicator. Includes the from-scratch `smc_engine_v2.pine` rebuild — mid-build, and a **separate track** from the `mpc_jarvis.pine` the Python engines were ported from. Do not confuse the two. |
 | `education/smc/` | The course material the engines were extracted FROM. Reference a human reads; no code reads any of it. |
 
 ### scripts/
@@ -301,7 +301,7 @@ moving it, and record the new width here; do not move it because a file is sitti
 ⚠ **The direction of travel is good and the audit should say so.** Since the ceiling landed,
 seven of the eleven oversized docs have SHRUNK, several by a lot — `command-center/backend`
 −83 KB, `command-center/frontend` −75 KB, `indicators` −166 KB, `command-center` −117 KB, and
-`strategies/python/mpc_sos_fade` −102 KB (307 → 205 KB, 2026-08-27). The reminder is working on
+`strategies/python/sos_fade` −102 KB (307 → 205 KB, 2026-08-27). The reminder is working on
 the files it can reach.
 
 
@@ -424,11 +424,11 @@ ssh forexvps "cd C:\trading && git pull origin main"
 
 # Deploy the code to a bot (the ONLY thing that changes what it trades).
 # Stages, verifies it imports, then swaps; a failure leaves the running bot untouched.
-ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot mpc_sos_fade_demo"
+ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot sos_fade_demo"
 
 # Stop the running bot by ASKING, never by killing. It polls its instance dir every 10s,
 # writes a shutdown record, and clears the file. Give it ~30s, then confirm it is gone.
-ssh forexvps "echo stop > C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\stop.request"
+ssh forexvps "echo stop > C:\trading\algos\markets\fx\instances\sos_fade_demo\stop.request"
 ssh forexvps "wmic process where \"name='python.exe'\" get commandline"
 
 # Restart onto the new version. SYS_MONITOR also brings a dead bot back on its own within
@@ -449,8 +449,8 @@ the half left behind. Story: `HISTORY.md`, the 2026-08-13 deploy that alarmed on
 running code that predates the file. Delete the request afterwards, since nothing consumed it:
 
 ```bash
-ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
-ssh forexvps "del C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\stop.request"
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot sos_fade_demo%'\" call terminate"
+ssh forexvps "del C:\trading\algos\markets\fx\instances\sos_fade_demo\stop.request"
 ```
 
 ⚠ **NEVER `taskkill /f /im python.exe`.** It kills every Python process on the box — the
@@ -839,7 +839,7 @@ behaviour.** It cannot — and that is exactly the confident argument a gate exi
 have to trust. **Only the 5 engines whose gate ran GREEN were reformatted** (`market_structure`,
 `rsi_divergence`, `session_volume_profile`, `candlesticks`, `vwap`). `fibonacci`, `order_blocks`,
 `sessions`, `liquidity`, `fair_value_gaps`, `equal_highs_lows` and **all four strategies including
-the LIVE `mpc_sos_fade`** were reverted to HEAD and are still unformatted.
+the LIVE `sos_fade`** were reverted to HEAD and are still unformatted.
 
 🔴 **9 of the 14 gates COULD NOT RUN, and that is the finding.** Exports are git-ignored scratch
 (`.gitignore` → `*VANTAGE_*.csv`), so **which engine you can gate depends on what is sitting on
@@ -858,7 +858,7 @@ read this as rule 22 having a general exception.
 🔴 **THE CARVE-OUT IS ENFORCED IN `ruff.toml`, NOT BY REMEMBERING WHAT YOU REVERTED.** It was
 first done with `git checkout --` on those paths, which holds exactly until the next
 `ruff format .` over the whole repo — which re-formatted every one of them, `git add -A` staged
-it, and the LIVE `mpc_sos_fade` shipped in a commit whose message said it was excluded. **Nothing
+it, and the LIVE `sos_fade` shipped in a commit whose message said it was excluded. **Nothing
 failed and no test went red; the commit message was the only thing that disagreed with the tree.**
 ⚠ **A decision that lives in your memory of what you reverted is not one the next command
 respects.** ⚠ **The exclusion only binds an explicitly-named path when `--force-exclude` is
@@ -881,7 +881,7 @@ the other on every commit.
 - `wip/secondary-pine` — **parked TradingView work, rescued from a stash 2026-09-01.** The
   1m-engine / drift / secondary rewrite of the A+ Pine strategy, one file, 276 insertions.
   ⚠ **It does NOT apply to `main` and is not meant to** — it was taken on **f70053e9
-  (2026-07-19)** against `indicators/mpc_strategy.pine`, a path that stopped existing at the
+  (2026-07-19)** against `indicators/sos_fade_strategy.pine`, a path that stopped existing at the
   2026-08-13 split into `indicators/strategies/` and `indicators/engines/`. Reviving it means
   re-applying the ideas onto the current file, not merging the branch.
   🔴 **The reason it is a branch is that a stash is the most losable place git has**: it is
@@ -907,7 +907,7 @@ the other on every commit.
 - Hardcode a broker's history depth — including as a "sensible" DEFAULT start date on a tool. A default is a hardcode with better manners: it fails quietly in the direction nobody checks, silently narrowing every run that didn't pass the flag (`run_report.py` did exactly this until 2026-07-29). Measure the floor, or refuse to run and ask.
 - Construct a `LAB_STRATEGY` class directly when a run may carry costs — go through `backtest.replay.build_strategy`. `LAB_STRATEGY` is an open contract, so a strategy may predate the `cost_profile` kwarg; passing it unconditionally crashes, and passing it conditionally reintroduces the exact bug that let the lab collect commission and slippage for months and charge neither. The helper refuses to run instead
 - Report a metric as verified because its arithmetic reproduces. Every stored KPI on run `f866873aa862` recomputed to the cent and the page still misled three ways — a drawdown in dollars only, a win rate counting breakeven scratches, a concentration measured over quarters answering a different question from the one its name asks. **Ask what a reader will CONCLUDE from a number, not just whether it is correct**
-- "Fix" a wrong-side stop filling at the next bar's open. It is the one-bar order delay every fill model here is built on, it is identical in Pine and Python (so parity is unaffected), and it makes the backtest look slightly WORSE than reality — the safe direction. Removing it is a real behaviour change across all five Pine files and needs its own measurement, not a tidy-up. See `strategies/python/mpc_sos_fade/CLAUDE.md` → `### Wrong-side stop fills`
+- "Fix" a wrong-side stop filling at the next bar's open. It is the one-bar order delay every fill model here is built on, it is identical in Pine and Python (so parity is unaffected), and it makes the backtest look slightly WORSE than reality — the safe direction. Removing it is a real behaviour change across all five Pine files and needs its own measurement, not a tidy-up. See `strategies/python/sos_fade/CLAUDE.md` → `### Wrong-side stop fills`
 - Read a `/health` response as a statement about the thing BEHIND the agent, or a `schtasks /run` exit code as evidence the task started. The MT5 agent answers `ok` while its terminal is disconnected; `schtasks` answers SUCCESS for a task Windows refuses to launch. Probe the thing you are actually claiming, and re-probe after any action you take
 - Trust a probe whose NEGATIVE result a healthy system can also produce — that is not a probe, it is a coin flip you have decided to believe. The live bot asked its bars whether the terminal was alive, and an empty bar frame is equally what a quiet market returns: when MetaTrader auto-updated and restarted itself on 2026-08-04 the bot read the dead link as a quiet market and sat blind for 50 minutes with its heartbeat ticking, the watchdog green and the Bots page saying RUNNING. `account_info()` is the probe now, because it answers whenever the link is alive whatever the market is doing. **The generalisation is about VALUES, not labels: never let "no data" and "cannot ask" be the same value.** Every layer in that path was individually defensible — an empty DataFrame is a reasonable return for a bar fetcher, a null balance a reasonable write when you have no balance — and the distinction was destroyed at the bottom and unrecoverable at every level above it, leaving a blank cell as the only symptom in the entire system
 - Record what you REQUESTED as though it were what you RECEIVED. The bar cache did exactly that until 2026-08-04: it fetched a window, saved whatever came back, and then marked the whole **requested** range as covered — so asking for bars through a date the broker did not have yet (every `--end today`) marked that date fetched forever, and every later run read a cache HIT and got a frame that silently stopped early. Measured: the sidecar claimed history through 2026-08-06 while the file held nothing past 2026-08-03 03:45, with the agent serving the missing bars on request the whole time. **The returned frame is clean and gives you no way to notice.** This is the same defect as the hardcoded history floor arriving from the other end of the window — the system answering a narrower question than the one asked. Clamp coverage to the data, and never into today, because a day still filling looks exactly like a complete one

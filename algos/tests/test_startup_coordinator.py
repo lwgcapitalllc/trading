@@ -51,11 +51,11 @@ def test_the_coordinator_does_not_mistake_itself_for_the_bot(monkeypatch):
         "run",
         _wmic(
             "CommandLine\n"
-            "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"
+            "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot sos_fade_demo\n"
         ),
     )
 
-    assert sc.bot_is_running("mpc_sos_fade_demo") is False
+    assert sc.bot_is_running("sos_fade_demo") is False
 
 
 def test_a_real_runner_process_is_still_detected(monkeypatch):
@@ -66,11 +66,11 @@ def test_a_real_runner_process_is_still_detected(monkeypatch):
         "run",
         _wmic(
             "CommandLine\n"
-            "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo --live\n"
+            "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo --live\n"
         ),
     )
 
-    assert sc.bot_is_running("mpc_sos_fade_demo") is True
+    assert sc.bot_is_running("sos_fade_demo") is True
 
 
 def test_another_bots_runner_is_not_this_bot(monkeypatch):
@@ -80,12 +80,11 @@ def test_another_bots_runner_is_not_this_bot(monkeypatch):
         sc.subprocess,
         "run",
         _wmic(
-            "CommandLine\n"
-            "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_bleg_demo --live\n"
+            "CommandLine\npython.exe C:\\trading\\algos\\live\\runner.py --bot b_leg_demo --live\n"
         ),
     )
 
-    assert sc.bot_is_running("mpc_sos_fade_demo") is False
+    assert sc.bot_is_running("sos_fade_demo") is False
 
 
 def test_the_pair_is_required_not_either_half(monkeypatch):
@@ -97,11 +96,11 @@ def test_the_pair_is_required_not_either_half(monkeypatch):
         _wmic(
             "CommandLine\n"
             "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot\n"
-            "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"
+            "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot sos_fade_demo\n"
         ),
     )
 
-    assert sc.bot_is_running("mpc_sos_fade_demo") is False
+    assert sc.bot_is_running("sos_fade_demo") is False
 
 
 def test_the_runners_own_guard_does_not_match_the_coordinator_that_launched_it(
@@ -164,7 +163,7 @@ def test_an_unreadable_process_list_is_treated_as_running(monkeypatch):
         raise OSError("wmic missing")
 
     monkeypatch.setattr(sc.subprocess, "run", _boom)
-    assert sc.bot_is_running("mpc_sos_fade_demo") is True
+    assert sc.bot_is_running("sos_fade_demo") is True
 
 
 # ── which log is the bot actually writing? ───────────────────────────────────

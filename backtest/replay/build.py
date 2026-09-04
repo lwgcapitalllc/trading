@@ -72,7 +72,7 @@ def build_strategy(
             raise TypeError(
                 f"{strategy_cls.__name__} does not accept `cost_profile`, but this run states "
                 f"costs to charge. Add the parameter and pass it through to Execution (see "
-                f"MpcSosFadeStrategy._fill_model), or run with commission and slippage at 0 — "
+                f"SosFadeStrategy._fill_model), or run with commission and slippage at 0 — "
                 f"running it as-is would silently discard the costs, which is the bug this "
                 f"refuses."
             )
@@ -87,7 +87,7 @@ def build_strategy(
             raise TypeError(
                 f"{strategy_cls.__name__} does not accept `account`, but this run shares one "
                 f"account between its legs. Add `account=None, leg='strat'` to its __init__ and "
-                f"pass both through to Execution (see MpcSosFadeStrategy.__init__) — running it "
+                f"pass both through to Execution (see SosFadeStrategy.__init__) — running it "
                 f"as-is would give this leg its own uncapped balance and silently ignore the "
                 f"shared risk budget."
                 + (

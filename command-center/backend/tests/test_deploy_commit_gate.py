@@ -41,7 +41,7 @@ _HOOK = _REPO / ".githooks" / "commit-msg"
 _BOTS = _BACKEND / "routers" / "bots.py"
 
 
-_PROBE_STAGED = "algos/markets/fx/instances/mpc_sos_fade_demo/config.json"
+_PROBE_STAGED = "algos/markets/fx/instances/sos_fade_demo/config.json"
 
 
 def _probe_paths() -> tuple[Path, Path]:
@@ -155,7 +155,7 @@ def test_the_real_hook_accepts_the_message_shape_this_app_produces():
     subprocess.run = _fake_run  # type: ignore[assignment]
     try:
         bots._git_commit_push(
-            _REPO / "algos" / "markets" / "fx" / "instances" / "mpc_sos_fade_demo" / "config.json",
+            _REPO / "algos" / "markets" / "fx" / "instances" / "sos_fade_demo" / "config.json",
             "bots: probe [command center]",
             "a bot moved between accounts from the Bots page; an operational deployment",
         )

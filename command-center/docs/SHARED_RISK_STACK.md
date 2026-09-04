@@ -60,8 +60,8 @@ modelled, so the current stack **overstates** the result. It is a candidate scre
 ## The work
 
 ### 1. Give B-LEG the account seam
-`strategies/python/mpc_sos_fade/execution.py` already takes an injected `account` (default
-`SoloAccount`). `strategies/python/mpc_bleg/` still sizes itself. Repeat the same edit.
+`strategies/python/sos_fade/execution.py` already takes an injected `account` (default
+`SoloAccount`). `strategies/python/b_leg/` still sizes itself. Repeat the same edit.
 
 - Constructor takes `account=None, leg: str = "strat"`; default to `SoloAccount(balance=…)`.
 - Entries go through `account.request_fill(...)`; stop moves call `account.update_stop(...)`;
@@ -132,10 +132,10 @@ Driven end to end through the running backend — `mode: "shared"`, XAUUSD M15, 
 
 | | trades | R | closing |
 |---|---|---|---|
-| `mpc_sos_fade` shared | 17 | +20.04 | |
-| `mpc_sos_fade` solo | 17 | +20.04 | $21,681.11 |
-| `mpc_bleg` shared | 16 | +6.31 | |
-| `mpc_bleg` solo | 16 | +6.31 | $15,188.43 |
+| `sos_fade` shared | 17 | +20.04 | |
+| `sos_fade` solo | 17 | +20.04 | $21,681.11 |
+| `b_leg` shared | 16 | +6.31 | |
+| `b_leg` solo | 16 | +6.31 | $15,188.43 |
 | **shared account** | **33** | **+26.35** | **$36,805.85** |
 
 ✅ **The seam is NEUTRAL, which is the control this first run exists to establish**: every leg

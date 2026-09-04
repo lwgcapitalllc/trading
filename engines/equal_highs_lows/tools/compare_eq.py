@@ -5,7 +5,7 @@ compare_eq.py — parity check: TradingView Pine export vs Python Equal Highs/Lo
 Purpose
 -------
 Prove the Python engine in equal_highs_lows/ produces the same EQH/EQL levels as the source-of-truth
-"EQUAL HIGHS / LOWS" block in mpc_assistant.pine, on real candles. It runs EqualHighsLowsEngine on the
+"EQUAL HIGHS / LOWS" block in mpc_jarvis.pine, on real candles. It runs EqualHighsLowsEngine on the
 same candles the Pine build saw and diffs its output against the px_eq* columns the Pine build plotted.
 
 What is compared (per bar, after --warmup)
@@ -240,7 +240,7 @@ def main(argv=None):
     print("Tip: mismatches confined to early bars = warmup (Pine's ATR was already warm and it may hold "
           "active EQ levels and a prior pivot from before the export window; the cold-started Python "
           "engine converges once its ATR settles and those off-window levels have been mitigated). "
-          "Persistent mismatches after a clean run = a real logic gap to fix against mpc_assistant.pine.")
+          "Persistent mismatches after a clean run = a real logic gap to fix against mpc_jarvis.pine.")
     return 1
 
 

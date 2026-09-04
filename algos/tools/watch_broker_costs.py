@@ -36,8 +36,8 @@ make a fresh reading indistinguishable from a stale one, which is the same reaso
 does not write the instance config.
 
 Usage (the box's scheduled task runs the first form):
-    python3 algos/tools/watch_broker_costs.py --bot mpc_sos_fade_demo
-    python3 algos/tools/watch_broker_costs.py --bot mpc_sos_fade_demo --dry-run
+    python3 algos/tools/watch_broker_costs.py --bot sos_fade_demo
+    python3 algos/tools/watch_broker_costs.py --bot sos_fade_demo --dry-run
 
 Exit codes: 0 ran (whether or not anything moved), 1 the watch itself could not run.
 ⚠ **Exit 0 does NOT mean the costs are current** — it means the watcher worked. The verdict is in

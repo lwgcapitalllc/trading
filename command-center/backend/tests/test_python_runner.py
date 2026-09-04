@@ -19,11 +19,11 @@ from services import python_runner, strategy_scanner
 
 
 def test_resolves_a_strategy_by_its_class_name():
-    found = python_runner._resolve("MpcSosFadeStrategy")
+    found = python_runner._resolve("SosFadeStrategy")
     assert found is not None, "the class name the routers send must resolve"
     pkg_name, entry = found
-    assert pkg_name == "mpc_sos_fade"
-    assert entry["strategy"].__name__ == "MpcSosFadeStrategy"
+    assert pkg_name == "sos_fade"
+    assert entry["strategy"].__name__ == "SosFadeStrategy"
 
 
 def test_the_scanner_and_the_runner_agree_on_the_name():
@@ -34,7 +34,7 @@ def test_the_scanner_and_the_runner_agree_on_the_name():
 
     import config as cfg
 
-    pkg_dir = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+    pkg_dir = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "sos_fade"
     row, err = strategy_scanner._parse_python_package(pkg_dir, Path(cfg.MONOREPO_ROOT))
     assert err is None
     assert row is not None
@@ -42,9 +42,9 @@ def test_the_scanner_and_the_runner_agree_on_the_name():
 
 
 def test_the_package_id_is_not_the_contract():
-    """ "mpc_sos_fade" is the lab id, not the class name — resolving it would mean accepting a key the
+    """ "sos_fade" is the lab id, not the class name — resolving it would mean accepting a key the
     dispatcher never sends and re-opening the original bug from the other side."""
-    assert python_runner._resolve("mpc_sos_fade") is None
+    assert python_runner._resolve("sos_fade") is None
 
 
 @pytest.mark.parametrize("name", ["", None, "NoSuchStrategy"])
@@ -59,7 +59,7 @@ def test_unknown_params_are_dropped_not_passed_through():
     """The lab's stored params can carry leftovers from an older schema or another runner. A
     dataclass raises TypeError on an unexpected keyword, which would fail the run over a param the
     strategy doesn't even read."""
-    from strategies.python.mpc_sos_fade.config import SosFadeConfig
+    from strategies.python.sos_fade.config import SosFadeConfig
 
     config = python_runner._build_config(
         SosFadeConfig, {"exec_risk_pct": 3.0, "AccountSize": 50000, "NotAParam": "x"}, "XAUUSD.s"
@@ -69,7 +69,7 @@ def test_unknown_params_are_dropped_not_passed_through():
 
 def test_json_types_are_coerced_to_the_field_types():
     """Params round-trip through JSON, where every number is a float and a bool may be 0/1."""
-    from strategies.python.mpc_sos_fade.config import SosFadeConfig
+    from strategies.python.sos_fade.config import SosFadeConfig
 
     config = python_runner._build_config(
         SosFadeConfig, {"exec_risk_pct": "2.5", "flat_by_close": 1}, "XAUUSD.s"
@@ -80,7 +80,7 @@ def test_json_types_are_coerced_to_the_field_types():
 
 def test_the_symbol_comes_from_the_run_not_the_param_form():
     """The lab already knows the instrument; tick mode shouldn't need it typed in twice."""
-    from strategies.python.mpc_sos_fade.config import SosFadeConfig
+    from strategies.python.sos_fade.config import SosFadeConfig
 
     assert python_runner._build_config(SosFadeConfig, {}, "XAUUSD.s").symbol == "XAUUSD.s"
 
@@ -163,14 +163,10 @@ def test_meta_json_matches_the_config_dataclass():
 
     import config as cfg
 
-    from strategies.python.mpc_sos_fade import SosFadeConfig
+    from strategies.python.sos_fade import SosFadeConfig
 
     meta_path = (
-        Path(cfg.MONOREPO_ROOT)
-        / "strategies"
-        / "python"
-        / "mpc_sos_fade"
-        / "mpc_sos_fade.meta.json"
+        Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "sos_fade" / "sos_fade.meta.json"
     )
     meta = json.loads(meta_path.read_text())
     fields = {f.name for f in __import__("dataclasses").fields(SosFadeConfig)}
@@ -183,16 +179,16 @@ def test_meta_json_matches_the_config_dataclass():
 
 
 # 🔴 THE GUARD BELOW CHECKED ONE STRATEGY OUT OF SIX UNTIL 2026-09-02, UNDER A NAME THAT SAYS
-# "EVERY". It named `mpc_sos_fade` outright, so `mpc_bleg`, `mpc_bos`, `mpc_realign`,
-# `loss_recovery` and `mpc_extreme_leg` were never covered — a green run said nothing about any of
+# "EVERY". It named `sos_fade` outright, so `b_leg`, `bos`, `realign`,
+# `loss_recovery` and `extreme_leg` were never covered — a green run said nothing about any of
 # them. MEASURED the day it was widened, by scanning each package the way the lab does:
 #
 #     loss_recovery      11 settings,   0 undocumented
-#     mpc_bleg          117 settings,  98 undocumented
-#     mpc_bos           137 settings,  91 undocumented
-#     mpc_extreme_leg    26 settings,   0 undocumented
-#     mpc_realign       126 settings, 120 undocumented
-#     mpc_sos_fade      116 settings,   0 undocumented
+#     b_leg          117 settings,  98 undocumented
+#     bos           137 settings,  91 undocumented
+#     extreme_leg    26 settings,   0 undocumented
+#     realign       126 settings, 120 undocumented
+#     sos_fade      116 settings,   0 undocumented
 #
 # ⚠ **It is a RATCHET, not a blanket rule, and that is deliberate.** Turning it on everywhere makes
 # 309 params fail at once with nothing that can auto-fix them — a wall, and this repo already knows
@@ -200,8 +196,8 @@ def test_meta_json_matches_the_config_dataclass():
 # packages are locked clean, and the three others are named here with their counts rather than left
 # to be discovered. **Moving a package out of the un-covered list is the unit of work.** Do not add
 # a package to the clean list without running the scan above.
-_DOCUMENTED_PACKAGES = ("mpc_sos_fade", "mpc_extreme_leg", "loss_recovery")
-_NOT_YET = {"mpc_bleg": 98, "mpc_bos": 91, "mpc_realign": 120}
+_DOCUMENTED_PACKAGES = ("sos_fade", "extreme_leg", "loss_recovery")
+_NOT_YET = {"b_leg": 98, "bos": 91, "realign": 120}
 
 
 @pytest.mark.parametrize("package", _DOCUMENTED_PACKAGES)
@@ -260,14 +256,10 @@ def test_enum_defaults_are_legal_choices():
 
     import config as cfg
 
-    from strategies.python.mpc_sos_fade import SosFadeConfig
+    from strategies.python.sos_fade import SosFadeConfig
 
     meta_path = (
-        Path(cfg.MONOREPO_ROOT)
-        / "strategies"
-        / "python"
-        / "mpc_sos_fade"
-        / "mpc_sos_fade.meta.json"
+        Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "sos_fade" / "sos_fade.meta.json"
     )
     meta = json.loads(meta_path.read_text())
     defaults = SosFadeConfig()

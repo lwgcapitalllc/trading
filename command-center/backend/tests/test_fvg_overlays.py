@@ -5,7 +5,7 @@ Two halves:
 
   1. **Hand-built candles** pin the layer's own rules: which gaps get drawn (only those live at a
      trade / blocked / missed anchor, and ALL of them when several overlap), the box geometry
-     against the Pine box's real span, and that the settings are mpc_assistant's — including the
+     against the Pine box's real span, and that the settings are mpc_jarvis's — including the
      timeframe-split gap floor, which is the one that silently draws the wrong gap set if it breaks.
 
   2. **A real TradingView export** proves the boxes ARE the Pine's gaps, price for price. The CSV
@@ -145,11 +145,11 @@ def test_a_gap_still_open_at_the_end_runs_to_the_last_candle():
     assert got[_B] == (5, 7)
 
 
-# ── The settings are mpc_assistant.pine's ─────────────────────────────────────
+# ── The settings are mpc_jarvis.pine's ─────────────────────────────────────
 
 
 def test_gap_floor_follows_mpcs_timeframe_split():
-    """`fvgThreshPct = timeframe.in_seconds() < 900 ? 0.0 : 0.04` (mpc_assistant.pine:410-412). Get
+    """`fvgThreshPct = timeframe.in_seconds() < 900 ? 0.0 : 0.04` (mpc_jarvis.pine:410-412). Get
     this wrong and the chart draws a different gap SET from the indicator it is meant to mirror,
     with nothing on screen to say so."""
     assert mpc_threshold_pct("M1") == 0.0

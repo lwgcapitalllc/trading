@@ -14,7 +14,7 @@ halts, link outages, review findings — is HEALTH and goes to a different chat.
 
 **The house shape and the no-Markdown rule both live in `shared/alert_format.py`** — read its
 docstring before changing any wording here. The short version: plain text always, because a lone
-underscore in `mpc_sos_fade` or `XAUUSD.s` makes Telegram reject the whole message; and no
+underscore in `sos_fade` or `XAUUSD.s` makes Telegram reject the whole message; and no
 timestamp, because Telegram already prints the send time in the reader's own local clock.
 
 One emoji per message, and each one means something: direction on the way in, outcome on the way
@@ -154,7 +154,7 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
     wording no longer says so — if that ever reads as a resting order, put the word back rather
     than trusting the layout to carry it.
 
-    `display` is the BOT's name (`MPC SOS Fade`); `snap.strategy` is only ever the class name.
+    `display` is the BOT's name (`SOS Fade`); `snap.strategy` is only ever the class name.
     """
     head = joined([display or snap.strategy, snap.symbol, f"{snap.met} of {snap.of}"])
     lines = [head, _confluence_line(snap)]
@@ -162,7 +162,7 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
         zone = f"Zone {_zone_text(snap.zone, digits)}"
         # ⚠ The stop and the zone's deep edge are the SAME price on this strategy. `exec_sl_level`
         # is 0.886, which is also the deep end of the 0.5-0.886 entry band — a documented property
-        # (`mpc_sos_fade/CLAUDE.md` → the `exec_sl_level` warning), not a rounding artefact. A fill
+        # (`sos_fade/CLAUDE.md` → the `exec_sl_level` warning), not a rounding artefact. A fill
         # at the very bottom of the zone has almost no stop distance, which is exactly what the
         # minimum-stop guard exists to refuse.
         if snap.stop is not None:

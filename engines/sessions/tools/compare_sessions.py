@@ -5,7 +5,7 @@ compare_sessions.py — parity check: TradingView Pine export vs Python sessions
 Purpose
 -------
 Prove the Python engine in sessions/ produces the same session / kill-zone / NY-range clock output
-as the source-of-truth blocks in mpc_assistant.pine, on real candles. It feeds each bar's timestamp
+as the source-of-truth blocks in mpc_jarvis.pine, on real candles. It feeds each bar's timestamp
 (+ high/low) through SessionEngine and diffs the result against the px_* columns the Pine build in
 indicators/engines/sessions_export.pine plotted, bar by bar.
 

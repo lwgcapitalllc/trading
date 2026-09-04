@@ -1,16 +1,16 @@
 ---
-description: Audit the latest mpc_assistant.pine against all extracted Python engines — detect logic drift and missing engines
+description: Audit the latest mpc_jarvis.pine against all extracted Python engines — detect logic drift and missing engines
 ---
 
-Audit `indicators/engines/mpc_assistant.pine` against the extracted Python engines. This is a REPORT-ONLY audit — do not change any engine code.
+Audit `indicators/engines/mpc_jarvis.pine` against the extracted Python engines. This is a REPORT-ONLY audit — do not change any engine code.
 
-Context: `indicators/engines/mpc_assistant.pine` is the source TradingView indicator. It gets edited on TradingView and re-pasted into this repo, so the working-tree copy may be newer than the last commit. Every functional block in it has been ported to a canonical Python engine under `engines/` — the mapping lives in `docs/ENGINE_EXTRACTION_ROADMAP.md`.
+Context: `indicators/engines/mpc_jarvis.pine` is the source TradingView indicator. It gets edited on TradingView and re-pasted into this repo, so the working-tree copy may be newer than the last commit. Every functional block in it has been ported to a canonical Python engine under `engines/` — the mapping lives in `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 
 ## MOST CRUCIAL — the market-structure sync chain (never let it drift)
 
 The market-structure block is the one engine with a dedicated single-purpose Pine mirror that bots run on. Its detection logic must stay in lockstep across the whole chain, top to bottom:
 
-1. `indicators/engines/mpc_assistant.pine` — the structure block (external `st.process` swing/BOS/CHoCH + the internal iSH/iSL/iBOS/iSOS block). **Source of truth.**
+1. `indicators/engines/mpc_jarvis.pine` — the structure block (external `st.process` swing/BOS/CHoCH + the internal iSH/iSL/iBOS/iSOS block). **Source of truth.**
 2. `indicators/engines/structure_engine.pine` — the structure-ONLY extraction. Its detection logic must stay **byte-for-byte identical** to mpc's structure block.
 3. `indicators/engines/structure_engine_export.pine` — instrumented copy of `structure_engine.pine` (adds `px_*` plot columns only). Must mirror it byte-for-byte in logic.
 4. `engines/market_structure/engine.py` — the canonical Python port, validated at 100% parity against `structure_engine_export.pine` by `engines/market_structure/tools/compare_tradingview.py`.
@@ -22,7 +22,7 @@ The market-structure block is the one engine with a dedicated single-purpose Pin
 
 Steps:
 
-1. Run `git diff indicators/engines/mpc_assistant.pine` (and `git log -1` on the file) to see exactly what changed since the last audited version. If the working tree is clean, diff against the commit of the last audit instead.
+1. Run `git diff indicators/engines/mpc_jarvis.pine` (and `git log -1` on the file) to see exactly what changed since the last audited version. If the working tree is clean, diff against the commit of the last audit instead.
 
 2. Read `docs/ENGINE_EXTRACTION_ROADMAP.md` to load the block → engine mapping (structure, order blocks, sessions, kill zones, NY opening range, liquidity levels, VWAP, the three fibs, SVP/MV).
 

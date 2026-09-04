@@ -128,7 +128,7 @@ export function StackConfigModal({
   // none — plus what a rerun of a stack stored before per-leg frames has to reproduce.
   const barValue = initial?.barValue ?? 15
   // 🔴 THE FRAME EACH LEG RUNS ON, and only the ones the reader has actually CHANGED. A strategy
-  // states the frame it was measured on (`mpc_extreme_leg` 5m, `mpc_sos_fade` 15m) and that is
+  // states the frame it was measured on (`extreme_leg` 5m, `sos_fade` 15m) and that is
   // what a leg gets unless it is overridden here. Until 2026-09-03 this form had ONE frame for
   // the whole stack, so putting those two on one account replayed one of them on a frame nobody
   // has ever measured it on — and the combined table said portfolio.

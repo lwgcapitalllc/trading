@@ -4,14 +4,14 @@
 //  EQUAL HIGHS / LOWS EXPORT — parity harness for engines/equal_highs_lows/
 // ============================================================================
 // Instrumented copy of the "EQUAL HIGHS / LOWS (EQH / EQL)" block from
-// mpc_assistant.pine, with ALL drawing removed (no dotted lines, no labels, no
+// mpc_jarvis.pine, with ALL drawing removed (no dotted lines, no labels, no
 // line arrays — those are visuals) and the price-level STATE kept (the eqhPx /
 // eqlPx float arrays). It adds px_eq* plot columns so a TradingView CSV export
 // can be diffed bar-by-bar against the Python EqualHighsLowsEngine by
 // engines/equal_highs_lows/tools/compare_eq.py.
 //
 // Keep the ATR + pivot + formation + mitigation logic byte-identical to
-// mpc_assistant.pine's EQ block. Do not let it drift.
+// mpc_jarvis.pine's EQ block. Do not let it drift.
 //
 // The FVG-persistence exemption (f_fvgNearEq / eqExemptFvg) lives on the FVG
 // side and is intentionally NOT reproduced here — this harness validates the EQ
@@ -21,7 +21,7 @@
 // small counts) don't drag the price chart's scale. All drawing is removed anyway.
 indicator("Equal Highs/Lows Export", overlay = false, max_bars_back = 2000)
 
-// ── GRP_EQ inputs (defaults == mpc_assistant.pine) ──
+// ── GRP_EQ inputs (defaults == mpc_jarvis.pine) ──
 bool  showEq     = input.bool(true, "Show Equal Highs/Lows")
 int   eqPivotLen = input.int(2,   "EQ Pivot Length",       minval = 1, maxval = 20)
 float eqAtrMult  = input.float(0.1, "EQ Tolerance (x ATR)", minval = 0.0, maxval = 2.0, step = 0.05)

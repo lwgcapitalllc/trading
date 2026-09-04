@@ -632,7 +632,7 @@ def _parse_python_package(
 ) -> tuple[Optional[dict], Optional[str]]:
     """Import a Python strategy package → `(row, error)`.
 
-    Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_sos_fade/__init__.py).
+    Opting in means declaring LAB_STRATEGY (see strategies/python/sos_fade/__init__.py).
 
     ⚠ AN IMPORT FAILURE IS REPORTED, NOT SWALLOWED. It still must not take the
     whole scan down — a half-finished package would make every other strategy
@@ -676,7 +676,7 @@ def _parse_python_package(
         "suggested_instrument": spec.get("suggested_instrument"),
         # 🔴 THE FRAME THIS STRATEGY WAS MEASURED ON, in minutes, or `None` when the package
         # never declared one. A strategy belongs to a frame the way it belongs to a setup —
-        # `mpc_extreme_leg` is a 5-minute bot and `mpc_sos_fade` a 15-minute one — and until
+        # `extreme_leg` is a 5-minute bot and `sos_fade` a 15-minute one — and until
         # 2026-09-03 nothing in this app could say so, so the stack page ran every leg on the
         # ONE frame the reader picked and a 5m bot replayed on 15m read as a portfolio result.
         # ⚠ THREE-STATE, and `None` means UNDECLARED rather than "any frame will do" (rule 1).
@@ -862,7 +862,7 @@ def scan_strategies() -> dict:
     # ONCE, before the loop — never per package. A scan reads the module for its params and the
     # FILES for its hash, so a cached import writes a fresh hash beside stale defaults and the row
     # can never be corrected by scanning again. Purging per package would be worse than useless:
-    # mpc_bleg imports mpc_sos_fade and sorts before it, so it would re-import against a still-stale
+    # b_leg imports sos_fade and sorts before it, so it would re-import against a still-stale
     # dependency. See services/strategy_import.py.
     strategy_import.purge_strategy_modules()
     for pkg_dir in (

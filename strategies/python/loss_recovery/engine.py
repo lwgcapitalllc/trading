@@ -15,7 +15,7 @@ Two things this file will NOT do, both deliberate:
 ⚠ It does not build a structure detector. `engines/market_structure` is the canonical one and
   this consumes its public events only (rule 21). The CHoCH it waits for is `external.bull_sos` /
   `external.bear_sos`, and the break leg is `bull_bos_low` / `bear_bos_high` — the same fields
-  mpc_sos_fade's own entry reads.
+  sos_fade's own entry reads.
 
 ⚠ It does not size positions or touch money. It returns R, and `RecoveryTrade.scaled_r` is the
   only figure a journal may add up. Lots, balances and broker minimums belong to the runner.

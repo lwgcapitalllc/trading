@@ -24,8 +24,8 @@ const SHARED_ID = 'st_shared01'
 const SCREEN_ID = 'st_screen01'
 
 const LEGS = [
-  { run_id: 'r_a', strategy_id: 'mpc_sos_fade', strategy_name: 'MPC SOS Fade' },
-  { run_id: 'r_b', strategy_id: 'mpc_bleg', strategy_name: 'MPC B-LEG' },
+  { run_id: 'r_a', strategy_id: 'sos_fade', strategy_name: 'SOS Fade' },
+  { run_id: 'r_b', strategy_id: 'b_leg', strategy_name: 'B-LEG' },
 ]
 
 /**
@@ -34,7 +34,7 @@ const LEGS = [
  * ⚠ `pnl` and `soloPnl` differ by design and `r` is IDENTICAL between them — that is the whole
  * shape of the defect this fixture exists to pin. Inside a shared account a leg sizes off a
  * balance every strategy grew, so the same trades at the same R are worth wildly different
- * dollars; measured on the live stack `st_94aeb25f0c`, MPC B-LEG posts 17.8674R either way and
+ * dollars; measured on the live stack `st_94aeb25f0c`, B-LEG posts 17.8674R either way and
  * $47,758,999 against $21,064. `solo` omitted models a stack replayed before the control book was
  * kept (or a screen, which has no control at all).
  */
@@ -115,7 +115,7 @@ function sharedReport(over: Record<string, unknown> = {}) {
     contention_events: 0,
     legs: [
       {
-        strategy_id: 'mpc_sos_fade',
+        strategy_id: 'sos_fade',
         run_id: 'r_a',
         shared_trades: 17,
         shared_r: 20.04,
@@ -127,7 +127,7 @@ function sharedReport(over: Record<string, unknown> = {}) {
         risk_refused: 0,
       },
       {
-        strategy_id: 'mpc_bleg',
+        strategy_id: 'b_leg',
         run_id: 'r_b',
         shared_trades: 16,
         shared_r: 6.31,
@@ -177,9 +177,9 @@ function replaying(progress?: { phase: string; pct: number; message: string }) {
     combined_r: null,
     contention_events: null,
     progress: progress ?? {
-      phase: 'solo:mpc_bleg',
+      phase: 'solo:b_leg',
       pct: 86,
-      message: 'solo:mpc_bleg · bar 15,872 / 23,712',
+      message: 'solo:b_leg · bar 15,872 / 23,712',
     },
   }
 }
@@ -257,7 +257,7 @@ async function mock(
             failed_strategies: 0,
             status: 'complete',
             created_at: '2026-08-09T10:00:00Z',
-            strategy_names: 'MPC SOS Fade + MPC B-LEG',
+            strategy_names: 'SOS Fade + B-LEG',
             mode: 'shared',
             risk_cap_pct: 10,
           },
@@ -271,7 +271,7 @@ async function mock(
             failed_strategies: 0,
             status: 'complete',
             created_at: '2026-08-08T10:00:00Z',
-            strategy_names: 'MPC SOS Fade + MPC B-LEG',
+            strategy_names: 'SOS Fade + B-LEG',
             mode: 'screen',
             risk_cap_pct: null,
           },
@@ -420,7 +420,7 @@ test.describe('shared-account stacks', () => {
     await expect(verdict).toContainText('2 of 2 on')
     const before = await verdict.locator('.text-\\[34px\\]').innerText()
 
-    await verdict.getByRole('button', { name: /MPC B-LEG/ }).click()
+    await verdict.getByRole('button', { name: /B-LEG/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
     await expect(verdict.locator('.text-\\[34px\\]')).not.toHaveText(before)
   })
@@ -431,18 +431,18 @@ test.describe('shared-account stacks', () => {
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const verdict = page.getByTestId('stack-verdict-card')
-    await verdict.getByRole('button', { name: /MPC B-LEG/ }).click()
+    await verdict.getByRole('button', { name: /B-LEG/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
     // The remaining leg is no longer a button at all — a disabled-looking control you can still
     // press is the version of this that fails silently.
-    await expect(verdict.getByRole('button', { name: /MPC SOS Fade/ })).toHaveCount(0)
+    await expect(verdict.getByRole('button', { name: /SOS Fade/ })).toHaveCount(0)
   })
 
   test('switching a strategy off swaps in the SOLO control, not its share of the stack', async ({
     page,
   }) => {
-    // 🔴 THE DEFECT THIS FILE EXISTS FOR MOST. Reported off the screen 2026-08-10: with MPC SOS
-    // Fade switched off, the page said MPC B-LEG had made $47,758,999 — while the same strategy
+    // 🔴 THE DEFECT THIS FILE EXISTS FOR MOST. Reported off the screen 2026-08-10: with SOS
+    // Fade switched off, the page said B-LEG had made $47,758,999 — while the same strategy
     // run standalone over the same window made $21,064. Both were right. Composing the remaining
     // leg from its SHARED trades answers "what did it contribute to an account the others built";
     // the reader hears "what would this have made alone", and inside the stack it sizes off a
@@ -458,7 +458,7 @@ test.describe('shared-account stacks', () => {
     await expect(page.getByTestId('basis-chip')).toContainText('the shared account, as it ran')
     await expect(page.locator('.text-\\[34px\\]').nth(1)).toContainText('16,805')
 
-    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await verdict.getByRole('button', { name: /SOS Fade/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
     // The SOLO figure ($500), never the leg's share of the shared book ($2,622).
     await expect(page.locator('.text-\\[34px\\]').nth(1)).toContainText('500')
@@ -484,7 +484,7 @@ test.describe('shared-account stacks', () => {
 
     // ⚠ And it stays in R when the leg is switched OFF. It fell back to the trade count there,
     // so one row read `+20.04R` and the other `17` on the same card — two units, one column.
-    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await verdict.getByRole('button', { name: /SOS Fade/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
     await expect(verdict).toContainText('+20.04R')
   })
@@ -500,7 +500,7 @@ test.describe('shared-account stacks', () => {
     await mock(page, 'shared', undefined, { solo: false })
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const verdict = page.getByTestId('stack-verdict-card')
-    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await verdict.getByRole('button', { name: /SOS Fade/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
     await expect(page.getByTestId('basis-chip')).toContainText('never replayed')
     await expect(page.getByTestId('unmeasured-card')).toBeVisible()
@@ -521,7 +521,7 @@ test.describe('shared-account stacks', () => {
     await page.goto(`${UI}/backtests/stacks/${SCREEN_ID}`)
     const verdict = page.getByTestId('stack-verdict-card')
     await expect(page.getByTestId('basis-chip')).toContainText('own account')
-    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await verdict.getByRole('button', { name: /SOS Fade/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
     await expect(page.getByTestId('unmeasured-card')).toHaveCount(0)
     // Its own dollars, straight from the leg — a screen has one book and this is it.
@@ -548,7 +548,7 @@ test.describe('shared-account stacks', () => {
       combined_trades: null,
       combined_r: null,
       contention_events: null,
-      progress: { phase: 'solo:mpc_bleg', pct: 86, message: 'solo:mpc_bleg · bar 15,872 / 23,712' },
+      progress: { phase: 'solo:b_leg', pct: 86, message: 'solo:b_leg · bar 15,872 / 23,712' },
     })
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     await expect(page.getByTestId('shared-account-panel')).toContainText('bar 15,872')
@@ -574,10 +574,10 @@ test.describe('shared-account stacks', () => {
     // caption. Losing either is losing half of what the reader was watching.
     await expect(page.getByTestId('stack-progress')).toContainText('bar 15,872')
     await expect(page.getByTestId('stack-progress')).toContainText('0 of 2 strategies complete')
-    // 🔴 And the phase is said in WORDS. `solo:mpc_bleg` is the machine's name for it and tells the
+    // 🔴 And the phase is said in WORDS. `solo:b_leg` is the machine's name for it and tells the
     // person watching nothing — asserting only the bar count would pass against a banner printing
     // the raw phase straight through.
-    await expect(page.getByTestId('stack-progress')).toContainText('Replaying MPC B-LEG')
+    await expect(page.getByTestId('stack-progress')).toContainText('Replaying B-LEG')
     await expect(page.getByTestId('stack-progress')).not.toContainText('solo:')
   })
 
@@ -671,7 +671,7 @@ test.describe('shared-account stacks', () => {
         neutral: {
           checkable: true,
           ok: false,
-          drifted: ['mpc_bleg'],
+          drifted: ['b_leg'],
           reason: 'nothing was refused, yet these legs post different R shared and solo',
         },
       })
@@ -685,7 +685,7 @@ test.describe('shared-account stacks', () => {
     // different numbers, with nothing on screen accounting for the gap.
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests?tab=stacks`)
-    const shared = page.locator('tr', { hasText: 'MPC SOS Fade + MPC B-LEG' }).first()
+    const shared = page.locator('tr', { hasText: 'SOS Fade + B-LEG' }).first()
     await expect(shared).toContainText('Shared')
     await expect(page.locator('tbody')).toContainText('Screen')
   })
@@ -794,8 +794,8 @@ test.describe('the stack detail audit', () => {
     // The dollars are named for the book they came from, and BOTH books are on the row.
     await expect(table).toContainText('In this stack')
     await expect(table).toContainText('On its own')
-    // The fixture's shared-vs-solo pair for MPC B-LEG: +$2,622 inside the stack, +$500 alone.
-    const bleg = table.locator('tr', { hasText: 'MPC B-LEG' })
+    // The fixture's shared-vs-solo pair for B-LEG: +$2,622 inside the stack, +$500 alone.
+    const bleg = table.locator('tr', { hasText: 'B-LEG' })
     await expect(bleg).toContainText('+$2,622')
     await expect(bleg).toContainText('+$500')
     // ⚠ And R leads, because it is the one per-trade figure a change of position size cannot
@@ -829,7 +829,7 @@ test.describe('the stack detail audit', () => {
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const verdict = page.getByTestId('stack-verdict-card')
     await expect(verdict).toBeVisible()
-    await verdict.getByText('MPC B-LEG').click()
+    await verdict.getByText('B-LEG').click()
 
     await expect(page.getByTestId('unmeasured-card')).toBeVisible()
     await expect(page.getByText('No completed strategy runs to compose')).toHaveCount(0)
@@ -1060,8 +1060,8 @@ test.describe('the stack preview is only asked when it has something to say', ()
         r.fulfill({
           json: [
             {
-              id: 'mpc_sos_fade',
-              name: 'MPC SOS Fade',
+              id: 'sos_fade',
+              name: 'SOS Fade',
               runner: 'python',
               suggested_instrument: 'XAUUSD',
               param_schema: [],
@@ -1069,8 +1069,8 @@ test.describe('the stack preview is only asked when it has something to say', ()
               needs_scan: false,
             },
             {
-              id: 'mpc_bleg',
-              name: 'MPC B-LEG',
+              id: 'b_leg',
+              name: 'B-LEG',
               runner: 'python',
               suggested_instrument: 'XAUUSD',
               param_schema: [],
@@ -1083,8 +1083,8 @@ test.describe('the stack preview is only asked when it has something to say', ()
 
     await page.goto(`${UI}/backtests?tab=stacks`)
     await page.getByRole('button', { name: /new stack/i }).click()
-    await page.getByRole('button', { name: /MPC SOS Fade/ }).click()
-    await page.getByRole('button', { name: /MPC B-LEG/ }).click()
+    await page.getByRole('button', { name: /SOS Fade/ }).click()
+    await page.getByRole('button', { name: /B-LEG/ }).click()
 
     // ⚠ Wait on the settings genuinely being COMPLETE — the account fields visible with two legs
     // ticked is the state that would have fired the preview. Asserting a count of 0 before that is
@@ -1122,7 +1122,7 @@ test.describe('a leg the reader switched off stays off while the stack finishes'
    * reader has answered**, so it needs three.
    */
   test('a third leg finishing does not switch a chosen one back on', async ({ page }) => {
-    const THIRD = { run_id: 'r_c', strategy_id: 'mpc_bos', strategy_name: 'MPC BOS' }
+    const THIRD = { run_id: 'r_c', strategy_id: 'bos', strategy_name: 'BOS' }
     let allDone = false
     await page.route(
       (u) => u.pathname.endsWith('/contention'),

@@ -60,7 +60,7 @@ EXTRA_FEEDS: dict[str, FeedSpec] = {
     # window just as hard as the chart's does.
     #
     # 🔴 5, not 1, since 2026-08-21, and the OWNER of that number is the strategy
-    # (`mpc_sos_fade/config.py::exec_sec_fill_tf_min`) — this is a copy, and
+    # (`sos_fade/config.py::exec_sec_fill_tf_min`) — this is a copy, and
     # `tests/test_run_feeds.py` fails if the two ever disagree. It is a copy rather than an import
     # because this module bounds the WINDOW before any strategy is constructed, and a value it
     # cannot read is a value it would have to guess.

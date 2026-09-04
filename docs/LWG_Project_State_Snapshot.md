@@ -12,7 +12,7 @@
 
 LWG Capital is a personal algorithmic trading operation. The near-term goal is to pass prop firm evaluation challenges. The long-term goal is to run 30–50 funded prop accounts, using prop payouts to fund personal accounts where the rules are looser. The working method is S.Y.S.T.E.M. — Specify, Yield (build), Stress test, Threshold check, Evaluate (live demo), Manage.
 
-**The state changed category on 2026-07-31 and again on 2026-08-05: there is a live bot.** `mpc_sos_fade_demo` has been running on the Windows VPS since 2026-07-31 and has been placing real orders on a PU Prime **demo** account since 2026-08-05. Everything before that date was research; the operation now has a process that trades, a ledger it writes, and a set of guardrails built specifically because it can lose money.
+**The state changed category on 2026-07-31 and again on 2026-08-05: there is a live bot.** `sos_fade_demo` has been running on the Windows VPS since 2026-07-31 and has been placing real orders on a PU Prime **demo** account since 2026-08-05. Everything before that date was research; the operation now has a process that trades, a ledger it writes, and a set of guardrails built specifically because it can lose money.
 
 The work today sits in three tracks. **The live track** — one armed bot, an account-level risk cap, a fleet kill switch, an external dead-man's switch, and a decision ledger backed up to GitHub twice a day. **The research track** — a local Python backtest runner (`backtest/`) that replays strategies bar by bar over canonical engines, plus the command center that drives and grades it. **The engine track** — twelve canonical Python engines extracted from a TradingView SMC indicator, each validated at 100% Pine parity.
 
@@ -131,15 +131,15 @@ Five strategies are registered in `lab.db`. Verified by direct query 2026-08-12:
 
 | Strategy | File | Runner | State |
 |---|---|---|---|
-| **MPC SOS Fade** (A+) | `strategies/python/mpc_sos_fade/` | python | **THE LIVE BOT.** Pine-parity green. The reversal leg of the suite. Ships at `exec_risk_pct = 12.5` in the headline run: **164 trades, 832× over 6.5 years, 64.2% max drawdown.** Trades roughly twice a month by design. |
-| **MPC B-LEG** | `strategies/python/mpc_bleg/` | python | The late-retrace setup, split out to run parallel to A+. **99 trades / +17.87R** over 6.5 years at today's defaults, drawdown −5.15R charged. A jitter audit finished positive on all 12 seeds. Registered as `mpc_bleg_demo` and **BENCHED** — its parity gate has not been re-run since its defaults moved on 2026-08-06. |
-| **MPC BOS** | `strategies/python/mpc_bos/` | python | Break-of-structure continuation, built 2026-08-07. Pine-parity green — but **about the shipped defaults only**: the gap entry is off there, so the FVG ladder, the Sniper Zone and five block codes were never exercised, and 6 trades closed in the window. |
+| **SOS Fade** (A+) | `strategies/python/sos_fade/` | python | **THE LIVE BOT.** Pine-parity green. The reversal leg of the suite. Ships at `exec_risk_pct = 12.5` in the headline run: **164 trades, 832× over 6.5 years, 64.2% max drawdown.** Trades roughly twice a month by design. |
+| **B-LEG** | `strategies/python/b_leg/` | python | The late-retrace setup, split out to run parallel to A+. **99 trades / +17.87R** over 6.5 years at today's defaults, drawdown −5.15R charged. A jitter audit finished positive on all 12 seeds. Registered as `b_leg_demo` and **BENCHED** — its parity gate has not been re-run since its defaults moved on 2026-08-06. |
+| **BOS** | `strategies/python/bos/` | python | Break-of-structure continuation, built 2026-08-07. Pine-parity green — but **about the shipped defaults only**: the gap entry is off there, so the FVG ladder, the Sniper Zone and five block codes were never exercised, and 6 trades closed in the window. |
 | **ORB** | `strategies/ninjatrader/ORB.cs` | ninjatrader | The only NT8 strategy. Reshaped to unit size, emits `engine_trades.csv`. 2 runs, both Tier 3. |
 | **LondonBreakout** | `strategies/mt5/LondonBreakout.mq5` | mt5 | Instrument-agnostic Asian-range → London breakout. 8 runs from the 2026-06-18 sweep; six Tier 2, two Tier 3. Its v3 unit-size reshape has still never produced `engine_trades.csv` from a VPS run. |
 
 **The suite is carved up by LEG, not by signal.** The strategies share a confluence source on purpose and each takes a different part of the move. A+ catches the reversal; B-LEG catches setups that take a long time to play out; BOS catches the legs in between. **Re-measured 2026-09-01 over 157,004 M15 bars: A+ and B-LEG held a position at the same time on 45 bars — 0.5% of A+'s hold time — and ZERO of those were same-side.** That does not make them independent (both read one structure stream on one instrument), and it does not retire the account-level allocator.
 
-Also on disk: three Pine strategies with no Python port yet — `mpc_d` and `mpc_h4_sweep` have export twins, and `smc_session_sweep` (renamed 2026-08-15 from `mpc_m15_playbook`) has **no twin, no compile and no measurement** — plus `ny_orb.pine` in TradingView research.
+Also on disk: three Pine strategies with no Python port yet — `mpc_d` and `mpc_h4_sweep` have export twins, and `smc_session_sweep` (renamed 2026-08-15 from `m15_playbook`) has **no twin, no compile and no measurement** — plus `ny_orb.pine` in TradingView research.
 
 ---
 

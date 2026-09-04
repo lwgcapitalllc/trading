@@ -120,7 +120,7 @@ class InternalEvents:
     # NOTE: swing_high_label is only ever "iSH" (first swing since seeding) or "iHH" (every
     # swing after) — it never becomes "iLH" despite the source's comment implying it should;
     # same for swing_low_label, which never becomes "iHL". This is a bug in the *original*
-    # Pine source (mpc_assistant.pine), ported faithfully. See engine.py for the exact lines.
+    # Pine source (mpc_jarvis.pine), ported faithfully. See engine.py for the exact lines.
     new_swing_high: bool = False
     new_swing_high_price: Optional[float] = None
     new_swing_high_index: Optional[int] = None
@@ -182,7 +182,7 @@ class InternalEvents:
     bull_sos_loc: Optional[int] = None
     bear_sos_loc: Optional[int] = None
 
-    # Order-block creation gate for the INTERNAL engine — mirrors mpc_assistant.pine's
+    # Order-block creation gate for the INTERNAL engine — mirrors mpc_jarvis.pine's
     # int_bull_break / int_bear_break / int_break_origin_loc (~lines 1115-1275). These fire on the
     # same bar as bull_bos/bear_bos/bull_sos/bear_sos, but are kept as separate fields because the
     # OB anchor is a distinct location from the break price: int_break_origin_loc is the bar the
@@ -193,7 +193,7 @@ class InternalEvents:
     int_break_origin_loc: Optional[int] = None
 
     # Latest CONFIRMED internal swing point (price + bar loc), captured on the bar an iSH/iSL
-    # confirms — mpc_assistant.pine's `i_confirmed_high_price/loc` (set at the iSH confirm, ~line
+    # confirms — mpc_jarvis.pine's `i_confirmed_high_price/loc` (set at the iSH confirm, ~line
     # 1299) and `i_confirmed_low_price/loc` (iSL confirm, ~line 1350). Consumed by the External
     # ("Structure") fib only, which adopts a more-extreme internal swing as its pull anchor. Fired
     # on the confirm bar only (None otherwise); the consumer latches + resets them (Pine keeps them
@@ -206,7 +206,7 @@ class InternalEvents:
 
     # Internal-Fib SEED — the anchor pair (low + high + direction) of the internal leg that just
     # broke, emitted on the bar an iBOS/iSOS fires (None off the break bar). Mirrors
-    # mpc_assistant.pine's `iFib_asl/asl_loc/ash/ash_loc/dir` assignments at the six internal-break
+    # mpc_jarvis.pine's `iFib_asl/asl_loc/ash/ash_loc/dir` assignments at the six internal-break
     # sites (bull/bear iBOS + the four iSOS branches). Consumed by the new Internal fib, which runs
     # its own live-extend + touch machine off this seed. Capture-only exposure of state the internal
     # engine already computes at break time, before the state reset — same pattern as

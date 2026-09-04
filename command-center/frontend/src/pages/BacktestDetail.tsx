@@ -435,7 +435,7 @@ function maxDrawdownOf(series: number[]): number {
 
 // The WORST drawdown as a fraction of the equity it fell FROM — the account-ending measure. On a
 // compounding run this is a different EPISODE from the biggest dollar drawdown, and the two must
-// never be presented as one number: on the shipped mpc_sos_fade run the deepest dollar drop is
+// never be presented as one number: on the shipped sos_fade run the deepest dollar drop is
 // $109,665 from a $330,303 peak (33.2%), while the worst percentage drop is 54.9% ($16,748 →
 // $7,551, only $9,198). Reporting the big dollar figure as the percentage is what produced
 // "1096.7% of capital" — the dollar drawdown divided by a static account_size the account had
@@ -465,7 +465,7 @@ function maxDrawdownPctOf(series: number[]): { pct: number; dollars: number; pea
 // therefore be measured against the equity it fell FROM, not against the STARTING balance —
 // dividing a late-run dollar drawdown by the opening capital reports a fraction the account
 // never experienced, and dragged this ratio down by the same factor. Measured on the shipped
-// mpc_sos_fade run: 0.11 (red, "poor") against a static $10k, 2.25 ("good") against the peak.
+// sos_fade run: 0.11 (red, "poor") against a static $10k, 2.25 ("good") against the peak.
 
 function computeCalmar(equity: EquityPoint[], balance: number | null): number | null {
   if (balance == null || balance <= 0 || equity.length < 2) return null
@@ -555,7 +555,7 @@ function zScoreLabel(z: number | null): string {
 // MEASURED IN RETURNS, NOT DOLLARS, whenever the run compounded (fixed 2026-07-31). In dollars
 // this metric reports the COMPOUNDING, not the clustering: on a run whose account grows 85x the
 // final quarter must hold nearly all the dollars however evenly the edge is spread. Measured on
-// mpc_sos_fade d2ab68f9e884 — dollar quarters $9k / $49k / $71k / $1,039k read 89% ("edge
+// sos_fade d2ab68f9e884 — dollar quarters $9k / $49k / $71k / $1,039k read 89% ("edge
 // clustered — overfit risk"); the same trades as returns on the equity each was taken with read
 // 40% ("spread across the test"). The amber was the metric describing the account, not the edge.
 //
@@ -701,7 +701,7 @@ const SHARPE_LOW_SAMPLE_DAYS = 10
  * story behind the Sharpe bug fixed 2026-07-31. `daily_pnl` holds only days that CLOSED a trade —
  * flat days are absent by design, because the trailing-drawdown engine walks the days that exist.
  * Scoring that series as if it were the population asks "how good were the days it traded", then
- * annualizes by √252 as if it had traded 252 of them. On the shipped mpc_sos_fade run that reads
+ * annualizes by √252 as if it had traded 252 of them. On the shipped sos_fade run that reads
  * 2.98 against a true 0.91. A flat day is a real observation and belongs in the series.
  *
  * Weekends are skipped to match √252, but any date PRESENT in the input is kept even on a weekend,
@@ -880,7 +880,7 @@ type DerivedKpis = ReturnType<typeof deriveKpis>
 // Weighted by elapsed days, not by row count (fixed 2026-07-31). `daily_pnl` holds only the days
 // that closed a trade — flat days are deliberately absent (backtest/output.py) — so counting rows
 // answered "what share of ACTIVE days were underwater" while the label said "of days". The gap is
-// not cosmetic on a selective strategy: mpc_sos_fade trades ~2x a month, so a row is worth two
+// not cosmetic on a selective strategy: sos_fade trades ~2x a month, so a row is worth two
 // weeks of calendar. It read 67% by rows and 70% by the clock. Equity between two closes sits at
 // the earlier close's level, which is what each day of that gap is judged against.
 function computeTimeUnderwater(daily: DailyPnlPoint[]): number | null {

@@ -69,7 +69,7 @@ def _profile():
 
 def _replay(df, warmup: int, capital: float, profile, **overrides):
     from backtest.replay import build_strategy
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     cfg = LAB_STRATEGY["config"](
         fill_model="bar", symbol="XAUUSD", exec_secondary=False, **overrides

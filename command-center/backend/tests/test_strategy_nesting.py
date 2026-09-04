@@ -30,13 +30,13 @@ def _scan(pkg: str) -> dict:
 
 
 def test_the_recovery_rule_is_listed_under_the_bot_it_recovers():
-    assert _scan("loss_recovery")["display_under"] == "mpc_sos_fade"
+    assert _scan("loss_recovery")["display_under"] == "sos_fade"
 
 
 def test_a_strategy_that_declares_nothing_is_top_level():
     """`None`, never `""`. An empty string is truthy nowhere useful and falsy everywhere it
     matters, so it would read as a declared parent in some checks and no parent in others."""
-    assert _scan("mpc_sos_fade")["display_under"] is None
+    assert _scan("sos_fade")["display_under"] is None
 
 
 def test_every_declared_parent_IS_a_real_strategy():
@@ -45,7 +45,7 @@ def test_every_declared_parent_IS_a_real_strategy():
     and the nesting has simply gone missing."""
     rows = [_scan(p.name) for p in sorted(_PY.iterdir()) if (p / "__init__.py").exists()]
     ids = {r["id"] for r in rows}
-    assert "mpc_sos_fade" in ids, "the scan found no strategies — this test would pass vacuously"
+    assert "sos_fade" in ids, "the scan found no strategies — this test would pass vacuously"
     for r in rows:
         under = r["display_under"]
         if under is None:
@@ -59,7 +59,7 @@ def test_nesting_takes_NOTHING_away_from_the_row():
     still run, stacked, optimized and deployed identically. The two ideas are separate: nesting
     says where a row is DRAWN, `requires_source` says whether it can run alone."""
     rec = _scan("loss_recovery")
-    assert rec["display_under"] == "mpc_sos_fade"
+    assert rec["display_under"] == "sos_fade"
     for field in ("id", "name", "class_name", "runner", "category", "param_schema"):
         assert rec.get(field), f"nesting must not blank {field}"
     assert rec["runner"] == "python"
@@ -76,7 +76,7 @@ def test_the_B_LEG_nests_under_the_A_PLUS_bot_too():
 
     Watched RED by deleting the declaration from the package: the assert below fails with None.
     """
-    assert _scan("mpc_bleg")["display_under"] == "mpc_sos_fade"
+    assert _scan("b_leg")["display_under"] == "sos_fade"
 
 
 def test_nesting_the_B_LEG_leaves_it_runnable_on_its_own():
@@ -85,7 +85,7 @@ def test_nesting_the_B_LEG_leaves_it_runnable_on_its_own():
 
     Watched RED by adding `requires_source` to the B-LEG package alongside the nesting.
     """
-    bleg = _scan("mpc_bleg")
+    bleg = _scan("b_leg")
     assert not bleg.get("requires_source")
     assert bleg["runner"] == "python"
 
@@ -103,9 +103,9 @@ def test_the_extreme_leg_is_TOP_LEVEL_and_that_is_a_decision():
     ⚠ This test exists because the field's failure mode is SILENT IN BOTH DIRECTIONS. A dropped
     declaration and a typo'd parent both render at the top level, so re-adding it — or reversing
     this decision by accident — would show up nowhere on the page. Watched RED by putting
-    `"display_under": "mpc_sos_fade"` back in the package.
+    `"display_under": "sos_fade"` back in the package.
     """
-    assert _scan("mpc_extreme_leg")["display_under"] is None
+    assert _scan("extreme_leg")["display_under"] is None
 
 
 def test_the_extreme_leg_still_stands_alone_after_the_move():
@@ -115,6 +115,6 @@ def test_the_extreme_leg_still_stands_alone_after_the_move():
 
     Watched RED by adding `requires_source` to the package alongside the move.
     """
-    xl = _scan("mpc_extreme_leg")
+    xl = _scan("extreme_leg")
     assert not xl.get("requires_source")
     assert xl["runner"] == "python"

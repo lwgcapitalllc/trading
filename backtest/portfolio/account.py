@@ -38,7 +38,7 @@ __all__ = [
 # A grant within this much of the desired risk IS the desired risk.
 #
 # `granted = min(desired, room)` and `room = cap - reserved`, so a lone leg whose own risk %
-# equals the account cap lands EXACTLY on the boundary — `mpc_sos_fade` at `exec_risk_pct = 10`
+# equals the account cap lands EXACTLY on the boundary — `sos_fade` at `exec_risk_pct = 10`
 # under a 10% cap does it on every single entry. In exact arithmetic those two are equal and
 # nothing is refused; in floats the room comes out a few parts in 1e16 short, `granted < desired`
 # is true, and the entry is logged as a shrink.
@@ -615,7 +615,7 @@ class SoloAccount(PortfolioAccount):
         #
         # The lab's stacked account may shrink because it is the only book: the leg opens at the
         # granted size and nothing else has an opinion. A LIVE bot's order is already RESTING AT
-        # THE BROKER by the time this runs — `mpc_sos_fade.execution` sizes a pending order from
+        # THE BROKER by the time this runs — `sos_fade.execution` sizes a pending order from
         # `equity * exec_risk_pct / dist` at PLACEMENT and never consults the account, and the
         # gate here runs at the FILL. So a shrink books a smaller position in the emulator than
         # the one the broker has just filled, and `bridge._agrees` compares DIRECTION and

@@ -58,7 +58,7 @@ log = logging.getLogger("CHARTSPEC")
 # while its UTC span does. Read on a UTC-4 chart, London and New York therefore shift an hour twice a
 # year and Tokyo never does.
 #
-# 🔴 **THESE ARE `mpc_assistant.pine`'s WINDOWS AND THEY WERE NOT (fixed 2026-08-08).** Tokyo ended at
+# 🔴 **THESE ARE `mpc_jarvis.pine`'s WINDOWS AND THEY WERE NOT (fixed 2026-08-08).** Tokyo ended at
 # 15:00 and London at 16:30 here, against the indicator's 18:00 and 17:00 — so two of the three boxes
 # on a backtest chart were SHORTER than the boxes on the TradingView chart the run is read against,
 # and nothing on either screen said so. Aaron confirmed the indicator is the correct source.
@@ -1043,7 +1043,7 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # Fair value gaps — but ONLY the ones that were live when something happened. The anchors are
     # every trade ENTRY, every blocked setup and every missed setup, so the layer answers "where were
     # the gaps when this fired?" rather than papering the chart with every gap the run ever saw. The
-    # gaps themselves are mpc_assistant.pine's (see fvg_overlays.py — the strategy runs a different,
+    # gaps themselves are mpc_jarvis.pine's (see fvg_overlays.py — the strategy runs a different,
     # stricter set). Best-effort: [] on any failure, and [] when the run has no trades/blocks/misses
     # in the window, which is what keeps the toggle off an NT8/MT5 chart.
     anchors = (
@@ -1054,7 +1054,7 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # Order blocks — the same anchor rule, for the same reason, off the canonical OB engine (see
     # ob_overlays.py). Measured on run `75ccc776d10c`: 2,567 blocks created over the window, 579 of
     # them live when something fired. Unlike the gaps there is no settings fork to warn about — the
-    # strategy files dropped order blocks entirely in 2026-07, so mpc_assistant.pine is the only
+    # strategy files dropped order blocks entirely in 2026-07, so mpc_jarvis.pine is the only
     # source; equally, a drawn block never explains an entry, because the bot reads none.
     overlays = overlays + build_ob_overlays(candles, anchors)
 

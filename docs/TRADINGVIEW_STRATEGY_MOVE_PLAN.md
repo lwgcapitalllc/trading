@@ -25,7 +25,7 @@
 >    at the real path, and only then was the assertion flipped. **A guard case pinned to a moved
 >    path is not testing anything; it is describing a repo you no longer have, in green.**
 > 2. **No `.pine` file's content was touched at all**, including one comment in
->    `indicators/engines/mss_sweeps_mpc.pine` that now points at a moved doc. Rule 22 is about
+>    `indicators/engines/mss_sweeps.pine` that now points at a moved doc. Rule 22 is about
 >    `.pine` content rather than about whether an edit could plausibly matter, and that file has no
 >    `compare_*.py` that could clear it. The dead pointer is recorded in
 >    `indicators/engines/CLAUDE.md`.
@@ -89,13 +89,13 @@ git ls-files indicators/strategies
 
 | Group | Count | Files |
 |---|---|---|
-| Pine strategy parents | 8 | `mpc_strategy`, `mpc_b_leg_strategy`, `mpc_bos_strategy`, `mpc_h4_sweep_strategy`, `mpc_realign_strategy`, `mpc_recovery_strategy`, `mpc_extreme_leg_strategy`, `smc_session_sweep_strategy` |
-| Pine `_export` twins | 5 | `mpc_strategy_export`, `mpc_b_leg_strategy_export`, `mpc_bos_strategy_export`, `mpc_h4_sweep_strategy_export`, `smc_session_sweep_strategy_export` |
+| Pine strategy parents | 8 | `sos_fade_strategy`, `b_leg_strategy`, `bos_strategy`, `h4_sweep_strategy`, `realign_strategy`, `recovery_strategy`, `extreme_leg_strategy`, `smc_session_sweep_strategy` |
+| Pine `_export` twins | 5 | `sos_fade_strategy_export`, `b_leg_strategy_export`, `bos_strategy_export`, `h4_sweep_strategy_export`, `smc_session_sweep_strategy_export` |
 | `docs/` prose, one per family | 7 | one `.md` per strategy family |
 | `tools/` | 2 | `build_extreme_leg.py`, `derive_htf_structure.py` |
 | `CLAUDE.md` | 1 | the folder's own rules |
 
-🔴 **Three parents have NO export twin** (`mpc_realign`, `mpc_recovery`, `mpc_extreme_leg`) — that
+🔴 **Three parents have NO export twin** (`realign`, `mpc_recovery`, `extreme_leg`) — that
 is a pre-existing fact about their parity gates, not something this move causes. Do not "fix" it here.
 
 ⚠ **A twin moves with its parent, in the same commit.** The editor guard's own `.pine` reminder
@@ -120,14 +120,14 @@ The ten heaviest files, for scale:
 | File | Occurrences |
 |---|---|
 | `indicators/docs/INDICATORS_BUILD_NOTES.md` | 9 |
-| `strategies/python/mpc_bleg/CLAUDE.md` | 8 |
+| `strategies/python/b_leg/CLAUDE.md` | 8 |
 | `indicators/strategies/CLAUDE.md` | 8 |
 | `indicators/CLAUDE.md` | 6 |
 | `docs/ENGINE_EXTRACTION_ROADMAP.md` | 6 |
-| `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` | 5 |
+| `strategies/python/sos_fade/sos_fade_optimization.md` | 5 |
 | `docs/SMC_SESSION_SWEEP_SPEC.md` | 5 |
 | `HISTORY.md` | 5 |
-| `strategies/python/mpc_sos_fade/CLAUDE.md` | 4 |
+| `strategies/python/sos_fade/CLAUDE.md` | 4 |
 | `docs/STRATEGY_WORKFLOW.md` | 4 |
 
 🔴 **`HISTORY.md` and the `*_BUILD_NOTES.md` files are a DATED RECORD of what happened.** A
@@ -148,8 +148,8 @@ Everything else is `git mv` plus a careful sweep. These four each need a decisio
 root. Its fragments include `/strategies/` (reminder: *"This is what a bot actually trades"*) and
 `.pine` (reminder: the declaration-order rule).
 
-**Today** `indicators/strategies/mpc_strategy.pine` matches `.pine` only — it is not under the
-top-level `strategies/`. **After the move** `strategies/tradingview/mpc_strategy.pine` matches BOTH.
+**Today** `indicators/strategies/sos_fade_strategy.pine` matches `.pine` only — it is not under the
+top-level `strategies/`. **After the move** `strategies/tradingview/sos_fade_strategy.pine` matches BOTH.
 
 ⚠ **`.claude/hooks/check_guard.py` has a case that asserts exactly the current behaviour**, titled
 *"Pine STRATEGY source is not a deployed Python strategy"*, asserting `"what a bot actually trades"
@@ -189,8 +189,8 @@ header naming a script that is not there sends the next reader hunting.
 
 ### 2.4 `.claude/settings.json` pins two absolute paths
 
-Two allow-listed `awk` commands name absolute paths into `mpc_strategy.pine` and
-`mpc_strategy_export.pine`. They are line-range reads from a past session. **Delete them rather than
+Two allow-listed `awk` commands name absolute paths into `sos_fade_strategy.pine` and
+`sos_fade_strategy_export.pine`. They are line-range reads from a past session. **Delete them rather than
 rewriting them** — they pin line numbers that have already moved, so they are dead allowances.
 ⚠ `.claude/settings.local.json` has two more; it is git-ignored and per-machine, so fix it on
 whichever machine complains and do not commit it.
@@ -206,7 +206,7 @@ strategies/
 ├── python/
 └── tradingview/          ← Pine strategy source
     ├── CLAUDE.md
-    ├── mpc_strategy.pine + mpc_strategy_export.pine
+    ├── sos_fade_strategy.pine + sos_fade_strategy_export.pine
     ├── … 11 more .pine …
     ├── docs/             ← one .md per strategy family
     └── tools/            ← build_extreme_leg.py, derive_htf_structure.py
@@ -258,7 +258,7 @@ required by the hook as well as by the reader.
 | `strategies/CLAUDE.md` | The key-paths tree gains 13 Pine files, `docs/` and `tools/`. 🔴 **Rewrite the "research scratch space" sentence** — see §3. Add a "Adding a new TradingView strategy" section next to the NT8/MT5/Python ones. |
 | Root `CLAUDE.md` | *Repo Structure* and the `indicators/` and `strategies/` rows of *The rest*. **Fix the stale "12" to 13** while you are in there. |
 | `.claude/` section of root `CLAUDE.md` | The guard paragraph quotes the `indicators/strategies/` example from §2.1. Update it to the new layout and keep the lesson. |
-| `strategies/python/*/CLAUDE.md` (4 files) | Each names its Pine twin's path. `mpc_bleg` has 8 references, `mpc_sos_fade` 4, `mpc_bos` 2, `mpc_realign` 1. |
+| `strategies/python/*/CLAUDE.md` (4 files) | Each names its Pine twin's path. `b_leg` has 8 references, `sos_fade` 4, `bos` 2, `realign` 1. |
 | `indicators/engines/CLAUDE.md`, `engines/fibonacci/CLAUDE.md`, `command-center/backend/CLAUDE.md`, `backtest/CLAUDE.md`, `docs/teaching/CLAUDE.md` | One or two path references each. |
 
 ⚠ **Watch the doc-growth guard.** `indicators/strategies/CLAUDE.md` is ~139 KB and
@@ -277,7 +277,7 @@ grep -rI 'indicators/strategies' --exclude-dir=.git .
 #    Every other hit is a miss.
 
 # 2. History followed the files.
-git log --follow --oneline -3 strategies/tradingview/mpc_strategy.pine
+git log --follow --oneline -3 strategies/tradingview/sos_fade_strategy.pine
 #    Expected: commits predating the move. If it shows one commit, git mv was not used.
 
 # 3. The guard cases agree with the new layout.

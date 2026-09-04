@@ -28,8 +28,8 @@ import alert_format as af  # noqa: E402
 
 # ── the shape ────────────────────────────────────────────────────────────────────
 def test_the_header_is_icon_label_subject():
-    msg = af.alert("⛔", "HALTED", "MPC SOS Fade", "Broker and emulator disagree.")
-    assert msg.splitlines()[0] == "⛔ HALTED · MPC SOS Fade"
+    msg = af.alert("⛔", "HALTED", "SOS Fade", "Broker and emulator disagree.")
+    assert msg.splitlines()[0] == "⛔ HALTED · SOS Fade"
 
 
 def test_a_subject_is_optional():
@@ -57,8 +57,8 @@ def test_a_missing_fact_is_absent_not_a_blank_line():
     """A caller passes what it has. Rendering `None` as an empty line would put a hole in the
     middle of the message and make every sender grow its own branching — which is the layout
     drift this module exists to end."""
-    msg = af.alert("🟢", "ONLINE", "MPC SOS Fade", "live", None, "", "  ", "$2,000.00")
-    assert msg == "🟢 ONLINE · MPC SOS Fade\nlive\n$2,000.00"
+    msg = af.alert("🟢", "ONLINE", "SOS Fade", "live", None, "", "  ", "$2,000.00")
+    assert msg == "🟢 ONLINE · SOS Fade\nlive\n$2,000.00"
 
 
 def test_the_header_stays_short_enough_for_a_lock_screen():
@@ -74,7 +74,7 @@ def test_the_header_stays_short_enough_for_a_lock_screen():
         "RECOVERED",
         "RESTARTED",
     ):
-        head = af.alert("⚠️", label, "MPC SOS Fade").splitlines()[0]
+        head = af.alert("⚠️", label, "SOS Fade").splitlines()[0]
         assert len(head) <= 45, f"{label!r} makes a {len(head)}-char header: {head!r}"
 
 
@@ -223,7 +223,7 @@ def test_the_mirror_renders_an_identical_message():
     edge cases — an absent fact and a whitespace-only one — where two hand-written copies of a
     layout diverge first."""
     cc = _mirror()
-    args = ("⏹", "STOPPED", "MPC SOS Fade", "Stopped from the command center.", None, "  ")
+    args = ("⏹", "STOPPED", "SOS Fade", "Stopped from the command center.", None, "  ")
     assert cc.alert(*args) == af.alert(*args)
     assert cc.alert("✅", "WIN", "", "Made $368.00") == af.alert("✅", "WIN", "", "Made $368.00")
     assert cc.joined(["a", None, "b", ""]) == af.joined(["a", None, "b", ""])

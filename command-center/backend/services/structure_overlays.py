@@ -383,7 +383,7 @@ def build_market_structure_overlays(candles: list[dict], major_length: int = 15)
             # level that broke**, by up to $18.47, against 144/144 correct everywhere else.
             #
             # ⚠ **The reported symptom was the LINE, not the price** (Aaron, 2026-08-08: *"the
-            # internal SOS is not showing the horizontal lines like the mpc_assistant"*). A wrong
+            # internal SOS is not showing the horizontal lines like the mpc_jarvis"*). A wrong
             # anchor bar can land on the break bar itself, and a zero-width `hline` draws NOTHING —
             # so the tag rendered with no line under it. On his own window one iSOS spanned 0 bars
             # and another 1; across the sample 12.4% of internal breaks drew a line ≤1 bar long,

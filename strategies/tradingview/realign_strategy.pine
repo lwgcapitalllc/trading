@@ -1,0 +1,688 @@
+//@version=6
+// [doc 1] Realign — internal-structure realignment after an external false bre  -> docs/realign_strategy.md
+strategy("Realign", overlay = true, initial_capital = 10000,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         pyramiding = 0, calc_on_every_tick = false,
+         margin_long = 0.2, margin_short = 0.2,
+         commission_type = strategy.commission.cash_per_contract, commission_value = 0.0)
+
+// ── the setup ────────────────────────────────────────────────────────────────────
+htfTf       = input.timeframe("15",  "External timeframe",                group = "Setup", tooltip = "The timeframe the false break is read on. The chart frame is the trigger.")
+majorLength = input.int(10,          "Structure pivot length",  minval = 2, group = "Setup", tooltip = "Swing detection lookback, on both frames.")
+windowHrs   = input.float(24.0,      "Hours the setup stays armed", minval = 0.5, group = "Setup", tooltip = "How long the setup stays armed after the false break. Chosen, not measured.")
+tradeLongs  = input.bool(true,       "Trade longs",  group = "Setup")
+tradeShorts = input.bool(true,       "Trade shorts", group = "Setup")
+
+// ── risk / entry ─────────────────────────────────────────────────────────────────
+riskPct     = input.float(1.0, "Risk % per trade", minval = 0.01, maxval = 100, group = "Risk", tooltip = "Percent of equity risked to the stop. Test at 1 - R is scale-free, so the R results come out identical.")
+slBufTk     = input.int(20,     "Stop buffer (ticks)", minval = 0, group = "Risk", tooltip = "How many ticks beyond the structural low or high the stop sits.")
+minStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $"], group = "Risk", tooltip = "Refuse a setup whose stop is too close to the entry, which would balloon the position.")
+minStopVal  = input.float(0.08, "Minimum stop value", minval = 0.0, group = "Risk", tooltip = "The floor itself - a percent of price or dollars, depending on the mode.")
+
+// ── the exit ladder (inherited from the A+ bot) ──────────────────────────────────
+tp1Pct        = input.float(0,   "TP1 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at the first target but still stages the stop to breakeven when price touches it.")
+tp2Pct        = input.float(0,   "TP2 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at the second target but still installs the floor and hands the rest to the trail.")
+beBufTk       = input.int(0,     "Breakeven buffer (ticks)", group = "Exit", tooltip = "Where the stop sits after the first target. Negative gives the trade room below the entry.")
+tp2StopMode   = input.string("TP1 price", "Stop floor after TP2", options = ["TP1 price", "Breakeven", "One trail step behind"], group = "Exit")
+runnerTrail   = input.string("Structure + % ratchet", "Runner trail", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = "Exit")
+trailPct      = input.float(1.0, "Ratchet step (% of price)", minval = 0.01, group = "Exit", tooltip = "Read only in Structure + % ratchet mode.")
+trailStep     = input.float(1.0, "Fixed trail step ($)", minval = 0.01, group = "Exit", tooltip = "Read only in Fixed step mode.")
+structTrailBuf= input.int(20,    "Structure trail buffer (ticks)", group = "Exit")
+timeStopMode  = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = "Exit", tooltip = "Closes a position open this long. Before TP1 never touches a trade that has reached the first target.")
+timeStopHrs   = input.float(36.0, "Time stop (hours)", minval = 0.5, group = "Exit")
+
+showMarks   = input.bool(true, "Mark setups on the chart", group = "Display")
+showDiag    = input.bool(true, "Diagnostics in the Data Window", group = "Display", tooltip = "Running counts of every stage of the setup. Open the Data Window and hover a bar - the first counter reading 0 is where the chain breaks.")
+
+float pbBuffer = 0.0
+
+type MTFStruct
+    int    length
+    float  ash             = na
+    int    ash_loc         = na
+    string ash_type        = ""
+    float  asl             = na
+    int    asl_loc         = na
+    string asl_type        = ""
+    float  last_conf_high     = na
+    int    last_conf_high_loc = na
+    float  last_conf_low      = na
+    int    last_conf_low_loc  = na
+    int    dir            = 0
+    bool   choch_lock     = false
+    int    pb_mode        = 0
+    int    pb_count       = 0
+    float  pb_level       = na
+    float  pb_extreme     = na
+    int    pb_extreme_loc = na
+    bool   pb_started     = false
+    float  pb_last_qualify_close = na
+    float  pb_last_qualify_high  = na
+    float  pb_extreme_close      = na
+    float  prev_close     = na
+    float  prev_high      = na
+    float  prev_low       = na
+    bool   seeded         = false
+    bool   bull_bos       = false
+    float  bull_bos_high  = na
+    int    bull_bos_h_loc = na
+    float  bull_bos_low   = na
+    int    bull_bos_l_loc = na
+    bool   bear_bos       = false
+    float  bear_bos_high  = na
+    int    bear_bos_h_loc = na
+    float  bear_bos_low   = na
+    int    bear_bos_l_loc = na
+    bool   new_swing_high = false
+    bool   new_swing_low  = false
+    bool   bull_sos       = false
+    bool   bear_sos       = false
+
+method mtfCreateAsh(MTFStruct st, float val, int loc) =>
+    st.ash      := val
+    st.ash_loc  := loc
+    st.ash_type := ""
+
+method mtfCreateAsl(MTFStruct st, float val, int loc) =>
+    st.asl      := val
+    st.asl_loc  := loc
+    st.asl_type := ""
+
+// Byte-for-byte the state logic of SMCStructure.process(); drawing removed.
+method processMTF(MTFStruct st, float ph_val, float pl_val) =>
+    st.bull_bos := false
+    st.bear_bos := false
+    st.new_swing_high := false
+    st.new_swing_low  := false
+    st.bull_sos := false
+    st.bear_sos := false
+
+    bool is_inside = false
+    if not na(st.prev_high) and not na(st.prev_low)
+        is_inside := high < st.prev_high and low > st.prev_low
+
+    if st.choch_lock
+        if st.dir == 1 and not na(pl_val)
+            st.choch_lock := false
+        else if st.dir == -1 and not na(ph_val)
+            st.choch_lock := false
+
+    if st.pb_mode == 1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_1 = false
+            if na(st.pb_extreme) or high > st.pb_extreme
+                st.pb_extreme            := high
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_1        := true
+            bool extreme_is_bearish_1 = extreme_updated_1 and close < open
+            bool is_candle1_1 = na(st.pb_last_qualify_close) and not extreme_updated_1
+            if (not is_inside or is_candle1_1) and (not extreme_updated_1 or extreme_is_bearish_1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close < threshold - pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := low
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                st.ash      := st.pb_extreme
+                st.ash_loc  := st.pb_extreme_loc
+                st.ash_type := "LOCKED"
+                st.new_swing_high := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    else if st.pb_mode == -1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_m1 = false
+            if na(st.pb_extreme) or low < st.pb_extreme
+                st.pb_extreme            := low
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_m1       := true
+            bool extreme_is_bullish_m1 = extreme_updated_m1 and close > open
+            bool is_candle1_m1 = na(st.pb_last_qualify_close) and not extreme_updated_m1
+            if (not is_inside or is_candle1_m1) and (not extreme_updated_m1 or extreme_is_bullish_m1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close > threshold + pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := high
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                st.asl      := st.pb_extreme
+                st.asl_loc  := st.pb_extreme_loc
+                st.asl_type := "LOCKED"
+                st.new_swing_low := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    st.prev_close := close
+    st.prev_high  := high
+    st.prev_low   := low
+
+    if na(st.ash) and na(st.asl) and not st.seeded
+        if not na(ph_val)
+            st.mtfCreateAsh(ph_val, bar_index[st.length])
+            st.dir := -1
+        else if not na(pl_val)
+            st.mtfCreateAsl(pl_val, bar_index[st.length])
+            st.dir := 1
+
+    if not st.seeded
+        if not na(st.ash) and na(st.asl)
+            float seed_low = low
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
+            for i = 0 to lb
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
+            if seed_low < st.ash
+                st.asl      := seed_low
+                st.asl_loc  := seed_loc
+                st.asl_type := ""
+                st.seeded := true
+        else if not na(st.asl) and na(st.ash)
+            float seed_high = high
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
+            for i = 0 to lb
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
+            if seed_high > st.asl
+                st.ash      := seed_high
+                st.ash_loc  := seed_loc
+                st.ash_type := ""
+                st.seeded := true
+        else if not na(st.ash) and not na(st.asl)
+            st.seeded := true
+
+    if na(st.last_conf_high) and na(st.last_conf_low)
+        if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
+            if ph_val > st.ash
+                st.mtfCreateAsh(ph_val, bar_index[st.length])
+        if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
+            if pl_val < st.asl
+                st.mtfCreateAsl(pl_val, bar_index[st.length])
+
+    bool ash_broken = not na(st.ash) and close > st.ash
+    bool asl_broken = not na(st.asl) and close < st.asl
+
+    if ash_broken
+        st.bull_bos := true
+        st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc := st.ash_loc
+
+        bool was_in_bear_pb = st.pb_mode == -1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool is_choch = st.dir == -1
+        if is_choch
+            st.bull_sos := true
+            st.choch_lock := true
+
+        st.last_conf_high     := st.ash
+        st.last_conf_high_loc := st.ash_loc
+        st.ash                := na
+        st.dir                := 1
+
+        if was_in_bear_pb
+            st.bull_bos_low   := st.pb_extreme
+            st.bull_bos_l_loc := st.pb_extreme_loc
+            st.asl      := st.pb_extreme
+            st.asl_loc  := st.pb_extreme_loc
+            st.asl_type := "LOCKED"
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := 1
+            st.pb_started            := true
+        else
+            if not na(st.asl)
+                bool already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+                if not already_conf_low
+                    st.last_conf_low     := st.asl
+                    st.last_conf_low_loc := st.asl_loc
+                st.asl      := na
+
+            float lowest_val = low
+            int   lowest_loc = bar_index
+            int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if low[i] < lowest_val
+                        lowest_val := low[i]
+                        lowest_loc := bar_index - i
+
+            // 🔴 KEEP THE ORIGINAL ANCHOR WHEN TWO BARS TIE FOR THE LOW. The scan above runs
+            // newest-to-oldest with a strict `<`, so on an identical low it lands on the LATER bar
+            // while this swing's label is already anchored on the EARLIER one — `already_conf_low`
+            // compares bar index as well as price, misses, and a SECOND label is drawn at the same
+            // price. Pine never deletes those, so they stack (the LL beside an HL, 2026-08-20).
+            // Full story + measurements: engines/market_structure/CLAUDE.md -> tied-extreme fix.
+            // 🔴 …AND THE SAME SNAP WHEN IT IS MORE EXTREME BUT NOT NEWER — A REFUSED WICK
+            // (2026-08-21). Structure BREAKS ON A CLOSE, but this scan reads the raw `low` over a
+            // window bounded by `last_conf_high_loc` — the OPPOSITE side — which reaches back BEFORE
+            // the swing just confirmed. So it can resurrect a bar that pierced the level, closed back
+            // inside and was correctly refused, and install it as the new active swing: EARLIER than
+            // and LOWER than the swing just labelled. Full mechanism + the measurements:
+            // `indicators/engines/mpc_jarvis.pine`, same block.
+            if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
+                lowest_val := st.last_conf_low
+                lowest_loc := st.last_conf_low_loc
+            st.bull_bos_low   := lowest_val
+            st.bull_bos_l_loc := lowest_loc
+
+            st.asl      := lowest_val
+            st.asl_loc  := lowest_loc
+            st.asl_type := ""
+
+            st.pb_mode               := 1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    else if asl_broken
+        st.bear_bos := true
+        st.bear_bos_low   := st.asl
+        st.bear_bos_l_loc := st.asl_loc
+
+        bool was_in_bull_pb = st.pb_mode == 1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool is_choch = st.dir == 1
+        if is_choch
+            st.bear_sos := true
+            st.choch_lock := true
+
+        st.last_conf_low     := st.asl
+        st.last_conf_low_loc := st.asl_loc
+        st.asl               := na
+        st.dir               := -1
+
+        if was_in_bull_pb
+            st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_h_loc := st.pb_extreme_loc
+            st.ash      := st.pb_extreme
+            st.ash_loc  := st.pb_extreme_loc
+            st.ash_type := "LOCKED"
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := -1
+            st.pb_started            := true
+        else
+            float highest_val = high
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
+
+            if not na(st.ash)
+                bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+                if not already_conf_high
+                    st.last_conf_high     := st.ash
+                    st.last_conf_high_loc := st.ash_loc
+                st.ash      := na
+            else
+                if highest_val != st.last_conf_high
+                    st.last_conf_high     := highest_val
+                    st.last_conf_high_loc := highest_loc
+
+            // 🔴 Mirror of the low-side tie guard above. This side stacks HH on HH rather than LL on
+            // HL, which is why it went unnoticed far longer despite being the MORE common of the two.
+            // ⚠ IT MUST SIT HERE, AFTER THE PROMOTION, NOT BESIDE THE SCAN — placed by the scan it
+            // reads a `last_conf_high` the promotion has not written yet and silently does nothing.
+            // 🔴 Mirror of the low side's refused-wick snap (2026-08-21) — see the note there.
+            // This side is the `ASH` printed beside an `HH`, and the bogus `HH` that follows once
+            // that ASH is broken. Must stay AFTER the promotion, same as the tie guard it replaces.
+            if not na(st.last_conf_high_loc) and (highest_val == st.last_conf_high or (highest_val > st.last_conf_high and highest_loc <= st.last_conf_high_loc))
+                highest_val := st.last_conf_high
+                highest_loc := st.last_conf_high_loc
+            st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc := highest_loc
+
+            st.ash      := highest_val
+            st.ash_loc  := highest_loc
+            st.ash_type := ""
+
+            st.pb_mode               := -1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+// [doc 2] THE TWO STRUCTURE READS  -> docs/realign_strategy.md
+
+f_frameStruct(int len) =>
+    var MTFStruct st = MTFStruct.new(length = len)
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low,  len, len)
+    st.processMTF(ph, pl)
+    // Copied into plain locals FIRST: Pine cannot take the history operator on a UDT
+    // field, and the whole point below is to return the PREVIOUS bar's values.
+    bool  bb = st.bull_bos
+    bool  bs = st.bull_sos
+    bool  rb = st.bear_bos
+    bool  rs = st.bear_sos
+    float ah = st.ash
+    float al = st.asl
+    float ch = st.last_conf_high
+    float cl = st.last_conf_low
+    [bb, bs, rb, rs, ah, al, ch, cl]
+
+// [doc 3] The same read, one HTF bar in the PAST. This is the non-repainting idiom  -> docs/realign_strategy.md
+f_frameStructPrev(int len) =>
+    [bb, bs, rb, rs, ah, al, ch, cl] = f_frameStruct(len)
+    [bb[1], bs[1], rb[1], rs[1], ah[1], al[1], ch[1], cl[1]]
+
+// [doc 4] ── the EXTERNAL frame, via security ────────────────────────────────────  -> docs/realign_strategy.md
+[hBullBos, hBullSos, hBearBos, hBearSos, hAsh, hAsl, hConfHi, hConfLo] =
+     request.security(syminfo.tickerid, htfTf, f_frameStructPrev(majorLength),
+                      lookahead = barmerge.lookahead_on)
+
+// [doc 5] A security call REPEATS its value across every chart bar inside one HTF   -> docs/realign_strategy.md
+htfStamp  = request.security(syminfo.tickerid, htfTf, time, lookahead = barmerge.lookahead_off)
+htfClosed = htfStamp != htfStamp[1]
+
+// ── the CHART frame — the trigger ────────────────────────────────────────────────
+var MTFStruct cst = MTFStruct.new(length = majorLength)
+float cph = ta.pivothigh(high, majorLength, majorLength)
+float cpl = ta.pivotlow(low,  majorLength, majorLength)
+cst.processMTF(cph, cpl)
+
+cBullBreak = cst.bull_bos or cst.bull_sos
+cBearBreak = cst.bear_bos or cst.bear_sos
+
+// [doc 6] THE SETUP TRACKER  -> docs/realign_strategy.md
+var int   htfTrend   = 0        // +1 after a bullish external break, -1 after a bearish one
+var bool  armLong    = false
+var bool  armShort   = false
+var int   armLongMs  = 0
+var int   armShortMs = 0
+var float tgtLong    = na       // the external high that stood before the deviation
+var float tgtShort   = na
+var int   stepLong   = 0        // 0 = waiting for the counter break, 1 = waiting for the shift
+var int   stepShort  = 0
+var float ctrLowL    = na       // extreme since the counter break — the stop
+var float ctrHighS   = na
+// Display latches. `htfTrend` is UPDATED later in the same bar, so a plot reading it
+// would describe the trend the break STARTED rather than the one it ended.
+bool markFalseDown = false
+bool markFalseUp   = false
+
+if htfClosed
+    bool hBull = hBullBos or hBullSos
+    bool hBear = hBearBos or hBearSos
+
+    // ARM on a counter-trend SOS that is the first counter break of the trend.
+    if hBearSos and htfTrend > 0 and tradeLongs and not na(hAsh)
+        armLong       := true
+        markFalseDown := true
+        armLongMs := time
+        tgtLong   := hAsh
+        stepLong  := 0
+        ctrLowL   := na
+    if hBullSos and htfTrend < 0 and tradeShorts and not na(hAsl)
+        armShort    := true
+        markFalseUp := true
+        armShortMs := time
+        tgtShort   := hAsl
+        stepShort  := 0
+        ctrHighS   := na
+
+    // The trend read updates AFTER arming: an SOS both ends the old trend and starts the
+    // new one, and the setup is about the trend it ended.
+    if hBull
+        htfTrend := 1
+    else if hBear
+        htfTrend := -1
+
+    // A further break AGAINST an armed setup kills it — the deviation has become a trend,
+    // which is the one thing this setup bets against.
+    if hBearBos and not hBearSos
+        armLong := false
+    if hBullBos and not hBullSos
+        armShort := false
+
+// ── expiry ───────────────────────────────────────────────────────────────────────
+int windowMs = int(windowHrs * 3600000)
+if armLong and time - armLongMs > windowMs
+    armLong := false
+if armShort and time - armShortMs > windowMs
+    armShort := false
+
+// [doc 7] ── the chart-frame realignment ─────────────────────────────────────────  -> docs/realign_strategy.md
+bool trigLong  = false
+bool trigShort = false
+
+if armLong
+    if cBearBreak
+        stepLong := 1
+        ctrLowL  := low
+    else if stepLong == 1
+        ctrLowL := na(ctrLowL) ? low : math.min(ctrLowL, low)
+    if stepLong == 1 and cst.bull_sos and not na(ctrLowL)
+        trigLong := true
+
+if armShort
+    if cBullBreak
+        stepShort := 1
+        ctrHighS  := high
+    else if stepShort == 1
+        ctrHighS := na(ctrHighS) ? high : math.max(ctrHighS, high)
+    if stepShort == 1 and cst.bear_sos and not na(ctrHighS)
+        trigShort := true
+
+// [doc 8] ENTRY — at MARKET, on the bar the realignment confirms  -> docs/realign_strategy.md
+
+f_minStopOk(float dist, float px) =>
+    minStopMode == "Off"        ? true :
+     minStopMode == "% of price" ? dist >= px * minStopVal / 100.0 :
+     dist >= minStopVal
+
+var float posStop  = na
+var float posTp1   = na
+var float posTp2   = na
+var int   posStage = 0
+var int   posMs    = 0
+var float posEntry = na
+var float trailAnc = na
+
+flat = strategy.position_size == 0
+
+if flat and trigLong and tradeLongs
+    float sl   = ctrLowL - slBufTk * syminfo.mintick
+    float dist = close - sl
+    if dist > 0 and f_minStopOk(dist, close) and not na(tgtLong) and tgtLong > close
+        float qty = (strategy.equity * riskPct / 100.0) / dist
+        strategy.entry("REALIGN L", strategy.long, qty = qty)
+        posStop  := sl
+        posTp2   := tgtLong
+        posTp1   := close + (tgtLong - close) * 0.5
+        posStage := 0
+        posMs    := time
+        posEntry := close
+        trailAnc := na
+        armLong  := false
+
+if flat and trigShort and tradeShorts
+    float sl   = ctrHighS + slBufTk * syminfo.mintick
+    float dist = sl - close
+    if dist > 0 and f_minStopOk(dist, close) and not na(tgtShort) and tgtShort < close
+        float qty = (strategy.equity * riskPct / 100.0) / dist
+        strategy.entry("REALIGN S", strategy.short, qty = qty)
+        posStop  := sl
+        posTp2   := tgtShort
+        posTp1   := close - (close - tgtShort) * 0.5
+        posStage := 0
+        posMs    := time
+        posEntry := close
+        trailAnc := na
+        armShort := false
+
+// [doc 9] THE EXIT LADDER  -> docs/realign_strategy.md
+isLong  = strategy.position_size > 0
+isShort = strategy.position_size < 0
+inPos   = isLong or isShort
+
+if inPos
+    // ── stage advance ────────────────────────────────────────────────────────────
+    if posStage == 0 and ((isLong and high >= posTp1) or (isShort and low <= posTp1))
+        posStage := 1
+        posStop  := isLong ? posEntry + beBufTk * syminfo.mintick
+                           : posEntry - beBufTk * syminfo.mintick
+    if posStage == 1 and ((isLong and high >= posTp2) or (isShort and low <= posTp2))
+        posStage := 2
+        float floorPx = tp2StopMode == "TP1 price" ? posTp1 :
+                         tp2StopMode == "Breakeven" ? posEntry :
+                         (isLong ? posTp1 - trailStep : posTp1 + trailStep)
+        posStop := isLong ? math.max(posStop, floorPx) : math.min(posStop, floorPx)
+
+    // ── the runner trail, past TP2 only ──────────────────────────────────────────
+    if posStage == 2
+        float cand = na
+        if runnerTrail == "Fixed step"
+            cand := isLong ? high - trailStep : low + trailStep
+        else
+            // [doc 10] Structure anchor: the chart frame's last CONFIRMED swing, buffered.  -> docs/realign_strategy.md
+            float anc = isLong ? hConfLo - structTrailBuf * syminfo.mintick
+                               : hConfHi + structTrailBuf * syminfo.mintick
+            cand := anc
+            if runnerTrail == "Structure + % ratchet" and not na(anc)
+                // Climb one %-of-price step per step of favourable move past the anchor.
+                float stepSz = close * trailPct / 100.0
+                if stepSz > 0
+                    float moved = isLong ? high - anc : anc - low
+                    if moved > stepSz
+                        float steps = math.floor(moved / stepSz)
+                        cand := isLong ? anc + (steps - 1) * stepSz
+                                       : anc - (steps - 1) * stepSz
+        if not na(cand)
+            posStop := isLong ? math.max(posStop, cand) : math.min(posStop, cand)
+
+    // [doc 11] ── the time stop ───────────────────────────────────────────────────────  -> docs/realign_strategy.md
+    bool timeOn  = timeStopMode != "Off"
+    bool timeOld = (time - posMs) > int(timeStopHrs * 3600000)
+    bool timeDue = timeOn and timeOld and (timeStopMode == "Always" or posStage == 0)
+    if timeDue
+        strategy.close_all(comment = "TIME")
+    else
+        float p1 = tp1Pct > 0 ? posTp1 : na
+        float p2 = tp2Pct > 0 ? posTp2 : na
+        // ⚠ strategy.exit(qty_percent = 0) closes the WHOLE position, so a 0 rung must
+        //   skip the call entirely rather than pass a zero through.
+        if tp1Pct > 0
+            strategy.exit("X1", limit = p1, stop = posStop, qty_percent = tp1Pct)
+        if tp2Pct > 0
+            strategy.exit("X2", limit = p2, stop = posStop, qty_percent = tp2Pct)
+        strategy.exit("XR", stop = posStop)
+
+// [doc 12] DIAGNOSTICS  -> docs/realign_strategy.md
+var int nHtfClose = 0
+var int nHtfBreak = 0
+var int nBullSos  = 0
+var int nBearSos  = 0
+var int nArmLong  = 0
+var int nArmShort = 0
+var int nCtrBreak = 0
+var int nTrig     = 0
+var int nEntry    = 0
+
+if htfClosed
+    nHtfClose += 1
+    if hBullBos or hBullSos or hBearBos or hBearSos
+        nHtfBreak += 1
+    if hBullSos
+        nBullSos += 1
+    if hBearSos
+        nBearSos += 1
+if markFalseDown
+    nArmLong += 1
+if markFalseUp
+    nArmShort += 1
+if (armLong or armShort) and (cBullBreak or cBearBreak)
+    nCtrBreak += 1
+if trigLong or trigShort
+    nTrig += 1
+if inPos and not inPos[1]
+    nEntry += 1
+
+plot(showDiag ? nHtfClose : na, "1 HTF bars closed",  display = display.data_window)
+plot(showDiag ? nHtfBreak : na, "2 HTF breaks seen",  display = display.data_window)
+plot(showDiag ? nBullSos  : na, "3 HTF bull SOS",     display = display.data_window)
+plot(showDiag ? nBearSos  : na, "4 HTF bear SOS",     display = display.data_window)
+plot(showDiag ? nArmLong  : na, "5 armed LONG",       display = display.data_window)
+plot(showDiag ? nArmShort : na, "6 armed SHORT",      display = display.data_window)
+plot(showDiag ? nCtrBreak : na, "7 chart breaks while armed", display = display.data_window)
+plot(showDiag ? nTrig     : na, "8 TRIGGERS",         display = display.data_window)
+plot(showDiag ? nEntry    : na, "9 ENTRIES",          display = display.data_window)
+plot(showDiag ? htfTrend  : na, "  htfTrend now",     display = display.data_window)
+
+// [doc 13] MARKS  -> docs/realign_strategy.md
+plotshape(showMarks and trigLong,  title = "Realign long",  style = shape.triangleup,
+          location = location.belowbar, color = color.new(color.teal, 0), size = size.tiny)
+plotshape(showMarks and trigShort, title = "Realign short", style = shape.triangledown,
+          location = location.abovebar, color = color.new(color.red, 0),  size = size.tiny)
+plotshape(showMarks and markFalseDown, title = "False break down",
+          style = shape.xcross, location = location.abovebar, color = color.new(color.orange, 0), size = size.tiny)
+plotshape(showMarks and markFalseUp, title = "False break up",
+          style = shape.xcross, location = location.belowbar, color = color.new(color.orange, 0), size = size.tiny)
+plot(inPos ? posStop : na, title = "Stop", color = color.new(color.red, 0), style = plot.style_linebr)
+plot(inPos and posStage < 2 ? posTp2 : na, title = "Target", color = color.new(color.teal, 0), style = plot.style_linebr)

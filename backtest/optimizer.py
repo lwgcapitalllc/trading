@@ -67,7 +67,7 @@ def _run_in_worker(combo: Combo) -> dict:
 def _refuse_unreplayable(config) -> None:
     """Refuse a config this sweep structurally cannot run.
 
-    A sweep replays ONE frame. `mpc_sos_fade`'s `exec_secondary` (default ON since 2026-08-07)
+    A sweep replays ONE frame. `sos_fade`'s `exec_secondary` (default ON since 2026-08-07)
     needs a second, 1-minute stream via `run_dual`, and there is nowhere here to get one. The
     dangerous option is not refusing — it is replaying single-stream, because every combo then
     comes back primary-only and is ranked against a baseline that HAS re-entries, and the winner
@@ -108,7 +108,7 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=Non
         strategy.step(stack.step(bar))
 
     # This drives the bar loop itself rather than calling `run()`, so it does NOT inherit run()'s
-    # end-of-book passes. Without this a sweep over a finished-book feature (mpc_sos_fade's
+    # end-of-book passes. Without this a sweep over a finished-book feature (sos_fade's
     # `exec_recovery` today) would grade every combo on a book missing those trades and rank them
     # confidently — the combos would differ in a field nothing consumed. Guarded because this
     # optimizer is strategy-agnostic and only some strategies have the hook; idempotent, so a
@@ -144,7 +144,7 @@ def run_sweep(
 ) -> List[dict]:
     """Replay `df` once per combo and return [{params, kpis}] — one row per combo, in combo order.
 
-    `module_path` is the strategy package (e.g. "strategies.python.mpc_sos_fade"); workers read its
+    `module_path` is the strategy package (e.g. "strategies.python.sos_fade"); workers read its
     `LAB_STRATEGY` for the strategy class. `progress(done, total)` is called from the collecting
     thread only. `should_cancel()` is polled between completions — a cancelled sweep returns the
     rows finished so far rather than raising, because a partial grid is still a real answer.

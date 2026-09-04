@@ -295,7 +295,7 @@ def test_the_groups_match_the_frontends_analysis_groups():
 
 def test_a_swept_level_survives_the_new_day_tidy():
     """🔴 The engine defaults `hide_mitigated_on_new_day=True` — the Pine's `i_currentDayOnly` tidy —
-    and that tidy is GATED on `not showMitLiq`, which went TRUE in mpc_assistant.pine on 2026-08-07.
+    and that tidy is GATED on `not showMitLiq`, which went TRUE in mpc_jarvis.pine on 2026-08-07.
     So today's indicator never runs it, and left at the default every swept level older than the
     current NY day would be evicted before it could be drawn.
 

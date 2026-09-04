@@ -558,7 +558,7 @@ def test_the_percent_ratchet_moves_a_locked_stop_past_where_the_lock_put_it():
     """RED by deleting the `trail_pct` block in `_manage`.
 
     Without it the stop stays at `lock_to_r` and this bar books exactly +1.000R. ⚠ The step is a
-    percent of PRICE, so it is NOT in R — see the config warning and the `mpc_bleg` trail that was
+    percent of PRICE, so it is NOT in R — see the config warning and the `b_leg` trail that was
     inert for months because one step exceeded the whole risk.
     """
     idx = pd.date_range("2024-01-01", periods=2, freq="15min", tz="UTC")

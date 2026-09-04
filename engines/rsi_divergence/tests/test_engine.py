@@ -1,7 +1,7 @@
 """
 Tests for the RSI-divergence state machine.
 
-These pin the ported Pine behaviour (mpc_assistant.pine "RSI DIVERGENCE — regular divergence at the
+These pin the ported Pine behaviour (mpc_jarvis.pine "RSI DIVERGENCE — regular divergence at the
 extremes"): Wilder's RSI (ta.rsi), strict RSI pivots (ta.pivotlow/ta.pivothigh) confirmed pivot_len
 bars late, and a regular divergence at the extremes — a bullish signal on a lower price low with a
 higher RSI low from oversold, the bearish mirror from overbought — plus the live confluence flags.

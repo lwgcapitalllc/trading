@@ -531,7 +531,7 @@ def _execute(job_id: str, spec: dict) -> None:
 def _replay(job_id: str, strategy, df, total: int) -> None:
     """Drive the strategy bar-by-bar, reporting progress and honouring cancellation.
 
-    `MpcSosFadeStrategy.run()` is the normal entry point, but it is a closed loop with no seam for
+    `SosFadeStrategy.run()` is the normal entry point, but it is a closed loop with no seam for
     either — so the loop is reproduced here over the same public API it uses. A long tick-mode run
     is minutes of work; a progress bar frozen at 15% and a Stop button that does nothing are not
     acceptable for that.
@@ -573,8 +573,8 @@ def _resolve(class_name: str) -> Optional[tuple]:
     ⚠ THE CACHED MODULES ARE DROPPED FIRST, once, before the loop. This backend is long-running, so
     `import_module` would otherwise pin whatever was on disk when it last booted — and a backtest
     replaying a strategy the repo no longer contains is a result that looks entirely normal and
-    describes code nobody can read. Purging per package would be worse than not purging: mpc_bleg
-    imports mpc_sos_fade and sorts before it. See `services/strategy_import.py`.
+    describes code nobody can read. Purging per package would be worse than not purging: b_leg
+    imports sos_fade and sorts before it. See `services/strategy_import.py`.
     """
     if not class_name:
         return None

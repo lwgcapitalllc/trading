@@ -104,7 +104,7 @@ def _strategy_digest(config) -> dict:
 
     🔴 **This exists because a comparison silently spanned a settings change and I read the
     result as a defect in my own optimisation (2026-08-26).** A baseline was captured at 20:31,
-    `mpc_sos_fade.meta.json` was edited at 20:34 by somebody else working the same clone, and the
+    `sos_fade.meta.json` was edited at 20:34 by somebody else working the same clone, and the
     20:41 comparison duly reported the trades had moved. They HAD moved — because the strategy
     had. The bar stream was byte-identical throughout, which is what made it so convincing.
 
@@ -120,7 +120,7 @@ def _strategy_digest(config) -> dict:
 
     import config as cfg
 
-    pkg = _P(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
+    pkg = _P(cfg.MONOREPO_ROOT) / "strategies" / "python" / "sos_fade"
     h = hashlib.sha1()
     for f in sorted(pkg.glob("*.py")) + sorted(pkg.glob("*.json")):
         h.update(f.name.encode())
@@ -141,9 +141,9 @@ def fingerprint(symbol: str, start: str, end: str, tf: str, secondary: bool, ser
     from backtest.data.source import BarSource
     from backtest.replay import build_strategy
 
-    found = python_runner._resolve("MpcSosFadeStrategy")
+    found = python_runner._resolve("SosFadeStrategy")
     if not found:
-        raise SystemExit("MpcSosFadeStrategy did not resolve")
+        raise SystemExit("SosFadeStrategy did not resolve")
     _pkg, entry = found
 
     src = BarSource(server=server)

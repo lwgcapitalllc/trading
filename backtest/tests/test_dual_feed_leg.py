@@ -1,6 +1,6 @@
 """A stacked leg may trade on TWO bar frames.
 
-`mpc_sos_fade`'s re-entry fills on a faster clock than its primary, and until 2026-09-02 a stack
+`sos_fade`'s re-entry fills on a faster clock than its primary, and until 2026-09-02 a stack
 refused that config outright — a leg was one frame, so the only honest thing to do was refuse
 rather than return a primary-only book beside controls that had the re-entries in them.
 

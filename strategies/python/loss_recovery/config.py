@@ -1,6 +1,6 @@
 """loss_recovery/config.py — every knob, with the measured default and the reason for it.
 
-Defaults are the ones MEASURED on XAUUSD M15 2018-09-14 → 2026-08-14 over mpc_sos_fade's 62
+Defaults are the ones MEASURED on XAUUSD M15 2018-09-14 → 2026-08-14 over sos_fade's 62
 losses, both sides charged at `puprime_ecn`. Where a default was chosen rather than swept, the
 docstring says so.
 
@@ -20,7 +20,7 @@ class RecoveryConfig:
     """Off until a caller opts in. See CLAUDE.md → Status."""
 
     major_length: int = 15
-    """Structure engine's swing length. 15 because that is what mpc_sos_fade runs, and the
+    """Structure engine's swing length. 15 because that is what sos_fade runs, and the
     recovery trade must read the SAME structure the primary read — a recovery entry off a
     different structure stream is a different rule that happens to share a trigger."""
 
@@ -117,7 +117,7 @@ class RecoveryConfig:
     leaving `trail_swings` in charge.
 
     🔴 **A percent of price is not a percent of risk, and this repo has already shipped that bug.**
-    `mpc_bleg` inherited `exec_trail_pct = 1.0` while a B leg's whole 1R is 0.13%-1.25% of price —
+    `b_leg` inherited `exec_trail_pct = 1.0` while a B leg's whole 1R is 0.13%-1.25% of price —
     one step was larger than the entire risk, so the ratchet was INERT and the runner handed back
     everything past +1R on 9 of 50 trades. Compare the step against the trade's own R before
     believing a number from this."""

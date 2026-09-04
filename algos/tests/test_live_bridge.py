@@ -26,7 +26,7 @@ import bridge as live_bridge  # noqa: E402
 from order_sizing import SymbolSpec  # noqa: E402
 
 # The live bot's real symbol, with the numbers measured off the PU Prime terminal on
-# 2026-07-31 (`instances/mpc_sos_fade_demo/config.json` → `_measured`).
+# 2026-07-31 (`instances/sos_fade_demo/config.json` → `_measured`).
 #
 # ⚠ The fake below returns THIS dataclass — the same type `mt5_ops.symbol_spec` returns. That is
 # deliberate and it is a rule, not a convenience: this repo has already lost three weeks to a

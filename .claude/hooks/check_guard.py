@@ -173,7 +173,7 @@ CASES = [
     (
         "Pine STRATEGY source under strategies/ gets BOTH reminders",
         {
-            "file_path": "/Users/alwg/trading/strategies/tradingview/mpc_strategy.pine",
+            "file_path": "/Users/alwg/trading/strategies/tradingview/sos_fade_strategy.pine",
             "old_string": "a",
             "new_string": "b",
         },
@@ -191,7 +191,7 @@ CASES = [
     (
         "a real deployed strategy still gets its reminder",
         {
-            "file_path": "/Users/alwg/trading/strategies/python/mpc_sos_fade/config.py",
+            "file_path": "/Users/alwg/trading/strategies/python/sos_fade/config.py",
             "old_string": "a",
             "new_string": "b",
         },

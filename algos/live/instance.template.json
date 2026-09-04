@@ -1,8 +1,8 @@
 {
   "_README": "Copy to algos/markets/fx/instances/<bot_key>/config.json and fill in. This file is the ONLY thing that decides which MT5 terminal, which account, which symbol, and which version of the strategy this bot trades. Nothing here is read from the strategy's own config.py — that is deliberate, so lab experiments cannot reach a live bot. The MT5 password is NOT here: it lives in algos/credentials.json under mt5_accounts.",
 
-  "bot_key": "mpc_sos_fade_demo",
-  "display_name": "MPC SOS Fade",
+  "bot_key": "sos_fade_demo",
+  "display_name": "SOS Fade",
 
   "mt5_path": "C:\\MT5_Demo\\terminal64.exe",
   "account": 0,
@@ -11,8 +11,8 @@
   "magic": 770115,
   "timeframe": "M15",
 
-  "strategy_package": "mpc_sos_fade",
-  "strategy_class": "MpcSosFadeStrategy",
+  "strategy_package": "sos_fade",
+  "strategy_class": "SosFadeStrategy",
   "strategy_params": {
     "exec_risk_pct": 2.0,
     "exec_sl_level": "0.886",
@@ -39,7 +39,7 @@
   "_symbol": "The BROKER's symbol string, exactly. PU Prime gold is XAUUSD.s, Vantage is XAUUSD. Wrong here = no bars and no trades.",
   "_magic": "Unique per bot PER ACCOUNT, and enforced since 2026-08-09 — live_config.load refuses to start a bot whose magic another instance already uses on the same account. Every order this bot places carries it and every order it reads back is filtered by it, so two bots sharing one would each read the OTHER's position as their own: cancel its orders, ratchet its stop, book its fill. The same magic on a DIFFERENT account is fine — the terminal scopes orders by login.",
   "_account_risk_cap_pct": "The most open risk EVERY bot on this account may hold at once, as a % of the LIVE balance, measured to each position's CURRENT broker-side stop — so a stop moved to breakeven frees its room. It is the layer above exec_risk_pct, which is per-TRADE and had nothing above it until now: two bots at 10% put 20% on from a state neither could see (docs/LIVE_TRADING_PIPELINE.md → G10). null = UNCAPPED, which is the honest state for a one-bot account and is what every result in this repo was measured on; the runner LOGS which state it is in at every start, so 'no cap' is a reported fact rather than an absence nobody noticed. It REFUSES an order that does not fit and never shrinks one — a resized order is not the trade the strategy's emulator is holding. It also refuses outright if any position on the account has NO stop, because that risk is unbounded rather than zero. Not runtime-reloadable: changing it needs a restart.",
-  "_strategy_params": "The FULL promoted parameter set, written out explicitly. exec_risk_pct: the shipped default is 10, which measured a 54.9% max drawdown over 6.5 years — choose deliberately. exec_min_stop_mode: ON by default since 2026-08-05 at '% of price' 0.08, swept over 7.9 years — 0.10 costs 1.8R, 0.15 costs 25R, and ATR mode is the wrong tool because the dangerous stops print on quiet bars; see strategies/python/mpc_sos_fade/CLAUDE.md. fill_model must stay 'bar' — 'tick' is a backtest cost model and needs a tick source the live bot does not have.",
+  "_strategy_params": "The FULL promoted parameter set, written out explicitly. exec_risk_pct: the shipped default is 10, which measured a 54.9% max drawdown over 6.5 years — choose deliberately. exec_min_stop_mode: ON by default since 2026-08-05 at '% of price' 0.08, swept over 7.9 years — 0.10 costs 1.8R, 0.15 costs 25R, and ATR mode is the wrong tool because the dangerous stops print on quiet bars; see strategies/python/sos_fade/CLAUDE.md. fill_model must stay 'bar' — 'tick' is a backtest cost model and needs a tick source the live bot does not have.",
   "_strategy_source_hash": "Content hash of the strategy package (see algos/live/version.py). The bot re-hashes on startup and REFUSES to run if the code moved. Empty = unpinned, allowed but logged loudly.",
   "_telegram_chat_id": "Where THIS bot reports. Empty = the shared group in algos/credentials.json. Set it when a bot deserves its own feed — a demo gold bot and a funded FX bot in one group means the message that matters is the one you scroll past. A chat id is not a secret (it is useless without a token), which is why it lives here.",
   "_telegram_token_key": "Optional, and only if this bot should appear as its OWN Telegram bot rather than the default one. It NAMES a key in algos/credentials.json (e.g. 'telegram_token_bleg') — never the token itself, because this file is not the place for a secret. Empty = send as the default bot. Remember a Telegram bot can only post to chats it has been added to.",

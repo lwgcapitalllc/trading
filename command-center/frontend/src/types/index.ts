@@ -341,7 +341,7 @@ export interface BotReview {
 }
 
 export interface BotStatus {
-  /** The bot's STABLE identifier (`mpc_sos_fade_demo`) — the same string on the VPS process
+  /** The bot's STABLE identifier (`sos_fade_demo`) — the same string on the VPS process
    *  commandline. Use it for URLs, selection state and API paths. `name` is a label chosen
    *  for a human, so it is the field that will eventually change, and anything keyed on it
    *  breaks when it does. Both are accepted by the API; new code passes the key. */

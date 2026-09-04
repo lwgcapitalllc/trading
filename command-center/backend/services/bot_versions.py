@@ -140,7 +140,7 @@ def unpushed_commits(trees: list[str]) -> list[str] | None:
     bot, and leaves it behind by exactly those commits. Every number on the page is then
     correct and the reader is left with a Deploy button that appears to have done nothing.
 
-    MEASURED 2026-08-14: a deploy of `mpc_sos_fade_demo` landed **v164** while the backtester
+    MEASURED 2026-08-14: a deploy of `sos_fade_demo` landed **v164** while the backtester
     read **v165**, because the single commit between them was sitting unpushed on this machine.
     The banner said "1 version behind" straight after a successful deploy and nothing on it
     said why. This is the same shape as `uncommitted_edits` one step further out — the working
@@ -256,7 +256,7 @@ def _dataclass_defaults(source: str) -> dict[str, object]:
     * a default that is not a literal (a call, a name, an expression) is `_UNPARSED`, so it is
       reported as *changed, cannot say to what* instead of as unchanged;
     * a field declared in more than one class in the file with DIFFERENT defaults is also
-      `_UNPARSED` — `mpc_bleg` subclasses `mpc_sos_fade`'s config and overrides fields, so
+      `_UNPARSED` — `b_leg` subclasses `sos_fade`'s config and overrides fields, so
       picking one silently would describe the wrong bot.
     """
     try:
@@ -287,7 +287,35 @@ def _dataclass_defaults(source: str) -> dict[str, object]:
 
 
 def _config_source_at(commit: str, package: str) -> str | None:
-    return _git("show", f"{commit}:strategies/python/{package}/config.py")
+    return _git("show", f"{commit}:{_config_path(package)}")
+
+
+def _config_path(package: str) -> str:
+    return f"strategies/python/{package}/config.py"
+
+
+def _path_before_renames(from_commit: str, to_commit: str, path: str) -> str | None:
+    """What `path` was CALLED at `from_commit`, if it was renamed on the way to `to_commit`.
+
+    🔴 **A package rename makes every earlier commit unreadable by the new name**, and the
+    promote that needs this most is the FIRST one after such a rename — a live bot deployed
+    before it, compared against a repo that has renamed the tree. Without this the preview
+    answers `None`, which renders as *not checked*: safe, but blank at the one moment somebody
+    is deciding whether to deploy.
+
+    Asks git rather than carrying a map of past renames, so it keeps working for the next one
+    and cannot go stale. A directory rename reaches git as one rename per file, so the package
+    tree moving is visible here as its `config.py` moving.
+    """
+    out = _git("diff", "--name-status", "-M", "--diff-filter=R", from_commit, to_commit)
+    if not out:
+        return None
+    for line in out.splitlines():
+        parts = line.split("\t")
+        # R<similarity>\t<old>\t<new>
+        if len(parts) == 3 and parts[0].startswith("R") and parts[2] == path:
+            return parts[1]
+    return None
 
 
 def _param_meta(package: str) -> dict[str, dict]:
@@ -344,6 +372,12 @@ def setting_changes(
         return None
     before_src = _config_source_at(from_commit, package)
     after_src = _config_source_at(to_commit, package)
+    if before_src is None and after_src is not None:
+        # The package was renamed between the two commits — read the old side by its old name
+        # rather than reporting "not checked" on the first promote after a rename.
+        was = _path_before_renames(from_commit, to_commit, _config_path(package))
+        if was:
+            before_src = _git("show", f"{from_commit}:{was}")
     if before_src is None or after_src is None:
         return None
 

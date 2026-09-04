@@ -1,7 +1,7 @@
 """
 Hand-traced tests for the Sniper fib zone state machine.
 
-These pin the ported Pine behaviour (mpc_assistant.pine GRP_SNIPER): a BOS drops a fresh
+These pin the ported Pine behaviour (mpc_jarvis.pine GRP_SNIPER): a BOS drops a fresh
 0.382-0.5 zone across the impulse leg and arms it; price entering that zone confirms once; a new
 BOS replaces the zone and re-arms; the break bar itself never counts as its own confirm. Full
 Pine<->Python parity is validated separately against a TradingView export (compare_fib.py).

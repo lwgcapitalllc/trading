@@ -4,12 +4,12 @@
 //  RSI DIVERGENCE EXPORT — parity harness for engines/rsi_divergence/
 // ============================================================================
 // Instrumented copy of the "RSI DIVERGENCE — regular divergence at the extremes"
-// block from mpc_assistant.pine, with ALL drawing removed (no dotted lines, no
+// block from mpc_jarvis.pine, with ALL drawing removed (no dotted lines, no
 // labels — those are visuals) and the divergence state kept. It adds px_div_*
 // plot columns so a TradingView CSV export can be diffed bar-by-bar against the
 // Python RsiDivergenceEngine by engines/rsi_divergence/tools/compare_rsi_div.py.
 //
-// Keep the RSI + pivot + divergence logic byte-identical to mpc_assistant.pine's
+// Keep the RSI + pivot + divergence logic byte-identical to mpc_jarvis.pine's
 // RSI DIVERGENCE block. Do not let it drift.
 // ============================================================================
 // overlay=false: its own pane, so the transparent parity plots don't drag the price
@@ -17,7 +17,7 @@
 // detection is timeframe-agnostic — export on any intraday timeframe.
 indicator("RSI Divergence Export", overlay = false, max_bars_back = 2000)
 
-// ── GRP_DIV inputs (defaults == mpc_assistant.pine) ──
+// ── GRP_DIV inputs (defaults == mpc_jarvis.pine) ──
 bool showDiv      = input.bool(true, "Track RSI Divergence")
 int  divRsiLen    = input.int(14, "RSI Length",              minval = 2,  maxval = 50)
 int  divPivotLen  = input.int(5,  "Pivot Width (bars)",      minval = 1,  maxval = 20)

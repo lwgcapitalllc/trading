@@ -408,7 +408,7 @@ def assert_secondary_wired(strategy_config, *, fill_clock_minutes, has_merge: bo
             f"make_dual_clock(), so there is nothing to merge the two streams with — the runner "
             f"would have two feeds and no rule for which bar is stepped when. A strategy that "
             f"needs a second feed owns the merge; see "
-            f"strategies/python/mpc_sos_fade/dual_clock.py."
+            f"strategies/python/sos_fade/dual_clock.py."
         )
 
 

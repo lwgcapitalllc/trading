@@ -6,7 +6,7 @@ New York) and kill zones are open, session open/close edges carrying each sessio
 high/low, and the NY opening-range high/low. The signal is the event/flag, not the drawing; boxes,
 lines and colours are out of scope.
 
-Ported from indicators/engines/mpc_assistant.pine (session windows, SESSION H/L TRACKING, KILL ZONES,
+Ported from indicators/engines/mpc_jarvis.pine (session windows, SESSION H/L TRACKING, KILL ZONES,
 NY RANGE BOX). Standalone — depends on nothing but the bar's timestamp + high/low. It is a
 prerequisite for the session-scoped parts of the future Liquidity engine (session H/L levels) and
 the future VWAP engine (session anchor).

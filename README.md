@@ -34,7 +34,7 @@ trading/
 │   ├── rsi_divergence/  ← RSI-divergence engine (regular divergence at the extremes + live confluence); standalone
 │   ├── equal_highs_lows/← Equal Highs/Lows (EQH/EQL) liquidity-level engine; standalone, price-driven
 │   ├── candlesticks/    ← Candlestick-pattern engine (15 classic patterns); standalone, OHLC-only — the one engine
-│   │                       ported from a THIRD-PARTY indicator rather than from mpc_assistant.pine
+│   │                       ported from a THIRD-PARTY indicator rather than from mpc_jarvis.pine
 │   │                       (SMC extraction COMPLETE — FVG, RSI-div, EQH/EQL and candlesticks pulled later; see ENGINE_EXTRACTION_ROADMAP.md)
 │   └── news/            ← Economic-calendar (news + holiday) blackout engine (off-roadmap, not a Pine port; standalone)
 │
@@ -84,7 +84,7 @@ Read these in order for full context:
 
 | Subsystem | Purpose | Status | Rules |
 |---|---|---|---|
-| `algos/` | Live algo trading on Windows VPS | **One bot LIVE and ARMED** — `mpc_sos_fade_demo` on a PU Prime ECN **demo** account since 2026-07-31, placing real orders since 2026-08-05. `mpc_bleg_demo` is registered and BENCHED (`account: null`) | `algos/CLAUDE.md` |
+| `algos/` | Live algo trading on Windows VPS | **One bot LIVE and ARMED** — `sos_fade_demo` on a PU Prime ECN **demo** account since 2026-07-31, placing real orders since 2026-08-05. `b_leg_demo` is registered and BENCHED (`account: null`) | `algos/CLAUDE.md` |
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
 | `engines/regime/` | Shared regime classifier for live bots and backtest lab | Production | `engines/regime/CLAUDE.md` |

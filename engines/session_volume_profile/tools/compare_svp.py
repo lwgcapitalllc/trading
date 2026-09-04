@@ -5,7 +5,7 @@ compare_svp.py — parity check: TradingView Pine export vs Python SVP engine.
 Purpose
 -------
 Prove the Python engine in svp/ produces the same Asia POC / "MV" line as the source-of-truth SESSION
-VOLUME PROFILE block in mpc_assistant.pine (line ~2554) and its MV confirmation slot (line ~2772), on
+VOLUME PROFILE block in mpc_jarvis.pine (line ~2554) and its MV confirmation slot (line ~2772), on
 real candles. It feeds each bar (timestamp + open/high/low/close + volume) through SvpEngine and diffs
 the current POC, the form pulse and the sweep state against the px_* columns the Pine build in
 indicators/engines/svp_export.pine plotted, bar by bar.

@@ -3,7 +3,7 @@
 
 Pine reports this as `CE10272: Undeclared identifier`, and **it only appears on the paste** —
 there is no local Pine compiler, so a file can sit in the repo looking finished for days.
-`mpc_extreme_leg_strategy.pine` shipped exactly that on 2026-08-24: its higher-timeframe engine
+`extreme_leg_strategy.pine` shipped exactly that on 2026-08-24: its higher-timeframe engine
 is GENERATED from the chart-frame one, the generator swapped the bar globals for passed-in
 values, and two helper methods got the swap without getting the parameter. Nothing failed until
 Aaron pasted it.

@@ -45,7 +45,7 @@ extend-exclude = [
     # 🔴 **THE CARVE-OUT IS HERE BECAUSE DOING IT BY HAND FAILED, AND IT FAILED SILENTLY.**
     # It was first done with `git checkout --` on those paths, which is correct exactly once:
     # a later `ruff format .` over the whole repo re-formatted every one of them, `git add -A`
-    # staged it, and the LIVE `mpc_sos_fade` went out in a commit whose message says it was
+    # staged it, and the LIVE `sos_fade` went out in a commit whose message says it was
     # excluded. Nothing failed, no test went red, and the message was the only thing that
     # disagreed with the tree. **A decision that lives in a person's memory of what they
     # reverted is not a decision the next command respects — put it where the tool reads it.**

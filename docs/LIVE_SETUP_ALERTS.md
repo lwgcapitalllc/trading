@@ -54,8 +54,8 @@ startup.** It must never go quiet instead. This repo has been bitten three times
 resolving through an empty registry and answering confidently — root `CLAUDE.md` rule 8. An absent
 implementation is a fact worth reporting, not a default worth guessing.
 
-⚠ **The implementation is per strategy and is written by whoever knows that strategy.** `mpc_bleg`
-and `mpc_bos` get theirs when they are actually run. Do not stub them: a stub is exactly the empty
+⚠ **The implementation is per strategy and is written by whoever knows that strategy.** `b_leg`
+and `bos` get theirs when they are actually run. Do not stub them: a stub is exactly the empty
 registry above.
 
 ---
@@ -66,7 +66,7 @@ registry above.
 flagged the guess as the thing most likely to make the channel unreadable. It was measured
 2026-08-13 and the guess was low by 2-4x, in the noisy direction.**
 
-One replay, `mpc_sos_fade` at shipped defaults, **155,807 M15 bars, 2020-01-01 → 2026-08-06**
+One replay, `sos_fade` at shipped defaults, **155,807 M15 bars, 2020-01-01 → 2026-08-06**
 (79.1 months), `exec_secondary=False`, warm-up records dropped:
 
 | message | count | per month |
@@ -153,7 +153,7 @@ indistinguishable from a quiet market. Both sides measured on the ONE window abo
 0.7 → 0.8 per month, nine extra messages in 79.7 months**, with every other row unmoved. The
 closing `👋 NO TRADE` reply was also corrected — it had been booking those deaths as "the limit
 rested and price never came back" when no limit was ever placed. Rules and the replay that proves
-it reporting-only: `strategies/python/mpc_sos_fade/CLAUDE.md` → *The two price refusals now report
+it reporting-only: `strategies/python/sos_fade/CLAUDE.md` → *The two price refusals now report
 themselves*.
 
 ⚠ **BLOCKED came in at 0.7/month, not the 4.1 the transition counts above predicted, and the gap
@@ -176,7 +176,7 @@ revisit.** A merely-unmet confluence is not untradeable — it is the normal sta
 before it fills — and getting that wrong hides real signals silently. A veto or the final hour can
 lift while a setup is alive, so those stay reportable and travel as `blocked_by` instead.
 
-⚠ **All of the above is `mpc_sos_fade` on XAUUSD M15 over one 6.5-year window.** It is not a
+⚠ **All of the above is `sos_fade` on XAUUSD M15 over one 6.5-year window.** It is not a
 prediction for any other strategy, and a new bot's rate must be measured the same way before its
 alerts are switched on.
 
@@ -217,7 +217,7 @@ class SetupSnapshot:
 valid entry zone anywhere between the most shallow area to the deepest area and the potential stop
 loss is this"*). `zone` is the range price must reach for this setup to be tradeable at all — known
 the moment the setup arms, which is what makes the WATCHING message useful. `entry` is the single
-price an order is actually resting at, and does not exist until one is. For `mpc_sos_fade` the zone
+price an order is actually resting at, and does not exist until one is. For `sos_fade` the zone
 is the 0.5 → 0.886 fib band (`fibo_p2` → `fibo_p6`) and the stop projects off the deep edge, so
 both are answerable a long time before a limit is placed.
 
@@ -236,7 +236,7 @@ its own resolution, and the alert layer never has to correlate anything.
 **Rules, all load-bearing:**
 
 ⚠ **`key` must be stable for the setup's whole life and unique across sides and strategies.** It is
-the Telegram thread id and the dedupe key. For `mpc_sos_fade` that is strategy + side + the SOS bar
+the Telegram thread id and the dedupe key. For `sos_fade` that is strategy + side + the SOS bar
 — the same identity `_MissWatch` already keys on.
 
 ⚠ **Prices are COPIED from what the strategy is holding, never recomputed.** §9.
@@ -263,7 +263,7 @@ Fires when a setup first appears. **7.7/month on A+** — not the 4.9 an earlier
 
 ```
 👀 SETUP FORMING · SHORT
-mpc_sos_fade — XAUUSD.p   (2 of 3)
+sos_fade — XAUUSD.p   (2 of 3)
 
 Sweep — Day High
 Shift of structure — confirmed
@@ -344,7 +344,7 @@ announced. So the phone said 4,323.55 while the broker held 4,333.66. Announcing
 call and it was made without noticing it leaves the one message that IS sent quietly wrong.
 ✅ **Fixed by sending LATER rather than more often** (`announce_resting`, `backtest/setups.py`): the
 strategy holds the message until price retraces to its `alert_resting_fib` (0.236 for
-`mpc_sos_fade`), which is both nearer the action and a fresher price. **The order is unchanged — it
+`sos_fade`), which is both nearer the action and a fresher price. **The order is unchanged — it
 still rests the moment the setup arms.** ⚠ **The threshold must stay SHALLOWER than the entry band**,
 which is what makes a suppressed message provably a setup that never traded. Volume over 6.5 years:
 332 → 301 resting alerts, invariant unchanged at 159 trades / 158 announced.
@@ -403,7 +403,7 @@ when a reply target is gone.
 ## 7. Build order
 
 1. `backtest/setups.py` — the contract, with tests.
-2. `Execution.live_setups()` for `mpc_sos_fade`, snapshotting from `_MissWatch` and `_pend_*`.
+2. `Execution.live_setups()` for `sos_fade`, snapshotting from `_MissWatch` and `_pend_*`.
    Prove reporting-only by full-history replay (byte-identical trade list).
 3. Re-run `compare_strategy.py` to exit 0. It must be unmoved.
 4. `format_watching` / `format_entry_zone` / `format_entered` / `format_no_trade` /

@@ -15,11 +15,11 @@ from routers import _costs
 
 def _flat():
     """A strategy row that can only price the spread as a flat charge."""
-    return {"id": "mpc_extreme_leg", "supports_bid_ask_fills": False}
+    return {"id": "extreme_leg", "supports_bid_ask_fills": False}
 
 
 def _moves():
-    return {"id": "mpc_sos_fade", "supports_bid_ask_fills": True}
+    return {"id": "sos_fade", "supports_bid_ask_fills": True}
 
 
 def _resolve(strategies, charge=True, slippage=0):

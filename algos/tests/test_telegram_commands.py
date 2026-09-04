@@ -136,14 +136,14 @@ def test_help_lists_exactly_what_dispatches(bot):
 # ── /status reads the runner's own state ─────────────────────────────────────────
 def _state(**over):
     st = {
-        "name": "MPC SOS Fade",
+        "name": "SOS Fade",
         "status": "live",
         "balance": 2000.0,
         "heartbeat": 1e12,
         "mt5_link": True,
     }
     st.update(over)
-    return {"mpc_sos_fade_demo": st}
+    return {"sos_fade_demo": st}
 
 
 def test_status_lists_a_bot_that_is_running(bot, monkeypatch):
@@ -157,7 +157,7 @@ def test_status_lists_a_bot_that_is_running(bot, monkeypatch):
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "3h 12m")
     monkeypatch.setattr(bot, "is_running", lambda s: True)
     out = bot.cmd_status()
-    assert "MPC SOS Fade" in out
+    assert "SOS Fade" in out
     assert "3h 12m" in out
     assert "$2,000.00" in out
 
@@ -206,7 +206,7 @@ def test_status_matches_the_bot_key_not_the_script_name(bot, monkeypatch):
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "1m")
     monkeypatch.setattr(bot, "is_running", lambda s: seen.append(s) or True)
     bot.cmd_status()
-    assert "--bot mpc_sos_fade_demo" in seen
+    assert "--bot sos_fade_demo" in seen
 
 
 def test_status_says_so_when_nothing_has_written_a_state_file(bot, monkeypatch):

@@ -8,7 +8,7 @@ No behavior lives here (bar a couple of tiny helpers on LiquidityLevel). Two con
     (H4 sweep target), or a finished session's high/low (Asia/London/NY H/L). Carries its price, the
     bar it was created on, its mitigation rule, and — once price takes it — the bar it was mitigated
     (swept) on. Mirrors the persisted d_hPrice / w_hPrice / h4TrackHigh / asiaHigh ... state in
-    indicators/engines/mpc_assistant.pine's liquidity blocks. Colours, lines and labels are drawing concerns
+    indicators/engines/mpc_jarvis.pine's liquidity blocks. Colours, lines and labels are drawing concerns
     and dropped.
 
   LiquidityEvents — the engine's per-bar OUTPUT: the levels created this bar (edge), the levels
@@ -28,14 +28,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-# Mitigation rules — how a level is "taken". Ported exactly from mpc_assistant.pine:
+# Mitigation rules — how a level is "taken". Ported exactly from mpc_jarvis.pine:
 #   SWEEP_HIGH  a wick through the level           (high > price)                     — day/session/H4 highs
 #   SWEEP_LOW   a wick through the level           (low  < price)                     — day/session/H4 lows
 #   BREAK_HIGH  a body close above                 (close > price)                    — week highs
 #   BREAK_LOW   a body close below                 (close < price)                    — week lows
 #   NONE        never mitigated                    (PWC — a reference close, not a swept level)
 #
-# The close-back guard was DROPPED 2026-07-06 to match a re-pasted mpc_assistant.pine: the sweep
+# The close-back guard was DROPPED 2026-07-06 to match a re-pasted mpc_jarvis.pine: the sweep
 # rules used to require price close back the other side (high>price AND close<price); they now fire
 # on the wick alone. Weekly keeps the plain close-through break rule (unchanged).
 SWEEP_HIGH = "sweep_high"
@@ -59,7 +59,7 @@ class LiquidityLevel:
     mitigated        — has price taken this level?
     mitigated_index  — bar index it was mitigated (swept) on, or None
     sweep_label      — for kind=="h4" only: "BSL" when the high is swept, "SSL" when the low is
-                       (mirrors the labels mpc_assistant.pine prints on an H4 sweep)
+                       (mirrors the labels mpc_jarvis.pine prints on an H4 sweep)
     id      — stable id so a consumer can match a created level to its later mitigation
     """
 

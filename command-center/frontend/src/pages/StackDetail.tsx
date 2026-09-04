@@ -123,7 +123,7 @@ type ComboPoint = EquityPoint & { _legOwner?: string } & Partial<Record<`leg_${s
 // ── Which BOOK the numbers on screen come from ────────────────────────────────
 //
 // 🔴 This distinction is the whole reason the leg toggles are trustworthy, and it did not exist
-// until 2026-08-10. Aaron switched MPC SOS Fade off on a shared stack and read that MPC B-LEG had
+// until 2026-08-10. Aaron switched SOS Fade off on a shared stack and read that B-LEG had
 // made $47,758,999, then ran that same strategy standalone over the same window and got $21,064.
 // Both numbers were right. The B-LEG's trades in a SHARED book are sized off a balance A+ grew to
 // ~$169M, so its last trade risks $16,925,791 where alone it risks $3,102 — 5,456x — for the
@@ -1090,7 +1090,7 @@ export function StackDetail() {
         detail: 'Auto-refreshing every few seconds.',
       }
     }
-    // The phase is machine vocabulary (`shared`, `solo:mpc_bleg`) and the message repeats it before
+    // The phase is machine vocabulary (`shared`, `solo:b_leg`) and the message repeats it before
     // the part worth reading. Say what is happening in words, and keep the bar counter after it.
     const phase = p.phase.startsWith('solo:')
       ? `Replaying ${nameFor(p.phase.slice(5))} on its own account`
@@ -1707,7 +1707,7 @@ export function StackDetail() {
               same day — repeated one section further down, on the same page, against the same
               stack. `net_pnl`, `max_drawdown` and `sharpe` on a shared leg are that leg's numbers
               INSIDE the portfolio, where it sizes off a balance every strategy grew: measured on
-              `st_94aeb25f0c`, MPC B-LEG reads $47,758,999 here and $21,064 on its own account, for
+              `st_94aeb25f0c`, B-LEG reads $47,758,999 here and $21,064 on its own account, for
               the identical 99 trades at the identical +17.8674R. The column said "Net P&L".
 
               ⚠ **R leads**, because it is the one per-trade figure a change of position size cannot

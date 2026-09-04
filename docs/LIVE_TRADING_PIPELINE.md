@@ -37,9 +37,9 @@ new Telegram token, and version pinning so the lab and the live bot cannot colli
 
 | Piece | Where | State |
 |---|---|---|
-| MPC SOS Fade (A+) | `strategies/python/mpc_sos_fade/` | Pine-parity GREEN 2026-07-29, 21,494 bars |
-| MPC B-LEG | `strategies/python/mpc_bleg/` | Pine-parity GREEN 2026-07-29 |
-| Per-bar driver | `MpcSosFadeStrategy.step(bar_state)` | Already the live seam — one closed bar in, one `Decision` out |
+| SOS Fade (A+) | `strategies/python/sos_fade/` | Pine-parity GREEN 2026-07-29, 21,494 bars |
+| B-LEG | `strategies/python/b_leg/` | Pine-parity GREEN 2026-07-29 |
+| Per-bar driver | `SosFadeStrategy.step(bar_state)` | Already the live seam — one closed bar in, one `Decision` out |
 | Self-sizing | `exec_risk_pct` (default 10) | The strategy computes its own lot size; the lab's sizing engine is bypassed (`self_sizing: True`) |
 | Confluence records | `execution.blocks` / `execution.misses` | Every refused and every died setup, with reasons — already structured for logging |
 
@@ -271,7 +271,7 @@ $4,000 gold) binds ~16x earlier, so the broker's limit should never be the one t
 box was decided on figures off a marketing page; the table that decides it now is ours.
 
 🟢 **AND IT IS NOW WHAT THE BOT ACTUALLY TRADES.** On 2026-08-12 Aaron logged `MT5_FFT` into the
-ECN demo and `mpc_sos_fade_demo` moved with it: **700107749 / `XAUUSD.s` → 700152905 /
+ECN demo and `sos_fade_demo` moved with it: **700107749 / `XAUUSD.s` → 700152905 /
 `XAUUSD.p`**, `account_profile` `puprime_standard` → `puprime_ecn`. Verified live — connected
 `#700152905 / $9,996.99`, warmed 5,000 bars, 0 errors, 0 halts. The old account's $9,996.99 (grown
 from $2,000) does not travel; 700152905 opens at $10,000.
@@ -285,7 +285,7 @@ so swap cannot pick an account** — that is the natural guess and it is false.
 
 ✅ **`SPREAD_UNMEASURED` IS RETIRED FOR ECN AS OF 2026-08-14 — AND FOR ECN ONLY.** Aaron left
 `MT5_FFT` logged into 700152905 for several days, so the terminal finally held the tick history the
-refusal was waiting on: `broker_facts.py --bot mpc_sos_fade_demo --history-days 6` read
+refusal was waiting on: `broker_facts.py --bot sos_fade_demo --history-days 6` read
 **3,033,270 ticks over 5 whole days**, median **$0.12**, p99 $0.18, max $0.19, across **all 23
 traded hours** — including the 22:00 UTC reopen that was the named blocker (median $0.16, p99
 $0.19, i.e. the one wide hour, exactly as on Standard). `backtest/fills.py` now carries
@@ -501,9 +501,9 @@ This is the only item on this list that can lose real money quickly.
 limit *inside* that band. When they land close together, stop distance collapses, and
 `qty = risk / stop_distance` builds an enormous position. Measured at `0.786`: a $0.20 stop, a
 39,033 oz position, ~180% of equity lost in one bar. At 0.886 it has never fired across 6.5 years,
-but that is **evidence of absence, not a guarantee** (`mpc_sos_fade/CLAUDE.md` says so explicitly).
+but that is **evidence of absence, not a guarantee** (`sos_fade/CLAUDE.md` says so explicitly).
 
-`mpc_strategy.pine` has the guard (`execMinStopMode` / `execMinStopVal`). **`config.py` has no
+`sos_fade_strategy.pine` has the guard (`execMinStopMode` / `execMinStopVal`). **`config.py` has no
 equivalent**, the export carries no column for it, and `compare_strategy.py` therefore reports GREEN
 regardless. Run 7 already measured the fix: `pct 0.1` (stop must be ≥ 0.1% of price) blocks 6 of 188
 trades, is +2.5R, and leaves four whole years byte-identical.
@@ -560,7 +560,7 @@ away.** Verified by tracing the code rather than by re-reading either: `algos/sh
 config (the setting), 21 tests in `algos/tests/test_account_risk.py`.
 
 🔴 **WHAT IS ACTUALLY OPEN IS A NUMBER.** `exec_risk_pct` is **10.0** and `account_risk_cap_pct` is
-**10.0** on `mpc_sos_fade_demo`, so one full-size A+ trade fills the entire account budget and a
+**10.0** on `sos_fade_demo`, so one full-size A+ trade fills the entire account budget and a
 second bot is REFUSED until that room comes back. The allocator arbitrates correctly; there is
 simply nothing to arbitrate over until the pool is split. **That is a decision about risk, not code
 to write.**
@@ -741,7 +741,7 @@ result above is a fact about today's config, not about the setups.
 same 155,531 bars and driven by two independent paths that agree to the cent (`overlap_audit.py` and
 the shared-account stack's solo control): **99 trades, +17.87R**, free of cost layers.
 
-What moved it was the 2026-08-06 tuning pass in `strategies/python/mpc_bleg/`, measured over 186,312
+What moved it was the 2026-08-06 tuning pass in `strategies/python/b_leg/`, measured over 186,312
 M15 bars with spread and swap charged, IS/OOS split declared before any row ran:
 
 | axis | old | new | why |
@@ -1052,7 +1052,7 @@ task, the Bots page Start/Restart buttons, and the documented restart command al
 launched `start_telegram.py`, whose first act is to force-kill any running Telegram bot.
 
 **Measured on the live box**, by firing the task to verify an unrelated fix: it left **two
-`runner.py --bot mpc_sos_fade_demo` processes** four minutes apart, and killed and rebuilt the
+`runner.py --bot sos_fade_demo` processes** four minutes apart, and killed and rebuilt the
 Telegram bot. Nothing anywhere reported either.
 
 ⚠ **Two copies of one bot is the worst duplicate available here.** They share an account, a magic
@@ -1108,7 +1108,7 @@ Aaron's values.
 
 ```json
 {
-  "bot_key": "mpc_sos_fade_demo",
+  "bot_key": "sos_fade_demo",
   "mt5_path": "C:\\MT5_PUPrime_Demo\\terminal64.exe",
   "symbol":   "XAUUSD.s",
   "timeframe": "M15",
@@ -1170,14 +1170,14 @@ raw log is bulky and mostly matters within days of an incident.
 Per Aaron, 2026-07-30. No daily summaries, no cap/limit alerts for now.
 
 ```
-🟢 ENTRY  MPC SOS Fade
+🟢 ENTRY  SOS Fade
 XAUUSD.s  LONG  0.42 lots
 Entry 3,318.40   Stop 3,301.15
 2026-08-04 14:15 UTC
 ```
 
 ```
-🔴 EXIT  MPC SOS Fade
+🔴 EXIT  SOS Fade
 XAUUSD.s  LONG  closed @ 3,377.90
 P&L  +$1,842.60   (+3.41R)
 Reason: trail stop
@@ -1219,7 +1219,7 @@ Nine steps. Steps 1–3 can be done before Aaron provides any account details.
 
 `exec_min_stop_mode` / `exec_min_stop_val` in `SosFadeConfig`, the floor applied at order placement
 in `_place_entries`, block reason **code 7** so a refusal on price is countable, `cfg_min_stop` /
-`cfg_min_stop_val` in a REGENERATED `mpc_strategy_export.pine` (its body is byte-identical to the
+`cfg_min_stop_val` in a REGENERATED `sos_fade_strategy_export.pine` (its body is byte-identical to the
 parent again — the export had drifted behind the min-stop input, which is why the parent could refuse
 setups the Python took while the comparator reported green), the decode in `compare_strategy.py`
 (absent column ⇒ `"Off"`, never the Python default), and both fields in the meta so the lab shows
@@ -1294,7 +1294,7 @@ wire — which is where `qty = risk / stop_distance` is computed, and therefore 
 stop the position being SIZED off a collapsed stop in the first place.
 
 **WHAT IT COSTS — MEASURED 2026-08-05, and the answer is NOTHING.** Aaron's question, and the right
-one to ask of any filter switched on live. Two replays of `mpc_sos_fade` over the SAME 70,867 M15
+one to ask of any filter switched on live. Two replays of `sos_fade` over the SAME 70,867 M15
 bars (2023-08-04 → 2026-08-04), identical but for the guard:
 
 | | trades | total R |
@@ -1397,7 +1397,7 @@ the two disagree.
 ### Step 5 — Register the bot in the command center (2.5)
 
 Fill in the six registry dicts in `routers/bots.py` and point `_BOT_INSTANCE_MAP` at the new instance
-config. Add a `BOT_MPC_SOS_FADE` scheduler XML modelled on the retired ones. Verify per-bot
+config. Add a `BOT_SOS_FADE` scheduler XML modelled on the retired ones. Verify per-bot
 start/stop/restart end to end.
 
 This is where Aaron's "wake up and say start or stop" requirement is actually delivered, and it is a
@@ -1478,7 +1478,7 @@ not by us — which is the only reason arming ahead of that export is defensible
 
 ## 5b. First VPS startup — 2026-07-31
 
-The first bot is configured and deployed: `mpc_sos_fade_demo`, on the **MT5_FFT** terminal
+The first bot is configured and deployed: `sos_fade_demo`, on the **MT5_FFT** terminal
 (`C:\MT5_FFT\terminal64.exe`), PU Prime demo **700107749** / `PUPrime-Demo` / **XAUUSD.s**.
 
 > ⚠ **SUPERSEDED 2026-08-12 — this section describes the STANDARD demo, which this bot has left.**
@@ -1488,7 +1488,7 @@ The first bot is configured and deployed: `mpc_sos_fade_demo`, on the **MT5_FFT*
 > re-read on `XAUUSD.p` is identical (2 digits, 0.01 point, 100 oz, $1.00 tick value, 20-point stops
 > level); the **filling mode** has NOT been re-read there and is the one that bites — a wrong one is
 > retcode 10030 and the order simply does not go on.
-Instance config at `algos/markets/fx/instances/mpc_sos_fade_demo/config.json`; the MT5 password
+Instance config at `algos/markets/fx/instances/sos_fade_demo/config.json`; the MT5 password
 lives in the VPS-only `algos/credentials.json`, which git cannot see.
 
 **Every broker fact in that config was probed off the running terminal, not typed.** Contract 100 oz,
@@ -1530,7 +1530,7 @@ believing it works.** Offline green means the logic is right, not that the bot s
 | 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | ~~**Live `exec_risk_pct`**~~ — **ANSWERED 2026-08-05: 10%, Aaron's explicit call.** No config change was needed; the live instance already carries `exec_risk_pct = 10.0`, so this is the decision being RECORDED rather than applied. ⚠ **It is a deliberate acceptance, not an unexamined default** — 10% measured **−54.9% max drawdown** over 6.5 years, and Run 12 established that the drawdown is a losing STREAK at that risk rather than give-back, so risk % is the only lever that moves it. Nothing further is owed here; re-open it only if the account purpose changes from demo | — |
-| 4 | **A+ only, or A+ and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "A+ only" answer rested on a number that is now dead.** The overlap audit re-ran again on 2026-09-01 and B-LEG passes it more cleanly still — **0 same-side bars in 6.6 years**, one same-break cluster (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11). 🔴 **AND THERE IS NOW A THIRD CANDIDATE, WHICH CHANGES THE QUESTION: `mpc_extreme_leg` went parity GREEN 2026-09-02** and over the same 6.6 years scores **113 trades / +58.53R against B-LEG's 101 / +20.20R**, with **ZERO same-side overlap** against the live A+ bot on 1,049 shared bars and monthly r **+0.035**. ⚠ It is not a free upgrade: its gate covers **3.5 months and 7 entries**, it runs on a **5-minute** frame the live runner has never driven (G18), and it puts A+ at raised risk for **7.6× longer than B-LEG does** — 3.13% of A+'s hold time against 0.41% — so it needs the allocator more, not less. 🔴 **THIS SENTENCE CARRIED FOUR STALE FIGURES AND ONE ARITHMETIC ERROR UNTIL 2026-09-03, WHILE THE ROOT `CLAUDE.md` HELD THE CORRECTIONS THE WHOLE TIME.** It read 132 trades / +57.10R / 1,066 bars / r +0.025 — the 2026-09-01 measurement, superseded the next day when a market-condition refusal was switched on and dropped 19 trades — and it said **"24× more shared bars"**, which divided the BAR COUNTS of two audits taken on different frames. A 5-minute bar is a third of a 15-minute one, so no bar count survives crossing between them: the ratio divides the PERCENTAGES and is 7.6×, not 24×. ⚠ **A correction recorded in one file does not reach a second file that restates the same numbers** — which is this repo's own parents-route-children-explain rule arriving as a bill. **Do not restate a measurement here; link to it.** ⚠ **Its per-trade risk also moved 1% → 5% on 2026-09-02, so every stacked figure for it predates that and none of the R above does.** ⚠ It also has **no jitter audit**. The choice for bot #2 is now three-way and should be made deliberately rather than by which was measured most recently |
+| 4 | **A+ only, or A+ and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "A+ only" answer rested on a number that is now dead.** The overlap audit re-ran again on 2026-09-01 and B-LEG passes it more cleanly still — **0 same-side bars in 6.6 years**, one same-break cluster (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11). 🔴 **AND THERE IS NOW A THIRD CANDIDATE, WHICH CHANGES THE QUESTION: `extreme_leg` went parity GREEN 2026-09-02** and over the same 6.6 years scores **113 trades / +58.53R against B-LEG's 101 / +20.20R**, with **ZERO same-side overlap** against the live A+ bot on 1,049 shared bars and monthly r **+0.035**. ⚠ It is not a free upgrade: its gate covers **3.5 months and 7 entries**, it runs on a **5-minute** frame the live runner has never driven (G18), and it puts A+ at raised risk for **7.6× longer than B-LEG does** — 3.13% of A+'s hold time against 0.41% — so it needs the allocator more, not less. 🔴 **THIS SENTENCE CARRIED FOUR STALE FIGURES AND ONE ARITHMETIC ERROR UNTIL 2026-09-03, WHILE THE ROOT `CLAUDE.md` HELD THE CORRECTIONS THE WHOLE TIME.** It read 132 trades / +57.10R / 1,066 bars / r +0.025 — the 2026-09-01 measurement, superseded the next day when a market-condition refusal was switched on and dropped 19 trades — and it said **"24× more shared bars"**, which divided the BAR COUNTS of two audits taken on different frames. A 5-minute bar is a third of a 15-minute one, so no bar count survives crossing between them: the ratio divides the PERCENTAGES and is 7.6×, not 24×. ⚠ **A correction recorded in one file does not reach a second file that restates the same numbers** — which is this repo's own parents-route-children-explain rule arriving as a bill. **Do not restate a measurement here; link to it.** ⚠ **Its per-trade risk also moved 1% → 5% on 2026-09-02, so every stacked figure for it predates that and none of the R above does.** ⚠ It also has **no jitter audit**. The choice for bot #2 is now three-way and should be made deliberately rather than by which was measured most recently |
 
 ---
 
@@ -1568,7 +1568,7 @@ the re-entry's own order, and the refusal is gone. ⚠ **What is NOT closed is t
 re-entry order has ever reached a broker, so every figure below is a lab finding. Stage 4.
 
 🔴 **PROVEN THE EXPENSIVE WAY ON 2026-08-28.** The re-entry was switched on for
-`mpc_sos_fade_demo` and the bot **would not start** — down until the setting was reverted:
+`sos_fade_demo` and the bot **would not start** — down until the setting was reverted:
 
 > `bridge.UnsupportedStrategyConfig: exec_secondary needs a 1-minute bar stream alongside the 15m
 > one (run_dual). The live runner drives a single timeframe. Turn it off, or build the dual feed.`
@@ -1581,7 +1581,7 @@ the first thing that exercises it is the restart, by which point the bot is down
 
 ⚠ **The same single-feed limitation is why `compare_strategy.py` can never gate a re-entry**
 (measured, not argued: the harness exercised **0** re-entries on a 21,357-bar export) **and why
-`mpc_bleg` and `mpc_bos` both pin the setting off.** Three places had already recorded this shape.
+`b_leg` and `bos` both pin the setting off.** Three places had already recorded this shape.
 Nobody had asked the live runner, which is the fourth.
 
 **What it costs today:** the reclaim re-entry is measured at **+32.50R over 44 trades**
@@ -1602,7 +1602,7 @@ be bundled with it.
 **Stage 1 — a second feed into the runner, placing NO orders.**
 Add a second `BarFeed` on `exec_sec_fill_tf_min` (5 minutes by default, and the caller's choice —
 `run_dual`'s second frame is deliberately not a minute). Merge the two on one clock exactly as
-`MpcSosFadeStrategy.run_dual` does: bars are timestamped at OPEN, so a faster bar reads the 15m
+`SosFadeStrategy.run_dual` does: bars are timestamped at OPEN, so a faster bar reads the 15m
 context of the bar that has already CLOSED at its open time. Step the secondary path and **LOG
 what it would have done. Place nothing.**
 🔴 **THIS PARAGRAPH IS WRONG ABOUT WHERE THAT PROOF RUNS AND IS CORRECTED BELOW — read the
@@ -1617,7 +1617,7 @@ the faster stream desyncs silently — the same defect that cost a re-warm rewri
 #### ✅ STAGE 1 LANDED 2026-09-01 — and what it cost to get the merge right
 
 **What shipped.** `LiveRunner` opens a second `BarFeed` on `exec_sec_fill_tf_min`, warms it, and
-steps the re-entry through the SAME object the lab drives — `strategies/python/mpc_sos_fade/
+steps the re-entry through the SAME object the lab drives — `strategies/python/sos_fade/
 dual_clock.DualClock`, which `run_dual` was refactored onto in the same change. **The bridge
 still places nothing**: a would-be fill is written to the decision ledger as
 `secondary_shadow_fill` and logged, and `assert_supported` still refuses the config outright.
@@ -1709,7 +1709,7 @@ merge over real bars or by a test going red.
 5. **The fast frame numbered from 1 where the lab numbers from 0.** No decision moves (every
    comparison on that feed is between two of its own indices) and it made a re-entry's recorded
    `entry_index` disagree with the lab's for ever — **the B-LEG harness trap**, which
-   `strategies/python/mpc_bleg/CLAUDE.md` records as 2,409 comparisons failing at one flat offset
+   `strategies/python/b_leg/CLAUDE.md` records as 2,409 comparisons failing at one flat offset
    while the logic was identical.
 
 🔴 **AND ONE IN THE PROOF ITSELF, WHICH IS THE MOST TRANSFERABLE.** The first trade-comparison
@@ -1788,7 +1788,7 @@ Over the same 6.6 years, off the LIVE config with only the named field moved: th
 its 100% (+21.00R with, +7.16R without — two thirds of the edge), while the gap is BETTER without
 its 50% (+20.11R at zero against +12.62R at fifty). **So the trigger the bot is actually set to is
 both the one that can go live and the one whose best setting needs no banking at all.** Full table
-and caveats: `strategies/python/mpc_sos_fade/CLAUDE.md`.
+and caveats: `strategies/python/sos_fade/CLAUDE.md`.
 
 ⚠ **NO LIVE PARTIAL HAS EVER EXECUTED**, and the broker call under it had ZERO callers before that
 day — it also clamped UP to the broker minimum, closing more than asked and reporting success.

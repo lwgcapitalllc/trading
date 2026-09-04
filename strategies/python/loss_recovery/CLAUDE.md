@@ -34,7 +34,7 @@ back in the other way and win the loss back?"
 
 `python backtest/tools/recovery_report.py --start 2018-09-14 --end 2026-08-14 --sweep`
 
-XAUUSD M15, 186,910 bars, `mpc_sos_fade` at shipped defaults with `exec_secondary=False`,
+XAUUSD M15, 186,910 bars, `sos_fade` at shipped defaults with `exec_secondary=False`,
 warmup 1000, bar fills. **Both sides costed at `puprime_ecn`** — the live account's tier.
 
 | | |
@@ -117,7 +117,7 @@ in this file.** The same book, added up two ways:
 account-weighted** either way; what differs is whether that R gets to COMPOUND.
 
 🔴 **The cause is a deliberate design choice in the wiring, not a bug** —
-`mpc_sos_fade/recovery.py` sizes the recovery off the running balance but never lets A+ size off
+`sos_fade/recovery.py` sizes the recovery off the running balance but never lets A+ size off
 the recovery, so a lab toggle cannot move a parity-gated book. The cost is that recovery profit
 sits BESIDE the curve instead of lifting it, and over a run that grows 5,000x an early gain is
 rounding by the end. ⚠ **That adapter's own note called this understatement "small". It is not —
@@ -450,7 +450,7 @@ the only negative variant measured on this rule.
 | 1% | +9.2R | +5.3R |
 
 ⚠ **Read the flatness, not the ranking.** A 20x range of step sizes returns the same answer on
-each stop, and the reason is the `mpc_bleg` trap from both ends: at 1% the step is **$40 against a
+each stop, and the reason is the `b_leg` trap from both ends: at 1% the step is **$40 against a
 $38 median stop**, so the ratchet cannot bind until the trade is already 2R out; at 0.05% it binds
 constantly and hands back the runners. **A percent of PRICE is not a percent of RISK, and this
 rule's whole result lives in the trades that run.** A swing level is where the market says the
@@ -518,12 +518,12 @@ closed is a RE-ENTRY signal, not a trailing-stop problem.** Nothing in this rule
 trade on the same premise. That is a new rule with its own spec and its own arming condition, and
 it is the only unexplored direction the numbers actually point at.
 
-## Why this is a package and not a flag on `mpc_sos_fade`
+## Why this is a package and not a flag on `sos_fade`
 
 The trigger is "a primary trade lost", which every strategy in this repo can state. Wiring it to
 one strategy's concrete `Trade` class would make the second consumer a rewrite, so the engine is
 defined against the `LossEvent` **Protocol** (`dir`, `exit_index`, `r`).
-`mpc_sos_fade.execution.Trade` satisfies it unchanged.
+`sos_fade.execution.Trade` satisfies it unchanged.
 
 ⚠ **`scaled_r`, never `r`.** A recovery trade is taken at a FRACTION of normal size, so `r` (its
 outcome in its own risk units) and `scaled_r` (`r * risk_fraction`, what the account sees) are
@@ -616,10 +616,10 @@ read would have let every assertion pass on an empty list.
 ## What would have to happen before this trades
 
 1. A Pine implementation and a green parity gate. **It cannot be bolted onto
-   `mpc_strategy.pine`** — that file assumes one position at a time (`closedR` at line 3869,
+   `sos_fade_strategy.pine`** — that file assumes one position at a time (`closedR` at line 3869,
    `openRiskUsd`, `netAtEntry` and 13 separate `strategy.position_size == 0` arming gates), so a
    concurrent recovery position makes the primary mis-grade its own trades. It needs a fork, the
-   same shape as `mpc_b_leg_strategy.pine`.
+   same shape as `b_leg_strategy.pine`.
 2. `/live-safety`, in full.
 3. **The account-level risk cap.** A recovery trade can open while a primary is still on — that
    is the point of it — and the live allocator that would refuse the second one does not exist
@@ -676,7 +676,7 @@ list at 0R — a trade that looks taken and moved nothing. The way to stop takin
 remove the leg.
 
 ⚠ **`soft_stop_r` is 0-means-off on the form and None-means-off in the engine**, translated in one
-place — and `mpc_sos_fade/recovery.py` translates it identically. The two adapters must agree or
+place — and `sos_fade/recovery.py` translates it identically. The two adapters must agree or
 the same setting means two things.
 
 ⚠ **The defaults ARE the measured configuration**, so selecting the leg and touching nothing
@@ -698,13 +698,13 @@ Until now this package could only be run from `backtest/tools/recovery_report.py
 config) had nothing to render, and `build_results` reads `strategy.execution.trades`, which never
 contained a recovery row.
 
-`mpc_sos_fade` now carries seven `exec_recovery_*` inputs and a `recovery.py` adapter that maps
+`sos_fade` now carries seven `exec_recovery_*` inputs and a `recovery.py` adapter that maps
 them onto `RecoveryConfig`, runs this engine over that bot's finished losses, and appends the
 result as `Trade(kind="recovery")`. Everything downstream — KPIs, equity curve, trades table,
 chart — then works with no change. **Defaults are unchanged and `exec_recovery` is OFF**; nothing
 measured in this file moved.
 
-⚠ **The wiring's facts live in `strategies/python/mpc_sos_fade/CLAUDE.md`**, not here — including
+⚠ **The wiring's facts live in `strategies/python/sos_fade/CLAUDE.md`**, not here — including
 the one that matters (turning it on cannot move an A+ trade) and the one approximation it buys
 (the two share a balance in one direction only). This file stays the owner of the RULE.
 
@@ -724,7 +724,7 @@ same trap as the five vacuous tests above, found the same way.
 
 ## It is LISTED under the A+ bot on the Strategies page (2026-08-21)
 
-`LAB_STRATEGY["display_under"] = "mpc_sos_fade"`. Display grouping only — a flat alphabetical list
+`LAB_STRATEGY["display_under"] = "sos_fade"`. Display grouping only — a flat alphabetical list
 put a rule that cannot run alone beside four that can.
 
 ⚠ **It does NOT pin which parent it may recover.** The stack builder still offers the tick box

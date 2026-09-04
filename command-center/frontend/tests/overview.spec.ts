@@ -265,7 +265,7 @@ test.describe('Overview — states the live box cannot produce', () => {
     await mockSnapshot(page, (s) => s, { failAfterFirst: true })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await expect(page.getByText('MPC SOS Fade')).toBeVisible() // a good snapshot first
+    await expect(page.getByText('SOS Fade')).toBeVisible() // a good snapshot first
 
     // TanStack keeps the last good `data` through a failed refetch, so the error and real bot
     // rows render together — and those rows still say RUNNING. Dating them is the whole fix.

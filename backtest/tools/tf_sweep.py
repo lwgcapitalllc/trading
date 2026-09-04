@@ -4,7 +4,7 @@
 Aaron, 2026-08-09: "does this mean you gonna run the strategy that we were thinking about, but
 just on, like, thirty minutes, one hour, four hour time frames?"
 
-One full replay of `mpc_sos_fade` per timeframe, at the SHIPPED defaults, over the same calendar
+One full replay of `sos_fade` per timeframe, at the SHIPPED defaults, over the same calendar
 window. Everything about the strategy is held constant; only the bar size moves.
 
 ⚠ **THIS IS NOT A COMPARISON OF EQUALS AND MUST NOT BE READ AS ONE.** A 4-hour bar is 16 M15 bars,
@@ -17,8 +17,8 @@ If it does not, the sweep is measuring something other than this bot and every o
 meaningless. Asserted, not assumed.
 
 ⚠ **ONE ENGINE CONSTANT IS GENUINELY TIMEFRAME-DEPENDENT AND IS LEFT ALONE ON PURPOSE.**
-`mpc_strategy.pine` splits the minimum-gap floor by timeframe — 0.0 below 15m, **0.1 at 15m and
-above** (`MpcSosFadeStrategy.engine_config`) — so 0.1 is the correct value at 30m, 1H and 4H and
+`sos_fade_strategy.pine` splits the minimum-gap floor by timeframe — 0.0 below 15m, **0.1 at 15m and
+above** (`SosFadeStrategy.engine_config`) — so 0.1 is the correct value at 30m, 1H and 4H and
 nothing needs changing. It would be wrong only BELOW 15m, which is why this tool refuses those.
 
 ⚠ **THE COSTS ARE OFF, matching every baseline figure in this repo.** A higher timeframe holds
@@ -90,7 +90,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     from backtest.data.source import BarSource
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     end = args.end or dt.date.today().isoformat()
     tfs = [t.strip() for t in args.tfs.split(",") if t.strip()]

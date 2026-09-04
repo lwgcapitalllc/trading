@@ -79,7 +79,7 @@ def stats(rows, risk_pct=10.0):
 def main():
     from backtest.data.source import BarSource
     from backtest.fills import PROFILES
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     prof = PROFILES["puprime_ecn"]
     sw = prof.swap

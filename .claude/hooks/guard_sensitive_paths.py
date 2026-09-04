@@ -174,7 +174,7 @@ def subsystem_matches(fragment: str, rel: str) -> bool:
     — which is about the FILE TYPE, not where it sits — still matches anywhere.
 
     🔴 THE OTHER HALF OF THAT 2026-08-13 EXAMPLE IS GONE, AND A MOVE IS WHY. `/strategies/`
-    used to be the twin case: `indicators/strategies/mpc_strategy.pine` contained
+    used to be the twin case: `indicators/strategies/sos_fade_strategy.pine` contained
     `/strategies/` and was wrongly told it was what a bot actually trades. On 2026-09-02
     those files MOVED to `strategies/tradingview/`, so they are now genuinely under the
     top-level `strategies/` and collect that reminder on purpose — a Pine strategy is half

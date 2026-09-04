@@ -8,7 +8,7 @@
  * reads as the feature being broken rather than as a bot that never filled the field.
  *
  * The ladder's ARITHMETIC is the strategy's and is pinned there by
- * `strategies/python/mpc_bleg/tests/test_bleg_fib.py`, mutation-proven — including the load-bearing
+ * `strategies/python/b_leg/tests/test_bleg_fib.py`, mutation-proven — including the load-bearing
  * one, that the band's far edge records as 0.618 (measured from the leg extreme, the drawing
  * convention) and not as the 0.382 the bot's own code calls it (measured from the leg origin).
  * What these two check is the half that only exists in the browser.
@@ -33,7 +33,7 @@ const RUN = '45795fcedf8c'
 // Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
 // that never rendered and sending the reader at the feature. See `fixtures.ts`.
 test.beforeAll(async () => {
-  await requireRun(RUN, 'an mpc_bleg run whose trades carry a recorded fib leg')
+  await requireRun(RUN, 'an b_leg run whose trades carry a recorded fib leg')
 })
 const EXPECTED_FIBS = 99
 

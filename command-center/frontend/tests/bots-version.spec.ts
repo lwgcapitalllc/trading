@@ -69,8 +69,8 @@ function version(cmp: BotVersionCompare | null): BotDeployedVersion {
     hash: 'fbf3b94bebf0b96e1d9f238b982dcb9c',
     commit: '4e97565',
     promoted_at: '2026-08-05',
-    strategy_package: 'mpc_sos_fade',
-    strategy_class: 'MpcSosFadeStrategy',
+    strategy_package: 'sos_fade',
+    strategy_class: 'SosFadeStrategy',
     strategy_version: 0,
     files: 97,
     params: {},
@@ -264,7 +264,7 @@ test('a finished deploy says DEPLOYED and withdraws the deploy button', async ({
   // · Backtester v121", and repeating the bot and the version there is what made a working
   // confirmation read as complicated.
   await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
-  await expect(banner(page).getByText(/MPC SOS Fade restarted/)).toHaveCount(0)
+  await expect(banner(page).getByText(/SOS Fade restarted/)).toHaveCount(0)
   await expect(banner(page).getByText(/nothing deployed yet/)).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: 'Close' })).toBeVisible()
@@ -405,7 +405,7 @@ test('a FAILED deploy keeps its output on screen without being asked', async ({ 
 
 // ── the reason a successful deploy can leave a bot behind ───────────────────────
 //
-// 🔴 MEASURED 2026-08-14: a deploy of mpc_sos_fade_demo landed v164 while the backtester read
+// 🔴 MEASURED 2026-08-14: a deploy of sos_fade_demo landed v164 while the backtester read
 // v165, because the one commit between them was unpushed. The promote pulls on the VPS, so the
 // remote is the ceiling — and the page said nothing, so the Deploy button looked broken.
 

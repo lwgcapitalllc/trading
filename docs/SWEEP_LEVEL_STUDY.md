@@ -16,7 +16,7 @@ python3 backtest/tools/sweep_edge.py --trigger wick
 
 Two claims were on the table and neither had a number under it.
 
-`indicators/engines/mss_sweeps_mpc.pine` arms the protected internal swing — the iHL a bull iBOS
+`indicators/engines/mss_sweeps.pine` arms the protected internal swing — the iHL a bull iBOS
 leaves behind, the iLH a bear iBOS leaves — and signals when price wicks through it and closes
 back. That is a STRUCTURE level.
 
@@ -136,7 +136,7 @@ external break by construction. `with-trend` is an awkward question there. It is
 for `session`, and the answer there is nothing.
 
 The "trending market" variant — external structure has continued at least once since its last
-change of character, which is what `mss_sweeps_mpc.pine` actually ships as its default filter —
+change of character, which is what `mss_sweeps.pine` actually ships as its default filter —
 is no better: structure +0.3% (n=159), session +0.5% (n=1792).
 
 ---
@@ -241,7 +241,7 @@ year to year, and it peaks at the one R target the table was scored at. About ni
 printed in this study; four or five above 2σ is what chance produces at that count.
 
 **The reclaim is the part that works.** It is worth ~2 points of win rate on every family and it
-is the difference between a losing trigger and a flat one. `mss_sweeps_mpc.pine` already requires
+is the difference between a losing trigger and a flat one. `mss_sweeps.pine` already requires
 it. Keep it; do not loosen it.
 
 **Do not add session levels to the MSS sweeps trigger** on the strength of this. Session levels

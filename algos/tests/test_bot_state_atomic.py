@@ -50,7 +50,7 @@ def _record(pad: int = 400) -> dict:
     against the bug it exists to catch — the fixture-more-capable-than-production shape.
     """
     return {
-        "mpc_sos_fade_demo": {
+        "sos_fade_demo": {
             "status": "running",
             "heartbeat": 1787000000.0,
             "started": 1786000000.0,
@@ -60,7 +60,7 @@ def _record(pad: int = 400) -> dict:
             "day_locked": False,
             "pad": "y" * pad,
         },
-        "mpc_bleg_demo": {"status": "stopped", "account": None},
+        "b_leg_demo": {"status": "stopped", "account": None},
     }
 
 
@@ -98,8 +98,8 @@ def test_reader_never_sees_a_partial_file(tmp_path):
                 continue
             # Complete is not enough — it must also be the RIGHT record, so a writer that
             # published an empty-but-valid `{}` could not pass.
-            assert got["mpc_sos_fade_demo"]["balance"] == 9996.99
-            assert got["mpc_bleg_demo"]["status"] == "stopped"
+            assert got["sos_fade_demo"]["balance"] == 9996.99
+            assert got["b_leg_demo"]["status"] == "stopped"
     finally:
         stop.set()
         t.join(timeout=5)
@@ -129,12 +129,12 @@ def test_a_crash_mid_write_leaves_the_previous_record_intact(tmp_path, monkeypat
     monkeypatch.setattr(bs.json, "dump", dump_then_die)
 
     second = _record()
-    second["mpc_sos_fade_demo"]["balance"] = 1.23
+    second["sos_fade_demo"]["balance"] = 1.23
     with pytest.raises(OSError):
         bs._save_instance_state(tmp_path, second)
 
     got = json.loads(path.read_text())
-    assert got["mpc_sos_fade_demo"]["balance"] == 9996.99, "the good record was overwritten"
+    assert got["sos_fade_demo"]["balance"] == 9996.99, "the good record was overwritten"
 
 
 def test_a_failed_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):

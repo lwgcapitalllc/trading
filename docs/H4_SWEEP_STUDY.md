@@ -3,7 +3,7 @@
 **Status:** ✅ **CLOSED 2026-07-31 — the question was ASKED and ANSWERED, and the answer was NO.** Do not build the H4 sweep continuation bot. Kept as the record of why, so the idea is not re-proposed and re-measured. **A closed study is not an open task.**
 
 **Asked:** 2026-07-31, Aaron. Build an H4 strategy off a sweep of an H4 high or low plus
-continuation, using the H4 liquidity tracking already in `mpc_assistant.pine`.
+continuation, using the H4 liquidity tracking already in `mpc_jarvis.pine`.
 
 **Answered:** 2026-07-31. **No — do not build the continuation bot.** Part 1 below.
 
@@ -71,7 +71,7 @@ The confirmed trade, 2R target, net of a $0.30 round-trip cost:
 | prev | 2,002 | −0.007 | **−0.085** | **+0.051** | −0.075 |
 | pivot | 254 | −0.002 | **−0.226** | **+0.187** | −0.055 |
 
-**The sign flips between the halves on both definitions**, which is the same failure `mpc_bos`
+**The sign flips between the halves on both definitions**, which is the same failure `bos`
 Run 3/4 recorded — regime, not edge. And it is negative net of costs everywhere regardless. The
 blind-entry version is worse still: −411R over 9,969 trades at 1R, and the **control beats it**
 (+40.8R), i.e. bars that swept nothing continued better than bars that swept.
@@ -90,7 +90,7 @@ is positive gross on both definitions and in **both halves**:
 
 On 1,464 trades with a stable sign across halves, **+0.073R gross is signal, not noise.** This is
 the first positive directional result in the study and it points at the FADE — which is what
-`mpc_sos_fade` already does, and consistent with everything else in this repo.
+`sos_fade` already does, and consistent with everything else in this repo.
 
 **But the gross edge is roughly the size of the transaction cost.** A $4.61 stop against a $0.30
 round trip is 6.5% of 1R, and it eats +0.073 down to +0.001. On the large-sample definition the
@@ -106,7 +106,7 @@ That leaves the pivot definition's +0.151R net. It does not survive inspection:
   is exactly the A+ Run 12 pattern — a result whose sign flips with the entry price.
 - **It is the long side, on a market that tripled.** Splitting it: reversal after a LOW sweep
   (= long) is +0.243R net with both halves positive; reversal after a HIGH sweep (= short) is
-  +0.077R net with the **second half at −0.066**. `mpc_bos` Run 3 flagged this exact confound —
+  +0.077R net with the **second half at −0.066**. `bos` Run 3 flagged this exact confound —
   "longs work on a 3x bull market" is the regime talking.
 - **The long skew does not replicate on the 10× larger sample.** On the prev definition the two
   sides are symmetric (+0.071 long / +0.074 gross short) and both are ~0 net. So the pivot long-side
@@ -129,7 +129,7 @@ Nothing was committed as a strategy. `backtest/tools/h4_sweep_profile.py` is the
 ### What the result actually argues for
 
 **Use the H4 sweep as a confluence INPUT to the A+ bot, not as a new strategy.** The measured edge
-is a fade of an H4 level; `mpc_sos_fade` is a fade with a real exit ladder, a min-stop guard, and
+is a fade of an H4 level; `sos_fade` is a fade with a real exit ladder, a min-stop guard, and
 Pine parity already earned. A thin standalone edge and a proven strategy in the same direction is
 an argument for a filter, not a sibling. It is also the cheap test: one A/B on the existing bot.
 

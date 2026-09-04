@@ -25,9 +25,9 @@ between the trade and the audit, the comparison is wrong in a way nothing here c
 `--config` a copy of the file as it was, or re-read the config note beside the change.
 
 Usage:
-    python3 algos/tools/audit_reentry.py --bot mpc_sos_fade_demo
-    python3 algos/tools/audit_reentry.py --bot mpc_sos_fade_demo --ticket 360712345
-    python3 algos/tools/audit_reentry.py --bot mpc_sos_fade_demo --date 2026-09-03 --all-legs
+    python3 algos/tools/audit_reentry.py --bot sos_fade_demo
+    python3 algos/tools/audit_reentry.py --bot sos_fade_demo --ticket 360712345
+    python3 algos/tools/audit_reentry.py --bot sos_fade_demo --date 2026-09-03 --all-legs
 
 Exit codes: 0 every check passed, 1 something FAILED, 2 nothing to audit.
 ⚠ **A run with unanswered checks still exits 0** — they are not failures — so read the summary
@@ -342,7 +342,7 @@ def render(rep: Report) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--bot", required=True, help="the bot's key, e.g. mpc_sos_fade_demo")
+    ap.add_argument("--bot", required=True, help="the bot's key, e.g. sos_fade_demo")
     ap.add_argument("--date", help="YYYY-MM-DD. Default: every day on disk.")
     ap.add_argument("--ticket", type=int, help="audit one trade")
     ap.add_argument("--config", help="a config.json to audit against, if the live one has moved")

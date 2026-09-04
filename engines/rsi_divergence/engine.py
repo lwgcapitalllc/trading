@@ -5,7 +5,7 @@ One stateful streaming engine, fed one closed bar at a time (index + close, plus
 for the price-side anchor). It maintains Wilder's RSI, detects RSI pivots, and confirms regular
 divergence at the extremes.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine's "RSI DIVERGENCE — regular divergence at the
+Ported line-by-line from indicators/engines/mpc_jarvis.pine's "RSI DIVERGENCE — regular divergence at the
 extremes" block (+ the `GRP_DIV` inputs). The Pine runs, each bar:
 
   divRsi   = ta.rsi(close, divRsiLen)
@@ -121,7 +121,7 @@ class RsiDivergenceEngine:
     """Streaming RSI-divergence detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_assistant.pine's default `GRP_DIV` settings: RSI length 14, pivot width 5, oversold
+    Mirrors mpc_jarvis.pine's default `GRP_DIV` settings: RSI length 14, pivot width 5, oversold
     25, overbought 75, and a divergence stays "live" confluence for 100 bars after its pivot.
     """
 

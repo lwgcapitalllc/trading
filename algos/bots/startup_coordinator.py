@@ -62,20 +62,20 @@ from bot_state import set_started, set_status
 # stopping the bot, which the watchdog will simply undo.
 STARTUP_SEQUENCE = [
     (
-        "mpc_sos_fade_demo",
-        "MPC SOS Fade",
+        "sos_fade_demo",
+        "SOS Fade",
         str(ALGOS / "live" / "runner.py"),
-        ["--bot", "mpc_sos_fade_demo", "--live"],
-        str(ALGOS / "markets/fx/instances/mpc_sos_fade_demo/mpc_sos_fade_demo.log"),
+        ["--bot", "sos_fade_demo", "--live"],
+        str(ALGOS / "markets/fx/instances/sos_fade_demo/sos_fade_demo.log"),
         "Connected | #",
         180,
     ),
     (
-        "mpc_bleg_demo",
-        "MPC B-LEG",
+        "b_leg_demo",
+        "B-LEG",
         str(ALGOS / "live" / "runner.py"),
-        ["--bot", "mpc_bleg_demo", "--live"],
-        str(ALGOS / "markets/fx/instances/mpc_bleg_demo/mpc_bleg_demo.log"),
+        ["--bot", "b_leg_demo", "--live"],
+        str(ALGOS / "markets/fx/instances/b_leg_demo/b_leg_demo.log"),
         "Connected | #",
         180,
     ),

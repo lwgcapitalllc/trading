@@ -1,0 +1,181 @@
+{
+  "_comment": "Editor UI metadata for B-LEG. Overlaid onto the schema built from BLegConfig (a SosFadeConfig superset). UI ONLY — never touches a trade decision or the source hash. Click Scan Strategies after editing. Params not listed here fall back to their raw field names; the A+ gate params (arm sources, FVG/entry, HTF, veto) are inherited from the A+ bot and still matter because the B-LEG keeps the 'A+ has priority' stand-down — see the A+ strategy's own meta for their descriptions. Labels and descs are shared with strategies/tradingview/b_leg_strategy.pine the same way the A+ meta is — label == the Pine input title, desc == its tooltip, changed in the same commit. COPY STYLE (2026-08-10, Aaron's call): every desc is SHORT and PLAIN — what the setting does, what each choice means, and the one fact that changes the decision. No measurement dumps, no trade counts, no R figures, no dates, no file references: the strategy detail page is for reading, and the evidence behind a default lives in this package's CLAUDE.md and its optimization doc. Same rule for `edge` and `steps`.",
+  "edge": "This is the reversal whose pullback turned up late. Structure breaks, but instead of pulling back the market runs on, so the normal setup dies with no trade at all. This one remembers the level and leaves an order there for a few days in case price comes back. Often it does. Everything after the entry is handled the same way as the main bot.",
+  "steps": [
+    {
+      "label": "01 · Break",
+      "title": "A reversal fires",
+      "detail": "Structure breaks and the level to watch is marked, even though the reversal itself has not traded yet."
+    },
+    {
+      "label": "02 · Runs on",
+      "title": "The pullback never comes",
+      "detail": "Price expands and breaks structure again before pulling back, so the normal reversal dies with no trade. That death is what starts this setup."
+    },
+    {
+      "label": "03 · Late",
+      "title": "The pullback arrives anyway",
+      "detail": "An order rests at the marked level for a few days. If price comes back to it, the order fills. If it never comes back, or runs too far the other way, the setup is dropped."
+    },
+    {
+      "label": "04 · Manage",
+      "title": "Let it run",
+      "detail": "The same machinery as the main bot: the first target moves the stop to breakeven, the second lifts it further, and the trailing stop takes the rest."
+    }
+  ],
+  "params": [
+    {
+      "name": "bleg_max_days",
+      "group": "B-LEG",
+      "core": true,
+      "unit": "days",
+      "label": "Days to watch for the late retrace",
+      "step": 0.25,
+      "desc": "How long the order waits for the late pullback before the setup is dropped. Counted in bars, so weekends and the daily close do not use it up.",
+      "guide": [
+        "Only quick pullbacks fill",
+        "Waits longer for a late return — 4 to 5 days tested best"
+      ],
+      "min": 1,
+      "max": 6
+    },
+    {
+      "name": "exec_risk_pct",
+      "group": "Sizing",
+      "core": true,
+      "unit": "%",
+      "label": "Risk % per trade",
+      "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk."
+    },
+    {
+      "name": "exec_longs",
+      "group": "Sides",
+      "core": true,
+      "widget": "toggle",
+      "label": "Trade longs",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Lets long setups trade. Off = shorts only."
+    },
+    {
+      "name": "exec_shorts",
+      "group": "Sides",
+      "core": true,
+      "widget": "toggle",
+      "label": "Trade shorts",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Lets short setups trade. Off = longs only."
+    },
+    {
+      "name": "exec_no_late_day",
+      "group": "Sides",
+      "widget": "toggle",
+      "label": "No entries in the final hour (16:00-17:00 NY)",
+      "options": {
+        "off": "Allow",
+        "on": "Block 16:00–17:00 NY"
+      },
+      "desc": "On = no new entries in the last hour before the daily close, so a trade cannot be gapped out over the break."
+    },
+    {
+      "name": "exec_runner_trail",
+      "group": "Exit ladder",
+      "core": true,
+      "label": "Runner trail method",
+      "choices": ["Fixed step", "Structure (swing)", "Structure + % ratchet"],
+      "desc": "How the stop follows the trade once the second target is hit. Fixed step is a plain dollar grid; structure parks it at the last swing.",
+      "guide": [
+        "Fixed step — simplest, and the worst of the three",
+        "Structure + ratchet — best on the main bot, untested here"
+      ]
+    },
+    {
+      "name": "exec_struct_trail_buf_tk",
+      "group": "Exit ladder",
+      "unit": "ticks",
+      "label": "Structure trail buffer (ticks)",
+      "desc": "How many ticks beyond the last swing the trailing stop sits, so a wick through it does not clip you.",
+      "guide": [
+        "Tight to the swing — clipped by wicks",
+        "Wide of the swing — survives noise, gives back more"
+      ]
+    },
+    {
+      "name": "exec_trail_pct",
+      "group": "Exit ladder",
+      "core": true,
+      "label": "Runner ratchet step (% of price)",
+      "unit": "% of price",
+      "step": 0.05,
+      "show_if": {
+        "exec_runner_trail": "Structure + % ratchet"
+      },
+      "desc": "How big each trailing step is, as a percent of price. Keep it small here - these trades risk very little of the price.",
+      "guide": [
+        "Tighter — banks more of each run on this setup",
+        "Too big and the stop never moves at all here"
+      ]
+    },
+    {
+      "name": "exec_trail_step",
+      "group": "Exit ladder",
+      "label": "Runner trail step ($ of price)",
+      "unit": "$ of price",
+      "step": 0.5,
+      "show_if": {
+        "exec_runner_trail": "Fixed step"
+      },
+      "desc": "The step size in dollars. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
+      "guide": [
+        "Tighter trail — banks sooner, cuts runners short",
+        "Looser trail — lets winners breathe, gives back more"
+      ]
+    },
+    {
+      "name": "exec_tp2_stop_mode",
+      "group": "Exit ladder",
+      "label": "TP2 → stop floor",
+      "choices": ["TP1 price", "Breakeven", "One trail step behind"],
+      "desc": "Where the stop jumps to the moment the second target is hit. TP1 is tight and can scratch the trade; breakeven gives it the most room.",
+      "guide": [
+        "TP1 price — protects the gain, scratches runners",
+        "Breakeven — maximum room for the runner"
+      ]
+    },
+    {
+      "name": "exec_time_stop_mode",
+      "group": "Exit ladder",
+      "label": "Time stop",
+      "desc": "Closes a trade that has been open longer than the hours set below. Before TP1 only cuts trades that never reached the first target.",
+      "choices": ["Off", "Before TP1 only", "Always"],
+      "guide": ["Off — the clock never closes a trade", "Always — the clock closes winners too"]
+    },
+    {
+      "name": "exec_time_stop_hrs",
+      "group": "Exit ladder",
+      "label": "Time stop (hours)",
+      "desc": "How long a trade may stay open, in hours, weekends included.",
+      "step": 0.25,
+      "show_if": {
+        "exec_time_stop_mode": ["Before TP1 only", "Always"]
+      },
+      "guide": ["Cuts winners as well as losers", "Fires on almost nothing"]
+    },
+    {
+      "name": "exec_aplus",
+      "group": "Setup",
+      "widget": "toggle",
+      "label": "A+ has priority (stand the B-leg down)",
+      "options": {
+        "off": "Every B leg trades",
+        "on": "A+ stands the B leg down"
+      },
+      "desc": "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own."
+    }
+  ]
+}

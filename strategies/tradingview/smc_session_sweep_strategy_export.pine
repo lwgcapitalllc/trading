@@ -382,7 +382,7 @@ method processMTF(MTFStruct st, float ph_val, float pl_val) =>
             // the swing just confirmed. So it can resurrect a bar that pierced the level, closed back
             // inside and was correctly refused, and install it as the new active swing: EARLIER than
             // and LOWER than the swing just labelled. Full mechanism + the measurements:
-            // `indicators/engines/mpc_assistant.pine`, same block.
+            // `indicators/engines/mpc_jarvis.pine`, same block.
             if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
                 lowest_val := st.last_conf_low
                 lowest_loc := st.last_conf_low_loc

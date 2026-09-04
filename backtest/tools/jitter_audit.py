@@ -54,7 +54,7 @@ data does that.
 Usage:
     python backtest/tools/jitter_audit.py
     python backtest/tools/jitter_audit.py --amp 0.05 --seeds 8
-    python backtest/tools/jitter_audit.py --strategy mpc_bleg --start 2020-01-01
+    python backtest/tools/jitter_audit.py --strategy b_leg --start 2020-01-01
 """
 
 from __future__ import annotations
@@ -75,8 +75,8 @@ if str(_ROOT) not in sys.path:
 # Same registry shape as overlap_audit.py / run_report.py — a package that declares
 # LAB_STRATEGY runs here for free. Keep them in step when a third Python strategy lands.
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
 }
 
 # The default amplitude is the MEASURED thing, not a round number: the shadow diff found Vantage
@@ -216,7 +216,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--strategy", default="sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
     ap.add_argument(

@@ -35,7 +35,7 @@ def test_entry_carries_everything_asked_for():
     """Aaron's list: strategy, direction, symbol, entry, stop, size, and what it costs to be
     wrong."""
     msg = alerts.format_entry(
-        strategy="MPC SOS Fade",
+        strategy="SOS Fade",
         symbol="XAUUSD.s",
         direction="LONG",
         entry=4094.87,
@@ -46,7 +46,7 @@ def test_entry_carries_everything_asked_for():
         when=_WHEN,
     )
     for expected in (
-        "MPC SOS Fade",
+        "SOS Fade",
         "XAUUSD.s",
         "LONG",
         "4,094.87",
@@ -92,7 +92,7 @@ def test_prices_are_grouped_together_and_size_is_on_its_own_line():
     """Aaron's brief: facts that belong together on one line, facts that do not on the next. The
     two prices define the trade; the size is a different question."""
     msg = alerts.format_entry(
-        strategy="MPC SOS Fade",
+        strategy="SOS Fade",
         symbol="XAUUSD.s",
         direction="LONG",
         entry=4094.87,
@@ -188,7 +188,7 @@ def test_the_label_is_a_noun_while_the_value_stays_the_verb():
 def test_exit_carries_everything_asked_for():
     """Aaron's list: verdict, dollar amount, R, exit price."""
     msg = alerts.format_exit(
-        strategy="MPC SOS Fade",
+        strategy="SOS Fade",
         symbol="XAUUSD.s",
         exit_price=4153.40,
         pnl_usd=292.65,
@@ -262,7 +262,7 @@ def test_the_outcome_is_the_first_thing_on_the_line():
 def test_a_threaded_exit_does_not_repeat_the_entrys_header():
     """It posts as a reply, so the strategy and symbol are one tap away. Aaron's call."""
     msg = alerts.format_exit(
-        strategy="MPC SOS Fade",
+        strategy="SOS Fade",
         symbol="XAUUSD.s",
         exit_price=4153.40,
         pnl_usd=292.65,
@@ -270,7 +270,7 @@ def test_a_threaded_exit_does_not_repeat_the_entrys_header():
         when=_WHEN,
     )
     assert msg.splitlines()[0] == "✅ WIN"
-    assert "MPC SOS Fade" not in msg
+    assert "SOS Fade" not in msg
     assert "XAUUSD.s" not in msg
 
 
@@ -278,7 +278,7 @@ def test_an_unthreaded_exit_names_the_trade_it_closed():
     """No entry alert was sent, so there is nothing to reply to — a bare 'WIN' in the group
     would name no trade at all."""
     msg = alerts.format_exit(
-        strategy="MPC SOS Fade",
+        strategy="SOS Fade",
         symbol="XAUUSD.s",
         exit_price=4153.40,
         pnl_usd=292.65,
@@ -310,7 +310,7 @@ def test_no_markdown_syntax_in_either_template():
     Telegram rejects an unbalanced Markdown entity and drops the WHOLE message — so an alert
     must not depend on the sender's plain-text rescue."""
     entry = alerts.format_entry(
-        strategy="mpc_sos_fade_demo",
+        strategy="sos_fade_demo",
         symbol="XAUUSD.s",
         direction="LONG",
         entry=1.0,
@@ -321,7 +321,7 @@ def test_no_markdown_syntax_in_either_template():
     # threaded=False so the exit actually CARRIES the underscore-heavy name — the threaded form
     # omits it, which would make this assertion pass without testing anything.
     exit_ = alerts.format_exit(
-        strategy="mpc_sos_fade_demo",
+        strategy="sos_fade_demo",
         symbol="XAUUSD.s",
         exit_price=1.0,
         pnl_usd=1.0,
@@ -331,7 +331,12 @@ def test_no_markdown_syntax_in_either_template():
     )
     for msg in (entry, exit_):
         assert "*" not in msg
-        assert msg.count("_") == msg.count("mpc_sos_fade_demo") * 3  # only the name's own
+        # 2, not 3: `sos_fade_demo` carries two underscores where `mpc_sos_fade_demo` carried
+        # three. ⚠ **The PARITY of that count decided whether a Markdown send failed loudly or
+        # corrupted silently** — odd is unbalanced and Telegram rejects the whole message (the
+        # rescue then delivers it), even parses fine and eats the underscores. The trade path no
+        # longer asks for Markdown at all (`runner._notify`), so neither can happen.
+        assert msg.count("_") == msg.count("sos_fade_demo") * 2  # only the name's own
 
 
 def test_every_message_opens_with_an_icon_a_label_and_stays_short():
@@ -339,7 +344,7 @@ def test_every_message_opens_with_an_icon_a_label_and_stays_short():
     that is what a lock screen shows."""
     msgs = [
         alerts.format_entry(
-            strategy="MPC SOS Fade",
+            strategy="SOS Fade",
             symbol="XAUUSD.s",
             direction="LONG",
             entry=4094.87,

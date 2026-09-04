@@ -72,8 +72,8 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
 }
 
 # The windows tested, in bars BEFORE the entry bar, inclusive of the entry bar itself. 0 means
@@ -110,7 +110,7 @@ def _stats(rows: list) -> str:
 def _replay(StrategyCls, cfg, capital, df, warmup, mode, sos_too):
     """One replay of the whole book with the internal-break veto applied AT THE FILL.
 
-    🔴 **This re-implements the six lines of `MpcSosFadeStrategy.run` and that is a real risk** —
+    🔴 **This re-implements the six lines of `SosFadeStrategy.run` and that is a real risk** —
     a second driver that drifts from the strategy's own would answer a question about a strategy
     nobody trades. It is guarded rather than trusted: `mode=None` runs the identical loop with the
     veto switched off, and the caller asserts it reproduces `run()`'s book exactly before believing
@@ -194,7 +194,7 @@ def _replay(StrategyCls, cfg, capital, df, warmup, mode, sos_too):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Internal break against the trade — is it a filter?")
-    ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--strategy", default="sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
     ap.add_argument("--start", default="2020-01-01")

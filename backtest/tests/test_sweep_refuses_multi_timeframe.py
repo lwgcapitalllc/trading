@@ -1,6 +1,6 @@
 """A sweep replays ONE frame, so it must REFUSE a config needing a second timeframe.
 
-`exec_secondary` (the mpc_sos_fade 1m re-entry) defaults ON as of 2026-08-07, and `run_sweep` has
+`exec_secondary` (the sos_fade 1m re-entry) defaults ON as of 2026-08-07, and `run_sweep` has
 no 1m stream to give it. Replaying it single-stream is the dangerous option, not the safe one: the
 combos come back primary-only and get ranked against a baseline that HAS re-entries, which is this
 repo's most-repeated defect — a comparison whose two sides were measured on different books.
@@ -65,7 +65,7 @@ def test_the_refusal_fires_BEFORE_a_pool_is_spawned():
     combos = [Combo(params={"a": i}, config=_Cfg(True)) for i in range(64)]
     with pytest.raises(ValueError, match="exec_secondary"):
         run_sweep(
-            module_path="strategies.python.mpc_sos_fade",
+            module_path="strategies.python.sos_fade",
             df=None,
             combos=combos,
             max_workers=8,

@@ -33,8 +33,8 @@ ledger. Re-sending on every run is the same muting problem with extra steps.
 place; this file decides only *is there something new* and *who is told*.
 
 Usage (the box's scheduled task runs the first form):
-    python3 algos/tools/watch_reentry.py --bot mpc_sos_fade_demo
-    python3 algos/tools/watch_reentry.py --bot mpc_sos_fade_demo --dry-run   # print, send nothing
+    python3 algos/tools/watch_reentry.py --bot sos_fade_demo
+    python3 algos/tools/watch_reentry.py --bot sos_fade_demo --dry-run   # print, send nothing
 
 Exit codes: 0 ran (whether or not it found anything), 1 the watch itself could not run.
 ⚠ **Exit 0 does NOT mean the trade passed** — it means the watcher worked. The verdict is in the

@@ -338,7 +338,7 @@ funnel and outcomes reproduce **exactly** across the change (1,073/1,052/925/727
    Paint the three states in three colours on a real run and check against Marco's screenshots.
 4. **Measure frequency before trading it.** If "liquidity-bearing" describes most swing levels,
    it is not a filter and everything downstream is noise.
-5. Only then a strategy package, on the `mpc_bleg` pattern.
+5. Only then a strategy package, on the `b_leg` pattern.
 
 ---
 

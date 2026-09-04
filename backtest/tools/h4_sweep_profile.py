@@ -22,7 +22,7 @@ and any edge it finds is an edge in the LEVEL.
 Two level definitions are measured side by side, because they may not behave the same
 and picking one up front is how a study gets a fitted answer:
 
-  prev      the previous H4 candle's high/low — what mpc_assistant.pine draws today.
+  prev      the previous H4 candle's high/low — what mpc_jarvis.pine draws today.
   pivot     an H4 swing pivot high/low (`--pivot-len` bars either side, Pine's
             ta.pivothigh convention: ties allowed on the left, strict extreme on the
             right). Rarer, older, and the level real stops actually rest on. The most
@@ -837,7 +837,7 @@ def report(
     for tr in sorted({2.0, 3.0, target_r}):
         # The side split is not optional. Gold ran 1,200 → 4,100 across this window, so
         # "the reversal works" can just be "longs work", which is the regime talking.
-        # mpc_bos Run 3 flagged the same confound and mpc_sos_fade/CLAUDE.md records its
+        # bos Run 3 flagged the same confound and sos_fade/CLAUDE.md records its
         # mirror image on the A+ short skew.
         for label, direction, subset in (
             ("continuation", 1, sweeps),
@@ -855,7 +855,7 @@ def report(
             rs = [t["r"] for _, t in taken]
             # The halves are the check that kills most of what looks like an edge here.
             # A sign flip between them is regime, and this repo has been fooled by one
-            # before (mpc_bos Run 3/4).
+            # before (bos Run 3/4).
             h1 = [t["r"] for src, t in taken if src["year"] < mid]
             h2 = [t["r"] for src, t in taken if src["year"] >= mid]
             # Cost drag, and this is where a thin edge dies. The stop is half a 15m

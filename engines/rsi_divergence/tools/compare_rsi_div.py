@@ -5,7 +5,7 @@ compare_rsi_div.py — parity check: TradingView Pine export vs Python RSI-diver
 Purpose
 -------
 Prove the Python engine in rsi_divergence/ produces the same RSI, RSI pivots and regular-divergence
-signals as the source-of-truth "RSI DIVERGENCE" block in mpc_assistant.pine, on real candles. It runs
+signals as the source-of-truth "RSI DIVERGENCE" block in mpc_jarvis.pine, on real candles. It runs
 RsiDivergenceEngine on the same candles the Pine build saw and diffs its output against the px_div_*
 columns the Pine build plotted.
 
@@ -308,7 +308,7 @@ def main(argv=None):
         "Tip: mismatches confined to early bars = warmup (Pine's RSI was already smoothed and it "
         "may hold an off-window pivot/divergence; the cold-started Python engine converges once its "
         "Wilder RMA settles and it establishes its own in-window pivots). Persistent mismatches "
-        "after a clean run = a real logic gap to fix against mpc_assistant.pine."
+        "after a clean run = a real logic gap to fix against mpc_jarvis.pine."
     )
     return 1
 

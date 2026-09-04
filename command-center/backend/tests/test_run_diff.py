@@ -45,7 +45,7 @@ import scripts.run_diff as rd  # noqa: E402
 # rather than hand-rolled, so a basis field added to the table cannot silently
 # leave this file testing a shape production no longer has.
 BASE_ROW = {
-    "strategy_id": "mpc_sos_fade",
+    "strategy_id": "sos_fade",
     "instrument": "XAUUSD",
     "params": json.dumps({"exec_risk_pct": 12.5}),
     "bar_type": "Minute",
@@ -78,7 +78,7 @@ def lab(tmp_path, monkeypatch):
     conn = sqlite3.connect(db)
     conn.execute(
         "INSERT OR REPLACE INTO strategies (id, name, class_name, source_path, scanned_at, runner) "
-        "VALUES ('mpc_sos_fade','MPC SOS Fade','MpcSosFade','strategies/python/mpc_sos_fade',1,'python')"
+        "VALUES ('sos_fade','SOS Fade','MpcSosFade','strategies/python/sos_fade',1,'python')"
     )
     conn.commit()
     conn.close()

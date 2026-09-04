@@ -5,7 +5,7 @@ next/active/last phases, edges).
 
 This is the same *shape* as engines/sessions/ — time-driven (input = the bar's epoch-ms UTC
 timestamp, not price), one closed bar per update(), state carried bar-to-bar. It is NOT a Pine port
-(the calendar comes from an external API, not mpc_assistant.pine), so it is validated by unit tests
+(the calendar comes from an external API, not mpc_jarvis.pine), so it is validated by unit tests
 + a live feed smoke test, not by Pine parity. That is the one deliberate break from the roadmap's
 engine pattern.
 

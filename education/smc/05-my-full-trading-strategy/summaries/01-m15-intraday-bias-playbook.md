@@ -90,7 +90,7 @@ This is the human playbook our code implements. Direct mappings:
 - **News blackout rules (CPI/NFP/FOMC, retail sales, core PCE)** →
   `engines/news/`.
 - The **setups and tags** are exactly the configs and grade inputs a strategy
-  like `strategies/python/mpc_sos_fade/` would parameterize and split-test —
+  like `strategies/python/sos_fade/` would parameterize and split-test —
   same "let the data decide / find the A+ setup" logic as our grading work.
 
 ## Questions / follow-ups

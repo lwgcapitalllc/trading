@@ -12,7 +12,7 @@ types + `__init__` + 19 unit tests + a rebuilt `indicators/engines/ob_export.pin
 `tools/compare_ob.py`. ⚠ **Budget ~300 bars of warm-up** — see *The 798-bar warm-up* below; it was
 investigated rather than accepted, and the direction of the error matters to a consumer. The one
 canonical implementation — no consumer builds its own.
-**Pine:** ported from `indicators/engines/mpc_assistant.pine`; parity harness is `indicators/engines/ob_export.pine`,
+**Pine:** ported from `indicators/engines/mpc_jarvis.pine`; parity harness is `indicators/engines/ob_export.pine`,
 diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-08-03 — **THE FIRST CONSUMER LANDED, AND IT IS A DISPLAY ONE.**
@@ -26,7 +26,7 @@ That split is the same one the engine's Scope line has always stated (events, no
 means a change to mpc's box geometry belongs in the consumer while a change to creation or
 mitigation belongs here. **(2) It runs the engine at its DEFAULTS, because there is no fork to
 resolve** — unlike `fair_value_gaps/`, whose two consumers legitimately see different gap sets, the
-strategy files dropped order blocks entirely on 2026-07-24/25, so `mpc_assistant.pine` is the only
+strategy files dropped order blocks entirely on 2026-07-24/25, so `mpc_jarvis.pine` is the only
 source and these defaults ARE its constants. ⚠ **That consumer brings NO new Pine evidence.** The FVG
 one diffs its boxes against the export's own `px_fvg_*` arrays and so validates that engine a second
 independent way; this one cannot, because all three exports in `exports/` predate the 2026-07-31
@@ -78,7 +78,7 @@ that consumer mirrors is the Pine's drawing rule (`OB_STUB`, the `obNear` stretc
 which is NOT in this engine. Keep those in step: `command-center/backend/CLAUDE.md` → *Order blocks*.
 And unlike the Cycle fib, there is **no
 two-Pine fork to worry about**: the strategy files dropped order blocks entirely on 2026-07-24/25, so
-`mpc_assistant.pine` is the only source. **`indicators/engines/ob_export.pine` was rebuilt too** — it used to
+`mpc_jarvis.pine` is the only source. **`indicators/engines/ob_export.pine` was rebuilt too** — it used to
 EMBED the whole structure engine (1148 lines → ~300), which was its single biggest maintenance trap
 (it silently went stale twice); it now needs no structure re-sync ever again, and carries `cfg_ob_*`
 columns so `compare_ob.py` configures the Python engine FROM the export. Earlier: 2026-07-14 —
@@ -100,7 +100,7 @@ engines/order_blocks/
     └── compare_ob.py   ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `mpc_assistant.pine` — the type + `manageOBs`/`extendOBs` (191-393), the shared
+Pine source of truth: `mpc_jarvis.pine` — the type + `manageOBs`/`extendOBs` (191-393), the shared
 turn pivot + PUSH source (2626-2715), `f_obAdd` (2269-2550), the TURN source (2717-2881).
 Parity export build: `indicators/engines/ob_export.pine`.
 
@@ -248,7 +248,7 @@ internals.
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s OB blocks back here line-by-line. Keep the per-bar order
+- Port any change to `mpc_jarvis.pine`'s OB blocks back here line-by-line. Keep the per-bar order
   (mitigate → push → turn), the six gates, the enter-then-leave/tap/through mitigation, the Pine
   pivot tie rule and the FIFO cap exact — do not "clean up" or reorder them.
 - Mirror any new mpc OB input as a constructor arg AND a `cfg_ob_*` column in `ob_export.pine` that
@@ -264,7 +264,7 @@ internals.
 - Do not re-add a structure dependency because it "feels" like an order block should need one. The
   Pine decides that, and today it does not.
 - Do not build a second OB implementation elsewhere. This is the canonical one.
-- Do not let this engine or the OB blocks in `mpc_assistant.pine` drift; re-run the parity check
+- Do not let this engine or the OB blocks in `mpc_jarvis.pine` drift; re-run the parity check
   after any change to either.
 
 ---
@@ -298,7 +298,7 @@ global variable "obBullMit" in function`. Pine lets a function or method READ a 
 assign to one, and the export-only counters were being incremented inside `extendOBs` AND inside
 `f_obAdd`. Fix: `extendOBs` returns its mitigation count (its `isBull` parameter became pointless and
 is gone), and the creation counters are bumped at `f_obAdd`'s four call sites off the bool it already
-returned. Those counters do not exist in `mpc_assistant.pine` at all — they are pure instrumentation
+returned. Those counters do not exist in `mpc_jarvis.pine` at all — they are pure instrumentation
 — so no ported logic moved.
 
 ### The 798-bar warm-up — investigated, not assumed
@@ -337,7 +337,7 @@ is the only backstop. It did not bite on the 21,691-bar run above.
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` OB blocks (191-393 / 2269-2550 / 2626-2881).
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` OB blocks (191-393 / 2269-2550 / 2626-2881).
 - Parity export build: `indicators/engines/ob_export.pine`.
 - **Consumers** (public events only — never this engine's internals):
   - `command-center/backend/services/ob_overlays.py` — draws the blocks that were live at each trade

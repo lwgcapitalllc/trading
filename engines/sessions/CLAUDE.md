@@ -8,7 +8,7 @@ not the box or line.
 **Scope:** Session-window detection + running session H/L + kill zones + NY opening range + the
 new-day / weekday clock flags. No trading decisions, no price-structure detection, no MT5 ops, no
 UI, no chart rendering (no boxes, lines, labels or colours).
-**Status:** Production — ported from `mpc_assistant.pine`, unit-tested (17 hand-traced tests,
+**Status:** Production — ported from `mpc_jarvis.pine`, unit-tested (17 hand-traced tests,
 green), and **100% Pine-parity-validated on a real `VANTAGE_XAUUSD, 5m` export** (7,319 bars): all
 18 fields — the 10 clock flags, the 6 session-H/L fields, and the 2 NY-opening-range fields — match
 on every warm bar (`--warmup 263`, exit 0). Independently re-confirmed on a `VANTAGE_XAUUSD, 15m`
@@ -16,7 +16,7 @@ export where the 16 timeframe-agnostic fields matched (all 10 flags zero-warmup,
 bar 66); only the NY opening range differs on 15m because it is a ≤5m feature. Two timeframes
 confirm the clock/session logic is timeframe-agnostic. The one canonical implementation — no
 consumer builds its own.
-**Pine:** ported from `indicators/engines/mpc_assistant.pine`; parity harness is `indicators/engines/sessions_export.pine`, diffed against this Python by `tools/compare_sessions.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
+**Pine:** ported from `indicators/engines/mpc_jarvis.pine`; parity harness is `indicators/engines/sessions_export.pine`, diffed against this Python by `tools/compare_sessions.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
 **Last reviewed:** 2026-07-31 (late) — ✅ **ALL 18 FIELDS GREEN, THE NY OPENING RANGE INCLUDED.**
 `compare_sessions.py --warmup 220` (no `--skip-nyr`) → **exit 0** on a real 13,186-bar
 `VANTAGE_XAUUSD, 5m` export (2026-05-27 → 2026-07-31), stable at warm-up 500 / 2000 / 6000. **The
@@ -37,7 +37,7 @@ answers 0 — undefined for both sides, not a defect in either. ⚠ **The 4 NY-o
 NOT covered** (`--skip-nyr`) — they are a ≤5m feature and a 15m export cannot test them; a short
 sessions-only 5m export closes that. The tool now measures the export's bar interval, warns before
 running, and prints a **NOT CHECKED** line on success as well as failure so this can never be
-misread as full coverage. Earlier the same day — 🔴 **THE THREE SESSION WINDOWS WERE RE-SYNCED AND TWO OF THEM MOVED.** Found by `/audit-engines` against the 2026-07-31 mpc paste (`mpc_assistant.pine:464-478`). Each window is now stated in its **own city's clock and follows that city's DST**, where all three used to be pinned to a fixed `GMT-4`:
+misread as full coverage. Earlier the same day — 🔴 **THE THREE SESSION WINDOWS WERE RE-SYNCED AND TWO OF THEM MOVED.** Found by `/audit-engines` against the 2026-07-31 mpc paste (`mpc_jarvis.pine:464-478`). Each window is now stated in its **own city's clock and follows that city's DST**, where all three used to be pinned to a fixed `GMT-4`:
 
 | | old | new |
 |---|---|---|
@@ -45,7 +45,7 @@ misread as full coverage. Earlier the same day — 🔴 **THE THREE SESSION WIND
 | London | `0400-1300` GMT-4 | `0800-1700` **Europe/London** |
 | New York | `0900-1800` GMT-4 | `0800-1700` **America/New_York** |
 
-**Worked through in UTC, because only one of the three is equivalent.** **Asia is IDENTICAL year-round** — both forms are 00:00–09:00 UTC (GMT-4 is a fixed offset, and Japan has no DST), so this is a pure re-expression there. **London and New York are identical only in northern-hemisphere WINTER**; under BST/EDT both open and close **one hour earlier in UTC** (London 08:00–17:00 → 07:00–16:00; New York 13:00–22:00 → 12:00–21:00). That is roughly seven months of every year, so real session boundaries moved. **Kill zones, the NY opening range, new-day and weekday are UNCHANGED** — they were always `America/New_York` and stay exactly as validated. **Cascade:** `engines/liquidity/` needed NO code change (it constructs `SessionEngine()` with no args, so it inherits these windows) but its Asia/London/NY session H/L levels now form over different windows — it is **STALE-BY-INPUT** and must be re-validated. `engines/session_volume_profile/` is **UNAFFECTED** — it composes the Asia window only, and Asia did not move; a new test pins that equivalence so an Asia change can never slip through silently. **Harnesses re-synced in the same pass:** `indicators/engines/sessions_export.pine` and `indicators/engines/liquidity_export.pine` both hardcoded the old strings. 18 unit tests green — `test_session_windows_fixed_offset_same_both_seasons` was REPLACED (it asserted a single time-of-day that happens to fall inside both the old and new windows, so it passed after the change while its name and comments described behaviour that no longer existed) by three tests that pin the UTC boundaries season-by-season. ✅ **Both re-validated later the same day** (this warning is kept only to show what the gate was): `compare_sessions.py` and `compare_liquidity.py` each exit 0 on fresh exports — see the entry at the top of this section. ✅ **Every remaining file was synced later the same day** — `mpc_b_leg_strategy.pine` + its export and `indicators/engines/mpc_m15_playbook.pine`. (`mpc_jarvis_v2.pine` was DELETED instead, superseded by `mpc_strategy_export.pine`.) Earlier: 2026-07-04
+**Worked through in UTC, because only one of the three is equivalent.** **Asia is IDENTICAL year-round** — both forms are 00:00–09:00 UTC (GMT-4 is a fixed offset, and Japan has no DST), so this is a pure re-expression there. **London and New York are identical only in northern-hemisphere WINTER**; under BST/EDT both open and close **one hour earlier in UTC** (London 08:00–17:00 → 07:00–16:00; New York 13:00–22:00 → 12:00–21:00). That is roughly seven months of every year, so real session boundaries moved. **Kill zones, the NY opening range, new-day and weekday are UNCHANGED** — they were always `America/New_York` and stay exactly as validated. **Cascade:** `engines/liquidity/` needed NO code change (it constructs `SessionEngine()` with no args, so it inherits these windows) but its Asia/London/NY session H/L levels now form over different windows — it is **STALE-BY-INPUT** and must be re-validated. `engines/session_volume_profile/` is **UNAFFECTED** — it composes the Asia window only, and Asia did not move; a new test pins that equivalence so an Asia change can never slip through silently. **Harnesses re-synced in the same pass:** `indicators/engines/sessions_export.pine` and `indicators/engines/liquidity_export.pine` both hardcoded the old strings. 18 unit tests green — `test_session_windows_fixed_offset_same_both_seasons` was REPLACED (it asserted a single time-of-day that happens to fall inside both the old and new windows, so it passed after the change while its name and comments described behaviour that no longer existed) by three tests that pin the UTC boundaries season-by-season. ✅ **Both re-validated later the same day** (this warning is kept only to show what the gate was): `compare_sessions.py` and `compare_liquidity.py` each exit 0 on fresh exports — see the entry at the top of this section. ✅ **Every remaining file was synced later the same day** — `b_leg_strategy.pine` + its export and `indicators/engines/m15_playbook.pine`. (`mpc_jarvis_v2.pine` was DELETED instead, superseded by `sos_fade_strategy_export.pine`.) Earlier: 2026-07-04
 
 ---
 
@@ -63,7 +63,7 @@ engines/sessions/
     └── compare_sessions.py   ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/engines/mpc_assistant.pine` — session windows (836-838), SESSION H/L
+Pine source of truth: `indicators/engines/mpc_jarvis.pine` — session windows (836-838), SESSION H/L
 TRACKING (1638-1646), KILL ZONES (1861-1866), NY RANGE BOX (1824-1856), newDay / isMondayToFriday
 (808-809). Parity export build: `indicators/engines/sessions_export.pine`.
 
@@ -159,7 +159,7 @@ is not.
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s session / kill-zone / NY-range blocks back here
+- Port any change to `mpc_jarvis.pine`'s session / kill-zone / NY-range blocks back here
   line-by-line. Keep the `[start, end)` window rule, the overnight-wrap support, each session's own
   timezone (and the fact that kill zones / NY range are separately pinned to NY time),
   the KZ minute windows and the NY-range reset/expand order exact — do not "clean up" or reorder.
@@ -175,7 +175,7 @@ is not.
 - Do not re-add the `withinKZDays` / `withinNYRangeDays` render gates — they are a drawing concern
   and make the output non-reproducible.
 - Do not build a second sessions implementation elsewhere. This is the canonical one.
-- Do not let this engine or the session blocks in `mpc_assistant.pine` drift; re-run the parity
+- Do not let this engine or the session blocks in `mpc_jarvis.pine` drift; re-run the parity
   check after any change to either.
 
 ---
@@ -197,7 +197,7 @@ opening range reads a 5-minute security in Pine — a ≤5m feature — so it is
 export, not 15m. The harness mirrors the other engines:
 
 1. `indicators/engines/sessions_export.pine` — the session / kill-zone / NY-range clock lifted from
-   `mpc_assistant.pine` (drawing + the two days-back gates removed) with `px_*` `plot()` columns
+   `mpc_jarvis.pine` (drawing + the two days-back gates removed) with `px_*` `plot()` columns
    for every flag, running session H/L, and the NY range. Put it on a **5-minute** chart (the NY
    range reads a 5m security), Export chart data → CSV, drop it in `engines/sessions/exports/` (git-ignored).
 2. `python3 engines/sessions/tools/compare_sessions.py <that.csv>` — feeds each bar's timestamp + high/low
@@ -218,11 +218,11 @@ Early-bar mismatches are warm-up (the Pine `var` extremes / NY range persisted f
 export window); the tool prints the last mismatching bar so you can pick `--warmup N`. **If the
 ONLY mismatches are on Sunday-evening / weekend bars**, Pine's session day default is weekday-only
 rather than all-7 — add a dayofweek gate in `_SessionTracker.contains` (see the `# NOTE:` there).
-Re-run `compare_sessions.py` after any change to the session blocks in `mpc_assistant.pine` or here.
+Re-run `compare_sessions.py` after any change to the session blocks in `mpc_jarvis.pine` or here.
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` (session blocks listed under Key paths).
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` (session blocks listed under Key paths).
 - Parity export build: `indicators/engines/sessions_export.pine`.
 - Downstream consumers: `engines/liquidity/` (session H/L levels — built). `engines/vwap/` (built)
   anchors on the trading-day boundary, not this engine's session windows — see `docs/ENGINE_EXTRACTION_ROADMAP.md`.

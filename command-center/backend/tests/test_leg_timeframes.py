@@ -3,8 +3,8 @@
 Two defects, both reported from the screen on 2026-09-03, both of which looked like display
 faults and were not:
 
-* **The stack form had ONE timeframe for every leg.** `mpc_extreme_leg` is measured on 5m and
-  `mpc_sos_fade` on 15m, so putting them on one account replayed one of them on a frame nobody
+* **The stack form had ONE timeframe for every leg.** `extreme_leg` is measured on 5m and
+  `sos_fade` on 15m, so putting them on one account replayed one of them on a frame nobody
   has ever measured it on — and the combined table said *portfolio*. The simulator has always
   merged two frames on one account (its clock steps a 5m leg three times inside a 15m leg's
   bar); this app was the half that could only load one.
@@ -32,16 +32,16 @@ from services import lab_db
 # a declaration MOVING, and a test that reads the value it is checking notices nothing.
 MEASURED_ON = {
     # every parity export and every shipped figure is M15
-    "mpc_sos_fade": 15,
+    "sos_fade": 15,
     # measured book is 186,312 M15 bars, 2018-09-13 → 2026-08-05
-    "mpc_bleg": 15,
+    "b_leg": 15,
     # parity export is 7,200 closed M15 bars
-    "mpc_bos": 15,
+    "bos": 15,
     # trades the 5m and reads the 15m through its own aggregator; a single-frame M15 run gives
     # 9 setups in 5.6 years, i.e. no strategy to measure
-    "mpc_realign": 5,
+    "realign": 5,
     # its Pine is exported from a 5-minute chart and its gate is 21,328 M5 bars
-    "mpc_extreme_leg": 5,
+    "extreme_leg": 5,
 }
 
 
@@ -128,18 +128,18 @@ def test_a_declared_frame_survives_a_round_trip_through_the_database(tmp_path, m
     lab_db.init_db()
     lab_db.upsert_strategy(
         {
-            "id": "mpc_extreme_leg",
-            "name": "MPC Extreme Leg",
+            "id": "extreme_leg",
+            "name": "Extreme Leg",
             "runner": "python",
-            "class_name": "MpcExtremeLegStrategy",
-            "source_path": "strategies/python/mpc_extreme_leg",
+            "class_name": "ExtremeLegStrategy",
+            "source_path": "strategies/python/extreme_leg",
             "scanned_at": 1,
             "param_schema": [],
             "default_params": {},
             "suggested_bar_value": 5,
         }
     )
-    assert lab_db.get_strategy("mpc_extreme_leg")["suggested_bar_value"] == 5
+    assert lab_db.get_strategy("extreme_leg")["suggested_bar_value"] == 5
 
 
 # ── The router resolves each leg's frame, once ────────────────────────────────
@@ -184,7 +184,7 @@ def test_a_frame_that_is_not_a_positive_number_of_minutes_is_refused_at_the_requ
         )
 
 
-def _seed(monkeypatch, tmp_path, ids=("mpc_sos_fade", "mpc_extreme_leg")):
+def _seed(monkeypatch, tmp_path, ids=("sos_fade", "extreme_leg")):
     from routers import stacks as stacks_router
     from services import portfolio_runner
 
@@ -209,11 +209,11 @@ def _seed(monkeypatch, tmp_path, ids=("mpc_sos_fade", "mpc_extreme_leg")):
 
 def _body(**over):
     body = {
-        "strategy_ids": ["mpc_sos_fade", "mpc_extreme_leg"],
+        "strategy_ids": ["sos_fade", "extreme_leg"],
         "instrument": "XAUUSD",
         "bar_type": "Minute",
         "bar_value": 15,
-        "bar_values_by_strategy": {"mpc_extreme_leg": 5},
+        "bar_values_by_strategy": {"extreme_leg": 5},
         "start_date": "2024-01-01",
         "end_date": "2024-12-31",
         "mode": "shared",
@@ -238,7 +238,7 @@ def test_each_leg_is_STORED_on_the_frame_it_will_be_replayed_on(client, tmp_path
     frames = {
         r["strategy_id"]: r["bar_value"] for r in lab_db.list_stack_runs(res.json()["stack_id"])
     }
-    assert frames == {"mpc_sos_fade": 15, "mpc_extreme_leg": 5}
+    assert frames == {"sos_fade": 15, "extreme_leg": 5}
 
 
 def test_the_runner_is_HANDED_each_leg_s_frame(client, tmp_path, monkeypatch):
@@ -256,7 +256,7 @@ def test_the_runner_is_HANDED_each_leg_s_frame(client, tmp_path, monkeypatch):
     ):
         res = client.post("/backtests/stack", json=_body())
     assert res.status_code == 202, res.text
-    assert seen == {"mpc_sos_fade": 15, "mpc_extreme_leg": 5}
+    assert seen == {"sos_fade": 15, "extreme_leg": 5}
 
 
 def test_the_window_is_checked_against_EVERY_leg_s_own_frame(client, tmp_path, monkeypatch):
@@ -288,11 +288,11 @@ def test_the_recovery_leg_is_PINNED_to_its_parent_s_frame(client, tmp_path, monk
 
     RED against HEAD: it took the stack's frame, which was also every other leg's, so the bug
     could not appear until legs stopped sharing one."""
-    _seed(monkeypatch, tmp_path, ids=("mpc_extreme_leg", "loss_recovery"))
+    _seed(monkeypatch, tmp_path, ids=("extreme_leg", "loss_recovery"))
     body = _body(
-        strategy_ids=["mpc_extreme_leg"],
-        bar_values_by_strategy={"mpc_extreme_leg": 5},
-        recovery_parent="mpc_extreme_leg",
+        strategy_ids=["extreme_leg"],
+        bar_values_by_strategy={"extreme_leg": 5},
+        recovery_parent="extreme_leg",
     )
     with patch("services.portfolio_runner.launch"):
         res = client.post("/backtests/stack", json=body)
@@ -302,7 +302,7 @@ def test_the_recovery_leg_is_PINNED_to_its_parent_s_frame(client, tmp_path, monk
     }
     # The stack's fallback is 15 and the parent runs on 5 — so anything reading the request
     # rather than the parent gets caught here.
-    assert frames == {"mpc_extreme_leg": 5, "loss_recovery": 5}
+    assert frames == {"extreme_leg": 5, "loss_recovery": 5}
 
 
 # ── The symbol the broker actually quotes ─────────────────────────────────────
@@ -424,14 +424,14 @@ def test_each_leg_is_replayed_on_the_frame_it_was_given(monkeypatch):
     alongside it — a leg carrying the right label and the wrong bars is precisely the failure.
     """
     legs = [
-        {"strategy_id": "mpc_sos_fade", "class_name": "A", "params": {}, "bar_value": 15},
-        {"strategy_id": "mpc_extreme_leg", "class_name": "B", "params": {}, "bar_value": 5},
+        {"strategy_id": "sos_fade", "class_name": "A", "params": {}, "bar_value": 15},
+        {"strategy_id": "extreme_leg", "class_name": "B", "params": {}, "bar_value": 5},
     ]
     specs = _run_execute(monkeypatch, legs, _settings())
     spacing = {
         s.name: int(s.df.index.to_series().diff().min().total_seconds() // 60) for s in specs
     }
-    assert spacing == {"mpc_sos_fade": 15, "mpc_extreme_leg": 5}
+    assert spacing == {"sos_fade": 15, "extreme_leg": 5}
 
 
 def test_a_leg_with_no_frame_of_its_own_falls_back_to_the_stack_s(monkeypatch):

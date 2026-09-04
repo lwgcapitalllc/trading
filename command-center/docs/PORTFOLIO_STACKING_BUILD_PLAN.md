@@ -1,7 +1,7 @@
 # Portfolio Stacking — build plan
 
 **Scope:** The shared-account portfolio — one balance, one live risk budget the legs compete for.
-Python legs first (all the MPC strategies are Python). Design: `PORTFOLIO_STACKING.md`.
+Python legs first (all the strategies are Python). Design: `PORTFOLIO_STACKING.md`.
 **Status:** Phase 0 + Phase 1 built 2026-07-17 (`backtest/portfolio/`: combine, account, clock,
 simulator — 41 new tests + strategy parity exit 0). Phases 2–4 (lab, analytics, forward) to do.
 
@@ -84,7 +84,7 @@ close frees the reservation, each bar reports the live stop. `compare_strategy.p
 20,076-bar export — standalone behaviour unchanged.
 
 Route sizing, entry-permission, and balance through an injected account.
-- **Files:** `strategies/python/mpc_sos_fade/execution.py` (the three call sites: where it sizes →
+- **Files:** `strategies/python/sos_fade/execution.py` (the three call sites: where it sizes →
   `account.request_fill`; where it books P&L → `account.on_close`; each bar → `account.update_stop`),
   and its config/driver to accept an `account`.
 - **Default = `SoloAccount`**, so nothing changes for a standalone run.

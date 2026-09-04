@@ -1,8 +1,8 @@
 """promote.py — deploy a version of the code to one bot, deliberately.
 
-    python algos/tools/promote.py --bot mpc_sos_fade_demo
-    python algos/tools/promote.py --bot mpc_sos_fade_demo --dry-run
-    python algos/tools/promote.py --bot mpc_sos_fade_demo --show     # what is deployed now
+    python algos/tools/promote.py --bot sos_fade_demo
+    python algos/tools/promote.py --bot sos_fade_demo --dry-run
+    python algos/tools/promote.py --bot sos_fade_demo --show     # what is deployed now
 
 **What promoting means, and why it is a copy.** Until 2026-08-03 a deployed bot imported its
 strategy straight out of `strategies/python/<pkg>` in the repo working tree. So the repo and the

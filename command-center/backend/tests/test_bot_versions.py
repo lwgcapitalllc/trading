@@ -20,7 +20,7 @@ from services import bot_versions as bv
 _REPO = Path(cfg.MONOREPO_ROOT)
 
 
-def _before_the_last(n: int = 8, package: str = "mpc_sos_fade") -> str:
+def _before_the_last(n: int = 8, package: str = "sos_fade") -> str:
     """A revision reaching back over the last `n` commits that actually TOUCHED this strategy.
 
     🔴 **Every case below asked for `HEAD~50` until 2026-09-01, and an hourly robot made that
@@ -91,7 +91,7 @@ def test_a_bot_with_no_strategy_package_counts_nothing():
 
 
 def test_a_version_is_the_count_of_commits_touching_the_trees():
-    trees = bv.trees_for("mpc_sos_fade")
+    trees = bv.trees_for("sos_fade")
     out = subprocess.run(
         ["git", "-C", str(_REPO), "rev-list", "--count", "HEAD", "--", *trees],
         capture_output=True,
@@ -117,7 +117,7 @@ def test_an_older_commit_has_a_lower_version_than_head():
     So it picks the last commit that TOUCHED the strategy and steps one behind it, which is
     lower by construction whatever else has been committed in between.
     """
-    trees = bv.trees_for("mpc_sos_fade")
+    trees = bv.trees_for("sos_fade")
     head = bv.version_at("HEAD", trees)
     older = bv.version_at(OLDER, trees)
     assert older is not None and head is not None
@@ -127,7 +127,7 @@ def test_an_older_commit_has_a_lower_version_than_head():
 def test_a_commit_this_clone_has_never_seen_is_None_not_zero():
     """`0` would render as *up to date*. A fresh clone that has not fetched the deployed commit
     must say it cannot answer — the same rule `mt5_link` and `grid_sensitivity_score` follow."""
-    assert bv.version_at("0" * 40, bv.trees_for("mpc_sos_fade")) is None
+    assert bv.version_at("0" * 40, bv.trees_for("sos_fade")) is None
 
 
 def test_has_commit_is_false_for_a_commit_that_is_not_here():
@@ -140,21 +140,21 @@ def test_has_commit_is_false_for_a_commit_that_is_not_here():
 
 
 def test_a_bot_that_has_never_been_promoted_is_not_comparable():
-    r = bv.compare("mpc_sos_fade", "", {})
+    r = bv.compare("sos_fade", "", {})
     assert r["comparable"] is False
     assert r["versions_behind"] is None
     assert "never been promoted" in r["reason"]
 
 
 def test_an_unfetched_deployed_commit_is_not_comparable_and_names_the_fix():
-    r = bv.compare("mpc_sos_fade", "0" * 40, {})
+    r = bv.compare("sos_fade", "0" * 40, {})
     assert r["comparable"] is False
     assert r["versions_behind"] is None
     assert "Pull" in r["reason"]
 
 
 def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():
-    r = bv.compare("mpc_sos_fade", "HEAD", {})
+    r = bv.compare("sos_fade", "HEAD", {})
     assert r["comparable"] is True
     assert r["versions_behind"] == 0
     assert r["changes"] == []
@@ -163,16 +163,16 @@ def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():
 def test_behind_never_goes_negative():
     """A deployment AHEAD of this clone (somebody else promoted from a machine that had pulled)
     must read 0, not a negative count — the banner's copy has no sensible form for -3."""
-    r = bv.compare("mpc_sos_fade", OLDER, {})
+    r = bv.compare("sos_fade", OLDER, {})
     assert r["versions_behind"] is not None and r["versions_behind"] > 0
-    r2 = bv.compare("mpc_sos_fade", "HEAD", {})
+    r2 = bv.compare("sos_fade", "HEAD", {})
     assert r2["versions_behind"] == 0
 
 
 def test_the_change_list_matches_the_version_gap():
     """The number in the headline and the list under it are two renderings of one fact; if they
     disagree the banner argues with itself."""
-    r = bv.compare("mpc_sos_fade", OLDER, {})
+    r = bv.compare("sos_fade", OLDER, {})
     assert r["comparable"] is True
     assert len(r["changes"]) == r["versions_behind"]
 
@@ -194,8 +194,8 @@ def test_every_change_names_the_tree_it_touched():
     * every named tree is one of the bot's own — a widened pathspec (`engines` matching a
       top-level FILE of that name, a missing `tree + "/"` test) shows up here and nowhere else.
     """
-    trees = bv.trees_for("mpc_sos_fade")
-    r = bv.compare("mpc_sos_fade", OLDER, {})
+    trees = bv.trees_for("sos_fade")
+    r = bv.compare("sos_fade", OLDER, {})
     assert r["changes"], "no changes to check — widen the range"
     assert any(not c.get("merge") for c in r["changes"]), "only merges in range — widen it"
     for c in r["changes"]:
@@ -231,7 +231,7 @@ def test_the_change_list_is_ONE_git_process_per_range():
         return real(args, **kwargs)
 
     with mock.patch.object(subprocess, "run", _counting_run):
-        changes = bv.changes_between(OLDER, "HEAD", bv.trees_for("mpc_sos_fade"))
+        changes = bv.changes_between(OLDER, "HEAD", bv.trees_for("sos_fade"))
 
     assert changes, "no changes to check — widen the range"
     assert len(calls) == 1, f"{len(calls)} git processes for {len(changes)} commits: {calls}"
@@ -248,7 +248,7 @@ def test_a_changed_default_is_reported_with_both_values():
 
 
 def test_a_field_declared_twice_with_different_defaults_refuses_to_guess():
-    """`mpc_bleg` subclasses `mpc_sos_fade`'s config and overrides fields. Picking one silently
+    """`b_leg` subclasses `sos_fade`'s config and overrides fields. Picking one silently
     would describe the wrong bot, so the value becomes UNPARSED and renders as '?'."""
     src = (
         "@dataclass\nclass Base:\n    a: bool = False\n"
@@ -292,7 +292,7 @@ def test_a_setting_the_config_pins_is_reported_as_stated():
     """A pinned setting cannot move on a promote. It is still returned, because *your bot is
     holding this still* is the reassuring half of the same question — and filtering it out
     leaves the reader unable to tell 'not affected' from 'not checked'."""
-    changes = bv.setting_changes("mpc_sos_fade", OLDER, "HEAD", {"exec_secondary": False})
+    changes = bv.setting_changes("sos_fade", OLDER, "HEAD", {"exec_secondary": False})
     assert changes is not None
     pinned = [c for c in changes if c["name"] == "exec_secondary"]
     if pinned:  # only if that default actually moved in-range
@@ -302,7 +302,7 @@ def test_a_setting_the_config_pins_is_reported_as_stated():
 def test_a_new_setting_says_it_is_new_rather_than_claiming_it_was_off():
     """`was: ""` + `is_new` — the deployed version had no such lever at all, which is not the
     same as having it switched off, and 'Off' would be a lie in the reassuring direction."""
-    changes = bv.setting_changes("mpc_sos_fade", OLDER, "HEAD", {})
+    changes = bv.setting_changes("sos_fade", OLDER, "HEAD", {})
     assert changes is not None
     for c in changes:
         assert (c["was"] == "") == c["is_new"], c
@@ -311,13 +311,13 @@ def test_a_new_setting_says_it_is_new_rather_than_claiming_it_was_off():
 def test_setting_labels_come_from_the_strategys_own_meta_file():
     """The page's wording is the STRATEGY's, copied. A name→sentence mapping written in this
     app would be a second claim about what a setting does."""
-    meta = bv._param_meta("mpc_sos_fade")
+    meta = bv._param_meta("sos_fade")
     assert meta, "the meta file did not parse — every label would silently fall back to the key"
     assert meta["exec_time_stop_mode"]["label"] == "Time stop"
 
 
 def test_a_setting_with_no_meta_entry_falls_back_to_its_key_rather_than_blank():
-    changes = bv.setting_changes("mpc_sos_fade", OLDER, "HEAD", {})
+    changes = bv.setting_changes("sos_fade", OLDER, "HEAD", {})
     assert changes is not None
     for c in changes:
         assert c["label"], f"{c['name']} rendered a blank label"
@@ -348,7 +348,7 @@ def test_an_unparsed_value_renders_as_a_question_mark_not_as_a_number():
 
 # ── what the VPS can actually REACH ─────────────────────────────────────────────
 #
-# 🔴 MEASURED 2026-08-14: a successful deploy of mpc_sos_fade_demo landed v164 while the
+# 🔴 MEASURED 2026-08-14: a successful deploy of sos_fade_demo landed v164 while the
 # backtester read v165, because the single commit between them was unpushed. The promote pulls
 # on the VPS, so the remote — not this laptop's HEAD — is the ceiling on what can be deployed.
 # Every number on the banner was correct and nothing on it explained why pressing Deploy again
@@ -398,16 +398,16 @@ def test_it_asks_only_about_THIS_BOTS_trees(monkeypatch):
         return "origin/main\n" if a[0] == "rev-parse" else ""
 
     monkeypatch.setattr(bv, "_git", fake)
-    bv.unpushed_commits(["strategies/python/mpc_sos_fade", "engines", "backtest"])
+    bv.unpushed_commits(["strategies/python/sos_fade", "engines", "backtest"])
     log = next(a for a in seen if a[0] == "log")
     assert "--" in log
-    assert log[log.index("--") + 1 :] == ("strategies/python/mpc_sos_fade", "engines", "backtest")
+    assert log[log.index("--") + 1 :] == ("strategies/python/sos_fade", "engines", "backtest")
 
 
 def test_compare_carries_the_unpushed_list_so_the_banner_can_explain_a_short_deploy():
     """It rides on every `compare()` result, INCLUDING the ones that refuse — a bot that has
     never been promoted is exactly where 'push first' is worth saying before the first deploy."""
-    r = bv.compare("mpc_sos_fade", "", {})
+    r = bv.compare("sos_fade", "", {})
     assert "unpushed_commits" in r
-    r2 = bv.compare("mpc_sos_fade", "HEAD", {})
+    r2 = bv.compare("sos_fade", "HEAD", {})
     assert "unpushed_commits" in r2

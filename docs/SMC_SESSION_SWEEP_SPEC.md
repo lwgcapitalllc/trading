@@ -13,13 +13,13 @@ harness.**
 
 Both were Aaron's call, in the same breath as *"I think we need to port over to Python"*.
 
-**`mpc_m15_playbook_strategy.pine` → `smc_session_sweep_strategy.pine`, and this spec moved
-from `MPC_M15_PLAYBOOK_SPEC.md`.** The old name named the timeframe the DIRECTION is read on
+**`m15_playbook_strategy.pine` → `smc_session_sweep_strategy.pine`, and this spec moved
+from `M15_PLAYBOOK_SPEC.md`.** The old name named the timeframe the DIRECTION is read on
 and said nothing about the setup, and it wore the `mpc_` prefix of a Pine family this file was
-never part of — it came from a video note, not from `mpc_assistant.pine`. The new name is the
+never part of — it came from a video note, not from `mpc_jarvis.pine`. The new name is the
 setup: a session sweeps the previous session's level, and the model trades the reversal off it.
 
-🔴 **`indicators/engines/mpc_m15_playbook.pine` was DELETED.** It was the 270 KB indicator half
+🔴 **`indicators/engines/m15_playbook.pine` was DELETED.** It was the 270 KB indicator half
 of the pair — structure, sessions, gaps, order blocks and a confirmation table, drawing only,
 no orders, so the Strategy Tester could never score it. ⚠ **It was also the file the strategy's
 structure engine was lifted byte-for-byte OUT of**, so that block's provenance now points at
@@ -137,7 +137,7 @@ are frozen anyway because every Pine file in this repo has carried the identical
 since 2026-07-31, so a divergence here would be a bug and not a setting. ⚠ **A change to them
 belongs in every file that carries the block.**
 
-**Every colour a trade is drawn in is `mpc_strategy.pine`'s.** Change a value there and copy it
+**Every colour a trade is drawn in is `sos_fade_strategy.pine`'s.** Change a value there and copy it
 down, never pick one here. ⚠ **The TABLE palette is gone with the state panel** — if a table ever
 returns, copy A+'s table colours rather than reusing the position ones.
 

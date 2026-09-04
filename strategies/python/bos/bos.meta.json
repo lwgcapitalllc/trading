@@ -1,0 +1,367 @@
+{
+  "_comment": "Editor UI metadata for BOS. Overlaid onto the schema built from BosConfig (a SosFadeConfig superset). UI ONLY — never touches a trade decision or the source hash. Click Scan Strategies after editing. THE CONTRACT: `label` is the Pine input's TITLE and `desc` is its TOOLTIP, both verbatim from strategies/tradingview/bos_strategy.pine, changed in the same commit — one parameter, one name, one explanation, two UIs. They were EXTRACTED from the Pine by script rather than retyped, because a lab row saying something different from the chart is how a rule gets read backwards (exec_deep_fib said 'ABOVE' where its own tooltip said 'shallower', and that was false half the time). Params not listed here fall back to their raw field names; the inherited A+ fields that this fork pins are deliberately absent, because none of them is an input in this fork's Pine — see config.py for why each is pinned. COPY STYLE (2026-08-10, Aaron's call): every desc is SHORT and PLAIN — what the setting does, what each choice means, and the one fact that changes the decision. No measurement dumps, no trade counts, no R figures, no dates, no file references: the strategy detail page is for reading, and the evidence behind a default lives in this package's CLAUDE.md and its optimization doc. Same rule for `edge` and `steps`.",
+  "edge": "A break of structure says the trend has turned. What comes after it is what this trades: the market keeps breaking in the same direction until it turns again, and each break gives a pullback to buy or sell into. The main bot fades the turn; this one rides what the turn started. Not every break is real, so it is filtered hard. Nothing here has been checked against the TradingView chart yet, so read the direction of a result and never the exact numbers.",
+  "steps": [
+    {
+      "label": "01 · Turn",
+      "title": "A shift opens a run",
+      "detail": "Structure breaks and opens a run on that side. Until it does, nothing can trade."
+    },
+    {
+      "label": "02 · Break",
+      "title": "A continuation break sets up a trade",
+      "detail": "Each later break in the same direction is a fresh setup. The newest one always owns it — an older setup still waiting for its pullback is dropped."
+    },
+    {
+      "label": "03 · Pullback",
+      "title": "A limit rests in the pullback",
+      "detail": "An order rests at the chosen depth and fills the moment price touches it. The setup dies if price runs out of room or the time limit passes first."
+    },
+    {
+      "label": "04 · Manage",
+      "title": "Out at the last target or the stop",
+      "detail": "The first target moves the stop to breakeven and the second lifts it further. By default nothing is banked early: the whole position leaves at the last target, or at the stop that has been climbing behind it."
+    }
+  ],
+  "params": [
+    {
+      "name": "exec_longs",
+      "label": "Trade longs",
+      "group": "What trades",
+      "core": true,
+      "desc": "Take long trades. Off = the long side never arms, and every long setup that was ready is logged as blocked, so you can still count what it cost.",
+      "_desc_note": "No tooltip on the Pine input — written here. Copy it back to the Pine before treating it as the shared text."
+    },
+    {
+      "name": "exec_shorts",
+      "label": "Trade shorts",
+      "group": "What trades",
+      "core": true,
+      "desc": "Take short trades. Off = the short side never arms, and every short setup that was ready is logged as blocked.",
+      "_desc_note": "No tooltip on the Pine input — written here. Copy it back to the Pine before treating it as the shared text."
+    },
+    {
+      "name": "bos_which",
+      "label": "Which break after the shift",
+      "group": "The break",
+      "core": true,
+      "desc": "Which break after the turn to trade. The first is the initial push, the rest are continuations. A new break cancels an older setup still waiting.",
+      "choices": ["1st only", "1st + 2nd", "All"]
+    },
+    {
+      "name": "bos_min_disp_atr",
+      "label": "   Break must clear the swing by (x ATR)",
+      "group": "The break",
+      "desc": "How far the breaking candle must close past the level, in ATR. A one-tick poke is a stop run, not a break. 0 = accept any break.",
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "name": "bos_min_leg_atr",
+      "label": "   Break leg must be at least (x ATR)",
+      "group": "The break",
+      "desc": "The smallest move that counts as a break, in ATR. 0 = no minimum.",
+      "min": 0,
+      "max": 10,
+      "step": 0.25
+    },
+    {
+      "name": "bos_max_days",
+      "label": "   Drop an armed break after (days)",
+      "group": "The break",
+      "desc": "How long a setup waits for its pullback before it is dropped. Counted in bars, so weekends and the daily close do not use it up.",
+      "min": 0.25,
+      "max": 10,
+      "step": 0.25
+    },
+    {
+      "name": "bos_max_per_regime",
+      "label": "   Max trades between shifts",
+      "group": "The break",
+      "desc": "Stop taking new trades after this many fills since the last turn. Lower it to stop losses stacking up in one choppy stretch.",
+      "min": 1,
+      "max": 20,
+      "step": 1
+    },
+    {
+      "name": "bos_req_hold",
+      "label": "   Broken level must hold",
+      "group": "The break",
+      "desc": "On = a close back through the broken level kills the setup. With an entry this deep that usually kills it just before it would have filled."
+    },
+    {
+      "name": "bos_fib_anchor",
+      "label": "Measure levels on",
+      "group": "Entry",
+      "core": true,
+      "desc": "Which move the entry, stop and targets are measured on. Break leg freezes them at the break; expansion leg keeps moving until the pullback starts.",
+      "choices": ["Expansion leg", "Break leg"]
+    },
+    {
+      "name": "bos_entry_top",
+      "label": "Shallowest the entry may rest",
+      "group": "Entry",
+      "desc": "The shallowest pullback the strategy will accept. Shallow entries fill far more often and pay far less.",
+      "choices": ["0.5", "0.382"]
+    },
+    {
+      "name": "bos_use_fvg",
+      "label": "Price the entry off a gap",
+      "group": "Entry",
+      "core": true,
+      "desc": "On = the order is placed on a gap inside the pullback. Off = a plain level, and the settings below grey out."
+    },
+    {
+      "name": "exec_req_fvg",
+      "label": "   ↳ ...and require one (no gap = no trade)",
+      "group": "Entry",
+      "desc": "On = no qualifying gap means no trade. Off = it still trades, at the plain level below.",
+      "show_if": {
+        "bos_use_fvg": true
+      }
+    },
+    {
+      "name": "exec_fvg_deep_only",
+      "label": "   ↳ ...gap must sit fully past the shallow end",
+      "group": "Entry",
+      "desc": "On = the whole gap has to sit on the deep side of the shallow end. Better prices, reached less often.",
+      "show_if": {
+        "bos_use_fvg": true
+      }
+    },
+    {
+      "name": "exec_deep_fib",
+      "label": "   ↳ ...deep gap enters at the nearest fib",
+      "group": "Entry",
+      "desc": "For a gap deeper than 0.618, rest the order at the nearest level above it - the price you reach first.",
+      "show_if": {
+        "bos_use_fvg": true
+      }
+    },
+    {
+      "name": "exec_conf_sz2",
+      "label": "   ↳ ...Sniper Zone counts as a gap",
+      "group": "Entry",
+      "desc": "Lets the shallow pocket of the break stand in for a gap on a setup that had none.",
+      "show_if": {
+        "bos_use_fvg": true
+      }
+    },
+    {
+      "name": "exec_fvg_50",
+      "label": "   ↳ ...gap across the shallow end enters at it",
+      "group": "Entry",
+      "desc": "Last resort: a gap lying across the shallow end rests the order exactly on that line.",
+      "show_if": {
+        "bos_use_fvg": true
+      }
+    },
+    {
+      "name": "bos_entry_fib",
+      "label": "Fallback entry level",
+      "group": "Entry",
+      "core": true,
+      "desc": "How deep in the pullback the order rests. This is what actually trades while gap pricing is off.",
+      "choices": ["0.382", "0.5", "0.618", "0.702", "0.786", "0.886"]
+    },
+    {
+      "name": "bos_respect_veto",
+      "label": "Divergence blocks a new entry",
+      "group": "Filters",
+      "desc": "On = a long will not open while a bearish divergence is live or momentum is very overbought, and the mirror for shorts."
+    },
+    {
+      "name": "bos_vwap_req",
+      "label": "Session VWAP filter",
+      "group": "Filters",
+      "core": true,
+      "desc": "Only trade while price is closing on the trend's own side of the session average price.",
+      "choices": ["Off", "Trend's side"]
+    },
+    {
+      "name": "exec_no_late_day",
+      "label": "No entries in the final hour (16:00-18:00 NY)",
+      "group": "Filters",
+      "desc": "Blocks new entries in the last hour before the daily close, so a trade cannot be gapped out over the break."
+    },
+    {
+      "name": "exec_htf_weekly",
+      "label": "Weekly bias requirement",
+      "group": "Filters",
+      "desc": "Whether the weekly trend has to agree with the trade. Ignore = no filter.",
+      "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"]
+    },
+    {
+      "name": "exec_htf_daily",
+      "label": "Daily bias requirement",
+      "group": "Filters",
+      "desc": "The same four choices, judged on the daily trend. Ignore = off.",
+      "choices": ["Ignore", "Must agree", "Must not oppose", "Must oppose (reversal)"]
+    },
+    {
+      "name": "exec_risk_pct",
+      "label": "Risk % per trade",
+      "group": "Size & stop",
+      "core": true,
+      "desc": "How much of the account each trade risks. A wider stop automatically buys a smaller position.",
+      "min": 0.1,
+      "max": 100,
+      "step": 0.1
+    },
+    {
+      "name": "bos_sl_model",
+      "label": "Stop model",
+      "group": "Size & stop",
+      "core": true,
+      "desc": "Where the stop sits. ATR is a fixed distance from the entry and is the default.",
+      "choices": [
+        "Fib 1.0 (leg origin)",
+        "Broken swing level",
+        "Fib 0.886",
+        "Last confirmed swing",
+        "ATR"
+      ]
+    },
+    {
+      "name": "bos_sl_atr",
+      "label": "   ↳ ATR multiple",
+      "group": "Size & stop",
+      "core": true,
+      "desc": "How far the stop sits from the entry, in ATR. Anything from about 1.2 to 1.5 gives the same answer.",
+      "min": 0.1,
+      "max": 10,
+      "step": 0.1,
+      "show_if": {
+        "bos_sl_model": "ATR"
+      }
+    },
+    {
+      "name": "exec_sl_buf_tk",
+      "label": "Extra room beyond the stop (ticks)",
+      "group": "Size & stop",
+      "desc": "Pushes the stop this many ticks further away, so a wick through it does not take you out.",
+      "min": 0,
+      "step": 1
+    },
+    {
+      "name": "exec_min_stop_mode",
+      "label": "Minimum stop distance",
+      "group": "Size & stop",
+      "desc": "Refuse a setup whose stop lands too close to the entry, which would buy an oversized position that noise runs straight through.",
+      "choices": ["Off", "% of price", "Fixed $", "x ATR(14)"]
+    },
+    {
+      "name": "exec_min_stop_val",
+      "label": "   ↳ Minimum stop floor (unit = mode above)",
+      "group": "Size & stop",
+      "desc": "The floor itself. A percent, dollars of price, or an ATR multiple, following the mode above.",
+      "min": 0,
+      "step": 0.05,
+      "show_if": {
+        "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"]
+      }
+    },
+    {
+      "name": "bos_move_stop",
+      "label": "Moving stop (trails from entry)",
+      "group": "Size & stop",
+      "desc": "A trailing stop that starts as soon as you are filled. It follows the best price seen and can only tighten.",
+      "choices": ["Off", "$ of price", "Structure (swing)"]
+    },
+    {
+      "name": "bos_move_stop_val",
+      "label": "   ↳ trail distance (unit = mode above)",
+      "group": "Size & stop",
+      "desc": "How far the moving stop sits behind the best price seen. Dollars of price in dollar mode, ticks behind the last swing in structure mode.",
+      "min": 0.1,
+      "step": 0.5,
+      "show_if": {
+        "bos_move_stop": ["$ of price", "Structure (swing)"]
+      }
+    },
+    {
+      "name": "exec_tp1_pct",
+      "label": "TP1 size %",
+      "group": "Targets",
+      "core": true,
+      "desc": "How much of the position the first target banks. 0 = bank nothing. Touching it still moves the stop to breakeven.",
+      "min": 0,
+      "max": 100,
+      "step": 5
+    },
+    {
+      "name": "exec_tp2_pct",
+      "label": "TP2 size %",
+      "group": "Targets",
+      "core": true,
+      "desc": "How much of the position the second target banks. 0 = bank nothing. Touching it still lifts the stop and hands the rest onward.",
+      "min": 0,
+      "max": 100,
+      "step": 5
+    },
+    {
+      "name": "exec_tp3_pct",
+      "label": "TP3 size %",
+      "group": "Targets",
+      "core": true,
+      "desc": "How much of the position the last target banks. 100 = the whole position leaves there, so there is no runner.",
+      "min": 0,
+      "max": 100,
+      "step": 5
+    },
+    {
+      "name": "bos_tp3_measured",
+      "label": "TP3 = measured move",
+      "group": "Targets",
+      "desc": "Replaces the last target with the size of the break projected forward from the level it broke. Ignored if it would land behind the second target."
+    },
+    {
+      "name": "exec_be_buf_tk",
+      "label": "Breakeven buffer (ticks)",
+      "group": "Targets",
+      "desc": "How far past the entry the breakeven stop sits, so a scratch still covers costs.",
+      "min": 0,
+      "step": 1
+    },
+    {
+      "name": "exec_runner_trail",
+      "label": "Runner trail method",
+      "group": "Runner",
+      "desc": "How the runner is trailed once the second target is hit. Structure parks the stop at the last swing; fixed step uses a dollar grid.",
+      "choices": ["Fixed step", "Structure (swing)"]
+    },
+    {
+      "name": "exec_struct_trail_buf_tk",
+      "label": "   ↳ Structure trail buffer (ticks)",
+      "group": "Runner",
+      "desc": "Structure method only. The trailing stop sits this many ticks beyond the swing it is following.",
+      "min": 0,
+      "step": 1,
+      "show_if": {
+        "exec_runner_trail": "Structure (swing)"
+      }
+    },
+    {
+      "name": "exec_trail_step",
+      "label": "Runner trail step ($ of price)",
+      "group": "Runner",
+      "desc": "The step size in dollars. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
+      "min": 0.01,
+      "step": 0.5
+    },
+    {
+      "name": "exec_tp2_stop_mode",
+      "label": "TP2 → stop floor",
+      "group": "Runner",
+      "desc": "Where the stop jumps to the moment the second target is hit. TP1 is tight and can scratch the trade; breakeven gives it the most room.",
+      "choices": ["TP1 price", "Breakeven", "One trail step behind"]
+    },
+    {
+      "name": "bos_close_opp_div",
+      "label": "Close an open trade on opposing divergence",
+      "group": "Runner",
+      "desc": "On = close the trade when a divergence confirms against it, rather than waiting for the stop or a target."
+    }
+  ]
+}

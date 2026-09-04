@@ -5,7 +5,7 @@ compare_liquidity.py — parity check: TradingView Pine export vs Python liquidi
 Purpose
 -------
 Prove the Python engine in liquidity/ produces the same liquidity levels as the source-of-truth
-blocks in mpc_assistant.pine, on real candles. It feeds each bar (timestamp + OHLC) through
+blocks in mpc_jarvis.pine, on real candles. It feeds each bar (timestamp + OHLC) through
 LiquidityEngine and diffs the current active-level prices + mitigation flags against the px_* columns
 the Pine build in indicators/engines/liquidity_export.pine plotted, bar by bar.
 

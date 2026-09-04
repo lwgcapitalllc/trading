@@ -85,7 +85,7 @@ ssh forexvps "cd C:\trading && git pull origin main"
 
 # Deploy the pulled code to a bot. A pull alone changes nothing — a live bot runs a
 # frozen snapshot in its instance dir, so it keeps its version until this is run.
-ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot mpc_sos_fade_demo"
+ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot sos_fade_demo"
 
 # Restart bots (coordinator starts them sequentially)
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
@@ -96,7 +96,7 @@ ssh forexvps "wmic process where \"name='python.exe'\" get commandline"
 agents, and it is what left the live bot dead for three days on 2026-07-31. Kill one bot:
 
 ```bash
-ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot sos_fade_demo%'\" call terminate"
 ```
 
 ---

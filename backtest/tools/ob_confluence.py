@@ -150,8 +150,8 @@ def main(argv=None) -> int:
 
     from backtest.data.history import floor_for
     from backtest.data.source import BarSource
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
-    from strategies.python.mpc_sos_fade.signals import _zones_overlap, pois_for
+    from strategies.python.sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade.signals import _zones_overlap, pois_for
 
     start = args.start
     if start is None:

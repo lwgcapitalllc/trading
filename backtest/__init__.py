@@ -10,5 +10,5 @@ Subpackages:
     data/   — the data layer (A0): broker-bar pull, disk cache, resample-up, ticks.
 
 Everything is importable standalone (CLI, the /audit-strategy parity harness, CI)
-without dragging in the FastAPI app. See docs/MPC_SOS_FADE_BUILD_PLAN.md.
+without dragging in the FastAPI app. See docs/SOS_FADE_BUILD_PLAN.md.
 """

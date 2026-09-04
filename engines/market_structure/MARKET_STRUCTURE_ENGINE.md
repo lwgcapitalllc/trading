@@ -219,7 +219,7 @@ port; re-added and carried through the shim to `algos/`.
 the `engines/order_blocks/` engine; mirror Pine's identically-named vars. On any internal break these flag
 its direction and expose the origin bar index the order-block engine scans back from — the two iBOS
 sites set `int_break_origin_loc` to `tracked_ext_loc`, the four iSOS branches to `sw_loc`, matching
-`mpc_assistant.pine` (~lines 1115-1275). Capture-only: set right beside the existing
+`mpc_jarvis.pine` (~lines 1115-1275). Capture-only: set right beside the existing
 `bull_bos`/`bear_sos` fields, before the state reset; no structure logic changed. `None`/`False` on
 bars with no internal break.
 
@@ -238,10 +238,10 @@ bars with no internal break.
 ## Source and validation
 
 This engine is ported line-by-line from `indicators/engines/structure_engine.pine`, a Pine Script v6
-indicator that is itself a market-structure-only extraction from `indicators/engines/mpc_assistant.pine`
+indicator that is itself a market-structure-only extraction from `indicators/engines/mpc_jarvis.pine`
 (all non-structure features — order blocks, sessions, kill zones, VWAP, liquidity levels,
 Fibonacci, SVP — stripped out; the structure detection logic itself is byte-for-byte identical to
-`mpc_assistant.pine`). Aaron validated `mpc_assistant.pine` on a live chart at ~99.99% parity
+`mpc_jarvis.pine`). Aaron validated `mpc_jarvis.pine` on a live chart at ~99.99% parity
 against the original private "Structure OS" TradingView indicator it was sourced to match.
 
 This Python port carries the same detection logic forward. It does not re-derive or "clean up"

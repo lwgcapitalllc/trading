@@ -1,7 +1,7 @@
 """algos/live/ — the live runtime for a `strategies/python/` bot on an MT5 terminal.
 
 The seam between a validated backtest and real orders. Nothing here contains strategy logic:
-the same `MpcSosFadeStrategy` object the lab replays is stepped bar by bar, and this package
+the same `SosFadeStrategy` object the lab replays is stepped bar by bar, and this package
 only supplies it with live bars and mirrors its intent onto the broker.
 
     runner.py    the loop — connect, verify the version pin, warm the engines, step, reconcile

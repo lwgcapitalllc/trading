@@ -84,8 +84,8 @@ class SetupAlerts:
         self._log = log
         self._digits = digits
         #: The bot's display name for the message head. Comes from the RUNNER's config, because a
-        #: strategy only knows its own class name — `MpcSosFadeStrategy` where a reader wants
-        #: `MPC SOS Fade`. Empty falls back to the class name, so a caller that does not set it
+        #: strategy only knows its own class name — `SosFadeStrategy` where a reader wants
+        #: `SOS Fade`. Empty falls back to the class name, so a caller that does not set it
         #: still renders something true.
         self._display = display
         #: side -> the lots ACTUALLY resting at the broker, or None when nothing is.
@@ -159,7 +159,7 @@ class SetupAlerts:
         # default settings"*). Announcing a setup the bot has already refused is a label with no
         # code behind it, pointed at a human who might act on it.
         #
-        # ⚠ **On `mpc_sos_fade` this suppresses ONE setup in 6.5 years, and the estimate that
+        # ⚠ **On `sos_fade` this suppresses ONE setup in 6.5 years, and the estimate that
         # justified building it was wrong by two orders of magnitude.** The guess was "220 of 609
         # are divergence-armed and this bot trades sweep-only". `arm_src` records which source
         # reached stage 1 FIRST; `sos_l_swp` records whether a sweep was live at the SOS, and

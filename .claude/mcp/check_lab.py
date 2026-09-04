@@ -80,7 +80,7 @@ if model:
 # ── 2. one differing basis field is enough to refuse ─────────────────────────
 BASE_RUN = {
     "run_id": "aaa",
-    "strategy_id": "mpc_sos_fade",
+    "strategy_id": "sos_fade",
     "instrument": "XAUUSD",
     "bar_type": "Minute",
     "bar_value": 15,
@@ -101,7 +101,7 @@ BASE_RUN = {
     "max_drawdown_pct": 37.78,
 }
 DIFFERENT = {
-    "strategy_id": "mpc_bleg",
+    "strategy_id": "b_leg",
     "instrument": "EURUSD",
     "bar_type": "Hour",
     "bar_value": 5,
@@ -170,7 +170,7 @@ try:
     lab.call_tool(
         "start_backtest",
         {
-            "strategy_id": "mpc_sos_fade",
+            "strategy_id": "sos_fade",
             "instrument": "XAUUSD",
             "start_date": "2020-01-01",
             "end_date": "2026-08-20",
@@ -182,7 +182,7 @@ try:
     lab.call_tool(
         "start_backtest",
         {
-            "strategy_id": "mpc_sos_fade",
+            "strategy_id": "sos_fade",
             "instrument": "XAUUSD",
             "start_date": "2020-01-01",
             "end_date": "2026-08-20",

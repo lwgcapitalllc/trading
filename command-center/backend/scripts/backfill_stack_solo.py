@@ -8,7 +8,7 @@ part and running it twice to write two files would be the only wasteful way to d
 from it (`solo_r`, `solo_closing_balance`). The trades were discarded — so a stack could not answer
 "what would the rest of this have made if that strategy never existed", and the page composed that
 answer out of the SHARED trades instead. Those are sized off a balance every leg compounded onto,
-which is how MPC B-LEG came to read $47,758,999 on a stack and $21,064 standalone over the same
+which is how B-LEG came to read $47,758,999 on a stack and $21,064 standalone over the same
 window, on the same 99 trades, at the same 17.8674R.
 
 ⚠ This RE-RUNS the replay — it does not recover anything from disk, because nothing was written.

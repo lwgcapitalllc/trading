@@ -16,7 +16,7 @@ Everything is in here: winners, losers, scratches, and every setup that never tr
 | Window | **2018-09-13 → 2026-07-29** — 7.9 years, 185,783 bars |
 | Warm-up | first 1,000 bars, engines only, no decisions recorded |
 | Fill model | `bar` — zero-cost, matches what TradingView's Strategy Tester would show. `costs_usd` is 0 in every row. Real spread/commission is NOT modelled here. |
-| Strategies | `mpc_sos_fade` (A+ SOS Fade) and `mpc_bleg` (B-LEG) |
+| Strategies | `sos_fade` (A+ SOS Fade) and `b_leg` (B-LEG) |
 
 2018-09-13 is the **measured** floor of the broker's real 15m history, not a guess.
 MT5 answers a request for a timeframe it has no history at with coarser bars still
@@ -46,7 +46,7 @@ pays out on a small number of large runners. Judge it on sumR, not win rate.
 
 ## Files
 
-Per strategy folder (`mpc_sos_fade/`, `mpc_bleg/`):
+Per strategy folder (`sos_fade/`, `b_leg/`):
 
 - **`trades.csv`** — one row per completed trade. Every trade, not just losers.
 - **`setups.csv`** — one row per A+ leg that reached the SOS stage, whether it traded
@@ -122,8 +122,8 @@ across 7.9 years, 700 setups reached SOS and only 188 became A+ trades.
 Needs the repo, Python deps, and either a warm `backtest/cache/` or a running MT5 agent.
 
 ```
-python backtest/tools/run_report.py --strategy mpc_sos_fade --out <dir>
-python backtest/tools/run_report.py --strategy mpc_bleg     --out <dir>
+python backtest/tools/run_report.py --strategy sos_fade --out <dir>
+python backtest/tools/run_report.py --strategy b_leg     --out <dir>
 ```
 
 No `--start` needed — the tool defaults to the broker's measured floor for the

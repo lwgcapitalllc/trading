@@ -31,7 +31,7 @@ import pytest
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "close_orphans.py"
 KEEP = 345453758
-PHRASE = "close 4 unmanaged positions on mpc_sos_fade_demo"
+PHRASE = "close 4 unmanaged positions on sos_fade_demo"
 
 
 class FakeMT5:
@@ -122,7 +122,7 @@ def tool(tmp_path, monkeypatch):
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
         m.INSTANCES = tmp_path / "instances"
-        d = m.INSTANCES / "mpc_sos_fade_demo"
+        d = m.INSTANCES / "sos_fade_demo"
         d.mkdir(parents=True, exist_ok=True)
         (d / "config.json").write_text(
             json.dumps(
@@ -144,7 +144,7 @@ def _run(m, argv, monkeypatch):
 
 
 def _rows(m):
-    d = m.INSTANCES / "mpc_sos_fade_demo" / "ledger"
+    d = m.INSTANCES / "sos_fade_demo" / "ledger"
     out = []
     for f in sorted(d.glob("*.jsonl")):
         out += [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
@@ -157,7 +157,7 @@ def test_refuses_a_terminal_on_another_account(tool, monkeypatch):
     f = FakeMT5(login=700107749, positions=_five())
     out = _run(
         tool(f),
-        ["--bot", "mpc_sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", PHRASE],
+        ["--bot", "sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", PHRASE],
         monkeypatch,
     )
     assert out and "WRONG TERMINAL" in out
@@ -176,12 +176,12 @@ def test_refuses_when_the_keep_ticket_is_not_open(tool, monkeypatch):
         tool(f),
         [
             "--bot",
-            "mpc_sos_fade_demo",
+            "sos_fade_demo",
             "--keep",
             "999",
             "--close",
             "--confirm",
-            "close 5 unmanaged positions on mpc_sos_fade_demo",
+            "close 5 unmanaged positions on sos_fade_demo",
         ],
         monkeypatch,
     )
@@ -193,7 +193,7 @@ def test_refuses_a_wrong_confirm_phrase(tool, monkeypatch):
     f = FakeMT5(positions=_five())
     out = _run(
         tool(f),
-        ["--bot", "mpc_sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", "yes"],
+        ["--bot", "sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", "yes"],
         monkeypatch,
     )
     assert out and "REFUSING" in out
@@ -202,7 +202,7 @@ def test_refuses_a_wrong_confirm_phrase(tool, monkeypatch):
 
 def test_is_read_only_without_close(tool, monkeypatch):
     f = FakeMT5(positions=_five())
-    _run(tool(f), ["--bot", "mpc_sos_fade_demo", "--keep", str(KEEP)], monkeypatch)
+    _run(tool(f), ["--bot", "sos_fade_demo", "--keep", str(KEEP)], monkeypatch)
     assert f.sends == []
 
 
@@ -213,7 +213,7 @@ def test_closes_the_others_and_marks_them_as_not_performance(tool, monkeypatch):
         m,
         [
             "--bot",
-            "mpc_sos_fade_demo",
+            "sos_fade_demo",
             "--keep",
             str(KEEP),
             "--close",
@@ -244,7 +244,7 @@ def test_timeout_that_landed_is_recorded_not_retried(tool, monkeypatch):
     m = tool(f)
     _run(
         m,
-        ["--bot", "mpc_sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", PHRASE],
+        ["--bot", "sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", PHRASE],
         monkeypatch,
     )
     assert len(f.sends) == 4, "it re-sent on a timeout, which IS the incident"
@@ -257,7 +257,7 @@ def test_a_close_that_really_failed_is_reported_and_not_retried(tool, monkeypatc
     m = tool(f)
     _run(
         m,
-        ["--bot", "mpc_sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", PHRASE],
+        ["--bot", "sos_fade_demo", "--keep", str(KEEP), "--close", "--confirm", PHRASE],
         monkeypatch,
     )
     assert len(f.sends) == 4 and len(f._pos) == 5

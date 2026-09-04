@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """sweep_edge.py — the sweep-and-reclaim is one trigger. Which LEVEL should it sweep?
 
-This is a study, not a strategy. `indicators/engines/mss_sweeps_mpc.pine` arms the protected
+This is a study, not a strategy. `indicators/engines/mss_sweeps.pine` arms the protected
 internal swing (the iHL under a bull iBOS, the iLH above a bear iBOS) and signals when price
 wicks through it and closes back. `education/learned/2026-08-11-smc-strategy-too-simple-to-
 ignore-1150-trades.md` argues for the same trigger on a completely different level — the

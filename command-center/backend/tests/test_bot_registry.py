@@ -12,7 +12,7 @@ confident wrong answer rather than an error:
     from the registry it was not using.
 
 Neither is reachable now, and these tests are about keeping it that way. They are written
-against the DERIVATION, not against `mpc_sos_fade_demo`, so they still mean something on the
+against the DERIVATION, not against `sos_fade_demo`, so they still mean something on the
 day bot #2 lands — which is the whole reason the audit that found this ran.
 """
 

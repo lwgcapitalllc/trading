@@ -77,23 +77,23 @@ for t in tb.TOOLS:
 
 # ── 2. guarded operations refuse, and refuse BEFORE the network ──────────────
 GUARDED = [
-    ("request_stop", "stop mpc_sos_fade_demo"),
-    ("promote", "promote mpc_sos_fade_demo"),
+    ("request_stop", "stop sos_fade_demo"),
+    ("promote", "promote sos_fade_demo"),
 ]
 BAD_CONFIRMS = [
     None,  # omitted entirely
     "",  # empty
     "yes",  # something else
     "stop",  # the verb alone
-    "stop mpc_bleg_demo",  # right verb, WRONG BOT
-    "STOP MPC_SOS_FADE_DEMO",  # case must match
+    "stop b_leg_demo",  # right verb, WRONG BOT
+    "STOP SOS_FADE_DEMO",  # case must match
 ]
 for name, good in GUARDED:
     for bad in BAD_CONFIRMS:
         wire = Tripwire()
         real, tb._api = tb._api, wire
         try:
-            args = {"bot": "mpc_sos_fade_demo"}
+            args = {"bot": "sos_fade_demo"}
             if bad is not None:
                 args["confirm"] = bad
             out = tb.call_tool(name, args)
@@ -111,7 +111,7 @@ for name, good in GUARDED:
     wire = Tripwire()
     real, tb._api = tb._api, wire
     try:
-        tb.call_tool(name, {"bot": "mpc_sos_fade_demo", "confirm": good})
+        tb.call_tool(name, {"bot": "sos_fade_demo", "confirm": good})
     finally:
         tb._api = real
     check(f"{name} proceeds on the exact phrase", len(wire.calls) == 1, f"calls={wire.calls}")
@@ -130,9 +130,9 @@ def dead(path, method="GET", timeout=None, body=None):
 LIES = ("running", "alive", "connected", "ok", "healthy", "status")
 for name, args in [
     ("box_status", {}),
-    ("bot_version", {"bot": "mpc_sos_fade_demo"}),
-    ("bot_log", {"bot": "mpc_sos_fade_demo"}),
-    ("promote_preview", {"bot": "mpc_sos_fade_demo"}),
+    ("bot_version", {"bot": "sos_fade_demo"}),
+    ("bot_log", {"bot": "sos_fade_demo"}),
+    ("promote_preview", {"bot": "sos_fade_demo"}),
 ]:
     real, tb._api = tb._api, dead
     try:
@@ -148,7 +148,7 @@ for name, args in [
     )
 
 # ── 4. a missing ledger day is not a quiet day ───────────────────────────────
-out = tb.call_tool("bot_decisions", {"bot": "mpc_sos_fade_demo", "date": "1999-01-01"})
+out = tb.call_tool("bot_decisions", {"bot": "sos_fade_demo", "date": "1999-01-01"})
 check("a missing ledger day reports cannot-ask", out.get("asked") is False, str(out)[:140])
 check("a missing ledger day reports no records count", "records" not in out)
 

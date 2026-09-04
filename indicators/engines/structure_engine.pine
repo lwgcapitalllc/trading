@@ -1,22 +1,22 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
 //@version=6
-// Structure Engine — market-structure-only extraction from indicators/engines/mpc_assistant.pine.
+// Structure Engine — market-structure-only extraction from indicators/engines/mpc_jarvis.pine.
 // Everything non-structure (Order Blocks, Sessions, Kill Zones/NY Range, VWAP, Liquidity
 // Levels, Fibonacci, Sniper Fib, SVP, FVG, RSI divergence) has been removed. The detection
-// logic AND the drawing/visibility layer are byte-for-byte identical to mpc_assistant.pine's
+// logic AND the drawing/visibility layer are byte-for-byte identical to mpc_jarvis.pine's
 // structure block, so this stays validated against the same chart reference and every label
-// and line overlaps the MPC assistant exactly.
+// and line overlaps the MPC JARVIS exactly.
 //
-// Input selection mirrors mpc_assistant.pine's "Market Structure" group one-for-one:
+// Input selection mirrors mpc_jarvis.pine's "Market Structure" group one-for-one:
 // Structure Label Size, Show External Structure, Show Internal Structure, Show Historic
 // Internal Structure, Show Swing Point Labels — so external/internal/historic-internal and
-// the swing-point labels toggle exactly the same way here as they do on the MPC assistant.
+// the swing-point labels toggle exactly the same way here as they do on the MPC JARVIS.
 //
 // NOTE — this intentionally uses ta.pivothigh/ta.pivotlow to seed swing candidates, which
 // breaks the "no pivot lookback" rule in indicators/docs/STRUCTURE_OS_BUILD.md /
 // indicators/engines/smc_engine_v2.pine. That from-scratch rebuild is a separate, still-in-progress
 // effort. This file is the pragmatic version: pivot-seeded candidates + pullback-confirmed
-// break-gated re-locking, which is what got mpc_assistant.pine to ~99.99% parity with the
+// break-gated re-locking, which is what got mpc_jarvis.pine to ~99.99% parity with the
 // original indicator. Do not merge this file's approach into smc_engine_v2.pine.
 //
 // The toggles are pure drawing/visibility — the state machine is untouched, so the
@@ -34,7 +34,7 @@ color iBullColor  = bullColor
 color iBearColor  = bearColor
 
 //============================================================
-//  MARKET STRUCTURE — input selection (mirrors mpc_assistant.pine's GRP_STRUCT)
+//  MARKET STRUCTURE — input selection (mirrors mpc_jarvis.pine's GRP_STRUCT)
 //============================================================
 var GRP_STRUCT = "Market Structure"
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
@@ -405,7 +405,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
             // the swing just confirmed. So it can resurrect a bar that pierced the level, closed back
             // inside and was correctly refused, and install it as the new active swing: EARLIER than
             // and LOWER than the swing just labelled. Full mechanism + the measurements:
-            // `indicators/engines/mpc_assistant.pine`, same block.
+            // `indicators/engines/mpc_jarvis.pine`, same block.
             if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
                 lowest_val := st.last_conf_low
                 lowest_loc := st.last_conf_low_loc

@@ -186,8 +186,8 @@ def main(argv=None) -> int:
 
     from backtest.data.history import floor_for
     from backtest.data.source import BarSource
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
-    from strategies.python.mpc_sos_fade.execution import _MISS_LABEL
+    from strategies.python.sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade.execution import _MISS_LABEL
 
     if _MISS_LABEL.get(_NO_FVG_CODE) != "No FVG in zone":
         raise SystemExit(

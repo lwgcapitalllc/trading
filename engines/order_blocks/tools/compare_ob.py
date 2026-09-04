@@ -5,7 +5,7 @@ compare_ob.py — parity check: TradingView Pine export vs Python order-block en
 Purpose
 -------
 Prove the Python engine in order_blocks/ produces the same order blocks as the source-of-truth OB
-blocks in mpc_assistant.pine, on real candles. It feeds OrderBlockEngine the same candles the Pine
+blocks in mpc_jarvis.pine, on real candles. It feeds OrderBlockEngine the same candles the Pine
 build saw and diffs its output against the px_ob_* columns the Pine build plotted.
 
 REBUILT 2026-07-31 alongside the engine. It used to run market_structure -> StructureSnapshot ->
@@ -293,7 +293,7 @@ def main(argv=None):
     print("-" * 72)
     print("Tip: mismatches confined to early bars = warmup (ATR still seeding, or a pre-window block "
           "still lingering in Pine's arrays). Persistent mismatches after a clean run of bars = a "
-          "real logic gap to fix against mpc_assistant.pine. If warmup NEVER clears, re-export a "
+          "real logic gap to fix against mpc_jarvis.pine. If warmup NEVER clears, re-export a "
           "WIDER window rather than raising --warmup — a block price never returns to cannot "
           "mitigate, so a ghost from before the window can sit in Pine's array for ever.")
     return 1

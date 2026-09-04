@@ -4,7 +4,7 @@
 
 **Date:** 2026-08-07
 **Tool:** `backtest/tools/intraday_edge.py` (stdlib only, runs off `backtest/cache/`)
-**Question:** Aaron has one profitable 15m swing strategy (`mpc_sos_fade`) and wants a SECOND,
+**Question:** Aaron has one profitable 15m swing strategy (`sos_fade`) and wants a SECOND,
 intraday, easy-to-run strategy that adds trade frequency rather than queueing behind the first.
 
 Run it:

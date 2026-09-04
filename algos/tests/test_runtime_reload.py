@@ -85,8 +85,8 @@ def runner(tmp_path, monkeypatch):
         "symbol": "XAUUSD.s",
         "magic": 7,
         "timeframe": "M15",
-        "strategy_package": "mpc_sos_fade",
-        "strategy_class": "MpcSosFadeStrategy",
+        "strategy_package": "sos_fade",
+        "strategy_class": "SosFadeStrategy",
         "strategy_source_hash": "abc123",
         "strategy_params": {"exec_risk_pct": 10.0, "aplus_window": 4320},
     }
@@ -267,7 +267,7 @@ def test_the_real_execution_object_exposes_its_config():
     This is the one test that touches the actual strategy class, and it lives here rather
     than with the strategy because `algos/live/` is what depends on the attribute.
     """
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     ex = LAB_STRATEGY["strategy"](LAB_STRATEGY["config"](), initial_capital=1000).execution
     assert hasattr(ex, "cfg"), "Execution.cfg is gone — the ledger cannot record risk_pct"
@@ -283,7 +283,7 @@ def test_the_strategy_config_is_frozen_which_is_why_a_reload_rebuilds():
     """
     import dataclasses
 
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     cfg = LAB_STRATEGY["config"]()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -293,7 +293,7 @@ def test_the_strategy_config_is_frozen_which_is_why_a_reload_rebuilds():
 def test_one_config_object_is_shared_by_every_component():
     """The other half of the reason. Four holders, one object — a per-holder edit would let
     them disagree about what the strategy is set to."""
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     s = LAB_STRATEGY["strategy"](LAB_STRATEGY["config"](), initial_capital=1000)
     assert s.execution.cfg is s.config
@@ -322,8 +322,8 @@ def test_a_half_written_file_is_ignored_and_retried(runner):
                             "symbol": "XAUUSD.s",
                             "magic": 7,
                             "timeframe": "M15",
-                            "strategy_package": "mpc_sos_fade",
-                            "strategy_class": "MpcSosFadeStrategy",
+                            "strategy_package": "sos_fade",
+                            "strategy_class": "SosFadeStrategy",
                             "strategy_source_hash": "abc123",
                             "strategy_params": {"exec_risk_pct": 5.0, "aplus_window": 4320},
                         }

@@ -5,7 +5,7 @@ This module holds one small state machine per fib type. Each is fed one closed b
 plus a StructureSnapshot (the structure engine's public output for that bar) and returns the
 fib's events for that bar. The geometry itself is shared — see geometry.py.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine. As with market_structure/, do not
+Ported line-by-line from indicators/engines/mpc_jarvis.pine. As with market_structure/, do not
 "clean up" or reorder the ported logic: the gating (0.618 must be reached before targets arm,
 targets only from the NEXT bar, retrace levels only while price is at/through 0.618) is exact and
 any change breaks parity with the chart.
@@ -44,7 +44,7 @@ _STRUCT_RETRACE: Tuple[Tuple[str, float], ...] = (
     ("1.0", 1.000),
 )
 # Target group (checked only from the bar AFTER 0.618 was first reached, on the profit side).
-# TP4 (-0.270) and TP5 (-0.618) were dropped in the 2026-07-08 mpc_assistant.pine re-paste — the
+# TP4 (-0.270) and TP5 (-0.618) were dropped in the 2026-07-08 mpc_jarvis.pine re-paste — the
 # Structure fib now stops at TP3 (0.0, full retrace). The 2026-07-09 re-paste then dropped the
 # TP3-hit hide as well: the leg is spent only on a real BOS/SOS (a new origin), no longer on the tap.
 _STRUCT_TARGET: Tuple[Tuple[str, float], ...] = (
@@ -64,7 +64,7 @@ class StructureFib:
 
     Anchors on the active swing high/low, and follows the live pullback extreme while a pullback
     is in progress — so it extends with the move exactly like the chart, then locks. Emits a
-    first-touch event for each level, gated on 0.618. See mpc_assistant.pine GRP_FIBO.
+    first-touch event for each level, gated on 0.618. See mpc_jarvis.pine GRP_FIBO.
     """
 
     def __init__(self) -> None:
@@ -250,7 +250,7 @@ class SniperFib:
     On each BOS, drops a fresh 0.382-0.5 zone across the impulse leg (`bull/bear_bos_high/low`)
     and arms it. When price later trades into that zone for the first time, it "confirms". A new
     BOS replaces the zone and re-arms it. Only one zone lives at a time. Line-by-line port of
-    mpc_assistant.pine GRP_SNIPER (compute + zone-touch), drawing removed.
+    mpc_jarvis.pine GRP_SNIPER (compute + zone-touch), drawing removed.
     """
 
     def __init__(self) -> None:
@@ -336,7 +336,7 @@ class MacroFib:
     a bullish SOS that follows a bearish SOS; its top (HH, the 0.0 level) extends on every new
     confirmed higher-high; the whole cycle resets when price closes back below the locked bottom,
     and hides (but stays locked) when price closes above the top. Level touches are gated on 0.618
-    exactly like the Structure fib. Line-by-line port of mpc_assistant.pine GRP_MACRO, drawing
+    exactly like the Structure fib. Line-by-line port of mpc_jarvis.pine GRP_MACRO, drawing
     removed. Pine restricts it to <=5m timeframes — that gate is the CALLER's job (feed this only
     <=5m bars), mirroring how the bot selects its data.
 
@@ -415,7 +415,7 @@ class MacroFib:
 
         # ── 4. BOTTOM LOCKS on a bullish SOS (Pine 2561) ──
         # Bottom anchor is ALWAYS the running lowest-low since the last bearish SOS. The re-pasted
-        # mpc_assistant.pine dropped the older "prefer last_conf_low if it came after the SOS"
+        # mpc_jarvis.pine dropped the older "prefer last_conf_low if it came after the SOS"
         # branch — the true cycle low is the streamed extreme, not the structure engine's scan.
         bottom_anchor = self._ll_since
         bottom_anchor_bar = self._ll_since_bar
@@ -549,7 +549,7 @@ class InternalFib:
     rides down with new lows. Its 8 levels register first touches on the same 0.618 gate as the
     other fibs, and the touch checks are skipped on any bar the moving anchor itself changed (a live
     wick, not a confirmed close — Pine `iFibExtChanged`). ANY external BOS/SOS clears the whole fib,
-    which then waits for the next iBOS/iSOS. Line-by-line port of mpc_assistant.pine's Internal Fib
+    which then waits for the next iBOS/iSOS. Line-by-line port of mpc_jarvis.pine's Internal Fib
     block (seed at the six internal-break sites 1400-1609 + clear/extend/touch 2704-2743), drawing
     removed. (`reset_active` is a kept-but-always-False mirror — the 2026-07-09 re-paste dropped the
     TP3-hit setter, so the leg is now spent only on the external-break clear.)

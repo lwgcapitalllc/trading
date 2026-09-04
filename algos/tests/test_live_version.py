@@ -26,7 +26,7 @@ def test_hash_matches_the_labs_scanner():
     sys.path.insert(0, str(_REPO / "command-center" / "backend"))
     from services.strategy_scanner import _python_source_hash
 
-    pkg = _REPO / "strategies" / "python" / "mpc_sos_fade"
+    pkg = _REPO / "strategies" / "python" / "sos_fade"
     assert live_version.python_source_hash(pkg) == _python_source_hash(pkg)
 
 

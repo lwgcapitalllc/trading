@@ -285,7 +285,7 @@ class BotReview(BaseModel):
 
 
 class BotStatus(BaseModel):
-    # The bot's STABLE identifier — `mpc_sos_fade_demo`, the same string that appears on the
+    # The bot's STABLE identifier — `sos_fade_demo`, the same string that appears on the
     # VPS process commandline (`runner.py --bot <key>`). Use this for URLs, selection state
     # and API paths; `name` is a label chosen for a human, so it is the field that will
     # eventually be changed, and anything keyed on it breaks when it is.
@@ -1438,8 +1438,8 @@ class StackRequest(BaseModel):
     # sends nothing else must keep getting exactly the stack it used to get.
     bar_value: int = 15
     # 🔴 THE FRAME EACH LEG RUNS ON, keyed by strategy id — minutes, missing means `bar_value`.
-    # A strategy belongs to a frame the way it belongs to a setup: `mpc_extreme_leg` is measured
-    # on 5m and `mpc_sos_fade` on 15m, and until 2026-09-03 a stack had ONE frame for every leg,
+    # A strategy belongs to a frame the way it belongs to a setup: `extreme_leg` is measured
+    # on 5m and `sos_fade` on 15m, and until 2026-09-03 a stack had ONE frame for every leg,
     # so putting those two on one account silently replayed one of them somewhere it has never
     # been measured — and the table said portfolio.
     # ⚠ The window is still SHARED and is checked per leg, because a finer frame has a shallower

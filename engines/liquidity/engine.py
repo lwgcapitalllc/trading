@@ -4,7 +4,7 @@ liquidity/engine.py — the liquidity-levels state machine.
 One stateful streaming engine, fed one closed bar at a time (index + UTC timestamp + high/low/close),
 returning that bar's liquidity EVENTS: which levels were created, which price took (swept/broke),
 which were evicted, and the full active set. Ported from the liquidity blocks of
-indicators/engines/mpc_assistant.pine:
+indicators/engines/mpc_jarvis.pine:
 
   - DAILY / WEEKLY LEVELS  ............. mpc DAILY/WEEKLY blocks  (prev period high/low + mitigation)
   - PREVIOUS WEEKLY CLOSE (PWC)  ........ mpc PWC block  (prev week's close, a reference line)
@@ -129,7 +129,7 @@ class LiquidityEngine:
     drives its own sessions engine for the Asia/London/NY session-H/L levels, and reconstructs the
     day/week/H4 levels from the bar stream (non-repainting — see the module docstring).
 
-    Defaults mirror the mpc_assistant.pine liquidity inputs: previous day/week H/L, PWC, the
+    Defaults mirror the mpc_jarvis.pine liquidity inputs: previous day/week H/L, PWC, the
     H4 sweep, and all three session H/Ls enabled; mitigated levels are dropped on a new NY day
     (`hide_mitigated_on_new_day`, Pine i_currentDayOnly = true).
     """

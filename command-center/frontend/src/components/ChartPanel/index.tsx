@@ -1944,7 +1944,7 @@ export default function ChartPanel({
     return Array.from(seen.values())
   }, [spec.trades])
   // A leg's display name for the marker hover cards. It falls back to the id rather than to nothing:
-  // a raw `mpc_bleg` is worse to read than the name and is still an ANSWER, where a blank line would
+  // a raw `b_leg` is worse to read than the name and is still an ANSWER, where a blank line would
   // read as a marker belonging to no strategy.
   const layerName = useCallback(
     (id: string) => tradeLayers.find((l) => l.id === id)?.name ?? id,

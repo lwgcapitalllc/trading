@@ -98,7 +98,7 @@ def _replay(params: dict, df, warmup: int):
     import dataclasses
 
     from backtest.replay import build_strategy
-    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+    from strategies.python.sos_fade import LAB_STRATEGY
 
     ConfigCls = LAB_STRATEGY["config"]
     known = {f.name for f in dataclasses.fields(ConfigCls)}

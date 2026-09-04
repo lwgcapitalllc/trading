@@ -356,8 +356,8 @@ export const labelOf = (p: ParamSchemaEntry) => p.label || p.display_name || p.n
  *
  * ⚠ The short name is authored in the strategy's own metadata, never derived — stripping
  * parentheses and units mechanically produces a name nobody chose. ⚠ Optional everywhere: a
- * strategy that writes none falls straight back to `labelOf`, which is what `mpc_bleg` and
- * `mpc_bos` do today. ⚠ Units belong to the VALUE, not the name — the value already renders
+ * strategy that writes none falls straight back to `labelOf`, which is what `b_leg` and
+ * `bos` do today. ⚠ Units belong to the VALUE, not the name — the value already renders
  * `4320 minutes`, so repeating it in the label says it twice.
  */
 export const shortLabelOf = (p: ParamSchemaEntry) => p.short || labelOf(p)
@@ -451,7 +451,7 @@ export function ParamEditor(props: Props) {
   // 🔴 A ROW WHOSE `disable_if` HOLDS IS HIDDEN, NOT GREYED (Aaron, 2026-08-27: *"hide them, like
   // everything else"*). It used to be drawn greyed with its reason beside it, on the argument that
   // a setting which vanishes reads as one that does not exist — see `param-gates.spec.ts` for the
-  // case that argument won in August. It lost to the form it produced: on `mpc_sos_fade` SEVENTEEN
+  // case that argument won in August. It lost to the form it produced: on `sos_fade` SEVENTEEN
   // rows are greyed under the shipped defaults, so a reader hunting the one setting that matters
   // reads past a screen of controls before learning that none of them apply. The old argument
   // protects a reader who is looking for a specific row and needs to be told it is dead; the count

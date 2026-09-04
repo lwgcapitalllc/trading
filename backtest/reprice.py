@@ -19,7 +19,7 @@ not contain, so that layer is refused here and stays a re-run. Returning a numbe
 the same defect this repo keeps meeting from the other side: a figure on a page that no code
 actually produced.
 
-**Proven, not argued.** `tests/test_reprice.py` replays `mpc_sos_fade` over real cached bars twice
+**Proven, not argued.** `tests/test_reprice.py` replays `sos_fade` over real cached bars twice
 — free, and charged — then rebuilds the second from the first's stored curve and asserts equality
 to the cent. The spread case reproduces 130.27R / $16,266,933.57 exactly.
 """
@@ -163,7 +163,7 @@ def rollovers_between(entry_ms: int, exit_ms: int, close_hour_ny: int) -> list[d
     just after the boundary is not charged for the night it did not hold.
 
     ⚠ **This reproduces what the replay EFFECTIVELY charges, which is not what its code literally
-    says.** `mpc_sos_fade._charge_swap` fires on the first BAR at or after a rollover and latches
+    says.** `sos_fade._charge_swap` fires on the first BAR at or after a rollover and latches
     once, so any rollover inside a stretch with no bars is silently SUPERSEDED by the last one in
     that stretch. Its own `_last_rollover_before` skips Saturday only; Friday is skipped in practice
     because no bar lands between Friday's close and Sunday's. Mirroring the source line-for-line

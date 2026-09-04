@@ -49,14 +49,14 @@ _INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 
 # Instance directory for each bot key
 BOT_INSTANCES = {
-    "mpc_sos_fade_demo": _INSTANCES / "mpc_sos_fade_demo",
-    "mpc_bleg_demo": _INSTANCES / "mpc_bleg_demo",
+    "sos_fade_demo": _INSTANCES / "sos_fade_demo",
+    "b_leg_demo": _INSTANCES / "b_leg_demo",
 }
 
 # Display names
 BOT_NAMES = {
-    "mpc_sos_fade_demo": "MPC SOS Fade",
-    "mpc_bleg_demo": "MPC B-LEG",
+    "sos_fade_demo": "SOS Fade",
+    "b_leg_demo": "B-LEG",
 }
 
 
@@ -257,7 +257,7 @@ def ensure_starting_balance(bot_key: str, balance: float, account=None) -> None:
 
     🔴 **The anchor belongs to the ACCOUNT, not to the bot, and until 2026-08-12 it was stored as
     though it belonged to the bot.** `total_pnl_pct` is the only thing that reads it, and it is
-    rendered on the Bots page and answered by Telegram's `/balance`. When `mpc_sos_fade_demo` was
+    rendered on the Bots page and answered by Telegram's `/balance`. When `sos_fade_demo` was
     moved from the PU Prime Standard demo (anchored at $2,000, grown to ~$10,000) onto the ECN demo
     (opening balance $10,000), the old anchor stayed put — so the new account would have reported
     **+399% on its first poll, for ever**, off a starting balance belonging to an account this bot

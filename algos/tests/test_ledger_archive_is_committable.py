@@ -33,9 +33,9 @@ import ledger_sync  # noqa: E402
 
 # The three per-day artefacts `ledger_sync.py` fetches, under the archive root it writes to.
 ARCHIVED = [
-    "algos/ledger_archive/mpc_sos_fade_demo/ledger/decisions-2026-08-05.jsonl",
-    "algos/ledger_archive/mpc_sos_fade_demo/ledger/health-2026-08-05.jsonl",
-    "algos/ledger_archive/mpc_sos_fade_demo/mpc_sos_fade_demo-2026-08-05.log",
+    "algos/ledger_archive/sos_fade_demo/ledger/decisions-2026-08-05.jsonl",
+    "algos/ledger_archive/sos_fade_demo/ledger/health-2026-08-05.jsonl",
+    "algos/ledger_archive/sos_fade_demo/sos_fade_demo-2026-08-05.log",
 ]
 
 

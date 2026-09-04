@@ -44,9 +44,9 @@ under it the recovery cannot touch A+ at all.
 **A recovery leg is a TICK BOX ON ITS PARENT, never an item in the strategy list.**
 
 ```
-  [x] MPC SOS Fade            risk 10%
+  [x] SOS Fade            risk 10%
         └ [x] Loss recovery      size 0.25x
-  [ ] MPC B-Leg
+  [ ] B-LEG
 ```
 
 The alternative — listing it beside the real strategies with a "recovers:" dropdown — was

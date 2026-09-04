@@ -443,7 +443,7 @@ def tool_promote(args):
 
 _BOT_ARG = {
     "type": "string",
-    "description": "The bot's key, e.g. mpc_sos_fade_demo. Never its display name.",
+    "description": "The bot's key, e.g. sos_fade_demo. Never its display name.",
 }
 
 TOOLS = [

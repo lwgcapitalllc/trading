@@ -14,7 +14,7 @@ The shape, and the reasoning that produced it, live in that file's docstring. Th
 * the LABEL is the whole message in two words — it is what a lock screen shows;
 * a message ends with the consequence, and "nothing to do" counts as one;
 * no timestamp: Telegram already prints the send time in the reader's own local clock;
-* plain text, never Markdown — a lone underscore in `mpc_sos_fade` makes Telegram reject the
+* plain text, never Markdown — a lone underscore in `sos_fade` makes Telegram reject the
   whole message.
 """
 

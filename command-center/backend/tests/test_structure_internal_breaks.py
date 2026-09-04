@@ -7,7 +7,7 @@ is not: the break is `i_last_hl` while the seed's bottom is `i_tracked_ext`, a d
 different bar.
 
 ⚠ **The reported symptom was the LINE, not the price.** Aaron, 2026-08-08, off the chart: *"the
-Command center internal SOS is not showing the horizontal lines like the mpc_assistant"*. A wrong
+Command center internal SOS is not showing the horizontal lines like the mpc_jarvis"*. A wrong
 anchor bar can land on the break bar itself, and a zero-width `hline` draws NOTHING — so the `iSOS`
 tag rendered with no line beneath it while the price it named was also wrong. On his own window one
 iSOS spanned 0 bars and another spanned 1.

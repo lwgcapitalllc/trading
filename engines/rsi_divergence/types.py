@@ -5,7 +5,7 @@ No behavior lives here. Two kinds of container:
 
   RsiDivergence — one confirmed regular divergence at the extremes: two consecutive RSI pivots
     (of the same side) where price and RSI disagree. Mirrors the anchor pair the Pine draws a
-    dotted line between (`divPrev*` → the newly confirmed pivot) in mpc_assistant.pine's RSI
+    dotted line between (`divPrev*` → the newly confirmed pivot) in mpc_jarvis.pine's RSI
     DIVERGENCE block; the drawing-only `line`/`label` handles are dropped. A **bullish** divergence
     is a lower price low with a higher RSI low, the lower of the two RSI lows coming from oversold;
     a **bearish** one mirrors it from overbought.

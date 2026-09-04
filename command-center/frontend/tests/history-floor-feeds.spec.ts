@@ -44,8 +44,8 @@ function limitFor(minutes: number) {
 function failedRun(params: Record<string, unknown>) {
   return {
     run_id: RUN_ID,
-    strategy_id: 'mpc_sos_fade',
-    strategy_name: 'MPC SOS Fade',
+    strategy_id: 'sos_fade',
+    strategy_name: 'SOS Fade',
     instrument: 'XAUUSD',
     status: 'failed_error',
     runner: 'python',

@@ -116,7 +116,7 @@ def resolve_keys(keys: Optional[Iterable[str]]) -> Tuple[str, ...]:
 # ──────────────────────────────────────────────────────────────────────────────────────
 # 🔴 THE ENGINE'S OWN DEFAULTS STAY AT THE PINE'S DEFAULTS (trend=5, doji_size=0.05) AND
 # MUST NOT BE MOVED TO THESE. That is this repo's standing shape: an engine MIRRORS its
-# source Pine, and a CONSUMER pins what it trades — `mpc_sos_fade` pins four FVG engine
+# source Pine, and a CONSUMER pins what it trades — `sos_fade` pins four FVG engine
 # settings explicitly, and the one it forgot to pin was silently inheriting a shared
 # default by coincidence until somebody changed it. Moving the defaults here would make
 # this engine stop describing `candle_sticks.pine`, and the next reader comparing the two

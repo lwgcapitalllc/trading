@@ -5,7 +5,7 @@ Turns the bar stream into order-block LEVEL EVENTS — the base candle a turn le
 displaced away from it, and the bar it is later consumed on. Colours and boxes are out of scope;
 this is the trading-signal layer, not the drawing layer.
 
-Ported line-by-line from indicators/engines/mpc_assistant.pine's OB blocks.
+Ported line-by-line from indicators/engines/mpc_jarvis.pine's OB blocks.
 
 STANDALONE since the 2026-07-31 re-port. It used to consume market_structure/ via a
 StructureSnapshot, because every block was born on a BOS/SOS/iBOS/iSOS. The Pine commented out all

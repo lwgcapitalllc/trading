@@ -11,7 +11,7 @@ It drives the REAL pipeline — the strategy's `live_setups()` contract, the tra
 replaced by a collector. So it counts the messages that would be SENT, not the transitions that
 happen underneath them, and those two numbers are very different:
 
-🔴 **MEASURED 2026-08-13 on `mpc_sos_fade`, 155,807 M15 bars (2020-01-01 → 2026-08-06): the
+🔴 **MEASURED 2026-08-13 on `sos_fade`, 155,807 M15 bars (2020-01-01 → 2026-08-06): the
 resting-limit alert fires 665 times on raw `None -> _Pending` transitions and 332 times per
 SETUP.** A limit is rebuilt every bar and cleared when not armed, so one setup flickers in and out
 of `RESTING` repeatedly. `docs/LIVE_SETUP_ALERTS.md` had INFERRED ~3/month for that message and
@@ -26,7 +26,7 @@ is its own question.
 the live runner discards them for the same reason (`runner.warm`).
 
 Usage:
-    python backtest/tools/alert_rate.py --strategy mpc_sos_fade --start 2020-01-01
+    python backtest/tools/alert_rate.py --strategy sos_fade --start 2020-01-01
     python backtest/tools/alert_rate.py --show 5        # ...and print sample threads
 """
 
@@ -47,16 +47,16 @@ for _p in (_ROOT, _ROOT / "algos" / "live", _ROOT / "algos" / "shared"):
 # of those returns an honest REFUSAL naming why, which is more useful than argparse rejecting the
 # name as if the strategy did not exist.
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
-    "mpc_bos": "strategies.python.mpc_bos",
-    "mpc_realign": "strategies.python.mpc_realign",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
+    "bos": "strategies.python.bos",
+    "realign": "strategies.python.realign",
 }
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Signals-channel message volume, by real replay.")
-    ap.add_argument("--strategy", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--strategy", default="sos_fade", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15")
     ap.add_argument("--start", default="2020-01-01")

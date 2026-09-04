@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Set
 class StructureSnapshot:
     """Everything the three fibs read out of the structure engine on one bar.
 
-    Mirrors the `st.*` fields mpc_assistant.pine's fib blocks reference. All optional fields are
+    Mirrors the `st.*` fields mpc_jarvis.pine's fib blocks reference. All optional fields are
     None when absent. Built from a StructureEngine + its StructureEvents for that bar.
     """
 
@@ -177,7 +177,7 @@ class MacroFibEvents:
     closes back below the locked bottom (which resets the cycle). It emits the same first-touch
     level events as the Structure fib, plus two lifecycle events: `new_cycle` (the cycle locked
     this bar) and `extended` (the top pushed to a new HH this bar). Only runs on <=5m timeframes.
-    See mpc_assistant.pine GRP_MACRO.
+    See mpc_jarvis.pine GRP_MACRO.
     """
 
     active: bool = False                              # levels currently computed (visible + locked + range>0)
@@ -201,7 +201,7 @@ class SniperFibEvents:
     touch machine like the Structure fib — just two events: `created` (a BOS fired, a fresh zone
     replaced any old one) and `confirmed` (price entered the zone for the first time on this
     zone). `zone_active` is the cumulative latch behind `confirmed`; once a zone is entered it
-    cannot re-confirm until the next BOS resets it. See mpc_assistant.pine GRP_SNIPER.
+    cannot re-confirm until the next BOS resets it. See mpc_jarvis.pine GRP_SNIPER.
     """
 
     active: bool = False                 # a zone currently exists (a BOS has fired at least once)
@@ -221,7 +221,7 @@ class InternalFibEvents:
     with the move; its 8 levels (E1-E4, 1.0, TP1-TP3) register first touches on the same 0.618
     gate as the other fibs. Hitting TP3 (0.0) latches `reset_active` (the leg is spent). ANY
     external BOS/SOS clears the whole fib, which then waits for the next iBOS/iSOS. See
-    mpc_assistant.pine's Internal Fib block.
+    mpc_jarvis.pine's Internal Fib block.
     """
 
     active: bool = False                              # anchors valid -> a fib is currently drawn

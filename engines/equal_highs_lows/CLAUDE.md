@@ -14,7 +14,7 @@ no consumer builds its own. **The real-export run caught a genuine pivot bug** (
 semantics" below): `ta.pivothigh`/`pivotlow` allow an EQUAL bar on the LEFT of the centre but require a
 STRICT extreme on the RIGHT, so the LAST bar of an equal-price run is the pivot; the engine had used
 strict-both-sides and silently dropped the frequent raw-price ties on gold. Fixed and re-validated.
-**Pine:** ported line-by-line from `indicators/engines/mpc_assistant.pine`'s "EQUAL HIGHS / LOWS (EQH / EQL)"
+**Pine:** ported line-by-line from `indicators/engines/mpc_jarvis.pine`'s "EQUAL HIGHS / LOWS (EQH / EQL)"
 block (+ the `GRP_EQ` inputs); parity harness is `indicators/engines/eq_export.pine`, diffed against this
 Python by `tools/compare_eq.py`.
 **Last reviewed:** 2026-07-19 (built + unit-tested + Pine-parity-validated, exit 0; pivot-tie bug fixed).
@@ -36,7 +36,7 @@ engines/equal_highs_lows/
 └── exports/                 ← drop folder for the TradingView CSV (git-ignored)
 ```
 
-Pine source of truth: `mpc_assistant.pine`'s `GRP_EQ` inputs + the "EQUAL HIGHS / LOWS" compute block.
+Pine source of truth: `mpc_jarvis.pine`'s `GRP_EQ` inputs + the "EQUAL HIGHS / LOWS" compute block.
 Parity export build: `indicators/engines/eq_export.pine`.
 
 ---
@@ -114,14 +114,14 @@ eq_levels=active_eqh + active_eql, eq_tol=tolerance)`, which skips exempt gaps i
 FVG (the Pine order). `compare_fvg.py` wires both engines from the `cfg_eq_*` columns `fvg_export.pine`
 now carries, and validates the coupling against mpc. Consumers that don't need the exemption pass no EQ
 state (plain FIFO). NOTE: `backtest/replay/EngineStack` does not yet wire EQ→FVG (exemption off there) —
-a follow-up; the mpc_sos_fade strategy parity is unaffected while it stays off.
+a follow-up; the sos_fade strategy parity is unaffected while it stays off.
 
 ---
 
 ## Do / Never do
 
 **Do**
-- Port any change to `mpc_assistant.pine`'s EQ block back here line-by-line. Keep the ATR(50) Wilder
+- Port any change to `mpc_jarvis.pine`'s EQ block back here line-by-line. Keep the ATR(50) Wilder
   tolerance, the strict pivot window, `max`/`min` level price, the compare-then-latch order, the FIFO
   cap and the close-through mitigation exact.
 - When adding a new event or field, update this file's Public API and the tests in the same commit.
@@ -129,7 +129,7 @@ a follow-up; the mpc_sos_fade strategy parity is unaffected while it stays off.
 **Never do**
 - Do not bake in colours, dotted lines, or labels — those are TradingView drawing concerns.
 - Do not build a second EQH/EQL implementation elsewhere. This is the canonical one.
-- Do not let this engine or the EQ block in `mpc_assistant.pine` drift; re-run the parity check after
+- Do not let this engine or the EQ block in `mpc_jarvis.pine` drift; re-run the parity check after
   any change to either.
 - Do not trust this on live money until `compare_eq.py` is exit 0 on a fresh export.
 
@@ -149,7 +149,7 @@ cross-check on a random walk (per-bar equality + positive paths, incl. a nonzero
 window's price ceiling that never mitigate); the wider re-export both cleared those and exposed the real
 pivot-tie bug now fixed (see "Pivot tie semantics" above). The harness:
 
-1. `indicators/engines/eq_export.pine` — the EQ compute block from `mpc_assistant.pine` (drawing removed, the
+1. `indicators/engines/eq_export.pine` — the EQ compute block from `mpc_jarvis.pine` (drawing removed, the
    `eqhPx` / `eqlPx` price arrays kept) + `px_eq*` `plot()` columns: `px_eq_tol`, `px_eq_ph` /
    `px_eq_pl` (confirmed pivots), `px_eqh_new` / `px_eql_new` (this-bar formation price), `px_eqh_cnt`
    / `px_eql_cnt` (active counts) and `px_eqh_0..5` / `px_eql_0..5` (active-level prices, oldest→
@@ -165,7 +165,7 @@ pivot-tie bug now fixed (see "Pivot tie semantics" above). The harness:
 
 ## References
 
-- Pine source of truth: `indicators/engines/mpc_assistant.pine` EQ block + `GRP_EQ` inputs.
+- Pine source of truth: `indicators/engines/mpc_jarvis.pine` EQ block + `GRP_EQ` inputs.
 - Parity export build: `indicators/engines/eq_export.pine`.
 - Siblings in shape (also standalone, events-not-visuals off the same indicator):
   `engines/fair_value_gaps/CLAUDE.md`, `engines/rsi_divergence/CLAUDE.md`.

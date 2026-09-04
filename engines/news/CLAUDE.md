@@ -27,7 +27,7 @@ indistinguishable from a broken one. Read-only — no fetch, no write, no policy
 
 ## Why this one is different (read first)
 
-Every other engine in `engines/` is a **line-by-line port of `indicators/engines/mpc_assistant.pine`**,
+Every other engine in `engines/` is a **line-by-line port of `indicators/engines/mpc_jarvis.pine`**,
 validated at **100% Pine parity**. This one has **no Pine source** — the economic calendar comes
 from an external API, not the chart. So:
 
@@ -360,7 +360,7 @@ These stand in for the other engines' Pine parity check (there is no Pine source
 
 - Free feed: `https://nfs.faireconomy.media/ff_calendar_thisweek.json` (current week).
 - History: `https://www.forexfactory.com/calendar?month=<mon>.<year>` (scraped via curl_cffi).
-- Non-Pine sibling precedent (also not a mpc_assistant port): `engines/regime/CLAUDE.md`.
+- Non-Pine sibling precedent (also not a mpc_jarvis port): `engines/regime/CLAUDE.md`.
 - Time-driven sibling (shape/precedent): `engines/sessions/CLAUDE.md`.
 - Roadmap (this is logged as an off-roadmap engine): `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 - Monorepo context: `../../CLAUDE.md`.

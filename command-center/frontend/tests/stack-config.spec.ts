@@ -69,16 +69,16 @@ const PROFILES = [
  */
 const STRATEGIES = [
   {
-    id: 'mpc_sos_fade',
-    name: 'MPC SOS Fade',
+    id: 'sos_fade',
+    name: 'SOS Fade',
     runner: 'python',
     suggested_instrument: 'XAUUSD',
     default_params: { exec_risk_pct: 10, exec_sl_deep: true, exec_tp1_pct: 40 },
     param_schema: [],
   },
   {
-    id: 'mpc_extreme_leg',
-    name: 'MPC Extreme Leg',
+    id: 'extreme_leg',
+    name: 'Extreme Leg',
     runner: 'python',
     suggested_instrument: 'XAUUSD',
     default_params: { exec_risk_pct: 1, exec_tp1_pct: 50 },
@@ -134,7 +134,7 @@ async function mock(page: Page, opts: { profiles?: typeof PROFILES } = {}) {
             failed_strategies: 0,
             status: 'complete',
             created_at: '2026-09-01T10:00:00Z',
-            strategy_names: 'MPC SOS Fade + MPC Extreme Leg',
+            strategy_names: 'SOS Fade + Extreme Leg',
             mode: 'shared',
             risk_cap_pct: 10,
           },
@@ -177,8 +177,8 @@ async function openModal(page: Page) {
 
 /** Fill in the two things the form needs before it will submit, and tick both legs. */
 async function fillForm(page: Page) {
-  await page.getByRole('button', { name: /MPC SOS Fade/ }).click()
-  await page.getByRole('button', { name: /MPC Extreme Leg/ }).click()
+  await page.getByRole('button', { name: /SOS Fade/ }).click()
+  await page.getByRole('button', { name: /Extreme Leg/ }).click()
   const instrument = page.getByPlaceholder('e.g. XAUUSD')
   await expect(instrument).toHaveValue('XAUUSD')
 }
@@ -276,10 +276,10 @@ test.describe('the stack form carries a broker, a cost switch and per-leg risk',
     await page.getByRole('button', { name: /Run stack/ }).click()
     await expect.poll(() => launches.length).toBe(1)
     const byStrategy = launches[0].params_by_strategy as Record<string, Record<string, unknown>>
-    expect(byStrategy.mpc_sos_fade.exec_risk_pct).toBe(5)
+    expect(byStrategy.sos_fade.exec_risk_pct).toBe(5)
     // The two settings the reader never touched must survive the override.
-    expect(byStrategy.mpc_sos_fade.exec_sl_deep).toBe(true)
-    expect(byStrategy.mpc_sos_fade.exec_tp1_pct).toBe(40)
+    expect(byStrategy.sos_fade.exec_sl_deep).toBe(true)
+    expect(byStrategy.sos_fade.exec_tp1_pct).toBe(40)
   })
 
   /**

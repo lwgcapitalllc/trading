@@ -1,8 +1,8 @@
 """`disable_if` / `custom_from` — the second gate a param can be dead behind.
 
-🔴 THE SUBJECT: `exec_sl_deep` on `mpc_sos_fade` cannot change anything when `exec_sl_level` is
+🔴 THE SUBJECT: `exec_sl_deep` on `sos_fade` cannot change anything when `exec_sl_level` is
 already `1.0` — both of its states place the stop in the same spot. The Pine has greyed it out
-since it was written (`strategies/tradingview/mpc_strategy.pine:116`, `active = execSlLevel != "1.0"`)
+since it was written (`strategies/tradingview/sos_fade_strategy.pine:116`, `active = execSlLevel != "1.0"`)
 and the Python UI never had the mechanism, so the lab offered a control that did nothing.
 
 Two things had to be true for that to be more than cosmetic:
@@ -28,7 +28,7 @@ import pytest
 from services import strategy_scanner
 from services.stress_tester import param_is_reachable, perturbable_params
 
-META = cfg.MONOREPO_ROOT / "strategies" / "python" / "mpc_sos_fade" / "mpc_sos_fade.meta.json"
+META = cfg.MONOREPO_ROOT / "strategies" / "python" / "sos_fade" / "sos_fade.meta.json"
 
 
 def _params():
@@ -180,7 +180,7 @@ def test_a_settled_param_is_still_a_REAL_field_with_a_default():
     from services import strategy_import
 
     strategy_import.purge_strategy_modules()
-    pkg = strategy_import.import_strategy_package("mpc_sos_fade", cfg.MONOREPO_ROOT)
+    pkg = strategy_import.import_strategy_package("sos_fade", cfg.MONOREPO_ROOT)
     cfg_cls = pkg.LAB_STRATEGY["config"]
     fields = {f for f in getattr(cfg_cls, "__dataclass_fields__", {})}
     hidden = [p["name"] for p in _params() if p.get("hidden")]
@@ -246,7 +246,7 @@ def test_a_param_with_no_default_in_the_schema_is_never_called_settled():
 
 def test_the_five_proven_settled_params_are_hidden():
     """Each of these was tested against alternatives and lost or tied. The evidence is in
-    `mpc_sos_fade_optimization.md`, named per param in this package's CLAUDE.md — Run 2's
+    `sos_fade_optimization.md`, named per param in this package's CLAUDE.md — Run 2's
     525-combo exit grid, Run 5/6 (`exec_close_opp_sos` at exactly 0 effect, twice), Run 12 (both
     relax routes).
 

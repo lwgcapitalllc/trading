@@ -75,8 +75,8 @@ class LiveConfig:
     timeframe: str = "M15"
 
     # ── which strategy, and which version of it ─────────────────────────────
-    strategy_package: str = "mpc_sos_fade"  # dir under strategies/python/
-    strategy_class: str = "MpcSosFadeStrategy"
+    strategy_package: str = "sos_fade"  # dir under strategies/python/
+    strategy_class: str = "SosFadeStrategy"
     strategy_params: Dict[str, Any] = field(default_factory=dict)
     strategy_source_hash: str = ""  # "" = UNPINNED (allowed, logged loudly)
     promoted_commit: str = ""

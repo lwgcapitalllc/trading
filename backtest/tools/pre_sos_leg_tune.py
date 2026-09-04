@@ -3,7 +3,7 @@
 
 WHY THIS EXISTS AND WHY IT IS NOT THE PARENT STUDY. `pre_sos_leg.py` asked whether the
 setup is tradeable at all, and it answered with no position slot — every setup scored on
-its own, as though the account could hold all of them at once. `mpc_extreme_leg_strategy.pine`
+its own, as though the account could hold all of them at once. `extreme_leg_strategy.pine`
 holds ONE. `pre_sos_leg_queued.py` measured what that costs at the shipped settings
 (228 setups -> 200 taken, +0.296R -> +0.276R). This tool sweeps the settings THEMSELVES
 with the slot on, because the slot changes which setting wins:
@@ -63,7 +63,7 @@ from backtest.tools.pre_sos_leg import (  # noqa: E402
 )
 from backtest.tools.pre_sos_leg_queued import one_slot, shipped  # noqa: E402
 
-# ⚠ THIS MUST TRACK `mpc_extreme_leg_strategy.pine`'s INPUT DEFAULTS, and it is the one thing here
+# ⚠ THIS MUST TRACK `extreme_leg_strategy.pine`'s INPUT DEFAULTS, and it is the one thing here
 # that can go stale silently. Every sweep below moves ONE knob away from these, so if they drift
 # from the strategy the tool is centred on a configuration nobody runs — and every row still prints
 # the word "shipped" while saying it. Changed 2026-08-25 with the file: air under the stop

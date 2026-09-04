@@ -38,7 +38,7 @@ is for, and it is the weaker of the two signals.
 
 Usage:
     python backtest/tools/overlap_audit.py
-    python backtest/tools/overlap_audit.py --a mpc_sos_fade --b mpc_bleg --start 2020-01-01
+    python backtest/tools/overlap_audit.py --a sos_fade --b b_leg --start 2020-01-01
     python backtest/tools/overlap_audit.py --out /tmp/overlap
 """
 
@@ -62,9 +62,9 @@ if str(_ROOT) not in sys.path:
 # Same registry shape as run_report.py — a package that declares LAB_STRATEGY is runnable
 # here for free. Keep the two in step when a third Python strategy lands.
 _STRATEGIES = {
-    "mpc_sos_fade": "strategies.python.mpc_sos_fade",
-    "mpc_bleg": "strategies.python.mpc_bleg",
-    "mpc_extreme_leg": "strategies.python.mpc_extreme_leg",
+    "sos_fade": "strategies.python.sos_fade",
+    "b_leg": "strategies.python.b_leg",
+    "extreme_leg": "strategies.python.extreme_leg",
 }
 
 # Same-direction entries this far apart or less are reported as a CLUSTER — the proxy for
@@ -325,7 +325,7 @@ def _replay(spec, StrategyCls, cfg, df, warmup: int, capital: float, fast_df):
 
     🔴 **A CONFIG THIS TOOL CANNOT REPLAY IS REFUSED, NEVER SILENTLY DOWNGRADED.** Until
     2026-09-02 this always called `run(df)`, so a bot whose config says re-entries are ON — which
-    is `mpc_sos_fade`'s DEFAULT and its LIVE setting — produced a primary-only book that looks
+    is `sos_fade`'s DEFAULT and its LIVE setting — produced a primary-only book that looks
     exactly like a bot whose re-entries never fired. Every clash figure this tool has published
     was measured on a bot nobody runs. Same defect `run_report.py` fixed on 2026-08-16 and the
     same refusal shape `portfolio/legs.py` already uses.
@@ -406,11 +406,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--a", default="mpc_sos_fade", choices=sorted(_STRATEGIES))
-    ap.add_argument("--b", default="mpc_bleg", choices=sorted(_STRATEGIES))
+    ap.add_argument("--a", default="sos_fade", choices=sorted(_STRATEGIES))
+    ap.add_argument("--b", default="b_leg", choices=sorted(_STRATEGIES))
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="15", help="the frame BOTH bots run on, unless overridden")
-    # ⚠ A bot's frame is not a preference — `mpc_extreme_leg` measures its trigger on 5-minute
+    # ⚠ A bot's frame is not a preference — `extreme_leg` measures its trigger on 5-minute
     # bars and builds its 15-minute half in code, so handing it a 15-minute frame makes the
     # trigger and the target the same series and there is no trade left to take.
     ap.add_argument("--tf-a", default=None, help="override the frame for --a")

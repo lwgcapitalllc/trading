@@ -2,9 +2,9 @@
 """intraday_edge.py — which INTRADAY trigger carries edge, before any strategy is built?
 
 The sibling of `trigger_edge.py`, aimed at a different question. That tool screened the two
-CONTINUATION triggers (`mpc_bos`, `mpc_d`) that hold for days. This one screens triggers that
+CONTINUATION triggers (`bos`, `mpc_d`) that hold for days. This one screens triggers that
 fire and RESOLVE inside a session, because the thing being looked for is a strategy that
-stacks with `mpc_sos_fade` rather than queueing behind it.
+stacks with `sos_fade` rather than queueing behind it.
 
 Same three disciplines as `trigger_edge.py`, and they are the whole tool:
 

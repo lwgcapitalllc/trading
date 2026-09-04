@@ -6,7 +6,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 (`strategies/python/`), or the lab that consumes it (`command-center/`).
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
-(local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
+(local optimizer) all landed 2026-07-16. See `docs/SOS_FADE_BUILD_PLAN.md`.
 **Last reviewed:** 2026-08-12 — ⚠ **The dated build narrative that used to sit here moved VERBATIM to `backtest/docs/BACKTEST_BUILD_NOTES.md`. Nothing was deleted.** It was 63 KB in **three** paragraphs, one of them **37,463 bytes on a single line** — unreadable by a person, and loaded in full every time anyone opened this package. The rules it taught are in `## Rules` below and each names its entry in the notes. **The standing lesson is about WHERE a lesson lives: a rule buried in a 38,000-byte paragraph is not findable, so in practice it is not a rule — it is only evidence that somebody once knew.**
 
 ---
@@ -44,7 +44,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   "no" vs "cannot ask" defect this repo has met on the live bot's terminal probe, the optimizer's
   sensitivity score and the news calendar; here the empty object would read as *no blocks* and a
   strategy would take no trades while looking perfectly healthy. ⚠ **There are deliberately NO OB
-  tuning fields on `EngineConfig`** — every OB constant is HARDCODED in `mpc_assistant.pine` rather
+  tuning fields on `EngineConfig`** — every OB constant is HARDCODED in `mpc_jarvis.pine` rather
   than exposed as an `input.*`, so a config field could never be carried by an export column and no
   parity gate could check it (the `BosConfig` rule, 2026-08-07). The engine's defaults ARE the Pine's
   constants. If mpc re-exposes one as an input, add the field then, with its export column.
@@ -58,14 +58,14 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `market_structure` engine always computes internal structure, but a consumer whose Pine has
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields
   (`i_confirmed_*` / `ifib_seed_*`) so the Structure fib does not adopt an internal-swing anchor. The
-  mpc_sos_fade bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
+  sos_fade bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
 - **A2 — Fill & cost model** *(done 2026-07-16; bar-mode costs added 2026-08-01)*.
-  `backtest/fills.py` + the tick seam in `mpc_sos_fade/execution.py`. **Two fill models, and the
+  `backtest/fills.py` + the tick seam in `sos_fade/execution.py`. **Two fill models, and the
   distinction is load-bearing:** `fill_model="bar"` (default) is the strategy's own bar-level
   intrabar-path GUESS, and it matches what the Pine assumes, so it is the ONLY model
   `compare_strategy.py` may diff. **Bar mode charges zero costs BY DEFAULT — which is not the same
   as charging none by construction, and until 2026-08-01 the two were confused.** A caller may
-  now hand `MpcSosFadeStrategy(..., cost_profile=<AccountProfile>)` and have commission and a
+  now hand `SosFadeStrategy(..., cost_profile=<AccountProfile>)` and have commission and a
   per-fill slippage estimate charged into each trade's own P&L; omit it and the path is
   byte-identical to what it has always been, which is what keeps the parity gate valid. Build the
   strategy through `backtest.replay.build_strategy` rather than calling the class directly — it
@@ -85,7 +85,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   real side of the book; running both bills one spread twice, and `_charge_spread` refuses the
   second. ⚠ **They do not agree, and the gap is the finding, not a defect**: a flat charge assumes
   market orders, and a strategy whose entries and exits all name a PRICE feels the spread as fill
-  TIMING instead — measured on `mpc_sos_fade`, the flat charge costs 5.7R and the fill model costs
+  TIMING instead — measured on `sos_fade`, the flat charge costs 5.7R and the fill model costs
   none, because the whole burden lands on shorts (which buy the ask to exit). ⚠ **Spread is a fact
   about the SYMBOL as much as the account** — the values in `PROFILES` are XAUUSD's, measured per
   broker off that broker's own cached ticks (**Vantage 0.22 over 1.49M ticks, PU Prime 0.33 over
@@ -104,7 +104,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   broker watches every tick. **It errs in the safe direction (backtest looks slightly worse than
   reality), it is identical in Pine and Python so parity is unaffected, and tick mode legitimately
   disagrees with it** — that is the improvement, not drift. Canonical write-up:
-  `strategies/python/mpc_sos_fade/CLAUDE.md` → `### Wrong-side stop fills`.
+  `strategies/python/sos_fade/CLAUDE.md` → `### Wrong-side stop fills`.
 - **A3 — Output adapter** *(done 2026-07-16)*. `backtest/output.py`. `build_results(trades, …)` →
   the lab's `{equity_curve, daily_pnl, kpis, engine_trades, blocked_setups}`. Strategy-agnostic: it consumes any
   trade object carrying the reporting fields (`execution.Trade` satisfies it) and owns no strategy
@@ -161,7 +161,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   substitute for either** — that is the bar the setup DIED, a median 17 and up to 717 bars later and
   a median $22 from the setup's own `edge` (measured). A consumer that read `time_ms` as "where the
   setup was" put marks in the wrong part of a chart for a day; see
-  `strategies/python/mpc_sos_fade/CLAUDE.md` → *The RETRACE a miss was waiting on*. **`None` means
+  `strategies/python/sos_fade/CLAUDE.md` → *The RETRACE a miss was waiting on*. **`None` means
   price never reached the zone and stays `None`** — a fallback to `time_ms` is the defect itself, and
   a `0` is the epoch.
   Full path: `command-center/backend/CLAUDE.md` → *Missed setups*.
@@ -239,7 +239,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **That excursion column is the diagnostic, not the P&L** — it is what distinguishes "the stop
   was unlucky" from "the trades are dying before their move".
   ⚠ **A percent ratchet loses to the confirmed-swing trail on both stops**, and flatly across a
-  20x range of steps: at 1% one step is $40 against a $38 median stop (inert — the `mpc_bleg`
+  20x range of steps: at 1% one step is $40 against a $38 median stop (inert — the `b_leg`
   trap), at 0.05% it binds constantly and hands back the runners.
   🔴 **`--search` (2026-08-19) is the stop sweep, and its best row is a trap worth knowing.**
   A stop on the CHoCH BAR's own extreme scores **+24.4R against the shipped +16.2R** on a stop 7x
@@ -277,9 +277,9 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ZERO ENTRIES, and the tool exists to have found that.** Funnel: 847 A-breaks → 16 shake outs →
   **0** real breaks. **The binding constraint is C**, which needs TWO `bull_sos` inside ~32 bars,
   against a measured density of **one SOS per 220 bars** (external 847 / internal 575 over the same
-  frame — the internal stream is RARER, so the obvious fix makes it worse). ⚠ **`docs/MPC_FB_SPEC.md`
+  frame — the internal stream is RARER, so the obvious fix makes it worse). ⚠ **`docs/FB_SPEC.md`
   §4.6 has to be re-specified before any RSO code is written: Aaron's own
-  `indicators/engines/mss_sweeps_mpc.pine` fires on a RECLAIM — price wicks the level and closes
+  `indicators/engines/mss_sweeps.pine` fires on a RECLAIM — price wicks the level and closes
   back — not on a second structure break, and that one substitution is the difference between an
   indicator that signals and this scan's zero.** ⚠ **A trigger that never fires has not been
   measured, it has been mis-specified** — do not read the zero as "RSO has no edge". ⚠ Trigger only:
@@ -339,7 +339,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   broken by a bearish SOS (a false break / structural liquidity grab); on a lower frame the internal
   structure turns counter and back with-trend to realign, and the scan asks how often that happens
   and whether the realignment carries information. Both directions. Feeds
-  `strategies/python/mpc_realign/` and `docs/MPC_REALIGN_SPEC.md`.
+  `strategies/python/realign/` and `docs/REALIGN_SPEC.md`.
   🔴 **ITS SHORT-SIDE RESULT WAS WRONG IN SIGN, AND THAT IS THE STANDING WARNING ON THIS TOOL.** It
   reported the internal-events stream at **+9.6% over control (+2.1σ)** for shorts — its strongest
   row — and a real replay through the exit ladder gives **−13.26R against +20.22R** on the other
@@ -368,13 +368,13 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   drawdown simultaneously** on a free book — it only falls behind once costs are charged. So the
   tool has now been overturned once in SIGN (the short trigger stream) and once in ORDER. **What it
   measures is TRIGGER quality; what a strategy is ranked on is what its exits bank. Do not choose a
-  default from this tool.** Tables: `strategies/python/mpc_realign/CLAUDE.md` → *The pattern rule*.
+  default from this tool.** Tables: `strategies/python/realign/CLAUDE.md` → *The pattern rule*.
   `internal_realign_scan.py --pattern any|opposing|strict --frame 5` · defaults to `strict`, the
   sequence that was DRAWN.
 - **`tools/scratch_audit.py`** + **`tools/swap_audit.py`** (new 2026-08-11) — is a "breakeven" exit
   actually breakeven on a real account, and what does overnight swap cost. Written for Aaron's
   theory that `exec_be_buf_tk` (30 ticks = $0.30) cannot cover a $0.32 spread; full record in
-  `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → **Run 17**.
+  `strategies/python/sos_fade/sos_fade_optimization.md` → **Run 17**.
   ⚠ **A scratch is classified on the PRICE MOVE, never on the money, and that is the whole design.**
   Sorting the cohort by profit would put every negative scratch in the loss bucket and return "all
   scratches are positive" by construction. The cohort has to be defined by what the strategy DID and
@@ -444,15 +444,15 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   strategy's run-to-run spread is **sd 15.06R** (`jitter_audit.py`) — a smaller gap is noise.
 - **`tools/verify_parity.py`** — the one "is everything in sync?" command. Point it at the TradingView
   export CSV(s) you just pulled; it runs every parity check (all nine engine `compare_*.py` + the
-  mpc_sos_fade `compare_strategy.py` + the mpc_bleg `compare_bleg.py`) whose MARKER column is present in the CSV, and prints one
+  sos_fade `compare_strategy.py` + the b_leg `compare_bleg.py`) whose MARKER column is present in the CSV, and prints one
   GREEN/RED/SKIP table. Cold-start warmup is auto-detected by walking a capped ladder (≤25% of the
   file), so a genuine LATE drift can never be skipped away as warmup. It reports drift; it does not fix
-  it (a real logic change is still a hand port, per drift). Run it after any `mpc_assistant.pine` /
-  `mpc_strategy.pine` / `mpc_b_leg_strategy.pine` re-paste + re-export. Stdlib only.
+  it (a real logic change is still a hand port, per drift). Run it after any `mpc_jarvis.pine` /
+  `sos_fade_strategy.pine` / `b_leg_strategy.pine` re-paste + re-export. Stdlib only.
   `verify_parity.py <csv> [csv ...]`, or no args = newest CSV in `backtest/`.
   Each registry row carries a MARKER column and a **VETO** column (added 2026-07-26): a check runs
   when its marker is present and its veto is absent. The veto exists because the two STRATEGY exports
-  overlap — `mpc_b_leg_strategy_export.pine` plots `px_stages` too (the B leg arms off the A+
+  overlap — `b_leg_strategy_export.pine` plots `px_stages` too (the B leg arms off the A+
   sequence), so marker-alone would run the A+ check against a B-LEG export and produce a red that
   means nothing. `bl_bits` exists only in the B-LEG export, so it is the A+ check's veto and the
   B-LEG check's marker. Deliberately NOT solved by re-marking A+ on an A+-only column like
@@ -483,7 +483,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   calls `run_dual`, refuses when there is no `run_dual` or no fill-clock bars, and always PRINTS the
   secondary trade count so *0 secondaries* is a stated answer. ⚠ **`--no-secondary` SETS the flag
   False rather than only picking the fast path** — the config that is reported must be the config
-  that RAN. ⚠ **THIS MOVED DOCUMENTED BASELINES**: every `mpc_sos_fade` figure this tool produced
+  that RAN. ⚠ **THIS MOVED DOCUMENTED BASELINES**: every `sos_fade` figure this tool produced
   at the default config before that date is primary-only, valid as a MATCHED SET (rankings stand)
   but understating absolute totals — **MEASURED 2018-09-14 → 2026-08-14, bar fills, ONE window both sides: 189 trades /
   +164.4R with the secondary against 181 / +138.9R without — the gap being 8 secondary trades
@@ -524,12 +524,12 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
   🔴 **IT REPLAYED A BOT NOBODY RUNS FOR ITS ENTIRE LIFE, AND EVERY FIGURE IT PUBLISHED BEFORE
   2026-09-02 IS A PRIMARY-ONLY NUMBER.** It always called the one-frame `run()`, while
-  `mpc_sos_fade`'s re-entries need two frames — and that switch is ON in the strategy's DEFAULT
+  `sos_fade`'s re-entries need two frames — and that switch is ON in the strategy's DEFAULT
   config *and* in the live bot's own instance config. So the tool built a config saying re-entries
   were on, ran a path that cannot fire one, and printed a clean report. **Nothing failed and nothing
   was empty**: A+ simply arrived with a third of its trades missing, which looks exactly like a bot
-  whose re-entries never triggered. ⚠ **Only A+ was affected** — `mpc_bleg` sets the switch False and
-  `mpc_extreme_leg` has no such field, both checked rather than assumed. ✅ Fixed by loading each
+  whose re-entries never triggered. ⚠ **Only A+ was affected** — `b_leg` sets the switch False and
+  `extreme_leg` has no such field, both checked rather than assumed. ✅ Fixed by loading each
   bot's own fill clock as a THIRD frame and calling `run_dual`; it **refuses** rather than
   downgrading when a bot wants a fill clock it cannot supply, and `--no-secondary` SETS the flag
   False so the config reported is the config that ran. ⚠ **`_choose_replay` is IMPORTED from
@@ -621,7 +621,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   feeds and never match exactly; the tool measures the gap. **Not a per-backtest check.** Run it:
   once as a baseline, whenever the agent's time handling or the broker/terminal changes, at the start
   of each demo campaign then ~monthly, and any time trades look off vs the chart. Needs the MT5 agent
-  + tunnel; the alignment math is unit-tested offline. Full rationale + cadence: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
+  + tunnel; the alignment math is unit-tested offline. Full rationale + cadence: `docs/SOS_FADE_BUILD_PLAN.md`.
 
 - **`tools/trigger_edge.py`** — **does a TRIGGER carry edge, before any strategy is built?** Added
   2026-08-06 to answer "which of the two continuation setups is worth pursuing" when NEITHER has a
@@ -638,7 +638,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   VWAP side** takes it to **+6.8% (+2.8σ, n=404)** with the median stop **38% tighter** (1.80 → 1.11
   ATR); the D strategy's counter-SOS → VWAP-reclaim trigger is **−0.4% (−0.3σ, n=833)**, i.e.
   indistinguishable from random, and goes significantly negative at long targets (−2.8%, −2.1σ at 4R).
-  That is what put VWAP into `mpc_bos_strategy.pine` (F10) rather than leaving it in the D file.
+  That is what put VWAP into `bos_strategy.pine` (F10) rather than leaving it in the D file.
   ⚠ **It measures SKELETONS, not the shipped strategies** — no FVG requirement, no Sniper Zone, no
   session filter, no min-stop guard, no real exit ladder. A result here is a prior for a TRIGGER,
   never a strategy's own number.
@@ -677,7 +677,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 - **`tools/sweep_edge.py`** — **the sweep-and-reclaim is one trigger. Which LEVEL should it sweep?**
   Added 2026-08-14 to settle structure-vs-session-vs-both with a number instead of a chart. Holds
   the trigger fixed and varies only the level across five families — `structure` (the protected
-  iHL/iLH `mss_sweeps_mpc.pine` arms), `session`, `day`, `week`, and `h4` as an internal BASELINE.
+  iHL/iLH `mss_sweeps.pine` arms), `session`, `day`, `week`, and `h4` as an internal BASELINE.
   Stdlib only, runs off `backtest/cache/`. Full record: `docs/SWEEP_LEVEL_STUDY.md`.
   🔴 **ITS FINDING IS ABOUT THE TRIGGER, NOT THE LEVEL, WHICH IS NOT THE QUESTION IT WAS ASKED.**
   `--trigger wick` drops only the close-back requirement, and **every family goes negative — h4 at
@@ -812,7 +812,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **Do not "fix" this tool to match** — that silently re-bases every number already recorded
   against it. A study is allowed to be a study; what it may not be is undocumented. The thing that
   settles the question is the port's parity gate
-  (`strategies/python/mpc_extreme_leg/tools/compare_extreme_leg.py`), not another run of this.
+  (`strategies/python/extreme_leg/tools/compare_extreme_leg.py`), not another run of this.
   🔴 **The SWEEP is the ingredient and it is not close: the identical trigger with no level under
   it is 18.2% and −0.186R.** Session (+14.4%) and daily (+16.7%) are the strong families, h4
   (+5.7%) the weak one that still works, weekly n=8 and unanswerable.
@@ -903,7 +903,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   doc records. That is the evidence the bump was orthogonal to the clock. **Pin a floor when you
   mean a floor, and ask what a version bump actually CHANGED before refusing on it.**
 
-- **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/mpc_bos_strategy.pine`.
+- **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/bos_strategy.pine`.
   It has moved TWICE and a path from before either date is stale: on 2026-08-13 the `.pine` sources
   were split by their DECLARATION into `indicators/strategies/` and `indicators/engines/`, and on
   2026-09-02 the `strategy(` half left `indicators/` altogether for `strategies/tradingview/`.
@@ -916,11 +916,11 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   more from its winners than the Pine does. It is kept because its METHOD is sound and reusable
   (matched drawdown budgets, paired jitter, resolvable-stop screening, matched random controls) and
   because fixing it is cheaper than rewriting it. **Every result must be treated as unverified
-  until `compare_bos.py` is green.** See `docs/MPC_BOS_OPTIMIZATION.md` → Run 8.
+  until `compare_bos.py` is green.** See `docs/BOS_OPTIMIZATION.md` → Run 8.
   ⚠ **Its own docstring warned it was a model rather than the strategy, and that was not enough** —
   a table of numbers reads as a finding whatever caveat sits under it. The check that falsified it
   was ONE Strategy Tester run, available the entire day it went unrun.
-  Added 2026-08-07; it chose that file's current defaults (Run 7 in `docs/MPC_BOS_OPTIMIZATION.md`), and it
+  Added 2026-08-07; it chose that file's current defaults (Run 7 in `docs/BOS_OPTIMIZATION.md`), and it
   exists so that answer is reproducible rather than asserted. Stdlib only, same as `trigger_edge.py`,
   and it reuses that tool's `drop_coarse()` reasoning. Modes: `sensitivity` (one lever at a time),
   `frontier` (the cartesian, ranked at a matched drawdown budget), `settle` (paired jitter
@@ -970,14 +970,14 @@ narrative is in `docs/BACKTEST_BUILD_NOTES.md`.
   one. No meaningful range ⇒ `zone=None`, never collapsed onto `entry`.
 - **REPORTING ONLY, and proven by REPLAY rather than argued.** Adding it to a strategy means
   replaying full history at HEAD and at the working tree and requiring a byte-identical trade
-  list. For `mpc_sos_fade`: 155,807 M15 bars, **159 trades / sum R +142.177389, SHA-256
+  list. For `sos_fade`: 155,807 M15 bars, **159 trades / sum R +142.177389, SHA-256
   `b52816e7…` identical both sides** — the documented baseline to six decimals. **No stored run is
   re-priced and no documented baseline moves.**
 - **`implements_contract` must not CALL the method.** A question about SHAPE may not execute
   strategy code, and a `try/except AttributeError` around a call swallows a genuine error inside a
   real implementation as "not implemented".
 - 🔴 **`reports_setups = False` opts a subclass out, and it exists because INHERITANCE produced the
-  empty-registry failure by itself.** `mpc_bleg` and `mpc_bos` subclass `mpc_sos_fade`'s
+  empty-registry failure by itself.** `b_leg` and `bos` subclass `sos_fade`'s
   `Execution` and both set `_records_misses = False` — the flag gating the one method that
   populates the setup context — so they inherited a `live_setups()` returning `[]` on every bar
   forever. A method-presence check called them supported. **An empty registry answering
@@ -991,7 +991,7 @@ narrative is in `docs/BACKTEST_BUILD_NOTES.md`.
   forgotten line look like a quiet market. 🔴 **Setting it False owes a guarantee that it goes True
   before any fill it would suppress**, or a real trade reaches the trades room unannounced —
   `alert_rate.py` checks exactly that, and it is `tradeable`'s failure mode one field along. For
-  `mpc_sos_fade` the guarantee is geometric, not measured: the threshold is shallower than the 0.5
+  `sos_fade` the guarantee is geometric, not measured: the threshold is shallower than the 0.5
   entry band, so price cannot fill without crossing it. **No baseline moves — 155,807 M15 bars at
   HEAD and on the working tree give an identical 159-trade list, sum R +142.177389.**
 - **`tradeable=False` means the strategy has ALREADY decided no price path reaches a fill**, and
@@ -1056,7 +1056,7 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
 - **`legs.py`** — `StrategyLeg` / `build_leg`: one real `strategies/python/` bot wrapped as a leg
   the simulator can drive (an `EngineStack` plus the strategy, stepped exactly the way
   `optimizer._replay_one` steps it). **Each leg owns its own stack**, which is not an optimisation
-  to remove: the two bots pin different engine inputs (`mpc_bleg` forces `eq_exempt_fvg` off where
+  to remove: the two bots pin different engine inputs (`b_leg` forces `eq_exempt_fvg` off where
   A+ forces it on), so one shared stack would replay at least one of them against a market it never
   saw. It uses `stack_config()`, never `engine_config()` — the second is the static Pine constants
   and a config whose POI source is order blocks needs the OB engine switched on. `exec_secondary`
@@ -1149,11 +1149,11 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
 - **`tools/stack_run.py`** — the CLI. Prints the shared book beside the solo controls, what the
   account CARRIED, and the contention log. ⚠ **It builds each leg from that strategy's CONFIG
   DEFAULTS**, so anything a leg does not declare it does not get: only fields a config actually
-  has are passed (`LAB_STRATEGY` is an open contract — `mpc_extreme_leg` has no fill-model field
+  has are passed (`LAB_STRATEGY` is an open contract — `extreme_leg` has no fill-model field
   at all), which is the same rule `overlap_audit.py` follows.
 
   🔴 **IT GAINED PER-LEG BAR FRAMES ON 2026-09-02, AND THE SIMULATOR HAD SUPPORTED THEM ALL ALONG.**
-  `--legs mpc_sos_fade:15,mpc_extreme_leg:5` runs each leg on its own frame; bare `--legs` still
+  `--legs sos_fade:15,extreme_leg:5` runs each leg on its own frame; bare `--legs` still
   uses `--tf` for all of them. The merged clock was built for this from the start — *"a 5m leg
   simply steps three times inside a 15m leg's bar"* — so the single-frame limit was **the CLI's
   alone**, and it made a mixed stack look impossible when it was one flag away.
@@ -1165,7 +1165,7 @@ compete for. Design + plan: `command-center/docs/PORTFOLIO_STACKING*.md`. Pure, 
   the output would say which. The common window is printed when the floors differ.
 
   🔴 **PER-TRADE RISK IS A BASIS FIELD AND IT WAS PRINTED NOWHERE UNTIL 2026-09-02.** The first
-  mixed stack ran `mpc_sos_fade` at 10% against `mpc_extreme_leg` at 1% — a 10:1 asymmetry that
+  mixed stack ran `sos_fade` at 10% against `extreme_leg` at 1% — a 10:1 asymmetry that
   came from the two config defaults and that nobody chose. **The bigger leg fills the budget on
   its own and the smaller one reads as harmless, which is a fact about the SETTINGS rather than
   about the strategies.** It is a column in the leg table now, and `--risk-pct` forces every leg
@@ -1196,8 +1196,8 @@ python backtest/tools/stack_run.py --start 2020-01-01 --end 2026-08-06 --balance
 
 | leg | shared trades | shared R | solo trades | solo R | solo closing |
 |---|---|---|---|---|---|
-| `mpc_sos_fade` | 159 | +142.18 | 159 | +142.18 | $54,683,172 |
-| `mpc_bleg` | 99 | +17.87 | 99 | +17.87 | $31,064 |
+| `sos_fade` | 159 | +142.18 | 159 | +142.18 | $54,683,172 |
+| `b_leg` | 99 | +17.87 | 99 | +17.87 | $31,064 |
 | **shared account** | **258** | **+160.04** | | | **$204,918,789** |
 
 ✅ **The seam is proven NEUTRAL, which is the whole point of the first run**: every leg posts the
@@ -1210,7 +1210,7 @@ that this drives the real strategies and not a third thing.
 **exactly 10.00%** — the cap — with **2 of 2 legs holding at once**, and the contention log is
 EMPTY. The reason is the reservation model and it is the part worth carrying: **open risk is
 measured to each trade's CURRENT stop, so a stop moved to breakeven releases its room**, and
-`mpc_sos_fade` touches breakeven on 161 of 161 trades at a median of ONE BAR (measured 2026-08-06).
+`sos_fade` touches breakeven on 161 of 161 trades at a median of ONE BAR (measured 2026-08-06).
 So by the time the second leg wants in, the first is reserving nothing. ⚠ **Read that as "the
 allocator would rarely have had anything to arbitrate", never as "a cap is unnecessary"** — it is
 the overlap audit's shared-bars result arriving through the budget (27 when this was written,
@@ -1307,7 +1307,7 @@ simulator, because **the contention log answers "was anything refused" and canno
 the account carry"** — a reservation is recomputed from live stops and leaves no trace once they
 advance, so a book holding two full positions all day can log nothing at all.
 
-The strategy seam lives in the strategy (`mpc_sos_fade/execution.py` takes an injected `account`,
+The strategy seam lives in the strategy (`sos_fade/execution.py` takes an injected `account`,
 default `SoloAccount`; both strategy constructors thread `account` / `leg` through as of
 2026-08-09) — see that package's CLAUDE.md. `compare_strategy.py` staying exit 0 with the
 SoloAccount is the gate that the seam didn't move standalone behaviour.
@@ -1714,8 +1714,8 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   carries the engine-construction knobs, and a consumer replaying a specific Pine must pin every one
   that Pine does not leave at the engine's default — `EngineConfig`'s own defaults cannot be right for
   everyone, because the Pine files disagree with each other. Live example (caught 2026-07-26):
-  `fvg_require_close` defaults **False** here, mirroring `mpc_assistant.pine` where it is an input and
-  is off; but `mpc_strategy.pine` HARDCODES the check, so `mpc_sos_fade` pins it True. Unpinned, the
+  `fvg_require_close` defaults **False** here, mirroring `mpc_jarvis.pine` where it is an input and
+  is off; but `sos_fade_strategy.pine` HARDCODES the check, so `sos_fade` pins it True. Unpinned, the
   engine created gaps that Pine never did and produced a phantom entry edge — invisible to
   `compare_strategy.py` until a fresh export happened to disagree, ~8 days after the engine made the
   gate optional. **When an engine default changes, audit every `engine_config()` that replays a Pine
@@ -1723,9 +1723,9 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   **Second live example, and the nastier direction (caught 2026-07-31): the trap also fires on an input
   a consumer FORGOT to pin.** `EngineConfig` carried `fvg_max_count = 6` / `fvg_threshold_pct = 0.1`,
   two generations stale, and this file said so — flagged as harmless because "every real consumer pins
-  its own". **That was half wrong.** `mpc_sos_fade` pinned `fvg_max_count` and `fvg_require_close` and
+  its own". **That was half wrong.** `sos_fade` pinned `fvg_max_count` and `fvg_require_close` and
   never pinned `fvg_threshold_pct`, so it was silently inheriting the 0.1 — which happens to equal
-  `mpc_strategy.pine`'s 15m floor, so the bot worked by coincidence rather than by decision. Anyone
+  `sos_fade_strategy.pine`'s 15m floor, so the bot worked by coincidence rather than by decision. Anyone
   reconciling that "stale" default to the engine's would have moved the A+ bot's trades with **no test
   failing**. Verified by doing exactly that: `compare_strategy.py` failed on the first compared bar
   (`px_edge` py=3478.99 vs pine=3475.43). Fixed the right way round — **`EngineConfig` carries ENGINE
@@ -1750,7 +1750,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 - **Tests run offline.** Network (the MT5 agent) is injected, so tests use a fake. Run:
   `command-center/backend/.venv/bin/python -m pytest backtest/tests/ -q`.
 - 🔴 **A REPLAY is the unit of cost in this suite, and two files were paying for the same one over
-  and over.** `test_reprice.py` ran **8** full `mpc_sos_fade` replays over two years of M15 bars
+  and over.** `test_reprice.py` ran **8** full `sos_fade` replays over two years of M15 bars
   where it needs **4** — every case re-ran the identical FREE replay before its charged one — and
   `test_cache_concurrency.py` fired its 5-process × 250,000-row collision once per test where the
   three tests assert three properties of ONE outcome. **MEASURED: 182s → 80s and 86s → 25s;
@@ -1770,7 +1770,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   an OPTIONAL `volume`. This line said "no volume (the A+ engines don't need it)" until
   2026-08-07 and was two generations stale: the data layer has carried volume since the
   2026-08-06 `FEED_VERSION` 3 pass, and `ReplayBar` carries it from 2026-08-07 for
-  `strategies/python/mpc_bos/`, the first strategy that needs it (its session-VWAP filter).
+  `strategies/python/bos/`, the first strategy that needs it (its session-VWAP filter).
   ⚠ **`ReplayBar.volume` is `Optional[float]` and `None` means THE FEED CARRIED NONE — never
   0.0.** A zero-volume bar is a real thing MT5 reports on a dead session, so filling the unknown
   with one puts a measurement where there is none, and a volume-weighted consumer averages
@@ -1833,7 +1833,7 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 
 ## `tools/recovery_stack.py` — the loss-recovery rule as a LEG of a shared account (2026-08-20)
 
-Runs `mpc_sos_fade` and `strategies/python/loss_recovery/` through `backtest/portfolio/` — one
+Runs `sos_fade` and `strategies/python/loss_recovery/` through `backtest/portfolio/` — one
 balance both size against, one budget they compete for, one merged clock, one refusal log. It
 exists because the lab's own `exec_recovery` toggle is a POST-PASS: the recovery sizes off the
 running balance and the primary never sizes off the recovery, so recovery profit sits BESIDE the
@@ -1871,7 +1871,7 @@ found one: A+ shifts −0.10R on the shrink path, unexplained, 0.08% of the book
 
 The equity point's `tp_targets` used to be two bare prices copied off `t.tp1` / `t.tp2`. A price
 alone cannot tell a profit target from a level that places no order at all and only steps the stop
-— and at mpc_sos_fade's shipped `exec_tp1_pct = exec_tp2_pct = 0` **neither rung sells anything on
+— and at sos_fade's shipped `exec_tp1_pct = exec_tp2_pct = 0` **neither rung sells anything on
 any trade**, so the price chart drew two targets that had never carried an order. Full finding:
 `command-center/backend/CLAUDE.md` → *The exit ladder*.
 
@@ -1903,19 +1903,19 @@ optional key here, and **absent unless the strategy recorded a real string**: a 
 re-entry layer, or one that cannot tell, writes nothing rather than a default. ⚠ **The absence is
 the point** — the price chart falls back to a neutral tag on a missing one, so an empty string
 shipped as a value would read as a fact nobody measured. Why it exists:
-`strategies/python/mpc_sos_fade/CLAUDE.md` → *A re-entry records what the trade before it did*.
+`strategies/python/sos_fade/CLAUDE.md` → *A re-entry records what the trade before it did*.
 
 ## `tools/run_report.py` — the second feed's timeframe belongs to the STRATEGY (2026-08-21)
 
 The dual-replay path loaded `BarSource().load(symbol, 1, ...)` — a hardcoded 1-minute feed — for
-as long as it existed. MEASURED on mpc_sos_fade over 7.9 years: 5m loads a fifth of the bars
+as long as it existed. MEASURED on sos_fade over 7.9 years: 5m loads a fifth of the bars
 (561,795 vs 2,804,720) and lands within 1.3% of the 1m result, where 15m is 7.6% off. So every run
 anybody made paid 2.8M bars for 1.3%.
 
 It now reads `getattr(cfg, "exec_sec_fill_tf_min", 1)` off the config it already built. ⚠ **The
 fallback is 1, not 5** — a strategy that does not declare a fill clock has not been measured, and
 absence must not be read as consent to coarsen it. Full table and the reasoning:
-`strategies/python/mpc_sos_fade/CLAUDE.md` → *The re-entry's FILL CLOCK*.
+`strategies/python/sos_fade/CLAUDE.md` → *The re-entry's FILL CLOCK*.
 
 ⚠ **`_assert_timeframe` follows it.** It refused anything that was not 1m before; pinning it while
 the loader moved would refuse every run, and pinning it the other way would let MT5's
@@ -2001,7 +2001,7 @@ reported a ceiling it enforced unevenly.
 
 🔴 **Passing an account used to rename the leg, and that would have been a silent side effect of a
 SIZE setting.** `build_strategy` forced the leg key to the strategy CLASS NAME whenever an account
-was supplied, so stating a ceiling would have re-filed every trade under `MpcSosFadeStrategy`
+was supplied, so stating a ceiling would have re-filed every trade under `SosFadeStrategy`
 instead of the strategy's own default — and the strategies do not agree on a default (`strat` for
 most, `recovery` for the loss-recovery leg). The class-name fallback now applies only to a SHARED
 account, where a missing key really is a caller bug. ⚠ **Nothing was relying on it** — every real
@@ -2118,7 +2118,7 @@ proves nothing.
 
 It drives the bar loop itself rather than calling `strategy.run()`, so it does **not** inherit
 `run()`'s end-of-book passes. Without the `hasattr(strategy, "finalize")` call after the loop, a
-sweep over a finished-book feature — `mpc_sos_fade`'s `exec_recovery` is the first — would grade
+sweep over a finished-book feature — `sos_fade`'s `exec_recovery` is the first — would grade
 every combo on a book missing those trades and rank them confidently, the combos differing in a
 field nothing consumed. Guarded because this optimizer is strategy-agnostic and only some
 strategies have the hook; idempotent, so a strategy whose `run()` already finalized is unaffected.
@@ -2204,7 +2204,7 @@ SWAPPED two trades passes a totals check in silence.
 
 🔴 **It fingerprints the STRATEGY SOURCE and the resolved config into the basis, and REFUSES to
 compare across a change in either.** Without that it reported a real difference that belonged to
-somebody else: a second session edited `mpc_sos_fade.meta.json` between a capture and its
+somebody else: a second session edited `sos_fade.meta.json` between a capture and its
 comparison, and the tool duly said the trades had moved. **They had — the strategy had.** *A
 comparison harness that cannot see the thing underneath it changing will blame whichever change
 you happen to be holding.*
@@ -2230,7 +2230,7 @@ with no door gets routed around in ways that leave no trace.
 
 🔴 **Where a strategy exposes BOTH algorithms behind a flag, prefer forcing the flag over running
 the tool twice** — one process, one binary, nothing else able to differ. That is how the bar-time
-map's prune was proved (`strategies/python/mpc_sos_fade/CLAUDE.md`), and it needs no waiver at
+map's prune was proved (`strategies/python/sos_fade/CLAUDE.md`), and it needs no waiver at
 all. ⚠ **Patch `type(strategy.execution)`, never the class imported by package path — the lab
 loads that module twice and they are different class objects.** A patch on the wrong one hits
 nothing and the comparison silently becomes a run against itself.
