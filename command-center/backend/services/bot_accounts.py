@@ -127,6 +127,37 @@ class AccountGroup:
         return bool(risks) and self.risk_cap_pct <= max(risks)
 
     @property
+    def share_total_pct(self) -> Optional[float]:
+        """The per-trade shares handed out on this account, added up.
+
+        🔴 **`None` when ANY bot's share is unreadable or unstated — never a partial sum.** The
+        page that shows this is the page somebody uses to split a cap between two bots, and a
+        total quietly missing one bot's share is a number that says the account fits when it does
+        not. Same rule as `share_overflow`, which REFUSES rather than counting an unknown as zero:
+        an unreadable share is not a share of zero (rule 1).
+
+        ⚠ **It is served rather than added up on the page**, because the page had its own reduce
+        with `?? 0` in it — the exact leniency this refuses — so the browser could print a total
+        that fitted while the save was refused. One rule, one place, whichever side asks.
+        """
+        if any(b.unreadable or b.risk_pct is None for b in self.bots):
+            return None
+        return sum(float(b.risk_pct) for b in self.bots)
+
+    @property
+    def share_overflow_reason(self) -> Optional[str]:
+        """Why the shares here do NOT fit under the ceiling — the sentence a save is refused with.
+
+        `None` when they fit, when there is no cap, or when the caps disagree (there is no agreed
+        ceiling to check against, and inventing one is what `risk_cap_pct` already refuses to do).
+
+        ⚠ **This is the SAME call the write path makes**, so what the page shows before you save
+        and what the save says are one function. It is served so an over-subscribed account is
+        VISIBLE, rather than being discovered by typing a number and being refused.
+        """
+        return share_overflow(self.bots, self.risk_cap_pct)
+
+    @property
     def magic_clash(self) -> list[str]:
         """Bots on this account sharing an order tag (`magic`). Empty is the healthy answer.
 

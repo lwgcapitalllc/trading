@@ -157,6 +157,46 @@ def test_the_accounts_endpoint_answers_without_touching_the_vps(client):
         assert "stacked" in g and "cap_agrees" in g and "risk_cap_pct" in g
 
 
+def test_the_endpoint_SERVES_the_shares_it_computed(client, monkeypatch):
+    """The two fields the page renders instead of adding anything up itself.
+
+    🔴 **ASSERTS THE VALUES, NEVER THAT THE KEYS ARE PRESENT — and BOTH earlier versions of this
+    test survived their own mutation, for two DIFFERENT reasons worth keeping apart.**
+
+    The first asserted `"share_total_pct" in g`. The response model declares both with a default of
+    `None`, so the key is in the JSON whether or not the router assigns it — the trap this backend
+    already met on the `python` lock scope: *ask not only whether the model declares a field, but
+    whether anything actually assigns it.*
+
+    The second compared the served values against the router's own grouping, on the REAL instance
+    configs. That caught the total and still could not catch the reason: today's account holds one
+    bot at 10% under a 10% cap, so its shares FIT and the honest answer is `None` — **the same
+    value an unassigned field defaults to.** A comparison whose two sides agree by accident is not
+    a comparison. It is the scale-of-1 lesson in the root CLAUDE.md: check that a test's inputs can
+    distinguish the behaviours it names.
+
+    So the grouping is STUBBED with an over-subscribed account, where the total is a distinctive
+    number and the reason is a sentence. MUTATION: drop either field from the endpoint and this
+    reddens on that field alone.
+    """
+    from routers import bots as bots_router
+
+    group = ba.AccountGroup(
+        account=700107749,
+        server="PUPrime-Demo",
+        kind="account",
+        bots=[_bot("a", 10.0), _bot("b", 5.0)],
+        risk_cap_pct=10.0,
+    )
+    assert group.share_total_pct == 15.0
+    assert group.share_overflow_reason is not None, "the stub must be able to tell the two apart"
+    monkeypatch.setattr(bots_router, "_account_groups", lambda: [group])
+
+    row = client.get("/bots/accounts").json()[0]
+    assert row["share_total_pct"] == 15.0
+    assert row["share_overflow_reason"] == group.share_overflow_reason
+
+
 def test_setting_a_cap_on_an_unknown_account_is_a_404(client):
     r = client.patch("/bots/accounts/12345/risk-cap", json={"risk_cap_pct": 10.0})
     assert r.status_code == 404
@@ -399,6 +439,95 @@ def test_ONE_bot_at_the_cap_is_fine():
     """The live account today: one bot, its share equal to the ceiling. It must not be refused —
     a cap EQUAL to the only share is full allocation, not over-allocation."""
     assert ba.share_overflow([_bot("a", 10.0)], 10.0) is None
+
+
+# ── the same two answers, SERVED to the page (2026-09-04) ─────────────────────
+#
+# 🔴 **The page had its own copy of the total and the copy was the lenient one.** It added the
+# shares up with `?? 0`, so a bot whose share could not be read counted as a bot risking nothing
+# — the exact leniency `share_overflow` refuses by name three functions above. The browser could
+# therefore print a total that fitted under the cap on an account the save would refuse.
+#
+# ⚠ **And the total only appeared at all in the take-turns note**, which needs the cap to be at
+# or under the largest single share — so the intended 5/5-under-10 configuration never displayed
+# it, and the way you found out was to type a number and be refused.
+
+
+def test_the_served_total_is_the_sum_of_the_shares():
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=5.0), "b": _cfg("b", magic=2, cap=10.0, risk=5.0)}
+    )[0]
+    assert g.share_total_pct == 10.0
+
+
+def test_the_served_total_REFUSES_an_unreadable_share_rather_than_scoring_it_zero():
+    """🔴 The whole reason this is served. MUTATION: sum with `or 0.0` and this goes red.
+
+    The page's own version returned 10.0 here — a number that fits a 10% cap — for an account
+    holding one 10% bot and one bot whose share nobody can read."""
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=10.0, risk=None)}
+    )[0]
+    assert g.share_total_pct is None
+
+
+def test_an_unreadable_CONFIG_makes_the_total_unanswerable_too():
+    """The flag is load-bearing on its own, so this bot states a PERFECTLY READABLE 5% and is
+    still not counted — same shape as `test_an_unreadable_CONFIG_refuses_too` above, because both
+    functions must treat an unparsed config as a share nobody knows rather than a share of 5.
+
+    ⚠ **A config that could not be read never reaches a real account group** — it goes to the
+    `unknown` bucket, since there is no way to tell which account it belongs to. That is why this
+    builds the group directly instead of feeding `group_by_account` a `None`."""
+    broken = _bot("b", 5.0)
+    broken.unreadable = True
+    g = ba.AccountGroup(account=1, server="S", bots=[_bot("a", 5.0), broken])
+    assert g.share_total_pct is None
+
+
+def test_the_unreadable_bucket_cannot_be_totalled_either():
+    """The group an unreadable config actually lands in. It must not print 0% — an account whose
+    configs cannot be read is the one place a reassuring number is most likely to be believed."""
+    groups = ba.group_by_account({"a": _cfg("a", cap=10.0, risk=5.0), "b": None})
+    unknown = next(g for g in groups if g.kind == "unknown")
+    assert unknown.share_total_pct is None
+
+
+def test_an_account_with_no_bots_totals_ZERO_not_unknown():
+    """`None` here means a share could not be read. An empty account has no unreadable share —
+    it has none at all, and 0% has genuinely been handed out. The page builds exactly this group
+    for a registered account nobody is trading yet."""
+    assert ba.AccountGroup(account=1, server="S").share_total_pct == 0.0
+
+
+def test_the_served_overflow_reason_is_the_SAME_call_the_save_makes():
+    """🔴 One rule, one place. MUTATION: re-derive it from `share_total_pct > risk_cap_pct` and
+    the float tolerance drifts away from the write path's, which is how the page ends up
+    disagreeing with the save it is standing in front of."""
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=10.0, risk=5.0)}
+    )[0]
+    assert g.share_overflow_reason == ba.share_overflow(g.bots, g.risk_cap_pct)
+    assert g.share_overflow_reason is not None
+    assert "15%" in g.share_overflow_reason
+
+
+def test_the_intended_split_reports_NO_overflow():
+    """Two bots at 5% under a 10% cap. It must not read as a near miss on the page either."""
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=5.0), "b": _cfg("b", magic=2, cap=10.0, risk=5.0)}
+    )[0]
+    assert g.share_overflow_reason is None
+
+
+def test_no_overflow_verdict_is_claimed_when_the_caps_DISAGREE():
+    """There is no agreed ceiling to check against, and inventing one is what `risk_cap_pct`
+    already refuses to do. Same guard as `cap_takes_turns`."""
+    g = ba.group_by_account(
+        {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=50.0, risk=10.0)}
+    )[0]
+    assert g.risk_cap_pct is None
+    assert g.share_overflow_reason is None
 
 
 # ── the per-trade risk has ONE definition ────────────────────────────────────

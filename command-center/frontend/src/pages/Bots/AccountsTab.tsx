@@ -376,6 +376,11 @@ function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
     cap_unknown: false,
     stacked: false,
     cap_takes_turns: false,
+    // No bots, so nothing has been handed out and there is nothing that could overflow. `0`
+    // rather than `null` on purpose: `null` here means "a share could not be read", and an
+    // account with no bots on it has no unreadable share — it has none at all.
+    share_total_pct: 0,
+    share_overflow_reason: null,
     magic_clash: [],
   }
 }
@@ -595,7 +600,13 @@ function AccountDetail({
 
   const isAccount = group.kind === 'account' && group.account !== null
   const isBench = group.kind === 'bench'
-  const totalRisk = group.bots.reduce((s, b) => s + (b.risk_pct ?? 0), 0)
+  // 🔴 **SERVED, not added up here.** This was a local `reduce` with `?? 0` in it until
+  // 2026-09-04, which counted a bot whose share could not be read as a bot risking nothing — the
+  // one leniency the backend's own check refuses by name. So the page could print a total that
+  // fitted under the cap on an account the save would refuse, and the sentence below it
+  // ("together they risk N%") was short by a whole bot's share with nothing to say so.
+  // `null` means CANNOT TOTAL, and it is rendered as that rather than as a number.
+  const totalRisk = group.share_total_pct
   const live = liveOf(group, statusByKey)
 
   // Map each bot's strategy PACKAGE to the lab's own strategy id, so "Backtest this stack"
@@ -1188,13 +1199,52 @@ function AccountDetail({
             </span>
           </div>
 
+          {/* 🔴 **The running total, and it is shown ALWAYS rather than only when something is
+              wrong.** Until 2026-09-04 the only place this number appeared was inside the
+              take-turns note below, which needs the cap to be at or under the largest single
+              share — so the intended configuration (two bots at 5% under a 10% cap) never
+              displayed it at all, and the way you found out the shares did not fit was to type a
+              number and be refused on save. Splitting a cap between two bots is the whole reason
+              this panel exists; the number being split has to be on screen while you do it. */}
+          {group.bots.length > 0 && (
+            <div data-testid="cap-shares" className="text-micro text-text-tertiary">
+              {typeof totalRisk !== 'number' ? (
+                <>
+                  A bot here states no risk per trade that can be read, so these shares cannot be
+                  totalled. An unreadable share is not a share of zero — fix that config before
+                  splitting a cap, or the total on screen would be short by a whole bot.
+                </>
+              ) : group.risk_cap_pct === null ? (
+                <>The bots here risk {totalRisk}% per trade between them, under no ceiling.</>
+              ) : (
+                <>
+                  The bots here risk {totalRisk}% per trade between them, against a{' '}
+                  {group.risk_cap_pct}% ceiling.
+                </>
+              )}
+            </div>
+          )}
+
+          {/* The same sentence the save is refused with, shown BEFORE the save. Served, never
+              re-derived here: deciding "does it fit" from two numbers in the browser is the rule
+              written twice in two languages that this repo already gates against elsewhere. */}
+          {group.share_overflow_reason && (
+            <div
+              data-testid="cap-overflow"
+              className="text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]"
+            >
+              {group.share_overflow_reason}
+            </div>
+          )}
+
           {/* Not a warning: a fact the two numbers imply and neither states on its own. */}
           {group.cap_takes_turns && (
             <div data-testid="cap-takes-turns" className="text-micro text-text-tertiary">
               At {group.risk_cap_pct}% these bots take turns rather than share — one full-size
               position or resting order fills the whole budget and the other is refused until its
-              stop moves. Together they risk {totalRisk}% per trade, so a cap above that lets both
-              hold at once.
+              stop moves.
+              {typeof totalRisk === 'number' &&
+                ` A cap above ${totalRisk}% lets both hold at once.`}
             </div>
           )}
         </div>

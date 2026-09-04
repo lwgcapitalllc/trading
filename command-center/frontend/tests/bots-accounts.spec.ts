@@ -44,6 +44,11 @@ function group(over: Record<string, unknown> = {}) {
     cap_unknown: false,
     stacked: false,
     cap_takes_turns: false,
+    // `null` = the shares could not be totalled, which is the safe default for a fixture: a
+    // number here would be a second statement of the sum the backend computes, and it would go
+    // stale the moment a check changed its bots. A check about the total states it.
+    share_total_pct: null,
+    share_overflow_reason: null,
     magic_clash: [],
     ...over,
   }
@@ -154,12 +159,18 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
   })
 }
 
+// ⚠ Two bots at 10% under a 10% ceiling really IS over-subscribed, so this fixture carries the
+// refusal the backend would serve for it. Stating only the shares would describe an account the
+// backend cannot produce, which is a fixture more capable than production.
 const STACKED = [
   group({
     bots: [bot('sos_fade', 'SOS Fade', 770115, 10), bot('b_leg', 'B-LEG', 770116, 10)],
     risk_cap_pct: 10,
     stacked: true,
     cap_takes_turns: true,
+    share_total_pct: 20,
+    share_overflow_reason:
+      'the risk shares on this account add up to 20%, which is more than its 10% ceiling',
   }),
 ]
 
@@ -177,6 +188,44 @@ test('a cap equal to the per-trade risk says the bots take turns', async ({ page
   await mock(page, STACKED)
   await page.goto('/bots?tab=accounts')
   await expect(page.getByTestId('cap-takes-turns')).toContainText('take turns')
+})
+
+test('the running total of the shares is on screen beside the ceiling', async ({ page }) => {
+  // Splitting a cap between two bots is what this panel is for, and until 2026-09-04 the number
+  // being split appeared only in the take-turns note above — which needs the cap to be at or
+  // under the largest single share, so the INTENDED configuration never showed it at all.
+  // MUTATION: drop `share_total_pct` from the payload → the line says the shares cannot be
+  // totalled and this goes red.
+  await mock(page, STACKED)
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('cap-shares')).toContainText('20% per trade')
+  await expect(page.getByTestId('cap-shares')).toContainText('10% ceiling')
+})
+
+test('an over-subscribed account says so BEFORE anybody saves', async ({ page }) => {
+  // The same sentence the write is refused with, served rather than re-derived here — so the
+  // page cannot disagree with the save it is standing in front of.
+  // MUTATION: drop `share_overflow_reason` from the payload → the banner disappears.
+  await mock(page, STACKED)
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('cap-overflow')).toContainText('more than its 10% ceiling')
+})
+
+test('shares that cannot be totalled are NOT rendered as a number', async ({ page }) => {
+  // 🔴 `null` means a bot's share could not be READ, which is not a share of zero — the page's
+  // own reduce used `?? 0` and printed a total that fitted under a cap the backend would refuse.
+  // MUTATION: render `null` as 0 → this goes red on the sentence.
+  await mock(page, [
+    group({
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 10), bot('b_leg', 'B-LEG', 770116, 10)],
+      risk_cap_pct: 10,
+      stacked: true,
+      share_total_pct: null,
+    }),
+  ])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('cap-shares')).toContainText('cannot be totalled')
+  await expect(page.getByTestId('cap-shares')).not.toContainText('0%')
 })
 
 test('a cap disagreement is named and no cap is quoted', async ({ page }) => {

@@ -1016,6 +1016,8 @@ def list_bot_accounts():
             cap_unknown=g.cap_unknown,
             stacked=g.stacked,
             cap_takes_turns=g.cap_takes_turns,
+            share_total_pct=g.share_total_pct,
+            share_overflow_reason=g.share_overflow_reason,
             magic_clash=g.magic_clash,
         )
         for g in _account_groups()

@@ -1417,9 +1417,47 @@ over-subscribed account unfixable.
 cap to check against, and `live_config._assert_account_cap_agrees` already refuses to start it;
 reporting a share overflow there names the wrong fault.
 
-⚠ **THE PAGE DOES NOT YET SHOW THE RUNNING TOTAL.** The refusal is the enforcement and it arrives
-at the moment of the write, which is the useful moment — but a reader planning a three-bot split
-still has to add the column up by hand. **That is a stated gap, not a finished feature.**
+✅ **THE PAGE SHOWS THE RUNNING TOTAL SINCE 2026-09-04, AND THE FIX IS SMALLER THAN WHAT IT
+FOUND.** `AccountGroup.share_total_pct` and `.share_overflow_reason` are served on
+`GET /bots/accounts` and rendered under the cap editor: the shares added up, the ceiling beside
+them, and — when they do not fit — the same sentence the save is refused with, before anybody
+saves.
+
+🔴 **THE PAGE ALREADY HAD A TOTAL AND IT WAS THE LENIENT COPY.** `AccountsTab.tsx` reduced the
+shares with `?? 0`, so a bot whose risk could not be READ counted as a bot risking nothing — the
+one leniency `share_overflow` refuses by name, three paragraphs up. **The browser could therefore
+print a total that fitted under the ceiling on an account the save would refuse**, and the
+take-turns sentence beside it said *"together they risk N%"* short by a whole bot's share with
+nothing on screen to say so. Rule 1 arriving where it is quietest: nothing errors, and the
+reassuring number is the wrong one.
+
+⚠ **And that total only ever appeared inside the take-turns note**, which needs the cap to be at
+or under the largest single share — **so the INTENDED configuration (two bots at 5% under a 10%
+cap) never displayed it at all.** The way to find out the shares did not fit was to type a number
+and be refused.
+
+⚠ **SERVED, never re-derived in the browser.** Deciding *does it fit* from two numbers on the page
+is the same rule written twice in two languages, which this repo gates against elsewhere and which
+had already drifted here. `share_overflow_reason` is the SAME call the write path makes.
+
+⚠ **`share_total_pct` is `None` when ANY share is unreadable — never a partial sum**, and the page
+renders that as *cannot be totalled* rather than as a number. A partial total is worse than no
+total, because it is a number and gets believed.
+
+⚠ **A group with no bots totals `0.0`, not `None`.** `None` means a share could not be read; an
+empty account has none at all, and 0% really has been handed out. The page builds exactly that
+group for a registered account nobody is trading yet.
+
+🔴 **THE ENDPOINT CHECK FOR THE TWO SERVED FIELDS SURVIVED ITS OWN MUTATION TWICE, FOR TWO
+DIFFERENT REASONS, AND BOTH ARE RECORDED IN ITS DOCSTRING.** The first version asserted the KEY
+was in the JSON — but the response model declares both with a default of `None`, so the key is
+there whether or not the router assigns it (the `python` lock-scope trap, one section down: *ask
+not only whether the model declares a field, but whether anything actually assigns it*). The
+second compared the served values against the router's own grouping on the REAL configs — and
+still could not catch the reason, because today's account holds one bot at 10% under a 10% cap,
+so its shares FIT and the honest answer is `None`, **the same value an unassigned field defaults
+to.** It drives a STUBBED over-subscribed group now, where the total is a distinctive number and
+the reason is a sentence. **A comparison whose two sides agree by accident is not a comparison.**
 
 **Tests:** 15 in `tests/test_bot_accounts.py` — 10 on the rule, 5 driving the three endpoints.
 ⚠ **A fail-watch is vacuous for a rule that did not exist**, so non-vacuity is by MUTATION: six

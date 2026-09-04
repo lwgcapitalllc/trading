@@ -519,6 +519,13 @@ class BotAccountGroup(BaseModel):
     cap_unknown: bool = False  # at least one config unreadable, so the cap cannot be confirmed
     stacked: bool = False  # more than one bot on this BALANCE (never true off an account)
     cap_takes_turns: bool = False  # the cap is at or below the largest per-trade risk here
+    # The shares handed out here, added up. `None` when ANY bot's share is unreadable — never a
+    # partial sum, because a total missing one bot's share reads as an account that fits.
+    share_total_pct: Optional[float] = None
+    # Why those shares do NOT fit under the ceiling — the same sentence the save is refused with,
+    # served so an over-subscribed account is visible BEFORE somebody types a number. `None` when
+    # they fit, when there is no cap, or when the caps disagree.
+    share_overflow_reason: Optional[str] = None
     # Bots here sharing an order tag. Empty is healthy, and the page shows the fact only when it
     # is true rather than printing a raw magic number nobody can interpret.
     magic_clash: list[str] = []

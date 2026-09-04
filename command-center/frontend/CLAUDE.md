@@ -3045,6 +3045,38 @@ five run here, each turning its named check red (registry cards dropped, `assign
 suffix dropped from the submit body, the suffix sent unconditionally instead of `null`, and the
 in-use guard dropped from Remove).
 
+## 🔴 The page may NOT add the risk shares up itself (2026-09-04)
+
+`AccountsTab` renders `group.share_total_pct` and `group.share_overflow_reason` straight off the
+API. **It used to reduce the shares locally, with `?? 0` in it** — so a bot whose risk could not be
+READ counted as a bot risking nothing, and the browser printed a total that fitted under the cap on
+an account the save would refuse. The backend's own check refuses that leniency by name.
+
+⚠ **A number is not the same as a rule, and only the rule is served.** The sum, and whether it
+fits, are both computed server-side; this page draws them. Deciding *does it fit* from two numbers
+here is the same rule written twice in two languages — the shape steps 9 and 10 of
+`scripts/run_all_tests.sh` exist to catch — and it had already drifted.
+
+⚠ **`share_total_pct` of `null` means the shares CANNOT be totalled, never zero**, and it renders
+as that sentence. The guard is `typeof x !== 'number'`, not `=== null`, so a payload missing the
+field (an older cached response) says *cannot be totalled* rather than printing `undefined%`.
+
+⚠ **The total is shown for ANY account with bots on it, not only when something is wrong.**
+Splitting a ceiling between two bots is what this panel is for, and until this landed the number
+being split appeared only inside the take-turns note — which needs the cap to be at or under the
+largest single share, **so the intended two-bots-at-5%-under-10% configuration never showed it at
+all.**
+
+⚠ **The take-turns note no longer states the total itself**, so the page holds one copy of the
+number rather than two that can disagree.
+
+**`tests/bots-accounts.spec.ts` — 3 new checks.** ⚠ **`group()`'s default is
+`share_total_pct: null`**: a number in the fixture would be a second statement of the sum the
+backend computes and would go stale the moment a check changed its bots. ⚠ **The `STACKED` fixture
+carries an overflow reason**, because two bots at 10% under a 10% ceiling really IS
+over-subscribed — a fixture stating only the shares would describe an account the backend cannot
+produce.
+
 ## Dragging a bot onto an account in the RAIL — a second GESTURE, never a second path (2026-08-12)
 
 A bot's row in the detail pane is draggable and every row in the ACCOUNT RAIL is a drop target.

@@ -46,6 +46,12 @@ than it is.
     drop the session memory (`p not in seen`)     -> 1 red: no-nag
     count a missing HEAD version as huge, not 0   -> 1 red: the new oversized file
 
+  the premise assertions (added 2026-09-04, both watched red)
+    write FEWER bytes than the file holds        -> 1 red: oversized + Write that GROWS it, so
+                                                    the derived size is genuinely load-bearing
+    raise CEILING above the fixture's size       -> the file refuses to run at all, naming the
+                                                    fixture, rather than passing 21 vacuous cases
+
 ⚠ ONE CASE IS DOUBLE-GUARDED and no SINGLE mutation reddens it: "oversized + Write that
 SHRINKS it". Dropping the growth test alone leaves it silent, because the replacement is
 tiny and the ceiling test then catches it; dropping the ceiling test alone leaves it silent
@@ -65,9 +71,29 @@ import sys
 import tempfile
 
 HOOK = "/Users/alwg/trading/.claude/hooks/guard_sensitive_paths.py"
-BIG = "/Users/alwg/trading/command-center/backend/CLAUDE.md"  # 282 KB, over the ceiling
-SMALL = "/Users/alwg/trading/engines/vwap/CLAUDE.md"  # well under it
+BIG = "/Users/alwg/trading/command-center/backend/CLAUDE.md"
+SMALL = "/Users/alwg/trading/engines/vwap/CLAUDE.md"
 LIVE = "/Users/alwg/trading/algos/live/runner.py"
+
+CEILING = 40_000  # what guard_sensitive_paths.py calls oversized
+
+
+def _size(path):
+    return os.path.getsize(path)
+
+
+# 🔴 **EVERY SIZE BELOW IS DERIVED FROM THE FILE, NEVER TYPED, AND THAT IS A CORRECTION.**
+# The Write-that-grows case wrote a hardcoded 400,000 bytes over a doc whose comment here said
+# 282 KB. That doc reached 400,570 bytes on 2026-09-04, so the "grow" became a SHRINK, the guard
+# correctly said nothing, and step 6 of `scripts/run_all_tests.sh` went red on main — pointing at
+# the guard, which was working perfectly. **A case whose premise is a number about a file that
+# grows is a case with an expiry date nobody wrote down**, and it is the same shape as the case
+# pinned to a path that moved on 2026-09-02: a fixture describing a repo you no longer have.
+#
+# ⚠ The two PREMISE assertions below are the other half. Trim that doc under the ceiling and every
+# "oversized" case here silently becomes a test of the quiet path — passing, and checking nothing.
+assert _size(BIG) > CEILING, f"{BIG} is no longer oversized — every 'oversized' case is vacuous"
+assert _size(SMALL) < CEILING, f"{SMALL} is now oversized — every 'under the ceiling' case is too"
 
 
 def run(tool_input):
@@ -106,7 +132,7 @@ CASES = [
     ),
     (
         "oversized + Write that GROWS it",
-        {"file_path": BIG, "content": "z" * 400_000},
+        {"file_path": BIG, "content": "z" * (_size(BIG) + 50_000)},
         lambda s: "adds roughly" in s,
     ),
     (

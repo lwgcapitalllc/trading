@@ -432,6 +432,18 @@ export interface BotAccountGroup {
   stacked: boolean
   /** The cap is at or below the largest per-trade risk here, so the bots take turns. */
   cap_takes_turns: boolean
+  /**
+   * The per-trade shares handed out here, added up — `null` when ANY bot's share is unreadable.
+   *
+   * 🔴 **Never add this up on the page.** It used to be a local `reduce` with `?? 0` in it, which
+   * counted a bot whose share could not be read as a bot risking nothing — so the browser printed
+   * a total that fitted under the cap while the backend refused the save for that exact reason.
+   * The server never counts an unknown as zero, and `null` here means "cannot total", not "zero".
+   */
+  share_total_pct: number | null
+  /** Why those shares do NOT fit under the ceiling — the same sentence the save is refused with.
+   *  `null` when they fit, when there is no cap, or when the bots' caps disagree. */
+  share_overflow_reason: string | null
   /** Bots here sharing an order tag, which would make each read the other's orders as its own.
    *  Empty is the healthy answer, and the page shows the fact only when it is true — which is
    *  why there is no raw `magic` column any more. */
