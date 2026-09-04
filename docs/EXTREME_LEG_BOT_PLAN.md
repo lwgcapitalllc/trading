@@ -126,6 +126,38 @@ cannot move the replay; the one existing line that must change is the sizing sea
 no-op unless a capped account is attached. **Both facts are checked by re-running the baseline,
 never assumed.**
 
+### 0.5 🔴 THE REAL BLOCKER, FOUND 2026-09-03: the order layer cannot OPEN at market
+
+**This strategy enters at market on the bar's close. `algos/live/bridge.py` can only rest a limit
+order.** Its one placement path, `_place`, calls `place_pending_limit` and nothing else.
+
+⚠ **This falsifies §1's opening assumption** ("not a change to `algos/live/`"). It was written
+before the placement path was read. **The extreme leg cannot go live without a market-entry route
+in the order layer**, and that is the code the running bot executes.
+
+✅ **The terminal layer already has the call** — `mt5_ops.place_order` sends a market order, with a
+broker minimum-stop guard. 🔴 **But NOTHING in the live path calls it.** Its only caller in the
+whole repo is one test. Rule 9: it has never placed a real order.
+
+### 0.6 A LATENT DEFECT in the SOS Fade bot, found on the way — not active, worth recording
+
+**A pending entry carries a `market` flag meaning "do not wait for price, fill at the next open".**
+
+- ✅ The EMULATOR honours it (`sos_fade/execution.py:1089-1096` — it fills at the open).
+- 🔴 **No file under `algos/live/` reads it.** Grepped for `.market` and `market=` across the whole
+  folder: nothing. The bridge would rest a limit for an order the strategy marked as market.
+
+⚠ **NOT active today, and that was CHECKED rather than assumed**: the live config has the reclaim
+entry mode on `Retest` and the recovery feature `false`, so the flag is never set. **It is latent.**
+
+🔴 **If anyone switches that mode to `Market`, the emulator and the broker do different things and
+nothing says so** — the emulator books a fill at the open while a limit rests at a price that may
+never come back. **This is rule 7 exactly: a label is a claim about code somewhere else, and this
+one has no consumer.** Fix it in the same change as the market-entry route above, or delete the
+flag; leaving a setting that silently does nothing is the worse of the two.
+
+---
+
 ---
 
 ## 1. What gets built
