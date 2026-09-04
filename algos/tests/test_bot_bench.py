@@ -119,3 +119,91 @@ def test_the_process_watchdog_skips_a_benched_bot(monkeypatch):
 
     monitor.main()
     assert checked == ["assigned"]
+
+
+# ── the five registries hold the SAME bots ────────────────────────────────────
+#
+# 🔴 **"Keep the three registries in step" lived ONLY in a comment until 2026-09-04, and on the
+# day this was written a neighbouring comment about another file turned out to be flat wrong** —
+# `command-center/backend/routers/bots.py` stated that the benched bots are deliberately absent
+# from the watchdog and the dead-man switch, and they are in both. **A rule that lives in a
+# comment is a rule that gets contradicted by the code it describes, quietly.**
+#
+# ⚠ **The failure this catches has no symptom.** A bot missing from `BOT_INSTANCES` dies on
+# startup with a bare KeyError AFTER connecting and warming; one missing from the boot sequence
+# is simply absent after a reboot; one missing from a watcher is a bot nothing is watching. None
+# of those look like a registry problem from outside.
+
+
+def _algos_registries():
+    """Every algos-side roster, as {name: set of bot keys}. REFUSES an empty one — an empty set
+    makes every comparison below pass for the wrong reason."""
+    monitor = _load("monitor_registry", "algos/notifications/monitor.py")
+    deadman = _load("deadman_registry", "algos/notifications/deadman.py")
+    coord = _load("coordinator_registry", "algos/bots/startup_coordinator.py")
+    got = {
+        "bot_state.BOT_INSTANCES": set(bs.BOT_INSTANCES),
+        "bot_state.BOT_NAMES": set(bs.BOT_NAMES),
+        "monitor.BOTS": set(monitor.BOTS),
+        "deadman.BOTS": set(deadman.BOTS),
+        "startup_coordinator.STARTUP_SEQUENCE": {row[0] for row in coord.STARTUP_SEQUENCE},
+    }
+    for name, keys in got.items():
+        assert keys, f"{name} parsed as EMPTY — every assertion here would pass for free"
+    return got
+
+
+def test_every_algos_registry_holds_the_SAME_bots():
+    """MUTATION: drop any one bot from any one registry and this goes red naming both sides."""
+    got = _algos_registries()
+    reference = got["bot_state.BOT_INSTANCES"]
+    for name, keys in got.items():
+        assert keys == reference, (
+            f"{name} holds {sorted(keys)} but bot_state.BOT_INSTANCES holds "
+            f"{sorted(reference)}. Every roster that watches, starts or names a bot must hold "
+            f"the same set — see this section's header for what each omission costs."
+        )
+
+
+def test_the_command_center_registry_holds_the_SAME_bots():
+    """The fifth roster, and the one that makes a bot ADDRESSABLE — it is what puts a bot on the
+    Accounts tab so it can be given an account at all.
+
+    ⚠ **Parsed rather than imported, deliberately.** That router lives in another package with
+    its own venv and imports FastAPI; importing it here would wire two trees together to answer a
+    question about a list of strings. It REFUSES rather than returning an empty set.
+    MUTATION: remove a `BotReg` line and this goes red.
+    """
+    import re
+
+    text = (_REPO / "command-center/backend/routers/bots.py").read_text(encoding="utf-8")
+    block = text.split("_BOTS: list[BotReg] = [", 1)
+    assert len(block) == 2, "the _BOTS registry was not found — has it been renamed?"
+    keys = set(re.findall(r'key="([a-z0-9_]+)"', block[1].split("\n]", 1)[0]))
+    assert keys, "the _BOTS registry parsed as EMPTY"
+    assert keys == set(bs.BOT_INSTANCES), (
+        f"the Command Center registers {sorted(keys)} but algos knows {sorted(bs.BOT_INSTANCES)}. "
+        f"A bot missing there cannot be put on an account from the browser; a bot only there is "
+        f"one the browser can arm and no watchdog is watching."
+    )
+
+
+def test_every_registered_bot_has_an_instance_config_on_disk():
+    """A roster entry with no config is a bot that reads as registered and cannot start.
+    MUTATION: add a made-up key to any registry and this goes red."""
+    for key, path in bs.BOT_INSTANCES.items():
+        assert (path / "config.json").is_file(), f"{key} has no config.json at {path}"
+
+
+def test_the_display_names_agree_across_the_registries():
+    """One bot, one name. Two rosters disagreeing means one Telegram alert and one page column
+    calling the same bot different things, which is how two bots get read as one.
+    MUTATION: change a display name in one registry and this goes red."""
+    monitor = _load("monitor_names", "algos/notifications/monitor.py")
+    deadman = _load("deadman_names", "algos/notifications/deadman.py")
+    coord = _load("coordinator_names", "algos/bots/startup_coordinator.py")
+    coord_names = {row[0]: row[1] for row in coord.STARTUP_SEQUENCE}
+    for key, name in bs.BOT_NAMES.items():
+        assert monitor.BOTS[key]["name"] == name, key
+        assert deadman.BOTS[key] == name, key
+        assert coord_names[key] == name, key

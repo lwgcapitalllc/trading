@@ -80,6 +80,8 @@ BOTS = {
     # `_is_assigned` — see the same note in `monitor.py`: registering a bot only once somebody
     # assigns it would let the Bots page arm a bot no switch is watching.
     "b_leg_demo": "B-LEG",
+    # Benched too, and registered for the same reason.
+    "extreme_leg_demo": "Extreme Leg",
 }
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor

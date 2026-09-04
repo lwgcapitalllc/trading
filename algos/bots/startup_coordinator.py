@@ -79,6 +79,20 @@ STARTUP_SEQUENCE = [
         "Connected | #",
         180,
     ),
+    # ⚠ **Listed while on the BENCH, exactly as the sibling above is, and `bot_is_assigned`
+    # skips it every pass.** Being here says a bot CAN be started; having an account says it
+    # SHOULD be. Adding it only once somebody assigns it would mean the Bots page could put a bot
+    # on an account that no boot sequence brings back after a reboot — and the symptom of that is
+    # a bot that is simply absent, which nothing distinguishes from one nobody has armed yet.
+    (
+        "extreme_leg_demo",
+        "Extreme Leg",
+        str(ALGOS / "live" / "runner.py"),
+        ["--bot", "extreme_leg_demo", "--live"],
+        str(ALGOS / "markets/fx/instances/extreme_leg_demo/extreme_leg_demo.log"),
+        "Connected | #",
+        180,
+    ),
 ]
 
 

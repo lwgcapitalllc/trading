@@ -51,12 +51,14 @@ _INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 BOT_INSTANCES = {
     "sos_fade_demo": _INSTANCES / "sos_fade_demo",
     "b_leg_demo": _INSTANCES / "b_leg_demo",
+    "extreme_leg_demo": _INSTANCES / "extreme_leg_demo",
 }
 
 # Display names
 BOT_NAMES = {
     "sos_fade_demo": "SOS Fade",
     "b_leg_demo": "B-LEG",
+    "extreme_leg_demo": "Extreme Leg",
 }
 
 

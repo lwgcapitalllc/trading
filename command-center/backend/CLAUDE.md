@@ -657,7 +657,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Domain | Status | What it does |
 |---|---|---|
 | Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
-| Bots | ✅ Live | SSH monitor + control. **One bot registered — `sos_fade_demo`** (this row said "none currently registered" until 2026-08-04; it has run since 2026-07-31). [Detail](../docs/BACKEND_BUILD_NOTES.md#bots) |
+| Bots | ✅ Live | SSH monitor + control. **THREE bots registered, ONE trading** — `sos_fade_demo` is live and armed; `b_leg_demo` and `extreme_leg_demo` are registered and BENCHED (`account: null`). ⚠ **Count them in `routers/bots.py::_BOTS`, never from this line** — it read "none currently registered" until 2026-08-04 and "one" until 2026-09-04, both times while it was wrong. **Registered and TRADING are different questions**: registration is what makes a bot addressable so it can be given an account at all. [Detail](../docs/BACKEND_BUILD_NOTES.md#bots) |
 | Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. [Detail](../docs/BACKEND_BUILD_NOTES.md#strategies) |
 | Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 18 seeded rows (14 prop + 2 personal demo + `unconstrained` + `personal_forex_risk`). [Detail](../docs/BACKEND_BUILD_NOTES.md#rulesets) |
 | Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
@@ -1873,6 +1873,26 @@ command names both `python.exe` and `--bot <key>` — and after this change a he
 reaches that command, so those tests would have passed against a `_kill_bot` that issued no kill at
 all. `stubborn_ssh` drives a bot that ignores its stop request. **A safety test whose scenario stops
 occurring passes for ever and protects nothing.**
+
+## `_BOTS` is ONE of FIVE registries, and its comment about the other four was wrong (2026-09-04)
+
+Registering a bot here is what makes it ADDRESSABLE — it is what puts it on the Accounts tab so it
+can be given an account at all, and what makes its version, params and state readable. **Whether it
+TRADES is a different question**, answered by its instance config's `account`.
+
+🔴 **THE COMMENT ON THE BENCHED ROW SAID THOSE BOTS ARE DELIBERATELY ABSENT FROM
+`algos/notifications/monitor.py` AND `deadman.py`. THEY ARE IN BOTH.** Its reasoning was sound —
+an alarm on a bot whose normal state is *not running* is one people learn to scroll past — and its
+conclusion was reversed where the code lives: both watchers register every bot STATICALLY and ask
+`bot_state.is_assigned` each pass, so a benched bot costs nothing and the Bots page can never arm
+one no watchdog is watching. **A comment about another file is a claim, and only that file settles
+it** (rule 7, in its quietest form: nothing goes red).
+
+⚠ **The five rosters are now held together by test**, in `algos/tests/test_bot_bench.py`, which
+PARSES this file rather than importing it — this router lives in another venv and imports FastAPI,
+and wiring two trees together to compare a list of strings is not worth it. **The rule and what each
+omission costs live in `algos/CLAUDE.md`** → *A bot lives in FIVE registries*; do not restate them
+here. Adding a `BotReg` without the four algos-side entries fails that test by name.
 
 ## The "needs review" flag — the one thing this page could not see
 

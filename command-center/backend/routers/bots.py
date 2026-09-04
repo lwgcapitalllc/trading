@@ -174,10 +174,27 @@ _BOTS: list[BotReg] = [
     #
     # ⚠ It reads STOPPED on the Monitor tab and that is correct rather than a gap: it is not
     # running, nothing has started it, and nothing will until somebody assigns it.
-    # ⚠ It is deliberately NOT in `algos/notifications/monitor.py` or `deadman.py`. Those alarm
-    # on a bot that is not running, which is this bot's normal state — registering it there would
-    # ring the one alarm that has to stay quiet until it means something.
+    #
+    # 🔴 **THIS COMMENT SAID THE BENCHED BOTS ARE DELIBERATELY ABSENT FROM
+    # `algos/notifications/monitor.py` AND `deadman.py`. THEY ARE IN BOTH, AND HAVE BEEN — the
+    # claim was corrected on 2026-09-04 by reading those two files rather than this line.** Its
+    # reasoning was sound and its conclusion was reversed where the code lives: both watchers
+    # register every bot STATICALLY and ask `bot_state.is_assigned` per pass, which is the ONE
+    # definition of the bench. Registering only on assignment would let this page arm a bot no
+    # watchdog is watching — the failure with no symptom — where a static registry costs nothing
+    # while a bot sits benched. **Rule 7: a comment about another file is a claim, and the line
+    # that consumes it is the only thing that settles it.**
     BotReg(task="BOT_B_LEG", key="b_leg_demo", display="B-LEG", account_type="demo"),
+    # Benched too (2026-09-04). ⚠ **Its frame is M5**, unlike every other bot here — on M15 the
+    # strategy runs, logs cleanly and never fires, which is indistinguishable from a quiet
+    # market. That lives in its instance config, not here; it is mentioned because this page is
+    # where somebody assigns it.
+    BotReg(
+        task="BOT_EXTREME_LEG",
+        key="extreme_leg_demo",
+        display="Extreme Leg",
+        account_type="demo",
+    ),
 ]
 
 # ── Derived views. Never edit one of these — add a BotReg above. ──────────────

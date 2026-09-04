@@ -87,6 +87,13 @@ BOTS = {
         "script": "b_leg_demo",
         "log": str(ALGOS_ROOT / "markets/fx/instances/b_leg_demo/b_leg_demo.log"),
     },
+    # Benched too, and registered for the same reason as the entry above.
+    "extreme_leg_demo": {
+        "name": "Extreme Leg",
+        "suppress_key": "extreme_leg_demo",
+        "script": "extreme_leg_demo",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/extreme_leg_demo/extreme_leg_demo.log"),
+    },
 }
 
 # How many times a bot is restarted before this gives up and asks for a human. Same shape as the

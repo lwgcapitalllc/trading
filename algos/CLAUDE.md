@@ -2791,6 +2791,45 @@ neither has the bridge's market-entry path.** The live proving period in
 the account-cap agreement — **exempt a benched bot**, so neither enforces anything today; the number
 is chosen now so assignment is never blocked by it.
 
+### A bot lives in FIVE registries, and nothing checked they agreed until 2026-09-04
+
+Registering one means five entries: the instance-directory map and the display names
+(`shared/bot_state.py`), the boot sequence (`bots/startup_coordinator.py`), the process watchdog
+(`notifications/monitor.py`), the dead-man switch (`notifications/deadman.py`), and the Command
+Center's own list, which is what makes a bot ADDRESSABLE — it is what puts it on the Accounts tab so
+it can be given an account at all.
+
+🔴 **EVERY OMISSION IS SILENT AND THEY FAIL DIFFERENTLY, WHICH IS WHY A COUNT OF FIVE IS NOT THE
+POINT.** Missing from the instance map, a bot dies on startup with a bare `KeyError` **after**
+connecting and warming. Missing from the boot sequence, it is simply absent after a reboot — which
+looks exactly like a bot nobody has armed. Missing from a watcher, it is a bot nothing is watching,
+and that one has no symptom at all.
+
+🔴 **`deadman.py` HAS SAID *"keep the three registries in step"* IN A COMMENT SINCE IT WAS
+WRITTEN, AND A NEIGHBOURING COMMENT ABOUT ANOTHER FILE TURNED OUT TO BE FLATLY WRONG ON THE SAME
+DAY** — the Command Center's registry stated that the benched bots are deliberately absent from the
+watchdog and the dead-man switch, and they are in **both**, each with its own note explaining why
+registering while benched is correct. **A rule that lives in a comment is a rule the code it
+describes can contradict without anything going red.** Rule 7, in the one direction that is hardest
+to notice: a comment is a CLAIM about another file, and only the other file settles it.
+
+✅ **Four tests in `algos/tests/test_bot_bench.py` now hold the five together** — the four
+algos-side rosters must carry the same keys, the Command Center's must match them, every registered
+key must have a config on disk, and the display names must agree. ⚠ **The Command Center's list is
+PARSED rather than imported**: it lives in another package with its own venv and imports FastAPI, so
+importing it would wire two trees together to answer a question about a list of strings. ⚠ **Every
+roster REFUSES to parse as empty** — an empty set makes every comparison pass for free, which is the
+same vacuous shape this file records elsewhere.
+
+⚠ **Registering a BENCHED bot in the two alarm registries is correct, not premature.** Both ask
+`bot_state.is_assigned` per pass — the ONE definition of the bench — so a bot with no account costs
+nothing. Registering only on assignment would let the Bots page arm a bot no watchdog is watching,
+and that is the failure with no symptom.
+
+⚠ **It is deliberately NOT in the VPS task list.** No `BOT_` scheduled task exists for it, and
+`SYS_STARTUP` is what launches a bot; the task name in the Command Center's row is an identifier
+that becomes real when somebody creates the task.
+
 ### ✅ The bridge can OPEN AT MARKET, and the flag that asked for it finally has a consumer (2026-09-03)
 
 **`_place` branches on `pend.market`.** Until now its only placement call was
