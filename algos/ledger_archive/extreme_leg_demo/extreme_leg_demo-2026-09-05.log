@@ -1,0 +1,36 @@
+2026-09-05 03:10:03,376 [INFO] Extreme Leg | ExtremeLegStrategy v193 | hash 8b966299c7f6 | commit b7afa218 | frozen | LIVE
+2026-09-05 03:10:03,894 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-05 03:10:03,894 [INFO] MT5 connection lock released
+2026-09-05 03:10:04,026 [ERROR] Startup failed: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1434, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 439, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
+
+2026-09-05 03:11:03,259 [INFO] Extreme Leg | ExtremeLegStrategy v193 | hash 8b966299c7f6 | commit b7afa218 | frozen | LIVE
+2026-09-05 03:11:03,776 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-05 03:11:03,777 [INFO] MT5 connection lock released
+2026-09-05 03:11:03,901 [ERROR] Startup failed: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1434, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 439, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
+
+2026-09-05 03:12:03,135 [INFO] Extreme Leg | ExtremeLegStrategy v193 | hash 8b966299c7f6 | commit b7afa218 | frozen | LIVE
+2026-09-05 03:12:03,652 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-05 03:12:03,653 [INFO] MT5 connection lock released
+2026-09-05 03:12:03,767 [ERROR] Startup failed: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1434, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 439, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
+

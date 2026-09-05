@@ -1,0 +1,21 @@
+2026-09-05 02:58:40,147 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-05 02:58:40,177 [INFO] Stop requested — shutting down.
+2026-09-05 02:58:40,192 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-05 02:58:40,839 [INFO] MT5 disconnected.
+2026-09-05 02:58:48,865 [INFO] SOS Fade | SosFadeStrategy v190 | hash b7e118f236d0 | commit 28527db7 | frozen | LIVE
+2026-09-05 02:58:49,409 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-05 02:58:49,410 [INFO] MT5 connection lock released
+2026-09-05 02:58:49,517 [INFO] Sizing basis 10,020.65 = broker balance 14,538.88 - 4,518.23 stated adjustment
+2026-09-05 02:58:49,518 [INFO] Sizing against account balance $10,020.65
+2026-09-05 02:58:49,525 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-05 02:58:49,525 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-09-05 02:58:49,528 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-05 02:58:51,233 [INFO] Warmed 5000 bars (2026-06-22 08:45:00+00:00 → 2026-09-04 20:30:00+00:00) in 1.6s
+2026-09-05 02:58:52,831 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-22 08:55:00+00:00 → 2026-09-04 20:50:00+00:00).
+2026-09-05 02:58:52,832 [INFO] Equity re-anchored to the account after warm-up: 10,925.03 → 10,020.65
+2026-09-05 02:58:53,261 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-05 03:09:34,219 [INFO] Sizing against account balance $10,020.65
+2026-09-05 03:09:35,641 [INFO] Warmed 5000 bars (2026-06-22 08:45:00+00:00 → 2026-09-04 20:30:00+00:00) in 1.4s
+2026-09-05 03:09:37,105 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-22 08:55:00+00:00 → 2026-09-04 20:50:00+00:00).
+2026-09-05 03:09:37,107 [INFO] Equity re-anchored to the account after warm-up: 10,524.80 → 10,020.65
+2026-09-05 03:09:37,107 [INFO] Runtime config applied while flat (strategy rebuilt): exec_risk_pct 10.0 → 5.0
