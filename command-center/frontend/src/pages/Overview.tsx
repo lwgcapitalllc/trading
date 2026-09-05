@@ -39,6 +39,7 @@ import {
   dayIndexOf as weekDayIndex,
 } from '@/lib/calendar'
 import { StatCard } from '@/components/StatCard'
+import { FleetControls } from '@/components/FleetControls'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import type { BotStatus, BacktestSummary, CalendarEvent } from '@/types'
@@ -133,7 +134,10 @@ function BotRow({ bot }: { bot: BotStatus }) {
   )
 }
 
-function JobPill({ job }: { job: { name: string; status: string } }) {
+/** ⚠ `schedule` arrives here because the Bots page's System panel — the only place a job's
+ *  timing was written — was deleted on 2026-09-05 as duplicate of this row. It is optional
+ *  because the Telegram service is passed through here too and has no schedule. */
+function JobPill({ job }: { job: { name: string; status: string; schedule?: string } }) {
   const running = job.status === 'RUNNING'
   // Switched off on purpose gets NO glow and no gold. A "waiting for next trigger" pill on a task
   // that will never fire says the job is covered when it isn't — and two of the three jobs on the
@@ -145,11 +149,12 @@ function JobPill({ job }: { job: { name: string; status: string } }) {
       ? 'bg-text-tertiary/40'
       : 'bg-gold shadow-[0_0_5px_#d9a441]'
   const textCls = running ? 'text-pos-text' : disabled ? 'text-text-tertiary' : 'text-gold-text'
-  const tip = running
+  const state = running
     ? 'Running'
     : disabled
       ? 'Disabled — will not run until re-enabled on the VPS'
       : 'Scheduled — waiting for next trigger'
+  const tip = job.schedule ? `${state}\nRuns ${job.schedule}` : state
   return (
     <span
       title={tip}
@@ -577,6 +582,12 @@ export function Overview() {
             )}
           </div>
         </div>
+
+        {/* ── Fleet controls ────────────────────────────────────────
+            Moved off the Bots page on 2026-09-05 (Aaron's call). That page manages bots one at
+            a time; this acts on all of them, and sitting the two together is what made every
+            row's own buttons read like these. */}
+        <FleetControls />
 
         {/* ── Smart Money ───────────────────────────────────────── */}
         {smartMoney && (

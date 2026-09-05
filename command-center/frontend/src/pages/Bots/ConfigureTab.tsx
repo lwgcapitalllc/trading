@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+
 import {
   AlertTriangle,
   ArrowRight,
@@ -17,11 +17,9 @@ import {
   Upload,
 } from 'lucide-react'
 import {
-  useBotSnapshot,
   useBotParams,
   useSaveBotRuntime,
   useBotVersion,
-  useBotVersions,
   usePreviewPromote,
   usePromoteBot,
 } from '@/hooks/useBots'
@@ -356,87 +354,6 @@ export function FleetStrip({
   )
 }
 
-// ── the rail ────────────────────────────────────────────────────────────────────
-
-function RailRow({
-  bot,
-  flags,
-  unread,
-  selected,
-  onSelect,
-}: {
-  bot: BotStatus
-  flags: VersionFlags | null
-  unread: boolean
-  selected: boolean
-  onSelect: () => void
-}) {
-  const isRunning = bot.status === 'RUNNING'
-  const isLive = bot.account_type === 'live'
-
-  return (
-    <button
-      onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
-      className={`w-full text-left px-[10px] py-[9px] rounded-md border transition-colors duration-[100ms] cursor-pointer ${
-        selected
-          ? 'bg-accent-muted border-accent/30'
-          : 'bg-transparent border-transparent hover:bg-bg-hover'
-      }`}
-    >
-      <div className="flex items-center gap-[7px]">
-        <span
-          title={isRunning ? 'Running' : bot.status === 'ERROR' ? 'Error' : 'Stopped'}
-          className={`w-[6px] h-[6px] rounded-full shrink-0 ${
-            isRunning ? 'bg-pos shadow-[0_0_6px_#00ff7f]' : 'bg-neg'
-          }`}
-        />
-        <span
-          className={`text-[11px] truncate ${selected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}
-          title={bot.name}
-        >
-          {bot.name}
-        </span>
-        {flags?.anyWarn && (
-          <AlertTriangle
-            size={10}
-            className="ml-auto shrink-0 text-warn-text"
-            aria-label="version needs attention"
-          />
-        )}
-        {unread && (
-          <span
-            className="ml-auto shrink-0 text-[10px] text-text-tertiary"
-            title="Deployment record unreadable"
-          >
-            ?
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-[5px] mt-[5px] pl-[13px]">
-        <span
-          className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill uppercase tracking-[0.4px] ${
-            isLive ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'
-          }`}
-        >
-          {bot.account_type}
-        </span>
-        <span className="text-[10px] font-mono text-text-tertiary truncate">{bot.account}</span>
-      </div>
-    </button>
-  )
-}
-
-// ── which version is deployed, and deploying a new one ──────────────────────────
-//
-// The card this replaced read `config.json` — the tracked file — and so described what
-// SHOULD be deployed rather than what is. Those were the same thing until 2026-08-03, when
-// a bot stopped importing from the repo and started running a frozen snapshot. They are now
-// routinely different, and the difference is the whole point: you can build version 3 in the
-// repo all day and this keeps saying version 2, because version 2 is what is trading.
-//
-// Everything here comes from the VPS. Nothing is inferred from the local checkout.
-
 function Warn({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -465,7 +382,7 @@ function Warn({ children }: { children: React.ReactNode }) {
 // and two controls firing one destructive action is two places for the confirmation copy, the
 // disabled state and the preview gate to drift apart — on the one control that changes what a
 // live account trades.
-function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string }) {
+export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string }) {
   const { data: v, isLoading, isFetching } = useBotVersion(botKey)
   const preview = usePreviewPromote()
   const promote = usePromoteBot()
@@ -844,7 +761,7 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
 // `botKey` addresses the API and `botLabel` is what a human reads. They are separate props
 // on purpose: a display name is the field somebody eventually renames, and a control that
 // ACTS on a name acts on nothing the day it changes.
-function DeployCard({ botKey }: { botKey: string }) {
+export function DeployCard({ botKey }: { botKey: string }) {
   const { data: v, isLoading } = useBotVersion(botKey)
 
   if (isLoading)
@@ -921,16 +838,19 @@ function DeployCard({ botKey }: { botKey: string }) {
 
 // ── the one editable lever ──────────────────────────────────────────────────────
 
-function RuntimeEditor({
+export function RuntimeEditor({
   botKey,
   botLabel,
   row,
   balance,
+  hideNote = false,
 }: {
   botKey: string
   botLabel: string
   row: BotParamRow
   balance: number | null
+  /** Suppress the instance config's prose. See the note's own comment below for why. */
+  hideNote?: boolean
 }) {
   const current = Number(row.value)
   const [draft, setDraft] = useState<string>(String(current))
@@ -1002,7 +922,16 @@ function RuntimeEditor({
         </p>
       )}
 
-      {row.note && (
+      {/* 🔴 **The note is OFF by default since 2026-09-05.** It is the `_`-prefixed prose from the
+          instance config — a paragraph a developer wrote about why a number is what it is, and on
+          `exec_risk_pct` it runs to some 1,500 words. Printed beside the one control on the page
+          it buried the control. Aaron: *"even the section that says risk per trade, what is all
+          of that information? Why do I care?"*
+
+          ⚠ **It is HIDDEN, never deleted.** That prose is the measured reasoning behind a live
+          risk number and this repo does not throw those away — the drawer shows it under Details,
+          where somebody asking *why is it 5%* will look and nobody else has to read it. */}
+      {row.note && !hideNote && (
         <p className="text-[10px] text-text-tertiary mt-[10px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
           <Info size={10} className="inline mr-[4px] -mt-[1px]" />
           {row.note}
@@ -1132,7 +1061,7 @@ function ConfirmRuntime({
 
 // ── read-only strategy parameters ───────────────────────────────────────────────
 
-function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[] }) {
+export function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[] }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="border-b border-border-subtle/60 last:border-b-0">
@@ -1248,131 +1177,6 @@ export function BotPanel({ bot }: { bot: BotStatus }) {
             ))}
           </div>
         </Card>
-      </div>
-    </div>
-  )
-}
-
-export function ConfigureTab() {
-  const { data: snapshot } = useBotSnapshot()
-  const [searchParams, setSearchParams] = useSearchParams()
-
-  const bots = snapshot?.bots ?? []
-  // The KEY, not the display name — see `BotStatus.key`. A name is a label chosen for a
-  // human and is the field that eventually changes; everything addressable keys off `key`.
-  const keys = bots.map((b) => b.key)
-
-  // One fetch per bot, sharing DeployCard's cache entries — see `useBotVersions`.
-  const versionQueries = useBotVersions(keys)
-  const flags = versionQueries.map((q) => versionFlags(q.data))
-  const unreadable = versionQueries.filter((q) => !q.isPending && !q.data).length
-  const loading = versionQueries.some((q) => q.isPending)
-  // `isFetching` covers the BACKGROUND re-read the poll fires while a restart settles, which
-  // `isPending` (the first read) never sees. The strip renders it so a number that is about to
-  // move says so — see `useBotVersion` for why anything polls here at all.
-  const rechecking = versionQueries.some((q) => q.isFetching)
-
-  // Selection lives in the URL, like every other tab state in this app — so a link to a
-  // specific bot's config is a real link, and a refresh does not silently move you to
-  // another bot's promote button.
-  //
-  // ⚠ Keyed on `bot.key`, never the display name. `?bot=SOS%20Fade` is a bookmark
-  // that dies the day somebody renames the bot — and the thing it silently falls back to is
-  // `bots[0]`, i.e. a DIFFERENT bot's promote button, with the URL still naming the one you
-  // wanted. A stale key falls back the same way, but a key is not a label and nobody edits
-  // it for readability.
-  const requested = searchParams.get('bot')
-  const selected = bots.find((b) => b.key === requested) ?? bots[0] ?? null
-
-  function selectBot(key: string) {
-    const next = new URLSearchParams(searchParams)
-    next.set('bot', key)
-    setSearchParams(next, { replace: true })
-  }
-
-  if (!snapshot) return null
-  if (bots.length === 0) {
-    return <p className="text-[11px] text-text-tertiary">No bots registered.</p>
-  }
-
-  return (
-    <div>
-      <FleetStrip
-        bots={bots}
-        flags={flags}
-        unreadable={unreadable}
-        loading={loading}
-        rechecking={rechecking}
-        onSelect={selectBot}
-      />
-
-      <div className="flex items-start gap-4">
-        {/* ── Rail ──────────────────────────────────────────────────────────── */}
-        <div className="w-[212px] shrink-0 sticky top-0">
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text px-[10px] pt-[6px] pb-[8px]">
-              Bots
-            </p>
-            <div className="flex flex-col gap-[2px]">
-              {bots.map((b, i) => (
-                <RailRow
-                  key={b.key}
-                  bot={b}
-                  flags={flags[i]}
-                  unread={!versionQueries[i]?.isPending && !versionQueries[i]?.data}
-                  selected={selected?.key === b.key}
-                  onSelect={() => selectBot(b.key)}
-                />
-              ))}
-            </div>
-          </div>
-          <p className="text-[10px] text-text-tertiary leading-[1.5] mt-[8px] px-[4px]">
-            One bot at a time. Only the selected bot's Promote and Deploy controls exist on this
-            page.
-          </p>
-        </div>
-
-        {/* ── Detail ────────────────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0">
-          {selected && (
-            <>
-              {/* Deliberately NOT sticky, and the rail is. The parameter accordion runs well
-                  past a screen, so "which bot am I editing" has to survive scrolling — but the
-                  RAIL is what answers it, because the rail is the selector and its highlighted
-                  row cannot disagree with itself. A second sticky header is a second answer to
-                  one question, and it also lands in the 22px trap `frontend/CLAUDE.md` records:
-                  `<main>` is a padded scroller, so `top-0` pins 22px LOW and the card headers
-                  below scroll up through the transparent strip it leaves. */}
-              <div className="pb-[10px] flex items-center gap-2 flex-wrap">
-                <span className="text-[14px] font-semibold">{selected.name}</span>
-                <span
-                  className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
-                    selected.status === 'RUNNING'
-                      ? 'bg-pos-muted text-pos-text'
-                      : 'bg-neg-muted text-neg-text'
-                  }`}
-                >
-                  {selected.status === 'RUNNING'
-                    ? 'Running'
-                    : selected.status === 'ERROR'
-                      ? 'Error'
-                      : 'Stopped'}
-                </span>
-                <span
-                  className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
-                    selected.account_type === 'live'
-                      ? 'bg-warn-muted text-warn-text'
-                      : 'bg-bg-surface-2 text-text-secondary'
-                  }`}
-                >
-                  {selected.account_type}
-                </span>
-                <span className="text-[11px] font-mono text-text-tertiary">{selected.account}</span>
-              </div>
-              <BotPanel key={selected.key} bot={selected} />
-            </>
-          )}
-        </div>
       </div>
     </div>
   )

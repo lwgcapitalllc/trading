@@ -123,33 +123,38 @@ rather than the presence of a particular figure, so the test cannot go stale the
 default moves. ⚠ **Playwright is not in `scripts/run_all_tests.sh`** — it needs the app up — so
 this one is only as good as somebody running it.
 
-## The Bots page is TWO tabs, split by what you are doing (2026-09-04)
+## The Bots page: one list, one drawer, no tabs (2026-09-05)
 
-**Fleet answers *what is running*. Setup answers *what do I want*.** It was four — Monitor,
-Accounts, Configure, Users — and they were three views of the same three objects, so version,
-account, status and risk each appeared in three places and putting one bot on an account took
-three tabs. Aaron: *"The bots pages and tabs dont flow naturally … So much duplicated info
-everywhere."*
+**Accounts are headings, bots are rows, and clicking either opens a drawer holding only what you
+can change.** It was four tabs, then two — both the same mistake, several views of the same three
+objects. Aaron: *"too much information, too much duplication … make it very, very simple."*
 
-⚠ **Setup's two panes are chosen by `?bot=`** — no bot named shows the ACCOUNTS pane, a named bot
-shows that bot's own pane. They are two steps of one job, which is why assigning a bot now swaps
-the pane instead of navigating, and why leaving a bot returns to the account it sits on.
+🔴 **Every number is stated ONCE, on the thing it belongs to.** Balance, cap and account number
+belong to the account and live on its heading; version, risk and uptime belong to the bot and live
+on its row. **Nothing is repeated to make a row look complete** — that habit is what put one
+account's balance on every row of a stack and let the fleet total add it twice.
 
-⚠ **`?tab=monitor|accounts|configure` still resolve** (`readTab` in `pages/Bots/index.tsx`). They
-are in history, in bookmarks and in links this app builds for itself, and an unrecognised tab fell
-through to the FIRST one — landing on Fleet while the URL still named a bot.
+⚠ **State is a dot, not a word.** `RUNNING` was written on every row of every tab.
 
-🔴 **Fleet's rows are grouped by ACCOUNT, and Balance and Account left the row to become the group
-header.** A stack's rows each repeated one account's balance, which is both the duplication and
-the reason the header tile double-counted. **Anything true of the ACCOUNT belongs on the group
-header; only what is true of THIS BOT belongs on the row** — that is what moved the day-lock chip
-onto the bot and deleted the per-row stacked chip, which said one thing about one account once per
-bot and could never say which bots shared it.
+🔴 **A control's own prose does not go on the surface.** The risk editor printed `row.note` — the
+`_`-prefixed paragraph from the instance config, ~1,500 words on `exec_risk_pct` — directly beside
+the one input on the page, and buried it. It is now behind `hideNote` and shown under the drawer's
+Details, where somebody asking *why is it 5%* will look. **Hidden, never deleted**: that prose is
+the measured reasoning behind a live risk number.
 
-⚠ **Playwright is not in the gate and these panes are what it covers.** Two specs were re-pointed
-with this change (`bots-accounts`, `bots-version`) and NOT run — `bots-version` does not intercept
-the snapshot, so it reaches the real backend and therefore the live trading box. Run them
-deliberately, when a bot being touched is acceptable.
+⚠ **The drawers reuse `VersionBanner` and `RuntimeEditor` unchanged.** Both carry a confirm and one
+of them deploys code to a live account; rewriting either to make a drawer tidier would put a fresh
+implementation on the money path.
+
+⚠ **Fleet controls and scheduled jobs moved to Overview** (`components/FleetControls.tsx`, one
+component, not a copy). This page manages bots one at a time; those act on all of them.
+
+🔴 **The 65 Playwright tests in `bots-accounts.spec.ts` and `bots-version.spec.ts` describe the
+REMOVED structure and have not been re-pointed.** They were deliberately not blind-rewritten: they
+cannot be run from the dev machine safely (`bots-version` does not intercept the snapshot, so it
+reaches the real backend and the live box), and a test rewritten against a UI it has never been
+executed against is the vacuous-test trap this repo has recorded eight times. **Re-point them with
+the app up, watching each one fail first.**
 
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
 

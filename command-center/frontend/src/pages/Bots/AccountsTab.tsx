@@ -320,7 +320,7 @@ function idOf(g?: BotAccountGroup): string {
 
 /** The name a human recognises. The registry's label wins, then the broker, then the number —
  *  a card headed `Account 700152905` says nothing the row under it does not already say. */
-function nameOf(reg: BotAccountRegistration | undefined, g: BotAccountGroup): string {
+export function nameOf(reg: BotAccountRegistration | undefined, g: BotAccountGroup): string {
   if (g.kind === 'bench') return 'Not on an account'
   if (g.kind === 'unknown') return 'Unreadable configs'
   return reg?.broker || reg?.label || `Account ${g.account}`
@@ -342,7 +342,7 @@ function nameOf(reg: BotAccountRegistration | undefined, g: BotAccountGroup): st
  * ⚠ **ONE definition, read by the rail row and by the detail chip.** Two hand-written readings is
  * how a green dot in the list ends up beside *nothing running* on the pane it opens.
  */
-function liveOf(group: BotAccountGroup, statusByKey: Map<string, string>) {
+export function liveOf(group: BotAccountGroup, statusByKey: Map<string, string>) {
   let running = 0
   let known = 0
   for (const b of group.bots) {
@@ -1348,7 +1348,7 @@ function MoveMenu({
  * this list is empty, and an empty dropdown with no explanation reads as a broken control — the
  * shape this repo keeps recording as a feature nobody has driven end to end.
  */
-function AddBotRow({
+export function AddBotRow({
   account,
   here,
   busy,
@@ -1446,7 +1446,7 @@ function AddBotRow({
  * blank changes nothing. It travels to the git-ignored credentials file on the VPS, never into
  * the git-tracked registry.
  */
-function AccountForm({
+export function AccountForm({
   existing,
   onClose,
 }: {
