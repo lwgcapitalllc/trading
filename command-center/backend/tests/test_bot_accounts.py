@@ -646,3 +646,99 @@ def test_LOWERING_a_bots_own_risk_is_always_allowed(client, monkeypatch):
     )
     assert written == ["sos_fade_demo"], "it should have reached the write"
     assert "add up to" not in str(r.json().get("detail", ""))
+
+
+# ── a param write must fit the RECEIVING strategy (2026-09-04) ────────────────
+#
+# 🔴 `runner._build_strategy` refuses to start on any `strategy_params` key the strategy's config
+# class does not declare — "they would be ignored, so the bot would trade settings you did not
+# choose" — and that refusal is right. `assign_plan` wrote the account's cost profile into every
+# bot it moved without asking whether that bot's strategy has the field. MEASURED: assigning
+# `extreme_leg_demo` to account 700152905 produced a bot that connected to the broker and refused
+# to start on every attempt, while the page reported the move as done.
+#
+# THE SHAPE: a write correct for every EXISTING receiver is not a correct write. Both strategies
+# that had ever been assigned declare that field, so this had a 100% pass rate right up to the
+# first one that did not.
+#
+# Watched RED by mutation. THE MAP WAS RUN, and the second entry was written from inspection as
+# "2 red" and is actually 5 — inverting the filter breaks the cases that assert a param IS carried
+# as well as the ones that assert one is dropped, which reading the case names does not show:
+#     write every param regardless of `declared_params`  -> 3 red
+#     invert the filter (drop what IS declared)          -> 5 red
+#     treat `None` (could not ask) as "declares nothing" -> 2 red
+#     skip silently, with no note                        -> 2 red
+# The restore was re-run after every mutation and gives 66 green, so a mutation that failed to
+# apply cannot be misread here as one the suite survived.
+
+
+class _Reg:
+    """The registry fields `assign_plan` reads. A stub rather than a `RegisteredAccount` so a new
+    required field on that dataclass cannot silently change what these cases are testing."""
+
+    def __init__(self, profile="puprime_ecn", suffix=".p"):
+        self.server = "PUPrime-Demo"
+        self.mt5_path = r"C:\MT5_FFT\terminal64.exe"
+        self.account_profile = profile
+        self.symbol_suffix = suffix
+        self.assignable = True
+
+
+def _assign(declared, *, symbol="XAUUSD.s"):
+    target = ba.group_by_account({"a": _cfg("a", cap=10.0)})[0]
+    return ba.assign_plan(
+        "newbot",
+        700107749,
+        target=target,
+        registered=_Reg(),
+        current_symbol=symbol,
+        declared_params=declared,
+    )
+
+
+def test_a_param_the_strategy_DECLARES_is_written():
+    """The working case, and it is why the fix is a filter rather than a removal: two of the three
+    live strategies do declare the cost profile and must keep getting it."""
+    plan = _assign({"account_profile", "symbol"})
+    assert plan.param_fields["account_profile"] == "puprime_ecn"
+
+
+def test_a_param_the_strategy_does_NOT_declare_is_not_written():
+    """🔴 The defect. MUTATION: write every param regardless and this goes red — which is exactly
+    the config that stopped the bot dead."""
+    plan = _assign({"symbol"})
+    assert "account_profile" not in plan.param_fields
+
+
+def test_the_skipped_param_is_NAMED_rather_than_dropped_in_silence():
+    """A move that quietly leaves a cost profile describing the account the bot has LEFT is the
+    2026-08-12 defect. Skipping is the right action; skipping without saying so is not."""
+    plan = _assign({"symbol"})
+    assert any("account_profile" in n for n in plan.notes)
+
+
+def test_the_filter_covers_EVERY_param_write_not_just_the_cost_profile():
+    """It runs once at the end of the plan, so a param this function learns to carry tomorrow is
+    covered without anyone remembering the rule. MUTATION: filter at the profile's own write site
+    and this goes red, because the symbol survives."""
+    plan = _assign({"account_profile"})
+    assert "symbol" not in plan.param_fields
+    assert any("symbol" in n for n in plan.notes)
+
+
+def test_an_UNREADABLE_strategy_writes_anyway_and_says_it_could_not_check():
+    """🔴 Deliberately NOT a refusal, and the one place here that does not follow *refuse when you
+    cannot ask*. Of the two wrong answers, writing gives a bot that refuses to start and names the
+    field; skipping gives a bot that starts and trades an account with another broker's costs
+    recorded against it. The loud one is recoverable in a minute.
+
+    MUTATION: treat `None` as "declares nothing" and this goes red — every param disappears."""
+    plan = _assign(None)
+    assert plan.param_fields["account_profile"] == "puprime_ecn"
+    assert any("unchecked" in n for n in plan.notes)
+
+
+def test_nothing_is_said_when_every_param_fits():
+    """A note per assignment that always fires is a note nobody reads."""
+    plan = _assign({"account_profile", "symbol"})
+    assert not any("account_profile" in n for n in plan.notes)

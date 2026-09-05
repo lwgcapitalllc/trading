@@ -33,6 +33,7 @@ import subprocess
 import threading
 import time as _time
 from dataclasses import dataclass, replace
+from dataclasses import fields as dataclass_fields
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -61,7 +62,15 @@ from models import (
     TelegramUserCreate,
     TelegramUserRoleUpdate,
 )
-from services import bot_account_registry, bot_accounts, bot_params, bot_versions, lab_db, notify
+from services import (
+    bot_account_registry,
+    bot_accounts,
+    bot_params,
+    bot_versions,
+    lab_db,
+    notify,
+    strategy_import,
+)
 from services.alert_format import alert, joined
 from services.notify import send_telegram_id
 
@@ -330,13 +339,84 @@ def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: s
     subprocess.run(
         ["git", "-C", root, "commit", "-m", message], check=True, capture_output=True, timeout=15
     )
+    return _push_with_one_rebase(root)
+
+
+def _fail(code: int, text: str) -> "subprocess.CalledProcessError":
+    """A `CalledProcessError` carrying BYTES stderr, which is what every caller decodes."""
+    return subprocess.CalledProcessError(code, "git push", stderr=text.encode())
+
+
+def _push_with_one_rebase(root: str) -> str:
+    """Push. On a REJECTED push, rebase onto the remote once and push again.
+
+    🔴 **The push ran without `check=True` and nothing read its return code, so a rejected push
+    returned git's own rejection text as this function's SUCCESS value.** Every caller wraps this
+    in `except subprocess.CalledProcessError` and reports *git push failed* — an exception the
+    push could not raise. The endpoint then pulled on the VPS (which succeeded, pulling nothing),
+    announced the deploy, and returned 200.
+
+    🔴 **MEASURED 2026-09-04, and it is why a bot sat stopped for an hour**: an account move and a
+    risk-share change were committed on the Mac, both pushes were rejected, and the page reported
+    both as deployed. The box kept reading the old config — bot benched, sibling at its old share
+    — and nothing anywhere disagreed.
+
+    ⚠ **A rejection here is the NORMAL case, not an edge case.** The trading box commits and
+    pushes its own decision record hourly (`algos/tools/ledger_sync.py`), so any deploy from this
+    page that lands after the box's push and before this clone has fetched is a non-fast-forward.
+    **Failing loudly alone would turn an hourly race into an hourly manual recovery**, so the
+    rejection is RECOVERED from: fetch, rebase, push again, once.
+
+    ⚠ **`--autostash` because this clone is usually dirty** — two sessions share it and a
+    per-machine settings file is nearly always modified. Without it the rebase refuses on
+    unstaged changes and the recovery fails for a reason that has nothing to do with the push.
+
+    ⚠ **Exactly ONE retry, and never `--force`.** A loop would keep racing a box that pushes on a
+    schedule; a force would discard whatever it raced with. If the second push is rejected too,
+    that is a genuine disagreement and a person needs to look at it.
+
+    ⚠ **A failed rebase is ABORTED before raising**, so the clone is left where it started rather
+    than mid-rebase with a detached HEAD for the next session to find.
+    """
     out = subprocess.run(
         ["git", "-C", root, "push", "origin", "main"],
         capture_output=True,
         text=True,
         timeout=30,
     )
-    return (out.stdout + out.stderr).strip()
+    if out.returncode == 0:
+        return (out.stdout + out.stderr).strip()
+
+    rejected = (out.stdout + out.stderr).strip()
+    pull = subprocess.run(
+        ["git", "-C", root, "pull", "--rebase", "--autostash", "origin", "main"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if pull.returncode != 0:
+        subprocess.run(["git", "-C", root, "rebase", "--abort"], capture_output=True, timeout=30)
+        raise _fail(
+            out.returncode,
+            f"the push was rejected and the clone could not be rebased onto the remote, so "
+            f"NOTHING was deployed and the commit is still local.\n"
+            f"push: {rejected}\nrebase: {(pull.stdout + pull.stderr).strip()}",
+        )
+
+    again = subprocess.run(
+        ["git", "-C", root, "push", "origin", "main"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if again.returncode != 0:
+        raise _fail(
+            again.returncode,
+            f"the push was rejected, the clone was rebased onto the remote, and the second push "
+            f"was rejected too, so NOTHING was deployed and the commit is still local.\n"
+            f"{(again.stdout + again.stderr).strip()}",
+        )
+    return (again.stdout + again.stderr).strip()
 
 
 def _notify_telegram(text: str):
@@ -1400,6 +1480,34 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     }
 
 
+def _declared_strategy_params(strategy_package: str) -> "set[str] | None":
+    """The `strategy_params` names a strategy actually declares. `None` = could not be read.
+
+    Read off the SAME dataclass the bot constructs (`LAB_STRATEGY["config"]`), the way
+    `strategy_scanner` builds the param form — not from a list kept here. A second statement of
+    what a strategy accepts is a second answer, and it is the one that drifts.
+
+    ⚠ **`None` and `set()` must never be conflated by a caller.** `None` is *nobody could ask*;
+    an empty set would be *this strategy accepts nothing*, which is not a real state for a config
+    dataclass. Both come back as `None` on purpose, and `_only_declared` writes unchecked and says
+    so rather than silently dropping every param.
+
+    ⚠ **Never raises.** An unimportable strategy must not make a bot unmovable — the assignment
+    then behaves exactly as it did before this check existed, with a note saying it was unchecked.
+    """
+    if not strategy_package:
+        return None
+    try:
+        mod = strategy_import.import_strategy_package(strategy_package, cfg.MONOREPO_ROOT)
+        spec = getattr(mod, "LAB_STRATEGY", None)
+        if not isinstance(spec, dict) or "config" not in spec:
+            return None
+        return {f.name for f in dataclass_fields(spec["config"])} or None
+    except Exception as exc:  # noqa: BLE001 - see the docstring: unmovable is worse than unchecked
+        print(f"bots: could not read {strategy_package}'s settings: {type(exc).__name__}: {exc}")
+        return None
+
+
 @router.patch("/{bot_name}/account")
 def set_bot_account(bot_name: str, update: BotAccountAssign):
     """Put this bot ON an account, or take it OFF one.
@@ -1486,6 +1594,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             target=target,
             registered=registered,
             current_symbol=str(data.get("symbol") or ""),
+            # What this strategy can actually hold. A param it does not declare stops the bot at
+            # startup — see `bot_accounts._only_declared` and the 2026-09-04 incident behind it.
+            declared_params=_declared_strategy_params(str(data.get("strategy_package") or "")),
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

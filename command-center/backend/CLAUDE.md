@@ -1582,6 +1582,51 @@ bots was right, and it left a hole shaped exactly like the first bot on a new ac
 looks like a missing feature and is really the derivation being asked a question it has no input
 for. When a value is derived, ask what it answers before the thing it derives from exists.**
 
+## 🔴 An assignment may only write a param the RECEIVING strategy declares (2026-09-04)
+
+**`runner._build_strategy` refuses to start on any `strategy_params` key the strategy's config
+class does not declare** — *"they would be ignored, so the bot would trade settings you did not
+choose."* ✅ **That refusal is right and stays.** 🔴 **`assign_plan` wrote the account's
+`account_profile` into every bot it moved without asking whether that strategy has the field**, so
+assigning `extreme_leg_demo` produced a bot that connected to the broker and refused to start on
+every attempt.
+
+🔴 **THE SHAPE: a write that is correct for every EXISTING receiver is not a correct write.** Both
+strategies that had ever been assigned declare that field, so the rule had a 100% pass rate right up
+to the first one that did not. **Rule 7 pointed the other way — the WRITER made a claim about a
+receiver it never read.**
+
+✅ **Filtered ONCE at the end of `assign_plan` (`_only_declared`), never at each write site**, so a
+param this function learns to carry tomorrow is covered without anyone remembering the rule, and
+✅ **the declared set is read off the same dataclass the bot constructs** (`LAB_STRATEGY["config"]`)
+— a second statement of what a strategy accepts is the one that drifts.
+
+⚠ **`declared_params=None` means COULD NOT ASK and it writes anyway, deliberately** — the one place
+here that does not refuse on an unanswered question. Writing gives a bot that refuses to start and
+names the field; skipping gives a bot that starts and trades an account with another broker's costs
+recorded against it. **A note says it was unchecked.** ⚠ **This fails LOUDLY; the symbol-suffix trap
+in the same function does not** — a wrong suffix gives a bot that runs and receives no bars.
+
+## 🔴 A REJECTED push was reported as a deployment (2026-09-04)
+
+🔴 **`_git_commit_push` ran `git push` without `check=True` and never read its return code, so it
+returned git's rejection text as its SUCCESS value.** All four endpoints wrap it in
+`except subprocess.CalledProcessError` and report *git push failed* — an exception the push could
+not raise; the endpoint then pulled on the VPS (succeeding, pulling nothing) and answered 200 while
+the box held the old config. **MEASURED: an account move and a risk-share change sat unpushed for an
+hour with the page reporting both deployed.**
+
+⚠ **The rule was already in this file 200 lines below the bug** — *`subprocess.run` without
+`check=True` does not raise on a non-zero exit, and the one failure mode a "never raises" helper
+must still detect is the one that never raises.* It was written for the alert-thread write and never
+applied to the push.
+
+⚠ **A rejection here is the NORMAL case.** The box pushes its own decision record hourly, so any
+deploy landing between its push and this clone's next fetch is a non-fast-forward, and **failing
+loudly alone would turn an hourly race into an hourly manual recovery.** So: fetch, rebase, push
+again, **once**; `--autostash` (two sessions share this clone and it is nearly always dirty); never
+`--force`; a failed rebase is ABORTED before raising.
+
 ## Every Deploy button in this app was dead for eight days (2026-08-12)
 
 🔴 **`_git_commit_push` could not commit at all between 2026-08-04 and 2026-08-12, and every

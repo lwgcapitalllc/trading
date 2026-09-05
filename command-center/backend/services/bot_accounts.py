@@ -376,6 +376,53 @@ class AssignPlan:
     notes: list[str] = field(default_factory=list)
 
 
+def _only_declared(
+    param_fields: dict[str, Any], declared: Optional[set]
+) -> tuple[dict[str, Any], list[str]]:
+    """Drop any `strategy_params` write the receiving strategy does not declare.
+
+    🔴 **`runner._build_strategy` REFUSES to start on any `strategy_params` key the strategy's
+    config class does not have** — *"they would be ignored, so the bot would trade settings you
+    did not choose"* — and that refusal is right. **MEASURED 2026-09-04**: assigning
+    `extreme_leg_demo` wrote `account_profile` off the account registry, `ExtremeLegConfig` has no
+    such field, and the bot connected to the broker and refused to start on every attempt.
+
+    🔴 **THE SHAPE: a write that is correct for every existing receiver is not a correct write.**
+    Both strategies that had ever been assigned declare that field, so this had a 100% pass rate
+    right up to the first one that did not, and nothing in the code was going to reveal it before
+    a third strategy existed.
+
+    ⚠ **Filtering happens HERE, at the end, rather than at each write site** — so a param this
+    function learns to carry tomorrow is covered without anyone remembering this rule. The
+    per-site version is the one that goes stale.
+
+    ⚠ **`declared is None` means COULD NOT ASK, and it writes anyway.** That is deliberate and it
+    is the one place here that does not follow "refuse when you cannot ask": of the two wrong
+    answers, writing gives a bot that refuses to start and says exactly why, while skipping gives
+    a bot that starts and trades an account with another broker's costs recorded against it — the
+    quiet one. **A note says the check could not be made, so it is never silent.**
+    """
+    if declared is None:
+        if param_fields:
+            return param_fields, [
+                "the receiving strategy's settings could not be read, so "
+                + ", ".join(sorted(param_fields))
+                + " were written unchecked — if the strategy does not declare one of them the "
+                "bot will refuse to start and name it."
+            ]
+        return param_fields, []
+
+    kept = {k: v for k, v in param_fields.items() if k in declared}
+    dropped = sorted(set(param_fields) - set(kept))
+    if not dropped:
+        return kept, []
+    return kept, [
+        f"{', '.join(dropped)} was not written: this strategy does not have that setting, and a "
+        f"setting it cannot read would stop it starting. Anything that value describes about the "
+        f"account is not recorded on this bot."
+    ]
+
+
 def assign_plan(
     bot_key: str,
     account: Optional[int],
@@ -383,6 +430,7 @@ def assign_plan(
     target: Optional[AccountGroup] = None,
     registered: Any = None,
     current_symbol: str = "",
+    declared_params: Optional[set] = None,
 ) -> AssignPlan:
     """The fields to write on `bot_key`'s config to put it on `account` (or on the bench).
 
@@ -432,6 +480,11 @@ def assign_plan(
     ⚠ **An unreadable bot in the target group is refused**, for `cap_change_plan`'s reason
     sharpened: we would be adopting a cap agreed by only the bots we could read, which is the
     disagreement the guard exists to catch, created deliberately by the tool meant to prevent it.
+
+    ⚠ **`declared_params` is the receiving strategy's own field names**, and every
+    `strategy_params` write is filtered through it — see `_only_declared`, which carries the
+    2026-09-04 incident this argument exists because of. Pass `None` only when the strategy genuinely
+    could not be read; it means *unchecked*, not *nothing to check*, and it is reported as such.
     """
     if account is None:
         return AssignPlan(fields={"account": None})
@@ -512,6 +565,9 @@ def assign_plan(
             f"to make a move complete."
         )
 
+    # LAST, so every param write above is covered — including any added later. See `_only_declared`.
+    param_fields, unwritable = _only_declared(param_fields, declared_params)
+    notes.extend(unwritable)
     return AssignPlan(
         fields=fields, param_fields=param_fields, adopt_terminal_from=adopt_from, notes=notes
     )
