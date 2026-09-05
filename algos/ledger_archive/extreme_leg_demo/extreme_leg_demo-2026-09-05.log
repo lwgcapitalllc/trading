@@ -34,3 +34,12 @@ Traceback (most recent call last):
     raise RuntimeError(
 RuntimeError: Unknown strategy_params in the instance config: account_profile. They would be ignored, so the bot would trade settings you did not choose.
 
+2026-09-05 03:42:49,046 [INFO] Extreme Leg | ExtremeLegStrategy v193 | hash 8b966299c7f6 | commit c2b63792 | frozen | LIVE
+2026-09-05 03:42:49,563 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-05 03:42:49,563 [INFO] MT5 connection lock released
+2026-09-05 03:42:49,686 [INFO] Sizing against account balance $14,538.88
+2026-09-05 03:42:49,686 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-05 03:42:49,688 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-05 03:42:53,087 [INFO] Warmed 15000 bars (2026-06-22 08:55:00+00:00 → 2026-09-04 20:50:00+00:00) in 3.3s
+2026-09-05 03:42:53,088 [INFO] Equity re-anchored to the account after warm-up: 13,936.92 → 14,538.88
+2026-09-05 03:42:53,612 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
