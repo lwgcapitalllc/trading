@@ -1129,6 +1129,28 @@ correct (it is plumbing, not trading logic) and worth knowing when you change on
 
 **Phase:** No live bots. All four first-attempt bots were deleted 2026-06-22. The suite is being rebuilt backtest-first per the S.Y.S.T.E.M. method (`docs/BOT_DEVELOPMENT_METHOD.md`) — strategies are validated through the command-center backtest lab before any return to live demo trading. The reusable deployment infrastructure is preserved in `docs/BOT_DEPLOYMENT_INFRA.md`.
 
+### 🔴 An assignment may only write a strategy param the receiving strategy DECLARES (2026-09-04)
+
+**`runner._build_strategy` refuses to start on any `strategy_params` key the strategy's dataclass
+does not declare** — a silently-ignored param is a bot trading a setting nobody chose. ✅ **That
+refusal is correct and stays.** 🔴 **`bot_accounts.plan_assignment` writes `account_profile` off
+the account registry into the receiving bot unconditionally, without asking whether that strategy
+has the field** — so assigning `extreme_leg_demo` produced a bot that connected to the broker and
+refused to start on every attempt.
+
+🔴 **THE SHAPE: a write that is correct for every existing receiver is not a correct write.** Both
+strategies that had ever been assigned declare that field, so the rule had a 100% pass rate right
+up to the first one that did not, and nothing in the code was going to show it before a third
+strategy existed. **Rule 7 pointed the other way — the WRITER made a claim about a receiver it
+never read.**
+
+⚠ **This one fails LOUDLY; the sibling trap in the same function does not.** A wrong symbol suffix
+from the same assignment path gives a bot that runs, warms up and receives no bars. **A move
+between accounts can break a bot in two directions and only one of them tells you.**
+
+⚠ **Until the writer is fixed the field returns on the next assignment**, so
+`instances/extreme_leg_demo/config.json` carries the warning at `_strategy_params`.
+
 ### CLEAN SLATE — 2026-07-31. Read this before trusting anything older.
 
 **Aaron's decision: the suite starts from scratch today. Nothing from before this date carries
