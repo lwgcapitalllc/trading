@@ -3158,6 +3158,27 @@ The anchor did not, because it lives inside a state file keyed by name. **Before
 what is keyed on the old name and carry each one across in the same change** — and prefer keying a
 measurement on the thing that does not move, which here is the account number and the magic.
 
-⚠ **Nothing enforces this yet.** A guard would have to compare a new key's fresh anchor against
-any retired entry naming the same account, and that is a decision about whether a state file may
-read its own retired rows — not written, and named here rather than left for the next rename.
+✅ **A GUARD LANDED 2026-09-05: `bot_state.suspect_anchors`.** When a bot writes a FRESH anchor it
+scans its own instance file for any other entry — retired keys included, which is the whole point —
+already anchoring the SAME account at a DIFFERENT balance, and records them under
+`starting_balance_suspect` beside the number it just wrote.
+
+🔴 **IT REPORTS AND DOES NOT ADOPT, and that is the design rather than a shortcut.** A rename and
+an ordinary second bot joining a grown account are **the same signature**: the extreme leg joined
+700152905 on 2026-09-04 and its `14538.88` is CORRECT, so adopting `9996.99` there would credit a
+bot that has never traded with 45% of somebody else's growth. **Two causes, one signature; guessing
+between them fabricates a percentage** — so it raises the question and a person answers it, which
+is this file's own rule that a guard firing is a QUESTION, not an answer.
+
+⚠ **It is scoped three ways, each because the unscoped version is noise.** Only the SAME account
+(another account's opening says nothing about this one); only a DIFFERENT value (two bots arriving
+at one balance is the ordinary case, and flagging it fires on every second bot ever added); and
+only on a FRESH anchor (the flag is a fact about the moment the number was written, so re-deciding
+it every poll would raise it the first time any neighbour anchors differently).
+
+⚠ **Nothing yet READS `starting_balance_suspect`** — not the Bots page, not the hourly log review.
+It is written where the next reader will find it, and surfacing it is a separate change. Said
+plainly rather than left to be discovered: **today this guard is a record, not an alarm.**
+
+✅ 5 tests in `algos/tests/test_starting_balance_anchor.py`, **5/5 mutations RUN and every one
+red** — including both directions of the report-don't-adopt rule.

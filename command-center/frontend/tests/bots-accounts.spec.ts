@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
+import { refuseLiveWrites } from './fixtures'
 
 /**
  * The Bots page's Accounts tab — which bots share a balance, and the ceiling over it.
@@ -87,6 +88,9 @@ export function reg(over: Record<string, unknown> = {}) {
  * password is stored, so an unmocked one would reach the live box from a unit check.
  */
 async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
+  // FIRST, so it sits UNDER this spec's own handlers and only ever sees what they fell through
+  // on. `route.fallback()` below is allow-by-default, and this backend writes to the live box.
+  await refuseLiveWrites(page)
   await page.route('**/*', async (route) => {
     const u = new URL(route.request().url())
     if (u.pathname === '/api/bots/accounts/registry') {

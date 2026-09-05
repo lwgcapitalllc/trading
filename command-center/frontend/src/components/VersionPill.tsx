@@ -19,6 +19,17 @@ import type { BotDeployedVersion } from '@/types'
  * the reassuring answer to a question nobody could answer, which is the same rule `mt5_link` and
  * `grid_sensitivity_score` follow. A version display that can be quietly wrong is worse than none,
  * because it is what you check before deciding anything.
+ *
+ * 🔴 **All three states carry a BORDER, and the up-to-date one is green (2026-09-05).** It was
+ * `bg-bg-surface-2 text-text-secondary` — the same grey as the surface behind it — so on a page
+ * where every other column is also grey the version stopped registering as a claim at all. Aaron:
+ * *"the version of the bot, outline that with some kind of colour or something, so it stands out
+ * to me."*
+ *
+ * ⚠ **Green means UP TO DATE, never "good bot".** It is answering one question — is the box
+ * running the code you tested — and that is the only thing it may ever be read as. ⚠ **The unknown
+ * state stays NEUTRAL and gets a border too**: it must not borrow either verdict's colour, and
+ * without a border it is the one state that looks like a rendering failure rather than a finding.
  */
 export function VersionPill({
   version,
@@ -42,7 +53,7 @@ export function VersionPill({
         title={c?.reason || 'Could not work out which version this bot is running.'}
         className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
                    rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary
-                   cursor-default"
+                   border border-border-strong cursor-default"
       >
         <HelpCircle size={9} /> No version
       </span>
@@ -64,10 +75,10 @@ export function VersionPill({
           : `Deployed v${c.deployed_version} — the same code the backtester runs.`
       }
       className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                  rounded-pill uppercase tracking-[0.4px] cursor-default ${
+                  rounded-pill uppercase tracking-[0.4px] border cursor-default ${
                     behind > 0
-                      ? 'bg-warn-muted text-warn-text'
-                      : 'bg-bg-surface-2 text-text-secondary'
+                      ? 'bg-warn-muted text-warn-text border-warn/50'
+                      : 'bg-pos-muted text-pos-text border-pos/40'
                   }`}
     >
       {behind > 0 ? <AlertTriangle size={9} /> : <CheckCircle2 size={9} />}

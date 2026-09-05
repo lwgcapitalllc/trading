@@ -252,6 +252,50 @@ def get_uptime_str(bot_key: str) -> str:
         return f"{minutes}m"
 
 
+def suspect_anchors(bot_key: str, account, about_to_write: float) -> dict:
+    """Other entries in this instance file that already anchored the SAME account differently.
+
+    🔴 **A bot RENAME arrives here looking exactly like a brand-new bot, and the number it then
+    writes is wrong in the most reassuring direction.** The 2026-09-03 de-brand
+    (`mpc_sos_fade_demo` → `sos_fade_demo`) made a fresh state entry with no anchor, so the next
+    heartbeat anchored it at the balance the account had already GROWN to. MEASURED 2026-09-05: the
+    retired entry still held `9996.99` for account 700152905 while the live one held `14538.88`, so
+    every screen reading `total_pnl_pct` said **0.0%** on an account up **45.4% / $4,541.89**.
+    Nothing errored and no test went red.
+
+    ⚠ **IT REPORTS AND DOES NOT ADOPT, and that is the whole design.** Adopting the other anchor
+    would be right for a rename and WRONG for the ordinary case it cannot be told apart from — a
+    second bot joining an account its neighbour has already grown, which SHOULD anchor at today's
+    balance. The extreme leg did exactly that on 2026-09-04 and its `14538.88` is correct. **Two
+    causes, one signature; guessing between them fabricates a percentage.** So this records the
+    disagreement and a person decides, which is this repo's own rule that a guard firing is a
+    QUESTION rather than an answer.
+
+    ⚠ **It compares against every entry in the file, not just registered bots.** A retired key is
+    precisely the thing being looked for, and filtering to the current registry would skip it.
+
+    ⚠ **Only anchors for the SAME account count.** Another account's opening balance says nothing
+    about this one, and flagging it would be noise that teaches the reader to ignore the field.
+
+    ⚠ **An anchor that AGREES is not suspect** — two bots that arrived at the same balance are the
+    ordinary case, and reporting it would fire on every second bot ever added to an account.
+    """
+    try:
+        instance_dir = BOT_INSTANCES[bot_key]
+    except KeyError:
+        return {}
+    found = {}
+    for key, entry in _load_instance_state(instance_dir).items():
+        if key == bot_key or not isinstance(entry, dict):
+            continue
+        other = entry.get("starting_balance")
+        if not other or entry.get("starting_balance_account") != account:
+            continue
+        if round(float(other), 2) != about_to_write:
+            found[key] = round(float(other), 2)
+    return found
+
+
 def ensure_starting_balance(bot_key: str, balance: float, account=None) -> None:
     """Write starting_balance once per ACCOUNT — never overwritten while the account is the same.
 
@@ -283,9 +327,13 @@ def ensure_starting_balance(bot_key: str, balance: float, account=None) -> None:
     state = read_bot(bot_key)
     have = state.get("starting_balance")
     if not have:
-        write_bot(
-            bot_key, {"starting_balance": round(balance, 2), "starting_balance_account": account}
-        )
+        fresh = {"starting_balance": round(balance, 2), "starting_balance_account": account}
+        # 🔴 A RENAME reaches this branch looking exactly like a brand-new bot, and the result
+        # is a silently wrong number. See `suspect_anchors`.
+        others = suspect_anchors(bot_key, account, round(balance, 2))
+        if others:
+            fresh["starting_balance_suspect"] = others
+        write_bot(bot_key, fresh)
         return
     if account is None:
         return

@@ -235,6 +235,10 @@ function pnlCls(v: number | null | undefined): string {
  *  ⚠ Green and red are absent BY CONSTRUCTION: they mean up and down on this page. */
 const BOT_TINTS = ['#00e5ff', '#ffb300', '#a78bfa', '#4da6ff'] as const
 
+/** ONE column template for the heading row and every bot row under it. Two hand-written
+ *  lists is how a heading ends up over the wrong column. */
+const GRID = 'grid-cols-[minmax(150px,225px)_142px_92px_50px_74px_1fr_auto]'
+
 function tintOf(index: number): string {
   return BOT_TINTS[index % BOT_TINTS.length]
 }
@@ -644,10 +648,35 @@ export function Bots() {
                   {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
                    *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
                    *  The rows below state both, and a number restating what is already on
-                   *  screen is the duplication this page was rebuilt to remove. */}
-                  <span className="text-[11px] text-text-tertiary">
-                    {cap == null ? 'no cap' : `${cap}% cap`}
-                  </span>
+                   *  screen is the duplication this page was rebuilt to remove.
+                   *
+                   *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
+                   *  number it read as another piece of identity — Aaron: *"the cap is missing.
+                   *  Well, not missing. It's just not obvious."* It is the one number here that
+                   *  can refuse a trade, so it gets a border and the gold the page reserves for
+                   *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
+                   *  is the condition worth noticing, and rendering it quieter than a set cap
+                   *  is backwards. */}
+                  {cap == null ? (
+                    <span
+                      title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
+                      className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
+                    >
+                      no cap
+                    </span>
+                  ) : (
+                    <span
+                      title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
+                      className="inline-flex items-baseline gap-[4px] text-[11px] px-[7px] py-[3px] rounded-pill bg-gold-muted border border-gold/30 cursor-default"
+                    >
+                      <span className="font-mono tabular-nums font-semibold text-gold-text">
+                        {cap}%
+                      </span>
+                      <span className="text-[10px] text-gold-text/70 uppercase tracking-[0.4px]">
+                        cap
+                      </span>
+                    </span>
+                  )}
 
                   <span className="ml-auto flex items-baseline gap-[10px]">
                     <span className="text-[17px] font-mono tabular-nums font-medium">
@@ -662,6 +691,26 @@ export function Bots() {
                 </button>
 
                 <div className="border-t border-border-subtle">
+                  {/* 🔴 The rows are a TABLE and were unlabelled — Aaron: *"since this is a kind
+                   *  of a table format, I would like titles."* Four numeric columns with no
+                   *  heading means the reader decodes them from their own shape, and `5%` beside
+                   *  `+12.0% of account` is exactly the pair that gets read as the same kind of
+                   *  thing.
+                   *
+                   *  ⚠ ONE grid template, shared with the rows below by a constant. A hand-copied
+                   *  column list is how a heading ends up over the wrong column — and a heading
+                   *  that is confidently over the wrong number is worse than none. */}
+                  <div
+                    className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
+                  >
+                    <span className="pl-[19px]">Bot</span>
+                    <span title="What this bot's own closed trades came to">P&amp;L</span>
+                    <span>Version</span>
+                    <span title="Risk per trade">Risk</span>
+                    <span>Uptime</span>
+                    <span />
+                    <span className="text-right">Actions</span>
+                  </div>
                   {rows.map((bot, i) => {
                     const be = earnByBot.get(bot.key)
                     const running = bot.status === 'RUNNING'
@@ -669,7 +718,7 @@ export function Bots() {
                       <div
                         key={bot.key}
                         data-testid="bot-row"
-                        className={`group grid grid-cols-[minmax(150px,225px)_142px_92px_50px_74px_1fr_auto] items-center gap-3 pr-4 py-[10px] transition-colors hover:bg-bg-surface-2 ${
+                        className={`group grid ${GRID} items-center gap-3 pr-4 py-[10px] transition-colors hover:bg-bg-surface-2 ${
                           i > 0 ? 'border-t border-border-subtle' : ''
                         }`}
                       >
@@ -681,12 +730,11 @@ export function Bots() {
                           title={`Open ${bot.name} — risk, version, account and its settings`}
                           className="flex items-center gap-[9px] font-medium text-[13px] text-left min-w-0 pl-[19px]"
                         >
-                          {/* This bot's identity colour, carried on every surface it appears
-                           *  on so two bots on one balance never blur together. */}
-                          <span
-                            className="inline-block w-[3px] h-[17px] rounded-full shrink-0 -ml-[11px]"
-                            style={{ background: tintFor(bot.key) }}
-                          />
+                          {/* ⚠ NO identity rail here. It was a 3px bar per bot and Aaron read it
+                           *  as meaningless decoration — which it was, on a row that already
+                           *  names the bot. The split bar below still tints its segments,
+                           *  because two segments have no other way to be told apart, and its
+                           *  legend spells out which is which. */}
                           <span
                             className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
                               running ? 'bg-pos shadow-[0_0_7px_#00ff7f]' : 'bg-neg'
@@ -756,20 +804,37 @@ export function Bots() {
                               onClick={() => act(bot.key, () => startOne.mutate(bot.key))}
                             />
                           )}
-                          {/* 🔴 The one control Aaron could not find: "there's no more edit
-                           *  button. I don't see a way to configure anything." The drawer had
-                           *  always held it, but a row you have to GUESS is clickable is a
-                           *  feature nobody has. */}
-                          <IconBtn
-                            icon={SlidersHorizontal}
-                            title={`Configure ${bot.name} — risk, version, account, settings`}
-                            onClick={() => set('bot', bot.key)}
-                          />
                           <IconBtn
                             icon={FileText}
                             title="Logs"
                             onClick={() => setLogBot(bot.key)}
                           />
+                          {/* 🔴 THE CONTROL AARON COULD NOT FIND, TWICE. First it was only the
+                           *  row itself; then it was an ICON among three other icons, and he
+                           *  still asked *"where is configure? We used to have a Configure tab.
+                           *  That's gone completely now."*
+                           *
+                           *  ⚠ **It says the word.** An icon is a rebus for anybody who has not
+                           *  already learned it, and the whole reason this control keeps going
+                           *  missing is that the tab it replaced had a NAME. The other three
+                           *  stay icons because they are verbs you can guess from a shape;
+                           *  "configure" is not a shape.
+                           *
+                           *  ⚠ It is the same target as clicking the name — one drawer, one
+                           *  route in. A second way in is fine; a second IMPLEMENTATION is what
+                           *  this page keeps being rebuilt to remove. */}
+                          <button
+                            data-testid="configure-bot"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              set('bot', bot.key)
+                            }}
+                            title={`Configure ${bot.name} — risk per trade, version, account and all its settings`}
+                            className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
+                          >
+                            <SlidersHorizontal size={11} />
+                            Configure
+                          </button>
                         </span>
                       </div>
                     )
@@ -813,12 +878,16 @@ export function Bots() {
                     <span className="ml-auto text-[12px] text-text-tertiary">
                       {versionByKey.get(bot.key)?.data?.frozen ? 'idle' : 'never deployed'}
                     </span>
-                    <IconBtn
-                      icon={SlidersHorizontal}
-                      title={`Configure ${bot.name}`}
-                      onClick={() => set('bot', bot.key)}
-                    />
                     <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(bot.key)} />
+                    <button
+                      data-testid="configure-bot"
+                      onClick={() => set('bot', bot.key)}
+                      title={`Configure ${bot.name}`}
+                      className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
+                    >
+                      <SlidersHorizontal size={11} />
+                      Configure
+                    </button>
                   </div>
                 ))}
               </div>

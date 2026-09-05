@@ -3861,3 +3861,52 @@ and the account's net names the balance and the bot that recorded it. The backte
 
 ⚠ **The header sums net across ACCOUNTS, never across bots**, and an account whose net nobody
 could measure is LEFT OUT and said, never added in as zero.
+
+### The second pass, after Aaron read it (2026-09-05)
+
+🔴 **"WHERE IS CONFIGURE?" WAS ASKED TWICE, AND THE SECOND TIME THE CONTROL EXISTED.** First it was
+only the row itself; then it was an ICON beside three other icons and he still asked *"where is
+configure? We used to have a Configure tab. That's gone completely now."* **It says the word now.**
+An icon is a rebus for anybody who has not already learned it, and the whole reason this control
+kept going missing is that the tab it replaced had a NAME. Stop/Restart/Logs stay icons because
+they are verbs you can guess from a shape; *configure* is not a shape.
+
+⚠ **It is the same target as clicking the bot's name — one drawer, one route in.** A second way in
+is fine; a second IMPLEMENTATION is what this page keeps being rebuilt to remove.
+
+🔴 **The rows are a TABLE and were unlabelled.** Four numeric columns with no heading means the
+reader decodes them from their own shape, and `5%` beside `+12.0% of account` is exactly the pair
+that gets read as the same kind of thing. ⚠ **ONE grid template (`GRID`), shared by the heading row
+and every row under it** — a hand-copied column list is how a heading ends up confidently over the
+wrong number, which is worse than no heading.
+
+🔴 **The cap is a CHIP, not grey prose.** As tertiary text beside the account number it read as
+another piece of identity — *"the cap is missing. Well, not missing. It's just not obvious."* It is
+the one number on this card that can refuse a trade, so it takes a border and the gold this app
+reserves for a limit. ⚠ **NO CAP is the LOUD state, in warn.** An account with no ceiling is the
+condition worth noticing, and rendering it quieter than a set cap is backwards.
+
+🔴 **`VersionPill` carries a BORDER in all three states and the up-to-date one is GREEN.** It was
+`bg-bg-surface-2 text-text-secondary` — the same grey as the surface behind it — so on a page where
+every other column is grey the version stopped registering as a claim. ⚠ **Green means UP TO DATE,
+never "good bot"**: it answers one question, is the box running the code you tested. ⚠ The unknown
+state stays NEUTRAL and still gets a border, or it is the one state that looks like a rendering
+failure rather than a finding.
+
+⚠ **The per-bot identity rail was REMOVED from the rows** — Aaron read it as decoration, which on a
+row that already names the bot is what it was. **The split bar keeps its segment tints**, because
+two segments have no other way to be told apart, and its legend spells out which is which.
+
+### `refuseLiveWrites` — the browser suites were allow-by-default
+
+🔴 **Both bot suites end their catch-all with `route.fallback()`.** Every write they trigger today
+is routed in its own test — CHECKED, not assumed — but that is a property of how the tests happen
+to be written rather than of the harness, and this backend PATCHes an instance config, pushes it
+and pulls it **on the live trading box**. A check that reaches that path once has already spent the
+thing it was protecting.
+
+⚠ **Register it BEFORE a spec's own `mock()`.** Playwright matches the most recently registered
+handler first and `fallback()` walks backwards, so it only ever sees what the spec did not answer.
+⚠ **It ABORTS rather than fulfilling a plausible success** — a fake 200 lets a test pass while
+proving nothing about the request it meant to make. ⚠ **Reads pass through**; they are what makes
+these suites worth running against a real backend, and the worst a read costs is a slow test.
