@@ -83,7 +83,7 @@ export async function refuseLiveWrites(page: import('@playwright/test').Page) {
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return route.fallback()
     const url = new URL(req.url())
     if (!url.pathname.startsWith('/api/')) return route.fallback()
-     
+
     console.error(
       `[refuseLiveWrites] BLOCKED an unrouted ${method} ${url.pathname} — ` +
         `this test would have written to the live trading box. Route it in the test.`
