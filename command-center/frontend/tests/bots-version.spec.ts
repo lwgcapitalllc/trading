@@ -139,8 +139,18 @@ function banner(page: Page) {
   return page.getByTestId('version-banner')
 }
 
+/**
+ * ⚠ **The bot is NAMED in the URL since 2026-09-04, and it has to be.** Configure and Accounts
+ * merged into one Setup tab whose two panes are chosen by `?bot=`: with no bot named it shows the
+ * ACCOUNTS pane, and every assertion below would fail on a missing banner rather than on anything
+ * about versions. `?tab=configure` still resolves to Setup, so only the selection was missing.
+ *
+ * ⚠ It names `sos_fade_demo` because that is what the old `bots[0]` fallback resolved to — this
+ * reproduces the previous behaviour rather than choosing a new subject, and the mocked version
+ * payload above is that bot's.
+ */
 async function openConfigure(page: Page) {
-  await page.goto('/bots?tab=configure')
+  await page.goto('/bots?tab=setup&bot=sos_fade_demo')
   await expect(banner(page)).toBeVisible({ timeout: 20_000 })
 }
 

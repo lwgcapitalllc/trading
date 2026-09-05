@@ -340,26 +340,45 @@ test('clearing the cap sends null, which means uncapped rather than unchanged', 
   await expect.poll(() => sent).toEqual({ risk_cap_pct: null, deploy: true })
 })
 
-test('the monitor row carries a Stacked chip', async ({ page }) => {
+test('the fleet groups a stacked account under ONE header', async ({ page }) => {
   // Aaron's ask: from the page that shows which bots are running, a stacked account has to be
   // visible without opening another tab.
-  // MUTATION: make `stacked` false on the group → both rows lose the chip and this goes red.
+  //
+  // 🔴 **This asserted a per-ROW chip until 2026-09-04 and expected TWO of them** — one fact
+  // about one account, rendered once per bot. The rows are grouped under an account header now,
+  // so the claim is made ONCE and names how many bots share the balance. Expecting 2 was the
+  // duplication itself, written down as a requirement.
+  //
+  // MUTATION: group by bot key instead of account → two headers of one bot each, and the count
+  // of 1 goes red.
   await mock(page, STACKED)
-  await page.goto('/bots?tab=monitor')
-  await expect(page.getByTestId('row-stacked-chip')).toHaveCount(2)
+  await page.goto('/bots?tab=fleet')
+  await expect(page.getByTestId('account-group-stacked')).toHaveCount(1)
+  await expect(page.getByTestId('account-group-stacked')).toContainText('2 bots')
 })
 
-test('a single-bot account shows no stacked chip anywhere', async ({ page }) => {
-  // The chip must not become decoration. MUTATION: render it whenever the group exists → red.
+test('an old ?tab=monitor link still lands on Fleet', async ({ page }) => {
+  // The four tabs became two on 2026-09-04. `?tab=monitor` is in browser history and in links
+  // this app built for itself, and an unrecognised tab silently fell through to the first one —
+  // which happens to be right here, and would not be if the order ever changed.
+  // MUTATION: drop the alias from `readTab` and this still passes by luck; drop the default and
+  // it goes red. Kept for the LINK, which is the thing a reader clicks.
+  await mock(page, STACKED)
+  await page.goto('/bots?tab=monitor')
+  await expect(page.getByTestId('account-group-stacked')).toHaveCount(1)
+})
+
+test('a single-bot account shows no stacked claim anywhere', async ({ page }) => {
+  // It must not become decoration. MUTATION: render it whenever the group exists → red.
   await mock(page, [
     group({
       bots: [bot('sos_fade', 'SOS Fade', 770115, 10)],
       risk_cap_pct: 10,
     }),
   ])
-  await page.goto('/bots?tab=monitor')
-  await expect(page.getByTestId('row-stacked-chip')).toHaveCount(0)
-  await page.goto('/bots?tab=accounts')
+  await page.goto('/bots?tab=fleet')
+  await expect(page.getByTestId('account-group-stacked')).toHaveCount(0)
+  await page.goto('/bots?tab=setup')
   await expect(page.getByTestId('stacked-chip')).toHaveCount(0)
 })
 

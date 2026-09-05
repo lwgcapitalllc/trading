@@ -31,12 +31,45 @@ import { StatCard } from '@/components/StatCard'
 import { VersionPill } from '@/components/VersionPill'
 import { BotStatusPill } from './BotStatusPill'
 import type { BotStatus, BotReview, JobStatus } from '@/types'
-import { AccountsTab, useAccountCount } from './AccountsTab'
-import { ConfigureTab } from './ConfigureTab'
+import { useAccountCount } from './AccountsTab'
+import { SetupTab } from './SetupTab'
 import { UsersTab } from './UsersTab'
 
 type AccountFilter = 'all' | 'demo' | 'live'
-type PageTab = 'monitor' | 'accounts' | 'configure' | 'users'
+/**
+ * Two tabs, split by what you are DOING rather than by which object you are looking at.
+ *
+ * 🔴 **It was four tabs — Monitor, Accounts, Configure, Users — and they were three views of the
+ * same three objects.** Version, account, status and risk each appeared in three places, and
+ * putting one bot on an account meant one tab to assign it, a second to set how it trades and a
+ * third to see whether it came up. Aaron, 2026-09-04: *"The bots pages and tabs dont flow
+ * naturally … So much duplicated info everywhere."*
+ *
+ * **Fleet** answers *what is running*, grouped by the account whose money it is.
+ * **Setup** answers *what do I want* — accounts, which bots are on them, how each one trades, and
+ * what is deployed. Everything that WRITES lives there; Fleet only starts, stops and restarts.
+ */
+type PageTab = 'fleet' | 'setup' | 'users'
+
+/**
+ * ⚠ **Old tab names still resolve, and that is not politeness.** `?tab=configure` is in browser
+ * history, in bookmarks, and in the `?tab=accounts&account=…` links this app builds for itself.
+ * An unrecognised value silently fell back to the FIRST tab, so a stale link would have landed on
+ * Fleet while still naming a bot in the query string — the same shape as `ConfigureTab`'s own
+ * warning about a renamed bot key falling back to a different bot's promote button.
+ */
+function readTab(raw: string | null): PageTab {
+  switch (raw) {
+    case 'setup':
+    case 'accounts':
+    case 'configure':
+      return 'setup'
+    case 'users':
+      return 'users'
+    default:
+      return 'fleet'
+  }
+}
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -59,29 +92,11 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-/** This bot shares its trading account with at least one other bot.
- *
- * ⚠ Derived from the instance configs (`GET /bots/accounts`), not from a stored grouping — two
- * bots naming the same account ARE sharing a balance whether anybody grouped them or not.
- * Absent when the accounts query has not answered: unknown is not "not stacked", and this is
- * the one chip whose false absence understates how much risk is on. */
-function StackedChip({ n, cap }: { n: number; cap: number | null }) {
-  return (
-    <span
-      data-testid="row-stacked-chip"
-      title={
-        `${n} bots trade this account, so they share one balance.\n` +
-        (cap === null
-          ? 'No account risk cap is set — nothing stops them holding full risk at once.'
-          : `Account risk cap ${cap}% of the live balance.`)
-      }
-      className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                 rounded-pill uppercase tracking-[0.4px] bg-accent-muted text-text-primary cursor-default"
-    >
-      <Layers size={9} /> Stacked
-    </span>
-  )
-}
+/* 🔴 `StackedChip` lived here and is DELETED (2026-09-04). It rendered on every row of a stack,
+   repeating one fact about one account N times, and it could not say WHICH bots shared the
+   balance — the question a reader actually has. The account header row above each group answers
+   both, once. Its `data-testid="row-stacked-chip"` went with it; the header carries the same
+   claim in words. */
 
 /** Running, but not talking to its terminal.
  *
@@ -355,16 +370,24 @@ export function Bots() {
     const cap = g.cap_agrees ? g.risk_cap_pct : null
     for (const b of g.bots) stackedByKey.set(b.key, { n: g.bots.length, cap })
   }
+  // The cap for EVERY account, not only the stacked ones. `stackedByKey` skips single-bot
+  // accounts by design (there is nothing to be stacked with), so the group header below cannot
+  // read its cap from there — and an account showing no cap because nobody looked it up is the
+  // reassuring direction of wrong.
+  const capByAccount = new Map<string, number | null>()
+  for (const g of accountGroups ?? []) {
+    if (g.account == null) continue
+    capByAccount.set(String(g.account), g.cap_agrees ? g.risk_cap_pct : null)
+  }
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = (searchParams.get('tab') ?? 'monitor') as PageTab
+  const tab = readTab(searchParams.get('tab'))
   // The numbers on the tab chips. Both are cheap cached reads the tabs themselves already make,
   // so showing them costs no extra request once either tab has been opened.
   const accountCount = useAccountCount()
   const { data: users } = useUsers()
   const tabCount: Record<PageTab, number | undefined> = {
-    monitor: undefined, // the fleet size is a stat card on that tab, not a chip
-    accounts: accountCount,
-    configure: undefined, // Configure lists the same bots Monitor does
+    fleet: undefined, // the fleet size is a stat card on that tab, not a chip
+    setup: accountCount,
     users: users?.length,
   }
   // Merge rather than replace — Configure keeps its selected bot in `?bot=`, and rebuilding
@@ -444,6 +467,47 @@ export function Bots() {
       accountsCounted: byAccount.size - unknown,
     }
   })()
+  /**
+   * The fleet table's rows, grouped by the ACCOUNT whose balance they share.
+   *
+   * 🔴 **It was a flat list, and it could not show the one thing that matters most about a
+   * stack: that two bots are spending the SAME money.** Every row repeated the account's
+   * balance and number, so the page showed $14,538.88 twice and the header added it up. Aaron,
+   * 2026-09-04: *"even though the two bots are stacked it add their balances together also the
+   * UI is just bad it doesnt show that they are trading on the same account."*
+   *
+   * ⚠ **The balance is the first one any bot in the group reports, not a sum.** They are reading
+   * one broker account; a stopped bot reports none while its neighbour reports the real figure,
+   * and the account still holds that money either way.
+   *
+   * ⚠ **Bots on NO account come last, in their own group.** A benched bot is not trading, and
+   * sitting it between two accounts that are would put an idle row inside a live reading.
+   */
+  const fleetGroups = (() => {
+    const order: string[] = []
+    const byAccount = new Map<string, BotStatus[]>()
+    for (const b of bots) {
+      const k = b.account || ''
+      if (!byAccount.has(k)) {
+        byAccount.set(k, [])
+        order.push(k)
+      }
+      byAccount.get(k)!.push(b)
+    }
+    order.sort((a, z) => (a === '' ? 1 : z === '' ? -1 : 0))
+    return order.map((account) => {
+      const rows = byAccount.get(account)!
+      return {
+        account,
+        rows,
+        balance: rows.find((b) => b.balance != null)?.balance ?? null,
+        cap: account ? (capByAccount.get(account) ?? null) : null,
+        running: rows.filter((b) => b.status === 'RUNNING').length,
+        type: rows[0].account_type,
+      }
+    })
+  })()
+
   const allJobsOk = snapshot?.scheduled_jobs.every((j) => j.status === 'RUNNING') ?? false
 
   // ⚠ These gate the FLEET buttons, so they are counted over ALL bots — never over the
@@ -508,7 +572,7 @@ export function Bots() {
             already looking. Each count has ONE definition and it is not here — see
             `useAccountCount`, and `useUsers` for the other. */}
         <div className="flex bg-bg-surface border border-border-subtle rounded-md overflow-hidden">
-          {(['monitor', 'accounts', 'configure', 'users'] as PageTab[]).map((t) => (
+          {(['fleet', 'setup', 'users'] as PageTab[]).map((t) => (
             <span
               key={t}
               onClick={() => setTab(t)}
@@ -562,7 +626,7 @@ export function Bots() {
           away and moved everything up. The Accounts and Users tabs do not read the snapshot to
           render at all (Accounts joins it only for the State column, which honestly says `—`), so
           they were being blocked by a fetch neither of them needs. */}
-      {isLoading && tab === 'monitor' && (
+      {isLoading && tab === 'fleet' && (
         <div className="animate-pulse">
           <div className="grid grid-cols-4 gap-[10px] mb-4">
             {[...Array(4)].map((_, i) => (
@@ -620,7 +684,7 @@ export function Bots() {
       )}
 
       {/* ── Monitor tab ───────────────────────────────────────────────────────── */}
-      {snapshot && tab === 'monitor' && (
+      {snapshot && tab === 'fleet' && (
         <>
           {/* ── Stat cards ──────────────────────────────────────────────────── */}
           <div className="grid grid-cols-3 gap-[10px] mb-4">
@@ -689,183 +753,217 @@ export function Bots() {
                   {/* "This bot" rather than "Actions": the fleet card below has buttons that
                       look the same and mean something else entirely, and the column header is
                       the only place the SCOPE of a row's buttons can be stated once. */}
-                  {[
-                    'Bot',
-                    'Status',
-                    'Version',
-                    'Balance',
-                    'Overall P&L',
-                    'Account',
-                    'Uptime',
-                    'This bot',
-                    'Logs',
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-6 py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle"
-                    >
-                      {h}
-                    </th>
-                  ))}
+                  {/* 🔴 **Balance and Account left this row on 2026-09-04 and became the GROUP
+                      HEADER above it.** Two bots on one account each reported that account's
+                      balance, so the column printed the same money twice and the header tile
+                      added it up — $29,077.76 for an account holding $14,538.88. A balance
+                      belongs to the account, and the account is now a row of its own. */}
+                  {['Bot', 'Status', 'Version', 'Overall P&L', 'Uptime', 'This bot', 'Logs'].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-6 py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle"
+                      >
+                        {h}
+                      </th>
+                    )
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {bots.map((bot: BotStatus) => {
-                  const isRunning = bot.status === 'RUNNING'
-                  const isThisRowBusy = pendingBotKey === bot.key
-                  const isExpanded = expandedBot === bot.key
-                  return (
-                    <Fragment key={bot.key}>
-                      {/* ── Main row ────────────────────────────── */}
-                      <tr className="border-b border-border-subtle hover:bg-bg-hover/40 transition-colors duration-[80ms]">
-                        <td
-                          className="px-6 py-[11px] font-medium align-middle cursor-pointer select-none"
-                          onClick={() => setExpandedBot(isExpanded ? null : bot.key)}
-                        >
-                          <div className="flex items-center gap-[7px]">
-                            <ChevronRight
-                              size={12}
-                              className={`text-text-tertiary flex-shrink-0 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
-                            />
-                            {bot.name}
-                          </div>
-                        </td>
-                        <td className="px-6 py-[11px] align-middle">
-                          <div className="flex items-center gap-[6px]">
-                            <BotStatusPill status={bot.status} />
-                            {stackedByKey.has(bot.key) && (
-                              <StackedChip
-                                n={stackedByKey.get(bot.key)!.n}
-                                cap={stackedByKey.get(bot.key)!.cap}
-                              />
-                            )}
-                            {bot.mt5_link === false && <NoLinkChip />}
-                            {bot.review && <ReviewChip review={bot.review} />}
-                          </div>
-                        </td>
-                        <td className="px-6 py-[11px] align-middle">
-                          <VersionPill
-                            version={versionByKey.get(bot.key)?.data}
-                            loading={versionByKey.get(bot.key)?.isPending}
-                          />
-                        </td>
-                        <td className="px-6 py-[11px] font-mono text-small align-middle">
-                          {bot.balance != null ? (
-                            '$' +
-                            bot.balance.toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })
-                          ) : (
-                            <span
-                              className={
-                                bot.mt5_link === false ? 'text-warn-text' : 'text-text-tertiary'
-                              }
-                            >
-                              {bot.mt5_link === false ? 'no link' : '—'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-[11px] font-mono text-small align-middle">
-                          {bot.total_pnl_pct != null ? (
-                            <span
-                              className={bot.total_pnl_pct >= 0 ? 'text-pos-text' : 'text-neg-text'}
-                            >
-                              {bot.total_pnl_pct >= 0 ? '+' : ''}
-                              {bot.total_pnl_pct.toFixed(1)}%
-                            </span>
-                          ) : (
-                            <span className="text-text-tertiary">—</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-[11px] align-middle">
-                          <div className="flex items-center gap-[6px]">
-                            <span className="font-mono text-[11px] text-text-secondary">
-                              {bot.account}
-                            </span>
-                            {filter === 'all' && (
+                {fleetGroups.map((group) => (
+                  <Fragment key={group.account || '__no_account'}>
+                    {/* ── Account header: the balance, the cap and the account number ONCE ── */}
+                    <tr className="bg-bg-surface-2/60">
+                      <td colSpan={7} className="px-6 py-[9px] border-b border-border-subtle">
+                        <div className="flex items-center gap-[10px] flex-wrap">
+                          {group.account ? (
+                            <>
+                              <span className="font-mono text-[11px] text-text-secondary">
+                                {group.account}
+                              </span>
                               <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
-                                {bot.account_type}
+                                {group.type}
                               </span>
-                            )}
-                            {bot.day_locked && (
-                              <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase bg-warn-muted text-warn-text">
-                                locked
+                              <span className="font-mono text-small text-text-primary">
+                                {group.balance != null
+                                  ? '$' +
+                                    group.balance.toLocaleString('en-US', {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })
+                                  : /* Not zero, and not blank. Nobody could ask. */
+                                    'balance unread'}
                               </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-[11px] font-mono text-small text-text-secondary align-middle">
-                          {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
-                        </td>
-                        <td className="px-6 py-[11px] align-middle">
-                          {isThisRowBusy ? (
-                            <div className="flex items-center gap-[6px] text-[11px] text-accent">
-                              <svg
-                                className="animate-spin h-[11px] w-[11px] flex-shrink-0"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                              >
-                                <circle
-                                  className="opacity-25"
-                                  cx="12"
-                                  cy="12"
-                                  r="10"
-                                  stroke="currentColor"
-                                  strokeWidth="4"
-                                />
-                                <path
-                                  className="opacity-75"
-                                  fill="currentColor"
-                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                                />
-                              </svg>
-                              {pendingBotActionLabel}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-[4px]">
-                              {isRunning ? (
-                                <>
-                                  <RowActionBtn
-                                    icon={Square}
-                                    title="Stop bot"
-                                    variant="neg"
-                                    disabled={anyGlobalPending}
-                                    onClick={() => setConfirmStopBot(bot.key)}
-                                  />
-                                  <RowActionBtn
-                                    icon={RotateCcw}
-                                    title="Restart bot"
-                                    disabled={anyGlobalPending}
-                                    onClick={() => restartOne.mutate(bot.key)}
-                                  />
-                                </>
-                              ) : (
-                                <RowActionBtn
-                                  icon={Play}
-                                  title="Start bot"
-                                  variant="pos"
-                                  disabled={anyGlobalPending}
-                                  onClick={() => startOne.mutate(bot.key)}
-                                />
+                              <span className="text-[10px] text-text-tertiary">
+                                {group.cap == null
+                                  ? 'no risk cap'
+                                  : `cap ${group.cap}% of the balance`}
+                              </span>
+                              {group.rows.length > 1 && (
+                                <span
+                                  data-testid="account-group-stacked"
+                                  title={
+                                    `${group.rows.length} bots trade this account, so they share one balance.\n` +
+                                    (group.cap === null
+                                      ? 'No account risk cap is set — nothing stops them holding full risk at once.'
+                                      : `Account risk cap ${group.cap}% of the live balance.`)
+                                  }
+                                  className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-accent-muted text-text-primary cursor-default"
+                                >
+                                  <Layers size={9} /> One balance · {group.rows.length} bots
+                                </span>
                               )}
-                            </div>
+                              <span className="text-[10px] text-text-tertiary ml-auto">
+                                {group.running} of {group.rows.length} trading
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-[11px] text-text-secondary">
+                                Not on an account
+                              </span>
+                              <span className="text-[10px] text-text-tertiary">
+                                these bots trade nothing until they are given one
+                              </span>
+                            </>
                           )}
-                        </td>
-                        <td className="px-6 py-[11px] align-middle">
-                          <RowActionBtn
-                            icon={FileText}
-                            title="View log"
-                            onClick={() => setLogBot(bot.key)}
-                          />
-                        </td>
-                      </tr>
+                        </div>
+                      </td>
+                    </tr>
+                    {group.rows.map((bot: BotStatus) => {
+                      const isRunning = bot.status === 'RUNNING'
+                      const isThisRowBusy = pendingBotKey === bot.key
+                      const isExpanded = expandedBot === bot.key
+                      return (
+                        <Fragment key={bot.key}>
+                          {/* ── Main row ────────────────────────────── */}
+                          <tr className="border-b border-border-subtle hover:bg-bg-hover/40 transition-colors duration-[80ms]">
+                            <td
+                              className="px-6 py-[11px] font-medium align-middle cursor-pointer select-none"
+                              onClick={() => setExpandedBot(isExpanded ? null : bot.key)}
+                            >
+                              <div className="flex items-center gap-[7px]">
+                                <ChevronRight
+                                  size={12}
+                                  className={`text-text-tertiary flex-shrink-0 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
+                                />
+                                {bot.name}
+                              </div>
+                            </td>
+                            <td className="px-6 py-[11px] align-middle">
+                              <div className="flex items-center gap-[6px]">
+                                <BotStatusPill status={bot.status} />
+                                {/* 🔴 The STACKED chip was here on every row of a stack, saying the
+                                same thing N times about one account. The account header above
+                                the group says it once, and says WHICH bots — which is the half
+                                the chip could never carry. */}
+                                {bot.mt5_link === false && <NoLinkChip />}
+                                {bot.review && <ReviewChip review={bot.review} />}
+                                {/* Moved here from the Account cell when that cell became a group
+                                header: the lock is a fact about THIS BOT's day, not about the
+                                account, and it was the only per-bot thing in that column. */}
+                                {bot.day_locked && (
+                                  <span
+                                    title="This bot has hit its daily limit and will place nothing more today."
+                                    className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase bg-warn-muted text-warn-text cursor-default"
+                                  >
+                                    locked
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-[11px] align-middle">
+                              <VersionPill
+                                version={versionByKey.get(bot.key)?.data}
+                                loading={versionByKey.get(bot.key)?.isPending}
+                              />
+                            </td>
+                            <td className="px-6 py-[11px] font-mono text-small align-middle">
+                              {bot.total_pnl_pct != null ? (
+                                <span
+                                  className={
+                                    bot.total_pnl_pct >= 0 ? 'text-pos-text' : 'text-neg-text'
+                                  }
+                                >
+                                  {bot.total_pnl_pct >= 0 ? '+' : ''}
+                                  {bot.total_pnl_pct.toFixed(1)}%
+                                </span>
+                              ) : (
+                                <span className="text-text-tertiary">—</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-[11px] font-mono text-small text-text-secondary align-middle">
+                              {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
+                            </td>
+                            <td className="px-6 py-[11px] align-middle">
+                              {isThisRowBusy ? (
+                                <div className="flex items-center gap-[6px] text-[11px] text-accent">
+                                  <svg
+                                    className="animate-spin h-[11px] w-[11px] flex-shrink-0"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <circle
+                                      className="opacity-25"
+                                      cx="12"
+                                      cy="12"
+                                      r="10"
+                                      stroke="currentColor"
+                                      strokeWidth="4"
+                                    />
+                                    <path
+                                      className="opacity-75"
+                                      fill="currentColor"
+                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                                    />
+                                  </svg>
+                                  {pendingBotActionLabel}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-[4px]">
+                                  {isRunning ? (
+                                    <>
+                                      <RowActionBtn
+                                        icon={Square}
+                                        title="Stop bot"
+                                        variant="neg"
+                                        disabled={anyGlobalPending}
+                                        onClick={() => setConfirmStopBot(bot.key)}
+                                      />
+                                      <RowActionBtn
+                                        icon={RotateCcw}
+                                        title="Restart bot"
+                                        disabled={anyGlobalPending}
+                                        onClick={() => restartOne.mutate(bot.key)}
+                                      />
+                                    </>
+                                  ) : (
+                                    <RowActionBtn
+                                      icon={Play}
+                                      title="Start bot"
+                                      variant="pos"
+                                      disabled={anyGlobalPending}
+                                      onClick={() => startOne.mutate(bot.key)}
+                                    />
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-6 py-[11px] align-middle">
+                              <RowActionBtn
+                                icon={FileText}
+                                title="View log"
+                                onClick={() => setLogBot(bot.key)}
+                              />
+                            </td>
+                          </tr>
 
-                      {/* ── Expanded detail row ──────────────────── */}
-                      {isExpanded && (
-                        <tr className="bg-bg-sunken border-b border-border-subtle">
-                          <td colSpan={9} className="px-6 py-[14px]">
-                            {/* ── Config strip ─────────────────────────────────────────
+                          {/* ── Expanded detail row ──────────────────── */}
+                          {isExpanded && (
+                            <tr className="bg-bg-sunken border-b border-border-subtle">
+                              <td colSpan={7} className="px-6 py-[14px]">
+                                {/* ── Config strip ─────────────────────────────────────────
                                 Four stat tiles (Daily P&L / Weekly P&L / Trades Today /
                                 Peak Balance) and three cap chips (Goal / Daily cap / Weekly
                                 cap) stood here until 2026-08-05. Every one was written by
@@ -877,34 +975,36 @@ export function Bots() {
                                 itself. Do not re-add a tile here without a writer behind
                                 it: a `number | null` nothing populates reads as "no P&L
                                 today" rather than "nothing measures this". ────────────── */}
-                            <div className="flex items-center gap-[12px] text-[11px] text-text-tertiary flex-wrap">
-                              {bot.last_updated && (
-                                <span>
-                                  Updated{' '}
-                                  <span className="text-text-secondary ml-[4px]">
-                                    {relativeTime(bot.last_updated)}
-                                  </span>
-                                </span>
-                              )}
-                            </div>
+                                <div className="flex items-center gap-[12px] text-[11px] text-text-tertiary flex-wrap">
+                                  {bot.last_updated && (
+                                    <span>
+                                      Updated{' '}
+                                      <span className="text-text-secondary ml-[4px]">
+                                        {relativeTime(bot.last_updated)}
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
 
-                            {/* ── Lock banner ──────────────────────── */}
-                            {bot.day_locked && (
-                              <div className="mt-[10px] pt-[10px] border-t border-border-subtle/40 flex items-center gap-[6px]">
-                                <span className="text-[11px] text-warn-text">
-                                  🔒 Day locked{bot.lock_reason ? ` — ${bot.lock_reason}` : ''}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
+                                {/* ── Lock banner ──────────────────────── */}
+                                {bot.day_locked && (
+                                  <div className="mt-[10px] pt-[10px] border-t border-border-subtle/40 flex items-center gap-[6px]">
+                                    <span className="text-[11px] text-warn-text">
+                                      🔒 Day locked{bot.lock_reason ? ` — ${bot.lock_reason}` : ''}
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </Fragment>
+                ))}
                 {bots.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-text-tertiary text-small">
+                    <td colSpan={7} className="text-center py-12 text-text-tertiary text-small">
                       No bots match filter.
                     </td>
                   </tr>
@@ -1042,10 +1142,8 @@ export function Bots() {
         </>
       )}
 
-      {/* ── Configure tab ─────────────────────────────────────────────────────── */}
-      {tab === 'accounts' && <AccountsTab />}
-
-      {tab === 'configure' && <ConfigureTab />}
+      {/* ── Setup tab ─────────────────────────────────────────────────────────── */}
+      {tab === 'setup' && <SetupTab />}
 
       {/* ── Users tab ─────────────────────────────────────────────────────────── */}
       {tab === 'users' && <UsersTab />}

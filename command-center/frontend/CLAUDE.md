@@ -123,6 +123,34 @@ rather than the presence of a particular figure, so the test cannot go stale the
 default moves. ⚠ **Playwright is not in `scripts/run_all_tests.sh`** — it needs the app up — so
 this one is only as good as somebody running it.
 
+## The Bots page is TWO tabs, split by what you are doing (2026-09-04)
+
+**Fleet answers *what is running*. Setup answers *what do I want*.** It was four — Monitor,
+Accounts, Configure, Users — and they were three views of the same three objects, so version,
+account, status and risk each appeared in three places and putting one bot on an account took
+three tabs. Aaron: *"The bots pages and tabs dont flow naturally … So much duplicated info
+everywhere."*
+
+⚠ **Setup's two panes are chosen by `?bot=`** — no bot named shows the ACCOUNTS pane, a named bot
+shows that bot's own pane. They are two steps of one job, which is why assigning a bot now swaps
+the pane instead of navigating, and why leaving a bot returns to the account it sits on.
+
+⚠ **`?tab=monitor|accounts|configure` still resolve** (`readTab` in `pages/Bots/index.tsx`). They
+are in history, in bookmarks and in links this app builds for itself, and an unrecognised tab fell
+through to the FIRST one — landing on Fleet while the URL still named a bot.
+
+🔴 **Fleet's rows are grouped by ACCOUNT, and Balance and Account left the row to become the group
+header.** A stack's rows each repeated one account's balance, which is both the duplication and
+the reason the header tile double-counted. **Anything true of the ACCOUNT belongs on the group
+header; only what is true of THIS BOT belongs on the row** — that is what moved the day-lock chip
+onto the bot and deleted the per-row stacked chip, which said one thing about one account once per
+bot and could never say which bots shared it.
+
+⚠ **Playwright is not in the gate and these panes are what it covers.** Two specs were re-pointed
+with this change (`bots-accounts`, `bots-version`) and NOT run — `bots-version` does not intercept
+the snapshot, so it reaches the real backend and therefore the live trading box. Run them
+deliberately, when a bot being touched is acceptable.
+
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
 
 **The Bots header added every bot's balance.** Each bot on a stack reports the SAME account

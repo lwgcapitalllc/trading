@@ -128,7 +128,7 @@ type VersionFlags = {
   anyWarn: boolean
 }
 
-function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
+export function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
   if (!v) return null
   const notFrozen = !v.frozen
   const snapshotModified = v.frozen && !v.snapshot_ok
@@ -220,7 +220,7 @@ function FleetCount({
   )
 }
 
-function FleetStrip({
+export function FleetStrip({
   bots,
   flags,
   unreadable,
@@ -1161,7 +1161,7 @@ function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[] }) {
   )
 }
 
-function BotPanel({ bot }: { bot: BotStatus }) {
+export function BotPanel({ bot }: { bot: BotStatus }) {
   // Every API path takes the KEY — the routes accept either, new code passes the key.
   const { data, isLoading, error } = useBotParams(bot.key)
 

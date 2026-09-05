@@ -198,13 +198,15 @@ export function AccountsTab() {
     setForm(null)
   }
 
-  // ⚠ **This tab answers WHICH ACCOUNT a bot trades; Configure answers HOW it trades.** They are
-  // two different writes — one rewrites the login, server, terminal, symbol and cap together, the
-  // other edits a runtime parameter — so they are two tabs, and this link is what makes that read
-  // as one journey rather than as two places you have to know about.
+  // WHICH ACCOUNT a bot trades and HOW it trades are two different writes — one rewrites the
+  // login, server, terminal, symbol and cap together, the other edits a runtime parameter.
+  //
+  // 🔴 **They were two TABS until 2026-09-04, and that is the thing Aaron reported**: putting one
+  // bot on an account meant this tab to assign it, a different tab to set how it trades, and a
+  // third to see whether it came up. They are two steps of ONE job, so they are now two panes of
+  // one tab and this only moves the selection — `SetupTab` swaps the pane on `?bot=`.
   const configure = (botKey: string) => {
     const next = new URLSearchParams(params)
-    next.set('tab', 'configure')
     next.set('bot', botKey)
     setParams(next, { replace: true })
   }
