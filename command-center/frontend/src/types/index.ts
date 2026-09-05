@@ -373,6 +373,14 @@ export interface BotStatus {
   status: 'RUNNING' | 'STOPPED' | 'ERROR'
   uptime_seconds: number | null
   total_pnl_pct: number | null
+  /** What the ACCOUNT held when THIS bot first connected to it.
+   *
+   *  ⚠ Two bots on one balance state DIFFERENT anchors and both are right — each recorded what
+   *  was there when it arrived. The account's own opening is picked server-side; read it off
+   *  `AccountEarnings.opening_balance`, never by choosing a bot here.
+   *
+   *  ⚠ `null` means the bot has never connected, NEVER "opened at zero". */
+  starting_balance: number | null
   day_locked: boolean
   // detail fields
   // ⚠ The per-day/week P&L fields and the three cap fields were removed 2026-08-05 with
@@ -383,11 +391,56 @@ export interface BotStatus {
   last_updated: string | null
 }
 
+/** What ONE bot's own closed trades came to, read off its own decision record.
+ *
+ *  ⚠ `traded: false` means NO RECORD HAS BEEN READ, never "it made nothing" — every figure below
+ *  is null in that case and the row prints `reason` instead of a confident zero. */
+export interface BotEarnings {
+  bot_key: string
+  name: string
+  traded: boolean
+  reason: string | null
+  closed_trades: number | null
+  realised_usd: number | null
+  realised_r: number | null
+  wins: number | null
+  losses: number | null
+  records_from: string | null
+  records_to: string | null
+  /** This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
+   *  is comparable between two bots sharing one balance. */
+  pct_of_opening: number | null
+}
+
+/** One broker account: what it made, and how much of that the bots here can account for.
+ *
+ *  🔴 `unattributed_usd` is a REPORTED FIGURE, not an error. The account's growth and the bots'
+ *  own trades are two different measurements, and the difference is a manual fill, a deposit, or
+ *  a trade older than the record. Dividing the account's growth between the bots would credit a
+ *  strategy with money it did not make. */
+export interface AccountEarnings {
+  account: number
+  balance: number | null
+  opening_balance: number | null
+  opening_from: string | null
+  opening_note: string | null
+  net_usd: number | null
+  net_pct: number | null
+  attributed_usd: number | null
+  unattributed_usd: number | null
+  bots_without_record: string[]
+  bots: BotEarnings[]
+}
+
 export interface BotSnapshot {
   fetched_at: string
   bots: BotStatus[]
   scheduled_jobs: JobStatus[]
   telegram: ProcessStatus
+  /** Computed server-side and rendered here. The page may not derive it: what an account made
+   *  and what its bots made are two measurements, and the rule that they do not have to agree
+   *  is the finding — see `services/bot_earnings.py`. */
+  earnings: AccountEarnings[]
 }
 
 // ── Accounts — which bots share a balance, and the ceiling over it ────────────

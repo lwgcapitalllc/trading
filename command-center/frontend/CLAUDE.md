@@ -3807,3 +3807,57 @@ placeholder, and each leg's name still being a button). ⚠ **`openModal`'s
 `ancestor::div[3]` locator in `stack-config.spec.ts` is dead** — nothing reads its return value —
 so the new nesting cannot break it, but **a positional locator that survives only because nobody
 uses it is one edit away from failing**, and a `data-testid="stack-modal"` now exists to replace it.
+
+## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
+
+Aaron: *"the page bots looks very boring now … how much percent each bot made on the account thus
+far … how much is the account up net-wise? … you don't need to put two trading, I could see two is
+trading … you don't need to put two bots."* Plus the blocker: *"there's no more edit button. I
+don't see a way to configure anything."*
+
+🔴 **THE ROW'S MONEY IS THE BOT'S OWN, NEVER THE ACCOUNT'S.** Every figure comes off
+`snapshot.earnings`, computed server-side in `services/bot_earnings.py`; **this page derives none
+of it.** What an account made and what its bots made are two measurements and whether they agree
+is the finding — deriving either here is the same rule written twice in two languages, which is
+how the risk-share total already drifted on this very page.
+
+🔴 **`NetSplit` is one bar per account, one segment per source, and the last segment is the money
+NO BOT RECORDED MAKING.** MEASURED live 2026-09-05: SOS Fade 26%, not-from-these-bots 74%. That
+segment is the point of the chart, not a rounding strip. ⚠ **Widths are absolute magnitudes and
+colour carries the sign** — a bar shrinking as a bot loses more would read as a bot doing less.
+⚠ **A segment under 1.5% still draws at 1.5%**, so a real contribution cannot vanish into a
+hairline that reads as *made nothing*; the LEGEND carries the true figures so nothing is read off
+pixels. ⚠ **Withheld entirely when the account's net is unmeasured** — a bar with no total behind
+it is a shape with no scale.
+
+⚠ **`tintByKey` is ONE map per account, read by the row's rail AND the bar's segments.** Two
+lookups is how a segment ends up a different colour from the row it names, on the one chart whose
+job is saying which bot is which. **`BOT_TINTS` is explicit, never `series.filter(c => c !== pos)`**
+— the shared palette holds near-misses (`#00ff7f` against pos `#00ff82`), the trap that already
+made a stack leg draw in the portfolio's colour. Green and red are absent by construction: on this
+page they mean up and down.
+
+⚠ **Colour is reserved for P&L.** Everything else stays neutral, so a green figure always means
+the same thing rather than meaning *this row rendered*.
+
+🔴 **A row is a `<div>` whose NAME is the button — never a `<button>` holding buttons.** That is
+invalid markup, React said so at runtime, and the unassigned rows had been saying it since the
+rewrite. The row now carries four controls and a row-wide click behind them makes every miss open
+a drawer over the thing you were aiming at.
+
+🔴 **Every row carries an explicit Configure control.** The drawer always held the settings; a row
+you have to GUESS is clickable is a feature nobody has, and that is exactly how it was reported.
+
+⚠ **The cap is the only count left on the account header.** `2 bots · 2 trading` went — the rows
+below state both, and a number restating what is already on screen is the duplication this page
+was rebuilt to remove.
+
+⚠ **The money sits NEXT TO THE NAME**, not out with the machinery. 400px of empty grid between the
+two made the row read as a name with some settings after it.
+
+⚠ **A percentage carries its DENOMINATOR** — the drawer says *% of the account's opening balance*
+and the account's net names the balance and the bot that recorded it. The backtest page's own
+*1439.7x of what* lesson, and it bites harder here because two bots legitimately anchor differently.
+
+⚠ **The header sums net across ACCOUNTS, never across bots**, and an account whose net nobody
+could measure is LEFT OUT and said, never added in as zero.

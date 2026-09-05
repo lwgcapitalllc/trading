@@ -41,6 +41,7 @@ import config as cfg
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from models import (
+    AccountEarnings,
     BotAccountAssign,
     BotAccountBot,
     BotAccountCapUpdate,
@@ -65,6 +66,7 @@ from models import (
 from services import (
     bot_account_registry,
     bot_accounts,
+    bot_earnings,
     bot_params,
     bot_versions,
     lab_db,
@@ -686,6 +688,21 @@ def _review_age_seconds(flag: dict, now: datetime) -> float | None:
     return (now - written).total_seconds()
 
 
+def _as_float(raw) -> float | None:
+    """A number the state file states, or None when it states nothing readable.
+
+    ⚠ `None` and `0.0` are different answers and the caller renders them differently — an
+    unwritten anchor is not an account that opened at zero, and an unmeasured P&L is not a
+    flat one. Never widen this to `or 0.0`.
+    """
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
     states: dict[str, dict] = {}
     for section, keys in _BOT_STATE_SECTIONS:
@@ -955,12 +972,7 @@ def get_snapshot():
         # IS the question being asked.
         status = "RUNNING" if _is_python_running(snap, bot_key) else "STOPPED"
 
-        total_pnl = state.get("total_pnl_pct")
-        if total_pnl is not None:
-            try:
-                total_pnl = float(total_pnl)
-            except Exception:
-                total_pnl = None
+        total_pnl = _as_float(state.get("total_pnl_pct"))
 
         bots.append(
             BotStatus(
@@ -993,6 +1005,10 @@ def get_snapshot():
                 status=status,
                 uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
                 total_pnl_pct=total_pnl,
+                # NOT gated on RUNNING. The anchor is what the account held when this bot
+                # arrived — a fact about the past that a stopped bot does not stop having,
+                # and the one number `total_pnl_pct` is measured against.
+                starting_balance=_as_float(state.get("starting_balance")),
                 day_locked=bool(state.get("day_locked", False)),
                 lock_reason=state.get("lock_reason") or None,
                 last_updated=state.get("last_updated") or None,
@@ -1047,7 +1063,32 @@ def get_snapshot():
 
     telegram = ProcessStatus(name="Telegram", status=tg_status)
 
-    return BotSnapshot(fetched_at=now, bots=bots, scheduled_jobs=jobs, telegram=telegram)
+    # What each bot MADE, joined onto the balances just fetched. It reads the committed ledger
+    # archive on THIS machine, so it costs no extra SSH and answers with the box unreachable.
+    # ⚠ It must never take the snapshot down: this is telemetry beside a page that also has to
+    # report a halted bridge, and a page that fails to load says nothing at all.
+    try:
+        earnings = [
+            AccountEarnings(**e)
+            for e in bot_earnings.account_earnings(
+                [
+                    {
+                        "bot_key": b.key,
+                        "name": b.name,
+                        "account": b.account,
+                        "balance": b.balance,
+                        "starting_balance": b.starting_balance,
+                    }
+                    for b in bots
+                ]
+            )
+        ]
+    except Exception:
+        earnings = []
+
+    return BotSnapshot(
+        fetched_at=now, bots=bots, scheduled_jobs=jobs, telegram=telegram, earnings=earnings
+    )
 
 
 # ── Accounts — which bots share a balance, and the ceiling over it ────────────

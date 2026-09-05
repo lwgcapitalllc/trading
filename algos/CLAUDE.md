@@ -3127,3 +3127,37 @@ no error anywhere. Verify a new broker with `compare_feeds.py`; do not assume th
 - Docs update in the same commit as the code change that required them.
 - Commit message: describe the *why*, not just the what.
 - Never commit credentials, `.env` files, or `users.json`.
+
+## 🔴 A RENAME orphans the account anchor, and the symptom is a confident 0.0% (2026-09-05)
+
+`ensure_starting_balance` re-anchors on the ACCOUNT changing and never on the balance moving —
+which is right, and which cannot see a bot key changing under it. The 2026-09-03 de-brand
+(`mpc_sos_fade_demo` → `sos_fade_demo`) created a NEW state entry with no anchor, so the next
+heartbeat anchored it at the balance the account had already grown to.
+
+**MEASURED 2026-09-05:** the retired entry still held `starting_balance 9996.99`, `total_pnl_pct
+45.43` for account **700152905**; the live entry held `starting_balance 14538.88`, `total_pnl_pct
+**0.0**` on the same account, same magic **770115**. The account was up **$4,541.89 / 45.4%** and
+every screen reading that field said flat. **Nothing errored, no test went red, and the number is
+the most reassuring one available.**
+
+✅ **REPAIRED by ADOPTING the retired identity's anchor** — same bot, same account, same magic,
+documented in `ledger_archive/sos_fade_demo/RENAMED.md`. Written through `bot_state.write_bot` so
+it took the same atomic-publish path the runner uses, and CONFIRMED by the bot's own next
+heartbeat recomputing **45.43**. That is exactly what the field's own *"adopt, do not reset"* rule
+does for a pre-field anchor; the rule simply has no way to fire across a key change.
+
+⚠ **The write was safe to make on a running bot because `total_pnl_pct` and `starting_balance`
+are REPORTING ONLY** — CHECKED rather than assumed: `runner.py` writes them, `telegram_bot.py` and
+the Bots page read them, and no sizing, entry or exit path reads either. Do not extend this
+precedent to a field a trade decides on.
+
+🔴 **THE GENERAL RULE: renaming a bot key silently discards every per-key measurement that has no
+other home.** The ledger survived because it is found by PATH and the folder was moved with it.
+The anchor did not, because it lives inside a state file keyed by name. **Before a rename, list
+what is keyed on the old name and carry each one across in the same change** — and prefer keying a
+measurement on the thing that does not move, which here is the account number and the magic.
+
+⚠ **Nothing enforces this yet.** A guard would have to compare a new key's fresh anchor against
+any retired entry naming the same account, and that is a decision about whether a state file may
+read its own retired rows — not written, and named here rather than left for the next rename.

@@ -4745,3 +4745,59 @@ run from any checkout still imports `strategies/`, `engines/` and `backtest/` fr
 Five tests "passed" against HEAD that way and the pass meant nothing — they were reading the edited
 files. **A fail-watch that runs the new code is not a fail-watch**, and nothing about the run says
 so: it is green, fast, and wrong. Watch repo-root code go red by MUTATING it in place.
+
+## What a BOT made, and why it may not be the account's growth (2026-09-05)
+
+`services/bot_earnings.py`, served on `GET /bots/snapshot` as `earnings`. Aaron: *"how much
+percent each bot made on the account thus far … that 45% increase was only from the SOS Fade.
+That should still be showing zero percent from the extreme leg."*
+
+🔴 **The only P&L this app had was a fact about the ACCOUNT wearing a bot's name.**
+`total_pnl_pct` is `(balance − starting_balance) / starting_balance` and `balance` is the
+ACCOUNT's, so every bot on a stack reported the same figure — a bot deployed yesterday claimed
+credit for everything the account had ever done, in green, beside its name. Nothing errored.
+
+**The one honest source is each bot's own ledger**, `algos/ledger_archive/<bot>/ledger/
+decisions-*.jsonl`, where a closed trade carries `pnl_usd` and `r`. That is a record of what THIS
+bot did, so it cannot pick up a neighbour's trade, a manual fill or a deposit.
+
+🔴 **THE SUM DOES NOT RECONCILE TO THE ACCOUNT, AND THAT GAP IS THE FINDING.** MEASURED on PU
+Prime ECN demo 700152905, 2026-09-05: the account is up **$4,541.89** from its $9,996.99 opening,
+of which SOS Fade's two closed trades are **$1,197.09** and the extreme leg has closed none. **74%
+of what this page used to credit to "the bots" was not theirs.** `unattributed_usd` is therefore
+REPORTED, always, and is not an error path — dividing it between the bots would credit a strategy
+with money it did not make.
+
+⚠ **An account's OPENING is not any one bot's anchor.** Each bot anchors what the account held
+when IT arrived, so a bot joining a grown account states a much higher number and both are right.
+`_pick_opening` takes the anchor of the bot with the EARLIEST ledger record and **serves
+`opening_from` so the pick is checkable**. A bot with no record can never be chosen while one with
+a record exists. Nothing anchored ⇒ it REFUSES and states why, never `opening = balance` (an
+account that doubled would read flat) and never 0 (a division by nothing).
+
+⚠ **`traded: False` means NO RECORD WAS READ, never "it made nothing"** — every figure is `None`
+there. A bot running a month having taken nothing is a MEASUREMENT and reads `traded: True,
+closed_trades: 0`. Collapsing the two is rule 1 in a table cell.
+
+⚠ **`bots_without_record` is named, never folded into the unattributed figure.** While it is
+non-empty the split is a FLOOR, and a page that cannot say so shows an incomplete split as a
+complete one.
+
+⚠ **It rides on the snapshot rather than an endpoint of its own** — the balances and anchors it
+joins to have just been fetched over SSH, and a second endpoint would pay that round trip again
+to answer half a question. The ledger half is LOCAL (the committed archive), so it answers with
+the box unreachable, and it is wrapped so it can never take the snapshot down.
+
+⚠ **Cached on a FINGERPRINT of the record** (file count + newest file's name/size/mtime), not on
+an interval — a live bot appends to today's file, so the cache turns over on its own and there is
+no window to be stale inside. MEASURED: 4.7–5.4ms warm, 19.6ms on a cold disk, 61 files.
+
+🔴 **The pre-filter rejects on the KIND only, and narrowing it is what made the test real.**
+Filtering `"closed"` there too made the structured `event == "closed"` check INERT — a mutation
+deleting it changed nothing, so the test covering it passed against its own defect. MEASURED: it
+cost nothing, because exactly **4** of 2,872 lines reach the parser either way.
+
+✅ `tests/test_bot_earnings.py` — 13 checks, **14/14 mutations RUN and every one red**. Two of my own
+tests could not catch their mutation first time: one gave a bot `balance=None` so *"summed"* and
+*"read once"* were the same assertion, and one targeted a branch that never runs when the opening
+is `None`. **Check that a test's inputs can distinguish the behaviours it names.**

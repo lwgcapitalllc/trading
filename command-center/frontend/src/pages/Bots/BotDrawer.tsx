@@ -21,7 +21,7 @@
  */
 import { Play, Square, RotateCcw, FileText, X } from 'lucide-react'
 import { useBotParams, useAssignBotAccount, useBotAccounts } from '@/hooks/useBots'
-import type { BotParamRow, BotParamsView, BotStatus } from '@/types'
+import type { BotParamRow, BotParamsView, BotStatus, BotEarnings } from '@/types'
 import { VersionBanner, RuntimeEditor, ParamGroup } from './ConfigureTab'
 
 function Fold({ label, children }: { label: string; children: React.ReactNode }) {
@@ -52,6 +52,7 @@ function Facts({ rows }: { rows: [string, React.ReactNode][] }) {
 
 export function BotDrawer({
   bot,
+  earnings,
   onClose,
   onLogs,
   onStart,
@@ -60,6 +61,10 @@ export function BotDrawer({
   busy,
 }: {
   bot: BotStatus
+  /** What THIS bot's own closed trades came to — computed server-side off its decision record.
+   *  ⚠ Never the account's growth: two bots on one balance share that, and crediting each with
+   *  all of it is the defect this whole section replaced. */
+  earnings: BotEarnings | undefined
   onClose: () => void
   onLogs: () => void
   onStart: () => void
@@ -165,6 +170,80 @@ export function BotDrawer({
               Could not read this bot's configuration: {String(error)}
             </p>
           )}
+
+          {/* ── what it has actually made ─────────────────────────────────── */}
+          <div className="py-[16px] border-b border-border-subtle">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
+              What it has made
+            </p>
+            {!earnings || !earnings.traded ? (
+              <p className="text-[11.5px] text-text-tertiary leading-[1.5]">
+                {earnings?.reason ??
+                  'No decision record has been read for this bot, so nothing here has been measured.'}
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-col mb-[10px]">
+                  <span
+                    className={`text-[22px] font-mono tabular-nums leading-none ${
+                      (earnings.realised_usd ?? 0) > 0
+                        ? 'text-pos-text'
+                        : (earnings.realised_usd ?? 0) < 0
+                          ? 'text-neg-text'
+                          : 'text-text-secondary'
+                    }`}
+                  >
+                    {(earnings.realised_usd ?? 0) > 0
+                      ? '+'
+                      : (earnings.realised_usd ?? 0) < 0
+                        ? '−'
+                        : ''}
+                    $
+                    {Math.abs(earnings.realised_usd ?? 0).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                  {/* The percentage needs its DENOMINATOR beside it or it is a number with
+                   *  no referent — the backtest page's own "1439.7x of what" lesson. On a
+                   *  stacked account it matters more: two bots divide by the same opening. */}
+                  {earnings.pct_of_opening != null && (
+                    <span className="text-[11px] font-mono tabular-nums text-text-tertiary mt-[4px]">
+                      {earnings.pct_of_opening > 0 ? '+' : ''}
+                      {earnings.pct_of_opening.toFixed(2)}% of the account's opening balance
+                    </span>
+                  )}
+                </div>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-[5px] text-[11px]">
+                  {(
+                    [
+                      ['Closed trades', String(earnings.closed_trades ?? 0)],
+                      ['Won / lost', `${earnings.wins ?? 0} / ${earnings.losses ?? 0}`],
+                      [
+                        'In R',
+                        `${(earnings.realised_r ?? 0) > 0 ? '+' : ''}${(earnings.realised_r ?? 0).toFixed(2)}R`,
+                      ],
+                      ['Record covers', `${earnings.records_from} → ${earnings.records_to}`],
+                    ] as [string, string][]
+                  ).map(([k, val]) => (
+                    <div key={k} className="contents">
+                      <dt className="text-text-tertiary">{k}</dt>
+                      <dd className="m-0 text-right font-mono tabular-nums text-text-secondary">
+                        {val}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {/* R travels WITH the dollars, always. The dollar figure compounds off whatever
+                 *  balance the account happened to hold, so it is the number least comparable
+                 *  between two bots — the repo's compare-R-never-dollars rule, in a drawer. */}
+                <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]">
+                  Read from this bot's own decision record — its trades only, never the account's.
+                  Compare bots on R; the dollars depend on the balance each trade was taken with.
+                </p>
+              </>
+            )}
+          </div>
 
           {v && (
             <>

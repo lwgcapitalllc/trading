@@ -318,6 +318,18 @@ class BotStatus(BaseModel):
     status: str  # "RUNNING" | "STOPPED" | "ERROR"
     uptime_seconds: Optional[int] = None
     total_pnl_pct: Optional[float] = None
+    # What the ACCOUNT held when this bot first connected to it — `algos/shared/bot_state.py`
+    # anchors it once per account and re-anchors only when the account CHANGES.
+    #
+    # ⚠ It belongs to the ACCOUNT, not to the bot, so two bots on one balance state DIFFERENT
+    # anchors and both are right: each recorded what was there when IT arrived. The account's
+    # own opening is the anchor of whichever bot has been on it longest, which is why
+    # `services/bot_earnings.py` picks by earliest ledger record rather than by whichever row
+    # the snapshot happens to list first.
+    #
+    # ⚠ `None` means the bot has never connected, NEVER "the account opened at zero". It is
+    # what `total_pnl_pct` divides by, so a fabricated 0 here is a division by nothing.
+    starting_balance: Optional[float] = None
     day_locked: bool = False
     # ── Detail fields (populated from bot_state.json) ─────────────────────────
     # ⚠ The derived P&L fields (daily_pnl, weekly_pnl, peak_balance, trades_today) and the
@@ -331,11 +343,63 @@ class BotStatus(BaseModel):
     last_updated: Optional[str] = None
 
 
+class BotEarnings(BaseModel):
+    """What ONE bot's own closed trades came to, read off its own decision record.
+
+    ⚠ `traded: False` means NO RECORD HAS BEEN READ, never "it made nothing" — every figure below
+    is `None` in that case and the page prints the reason rather than a confident zero.
+    """
+
+    bot_key: str
+    name: str
+    traded: bool
+    reason: Optional[str] = None
+    closed_trades: Optional[int] = None
+    realised_usd: Optional[float] = None
+    realised_r: Optional[float] = None
+    wins: Optional[int] = None
+    losses: Optional[int] = None
+    records_from: Optional[str] = None
+    records_to: Optional[str] = None
+    # This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
+    # is comparable between two bots sharing one balance.
+    pct_of_opening: Optional[float] = None
+
+
+class AccountEarnings(BaseModel):
+    """One broker account: what it made, and how much of that any bot here can account for.
+
+    🔴 `unattributed_usd` is a REPORTED FIGURE, not an error. The account's growth and the bots'
+    trades are two different measurements, and the difference is a manual fill, a deposit or a
+    trade older than the record. Splitting the account's growth between the bots would credit a
+    strategy with money it did not make.
+    """
+
+    account: int
+    balance: Optional[float] = None
+    opening_balance: Optional[float] = None
+    # WHICH bot's anchor was taken as the account's opening — printed, so the pick is checkable
+    # rather than a number the reader has to trust.
+    opening_from: Optional[str] = None
+    opening_note: Optional[str] = None
+    net_usd: Optional[float] = None
+    net_pct: Optional[float] = None
+    attributed_usd: Optional[float] = None
+    unattributed_usd: Optional[float] = None
+    # Bots here whose record has not arrived. While this is non-empty the split is a FLOOR.
+    bots_without_record: list[str] = []
+    bots: list[BotEarnings] = []
+
+
 class BotSnapshot(BaseModel):
     fetched_at: datetime
     bots: list[BotStatus]
     scheduled_jobs: list[JobStatus]
     telegram: ProcessStatus
+    # Rides on the snapshot rather than on an endpoint of its own: the balances and anchors it
+    # needs have just been fetched over SSH, and a second endpoint would pay that round trip
+    # again to answer half a question. The ledger half is local and MEASURED at 5.5ms cold.
+    earnings: list[AccountEarnings] = []
 
 
 # `BotConfigSections` / `BotConfigUpdate` / `BotCapUpdate` were deleted 2026-08-04 with the

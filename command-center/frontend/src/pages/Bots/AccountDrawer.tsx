@@ -16,13 +16,14 @@ import { useState } from 'react'
 import { Play, Pencil, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useSetAccountRiskCap, useUnregisterAccount } from '@/hooks/useBots'
-import type { BotAccountGroup, BotAccountRegistration } from '@/types'
+import type { AccountEarnings, BotAccountGroup, BotAccountRegistration } from '@/types'
 import { AccountForm, AddBotRow, nameOf } from './AccountsTab'
 
 export function AccountDrawer({
   group,
   reg,
   balance,
+  earnings,
   statusByKey,
   onClose,
 }: {
@@ -30,6 +31,11 @@ export function AccountDrawer({
   reg: BotAccountRegistration | undefined
   /** Read off the bots, because the accounts endpoint deliberately never touches the VPS. */
   balance: number | null
+  /** What this account has MADE and where it came from — computed server-side.
+   *  ⚠ The split between the bots and the remainder is never derived here: the page rendering
+   *  its own version of that arithmetic is how one surface starts crediting a bot with money
+   *  another surface says it did not make. */
+  earnings: AccountEarnings | undefined
   statusByKey: Map<string, string>
   onClose: () => void
 }) {
@@ -97,6 +103,34 @@ export function AccountDrawer({
                 })
               )}
             </p>
+            {/* What it OPENED at, and which bot recorded that — a net with no denominator on
+             *  screen is a number nobody can check, and here two bots legitimately state
+             *  different anchors because each recorded what was there when it arrived. */}
+            {earnings?.net_usd != null && earnings.opening_balance != null ? (
+              <p className="text-[11px] text-text-tertiary mt-[7px] leading-[1.55]">
+                <span className={earnings.net_usd >= 0 ? 'text-pos-text' : 'text-neg-text'}>
+                  {earnings.net_usd >= 0 ? '+' : '−'}$
+                  {Math.abs(earnings.net_usd).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                  {earnings.net_pct != null &&
+                    ` (${earnings.net_pct > 0 ? '+' : ''}${earnings.net_pct.toFixed(1)}%)`}
+                </span>{' '}
+                since it opened at $
+                {earnings.opening_balance.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+                {earnings.opening_from ? `, recorded by ${earnings.opening_from}` : ''}.
+              </p>
+            ) : (
+              earnings?.opening_note && (
+                <p className="text-[11px] text-text-tertiary mt-[7px] leading-[1.55]">
+                  {earnings.opening_note}
+                </p>
+              )
+            )}
           </div>
 
           {/* ── the ceiling ───────────────────────────────────────────────── */}
