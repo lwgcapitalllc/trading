@@ -1444,6 +1444,18 @@ heartbeat ticks, `wmic` lists the process, the Bots page says RUNNING, and the b
 Same for a crash loop overnight, a terminal link lost and regained four times, a re-warm storm, or a
 runtime config change the bot REFUSED (so the command center shows settings it is not using).
 
+🔴 **A REFUSAL TO START IS ANSWERED BY A START, and all three of them now clear that way
+(2026-09-04).** A failed start, a version-pin refusal and a refused settings change are one claim
+with three causes, and a later successful start answers every one of them — the bot re-read the
+file, re-checked the pin, and got in. Only the settings one had that rule (since 2026-08-07), so
+`extreme_leg_demo` showed **NEEDS REVIEW (3)** beside a green RUNNING pill for three failures it
+had already recovered from. **That pair cannot be resolved by the person reading it**, and Aaron
+asked what it meant. ⚠ **It is the halt-tense defect a third time**: a past event rendered as a
+standing state, sticky for the full two-day window. ⚠ **A failure AFTER the last good start is
+KEPT** — that bot is down now, which is the finding's whole purpose. ⚠ **An unparseable timestamp
+on either side keeps the finding**, and ⚠ **the restart-loop finding is untouched**: it counts
+STARTS, not failures, so a bot flapping its way to a start is still reported.
+
 **The charter, stated so this does not grow into a second watchdog: `monitor.py` owns NOW, this owns
 THE RECORD.** The watchdog answers *is it alive this minute* and restarts it; this answers *what does
 today's record say happened*, including things that recovered before anyone looked. That split is why

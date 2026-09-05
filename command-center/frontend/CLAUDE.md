@@ -123,6 +123,23 @@ rather than the presence of a particular figure, so the test cannot go stale the
 default moves. ⚠ **Playwright is not in `scripts/run_all_tests.sh`** — it needs the app up — so
 this one is only as good as somebody running it.
 
+## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
+
+**The Bots header added every bot's balance.** Each bot on a stack reports the SAME account
+balance — one pot of money, not one each — so a two-bot stack showed **$29,077.76** for an account
+holding **$14,538.88**. It is summed per ACCOUNT now.
+
+🔴 **It read correctly for as long as every bot had its own account, which is exactly why nobody
+caught it.** The defect arrived with the first stack this app has ever had, not with the code.
+
+⚠ **This is the repo's compare-R-never-dollars rule arriving in a header tile**: the moment two
+things share a balance, anything summed across them is wrong by whatever they share. **Before
+totalling a column, ask what the rows SHARE** — balance, account, terminal, risk budget.
+
+⚠ **An account whose balance could not be read counts as UNKNOWN, never as zero**, and the tile's
+caption says how many accounts it added and how many it could not. A total quietly missing a box's
+worth of money is the reassuring direction, which is the wrong one.
+
 ## Feature flags — `src/lib/features.ts`
 
 **Added 2026-08-04. Smart Money is OFF.** Aaron is leaning the command center down to

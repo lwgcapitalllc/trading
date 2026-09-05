@@ -408,7 +408,42 @@ export function Bots() {
 
   const running = allBots.filter((b) => b.status === 'RUNNING').length
   const total = allBots.length
-  const totalBalance = allBots.reduce((s, b) => s + (b.balance ?? 0), 0)
+  // 🔴 **Summed per ACCOUNT, never per BOT.** Every bot on a stack reports the SAME account
+  // balance — it is one pot of money, not one each — so adding the rows counted this account's
+  // $14,538.88 twice and showed a fleet worth $29,077.76 that does not exist (Aaron, 2026-09-04,
+  // the day a second bot joined the first stack this app has ever had). It read correctly for as
+  // long as every bot had its own account, which is the whole reason nobody caught it.
+  //
+  // ⚠ **This is the repo's compare-R-never-dollars rule arriving in a header tile**: the moment
+  // two things share a balance, anything summed across them is wrong by however much they share.
+  //
+  // ⚠ **A bot with no account contributes nothing** (benched bots report no balance), and an
+  // account whose balance could not be read is COUNTED AS UNKNOWN rather than as zero — `unknown`
+  // drives the caption, so a fleet total that is missing a box's worth of money says so instead
+  // of quietly reading low.
+  const { totalBalance, unknownAccounts, accountsCounted } = (() => {
+    // Keyed on the account STRING this row actually shows, so the tile groups by exactly what a
+    // reader sees in the Account column. A benched bot carries `''` and is skipped — it holds no
+    // money, and treating it as an account would add an "unreadable" that is nothing of the sort.
+    const byAccount = new Map<string, number | null>()
+    for (const b of allBots) {
+      if (!b.account) continue
+      // First non-null wins: a stopped bot on a live stack reports no balance while its
+      // neighbour reports the real one, and the account still holds that money.
+      if (byAccount.get(b.account) == null) byAccount.set(b.account, b.balance ?? null)
+    }
+    let sum = 0
+    let unknown = 0
+    for (const v of byAccount.values()) {
+      if (v == null) unknown++
+      else sum += v
+    }
+    return {
+      totalBalance: sum,
+      unknownAccounts: unknown,
+      accountsCounted: byAccount.size - unknown,
+    }
+  })()
   const allJobsOk = snapshot?.scheduled_jobs.every((j) => j.status === 'RUNNING') ?? false
 
   // ⚠ These gate the FLEET buttons, so they are counted over ALL bots — never over the
@@ -610,6 +645,15 @@ export function Bots() {
                   maximumFractionDigits: 2,
                 })
               }
+              // Says WHAT WAS ADDED UP, because the honest total no longer matches the column
+              // above it — two bots on one account is one balance, and a reader who adds the
+              // rows themselves must be able to see why the answer differs.
+              sub={
+                unknownAccounts > 0
+                  ? `${accountsCounted} account${accountsCounted === 1 ? '' : 's'} · ${unknownAccounts} unreadable`
+                  : `across ${accountsCounted} account${accountsCounted === 1 ? '' : 's'}`
+              }
+              subVariant={unknownAccounts > 0 ? 'neg' : 'neutral'}
             />
             <StatCard
               label="Scheduled Jobs"

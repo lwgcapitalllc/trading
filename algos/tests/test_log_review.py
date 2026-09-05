@@ -386,6 +386,126 @@ def test_a_failed_start_and_a_version_mismatch_are_alerts(tmp_path):
     )
 
 
+# ── a refusal to start is ANSWERED by a start (2026-09-04) ───────────────────
+#
+# 🔴 `extreme_leg_demo` failed three times on one unknown setting, the setting was removed, and it
+# started and traded — while the Bots page showed NEEDS REVIEW (3) beside a green RUNNING pill.
+# That pair cannot be resolved by the person reading it, and Aaron asked why. It is the halt-tense
+# defect a third time: a past event rendered as a standing state.
+#
+# The rule already existed two blocks down for `config_change_refused`. These cases extend it to
+# both refused-to-start findings, which is the same claim with a different cause.
+#
+# Watched RED, and the map was RUN:
+#     against HEAD                                  -> 3 red (both suppressions + the loop case)
+#     loosen the comparison to `>=`                 -> 2 red
+#     suppress on ANY start rather than a LATER one -> 5 red
+#     treat an unreadable timestamp as suppressible -> 2 red (this file's case and its sibling)
+#     restore                                       -> 46 green, re-run after every mutation
+#
+# 🔴 **THE FIRST ATTEMPT AT THE UNREADABLE-TIMESTAMP MUTATION SURVIVED, AND THE MUTATION WAS THE
+# THING AT FAULT.** It moved the `at is not None` test into the generator, where a `None` still
+# yields nothing and `any()` is still False — behaviour identical to the original. **A mutation
+# that does not change behaviour is indistinguishable from a test that cannot catch one**, and it
+# reads as the more alarming of the two. The real mutation substitutes an epoch floor for the
+# missing timestamp, so every start looks later, and both cases go red.
+
+
+def test_a_failed_start_stops_being_reported_once_it_has_STARTED_since(tmp_path):
+    """🔴 The chip Aaron asked about. Watched RED against HEAD, which reported it for the full
+    two-day window however well the bot was running."""
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("startup_failed", "2026-08-05T13:00:00+00:00", error="unknown param"),
+            _event("startup", "2026-08-05T13:05:00+00:00", previous_run_clean=True),
+        ],
+    )
+
+    assert "startup_failed" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_failed_start_AFTER_the_last_good_one_is_still_reported(tmp_path):
+    """The bot is down NOW, which is the whole point of the finding. MUTATION: suppress on any
+    start rather than a LATER one and this goes red — the chip would go dark on a bot that cannot
+    start at all, which is strictly worse than the defect being fixed."""
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("startup", "2026-08-05T13:00:00+00:00", previous_run_clean=True),
+            _event("startup_failed", "2026-08-05T13:05:00+00:00", error="unknown param"),
+        ],
+    )
+
+    assert "startup_failed" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_VERSION_refusal_also_clears_once_it_has_started(tmp_path):
+    """It is *it refused to start* with the pin as the cause. Leaving one of the three
+    refused-to-start findings sticky while the others clear is the inconsistency this fixes.
+    Watched RED against HEAD."""
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("version_mismatch", "2026-08-05T13:00:00+00:00", detail="hash differs"),
+            _event("startup", "2026-08-05T13:05:00+00:00", previous_run_clean=True),
+        ],
+    )
+
+    assert "version_mismatch" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_start_at_the_same_second_does_not_clear_a_failed_start(tmp_path):
+    """Ambiguity keeps the finding, matching the settings refusal.
+
+    ⚠ Cannot go red against HEAD. Proven by MUTATION: loosening the comparison to `>=` drops the
+    finding and this goes red."""
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            _event("startup_failed", "2026-08-05T13:00:00+00:00", error="unknown param"),
+            _event("startup", "2026-08-05T13:00:00+00:00", previous_run_clean=True),
+        ],
+    )
+
+    assert "startup_failed" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_failed_start_with_an_unreadable_time_is_never_suppressed(tmp_path):
+    """A failure that cannot be placed in time is precisely the one not to drop.
+
+    ⚠ Cannot go red against HEAD. Proven by MUTATION: dropping the guard on the parsed timestamp
+    suppresses it (or raises), and this goes red either way."""
+    _write(
+        tmp_path,
+        _healthy()
+        + [
+            {"ts": "?", "bot": "b", "kind": "event", "event": "startup_failed", "error": "x"},
+            _event("startup", "2026-08-05T13:05:00+00:00", previous_run_clean=True),
+        ],
+    )
+
+    assert "startup_failed" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_clearing_a_failed_start_does_not_silence_the_RESTART_LOOP(tmp_path):
+    """The two ask different questions: this counts STARTS, that counts failures. A bot flapping
+    its way to a start must still be reported, and suppressing both from one signal would hide
+    exactly the case where a bot keeps dying and coming back."""
+    rows = _healthy() + [_event("startup_failed", "2026-08-05T13:00:00+00:00", error="x")]
+    for i in range(lr.RESTART_LOOP):
+        rows.append(_event("startup", f"2026-08-05T14:0{i}:00+00:00", previous_run_clean=False))
+    _write(tmp_path, rows)
+    found = _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+    assert "startup_failed" not in found
+    assert "restart_loop" in found
+
+
 # ── saying it once ───────────────────────────────────────────────────────────
 def test_the_same_halt_keeps_one_key_across_runs(tmp_path):
     """Run hourly, alert once. A key per KIND of problem would do this correctly and then never

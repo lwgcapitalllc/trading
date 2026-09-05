@@ -287,6 +287,12 @@ def review_bot(
     def _of(name: str) -> List[dict]:
         return [r for r in events if r.get("event") == name]
 
+    # Gathered ONCE here because TWO findings below ask *has it started since?* and the two must
+    # not be able to answer differently. `config_change_refused` has asked since 2026-08-07;
+    # `startup_failed` joined it 2026-09-04 (see its own block for why).
+    starts = _of("startup")
+    start_times = [t for t in (_parse_ts(r) for r in starts) if t is not None]
+
     # ── the bridge stopped placing orders, and nothing else can see this ─────
     #
     # ⚠ **Tense follows the CURRENT bridge state, not the record.** These findings are sticky by
@@ -377,7 +383,32 @@ def review_bot(
         )
 
     # ── refused to start at all ──────────────────────────────────────────────
+    #
+    # 🔴 **Dropped once the bot has STARTED since the failure** — the same rule, for the same
+    # reason, as the settings refusal below, which has carried it since 2026-08-07. A failed start
+    # is answered by a successful one: the bot read its config fresh and got in. Without this it
+    # re-raised for the full two-day window, so a bot fixed and running reads as an open incident.
+    #
+    # ⚠ **MEASURED 2026-09-04**: `extreme_leg_demo` failed three times on one unknown setting, the
+    # setting was removed, it started and traded — and the chip said *NEEDS REVIEW (3)* beside a
+    # green RUNNING pill, which is the exact pair a reader cannot resolve. Aaron asked why.
+    #
+    # ⚠ **The TENSE is the defect, as it was for the halt and the settings refusal.** *"It failed
+    # to start"* is a past event rendered as a standing state; a sticky claim that has stopped
+    # being true is worth less than no claim, because the next real one reads the same.
+    #
+    # ⚠ **A failure AFTER the last successful start is KEPT** — that is a bot which is down now,
+    # and it is the whole point of the finding.
+    #
+    # ⚠ **An unparseable timestamp on either side KEEPS the finding**, matching the block below: a
+    # failure that cannot be placed in time is precisely the one not to drop.
+    #
+    # ⚠ **It does NOT suppress the restart-loop finding**, which counts starts rather than
+    # failures and is the thing that catches a bot flapping its way to a start.
     for row in _of("startup_failed"):
+        at = _parse_ts(row)
+        if at is not None and any(s > at for s in start_times):
+            continue
         findings.append(
             Finding(
                 f"startup_failed:{_ts(row)}",
@@ -386,7 +417,15 @@ def review_bot(
                 f"At {_at(row)}: {row.get('error', '?')}",
             )
         )
+    # ⚠ **Same rule, and it is the same finding wearing a different reason** — this is *it refused
+    # to start* with the pin as the cause rather than the config. A later successful start answers
+    # it identically: the bot re-checked the pin and got in. Leaving one of the three
+    # refused-to-start findings sticky while the other two clear is the inconsistency that made
+    # this block worth reading twice.
     for row in _of("version_mismatch"):
+        at = _parse_ts(row)
+        if at is not None and any(s > at for s in start_times):
+            continue
         findings.append(
             Finding(
                 f"version_mismatch:{_ts(row)}",
@@ -426,7 +465,6 @@ def review_bot(
     # first-ever start or an unreadable directory produces it), which is why counting it costs no
     # noise. The wording says "recorded no clean shutdown" rather than claiming a kill, because
     # for the None case a kill is exactly what is not known.
-    starts = _of("startup")
     unclean_starts = [r for r in starts if r.get("previous_run_clean") is not True]
     if len(unclean_starts) >= RESTART_LOOP:
         findings.append(
@@ -516,7 +554,6 @@ def review_bot(
     # the file fresh, so the settings took either way. This asks what the bot LOADED, not how the
     # run before it ended — that is the question above's, and conflating the two would suppress
     # nothing while looking careful.
-    start_times = [t for t in (_parse_ts(r) for r in starts) if t is not None]
     for row in _of("config_change_refused"):
         at = _parse_ts(row)
         if at is not None and any(s > at for s in start_times):
