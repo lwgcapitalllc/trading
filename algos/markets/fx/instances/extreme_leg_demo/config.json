@@ -4,7 +4,7 @@
   "bot_key": "extreme_leg_demo",
   "display_name": "Extreme Leg",
   "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
-  "account": null,
+  "account": 700152905,
   "server": "PUPrime-Demo",
   "symbol": "XAUUSD.p",
   "magic": 770117,
@@ -37,7 +37,8 @@
     "news_before_min": 30,
     "news_after_min": 30,
     "point_value": 1.0,
-    "symbol": "XAUUSD.p"
+    "symbol": "XAUUSD.p",
+    "account_profile": "puprime_ecn"
   },
   "strategy_source_hash": "",
   "promoted_commit": "",
