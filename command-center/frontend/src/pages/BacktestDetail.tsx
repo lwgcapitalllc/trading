@@ -107,14 +107,12 @@ import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import type { ChartSpec } from '@/components/ChartPanel/types'
 import { OptimizeButton } from '@/components/OptimizeButton'
 import {
-  fillTokens,
-  isOutOfPlay,
-  isSettled,
-  shortLabelOf,
-  prettyName,
-  valueLabel,
-  type ParamValue,
-} from '@/components/ParamEditor'
+  buildRunSettingsView,
+  FOUNDATIONAL_CAPTION,
+  FOUNDATIONAL_HEADING,
+  SETTLED_CAPTION,
+  SETTLED_HEADING,
+} from '@/components/runSettings'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
 import { useStickyBanner } from '@/components/StickyHeader'
@@ -4822,72 +4820,25 @@ function ParamsSidePanel({
   // below an early return is a CONDITIONAL hook call. It sat below one for exactly as long as
   // it took to click the button: *Cannot access 'shutGroups' before initialization*.
 
-  const filledSchema = useMemo(
-    () => fillTokens(paramSchema ?? [], (run.params ?? {}) as Record<string, ParamValue>),
-    [paramSchema, run.params]
-  )
-  const schemaByName = new Map(filledSchema.map((s) => [s.name, s]))
   // 🔴 This panel is the answer to "what settings ran this?", and it printed FIELD NAMES —
   // `exec_nogap_arm`, `exec_sl_buf_tk`. That is only readable with the source open, so the one
   // surface that records a finished run's inputs was useless to the person reading the result.
-  // Words come from the same helper the editor uses, so the two cannot drift apart.
-  const nameOf = (k: string) => {
-    const p = schemaByName.get(k)
-    return p ? shortLabelOf(p) : prettyName(k)
-  }
-  const valueOf = (k: string, v: unknown) => valueLabel(schemaByName.get(k), v)
-  // The group a param belongs to, from the strategy's own metadata. An unmapped param lands in
-  // "Other" rather than vanishing — the record must stay complete.
-  const groupOf = (k: string) => schemaByName.get(k)?.group || 'Other'
-  const isFoundational = (k: string) => schemaByName.get(k)?.category === 'foundational'
-  // A SETTLED param is folded away here, never dropped. This panel is the record of what the run
-  // actually sent, and a run report that silently omits inputs is a worse defect than a long list
-  // — so the editor's rule (`isSettled`, imported rather than re-written) decides what folds, and
-  // the fold states its own count. Same escape as everywhere else: moved off its default, or
-  // differing from the tune baseline, and it is back in the main list.
-  const settledKey = (k: string, v: unknown) => {
-    const p = schemaByName.get(k)
-    if (!p || !isSettled(p, v as ParamValue)) return false
-    return baselineParams == null || String(v) === String(baselineParams[k])
-  }
-  // 🔴 A SETTING WHOSE PARENT IS OFF DID NOTHING ON THIS RUN, so it does not belong in the list
-  // you read to see what the run did. Fifteen secondary re-entry rows sat in the main list on
-  // every run with the secondary switched off (*"you DON'T need to show all the params related
-  // to it… same goes for anything cascading"*). ⚠ FOLDED, never dropped — same rule as a settled
-  // param: this panel is the RECORD of what was sent, and a run report that silently omits
-  // inputs is a worse defect than a long list. ⚠ Asked of `isOutOfPlay`, imported rather than
-  // re-written, so the panel and the editor cannot disagree about which cascade is live.
-  const runValues = (run.params ?? {}) as Record<string, ParamValue>
-  const outOfPlayKey = (k: string, v: unknown) => {
-    const p = schemaByName.get(k)
-    if (!p || !isOutOfPlay(p, filledSchema, runValues)) return false
-    // The same escape the settled fold carries: a value differing from the tune BASELINE stays
-    // in the main list, or the "N changed" count names a row the reader cannot find.
-    return baselineParams == null || String(v) === String(baselineParams[k])
-  }
-  const foldedKey = (k: string, v: unknown) => settledKey(k, v) || outOfPlayKey(k, v)
+  // ⚠ The words, the grouping and both folds moved to `runSettings.ts` on 2026-09-06, because
+  // the STACK page asks the identical question about each of its legs and was still printing
+  // field names. Two copies of this classification is two vocabularies for one set of settings.
+  const view = useMemo(
+    () => buildRunSettingsView(run.params, paramSchema, baselineParams),
+    [run.params, paramSchema, baselineParams]
+  )
+  const { nameOf, valueOf, changedCount } = view
 
-  const entries = Object.entries(run.params || {})
-  if (!entries.length) return null
-  const tunable = entries.filter(([k, v]) => !isFoundational(k) && !foldedKey(k, v))
-  const settled = entries.filter(([k, v]) => !isFoundational(k) && foldedKey(k, v))
-  const foundational = entries.filter(([k]) => isFoundational(k))
-  const changedCount = baselineParams
-    ? tunable.filter(([k, v]) => String(v) !== String(baselineParams[k])).length
-    : 0
-  // Grouped in the metadata's OWN order — the order params appear in the schema is the order the
-  // strategy decides things in, and re-sorting alphabetically would scramble that back into a
-  // list you have to hunt through. A Map preserves insertion order.
-  const groupOrder = new Map<string, [string, unknown][]>()
-  for (const [k, v] of tunable) {
-    const g = groupOf(k)
-    if (!groupOrder.has(g)) groupOrder.set(g, [])
-    groupOrder.get(g)!.push([k, v])
-  }
-  const tunableGroups = [...groupOrder.entries()]
+  if (!view.total) return null
+  const tunableGroups = view.groups
+  const settled = view.settled
+  const foundational = view.foundational
   // ⚠ Derived from the groups that EXIST, never from a count held alongside the set — a stale
   // total would leave the button offering to expand a panel that is already open.
-  const everyGroup = tunableGroups.map(([g]) => g)
+  const everyGroup = tunableGroups.map((g) => g.group)
   const allShut = everyGroup.length > 0 && everyGroup.every((g) => shutGroups.has(g))
 
   // The outer column is the full page-height surface (flush against the nav sidebar,
@@ -4963,7 +4914,7 @@ function ParamsSidePanel({
             chance in the ~120px a right-aligned value leaves in a 248px rail, and a truncated
             label is the same problem as a field name. Group headings come from the strategy's
             own metadata, so the list reads in the order the setups are actually decided. */}
-          {tunableGroups.map(([group, rows]) => (
+          {tunableGroups.map(({ group, rows }) => (
             <div
               key={group}
               className="space-y-[3px] border-t border-border-subtle/60 pt-3 mt-3 first:border-t-0 first:pt-0 first:mt-0"
@@ -4992,12 +4943,17 @@ function ParamsSidePanel({
               </button>
               {!shutGroups.has(group) &&
                 rows.map(([k, v]) => {
-                  const changed = baselineParams != null && String(v) !== String(baselineParams[k])
+                  const changed = view.changed(k, v)
                   return (
                     <div
                       key={k}
+                      // ⚠ A seam, and it is on ALL THREE lists (here, the fold, and instrument &
+                      // broker) so a check can assert the one invariant that matters: every param
+                      // the run sent is accounted for SOMEWHERE. A fold that quietly drops a row
+                      // is otherwise indistinguishable from one that folds it.
+                      data-testid="run-param-row"
                       className={`px-2 py-[5px] rounded ${changed ? 'bg-accent/5 border border-accent/30' : ''}`}
-                      title={schemaByName.get(k)?.desc || schemaByName.get(k)?.description}
+                      title={view.descOf(k)}
                     >
                       <div className={TIER_SETTING}>{nameOf(k)}</div>
                       <div className={`mt-[3px] ${TIER_VALUE}`}>
@@ -5021,7 +4977,7 @@ function ParamsSidePanel({
               <summary
                 className={`cursor-pointer select-none px-2 hover:text-gold-text/80 ${TIER_CATEGORY}`}
               >
-                Already decided · {settled.length}
+                {SETTLED_HEADING} · {settled.length}
               </summary>
               {/* ⚠ It was headed "Settled" with the caption "Off the editor, still sent", and
                 Aaron asked *"what does the settled section even mean?"* — both halves were
@@ -5030,13 +4986,14 @@ function ParamsSidePanel({
                 ⚠ The caption names BOTH reasons a row lands here, because the fold now holds
                 two different sets: a question past testing closed, and a setting whose parent
                 is switched off. Naming only one would make the other look mis-filed. */}
+              {/* ⚠ The words come from `runSettings.ts` — the stack page renders the same two
+                folds, and a reader who learns what this one means on one page has learned it. */}
               <p className="text-[10px] text-text-tertiary/80 px-2 mt-1 leading-snug">
-                Nothing to decide here — a parent setting is off, or testing settled it. All still
-                sent with the run.
+                {SETTLED_CAPTION}
               </p>
               <div className="mt-1.5 space-y-[3px]">
                 {settled.map(([k, v]) => (
-                  <div key={k} className="px-2">
+                  <div key={k} data-testid="run-param-row" className="px-2">
                     <div className={TIER_SETTING}>{nameOf(k)}</div>
                     <div className="mt-[2px] text-[11px] font-semibold text-text-secondary tabular-nums leading-tight">
                       {valueOf(k, v)}
@@ -5051,17 +5008,17 @@ function ParamsSidePanel({
               <summary
                 className={`cursor-pointer select-none px-2 hover:text-gold-text/80 ${TIER_CATEGORY}`}
               >
-                Instrument &amp; broker · {foundational.length}
+                {FOUNDATIONAL_HEADING} · {foundational.length}
               </summary>
               {/* Not strategy rules — the contract and the fills: symbol, tick size, point
                 value, fill model, account profile, daily close hour. "Foundational" is the
                 schema's word for that and means nothing to a reader of the run. */}
               <p className="text-[10px] text-text-tertiary/80 px-2 mt-1 leading-snug">
-                What was traded and how it filled, not how it decided.
+                {FOUNDATIONAL_CAPTION}
               </p>
               <div className="mt-1.5 space-y-[3px]">
                 {foundational.map(([k, v]) => (
-                  <div key={k} className="px-2">
+                  <div key={k} data-testid="run-param-row" className="px-2">
                     <div className={TIER_SETTING}>{nameOf(k)}</div>
                     <div className="mt-[2px] text-[11px] font-semibold text-text-secondary tabular-nums leading-tight">
                       {valueOf(k, v)}

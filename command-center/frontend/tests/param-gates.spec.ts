@@ -20,7 +20,7 @@
  * `backend/tests/test_param_gates.py`.
  */
 import { test, expect, type Page } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { getJson } from './fixtures'
 
 const RUN_ID = 'paramgates01'
 
@@ -79,9 +79,17 @@ async function openEditor(page: Page, params: Record<string, unknown> = {}) {
     .getByRole('button', { name: /Risk & stop/ })
     .first()
     .click()
+  // 🔴 THE PRECONDITION IS THAT THE GROUP IS OPEN — NOT THAT THE DEPENDENT ROW IS ON SCREEN.
+  // It asserted both until 2026-09-06, which made it contradict the one test that opens the
+  // editor in a configuration where the dependent row must be GONE (Custom = 1.0): the setup
+  // demanded the row the test exists to prove is hidden, so that check failed in its helper and
+  // read as a broken page. ⚠ The positive control moved INTO the tests that need it, where it
+  // can be read beside the assertion it guards — see `deepRow`.
   await expect(page.getByText('Stop fib level (deep side of 0.5)').first()).toBeVisible()
-  await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0').first()).toBeVisible()
 }
+
+/** The row whose two states cannot differ once the stop level is 1.0. */
+const deepRow = (page: Page) => page.getByText('Entries at 0.786 or deeper stop at 1.0')
 
 /** The `Stop fib level` dropdown — found by its own options, not by a position in the list. */
 const levelSelect = (page: Page) =>
@@ -137,8 +145,11 @@ test.describe('a toggle that cannot matter is HIDDEN', () => {
     // greyed note behind it.
     await openEditor(page)
 
+    // Positive control FIRST: an absent row and a row that was never drawn are the same DOM, so
+    // without this the assertion below passes against a page that renders nothing at all.
+    await expect(deepRow(page).first()).toBeVisible()
     await levelSelect(page).selectOption('1.0')
-    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0')).toHaveCount(0)
+    await expect(deepRow(page)).toHaveCount(0)
     await expect(page.getByTestId('param-inert-exec_sl_deep')).toHaveCount(0)
   })
 
@@ -148,10 +159,11 @@ test.describe('a toggle that cannot matter is HIDDEN', () => {
     // screen to notice. MUTATION: make `isInert` return true always and this goes red.
     await openEditor(page)
 
+    await expect(deepRow(page).first()).toBeVisible()
     await levelSelect(page).selectOption('1.0')
-    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0')).toHaveCount(0)
+    await expect(deepRow(page)).toHaveCount(0)
     await levelSelect(page).selectOption('0.886')
-    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0').first()).toBeVisible()
+    await expect(deepRow(page).first()).toBeVisible()
     await expect(offLabel(page, 'Stop 0.886')).toBeEnabled()
   })
 
@@ -161,7 +173,16 @@ test.describe('a toggle that cannot matter is HIDDEN', () => {
     // from `isInert` and this goes red while every other check stays green.
     await openEditor(page, { exec_sl_level: 'Custom', exec_sl_custom: 1.0 })
 
-    await expect(page.getByText('Entries at 0.786 or deeper stop at 1.0')).toHaveCount(0)
+    await expect(deepRow(page)).toHaveCount(0)
+    // ⚠ The positive control cannot be taken in this configuration — the row is meant to be gone
+    // from the first frame — so it is taken on the SIBLING value instead: at Custom = 0.95 the
+    // same page draws the row, which is what proves this assertion is reading a live editor.
+    await page
+      .getByRole('button', { name: /Risk & stop/ })
+      .first()
+      .click()
+    await openEditor(page, { exec_sl_level: 'Custom', exec_sl_custom: 0.95 })
+    await expect(deepRow(page).first()).toBeVisible()
   })
 
   test('the dropdown that KILLS it is itself untouched', async ({ page }) => {
@@ -170,6 +191,7 @@ test.describe('a toggle that cannot matter is HIDDEN', () => {
     // no way back to 0.886. MUTATION: give `exec_sl_level` the same `disable_if` and this goes red.
     await openEditor(page)
 
+    await expect(deepRow(page).first()).toBeVisible()
     await levelSelect(page).selectOption('1.0')
     await expect(levelSelect(page)).toBeVisible()
     await expect(levelSelect(page)).toBeEnabled()
@@ -208,18 +230,30 @@ test.describe('a cost figure sits under the cost that charges it', () => {
     await expect(page.getByText('Advanced', { exact: true })).toHaveCount(0)
   })
 
-  test('the Commission box appears only once its own layer is ticked', async ({ page }) => {
-    // 🔴 An untick left the number on screen looking live — the same "a label points at a widget
-    // that is not listening" shape as the toggle above.
-    // MUTATION: render `costInputs[row.id]` unconditionally rather than behind `on`, and the
-    // first assertion goes red.
+  /**
+   * 🔴 RE-POINTED 2026-09-06, AND THE OLD SUBJECT IS GONE BY DECISION, NOT BY ROT. This asserted
+   * that ticking a Commission LAYER revealed a typed commission box. The five tickboxes became
+   * ONE switch on 2026-08-24 and the typed box went with them, because `routers/_costs.py` reads
+   * commission off the BROKER ACCOUNT and had been ignoring whatever was typed — a control that
+   * asked the reader for a number and changed nothing.
+   *
+   * What replaced it is the rule worth pinning: **the charge is STATED and comes off the account**.
+   *
+   * MUTATION: bring a typed commission input back into `chargedRows`, or drop the per-lot figure
+   * from the Commission row's detail, and this goes red.
+   */
+  test('commission is stated off the account, never typed into the form', async ({ page }) => {
     await openRunModal(page)
-    const box = page.getByLabel('Commission / side ($)')
 
+    // The switch is ON by default, so the rows it charges are on screen.
+    const commission = page.getByText('Commission', { exact: true }).first()
+    await expect(commission).toBeVisible()
+    await expect(page.getByText(/per side per lot, measured on this account/)).toBeVisible()
+    // The typed box is GONE — a form field for a figure nothing reads is the defect this removed.
     await expect(page.getByText('Commission / side ($)')).toHaveCount(0)
-    await page.getByRole('button', { name: /Commission/ }).click()
-    await expect(page.getByText('Commission / side ($)')).toBeVisible()
-    await expect(box.or(page.locator('input[type="number"][step="0.01"]')).first()).toBeVisible()
+    // ⚠ Slippage KEEPS its typed box and its tag: it is the one cost nobody has measured, so
+    // charging it is somebody saying a guess out loud.
+    await expect(page.getByText(/a guess/i).first()).toBeVisible()
   })
 
   test('the folded header still says what is charged', async ({ page }) => {
@@ -236,13 +270,19 @@ test.describe('a cost figure sits under the cost that charges it', () => {
     // The modal title is a plain div, not a heading — assert on the text.
     await expect(page.getByText('Run Backtest', { exact: true }).first()).toBeVisible()
 
-    // Folded, nothing ticked. Scoped to the header BUTTON — the word also sits in the section's
-    // tooltip, which is in the DOM at all times behind a hover.
-    await expect(page.getByRole('button', { name: /Costs.*frictionless/ })).toBeVisible()
+    // Folded, costs ON — the shipped default since 2026-08-24. Scoped to the header BUTTON: the
+    // words also sit in the section's tooltip, which is in the DOM at all times behind a hover.
+    // ⚠ It asserted `frictionless` until 2026-09-06, which was the summary of a version with five
+    // tickboxes and everything off. **If a default changes, every assertion naming it changes in
+    // the same commit** — this file's own rule, arriving as a red test.
+    await expect(page.getByRole('button', { name: /Costs.*charged/ })).toBeVisible()
     await page.getByRole('button', { name: /^Costs/ }).click()
-    await page.getByRole('button', { name: /Overnight swap/ }).click()
+    // Switching costs OFF must be visible from the FOLDED header — a run measured gross is the
+    // single most important physical fact about it, and a collapsed section that does not say so
+    // is what made every early run frictionless without anybody deciding to.
+    await page.getByRole('switch').first().click()
     await page.getByRole('button', { name: /^Costs/ }).click()
-    await expect(page.getByRole('button', { name: /Costs.*overnight swap/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Costs.*GROSS/ })).toBeVisible()
   })
 })
 
@@ -258,25 +298,50 @@ test.describe('a cost figure sits under the cost that charges it', () => {
  * anyway. The value is still sent, so hiding a moved one would put a setting on the run that no
  * reader could see — a page that cannot show what it is about to submit.
  */
+/**
+ * How many params the STRATEGY marks settled, read off the served schema.
+ *
+ * 🔴 THE COUNT USED TO BE TYPED (`26 settled`, then `25`) AND IT ROTTED — measured 20 on
+ * 2026-09-06, so both checks failed on a page that was right. **A count of somebody else's
+ * metadata is a fixture with an expiry date**, the trap this folder already records for a
+ * database row, a weekday and a fleet size. Derived, it moves with the meta file.
+ *
+ * ⚠ It is NOT a second copy of the settled RULE (hidden AND still on its default): the run
+ * these checks mock sets three params, none of them hidden, so every hidden one is at its
+ * default and the two answers coincide by construction. A check that moves a hidden param
+ * off its default subtracts from this by hand — which is the rule stated once, in the test
+ * that is about it.
+ */
+async function settledInSchema(page: Page): Promise<number> {
+  const res = await page.request.get('http://localhost:8000/strategies/sos_fade')
+  const schema = (await res.json()).param_schema as { hidden?: boolean }[]
+  const n = schema.filter((p) => p.hidden).length
+  expect(n).toBeGreaterThan(0) // a strategy that settles nothing cannot test this at all
+  return n
+}
+
 test.describe('a settled param is hidden, not removed', () => {
   test('the settled ones are off the editor, and the page SAYS how many', async ({ page }) => {
     // MUTATION: drop `&& !settled(p)` from `visible` and the first assertion goes red; drop the
     // `settledCount` block and the second does.
+    const expected = await settledInSchema(page)
     await openEditor(page)
 
     // `exec_htf_weekly` heads a group that is now entirely settled — the group itself is gone.
     await expect(page.getByText('Weekly bias requirement')).toHaveCount(0)
     await expect(page.getByText('Higher-timeframe filter')).toHaveCount(0)
-    await expect(page.getByTestId('param-settled-count')).toContainText('26 settled')
+    await expect(page.getByTestId('param-settled-count')).toContainText(`${expected} settled`)
   })
 
   test('🔴 a settled param MOVED off its default comes back on its own', async ({ page }) => {
     // The guard that makes hiding safe at all. MUTATION: make `settled` return `!!p.hidden` and
     // this goes red — the run would carry `exec_longs: false` with nothing on screen saying so.
+    const expected = await settledInSchema(page)
     await openEditor(page, { exec_longs: false })
     // `What arms a setup` holds the first core param, so it is the group that opens by itself.
     await expect(page.getByText('Trade longs')).toBeVisible()
-    await expect(page.getByTestId('param-settled-count')).toContainText('25 settled')
+    // Exactly ONE fewer than the check above — the moved param, and nothing else, came back.
+    await expect(page.getByTestId('param-settled-count')).toContainText(`${expected - 1} settled`)
   })
 
   test('the secondary re-entries have their own group now', async ({ page }) => {
@@ -290,7 +355,10 @@ test.describe('a settled param is hidden, not removed', () => {
     // ABSENCE of one. It also pins the two sub-groups, because a reader told which trigger a
     // setting belongs to is the whole point of the split.
     await openEditor(page)
-    await expect(page.getByRole('button', { name: /^Secondary re-entries$/ })).toBeVisible()
+    // ⚠ Anchored at the START only. An accordion header states its own COUNT ("15 settings"), so
+    // an end-anchored name pins how many settings that group happens to hold today — the same
+    // expiry date the settled count above was carrying.
+    await expect(page.getByRole('button', { name: /^Secondary re-entries\b/ })).toBeVisible()
     await expect(page.getByText(/Secondary re-entries \(\d+m\)/)).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Reclaim Entry only/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Structure shift only/ })).toBeVisible()
@@ -309,18 +377,51 @@ test.describe('a settled param is hidden, not removed', () => {
  * fold agrees with the schema the scanner actually served. A mocked run would prove the mock.
  */
 test.describe('a finished run FOLDS its settled params rather than dropping them', () => {
-  // A completed full-history sos_fade run. Every one of its params is at the shipped default,
-  // which is what makes the count equal the whole settled set rather than "some".
-  const DONE_RUN = '7a77391d6568'
+  /**
+   * 🔴 RESOLVED BY SHAPE, NEVER PINNED — AND THE PIN IS WHY THIS SUITE WAS RED (2026-09-06).
+   *
+   * It named `7a77391d6568`, which has left the lab: `requireRun` reported it by name (working
+   * exactly as designed) and all four checks were dead. Worse, the sentence that pin carried —
+   * *every param at its shipped default* — **can no longer be satisfied by anything in the lab**:
+   * the closest run today differs from the defaults in 11 places. So re-pointing at another
+   * literal would have bought the same failure on a later date.
+   *
+   * What these checks actually need is a SHAPE: a completed python `sos_fade` run with the
+   * secondary switched OFF (so its dependants have something to fold), carrying a settled param
+   * still at its default (the row the fold has to hold), and rows in the two groups the section
+   * checks open. `fixtures.ts` says to prefer this over naming a row wherever a check allows it.
+   */
+  let DONE_RUN = ''
 
-  // Fail by NAME if this pinned run has left the lab. Its `Settled · 26` assertion is tied to
-  // THIS run's params being all-default, so a replacement has to satisfy that too — which is
-  // exactly the sentence a bare 404 timeout cannot supply. See `fixtures.ts`.
   test.beforeAll(async () => {
-    await requireRun(
-      DONE_RUN,
-      'a completed full-history sos_fade run with EVERY param at its shipped default — that is what makes the settled count the whole set rather than "some"'
+    type Row = { run_id: string; status: string; runner: string; created_at?: number | string }
+    const strat = await getJson<{
+      param_schema: { name: string; group?: string; hidden?: boolean; default?: unknown }[]
+    }>('/strategies/sos_fade')
+    const sch = new Map(strat.param_schema.map((p) => [p.name, p]))
+    const runs = await getJson<(Row & { params?: Record<string, unknown> })[]>(
+      '/backtests/runs?strategy_id=sos_fade'
     )
+    const groupsOf = (params: Record<string, unknown>) =>
+      new Set(Object.keys(params).map((k) => sch.get(k)?.group))
+    const fits = runs
+      .filter((r) => r.status === 'complete' && r.runner === 'python' && r.params)
+      .filter((r) => r.params!.exec_secondary === false)
+      // A settled param still at its default — the row the fold must hold.
+      .filter((r) => String(r.params!.div_rsi_len) === String(sch.get('div_rsi_len')?.default))
+      .filter((r) => {
+        const g = groupsOf(r.params!)
+        return g.has('Entry zone') && g.has('Risk & stop') && g.has('Secondary re-entries')
+      })
+      .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+    if (!fits.length) {
+      throw new Error(
+        'FIXTURE GONE, not a regression: the lab holds no completed python sos_fade run with the ' +
+          'secondary switched OFF, a settled param at its default, and rows in Entry zone / Risk & ' +
+          'stop / Secondary re-entries. Run one (any window will do) and these four checks come back.'
+      )
+    }
+    DONE_RUN = fits[0].run_id
   })
 
   test('the settled ones are behind a fold that COUNTS them, and the values are still there', async ({
@@ -331,11 +432,11 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
     await page.goto(`/backtests/runs/${DONE_RUN}`)
     const panel = page.getByTestId('run-settled-params')
     await expect(panel).toBeVisible({ timeout: 30_000 })
-    // ⚠ 31, not the 26 this pinned for its whole life: the fold gained the settings a run could
-    // not act on (this run has the secondary OFF) alongside the ones past testing settled. The
-    // number is pinned on purpose — it is what makes this a check on the RULE rather than on
-    // "some params are folded", and a change to either rule has to come here and say why.
-    await expect(panel).toContainText('Already decided · 31')
+    // 🔴 THE COUNT WAS TYPED (`26`, then `31`) AND IT ROTTED. What the number was standing in
+    // for is an INVARIANT, and the invariant is worth more: **every param the run sent is
+    // accounted for somewhere on this panel.** A fold that quietly drops a row is otherwise
+    // indistinguishable from one that folds it, which is the whole subject here.
+    await expect(panel).toContainText(/Already decided · \d+/)
 
     // ⚠ Asserted on the WORDS, because the words are what the panel shows. It printed field
     // names until 2026-08-20 — `div_rsi_len` for this row — which made the one surface that
@@ -348,6 +449,21 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
     // ...and one click puts the value back on screen. Nothing was dropped.
     await panel.getByText(/^Already decided · /).click()
     await expect(panel.getByText('RSI length', { exact: true })).toBeVisible()
+
+    // 🔴 THE FOLD'S COUNT WAS TYPED (`26`, then `31`) AND IT ROTTED — the run it was measured on
+    // has left the lab, and no run there now can satisfy the sentence it rested on. What the
+    // number stood in for is an INVARIANT, and the invariant is worth more than the literal:
+    // **every param the run sent is accounted for somewhere on this panel.** A fold that quietly
+    // DROPS a row is otherwise indistinguishable from one that folds it, which is the subject of
+    // this whole check.
+    // ⚠ Counted LAST, with both folds open — opening them earlier would satisfy the
+    // starts-closed assertion above by accident.
+    await page.getByText(/^Instrument & broker · /).click()
+    const sent = Object.keys(
+      (await getJson<{ params: Record<string, unknown> }>(`/backtests/runs/${DONE_RUN}`)).params
+    ).length
+    expect(sent).toBeGreaterThan(0)
+    await expect(page.getByTestId('run-param-row')).toHaveCount(sent)
   })
   /**
    * 🔴 EVERY SECTION IS OPEN ON ARRIVAL, AND COLLAPSING IS THE READER'S CHOICE.
@@ -422,7 +538,8 @@ test.describe('a finished run FOLDS its settled params rather than dropping them
     page,
   }) => {
     // The pinned run has `exec_secondary: false`, which is what makes this case real rather
-    // than mocked. `requireRun` above already fails by NAME if it leaves the lab.
+    // than mocked. The resolver above refuses to run this suite at all if the lab holds no
+    // such run, so a red here is about the panel rather than about the fixture.
     await page.goto(`/backtests/runs/${DONE_RUN}`)
     const secondary = page.getByRole('button', { name: /Secondary re-entries/ })
     await expect(secondary).toBeVisible({ timeout: 30_000 })
@@ -525,7 +642,11 @@ test.describe('the Run modal is one editable view of every setting', () => {
     await openModal(page)
     await expect(page.getByTestId('param-row-exec_longs')).toHaveCount(0)
     await expect(page.getByTestId('param-row-exec_close_opp_sos')).toHaveCount(0)
-    await expect(page.getByTestId('param-settled-count')).toContainText('26 settled')
+    // Derived, never typed — see `settledInSchema`. A literal here read `26` against a page
+    // correctly saying 20.
+    await expect(page.getByTestId('param-settled-count')).toContainText(
+      `${await settledInSchema(page)} settled`
+    )
   })
 
   test('the strategy name is in the TITLE and the setup fits one row', async ({ page }) => {

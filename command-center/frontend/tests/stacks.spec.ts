@@ -29,6 +29,62 @@ const LEGS = [
 ]
 
 /**
+ * The editor metadata the Settings card reads its WORDS out of.
+ *
+ * ⚠ Served as a fixture rather than left to the real lab, deliberately: these legs carry real
+ * strategy ids, so an unrouted list would hand the page whichever labels those packages happen to
+ * carry today and the assertions would move whenever somebody edits a meta file. What is under
+ * test is that the card reads the metadata AT ALL, not what any particular strategy calls a
+ * setting.
+ */
+const SCHEMA_ROUTE = (u: URL) => u.pathname === '/api/strategies'
+const PARAM_SCHEMA = [
+  {
+    name: 'exec_secondary',
+    type: 'bool',
+    default: true,
+    group: 'Secondary re-entries',
+    label: 'Take re-entries after the first exit',
+    short: 'Re-entries',
+    options: { on: 'Re-entries on', off: 'No re-entries' },
+  },
+  {
+    name: 'exec_rec_window',
+    type: 'int',
+    default: 240,
+    group: 'Secondary re-entries',
+    label: 'How long a re-entry stays armed (minutes)',
+    short: 'Re-entry window',
+    unit: 'minutes',
+    // Its parent is pinned off on a shared leg, so this could not act on the run.
+    show_if: { exec_secondary: true },
+  },
+  {
+    name: 'exec_risk_pct',
+    type: 'double',
+    default: 10,
+    group: 'Risk & stop',
+    label: 'Risk per trade (% of balance)',
+    short: 'Risk per trade',
+    unit: '% of balance',
+  },
+]
+const schemaFixture = (r: { fulfill: (o: { json: unknown }) => unknown }) =>
+  r.fulfill({
+    json: LEGS.map((l) => ({
+      id: l.strategy_id,
+      name: l.strategy_name,
+      class_name: l.strategy_name,
+      source_path: `strategies/python/${l.strategy_id}`,
+      default_params: {},
+      param_schema: PARAM_SCHEMA,
+      scanned_at: '2026-09-01T00:00:00Z',
+      run_count: 1,
+      runner: 'python',
+    })),
+  })
+
+/**
  * One leg, with the two books a SHARED stack really has on disk.
  *
  * ⚠ `pnl` and `soloPnl` differ by design and `r` is IDENTICAL between them — that is the whole
@@ -1186,6 +1242,7 @@ test.describe('a stack says what it was replayed with', () => {
       (u) => u.pathname.endsWith('/chart-spec'),
       (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
     )
+    await page.route(SCHEMA_ROUTE, schemaFixture)
     await page.route(
       (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
       (r) => {
@@ -1206,10 +1263,112 @@ test.describe('a stack says what it was replayed with', () => {
 
     // Open the first leg's disclosure and read the pinned value.
     await settings.locator('summary').first().click()
-    await expect(settings).toContainText('exec_secondary')
-    // 🔴 `false` must RENDER. A boolean dropped as falsy, or printed as an em-dash, would hide
-    // exactly the pinned value this section exists to show — and it would look like a tidy
-    // empty cell rather than a missing fact.
-    await expect(settings.getByText('false', { exact: true }).first()).toBeVisible()
+    // 🔴 THE WORDS, NEVER THE FIELD NAME. This section printed `exec_secondary` until 2026-09-06,
+    // which is only readable with the source open — so the one surface recording what a stack's
+    // legs ran with was useless to the person reading the result. The words come from the
+    // strategy's own metadata, the same helper the single-run page's parameters panel uses.
+    await expect(settings).toContainText('Re-entries')
+    await expect(settings).not.toContainText('exec_secondary')
+    // 🔴 An OFF value must RENDER, in the strategy's own two words. A boolean dropped as falsy,
+    // or printed as an em-dash, would hide exactly the pinned value this section exists to show
+    // — and it would look like a tidy empty cell rather than a missing fact.
+    await expect(settings.getByText('No re-entries', { exact: true }).first()).toBeVisible()
+  })
+
+  /**
+   * 🔴 A SETTING WHOSE PARENT IS OFF DID NOTHING ON THIS RUN, so it is folded away — never
+   * dropped. This card is the RECORD of what each leg was handed, and a report that silently
+   * omits inputs is a worse defect than a long list. Same rule, same words, as the single-run
+   * page's own parameters panel.
+   *
+   * MUTATION: render `view.groups` only and drop both folds from `LegSettings`, or make the fold
+   * FILTER instead of fold, and this goes red on the count.
+   */
+  test('a setting the run could not act on is folded away, not dropped', async ({ page }) => {
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => r.fulfill({ json: sharedReport() })
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/chart-spec'),
+      (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
+    )
+    await page.route(SCHEMA_ROUTE, schemaFixture)
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        const d = stackDetail('shared')
+        d.strategies = d.strategies.map((s) => ({
+          ...s,
+          // The re-entry window can only matter while re-entries are ON, and they are pinned off.
+          params: { exec_secondary: false, exec_rec_window: 240, exec_risk_pct: 10 },
+        }))
+        return r.fulfill({ json: d })
+      }
+    )
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const settings = page.getByTestId('stack-settings')
+    await settings.locator('summary').first().click()
+
+    const fold = settings.getByTestId('stack-settled-params').first()
+    await expect(fold).toContainText('Already decided · 1')
+    // Still SENT, so still readable — one click away rather than gone.
+    await fold.locator('summary').click()
+    await expect(fold).toContainText('Re-entry window')
+  })
+
+  /**
+   * 🔴 THE CARD HAS TO STAY READABLE AS LEGS ARE ADDED. A stack takes as many strategies as the
+   * account can carry, so one row per leg is the shape that scales — and past two legs, opening
+   * them one at a time is the click count the reader pays every visit. ONE control, stating which
+   * way it will go: two buttons leave a dead one on screen at each extreme.
+   *
+   * MUTATION: drop `open`/`onToggle` from `LegSettings` and let the native disclosure own itself —
+   * the button then moves nothing and both halves of this go red.
+   */
+  test('one control opens and shuts every strategy at once', async ({ page }) => {
+    await page.route(
+      (u) => u.pathname.endsWith('/contention'),
+      (r) => r.fulfill({ json: sharedReport() })
+    )
+    await page.route(
+      (u) => u.pathname.endsWith('/chart-spec'),
+      (r) => r.fulfill({ status: 404, json: { detail: 'no chart in this test' } })
+    )
+    await page.route(SCHEMA_ROUTE, schemaFixture)
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        const d = stackDetail('shared')
+        d.strategies = d.strategies.map((s) => ({
+          ...s,
+          params: { exec_secondary: false, exec_risk_pct: 10 },
+        }))
+        return r.fulfill({ json: d })
+      }
+    )
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const settings = page.getByTestId('stack-settings')
+    await expect(settings).toBeVisible()
+    const legs = settings
+      .locator('details')
+      .filter({ has: page.locator('summary > span.rounded-full') })
+    await expect(legs).toHaveCount(2)
+
+    // Shut on arrival — N legs of full settings would otherwise bury the page they sit at the
+    // bottom of. The control offers the action the card is NOT in.
+    const toggleAll = page.getByTestId('stack-settings-toggle-all')
+    await expect(toggleAll).toHaveText('Expand all')
+    await toggleAll.click()
+    await expect(legs.nth(0)).toHaveAttribute('open', '')
+    await expect(legs.nth(1)).toHaveAttribute('open', '')
+
+    // ...and it flips, so the same control puts them all away again.
+    await expect(toggleAll).toHaveText('Collapse all')
+    await toggleAll.click()
+    await expect(legs.nth(0)).not.toHaveAttribute('open', '')
+    await expect(legs.nth(1)).not.toHaveAttribute('open', '')
   })
 })

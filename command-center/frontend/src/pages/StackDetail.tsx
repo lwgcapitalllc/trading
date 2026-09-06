@@ -14,6 +14,7 @@ import {
 import StickyHeader from '@/components/StickyHeader'
 import {
   useStack,
+  useStrategies,
   useDeleteStack,
   useCancelStack,
   useStackChartSpec,
@@ -55,7 +56,17 @@ import {
   type PanelRow,
 } from '@/pages/BacktestDetail'
 import { C } from '@/themes/chart'
+import {
+  buildRunSettingsView,
+  FOUNDATIONAL_CAPTION,
+  FOUNDATIONAL_HEADING,
+  SETTLED_CAPTION,
+  SETTLED_HEADING,
+  type SettingRow,
+  type RunSettingsView,
+} from '@/components/runSettings'
 import type {
+  ParamSchemaEntry,
   StackStrategyLeg,
   BacktestDetail as RunDetail,
   EquityPoint,
@@ -1055,6 +1066,37 @@ export function StackDetail() {
     [legs]
   )
 
+  // The editor metadata for each leg's strategy — labels, groups, units, option words. It is what
+  // turns the Settings card below from field names into English.
+  //
+  // ⚠ Read off the STRATEGY LIST, which every page here already holds warm, rather than one
+  // request per leg: a stack has as many legs as it likes, and a fan-out that grows with them is
+  // the shape this repo has already paid for once (`bot_versions` ran a `git show` per commit).
+  // ⚠ A missing schema is not an error state — a strategy scanned before its metadata existed
+  // renders tidied field names and raw values, which is what the card did for everything until
+  // 2026-09-06. It must never render a blank row instead.
+  // 🔴 ONE ROW PER LEG, AND THE ROWS ARE WHAT SCALE. A stack takes as many strategies as the
+  // account can carry, so the card has to stay readable at five legs as well as at two: rows grow
+  // the card LINEARLY and collapse to one line each, while side-by-side columns halve their own
+  // width every time a leg is added and take the group grid inside them down to one column with
+  // it. ⚠ The tracked set is what is OPEN rather than what is shut — the opposite of the run
+  // page's parameters rail, and deliberately: that panel exists to show at a glance what a run
+  // charged, while this one holds N strategies' full settings and cannot open them all at once
+  // without burying the page it sits at the bottom of.
+  const [openLegs, setOpenLegs] = useState<Set<string>>(new Set())
+  const settingsLegs = useMemo(
+    () => legs.filter((l) => l.params && Object.keys(l.params).length > 0),
+    [legs]
+  )
+  const allLegsOpen =
+    settingsLegs.length > 0 && settingsLegs.every((l) => openLegs.has(l.strategy_id))
+
+  const { data: strategies } = useStrategies()
+  const schemaFor = useCallback(
+    (id: string) => strategies?.find((st) => st.id === id)?.param_schema,
+    [strategies]
+  )
+
   // Is the shared replay's own progress being carried by the banner above? Only while the STACK is
   // running and the report is genuinely still in flight.
   //
@@ -1882,14 +1924,19 @@ export function StackDetail() {
               ⚠ It is per LEG rather than one merged list: two strategies can hold the same key at
               different values, and a merged view would have to pick one.
 
+              🔴 IT PRINTED FIELD NAMES FOR ITS WHOLE LIFE, AND THAT MADE IT UNREADABLE (Aaron,
+              2026-09-06: *"these settings show the actual code variable names. So when I look at
+              them, I don't know what's on or what's off"*). The single-run page has read in plain
+              English since 2026-08-20 — same question, same run, two vocabularies. Both now go
+              through `runSettings.ts`, so the words, the group order and both folds are ONE
+              implementation and cannot drift apart again.
+
               🔴 IT WAS N FLOATING BARS AND THEY READ AS A DIFFERENT PAGE (2026-09-03). Each leg was
               its own rounded card in a `space-y-2` column, so the last thing on a page built out of
               framed sections was an unframed list of pills — Aaron: *"the settings section just
               looks out of place."* It is ONE card now, legs as rows inside it, divided rather than
-              detached, which is the same anatomy the per-strategy table above it already uses.
-              ⚠ Every rule below the surface is unchanged: still per leg, still a disclosure, still
-              rendering a `false` as the word. */}
-          {legs.some((l) => l.params && Object.keys(l.params).length > 0) && (
+              detached, which is the same anatomy the per-strategy table above it already uses. */}
+          {settingsLegs.length > 0 && (
             <div>
               <div className="flex items-baseline gap-2 mb-3">
                 <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
@@ -1898,67 +1945,193 @@ export function StackDetail() {
                 <span className="text-[11px] text-text-tertiary">
                   what each strategy was actually replayed with
                 </span>
+                {/* 🔴 ONE control, and it offers the action the card is NOT already in. Two
+                  buttons leave a dead one on screen at each extreme, and a control that does
+                  nothing when clicked reads as broken rather than as already-done — the run
+                  page's parameters panel settled that. ⚠ It says the WORDS rather than carrying
+                  an icon: this header has the room, and an icon is a rebus for anybody who has
+                  not already learned it. ⚠ It appears at TWO legs and up, because at one there
+                  is nothing to do in bulk. */}
+                {settingsLegs.length > 1 && (
+                  <button
+                    data-testid="stack-settings-toggle-all"
+                    onClick={() =>
+                      setOpenLegs(
+                        allLegsOpen ? new Set() : new Set(settingsLegs.map((l) => l.strategy_id))
+                      )
+                    }
+                    className="ml-auto text-[11px] text-text-tertiary hover:text-text-secondary"
+                  >
+                    {allLegsOpen ? 'Collapse all' : 'Expand all'}
+                  </button>
+                )}
               </div>
               <div
                 data-testid="stack-settings"
                 className="rounded-xl border border-border-default bg-bg-surface overflow-hidden"
               >
-                {legs
-                  .filter((l) => l.params && Object.keys(l.params).length > 0)
-                  .map((leg) => (
-                    <details
-                      key={leg.strategy_id}
-                      className="group border-border-subtle [&:not(:first-child)]:border-t"
-                    >
-                      <summary
-                        className="px-4 py-[11px] cursor-pointer select-none list-none flex items-center gap-2.5
-                                   text-[12px] hover:bg-bg-sunken/40 transition-colors
-                                   [&::-webkit-details-marker]:hidden"
-                      >
-                        <ChevronDown
-                          size={13}
-                          className="shrink-0 text-text-tertiary transition-transform -rotate-90 group-open:rotate-0"
-                        />
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ background: colorFor(leg.strategy_id) }}
-                        />
-                        <span className="font-medium text-text-primary">{leg.strategy_name}</span>
-                        <span className="ml-auto font-mono tabular-nums text-[11px] text-text-tertiary">
-                          {Object.keys(leg.params!).length} settings
-                        </span>
-                      </summary>
-                      <div
-                        className="border-t border-border-subtle bg-bg-sunken/30 px-4 py-3 grid gap-x-7 gap-y-[3px]
-                                    grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                      >
-                        {Object.entries(leg.params!)
-                          .sort(([a], [b]) => a.localeCompare(b))
-                          .map(([k, v]) => (
-                            <div
-                              key={k}
-                              className="flex items-baseline justify-between gap-3 text-[11px] py-[2px]
-                                         border-b border-border-subtle/40"
-                            >
-                              <span className="text-text-tertiary truncate" title={k}>
-                                {k}
-                              </span>
-                              <span className="font-mono tabular-nums text-text-secondary whitespace-nowrap">
-                                {/* Rendered as written. A `false` printed as an em-dash, or a 0 dropped
-                                as falsy, would hide exactly the pinned value this section exists
-                                to show. */}
-                                {typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v)}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </details>
-                  ))}
+                {settingsLegs.map((leg) => (
+                  <LegSettings
+                    key={leg.strategy_id}
+                    leg={leg}
+                    color={colorFor(leg.strategy_id)}
+                    schema={schemaFor(leg.strategy_id)}
+                    open={openLegs.has(leg.strategy_id)}
+                    onToggle={() =>
+                      setOpenLegs((prev) => {
+                        const next = new Set(prev)
+                        if (!next.delete(leg.strategy_id)) next.add(leg.strategy_id)
+                        return next
+                      })
+                    }
+                  />
+                ))}
               </div>
             </div>
           )}
         </div>
       )}
     </div>
+  )
+}
+
+// ── One leg's settings, in English ────────────────────────────────────────────
+// The words, the group order and both folds come from `runSettings.ts`, which the single-run
+// page's parameters rail reads too. Only the LAYOUT is local: that rail is 248px and stacks a
+// label over its value, while this card has the full page width and can put the two on one line
+// with the groups side by side.
+
+const SET_GROUP = 'text-[10px] font-bold uppercase tracking-[0.8px] text-gold-text leading-none'
+const SET_NAME = 'text-[11.5px] text-text-tertiary leading-tight'
+const SET_VALUE =
+  'text-[11.5px] font-semibold text-text-primary tabular-nums leading-tight whitespace-nowrap'
+
+/**
+ * ⚠ Rendered through `view.valueOf`, which turns a bool into the two words the strategy's own
+ * toggle uses (*Retest* / *Any*) and never into `true`/`false`. A `false` printed as an em-dash,
+ * or a 0 dropped as falsy, would hide exactly the pinned value this whole section exists to show.
+ */
+function SettingList({ rows, view }: { rows: SettingRow[]; view: RunSettingsView }) {
+  return (
+    <div className="space-y-[2px]">
+      {rows.map(([k, v]) => (
+        <div
+          key={k}
+          // The hover explains the setting; a param with no metadata falls back to naming the
+          // field, which is the one case where the raw name is the most honest thing to show.
+          title={view.descOf(k) || k}
+          className="flex items-baseline justify-between gap-4 border-b border-border-subtle/30 py-[3px]"
+        >
+          <span className={`${SET_NAME} min-w-0 truncate`}>{view.nameOf(k)}</span>
+          <span className={SET_VALUE}>{view.valueOf(k, v)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** A fold — settings that were SENT but could not decide anything. Never a drop: this card is the
+ *  record of what the run carried, and a report that silently omits inputs is the worse defect. */
+function SettingFold({
+  heading,
+  caption,
+  rows,
+  view,
+  testId,
+}: {
+  heading: string
+  caption: string
+  rows: SettingRow[]
+  view: RunSettingsView
+  testId?: string
+}) {
+  if (!rows.length) return null
+  return (
+    <details data-testid={testId} className="mt-5 border-t border-border-subtle/60 pt-3">
+      <summary className={`cursor-pointer select-none hover:text-gold-text/80 ${SET_GROUP}`}>
+        {heading} · {rows.length}
+      </summary>
+      <p className="text-[10.5px] text-text-tertiary/80 mt-1.5 leading-snug">{caption}</p>
+      <div className="mt-2.5 grid gap-x-8 gap-y-0 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+        <SettingList rows={rows} view={view} />
+      </div>
+    </details>
+  )
+}
+
+function LegSettings({
+  leg,
+  color,
+  schema,
+  open,
+  onToggle,
+}: {
+  leg: StackStrategyLeg
+  color: string
+  schema?: ParamSchemaEntry[]
+  open: boolean
+  onToggle: () => void
+}) {
+  const view = useMemo(() => buildRunSettingsView(leg.params, schema), [leg.params, schema])
+  // ⚠ CONTROLLED, so one header control can move every leg at once. The click is intercepted
+  // rather than left to the native disclosure — a `<details>` toggling itself and a parent
+  // deciding which are open are two owners of one piece of state, and they disagree the first
+  // time somebody presses Expand all with a leg already open.
+  return (
+    <details open={open} className="group border-border-subtle [&:not(:first-child)]:border-t">
+      {/* ⚠ The open leg's header takes a background and its body takes a rule in the leg's own
+        colour. Two open legs used to run straight into one another — Aaron, 2026-09-06: *"the two
+        strategies kinda start on top of each other"* — because a body ended in rows and the next
+        leg began with a row-sized line, with nothing between them saying a new strategy had
+        started. The colour is the same one this leg carries in every chart on the page. */}
+      <summary
+        onClick={(e) => {
+          e.preventDefault()
+          onToggle()
+        }}
+        className="px-4 py-[11px] cursor-pointer select-none list-none flex items-center gap-2.5
+                   text-[12px] hover:bg-bg-sunken/40 group-open:bg-bg-sunken/50 transition-colors
+                   [&::-webkit-details-marker]:hidden"
+      >
+        <ChevronDown
+          size={13}
+          className="shrink-0 text-text-tertiary transition-transform -rotate-90 group-open:rotate-0"
+        />
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+        <span className="font-medium text-text-primary">{leg.strategy_name}</span>
+        <span className="ml-auto font-mono tabular-nums text-[11px] text-text-tertiary">
+          {view.total} settings
+        </span>
+      </summary>
+      <div
+        className="border-t border-border-subtle bg-bg-sunken/30 px-5 py-4 border-l-2"
+        style={{ borderLeftColor: color }}
+      >
+        {/* Groups side by side, each one whole. The rail's single column would waste this width,
+          and a flat alphabetical list — what this card printed until 2026-09-06 — scrambles the
+          order the strategy actually decides things in. */}
+        <div className="grid gap-x-8 gap-y-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+          {view.groups.map(({ group, rows }) => (
+            <div key={group}>
+              <div className={`${SET_GROUP} mb-2`}>{group}</div>
+              <SettingList rows={rows} view={view} />
+            </div>
+          ))}
+        </div>
+        <SettingFold
+          testId="stack-settled-params"
+          heading={SETTLED_HEADING}
+          caption={SETTLED_CAPTION}
+          rows={view.settled}
+          view={view}
+        />
+        <SettingFold
+          heading={FOUNDATIONAL_HEADING}
+          caption={FOUNDATIONAL_CAPTION}
+          rows={view.foundational}
+          view={view}
+        />
+      </div>
+    </details>
   )
 }

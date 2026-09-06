@@ -1584,10 +1584,28 @@ wearing different clothes, and each has its own fix. Full record: `../docs/FRONT
 | the **calendar** | `overview.spec.ts` (1) — `?week=12 // US fall-back, 2026-11-01`, a fixed date written in an offset from today, so it named a different week every Monday and asserted 169h against a correct 168h | **derive the offset.** `nextDstWeek()` scans `getTimezoneOffset()` forward for the real changeover and expects 169h on a fall-back, 167h on a spring-forward. ⚠ It THROWS on a no-DST timezone — a silent skip and a pass are the same outcome |
 | the **registry's SIZE** | `overview.spec.ts` (2) — `1 of 1` / `1 of 2` not reporting, against a fleet that grew to 3 | **SET the fleet, don't add to it.** Trim the real snapshot to the bots the rule needs. ⚠ And STATE the reporting bot's balance rather than inheriting it — the live one is `null` whenever the terminal is quiet, which would make the check pass for the wrong reason on exactly the days it matters |
 | an **empty table** | `stress.spec.ts` (11) — the lab held ZERO stress tests, so a whole feature's suite had switched itself off | **make the fixture one command.** `backend/scripts/seed_stress_fixture.py` seeds a Monte-Carlo-only test (seconds, no VPS, no child backtests, Telegram stubbed), and the suite's own failure prints that command |
+| a **count of somebody else's metadata** | `param-gates.spec.ts` (4, 2026-09-06) — `26 settled` against a page correctly saying `20`, `Already decided · 31`, and `{ name: /^Secondary re-entries$/ }` against a header that states its own settings count | **DERIVE it.** `settledInSchema()` counts the `hidden` params in the served schema and the escape check subtracts exactly one; group names anchor at the START only. ⚠ Where deriving would mean re-writing the rule under test, assert the INVARIANT instead — the fold's literal became *every param the run sent is rendered somewhere on the panel* (`run-param-row`), which is stronger AND cannot rot |
+| a **UI that was deliberately replaced** | `param-gates.spec.ts` (2) — the Costs section's five tickboxes and its typed Commission box became ONE switch on 2026-08-24, and the summary word `frictionless` went with them | **re-point to the rule that REPLACED it, do not delete.** The commission check now pins that the figure is stated off the broker account and that no typed box exists — which is why the old control was removed. ⚠ Deleting these as rot loses the evidence for the decision |
+
+🔴 **A SEVENTH, AND IT IS NOT DRIFT AT ALL: A HELPER'S PRECONDITION CONTRADICTED THE TEST IT SET
+UP.** `openEditor` asserted the dependent row was VISIBLE — fine for three checks, and the fourth
+opens the editor in the one configuration where that row must be GONE (Custom = 1.0). It failed
+inside the setup, so it read as a broken page rather than as a setup asserting the opposite of its
+own subject. **A shared precondition may assert only what EVERY caller needs**; the positive
+control belongs in the checks, beside the assertion it guards. ⚠ Moving it out is what makes those
+checks honest anyway — an absent row and a row that was never drawn are the same DOM.
 
 ⚠ **The generalisation is the repo's own rule one level out: a test may depend on the world, but it
 must not be able to fail SILENTLY-WRONGLY when the world moves.** Every one of these five failed
 loudly enough to be seen and quietly enough to be read as a regression, which is the expensive half.
+
+🔴 **AND A DEAD PIN IS NOT ALWAYS RE-POINTABLE.** `param-gates.spec.ts` named a run whose stated
+requirement was *every param at its shipped default*; that run has left the lab and **no run in it
+today can satisfy that sentence** — the closest differs in 11 places. So the four checks resolve a
+run BY SHAPE now (completed python `sos_fade`, secondary OFF, a settled param still at its default,
+rows in the groups the checks open) and refuse by name when the lab holds none. ⚠ **When a pin
+dies, re-read what it was pinned FOR before naming a replacement** — a second literal buys the same
+failure on a later date.
 
 ⚠ **`tsc --noEmit` DOES NOT COVER `tests/`.** A spec's syntax error typechecks clean and surfaces
 only when Playwright loads the file. **`npx playwright test --list` is the parse check** — seconds,
@@ -1950,6 +1968,13 @@ reports `0%` against the old ternary. The bar and its percentage carry `run-prog
 `run-progress-pct` so the check reads the element it means.
 
 ### The finished-run params panel — plain names, three tiers, collapsible (2026-08-20)
+
+🔴 **ITS CLASSIFICATION MOVED OUT TO `components/runSettings.ts` ON 2026-09-06 AND IS NOW SHARED
+WITH THE STACK PAGE'S Settings CARD.** That card asks the identical question about each of its
+legs and was still printing field names, so the words, the group ORDER and both folds are one
+implementation (`buildRunSettingsView`) and each surface owns only its LAYOUT. **Edit the words or
+either fold THERE, never here** — the rules below are unchanged and are stated once, under *The
+Settings section is ONE card* where the second reader of them lives.
 
 🔴 **It printed FIELD NAMES** — `exec_nogap_arm`, `exec_sl_buf_tk`, `aplus_window` — so the one
 surface that records what a finished run actually charged was unreadable without the source open.
@@ -2439,6 +2464,54 @@ bordered card with the legs as divided rows — the anatomy the per-strategy tab
 - ⚠ **Suppressing the native disclosure marker means ADDING one** (`list-none` +
   `[&::-webkit-details-marker]:hidden`, with a `group-open` chevron), or a row opens with nothing
   saying it could be opened.
+
+🔴 **IT PRINTED FIELD NAMES FOR ITS WHOLE LIFE, AND THE SINGLE-RUN PAGE HAD NOT SINCE 2026-08-20
+(fixed 2026-09-06).** One question — *what settings produced this book?* — answered in two
+vocabularies six inches apart, and Aaron could not read this one: *"these settings show the actual
+code variable names. So when I look at them, I don't know what's on or what's off."*
+
+- 🔴 **`components/runSettings.ts` is the ONE classification, read by BOTH surfaces.** The words,
+  the group ORDER and both folds come out of `buildRunSettingsView`; each page owns only its
+  LAYOUT — a 248px rail stacks a label over its value, a full-width card puts groups side by side.
+  **A second copy of this is how one surface starts teaching a different name for one setting**,
+  which is the drift this file already records for the Sharpe formula and the condition evaluator.
+- ⚠ **The fold HEADINGS and CAPTIONS are shared constants too.** A reader who learns what
+  *Already decided* means on one page has learned it; two wordings is two folds.
+- ⚠ **Nothing is DROPPED — a settled param and one whose parent is off both fold, never vanish.**
+  This card is the RECORD of what each leg was handed, and a report that silently omits inputs is
+  a worse defect than a long list. Same rule, same code, as the run page's panel.
+- ⚠ **A missing schema degrades to a tidied field name and the raw value, never to a blank row.**
+  A strategy scanned before its metadata existed still has to render every setting it was sent.
+- ⚠ **The schema is read off the STRATEGY LIST (`useStrategies`), which the app already holds
+  warm — never one request per leg.** A stack takes as many legs as it likes, and a fan-out that
+  grows with them is the shape this repo has paid for once already.
+- ⚠ **An open leg tints its own header and takes a 2px rule in ITS chart colour.** Two open legs
+  ran straight into each other (*"the two strategies kinda start on top of each other"*) — a body
+  ended in rows and the next leg began with a row-sized line, with nothing between them saying a
+  new strategy had started.
+- 🔴 **ONE ROW PER LEG IS THE SHAPE THAT SCALES, and an account takes more than two strategies.**
+  Rows grow the card LINEARLY and collapse to one line each; side-by-side columns halve their own
+  width with every leg added and take the group grid inside them down to one column with it. Aaron
+  left the call open (*"I can stack more than 2 strategies on an account so you decide"*) — this is
+  the decision, and the reason is the third leg rather than the second.
+- ⚠ **ONE bulk control, stating which way it will go** (`stack-settings-toggle-all`, shown at two
+  legs and up). Two buttons leave a dead one on screen at each extreme. It says the WORDS, not an
+  icon: the header has room, and an icon is a rebus for anybody who has not already learned it.
+- ⚠ **The legs are CONTROLLED (`open` / `onToggle`), never left to the native disclosure** — a
+  `<details>` owning its own state and a parent deciding which are open are two owners of one fact,
+  and they disagree the first time somebody presses Expand all with a leg already open.
+- 🔴 **The tracked set is what is OPEN — the OPPOSITE polarity to the run page's parameters rail,
+  and deliberately.** That rail exists to show at a glance what a run charged, so it must arrive
+  expanded and track what is SHUT. This card holds N strategies' full settings at the bottom of a
+  long page; opening them all on arrival buries the page it sits under.
+
+✅ **`tests/stacks.spec.ts` (34 → 36), and the settings checks now SERVE their own param schema**
+— these legs carry real strategy ids, so an unrouted `/strategies` hands the page whichever labels
+those packages happen to carry today and every assertion moves when somebody edits a meta file.
+**What is under test is that the card reads the metadata AT ALL**, never what a particular strategy
+calls a setting. All three are watched RED by mutation: names reverted to field names reddens the
+words check, a fold that DROPS instead of folding reddens the second, and letting each leg own its
+own disclosure again reddens the bulk control's.
 
 ✅ **`tests/stacks.spec.ts` (29 → 34).** ⚠ **A fail-watch against HEAD is vacuous** — the merged
 block did not exist, so a red proves the locator only. **Non-vacuity is by MUTATION, seven named and
