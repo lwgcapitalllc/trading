@@ -2334,6 +2334,53 @@ must act on the difference tests `is UNKNOWN`.
    one layer down; MEASURED, not reasoned, when writing it as `kind` killed six tests on the fake
    ledger's signature.
 
+### 🔴 A refused order records WHICH guard refused it (2026-09-06)
+
+**The order layer refuses for seven unrelated reasons and every one returned the same
+`(None, None)`**, so `bridge._place` could record only THAT an order was refused — no code, no
+sentence. The reason existed, correctly worded, in a log line that rotates; **the decision record —
+the copy `ledger_sync.py` pushes off the box, and the only artefact that outlives the week — could
+not answer the question it exists to answer.**
+
+⚠ **This was NARROW and the narrowness is why it survived.** The SIZING refusal beside it
+(`_record_refusal`) has carried a code, a detail, the wanted size and an alert since it was written.
+Only the PLACEMENT refusal was mute, so a grep for `order_refused` found rich records and the gap
+sat in the other branch.
+
+**`mt5_ops.BotMT5.last_refusal` carries it out**: cleared at the top of BOTH placement functions,
+set by `_refuse` at each guard, read by the bridge. ⚠ **Cleared on ENTRY, or a stale reason from an
+earlier bar is read as this bar's** — a confidently wrong sentence in the one record that survives,
+which is worse than the blank field it replaces.
+
+⚠ **`None` at the bridge is recorded as `code="unrecorded"` with a detail NAMING the gap, never as
+a blank field.** Rule 1: *no reason given* and *nobody captured one* must not read alike — the first
+is a gap in `mt5_ops.py` worth finding, and a blank hides it for as long as it exists.
+
+⚠ **The codes are NAMED CONSTANTS, never literals** (`ORDER_REFUSAL_CODES`). A mistyped literal is
+a brand-new code no reader and no query has heard of and nothing fails; a mistyped name does not
+import. **Deliberately not a validating assert** — a guard that can crash a live bot over a typo in
+its own error path is worse than the gap it closes.
+
+⚠ **Only the genuine refusal branch sets it.** An UNKNOWN outcome and an ADOPTED order must leave
+none: one means *we could not find out* and the other *it worked*, and a reason-for-refusal under
+either is a sentence flatly contradicting the record beside it.
+
+⚠ **`at_market` travels with the record**, because the two placement paths share codes — a size
+below the venue minimum is `below_min_lot` on both — and a count that cannot tell them apart answers
+a different question from the one its name asks.
+
+⚠ **The two ends of the broker's stop distance get DIFFERENT codes.** A strategy hitting the
+entry-to-stop one every time has a stop too tight for this venue; one hitting the market-to-entry
+one is arming too close to price. A shared code cannot show either.
+
+✅ **9 tests in `test_live_bridge.py` and 16 in `test_mt5_ops_pending.py`; 18 mutations RUN and every
+one red**, including a control that a SUCCESSFUL placement records no refusal at all — a suite whose
+every case asserts a refusal certifies a bridge that refuses everything, which this repo has already
+shipped once.
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — the codes are produced by a faked terminal,
+and the first real one is still the first one.
+
 ### 🔴 An oversized position is RESIZED now, and the resize does NOT happen here (2026-09-02)
 
 **A strategy asking for more lots than the venue accepts trades the maximum instead of skipping
@@ -3176,9 +3223,30 @@ at one balance is the ordinary case, and flagging it fires on every second bot e
 only on a FRESH anchor (the flag is a fact about the moment the number was written, so re-deciding
 it every poll would raise it the first time any neighbour anchors differently).
 
-⚠ **Nothing yet READS `starting_balance_suspect`** — not the Bots page, not the hourly log review.
-It is written where the next reader will find it, and surfacing it is a separate change. Said
-plainly rather than left to be discovered: **today this guard is a record, not an alarm.**
+✅ **IT IS AN ALARM SINCE 2026-09-06 — `log_review._suspect_anchor` reads it.** This paragraph said
+*"today this guard is a record, not an alarm"* for a day, which is the honest version of a gap and
+still a gap: **a guard whose finding reaches nobody fires into an empty room, and that is worth less
+than no guard, because the next reader takes the silence for a checked account.** It now reaches
+Telegram once per occurrence and stands as a chip on the Bots page until it is dealt with.
+
+🔴 **IT REPORTS THE QUESTION AND NEVER A VERDICT, for the same reason the guard adopts nothing.**
+A rename and an ordinary second bot joining a grown account are the SAME signature, and the second
+is CORRECT — so a message reading *this is wrong* would send somebody to break a good number. It
+names both readings and says which action each calls for.
+
+⚠ **The key carries both figures, so a re-anchor at a DIFFERENT value announces itself again.**
+Keying on the bot alone reports the first orphaning and then stays silent through every later one —
+the de-duplicating-alerter bug `log_review.Finding` already warns about in its own docstring.
+
+⚠ **Raised for a STOPPED bot too, and BEFORE the health record is read.** It is a fact about the
+state file rather than about the record, so the *do not cry wolf over a deliberately stopped bot*
+rule does not apply — the number is wrong on screen either way — and `review_bot` returns early when
+the record cannot be read, which would otherwise swallow it for exactly the bot most worth a look.
+
+✅ **11 tests in `algos/tests/test_log_review.py`, 9/9 mutations RUN and every one red.** 🔴 **One
+survived first and the fix is the lesson: the *a stopped bot still reports it* test called the
+helper DIRECTLY, so a gate added in the CALLER could not fail it.** It drives `review_bot` now.
+**A test aimed one layer below the thing it names is green against its own defect.**
 
 ✅ 5 tests in `algos/tests/test_starting_balance_anchor.py`, **5/5 mutations RUN and every one
 red** — including both directions of the report-don't-adopt rule.

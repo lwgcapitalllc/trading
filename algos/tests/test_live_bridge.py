@@ -120,6 +120,28 @@ class _FakeMt5Ops:
         self.partial_result = True
         # Whether a full close at market succeeds. See `close_position` below.
         self.close_result = True
+        # ── refusing a PLACEMENT, the way the real broker layer refuses ──
+        #
+        # `None` places normally. A dict refuses AND records why, which is what
+        # `mt5_ops.place_order` / `place_pending_limit` do at each of their seven guards. The
+        # string `"silent"` refuses and records NOTHING — the gap case, i.e. a guard added one
+        # day that forgets to say which it was.
+        #
+        # ⚠ **Both refusing shapes are here on purpose.** A fake that could only refuse WITH a
+        # reason cannot exercise the branch that names the gap, and that branch is the one
+        # standing between a missing reason and a blank field nobody would ever notice.
+        self.refuse_placement = None
+        #: Mirrors production's own attribute — see `mt5_ops.BotMT5.last_refusal`.
+        self.last_refusal = None
+
+    def _refused_placement(self):
+        """Apply `refuse_placement`, returning True when the caller should refuse."""
+        self.last_refusal = None
+        if self.refuse_placement is None:
+            return False
+        if self.refuse_placement != "silent":
+            self.last_refusal = dict(self.refuse_placement)
+        return True
 
     def get_open_positions(self, symbol=None):
         # Remember every ticket that has ever been open, so `_book()` can keep a filled order
@@ -210,6 +232,8 @@ class _FakeMt5Ops:
     # deleted the order, the exact condition `_observe_vanished` now watches for. A fake whose
     # book never agrees with its own actions cannot test anything that reads that book.
     def place_pending_limit(self, direction, lots, price, sl, tp=0.0, comment="", symbol=None):
+        if self._refused_placement():
+            return None, None
         self._ticket += 1
         self.actions.append(("place", direction, lots, price, sl))
         self.orders.append(
@@ -224,6 +248,8 @@ class _FakeMt5Ops:
     # accepts market orders and never fills them. Rule 13: a double that cannot do what
     # production does is testing a system we do not have.
     def place_order(self, direction, lots, sl, tp=0.0, comment="", symbol=None):
+        if self._refused_placement():
+            return None, None
         self._ticket += 1
         self.actions.append(("market", direction, lots, sl))
         fill = self.fill_price if self.fill_price is not None else 100.0
@@ -2953,3 +2979,79 @@ def test_the_VENUE_ceiling_is_reconciled_BEFORE_the_strategy_sizes_anything():
     b, _, _, _ = _bridge(ex, mt5ops=_FakeMt5Ops(spec=tight))
     b.refresh_account_room()
     assert ex._account.max_lots == 50.0
+
+
+# ── a refused order says WHICH guard refused it (2026-09-06) ─────────────────
+#
+# 🔴 The order layer refuses for seven unrelated reasons and every one of them came back to the
+# bridge as the same empty-handed answer, so the durable record could say only THAT an order was
+# refused. The sentence existed in a log line that rotates; the decision record — the copy
+# `ledger_sync.py` pushes off the box, and the only artefact that outlives the week — could not
+# answer the question it exists to answer.
+
+
+def _refused_bridge(refusal, *, market=False):
+    """A bridge whose broker refuses the placement the way the real one does."""
+    b, ops, ledger, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248, market=market))
+    ops.refuse_placement = refusal
+    b.sync(_Dec(), _Sig())
+    rows = [kw for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert len(rows) == 1, rows
+    return rows[0]
+
+
+def test_a_refused_placement_records_WHICH_guard_refused_it():
+    """🔴 The defect, at the layer it was visible from. Watched RED against HEAD: the record
+    carried no `code` key at all, so this raised KeyError.
+
+    MUTATION: write a constant string instead of the layer's answer and this goes red.
+    """
+    row = _refused_bridge({"code": "limit_wrong_side", "detail": "price already reached it"})
+    assert row["code"] == "limit_wrong_side"
+    assert row["detail"] == "price already reached it"
+
+
+def test_a_refusal_the_order_layer_COULD_NOT_EXPLAIN_is_named_as_a_gap():
+    """🔴 Rule 1, at the one place it would be easiest to get wrong. A guard added tomorrow that
+    forgets to say which it was must not render as a blank field — a blank reads as *no reason
+    given* and hides the missing one for as long as it exists.
+
+    MUTATION: default the code to `None` (or to the empty string) and this goes red.
+    """
+    row = _refused_bridge("silent")
+    assert row["code"] == "unrecorded"
+    assert row["detail"] and "no reason" in row["detail"].lower(), row
+
+
+def test_the_refusal_says_whether_the_order_was_MARKET_or_LIMIT():
+    """The two paths refuse for different reasons and SHARE codes — a size below the venue
+    minimum is `below_min_lot` on both. A count that cannot tell them apart answers a different
+    question from the one its name asks.
+
+    MUTATION: drop `at_market` from the record and this goes red.
+    """
+    limit = _refused_bridge({"code": "below_min_lot", "detail": "too small"})
+    market = _refused_bridge({"code": "below_min_lot", "detail": "too small"}, market=True)
+    assert limit["at_market"] is False
+    assert market["at_market"] is True
+
+
+def test_the_refusal_records_the_slot_it_was_for():
+    """Both legs place orders, so a refusal that does not say which one is a refusal you cannot
+    attribute. The sizing refusal beside it has recorded this since it was written.
+
+    MUTATION: drop `intent` from the record and this goes red.
+    """
+    row = _refused_bridge({"code": "no_tick", "detail": "no tick"})
+    assert row["intent"], row
+
+
+def test_a_SUCCESSFUL_placement_records_no_refusal_at_all():
+    """The control. A test suite whose every case asserts a refusal certifies a bridge that
+    refuses everything — the failure this repo already shipped once, in the checker written to
+    prove two tools worked when neither ever had.
+    """
+    b, ops, ledger, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248))
+    b.sync(_Dec(), _Sig())
+    assert not [kw for kind, kw in ledger.rows if kind == "event:order_refused"], ledger.rows
+    assert "event:order_placed" in ledger.kinds()

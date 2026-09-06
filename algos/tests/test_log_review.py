@@ -832,3 +832,134 @@ def test_the_three_tenses_are_three_distinct_values(tmp_path):
     recovered reddens it, and reddens the stopped-bot case beside it.
     """
     assert len({lr.HALT_NOW, lr.HALT_RECOVERED, lr.HALT_UNKNOWN}) == 3
+
+
+# ── the orphaned opening balance reaches a person (2026-09-06) ───────────────
+#
+# 🔴 `bot_state.suspect_anchors` has spotted this since 2026-09-05 and wrote it to a file NOBODY
+# READ. The guard fired into an empty room, which is worth less than no guard at all — the next
+# reader takes the silence for a clean check. These cover the half that tells somebody.
+
+SUSPECT = {
+    "status": "live",
+    "starting_balance": 14538.88,
+    "starting_balance_suspect": {"old": 9996.99},
+}
+
+
+def _anchor_titles(state, inst=None):
+    return [f.title for f in lr._suspect_anchor("b", state)]
+
+
+def test_an_orphaned_opening_balance_is_reported(tmp_path):
+    """WATCHED RED against HEAD — `_suspect_anchor` did not exist, so this raised AttributeError.
+
+    MUTATION: return `[]` unconditionally and this goes red.
+    """
+    assert _anchor_titles(SUSPECT), "the guard's finding never reaches a person"
+
+
+def test_a_bot_with_NO_suspect_record_reports_nothing():
+    """The control. A finding that fires on every bot is one nobody reads.
+
+    MUTATION: drop the emptiness test and this goes red.
+    """
+    assert _anchor_titles({"status": "live", "starting_balance": 9996.99}) == []
+
+
+def test_an_EMPTY_suspect_record_is_not_a_finding():
+    """`{}` means the guard ran and found nothing — the opposite of a problem. Reporting it would
+    make *checked and clean* and *something is wrong* the same message.
+
+    MUTATION: test only for the key's presence and this goes red.
+    """
+    assert _anchor_titles({"status": "live", "starting_balance_suspect": {}}) == []
+
+
+def test_a_STOPPED_bot_still_reports_it(tmp_path):
+    """🔴 This is a fact about the STATE FILE, not about the health record, so the *do not cry
+    wolf over a deliberately stopped bot* rule does not apply — a wrong opening balance is just
+    as wrong while the bot is off, and it is on screen the whole time.
+
+    ⚠ **It drives `review_bot`, not the helper.** The gate being guarded against lives in the
+    CALLER, so a test calling `_suspect_anchor` directly passes with the gate in place — measured,
+    not reasoned: the first version of this test did exactly that and survived its own mutation.
+
+    MUTATION: gate the call behind `supposed_to_run` and this goes red.
+    """
+    inst = tmp_path / "inst"
+    inst.mkdir()
+    stopped = dict(SUSPECT, status="stopped")
+    titles = [f.title for f in lr.review_bot("b", inst, stopped, now=NOW)]
+    assert any("opening balance" in t for t in titles), titles
+
+
+def test_an_UNREADABLE_health_record_does_not_swallow_it(tmp_path):
+    """🔴 The path that would have hidden it. `review_bot` RETURNS EARLY when the record cannot
+    be read, so a finding raised after that point is lost for exactly the bot most likely to need
+    looking at.
+
+    MUTATION: move the call below the `rows, problem` block and this goes red.
+    """
+    inst = tmp_path / "inst"
+    inst.mkdir()  # no ledger directory at all — unreadable
+    titles = [f.title for f in lr.review_bot("b", inst, SUSPECT, now=NOW)]
+    assert any("opening balance" in t for t in titles), titles
+
+
+def test_the_message_names_BOTH_readings_and_states_neither(tmp_path):
+    """🔴 The property that keeps this honest. A rename and an ordinary second bot joining a
+    grown account are the SAME signature, and the second one is CORRECT — so a message reading
+    *this is wrong* sends somebody to break a good number.
+
+    MUTATION: drop either branch from the sentence and this goes red.
+    """
+    detail = lr._suspect_anchor("b", SUSPECT)[0].detail.lower()
+    assert "renamed" in detail
+    assert "second bot" in detail
+    assert "nothing to do" in detail
+
+
+def test_the_message_carries_BOTH_figures():
+    """A finding naming no numbers sends the reader to go and find them, which is the work the
+    alert exists to save.
+
+    MUTATION: drop either figure from the sentence and this goes red.
+    """
+    detail = lr._suspect_anchor("b", SUSPECT)[0].detail
+    assert "14,538.88" in detail
+    assert "9,996.99" in detail
+
+
+def test_a_RE_ANCHOR_AT_A_DIFFERENT_FIGURE_is_a_new_occurrence():
+    """🔴 The de-duplicating-alerter bug this module's own `Finding` class warns about. Keying on
+    the bot alone announces the first orphaning and then stays silent through every later one.
+
+    MUTATION: key on `bot_key` alone and this goes red.
+    """
+    first = lr._suspect_anchor("b", SUSPECT)[0].key
+    moved = lr._suspect_anchor("b", dict(SUSPECT, starting_balance=20000.0))[0].key
+    assert first != moved
+
+
+def test_THE_SAME_orphaning_keeps_ONE_key():
+    """The other half of the same rule — an unchanged finding must not re-announce hourly."""
+    assert lr._suspect_anchor("b", SUSPECT)[0].key == lr._suspect_anchor("b", dict(SUSPECT))[0].key
+
+
+def test_an_UNREADABLE_figure_does_not_take_the_message_down():
+    """🔴 This runs unattended. A malformed number raising inside the one message written to
+    report a problem is how `watch_broker_costs.py` became unable to announce its own failure.
+
+    MUTATION: format with a bare f-string conversion and this goes red with ValueError/TypeError.
+    """
+    broken = {"status": "live", "starting_balance": None, "starting_balance_suspect": {"old": "x"}}
+    detail = lr._suspect_anchor("b", broken)[0].detail
+    assert "unreadable" in detail.lower(), detail
+
+
+def test_a_suspect_record_of_the_WRONG_SHAPE_is_ignored_rather_than_crashing():
+    """A hand-edited state file, or a future writer changing the shape. Refusing to read it is
+    right; taking the hourly reviewer down over it is not."""
+    for bad in ("nonsense", 5, [1, 2], None):
+        assert _anchor_titles({"status": "live", "starting_balance_suspect": bad}) == []

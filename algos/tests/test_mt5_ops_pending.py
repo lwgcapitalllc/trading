@@ -692,3 +692,224 @@ def test_the_market_order_refusal_names_the_number_it_refused(mt5ops):
     log = _Log()
     _bot(mt5_ops, log).place_order("bullish", 0.004, sl=3190.0, tp=0.0)
     assert log.saw("0.004") and log.saw("0.01")
+
+
+# ── WHICH guard refused (2026-09-06) ─────────────────────────────────────────
+#
+# 🔴 Every refusal below returned the same `(None, None)`, so the bridge could record only THAT
+# an order was refused. The reason existed — worded, and correct — in a log line that rotates,
+# while the decision record, the copy `ledger_sync.py` pushes off the box and the only artefact
+# that outlives the week, could not answer "which guard fired". These pin the code each guard
+# now leaves behind, and the three cases where leaving one would be a lie.
+
+
+def test_a_wrong_side_limit_says_which_guard_refused_it(mt5ops):
+    """MUTATION: pass any other code at that site and this goes red naming both.
+
+    WATCHED RED against HEAD — `last_refusal` did not exist, so this raised AttributeError.
+    """
+    mt5_ops, _ = mt5ops
+    bot = _bot(mt5_ops)
+    bot.place_pending_limit("bullish", 0.42, 3310.00, 3280.00)
+    assert bot.last_refusal["code"] == mt5_ops.REFUSE_LIMIT_WRONG_SIDE
+
+
+def test_the_two_ends_of_the_stops_level_get_DIFFERENT_codes(mt5ops):
+    """🔴 The venue floor applies twice — market-to-entry and entry-to-stop — and they are
+    different problems. A strategy hitting the second one every time has a stop too tight for
+    this venue; one hitting the first is arming too close to price. A shared code cannot tell
+    those apart, and a month of records would answer the wrong question confidently.
+
+    MUTATION: give both sites the same code and this goes red on the inequality.
+    """
+    mt5_ops, fake = mt5ops
+    fake._symbol.trade_stops_level = 500  # 500 points × 0.01 = $5.00
+
+    entry = _bot(mt5_ops)
+    entry.place_pending_limit("bullish", 0.42, 3298.00, 3280.00)
+
+    stop = _bot(mt5_ops)
+    stop.place_pending_limit("bullish", 0.42, 3290.00, 3289.00)
+
+    assert entry.last_refusal["code"] == mt5_ops.REFUSE_STOPS_LEVEL_ENTRY
+    assert stop.last_refusal["code"] == mt5_ops.REFUSE_STOPS_LEVEL_STOP
+    assert entry.last_refusal["code"] != stop.last_refusal["code"]
+
+
+def test_a_sub_minimum_size_reports_the_lot_code_on_BOTH_order_paths(mt5ops):
+    """The same guard exists in both placement functions and must be countable as one thing.
+
+    MUTATION: change either site's code and this goes red.
+    """
+    mt5_ops, _ = mt5ops
+    limit = _bot(mt5_ops)
+    limit.place_pending_limit("bullish", 0.004, 3290.00, 3280.00)
+    market = _bot(mt5_ops)
+    market.place_order("bullish", 0.004, sl=3190.0, tp=0.0)
+
+    assert limit.last_refusal["code"] == mt5_ops.REFUSE_BELOW_MIN_LOT
+    assert market.last_refusal["code"] == mt5_ops.REFUSE_BELOW_MIN_LOT
+
+
+def test_a_market_stop_inside_the_stops_level_reports_the_stop_code(mt5ops):
+    mt5_ops, fake = mt5ops
+    fake._symbol.trade_stops_level = 500
+    bot = _bot(mt5_ops)
+    bot.place_order("bullish", 0.42, sl=3299.0, tp=0.0)
+    assert bot.last_refusal["code"] == mt5_ops.REFUSE_STOPS_LEVEL_STOP
+
+
+def test_a_missing_symbol_and_a_missing_tick_are_told_apart(mt5ops):
+    """Two ways of being unable to price an order, and only one of them means the terminal has
+    lost the symbol. Rule 1 in a code rather than in a value.
+
+    MUTATION: collapse them onto one code and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+
+    no_symbol = _bot(mt5_ops)
+    fake.symbol_info = lambda sym: None
+    no_symbol.place_pending_limit("bullish", 0.42, 3290.00, 3280.00)
+
+    fake.symbol_info = lambda sym: fake._symbol
+    no_tick = _bot(mt5_ops)
+    fake.symbol_info_tick = lambda sym: _Tick(0.0, 0.0)
+    no_tick.place_pending_limit("bullish", 0.42, 3290.00, 3280.00)
+
+    assert no_symbol.last_refusal["code"] == mt5_ops.REFUSE_NO_SYMBOL
+    assert no_tick.last_refusal["code"] == mt5_ops.REFUSE_NO_TICK
+
+
+def test_a_broker_rejection_carries_the_BROKERS_OWN_WORDS_into_the_record(mt5ops):
+    """The retcode says what class of refusal it was; the comment is the sentence a human acts
+    on, and until now it reached the log only. This is the 2026-08-10 lesson (a rejected order
+    logging "Success") arriving one layer further out.
+
+    MUTATION: record `str(result.retcode)` as the detail instead of `refusal_detail(result)` and
+    this goes red — the broker's sentence disappears.
+    """
+    mt5_ops, fake = mt5ops
+    fake._refuse_with = _Result(10027, comment="AutoTrading disabled by client")
+    bot = _bot(mt5_ops)
+    bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+
+    assert bot.last_refusal["code"] == mt5_ops.REFUSE_BROKER_REJECTED
+    assert "10027" in bot.last_refusal["detail"]
+    assert "AutoTrading disabled by client" in bot.last_refusal["detail"]
+
+
+def test_a_market_rejection_also_carries_the_brokers_words(mt5ops):
+    mt5_ops, fake = mt5ops
+    fake._refuse_with = _Result(10019, comment="No money")
+    bot = _bot(mt5_ops)
+    bot.place_order("bullish", 0.42, sl=3190.0, tp=0.0)
+
+    assert bot.last_refusal["code"] == mt5_ops.REFUSE_BROKER_REJECTED
+    assert "No money" in bot.last_refusal["detail"]
+
+
+def test_a_SUCCESSFUL_placement_clears_the_previous_refusal(mt5ops):
+    """🔴 The property the whole design rests on. A refusal left lying around is read by the next
+    bar's caller as THIS bar's reason — a confidently wrong sentence in the one record that
+    survives, which is worse than the blank field this replaced.
+
+    MUTATION: delete either `self.last_refusal = None` at the top of a placement function and
+    this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    bot.place_pending_limit("bullish", 0.42, 3310.00, 3280.00)  # refused: wrong side
+    assert bot.last_refusal is not None
+
+    ticket, _ = bot.place_pending_limit("bullish", 0.42, 3290.00, 3280.00)  # fine
+    assert ticket is not None
+    assert bot.last_refusal is None
+
+
+def test_a_market_placement_also_clears_a_refusal_left_by_the_limit_path(mt5ops):
+    """The two functions share one slot, so clearing must not be a property of only one of them.
+
+    MUTATION: delete the clear at the top of `place_order` and this goes red.
+    """
+    mt5_ops, _ = mt5ops
+    bot = _bot(mt5_ops)
+    bot.place_pending_limit("bullish", 0.42, 3310.00, 3280.00)
+    assert bot.last_refusal is not None
+
+    ticket, _ = bot.place_order("bullish", 0.42, sl=3190.0, tp=0.0)
+    assert ticket is not None
+    assert bot.last_refusal is None
+
+
+def test_an_ADOPTED_order_leaves_no_refusal_behind(mt5ops):
+    """It worked. A reason-for-refusal sitting under an order that IS at the broker would be a
+    sentence flatly contradicting the ticket beside it.
+
+    MUTATION: move the `_refuse` call above the reconciliation and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+
+    def order_send(req):
+        fake.sent.append(req)
+        fake._orders.append(_RestingOrder(7777, req["price"], req["volume"]))
+        return _timeout()
+
+    fake.order_send = order_send
+
+    ticket, _ = bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+    assert ticket == 7777
+    assert bot.last_refusal is None
+
+
+def test_an_UNKNOWN_outcome_leaves_no_refusal_behind(mt5ops):
+    """*We could not find out* is not *we refused*, and the bridge acts on them differently —
+    one blocks the slot until the book can be read, the other is a countable decision. A refusal
+    recorded here would describe the wrong one.
+
+    MUTATION: as above — refuse before reconciling — and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+    fake._refuse_with = _timeout()
+    fake.orders_get = lambda **kw: None
+
+    ticket, _ = bot.place_pending_limit("bearish", 0.40, 3310.0, 3320.0)
+    assert ticket is mt5_ops.UNKNOWN
+    assert bot.last_refusal is None
+
+
+def test_a_fresh_bot_has_asked_nothing_and_says_so(mt5ops):
+    """`None` means NOT ASKED. It must not start life as a blank refusal, or "no reason given"
+    and "no order attempted" become the same reading."""
+    mt5_ops, _ = mt5ops
+    assert _bot(mt5_ops).last_refusal is None
+
+
+def test_every_code_the_placement_layer_can_emit_is_in_the_published_set(mt5ops):
+    """The set is what a reader — or a query over a month of records — checks an unfamiliar code
+    against. A code emitted but never published makes that check answer wrongly.
+
+    MUTATION: drop any constant from `ORDER_REFUSAL_CODES` and this goes red naming it.
+    """
+    mt5_ops, fake = mt5ops
+    fake._symbol.trade_stops_level = 500
+    emitted = set()
+
+    def run(fn, *a, **kw):
+        bot = _bot(mt5_ops)
+        fn(bot, *a, **kw)
+        if bot.last_refusal:
+            emitted.add(bot.last_refusal["code"])
+
+    run(mt5_ops.BotMT5.place_pending_limit, "bullish", 0.42, 3298.00, 3280.00)
+    run(mt5_ops.BotMT5.place_pending_limit, "bullish", 0.42, 3290.00, 3289.00)
+    run(mt5_ops.BotMT5.place_pending_limit, "bullish", 0.004, 3270.00, 3260.00)
+    fake._symbol.trade_stops_level = 0
+    run(mt5_ops.BotMT5.place_pending_limit, "bullish", 0.42, 3310.00, 3280.00)
+    run(mt5_ops.BotMT5.place_order, "bullish", 0.004, 3190.0, 0.0)
+    fake._refuse_with = _Result(10019, comment="No money")
+    run(mt5_ops.BotMT5.place_order, "bullish", 0.42, 3190.0, 0.0)
+
+    assert len(emitted) >= 5, emitted
+    assert emitted <= mt5_ops.ORDER_REFUSAL_CODES, emitted - mt5_ops.ORDER_REFUSAL_CODES

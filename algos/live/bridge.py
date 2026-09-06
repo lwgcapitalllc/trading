@@ -2323,10 +2323,36 @@ class OrderBridge:
                 units=pend.qty,
             )
         elif not self.dry_run:
-            # place_pending_limit already logged WHY; record it so a refused setup is countable
-            # next to the strategy's own blocked setups.
+            # 🔴 **This used to record that an order was refused and nothing about WHY (fixed
+            # 2026-09-06).** The order layer refuses for seven unrelated reasons — below the
+            # venue's minimum lot, a limit on the wrong side, either end of the broker's stop
+            # distance, no tick, no symbol, the broker itself — and each one returned the same
+            # empty-handed answer. The sentence existed in a log line that rotates; the decision
+            # record, which is the copy that survives and the one `ledger_sync.py` pushes off the
+            # box, could not say which guard had fired.
+            #
+            # ⚠ **`None` here means the order layer refused WITHOUT saying why, and that is
+            # recorded as its own code rather than as a blank field.** A missing reason and a
+            # reason nobody captured must not read alike (rule 1) — the first is a gap in
+            # `mt5_ops.py` worth finding, and a blank would hide it for as long as it existed.
+            said = getattr(self._mt5, "last_refusal", None) or {}
+            code = said.get("code") or "unrecorded"
             self._ledger.event(
-                "order_refused", dir=direction, lots=lots, price=pend.edge, stop=pend.sl
+                "order_refused",
+                dir=direction,
+                intent=slot[0],
+                code=code,
+                detail=said.get("detail")
+                or "The order layer refused and recorded no reason. This is a gap in the "
+                "placement code, not a reason.",
+                # ⚠ **`at_market` travels with it** because the two paths refuse for different
+                # reasons and share codes: a wrong-side refusal can only come from the limit
+                # path, and a count that cannot tell them apart answers the wrong question.
+                at_market=at_market,
+                lots=lots,
+                price=pend.edge,
+                stop=pend.sl,
+                sos_bar=getattr(pend, "sos_bar", None),
             )
 
     def _alert_once(self, code: str, body: str) -> None:

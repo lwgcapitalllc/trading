@@ -191,6 +191,48 @@ def refusal_detail(result, mt5_mod=None) -> str:
     return f"retcode={rc} '{comment}' last_error={m.last_error()}"
 
 
+# ── Which guard refused an order ──────────────────────────────────────────────
+#
+# 🔴 **Added 2026-09-06 because the durable record could not say WHY.** Both order-sending
+# functions below refuse for several unrelated reasons and every one of them returns the same
+# `(None, None)`. The caller in `algos/live/bridge.py` could therefore only write *an order was
+# refused* — no code, no sentence — while the reason existed, fully worded, in a log line that
+# rotates. **The one artefact that survives is the decision record, and it was the one that could
+# not answer.** When four duplicate orders had to be closed by hand on 2026-09-05, reading which
+# guard had fired meant reading a commit rather than the bot's own account of itself.
+#
+# ⚠ **This is the repo's rule 5 in the ledger rather than in a log** — ask what a diagnostic is
+# reporting ON. *No ticket came back* is a fact about the RETURN VALUE; it is not the reason, and
+# storing it as though it were is how a refusal becomes uncountable.
+#
+# ⚠ **They are NAMED CONSTANTS, never literals at the call site.** A mistyped literal is a brand
+# new code that no reader and no query has ever heard of, and nothing would fail; a mistyped name
+# does not import. That is the cheapest enforcement available and it costs nothing at run time —
+# deliberately not a validating assert, because a guard that can crash a live bot over a typo in
+# its own error path is worse than the gap it closes.
+REFUSE_NO_SYMBOL = "no_symbol_info"
+REFUSE_NO_TICK = "no_tick"
+REFUSE_BELOW_MIN_LOT = "below_min_lot"
+REFUSE_LIMIT_WRONG_SIDE = "limit_wrong_side"
+REFUSE_STOPS_LEVEL_ENTRY = "stops_level_entry"
+REFUSE_STOPS_LEVEL_STOP = "stops_level_stop"
+REFUSE_BROKER_REJECTED = "broker_rejected"
+
+#: Every code the two placement functions can produce. Kept as a set so a reader — or a query over
+#: a month of records — can tell a code this build can emit from one left behind by an older bot.
+ORDER_REFUSAL_CODES = frozenset(
+    {
+        REFUSE_NO_SYMBOL,
+        REFUSE_NO_TICK,
+        REFUSE_BELOW_MIN_LOT,
+        REFUSE_LIMIT_WRONG_SIDE,
+        REFUSE_STOPS_LEVEL_ENTRY,
+        REFUSE_STOPS_LEVEL_STOP,
+        REFUSE_BROKER_REJECTED,
+    }
+)
+
+
 # How far past "now" a deal-history query must reach.
 #
 # 🔴 MT5 stamps a deal's `time` in the BROKER SERVER's clock, and `history_deals_get(from_, to)`
@@ -238,6 +280,27 @@ class BotMT5:
         self._cfg = config
         self._account = account
         self.log = log
+        #: Why the LAST placement attempt was refused — `{"code", "detail"}`, or `None`.
+        #:
+        #: ⚠ **`None` means NOT ASKED, never "no reason".** Both placement functions clear it on
+        #: entry, so a caller that reads `None` after a refusal is looking at a real gap in this
+        #: file rather than at a stale answer from an earlier bar — which is why the bridge
+        #: records that case explicitly instead of writing a blank field (rule 1).
+        self.last_refusal = None
+
+    def _refuse(self, code: str, message: str, level: str = "warning") -> tuple:
+        """Log a refusal, record WHICH guard it was, and return the `(None, None)` callers expect.
+
+        ⚠ **One helper rather than two lines at each site, because the two must not drift.** A
+        refusal that logs without recording is invisible to the ledger — the exact defect this
+        closes — and one that records without logging is invisible to whoever is tailing the box.
+        """
+        self.last_refusal = {"code": code, "detail": message}
+        if level == "error":
+            self.log.error(message)
+        else:
+            self.log.warning(message)
+        return None, None
 
     # ── Connection ────────────────────────────────────────────────────────────
 
@@ -416,6 +479,9 @@ class BotMT5:
         comment: optional override for the MT5 order comment field
         Returns (ticket, filled_price) or (None, None) on failure.
         """
+        # Cleared FIRST, before any refusal can set it. A stale record from an earlier bar read as
+        # this bar's reason would be a confidently wrong entry in the one artefact that survives.
+        self.last_refusal = None
         sym = symbol or self.symbol
         si = mt5.symbol_info(sym)
         digits = si.digits if si else 2
@@ -427,11 +493,11 @@ class BotMT5:
         if si and si.trade_stops_level > 0:
             min_dist = si.trade_stops_level * si.point
             if abs(price - sl) < min_dist:
-                self.log.warning(
+                return self._refuse(
+                    REFUSE_STOPS_LEVEL_STOP,
                     f"SL too close: |{price:.{digits}f} - {sl:.{digits}f}| = "
-                    f"{abs(price - sl):.{digits}f} < stops_level {min_dist:.{digits}f} ({sym}). Skip."
+                    f"{abs(price - sl):.{digits}f} < stops_level {min_dist:.{digits}f} ({sym}). Skip.",
                 )
-                return None, None
 
         # 🔴 **THE SAME VOLUME GUARD `place_pending_limit` HAS, AND ITS ABSENCE HERE WAS AN
         # ASYMMETRY RATHER THAN A DECISION.** Both functions send an order; only one checked that
@@ -444,11 +510,11 @@ class BotMT5:
         # strategy authorised — a bigger position than anything asked for, arriving silently.
         vol = self.normalize_volume(lots, sym)
         if vol <= 0:
-            self.log.warning(
+            return self._refuse(
+                REFUSE_BELOW_MIN_LOT,
                 f"Market order refused: {lots} lots rounds below the {sym} minimum "
-                f"({si.volume_min if si else '?'}). Position too small to place — NOT rounding up."
+                f"({si.volume_min if si else '?'}). Position too small to place — NOT rounding up.",
             )
-            return None, None
 
         result = mt5.order_send(
             {
@@ -475,10 +541,14 @@ class BotMT5:
                 f"SL={sl:.{digits}f} TP={tp:.{digits}f}"
             )
             return result.order, result.price
-        self.log.error(
-            f"Order failed ({sym} {direction} {vol}L @ {price}): {refusal_detail(result)}"
+        # ⚠ **A market send is NOT reconciled the way the pending one below is**, so this stays a
+        # plain failure. Recording the broker's own words as the detail is the whole gain here:
+        # the retcode and the broker's comment reach the durable record instead of only the log.
+        return self._refuse(
+            REFUSE_BROKER_REJECTED,
+            f"Order failed ({sym} {direction} {vol}L @ {price}): {refusal_detail(result)}",
+            level="error",
         )
-        return None, None
 
     # ── Pending (resting limit) orders ────────────────────────────────────────
     #
@@ -741,11 +811,14 @@ class BotMT5:
         direction: 'bullish' → BUY LIMIT, 'bearish' → SELL LIMIT
         Returns (ticket, price) or (None, None) — every refusal is logged with its reason.
         """
+        # Cleared FIRST — see the note on the same line in `place_order`.
+        self.last_refusal = None
         sym = symbol or self.symbol
         si = mt5.symbol_info(sym)
         if not si:
-            self.log.error(f"Pending refused: no symbol info for {sym}")
-            return None, None
+            return self._refuse(
+                REFUSE_NO_SYMBOL, f"Pending refused: no symbol info for {sym}", level="error"
+            )
         digits = si.digits
         price = round(price, digits)
         sl = round(sl, digits)
@@ -753,16 +826,17 @@ class BotMT5:
 
         vol = self.normalize_volume(lots, sym)
         if vol <= 0:
-            self.log.warning(
+            return self._refuse(
+                REFUSE_BELOW_MIN_LOT,
                 f"Pending refused: {lots} lots rounds below the {sym} minimum "
-                f"({si.volume_min}). Position too small to place — NOT rounding up."
+                f"({si.volume_min}). Position too small to place — NOT rounding up.",
             )
-            return None, None
 
         bid, ask = self.get_tick(sym)
         if not bid or not ask:
-            self.log.error(f"Pending refused: no tick for {sym}")
-            return None, None
+            return self._refuse(
+                REFUSE_NO_TICK, f"Pending refused: no tick for {sym}", level="error"
+            )
 
         is_buy = direction == "bullish"
         order_type = mt5.ORDER_TYPE_BUY_LIMIT if is_buy else mt5.ORDER_TYPE_SELL_LIMIT
@@ -772,28 +846,32 @@ class BotMT5:
         # traded through the level the order is not a limit any more — refuse rather than let
         # MT5 reject it as an "invalid price" the caller then has to decode.
         if (is_buy and price >= market) or ((not is_buy) and price <= market):
-            self.log.warning(
+            return self._refuse(
+                REFUSE_LIMIT_WRONG_SIDE,
                 f"Pending refused: {direction} limit {price:.{digits}f} is on the wrong side of "
-                f"the market ({market:.{digits}f}) — price already reached the level."
+                f"the market ({market:.{digits}f}) — price already reached the level.",
             )
-            return None, None
 
         min_dist = self.min_stop_distance(sym)
         if min_dist > 0:
+            # ⚠ **Two codes, not one.** The venue floor applies to the ENTRY and to the STOP, and
+            # they are different problems with different answers — a strategy hitting the second
+            # one every time has a stop too tight for this venue, which no count of a shared code
+            # would ever show.
             if abs(market - price) < min_dist:
-                self.log.warning(
+                return self._refuse(
+                    REFUSE_STOPS_LEVEL_ENTRY,
                     f"Pending refused: limit {price:.{digits}f} is {abs(market - price):.{digits}f} "
                     f"from market {market:.{digits}f}, inside the broker stops_level "
-                    f"{min_dist:.{digits}f} ({sym})."
+                    f"{min_dist:.{digits}f} ({sym}).",
                 )
-                return None, None
             if abs(price - sl) < min_dist:
-                self.log.warning(
+                return self._refuse(
+                    REFUSE_STOPS_LEVEL_STOP,
                     f"Pending refused: SL {sl:.{digits}f} is {abs(price - sl):.{digits}f} from the "
                     f"limit {price:.{digits}f}, inside the broker stops_level "
-                    f"{min_dist:.{digits}f} ({sym})."
+                    f"{min_dist:.{digits}f} ({sym}).",
                 )
-                return None, None
 
         # Snapshot the order book BEFORE the send. This is the only way to answer "did it
         # land" without trusting a return code — see the reconciliation below.
@@ -850,8 +928,15 @@ class BotMT5:
                 f"Adopting it instead of re-sending."
             )
             return landed, price
-        self.log.error(f"Pending failed ({sym} {direction} {vol}L @ {price}): {detail}")
-        return None, None
+        # ⚠ **Only THIS branch is a refusal.** The two above it are an unknown outcome and an
+        # adopted order, and neither may leave a refusal behind: one is *we could not find out*
+        # and the other is *it worked*. Recording either as a reason an order was refused would
+        # put a confident sentence under a record that means the opposite.
+        return self._refuse(
+            REFUSE_BROKER_REJECTED,
+            f"Pending failed ({sym} {direction} {vol}L @ {price}): {detail}",
+            level="error",
+        )
 
     def _reconcile_pending(self, sym: str, before, vol: float, price: float):
         """After a send that did not confirm: did an order of ours appear anyway?

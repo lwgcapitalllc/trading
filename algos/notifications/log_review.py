@@ -252,6 +252,70 @@ def _halt_tense(pulses: List[dict], supposed_to_run: bool, now: datetime) -> str
 
 
 # ── the checks ───────────────────────────────────────────────────────────────
+def _suspect_anchor(bot_key: str, state: dict) -> List[Finding]:
+    """The opening balance this bot anchored looks like it was orphaned by a RENAME.
+
+    🔴 **Until this landed the guard that finds this wrote a record NOBODY READ** — not this
+    reviewer, not the Bots page. It was said plainly in `algos/CLAUDE.md` at the time: *"today
+    this guard is a record, not an alarm."* A guard whose finding never reaches a person is a
+    guard that fires into an empty room, which is worth less than none because the next reader
+    takes the silence for a clean check.
+
+    **What it is reporting.** `bot_state.ensure_starting_balance` re-anchors when the ACCOUNT
+    changes and cannot see a KEY changing, so a renamed bot arrives looking brand new and anchors
+    at whatever the account has already grown to. That is a percentage of ZERO on an account that
+    is up — measured on 2026-09-05 at **0.0% on an account up 45.4%**, with nothing erroring and
+    no test red. `suspect_anchors` spots the shape; this is the half that tells somebody.
+
+    🔴 **It reports a QUESTION and must never state a verdict**, because two different causes
+    produce the identical signature: a rename, and an ordinary second bot joining an account that
+    has already grown. The second is CORRECT — the extreme leg's own opening on the shared account
+    is right — so a message reading *"this is wrong"* would send somebody to break a good number.
+    The message therefore names both readings and asks.
+
+    ⚠ **The key carries the numbers, so a re-anchor at a different value is a NEW occurrence** and
+    is announced again. Keying on the bot alone would announce the first one and then stay silent
+    through every later orphaning — the de-duplicating-alerter bug this module's `Finding` class
+    already warns about.
+
+    ⚠ **It is raised whatever the bot's status, and BEFORE the health record is read.** This is a
+    fact about the state file rather than about the record, so a stopped bot still has it and an
+    unreadable record must not swallow it — that path returns early.
+    """
+    suspect = state.get("starting_balance_suspect")
+    if not isinstance(suspect, dict) or not suspect:
+        return []
+
+    # ⚠ **Every number is formatted defensively.** This runs unattended on the box, and a
+    # malformed figure here would raise inside the one message written to report a problem —
+    # the shape that made `watch_broker_costs.py` unable to announce its own failure.
+    def _money(v) -> str:
+        try:
+            return f"{float(v):,.2f}"
+        except (TypeError, ValueError):
+            return "an unreadable figure"
+
+    mine = state.get("starting_balance")
+    others = ", ".join(
+        f"{_bot_state.BOT_NAMES.get(k, k)} has it at {_money(v)}"
+        for k, v in sorted(suspect.items())
+    )
+    key = f"anchor:{bot_key}:{mine}:{sorted(suspect.items())}"
+    return [
+        Finding(
+            key,
+            WARN,
+            "Check this account's opening balance",
+            f"This bot recorded the account as opening at {_money(mine)}, but {others} on the "
+            f"same account. Two different things look exactly like this and only one is a "
+            f"problem. If this bot was RENAMED, the older figure is the real opening and every "
+            f"percentage this bot reports is measured from the wrong place — adopt the older "
+            f"one. If this is just a second bot that joined an account already in profit, both "
+            f"figures are correct and there is nothing to do.",
+        )
+    ]
+
+
 def review_bot(
     bot_key: str, instance_dir: Path, state: dict, now: Optional[datetime] = None
 ) -> List[Finding]:
@@ -263,6 +327,8 @@ def review_bot(
     now = now or datetime.now(timezone.utc)
     findings: List[Finding] = []
     supposed_to_run = str(state.get("status", "")).lower() not in ("", "stopped", "offline")
+
+    findings.extend(_suspect_anchor(bot_key, state))
 
     rows, problem = health_rows(instance_dir, now)
     if problem:
