@@ -326,17 +326,44 @@ def test_a_STACK_can_be_stress_tested_and_the_row_says_so(stack_client):
     assert st["run_id"] is None
 
 
-def test_walk_forward_and_sensitivity_are_REFUSED_for_a_stack(stack_client):
-    """They would replay ONE LEG and grade the whole account on it. Refusing names the
-    missing feature; running quietly puts a portfolio letter on a single strategy's evidence.
+def test_SENSITIVITY_is_refused_for_a_stack_and_WALK_FORWARD_is_not(stack_client):
+    """A shift cannot say WHICH LEG's setting it is nudging, so sensitivity would perturb one
+    strategy and report the answer as the whole account's. Walk-forward has no such problem —
+    the whole stack replays per window — so it is allowed.
 
-    ⚠ Watched RED by dropping the guard — the test then gets a 202 for a test that would
-    measure the wrong thing.
+    ⚠ Watched RED both ways: dropping the sensitivity guard (a 202 for a test that would
+    measure the wrong thing) and re-adding walk-forward to it (a 400 for a phase that works).
     """
-    for phase in ("include_walk_forward", "include_sensitivity"):
-        r = stack_client.post("/stress-tests/run", json={"stack_id": "stk_1", phase: True})
-        assert r.status_code == 400, phase
-        assert "one leg" in r.json()["detail"]
+    refused = stack_client.post(
+        "/stress-tests/run", json={"stack_id": "stk_1", "include_sensitivity": True}
+    )
+    assert refused.status_code == 400
+    assert "which leg" in refused.json()["detail"]
+
+    allowed = stack_client.post(
+        "/stress-tests/run", json={"stack_id": "stk_1", "include_walk_forward": True}
+    )
+    assert allowed.status_code == 202, allowed.text
+
+
+def test_a_stack_holding_a_DEPENDENT_leg_is_refused_WALK_FORWARD_up_front(
+    stack_client, tmp_path, monkeypatch
+):
+    """🔴 A loss-recovery leg's PARENT is passed at launch and never written down, so a window
+    replay would rebuild it with nothing to arm off — an empty book landing in the summary
+    looking exactly like a rule that found no setups, with the whole account graded on a
+    strategy set quietly one leg short.
+
+    ⚠ Refused at the REQUEST, not ten minutes into the phase.
+    ⚠ Watched RED by dropping the `requires_source` check from `rebuild_legs`.
+    """
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute("UPDATE strategies SET requires_source=1 WHERE id='b_leg'")
+    r = stack_client.post(
+        "/stress-tests/run", json={"stack_id": "stk_1", "include_walk_forward": True}
+    )
+    assert r.status_code == 400
+    assert "not recorded" in r.json()["detail"]
 
 
 def test_the_trade_FLOOR_counts_the_COMBINED_book(stack_client, tmp_path):
@@ -363,3 +390,168 @@ def test_naming_NEITHER_target_is_a_400_at_the_endpoint(client):
     r = client.post("/stress-tests/run", json={})
     assert r.status_code == 400
     assert "exactly one" in r.json()["detail"]
+
+
+# ── Walk-forward over a stack ─────────────────────────────────────────────────
+
+
+def _book(*, trades: int, pnl: float, sharpe_seed: float = 1.0) -> dict:
+    """A window's combined book, shaped the way `replay_window` returns one."""
+    from datetime import date, timedelta
+
+    # ⚠ Real calendar dates, walked forward — the first version formatted `2024-01-{i}` and
+    # produced 2024-01-40 at forty trades, which reads as a code failure and is a fixture bug.
+    day0 = date(2024, 1, 1)
+    curve = [
+        {
+            "index": i + 1,
+            "equity": 10_000 + pnl * (i + 1),
+            "profit": pnl * sharpe_seed,
+            "date": (day0 + timedelta(days=i)).isoformat(),
+        }
+        for i in range(max(trades, 1))
+    ]
+    return {
+        "cancelled": False,
+        "equity_curve": curve if trades else [],
+        "daily_pnl": [],
+        "kpis": {},
+        "trade_count": trades,
+        "net_pnl": pnl,
+        "total_r": 1.0,
+    }
+
+
+@pytest.fixture
+def wf(lab, monkeypatch):
+    """A stack ready for walk-forward, with the REPLAY stubbed and every call recorded.
+
+    ⚠ The replay is stubbed because a real one needs bar data and a live strategy package.
+    What is under test here is the WINDOW LOOP — which legs go into each window, what balance
+    each starts from, and what happens when one fails — none of which the replay decides.
+    """
+    _stack(lab, monkeypatch)
+    calls: list[dict] = []
+
+    def fake_replay(legs, settings, start_date, end_date, should_cancel=None):
+        calls.append(
+            {
+                "legs": [leg["strategy_id"] for leg in legs],
+                "account_size": settings["account_size"],
+                "start": start_date,
+                "end": end_date,
+            }
+        )
+        return _book(trades=40, pnl=1_000.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", fake_replay)
+    return calls
+
+
+def _run_wf(stress_test_id="st_wf", windows=2):
+    import asyncio
+
+    from services import stress_tester
+
+    lab_db.insert_stress_test(
+        {
+            "stress_test_id": stress_test_id,
+            "stack_id": "stk_1",
+            "status": "running",
+            "created_at": 1,
+            "walk_forward_windows": windows,
+        }
+    )
+    return asyncio.run(stress_tester.run_walk_forward_task(stress_test_id))
+
+
+def test_EVERY_window_replays_the_WHOLE_stack_together(wf):
+    """🔴 The point of the phase on a stack. Replaying the legs separately and adding their
+    windows up drops contention in the one place the answer is meant to be hardest — and is
+    not a portfolio result at all.
+
+    ⚠ Watched RED by passing `legs[:1]` to the replay.
+    """
+    ok, err = _run_wf()
+    assert (ok, err) == (True, None)
+    assert len(wf) == 4, "two windows, an in-sample and an out-of-sample half each"
+    for call in wf:
+        assert call["legs"] == ["sos_fade", "b_leg"]
+
+
+def test_every_window_starts_from_the_SAME_opening_balance(wf):
+    """Aaron's call. A balance carried forward makes the last window's dollars enormous and the
+    in-sample/out-of-sample comparison meaningless; a fresh account makes the windows
+    comparable to each other, which is the only comparison this phase draws.
+
+    ⚠ Watched RED by compounding the account size across windows.
+    """
+    _run_wf()
+    assert {c["account_size"] for c in wf} == {10_000.0}
+
+
+def test_the_two_halves_of_a_window_do_NOT_share_a_day(wf):
+    """The split date used to be backtested on BOTH sides — a day the "unseen" half had
+    already seen. Immaterial to the numbers and still a bar on the wrong side of the only line
+    this phase draws."""
+    _run_wf()
+    is_end = wf[0]["end"]
+    oos_start = wf[1]["start"]
+    assert oos_start > is_end
+
+
+def test_a_window_that_RAISES_is_recorded_as_a_failed_period_not_dropped(lab, monkeypatch):
+    """A period that produced nothing keeps None on its side, which excludes it from the
+    average — and the count is what lets the phase say *N of M failed* rather than reporting a
+    degradation off whatever survived.
+
+    ⚠ Watched RED by letting the exception escape: the whole phase dies on one bad window.
+    """
+    _stack(lab, monkeypatch)
+    calls = {"n": 0}
+
+    def flaky(legs, settings, start_date, end_date, should_cancel=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("no bars for this window")
+        return _book(trades=40, pnl=500.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", flaky)
+    ok, err = _run_wf()
+    assert ok is True, "one bad window must not kill the phase"
+    st = lab_db.get_stress_test("st_wf")
+    summary = st["walk_forward_summary"]
+    # ⚠ The failed half leaves its keys ABSENT, which is the single-run path's own convention —
+    # the scorer reads them with `.get()`, so absent excludes the window from the average. What
+    # matters is that it is never a real `0.0`: that value passes through as a measurement and
+    # draws a bar on the chart for a period nothing was measured on.
+    assert summary[0].get("oos_sharpe") is None, "the failed half is UNMEASURED, never a 0.0"
+    assert summary[0].get("oos_pnl") is None
+    assert summary[0]["is_trades"] == 40, "the half that DID run is kept"
+
+
+def test_EVERY_window_failing_is_a_FAILED_phase(lab, monkeypatch):
+    """Not a clean summary of nothing. Reported as an error so the row can say so — otherwise
+    grading reads the NULL summary as *not run* and neither credits nor penalises it, which is
+    how a crashed phase used to cost a test nothing."""
+    _stack(lab, monkeypatch)
+
+    def always_fails(legs, settings, start_date, end_date, should_cancel=None):
+        raise RuntimeError("nope")
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", always_fails)
+    ok, err = _run_wf()
+    assert ok is False
+    assert "every walk-forward backtest failed" in err
+
+
+def test_a_CANCELLED_stack_walk_forward_stops_between_windows(lab, monkeypatch):
+    """⚠ Watched RED by dropping the cancellation check from the loop — the phase then runs
+    every window after the Stop and writes a summary for a test the reader stopped."""
+    _stack(lab, monkeypatch)
+    from services import stress_tester
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", lambda *a, **k: _book(trades=9, pnl=1))
+    monkeypatch.setattr(stress_tester, "is_cancelled", lambda _st: True)
+    ok, err = _run_wf()
+    assert (ok, err) == (False, "cancelled")

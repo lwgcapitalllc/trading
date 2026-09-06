@@ -1175,12 +1175,11 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     if not st:
         return (False, "Stress test row disappeared")
 
-    # ⚠ A STACK-targeted test has no source run, and this phase is not built for one — it would
-    # replay a single leg and report the answer as the whole account's. The endpoint refuses it
-    # up front; this is the backstop, and it says the TRUE reason. Falling through to "Source
-    # run not found" would send the reader looking for a run nobody deleted.
-    if not st.get("run_id"):
-        return (False, "This phase is not built for a stack yet — it would replay one leg")
+    # A STACK is replayed WHOLE, per window, in this process — no child runs and no platform to
+    # hold. It is dispatched here rather than branching further down because everything below
+    # resolves a single source run, which a stack does not have.
+    if st.get("stack_id"):
+        return await _run_stack_walk_forward(stress_test_id, st)
     source_run = lab_db.get_run(st["run_id"])
     if not source_run:
         return (False, "Source run not found")
@@ -1329,6 +1328,102 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     #
     # Refusing is the right answer AND an actionable one: `walk_forward_windows` is a user setting,
     # so the fix is fewer, longer windows, not a looser test.
+    return _finish_walk_forward(stress_test_id, summary, failed_periods, len(windows))
+
+
+async def _run_stack_walk_forward(stress_test_id: str, st: dict) -> tuple[bool, Optional[str]]:
+    """Walk-forward over a STACK — the whole stack replayed per window, on one account.
+
+    🔴 **EVERY LEG RUNS TOGETHER IN EVERY WINDOW, with the risk budget live.** Replaying the
+    legs separately and adding their windows up would drop contention in the one place the
+    answer is meant to be hardest, and would not be a portfolio result at all.
+
+    🔴 **EVERY WINDOW STARTS FROM THE SAME OPENING BALANCE (Aaron's call, 2026-09-06).** A
+    balance carried forward makes the last window's dollars enormous and the in-sample /
+    out-of-sample comparison meaningless; a fresh account makes the windows comparable to each
+    other, which is the only comparison this phase draws.
+
+    ⚠ **It spawns NO child runs, unlike the single-run path.** A stack replays in this process,
+    so a window is a function call rather than a job on a terminal — which is why there is no
+    platform to hold and nothing to poll. It also means a window that raises is caught HERE and
+    recorded as a failed period, exactly as a failed child backtest is.
+    """
+    from services import gradable, portfolio_runner
+
+    stack_id = st["stack_id"]
+    try:
+        gradable.resolve(stack_id=stack_id)
+        legs = gradable.rebuild_legs(stack_id)
+    except gradable.NotGradable as exc:
+        return (False, exc.reason)
+
+    settings = lab_db.get_stack_settings(stack_id)
+    if not settings:
+        return (False, "Stack settings not found")
+
+    n_windows = st.get("walk_forward_windows", 5)
+    try:
+        windows = _split_windows(settings["start_date"], settings["end_date"], n_windows)
+    except ValueError as exc:
+        return (False, str(exc))
+
+    summary: list[dict] = []
+    failed_periods: list[str] = []
+
+    for w in windows:
+        window_data = dict(w)
+        for half, (p_start, p_end) in (
+            ("is", (w["is_start"], w["is_end"])),
+            ("oos", (w["oos_start"], w["oos_end"])),
+        ):
+            if is_cancelled(stress_test_id):
+                return (False, "cancelled")
+            tag = f"wf_{w['window']}_{half}"
+            try:
+                book = await asyncio.to_thread(
+                    portfolio_runner.replay_window,
+                    legs,
+                    settings,
+                    p_start,
+                    p_end,
+                    should_cancel=lambda: is_cancelled(stress_test_id),
+                )
+            except Exception as exc:  # noqa: BLE001 — a bad window must not kill the phase
+                # A period that never produced a result is RECORDED, not silently dropped. Its
+                # window keeps None on that side, which excludes it from the average — and the
+                # count is what lets the caller say "3 of 10 periods failed".
+                log.warning("Stack walk-forward %s: %s failed — %s", stress_test_id, tag, exc)
+                failed_periods.append(tag)
+                continue
+            if book.get("cancelled"):
+                return (False, "cancelled")
+
+            curve = book["equity_curve"]
+            # No trades in the window = the Sharpe could not be COMPUTED, which is not the
+            # claim "the Sharpe was zero". A real 0.0 draws a bar on the chart for a period
+            # nothing was measured on.
+            window_data[f"{half}_pnl"] = round(book["net_pnl"], 2)
+            window_data[f"{half}_sharpe"] = round(_compute_sharpe(curve), 4) if curve else None
+            window_data[f"{half}_trades"] = book["trade_count"]
+        summary.append(window_data)
+
+    return _finish_walk_forward(stress_test_id, summary, failed_periods, len(windows))
+
+
+def _finish_walk_forward(
+    stress_test_id: str,
+    summary: list[dict],
+    failed_periods: list[str],
+    n_windows: int,
+) -> tuple[bool, Optional[str]]:
+    """Score the windows, store the summary, and say whether the phase succeeded.
+
+    🔴 **SHARED by the single-run path and the STACK path (2026-09-06), never copied.** Every
+    exclusion rule below is a judgement about when `1 - OOS/IS` means anything, and a second
+    copy would let a stack be scored under a rule a run is not. Both write the same
+    `walk_forward_degradation` field and are read against the same grading thresholds, so the
+    two MUST agree — the same argument that made sensitivity's two paths share a metric.
+    """
     thin = [
         w["window"]
         for w in summary
@@ -1357,18 +1452,18 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     # Every period failing is a FAILED phase, not a clean summary of nothing. Reported as an error
     # so the row can say so; a partial failure keeps the summary (the windows that ran are real)
     # and is named in the log.
-    if failed_periods and len(failed_periods) >= 2 * len(windows):
+    if failed_periods and len(failed_periods) >= 2 * n_windows:
         return (
             False,
             f"every walk-forward backtest failed ({len(failed_periods)} of "
-            f"{2 * len(windows)} periods)",
+            f"{2 * n_windows} periods)",
         )
     if failed_periods:
         log.warning(
             "Walk-forward %s: %d of %d period backtests failed (%s)",
             stress_test_id,
             len(failed_periods),
-            2 * len(windows),
+            2 * n_windows,
             ", ".join(failed_periods),
         )
     return (True, None)

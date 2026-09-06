@@ -239,6 +239,53 @@ def _stack_label(legs: list[dict]) -> str:
     return " + ".join(names)
 
 
+def rebuild_legs(stack_id: str) -> list[dict]:
+    """The leg dicts `portfolio_runner` needs, rebuilt from what the stack STORED.
+
+    Walk-forward replays the whole stack over each window, so it has to reconstruct the legs
+    the launch was given. Everything the runner reads comes off the stored rows — the run id,
+    the strategy, its params, and the leg's OWN frame — except one thing.
+
+    🔴 **A DEPENDENT LEG'S PARENT IS NOT PERSISTED ANYWHERE, so a stack holding one cannot be
+    replayed and is REFUSED.** `LegSpec.source` names the leg whose closed trades a loss-recovery
+    rule arms off; it is passed at launch and never written down. Rebuilding without it produces
+    a leg that arms off nothing, returns an EMPTY book, and lands in the window summary looking
+    exactly like a rule that found no setups — a whole account graded on a strategy set that is
+    quietly one leg short. **Refusing names a real gap; replaying would hide it.**
+
+    ⚠ The fix when somebody wants this is to STORE the parent on the member row, not to guess
+    it from the leg order.
+    """
+    legs = lab_db.list_stack_runs(stack_id)
+    rebuilt: list[dict] = []
+    for leg in legs:
+        strategy = lab_db.get_strategy(leg.get("strategy_id", "")) or {}
+        if strategy.get("requires_source"):
+            raise NotGradable(
+                "This stack holds a loss-recovery leg, and which leg it arms off is not "
+                "recorded — so the stack cannot be replayed window by window without "
+                "silently dropping it. Walk-forward is not available for this stack.",
+                status=400,
+            )
+        if not strategy.get("class_name"):
+            raise NotGradable(
+                f"Leg {leg.get('strategy_id')!r} no longer resolves to a strategy, so the "
+                f"stack cannot be replayed.",
+                status=400,
+            )
+        rebuilt.append(
+            {
+                "run_id": leg.get("run_id"),
+                "strategy_id": leg.get("strategy_id"),
+                "class_name": strategy["class_name"],
+                "params": leg.get("params") or {},
+                "ruleset_ids": [],
+                "bar_value": leg.get("bar_value"),
+            }
+        )
+    return rebuilt
+
+
 def combined_book_kpis(stack_id: str) -> dict[str, Any]:
     """The stack's combined KPI dict, or `{}` when no book was stored.
 

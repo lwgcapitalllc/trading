@@ -95,15 +95,29 @@ async def trigger_stress_test(body: StressTestCreate):
     except gradable.NotGradable as exc:
         raise HTTPException(exc.status, exc.reason) from exc
 
-    # ⚠ Walk-forward and sensitivity are NOT built for a stack yet, and running them would
-    # replay ONE LEG and grade the whole account on it. Refusing names the missing feature;
-    # running quietly would put a portfolio letter on a single strategy's evidence.
-    if target.is_stack and (body.include_walk_forward or body.include_sensitivity):
+    # ⚠ SENSITIVITY is not built for a stack yet: a shift has no way to name WHICH LEG's
+    # setting it is nudging, so it would perturb one strategy and report the answer as the
+    # whole account's. Refusing names the missing feature; running quietly would put a
+    # portfolio number on a single strategy's evidence.
+    #
+    # ✅ Walk-forward IS built for a stack (2026-09-06) — the whole stack replays per window on
+    # one account, so it stays allowed here.
+    if target.is_stack and body.include_sensitivity:
         raise HTTPException(
             400,
-            "Walk-forward and sensitivity are not built for a stack yet — they would replay "
-            "one leg and grade the whole account on it. Run the reshuffle test on its own.",
+            "Sensitivity is not built for a stack yet — a shift cannot say which leg's setting "
+            "it is nudging, so it would perturb one strategy and grade the whole account on it.",
         )
+
+    # ⚠ A stack's walk-forward replays IN THIS PROCESS rather than spawning child backtests, so
+    # it is refused up front when the stack cannot be rebuilt — a dependent leg's parent is not
+    # persisted, and replaying without it would drop that leg in silence. Asked here so the
+    # answer is a 400 with the reason rather than a phase that fails ten minutes in.
+    if target.is_stack and body.include_walk_forward:
+        try:
+            gradable.rebuild_legs(target.target_id)
+        except gradable.NotGradable as exc:
+            raise HTTPException(exc.status, exc.reason) from exc
 
     # Sample-size gate — one flat floor. Below MIN_TRADES_FOR_STRESS the whole test is blocked:
     # the A-F grade leans on Monte Carlo tail percentiles (worst-1%/worst-5% drawdown) that small

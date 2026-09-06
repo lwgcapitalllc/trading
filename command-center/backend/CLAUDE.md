@@ -5031,3 +5031,71 @@ settings-import fixture four sections up.
 - **Sensitivity on a stack** — needs a shift to name a LEG as well as a setting.
 - **Copying a graded stack's settings onto bots** — one strategy to one bot today.
 - **Nothing in the UI offers this yet**; the endpoint takes a stack and no page sends one.
+
+## Walk-forward over a STACK — the whole stack per window, on a fresh account (2026-09-06)
+
+`stress_tester._run_stack_walk_forward` + `portfolio_runner.replay_window`. Dispatched from
+`run_walk_forward_task` before anything resolves a source run, because a stack does not have one.
+
+🔴 **EVERY LEG RUNS TOGETHER IN EVERY WINDOW, with the risk budget live.** Replaying the legs
+separately and adding their windows up would drop contention in the one place the answer is meant
+to be hardest, and would not be a portfolio result at all.
+
+🔴 **EVERY WINDOW STARTS FROM THE SAME OPENING BALANCE (Aaron's call).** `account_size` is not
+carried forward, so a late window is not flattered by everything the account made before it, and
+the in-sample / out-of-sample halves of one window stay directly comparable — the only comparison
+this phase draws. A compounded balance makes the last window's dollars enormous and the comparison
+meaningless, which is why every figure downstream is read in risk multiples and percentages.
+
+⚠ **It spawns NO child runs.** A stack replays in this process, so a window is a function call
+rather than a job on a terminal — no platform to hold, nothing to poll, and a window that raises is
+caught here and recorded as a failed period exactly as a failed child backtest is.
+
+🔴 **`_build_and_run` was SPLIT OUT of `_execute` for this, and it persists nothing and knows no
+`stack_id`.** Every window is a throwaway measurement; writing one would overwrite the stack's own
+book with three months of its history. Progress and cancellation arrive as CALLBACKS — a function
+that reached for `_set_progress(stack_id, …)` itself could not be reused without inventing a stack
+id for a window that is not a stack.
+
+⚠ **A window replays with the SOLO CONTROLS OFF.** They answer *what would this leg have made
+alone*, which is a question about the launched stack — so a window costs one replay instead of
+`1 + N`.
+
+🔴 **`_finish_walk_forward` is SHARED by the single-run and stack paths, never copied.** Every
+exclusion rule in it is a judgement about when `1 - OOS/IS` means anything, both paths write the
+same `walk_forward_degradation`, and both are read against the same grading thresholds — so a
+second copy would let a stack be scored under a rule a run is not. Same argument that made
+sensitivity's two paths share a metric.
+
+⚠ **A failed half leaves its keys ABSENT, which is the single-run path's own convention** — the
+scorer reads them with `.get()`, so absent excludes the window from the average. What must never
+happen is a real `0.0`, which passes through as a measurement and draws a bar on the chart for a
+period nothing was measured on.
+
+🔴 **A STACK HOLDING A DEPENDENT LEG IS REFUSED, AT THE REQUEST.** `LegSpec.source` — the leg whose
+closed trades a loss-recovery rule arms off — is passed at launch and **never written down**, so a
+window replay would rebuild that leg with nothing to arm off. It would return an EMPTY book and
+land in the summary looking exactly like a rule that found no setups: a whole account graded on a
+strategy set quietly one leg short. **Refusing names a real gap; replaying would hide it.** The fix,
+when somebody wants this, is to STORE the parent on the member row — never to guess it from the leg
+order.
+
+⚠ **SENSITIVITY is still refused for a stack**, and for a different reason: a shift has no way to
+name WHICH LEG's setting it is nudging, so it would perturb one strategy and report the answer as
+the whole account's.
+
+**Tests:** `tests/test_gradable_resolver.py` (23 now). ⚠ **Non-vacuity by MUTATION: 9 written, 9
+RUN, 9 killed** — the dispatch removed, only the first leg replayed, the balance carried forward,
+a raising window killing the phase, the cancellation check dropped, every-window-failed reported
+clean, the dependent-leg refusal dropped, sensitivity allowed, and walk-forward refused again.
+
+🔴 **ONE SURVIVED FIRST AND IT WAS THE HARNESS.** `summary.append(window_data)` appears in BOTH
+walk-forward paths and the single-run one comes first in the file, so a first-occurrence replace
+mutated the wrong function — **a mutation that lands somewhere else is not a surviving mutation,
+and it reads exactly like one.** This is the second time in two days that trap has been hit here
+(the settings-import harness mutated the wrong endpoint the same way). **Anchor a mutation on
+something unique to the function you mean.**
+
+⚠ **A fixture bug also read as a code failure**: the window book generated `2024-01-40`. Same shape
+as the thin `stress_tests` fixture two sections up — **when a new test fails, check the fixture
+before the code.**

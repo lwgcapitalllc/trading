@@ -133,8 +133,57 @@ def _bars_per_day(df) -> float:
 
 
 def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
+    """Replay a stack and persist it — the launch path."""
+    from backtest.portfolio import contention_summary
+
+    run, specs = _build_and_run(
+        legs,
+        settings,
+        on_progress=lambda phase, pct, message: _set_progress(
+            stack_id, phase=phase, pct=pct, message=message
+        ),
+        should_cancel=lambda: _is_cancelled(stack_id, legs),
+    )
+
+    if run.cancelled:
+        # Every book here is PARTIAL — it holds the trades closed up to the tick the run
+        # stopped on, which is indistinguishable from a complete short backtest once written to
+        # disk. Persisting it would be the "cancel did not cancel" defect from the other side:
+        # not a run that carried on, but a stopped run recorded as a finished one.
+        _set_progress(stack_id, phase="cancelled", pct=100, message="cancelled")
+        for leg in legs:
+            lab_db.update_run_status(leg["run_id"], "failed_cancelled", "cancelled")
+        return
+
+    _set_progress(stack_id, phase="persisting", pct=98, message="writing results…")
+    _persist(stack_id, legs, specs, run, settings, contention_summary(run))
+    _set_progress(
+        stack_id, phase="complete", pct=100, message=f"{len(run.trades)} trades on one account"
+    )
+
+
+def _build_and_run(
+    legs: list[dict],
+    settings: dict,
+    *,
+    on_progress=None,
+    should_cancel=None,
+    solo_control: bool = True,
+):
+    """Build the legs and replay them on ONE account. Returns `(StackRun, specs)`.
+
+    🔴 **It PERSISTS NOTHING and knows no `stack_id`**, which is the whole reason it was split
+    out of `_execute` (2026-09-06). Walk-forward replays the same stack over a series of
+    sub-windows, and every one of those is a throwaway measurement — writing them would
+    overwrite the stack's own artefacts with a book from three months of its history.
+
+    ⚠ **Progress and cancellation arrive as CALLBACKS.** The launch path routes them to the
+    stack's live progress line; a walk-forward window has no such line and passes neither. A
+    function that reached for `_set_progress(stack_id, …)` itself could not be reused without
+    inventing a stack id for a window that is not a stack.
+    """
     from backtest.data.source import BarSource
-    from backtest.portfolio import LegSpec, contention_summary, run_stack
+    from backtest.portfolio import LegSpec, run_stack
     from services.python_runner import (
         _build_config,
         _cost_profile,
@@ -249,16 +298,17 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
     phase_names = ["shared"] + [f"solo:{s.name}" for s in specs]
 
     def _progress(phase: str, i: int) -> None:
+        if on_progress is None:
+            return
         try:
             done = phase_names.index(phase)
         except ValueError:
             done = 0
         frac = (done + min(1.0, i / max(1, total_ticks))) / phases
-        _set_progress(
-            stack_id,
-            phase=phase,
-            pct=min(97, 3 + int(frac * 94)),
-            message=f"{phase} · bar {i:,} / {total_ticks:,}",
+        on_progress(
+            phase,
+            min(97, 3 + int(frac * 94)),
+            f"{phase} · bar {i:,} / {total_ticks:,}",
         )
 
     run = run_stack(
@@ -266,25 +316,65 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
         balance=balance,
         risk_cap_pct=float(settings["risk_cap_pct"]) / 100.0,
         entry_floor_pct=float(settings.get("entry_floor_pct") or 0.0) / 100.0,
-        progress=_progress,
-        should_cancel=lambda: _is_cancelled(stack_id, legs),
+        # ⚠ The solo controls are `1 + N` replays and answer *what would this leg have made
+        # alone* — a question about the LAUNCHED stack. A walk-forward window does not ask it,
+        # so it switches them off and pays one replay per window instead of one per leg.
+        solo_control=solo_control,
+        progress=_progress if on_progress is not None else None,
+        should_cancel=should_cancel,
     )
+    return run, specs
 
-    if run.cancelled:
-        # Every book here is PARTIAL — it holds the trades closed up to the tick the run
-        # stopped on, which is indistinguishable from a complete short backtest once written to
-        # disk. Persisting it would be the "cancel did not cancel" defect from the other side:
-        # not a run that carried on, but a stopped run recorded as a finished one.
-        _set_progress(stack_id, phase="cancelled", pct=100, message="cancelled")
-        for leg in legs:
-            lab_db.update_run_status(leg["run_id"], "failed_cancelled", "cancelled")
-        return
 
-    _set_progress(stack_id, phase="persisting", pct=98, message="writing results…")
-    _persist(stack_id, legs, specs, run, settings, contention_summary(run))
-    _set_progress(
-        stack_id, phase="complete", pct=100, message=f"{len(run.trades)} trades on one account"
+def replay_window(
+    legs: list[dict],
+    settings: dict,
+    start_date: str,
+    end_date: str,
+    *,
+    should_cancel=None,
+) -> dict:
+    """Replay the WHOLE stack over one sub-window, on a fresh account, and return its book.
+
+    This is what walk-forward steps through (2026-09-06). Every leg runs, together, on one
+    balance with the risk budget live — so contention is measured inside each window exactly as
+    it is measured over the whole history. Replaying the legs separately and adding them up
+    would answer a different question in the one place the answer is supposed to be hardest.
+
+    🔴 **EVERY WINDOW STARTS FROM THE SAME OPENING BALANCE (Aaron's call).** `account_size` is
+    not carried forward, so a late window is not flattered by everything the account made
+    before it — and the in-sample/out-of-sample halves of one window are directly comparable,
+    which is the only comparison this phase draws. Compounding a balance across windows makes
+    the last window's dollars enormous and the comparison meaningless, which is why every
+    figure downstream is read in risk multiples and percentages.
+
+    ⚠ **It writes NOTHING.** A window is a throwaway measurement; persisting one would
+    overwrite the stack's own book with three months of its history.
+
+    ⚠ **No solo controls.** They answer *what would this leg have made alone*, which is a
+    question about the launched stack, not about a window.
+    """
+    from backtest.output import build_results
+
+    windowed = {**settings, "start_date": start_date, "end_date": end_date}
+    run, specs = _build_and_run(legs, windowed, should_cancel=should_cancel, solo_control=False)
+    results = build_results(
+        run.trades,
+        point_value=_stack_point_value(specs),
+        initial_capital=run.opening_balance,
     )
+    apply_canonical_sharpe(results["kpis"], results["daily_pnl"])
+    return {
+        "cancelled": run.cancelled,
+        "equity_curve": results["equity_curve"],
+        "daily_pnl": results["daily_pnl"],
+        "kpis": results["kpis"],
+        "trade_count": results["kpis"].get("trade_count", 0),
+        "net_pnl": results["kpis"].get("net_pnl", 0.0),
+        # R is the one figure a change of position size cannot move, so it is the honest way to
+        # compare a window against another window — see the repo's rule 6.
+        "total_r": results["kpis"].get("total_r"),
+    }
 
 
 def _is_cancelled(stack_id: str, legs: list[dict]) -> bool:
