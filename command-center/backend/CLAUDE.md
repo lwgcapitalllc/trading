@@ -4946,3 +4946,88 @@ describes a system you do not have** — and here it accused the right code of t
 - **Walk-forward on a stack** needs the stack runner to accept a date window it does not take today.
 - **Sensitivity on a stack** needs a shift to name a LEG as well as a setting.
 - **Copying a graded stack's settings onto bots** is one strategy to one bot today.
+
+## A STACK can now be stress tested — `services/gradable.py` (2026-09-06)
+
+The reshuffle half of the plan. Everything downstream of a stress test used to read a
+`backtest_runs` row directly, so a stack — which has no such row of its own — could not be graded.
+
+🔴 **ONE resolver answers *what am I grading*, and BOTH the endpoint and the background task ask
+it.** The endpoint asks to decide a status code; the task asks to decide what to read. Two places
+answering that independently is precisely how a pre-flight and a run came to disagree about which
+bar feeds a backtest loads (`run_feeds.py`, written for that defect one layer down). Here the cost
+would be a test refused on one side and started on the other, or graded against a window it never
+replayed.
+
+⚠ **The task resolves off the ROW, never off an id handed to it.** The row is the record of what
+was requested; a task told separately can grade something the row does not name.
+
+⚠ **`NotGradable` carries its own HTTP status.** Only the resolver knows whether it just decided
+*no such stack* (404) or *this stack is a screen* (400), and a router inferring it would report one
+as the other.
+
+⚠ **A SCREEN is refused, by name.** There every leg traded its own full account with nothing able
+to block anything, so the combined figure is N standalone runs added up — an UPPER BOUND. Grading
+it would put a letter on a result no account can produce, which is worse than refusing **because it
+looks like an answer**.
+
+⚠ **A stack with no combined book is refused with the FIX in the sentence** (*re-run the stack*),
+never reported as an empty result — which reads as an account that never traded. Every stack
+replayed before 2026-09-06 is that stack, and there is no backfill.
+
+⚠ **The runner is READ OFF THE LEGS, not asserted.** A stack is python-only by construction; the
+day that stops being true this refuses rather than filing an MT5 leg under the python platform
+lock. Legs that disagree are refused.
+
+⚠ **Each leg carries ITS OWN frame**, since a leg has named one since 2026-09-03. Reading the
+stack's fallback for every leg describes a leg on a timeframe it was never replayed on.
+
+🔴 **WALK-FORWARD AND SENSITIVITY ARE REFUSED FOR A STACK, and that refusal is the feature.**
+Neither is built for one, and both would replay a SINGLE LEG and report the answer as the whole
+account's. The endpoint refuses up front; both phase functions refuse again as a backstop **and say
+the true reason** — falling through to their existing *"Source run not found"* would send the
+reader looking for a run nobody deleted.
+
+⚠ **The trade floor counts the COMBINED book, and that is Aaron's design rather than a loophole.**
+Sample size arrives at the PORTFOLIO level, so two legs that each trade too rarely to grade alone
+clear the 100 floor together — one account's real trade history, not a trade count bought by
+loosening a filter.
+
+⚠ **The Telegram grade alert is named off the TARGET.** A stack has no run row, and naming it after
+its first leg would credit one strategy with a whole account's grade.
+
+⚠ **`_apply_grid_sensitivity_if_available` refuses a stack BY NAME rather than relying on
+`get_run(None)` returning None** — which it does, measured. A branch that is correct by accident is
+one the next edit breaks in silence.
+
+⚠ **This endpoint deliberately does NOT call `refuse_if_needs_source`**, and the AST sweep in
+`test_recovery_leg_wiring.py` flagged it the moment the code read a strategy id. It is the decision
+`_source_guard.py` already records — a stress test acts on a result that ALREADY EXISTS, and no run
+of a parentless rule can be created once every creation path refuses one. **For a stack the guard
+would be actively wrong**: a stack may legitimately hold a loss-recovery leg, which is the case that
+leg was built for. The endpoint reads the strategy off the resolved target instead of looking it up
+again — one read of one fact, which is what stopped the sweep matching.
+
+⚠ **`StressTest.run_id` is Optional and `stack_id` is DECLARED.** A stack row carries `run_id =
+None`, and a required field would make the whole row unserialisable — a 500 on the list endpoint,
+not a missing field. An undeclared `stack_id` would be dropped in silence, the trap `entry_ms`,
+`exit_ms`, `favorable`/`adverse` and `r` each hit on this same model.
+
+**Tests:** `tests/test_gradable_resolver.py` (16). ⚠ **A fail-watch is vacuous — the module did not
+exist — so non-vacuity is by MUTATION: 13 written, 13 RUN, 13 killed.**
+
+🔴 **TWO SURVIVED FIRST AND BOTH WERE THE TESTS, NOT THE HARNESS.** One asserted only that the
+resolver RAISED when neither target was named — and with the guard weakened, naming neither falls
+through to `_from_run("")`, which raises the same class saying *Run not found*. **A refusal for the
+wrong reason passes a test that only asks whether it refused.** The other seeded legs with no
+equity curve of their own, so *resolve the account's book* and *resolve the first leg's book*
+returned the identical path and the swap could not be detected — **a fixture whose two behaviours
+cannot produce different output is not testing the thing it names**, the same shape as the
+settings-import fixture four sections up.
+
+### What is still missing
+
+- **Walk-forward on a stack** — needs the stack runner to accept a date window it does not take.
+- **Sensitivity on a stack** — needs a shift to name a LEG as well as a setting.
+- **Copying a graded stack's settings onto bots** — one strategy to one bot today.
+- **Nothing in the UI offers this yet**; the endpoint takes a stack and no page sends one.

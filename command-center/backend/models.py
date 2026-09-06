@@ -1984,7 +1984,13 @@ class StressTestCreate(BaseModel):
     is a multiplier on wall-clock time and on the platform lock.
     """
 
-    run_id: str
+    # 🔴 EXACTLY ONE of these names what is being graded (2026-09-06). `run_id` was required,
+    # which is what made a STACK ungradeable — there was nowhere to say the subject is a whole
+    # strategy set on one shared account. Both being optional here is not a relaxation: the
+    # rule is enforced by `services.gradable.resolve` and, on the row, by the table's own CHECK.
+    # Stating it a third time in this model would be a copy able to drift from both.
+    run_id: Optional[str] = None
+    stack_id: Optional[str] = None
     ruleset_id: Optional[str] = None
     include_walk_forward: bool = False
     include_sensitivity: bool = False
@@ -2016,7 +2022,14 @@ class WalkForwardWindow(BaseModel):
 
 class StressTest(BaseModel):
     stress_test_id: str
-    run_id: str
+    # ⚠ EXACTLY ONE is set, and `run_id` is Optional for that reason rather than because it is
+    # ever absent by accident. A stack-targeted row carries `run_id = None`, and a required
+    # field would make the whole row unserialisable — a 500 on the LIST endpoint, not a
+    # missing field. `stack_id` must stay declared here: an undeclared field is dropped in
+    # silence on the way to the browser, the trap `entry_ms`, `exit_ms`, `favorable`/`adverse`
+    # and `r` each hit on this same model.
+    run_id: Optional[str] = None
+    stack_id: Optional[str] = None
     ruleset_id: Optional[str] = None
     status: str
     created_at: int

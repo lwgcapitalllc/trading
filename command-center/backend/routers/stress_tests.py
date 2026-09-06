@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from models import StressTest, StressTestCreate, StressTestDetail
-from services import lab_db
+from services import gradable, lab_db
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.stress_tester import (
     MIN_TRADES_FOR_STRESS,
@@ -85,27 +85,43 @@ def get_stress_test(stress_test_id: str):
 
 @router.post("/run", status_code=202)
 async def trigger_stress_test(body: StressTestCreate):
-    run = lab_db.get_run(body.run_id)
-    if not run:
-        raise HTTPException(404, "Run not found")
-    if run.get("status") != "complete":
-        raise HTTPException(400, "Run must be complete before stress testing")
+    # 🔴 ONE resolver decides what is being graded, and the background task asks the SAME one.
+    # Two places answering that independently is how a pre-flight and a run come to disagree
+    # about what they are looking at — `run_feeds.py` exists because of exactly that, one layer
+    # down. `NotGradable` carries its own status code, because only the resolver knows whether
+    # it just decided *no such stack* or *this stack is a screen*.
+    try:
+        target = gradable.resolve(run_id=body.run_id, stack_id=body.stack_id)
+    except gradable.NotGradable as exc:
+        raise HTTPException(exc.status, exc.reason) from exc
 
-    if not run.get("equity_curve_path"):
-        raise HTTPException(400, "Run has no equity curve data")
+    # ⚠ Walk-forward and sensitivity are NOT built for a stack yet, and running them would
+    # replay ONE LEG and grade the whole account on it. Refusing names the missing feature;
+    # running quietly would put a portfolio letter on a single strategy's evidence.
+    if target.is_stack and (body.include_walk_forward or body.include_sensitivity):
+        raise HTTPException(
+            400,
+            "Walk-forward and sensitivity are not built for a stack yet — they would replay "
+            "one leg and grade the whole account on it. Run the reshuffle test on its own.",
+        )
 
     # Sample-size gate — one flat floor. Below MIN_TRADES_FOR_STRESS the whole test is blocked:
     # the A-F grade leans on Monte Carlo tail percentiles (worst-1%/worst-5% drawdown) that small
     # samples can't estimate, and walk-forward's IS/OOS windows would be a coin flip. Get more
     # DATA to clear it (longer period, more instruments, smaller timeframe) — not looser params,
     # which just curve-fits the trade count up.
-    trade_count = run.get("trade_count") or 0
+    #
+    # ⚠ For a STACK this counts the COMBINED book, which is the point: Aaron's stated design is
+    # that sample size arrives at the PORTFOLIO level, so a pair of legs that each trade too
+    # rarely to grade alone can clear this floor together. That is the honest reading — it is
+    # one account's trade history — and not a way of buying trades by loosening anything.
+    trade_count = target.trade_count
     if trade_count < MIN_TRADES_FOR_STRESS:
         raise HTTPException(
             422,
             f"Stress test needs at least {MIN_TRADES_FOR_STRESS} trades to be meaningful — "
-            f"this run has {trade_count}. Get more trades from more data (longer period, more "
-            f"instruments, or a smaller timeframe) before stress testing.",
+            f"this {target.kind} has {trade_count}. Get more trades from more data (longer "
+            f"period, more instruments, or a smaller timeframe) before stress testing.",
         )
 
     if body.ruleset_id:
@@ -113,8 +129,17 @@ async def trigger_stress_test(body: StressTestCreate):
         if not rs:
             raise HTTPException(404, "Ruleset not found")
 
-    strategy = lab_db.get_strategy(run.get("strategy_id", ""))
-    runner = (strategy or {}).get("runner", "ninjatrader")
+    run = lab_db.get_run(body.run_id) if body.run_id else None
+    # ⚠ Off the RESOLVED target, never looked up again here — the resolver already read it, and
+    # two reads of one fact is what this module's own defects have been made of.
+    #
+    # ⚠ This endpoint deliberately does NOT call `refuse_if_needs_source`, and that is the same
+    # decision `_source_guard.py` already records: a stress test acts on a result that ALREADY
+    # EXISTS, and no run of a parentless rule can be created once every creation path refuses
+    # one. For a STACK the guard would be actively wrong — a stack may legitimately hold a
+    # loss-recovery leg, which is the case that leg was built for.
+    strategy = target.strategy or None
+    runner = target.runner
     # ONE definition of which market a runner belongs to (lab_db.stress_market_for_runner), mirrored
     # by the frontend's `runnerMarket`. Inline, a python run was filed under futures here and read
     # as forex on the page, so its own button never knew it was blocked.
@@ -133,7 +158,12 @@ async def trigger_stress_test(body: StressTestCreate):
     lab_db.insert_stress_test(
         {
             "stress_test_id": st_id,
-            "run_id": body.run_id,
+            # ⚠ Written from the RESOLVED target, not from the request body. The resolver has
+            # already refused every shape but exactly-one, so this cannot record a row the
+            # table's CHECK would reject — and it cannot record a target the resolver did not
+            # bless either.
+            "run_id": target.target_id if not target.is_stack else None,
+            "stack_id": target.target_id if target.is_stack else None,
             "ruleset_id": body.ruleset_id,
             "status": "running",
             "created_at": int(time.time()),
@@ -174,7 +204,10 @@ async def trigger_stress_test(body: StressTestCreate):
         # REACHABLE — not behind a switch this run has off) and use the runner's real shift count
         # (MT5 = 2, NT8/python = 4) — both via the shared helpers, so the estimate can't drift
         # from the run loop.
-        n_params = sensitivity_param_count(strategy, run.get("params") or {})
+        # ⚠ Params come off the RESOLVED target's leg, not off a second read of the run row.
+        # For a single run they are the same dict; keeping one source is what stops the
+        # estimate describing a different configuration from the one that will be perturbed.
+        n_params = sensitivity_param_count(strategy, target.legs[0].params if target.legs else {})
         n_backtests = n_params * sensitivity_shift_count(runner)
         # The RUN is passed so the estimate can use its own measured duration instead of a
         # per-job constant — a 6.6-year replay costs ~69s a child, not the 12s the constant

@@ -4214,13 +4214,18 @@ def insert_stress_test(data: dict) -> None:
         conn.execute(
             """
             INSERT INTO stress_tests
-                (stress_test_id, run_id, ruleset_id, status, created_at,
+                (stress_test_id, run_id, stack_id, ruleset_id, status, created_at,
                  num_simulations, num_bootstrap, walk_forward_windows, phases_requested)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["stress_test_id"],
-                data["run_id"],
+                # ⚠ Exactly ONE of these, and the CHECK on the table is what enforces it — this
+                # function deliberately does not re-state the rule. A caller passing both, or
+                # neither, is refused by the database rather than by a copy of the rule here
+                # that could drift from it.
+                data.get("run_id"),
+                data.get("stack_id"),
                 data.get("ruleset_id"),
                 data["status"],
                 data["created_at"],

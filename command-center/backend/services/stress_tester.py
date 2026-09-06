@@ -1175,6 +1175,12 @@ async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str
     if not st:
         return (False, "Stress test row disappeared")
 
+    # ⚠ A STACK-targeted test has no source run, and this phase is not built for one — it would
+    # replay a single leg and report the answer as the whole account's. The endpoint refuses it
+    # up front; this is the backstop, and it says the TRUE reason. Falling through to "Source
+    # run not found" would send the reader looking for a run nobody deleted.
+    if not st.get("run_id"):
+        return (False, "This phase is not built for a stack yet — it would replay one leg")
     source_run = lab_db.get_run(st["run_id"])
     if not source_run:
         return (False, "Source run not found")
@@ -1401,6 +1407,12 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     if not st:
         return (False, "Stress test row disappeared")
 
+    # ⚠ A STACK-targeted test has no source run, and this phase is not built for one — it would
+    # replay a single leg and report the answer as the whole account's. The endpoint refuses it
+    # up front; this is the backstop, and it says the TRUE reason. Falling through to "Source
+    # run not found" would send the reader looking for a run nobody deleted.
+    if not st.get("run_id"):
+        return (False, "This phase is not built for a stack yet — it would replay one leg")
     source_run = lab_db.get_run(st["run_id"])
     if not source_run:
         return (False, "Source run not found")
@@ -1579,7 +1591,14 @@ async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) ->
     If the source run came from a native optimization that already has grid sensitivity,
     populate the stress test's sensitivity fields from that data — no NT8 backtests.
     Returns True if sensitivity was applied.
+
+    ⚠ A STACK-targeted test has no source run and no optimization behind it, so there is
+    nothing to inject. It is refused HERE, by name, rather than left to fall through
+    `get_run(None)` returning None — which it does (measured, not assumed). A branch that is
+    correct by accident is one the next edit breaks silently.
     """
+    if not st.get("run_id"):
+        return False
     run = lab_db.get_run(st["run_id"])
     if not run:
         return False
@@ -1609,13 +1628,15 @@ async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) ->
 
 
 def _fire_grade_notification(
-    stress_test_id: str, run: dict, st: dict, grade: Optional[str], reasons: list[str]
+    stress_test_id: str, target, st: dict, grade: Optional[str], reasons: list[str]
 ) -> None:
-    strategy = lab_db.get_strategy(run.get("strategy_id", ""))
-    strat_name = (
-        (strategy.get("name") or strategy.get("class_name") or "Unknown") if strategy else "Unknown"
-    )
-    instrument = run.get("instrument", "?")
+    # ⚠ Named off the RESOLVED target rather than off a run row. A stack has no run row, and
+    # naming it after its first leg would send an alert crediting one strategy with a whole
+    # account's grade. `label` is every leg's name for a stack and the strategy's for a run.
+    strat_name = target.label or "Unknown"
+    if target.is_stack:
+        strat_name = f"Stack: {strat_name}"
+    instrument = target.instrument or "?"
     prob_pass = st.get("prob_pass_eval")
     p1_dd = st.get("pct1_max_dd")
 
@@ -1669,21 +1690,23 @@ async def run_stress_test_task(
         if not st:
             return
 
-        run = lab_db.get_run(st["run_id"])
-        if not run:
-            lab_db.update_stress_test_status(
-                stress_test_id, "failed_no_run", "Source run not found"
-            )
+        # 🔴 THE SAME RESOLVER THE ENDPOINT USED, asked again off the ROW rather than off an id
+        # passed in. The row is the record of what was requested; a task told separately could
+        # grade something the row does not name. A stack has no `backtest_runs` row of its own,
+        # so reading one here is what made a stack ungradeable.
+        from services import gradable
+
+        try:
+            target = gradable.resolve_for_stress_test(st)
+            equity_curve = gradable.load_equity_curve(target)
+        except gradable.NotGradable as exc:
+            lab_db.update_stress_test_status(stress_test_id, "failed_no_data", exc.reason)
             return
 
-        eq_path = run.get("equity_curve_path")
-        if not eq_path or not Path(eq_path).exists():
-            lab_db.update_stress_test_status(
-                stress_test_id, "failed_no_data", "No equity curve data"
-            )
-            return
-
-        equity_curve = json.loads(Path(eq_path).read_text())
+        # A single run still resolves a `backtest_runs` row, and the phases below read it for
+        # the window, the params and the measurement basis a child must inherit. A STACK has
+        # none — and cannot reach those phases, which the endpoint refuses for it.
+        run = lab_db.get_run(target.target_id) if not target.is_stack else None
         trade_pnls = [t["profit"] for t in equity_curve if t.get("profit") is not None]
         if not trade_pnls:
             lab_db.update_stress_test_status(
@@ -1795,7 +1818,7 @@ async def run_stress_test_task(
                 sens_failed="sensitivity" in phase_failures,
             )
             lab_db.update_stress_test_grade(stress_test_id, grade, reasons)
-            _fire_grade_notification(stress_test_id, run, st_updated, grade, reasons)
+            _fire_grade_notification(stress_test_id, target, st_updated, grade, reasons)
         else:
             # No ruleset means no letter is possible, which is not a failure — but a phase that
             # died still has to be visible, so it goes in the row's own error field rather than
