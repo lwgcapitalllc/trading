@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import json
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -1491,3 +1492,193 @@ def test_a_stack_with_nothing_finished_reports_NO_result_rather_than_zero(
     row = next(r for r in client.get("/backtests/stacks").json() if r["stack_id"] == "st_run")
     assert row["net_pnl"] is None
     assert row["trade_count"] is None
+
+
+# ── The COMBINED book — what the shared ACCOUNT itself did, trade by trade ────
+
+
+@dataclass
+class _FakeTrade:
+    """The trade duck-type `backtest/output.build_results` actually reads.
+
+    Deliberately a plain object rather than the real trade class: this file tests the lab's
+    seams around the simulation, never the simulation, and a fixture that could only be produced
+    by a full replay would make these tests unrunnable without one.
+    """
+
+    entry_ms: int
+    exit_ms: int
+    pnl_usd: float
+    dir: int = 1
+    qty: float = 1.0
+    entry_price: float = 2000.0
+    exit_price: float = 2010.0
+    stop_distance: float = 10.0
+    exit_reason: str = "target"
+    r: float = 1.0
+
+
+class _FakeRun:
+    """The fields `_persist` reads off a finished stack replay."""
+
+    def __init__(self, trades, per_leg, opening, closing):
+        self.trades = list(trades)
+        self.per_leg = dict(per_leg)
+        self.solo_per_leg = {k: list(v) for k, v in per_leg.items()}
+        self.solo_closing = dict.fromkeys(per_leg, 0.0)
+        self.blocked_per_leg = {}
+        self.missed_per_leg = {}
+        self.contention = []
+        self.opening_balance = opening
+        self.closing_balance = closing
+        self.risk_cap_pct = 0.10
+        self.entry_floor_pct = 0.0
+        self.peak_reserved_pct = 0.05
+        self.peak_concurrent = 1
+        self.cancelled = False
+
+
+class _Cfg:
+    point_value = 1.0
+
+
+class _Spec:
+    def __init__(self, name, point_value=1.0):
+        self.name = name
+        self.config = _Cfg()
+        self.config.point_value = point_value
+
+
+def _persist_a_stack(tmp_path, monkeypatch, *, a_trades, b_trades, closing=None):
+    """Run `_persist` over two legs and hand back the stack dir."""
+    from services import portfolio_runner
+
+    monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path)
+    monkeypatch.setattr(portfolio_runner, "_write_leg", lambda *a, **k: None)
+
+    opening = 10_000.0
+    total = sum(t.pnl_usd for t in a_trades) + sum(t.pnl_usd for t in b_trades)
+    run = _FakeRun(
+        list(a_trades) + list(b_trades),
+        {"leg_a": a_trades, "leg_b": b_trades},
+        opening,
+        opening + total if closing is None else closing,
+    )
+    portfolio_runner._persist(
+        "st_combined",
+        [
+            {"strategy_id": "leg_a", "run_id": "r_a", "ruleset_ids": []},
+            {"strategy_id": "leg_b", "run_id": "r_b", "ruleset_ids": []},
+        ],
+        [_Spec("leg_a"), _Spec("leg_b")],
+        run,
+        {},
+        {},
+    )
+    return tmp_path / "st_combined"
+
+
+def test_the_COMBINED_book_is_KEPT_not_reduced_to_two_scalars(tmp_path, monkeypatch):
+    """🔴 `_persist` stored `combined_trades` and `combined_r` and threw the ACCOUNT's own trade
+    stream away — so the one thing a shared stack exists to produce was computed on every run and
+    never written. Nothing could grade a stack because there was nothing to grade.
+
+    Watched RED: with the combined block removed the files are absent and this fails on the
+    first read.
+    """
+    from services import portfolio_runner
+
+    sdir = _persist_a_stack(
+        tmp_path,
+        monkeypatch,
+        a_trades=[_FakeTrade(1_000, 2_000, 500.0)],
+        b_trades=[_FakeTrade(3_000, 4_000, -200.0)],
+    )
+    eq, dp = portfolio_runner.combined_book("st_combined")
+    assert [p["profit"] for p in eq] == [500.0, -200.0]
+    assert sum(d["pnl"] for d in dp) == 300.0
+    assert (
+        json.loads((sdir / "shared_summary.json").read_text())["combined_kpis"]["trade_count"] == 2
+    )
+
+
+def test_the_combined_curve_is_in_EXIT_ORDER_across_legs_not_grouped_by_leg(tmp_path, monkeypatch):
+    """⚠ The simulator hands `run.trades` over grouped BY LEG — every leg A trade, then every leg B
+    trade — and an account's book in that order is not the account's book. `build_equity_curve`
+    sorts on exit time, which is the ONLY reason passing it that list is safe.
+
+    Watched RED by sorting the trades by leg instead: the curve then reads 500, 100, -200.
+    """
+    from services import portfolio_runner
+
+    _persist_a_stack(
+        tmp_path,
+        monkeypatch,
+        a_trades=[_FakeTrade(1_000, 2_000, 500.0), _FakeTrade(9_000, 10_000, 100.0)],
+        b_trades=[_FakeTrade(3_000, 4_000, -200.0)],
+    )
+    eq, _ = portfolio_runner.combined_book("st_combined")
+    assert [p["profit"] for p in eq] == [500.0, -200.0, 100.0]
+
+
+def test_the_combined_curve_is_CHECKED_against_the_account_balance(tmp_path, monkeypatch):
+    """The curve is walked from the opening balance over the trades; the account tracked its
+    balance live. They must agree — and when they do not, the account applied something no trade
+    carries, which is a defect in the seam rather than a rounding difference.
+
+    Watched RED by pinning the flag to True.
+    """
+    ok = _persist_a_stack(
+        tmp_path,
+        monkeypatch,
+        a_trades=[_FakeTrade(1_000, 2_000, 500.0)],
+        b_trades=[_FakeTrade(3_000, 4_000, -200.0)],
+    )
+    assert json.loads((ok / "shared_summary.json").read_text())["combined_curve_agrees"] is True
+
+    bad = _persist_a_stack(
+        tmp_path / "other",
+        monkeypatch,
+        a_trades=[_FakeTrade(1_000, 2_000, 500.0)],
+        b_trades=[_FakeTrade(3_000, 4_000, -200.0)],
+        closing=99_999.0,
+    )
+    assert json.loads((bad / "shared_summary.json").read_text())["combined_curve_agrees"] is False
+
+
+def test_legs_disagreeing_on_CONTRACT_SIZE_are_refused_rather_than_priced_at_one_of_them(
+    tmp_path, monkeypatch
+):
+    """A stack is one instrument, so its legs must agree. Taking whichever leg happened to be last
+    would price the other leg's trades at the wrong size and report it as the account's book."""
+    from services import portfolio_runner
+
+    with pytest.raises(ValueError, match="disagree on contract size"):
+        portfolio_runner._stack_point_value([_Spec("leg_a", 1.0), _Spec("leg_b", 100.0)])
+    assert (
+        portfolio_runner._stack_point_value([_Spec("leg_a", 100.0), _Spec("leg_b", 100.0)]) == 100.0
+    )
+
+
+def test_a_stack_with_NO_combined_book_reports_empty_and_never_an_exception(tmp_path, monkeypatch):
+    """⚠ Empty means NOT STORED — a screen, or a stack replayed before the combined book existed.
+    A caller rendering it as a flat account is reporting a stack that never ran as one that
+    traded nothing."""
+    from services import portfolio_runner
+
+    monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path)
+    assert portfolio_runner.combined_book("st_nothing") == ([], [])
+
+
+def test_the_combined_KPIs_carry_the_CANONICAL_sharpe(tmp_path, monkeypatch):
+    """Every other book in this app has its Sharpe stamped from daily P&L at completion. A stack
+    computing its own differently would be a second answer to the same question — and the grader
+    reads this one."""
+    sdir = _persist_a_stack(
+        tmp_path,
+        monkeypatch,
+        a_trades=[_FakeTrade(1_000, 2_000, 500.0), _FakeTrade(200_000_000, 300_000_000, 250.0)],
+        b_trades=[_FakeTrade(3_000, 4_000, -200.0)],
+    )
+    kpis = json.loads((sdir / "shared_summary.json").read_text())["combined_kpis"]
+    assert "sharpe" in kpis

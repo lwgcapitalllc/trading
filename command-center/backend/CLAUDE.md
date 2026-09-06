@@ -4860,3 +4860,89 @@ wrong endpoint (`if _bot_is_running(bot_key):` appears twice in that router, and
 replace hit the account move), and one was a fixture whose bot and run carried the same key set, so
 *write the plan* and *merge the run's dict* produced identical output. **A mutation that lands
 somewhere else is not a surviving mutation, and it reads exactly like one.**
+
+## A STACK can be graded — the combined book, and the target that had nowhere to point (2026-09-06)
+
+Aaron's pipeline is **backtest → stress test → demo → live**, and he runs stacks: *"it doesn't
+matter if it's a single strategy or a stack of two or more strategies … nothing should run on its
+own and then come at numbers at the end. It should try to test it as though this is the whole
+strategy set that's been run on the account."* Everything below is the first two steps of making
+that true. The pieces still missing are named at the end.
+
+### 🔴 The shared account's own book was computed on every run and thrown away
+
+`portfolio_runner._persist` kept each leg's trades, each leg's SOLO control, and the contention
+log — and reduced the ACCOUNT's own trade stream to two scalars, `combined_trades` and
+`combined_r`. **So the one thing a shared stack exists to produce did not survive to disk**, and
+nothing downstream could grade a stack because there was nothing to grade. It is now written
+through the SAME `build_results` every other book in this app goes through
+(`combined_equity_curve.json`, `combined_daily_pnl.json`, `combined_kpis` on the summary), read
+back by `portfolio_runner.combined_book`.
+
+⚠ **`run.trades` arrives grouped BY LEG, not in time order** — every leg A trade, then every leg B
+trade. `build_equity_curve` sorts on exit time itself, which is the ONLY reason handing it that
+list is safe. **Do not pass it to anything that walks it as given.**
+
+⚠ **A second curve builder here would be a second answer to *what did this account do*.** The
+equity contract — one point per closed trade, in exit order, anchored on the opening balance — is
+what the stress tester, the grader and the chart all read.
+
+⚠ **`combined_curve_agrees` is a CHECK the artefact makes rather than a number it reports.** The
+curve is walked from the opening balance over the trades; the account tracked its balance live.
+A disagreement means the account applied something no trade carries — a defect in the seam, not a
+rounding difference. Same idea as `neutral` beside it.
+
+⚠ **`combined_book` returning `([], [])` means NOT STORED, never *this account made nothing*.** A
+screen has no shared account for a book to belong to, and every stack replayed before this date has
+none either. **There is no backfill** — recovering it means replaying the stack.
+
+⚠ **`_stack_point_value` REFUSES legs that disagree on contract size** rather than taking whichever
+leg was last. A stack is one instrument, so disagreement means the account's book would be priced
+at one leg's contract while carrying the other leg's trades.
+
+### 🔴 `stress_tests.run_id` was NOT NULL, so a stack had nowhere to point
+
+A stress test grades a RESULT, and a result is now either a single strategy's run or a whole stack
+on one shared account. The row carries `run_id` **or** `stack_id`, and **the database enforces
+exactly one** (`CHECK ((run_id IS NULL) <> (stack_id IS NULL))`).
+
+🔴 **Pointing a stack's test at its FIRST LEG would have satisfied the foreign key** and named one
+strategy as the subject of a portfolio result — a field that reads as answered and is not. That is
+the shape rule 1 keeps catching, in a column rather than in a probe.
+
+⚠ **`_migrate_stress_tests_gradable_target` READS ITS COLUMN LIST OFF THE TABLE, never types it.**
+This file already records what typing it costs: the `optimizations` rebuild above lists its columns
+by hand and silently DROPPED the ones somebody forgot, on every fresh database. Every column on
+`stress_tests` past `error_message` arrived by a later migration, so a hand-written list here would
+have rotted the same way. Only `run_id`'s NOT NULL is lifted; every other constraint and default is
+carried across exactly as the table states it.
+
+🔴 **The stack INDEX may not live in the main schema script.** That script also runs against a
+database whose `stress_tests` predates the column — `CREATE TABLE IF NOT EXISTS` does not alter an
+existing table — and an index on a missing column kills the whole script and **every migration
+below it**. It is asserted in the migration instead, on the rebuild path AND on the
+already-migrated early return, or a fresh database would never get it.
+
+⚠ **Both paths were checked, and this section is the reason:** a schema change declared in only one
+of them works perfectly on the machine that ran the migration and is broken on every fresh clone.
+
+**Tests:** `tests/test_gradable_target.py` (9) + 6 in `tests/test_shared_stack.py`. ⚠ **A
+fail-watch is vacuous for a column that did not exist**, so non-vacuity is by **MUTATION: 12
+written, 12 RUN, 12 killed** — the CHECK removed from each of the two paths in turn, the rebuild
+lifting every NOT NULL, the column list hardcoded, the index dropped from the early return, the
+curve's exit-order sort, the balance cross-check pinned true, the contract-size refusal, the
+canonical Sharpe, and the book not written at all.
+
+🔴 **THE FIRST FIXTURE HERE WAS THINNER THAN ANY REAL MACHINE, AND IT READ AS A BUG IN THE CODE
+UNDER TEST.** A hand-written *old* `stress_tests` omitted columns a later migration in `init_db`
+needs, so that migration raised and the failure pointed at the rebuild. `_downgrade` now DERIVES
+the old shape from the table that is actually there. **A fixture less capable than production
+describes a system you do not have** — and here it accused the right code of the fixture's fault.
+
+### What is NOT built yet, so nobody reads this as finished
+
+- **Nothing yet CREATES a stress test against a stack.** The column exists and the book exists; the
+  endpoint and the phases still read a single run.
+- **Walk-forward on a stack** needs the stack runner to accept a date window it does not take today.
+- **Sensitivity on a stack** needs a shift to name a LEG as well as a setting.
+- **Copying a graded stack's settings onto bots** is one strategy to one bot today.

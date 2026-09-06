@@ -303,6 +303,34 @@ def _is_cancelled(stack_id: str, legs: list[dict]) -> bool:
     return False
 
 
+def _stack_point_value(specs: list) -> float:
+    """The contract size the combined book is priced in.
+
+    A stack is one instrument, so every leg must carry the same one. It is CHECKED rather than
+    taken off whichever leg happened to be last: two legs disagreeing here would mean the stack
+    was built on two instruments, and pricing the account's book at one of them silently reports
+    the other leg's trades at the wrong size.
+    """
+    seen = {round(float(getattr(s.config, "point_value", 1.0)), 10) for s in specs}
+    if len(seen) > 1:
+        raise ValueError(
+            f"legs disagree on contract size ({sorted(seen)}) — a shared account cannot price "
+            f"one book across two instruments"
+        )
+    return seen.pop() if seen else 1.0
+
+
+def _curve_agrees(curve: list[dict], run) -> bool:
+    """Does the combined curve end where the account says it did?
+
+    ⚠ True on an EMPTY book only when the account never moved, which is the honest reading: no
+    trades and an unchanged balance agree. A cent of tolerance, because the curve is rounded per
+    point and the account is not.
+    """
+    ended = float(curve[-1]["equity"]) if curve else float(run.opening_balance)
+    return abs(ended - float(run.closing_balance)) <= 0.01
+
+
 def _persist(
     stack_id: str, legs: list[dict], specs: list, run, settings: dict, summary: dict
 ) -> None:
@@ -367,6 +395,30 @@ def _persist(
             }
         )
 
+    # 🔴 THE ACCOUNT'S OWN BOOK, which this function threw away until 2026-09-06. Every leg's
+    # trades were kept and the combined stream was reduced to two scalars (`combined_trades`,
+    # `combined_r`) — so the one thing a stack exists to produce, the record of what the SHARED
+    # ACCOUNT did trade by trade, was computed on every run and never written. Nothing downstream
+    # could grade a stack because there was nothing to grade; adding stress testing starts here.
+    #
+    # ⚠ It is built from `run.trades` through the SAME `build_results` every other book in this
+    # app goes through, deliberately. A second curve builder is a second answer to "what did this
+    # account do", and the equity contract (one point per closed trade, in exit order, anchored on
+    # the opening balance) is the thing the stress tester, the grader and the chart all read.
+    # ⚠ `run.trades` arrives grouped BY LEG rather than in time order; `build_equity_curve` sorts
+    # on exit time itself, which is the only reason this is safe. Do not hand that list to
+    # anything that walks it as given.
+    combined = build_results(
+        run.trades,
+        point_value=_stack_point_value(specs),
+        initial_capital=run.opening_balance,
+    )
+    apply_canonical_sharpe(combined["kpis"], combined["daily_pnl"])
+    (sdir / "combined_equity_curve.json").write_text(
+        json.dumps(combined["equity_curve"], default=str)
+    )
+    (sdir / "combined_daily_pnl.json").write_text(json.dumps(combined["daily_pnl"], default=str))
+
     (sdir / "contention.json").write_text(json.dumps(run.contention, default=str))
     (sdir / "shared_summary.json").write_text(
         json.dumps(
@@ -374,6 +426,17 @@ def _persist(
                 "stack_id": stack_id,
                 "opening_balance": run.opening_balance,
                 "closing_balance": round(run.closing_balance, 2),
+                # The combined book's own KPIs and where its curve landed. Stored beside the
+                # totals rather than instead of them: `combined_r` is what the legs posted and
+                # this is what the ACCOUNT did, and the two answer different questions.
+                "combined_kpis": combined["kpis"],
+                "combined_equity_curve_path": str(sdir / "combined_equity_curve.json"),
+                "combined_daily_pnl_path": str(sdir / "combined_daily_pnl.json"),
+                # The check this artefact can make rather than report. The curve is walked from
+                # the opening balance over the trades; the account tracked its balance live. They
+                # must agree, and if they do not, the account applied something no trade carries —
+                # a defect in the seam, not a rounding difference. Same idea as `neutral` below.
+                "combined_curve_agrees": _curve_agrees(combined["equity_curve"], run),
                 "risk_cap_pct": round(run.risk_cap_pct * 100.0, 4),
                 "entry_floor_pct": round(run.entry_floor_pct * 100.0, 4),
                 "peak_open_risk_pct": round(run.peak_reserved_pct * 100.0, 4),
@@ -447,6 +510,21 @@ def solo_book(stack_id: str, strategy_id: str) -> tuple[list, list]:
     d = stack_dir(stack_id) / "solo" / strategy_id
     eq = _read_json_list(d / "equity_curve.json")
     dp = _read_json_list(d / "daily_pnl.json")
+    return eq, dp
+
+
+def combined_book(stack_id: str) -> tuple[list, list]:
+    """The SHARED ACCOUNT's own book — its equity curve and daily P&L — or `([], [])`.
+
+    ⚠ Empty means NOT STORED, never "this account made nothing". A stack replayed before
+    2026-09-06 has no combined book on disk at all, and so does every screen — a screen has no
+    shared account for a book to belong to. A caller that renders empty as a flat account is
+    reporting a stack that was never run as one that traded nothing, which is the same class of
+    defect as the solo book above.
+    """
+    d = stack_dir(stack_id)
+    eq = _read_json_list(d / "combined_equity_curve.json")
+    dp = _read_json_list(d / "combined_daily_pnl.json")
     return eq, dp
 
 

@@ -436,7 +436,15 @@ def init_db() -> None:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS stress_tests (
                 stress_test_id     TEXT PRIMARY KEY,
-                run_id             TEXT NOT NULL REFERENCES backtest_runs(run_id),
+                -- 🔴 EXACTLY ONE of these is set, and the database enforces it. A stress test
+                -- grades a RESULT, and since 2026-09-06 a result is either a single strategy's
+                -- run or a whole STACK replayed on one shared account. `run_id` was NOT NULL
+                -- until then, which is what made a stack ungradeable: there was nowhere to
+                -- point. Pointing at a stack's first leg instead would have satisfied the
+                -- foreign key and quietly named one strategy as the subject of a portfolio
+                -- result — a field that looks answered and is not.
+                run_id             TEXT REFERENCES backtest_runs(run_id),
+                stack_id           TEXT,
                 ruleset_id         TEXT REFERENCES rulesets(id),
                 status             TEXT NOT NULL,
                 created_at         INTEGER NOT NULL,
@@ -460,10 +468,16 @@ def init_db() -> None:
                 grade_reasons      TEXT,
                 equity_paths_path  TEXT,
                 distribution_path  TEXT,
-                error_message      TEXT
+                error_message      TEXT,
+                CHECK ((run_id IS NULL) <> (stack_id IS NULL))
             );
             CREATE INDEX IF NOT EXISTS idx_stress_tests_run ON stress_tests(run_id);
             CREATE INDEX IF NOT EXISTS idx_stress_tests_grade ON stress_tests(grade);
+            -- ⚠ The stack index is NOT here. This script also runs against a database whose
+            -- `stress_tests` predates that column — CREATE TABLE IF NOT EXISTS does not alter
+            -- an existing table — and an index on a missing column kills the whole script,
+            -- every migration below it included. It is created by
+            -- _migrate_stress_tests_gradable_target, once the column is certain to exist.
 
             CREATE TABLE IF NOT EXISTS optimizations (
                 optimization_id     TEXT PRIMARY KEY,
@@ -930,6 +944,7 @@ def init_db() -> None:
     _migrate_strategy_renames()
     _migrate_personal_demo_rename()
     _migrate_optimizations_nullable_ruleset()
+    _migrate_stress_tests_gradable_target()
 
     # Re-score stress tests written by an older grading engine. Its own connection, after the
     # schema work above, because it reads the child runs and the rulesets it re-grades against.
@@ -1014,6 +1029,79 @@ def _migrate_optimizations_nullable_ruleset() -> None:
             DROP TABLE optimizations;
             ALTER TABLE optimizations_new RENAME TO optimizations;
             CREATE INDEX IF NOT EXISTS idx_opts_strategy ON optimizations(strategy_id, created_at DESC);
+            COMMIT;
+        """)
+    except Exception:
+        try:
+            raw.execute("ROLLBACK")
+        except Exception:
+            pass
+    finally:
+        raw.execute("PRAGMA foreign_keys=ON")
+        raw.close()
+
+
+def _migrate_stress_tests_gradable_target() -> None:
+    """Let a stress test point at a STACK as well as at a single run (2026-09-06).
+
+    `run_id` was NOT NULL, so there was nowhere to record that the thing being graded is a
+    whole stack replayed on one shared account. Pointing at the stack's first leg would have
+    satisfied the foreign key and named one strategy as the subject of a portfolio result —
+    a field that reads as answered and is not.
+
+    🔴 **The column list is READ OFF THE TABLE, never typed.** This file already records what
+    typing it costs: the `optimizations` rebuild above lists its columns by hand, and the
+    columns somebody forgot were silently DROPPED on every fresh database. A rebuild that
+    derives its own DDL cannot lose a column that was added by a migration after it was
+    written, which is every column on this table past `error_message`.
+    """
+    raw = sqlite3.connect(DB_PATH)
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA foreign_keys=OFF")
+    try:
+        info = raw.execute("PRAGMA table_info(stress_tests)").fetchall()
+        if not info:
+            return  # table not built yet; the CREATE above already has the new shape
+        names = {c[1] for c in info}
+        run_col = next((c for c in info if c[1] == "run_id"), None)
+        if run_col is not None and run_col[3] == 0 and "stack_id" in names:
+            # Already the new shape — a fresh database, or a second startup. The index
+            # still has to be asserted here, because this is the ONLY place that may
+            # mention the stack column: see the note beside the CREATE TABLE.
+            raw.execute(
+                "CREATE INDEX IF NOT EXISTS idx_stress_tests_stack ON stress_tests(stack_id)"
+            )
+            raw.commit()
+            return
+
+        pieces = []
+        for _cid, name, ctype, notnull, dflt, pk in info:
+            piece = f"{name} {ctype or 'TEXT'}"
+            if pk:
+                piece += " PRIMARY KEY"
+            # run_id is the ONE column whose NOT NULL is being lifted. Every other
+            # constraint is carried across exactly as the table already states it.
+            if notnull and name != "run_id":
+                piece += " NOT NULL"
+            if dflt is not None:
+                piece += f" DEFAULT {dflt}"
+            pieces.append(piece)
+        if "stack_id" not in names:
+            pieces.append("stack_id TEXT")
+        pieces.append("FOREIGN KEY (run_id) REFERENCES backtest_runs(run_id)")
+        pieces.append("FOREIGN KEY (ruleset_id) REFERENCES rulesets(id)")
+        pieces.append("CHECK ((run_id IS NULL) <> (stack_id IS NULL))")
+
+        carried = ", ".join(c[1] for c in info)
+        raw.executescript(f"""
+            BEGIN;
+            CREATE TABLE stress_tests_new ({", ".join(pieces)});
+            INSERT INTO stress_tests_new ({carried}) SELECT {carried} FROM stress_tests;
+            DROP TABLE stress_tests;
+            ALTER TABLE stress_tests_new RENAME TO stress_tests;
+            CREATE INDEX IF NOT EXISTS idx_stress_tests_run ON stress_tests(run_id);
+            CREATE INDEX IF NOT EXISTS idx_stress_tests_stack ON stress_tests(stack_id);
+            CREATE INDEX IF NOT EXISTS idx_stress_tests_grade ON stress_tests(grade);
             COMMIT;
         """)
     except Exception:
