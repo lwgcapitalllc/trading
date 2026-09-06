@@ -136,6 +136,38 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
         },
       })
     }
+    // One bot's own settings, which the BOT drawer needs before it renders anything you can act
+    // on — the account selector included. Routed rather than left to fall through, because the
+    // real endpoint reads an instance config off the live trading box.
+    const p = u.pathname.match(/^\/api\/bots\/([^/]+)\/params$/)
+    if (p) {
+      return route.fulfill({
+        json: {
+          bot_key: p[1],
+          display_name: p[1],
+          identity: {
+            account: ACCOUNT,
+            server: 'PUPrime-Demo',
+            symbol: 'XAUUSD.p',
+            timeframe: 'M15',
+            mt5_path: 'C:\\MT5_FFT\\terminal64.exe',
+            magic: 770115,
+          },
+          version: {
+            strategy_package: p[1],
+            strategy_class: 'C',
+            strategy_version: 1,
+            strategy_source_hash: 'abc',
+            promoted_commit: 'c0ffee',
+            promoted_at: '2026-08-05',
+          },
+          runtime: [],
+          strategy: [],
+          notes: {},
+          readme: null,
+        },
+      })
+    }
     // The page reads this for the Users tab's count chip, on every tab. Routed so the count is a
     // fixture rather than whoever happens to be in `users.json` on this machine.
     if (u.pathname === '/api/bots/users') {
@@ -372,46 +404,30 @@ test('clearing the cap sends null, which means uncapped rather than unchanged', 
   await expect.poll(() => sent).toEqual({ risk_cap_pct: null, deploy: true })
 })
 
-test('the fleet groups a stacked account under ONE header', async ({ page }) => {
-  // Aaron's ask: from the page that shows which bots are running, a stacked account has to be
-  // visible without opening another tab.
-  //
-  // 🔴 **This asserted a per-ROW chip until 2026-09-04 and expected TWO of them** — one fact
-  // about one account, rendered once per bot. The rows are grouped under an account header now,
-  // so the claim is made ONCE and names how many bots share the balance. Expecting 2 was the
-  // duplication itself, written down as a requirement.
-  //
-  // MUTATION: group by bot key instead of account → two headers of one bot each, and the count
-  // of 1 goes red.
-  await mock(page, STACKED)
-  await page.goto('/bots?tab=fleet')
-  await expect(page.getByTestId('account-group-stacked')).toHaveCount(1)
-  await expect(page.getByTestId('account-group-stacked')).toContainText('2 bots')
-})
+// 🔴 **DELETED 2026-09-06: *the fleet groups a stacked account under ONE header* and *a
+// single-bot account shows no stacked claim anywhere*.** Both were about a `Stacked · 2` chip,
+// and that chip went on 2026-09-05 with the rest of the per-row counts — Aaron: *"I could see two
+// is trading… I could see two bots"*, a number restating what the rows already say.
+//
+// ⚠ **The PROPERTY under them is live and is covered above, not lost**: *two bots on one account
+// render as ONE card* asserts the same thing directly (one card, and the drawer naming both bots
+// on that balance), which is the never-sum-a-shared-balance rule these were really protecting.
+// ⚠ **The second one had become vacuous rather than merely redundant** — it asserted a count of
+// ZERO for two testids nothing renders, so it passed against any page at all. **A test whose
+// subject no longer exists does not fail; it goes quietly green and reads as coverage.**
 
-test('an old ?tab=monitor link still lands on Fleet', async ({ page }) => {
-  // The four tabs became two on 2026-09-04. `?tab=monitor` is in browser history and in links
-  // this app built for itself, and an unrecognised tab silently fell through to the first one —
-  // which happens to be right here, and would not be if the order ever changed.
-  // MUTATION: drop the alias from `readTab` and this still passes by luck; drop the default and
-  // it goes red. Kept for the LINK, which is the thing a reader clicks.
+test('an old ?tab=monitor link still lands on the fleet', async ({ page }) => {
+  // The four tabs became two on 2026-09-04 and then none on 2026-09-05. `?tab=monitor` is in
+  // browser history and in links this app built for itself, so it has to land somewhere usable.
+  // MUTATION: make an unrecognised parameter render an empty state → red.
+  //
+  // ⚠ It asserts the LIST, not a tab: the page ignores the parameter entirely now, and asserting
+  // on a tab that no longer exists is what left a dozen checks in this file pointed at a page
+  // nobody has.
   await mock(page, STACKED)
   await page.goto('/bots?tab=monitor')
-  await expect(page.getByTestId('account-group-stacked')).toHaveCount(1)
-})
-
-test('a single-bot account shows no stacked claim anywhere', async ({ page }) => {
-  // It must not become decoration. MUTATION: render it whenever the group exists → red.
-  await mock(page, [
-    group({
-      bots: [bot('sos_fade', 'SOS Fade', 770115, 10)],
-      risk_cap_pct: 10,
-    }),
-  ])
-  await page.goto('/bots?tab=fleet')
-  await expect(page.getByTestId('account-group-stacked')).toHaveCount(0)
-  await page.goto('/bots?tab=setup')
-  await expect(page.getByTestId('stacked-chip')).toHaveCount(0)
+  await expect(page.getByTestId('account-card')).toHaveCount(1)
+  await expect(page.getByTestId('bot-row')).toHaveCount(2)
 })
 
 // ── add / remove, the bench, and the version pill (2026-08-09) ────────────────
@@ -428,25 +444,48 @@ const BENCHED = group({
   bots: [bot('b_leg', 'B-LEG', 770116, null)],
 })
 
-test('a benched bot gets its own card, not the unreadable one', async ({ page }) => {
-  // MUTATION: render `kind: 'bench'` and `kind: 'unknown'` with one heading → red.
-  // One is a state somebody chose and the other is a broken file; the same card would give a
-  // broken config the same controls as a resting bot.
+test('a benched bot is listed apart from one whose config could not be READ', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06 and this was a live defect, not test rot. The rail this used to
+  // assert on went with the tabs — but so did the DISTINCTION: the page derived its no-account
+  // list from the VPS snapshot alone, so a bot whose instance config could not be parsed landed
+  // under *trades nothing until you give it one*. That instruction cannot fix a broken file, and
+  // it is the one sentence the reader acts on.
+  // MUTATION: fold the unreadable bots back into the unassigned list → the broken row disappears
+  // and this goes red on both counts.
+  //
+  // One is a state somebody chose; the other is a fault. The grouping has always kept them apart
+  // — its own type says so — and this page was the only place merging them again.
+  await mock(page, [
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    group({
+      account: null,
+      server: '',
+      kind: 'unknown',
+      bots: [bot('b_leg', 'B-LEG', 770116, null)],
+    }),
+  ])
+  await page.goto('/bots')
+
+  const broken = page.getByTestId('bot-row-broken')
+  await expect(broken).toHaveCount(1)
+  await expect(broken).toContainText('B-LEG')
+  // …and it is NOT offered the control that reads the very file that cannot be read.
+  await expect(broken.getByTestId('configure-bot')).toHaveCount(0)
+  // The benched list is empty here, so nothing tells the reader to give this bot an account.
+  await expect(page.getByText('Not on an account')).toHaveCount(0)
+})
+
+test('a benched bot IS told to be given an account', async ({ page }) => {
+  // The positive control for the check above — without it a page that simply dropped both lists
+  // would pass, because an absent row and a correctly-filed one are the same DOM.
   await mock(page, [
     group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
     BENCHED,
   ])
   await page.goto('/bots')
-  // ⚠ Scoped to the RAIL and then to the DETAIL, because since the tab became master–detail
-  // (2026-08-12) `data-kind` is on both — a bare `[data-kind="bench"]` matches two elements and
-  // the strict-mode violation reads as a missing card rather than a duplicated one.
-  const railBench = page.locator('[data-testid="account-rail-item"][data-kind="bench"]')
-  await expect(railBench).toHaveCount(1)
-  await railBench.click()
-  const card = page.locator('[data-testid="account-card"][data-kind="bench"]')
-  await expect(card).toContainText('Not on an account')
-  // No cap editor on the bench: there is no account for a ceiling to describe.
-  await expect(card.getByTestId('cap-save')).toHaveCount(0)
+
+  await expect(page.getByText('Not on an account')).toBeVisible()
+  await expect(page.getByTestId('bot-row-broken')).toHaveCount(0)
 })
 
 test('a benched bot is offered as something to add, and says where it comes from', async ({
@@ -458,8 +497,10 @@ test('a benched bot is offered as something to add, and says where it comes from
     group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
     BENCHED,
   ])
-  await page.goto('/bots')
-  await page.locator('[data-kind="account"] [data-testid="add-bot"]').click()
+  // ⚠ Re-pointed 2026-09-06: the control moved from a card in a rail into the ACCOUNT drawer,
+  // and the candidate list itself (`AddBotRow`) is the same component it always was.
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
   await expect(page.getByTestId('add-b_leg')).toBeVisible()
   await expect(page.getByTestId('add-b_leg')).toContainText('not on an account')
 })
@@ -489,8 +530,9 @@ test('adding a bot sends its key and the account it is joining', async ({ page }
     return route.fallback()
   })
 
-  await page.goto('/bots')
-  await page.locator('[data-kind="account"] [data-testid="add-bot"]').click()
+  // ⚠ Re-pointed 2026-09-06 with its sibling above: the control moved into the ACCOUNT drawer.
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
   await page.getByTestId('add-b_leg').click()
   await expect.poll(() => sent).toEqual({ account: ACCOUNT, deploy: true })
   // Never "added and trading" — a bot reads its account at startup.
@@ -521,27 +563,33 @@ test('removing a bot sends null, which is the bench rather than a delete', async
     return route.fallback()
   })
 
-  await page.goto('/bots')
-  await page.getByTestId('remove-b_leg').click()
+  // ⚠ Re-pointed 2026-09-06. The account card's own Remove button went with the tab collapse;
+  // taking a bot OFF an account is the same write from the other side, and it is now the last
+  // option in the bot's own account selector. **The RULE is untouched and is the whole check:
+  // `null` is the only spelling of "on no account" — `0` is not an account, and omitting the
+  // field reads to the backend as no change at all.**
+  await openBot(page, 'b_leg')
+  await page.getByTestId('move-b_leg').selectOption('')
   await expect.poll(() => sent).toEqual({ account: null, deploy: true })
   await expect(page.getByText(/will not start until it is on one again/i)).toBeVisible()
 })
 
-test('a RUNNING bot cannot be removed from its account', async ({ page }) => {
-  // MUTATION: drop `running` from the button's `disabled` → red. Its config was read at startup,
-  // so the write cannot reach the live process: the page would show it under one account while
-  // it went on trading another.
-  await mock(page, STACKED) // the snapshot mock has sos_fade RUNNING, b_leg STOPPED
-  await page.goto('/bots')
-  await expect(page.getByTestId('remove-sos_fade')).toBeDisabled()
-  await expect(page.getByTestId('remove-b_leg')).toBeEnabled()
+test('a STOPPED bot may be moved — the positive control for the running guard', async ({
+  page,
+}) => {
+  // Without this, *a RUNNING bot cannot be moved* passes against a page that disabled the control
+  // for everybody. An absent action and a withheld one are the same DOM, and this file has now
+  // recorded that trap six times.
+  await mock(page, STACKED, [reg(), reg({ account: OTHER, label: 'ECN' })])
+  await openBot(page, 'b_leg') // the snapshot mock has sos_fade RUNNING, b_leg STOPPED
+  await expect(page.getByTestId('move-b_leg')).toBeEnabled()
 })
 
 test('an account with nothing left to add says so instead of an empty list', async ({ page }) => {
   // MUTATION: render the picker unconditionally → an empty box with no explanation, which reads
   // as a broken control rather than as an answer.
   await mock(page, STACKED)
-  await page.goto('/bots')
+  await openAccount(page)
   await page.getByTestId('add-bot').click()
   await expect(page.getByTestId('no-candidates')).toContainText('already on this account')
 })
@@ -597,11 +645,17 @@ test('a bot whose version cannot be worked out says so rather than showing a num
   )
 })
 
-test('the monitor page carries the same version pill', async ({ page }) => {
-  // Aaron asked for it on both pages, from one component, so the two cannot disagree.
+test('every bot row carries the same version pill, under a labelled column', async ({ page }) => {
+  // Aaron asked for it wherever a bot is listed, from ONE component, so two surfaces cannot
+  // disagree about which version is deployed.
+  // MUTATION: drop the pill from the row → the count goes to 0, red.
+  //
+  // ⚠ Re-pointed 2026-09-06: the rows were a `<table>` and are a grid now, so the heading is a
+  // `<span>` — the COLUMN still has to be labelled, because four numeric columns with no heading
+  // means the reader decodes them from their own shape.
   await mock(page, STACKED)
-  await page.goto('/bots?tab=monitor')
-  await expect(page.locator('th', { hasText: /^Version$/ })).toHaveCount(1)
+  await page.goto('/bots')
+  await expect(page.getByText('Version', { exact: true })).toHaveCount(1)
   await expect(page.locator('[data-testid="version-pill"]')).toHaveCount(2)
 })
 
@@ -611,14 +665,16 @@ test('the monitor page carries the same version pill', async ({ page }) => {
 // grouping is DERIVED from instance configs, which is right, and it could therefore only ever see
 // accounts a bot was already on — so the first bot onto a new account had nothing to be moved to.
 
-test('a registered account with NO bots is a card you can add one to', async ({ page }) => {
-  // MUTATION: drop `registered` from the card list in AccountsTab (render only `groups`) → red.
-  // This is the whole point of the registry; before it, this account did not exist on the page.
+test('a registered account with NO bots can still be OPENED and added to', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06, and it is the registry's whole purpose re-broken. The drawer
+  // rendered only for an account in the GROUPING — which is derived from the instance configs and
+  // therefore holds only accounts a bot is ALREADY on — so the one account that most needs the
+  // Add bot control could not be opened at all.
+  // MUTATION: require the grouping again → the drawer never renders and this goes red.
   await mock(page, [], [reg()])
-  await page.goto('/bots')
+  await openAccount(page)
 
-  await expect(page.getByTestId('account-card')).toHaveCount(1)
-  await expect(page.getByTestId('no-bots')).toContainText('No bot trades this account yet')
+  await expect(page.getByTestId('no-bots')).toContainText('trades nothing')
   await expect(page.getByTestId('add-bot')).toBeEnabled()
 })
 
@@ -638,11 +694,15 @@ test('an account with no terminal cannot be added to, and says why', async ({ pa
       }),
     ]
   )
-  await page.goto('/bots')
+  // 🔴 WATCHED RED on 2026-09-06: neither the chip nor the guard survived the tab collapse, so
+  // the drawer offered Add bot on an account no terminal is logged into.
+  await openAccount(page)
 
   await expect(page.getByTestId('no-terminal')).toBeVisible()
   await expect(page.getByTestId('add-bot')).toBeDisabled()
-  await expect(page.getByTestId('no-bots')).toContainText('Log a terminal into it')
+  // ⚠ The REASON, not merely the disabled state — a greyed control with no explanation reads as
+  // a rendering fault, and the reader cannot tell it from an account that is simply busy.
+  await expect(page.getByTestId('no-terminal')).toHaveAttribute('title', /no terminal/)
 })
 
 test('a password the VPS could not be asked about reads UNKNOWN, never "no password"', async ({
@@ -655,12 +715,15 @@ test('a password the VPS could not be asked about reads UNKNOWN, never "no passw
   // of "Password unknown" alone would pass against a chip that ALSO said no password somewhere.
   // Rendering an unanswered question as a missing credential sends the reader to re-enter one
   // that is already there, and refuses a move that would have worked.
+  //
+  // 🔴 WATCHED RED on 2026-09-06 — the chip went off screen entirely with the tab collapse, so
+  // all three answers rendered as nothing at all, which reads as *no problem here*.
   await mock(page, [], [reg({ has_password: null })])
-  await page.goto('/bots')
+  await openAccount(page)
 
   const chip = page.getByTestId('password-chip')
-  await expect(chip).toContainText('Password unknown')
-  await expect(chip).not.toContainText('No password')
+  await expect(chip).toContainText(/password unknown/i)
+  await expect(chip).not.toContainText(/no password/i)
 })
 
 test('an account with no stored password says so before you try to move a bot onto it', async ({
@@ -669,8 +732,8 @@ test('an account with no stored password says so before you try to move a bot on
   // The backend refuses the move (409) on a DEFINITE no; this is the same fact stated before
   // the click rather than after it.
   await mock(page, [], [reg({ has_password: false })])
-  await page.goto('/bots')
-  await expect(page.getByTestId('password-chip')).toContainText('No password')
+  await openAccount(page)
+  await expect(page.getByTestId('password-chip')).toContainText(/no password/i)
 })
 
 test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move forgot', async ({
@@ -732,7 +795,7 @@ test('an account a bot still trades cannot be unregistered', async ({ page }) =>
   // MUTATION: drop the `group.bots.length > 0` guard → the button enables and this goes red.
   // The bot would go on trading an account this page can no longer describe.
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
-  await page.goto('/bots')
+  await openAccount(page)
   await expect(page.getByTestId(`unregister-${ACCOUNT}`)).toBeDisabled()
 })
 
@@ -740,54 +803,70 @@ test('an account nobody registered still renders, with the gap named', async ({ 
   // Backwards compatibility, and it is the half that keeps the registry from being a wall: the
   // account still works, and the reader is told what this page cannot do with it.
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [])
-  await page.goto('/bots')
+  await openAccount(page)
   await expect(page.getByTestId('unregistered')).toBeVisible()
+  // ⚠ And NO password chip, because nothing was ever asked about a login nobody registered —
+  // a chip reading "no password" there would be a claim off a measurement that was never taken.
   await expect(page.getByTestId('password-chip')).toHaveCount(0)
 })
 
+// ── Moving a bot between accounts ─────────────────────────────────────────────
+//
+// 🔴 **THE GESTURE MOVED AND THE RULES DID NOT.** Dragging a row onto an account in a rail, and
+// the Move menu beside it, both went with the tab collapse on 2026-09-05 — the page is one list
+// of accounts plus a drawer now, and the single control that moves a bot lives in the BOT's own
+// drawer. What these checks are about is unchanged: which account a bot is moved to, and the two
+// refusals that stop a move nobody could act on.
+//
+// 🔴 **RE-POINTED RATHER THAN DELETED, and on 2026-09-06 every one of them turned out to be
+// reporting a LIVE DEFECT.** The control the collapse left behind had no running guard, offered
+// an account with no terminal on the box as an ordinary choice, and could not see a registered
+// account no bot was on yet. **Deleting them as rot would have deleted the evidence** — the same
+// thing that had already happened one screen over to the four account safety warnings.
+
+const OTHER = 700152905
+const NO_TERM = 700119432
+const EMPTY = 700104441
+
 /**
- * Drag a bot's row out of the detail pane onto another account in the RAIL.
+ * Open one bot's drawer — where the version, the risk and the account selector now live.
  *
- * ⚠ **The rail is the drop target since the tab became master–detail (2026-08-12), and it had to
- * be**: only one account's card is on screen at a time, so a card-to-card drag can no longer
- * reach a destination. The rail is the one surface that always shows every account.
- *
- * ⚠ **It fires the SAME mutation Add bot and the Move menu fire**, so what is checked here is the
- * GESTURE reaching that mutation with the right account — not a second write path, which is
- * exactly what this must never grow into.
+ * ⚠ **Straight to `?bot=` rather than clicking the row**, for `openAccount`'s reason: a check
+ * about MOVING a bot must not also depend on the row's markup, or a layout change reddens a
+ * dozen checks that are not about layout.
  */
-async function dragBotOnto(page: Page, botKey: string, railIndex: number) {
-  // ⚠ **Wait for BOTH ends before dispatching.** `page.evaluate` runs the moment the document
-  // exists, so a `querySelector(...)!` on a row React has not rendered yet throws — and that
-  // failure is a null-reference inside the harness, which reads exactly like the drop handler
-  // being missing. It passed alone and failed in a full run, i.e. purely on how loaded the box was.
-  await page.getByTestId(`bot-row-${botKey}`).waitFor()
-  await page.getByTestId('account-rail-item').nth(railIndex).waitFor()
-  // HTML5 drag-and-drop is dispatched by hand rather than with `dragTo`: Playwright's helper is
-  // unreliable across the mouse-move heuristics, and what this check is about is the DATA the drop
-  // carries, which the manual events model exactly.
-  await page.evaluate(
-    ({ botKey, railIndex }) => {
-      const row = document.querySelector(`[data-testid="bot-row-${botKey}"]`)!
-      const target = document.querySelectorAll('[data-testid="account-rail-item"]')[railIndex]!
-      const dt = new DataTransfer()
-      row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
-      target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
-      target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }))
-    },
-    { botKey, railIndex }
-  )
+async function openBot(page: Page, botKey: string) {
+  await page.goto(`/bots?bot=${botKey}`)
+  await expect(page.getByTestId(`move-${botKey}`)).toBeVisible()
 }
 
-test('dragging a bot onto another account moves it there', async ({ page }) => {
-  // MUTATION: drop the `onDrop` handler from the card → no request is made and this goes red.
-  const OTHER = 700152905
-  let moved: { url: string; body: Record<string, unknown> } | null = null
+test('a RUNNING bot cannot be moved to another account', async ({ page }) => {
+  // 🔴 WATCHED RED against the page as it stood on 2026-09-06: the selector was offered
+  // unconditionally, so moving a live bot took the click and came back as an error toast from
+  // the server. The server does refuse it — but a page offering a control the box will reject is
+  // teaching the reader that its own controls mean nothing.
+  // MUTATION: drop `running` from the select's `disabled` → it enables and this goes red.
+  //
+  // It read its account at startup, so the write cannot reach the running process: the page would
+  // show it under the new account while it went on trading the old one, which is a screen lying
+  // about a live position rather than a stale setting.
+  await mock(
+    page,
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
+    [reg(), reg({ account: OTHER, label: 'ECN' })]
+  )
+  await openBot(page, 'sos_fade')
+  await expect(page.getByTestId('move-sos_fade')).toBeDisabled()
+})
 
+test('moving a bot names the account it is joining', async ({ page }) => {
+  // MUTATION: send the option's label instead of its value → the body carries a string and this
+  // goes red on the account.
+  let moved: { url: string; body: Record<string, unknown> } | null = null
   await mock(
     page,
     [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
-    [reg({ account: ACCOUNT }), reg({ account: OTHER, label: 'ECN' })]
+    [reg(), reg({ account: OTHER, label: 'ECN' })]
   )
   await page.route('**/api/bots/*/account', async (route) => {
     moved = { url: route.request().url(), body: route.request().postDataJSON() }
@@ -803,140 +882,28 @@ test('dragging a bot onto another account moves it there', async ({ page }) => {
     })
   })
 
-  await page.goto('/bots')
-  await expect(page.getByTestId('account-rail-item')).toHaveCount(2)
-  await dragBotOnto(page, 'b_leg', 1)
+  await openBot(page, 'b_leg')
+  await page.getByTestId('move-b_leg').selectOption(String(OTHER))
 
   await expect.poll(() => moved).not.toBeNull()
   expect(moved!.url).toContain('/bots/b_leg/account')
   expect(moved!.body.account).toBe(OTHER)
 })
 
-test('a RUNNING bot cannot be dragged at all', async ({ page }) => {
-  // MUTATION: make `draggable` unconditional → the attribute reads "true" and this goes red.
+test('an account with no terminal is offered DISABLED, with the reason on it', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06 — every account was offered as an ordinary enabled choice.
+  // MUTATION: drop `disabled={!d.assignable}` from the option → red.
   //
-  // It read its config at startup, so a write cannot reach the live process — the page would show
-  // it under one account while it went on trading another. Same guard as the Remove button, and
-  // the backend refuses it with a 409 regardless; this is it stated before the gesture.
-  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
-  await page.goto('/bots')
-  await expect(page.getByTestId('bot-row-sos_fade')).toHaveAttribute('draggable', 'false')
-})
-
-test('an account with no terminal refuses the drop rather than reporting it afterwards', async ({
-  page,
-}) => {
-  // MUTATION: drop the `registration?.assignable === false` early return in onDragOver → the
-  // card highlights and this goes red.
-  //
-  // ⚠ Only `preventDefault` on dragover makes an element a valid drop target, so declining to
-  // call it IS the refusal — the cursor says no while the row is still being held. Asserting the
-  // highlight is what makes that observable: `data-dropping` is set in the same handler.
-  const OTHER = 700152905
+  // ⚠ Hiding it would make an account that EXISTS look like one that does not, and the write
+  // would otherwise be committed, pushed and pulled before failing at connect() with a message
+  // about credentials — pointing whoever reads it at the password rather than at the missing
+  // terminal.
   await mock(
     page,
     [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
     [
-      reg({ account: ACCOUNT }),
-      reg({
-        account: OTHER,
-        mt5_path: '',
-        assignable: false,
-        unassignable_reason: 'no terminal on the VPS logged into it',
-      }),
-    ]
-  )
-
-  await page.goto('/bots')
-  // Same race as `dragBotOnto` — see the note there.
-  await page.getByTestId('bot-row-b_leg').waitFor()
-  await page.getByTestId('account-rail-item').nth(1).waitFor()
-  await page.evaluate(() => {
-    const row = document.querySelector('[data-testid="bot-row-b_leg"]')!
-    const target = document.querySelectorAll('[data-testid="account-rail-item"]')[1]!
-    const dt = new DataTransfer()
-    row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
-    target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
-  })
-
-  const rail = page.getByTestId('account-rail-item')
-  await expect(rail.nth(1)).not.toHaveAttribute('data-dropping', 'true')
-})
-
-// ── The rail, and the Move menu that makes a move discoverable ─────────────────
-//
-// 🔴 Added 2026-08-12 with the master–detail rebuild. Aaron, off the screen: *"the more accounts I
-// add, it's just gonna keep scrolling up and down… I can't tell easily what bot is trading on what
-// account… I don't see an easy way to add bots or remove bots from accounts."*
-
-test('the rail lists every account and only ONE detail pane is on screen', async ({ page }) => {
-  // MUTATION: render the entries as a stack of cards again (drop the rail/detail split) → the
-  // detail-pane count goes to 3 and this goes red. One pane is the property that keeps the page a
-  // fixed height however many accounts are registered.
-  await mock(
-    page,
-    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)] })],
-    [
-      reg({ account: ACCOUNT, broker: 'PU Prime', tier: 'Standard' }),
-      reg({ account: 700152905, broker: 'PU Prime', tier: 'ECN' }),
-      reg({ account: 700119432, broker: 'PU Prime', tier: 'Prime' }),
-    ]
-  )
-  await page.goto('/bots')
-
-  await expect(page.getByTestId('account-rail-item')).toHaveCount(3)
-  await expect(page.getByTestId('account-card')).toHaveCount(1)
-
-  // ⚠ Identity is asserted on the RAIL, because that is what the rebuild was for: broker, then
-  // number, then tier, in that order, so an account can be picked out of a list of them.
-  const first = page.getByTestId('account-rail-item').first()
-  await expect(first).toContainText('PU Prime')
-  await expect(first).toContainText(`#${ACCOUNT}`)
-  await expect(first).toContainText('Standard')
-})
-
-test('picking an account in the rail swaps the detail pane and survives a reload', async ({
-  page,
-}) => {
-  // MUTATION: hold the selection in `useState` instead of `?account=` → the reload lands back on
-  // the first account and this goes red. A selection that dies on refresh is one the reader has
-  // to re-make every time they come back to the tab.
-  await mock(
-    page,
-    [],
-    [
-      reg({ account: ACCOUNT, broker: 'PU Prime', tier: 'Standard' }),
-      reg({ account: 700152905, broker: 'Vantage', tier: 'ECN' }),
-    ]
-  )
-  await page.goto('/bots')
-
-  await expect(page.getByTestId('account-card')).toContainText(`#${ACCOUNT}`)
-  await page.getByTestId('account-rail-item').nth(1).click()
-  await expect(page.getByTestId('account-card')).toContainText('#700152905')
-  await expect(page.getByTestId('account-card')).toContainText('Vantage')
-
-  await page.reload()
-  await expect(page.getByTestId('account-card')).toContainText('#700152905')
-})
-
-test('the Move menu moves a bot, and lists an unassignable account DISABLED', async ({ page }) => {
-  // MUTATION: drop the `<select>` and leave drag as the only route → red. Dragging is the fast
-  // path and nothing on screen advertises it; a move has to be reachable with a trackpad.
-  //
-  // ⚠ The disabled option is the second half and is not decoration: hiding an account with no
-  // terminal makes one that exists look like one that does not, which is the same rule the Add bot
-  // list follows for a running bot.
-  const OTHER = 700152905
-  const NO_TERM = 700119432
-  let moved: Record<string, unknown> | null = null
-
-  await mock(
-    page,
-    [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
-    [
-      reg({ account: ACCOUNT }),
-      reg({ account: OTHER, broker: 'PU Prime', tier: 'ECN' }),
+      reg(),
+      reg({ account: OTHER, label: 'ECN' }),
       reg({
         account: NO_TERM,
         mt5_path: '',
@@ -945,71 +912,67 @@ test('the Move menu moves a bot, and lists an unassignable account DISABLED', as
       }),
     ]
   )
-  await page.route('**/api/bots/*/account', async (route) => {
-    moved = route.request().postDataJSON()
-    return route.fulfill({
-      json: {
-        status: 'ok',
-        changed: true,
-        bot: 'b_leg',
-        account: OTHER,
-        restart_required: true,
-        notes: [],
-      },
-    })
-  })
+  await openBot(page, 'b_leg')
 
-  await page.goto('/bots')
   const menu = page.getByTestId('move-b_leg')
   await expect(menu.locator(`option[value="${NO_TERM}"]`)).toBeDisabled()
-  await expect(menu.locator(`option[value="${ACCOUNT}"]`)).toHaveCount(0) // it is already here
-
-  await menu.selectOption(String(OTHER))
-  await expect.poll(() => moved).toEqual({ account: OTHER, deploy: true })
+  // ⚠ The REASON, not merely the disabled attribute — a greyed row with no explanation reads as
+  // a rendering fault, and the reader cannot tell it from an account that is simply busy.
+  await expect(menu.locator(`option[value="${NO_TERM}"]`)).toContainText('no terminal')
+  // …and an assignable one beside it is still offered, or the check would pass against a control
+  // that disabled everything.
+  await expect(menu.locator(`option[value="${OTHER}"]`)).not.toBeDisabled()
 })
 
-test('a RUNNING bot cannot be moved from the menu either', async ({ page }) => {
-  // MUTATION: drop `running` from the select's `disabled` → it enables and this goes red.
-  // The Remove button beside it has always been guarded; a second control that is not is a way
-  // round the guard rather than a convenience.
+test('an account nobody is on YET is still offered as a destination', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06, and this is the defect the registry query was written to close
+  // in the first place. The destinations were read off the GROUPING, which is derived from the
+  // instance configs — so it can only see accounts some bot is ALREADY on, and the first bot onto
+  // a newly registered account was not offered here at all. That move had to be made by
+  // hand-editing a config on the trading box.
+  // MUTATION: read the destinations off the grouping again → the empty account disappears, red.
   await mock(
     page,
-    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
-    [reg({ account: ACCOUNT }), reg({ account: 700152905 })]
+    [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
+    [reg(), reg({ account: EMPTY, label: 'Standard', broker: 'PU Prime' })]
   )
-  await page.goto('/bots')
-  await expect(page.getByTestId('move-sos_fade')).toBeDisabled()
+  await openBot(page, 'b_leg')
+  await expect(page.getByTestId('move-b_leg').locator(`option[value="${EMPTY}"]`)).toHaveCount(1)
 })
 
-test('the tab chips carry the counts, so "how many accounts" is answered without opening the tab', async ({
-  page,
-}) => {
-  // MUTATION: return `registry.length` alone from `useAccountCount` → the chip reads 2 and this
-  // goes red on the unregistered account nobody counted.
-  // The fixture has to carry an UNREGISTERED account or the mutation cannot bite — two registered
-  // rows count 2 whichever way the hook is written.
+// ── The page's own state, and the three-state rule on every row ───────────────
+
+test('the account you opened survives a reload', async ({ page }) => {
+  // MUTATION: hold the selection in `useState` instead of `?account=` → the reload closes the
+  // drawer and this goes red. A selection that dies on refresh is one the reader re-makes every
+  // time they come back to the page.
+  //
+  // ⚠ The rail this used to assert on is gone; the PROPERTY it was protecting is not, and it is
+  // the same one `openAccount` relies on for every check in this file.
   await mock(
     page,
     [
       group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] }),
-      group({ account: 700152905, bots: [] }),
-    ], // a bot names it, nobody registered it
-    [reg({ account: ACCOUNT }), reg({ account: 700119432 })]
+      group({ account: OTHER, bots: [bot('b_leg', 'B-LEG', 770116, null)] }),
+    ],
+    [reg(), reg({ account: OTHER, label: 'ECN', broker: 'Vantage' })]
   )
+  await openAccount(page, OTHER)
 
-  await page.goto('/bots?tab=monitor')
-  // Read from the MONITOR tab on purpose: the whole point of a count on the chip is that it is
-  // readable from somewhere else.
-  await expect(page.getByTestId('tab-count-accounts')).toHaveText('3')
-  await expect(page.getByTestId('tab-count-users')).toHaveText('2')
+  const drawer = page.getByRole('complementary', { name: 'Account settings' })
+  await expect(drawer).toContainText(String(OTHER))
+  await page.reload()
+  await expect(drawer).toContainText(String(OTHER))
 })
 
-test('a bot row opens that bot on Configure — the tab that answers a different question', async ({
+test('a bot row opens that bot, on the panel that answers a different question', async ({
   page,
 }) => {
   // MUTATION: drop the Configure button from the row → this goes red on the locator.
-  // The two tabs are one journey: this one decides WHICH account, that one decides how the bot
-  // trades on it, and nothing on the page said so before.
+  //
+  // The two panels are one journey: the ACCOUNT drawer decides which balance a bot spends, this
+  // one decides how it trades there. ⚠ It asserts `?bot=` and NOT `?tab=configure` — the tabs
+  // went on 2026-09-05, and a check still naming one would be describing a page nobody has.
   await mock(
     page,
     [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
@@ -1017,48 +980,18 @@ test('a bot row opens that bot on Configure — the tab that answers a different
   )
   await page.goto('/bots')
 
-  await page.getByTestId('configure-sos_fade').click()
-  await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('configure')
-  expect(new URL(page.url()).searchParams.get('bot')).toBe('sos_fade')
+  await page.getByTestId('configure-bot').first().click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('bot')).toBe('sos_fade')
 })
 
-test('the rail and the detail pane are the same height and both reach the bottom of the page', async ({
-  page,
-}) => {
-  // MUTATION: drop the measured height (`style={undefined}` on the shell) → the panes fall back
-  // to their own content and the two differ by 216px, red on the first assertion.
-  // ⚠ `items-stretch` alone is NOT what makes this pass and the comment must not claim it is —
-  // swapping it for `items-start` leaves the check green, because the shell has an explicit height
-  // and each pane carries `h-full`. Measured, not reasoned about.
-  // Aaron: "make the site navigation where all the accounts are the height of the page. Also make
-  // the details on the right the same height of the page."
-  await mock(
-    page,
-    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
-    [reg({ account: ACCOUNT })]
-  )
-  await page.goto('/bots')
-  await expect(page.getByTestId('account-card')).toBeVisible()
-
-  const rail = (await page
-    .getByTestId('account-rail-item')
-    .first()
-    .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]')
-    .boundingBox())!
-  const card = (await page.getByTestId('account-card').boundingBox())!
-  const view = page.viewportSize()!
-
-  expect(Math.abs(rail.height - card.height)).toBeLessThan(2)
-  expect(Math.abs(rail.y - card.y)).toBeLessThan(2)
-  // …and the bottom edge is the bottom of the page, not wherever the content ended.
-  expect(view.height - (card.y + card.height)).toBeLessThan(40)
-})
-
-test('the Accounts tab renders while the VPS snapshot is still loading', async ({ page }) => {
-  // 🔴 WATCHED RED against HEAD: the Monitor tab's loading skeleton was ungated, so opening
-  // Accounts drew ~400px of fake Monitor cards above it until the VPS answered — and the accounts
-  // list needs no VPS at all. The observable is where the card SITS, because the skeleton has no
-  // testid and pushing the pane down is the whole damage.
+test('the accounts render while the VPS snapshot is still unanswered', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06, and it is rule 1 on a whole page rather than on one cell. A
+  // row was the SNAPSHOT row and was dropped when the snapshot did not carry it — so an account
+  // whose bots the box had not answered for did not render at all, and while the trading box was
+  // unreachable this page showed NO ACCOUNTS WHATSOEVER. The accounts list needs no VPS: it is
+  // read from the instance configs, and reporting nothing because a different source is quiet is
+  // the page telling you there are no accounts.
+  // MUTATION: drop the account again when no bot is in the snapshot → red on the card.
   let release: () => void = () => {}
   const held = new Promise<void>((r) => {
     release = r
@@ -1081,58 +1014,30 @@ test('the Accounts tab renders while the VPS snapshot is still loading', async (
   })
 
   await page.goto('/bots')
-  const card = page.getByTestId('account-card')
-  await expect(card).toBeVisible()
-  expect((await card.boundingBox())!.y).toBeLessThan(200)
-  // The State column says `—` while the snapshot is unanswered, which is the honest reading —
-  // never "Stopped".
-  await expect(page.getByTestId('bot-row-sos_fade')).toContainText('—')
+  await expect(page.getByTestId('account-card')).toBeVisible()
+  // …and the bot is on it, named off the config rather than off a reading nobody took.
+  await expect(page.getByTestId('account-card').getByTestId('bot-row')).toContainText('SOS Fade')
   release()
 })
 
-test('an account with a bot running says so in the rail and in the header', async ({ page }) => {
-  // Aaron: "make more obvious that the account has a bot running against it or not."
-  // The rail used to read `2 bots`, which is a fact about the CONFIG — two stopped bots and two
-  // trading ones rendered identically, so the list could not answer which account was live.
-  // MUTATION: have `RailLive` fall back to the old `${n} bots` line → red on the rail assertion;
-  // drop the `running-chip` block → red on the header one.
-  await mock(page, STACKED, [reg({ account: ACCOUNT })])
-  await page.goto('/bots')
-  await expect(page.getByTestId('account-card')).toBeVisible()
-
-  // One of the two fixture bots is RUNNING, so the count is a measurement rather than a state word.
-  await expect(page.getByTestId('account-rail-item').first()).toContainText('1 of 2 trading')
-  await expect(page.getByTestId('running-chip')).toContainText('Trading · 1 of 2')
-})
-
-test('an account whose bots are all stopped says nothing is running', async ({ page }) => {
-  // The other half, and it has to be stated rather than left as an absent green marker — a row
-  // with no live marker is indistinguishable from one whose account nobody could ask about.
-  // MUTATION: render the chip only when `live.state === true` → red, because the idle account
-  // then says nothing at all.
-  await mock(
-    page,
-    [group({ bots: [bot('b_leg', 'B-LEG', 770116, 10)] })],
-    [reg({ account: ACCOUNT })]
-  )
-  await page.goto('/bots')
-  await expect(page.getByTestId('running-chip')).toContainText('Nothing running')
-  await expect(page.getByTestId('account-rail-item').first()).toContainText('1 bot · idle')
-  // …and it must not claim the opposite anywhere on the pane.
-  await expect(page.getByTestId('account-card')).not.toContainText('Trading ·')
-})
-
-test('an unanswered VPS snapshot reads as unknown, never as idle', async ({ page }) => {
-  // The three-state rule, on the one reading this tab cannot take itself: `/bots/accounts` never
-  // touches the VPS, so the page renders in full while the box is unreachable — and calling that
-  // silence `idle` would report the fleet as stopped at exactly the moment nothing can be checked.
-  // MUTATION: collapse `state` to `running > 0` in `liveOf` → the chip reads "Nothing running"
-  // and the rail reads "idle", red on both.
+test('a bot the box has not answered for reads UNKNOWN, never stopped', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06. The dot was `running ? green : red`, so a bot the snapshot did
+  // not carry drew the same red as a bot measured to be stopped — a dead link to the VPS
+  // rendering as a fleet sitting quietly, which is this repo's oldest and most expensive rule.
+  // MUTATION: collapse the dot back to two states → red here, and the row offers Start again.
+  //
+  // ⚠ It asserts the CONTROLS too, and that half is the one that costs money: the old branch was
+  // `running ? stop/restart : start`, so a bot nobody had asked about was handed a START button —
+  // and starting a bot that is already trading is the one mistake this row can make.
   let release: () => void = () => {}
   const held = new Promise<void>((r) => {
     release = r
   })
-  await mock(page, STACKED, [reg({ account: ACCOUNT })])
+  await mock(
+    page,
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
+    [reg({ account: ACCOUNT })]
+  )
   await page.route('**/api/bots/snapshot', async (route) => {
     await held
     await route.fulfill({
@@ -1146,8 +1051,34 @@ test('an unanswered VPS snapshot reads as unknown, never as idle', async ({ page
   })
 
   await page.goto('/bots')
-  await expect(page.getByTestId('running-chip')).toContainText('Running state unknown')
-  await expect(page.getByTestId('account-rail-item').first()).toContainText('2 bots · unknown')
-  await expect(page.getByTestId('account-rail-item').first()).not.toContainText('idle')
+  // ⚠ Scoped to the CARD: the no-account list renders `bot-row` too, so a page-wide locator is
+  // a strict-mode violation that reads as a missing row rather than as two matches.
+  const row = page.getByTestId('account-card').getByTestId('bot-row')
+  await expect(row).toContainText('unknown')
+  // ⚠ `{ exact: true }`, and it is not tidiness: Playwright's title matcher is a CASE-INSENSITIVE
+  // SUBSTRING by default, so a bare 'Start' matches the uptime cell's own
+  // *"how long it has been running without a re**start**"* and this check failed against a page
+  // that was behaving perfectly. **A locator loose enough to match its own neighbours reports the
+  // opposite of the truth** — the mirror image of the vacuous-locator trap this file records.
+  await expect(row.getByTitle('Start', { exact: true })).toHaveCount(0)
   release()
+})
+
+test('a bot the box DID answer for still offers the control its state allows', async ({ page }) => {
+  // The positive control, and without it the check above passes against a row that offers nothing
+  // to anybody — an absent button and a withheld one are the same DOM. This file has now recorded
+  // that trap five times over.
+  await mock(
+    page,
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
+    [reg({ account: ACCOUNT })]
+  )
+  await page.goto('/bots')
+
+  // ⚠ Scoped to the CARD: the no-account list renders `bot-row` too, so a page-wide locator is
+  // a strict-mode violation that reads as a missing row rather than as two matches.
+  const row = page.getByTestId('account-card').getByTestId('bot-row')
+  // The fixture's snapshot has this one RUNNING, so Stop is what it may offer — never Start.
+  await expect(row.getByTitle('Stop', { exact: true })).toHaveCount(1)
+  await expect(row).not.toContainText('unknown')
 })

@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import { Play, Pencil, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useSetAccountRiskCap, useUnregisterAccount } from '@/hooks/useBots'
+import { useSetAccountRiskCap, useUnregisterAccount, useAssignBotAccount } from '@/hooks/useBots'
 import type { AccountEarnings, BotAccountGroup, BotAccountRegistration } from '@/types'
 import { AccountForm, AddBotRow, nameOf } from './AccountsTab'
 
@@ -42,6 +42,18 @@ export function AccountDrawer({
   const navigate = useNavigate()
   const setCap = useSetAccountRiskCap()
   const unregister = useUnregisterAccount()
+  /**
+   * 🔴 **THE ADD BOT PICKER WAS DEAD, AND IT LOOKED LIKE IT WORKED (fixed 2026-09-06).**
+   * `AddBotRow` does not write — it hands the chosen bot back through `onPick`, and the card that
+   * used to own it fired the move there. The drawer's `onPick` only closed the panel, so picking
+   * a bot dismissed the list and sent nothing. **The panel closing IS the feedback a reader gets
+   * from a successful pick**, so the control was indistinguishable from a working one.
+   *
+   * ⚠ **It fires the SAME mutation the bot drawer's account selector fires.** Three gestures, one
+   * write: a private write here would be a second place for the six-field move to drift out of
+   * step with what the backend does.
+   */
+  const assign = useAssignBotAccount()
 
   const account = group.account
   // ⚠ A disagreement is NOT a cap. Quoting one bot's number when they differ would put a figure
@@ -78,6 +90,66 @@ export function AccountDrawer({
               {account ?? '—'}
               {reg?.server ? ` · ${reg.server}` : ''}
               {reg?.kind ? ` · ${reg.kind}` : ''}
+            </div>
+            {/* 🔴 **THE THREE READINESS FACTS, restored 2026-09-06.** They lived on the account
+             *  card of a tab nothing renders any more, and each one answers *why did that move
+             *  fail* BEFORE somebody makes it — which is the only moment the answer is worth
+             *  anything. Without them the write is committed, pushed and pulled and then fails on
+             *  the box, and the error names the wrong thing. */}
+            <div className="flex items-center gap-[6px] flex-wrap mt-[7px]">
+              {/* ⚠ THREE states, and the third is the point: `has_password` is `boolean | null`
+               *  and `null` means the VPS could not be ASKED. Rendering that as *no password*
+               *  sends the reader to re-enter a credential that is already there, and refuses a
+               *  move that would have worked. Same rule as the terminal link and the bot dots. */}
+              {reg && (
+                <span
+                  data-testid="password-chip"
+                  title={
+                    reg.has_password === true
+                      ? 'A password for this login is stored on the trading box.'
+                      : reg.has_password === false
+                        ? 'No password is stored, so a bot moved here cannot log in. Edit the account to add one.'
+                        : 'The trading box could not be asked whether a password is stored — unknown, not missing.'
+                  }
+                  className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border cursor-default ${
+                    reg.has_password === true
+                      ? 'bg-bg-surface-2 text-text-secondary border-border-subtle'
+                      : reg.has_password === false
+                        ? 'bg-warn-muted text-warn-text border-warn/40'
+                        : 'bg-bg-surface-2 text-text-tertiary border-border-strong'
+                  }`}
+                >
+                  {reg.has_password === true
+                    ? 'password set'
+                    : reg.has_password === false
+                      ? 'no password'
+                      : 'password unknown'}
+                </span>
+              )}
+              {reg && !reg.assignable && (
+                <span
+                  data-testid="no-terminal"
+                  title={
+                    reg.unassignable_reason ||
+                    'This account cannot be assigned a bot from here — see the registry entry.'
+                  }
+                  className="inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
+                >
+                  no terminal
+                </span>
+              )}
+              {/* ⚠ An account a bot NAMES that nobody registered still works — the move reads its
+               *  peers — so this says what this page cannot do with it rather than hiding it.
+               *  Hiding it would be the gap the registry exists to end, in reverse. */}
+              {!reg && account !== null && (
+                <span
+                  data-testid="unregistered"
+                  title="A bot names this account but nobody registered it here, so this page has no broker, tier or symbol suffix for it. Add it to the registry to move bots onto it."
+                  className="inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary border border-border-strong cursor-default"
+                >
+                  not registered
+                </span>
+              )}
             </div>
           </div>
           <button
@@ -250,9 +322,20 @@ export function AccountDrawer({
                 Bots on this balance · {group.bots.length}
               </p>
               {account !== null && (
+                /* ⚠ **DISABLED with the reason on it, never hidden.** The backend refuses a move
+                 *  onto an account with no terminal on the box; this is that refusal stated
+                 *  BEFORE the click rather than as a 409 after the reader has committed to it. A
+                 *  control that vanishes reads as a feature that does not exist. */
                 <button
+                  data-testid="add-bot"
+                  disabled={reg ? !reg.assignable : false}
+                  title={
+                    reg && !reg.assignable
+                      ? `Cannot add a bot here — ${reg.unassignable_reason || 'this account is not assignable'}.`
+                      : 'Put a bot on this account'
+                  }
                   onClick={() => setAdding(true)}
-                  className="ml-auto text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+                  className="ml-auto text-[11px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   + Add bot
                 </button>
@@ -273,24 +356,42 @@ export function AccountDrawer({
               </div>
             )}
             {group.bots.length === 0 ? (
-              <p className="text-[11px] text-text-tertiary">
+              <p data-testid="no-bots" className="text-[11px] text-text-tertiary">
                 Nothing here yet — this account trades nothing.
               </p>
             ) : (
               <div className="flex flex-col gap-[5px]">
-                {group.bots.map((b) => (
-                  <div key={b.key} className="flex items-center gap-[8px] text-[12px]">
-                    <span
-                      className={`inline-block w-[6px] h-[6px] rounded-full shrink-0 ${
-                        statusByKey.get(b.key) === 'RUNNING' ? 'bg-pos' : 'bg-neg'
-                      }`}
-                    />
-                    <span className="text-text-primary">{b.display}</span>
-                    {typeof b.risk_pct === 'number' && (
-                      <span className="ml-auto font-mono text-text-tertiary">{b.risk_pct}%</span>
-                    )}
-                  </div>
-                ))}
+                {/* 🔴 **THREE states (2026-09-06).** Red meant *stopped* and was also what an
+                 *  UNANSWERED box drew, so a dead link to the VPS rendered as a list of quietly
+                 *  idle bots. The same collapse was on the account card's rows and is fixed the
+                 *  same way — unknown is hollow and says so on hover. */}
+                {group.bots.map((b) => {
+                  const st = statusByKey.get(b.key)
+                  return (
+                    <div key={b.key} className="flex items-center gap-[8px] text-[12px]">
+                      <span
+                        title={
+                          st === undefined
+                            ? 'The trading box has not answered for this bot — unknown, not stopped.'
+                            : st === 'RUNNING'
+                              ? 'Running'
+                              : 'Stopped'
+                        }
+                        className={`inline-block w-[6px] h-[6px] rounded-full shrink-0 ${
+                          st === undefined
+                            ? 'border border-text-tertiary'
+                            : st === 'RUNNING'
+                              ? 'bg-pos'
+                              : 'bg-neg'
+                        }`}
+                      />
+                      <span className="text-text-primary">{b.display}</span>
+                      {typeof b.risk_pct === 'number' && (
+                        <span className="ml-auto font-mono text-text-tertiary">{b.risk_pct}%</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
             {adding && account !== null && (
@@ -298,8 +399,11 @@ export function AccountDrawer({
                 <AddBotRow
                   account={account}
                   here={new Set(group.bots.map((b) => b.key))}
-                  busy={false}
-                  onPick={() => setAdding(false)}
+                  busy={assign.isPending}
+                  onPick={(key) => {
+                    assign.mutate({ botKey: key, account })
+                    setAdding(false)
+                  }}
                   onClose={() => setAdding(false)}
                   statusByKey={statusByKey}
                 />
@@ -324,7 +428,11 @@ export function AccountDrawer({
                   >
                     <Pencil size={12} /> Edit
                   </button>
+                  {/* ⚠ An account a bot still TRADES cannot be unregistered, and the refusal is
+                   *  stated on the control rather than after the click — dropping the registry row
+                   *  would leave a live bot pointed at a login this page can no longer describe. */}
                   <button
+                    data-testid={`unregister-${account}`}
                     disabled={group.bots.length > 0 || unregister.isPending}
                     title={
                       group.bots.length > 0

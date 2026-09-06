@@ -25,7 +25,12 @@
  * to hide the list it was opened from is a page you have navigated away from without meaning to.
  */
 import { Play, Square, RotateCcw, FileText, X } from 'lucide-react'
-import { useBotParams, useAssignBotAccount, useBotAccounts } from '@/hooks/useBots'
+import {
+  useBotParams,
+  useAssignBotAccount,
+  useBotAccounts,
+  useRegisteredAccounts,
+} from '@/hooks/useBots'
 import type { BotParamRow, BotParamsView, BotStatus, BotEarnings } from '@/types'
 import { VersionBanner, RuntimeEditor, ParamGroup } from './ConfigureTab'
 
@@ -79,15 +84,41 @@ export function BotDrawer({
 }) {
   const { data, isLoading, error } = useBotParams(bot.key)
   const { data: groups } = useBotAccounts()
+  const { data: registry } = useRegisteredAccounts()
   const assign = useAssignBotAccount()
 
   const running = bot.status === 'RUNNING'
   const v = data as BotParamsView | undefined
 
-  // Every account a bot can be moved to, read off the same grouping the rest of the page uses.
-  const accounts = (groups ?? [])
-    .filter((g) => g.kind === 'account' && g.account !== null)
-    .map((g) => g.account as number)
+  /**
+   * Every account this bot can be moved TO.
+   *
+   * 🔴 **Read off the REGISTRY first, not the grouping alone (2026-09-06).** The grouping is
+   * derived from the instance configs, so it can only see accounts some bot is ALREADY on — the
+   * first bot onto a newly registered account was not offered here at all, and had to be moved by
+   * hand-editing a config on the box. That is the precise gap the registry query was written to
+   * close, and this control was built against the half that cannot answer it.
+   *
+   * ⚠ **An account a bot names that nobody registered is unioned in and counts as assignable** —
+   * it works (the move reads its peers), and dropping it would leave the bot's own current
+   * account missing from the list it is supposed to be selected in.
+   *
+   * ⚠ **The registry entry WINS on a clash**, which is the whole reason it is listed first: the
+   * grouping has no opinion about whether an account has a terminal, so taking its answer would
+   * quietly re-enable an account that cannot be assigned.
+   */
+  const destinations = [
+    ...(registry ?? []).map((r) => ({
+      account: r.account,
+      assignable: r.assignable,
+      reason: r.unassignable_reason,
+    })),
+    ...(groups ?? [])
+      .filter((g) => g.kind === 'account' && g.account !== null)
+      .map((g) => ({ account: g.account as number, assignable: true, reason: '' })),
+  ]
+    .filter((d, i, all) => all.findIndex((o) => o.account === d.account) === i)
+    .sort((a, b) => a.account - b.account)
 
   const strategyGroups = (v?.strategy ?? []).reduce<Record<string, BotParamRow[]>>((acc, r) => {
     ;(acc[r.group] ??= []).push(r)
@@ -297,21 +328,44 @@ export function BotDrawer({
                 <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
                   Account
                 </p>
+                {/* 🔴 **A RUNNING bot cannot be moved, and it is said BEFORE the gesture
+                 *  (restored 2026-09-06).** The control was offered unconditionally, so moving a
+                 *  live bot took the click and came back as an error toast from the server. The
+                 *  server does refuse it — but a page that offers a control the box will reject
+                 *  is teaching the reader that its own controls mean nothing.
+                 *
+                 *  ⚠ It read its account at startup, so the write could not reach the live
+                 *  process: the page would show it under the new account while it went on trading
+                 *  the old one. That is a screen lying about a live position, not a stale setting.
+                 *
+                 *  ⚠ **An account with no terminal is LISTED and DISABLED, with the reason in the
+                 *  option.** Hiding it makes an account that exists look like one that does not,
+                 *  and the write would otherwise be committed and pushed before failing at
+                 *  connect() with a message about credentials — pointing whoever reads it at the
+                 *  password rather than at the missing terminal. */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <select
+                    data-testid={`move-${bot.key}`}
                     value={bot.account || ''}
-                    disabled={assign.isPending}
+                    disabled={running || assign.isPending}
+                    title={
+                      running
+                        ? `Stop ${bot.name} first — it read its account at startup, so a move ` +
+                          'cannot reach the running process.'
+                        : `Move ${bot.name} to another account.`
+                    }
                     onChange={(e) =>
                       assign.mutate({
                         botKey: bot.key,
                         account: e.target.value === '' ? null : Number(e.target.value),
                       })
                     }
-                    className="text-[12px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40"
+                    className="text-[12px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {accounts.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
+                    {destinations.map((d) => (
+                      <option key={d.account} value={d.account} disabled={!d.assignable}>
+                        {d.account}
+                        {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
                       </option>
                     ))}
                     <option value="">Not on an account</option>
@@ -321,8 +375,9 @@ export function BotDrawer({
                   )}
                 </div>
                 <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]">
-                  A move rewrites the server, terminal and symbol to match. It takes effect at this
-                  bot's next start.
+                  {running
+                    ? `Stop ${bot.name} before moving it — it reads its account when it starts.`
+                    : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
                 </p>
               </div>
 

@@ -367,7 +367,7 @@ export function liveOf(group: BotAccountGroup, statusByKey: Map<string, string>)
  * no bot states a cap, so there is nothing to disagree about and nothing is capped. Writing
  * `cap_agrees: false` here would draw the disagreement banner over an account with no bots on it.
  */
-function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
+export function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
   return {
     account: a.account,
     server: a.server,

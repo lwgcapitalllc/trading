@@ -482,22 +482,30 @@ test('the success line names the version that LANDED, not the one in the backtes
   await expect(banner(page).getByText(/is 1 version behind/)).toBeVisible()
 })
 
-// ── the fleet strip: a badge that goes stale is a badge that lies ───────────────
+// ── a badge that goes stale is a badge that lies ───────────────────────────────
 //
-// 🔴 **Reported 2026-08-28, off the screen, after a promote that had plainly worked:** the strip
-// read `1 restart pending` over a bot the box itself said was up to date, and `1 not frozen`,
-// which meant nothing to the reader. MEASURED the same day: the deployment record and the running
-// process agreed exactly, so the count was not wrong — it was OLD, and nothing was ever going to
-// re-read it.
+// 🔴 **Reported 2026-08-28, off the screen, after a promote that had plainly worked:** the fleet
+// summary read `1 restart pending` over a bot the box itself said was up to date, and `1 not
+// frozen`, which meant nothing to the reader. MEASURED the same day: the deployment record and
+// the running process agreed exactly, so the count was not wrong — it was OLD, and nothing was
+// ever going to re-read it.
 //
-// ⚠ **These are scoped to `fleet-strip`, and that is not tidiness.** "restart pending" and
-// "behind repo" also appear in the DeployCard's warnings further down the page, so a page-wide
-// locator matches a card that is not the strip and passes against a broken one — the vacuous
-// locator this folder has now recorded five times.
+// 🔴 **THE STRIP THOSE CHECKS NAMED IS GONE, AND THE WARNINGS IT CARRIED WERE GOING WITH IT
+// (2026-09-06).** The tab collapse left `ConfigureTab()` unrendered, so both the fleet summary and
+// the deploy card under it stopped existing — and with them went the three per-bot warnings that
+// say the banner's headline is FALSE. A bot promoted and never restarted showed a green *up to
+// date* while the running process traded the old code, and nothing anywhere said so.
+//
+// ⚠ **So these are RE-POINTED onto the version banner, which is what survived**, and the rules
+// are unchanged. The one check that genuinely went with the strip is named below rather than
+// silently dropped.
+//
+// ⚠ **Every assertion is scoped to `version-banner`**, and that is not tidiness: the Risk card
+// carries its own Deploy button and the drawer carries the bot's name three times over, so a
+// page-wide locator matches something that is not this panel and passes against a broken one —
+// the vacuous locator this folder has now recorded five times.
 
-const strip = (page: Page) => page.getByTestId('fleet-strip')
-/** The chip, whichever shape it is in — the button form prefixes the bot names onto the title. */
-const restartChip = (page: Page) => strip(page).getByTitle(/the new code is on disk/)
+const restartWarn = (page: Page) => banner(page).getByTestId('banner-restart-pending')
 
 /**
  * `/version` that reports a STALE running hash and then, after `settlesAfterMs`, a matching one —
@@ -539,45 +547,56 @@ async function mockRestartSettling(
   )
 }
 
-test('a restart-pending badge clears ITSELF once the bot comes back — no reload', async ({
+test('a restart-pending warning clears ITSELF once the bot comes back — no reload', async ({
   page,
 }) => {
-  // 🔴 The reported bug, and the one check in this file with a CLEAN fail-watch: against HEAD the
-  // version query had no `refetchInterval` at all, so the count sticks at its first reading for
-  // ever and the second assertion times out. Nothing about the locator can make that pass.
-  // ⚠ It asserts the TRANSITION rather than a number, so it does not care how many bots are
-  // registered — the registry's SIZE is one of the five things a spec here drifts against.
+  // 🔴 The reported bug, and the one check here with a CLEAN fail-watch: with the version query's
+  // `refetchInterval` removed the warning sticks at its first reading for ever and the second
+  // assertion times out. Nothing about the locator can make that pass.
+  // ⚠ It asserts the TRANSITION rather than a count, so the size of the registry cannot break it.
   await mockRestartSettling(page, 3_000)
   await openConfigure(page)
 
-  await expect(restartChip(page)).toHaveText(/^[1-9]/)
+  await expect(restartWarn(page)).toBeVisible()
   // No reload, no click, no navigation — the poll is the only thing that can move this.
-  await expect(restartChip(page)).toHaveText(/^0/, { timeout: 30_000 })
+  await expect(restartWarn(page)).toHaveCount(0, { timeout: 30_000 })
 })
 
-test('a non-zero count is a button that goes to the bot it is counting', async ({ page }) => {
-  // MUTATION: render the chip as a `<span>` again. It goes red on the role, and the URL check is
-  // what says the click actually SELECTED something rather than merely being clickable.
-  // ⚠ The count named a condition and a number and nothing else, so "which bot?" meant clicking
-  // every row in the rail — and the sentence explaining the condition lives on the card you reach
-  // by doing that.
+test('a restart-pending bot is NOT reported as up to date', async ({ page }) => {
+  // 🔴 WATCHED RED on 2026-09-06 and this is the defect the re-point exposed. The banner's
+  // headline compares the DEPLOYED version to the backtester's, which agree the moment a promote
+  // lands — so it says *up to date* while the running process is still on the old code, and the
+  // only thing that ever contradicted it lived in a card nothing renders any more.
+  // MUTATION: drop the restart-pending block from the banner → the headline stands alone, red.
   await mockRestartSettling(page, 999_000)
   await openConfigure(page)
 
-  await restartChip(page).click()
-  await expect(page).toHaveURL(/[?&]bot=/)
+  await expect(banner(page).getByText(/is up to date/)).toBeVisible()
+  // …and directly under it, the sentence that says the headline is not the whole truth.
+  await expect(restartWarn(page)).toContainText(/still trading/)
 })
 
-test('the strip says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {
+test('it says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {
   // 🔴 Aaron, 2026-08-28: *"1 not frozen — idk what that even means"*. "Frozen" is the word for the
-  // MECHANISM (a deployed bot runs a frozen snapshot) and says nothing about the bot.
-  // MUTATION: put the old label back — the first assertion goes red on the absent chip and the
-  // second on the resurrected one.
+  // MECHANISM (a deployed bot runs a frozen snapshot) and says nothing about the bot. What is true
+  // is that nobody ever deployed it, so there is no pinned version and a pull on the box changes
+  // what it trades.
+  // MUTATION: put the old label back — the first assertion goes red on the absent warning and the
+  // second on the resurrected wording.
   await mockRestartSettling(page, 999_000, { frozen: false })
   await openConfigure(page)
 
-  await expect(strip(page).getByTitle(/never promoted, so it has no pinned version/)).toHaveText(
-    /never deployed$/
-  )
-  await expect(strip(page).getByText(/not frozen/i)).toHaveCount(0)
+  await expect(banner(page).getByTestId('banner-never-deployed')).toContainText(/Never deployed/)
+  await expect(banner(page).getByText(/not frozen/i)).toHaveCount(0)
 })
+
+// 🔴 **DELETED 2026-09-06 rather than re-pointed: *a non-zero count is a button that goes to the
+// bot it is counting*.** It was about a FLEET summary — a count naming a condition and a number,
+// where answering *which bot?* meant clicking every row of a rail — and that summary is gone with
+// the tabs. The question it existed to answer no longer arises: these warnings render inside ONE
+// bot's own drawer, so the bot is already selected and there is nowhere for a count to navigate.
+//
+// ⚠ **Recorded rather than removed silently.** The RULE behind it is live and applies to the next
+// roll-up anybody builds: a count that names a condition without naming its subject has moved the
+// question rather than answered it, and a zero must stay a plain span, because a button that
+// navigates nowhere reads as a broken page.

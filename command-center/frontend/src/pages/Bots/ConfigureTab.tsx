@@ -540,6 +540,70 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
         {deployBtn}
       </div>
 
+      {/* 🔴 **THE THREE WARNINGS THAT SAY THE HEADLINE ABOVE IS FALSE (restored 2026-09-06).**
+          They lived in `DeployCard` and the fleet strip, and the tab collapse left both
+          unrendered — so a bot promoted and never restarted showed a green *up to date* while
+          the running process was still trading the old code, and nothing anywhere said so.
+
+          ⚠ **This is the same failure as the four account warnings dropped on 2026-09-06**, one
+          screen along: the CONTROL was carried across to the drawer and the checks on it were
+          not. A panel that keeps the reassuring half of a claim and loses the contradicting half
+          is worse than one that says nothing, because it is read as having checked.
+
+          ⚠ **Derived from `versionFlags`, never re-derived here.** That function is the single
+          answer to *is this bot's version claim false*, and its own note says three places
+          counting it three ways is three answers that can disagree. */}
+      {(() => {
+        const f = versionFlags(v)
+        if (!f) return null
+        return (
+          <>
+            {f.restartPending && (
+              <p
+                data-testid="banner-restart-pending"
+                className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+              >
+                <strong>Restart pending.</strong> The running process reports{' '}
+                <span className="font-mono">{v?.running_hash}</span>, not the deployed one — the new
+                version is on disk and the OLD one is still trading. It clears itself once the bot
+                comes back, and this is re-read every 15s while it says so.
+              </p>
+            )}
+            {f.snapshotModified && (
+              <p
+                data-testid="banner-snapshot-modified"
+                className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+              >
+                <strong>Snapshot modified.</strong> The deployed files no longer match their record
+                — they were edited in place, bypassing deploy. Deploy again to re-pin.
+              </p>
+            )}
+            {f.notFrozen && (
+              <p
+                data-testid="banner-never-deployed"
+                className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+              >
+                <strong>Never deployed.</strong> There is no pinned version, so it runs whatever is
+                in the repo when it starts — a pull on the box changes what it trades.
+              </p>
+            )}
+            {f.driftCount > 0 && (
+              <p
+                data-testid="banner-drift"
+                className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+                title={v?.params_drift.join('\n')}
+              >
+                <strong>
+                  {f.driftCount} setting{f.driftCount === 1 ? '' : 's'} changed since deploy:
+                </strong>{' '}
+                <span className="font-mono">{v?.params_drift.join(', ')}</span>. They take effect at
+                the next deploy, except risk per trade, which applies live.
+              </p>
+            )}
+          </>
+        )
+      })()}
+
       {dirty > 0 && (
         <p
           className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"

@@ -4087,10 +4087,58 @@ dozen checks that are not about layout is most of how this file came to be red.
 on the default view and failing on a control one click away. **A URL parameter nothing reads is
 indistinguishable from one that works.**
 
-⚠ **STANDING: 28 of 65 pass.** The rest name the RAIL, the drag-and-drop, the Move menu and the tab
-count chips — features the collapse genuinely removed — so each needs a decision about whether the
-behaviour should come back before its check is deleted. **Do not delete them as rot without asking
-that**; four of the ones already re-pointed turned out to be reporting a real loss.
+### 🔴 …and the REST of the red was ELEVEN more live defects, not a pile of removed widgets (2026-09-06)
+
+The 37 still red named the RAIL, the drag-and-drop, the Move menu, the tab chips and a fleet
+summary — all genuinely removed. **The rules inside them were not, and asking that question one
+check at a time is what found these.** Every one was on the page before anybody touched a test.
+
+| the check named | what was actually broken |
+|---|---|
+| a running bot cannot be DRAGGED / MOVED | the drawer's account selector had **no running guard at all**. It reads its account at startup, so the write cannot reach the process — the page would show it under the new account while it traded the old one. The server 409s it; the page offered the control anyway |
+| an unassignable account is listed DISABLED | every account was offered as an ordinary enabled choice. The write is committed, pushed and pulled before failing at `connect()` with a message about **credentials**, which points the reader at the password rather than at the missing terminal |
+| the Move menu lists every account | the destinations were read off the GROUPING, which is derived from the instance configs — **so a registered account no bot was on yet was not offered**, which is the exact gap the registry query exists to close, re-opened |
+| the Accounts tab renders while the snapshot loads | a row WAS the snapshot row and was dropped when the snapshot lacked it, so **while the trading box was unreachable this page showed no accounts at all** |
+| an unanswered snapshot reads as unknown | the dot was `running ? green : red`, so a bot nobody had asked about drew *stopped* — **and the row handed it a START button**, which is the one mistake there that costs money |
+| a benched bot is not the unreadable one | the no-account list came off the snapshot alone, so a bot whose config could not be PARSED sat under *trades nothing until you give it one* — an instruction that cannot fix a broken file |
+| a password the VPS could not be asked about reads UNKNOWN | the chip was gone entirely, so all THREE answers rendered as nothing at all — which reads as *no problem here*. `has_password` is `boolean \| null` and the null branch is the whole point |
+| an account with no terminal cannot be added to | the chip AND the guard both went, so the drawer offered Add bot on an account no terminal is logged into |
+| an account nobody registered still says so | the *not registered* chip went with them, so this page silently had no broker, tier or symbol suffix for that account and nothing said why |
+| a registered account with NO bots is one you can add to | the drawer rendered only for an account in the GROUPING, so **the one account that most needs Add bot could not be opened at all** — the registry's whole purpose, re-broken |
+| adding a bot sends its key and the account | 🔴 **the picker was DEAD and looked like it worked.** `AddBotRow` does not write — it hands the chosen bot back through `onPick`, and the card that used to own it fired the move there. The drawer's `onPick` only closed the panel, so picking a bot dismissed the list and sent nothing. **The panel closing IS the feedback a successful pick gives**, so it was indistinguishable from a working control |
+| an account a bot still trades cannot be unregistered | the guard survived; nothing could reach it, so it was never exercised |
+
+⚠ **The version spec's three fleet-strip checks were the same shape.** `ConfigureTab()` is dead too
+(only `VersionBanner` / `RuntimeEditor` / `ParamGroup` are imported from it), so `DeployCard` and
+the strip went with it — **and with them the three warnings that say the banner's headline is
+FALSE**: restart pending, snapshot modified, and settings changed since deploy. A bot promoted and
+never restarted showed a green *up to date* over a process still trading the old code. All four are
+in the banner now, derived from `versionFlags` and never re-derived.
+
+⚠ **Six checks were DELETED, each with its reason left where it stood** — the rail's layout, the two
+panes' matched height, the tab count chips, the `Stacked · 2` chip twice, and a fleet count that
+navigated to the bot it counted. 🔴 **One had already gone VACUOUS rather than redundant**: it
+asserted a count of ZERO for two testids nothing renders, so it passed against any page at all. **A
+test whose subject no longer exists does not fail — it goes quietly green and reads as coverage.**
+
+⚠ **The rule: never delete a red check as rot without asking what it was PROTECTING.** Of the 44,
+eleven reported a live loss and six were genuinely removed layout. That ratio is the whole argument.
+
+✅ **59 of 59 green, and non-vacuity is by MUTATION — eleven RUN, each red on its own named check**
+(the running guard, the disabled option, the registry destinations, the snapshot gate, the row's
+third state, the bench/unreadable split, the dead Add bot picker, the drawer's grouping
+requirement, both banner warnings, and the served share total). ⚠ **Each mutation gets its OWN
+shell call**: restoring and re-mutating in one leaves Vite serving the previous module, and a
+mutation that silently no-ops looks exactly like a test doing its job — recorded here once already.
+🔴 **And `git checkout -- <file>` is NOT a mutation restore.** It reverts to HEAD, which wipes every
+uncommitted fix in that file alongside the one-line mutation; it did exactly that here and the work
+had to be rewritten. **Restore by replacing the mutated string back.**
+
+🔴 **One check failed against a page that was behaving perfectly, and the locator was the bug:**
+`getByTitle('Start')` is a CASE-INSENSITIVE SUBSTRING by default, so it matched the uptime cell's
+own *"how long it has been running without a re**start**"*. **A locator loose enough to match its
+own neighbours reports the opposite of the truth** — the mirror image of the vacuous-locator trap
+this file records six times. `{ exact: true }`.
 
 ## Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
 

@@ -54,6 +54,7 @@ import { VersionPill } from '@/components/VersionPill'
 import type {
   BotStatus,
   BotReview,
+  BotAccountBot,
   BotAccountGroup,
   BotAccountRegistration,
   BotEarnings,
@@ -62,7 +63,7 @@ import type {
 import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
-import { AccountForm, nameOf } from './AccountsTab'
+import { AccountForm, emptyGroup, nameOf } from './AccountsTab'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -421,25 +422,68 @@ export function Bots() {
   /** Every bot on one account reports the SAME balance — one pot of money, not one each. The
    *  first that answers is the account's; a stopped neighbour reporting none does not change
    *  what the account holds. */
-  const balanceOf = (rows: BotStatus[]) => rows.find((b) => b.balance != null)?.balance ?? null
+  const balanceOf = (rows: { live: BotStatus | undefined }[]) =>
+    rows.find((r) => r.live?.balance != null)?.live?.balance ?? null
 
-  // Accounts that actually have bots, then the unassigned, then the empty ones as one-liners.
-  const withBots: { account: number; group: BotAccountGroup; rows: BotStatus[] }[] = []
+  /**
+   * Accounts that have bots, then the unassigned, then the empty ones as one-liners.
+   *
+   * 🔴 **A ROW IS THE CONFIG, AND THE VPS READING IS ATTACHED TO IT (2026-09-06).** It used to be
+   * the snapshot row alone, dropped when the snapshot did not carry it — so an account whose bots
+   * the box had not answered for **did not render at all**, and while the trading box was
+   * unreachable this page showed no accounts whatsoever. The account list needs no VPS: it is read
+   * from the instance configs, and reporting nothing because a *different* source is quiet is the
+   * page telling you there are no accounts.
+   *
+   * ⚠ **`live` is undefined when the box has not answered, and that is a THIRD state** — not
+   * stopped. Every reader below has to branch on it rather than on `status === 'RUNNING'`, or a
+   * dead link renders as a quiet fleet, which is this repo's oldest rule.
+   */
+  const withBots: {
+    account: number
+    group: BotAccountGroup
+    rows: { cfg: BotAccountBot; live: BotStatus | undefined }[]
+  }[] = []
   for (const [account, group] of groupByAccount) {
-    const rows = group.bots.map((b) => botByKey.get(b.key)).filter((b): b is BotStatus => !!b)
-    if (rows.length) withBots.push({ account, group, rows })
+    if (!group.bots.length) continue
+    withBots.push({
+      account,
+      group,
+      rows: group.bots.map((b) => ({ cfg: b, live: botByKey.get(b.key) })),
+    })
   }
-  const assigned = new Set(withBots.flatMap((a) => a.rows.map((b) => b.key)))
-  const unassigned = bots.filter((b) => !assigned.has(b.key))
+  const assigned = new Set(withBots.flatMap((a) => a.rows.map((r) => r.cfg.key)))
+  /**
+   * Bots whose instance config could NOT BE READ — a fault, not a resting state.
+   *
+   * 🔴 **They were folded in with the deliberately-benched ones (fixed 2026-09-06)**, under a
+   * heading reading *trades nothing until you give it one* — which is an instruction that cannot
+   * fix a broken file, and it is the one sentence the reader acts on. The grouping has always
+   * kept these apart (its own type says so: one is a state somebody chose, the other is a fault),
+   * and this page was the only place merging them again.
+   */
+  const unreadable = new Set(
+    (accountGroups ?? [])
+      .filter((g) => g.kind === 'unknown')
+      .flatMap((g) => g.bots.map((b) => b.key))
+  )
+  const unassigned = bots.filter((b) => !assigned.has(b.key) && !unreadable.has(b.key))
+  const broken = bots.filter((b) => unreadable.has(b.key))
   const emptyAccounts = (registry ?? []).filter((a) => !groupByAccount.get(a.account)?.bots.length)
 
   // ⚠ Filtered LAST, on the assembled lists, so the derivations above stay the whole truth —
   // `assigned` in particular decides which bots count as unassigned, and computing that against
   // a filtered set would invent bots with no account whenever a filter was on.
   const keep = (t: string | undefined) => !kind || t === kind
-  const shownAccounts = withBots.filter((a) => keep(a.rows[0]?.account_type))
+  /** Demo or live. The VPS row is the first answer; the registry is the fallback, because the
+   *  live-vs-demo FILTER must not silently drop every account while the box is quiet. Neither
+   *  answers ⇒ `undefined`, which the filter reads as unknown rather than as demo. */
+  const typeOf = (account: number, rows: { live: BotStatus | undefined }[]) =>
+    rows.find((r) => r.live?.account_type)?.live?.account_type ?? regByAccount.get(account)?.kind
+  const shownAccounts = withBots.filter((a) => keep(typeOf(a.account, a.rows)))
   const shownEmpty = emptyAccounts.filter((a) => keep(a.kind))
   const shownUnassigned = unassigned.filter((b) => keep(b.account_type))
+  const shownBroken = broken.filter((b) => keep(b.account_type))
   const hiddenByFilter =
     withBots.length -
     shownAccounts.length +
@@ -543,6 +587,7 @@ export function Bots() {
             </button>
           ))}
           <button
+            data-testid="add-account"
             onClick={() => setAdding(true)}
             className="text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
           >
@@ -581,11 +626,22 @@ export function Bots() {
         </p>
       )}
 
-      {snapshot && (
+      {/* 🔴 **NOT GATED ON THE SNAPSHOT (2026-09-06), AND THAT GATE WAS THE WHOLE DEFECT.** The
+       *  accounts and their bots are read from the instance configs, which need no VPS at all —
+       *  but the entire list sat behind `{snapshot && …}`, so while the trading box was
+       *  unreachable this page rendered NO ACCOUNTS WHATSOEVER. Reporting nothing because a
+       *  DIFFERENT source is quiet is the page telling you there are no accounts, which is the
+       *  most reassuring answer available and the one most likely to be wrong.
+       *
+       *  ⚠ The failure banner above still says the box could not be reached, and each row's own
+       *  dot says its state is unknown rather than stopped. **Three separate statements, none of
+       *  which may be collapsed into an empty page.** */}
+      {(accountGroups || registry) && (
         <div className="flex flex-col gap-[14px]">
           {/* ── accounts that are trading ──────────────────────────────────── */}
           {shownAccounts.map(({ account, group, rows }) => {
             const balance = balanceOf(rows)
+            const acctType = typeOf(account, rows)
             const cap = group.cap_agrees ? group.risk_cap_pct : null
             const reg = regByAccount.get(account)
             const earn = earnByAccount.get(account)
@@ -624,14 +680,20 @@ export function Bots() {
                   <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
                   {/* ⚠ A LIVE account is tinted, a demo is not. Same treatment everywhere an
                    *  account appears — its cost is different in KIND, not degree. */}
+                  {/* ⚠ Three states, and the third may not borrow the demo styling: with the box
+                   *  quiet and no registry row, nobody has said which this is — and rendering
+                   *  that as the untinted DEMO chip is the one direction that cannot be allowed
+                   *  to guess. */}
                   <span
                     className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border ${
-                      rows[0].account_type === 'live'
+                      acctType === 'live'
                         ? 'bg-warn-muted text-warn-text border-warn/40'
-                        : 'bg-bg-surface-2 text-text-secondary border-border-subtle'
+                        : acctType === undefined
+                          ? 'bg-bg-surface-2 text-text-tertiary border-border-strong'
+                          : 'bg-bg-surface-2 text-text-secondary border-border-subtle'
                     }`}
                   >
-                    {rows[0].account_type}
+                    {acctType ?? 'type unknown'}
                   </span>
 
                   {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
@@ -722,12 +784,21 @@ export function Bots() {
                     <span />
                     <span className="text-right">Actions</span>
                   </div>
-                  {rows.map((bot, i) => {
-                    const be = earnByBot.get(bot.key)
-                    const running = bot.status === 'RUNNING'
+                  {rows.map(({ cfg, live }, i) => {
+                    const be = earnByBot.get(cfg.key)
+                    // ⚠ THREE states. `asked` is whether the box answered for this bot at all —
+                    // an unanswered snapshot is not a stopped bot, and the controls below branch
+                    // on it rather than on `running`, so nothing offers Start for a bot whose
+                    // state nobody knows.
+                    const asked = live !== undefined
+                    const running = live?.status === 'RUNNING'
+                    // The NAME comes from the config, which is always readable — a bot the box
+                    // has not answered for still has one, and falling back to its key would make
+                    // an unreachable box look like a page full of unknown bots.
+                    const name = live?.name ?? cfg.display
                     return (
                       <div
-                        key={bot.key}
+                        key={cfg.key}
                         data-testid="bot-row"
                         className={`group grid ${GRID} items-center gap-3 pr-4 py-[10px] transition-colors hover:bg-bg-surface-2 ${
                           i > 0 ? 'border-t border-border-subtle' : ''
@@ -737,25 +808,41 @@ export function Bots() {
                          *  four controls and a row-wide click behind them makes every miss
                          *  open a drawer over the thing you were aiming at. */}
                         <button
-                          onClick={() => set('bot', bot.key)}
-                          title={`Open ${bot.name} — risk, version, account and its settings`}
+                          onClick={() => set('bot', cfg.key)}
+                          title={`Open ${name} — risk, version, account and its settings`}
                           className="flex items-center gap-[9px] font-medium text-[13px] text-left min-w-0 pl-[19px]"
                         >
                           {/* ⚠ NO identity rail here. It was a 3px bar per bot and Aaron read it
                            *  as meaningless decoration — which it was, on a row that already
                            *  names the bot. The split bar below still tints its segments,
                            *  because two segments have no other way to be told apart, and its
-                           *  legend spells out which is which. */}
+                           *  legend spells out which is which.
+                           *
+                           *  🔴 **THREE states, not two (2026-09-06).** Red meant *stopped* and
+                           *  was also what an UNANSWERED box drew — so a dead link to the VPS
+                           *  rendered as a fleet sitting quietly, which is the failure this repo
+                           *  keeps paying for. Unknown is hollow and says so on hover. */}
                           <span
+                            title={
+                              asked
+                                ? running
+                                  ? 'Running'
+                                  : 'Stopped'
+                                : 'The trading box has not answered for this bot — its state is unknown, not stopped.'
+                            }
                             className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
-                              running ? 'bg-pos shadow-[0_0_7px_#00ff7f]' : 'bg-neg'
+                              !asked
+                                ? 'border border-text-tertiary'
+                                : running
+                                  ? 'bg-pos shadow-[0_0_7px_#00ff7f]'
+                                  : 'bg-neg'
                             }`}
                           />
                           <span className="truncate group-hover:text-accent transition-colors">
-                            {bot.name}
+                            {name}
                           </span>
-                          {bot.mt5_link === false && <NoLinkChip />}
-                          {bot.review && <ReviewChip review={bot.review} />}
+                          {live?.mt5_link === false && <NoLinkChip />}
+                          {live?.review && <ReviewChip review={live.review} />}
                         </button>
 
                         {/* 🔴 The money sits NEXT TO THE NAME, not out at the far edge with the
@@ -765,31 +852,42 @@ export function Bots() {
                         <Contribution e={be} />
 
                         <VersionPill
-                          version={versionByKey.get(bot.key)?.data}
-                          loading={versionByKey.get(bot.key)?.isPending}
+                          version={versionByKey.get(cfg.key)?.data}
+                          loading={versionByKey.get(cfg.key)?.isPending}
                         />
 
                         <span
                           title="Risk per trade — its share of this account's ceiling"
                           className="text-[12px] font-mono text-text-secondary cursor-default"
                         >
-                          {typeof group.bots.find((b) => b.key === bot.key)?.risk_pct === 'number'
-                            ? `${group.bots.find((b) => b.key === bot.key)!.risk_pct}%`
-                            : '—'}
+                          {typeof cfg.risk_pct === 'number' ? `${cfg.risk_pct}%` : '—'}
                         </span>
 
                         <span
                           title="How long it has been running without a restart"
                           className="text-[12px] font-mono text-text-tertiary cursor-default"
                         >
-                          {bot.uptime_seconds != null ? formatUptime(bot.uptime_seconds) : '—'}
+                          {live?.uptime_seconds != null ? formatUptime(live.uptime_seconds) : '—'}
                         </span>
 
                         <span />
 
                         <span className="flex gap-[3px] justify-end">
-                          {pending === bot.key ? (
+                          {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).**
+                           *  The old branch was `running ? stop/restart : start`, so a bot the box
+                           *  had not answered for was handed a START button — and pressing start
+                           *  on a bot that is already trading is the one mistake this row can
+                           *  make that costs money. An unanswered box is a reason to ask again,
+                           *  never a reason to act. */}
+                          {pending === cfg.key ? (
                             <span className="text-[11px] text-accent animate-pulse pr-1">…</span>
+                          ) : !asked ? (
+                            <span
+                              title="The trading box has not answered for this bot, so there is nothing safe to offer here — its state is unknown, not stopped."
+                              className="text-[11px] text-text-tertiary pr-1 cursor-default"
+                            >
+                              unknown
+                            </span>
                           ) : running ? (
                             <>
                               <IconBtn
@@ -797,13 +895,13 @@ export function Bots() {
                                 title="Stop"
                                 tone="neg"
                                 disabled={busy}
-                                onClick={() => act(bot.key, () => stopOne.mutate(bot.key))}
+                                onClick={() => act(cfg.key, () => stopOne.mutate(cfg.key))}
                               />
                               <IconBtn
                                 icon={RotateCcw}
                                 title="Restart"
                                 disabled={busy}
-                                onClick={() => act(bot.key, () => restartOne.mutate(bot.key))}
+                                onClick={() => act(cfg.key, () => restartOne.mutate(cfg.key))}
                               />
                             </>
                           ) : (
@@ -812,13 +910,13 @@ export function Bots() {
                               title="Start"
                               tone="pos"
                               disabled={busy}
-                              onClick={() => act(bot.key, () => startOne.mutate(bot.key))}
+                              onClick={() => act(cfg.key, () => startOne.mutate(cfg.key))}
                             />
                           )}
                           <IconBtn
                             icon={FileText}
                             title="Logs"
-                            onClick={() => setLogBot(bot.key)}
+                            onClick={() => setLogBot(cfg.key)}
                           />
                           {/* 🔴 THE CONTROL AARON COULD NOT FIND, TWICE. First it was only the
                            *  row itself; then it was an ICON among three other icons, and he
@@ -838,9 +936,9 @@ export function Bots() {
                             data-testid="configure-bot"
                             onClick={(e) => {
                               e.stopPropagation()
-                              set('bot', bot.key)
+                              set('bot', cfg.key)
                             }}
-                            title={`Configure ${bot.name} — risk per trade, version, account and all its settings`}
+                            title={`Configure ${name} — risk per trade, version, account and all its settings`}
                             className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
                           >
                             <SlidersHorizontal size={11} />
@@ -905,6 +1003,44 @@ export function Bots() {
             </div>
           )}
 
+          {/* ── bots whose config could not be READ ─────────────────────────── */}
+          {/* 🔴 **A SEPARATE SECTION, and merging it with the one above was the defect (fixed
+           *  2026-09-06).** A benched bot is a state somebody chose; an unreadable config is a
+           *  fault, and the heading above tells the reader to *give it an account* — an
+           *  instruction that cannot fix a broken file and sends them to the wrong control.
+           *  ⚠ **No Configure button here**, deliberately: that panel reads the same config, so
+           *  offering it is offering a door onto the thing that is broken. Logs is what is left,
+           *  and it is where the parse error actually is. */}
+          {shownBroken.length > 0 && (
+            <div>
+              <p className="text-[12px] text-neg-text mb-[7px] px-[2px]">
+                Configuration could not be read{' '}
+                <span className="text-text-tertiary">
+                  — not benched, and not fixable from this page: read the log and repair the file
+                </span>
+              </p>
+              <div className="bg-bg-surface border border-neg/30 rounded-lg overflow-hidden">
+                {shownBroken.map((bot, i) => (
+                  <div
+                    key={bot.key}
+                    data-testid="bot-row-broken"
+                    className={`flex items-center gap-3 pr-4 py-[10px] ${
+                      i > 0 ? 'border-t border-border-subtle' : ''
+                    }`}
+                  >
+                    <span className="flex items-center gap-[9px] font-medium text-[13px] pl-4">
+                      <span className="inline-block w-[7px] h-[7px] rounded-full shrink-0 bg-neg" />
+                      {bot.name}
+                    </span>
+                    <span className="ml-auto">
+                      <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(bot.key)} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── accounts with nothing on them: one line each ───────────────── */}
           {shownEmpty.length > 0 && (
             <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -961,20 +1097,30 @@ export function Bots() {
         />
       )}
 
-      {selAccount && groupByAccount.get(Number(selAccount)) && (
-        <AccountDrawer
-          group={groupByAccount.get(Number(selAccount)) as BotAccountGroup}
-          reg={regByAccount.get(Number(selAccount))}
-          earnings={earnByAccount.get(Number(selAccount))}
-          balance={balanceOf(
-            (groupByAccount.get(Number(selAccount)) as BotAccountGroup).bots
-              .map((b) => botByKey.get(b.key))
-              .filter((b): b is BotStatus => !!b)
-          )}
-          statusByKey={statusByKey}
-          onClose={() => set('account', null)}
-        />
-      )}
+      {/* 🔴 **A REGISTERED ACCOUNT WITH NO BOTS OPENS TOO (2026-09-06).** The drawer used to
+       *  render only for an account in the GROUPING — which is derived from the instance configs
+       *  and therefore holds only accounts a bot is already on — so the one account that most
+       *  needs the Add bot control could not open at all. That is the registry's whole purpose,
+       *  re-broken. ⚠ The synthesized group states `share_total_pct: 0`, never `null`: nothing has
+       *  been handed out, which is different from a share that could not be read. */}
+      {selAccount &&
+        (groupByAccount.get(Number(selAccount)) || regByAccount.get(Number(selAccount))) && (
+          <AccountDrawer
+            group={
+              groupByAccount.get(Number(selAccount)) ??
+              emptyGroup(regByAccount.get(Number(selAccount)) as BotAccountRegistration)
+            }
+            reg={regByAccount.get(Number(selAccount))}
+            earnings={earnByAccount.get(Number(selAccount))}
+            balance={balanceOf(
+              (groupByAccount.get(Number(selAccount))?.bots ?? []).map((b) => ({
+                live: botByKey.get(b.key),
+              }))
+            )}
+            statusByKey={statusByKey}
+            onClose={() => set('account', null)}
+          />
+        )}
 
       {logBot && (
         <LogModal
