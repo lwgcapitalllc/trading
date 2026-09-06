@@ -489,6 +489,45 @@ class BotVersionCompare(BaseModel):
     setting_changes: list[BotSettingChange] = []
 
 
+class BotSettingImportChange(BaseModel):
+    """One setting a stress-test import would move, with both ends of the move."""
+
+    name: str
+    current: Any = None
+    proposed: Any = None
+
+
+class BotSettingImportPlan(BaseModel):
+    """What applying a stress test's settings to a bot would do — the list a human reads.
+
+    🔴 **The preview and the apply return this SAME model from the SAME planning call.** The
+    entire value of this feature is that the list you read is the change you get; two code paths
+    that both build a list are two lists that can disagree, and the disagreement is invisible
+    until it lands on a bot.
+
+    `blocked` is a REASON rather than a bool — a caller that only knows "no" cannot say which
+    rule said no.
+    """
+
+    bot: str
+    stress_test_id: str
+    run_id: str
+    blocked: Optional[str] = None
+    grade: Optional[str] = None
+    graded: bool = False
+    changes: list[BotSettingImportChange] = []
+    dropped_notes: list[str] = []
+    unchanged_count: int = 0
+    untouched: list[str] = []
+    warnings: list[str] = []
+    # Set only on an APPLY. `restart_required` is always True for this write: exactly one setting
+    # reaches a running bot without a restart (`live_config.RUNTIME_RELOADABLE`), and this control
+    # writes many, so reporting anything else would claim an effect the bot has not had.
+    applied: bool = False
+    restart_required: bool = False
+    commit: str = ""
+
+
 class BotDeployedVersion(BaseModel):
     """What a bot is ACTUALLY running, read off the VPS.
 

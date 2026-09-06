@@ -4018,3 +4018,44 @@ indistinguishable from one that works.**
 count chips — features the collapse genuinely removed — so each needs a decision about whether the
 behaviour should come back before its check is deleted. **Do not delete them as rot without asking
 that**; four of the ones already re-pointed turned out to be reporting a real loss.
+
+## Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
+
+`components/SettingsImportModal.tsx`, opened from a FINISHED stress test's header, driven by
+`useSettingsImportPreview` / `useApplySettingsImport`. Backend rules and the refusals:
+`../backend/CLAUDE.md` → *A stress test's settings can be copied onto a DEMO bot*.
+
+🔴 **NOTHING IN THIS COMPONENT DECIDES ANYTHING.** The change list, the warnings, the dropped
+settings and the refusal all arrive from the backend, which builds them ONCE and returns the same
+shape to both verbs. **Do not sort, filter, re-label or re-derive** — a browser-side list beside a
+server-side one is two answers about a live bot, and only one of them was approved. Same rule the
+risk-share total is under one section up, and that one had already drifted.
+
+⚠ **The preview query is `staleTime: 0, gcTime: 0`.** It describes a LIVE bot's current settings,
+and a cached preview is a list that no longer matches what an apply would write — the one thing
+this flow exists to prevent.
+
+⚠ **A LIVE bot is listed and DISABLED with the reason on it, never hidden.** A bot that vanishes
+from a picker reads as a bug, and the reader needs to see that demo→live is a stage rather than
+wonder where their bot went.
+
+⚠ **The Apply button reflects the PLAN** (`!blocked && changes.length > 0`), never a guess made
+here. A button whose only outcome is an error toast is the defect this folder records twice.
+
+⚠ **`show()` renders `null`/absent as `not set`, never as `Off`.** A setting the bot does not state
+is a different fact from one it states as off, and this is the panel where that distinction decides
+whether somebody presses the button.
+
+⚠ **The apply hook has NO `onError` toast** — `api.request` already surfaces the server's own
+`detail`, which carries the reason (running bot, live bot). A second generic toast buries it.
+
+⚠ **`applied: false` on a 200 is a real outcome, not a failure** — the bot already matched — and it
+is toasted as such rather than as a success that wrote something.
+
+⚠ **The button renders only on `status === 'complete'`.** A running test's settings are the same,
+but a control that appears mid-run invites copying a result nobody has read. **Grade is NOT a
+gate** — the backend warns on a weak or absent one and still allows it.
+
+⚠ **NO automated check.** Playwright is out of the gate by design and this needs the app and the
+backend up. The behaviour is pinned backend-side by 27 tests and 20 killed mutations; what is
+unverified here is the rendering.

@@ -97,7 +97,7 @@ export const useBotRestartOne = () => useBotAction('restart')
 // `useBotParams` reads and `useSaveBotRuntime` writes the one lever that may move — and
 // that one does NOT restart the bot.
 
-import type { BotParamsView, TelegramUser, TelegramUserCreate } from '@/types'
+import type { BotParamsView, BotSettingImportPlan, TelegramUser, TelegramUserCreate } from '@/types'
 
 // ── Live parameters ──────────────────────────────────────────────────────────
 // What a running bot is actually configured with, and the one lever that may move
@@ -460,5 +460,58 @@ export function useUpdateUserRole() {
       qc.invalidateQueries({ queryKey: ['bots', 'users'] })
     },
     onError: (err) => toast.error(`Update role failed: ${err}`),
+  })
+}
+
+// ── Copying a graded stress test's settings onto a DEMO bot ──────────────────
+//
+// The pipeline is backtest → stress test → demo → live, and this is the third hop. The one
+// promise it makes: the list the reader approves is the change that lands.
+//
+// 🔴 Both hooks call the SAME endpoint path, and the BACKEND builds the list once for both
+// verbs. Nothing here may re-derive, re-sort or re-filter it — a browser-side list beside a
+// server-side one is two answers about a live bot, and only one of them was approved.
+
+function importUrl(botName: string, stressTestId: string) {
+  return `/bots/${encodeURIComponent(botName)}/settings-from-stress-test/${encodeURIComponent(stressTestId)}`
+}
+
+/** What applying this stress test to this bot WOULD do. Writes nothing. */
+export function useSettingsImportPreview(botName: string | null, stressTestId: string | null) {
+  return useQuery({
+    queryKey: ['bots', 'settings-import', botName, stressTestId],
+    queryFn: () => api.get<BotSettingImportPlan>(importUrl(botName!, stressTestId!)),
+    enabled: !!botName && !!stressTestId,
+    // Never cached: it describes a LIVE bot's current settings, and a stale preview is a list
+    // that no longer matches what an apply would write — the one thing this flow must not do.
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  })
+}
+
+/** Write the settings, commit and push. Does NOT restart the bot and does NOT deploy code. */
+export function useApplySettingsImport() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ botName, stressTestId }: { botName: string; stressTestId: string }) =>
+      api.post<BotSettingImportPlan>(importUrl(botName, stressTestId)),
+    onSuccess: (plan, { botName }) => {
+      // `applied: false` on a 200 means the bot already matched — a real outcome, not a failure,
+      // and reporting it as a success would claim a write that did not happen.
+      if (!plan.applied) {
+        toast.success(`${botName} already matches this stress test — nothing to write`)
+      } else {
+        toast.success(
+          `${botName}: ${plan.changes.length} setting${plan.changes.length === 1 ? '' : 's'} written — restart the bot for them to take effect`
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
+      qc.invalidateQueries({ queryKey: ['bots', 'version', botName] })
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+      qc.invalidateQueries({ queryKey: ['bots', 'settings-import'] })
+    },
+    // No toast here: `request` already surfaces the server's own `detail`, which carries the
+    // reason (a running bot, a live bot). A second generic toast buries the useful one.
   })
 }

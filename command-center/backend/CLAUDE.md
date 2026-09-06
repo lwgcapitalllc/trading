@@ -4801,3 +4801,62 @@ cost nothing, because exactly **4** of 2,872 lines reach the parser either way.
 tests could not catch their mutation first time: one gave a bot `balance=None` so *"summed"* and
 *"read once"* were the same assertion, and one targeted a branch that never runs when the opening
 is `None`. **Check that a test's inputs can distinguish the behaviours it names.**
+
+## A stress test's settings can be copied onto a DEMO bot (2026-09-06)
+
+`services/bot_settings_import.py` + two endpoints on `routers/bots.py`
+(`GET`/`POST /bots/{bot}/settings-from-stress-test/{id}`). Aaron's pipeline is **backtest → stress
+test → demo → live**, and this is the third hop. Before it, the only way to move settings from a
+good result onto a bot was hand-editing that bot's instance config and restarting.
+
+🔴 **ONE PLANNER, CALLED BY BOTH VERBS, AND THAT IS THE ENTIRE VALUE OF THE FEATURE.** The preview
+and the apply build the list from the same call; the apply writes exactly `plan.changes`. Two code
+paths that each assemble a list are two lists that can drift — invisibly, because nothing compares
+them — and the reader has then approved a list describing something else. A test drives both verbs
+and asserts the plans match.
+
+🔴 **THE SOURCE IS A STRESS TEST, NOT A BACKTEST (Aaron's call).** A backtest is one path through
+history. The stress test is what asks whether that result survives being shaken — reshuffled trade
+order, held-out windows, and each setting nudged. **A knife-edge setting backtests beautifully and
+cannot be told from a robust one by its equity curve.** ⚠ **It costs nothing in fidelity**: a stress
+test carries no settings of its own, it reads its parent run's and perturbs COPIES into child runs,
+so a button on either page writes identical values.
+
+🔴 **DEMO ONLY, and that is what makes demo→live a real stage rather than the same button with two
+labels.** It reads `BotReg.account_type`, which has no default and is validated — a fact about the
+bot, not a naming convention. A live bot is refused (409) with the reason.
+
+⚠ **A RUNNING bot is refused, for `set_bot_account`'s reason**: the bot read its config at startup,
+so the write cannot reach the live process and the page would show settings it is not trading.
+
+⚠ **It never reports the change as in effect.** `restart_required` is always True — exactly one
+setting reaches a running bot without a restart and this writes many.
+
+⚠ **`_only_declared` is IMPORTED from `bot_accounts`, never re-implemented.** It carries the
+2026-09-04 incident where a bot was written a setting its strategy does not declare and refused to
+start on every attempt. A dropped setting is NAMED, never silent.
+
+⚠ **`_stress_test_was_graded` reads `grade`/`grade_reasons`.** `grade is None` after grading ran is
+a first-class outcome (a ruleset stating no drawdown limit), so *not graded* must never render as
+*passed* — nor as *failed*. ⚠ **There is no `graded_at` column**; an earlier draft read one.
+
+⚠ **A weak grade, a symbol mismatch and a timeframe mismatch all WARN and none of them BLOCKS**
+(Aaron's call). Blocking a low grade puts a legitimately good low-trade config out of reach, which
+fights this repo's stated design intent. A timeframe that cannot be compared says so rather than
+reporting a match.
+
+⚠ **`untouched` is reported**: settings the bot pins that the run never mentions keep their values,
+so the bot does NOT end up identical to the run. A page that cannot say that shows a partial copy
+as a complete one.
+
+⚠ **A no-op apply writes nothing, commits nothing and returns `applied: false`** — reporting
+success there would claim a write that did not happen, and an empty commit is noise in a log two
+people read.
+
+**Tests:** `tests/test_bot_settings_import.py` (27). ⚠ **A fail-watch against HEAD is VACUOUS** —
+the module did not exist — so non-vacuity is by **MUTATION: 20 written, 20 RUN, 20 killed.** Two
+survived first and both are recorded in the file's own docstring: one was the HARNESS mutating the
+wrong endpoint (`if _bot_is_running(bot_key):` appears twice in that router, and a first-occurrence
+replace hit the account move), and one was a fixture whose bot and run carried the same key set, so
+*write the plan* and *merge the run's dict* produced identical output. **A mutation that lands
+somewhere else is not a surviving mutation, and it reads exactly like one.**

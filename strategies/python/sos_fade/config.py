@@ -482,7 +482,7 @@ class SosFadeConfig:
     #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop
     #   up to TP1; "Breakeven" holds at entry ± the BE buffer (most room); "One trail step behind"
     #   keeps it one `exec_trail_step` under the high-water mark, never below breakeven.
-    exec_scale_in: bool = False        # "Add to the runner (scale in)" (Pine execScaleIn)
+    exec_scale_in: bool = True         # "Add to the runner (scale in)" (Pine execScaleIn)
     #   Add SIZE to a trade the runner trail is already protecting. Every family ever swept on
     #   this strategy before 2026-08-16 was PROTECTIVE (Run 8 alone killed ~50 tightening
     #   variants); this is the first additive one, and a grep for pyramid/scale_in across the
@@ -1057,7 +1057,7 @@ class SosFadeConfig:
     #   taking re-entries is `exec_secondary = False`, which also stops the arm doing the work.
     #   ⚠ Read ONLY when exec_secondary is on.
 
-    exec_sec_trigger: str = "Reclaim Entry"   # "What triggers a re-entry"
+    exec_sec_trigger: str = "FVG in zone + Reclaim Entry"   # "What triggers a re-entry"
     #   ∈ {Structure shift, Reclaim Entry, FVG in zone, FVG in zone + Reclaim Entry}
     #   WHAT HAS TO HAPPEN before a re-entry rests its order. Four values:
     #     "Structure shift"    — a break of structure on the fill clock inside the zone, then a limit at

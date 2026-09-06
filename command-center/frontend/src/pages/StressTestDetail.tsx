@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle, Square } from 'lucide-react'
+import { Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle, Square, Upload } from 'lucide-react'
 import { useStressTest, useDeleteStressTest, useCancelStressTest } from '@/hooks/useStressTests'
 import { useRulesets, useBacktestRun } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
@@ -10,6 +10,7 @@ import SensitivityRadar from '@/components/SensitivityRadar'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import StickyHeader from '@/components/StickyHeader'
 import InfoTip from '@/components/InfoTip'
+import { SettingsImportModal } from '@/components/SettingsImportModal'
 
 // ── MetricCard ────────────────────────────────────────────────────────────────
 
@@ -190,6 +191,7 @@ export default function StressTestDetail() {
 
   const isRunning = st ? !st.status.startsWith('failed') && st.status !== 'complete' : false
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [copySettings, setCopySettings] = useState(false)
   const [chartTab, setChartTab] = useState('mc')
   const [fullscreen, setFullscreen] = useState(false)
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
@@ -961,13 +963,29 @@ export default function StressTestDetail() {
                   </>
                 )}
               </div>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors flex-shrink-0"
-              >
-                <Trash2 size={12} />
-                Delete
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* The third hop of backtest → stress test → demo → live. Offered on a FINISHED
+                    test only: a running one's settings are the same, but a control that appears
+                    mid-run invites copying a result nobody has read yet. Grade is deliberately
+                    NOT a gate — the backend warns on a weak or absent one and still allows it,
+                    because blocking would put a legitimately good low-trade config out of reach. */}
+                {st.status === 'complete' && (
+                  <button
+                    onClick={() => setCopySettings(true)}
+                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-secondary hover:text-text-primary border border-border-subtle hover:border-border-default transition-colors"
+                  >
+                    <Upload size={12} />
+                    Copy settings to a bot
+                  </button>
+                )}
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-tertiary hover:text-neg-text hover:bg-neg-muted border border-transparent hover:border-neg-text/20 transition-colors"
+                >
+                  <Trash2 size={12} />
+                  Delete
+                </button>
+              </div>
             </div>
           )}
         </StickyHeader>
@@ -1012,6 +1030,15 @@ export default function StressTestDetail() {
           title={chartTitleByKey[activeChart]}
           onClose={() => setFullscreen(false)}
           render={(h) => renderChart(activeChart, h)}
+        />
+      )}
+
+      {copySettings && stressTestId && (
+        <SettingsImportModal
+          stressTestId={stressTestId}
+          strategyName={st.strategy_name}
+          grade={st.grade}
+          onClose={() => setCopySettings(false)}
         />
       )}
 

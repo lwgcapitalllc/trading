@@ -54,6 +54,8 @@ from models import (
     BotPromoteRequest,
     BotPromoteResult,
     BotRuntimeUpdate,
+    BotSettingImportChange,
+    BotSettingImportPlan,
     BotSnapshot,
     BotStatus,
     BotVersionCompare,
@@ -68,6 +70,7 @@ from services import (
     bot_accounts,
     bot_earnings,
     bot_params,
+    bot_settings_import,
     bot_versions,
     lab_db,
     notify,
@@ -2139,6 +2142,194 @@ def _deployed_json(bot_key: str) -> dict:
         return json.loads(raw) if raw.strip() else {}
     except json.JSONDecodeError:
         return {}
+
+
+def _stress_test_was_graded(st: dict) -> bool:
+    """Did grading RUN on this test — regardless of whether it produced a letter.
+
+    🔴 **`grade is None` is a first-class outcome, not a failure** (`services/grading.compute_grade`):
+    a ruleset stating no drawdown limit leaves nothing to grade against, and the test finishes
+    with reasons and no letter. So "no letter" must never render as "passed", and it must never
+    render as "failed" either. `grade_reasons` is what separates *graded, no letter* from *never
+    graded*, and it is written by the same call that writes the grade
+    (`lab_db.update_stress_test_grade`).
+
+    ⚠ There is no `graded_at` column — an earlier draft of this read one and it does not exist.
+    Checked against the schema rather than assumed.
+    """
+    return st.get("grade") is not None or st.get("grade_reasons") is not None
+
+
+def _build_settings_import_plan(
+    bot_name: str, stress_test_id: str
+) -> tuple[str, dict, dict, bot_settings_import.ImportPlan]:
+    """Read everything and plan the copy. Returns `(bot_key, config, run, plan)`.
+
+    🔴 **ONE builder, called by BOTH the preview and the apply.** The whole value of this feature
+    is that the list the reader approves is the change that lands, and two functions that each
+    assemble a list are two lists that can drift apart — invisibly, because nothing compares them.
+    The apply writes exactly the plan this returns.
+
+    ⚠ Reads only. Every write lives in the apply endpoint.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+
+    reg = _BY_KEY.get(bot_key)
+    if reg is None:
+        # Not a 404 on the bot — `_resolve_bot` already found it. This is the registry and the
+        # instance map disagreeing, which is a deployment fault rather than a bad request.
+        raise HTTPException(
+            status_code=500,
+            detail=f"{bot_key} resolves as a bot but is not in the registry, so nothing here "
+            f"knows whether it trades a demo or a live account. Refusing rather than guessing.",
+        )
+
+    st = lab_db.get_stress_test(stress_test_id)
+    if not st:
+        raise HTTPException(status_code=404, detail=f"Stress test '{stress_test_id}' not found")
+
+    run_id = str(st.get("run_id") or "")
+    run = lab_db.get_run(run_id) if run_id else None
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail=f"stress test '{stress_test_id}' names run '{run_id}', which is not in the "
+            f"lab database — its settings cannot be read, so there is nothing to copy.",
+        )
+
+    config = _read_instance_config(bot_key)
+
+    plan = bot_settings_import.plan_import(
+        run_params=run.get("params") or {},
+        bot_params=config.get("strategy_params") or {},
+        # `None` here means COULD NOT READ and is handled as *unchecked*, never as *nothing
+        # declared* — see `_declared_strategy_params`.
+        declared=_declared_strategy_params(str(config.get("strategy_package") or "")),
+        account_type=reg.account_type,
+        grade=st.get("grade"),
+        # A stress test with no grade LETTER may still have been graded (a ruleset with no
+        # drawdown limit produces `grade=None` legitimately). `graded` asks whether grading ran
+        # at all, so the preview never renders "not graded" as "passed".
+        graded=_stress_test_was_graded(st),
+        run_instrument=str(run.get("instrument") or ""),
+        bot_symbol=str(config.get("symbol") or ""),
+        run_bar_type=str(run.get("bar_type") or ""),
+        run_bar_value=run.get("bar_value"),
+        bot_timeframe=str(config.get("timeframe") or ""),
+    )
+    return bot_key, config, run, plan
+
+
+def _plan_response(
+    bot_key: str, stress_test_id: str, run: dict, st_grade, st_graded: bool, plan
+) -> BotSettingImportPlan:
+    return BotSettingImportPlan(
+        bot=bot_key,
+        stress_test_id=stress_test_id,
+        run_id=str(run.get("run_id") or ""),
+        blocked=plan.blocked,
+        grade=st_grade,
+        graded=st_graded,
+        changes=[
+            BotSettingImportChange(name=c.name, current=c.current, proposed=c.proposed)
+            for c in plan.changes
+        ],
+        dropped_notes=plan.dropped_notes,
+        unchanged_count=plan.unchanged_count,
+        untouched=plan.untouched,
+        warnings=plan.warnings,
+    )
+
+
+@router.get(
+    "/{bot_name}/settings-from-stress-test/{stress_test_id}",
+    response_model=BotSettingImportPlan,
+)
+def preview_settings_from_stress_test(bot_name: str, stress_test_id: str):
+    """What copying this stress test's settings onto this bot WOULD do. Writes nothing.
+
+    The list this returns is the list the reader approves, and the apply writes exactly it.
+    """
+    bot_key, _, run, plan = _build_settings_import_plan(bot_name, stress_test_id)
+    st = lab_db.get_stress_test(stress_test_id) or {}
+    return _plan_response(
+        bot_key,
+        stress_test_id,
+        run,
+        st.get("grade"),
+        _stress_test_was_graded(st),
+        plan,
+    )
+
+
+@router.post(
+    "/{bot_name}/settings-from-stress-test/{stress_test_id}",
+    response_model=BotSettingImportPlan,
+)
+def apply_settings_from_stress_test(bot_name: str, stress_test_id: str):
+    """Write this stress test's settings onto this bot's config, commit and push.
+
+    ⚠ **A RUNNING bot is refused (409)**, for the reason `set_bot_account` is: the bot read its
+    config at startup, so the file change cannot reach the live process. It would go on trading
+    the old settings while this page showed the new ones — a screen lying about a live position,
+    which is worse than the friction of stopping first.
+
+    ⚠ **It never reports the change as in effect.** `restart_required` is always True: exactly
+    one setting reaches a running bot without a restart (`live_config.RUNTIME_RELOADABLE`) and
+    this control writes many, so claiming anything else would describe a bot nobody has.
+
+    ⚠ **It does NOT deploy code and does NOT restart.** Those stay separate, deliberate steps —
+    the whole pipeline is backtest → stress test → demo → live, and collapsing two stages into
+    one button is how a stage stops being a gate.
+    """
+    bot_key, config, run, plan = _build_settings_import_plan(bot_name, stress_test_id)
+    st = lab_db.get_stress_test(stress_test_id) or {}
+    graded = _stress_test_was_graded(st)
+    resp = _plan_response(bot_key, stress_test_id, run, st.get("grade"), graded, plan)
+
+    if plan.blocked:
+        raise HTTPException(status_code=409, detail=plan.blocked)
+
+    if _bot_is_running(bot_key):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{bot_key} is running, so its settings cannot be changed — it read its "
+            f"config at startup and would go on trading the old settings while this page "
+            f"showed the new ones. Stop it, apply, then start it.",
+        )
+
+    if plan.is_noop:
+        # Not an error: the bot already matches. Reported as applied=False so nothing claims a
+        # write that did not happen, and no empty commit is made.
+        return resp
+
+    params = dict(config.get("strategy_params") or {})
+    for change in plan.changes:
+        params[change.name] = change.proposed
+    config["strategy_params"] = params
+    _write_instance_config(bot_key, config)
+
+    names = ", ".join(c.name for c in plan.changes[:6])
+    if len(plan.changes) > 6:
+        names += f" +{len(plan.changes) - 6} more"
+    path = _BOT_INSTANCE_MAP[bot_key]["path"]
+    try:
+        out = _git_commit_push(
+            path,
+            f"bots: {bot_key} settings from stress test {stress_test_id[:8]} "
+            f"({len(plan.changes)} changed: {names}) [command center]",
+            "settings copied from a graded stress test onto a demo bot from the Command "
+            "Center; the settings and their source test are named in the message",
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
+
+    resp.applied = True
+    resp.restart_required = True
+    resp.commit = out
+    return resp
 
 
 @router.get("/{bot_name}/version", response_model=BotDeployedVersion)

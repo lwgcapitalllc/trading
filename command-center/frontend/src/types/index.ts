@@ -719,6 +719,56 @@ export interface BotPromoteResult {
   restarted: boolean
 }
 
+/** One setting a stress-test import would move, with BOTH ends of the move.
+ *
+ *  `current` is carried even when null — a setting the bot does not state yet is a different
+ *  fact from one it states as null, and the reader is approving a transition rather than a
+ *  destination. */
+export interface BotSettingImportChange {
+  name: string
+  current: unknown
+  proposed: unknown
+}
+
+/**
+ * What copying a graded stress test's settings onto a bot would do — the list a human reads.
+ *
+ * 🔴 The preview and the apply return this SAME shape from the SAME planning call on the
+ * backend. The entire value of the flow is that the list you approve is the change that lands,
+ * so nothing here may be re-derived in the browser: two places building a list are two lists
+ * that can disagree, and the disagreement is invisible until it reaches a live bot.
+ *
+ * `blocked` is a REASON, never a boolean — a page that only knows "no" cannot say which rule
+ * said no. It is set for a LIVE bot (this control is demo-only, by design: demo→live is the
+ * next stage and a separate decision) and for a run that stored no settings.
+ */
+export interface BotSettingImportPlan {
+  bot: string
+  stress_test_id: string
+  run_id: string
+  blocked: string | null
+  grade: string | null
+  /** Whether grading RAN, which is not the same question as whether it produced a letter.
+   *  A ruleset stating no drawdown limit finishes with reasons and no grade — so `grade: null`
+   *  with `graded: true` must never render as "passed", and never as "failed" either. */
+  graded: boolean
+  changes: BotSettingImportChange[]
+  /** Settings the run carries that the bot's strategy does not declare. NAMED, never silently
+   *  dropped — the bot refuses to start on one, and a setting that vanishes without a word is
+   *  one the reader believes they applied. */
+  dropped_notes: string[]
+  unchanged_count: number
+  /** On the bot and not mentioned by the run: they keep their current values, so the bot does
+   *  NOT end up identical to the run. */
+  untouched: string[]
+  warnings: string[]
+  applied: boolean
+  /** Always true on an apply. Exactly one setting reaches a running bot without a restart, and
+   *  this writes many — any other answer claims an effect the bot has not had. */
+  restart_required: boolean
+  commit: string
+}
+
 // ── Lab — Strategies ─────────────────────────────────────────────────────────
 
 // How a run's position size is decided. 'consistent'/'bullet' are AUTOMATIC — the ruleset's
