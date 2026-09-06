@@ -18,6 +18,11 @@
  *
  * ⚠ **Nothing is deleted, it is folded.** The parameter list is how you check the bot is the bot
  * that was backtested, and the risk note is the measured reasoning behind a live number.
+ *
+ * ⚠ **620px, up from 440 (2026-09-06, Aaron: *"make this side panel a little wider so it could
+ * fit more information in, so there's less up and down scrolling"*).** It is capped rather than
+ * a fraction of the viewport because the page BEHIND it stays the subject — a panel wide enough
+ * to hide the list it was opened from is a page you have navigated away from without meaning to.
  */
 import { Play, Square, RotateCcw, FileText, X } from 'lucide-react'
 import { useBotParams, useAssignBotAccount, useBotAccounts } from '@/hooks/useBots'
@@ -96,7 +101,7 @@ export function BotDrawer({
       <div className="fixed inset-0 bg-black/55 z-40" onClick={onClose} />
       <aside
         aria-label={`${bot.name} settings`}
-        className="fixed top-0 right-0 bottom-0 w-[min(440px,100%)] bg-bg-surface border-l border-border-default z-50 overflow-y-auto"
+        className="fixed top-0 right-0 bottom-0 w-[min(620px,100%)] bg-bg-surface border-l border-border-default z-50 overflow-y-auto"
       >
         {/* ── who ─────────────────────────────────────────────────────────── */}
         <div className="flex items-start gap-3 px-5 py-[18px] border-b border-border-subtle">
@@ -272,8 +277,17 @@ export function BotDrawer({
 
               {/* ── version, and the only Deploy control ──────────────────── */}
               <div className="py-[16px] border-b border-border-subtle">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
-                  Version
+                {/* 🔴 IT SAYS "DEPLOY" IN THE HEADING (2026-09-06). Aaron opened with *"you're
+                 *  still not telling me how do I promote a bot"* and then found it here himself
+                 *  — so the control was reachable and the SECTION NAME was not answering the
+                 *  question anybody arrives with. *Version* names the noun; the reader is
+                 *  looking for the verb. */}
+                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[3px]">
+                  Version · deploy new code to this bot
+                </p>
+                <p className="text-[10px] text-text-tertiary mb-[10px] leading-[1.5]">
+                  Deploying copies the code on the trading box and restarts the bot on it. Until you
+                  do, it keeps running the version it started with.
                 </p>
                 <VersionBanner botKey={bot.key} botLabel={bot.name} />
               </div>

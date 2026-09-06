@@ -3910,3 +3910,60 @@ handler first and `fallback()` walks backwards, so it only ever sees what the sp
 ⚠ **It ABORTS rather than fulfilling a plausible success** — a fake 200 lets a test pass while
 proving nothing about the request it meant to make. ⚠ **Reads pass through**; they are what makes
 these suites worth running against a real backend, and the worst a read costs is a slow test.
+
+### The third pass — subtraction, mostly (2026-09-06)
+
+Aaron read the second pass control by control. Most of what came back was *take this away*, and the
+two removals below are the ones with a rule under them.
+
+🔴 **THE SPLIT BAR IS GONE, AND ITS SEGMENTS WERE THE PROBLEM.** It drew one segment per bot plus
+the unattributed remainder — *"is the purpose of it to show the breakdown of which strategy added
+how much equity per account? because if that's the case, I thought that's what the P&L column is
+for."* He was right, and the fix is not a better explanation: **only ONE segment was saying
+something the row above it could not**, so only that one survives, as a line of text. ⚠ **It still
+has to survive** — the remainder on the live account is $3,344.80 of duplicate positions a
+broker-timeout defect opened, and folding that into "the bots" would report a fixed bug as a
+strategy result. ⚠ **It renders only when there IS a remainder**: a permanent row reading `$0.00`
+is a green tick nobody reads by the second day.
+
+🔴 **THE FLEET TOTAL CAME OFF THE HEADER.** It carried the fleet balance and the fleet net, both
+already stated on the account they belong to — *"I don't know if that information is necessary.
+Like, I could just look and see."* ⚠ **The RUNNING COUNT stays**, because it is the one thing on
+that line you cannot read off the rows without counting them yourself. ⚠ **And the unread-balance
+warning stays**, because it is a FAULT and a fault has no other home. **A number restating what is
+already on screen is not a summary; it is a second copy that can disagree.**
+
+⚠ **The per-bot colour palette went with them** — both its consumers are gone. If one comes back:
+the list must be EXPLICIT, never `series.filter(c => c !== pos)`, because the shared palette holds
+near-misses (`#00ff7f` against pos `#00ff82`) and that is how a stack leg once drew in the
+portfolio's own colour.
+
+🔴 **THE ACCOUNT NUMBER LEADS ITS HEADING** — *"the account number should be the thing prefix in
+the account."* The login is what the broker, the terminal, the instance config and every refusal
+message name it by; the label is a nickname somebody typed here. **When the two disagree the number
+is the one that is right**, so it is the one the eye lands on.
+
+⚠ **A live/demo filter, as TWO chips and no third.** He asked for live-vs-demo and said he does not
+care about an "all" — so ALL is the state with neither chip pressed, reached by pressing the active
+one again. ⚠ **The default is ALL anyway**: every account on this box is a demo today, so defaulting
+to LIVE opens the page empty, which is indistinguishable from a page that failed to load. ⚠ **It
+lives in `?kind=`**, and **filtering happens LAST on the assembled lists** — `assigned` decides which
+bots count as unassigned, and computing it against a filtered set invents bots with no account
+whenever a filter is on. ⚠ **An emptied page SAYS what it is hiding and offers the way back**; a
+blank list and an empty fleet look identical, and only one is a finding.
+
+🔴 **`AccountForm` gained a LABELLED exit at the top.** Cancel had always been at the BOTTOM, past a
+dozen fields, so the only exit a reader finds is a 12px `X` glyph — *"there's no back button. That
+sucks. Maybe there's a little x."* ⚠ **The bottom Cancel STAYS**: in a scrolling pane you cannot see
+both ends of, deciding not to START and deciding not to FINISH are different moments.
+
+⚠ **Both drawers went 440px → 620px** — *"make this side panel a little wider so it could fit more
+information in, so there's less up and down scrolling."* Capped, never a fraction of the viewport:
+a panel wide enough to hide the list it was opened from is a page you navigated away from without
+meaning to.
+
+🔴 **THE DEPLOY SECTION SAYS "DEPLOY".** He opened with *"you're still not telling me how do I
+promote a bot"* and then found it himself under a heading reading **Version**. The control was
+reachable; the heading named the NOUN when the reader is looking for the VERB. **Third time a
+control on this page has been reported missing while present** — the row, then the icon, now the
+heading — and every time the fix was a word rather than a position.

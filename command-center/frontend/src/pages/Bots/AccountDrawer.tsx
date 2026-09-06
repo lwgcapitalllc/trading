@@ -64,7 +64,7 @@ export function AccountDrawer({
       <div className="fixed inset-0 bg-black/55 z-40" onClick={onClose} />
       <aside
         aria-label="Account settings"
-        className="fixed top-0 right-0 bottom-0 w-[min(440px,100%)] bg-bg-surface border-l border-border-default z-50 overflow-y-auto"
+        className="fixed top-0 right-0 bottom-0 w-[min(620px,100%)] bg-bg-surface border-l border-border-default z-50 overflow-y-auto"
       >
         <div className="flex items-start gap-3 px-5 py-[18px] border-b border-border-subtle">
           <div className="min-w-0">

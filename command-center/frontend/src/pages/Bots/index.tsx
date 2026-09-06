@@ -227,21 +227,15 @@ function pnlCls(v: number | null | undefined): string {
   return 'text-text-secondary'
 }
 
-/** A bot's identity colour, so one bot reads as the same thing in every row it appears in.
- *
- *  ⚠ **Explicit, never `series.filter(c => c !== pos)`.** The shared palette holds near-misses —
- *  `#00ff7f` against pos `#00ff82` is the same green to any eye — and a filter let a stack leg
- *  draw in the portfolio's own colour on the chart page. Same trap, same answer: list them.
- *  ⚠ Green and red are absent BY CONSTRUCTION: they mean up and down on this page. */
-const BOT_TINTS = ['#00e5ff', '#ffb300', '#a78bfa', '#4da6ff'] as const
+/** ⚠ THE PER-BOT COLOUR PALETTE IS GONE (2026-09-06), with both things that read it: the row
+ *  rail Aaron read as decoration, and the split bar whose segments duplicated the P&L column.
+ *  Note for whoever wants one back — the rule that made it safe was that the list was EXPLICIT
+ *  rather than `series.filter(c => c !== pos)`: the shared palette holds near-misses (`#00ff7f`
+ *  against pos `#00ff82`), which is how a stack leg once drew in the portfolio's own colour. */
 
 /** ONE column template for the heading row and every bot row under it. Two hand-written
  *  lists is how a heading ends up over the wrong column. */
 const GRID = 'grid-cols-[minmax(150px,225px)_142px_92px_50px_74px_1fr_auto]'
-
-function tintOf(index: number): string {
-  return BOT_TINTS[index % BOT_TINTS.length]
-}
 
 /** What ONE bot's own closed trades came to.
  *
@@ -329,92 +323,40 @@ function AccountNet({ e }: { e: AccountEarnings | undefined }) {
   )
 }
 
-/** Where the account's growth CAME FROM — one bar, one segment per source.
+/** The money an account made that NO BOT here recorded making.
  *
- *  🔴 **The last segment is the money no bot here recorded making, and it is the point of the
- *  chart rather than a rounding strip.** MEASURED on the live PU Prime ECN demo 2026-09-05: the
- *  account is up $4,541.89 and the bots' own closed trades are $1,197.09 of it — so **74% of
- *  what this page used to credit to "the bots" was not theirs.** Dividing an account's growth
- *  between the bots on it by any arithmetic credits a strategy with money it did not make.
+ * 🔴 **This was a stacked bar with a segment per bot, and the segments were a second copy of the
+ * P&L column.** Aaron, 2026-09-06: *"is the purpose of it to show the breakdown of which strategy
+ * added how much equity per account? because if that's the case, I thought that's what the P&L
+ * column is for."* He was right — and the answer is not to explain the bar better, it is that only
+ * ONE of its segments was saying something the row above could not.
  *
- *  ⚠ **Widths are absolute magnitudes, colours carry the sign.** A losing bot still occupies the
- *  room it moved the account by — a bar that shrank toward nothing as a bot lost more would read
- *  as a bot doing less.
+ * ⚠ **That one is worth keeping on its own.** MEASURED on the live PU Prime ECN demo: the account
+ * is up $4,541.89, the bots' own closed trades are $1,197.09, and the remaining **$3,344.80 was
+ * four duplicate positions a broker-timeout defect opened and Aaron closed by hand.** A page that
+ * silently folded that into "the bots" would have reported a fixed bug as a strategy result.
  *
- *  ⚠ **It is withheld, never faked, when the account's net is unmeasured.** A bar with no total
- *  behind it would be a shape with no scale, which is the most confident-looking way to be wrong.
+ * ⚠ **It renders only when there IS a remainder.** A permanent row reading `$0.00` is a green tick
+ * nobody reads by the second day, and this line only earns its space on the days it has something
+ * to say.
  *
- *  ⚠ **A segment under 1.5% still draws at 1.5%** so a real contribution can never vanish into a
- *  hairline that reads as "made nothing" — and the LEGEND under it carries the true figures, so
- *  nothing is read off the pixels. */
-function NetSplit({ e, tintFor }: { e: AccountEarnings; tintFor: (key: string) => string }) {
-  if (e.net_usd == null) return null
-
-  const parts = [
-    ...e.bots
-      .filter((b) => b.traded && b.realised_usd != null && Math.abs(b.realised_usd) >= 0.01)
-      .map((b) => ({
-        key: b.bot_key,
-        label: b.name,
-        usd: b.realised_usd as number,
-        color: tintFor(b.bot_key),
-      })),
-    ...(e.unattributed_usd != null && Math.abs(e.unattributed_usd) >= 0.01
-      ? [
-          {
-            key: '__rest',
-            label: 'Not from these bots',
-            usd: e.unattributed_usd,
-            color: '#3a3a55',
-          },
-        ]
-      : []),
-  ]
-  if (!parts.length) return null
-
-  const scale = parts.reduce((s, p) => s + Math.abs(p.usd), 0)
-  if (scale <= 0) return null
-
+ * ⚠ **`bots_without_record` still qualifies the claim.** While a bot here has no record the
+ * remainder includes whatever it may have done, so the sentence says the split is a floor rather
+ * than asserting the money came from nowhere. */
+function Unattributed({ e }: { e: AccountEarnings }) {
+  if (e.unattributed_usd == null || Math.abs(e.unattributed_usd) < 0.01) return null
   const missing = e.bots_without_record.length
-
   return (
-    <div className="px-4 py-[11px] border-t border-border-subtle bg-bg-sunken/40">
-      <div className="flex h-[7px] rounded-full overflow-hidden gap-[2px] mb-[9px]">
-        {parts.map((p) => (
-          <span
-            key={p.key}
-            title={`${p.label}: ${money(p.usd)}`}
-            style={{
-              width: `${Math.max(1.5, (Math.abs(p.usd) / scale) * 100)}%`,
-              background: p.color,
-              opacity: p.usd < 0 ? 0.45 : 1,
-            }}
-            className="block first:rounded-l-full last:rounded-r-full"
-          />
-        ))}
-      </div>
-      <div className="flex items-center gap-x-[18px] gap-y-[3px] flex-wrap">
-        {parts.map((p) => (
-          <span key={p.key} className="flex items-center gap-[6px] text-[11px]">
-            <span
-              className="inline-block w-[7px] h-[7px] rounded-sm shrink-0"
-              style={{ background: p.color, opacity: p.usd < 0 ? 0.45 : 1 }}
-            />
-            <span className={p.key === '__rest' ? 'text-text-tertiary' : 'text-text-secondary'}>
-              {p.label}
-            </span>
-            <span className={`font-mono tabular-nums ${pnlCls(p.usd)}`}>{money(p.usd)}</span>
-            <span className="font-mono tabular-nums text-text-tertiary">
-              {Math.round((Math.abs(p.usd) / scale) * 100)}%
-            </span>
-          </span>
-        ))}
-        <span className="ml-auto text-[10.5px] text-text-tertiary">
-          {missing > 0
-            ? `${missing === 1 ? 'one bot has' : `${missing} bots have`} no record here yet — this split is a floor`
-            : 'the rest is a manual fill, a deposit, or a trade older than the record'}
-        </span>
-      </div>
+    <div className="flex items-center gap-[10px] px-4 py-[9px] border-t border-border-subtle bg-bg-sunken/40">
+      <span className="text-[11px] text-text-tertiary">Not from these bots</span>
+      <span className={`text-[12px] font-mono tabular-nums ${pnlCls(e.unattributed_usd)}`}>
+        {money(e.unattributed_usd)}
+      </span>
+      <span className="text-[10.5px] text-text-tertiary">
+        {missing > 0
+          ? `— a manual fill, a deposit, or ${missing === 1 ? 'a bot whose record has' : `${missing} bots whose records have`} not arrived`
+          : '— a manual fill, a deposit, or a trade older than the record'}
+      </span>
     </div>
   )
 }
@@ -448,6 +390,14 @@ export function Bots() {
   // Selection lives in the URL, like every other view state in this app, so a link to one bot is
   // a real link and a refresh does not move you to a different bot's Deploy button.
   const view = params.get('view')
+  // Live / demo, in the URL like every other view state here — so a link to "just the live
+  // accounts" is a real link and a refresh does not put the demos back.
+  //
+  // ⚠ **Absent means ALL, and that is the default deliberately.** Aaron asked for live-vs-demo
+  // and said he does not care about an "all" — but every account on this box is a demo today, so
+  // defaulting to LIVE would open the page empty, which is indistinguishable from a page that
+  // failed to load. The control is what he asked for; the default is the one that cannot lie.
+  const kind = params.get('kind')
   const selBot = params.get('bot') ? (botByKey.get(params.get('bot') as string) ?? null) : null
   const selAccount = params.get('account')
 
@@ -483,8 +433,20 @@ export function Bots() {
   const unassigned = bots.filter((b) => !assigned.has(b.key))
   const emptyAccounts = (registry ?? []).filter((a) => !groupByAccount.get(a.account)?.bots.length)
 
+  // ⚠ Filtered LAST, on the assembled lists, so the derivations above stay the whole truth —
+  // `assigned` in particular decides which bots count as unassigned, and computing that against
+  // a filtered set would invent bots with no account whenever a filter was on.
+  const keep = (t: string | undefined) => !kind || t === kind
+  const shownAccounts = withBots.filter((a) => keep(a.rows[0]?.account_type))
+  const shownEmpty = emptyAccounts.filter((a) => keep(a.kind))
+  const shownUnassigned = unassigned.filter((b) => keep(b.account_type))
+  const hiddenByFilter =
+    withBots.length -
+    shownAccounts.length +
+    (emptyAccounts.length - shownEmpty.length) +
+    (unassigned.length - shownUnassigned.length)
+
   const running = bots.filter((b) => b.status === 'RUNNING').length
-  const totalBalance = withBots.reduce((s, a) => s + (balanceOf(a.rows) ?? 0), 0)
   const unread = withBots.filter((a) => balanceOf(a.rows) == null).length
 
   // 🔴 Computed SERVER-SIDE and only rendered here. What an account made and what its bots made
@@ -496,13 +458,12 @@ export function Bots() {
     (snapshot?.earnings ?? []).flatMap((e) => e.bots.map((b) => [b.bot_key, b] as const))
   )
 
-  // ⚠ Summed across ACCOUNTS, never across bots — two bots on one balance share one pot, which
-  // is what made this header add the same money twice on 2026-09-04. An account whose net could
-  // not be measured is counted as UNKNOWN and named, never folded in as zero.
-  const netAccounts = withBots
-    .map((a) => earnByAccount.get(a.account))
-    .filter((e): e is AccountEarnings => !!e && e.net_usd != null)
-  const fleetNet = netAccounts.length ? netAccounts.reduce((s, e) => s + (e.net_usd ?? 0), 0) : null
+  // ⚠ THERE IS DELIBERATELY NO FLEET TOTAL HERE ANY MORE (2026-09-06). Summing balances across
+  // ACCOUNTS was correct — two bots on one balance share one pot, and summing across BOTS is what
+  // added the same money twice on 2026-09-04 — but the figure was a second copy of what each
+  // account already states. It came off with the header line it fed. If a fleet total is ever
+  // wanted again, sum per ACCOUNT and leave an unmeasured one OUT rather than folding it in as
+  // zero; that is the part that was hard to get right.
 
   function act(key: string, fn: () => void) {
     setPending(key)
@@ -531,37 +492,56 @@ export function Bots() {
       {/* ── one line, where three stat cards and a fleet strip used to be ──────── */}
       <div className="flex items-baseline gap-[14px] flex-wrap pb-[14px] mb-[18px] border-b border-border-subtle">
         <h1 className="text-[19px] font-semibold">Bots</h1>
+        {/* 🔴 THE MONEY CAME OFF THIS LINE (2026-09-06). It carried the fleet balance and the
+         *  fleet net, and both are already on the account they belong to a few pixels below —
+         *  Aaron: *"I don't know if that information is necessary. Like, I could just look and
+         *  see."* ⚠ The rule it is an instance of is this page's oldest one: a number restating
+         *  what is already on screen is not a summary, it is a second copy that can disagree.
+         *  ⚠ The count STAYS, because *how many are running* is the one thing you cannot read
+         *  off the rows without counting them yourself. */}
         {snapshot && (
           <p className="text-[13px] text-text-secondary">
             <span className={running > 0 ? 'text-pos-text font-medium' : 'text-text-primary'}>
               {running}
             </span>{' '}
-            of <span className="text-text-primary font-medium">{bots.length}</span> running ·{' '}
-            <span className="text-text-primary font-medium font-mono tabular-nums">
-              {money(totalBalance, false)}
-            </span>{' '}
-            on {withBots.length} account{withBots.length === 1 ? '' : 's'}
-            {/* The fleet's own move, and it is summed across ACCOUNTS. An account whose net
-             *  nobody could measure is left OUT and said, never added in as a zero. */}
-            {fleetNet != null && (
-              <>
+            of <span className="text-text-primary font-medium">{bots.length}</span> running
+            {/* Never silently low: an account nobody could read is SAID, never counted as zero.
+             *  It survives the trim because it is a FAULT, and a fault has no other home. */}
+            {unread > 0 && (
+              <span className="text-warn-text">
                 {' · '}
-                <span className={`font-mono tabular-nums font-medium ${pnlCls(fleetNet)}`}>
-                  {money(fleetNet)}
-                </span>
-                {netAccounts.length < withBots.length && (
-                  <span className="text-warn-text">
-                    {' '}
-                    from {netAccounts.length} of {withBots.length}
-                  </span>
-                )}
-              </>
+                {unread} balance{unread === 1 ? '' : 's'} unread
+              </span>
             )}
-            {/* Never silently low: an account nobody could read is said, not counted as zero. */}
-            {unread > 0 && <span className="text-warn-text"> · {unread} unreadable</span>}
           </p>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {/* 🔴 TWO CHIPS, NOT THREE. Aaron asked for live-vs-demo and said plainly he does not
+           *  care about an "All" — so ALL is the state with NEITHER chip pressed, reached by
+           *  pressing the active one again, rather than a third button competing for the eye.
+           *  ⚠ The pressed chip carries `aria-pressed` and a border: a filter you cannot see is
+           *  still a filter that is applied, and this page can hide an entire account. */}
+          {(['live', 'demo'] as const).map((k) => (
+            <button
+              key={k}
+              aria-pressed={kind === k}
+              onClick={() => set('kind', kind === k ? null : k)}
+              title={
+                kind === k
+                  ? `Showing ${k} accounts only — click to show every account`
+                  : `Show only ${k} accounts`
+              }
+              className={`text-[11px] font-semibold uppercase tracking-[0.4px] px-[9px] py-[5px] rounded-md border transition-colors ${
+                kind === k
+                  ? k === 'live'
+                    ? 'bg-warn-muted text-warn-text border-warn/50'
+                    : 'bg-accent-muted text-accent border-accent/50'
+                  : 'border-border-default text-text-tertiary hover:text-text-primary hover:bg-bg-hover'
+              }`}
+            >
+              {k}
+            </button>
+          ))}
           <button
             onClick={() => setAdding(true)}
             className="text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
@@ -604,17 +584,11 @@ export function Bots() {
       {snapshot && (
         <div className="flex flex-col gap-[14px]">
           {/* ── accounts that are trading ──────────────────────────────────── */}
-          {withBots.map(({ account, group, rows }) => {
+          {shownAccounts.map(({ account, group, rows }) => {
             const balance = balanceOf(rows)
             const cap = group.cap_agrees ? group.risk_cap_pct : null
             const reg = regByAccount.get(account)
             const earn = earnByAccount.get(account)
-            // ONE map from bot key to colour, read by the row's rail AND by the split bar's
-            // segments. Two hand-written lookups is how a bar segment ends up a different
-            // colour from the row it names, on the one chart whose whole job is saying which
-            // bot is which.
-            const tintByKey = new Map(rows.map((b, i) => [b.key, tintOf(i)]))
-            const tintFor = (key: string) => tintByKey.get(key) ?? '#3a3a55'
             // Green when the account is up, red when it is down, neutral when nothing has
             // measured it. The rail is the only large block of colour on the card, so it may
             // not be decorative — it says one thing and it is the same thing everywhere.
@@ -639,11 +613,26 @@ export function Bots() {
                   title="Open this account — balance, risk cap, and which bots are on it"
                   className="w-full flex items-center gap-3 pl-[19px] pr-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
                 >
-                  <span className="text-[14px] font-semibold">{nameOf(reg, group)}</span>
-                  <span className="inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary border border-border-subtle">
+                  {/* 🔴 THE NUMBER LEADS (2026-09-06, Aaron: *"the account number should be the
+                   *  thing prefix in the account"*). The login is what the broker, the terminal,
+                   *  the instance config and every refusal message name it by; the label is a
+                   *  nickname somebody typed here. When the two disagree the number is the one
+                   *  that is right, so it is the one the eye lands on first. */}
+                  <span className="text-[14px] font-mono font-semibold tabular-nums">
+                    {account}
+                  </span>
+                  <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
+                  {/* ⚠ A LIVE account is tinted, a demo is not. Same treatment everywhere an
+                   *  account appears — its cost is different in KIND, not degree. */}
+                  <span
+                    className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border ${
+                      rows[0].account_type === 'live'
+                        ? 'bg-warn-muted text-warn-text border-warn/40'
+                        : 'bg-bg-surface-2 text-text-secondary border-border-subtle'
+                    }`}
+                  >
                     {rows[0].account_type}
                   </span>
-                  <span className="text-[12px] font-mono text-text-tertiary">{account}</span>
 
                   {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
                    *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
@@ -841,13 +830,13 @@ export function Bots() {
                   })}
                 </div>
 
-                {earn && <NetSplit e={earn} tintFor={tintFor} />}
+                {earn && <Unattributed e={earn} />}
               </div>
             )
           })}
 
           {/* ── bots with no account ───────────────────────────────────────── */}
-          {unassigned.length > 0 && (
+          {shownUnassigned.length > 0 && (
             <div>
               <p className="text-[12px] text-text-secondary mb-[7px] px-[2px]">
                 Not on an account{' '}
@@ -858,7 +847,7 @@ export function Bots() {
                  *  buttons. `<button>` inside `<button>` is invalid markup — React says so at
                  *  runtime and this row had been saying it since the rewrite — and the nested
                  *  control's click is what the browser is entitled to do anything with. */}
-                {unassigned.map((bot, i) => (
+                {shownUnassigned.map((bot, i) => (
                   <div
                     key={bot.key}
                     data-testid="bot-row"
@@ -895,9 +884,9 @@ export function Bots() {
           )}
 
           {/* ── accounts with nothing on them: one line each ───────────────── */}
-          {emptyAccounts.length > 0 && (
+          {shownEmpty.length > 0 && (
             <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-              {emptyAccounts.map((a: BotAccountRegistration, i) => (
+              {shownEmpty.map((a: BotAccountRegistration, i) => (
                 <button
                   key={a.account}
                   onClick={() => set('account', String(a.account))}
@@ -916,6 +905,19 @@ export function Bots() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* ⚠ A filter that empties the page must SAY it did. A blank list and a fleet that
+           *  really is empty look identical, and only one of them is a finding. */}
+          {kind && hiddenByFilter > 0 && (
+            <p className="text-[11.5px] text-text-tertiary px-[2px]">
+              {hiddenByFilter}{' '}
+              {hiddenByFilter === 1 ? 'account or bot is' : 'accounts and bots are'} hidden by the{' '}
+              <span className="text-text-secondary">{kind}</span> filter.{' '}
+              <button onClick={() => set('kind', null)} className="text-accent hover:underline">
+                Show everything
+              </button>
+            </p>
           )}
 
           {bots.length === 0 && (

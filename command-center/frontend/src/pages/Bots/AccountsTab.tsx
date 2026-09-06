@@ -1515,8 +1515,20 @@ export function AccountForm({
         <div className="text-[15px] text-text-primary font-semibold">
           {existing ? `Edit account ${existing.account}` : 'Add a broker account'}
         </div>
-        <button onClick={onClose} className="ml-auto text-text-tertiary hover:text-text-primary">
-          <X size={12} />
+        {/* 🔴 A LABELLED WAY OUT, AT THE TOP (2026-09-06). Cancel has always been at the
+         *  BOTTOM of this form — past a dozen fields — so the only exit a reader finds is a
+         *  12px `X` glyph they have to guess at. Aaron: *"when I hit add an account, there's no
+         *  back button. That sucks. Maybe there's a little x. Okay. So that's the x."*
+         *
+         *  ⚠ **The bottom Cancel STAYS.** This is a scrolling form and the two exits serve
+         *  different moments — one for deciding not to start, one for deciding not to finish —
+         *  and neither is a duplicate of the other in a pane you cannot see both ends of. */}
+        <button
+          onClick={onClose}
+          className="ml-auto flex items-center gap-[5px] px-[10px] py-[5px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+        >
+          <X size={11} />
+          Cancel
         </button>
       </div>
 
