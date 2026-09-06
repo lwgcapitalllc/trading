@@ -56,8 +56,13 @@ export function AccountDrawer({
   const valid = !capped || (Number.isFinite(next as number) && (next as number) > 0)
   const dirty = valid && next !== stated
 
-  const shares = group.bots.map((b) => b.risk_pct).filter((r): r is number => typeof r === 'number')
-  const shareTotal = shares.length === group.bots.length ? shares.reduce((s, r) => s + r, 0) : null
+  // 🔴 **SERVED, never summed here.** `BotAccountGroup.share_total_pct` carries this exact
+  // warning in its own type: a local reduce over the bots' shares is how the browser came to
+  // print a total that fitted under the ceiling while the backend refused the save for that
+  // very reason. This file had grown its own reduce back — safer than the original (it returns
+  // null when any share is unreadable rather than counting it as zero) and still a SECOND
+  // answer to a question the server already answers, which is the whole defect shape.
+  const shareTotal = group.share_total_pct
 
   return (
     <>
@@ -151,6 +156,7 @@ export function AccountDrawer({
                 </label>
                 <input
                   type="number"
+                  data-testid="cap-input"
                   value={draft}
                   disabled={!capped}
                   onChange={(e) => setDraft(e.target.value)}
@@ -166,16 +172,74 @@ export function AccountDrawer({
                   {setCap.isPending ? 'Saving…' : 'Save'}
                 </button>
               </div>
-              <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]">
+              {/* ── what the shares actually add up to ──────────────────────
+               *
+               * 🔴 **These four warnings were on screen until the tabs were collapsed into this
+               * drawer on 2026-09-05, and they went with the tab rather than being moved.** The
+               * cap EDITOR came across and the things telling you the number is wrong did not,
+               * so the one screen that can over-allocate an account lost every check on it.
+               * Found on 2026-09-06 by asking why 44 browser tests were red instead of deleting
+               * them — the red WAS the finding, exactly as the tests were written to be.
+               *
+               * ⚠ **Each says the fact only when it is TRUE.** A healthy account shows one plain
+               * sentence; a warning that renders on every account is one nobody reads on the day
+               * it means something. */}
+              <p
+                data-testid="cap-shares"
+                className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]"
+              >
                 The ceiling on open risk across every bot here.
-                {shareTotal !== null && stated !== null && (
+                {shareTotal === null ? (
                   <>
                     {' '}
-                    They risk {shareTotal}% per trade between them, against {stated}%.
+                    Their shares cannot be totalled — at least one bot here does not state what it
+                    risks per trade.
+                  </>
+                ) : (
+                  <>
+                    {' '}
+                    They risk {shareTotal}% per trade between them
+                    {stated !== null ? `, against ${stated}%` : ''}.
                   </>
                 )}{' '}
                 Applies at each bot's next start — a running bot does not pick it up.
               </p>
+
+              {/* The save is refused for this reason too, so saying it here is what makes the
+               *  refusal predictable rather than a surprise at the moment you press Save. */}
+              {group.share_overflow_reason && (
+                <p
+                  data-testid="cap-overflow"
+                  className="text-[10.5px] text-warn-text bg-warn-muted border border-warn/40 rounded-md px-[9px] py-[6px] mt-[8px] leading-[1.5]"
+                >
+                  {group.share_overflow_reason}
+                </p>
+              )}
+
+              {/* 🔴 The condition that stops every bot here STARTING. `stated` is already forced
+               *  to null above so no figure is quoted — but until now nothing said WHY the field
+               *  had gone blank, which hid the fault instead of naming it. */}
+              {!group.cap_agrees && (
+                <p
+                  data-testid="cap-disagreement"
+                  className="text-[10.5px] text-neg-text bg-neg-muted border border-neg/40 rounded-md px-[9px] py-[6px] mt-[8px] leading-[1.5]"
+                >
+                  The bots on this balance do not state the same ceiling, so none of them will
+                  start. Saving here writes one figure to all of them.
+                </p>
+              )}
+
+              {/* Not a fault — a consequence worth knowing before you read a quiet week as a
+               *  broken bot. */}
+              {group.cap_takes_turns && (
+                <p
+                  data-testid="cap-takes-turns"
+                  className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]"
+                >
+                  One full-size trade fills this ceiling, so the bots here take turns — whichever is
+                  in first blocks the other until it is out.
+                </p>
+              )}
             </div>
           )}
 
@@ -194,6 +258,20 @@ export function AccountDrawer({
                 </button>
               )}
             </div>
+            {/* 🔴 Two bots sharing an order tag each read the OTHER's orders as its own —
+             *  cancelling them, moving their stops, booking their fills. It went off screen with
+             *  the tab on 2026-09-05 and is back because it is the only warning here about two
+             *  bots actively corrupting each other's book. Shown only when true. */}
+            {group.magic_clash.length > 0 && (
+              <div
+                data-testid="magic-clash"
+                className="text-[10.5px] text-neg-text bg-neg-muted border border-neg/40 rounded-md px-[9px] py-[6px] mb-[10px] leading-[1.5]"
+              >
+                <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
+                read the other's orders as its own — cancelling them, moving their stops and booking
+                their fills. They will refuse to start until one is given a different one.
+              </div>
+            )}
             {group.bots.length === 0 ? (
               <p className="text-[11px] text-text-tertiary">
                 Nothing here yet — this account trades nothing.

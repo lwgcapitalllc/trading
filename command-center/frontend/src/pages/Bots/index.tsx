@@ -646,8 +646,29 @@ export function Bots() {
                    *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
                    *  is the condition worth noticing, and rendering it quieter than a set cap
                    *  is backwards. */}
-                  {cap == null ? (
+                  {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
+                   *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
+                   *  *nothing here refuses a trade for being too large* — the opposite of what
+                   *  is true. When the bots on one balance state different ceilings, NONE of
+                   *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
+                   *  a chip: *nobody set one* and *they cannot agree* are different facts and
+                   *  only one of them is safe to read as quiet.**
+                   *
+                   *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
+                   *  forced to null above, because printing one bot's number would name a
+                   *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
+                   *  fix beside it; this is the half a reader sees without opening anything. */}
+                  {!group.cap_agrees ? (
                     <span
+                      data-testid="cap-chip"
+                      title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
+                      className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
+                    >
+                      cap disagreement
+                    </span>
+                  ) : cap == null ? (
+                    <span
+                      data-testid="cap-chip"
                       title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
                       className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
                     >
@@ -655,6 +676,7 @@ export function Bots() {
                     </span>
                   ) : (
                     <span
+                      data-testid="cap-chip"
                       title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
                       className="inline-flex items-baseline gap-[4px] text-[11px] px-[7px] py-[3px] rounded-pill bg-gold-muted border border-gold/30 cursor-default"
                     >

@@ -3967,3 +3967,54 @@ promote a bot"* and then found it himself under a heading reading **Version**. T
 reachable; the heading named the NOUN when the reader is looking for the VERB. **Third time a
 control on this page has been reported missing while present** — the row, then the icon, now the
 heading — and every time the fix was a word rather than a position.
+
+### 🔴 The tab collapse dropped four SAFETY WARNINGS, and 44 red tests were the finding (2026-09-06)
+
+**`AccountsTab()` is DEAD — nothing renders it.** The rewrite that collapsed the tabs kept three
+small exports from that file (`AccountForm`, `AddBotRow`, `nameOf`) and left 1,775 lines
+unreachable. The cap EDITOR moved to `AccountDrawer`; **the things telling you the number is wrong
+did not**, so the one screen that can over-allocate an account lost every check on it:
+
+| gone | what it says |
+|---|---|
+| `cap-shares` | what the per-trade shares actually add up to against the ceiling |
+| `cap-overflow` | they do NOT fit — the same sentence the save is refused with |
+| `cap-disagreement` | the bots state different ceilings, so none of them will start |
+| `magic-clash` | two bots share an order tag and would read each other's orders as their own |
+
+🔴 **IT WAS FOUND BY ASKING WHY 44 BROWSER TESTS WERE RED INSTEAD OF DELETING THEM.** They were
+written against a page that still had these, so **the red WAS the finding** — exactly what they
+exist for. Re-pointing them without looking would have deleted the evidence and left the gap.
+
+⚠ **The share total is SERVED, never summed here.** `AccountDrawer` had grown its own `reduce`
+back — safer than the original (null when any share is unreadable rather than counting it as zero)
+and still a SECOND answer to a question the server already answers. `BotAccountGroup.share_total_pct`
+carries that warning in its own type, and this file's own *never sum the shares* rule is one section
+up. **A rule stated in a type is not a rule the next file inherits.**
+
+🔴 **AND A CAP DISAGREEMENT RENDERED AS `no cap` ON THE ACCOUNT HEADING — a live defect, not test
+rot.** That chip's tooltip read *"nothing here refuses a trade for being too large"*, which is the
+OPPOSITE of what a disagreement means: the bots do state ceilings, they cannot agree, and the
+consequence is that **none of them will start**. Rule 1 in a chip — *nobody set one* and *they
+cannot agree* are different facts and only one is safe to read as quiet. Three states now, and the
+disagreement is the loud one.
+
+⚠ **`cap` was ALREADY forced to null on a disagreement** and the drawer's comment said why — so the
+figure was correctly withheld on both surfaces and **neither said what had happened**. Withholding a
+number without naming the reason hides the fault instead of reporting it.
+
+⚠ **Each warning renders only when TRUE.** A healthy account gets one plain sentence; a warning on
+every account is one nobody reads on the day it means something.
+
+⚠ **`openAccount()` goes to `?account=` directly rather than clicking the heading**, so a check
+about the CEILING does not also depend on the heading button's markup — a layout change reddening a
+dozen checks that are not about layout is most of how this file came to be red.
+
+⚠ **`?tab=accounts` is IGNORED by the page and every one of these checks navigated to it**, landing
+on the default view and failing on a control one click away. **A URL parameter nothing reads is
+indistinguishable from one that works.**
+
+⚠ **STANDING: 28 of 65 pass.** The rest name the RAIL, the drag-and-drop, the Move menu and the tab
+count chips — features the collapse genuinely removed — so each needs a decision about whether the
+behaviour should come back before its check is deleted. **Do not delete them as rot without asking
+that**; four of the ones already re-pointed turned out to be reporting a real loss.
