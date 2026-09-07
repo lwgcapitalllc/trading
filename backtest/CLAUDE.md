@@ -2291,14 +2291,44 @@ on on 2026-09-06 and `test_reprice.py` — which builds the SHIPPED config — w
 **A model that is correct only while a feature is switched off is a model nobody has tested**, and
 the thing that caught it was a test constructing real defaults rather than a stub.
 
-⚠ **SWAP IS DELIBERATELY NOT CHARGED ON ADDS, and that is the sharp part.** `_charge_swap` in the
-replay bills `self._qty - self._filled_qty` — the base — so an add pays no financing there either.
-This module's job is to reproduce the replay, so counting them here makes the page disagree with
-the run it describes: **MEASURED at 0.20R, four times the swap bound, when it was tried.** ⚠ **The
-replay's own behaviour is a real open question** — a broker finances the whole position, so a
-scaled trade held overnight is under-charged in the run itself. That is a change to
-`execution.py`, with its own measurement, and it would move every stored number on a scaled run.
-**Do not close it here; here it would only hide the disagreement.**
+🔴 **SWAP IS NOW CHARGED ON ADDS TOO, ON BOTH SIDES, AND UNTIL 2026-09-07 IT WAS CHARGED ON
+NEITHER.** A broker finances the POSITION, not the order that opened it, so a lot bought on the
+way up costs exactly what the base costs to carry through the same night. The replay billed
+`self._qty - self._filled_qty` — the base alone — and this module mirrored it, so **the two
+AGREED while both under-charged every scaled trade held overnight.**
+
+🔴 **That is rule 14 arriving as a bill, and it is the transferable part: a green reproduction
+check says the model MATCHES the run, never that either is RIGHT.** This check has a 1e-5 bound on
+the exact layers and 0.05R on swap, it ran on every commit, and it was green throughout — because
+both sides were wrong in the same direction. **When two implementations are written to agree, ask
+what they agree ABOUT.**
+
+**MEASURED** on the reference window (PU Prime `XAUUSD.p` M15, 42 trades, 15 of them scaled): the
+correction is **0.2024R**, four times the swap bound. The charged replay's swap layer moves
+`-1.6920R` → `-1.8945R`. ⚠ **Every stored number on a run that scaled in moves by roughly this
+much, in the expensive direction.** Runs with no adds are byte-identical — scale-in shipped OFF
+until 2026-09-06, so the whole published history predating that date is untouched.
+
+⚠ **Each lot's nights are its OWN.** A trade may open one night, add on the second and bank the
+add on the third, and only the middle night is financed on the larger size — so `_qty_open_at`
+reads each add's own fill and exit times rather than the trade's window. Charging every add for
+the whole hold would over-bill a late add by however long the trade ran before it.
+
+⚠ **The boundary rules are INHERITED from the replay, not chosen here.** `_charge_swap` runs
+before the bar's fills and before its exits, so a lot bought at the rollover pays nothing and a
+lot sold at it still pays — the same treatment the base already gets.
+
+⚠ **Proven by MUTATION IN BOTH DIRECTIONS, which is what says the two are genuinely coupled.**
+Reverting only the replay reddens the swap case at `-1.8945` vs `-1.6920`; reverting only this
+module reddens it at `-1.6920` vs `-1.8945` — the same gap, mirrored. A one-sided fix cannot pass.
+
+⚠ **THE PARITY GATE CANNOT COVER ANY OF THIS, and it was checked rather than assumed.** The gate
+replays COST-FREE (`compare_strategy.py` builds the strategy with no profile, so `_charge_swap`
+returns at its first line), and **every TradingView export on this machine ran with
+`cfg_scale_in = 0`** — so it says nothing about adds either. It was run and is green
+(`VANTAGE_XAUUSD, 15_b5eda.csv`, 20,841 bars from 500 on), which establishes that the change did
+not move the entry/exit logic and nothing more. **Financing on adds is covered by this
+reproduction check and by three unit tests in `test_execution_ticks.py`, not by the gate.**
 
 ⚠ **Commission is charged per ADD, never on their total.** It is billed per LOT and the profile
 rounds lots, so summing first and charging once rounds a different number.

@@ -212,23 +212,36 @@ def _qty_open_at(row: dict, when_ms: int) -> float:
     which is the only way to know that after the fact — falling back to the entry size would
     overcharge every scale-out, and falling back to the final size would undercharge it.
 
-    🔴 **SCALE-IN LOTS ARE DELIBERATELY NOT COUNTED, and it is not an oversight — the REPLAY does
-    not charge financing on them either.** `Execution._charge_swap` bills
-    `self._qty - self._filled_qty`, which is the BASE position; an add is a separate lot and never
-    enters that number. This module's whole job is to reproduce a charged replay, so counting them
-    here would make the page disagree with the run it is describing — MEASURED at 0.20R over 42
-    trades, four times the swap bound, when it was tried on 2026-09-07.
+    🔴 **SCALE-IN LOTS ARE COUNTED, and they were not until 2026-09-07.** A broker finances the
+    POSITION, so a lot bought on the way up carries the same overnight cost the base does. Both
+    sides were wrong together — the replay billed `_qty - _filled_qty` and this mirrored it — so
+    the two AGREED while both under-charged every scaled trade held overnight. **A green
+    reproduction check says the model matches the run, never that either is right** (rule 14).
 
-    ⚠ **Whether the REPLAY should bill them is a real and separate question**: a broker finances
-    the whole position, so a scaled trade held overnight is under-charged in the run itself. That
-    is a change to `execution.py` with its own measurement, and it would move every stored number
-    on a scaled run. Do not "fix" it here — here it would only hide the disagreement.
+    ⚠ **Each lot carries its own fill and exit times, so its nights are its own.** A trade may
+    open one night, add on the second and bank the add on the third, and only the middle night is
+    financed on the larger size. Falling back to the trade's own window would charge every add for
+    the whole hold.
+
+    ⚠ **A lot with no exit time is treated as open to the trade's end.** `_exit_portion` takes
+    every add on the trade's last fill, so this should be unreachable; carrying it to the end is
+    the direction that OVER-charges, which is the safe one for a cost.
+
+    ⚠ **The boundary rules mirror the replay's own timing rather than being chosen here.**
+    `_charge_swap` runs before the bar's fills and before its exits, so a lot bought at the
+    rollover instant pays nothing and a lot sold at it still pays — the same treatment the base
+    already gets from the `<=` on its exit rungs below.
     """
     qty = float(row.get("size") or 0.0)
     for leg in row.get("legs") or []:
         leg_ms = int(leg.get("ms") or 0)
         if leg_ms and leg_ms <= when_ms:
             qty -= float(leg.get("qty") or 0.0)
+    for add in _adds(row):
+        fill_ms = int(add.get("ms") or 0)
+        exit_ms = int(add.get("exit_ms") or 0)
+        if fill_ms and fill_ms < when_ms and (not exit_ms or exit_ms >= when_ms):
+            qty += float(add.get("qty") or 0.0)
     return max(qty, 0.0)
 
 

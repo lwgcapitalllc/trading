@@ -3249,6 +3249,22 @@ class Execution:
         boundary cannot double-book — the same edge-vs-level distinction that caused the sweep
         double-count bug in signals.py. Swap is why holding matters: it hits longs and shorts in
         OPPOSITE directions, so omitting it flatters every long and understates every short.
+
+        🔴 **SCALE-IN LOTS ARE FINANCED TOO, and they were free until 2026-09-07.** A broker
+        finances the POSITION, not the order that opened it, so a lot bought on the way up costs
+        exactly what the base costs to carry through the same night. This billed
+        `_qty - _filled_qty` — the base alone — so every add rode overnight for nothing, and a
+        scaled trade held for days was under-charged in every stored run. It was invisible for as
+        long as it existed because scale-in shipped OFF; the default moved on 2026-09-06.
+
+        ⚠ **`_adds` is the live ledger and a spent lot is ZEROED IN PLACE** (`_bank_adds`), so
+        summing `lot[1]` is the quantity still open and a banked lot contributes nothing. Reading
+        `_add_lots` instead would finance lots that had already been sold.
+
+        ⚠ **The base's own timing is inherited rather than re-decided.** This runs before this
+        bar's fills and before its exits, so a lot bought THIS bar pays nothing for the night it
+        was not yet held, and a lot sold this bar pays for the night it was — which is the same
+        rule `_qty - _filled_qty` already applies to the base.
         """
         if self._profile is None or self._profile.swap is None or self._pos_dir == 0:
             return
@@ -3260,7 +3276,7 @@ class Execution:
             self._last_roll_ms = roll_ms
             return
         self._last_roll_ms = roll_ms
-        remaining = self._qty - self._filled_qty
+        remaining = self._qty - self._filled_qty + sum(lot[1] for lot in self._adds)
         self._charge(self._profile.swap_charge(self._pos_dir, remaining, roll_date))
 
     def _last_rollover_before(self, time_ms: int):

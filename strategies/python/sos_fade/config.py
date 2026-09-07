@@ -580,7 +580,12 @@ class SosFadeConfig:
     #   lot is always the extreme one. Every lot it closes is therefore closed in profit;
     #   banking one lot at a loss to bank another at a gain is not what this is for.
     #   ⚠ It moves the ADDS ONLY. The base position's stop, TP1 and TP2 are untouched, so with
-    #   `exec_scale_in` OFF (the default) this input cannot change a single trade.
+    #   `exec_scale_in` OFF this input cannot change a single trade.
+    #   ⚠ OFF IS NO LONGER THE DEFAULT — this line said "(the default)" until 2026-09-07, a
+    #   year-zero claim left behind when the field above flipped False → True on 2026-09-06.
+    #   A comment naming another field's default is a SECOND copy of that default, and it goes
+    #   stale the moment the first one moves, with nothing to fail. Say what a setting DOES and
+    #   let the field declare its own value.
     #
     #   🔴 MEASURED 2026-08-19 (Run 22), RE-MEASURED the same day after the resting-order fix
     #   below. XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, Trail 3 x 0.5x, 182

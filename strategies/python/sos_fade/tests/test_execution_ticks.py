@@ -249,6 +249,48 @@ def test_intraday_trade_pays_no_swap():
     assert ex._costs_usd == 0.0
 
 
+def test_an_open_scale_in_lot_is_financed_alongside_the_base():
+    """A broker finances the POSITION, not the order that opened it.
+
+    🔴 Every add rode overnight FREE until 2026-09-07 — `_charge_swap` billed the base alone, so a
+    scaled trade held for days was under-charged in every stored run. Watched red by putting the
+    base-only sum back: it reads -78.29 instead of -117.435.
+    """
+    ex = _open_at(1, "2026-03-10 10:00")
+    ex._adds = [[100.0, 50.0]]                          # half a lot, bought after the entry
+    ex._charge_swap(Sig(time_ms=_ms("2026-03-10 18:00")))
+    assert ex._costs_usd == pytest.approx(-78.29 * 1.5)
+
+
+def test_a_BANKED_scale_in_lot_is_financed_nothing():
+    """`_bank_adds` zeroes a spent lot IN PLACE rather than dropping it, so the ladder's cap keeps
+    counting — which means the length of the list says nothing about what is still held.
+
+    🔴 **The two lists are the trap, and this test exists to catch reading the wrong one.**
+    `_adds` is the LIVE ledger and `_add_lots` is what was BOUGHT, never consumed — so the
+    plausible wrong implementation finances a lot that was already sold. Both are populated here
+    with DIFFERENT totals precisely so that mistake fails: reading `_add_lots` bills 2.0 lots
+    against the 1.5 actually held.
+    """
+    ex = _open_at(1, "2026-03-10 10:00")
+    ex._adds = [[100.0, 0.0], [101.0, 50.0]]            # first banked, second still open
+    ex._add_lots = [{"price": 100.0, "qty": 50.0},      # ...as they were BOUGHT: both still 0.5
+                    {"price": 101.0, "qty": 50.0}]
+    ex._charge_swap(Sig(time_ms=_ms("2026-03-10 18:00")))
+    assert ex._costs_usd == pytest.approx(-78.29 * 1.5)
+
+
+def test_a_part_exited_base_plus_an_add_finances_what_is_actually_held():
+    """The two halves are independent: a rung banking part of the base does not touch the adds,
+    and an add banking does not touch the base. Both have to be read, or a trade that scaled out
+    of one and into the other is charged on a size it never held."""
+    ex = _open_at(1, "2026-03-10 10:00")
+    ex._filled_qty = 60.0                               # 0.4 lot of base left
+    ex._adds = [[100.0, 30.0]]                          # plus 0.3 lot of add
+    ex._charge_swap(Sig(time_ms=_ms("2026-03-10 18:00")))
+    assert ex._costs_usd == pytest.approx(-78.29 * 0.7)
+
+
 def test_saturday_books_nothing():
     """The market is shut; the weekend is carried by the triple-swap weekday instead."""
     ex = _open_at(1, "2026-03-13 10:00")               # Friday

@@ -3056,10 +3056,59 @@ fixture.**
 genuinely places adds (2 across 6 closed trades on the synthetic window), so the gate walks the
 scaled path rather than being green over an unexercised one. Watched RED by mutation.
 
-⚠ **`config.py`'s own note on the setting still reads *`exec_scale_in` OFF (the default)*** — a
-stale claim sitting beside the line that now says `True`. It is left alone here on purpose: no
-TradingView export is present on this machine, so rule 22's gate cannot be run against a
-`config.py` change. **Fix it in a pass that can run the gate.**
+✅ **`config.py`'s stale note is FIXED (2026-09-07).** It read *`exec_scale_in` OFF (the default)*
+beside a line that says `True`. 🔴 **The reason it survived a day is worth more than the typo: the
+pass that found it recorded *"no TradingView export is present on this machine"* and deferred on
+rule 22 — and that was FALSE.** Four exports here carry all 26 `cfg_` columns including the five
+scale-in ones; the gate is **exit 0 at warmups 100 / 500 / 1000 / 2000** on
+`VANTAGE_XAUUSD, 15_b5eda.csv` (21,241 bars from 100 on). **An unchecked claim about what a
+machine HAS is the cheapest kind to test and reads exactly like a constraint — one `find` settled
+it.** That is rule 4 in the shape it actually appears: not a guessed number, a guessed capability.
+
+⚠ **A comment naming another field's default is a SECOND COPY of that default**, and it goes stale
+the moment the first one moves with nothing to fail. The note now says what the setting DOES and
+lets the field declare its own value.
+
+### Financing is charged on scale-in lots (2026-09-07)
+
+🔴 **Every add rode overnight FREE until this date.** `_charge_swap` billed
+`self._qty - self._filled_qty` — the BASE position — and an add is a separate lot that never
+enters that number. A broker finances the POSITION, not the order that opened it, so a lot bought
+on the way up costs exactly what the base costs to carry through the same night.
+
+🔴 **The model that re-prices a finished run mirrored the bug, so the two AGREED while both
+under-charged.** `backtest/reprice.py` reproduces a charged replay to 1e-5 on the exact layers and
+0.05R on swap, it runs on every commit, and it was green throughout. **That is rule 14: a green
+agreement check says the two MATCH, never that either is RIGHT.** Both sides were fixed in one
+change; the reasoning and the mutation evidence live in `backtest/CLAUDE.md`.
+
+**MEASURED**: the correction is **0.2024R** on the reference window (42 trades, 15 scaled) — the
+swap layer moves `-1.6920R` → `-1.8945R`. ⚠ **Every stored number on a run that scaled in moves by
+about that much, in the expensive direction.** Runs with no adds are byte-identical, so the whole
+published history before scale-in shipped on (2026-09-06) is untouched.
+
+⚠ **`_adds` is the LIVE ledger and `_add_lots` is what was BOUGHT.** A spent lot is zeroed IN
+PLACE rather than dropped, so the ladder's cap keeps counting — which means summing `_add_lots`
+finances lots that were already sold. `test_a_BANKED_scale_in_lot_is_financed_nothing` populates
+both lists with DIFFERENT totals precisely so that mistake fails, and it was watched red by making
+it.
+
+⚠ **The timing is inherited, not re-decided.** `_charge_swap` runs before this bar's fills and
+before its exits, so a lot bought this bar pays nothing for a night it did not hold and a lot sold
+this bar pays for the night it did — the same rule `_qty - _filled_qty` already applies to the
+base.
+
+🔴 **THE PARITY GATE CANNOT SEE THIS, TWICE OVER, AND BOTH HALVES WERE CHECKED RATHER THAN
+ASSUMED.** The gate builds the strategy with no cost profile, so `_charge_swap` returns at its
+first line and no export can ever exercise a financing change; and **every export on this machine
+ran `cfg_scale_in = 0`**, so it does not walk the add path either. It was run and is green at four
+warmups, which establishes that the change did not move the entry or exit logic — nothing more.
+**Financing on adds is covered by three unit tests in `tests/test_execution_ticks.py` and by the
+reproduction check in `backtest/tests/test_reprice.py`.**
+
+⚠ **Gating the scale-in path at all needs a fresh export taken with the feature ON.** That is a
+TradingView action only a person can do, and until it exists the adds are covered by unit tests
+and the lab, never by Pine parity.
 
 ### The re-entry trigger default moved too, and its pin had to move with it
 
