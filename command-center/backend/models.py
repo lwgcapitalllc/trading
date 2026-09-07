@@ -576,6 +576,82 @@ class StackSettingImportPlan(BaseModel):
     commit: str = ""
 
 
+class GoLiveRecord(BaseModel):
+    """What one bot actually DID on the demo account, read off its own decision record.
+
+    🔴 **Three-state on purpose.** `traded: False` with a `reason` means no record reached this
+    machine — which is NOT zero trades, and may not be rendered as one. `services/bot_earnings.py`
+    already refuses to collapse those and this model may not undo it one layer up.
+    """
+
+    traded: bool = False
+    reason: Optional[str] = None
+    closed_trades: Optional[int] = None
+    realised_usd: Optional[float] = None
+    realised_r: Optional[float] = None
+    wins: Optional[int] = None
+    losses: Optional[int] = None
+    records_from: Optional[str] = None
+    records_to: Optional[str] = None
+
+
+class GoLiveMove(BaseModel):
+    """One bot's move onto the live account: what gets written, and what could not be carried.
+
+    ⚠ `fields` and `param_fields` are shown because this is the last screen before real money —
+    the reader gets the literal writes, not a summary of them.
+    """
+
+    bot: str
+    display: str = ""
+    fields: dict = {}
+    param_fields: dict = {}
+    notes: list[str] = []
+    record: Optional[GoLiveRecord] = None
+
+
+class GoLivePlan(BaseModel):
+    """What promoting a proven strategy set from its demo account to a live one would do.
+
+    🔴 **ALL OR NOTHING, and `confirm` has to be typed back.** Two of three bots on the live
+    account is a strategy set nobody ran, and it reads as a finished promotion. The confirmation
+    phrase NAMES THE ACCOUNT so it cannot be typed from memory or pasted from another preview.
+
+    🔴 **There is no minimum demo record** (Aaron's call) — so `record` is reported per bot and
+    refuses on nothing. The warnings say plainly when a bot has none.
+    """
+
+    from_account: Optional[int] = None
+    to_account: Optional[int] = None
+    blocked: Optional[str] = None
+    moves: list[GoLiveMove] = []
+    cap_pct: Optional[float] = None
+    # The exact words a POST must send back. Served so the page can show them and the caller
+    # cannot invent them.
+    confirm: str = ""
+    warnings: list[str] = []
+    # Set only on an APPLY. `restart_required` is always True: `account` is not runtime-reloadable
+    # and could not be, so nothing here is true on the box until the bots are started.
+    applied: bool = False
+    restart_required: bool = False
+    commit: str = ""
+
+
+class GoLiveRequest(BaseModel):
+    """Promote these bots onto this live account.
+
+    ⚠ **The bots are named explicitly rather than derived from the destination or from a stack.**
+    What is being promoted is a set somebody chose, and a promotion that inferred its own members
+    would be a live-money write nobody typed the membership of.
+    """
+
+    bots: list[str] = []
+    account: int
+    # Must equal the plan's own `confirm` exactly, case included.
+    confirm: str = ""
+    deploy: bool = True  # commit + push; False writes locally only
+
+
 class BotDeployedVersion(BaseModel):
     """What a bot is ACTUALLY running, read off the VPS.
 

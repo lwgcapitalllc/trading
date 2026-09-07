@@ -59,6 +59,10 @@ from models import (
     BotSnapshot,
     BotStatus,
     BotVersionCompare,
+    GoLiveMove,
+    GoLivePlan,
+    GoLiveRecord,
+    GoLiveRequest,
     JobStatus,
     ProcessStatus,
     StackSettingImportCap,
@@ -75,6 +79,7 @@ from services import (
     bot_params,
     bot_settings_import,
     bot_versions,
+    go_live,
     gradable,
     lab_db,
     notify,
@@ -959,6 +964,9 @@ def get_snapshot():
     _now_utc = datetime.now(timezone.utc)
     task_statuses = _parse_tasks(snap)
     now = datetime.now(timezone.utc)
+    # Read ONCE for the whole snapshot, not once per bot: it is a file read, and two rows in
+    # one response may never disagree about what kind of account a number is.
+    _kinds = _registered_kinds()
 
     bots: list[BotStatus] = []
     for task_name in _BOT_DISPLAY_ORDER:
@@ -992,12 +1000,16 @@ def get_snapshot():
                 # upstream: making the registries hold strings to satisfy a label would put a
                 # display concern inside the account guard.
                 account=str(state.get("account") or ""),
-                # From the registry, which cannot omit it — `account_type` has no default on
-                # BotReg, so a bot registered without one is a TypeError at import. The old
-                # `.get(task, "demo")` defaulted in the dangerous direction: a LIVE bot
-                # rendered as demo, losing the amber tinting, the "N of these are LIVE
-                # accounts" warning on every fleet dialog, and its place in the demo/live filter.
-                account_type=_BY_TASK[task_name].account_type,
+                # 🔴 DERIVED from the account this bot is on, with the registry's hardcoded
+                # label as the fallback — see `_account_type_of`. It read the hardcode alone
+                # until 2026-09-07, which was correct exactly as long as no bot could be moved
+                # onto a live account from this app. The old `.get(task, "demo")` before that
+                # defaulted in the same dangerous direction this now closes: a LIVE bot rendered
+                # as demo, losing the amber tinting, the "N of these are LIVE accounts" warning
+                # on every fleet dialog, and its place in the demo/live filter.
+                account_type=_account_type_of(
+                    bot_key, reported_account=state.get("account"), kinds=_kinds
+                ),
                 balance=state.get("balance"),
                 # Read with a THREE-way result on purpose: True, False, or "the bot never said".
                 # `state.get("mt5_link")` on a bot that predates the field returns None, and
@@ -1155,6 +1167,68 @@ def list_bot_accounts():
 
 def _registry_path():
     return bot_account_registry.registry_path(cfg.MONOREPO_ROOT)
+
+
+def _registered_kinds() -> dict[int, str]:
+    """Every registered account number → `"demo"` or `"live"`. Empty when it cannot be read.
+
+    ⚠ Empty means COULD NOT ASK, and every caller below falls back to the bot registry's own
+    hardcoded label rather than treating an unanswerable question as "demo".
+    """
+    try:
+        return {a.account: a.kind for a in bot_account_registry.load_accounts(_registry_path())}
+    except Exception:  # noqa: BLE001 — an unreadable registry may not blank the fleet's tinting
+        return {}
+
+
+def _account_type_of(bot_key: str, *, reported_account=None, kinds=None) -> str:
+    """Whether this bot is on a demo or a live account — DERIVED, never a stored label.
+
+    🔴 **`BotReg.account_type` is a hardcoded Python fact, and the moment a bot can be MOVED
+    onto a live account from this app that hardcode becomes a second answer that drifts.** It
+    would drift in the one direction the registry's own comment names as dangerous: a LIVE bot
+    rendered as demo, losing the amber tinting, the "N of these are LIVE accounts" warning on
+    every fleet dialog, its place in the demo/live filter — and, worse, letting the settings
+    imports write to it, since both of those refuse on anything but demo.
+
+    🔴 **LIVE WINS OVER DEMO WHEN THE TWO SOURCES DISAGREE, and the disagreement is a real state
+    rather than a fault.** A promoted bot's config names the live account while the stopped
+    process last reported the demo one; between the write and the restart both are true of
+    something. The tint's job is to say that this bot touches real money, so it goes amber the
+    moment ANY evidence says live and only goes back when nothing does. Under-reporting live is
+    the failure this may never have.
+
+    ⚠ **The registry's hardcode is the FALLBACK, not the answer** — used when the account is
+    unknown to the account registry, when the config cannot be read, or when the registry itself
+    cannot be. It is still what a benched bot reports, which is right: a bot on no account has no
+    account to derive a kind from.
+    """
+    reg = _BY_KEY.get(bot_key)
+    fallback = reg.account_type if reg else "demo"
+    if kinds is None:
+        kinds = _registered_kinds()
+    if not kinds:
+        return fallback
+
+    candidates = []
+    try:
+        raw = _read_instance_config(bot_key).get("account")
+    except Exception:  # noqa: BLE001 — an unreadable config is not evidence of anything
+        raw = None
+    for value in (raw, reported_account):
+        if isinstance(value, bool) or value is None:
+            continue
+        try:
+            candidates.append(int(value))
+        except (TypeError, ValueError):
+            continue
+
+    seen = [kinds[a] for a in candidates if a in kinds]
+    if "live" in seen:
+        return "live"
+    if "demo" in seen:
+        return "demo"
+    return fallback
 
 
 # The VPS copy of the git-ignored credentials file. A password written from this page lands
@@ -2210,7 +2284,10 @@ def _build_settings_import_plan(
         # `None` here means COULD NOT READ and is handled as *unchecked*, never as *nothing
         # declared* — see `_declared_strategy_params`.
         declared=_declared_strategy_params(str(config.get("strategy_package") or "")),
-        account_type=reg.account_type,
+        # DERIVED, not `reg.account_type`: this planner REFUSES anything but a demo bot, and a
+        # hardcoded label would go on saying demo about a bot that has been promoted to live —
+        # turning the one guard here that protects real money into a comment.
+        account_type=_account_type_of(bot_key),
         grade=st.get("grade"),
         # A stress test with no grade LETTER may still have been graded (a ruleset with no
         # drawdown limit produces `grade=None` legitimately). `graded` asks whether grading ran
@@ -2371,6 +2448,7 @@ def _bot_targets(running: set) -> list:
     name; an empty dict would read as a bot that states nothing and let it through.
     """
     out = []
+    kinds = _registered_kinds()
     for key, reg in _BY_KEY.items():
         try:
             config = _read_instance_config(key)
@@ -2380,7 +2458,9 @@ def _bot_targets(running: set) -> list:
             stack_settings_import.BotTarget(
                 key=key,
                 display=reg.display,
-                account_type=reg.account_type,
+                # DERIVED — same reason as the single-bot import. Both planners that consume
+                # this refuse on anything but demo, so a stale label is a live account written to.
+                account_type=_account_type_of(key, kinds=kinds),
                 running=key in running,
                 config=config,
                 declared=_declared_strategy_params(
@@ -2560,6 +2640,195 @@ def apply_stack_settings_from_stress_test(stress_test_id: str):
         raise HTTPException(
             status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
         )
+
+    resp.applied = True
+    resp.restart_required = True
+    resp.commit = out
+    return resp
+
+
+# ── Demo → LIVE: the whole proven set, or none of it ─────────────────────────
+
+
+def _go_live_plan(bot_keys: list[str], account: int):
+    """Read every edge and plan the promotion. Returns `(plan, destination)`.
+
+    🔴 **ONE builder, called by BOTH the preview and the apply**, for the reason every other
+    preview-then-apply pair here uses one: the list a human reads before authorising a live-money
+    write has to BE the write. Two functions that each assemble a plan are two plans that can
+    disagree, and the disagreement is invisible until it lands on a live account.
+
+    ⚠ Reads only. Every write lives in the apply endpoint.
+    """
+    try:
+        registered = bot_account_registry.account_by_number(_registry_path(), account)
+    except bot_account_registry.RegistryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    groups = _account_groups()
+    destination_group = next(
+        (g for g in groups if g.kind == "account" and g.account == account), None
+    )
+
+    plan = go_live.plan_go_live(
+        bot_keys=list(bot_keys),
+        bots=_bot_targets(_running_bot_keys()),
+        destination=registered,
+        destination_group=destination_group,
+        # What each bot DID on demo. Reported, never enforced — there is no minimum here, so the
+        # only thing this can do is put the evidence in front of the person deciding.
+        records={k: bot_earnings.read_bot_ledger(k) for k in bot_keys},
+        # The SAME function a single move from the Accounts page runs through. Six fields move a
+        # bot and every one of them has an incident behind it; a second copy would have to
+        # re-learn all six.
+        assign=bot_accounts.assign_plan,
+    )
+    return plan, registered
+
+
+def _go_live_response(plan) -> GoLivePlan:
+    return GoLivePlan(
+        from_account=plan.from_account,
+        to_account=plan.to_account,
+        blocked=plan.blocked,
+        moves=[
+            GoLiveMove(
+                bot=m.bot_key,
+                display=m.display,
+                fields=m.fields,
+                param_fields=m.param_fields,
+                notes=m.notes,
+                record=GoLiveRecord(**{k: v for k, v in m.record.items() if k != "bot_key"})
+                if m.record
+                else None,
+            )
+            for m in plan.moves
+        ],
+        cap_pct=plan.cap_pct,
+        confirm=plan.confirm,
+        warnings=plan.warnings,
+    )
+
+
+@router.post("/go-live/preview", response_model=GoLivePlan)
+def preview_go_live(body: GoLiveRequest):
+    """What promoting this set onto that live account WOULD do. Writes nothing.
+
+    ⚠ **`confirm` is ignored here on purpose.** The phrase this returns is the one the apply
+    demands, so a caller reads it off a preview it has just seen rather than composing it.
+    """
+    plan, _registered = _go_live_plan(body.bots, body.account)
+    return _go_live_response(plan)
+
+
+@router.post("/go-live", response_model=GoLivePlan)
+def apply_go_live(body: GoLiveRequest):
+    """Move this proven set off its demo account and onto the live one.
+
+    🔴 **THE ONLY WRITE IN THIS APP THAT PUTS A STRATEGY ON REAL MONEY, and it is guarded three
+    ways that all have to hold at once**: the destination's REGISTRY entry has to say `live`, a
+    password for it has to be stored, and the caller has to type back a phrase naming the account.
+
+    🔴 **ALL OR NOTHING, and the writes are staged before ANY of them lands.** The plan is
+    complete or it is blocked, so a refusal costs nothing; staging buys that a config which cannot
+    be serialised takes the whole promotion down before the first file moves, rather than after
+    two of three bots are already on the live account.
+
+    ⚠ **Every file goes into ONE commit.** A set is bots measured together; two commits is two
+    states of the fleet, and the one in between was never measured.
+
+    ⚠ **It never reports the move as in effect.** `account` is not runtime-reloadable and could
+    not be, so `restart_required` is always True — and every bot in the set is stopped (a running
+    one is refused), so nothing trades the live account until somebody starts it.
+
+    ⚠ **It does NOT deploy code and does NOT restart.** Those stay separate, deliberate steps.
+    """
+    plan, registered = _go_live_plan(body.bots, body.account)
+    resp = _go_live_response(plan)
+
+    if plan.blocked:
+        raise HTTPException(status_code=409, detail=plan.blocked)
+    if plan.is_noop:
+        return resp
+
+    # ⚠ Refused on a DEFINITE no, never on an unanswered question — `set_bot_account`'s rule.
+    # `None` means the VPS could not be asked, and refusing on it would send the reader to
+    # re-enter a password that is already there. Checked HERE rather than in the planner because
+    # it needs the box, and the planner is pure.
+    with_password = _accounts_with_a_password()
+    if with_password is not None and body.account not in with_password:
+        raise HTTPException(
+            status_code=409,
+            detail=f"No MT5 password is stored for account {body.account}, so none of these bots "
+            f"could log in. Set it under Accounts, then promote.",
+        )
+
+    # 🔴 Compared to the phrase THIS plan produced, not to a constant. The plan is rebuilt above
+    # from live state, so a confirmation typed against an older preview — a different account, or
+    # one that has since changed — no longer matches.
+    if body.confirm != plan.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This puts {len(plan.moves)} bots on LIVE account {plan.to_account}. To "
+            f"confirm, send exactly: {plan.confirm}",
+        )
+
+    # ── stage every file first, write none ───────────────────────────────────────────────
+    staged: dict = {}
+    for move in plan.moves:
+        data = _read_instance_config(move.bot_key)
+        data.update(move.fields)
+        if move.param_fields:
+            # Merged rather than replaced: the symbol and the cost profile move with the account,
+            # and every other key in there is the bot's own tuning.
+            params = dict(data.get("strategy_params") or {})
+            params.update(move.param_fields)
+            data["strategy_params"] = params
+        staged[move.bot_key] = data
+
+    for key, data in staged.items():
+        _write_instance_config(key, data)
+
+    moved = ", ".join(sorted(staged))
+    cap_note = f", risk budget {plan.cap_pct:g}%" if plan.cap_pct is not None else ", UNCAPPED"
+
+    if not body.deploy:
+        resp.applied = True
+        resp.restart_required = True
+        return resp
+
+    paths = [_BOT_INSTANCE_MAP[key]["path"] for key in sorted(staged)]
+    try:
+        out = _git_commit_push(
+            paths,
+            f"bots: {moved} promoted from demo {plan.from_account} to LIVE "
+            f"{plan.to_account}{cap_note} [command center]",
+            "a proven strategy set moved from its demo account onto a live one from the "
+            "Command Center; the bots, both accounts and the risk budget are named in the "
+            "message",
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
+    try:
+        out += "\n" + _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+    # ⚠ Announced rather than logged quietly. This is the one event on this box where a config
+    # write changes whose money is at risk, and the person who did not press the button is the
+    # one who most needs to know it happened.
+    _notify_telegram(
+        alert(
+            "🔴",
+            "GONE LIVE",
+            moved,
+            f"Moved from demo {plan.from_account} to LIVE {plan.to_account} "
+            f"({registered.broker or 'broker unrecorded'}{cap_note}).",
+            "Not trading yet — every bot is stopped and has to be started.",
+        )
+    )
 
     resp.applied = True
     resp.restart_required = True

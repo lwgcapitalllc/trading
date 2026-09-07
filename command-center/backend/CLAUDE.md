@@ -5353,3 +5353,124 @@ it refused**, which is the trap `test_gradable_resolver.py` recorded on its own 
 case a day earlier. The per-leg planner IS the intended backstop and stays; what the test pins now
 is that the STACK-level check gets there first, so the reader is told the whole set is barred
 rather than reading it as one leg's problem.
+
+---
+
+## DEMO → LIVE: the whole proven set, or none of it (2026-09-07)
+
+`services/go_live.py` + two endpoints on `routers/bots.py` (`POST /bots/go-live/preview`,
+`POST /bots/go-live`). The last hop of Aaron's pipeline, and the only write in this app that puts
+a strategy on real money.
+
+🔴 **ALL OR NOTHING, for the reason the stack settings copy is.** A strategy set is a measurement
+of several strategies competing for ONE balance and ONE risk budget. Two of three bots on the live
+account is a set nobody has ever run — **and it reads as a finished promotion, because every bot it
+did move is correct.**
+
+🔴 **THERE IS NO MINIMUM DEMO RECORD, AND THAT IS A DECISION** (Aaron, 2026-09-06: *"There's no
+minimum to go from demo to live. That's discretionary."*). So the plan REPORTS what each bot did on
+demo — closed trades, realised R, wins and losses, and the span of the record — and refuses on none
+of it. ⚠ **A bot with no ledger reads *no record reached this machine*, never *zero trades***;
+`bot_earnings` already refuses to collapse those two and this may not undo it one layer up. The
+warning for such a bot says NO DEMO EVIDENCE in as many words, because the alternative is a set
+going live on a sibling's record.
+
+**What it refuses on is the ACCOUNT, not the evidence:**
+
+- 🔴 **The destination's REGISTRY entry has to say `live`.** Going "live" onto a demo account is a
+  no-op wearing the word, and the account registry is the one place that states what an account IS
+  — not the account number, and not the bot's name. It must also be registered at all (nothing
+  else knows its server, its terminal or its symbol suffix) and have a terminal logged into it.
+- **Every bot has to be on ONE demo account today**, which is the set that was proven together.
+- 🔴 **A bot LEFT BEHIND on that demo account is REFUSED, not warned.** The whole claim being
+  promoted is that these strategies were measured competing for one balance; a leg that stays
+  behind means the thing that ran on demo is not the thing going live. It is the only check here
+  that fires on a bot nobody asked to move.
+- **Nothing may be RUNNING.** A bot reads its config at startup, so a moved config on a running bot
+  means the page shows a live account while the process trades the demo one.
+- **The shares still have to fit** under the budget the set arrives with.
+
+🔴 **THE RISK BUDGET IS CARRIED, NOT RE-DERIVED, and this is the trap the module exists for.**
+`bot_accounts.assign_plan` writes `account_risk_cap_pct = None` for the FIRST bot on an account —
+correct for one bot joining an empty account, and catastrophic for a set: moved one at a time,
+**every member looks like the first**, so a proven set lands on a live account UNCAPPED. The budget
+is written explicitly here, on every bot, and `assign_plan`'s own *"starts UNCAPPED"* note is
+dropped when it is — a note contradicting the fields beside it is worse than no note.
+
+⚠ **A populated destination's budget WINS.** A live account already carrying bots has a ceiling
+those bots agreed on, and arrivals adopt it; the alternative is the set rewriting a ceiling on an
+account it has never traded, and `live_config._assert_account_cap_agrees` then refuses every bot
+there at its next restart. Bots on the destination that DISAGREE, or one whose config cannot be
+read, refuse the promotion outright — there is nothing safe to adopt.
+
+⚠ **An arriving bot keeps its OWN per-trade share.** This moves an account, not a setting: a
+promotion that quietly re-sized the strategies would be promoting something other than what was
+proven. If the shares do not fit, that is a refusal to read, not a number to adjust.
+
+🔴 **A TYPED CONFIRMATION THAT NAMES THE ACCOUNT.** `confirmation_phrase` returns `GO LIVE
+<account>`, compared exactly. A fixed word like CONFIRM is a reflex — typed the same way whichever
+preview is on screen, so it proves the button was pressed and nothing else. An account number can
+only be typed by somebody reading THIS preview, so a confirmation pasted from a different one
+fails. ⚠ **The plan is rebuilt from live state on the apply**, so the phrase is compared against
+what is true now, not against a constant.
+
+⚠ **The password check is a DEFINITE no only.** `_accounts_with_a_password()` answers `None` when
+the VPS could not be asked, and refusing on that sends the reader to re-enter a credential that is
+already there. It lives in the router because it needs the box; the planner is pure.
+
+⚠ **Every file goes into ONE commit**, staged before any of them lands, and the promotion is
+ANNOUNCED on Telegram. This is the one event on this box where a config write changes whose money
+is at risk, and the person who did not press the button is the one who most needs to know.
+
+⚠ **Nothing is started.** Every bot in the set is stopped (a running one is refused) and stays
+stopped; `restart_required` is always True. It does NOT deploy code either — that stays a separate
+deliberate step.
+
+### 🔴 The demo/live label is DERIVED now, or step 8 would have made the fleet lie
+
+`_account_type_of` resolves a bot's account type from the account its config names (and the account
+its process last reported), looked up in the account registry, with `BotReg.account_type` as the
+FALLBACK.
+
+**`BotReg.account_type` is a hardcoded Python fact, and the moment a bot can be MOVED onto a live
+account from this app that hardcode becomes a second answer that drifts** — in the one direction
+the registry's own comment names as dangerous. A promoted bot would have gone on rendering as demo:
+no amber tint, absent from the *"N of these are LIVE accounts"* warning on every fleet dialog, wrong
+in the demo/live filter and in the Overview's live-bot count. **Worse, both settings imports refuse
+anything but a demo bot — so a stale label turns the one guard there that protects real money into
+a comment.**
+
+⚠ **LIVE WINS when the config and the running process disagree, and the disagreement is a real
+state rather than a fault.** Between the promotion write and the restart, both are true of
+something. The tint's job is to say this bot touches real money, so it goes amber the moment ANY
+evidence says live and only goes back when nothing does. Under-reporting live is the failure this
+may never have.
+
+⚠ **An unreadable account registry, or an account nobody registered, falls back to the hardcode** —
+never to `"demo"`. Cannot ask is not an answer, and here the reassuring answer is the dangerous one.
+A benched bot keeps the hardcode too, which is right: a bot on no account has no account to derive
+a kind from.
+
+⚠ **`_registered_kinds()` is read ONCE per snapshot**, not once per bot — two rows in one response
+may never disagree about what kind of account a number is.
+
+🔴 **`test_bot_registry.py` ALREADY ASSERTED THIS FIELD AND COULD NOT HAVE CAUGHT THE REGRESSION.**
+It compares each row to `reg.account_type`, and every registered bot is demo-registered on a demo
+account — so derived and hardcoded give the same answer there and the test passes either way. Two
+fallback tests written here had the identical flaw and were caught by mutation: against a
+demo-registered bot, *"fell back to the hardcode"* and *"answered demo"* are the same assertion.
+Both now use a bot registered LIVE, where the two differ. **Check that a test's inputs can
+distinguish the behaviours it names** — third time in a week.
+
+**Tests:** `tests/test_go_live.py` (49). ⚠ **A fail-watch against HEAD is VACUOUS** — the module did
+not exist — so non-vacuity is by **MUTATION: 52 written, 52 RUN, 52 killed.**
+
+🔴 **One survivor, and it was the assertion depending on ITERATION ORDER.** The no-terminal case
+asserted the refusal did not start with one named bot key — but the moves are sorted, so the
+per-bot backstop refused a DIFFERENT bot first and the assertion passed under the mutation. It now
+checks against every key in the set. ⚠ **This is the third time this month a test has been
+satisfied by a refusal for the wrong reason**; the fix is always the same shape — assert WHICH rule
+refused, not merely that something did.
+
+⚠ **A reformat invalidated one mutation's patch string and it reported as a survivor.** Re-run the
+harness after `ruff format`, and treat a BADPATCH as an unrun mutation rather than a passing one.
