@@ -576,6 +576,25 @@ class StackSettingImportPlan(BaseModel):
     commit: str = ""
 
 
+class StressShiftBook(BaseModel):
+    """The combined ACCOUNT book one sensitivity shift produced.
+
+    🔴 **A STACK's shift only.** A single run's shift is a child backtest with a row of its own,
+    so it is opened as a run; a stack's shift is a function call in this process with no row, and
+    manufacturing one would put a backtest in the Runs lineage that nobody launched. This is the
+    stored book instead.
+
+    ⚠ Empty lists here mean the account genuinely traded nothing under that shift. A book that was
+    never stored is a 404, not an empty one.
+    """
+
+    stress_test_id: str
+    slug: str
+    equity_curve: list = []
+    daily_pnl: list = []
+    kpis: dict = {}
+
+
 class GoLiveRecord(BaseModel):
     """What one bot actually DID on the demo account, read off its own decision record.
 

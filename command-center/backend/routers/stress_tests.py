@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from models import StressTest, StressTestCreate, StressTestDetail
-from services import gradable, lab_db
+from models import StressShiftBook, StressTest, StressTestCreate, StressTestDetail
+from services import gradable, lab_db, stress_tester
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.stress_tester import (
     MIN_TRADES_FOR_STRESS,
@@ -44,6 +44,43 @@ def running_stress_lock():
 @router.get("/strategy-grades")
 def strategy_best_grades():
     return lab_db.best_grades_by_strategy()
+
+
+@router.get("/{stress_test_id}/shift-book/{slug}", response_model=StressShiftBook)
+def get_stress_shift_book(stress_test_id: str, slug: str):
+    """The combined ACCOUNT book one sensitivity shift produced, so a stack shift can be opened.
+
+    🔴 **A stack shift has no run row and must not be given one.** A single run's shift IS a
+    backtest and gets a child row somebody can navigate to; a stack's shift is a function call in
+    this process, and manufacturing a run row for it would put a backtest in the Runs lineage that
+    nobody launched — naming one strategy as the subject of an account's result, which is the
+    mistake the nullable `run_id` on the stress test exists to prevent. The BOOK is stored
+    instead, and this is how it is read.
+
+    ⚠ **Pass `__baseline__` for the run every shift is scored against**, replayed by the same
+    phase through the same path. A shift's number is a RATIO against it, so a reader holding only
+    the shift is holding half a measurement.
+
+    ⚠ **404 means NOT STORED**, which covers a phase that predates this, a write that failed, and
+    a slug that names nothing. It is deliberately not an empty book: an account that traded
+    nothing and a book nobody kept are different answers.
+    """
+    if not lab_db.get_stress_test(stress_test_id):
+        raise HTTPException(404, "Stress test not found")
+    book = stress_tester.read_shift_book(stress_test_id, slug)
+    if book is None:
+        raise HTTPException(
+            404,
+            f"No stored book for {slug!r}. Only a STACK's sensitivity shifts keep one, and only "
+            f"since 2026-09-07 — a single run's shift is a child backtest you can open directly.",
+        )
+    return StressShiftBook(
+        stress_test_id=stress_test_id,
+        slug=slug,
+        equity_curve=book["equity_curve"],
+        daily_pnl=book["daily_pnl"],
+        kpis=book["kpis"],
+    )
 
 
 @router.get("/{stress_test_id}", response_model=StressTestDetail)

@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 import uuid
 from datetime import date, timedelta
@@ -1945,6 +1946,11 @@ async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, O
             stress_test_id,
             baseline_pf,
         )
+    # 🔴 THE BASELINE IS STORED TOO, and it is not decoration. Every shift's number is a RATIO
+    # against it, so a reader opening a shift with nothing to compare it to is holding half a
+    # measurement — and this baseline is the one this phase replayed, not the stack's own stored
+    # book, which was measured on a different code path.
+    write_shift_book(stress_test_id, _BASELINE_SLUG, base_book)
 
     results: list[dict] = []
     for entry in plan:
@@ -1969,12 +1975,17 @@ async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, O
             continue
         if book.get("cancelled"):
             return (False, "cancelled")
+        slug = stack_shift_slug(entry["key"], entry["label"])
         results.append(
             {
                 # ⚠ `param` is the KEY (`<strategy>.<setting>` for a leg), because that is what
                 # the scorer files the result under and what the page labels the row with.
                 "entry": {**entry, "param": entry["key"]},
                 "run_id": None,
+                # ⚠ **Recorded ONLY when the write landed.** A slug on a record whose book is not
+                # on disk is a link that opens nothing, and *cannot open* would then be
+                # indistinguishable from *was never stored*.
+                "book": slug if write_shift_book(stress_test_id, slug, book) else None,
                 "ok": True,
                 "pf": book["kpis"].get("profit_factor"),
                 "pnl": book["kpis"].get("net_pnl") or 0.0,
@@ -1996,6 +2007,112 @@ async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, O
             "settings_out_of_budget": out_of_budget,
         },
     )
+
+
+# ── A stack shift's own book, so the reader can open one ──────────────────────
+
+
+# Filesystem-safe, and DERIVED from the shift rather than counted, so the same shift of the same
+# setting always lands on the same file — a re-run overwrites its own book instead of leaving the
+# previous phase's beside it under a number that has shifted by one.
+_SLUG_SAFE = re.compile(r"[^A-Za-z0-9_.+-]+")
+
+# The baseline's own folder. Double-underscored so it cannot collide with a real shift's slug —
+# a setting named `baseline` is legal and would otherwise overwrite the thing every shift is
+# scored against.
+_BASELINE_SLUG = "__baseline__"
+
+
+def stack_shift_slug(param: str, label: str) -> str:
+    """The folder one shift's book is stored under. `param` is `<strategy>.<setting>`.
+
+    ⚠ **Anything the regex would collapse is REPLACED, never dropped**, so two different shifts
+    cannot land on one name: `+10%` and `+10` differ because the `%` becomes an underscore rather
+    than vanishing.
+
+    🔴 **AND NOTHING IS STRIPPED FROM THE END, which is where that guarantee was lost.** The first
+    version finished with `.strip("_")`, which deleted the very underscore the substitution had
+    just put there — so `+25%` and `+25` both became `account_size__+25` and the second shift's
+    book would have silently overwritten the first's. MEASURED, not reasoned: the two returned the
+    identical string. No shift label today lacks a `%`, so it could not fire — **and the docstring
+    positively claimed the collision was impossible**, which is the shape this repo keeps
+    recording: a comment asserting a safety net that is not there stops the next reader looking.
+    A LEADING underscore is still stripped; that one cannot encode anything.
+    """
+    return _SLUG_SAFE.sub("_", f"{param}__{label}").lstrip("_")
+
+
+def _shift_book_dir(stress_test_id: str):
+    """Where a stack stress test keeps its per-shift books.
+
+    🔴 **UNDER THE STRESS TEST'S OWN DIRECTORY, which is what makes it disposable.** The delete
+    endpoint already rmtrees that directory, so these books are removed with the test they
+    describe and cannot become the orphaned-directory backlog this app has already had to clear
+    once. A directory of its own would need its own cleanup, and the one nobody wrote is the one
+    that grows.
+    """
+    from services.backtest_runner import LAB_RESULTS_DIR
+
+    return Path(LAB_RESULTS_DIR) / stress_test_id / "shifts"
+
+
+def write_shift_book(stress_test_id: str, slug: str, book: dict) -> bool:
+    """Persist one shift's combined account book. Returns whether it landed.
+
+    🔴 **A STACK SHIFT SPAWNS NO CHILD RUN, so without this there is nothing to open.** A single
+    run's shift IS a backtest and gets a row somebody can navigate to; a stack's shift is a
+    function call in this process, and creating a run row for it would put a backtest in the Runs
+    lineage that nobody launched — naming one strategy as the subject of an account's result, the
+    same mistake the nullable `run_id` on the stress test exists to prevent. So the BOOK is stored
+    and the row stays absent.
+
+    ⚠ **It NEVER raises and never fails the phase.** A shift's score comes off the KPIs in memory;
+    this file is a convenience for the reader. A phase that died because a drill-down could not be
+    written would have traded a measurement for a link.
+
+    ⚠ **The return value is the point.** The caller records the slug only when the write landed,
+    so the page is never offered a link to a book that is not there — *cannot open* and *was never
+    stored* would otherwise be the same broken link.
+    """
+    try:
+        d = _shift_book_dir(stress_test_id) / slug
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "equity_curve.json").write_text(json.dumps(book.get("equity_curve") or []))
+        (d / "daily_pnl.json").write_text(json.dumps(book.get("daily_pnl") or []))
+        (d / "kpis.json").write_text(json.dumps(book.get("kpis") or {}))
+        return True
+    except Exception as exc:  # noqa: BLE001 — see the docstring: this may never fail a phase
+        log.warning(
+            "Stack sensitivity %s: could not store %s's book — %s", stress_test_id, slug, exc
+        )
+        return False
+
+
+def read_shift_book(stress_test_id: str, slug: str) -> Optional[dict]:
+    """One stored shift book, or `None` when there is none.
+
+    ⚠ `None` means NOT STORED — the phase predates this, the write failed, or the slug is wrong —
+    and the router turns it into a 404. A partially readable book returns what it has rather than
+    nothing: the KPIs are what the reader came for and an unreadable curve should not withhold
+    them.
+    """
+    d = _shift_book_dir(stress_test_id) / slug
+    if not d.is_dir():
+        return None
+    out: dict = {"equity_curve": [], "daily_pnl": [], "kpis": {}}
+    for name, key in (
+        ("equity_curve.json", "equity_curve"),
+        ("daily_pnl.json", "daily_pnl"),
+        ("kpis.json", "kpis"),
+    ):
+        f = d / name
+        if not f.exists():
+            continue
+        try:
+            out[key] = json.loads(f.read_text())
+        except Exception:  # noqa: BLE001 — a corrupt half is reported as absent, never as empty
+            log.warning("Stack sensitivity %s: %s/%s is unreadable", stress_test_id, slug, name)
+    return out
 
 
 def _finish_sensitivity(
@@ -2053,6 +2170,12 @@ def _finish_sensitivity(
 
         sensitivity.setdefault(pname, {})[shift_label] = {
             "run_id": res["run_id"],
+            # 🔴 A SEPARATE FIELD FROM `run_id`, DELIBERATELY. `run_id` means *there is a lab run
+            # row you can navigate to*; `book` means *a stored account book you can read*. A stack
+            # shift has the second and never the first, and folding them into one field would make
+            # a page that follows `run_id` request a run that does not exist. `None` on both is
+            # the honest answer for a shift that could not be stored.
+            "book": res.get("book"),
             "new_value": entry["value"],
             "degradation": None if degradation is None else round(degradation, 4),
             "pf_delta_pct": None if pf_delta_pct is None else round(pf_delta_pct, 2),

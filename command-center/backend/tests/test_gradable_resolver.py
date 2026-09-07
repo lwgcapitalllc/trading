@@ -813,7 +813,15 @@ def sens(lab, monkeypatch):
     ⚠ The fixture's strategies carry NO param schema, so the plan is the stack's own settings
     alone: the risk budget and the starting balance, four shifts each. The smallest-position
     setting sits at 0.0, so every shift of it lands back on 0 and is dropped as a no-op.
+
+    🔴 **The lab results directory is redirected, and that is not tidiness.** Since 2026-09-07 the
+    phase WRITES each shift's book under `<results>/<stress_test_id>/shifts/`, so without this
+    every run of this file would leave folders in the real `reports/lab` — the orphaned-directory
+    backlog this app has already had to clear once, created by its own test suite.
     """
+    from services import backtest_runner
+
+    monkeypatch.setattr(backtest_runner, "LAB_RESULTS_DIR", lab / "reports")
     _stack(lab, monkeypatch)
     calls: list[dict] = []
 
@@ -1127,3 +1135,192 @@ def test_the_LAUNCH_records_the_recovery_parent_on_the_member_row(client, monkey
     by_sid = {row["sid"]: row["source"] for row in rows}
     assert by_sid["loss_recovery"] == "sos_fade"
     assert by_sid["sos_fade"] is None
+
+
+# ── A stack shift's own book — the drill-down a stack shift has no run row for ────────────
+
+
+def _shift_dir(lab, stress_test_id="st_sens"):
+    return lab / "reports" / stress_test_id / "shifts"
+
+
+def test_two_shift_labels_that_differ_only_by_a_DROPPED_character_get_different_slugs():
+    """🔴 THE DEFECT THIS CASE WAS WRITTEN FOR WAS MINE, and it was found by looking at the files
+    rather than by reading the code. The first slug ended with `.strip("_")`, which deleted the
+    underscore the substitution had just put there in place of the `%` — so `+25%` and `+25` both
+    became `account_size__+25`, and the second shift's book would have overwritten the first's in
+    silence.
+
+    ⚠ **No shift label today lacks a `%`, so it could not fire** — and the docstring positively
+    claimed the collision was impossible, which is exactly the shape that stops the next reader
+    looking.
+    ⚠ Watched RED by restoring the trailing strip.
+    """
+    from services.stress_tester import stack_shift_slug
+
+    assert stack_shift_slug("account_size", "+25%") != stack_shift_slug("account_size", "+25")
+    assert stack_shift_slug("a.b", "+10%") != stack_shift_slug("a.b", "-10%")
+    # And it stays a legal single path segment whatever the setting is called.
+    assert "/" not in stack_shift_slug("a/b", "+10%")
+
+
+def test_every_SHIFT_stores_its_own_account_book_and_so_does_the_BASELINE(sens, lab):
+    """🔴 A stack shift spawns no child run, so without a stored book there is nothing to open.
+
+    ⚠ **The baseline is stored too, and it is not decoration**: every shift's number is a RATIO
+    against it, so a reader opening a shift with nothing to compare it to holds half a
+    measurement. It is the baseline THIS phase replayed, not the stack's own stored book, which
+    was measured on a different code path.
+    ⚠ Watched RED by writing nothing, and again by skipping the baseline.
+    """
+    ok, err = _run_sens()
+    assert (ok, err) == (True, None)
+
+    stored = sorted(p.name for p in _shift_dir(lab).iterdir())
+    assert "__baseline__" in stored
+    # Eight shifts: four each of the risk budget and the starting balance.
+    assert len([n for n in stored if n != "__baseline__"]) == 8
+    one = _shift_dir(lab) / stored[0]
+    assert {p.name for p in one.iterdir()} == {
+        "equity_curve.json",
+        "daily_pnl.json",
+        "kpis.json",
+    }
+
+
+def test_the_stored_record_names_the_BOOK_and_it_is_NOT_the_run_id(sens):
+    """🔴 TWO FIELDS, DELIBERATELY. `run_id` means *there is a lab run row you can navigate to*;
+    `book` means *a stored account book you can read*. A stack shift has the second and never the
+    first, and folding them into one field would make a page that follows `run_id` request a run
+    that does not exist.
+
+    ⚠ Watched RED by writing the slug into `run_id`.
+    """
+    _run_sens()
+    st = lab_db.get_stress_test("st_sens")
+    # ⚠ `get_stress_test` already parses this column — reading it back through
+    # `json.loads` is a second parse of a dict.
+    sensitivity = st["sensitivity_summary"]
+    shift = sensitivity["risk_cap_pct"]["+10%"]
+    assert shift["run_id"] is None
+    assert shift["book"] and shift["book"].startswith("risk_cap_pct__")
+
+
+def test_a_shift_whose_book_could_NOT_be_written_records_no_link(sens, monkeypatch):
+    """⚠ A slug on a record whose book is not on disk is a link that opens nothing, and *cannot
+    open* would then be indistinguishable from *was never stored*.
+
+    ⚠ **The phase still succeeds**, because the score comes off the KPIs in memory — a phase that
+    died because a drill-down could not be written would have traded a measurement for a link.
+    ⚠ Watched RED by recording the slug unconditionally.
+    """
+    from services import stress_tester
+
+    monkeypatch.setattr(stress_tester, "write_shift_book", lambda *a, **k: False)
+    ok, err = _run_sens()
+    assert (ok, err) == (True, None)
+
+    sensitivity = lab_db.get_stress_test("st_sens")["sensitivity_summary"]
+    assert all(shift["book"] is None for param in sensitivity.values() for shift in param.values())
+
+
+def test_the_book_writer_NEVER_raises_and_says_it_failed(lab, monkeypatch):
+    """A drill-down is a convenience; it may never take a phase down with it. The return value is
+    what the caller reads, so a silent False is not silent to the code that matters.
+
+    ⚠ Watched RED by letting the write raise.
+    """
+    from services import backtest_runner, stress_tester
+
+    # A FILE where the directory has to go — `mkdir` on it raises, which is the realistic
+    # failure (a full disk, a read-only mount) without needing either.
+    blocker = lab / "blocked"
+    blocker.write_text("not a directory")
+    monkeypatch.setattr(backtest_runner, "LAB_RESULTS_DIR", blocker)
+    assert stress_tester.write_shift_book("st_x", "slug", _book_pf(pf=1.0)) is False
+
+
+def test_reading_a_slug_that_was_never_stored_is_None_not_an_empty_book(lab, monkeypatch):
+    """⚠ An account that traded nothing and a book nobody kept are different answers, and the
+    router turns only the second into a 404.
+
+    ⚠ Watched RED by returning an empty book for a missing directory.
+    """
+    from services import backtest_runner, stress_tester
+
+    monkeypatch.setattr(backtest_runner, "LAB_RESULTS_DIR", lab / "reports")
+    assert stress_tester.read_shift_book("st_x", "nothing_here") is None
+
+
+def test_a_CORRUPT_half_of_a_book_still_reports_the_readable_half(lab, monkeypatch):
+    """The KPIs are what the reader came for; an unreadable curve should not withhold them.
+
+    ⚠ Watched RED by returning None when any file fails to parse.
+    """
+    from services import backtest_runner, stress_tester
+
+    monkeypatch.setattr(backtest_runner, "LAB_RESULTS_DIR", lab / "reports")
+    stress_tester.write_shift_book("st_x", "slug", _book_pf(pf=1.5))
+    (lab / "reports" / "st_x" / "shifts" / "slug" / "equity_curve.json").write_text("{oops")
+
+    book = stress_tester.read_shift_book("st_x", "slug")
+    assert book["kpis"]["profit_factor"] == 1.5
+    assert book["equity_curve"] == []
+
+
+# ── The endpoint ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def book_client(client, lab, monkeypatch):
+    """The API, with one stored shift book on disk."""
+    from services import backtest_runner, stress_tester
+
+    monkeypatch.setattr(backtest_runner, "LAB_RESULTS_DIR", lab / "reports")
+    lab_db.insert_stress_test(
+        {"stress_test_id": "st_b", "stack_id": "stk_1", "status": "complete", "created_at": 1}
+    )
+    stress_tester.write_shift_book("st_b", "risk_cap_pct__+10_", _book_pf(pf=2.5))
+    stress_tester.write_shift_book("st_b", "__baseline__", _book_pf(pf=2.0))
+    return client
+
+
+_BOOK_URL = "/stress-tests/st_b/shift-book"
+
+
+def test_a_stored_shift_book_is_served(book_client):
+    """⚠ Watched RED by dropping the route."""
+    r = book_client.get(f"{_BOOK_URL}/risk_cap_pct__+10_")
+    assert r.status_code == 200
+    assert r.json()["kpis"]["profit_factor"] == 2.5
+    assert r.json()["slug"] == "risk_cap_pct__+10_"
+
+
+def test_the_BASELINE_is_servable_through_the_same_route(book_client):
+    """A shift's number is a ratio against it, so the reader needs both from one place.
+
+    ⚠ Watched RED by refusing the baseline slug.
+    """
+    r = book_client.get(f"{_BOOK_URL}/__baseline__")
+    assert r.status_code == 200
+    assert r.json()["kpis"]["profit_factor"] == 2.0
+
+
+def test_an_unknown_SLUG_is_a_404_that_says_only_a_stack_keeps_one(book_client):
+    """404 covers a phase that predates this, a write that failed, and a slug naming nothing —
+    all of which are *not stored*, and none of which is an empty book.
+
+    ⚠ Watched RED by returning an empty book instead of raising.
+    """
+    r = book_client.get(f"{_BOOK_URL}/never_stored")
+    assert r.status_code == 404
+    assert "STACK" in r.json()["detail"]
+
+
+def test_an_unknown_STRESS_TEST_is_a_404_before_the_disk_is_touched(book_client):
+    """⚠ Watched RED by dropping the row check — a slug under a made-up test id would then read
+    the filesystem and answer *no stored book*, naming the wrong thing as missing.
+    """
+    r = book_client.get("/stress-tests/st_nope/shift-book/__baseline__")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Stress test not found"

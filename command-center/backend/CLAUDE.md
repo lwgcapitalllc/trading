@@ -5156,9 +5156,10 @@ It was a COUNT in one place and a literal list in another, held together by a co
 ±25% pair is usually the one that produces the maximum, so probing a stack with ±10% only to buy
 back replays would make every stack grade EASIER than every run, on one letter scale, silently.
 
-⚠ **No child runs are spawned, so a shift has no run id and the page offers no drill-down into
-it.** That is honest rather than convenient — there is no row, because a stack replay is a function
-call in this process, not a job on a terminal.
+⚠ **No child runs are spawned, and none should be** — a stack replay is a function call in this
+process, not a job on a terminal, and manufacturing a run row would put a backtest in the Runs
+lineage that nobody launched. ✅ **The BOOK is stored instead since 2026-09-07**, so a shift can be
+opened without inventing a row: *A stack shift keeps its own book* below.
 
 ✅ **A stack holding a loss-recovery leg is sensitivity-testable since 2026-09-07**, through the
 same rebuild walk-forward uses — both phases share `gradable.rebuild_legs`, so neither can accept a
@@ -5529,3 +5530,73 @@ dependent leg being refused; they now pin the PRE-COLUMN stack being refused, wh
 that survives. **A test whose premise quietly changes meaning while staying green is a test that
 has stopped guarding what its name claims** — the same trap this file records for the fixture
 premises two sections up.
+
+---
+
+## A stack shift keeps its own BOOK, so it can be opened without inventing a row (2026-09-07)
+
+`stress_tester.write_shift_book` / `read_shift_book` / `stack_shift_slug`, served by
+`GET /stress-tests/{id}/shift-book/{slug}`.
+
+🔴 **A SINGLE RUN'S SHIFT IS A BACKTEST AND GETS A ROW; A STACK'S SHIFT IS A FUNCTION CALL AND
+MUST NOT.** The single-run path creates a child `backtest_runs` row per shift, which is what the
+page navigates into. A stack shift replays in this process — there is no job, no terminal and
+nothing to poll — and giving it a run row would put a backtest in the Runs lineage that nobody
+launched, **naming one strategy as the subject of an account's result**, which is exactly what the
+nullable `run_id` on the stress test exists to prevent. So the BOOK is stored and the row stays
+absent.
+
+🔴 **`book` IS A SEPARATE FIELD FROM `run_id` ON THE SHIFT RECORD.** `run_id` means *there is a lab
+run row you can navigate to*; `book` means *a stored account book you can read*. A stack shift has
+the second and never the first, and folding them into one field would make a page that follows
+`run_id` request a run that does not exist.
+
+⚠ **The slug is recorded ONLY when the write landed.** A slug whose book is not on disk is a link
+that opens nothing, and *cannot open* would then be indistinguishable from *was never stored*.
+
+⚠ **The writer NEVER raises and never fails the phase.** A shift's score comes off the KPIs in
+memory; the file is a convenience for the reader, and a phase that died because a drill-down could
+not be written would have traded a measurement for a link. Its return value is what the caller
+reads, so the failure is not silent to the code that matters.
+
+🔴 **THE BASELINE IS STORED TOO, and it is not decoration.** Every shift's number is a RATIO
+against it, so a reader opening a shift with nothing to compare it to holds half a measurement —
+and it is the baseline THIS phase replayed, not the stack's own stored book, which was measured on
+a different code path. Its slug is `__baseline__`, double-underscored so a setting genuinely named
+`baseline` cannot overwrite the thing every shift is scored against.
+
+⚠ **The books live UNDER THE STRESS TEST'S OWN DIRECTORY**, which is what makes them disposable:
+the delete endpoint already rmtrees that directory, so they go with the test they describe. A
+directory of their own would need its own cleanup, and the one nobody writes is the one that grows
+— this app has already had to clear an orphaned-directory backlog once.
+
+⚠ **404 means NOT STORED** — a phase predating this, a write that failed, or a slug naming nothing
+— and it is deliberately not an empty book. An account that traded nothing and a book nobody kept
+are different answers.
+
+⚠ **A corrupt half returns the readable half.** The KPIs are what the reader came for and an
+unreadable curve should not withhold them; the missing half reads as absent, never as measured
+empty.
+
+🔴 **A DEFECT OF MINE WAS FOUND BY LOOKING AT THE FILES, NOT BY READING THE CODE, AND ITS DOCSTRING
+CLAIMED THE OPPOSITE.** `stack_shift_slug` ended with `.strip("_")`, which deleted the underscore
+the substitution had just put there in place of the `%` — so `+25%` and `+25` both became
+`account_size__+25` and the second shift's book would have silently overwritten the first's.
+MEASURED: the two returned the identical string. **No shift label today lacks a `%`, so it could
+not fire** — and the comment positively asserted the collision was impossible, which is the shape
+this file already records twice: *a comment asserting a safety net that is not there is worse than
+no comment, because the next reader stops looking.* A leading underscore is still stripped; that
+one cannot encode anything.
+
+⚠ **AND THE TEST SUITE WAS WRITING INTO THE REAL `reports/lab`.** The sensitivity fixture never
+redirected the results directory — harmless while the phase wrote nothing, and the moment it wrote
+books every run of that file left folders in the live reports tree. **Found the same way**, by
+listing the directory. The fixture redirects it now, and the stray folder was read before it was
+deleted and confirmed to hold only the fixture's own stub values with no stress-test row naming it.
+
+**Tests:** 11 more in `tests/test_gradable_resolver.py` (55). ⚠ **Non-vacuity by MUTATION: 11
+written, 11 RUN, 11 killed** — the trailing strip restored, a bad character dropped rather than
+replaced, no book written, the slug recorded despite a failed write, the baseline skipped, the
+`book` field blanked, the writer allowed to raise, a missing directory read as an empty book, a
+corrupt half taking the whole book down, the endpoint serving an empty book instead of 404, and the
+endpoint skipping its row check.
