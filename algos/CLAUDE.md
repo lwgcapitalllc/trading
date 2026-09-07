@@ -2905,11 +2905,14 @@ one field in that file that produces a bot which runs, logs cleanly and does not
 ✅ **IT WAS LANDED ON 2026-09-04 AND THE ORDERING TRAP BELOW IS HOW.** `sos_fade_demo` went to
 5% **FIRST**, then this bot was assigned at 5%. The Command Center refuses a write whose shares sum
 past the account cap, so assigning first is refused: 10 + 5 > 10 — loudly, at the moment of
-assignment, rather than later. 🔴 **THE TRAP IS STILL LOADED FOR A THIRD BOT AND THERE IS NO ROOM
-LEFT**: two shares of 5 fill the 10% cap exactly, `b_leg_demo` is benched and still states 10.0, and
-moving it to 5.0 alone would make three 5% shares against a 10% cap — at which point the three do
-not share the budget, they take turns. Decide what the cap becomes and how it splits three ways
-before assigning anything. ⚠ **The old warning here — do not move the sibling down before this bot
+assignment, rather than later. ⚠ **THE SAME ORDERING APPLIES TO A THIRD BOT, AND THAT IS ALL IT IS — A CHOICE, NOT A
+BLOCKER.** Two shares of 5 fill the 10% cap exactly, so a third at any positive risk sums past it
+and the three take turns instead of sharing. Aaron's answer, 2026-09-07: *"I can lower individual
+bots risk or just up the cap so no issue there."* Both are one write. 🔴 **AN EARLIER REVISION OF
+THIS LINE SAID *decide what the cap becomes before assigning anything*, WHICH IS THIS SECTION'S OWN
+FAILURE MODE ARRIVING FROM THE OTHER SIDE**: the paragraphs above exist because a doc called a
+solved thing impossible, and a doc that calls a routine choice a blocker does the same damage a
+week later. **State the mechanic; do not tell the owner to stop and decide.** ⚠ **The old warning here — do not move the sibling down before this bot
 is ready — was ANSWERED, not retired**: an account holding 5% for a bot that is not trading earns
 half its measured return for nothing, and the window between the two writes is the whole exposure.
 Do them together.
