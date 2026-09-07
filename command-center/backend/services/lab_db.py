@@ -427,6 +427,19 @@ def init_db() -> None:
             # `backtest_runs`; '[]' is the explicit "charge nothing".
             "ALTER TABLE stacks ADD COLUMN cost_layers TEXT",
             "ALTER TABLE stacks ADD COLUMN broker_profile TEXT",
+            # 2026-09-07 — the leg a DEPENDENT leg arms off, by strategy id.
+            #
+            # 🔴 It was passed at launch and written down NOWHERE, so a stack holding a
+            # loss-recovery leg could not be replayed and was refused walk-forward and
+            # sensitivity outright. Rebuilding without it produces a leg that arms off nothing
+            # and returns an EMPTY book — a whole account graded on a strategy set quietly one
+            # leg short, indistinguishable from a rule that found no setups.
+            #
+            # ⚠ NULL is THREE-STATE by construction and only two of the three matter: an
+            # ordinary leg depends on nothing, and a stack stored before this column has the
+            # dependency and cannot state it. The second is still refused, by asking the
+            # STRATEGY whether it needs a parent — never by reading NULL as "independent".
+            "ALTER TABLE stack_members ADD COLUMN source TEXT",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -922,11 +935,17 @@ def init_db() -> None:
             -- created (hidden from Runs via backtest_runs.stack_id, deleted with the stack);
             -- owned=0 = a pre-existing standalone run REUSED as-is (stays in Runs, survives
             -- stack deletion). position orders the legs.
+            -- `source` is the strategy id whose closed trades this leg arms off — the ONE
+            -- field that makes a leg DEPENDENT rather than a strategy of its own. NULL on
+            -- every ordinary leg, and also on any leg stored before 2026-09-07, which is why
+            -- a rebuild asks the STRATEGY whether it needs a parent rather than reading NULL
+            -- as "independent".
             CREATE TABLE IF NOT EXISTS stack_members (
                 stack_id  TEXT NOT NULL,
                 run_id    TEXT NOT NULL,
                 owned     INTEGER NOT NULL DEFAULT 1,
                 position  INTEGER NOT NULL DEFAULT 0,
+                source    TEXT,
                 PRIMARY KEY (stack_id, run_id)
             );
             CREATE INDEX IF NOT EXISTS idx_stack_members_stack
@@ -3550,12 +3569,24 @@ def insert_stack(data: dict) -> None:
         )
 
 
-def add_stack_member(stack_id: str, run_id: str, owned: int, position: int) -> None:
+def add_stack_member(
+    stack_id: str, run_id: str, owned: int, position: int, source: Optional[str] = None
+) -> None:
+    """Record one leg's membership.
+
+    `source` is the strategy id this leg arms off, and it is what makes the stack REPLAYABLE
+    later — walk-forward and sensitivity rebuild the legs from these rows, and a dependent leg
+    rebuilt without its parent arms off nothing and returns an empty book.
+
+    ⚠ `None` is the ordinary case (a leg that depends on nothing) and it is also what a leg
+    stored before this column has. Only the STRATEGY can tell those apart, which is why
+    `gradable.rebuild_legs` asks it rather than reading NULL as *independent*.
+    """
     with _connect() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO stack_members (stack_id, run_id, owned, position) "
-            "VALUES (?, ?, ?, ?)",
-            (stack_id, run_id, owned, position),
+            "INSERT OR IGNORE INTO stack_members (stack_id, run_id, owned, position, source) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (stack_id, run_id, owned, position, source or None),
         )
 
 
@@ -3676,7 +3707,8 @@ def list_stack_runs(stack_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT r.*, s.name AS strategy_name, m.owned AS stack_owned
+            SELECT r.*, s.name AS strategy_name, m.owned AS stack_owned,
+                   m.source AS stack_source
             FROM stack_members m
             JOIN backtest_runs r ON r.run_id = m.run_id
             JOIN strategies s ON s.id = r.strategy_id

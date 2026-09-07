@@ -76,6 +76,7 @@ def _stack(
     write_book: bool = True,
     complete_legs: bool = True,
     runner: str = "python",
+    sources: dict | None = None,
 ) -> str:
     """A whole stack, seeded the way the app builds one, with its combined book on disk."""
     monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path / "reports")
@@ -108,7 +109,10 @@ def _stack(
             leg_curve = tmp_path / f"leg_{sid}.json"
             leg_curve.write_text(json.dumps([{"index": 1, "equity": 1.0, "profit": 1.0}]))
             _complete(f"r_{sid}", trades=60, curve_path=str(leg_curve))
-        lab_db.add_stack_member("stk_1", f"r_{sid}", 1, i)
+        # The leg this one arms off, by strategy id. Recorded on the MEMBER row since
+        # 2026-09-07 — before that it lived only in the launch request, so a rebuilt stack
+        # could not know it and the whole stack was refused a window replay.
+        lab_db.add_stack_member("stk_1", f"r_{sid}", 1, i, source=(sources or {}).get(sid))
 
     if write_book:
         sdir = portfolio_runner.stack_dir("stk_1")
@@ -384,6 +388,10 @@ def test_a_stack_holding_a_DEPENDENT_leg_is_refused_SENSITIVITY_up_front(stack_c
     and returns an empty book. Every shift would then be measured on an account quietly one leg
     short, and the phase would look like it worked.
 
+    ⚠ **The subject narrowed on 2026-09-07 and this case is the half that SURVIVES.** The parent
+    is recorded on the member row now, so a stack launched since then replays; what is still
+    refused is one launched BEFORE, which has the dependency and cannot state it. The fixture
+    records no source, which is exactly that stack.
     ⚠ Watched RED by narrowing the pre-check back to walk-forward only.
     """
     with sqlite3.connect(lab_db.DB_PATH) as c:
@@ -398,11 +406,15 @@ def test_a_stack_holding_a_DEPENDENT_leg_is_refused_SENSITIVITY_up_front(stack_c
 def test_a_stack_holding_a_DEPENDENT_leg_is_refused_WALK_FORWARD_up_front(
     stack_client, tmp_path, monkeypatch
 ):
-    """🔴 A loss-recovery leg's PARENT is passed at launch and never written down, so a window
-    replay would rebuild it with nothing to arm off — an empty book landing in the summary
-    looking exactly like a rule that found no setups, with the whole account graded on a
-    strategy set quietly one leg short.
+    """🔴 A loss-recovery leg rebuilt with nothing to arm off returns an EMPTY book, which lands
+    in the summary looking exactly like a rule that found no setups — the whole account graded on
+    a strategy set quietly one leg short.
 
+    ⚠ **This is now the PRE-COLUMN stack only.** The parent is stored on the member row since
+    2026-09-07, so a stack launched since then replays; this fixture records none, which is every
+    stack launched before it. **The refusal keys on the STRATEGY needing a parent, never on the
+    column being NULL** — an ordinary leg stores NULL too, so the column alone cannot tell an
+    independent leg from an unrecorded dependency.
     ⚠ Refused at the REQUEST, not ten minutes into the phase.
     ⚠ Watched RED by dropping the `requires_source` check from `rebuild_legs`.
     """
@@ -995,3 +1007,123 @@ def test_two_legs_of_the_SAME_strategy_are_refused(lab, monkeypatch):
     ok, err = _run_sens()
     assert ok is False
     assert "same strategy" in (err or "")
+
+
+# ── A dependent leg's parent is RECORDED, so the stack can be replayed ────────────────────
+
+
+def test_a_dependent_leg_with_a_RECORDED_parent_is_rebuilt_and_carries_it(lab, monkeypatch):
+    """🔴 The whole point of the column. `LegSpec.source` is what makes the leg arm off its
+    parent's closed trades; a rebuilt leg missing it arms off nothing and returns an empty book
+    that reads as a rule with no setups.
+
+    ⚠ It asserts the rebuilt leg CARRIES the parent, not merely that the rebuild succeeded — a
+    rebuild that silently dropped the field would pass the second and produce the empty book.
+    ⚠ Watched RED by dropping `source` from the rebuilt leg dict.
+    """
+    _stack(lab, monkeypatch, sources={"b_leg": "sos_fade"})
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute("UPDATE strategies SET requires_source=1 WHERE id='b_leg'")
+
+    legs = gradable.rebuild_legs("stk_1")
+    by_id = {leg["strategy_id"]: leg for leg in legs}
+    assert by_id["b_leg"]["source"] == "sos_fade"
+
+
+def test_an_ORDINARY_leg_carries_no_source_at_all(lab, monkeypatch):
+    """⚠ Absent rather than `None`. The runner reads it with `.get()`, so both mean the same
+    thing — and stating it once is one fewer way for the two to disagree.
+
+    ⚠ Watched RED by emitting the key unconditionally.
+    """
+    _stack(lab, monkeypatch)
+    assert all("source" not in leg for leg in gradable.rebuild_legs("stk_1"))
+
+
+def test_a_recorded_parent_that_is_NOT_IN_THE_STACK_is_refused(lab, monkeypatch):
+    """The leg would arm off nothing, which is the same empty book by another route.
+
+    ⚠ `run_stack` refuses a dangling source too — but that arrives minutes into a replay, and
+    names the simulator rather than the stack. This one arrives before the phase starts.
+    ⚠ Watched RED by dropping the membership check.
+    """
+    _stack(lab, monkeypatch, sources={"b_leg": "ghost_strategy"})
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute("UPDATE strategies SET requires_source=1 WHERE id='b_leg'")
+
+    with pytest.raises(gradable.NotGradable) as exc:
+        gradable.rebuild_legs("stk_1")
+    assert "ghost_strategy" in exc.value.reason
+    assert "not in this stack" in exc.value.reason
+
+
+def test_a_stack_with_a_RECORDED_parent_is_ACCEPTED_for_both_deep_phases(
+    stack_client, tmp_path, monkeypatch
+):
+    """🔴 The gap this closes, driven through the endpoint rather than the helper. Before the
+    column, a stack holding a loss-recovery leg was refused walk-forward AND sensitivity outright
+    — the two phases that make a stack's grade mean anything.
+
+    ⚠ Watched RED by keeping the old blanket `requires_source` refusal.
+    """
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute("UPDATE strategies SET requires_source=1 WHERE id='b_leg'")
+        c.execute("UPDATE stack_members SET source='sos_fade' WHERE run_id='r_b_leg'")
+
+    for phase in ("include_walk_forward", "include_sensitivity"):
+        r = stack_client.post("/stress-tests/run", json={"stack_id": "stk_1", phase: True})
+        assert r.status_code == 202, r.json()
+        _finish(r.json()["stress_test_id"])
+
+
+def test_the_LAUNCH_records_the_recovery_parent_on_the_member_row(client, monkeypatch, tmp_path):
+    """🔴 Rule 7 — the column is only worth having if the thing that creates a stack WRITES it.
+    A rebuild reading a column nobody fills refuses every stack for ever, which looks exactly
+    like the bug it replaced.
+
+    ⚠ Watched RED by dropping `source=` from the router's `add_stack_member` call.
+    """
+    from routers import stacks as stacks_router
+
+    launched: dict = {}
+    monkeypatch.setattr(
+        stacks_router.portfolio_runner,
+        "launch",
+        lambda sid, legs, settings: launched.update(legs=legs),
+    )
+    for sid in ("sos_fade", "loss_recovery"):
+        _seed_strategy(sid)
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute("UPDATE strategies SET requires_source=1 WHERE id='loss_recovery'")
+
+    r = client.post(
+        "/backtests/stack",
+        json={
+            "strategy_ids": ["sos_fade"],
+            "instrument": "XAUUSD",
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "mode": "shared",
+            "account_size": 10_000.0,
+            "risk_cap_pct": 10.0,
+            "recovery_parent": "sos_fade",
+        },
+    )
+    # 202, not "any 2xx": a shared launch that never reached the runner would still answer,
+    # and a loose check would call that a pass.
+    assert r.status_code == 202, r.text
+    stack_id = r.json()["stack_id"]
+    assert launched["legs"], "the launch never reached the runner"
+
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute(
+            "SELECT m.source AS source, r.strategy_id AS sid FROM stack_members m "
+            "JOIN backtest_runs r ON r.run_id = m.run_id WHERE m.stack_id = ?",
+            (stack_id,),
+        ).fetchall()
+    by_sid = {row["sid"]: row["source"] for row in rows}
+    assert by_sid["loss_recovery"] == "sos_fade"
+    assert by_sid["sos_fade"] is None

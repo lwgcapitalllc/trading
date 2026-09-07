@@ -618,7 +618,14 @@ def _trigger_shared_stack(
                 "runner": "python",
             }
         )
-        lab_db.add_stack_member(stack_id, rec_run_id, owned=1, position=len(legs))
+        # 🔴 The parent is RECORDED on the member row, not only passed to the runner. It is
+        # the one field that makes this leg dependent, and until 2026-09-07 it lived only in
+        # this request — so the stack could be replayed by nobody, and walk-forward and
+        # sensitivity refused it outright rather than silently rebuilding a leg that arms off
+        # nothing.
+        lab_db.add_stack_member(
+            stack_id, rec_run_id, owned=1, position=len(legs), source=req.recovery_parent
+        )
         legs.append(
             {
                 "run_id": rec_run_id,

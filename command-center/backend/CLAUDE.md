@@ -4941,11 +4941,11 @@ describes a system you do not have** — and here it accused the right code of t
 
 ### What is NOT built yet, so nobody reads this as finished
 
-- **Nothing yet CREATES a stress test against a stack.** The column exists and the book exists; the
-  endpoint and the phases still read a single run.
-- **Walk-forward on a stack** needs the stack runner to accept a date window it does not take today.
-- **Sensitivity on a stack** needs a shift to name a LEG as well as a setting.
-- **Copying a graded stack's settings onto bots** is one strategy to one bot today.
+✅ **ALL FOUR OF THESE LANDED, 2026-09-06 → 2026-09-07, and the list is kept as a record of the
+order rather than as open work.** A stress test can be created against a stack (`services/
+gradable.py`); walk-forward replays the whole stack per window; sensitivity replays it per shift;
+and a graded stack's settings copy onto its bots. ⚠ **Read the sections below for the rules — this
+list is history, not status.**
 
 ## A STACK can now be stress tested — `services/gradable.py` (2026-09-06)
 
@@ -5027,10 +5027,8 @@ settings-import fixture four sections up.
 
 ### What is still missing
 
-- **Walk-forward on a stack** — needs the stack runner to accept a date window it does not take.
-- **Sensitivity on a stack** — needs a shift to name a LEG as well as a setting.
-- **Copying a graded stack's settings onto bots** — one strategy to one bot today.
-- **Nothing in the UI offers this yet**; the endpoint takes a stack and no page sends one.
+✅ **Walk-forward** (2026-09-06), ✅ **sensitivity** (2026-09-07) and ✅ **the settings copy onto
+bots** (2026-09-07) all landed — see their own sections below.
 
 ## Walk-forward over a STACK — the whole stack per window, on a fresh account (2026-09-06)
 
@@ -5072,13 +5070,13 @@ scorer reads them with `.get()`, so absent excludes the window from the average.
 happen is a real `0.0`, which passes through as a measurement and draws a bar on the chart for a
 period nothing was measured on.
 
-🔴 **A STACK HOLDING A DEPENDENT LEG IS REFUSED, AT THE REQUEST.** `LegSpec.source` — the leg whose
-closed trades a loss-recovery rule arms off — is passed at launch and **never written down**, so a
-window replay would rebuild that leg with nothing to arm off. It would return an EMPTY book and
-land in the summary looking exactly like a rule that found no setups: a whole account graded on a
-strategy set quietly one leg short. **Refusing names a real gap; replaying would hide it.** The fix,
-when somebody wants this, is to STORE the parent on the member row — never to guess it from the leg
-order.
+✅ **A STACK HOLDING A DEPENDENT LEG REPLAYS SINCE 2026-09-07, and until then it was refused at
+the request.** `LegSpec.source` — the leg whose closed trades a loss-recovery rule arms off — was
+passed at launch and never written down, so a window replay would have rebuilt that leg with
+nothing to arm off: an EMPTY book landing in the summary looking exactly like a rule that found no
+setups, on a whole account graded one leg short. It is stored on the member row now; the rules are
+in *A dependent leg's parent is stored* below. ⚠ **A stack launched BEFORE that column is still
+refused**, because it has the dependency and cannot state it.
 
 ⚠ **SENSITIVITY is still refused for a stack**, and for a different reason: a shift has no way to
 name WHICH LEG's setting it is nudging, so it would perturb one strategy and report the answer as
@@ -5162,11 +5160,10 @@ back replays would make every stack grade EASIER than every run, on one letter s
 it.** That is honest rather than convenient — there is no row, because a stack replay is a function
 call in this process, not a job on a terminal.
 
-⚠ **A stack holding a loss-recovery leg is REFUSED sensitivity up front, exactly as it is refused
-walk-forward.** That leg's parent is passed at launch and never persisted, so a rebuilt stack would
-carry a leg that arms off nothing and returns an empty book, and every shift would be measured on
-an account quietly one strategy short. The fix when somebody wants it is to STORE the parent on the
-member row.
+✅ **A stack holding a loss-recovery leg is sensitivity-testable since 2026-09-07**, through the
+same rebuild walk-forward uses — both phases share `gradable.rebuild_legs`, so neither can accept a
+stack the other refuses. ⚠ **A stack launched before the parent was stored is still refused**: every
+shift would otherwise be measured on an account quietly one strategy short.
 
 ⚠ **Two legs of the same strategy are refused**, because a shift is recorded under
 `<strategy>.<setting>` and the second would overwrite the first in silence. The replay itself
@@ -5474,3 +5471,61 @@ refused, not merely that something did.
 
 ⚠ **A reformat invalidated one mutation's patch string and it reported as a survivor.** Re-run the
 harness after `ruff format`, and treat a BADPATCH as an unrun mutation rather than a passing one.
+
+---
+
+## A dependent leg's parent is STORED, so the stack can be replayed (2026-09-07)
+
+`stack_members.source` — the strategy id whose closed trades a dependent leg arms off — written
+by `routers/stacks.py` at launch, read back by `gradable.rebuild_legs`.
+
+🔴 **IT WAS PASSED AT LAUNCH AND WRITTEN DOWN NOWHERE, so a stack holding a loss-recovery leg
+could be replayed by nobody and was refused walk-forward AND sensitivity outright** — the two
+phases that make a stack's grade mean anything. Rebuilding without it produces a leg that arms off
+nothing and returns an EMPTY book, which lands in the summary looking exactly like a rule that
+found no setups: a whole account graded on a strategy set quietly one leg short. **Refusing named a
+real gap; replaying would have hidden it** — which is why the refusal was the right interim answer
+and why the fix is a column rather than a guess from leg order.
+
+⚠ **NULL IS NOT READ AS *INDEPENDENT*; THE STRATEGY IS ASKED WHETHER IT NEEDS A PARENT.** Every
+ordinary leg stores NULL, and so does every leg written before the column existed — so the column
+alone cannot tell an independent leg from an unrecorded dependency, and reading it that way would
+replay exactly the stacks the refusal exists for. `requires_source` on the strategy row can tell
+them apart, and it is the same flag every endpoint that starts a job already refuses on.
+
+⚠ **A stack launched before 2026-09-07 is STILL REFUSED, and the refusal names the fix** (re-run
+the stack). There is no backfill: the parent was never recorded, and inferring it from leg order
+is the guess this column exists to remove.
+
+⚠ **The parent must be a leg of THIS stack, checked at rebuild time.** `run_stack` refuses a
+dangling source too — but that refusal arrives minutes into a replay and names the simulator; this
+one arrives before the phase starts and names the stack.
+
+⚠ **`source` is ABSENT from an ordinary leg's rebuilt dict rather than `None`.** The runner reads
+it with `.get()`, so both mean the same thing, and stating it once is one fewer way for the two to
+disagree.
+
+⚠ **The column is declared in the migration list AND in the `stack_members` CREATE TABLE**, per
+this file's standing note — a column added to only one works perfectly on the machine that ran the
+migration and is missing on every fresh clone. Both paths were checked.
+
+🔴 **THE COLUMN IS ONLY WORTH HAVING IF THE THING THAT CREATES A STACK WRITES IT** (rule 7). A
+rebuild reading a column nobody fills refuses every stack for ever, which looks exactly like the
+bug it replaced — so the launch's write is pinned by its own test, driven through the real endpoint
+rather than the helper.
+
+⚠ **Both phases share `gradable.rebuild_legs`**, so neither can accept a stack the other refuses.
+That is the same reason `_finish_walk_forward` and `_finish_sensitivity` are shared: a second copy
+would let one phase run under a rule the other does not.
+
+**Tests:** 6 more in `tests/test_gradable_resolver.py` (44). ⚠ **Non-vacuity by MUTATION: 9
+written, 9 RUN, 9 killed** — the parent dropped from the rebuilt leg, emitted unconditionally, the
+membership check dropped, the blanket refusal restored, the refusal dropped entirely, the refusal
+keyed on the NULL column instead of the strategy flag, the router's write dropped, the write
+thrown away in `add_stack_member`, and the column dropped from the leg query.
+
+⚠ **TWO EXISTING TESTS HAD THEIR SUBJECT NARROWED AND THEIR DOCSTRINGS SAY SO.** They pinned *any*
+dependent leg being refused; they now pin the PRE-COLUMN stack being refused, which is the half
+that survives. **A test whose premise quietly changes meaning while staying green is a test that
+has stopped guarding what its name claims** — the same trap this file records for the fixture
+premises two sections up.
