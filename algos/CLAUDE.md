@@ -1313,6 +1313,40 @@ decision; a record about the process that runs them is health. That is why `orde
 broker declined a real order) is a decision and `halted` (the bridge stopped placing anything) is
 health — one answers *why no trade on that setup*, the other *why no trading at all*.
 
+🔴 **A `bar` RECORD MUST CARRY THE BAR, AND FOR `extreme_leg_demo` IT CARRIED NONE OF IT UNTIL
+2026-09-07.** `Ledger.bar()` reads every field with `getattr(..., None)` on purpose — so a strategy
+with an unfamiliar decision shape logs what it has instead of crashing the bot, and that stays. What
+it also did was read the three BAR facts FLAT off the signal, and only one of the two live shapes
+answers flat. SOS Fade's signal exposes `time_ms` / `index` / `close` directly; a strategy wired
+through `PassThroughSignals` hands the engine stack's own `BarState` straight past, where the bar
+sits one level down on `.bar` **and its timestamp is called `timestamp_ms`**. **MEASURED on the
+committed record: `extreme_leg_demo` wrote 196 of 196 rows that day with bar time, bar index and
+close all null, while `sos_fade_demo` wrote 66 of 66 with all three.** The extreme leg computes all
+three every bar; they were never reaching the file.
+
+⚠ **It never affected trading** — the record is written after the strategy has decided and nothing
+in the decision path reads it back. ⚠ **What it cost is the only thing the file exists for**: a row
+that cannot say which bar it describes or where price was cannot be lined up against a chart, so
+*why did it not trade* was answerable in principle and unreadable in practice — on the one bot whose
+first setup somebody is waiting for. ✅ Fixed at `ledger._bar_field`, which looks flat FIRST (so SOS
+Fade's records cannot move by a byte), then through `.bar`, treating the two timestamp names as one
+fact. Ten tests, `tests/test_ledger_bar_fields.py`, five mutations RUN.
+
+🔴 **THE RULE UNDER IT IS RULE 1 AT ITS CHEAPEST: `getattr(x, name, None)` collapses *this object
+has no such field* into *that field is None*.** Both write `null`, so a bot logging blanks all day
+and a bot on a quiet market produce the same file — and the file is the sole witness. `_bar_field`
+returns a private sentinel to keep the two separable in code; `_bar_or_none` flattens it at the
+record, because the SCHEMA has one null and leaking a sentinel into the JSON would break every
+reader. ⚠ **Both halves are pinned**, or somebody deletes the asymmetry as pointless.
+
+🔴 **AND THE MUTATION MAP WAS RUN RATHER THAN REASONED, WHICH CHANGED THE TESTS.** Two of the five
+rows were first written from inspection and both were wrong — and one mutation, deleting the
+sentinel outright, **survived the entire file**: every case asserted on the written ROW, and
+`_bar_or_none` flattens the sentinel before it gets there, so the two behaviours are byte-identical
+in the record. **A distinction living one layer below the assertions is a distinction the
+assertions cannot make** — the same shape as a scaling test written against a scale of exactly 1.
+It is now pinned on `_bar_field` itself.
+
 ⚠ **Routing is ONE dict (`ledger._DECISION_EVENTS`) and it is TEST-ENFORCED.**
 `tests/test_ledger_streams.py` greps every `ledger.event("...")` call in `algos/live/` and fails if
 the name is not classified, in **both** directions — an unrouted event would fall into health and

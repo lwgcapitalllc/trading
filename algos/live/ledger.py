@@ -154,6 +154,44 @@ _DECISION_EVENTS = {
 _RUN_END = "shutdown"
 _RUN_BOUNDARY = {"startup", "startup_failed", "version_mismatch", _RUN_END}
 
+# ── reading the BAR off a signal whose shape this module must not know ───────
+_MISSING = object()
+
+
+def _bar_field(sig, *names):
+    """One bar fact, off a per-bar signal of ANY shape. `_MISSING` when nothing answers.
+
+    🔴 **TWO SHAPES REACH THIS MODULE AND THEY NEST DIFFERENTLY.** SOS Fade's signal exposes the
+    bar FLAT (`sig.time_ms`, `sig.index`, `sig.close`). A strategy wired through
+    `PassThroughSignals` hands the engine stack's own `BarState` straight past, and there the bar
+    sits ONE LEVEL DOWN on `.bar` — and its timestamp is called `timestamp_ms`, not `time_ms`.
+    So this looks flat first, then through `.bar`, and treats the two timestamp names as one fact.
+
+    ⚠ **It returns `_MISSING` rather than `None` on purpose.** *This strategy does not expose the
+    field* and *the field's value is None* are different facts, and the caller is the only place
+    that can decide what to write for each. Collapsing them is rule 1, and it is exactly what
+    went wrong: `getattr(sig, "time_ms", None)` turned an unanswered question into a measured
+    blank, so `extreme_leg_demo` wrote 196 rows a day carrying no bar time, no bar index and no
+    close, and nothing anywhere said so.
+
+    ⚠ **Order matters — flat wins.** SOS Fade's records must not move by a byte, and a signal that
+    answers flat is never asked about `.bar`.
+    """
+    for holder in (sig, getattr(sig, "bar", None)):
+        if holder is None:
+            continue
+        for name in names:
+            value = getattr(holder, name, _MISSING)
+            if value is not _MISSING:
+                return value
+    return _MISSING
+
+
+def _bar_or_none(sig, *names):
+    """`_bar_field`, flattened to what the RECORD holds — the schema has one null, not two."""
+    value = _bar_field(sig, *names)
+    return None if value is _MISSING else value
+
 
 class Ledger:
     def __init__(self, directory: Path, bot_key: str) -> None:
@@ -188,9 +226,12 @@ class Ledger:
             DECISIONS,
             "bar",
             {
-                "bar_time": getattr(sig, "time_ms", None),
-                "bar_index": getattr(sig, "index", None),
-                "close": getattr(sig, "close", None),
+                # Through `_bar_or_none`, never `getattr` — a signal that nests its bar one
+                # level down answers here too. See `_bar_field` for the shapes and the 196
+                # blank rows a day that a flat `getattr` produced in silence.
+                "bar_time": _bar_or_none(sig, "time_ms", "timestamp_ms"),
+                "bar_index": _bar_or_none(sig, "index"),
+                "close": _bar_or_none(sig, "close"),
                 "l_stage": getattr(dec, "l_stage", None),
                 "s_stage": getattr(dec, "s_stage", None),
                 "long_armed": getattr(dec, "long_armed", None),
