@@ -4267,3 +4267,47 @@ already on that account — and is toasted as that rather than as a write that h
 the app and the backend up; the backend talks to the live trading box, so booting it stays a person's
 decision. Typecheck, lint, build and the three node checks are green. **What is unverified is the
 RENDERING** — the behaviour is pinned backend-side. Drive them once with the app up.
+
+### The three new screens were DRIVEN IN A BROWSER (2026-09-07) — and two are only half-covered
+
+Rule 9 says a feature nobody has RUN is not a feature. These three shipped on 2026-09-07 without
+anyone opening them, so they were driven against the real backend and the real trading box. **Zero
+console errors on every page.** What was actually reached, and what was not:
+
+✅ **Stack stress test — FULLY EXERCISED on a real shared stack.** The modal opens, and the
+arithmetic it does before spending an hour is live: at 5 windows it read *"≈16 unseen trades
+each"* and raised its own warning that under 20 the walk-forward returns no number and the grade
+caps at B, *"Use 4 windows or fewer."* ✅ **The refusal was checked as a separate case and it
+holds — the button is ABSENT on a screen stack**, which is the whole point: a screen is N
+standalone runs added up and a letter grade on it would describe a result no account can produce.
+✅ **The ruleset control's three-state was confirmed by USE**: choosing *"No ruleset"* stuck
+rather than snapping back to the first option. That state is DERIVED rather than filled by an
+effect precisely so nothing can overwrite an explicit choice, and this is the check that says so.
+
+⚠ **Copy a graded stack's settings — THE STACK BRANCH RENDERED NOTHING, because no stack stress
+test exists yet.** Only one stress test is stored on this machine and it came from a single run,
+so the page took the run-sourced path. **What that DOES establish is the regression: the existing
+single-run flow is unchanged** — the button still reads *"Copy settings to a bot"*, the modal
+opens, all three bots list, and Apply stays disabled until one is picked. 🔴 **The stack half is
+UNSEEN and must not be written up as working.** Reaching it needs a stress test actually run on a
+shared stack, which is an hour of compute and needs the platform idle.
+
+⚠ **Take live — THE BUTTON AND ITS REFUSAL ARE VERIFIED; THE MODAL BODY IS NOT.** The control is
+present on the account drawer and correctly disabled, and its reason is the right one of the
+three: *"Stop every bot on this account first — a bot reads its account when it starts, so a move
+cannot reach a running one."* Two bots are live on that account, so that reason outranks the other
+two, which is the order the code states. 🔴 **The destination picker, the preview, the literal
+writes and the typed phrase have NEVER been rendered**, and reaching them means stopping both live
+demo bots. **That is Aaron's call, not a verification step to take unasked.**
+
+⚠ **The honest generalisation: opening a page proves the page, not the branch.** Two of these
+three have a second path that only appears when data or state this machine does not have exists,
+and a green first path says nothing about them — the same rule the parity gates state about a
+branch neither side entered.
+
+⚠ **The browser MCP is pinned to port 5173 by an explicit origin allowlist** (`.mcp.json`), so a
+dev server that lands on 5174 because 5173 is taken is unreachable and fails as
+`ERR_BLOCKED_BY_CLIENT` — which reads like the guard refusing the app rather than the port being
+wrong. ⚠ **And Vite binds `localhost` as IPv6 here**, so `curl 127.0.0.1:5173` answers nothing
+while the server is up and serving; probe `http://[::1]:5173`. **Both of those cost time and
+neither is a defect** — write them down rather than rediscovering them.
