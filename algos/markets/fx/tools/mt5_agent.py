@@ -11,6 +11,7 @@ Endpoints — Step 1 (this build):
     GET  /health                         → ping; running_jobs count
     GET  /status                         → MT5 connection + account info
     GET  /symbol_info                    → broker contract spec: spread, swap, digits, contract size
+    GET  /symbols                        → EVERY instrument on the terminal — the tradeable universe
     GET  /data_availability              → earliest→latest served bar per timeframe (M1..H4)
     GET  /historical_data                → M1–M30/H1/H4/daily OHLC bars
     GET  /ticks                          → real bid/ask tick history (the A2 fill model's feed)
@@ -488,6 +489,93 @@ def symbol_info():
         f"symbol_info: {used} spread={spread_points}pt swap L/S={result['swap_long']}/{result['swap_short']}"
     )
     return jsonify(result)
+
+
+# MT5's SYMBOL_TRADE_MODE_*. A symbol can be quoted, charted and backtested while refusing a
+# new position, so this is the difference between "on the platform" and "can be in a portfolio".
+_TRADE_MODE_FULL = 4
+_TRADE_MODES = {0: "disabled", 1: "long only", 2: "short only", 3: "close only", 4: "full"}
+
+
+@app.route("/symbols")
+def symbols():
+    """Every instrument this terminal carries — the account's actual tradeable universe.
+
+    There was no way to ASK this before. /symbol_info answers about a name you already hold, so
+    surveying the broker meant guessing names and probing them one at a time — and a name that
+    never occurred to you came back identical to an instrument the broker does not offer. That is
+    this repo's oldest rule broken in a new place: "no" and "cannot ask" must never be the same
+    answer. This endpoint ENUMERATES rather than confirming, so the absence of a symbol here is
+    evidence instead of a gap in somebody's imagination.
+
+    Query params, both optional:
+      group          — MT5 group filter, e.g. "*Forex*". Omitted means everything.
+      tradable_only  — "1" to drop symbols the account cannot open a new position on.
+
+    Returns what /symbol_info returns minus the live tick, plus `trade_mode` — a symbol may be
+    visible and quoted while being close-only or disabled outright.
+
+    Read-only, and deliberately does NOT select anything into Market Watch: enumerating the
+    broker must not change what the terminal is watching underneath a running backtest.
+    """
+    group = request.args.get("group", "").strip()
+    tradable_only = request.args.get("tradable_only", "").strip() in ("1", "true", "yes")
+
+    ok, err = _ensure_mt5()
+    if not ok:
+        return jsonify({"error": err}), 503
+
+    with _mt5_lock:
+        found = mt5.symbols_get(group) if group else mt5.symbols_get()
+        err_after = mt5.last_error()
+
+    # None is the terminal saying it COULD NOT ANSWER. An empty tuple is it saying "none match".
+    # Collapsing those two into [] is precisely the failure this endpoint exists to avoid.
+    if found is None:
+        return jsonify({"error": f"terminal returned no symbol list: {err_after}"}), 502
+
+    out = []
+    for info in found:
+        mode = int(getattr(info, "trade_mode", 0) or 0)
+        if tradable_only and mode != _TRADE_MODE_FULL:
+            continue
+        out.append(
+            {
+                "symbol": info.name,
+                "path": getattr(info, "path", None),  # the broker's own grouping
+                "description": getattr(info, "description", None),
+                "trade_mode": mode,
+                "trade_mode_label": _TRADE_MODES.get(mode, f"unknown ({mode})"),
+                "visible": bool(getattr(info, "visible", False)),
+                "digits": int(getattr(info, "digits", 0) or 0),
+                "point": float(getattr(info, "point", 0.0) or 0.0),
+                "contract_size": float(getattr(info, "trade_contract_size", 0.0) or 0.0),
+                "volume_min": float(getattr(info, "volume_min", 0.0) or 0.0),
+                "volume_step": float(getattr(info, "volume_step", 0.0) or 0.0),
+                "volume_max": float(getattr(info, "volume_max", 0.0) or 0.0),
+                "spread_points": int(getattr(info, "spread", 0) or 0),
+                "swap_long": float(getattr(info, "swap_long", 0.0) or 0.0),
+                "swap_short": float(getattr(info, "swap_short", 0.0) or 0.0),
+                "swap_mode": int(getattr(info, "swap_mode", 0) or 0),
+                "swap_rollover3days": int(getattr(info, "swap_rollover3days", 0) or 0),
+                "currency_base": getattr(info, "currency_base", None),
+                "currency_profit": getattr(info, "currency_profit", None),
+                "currency_margin": getattr(info, "currency_margin", None),
+            }
+        )
+
+    _alog(
+        f"symbols: group={group or '*'} tradable_only={tradable_only} -> {len(out)} of {len(found)}"
+    )
+    return jsonify(
+        {
+            "symbols": out,
+            "count": len(out),
+            "total_on_terminal": len(found),
+            "group": group or None,
+            "tradable_only": tradable_only,
+        }
+    )
 
 
 @app.route("/data_availability")
