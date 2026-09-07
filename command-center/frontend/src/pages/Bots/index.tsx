@@ -1111,6 +1111,7 @@ export function Bots() {
               emptyGroup(regByAccount.get(Number(selAccount)) as BotAccountRegistration)
             }
             reg={regByAccount.get(Number(selAccount))}
+            registry={registry ?? []}
             earnings={earnByAccount.get(Number(selAccount))}
             balance={balanceOf(
               (groupByAccount.get(Number(selAccount))?.bots ?? []).map((b) => ({

@@ -769,6 +769,126 @@ export interface BotSettingImportPlan {
   commit: string
 }
 
+/** One leg of a stack, and the bot its settings would be written to. */
+export interface StackSettingImportLeg {
+  strategy_id: string
+  bot: string
+  changes: BotSettingImportChange[]
+  /** Settings the leg carries that this bot's strategy does not declare. NAMED, never dropped in
+   *  silence — the bot refuses to start on one, and a setting that vanishes without a word is one
+   *  the reader believes they applied. */
+  dropped_notes: string[]
+  unchanged_count: number
+  /** On the bot and never mentioned by the leg: they keep their current values. */
+  untouched: string[]
+}
+
+/** The account's risk ceiling, and every bot that has to be written to move it.
+ *
+ *  ⚠ `bots_to_write` is EVERY bot on the account, not only this stack's legs — the ceiling is
+ *  stored per bot, so one left behind leaves the account holding two different numbers, and then
+ *  none of them will start. */
+export interface StackSettingImportCap {
+  current: number | null
+  proposed: number | null
+  bots_to_write: string[]
+}
+
+/**
+ * What copying a graded STACK's settings onto its bots would do.
+ *
+ * 🔴 ALL OR NOTHING. A shared-account stack is a measurement of several strategies competing for
+ * one balance and one risk budget; writing three of its four legs produces a strategy set nobody
+ * has measured, and it reads as a completed copy. `blocked` is a REASON, and a caller holding one
+ * writes nothing at all.
+ *
+ * Same contract as `BotSettingImportPlan`: the preview and the apply return this SAME shape from
+ * the SAME planning call on the backend, so nothing here may be re-derived in the browser.
+ */
+export interface StackSettingImportPlan {
+  stress_test_id: string
+  stack_id: string
+  account: number | null
+  blocked: string | null
+  grade: string | null
+  /** Whether grading RAN, which is not the same question as whether it produced a letter. */
+  graded: boolean
+  legs: StackSettingImportLeg[]
+  cap: StackSettingImportCap | null
+  warnings: string[]
+  applied: boolean
+  /** Always true on an apply: this writes many settings across several bots and exactly one
+   *  setting reaches a running bot without a restart. */
+  restart_required: boolean
+  commit: string
+}
+
+// ── Bots — demo to live ──────────────────────────────────────────────────────
+
+/**
+ * What one bot actually DID on the demo account, read off its own decision record.
+ *
+ * 🔴 Three-state on purpose. `traded: false` with a `reason` means no record reached this machine
+ * — which is NOT zero trades and may never be rendered as one.
+ */
+export interface GoLiveRecord {
+  traded: boolean
+  reason: string | null
+  closed_trades: number | null
+  realised_usd: number | null
+  realised_r: number | null
+  wins: number | null
+  losses: number | null
+  records_from: string | null
+  records_to: string | null
+}
+
+/** One bot's move onto the live account: the literal writes, and what could not be carried. */
+export interface GoLiveMove {
+  bot: string
+  display: string
+  fields: Record<string, unknown>
+  param_fields: Record<string, unknown>
+  notes: string[]
+  record: GoLiveRecord | null
+}
+
+/**
+ * What promoting a proven strategy set from its demo account to a live one would do.
+ *
+ * 🔴 ALL OR NOTHING, and `confirm` has to be typed back exactly. Two of three bots on the live
+ * account is a strategy set nobody ran, and it reads as a finished promotion. The phrase NAMES THE
+ * ACCOUNT so it cannot be typed from memory or pasted from another preview — never invent it here,
+ * always send back the one the server served.
+ *
+ * 🔴 There is no minimum demo record (Aaron's call), so `record` is REPORTED per bot and refuses
+ * on nothing. The warnings say plainly when a bot has none.
+ */
+export interface GoLivePlan {
+  from_account: number | null
+  to_account: number | null
+  blocked: string | null
+  moves: GoLiveMove[]
+  cap_pct: number | null
+  confirm: string
+  warnings: string[]
+  applied: boolean
+  /** Always true on an apply: which account a bot trades is read at startup and could not be
+   *  reloadable, so nothing here is true on the box until the bots are restarted. */
+  restart_required: boolean
+  commit: string
+}
+
+export interface GoLiveRequest {
+  /** Named explicitly rather than derived from the destination or from a stack — what is being
+   *  promoted is a set somebody chose, and a promotion that inferred its own membership would be
+   *  a live-money write nobody typed the members of. */
+  bots: string[]
+  account: number
+  confirm: string
+  deploy?: boolean
+}
+
 // ── Lab — Strategies ─────────────────────────────────────────────────────────
 
 // How a run's position size is decided. 'consistent'/'bullet' are AUTOMATIC — the ruleset's
@@ -1297,7 +1417,11 @@ export interface SensitivityCoverage {
 
 export interface StressTest {
   stress_test_id: string
-  run_id: string
+  // EXACTLY ONE of these is set. A stress test grades either a single run or a whole shared
+  // account, and `run_id` is null on the second — so anything that navigates to a backtest off
+  // this row has to ask which kind it is holding first.
+  run_id: string | null
+  stack_id: string | null
   ruleset_id: string | null
   status: string
   created_at: number
@@ -1357,7 +1481,10 @@ export interface StressTestDetail extends StressTest {
 }
 
 export interface StressTestCreate {
-  run_id: string
+  // Send exactly one. The server refuses both and neither, and it is the same resolver that the
+  // background work asks later — so a shape it accepts here is one it can still grade in an hour.
+  run_id?: string
+  stack_id?: string
   ruleset_id?: string
   include_walk_forward: boolean
   include_sensitivity: boolean

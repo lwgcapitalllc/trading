@@ -97,7 +97,15 @@ export const useBotRestartOne = () => useBotAction('restart')
 // `useBotParams` reads and `useSaveBotRuntime` writes the one lever that may move — and
 // that one does NOT restart the bot.
 
-import type { BotParamsView, BotSettingImportPlan, TelegramUser, TelegramUserCreate } from '@/types'
+import type {
+  BotParamsView,
+  BotSettingImportPlan,
+  GoLivePlan,
+  GoLiveRequest,
+  StackSettingImportPlan,
+  TelegramUser,
+  TelegramUserCreate,
+} from '@/types'
 
 // ── Live parameters ──────────────────────────────────────────────────────────
 // What a running bot is actually configured with, and the one lever that may move
@@ -513,5 +521,86 @@ export function useApplySettingsImport() {
     },
     // No toast here: `request` already surfaces the server's own `detail`, which carries the
     // reason (a running bot, a live bot). A second generic toast buries the useful one.
+  })
+}
+
+// ── A graded STACK's settings, onto every one of its bots at once ─────────────
+//
+// 🔴 Same contract as the single-bot pair above, and the SAME endpoint path for both verbs: the
+// backend plans once and returns one shape, so the list a reader approves is the change that
+// lands. Nothing here may re-derive it.
+
+function stackImportUrl(stressTestId: string) {
+  return `/bots/stack-settings-from-stress-test/${encodeURIComponent(stressTestId)}`
+}
+
+/** What copying this stack's settings onto its bots WOULD do. Writes nothing. */
+export function useStackSettingsImportPreview(stressTestId: string | null) {
+  return useQuery({
+    queryKey: ['bots', 'stack-settings-import', stressTestId],
+    queryFn: () => api.get<StackSettingImportPlan>(stackImportUrl(stressTestId!)),
+    enabled: !!stressTestId,
+    // Never cached, for the reason the single-bot preview is not: it describes LIVE bots' current
+    // settings, and a stale list is one that no longer matches what an apply would write.
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  })
+}
+
+/** Write every leg's settings and the account's risk ceiling. One commit. No restart, no deploy. */
+export function useApplyStackSettingsImport() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stressTestId: string) =>
+      api.post<StackSettingImportPlan>(stackImportUrl(stressTestId)),
+    onSuccess: (plan) => {
+      const n = plan.legs.reduce((sum, leg) => sum + leg.changes.length, 0)
+      // `applied: false` on a 200 means the bots already matched. A real outcome, and reporting it
+      // as a write that happened would claim an effect nothing had.
+      if (!plan.applied) {
+        toast.success('These bots already match this stack — nothing to write')
+      } else {
+        toast.success(
+          `${n} setting${n === 1 ? '' : 's'} written across ${plan.legs.length} bot${plan.legs.length === 1 ? '' : 's'} — restart them for it to take effect`
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['bots'] })
+    },
+    // No toast: `request` already surfaces the server's own reason.
+  })
+}
+
+// ── Demo to live ─────────────────────────────────────────────────────────────
+//
+// 🔴 The preview is a MUTATION rather than a query, because it is a POST — the set of bots is
+// named in the body, not in the path, and a promotion may never infer its own membership.
+
+/** What promoting these bots onto this live account would do. Writes nothing. */
+export function useGoLivePreview() {
+  return useMutation({
+    mutationFn: (body: { bots: string[]; account: number }) =>
+      api.post<GoLivePlan>('/bots/go-live/preview', { ...body, confirm: '' }),
+  })
+}
+
+/** Move the whole set onto the live account. Refused unless `confirm` matches the plan's own. */
+export function useApplyGoLive() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: GoLiveRequest) => api.post<GoLivePlan>('/bots/go-live', body),
+    onSuccess: (plan) => {
+      // `applied: false` on a 200 means there was nothing to move — every bot was already on that
+      // account. A real outcome, and toasting it as a promotion would claim a write nothing made.
+      if (!plan.applied) {
+        toast.success('These bots are already on that account — nothing to move')
+      } else {
+        toast.success(
+          `${plan.moves.length} bot${plan.moves.length === 1 ? '' : 's'} moved onto account ${plan.to_account} — restart them to trade it`
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['bots'] })
+    },
+    // No toast: `request` already surfaces the server's own refusal, which names the rule.
   })
 }

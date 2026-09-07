@@ -13,15 +13,17 @@
  * new forms — the registry is what makes a first bot on a new account movable at all.
  */
 import { useState } from 'react'
-import { Play, Pencil, Trash2, X } from 'lucide-react'
+import { Play, Pencil, Rocket, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useSetAccountRiskCap, useUnregisterAccount, useAssignBotAccount } from '@/hooks/useBots'
 import type { AccountEarnings, BotAccountGroup, BotAccountRegistration } from '@/types'
 import { AccountForm, AddBotRow, nameOf } from './AccountsTab'
+import { GoLiveModal } from './GoLiveModal'
 
 export function AccountDrawer({
   group,
   reg,
+  registry,
   balance,
   earnings,
   statusByKey,
@@ -29,6 +31,9 @@ export function AccountDrawer({
 }: {
   group: BotAccountGroup
   reg: BotAccountRegistration | undefined
+  /** Every registered account, because the demo → live promotion needs the DESTINATIONS and this
+   *  account's own row cannot name them. */
+  registry: BotAccountRegistration[]
   /** Read off the bots, because the accounts endpoint deliberately never touches the VPS. */
   balance: number | null
   /** What this account has MADE and where it came from — computed server-side.
@@ -63,6 +68,28 @@ export function AccountDrawer({
   const [draft, setDraft] = useState(stated === null ? '10' : String(stated))
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [goingLive, setGoingLive] = useState(false)
+
+  /**
+   * Why this set cannot go live, in words, or `null` when it can.
+   *
+   * ⚠ Ordered worst-first and it names ONE reason: a reader fixing a running bot does not also
+   * need to be told there is no live account until the first thing is done.
+   *
+   * ⚠ **A bot the box has not answered for is NOT counted as stopped.** `statusByKey` holds only
+   * what the snapshot reported, so an absent key means nobody asked — and reading that silence as
+   * *not running* is how a live-money write gets offered on a bot that is trading.
+   */
+  const anyRunning = group.bots.some((b) => statusByKey.get(b.key) !== 'STOPPED')
+  const liveTargets = registry.filter((a) => a.kind === 'live' && a.assignable)
+  const goLiveBlock: string | null =
+    reg?.kind === 'live'
+      ? 'This account is already live'
+      : anyRunning
+        ? 'Stop every bot on this account first — a bot reads its account when it starts, so a move cannot reach a running one'
+        : liveTargets.length === 0
+          ? 'No live account with a terminal on the box to move them to'
+          : null
 
   const next = capped ? parseFloat(draft) : null
   const valid = !capped || (Number.isFinite(next as number) && (next as number) > 0)
@@ -420,6 +447,30 @@ export function AccountDrawer({
               >
                 <Play size={12} /> Backtest the stack
               </button>
+              {/* ── the last hop: demo → live ───────────────────────────────────
+               *
+               * 🔴 **Offered on a DEMO account with bots on it, and DISABLED with the reason on
+               * it otherwise — never hidden.** A control that vanishes reads as a feature that
+               * does not exist, and this is the one people come to this page looking for.
+               *
+               * ⚠ **Every refusal here is the SERVER's own rule, stated before the click rather
+               * than delivered as a 400 after it.** A running bot reads its account at startup,
+               * so a write cannot reach the live process and the page would show it on one
+               * account while it traded another; the server refuses it, and so does this.
+               *
+               * ⚠ **`goLiveBlock` is a REASON, never a boolean** — a control that only knows
+               * "no" cannot say which rule said no. */}
+              {group.bots.length > 0 && (
+                <button
+                  data-testid="go-live"
+                  disabled={!!goLiveBlock}
+                  title={goLiveBlock ?? 'Move every bot on this account onto a live one'}
+                  onClick={() => setGoingLive(true)}
+                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Rocket size={12} /> Take live
+                </button>
+              )}
               {reg && (
                 <>
                   <button
@@ -453,6 +504,15 @@ export function AccountDrawer({
             <div className="pt-[6px]">
               <AccountForm existing={reg} onClose={() => setEditing(false)} />
             </div>
+          )}
+
+          {goingLive && account !== null && (
+            <GoLiveModal
+              botKeys={group.bots.map((b) => b.key)}
+              fromAccount={account}
+              registry={registry}
+              onClose={() => setGoingLive(false)}
+            />
           )}
         </div>
       </aside>

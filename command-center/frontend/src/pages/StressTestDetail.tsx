@@ -2,7 +2,7 @@ import { useState, useEffect, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle, Square, Upload } from 'lucide-react'
 import { useStressTest, useDeleteStressTest, useCancelStressTest } from '@/hooks/useStressTests'
-import { useRulesets, useBacktestRun } from '@/hooks/useLab'
+import { useRulesets, useBacktestRun, useStack } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
 import DrawdownDistribution from '@/components/DrawdownDistribution'
 import WalkForwardChart from '@/components/WalkForwardChart'
@@ -11,6 +11,7 @@ import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import StickyHeader from '@/components/StickyHeader'
 import InfoTip from '@/components/InfoTip'
 import { SettingsImportModal } from '@/components/SettingsImportModal'
+import { StackSettingsImportModal } from '@/components/StackSettingsImportModal'
 
 // ── MetricCard ────────────────────────────────────────────────────────────────
 
@@ -186,6 +187,11 @@ export default function StressTestDetail() {
   const { data: st, isLoading } = useStressTest(stressTestId ?? null)
   const { data: rulesets } = useRulesets()
   const { data: run } = useBacktestRun(st?.run_id ?? null)
+  // A stress test grades EXACTLY ONE of a run or a whole shared account, so at most one of
+  // these two fetches is ever enabled. `isStack` is read off the row's own field rather than
+  // inferred from a missing run — a run that failed to load is not a stack.
+  const isStack = !!st?.stack_id
+  const { data: stack } = useStack(st?.stack_id ?? null)
   const deleteTest = useDeleteStressTest()
   const cancelTest = useCancelStressTest()
 
@@ -933,6 +939,58 @@ export default function StressTestDetail() {
     </div>
   ) : null
 
+  // The same card for a STACK. A stack-targeted test has no run, so without this the page states
+  // nothing at all about what it graded — and `strategy_name` on the row is already the stack's own
+  // label (the backend falls back to it), so the heading is honest either way.
+  //
+  // ⚠ No net and no trade count here: those live on the stack's own combined book, and restating a
+  // figure this page has not read is how two surfaces come to disagree about one account.
+  const stackSourceCard = isStack ? (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-3 h-full">
+      <div className="flex items-stretch gap-6 h-full">
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary">
+            Source Stack
+          </div>
+          <div className="text-[17px] font-semibold text-text-primary truncate">
+            {st?.strategy_name || 'Shared account'}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {stack?.instrument && (
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+                {stack.instrument}
+              </span>
+            )}
+            {stack && (
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
+                {fmtDate(stack.start_date)} → {fmtDate(stack.end_date)}
+              </span>
+            )}
+            <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary">
+              one shared account
+            </span>
+          </div>
+        </div>
+        <div className="border-l border-border-subtle pl-6 flex flex-col justify-between items-end flex-shrink-0">
+          <div className="text-right">
+            <div className="text-[18px] font-semibold font-mono text-text-primary">
+              {stack?.total_strategies ?? '—'}
+            </div>
+            <div className="text-[10px] text-text-tertiary uppercase tracking-[0.5px]">
+              Strategies
+            </div>
+          </div>
+          <button
+            onClick={() => navigate(`/backtests/stacks/${st?.stack_id}`)}
+            className="flex items-center gap-1.5 px-3 py-[6px] rounded text-[12px] font-medium bg-bg-sunken border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors"
+          >
+            View Stack <ArrowLeft size={12} className="rotate-180" />
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   return (
     <>
       <div className="space-y-8">
@@ -975,7 +1033,7 @@ export default function StressTestDetail() {
                     className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-secondary hover:text-text-primary border border-border-subtle hover:border-border-default transition-colors"
                   >
                     <Upload size={12} />
-                    Copy settings to a bot
+                    {isStack ? 'Copy settings to its bots' : 'Copy settings to a bot'}
                   </button>
                 )}
                 <button
@@ -993,7 +1051,7 @@ export default function StressTestDetail() {
         {/* ══ Context row — grade (with per-analysis verdicts) + source backtest ════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
           {gradeCard}
-          {sourceCard}
+          {sourceCard ?? stackSourceCard}
         </div>
 
         {/* Pipeline progress (running only) — full width below the context row */}
@@ -1033,10 +1091,22 @@ export default function StressTestDetail() {
         />
       )}
 
-      {copySettings && stressTestId && (
+      {/* Two flows, two modals, and the row decides which. A stack writes EVERY leg's bot and the
+          account's ceiling in one commit; a single run writes one bot the reader picks. Neither
+          knows how to do the other's job, so routing here rather than branching inside one modal
+          is what keeps each refusal readable. */}
+      {copySettings && stressTestId && !isStack && (
         <SettingsImportModal
           stressTestId={stressTestId}
           strategyName={st.strategy_name}
+          grade={st.grade}
+          onClose={() => setCopySettings(false)}
+        />
+      )}
+      {copySettings && stressTestId && isStack && (
+        <StackSettingsImportModal
+          stressTestId={stressTestId}
+          stackName={st.strategy_name}
           grade={st.grade}
           onClose={() => setCopySettings(false)}
         />

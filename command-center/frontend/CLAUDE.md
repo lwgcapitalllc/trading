@@ -4180,3 +4180,90 @@ gate** — the backend warns on a weak or absent one and still allows it.
 ⚠ **NO automated check.** Playwright is out of the gate by design and this needs the app and the
 backend up. The behaviour is pinned backend-side by 27 tests and 20 killed mutations; what is
 unverified here is the rendering.
+
+## A whole strategy SET gets the same three hops one strategy gets (2026-09-07)
+
+Backtest → stress test → demo → live had a control for each hop for a single run, and **the
+endpoints for a stack's version of all three had existed for a day with nothing calling them.**
+`RunStackStressTestModal`, `StackSettingsImportModal` and `Bots/GoLiveModal`. Backend rules and the
+refusals: `../backend/CLAUDE.md`.
+
+🔴 **NONE OF THE THREE DECIDES ANYTHING.** Every list, every warning, every refusal and the
+confirmation phrase arrive from the backend, which plans ONCE and returns the same shape to the
+preview and the apply. A list assembled here beside one assembled there is two answers about live
+bots, and only one of them was read. Same rule the single-bot import is under, and the same rule the
+risk-share total had already drifted out of on the Bots page.
+
+⚠ **All three are ALL OR NOTHING, and none offers a per-leg or per-bot tick box.** A shared account
+is several strategies measured competing for one balance; writing three of its four legs produces a
+set nobody has measured and reads on every later screen as a completed copy. A control per leg would
+make that the easy mistake rather than an impossible one.
+
+### Stress testing a stack
+
+⚠ **The button is SHARED-ONLY and is not rendered on a screen.** There every leg traded its own full
+account with nothing able to block anything, so the combined figure is an upper bound and a letter on
+it would grade a result no account can produce. The server refuses it in those words; a button whose
+only outcome is an error toast is the defect this folder records twice.
+
+⚠ **The trade count is the COMBINED book's, off the shared report — never summed from the legs.** Two
+legs on one account can hold a position at the same time, so adding their counts answers a different
+question from the one the sample floor asks.
+
+⚠ **`trades: null` is *nobody could tell me*, never zero**, and the modal says so rather than
+refusing. Rendering it as 0 would state that the account never traded, which reads as a refusal the
+reader cannot act on — and the server holds the real gate and names the figure it measured.
+
+⚠ **A stack carries no stored evaluations**, so the ruleset choice is over the FOREX rulesets rather
+than over what the subject was scored against. ⚠ **The default is DERIVED, not filled by an effect**
+(`chosen === undefined ? options[0]?.id : chosen`): three states, because *not chosen yet* and
+*chosen to grade against nothing* are different answers, and an effect that filled the first would
+overwrite the second the moment the list arrived.
+
+### The stress test page routes on the ROW, not on a missing run
+
+⚠ **`isStack` is read off `stack_id`.** A run that failed to load is not a stack, and inferring the
+kind from an absent run is how a transport failure comes to render as a different feature.
+
+⚠ **A stack-targeted row gets its own source card.** Without one the page states nothing at all about
+what it graded — `sourceCard` is null with no run. ⚠ **It quotes NO net and no trade count**: those
+live on the stack's own combined book, and restating a figure this page has not read is how two
+surfaces come to disagree about one account.
+
+⚠ **Two modals, routed here rather than branched inside one.** A stack writes every leg's bot and the
+account's ceiling in one commit; a single run writes one bot the reader picks. Neither knows how to
+do the other's job, and keeping them apart is what keeps each refusal readable.
+
+### Demo → live
+
+⚠ **It lives in the ACCOUNT drawer, because the set it promotes is *every bot on this account*.** The
+account heading is a single `<button>` and a control there would be a button inside a button — the
+invalid markup this page has already been bitten by.
+
+⚠ **Every refusal is stated ON the control, before the click** — already live, a running bot, no live
+destination — and `goLiveBlock` is a REASON rather than a boolean, because a control that only knows
+"no" cannot say which rule said no. ⚠ **A bot the box has not answered for is NOT counted as
+stopped**: `statusByKey` holds only what the snapshot reported, and reading that silence as
+*not running* is how a live-money write gets offered on a bot that is trading.
+
+⚠ **The confirmation phrase is the SERVER's and is never built here.** It names the destination
+account, so it cannot be typed from memory or pasted from a different preview — which is the whole
+reason it is a phrase and not a checkbox. The server rebuilds the plan on apply and compares against
+that plan's own phrase, so a confirmation typed against a stale preview no longer matches.
+
+⚠ **The literal writes are shown, not a summary of them.** This is the last screen before real money.
+
+⚠ **A bot's demo record is REPORTED and refuses nothing** (Aaron's call: no minimum). `traded: false`
+with a reason means no record reached this machine, which is NOT zero trades and is never drawn as
+one — a number nobody measured under a decision about real money is worse than a sentence saying so.
+
+⚠ **An unassignable live account is LISTED and DISABLED with its reason**, never hidden. Same rule the
+Add-bot list follows: a destination that silently vanishes reads as a bug.
+
+⚠ **`applied: false` on a 200 is a real outcome** on both applies — the bots already matched, or were
+already on that account — and is toasted as that rather than as a write that happened.
+
+⚠ **NO automated check on any of the three.** Playwright is out of the gate by design and these need
+the app and the backend up; the backend talks to the live trading box, so booting it stays a person's
+decision. Typecheck, lint, build and the three node checks are green. **What is unverified is the
+RENDERING** — the behaviour is pinned backend-side. Drive them once with the app up.

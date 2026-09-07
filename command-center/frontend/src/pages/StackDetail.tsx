@@ -10,6 +10,7 @@ import {
   Trash2,
   Square,
   Play,
+  Gauge,
 } from 'lucide-react'
 import StickyHeader from '@/components/StickyHeader'
 import {
@@ -25,6 +26,7 @@ import {
 } from '@/hooks/useLab'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { StackConfigModal } from '@/components/StackConfigModal'
+import { RunStackStressTestModal } from '@/components/RunStackStressTestModal'
 import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverlayToggle'
 import InfoTip from '@/components/InfoTip'
@@ -1011,6 +1013,7 @@ export function StackDetail() {
   const cancelStack = useCancelStack()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showRerun, setShowRerun] = useState(false)
+  const [showStress, setShowStress] = useState(false)
   // ONE preference, shared with a single backtest's Performance panel — the same control on the
   // same panel must not remember two answers depending on which page you last pressed it on.
   const [perfCollapsed, togglePerfCollapsed] = usePerfCollapsed()
@@ -1407,6 +1410,18 @@ export function StackDetail() {
             </div>
             {stack && !isRunning && (
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* 🔴 SHARED ONLY. A screen gave every leg its own full account with nothing able
+                    to block anything, so its combined figure is an upper bound and grading it would
+                    put a letter on a result no account can produce. The server refuses it in those
+                    words; offering the button anyway would make an error toast the only outcome. */}
+                {isShared && (
+                  <button
+                    onClick={() => setShowStress(true)}
+                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-secondary hover:text-text-primary border border-border-default hover:bg-bg-hover transition-colors"
+                  >
+                    <Gauge size={12} /> Stress Test
+                  </button>
+                )}
                 <button
                   onClick={() => setShowRerun(true)}
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-secondary hover:text-text-primary border border-border-default hover:bg-bg-hover transition-colors"
@@ -1463,6 +1478,19 @@ export function StackDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {showStress && stackId && (
+        <RunStackStressTestModal
+          stackId={stackId}
+          // The COMBINED book's own count, off the shared report — never summed from the legs here.
+          // Two legs on one account can hold a position at the same time, and a page adding their
+          // counts would be answering a different question from the one the floor asks.
+          // `undefined` becomes null: nobody could tell us, which is not zero.
+          trades={shared?.combined_trades ?? null}
+          onClose={() => setShowStress(false)}
+          navigate={navigate}
+        />
       )}
 
       {showRerun && stack && (
