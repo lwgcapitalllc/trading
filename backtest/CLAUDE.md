@@ -403,11 +403,18 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   repo has published on a charged book, and rule 11 says a comparison carries forward everything
   that decides what it was measured on — **paying that for a 0.09R correction buys an inconsistency,
   not accuracy.** Update it when a reading moves something, and re-run the two-way replay to say so.
-  🔴 **WHAT IS STILL OPEN IS THE MONITORING, NOT THIS NUMBER: nothing announces a drift, so a move
-  large enough to matter would arrive exactly as silently as this one did.** Four readings in seven
-  weeks — **−78.29 (2026-07-16), −79.60 (2026-08-06), −81.18 (2026-08-14), −80.54 (2026-09-02)** —
-  and every one was found by somebody looking. A broker re-quotes swaps whenever it likes; this
-  module cannot tell. ⚠ **The drift is NOT monotonic** (it came back down), so *"it only ever goes
+  ✅ **THE MONITORING LANDED 2026-09-03 AND THIS LINE STILL SAID IT HAD NOT.** `SYS_BROKERCOSTS`
+  (`algos/tools/watch_broker_costs.py`, daily 06:40 UTC) reads the rate off the live terminal and
+  reports on Telegram when the broker MOVES it; it changes nothing here, by design. 🔴 **WHAT IS
+  STILL OPEN IS THIS NUMBER, NOT THE MONITORING — and the two are not the same job.** A watcher
+  tells you the broker moved; re-pricing the lab's constant re-bases every charged figure the repo
+  has published, and that stays a deliberate decision. ⚠ **A drift is no longer silent, so the
+  reason this number lags is now a CHOICE rather than a blind spot** — say which one you mean.
+  ⚠ **Before the watcher, a move large enough to matter arrived exactly as silently as this one
+  did, and the four readings are why it was built** — **−78.29 (2026-07-16), −79.60 (2026-08-06),
+  −81.18 (2026-08-14), −80.54 (2026-09-02)**, four in seven weeks, every one found by somebody who
+  happened to look. A broker re-quotes swaps whenever it likes; this module still cannot tell, and
+  that has not changed — what changed is that something else now asks on a schedule. ⚠ **The drift is NOT monotonic** (it came back down), so *"it only ever goes
   one way"* is not available as a shortcut, and the gap to the lab's constant is not a running
   total. 🔴 **The four readings are recorded in THREE different places and no two of them agree on
   the series** — `fills.py`'s own comments hold the first two, the live bot's instance config

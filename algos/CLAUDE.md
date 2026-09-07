@@ -2876,10 +2876,17 @@ third pinning that an orphan under our own magic is still COUNTED.
 answer* and *the book carries something unmeasurable* call for different work, and a pre-existing
 test caught it. Two failures must never share one message.
 
-### `extreme_leg_demo` — REGISTERED AND BENCHED (2026-09-03, was "cannot be a bot yet")
+### `extreme_leg_demo` — LIVE ON AN ACCOUNT AND ARMED (2026-09-04; benched 2026-09-03, "cannot be a bot yet" before that)
 
-**It has an instance directory, it loads, and it satisfies the live contract. `account` is `null`,
-so it trades nothing and the runner refuses to start it.** ✅ **All five rows of the table this
+🔴 **THIS HEADING SAID BENCHED FOR THREE DAYS AFTER THE BOT WAS ASSIGNED, RUNNING AND ARMED — inside
+the very section whose lesson is that a stale blocker outlives the work that cleared it.** The
+reader who accepted "benched" had no reason to look again, which is the failure named four
+paragraphs down, arriving as a bill.
+
+**It is on PU Prime demo account 700152905 at 5% per trade under a 10% account cap, promoted and
+frozen, and it has been running since 2026-09-05.** Verified on the box 2026-09-07: link up, warm,
+bars advancing, flat, not a dry run. ⚠ **It has taken NO trade yet** — see the Rule 9 paragraph
+below, because armed and proven are different states and only one of them is true. ✅ **All five rows of the table this
 section used to carry are now built** — the per-bar step, the commanded close, save/restore, the
 fields the bridge reads directly, and the account-budget clamp at the sizing seam. `verify_live_ready`
 returns nothing missing, and the last of them, a route that OPENS at market, is the section below.
@@ -2895,12 +2902,17 @@ work that made it possible, because nobody re-reads a blocker they have already 
 never fires — no error, no refusal code, no alert, indistinguishable from a quiet market. It is the
 one field in that file that produces a bot which runs, logs cleanly and does nothing.
 
-🔴 **WHAT STILL BLOCKS IT IS AN ORDERING TRAP, AND IT FAILS LOUDLY THE WRONG WAY ROUND.** Move
-`sos_fade_demo` to 5% **FIRST**, then assign this bot at 5%. The Command Center refuses a write whose
-shares sum past the account cap, so assigning first is refused: 10 + 5 > 10. ⚠ **Do NOT move the
-sibling down before this bot is genuinely ready to be armed** — an account holding 5% for a bot that
-is not trading earns half its measured return for nothing, which is the mistake this section already
-records once.
+✅ **IT WAS LANDED ON 2026-09-04 AND THE ORDERING TRAP BELOW IS HOW.** `sos_fade_demo` went to
+5% **FIRST**, then this bot was assigned at 5%. The Command Center refuses a write whose shares sum
+past the account cap, so assigning first is refused: 10 + 5 > 10 — loudly, at the moment of
+assignment, rather than later. 🔴 **THE TRAP IS STILL LOADED FOR A THIRD BOT AND THERE IS NO ROOM
+LEFT**: two shares of 5 fill the 10% cap exactly, `b_leg_demo` is benched and still states 10.0, and
+moving it to 5.0 alone would make three 5% shares against a 10% cap — at which point the three do
+not share the budget, they take turns. Decide what the cap becomes and how it splits three ways
+before assigning anything. ⚠ **The old warning here — do not move the sibling down before this bot
+is ready — was ANSWERED, not retired**: an account holding 5% for a bot that is not trading earns
+half its measured return for nothing, and the window between the two writes is the whole exposure.
+Do them together.
 
 ⚠ **`warmup_bars` is 15,000 M5 bars (52 days), and the floor under it is MEASURED at 1,008.** Twelve
 quarterly start dates, 34 reference trades, judging the 30 days after each: 1,008 bars and up
@@ -2912,15 +2924,23 @@ trades, which cannot separate warm from cold at all.** Compare run-ups on DECISI
 numbers, and never on dollar fields, because a longer run-up books more prior trades onto the
 emulator's compounding balance and moves every size legitimately.
 
-⚠ **It is UNPROMOTED (`strategy_source_hash` empty), so it would import from the working tree
-rather than a frozen snapshot.** Promote before it ever runs.
+✅ **PROMOTED 2026-09-05** — frozen snapshot, `deployed.json` present, content hash
+`8b966299…`, built from commit `28527db7`, strategy version 193. Verified on the box 2026-09-07.
+🔴 **`strategy_source_hash` IN `config.json` IS EMPTY AND THAT IS NOT WHAT IT LOOKS LIKE — this
+line read it as proof the bot was unpromoted for three days after the promote.** `promote.py` writes
+the pin to `deployed.json`, a SEPARATE file that `live_config` overlays onto the config at load, so
+the field in `config.json` stays empty on a perfectly pinned bot. **Read `deployed.json`, or ask the
+box, before ever concluding a bot is unpinned.**
 
 ⚠ **Its parity gate covers 3.5 months and 7 entries and cannot cover its shipped form at all** — the
 chart has no engine for the market-condition refusal that is switched ON in its params, so the gate
 forces that off and compares the shared logic. **The shipped bot takes fewer trades than any green
-gate has ever checked.** 🔴 **Rule 9 in full: nothing in this package has been near a broker, and
-neither has the bridge's market-entry path.** The live proving period in
-`docs/EXTREME_LEG_BOT_PLAN.md` §4.3 is the only thing that closes that.
+gate has ever checked.** 🔴 **Rule 9 is NOT closed by this bot being live, and that distinction is
+the whole point of the rule.** As of 2026-09-07 it is running, warm, linked and flat, and it has
+taken **zero** trades — so nothing in this package has still been near a broker, and neither has the
+bridge's market-entry path. **Running is not executed.** The live proving period in
+`docs/EXTREME_LEG_BOT_PLAN.md` §4.3 is the only thing that closes that, and its first entry is the
+event to watch.
 
 ⚠ **Magic `770117`**, one above `b_leg_demo`. Both guards that would police it — the magic clash and
 the account-cap agreement — **exempt a benched bot**, so neither enforces anything today; the number
