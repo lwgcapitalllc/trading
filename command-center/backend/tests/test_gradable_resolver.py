@@ -326,24 +326,52 @@ def test_a_STACK_can_be_stress_tested_and_the_row_says_so(stack_client):
     assert st["run_id"] is None
 
 
-def test_SENSITIVITY_is_refused_for_a_stack_and_WALK_FORWARD_is_not(stack_client):
-    """A shift cannot say WHICH LEG's setting it is nudging, so sensitivity would perturb one
-    strategy and report the answer as the whole account's. Walk-forward has no such problem —
-    the whole stack replays per window — so it is allowed.
+def test_BOTH_deep_phases_are_allowed_on_a_stack_and_sensitivity_quotes_its_own_plan(
+    stack_client,
+):
+    """Walk-forward (2026-09-06) and sensitivity (2026-09-07) both replay the WHOLE stack, so
+    both are allowed on one.
 
-    ⚠ Watched RED both ways: dropping the sensitivity guard (a 202 for a test that would
-    measure the wrong thing) and re-adding walk-forward to it (a 400 for a phase that works).
+    ⚠ The estimate is asserted too, not just the status code. A 202 says the request was
+    accepted; it says nothing about whether the modal is about to quote an experiment other
+    than the one that will run — which is the defect this endpoint has already shipped once,
+    quoting ~12 minutes for a ~69 minute job.
+
+    ⚠ Watched RED by re-adding the old refusal, and again by pointing the estimate at the
+    single-run counter (which reports 0 backtests here, the fixture's strategies having no
+    param schema).
     """
-    refused = stack_client.post(
+    for phase in ("include_walk_forward", "include_sensitivity"):
+        r = stack_client.post("/stress-tests/run", json={"stack_id": "stk_1", phase: True})
+        assert r.status_code == 202, (phase, r.text)
+
+    r = stack_client.post(
         "/stress-tests/run", json={"stack_id": "stk_1", "include_sensitivity": True}
     )
-    assert refused.status_code == 400
-    assert "which leg" in refused.json()["detail"]
+    note = next(n for n in r.json()["notes"] if n.startswith("Sensitivity"))
+    # The stack's own risk budget and starting balance, four shifts each. The smallest-position
+    # setting is 0.0 in this fixture, so every shift of it lands back on 0 and is dropped as a
+    # no-op — which is the honest count, not a shortfall.
+    assert "8 whole-stack replays" in note, note
 
-    allowed = stack_client.post(
-        "/stress-tests/run", json={"stack_id": "stk_1", "include_walk_forward": True}
+
+def test_a_stack_holding_a_DEPENDENT_leg_is_refused_SENSITIVITY_up_front(stack_client):
+    """Same refusal as walk-forward's, for the same reason and at the same moment.
+
+    🔴 Sensitivity replays the stack once per shift, so a stack that cannot be REBUILT cannot be
+    perturbed either — and rebuilding it without the parent produces a leg that arms off nothing
+    and returns an empty book. Every shift would then be measured on an account quietly one leg
+    short, and the phase would look like it worked.
+
+    ⚠ Watched RED by narrowing the pre-check back to walk-forward only.
+    """
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute("UPDATE strategies SET requires_source=1 WHERE id='b_leg'")
+    r = stack_client.post(
+        "/stress-tests/run", json={"stack_id": "stk_1", "include_sensitivity": True}
     )
-    assert allowed.status_code == 202, allowed.text
+    assert r.status_code == 400
+    assert "not recorded" in r.json()["detail"]
 
 
 def test_a_stack_holding_a_DEPENDENT_leg_is_refused_WALK_FORWARD_up_front(
@@ -555,3 +583,394 @@ def test_a_CANCELLED_stack_walk_forward_stops_between_windows(lab, monkeypatch):
     monkeypatch.setattr(stress_tester, "is_cancelled", lambda _st: True)
     ok, err = _run_wf()
     assert (ok, err) == (False, "cancelled")
+
+
+# ── Sensitivity over a STACK ──────────────────────────────────────────────────
+#
+# ⚠ A fail-watch against HEAD is VACUOUS for every case below — the stack path did not exist —
+# so non-vacuity is by MUTATION, and each docstring names the mutation that turns it red.
+
+SHIFTS_2 = [("+10%", 1.10), ("-10%", 0.90)]
+
+_STACK_SETTINGS = {
+    "account_size": 10_000.0,
+    "risk_cap_pct": 10.0,
+    "entry_floor_pct": 2.0,
+    "start_date": "2024-01-01",
+    "end_date": "2024-12-31",
+}
+
+
+def _schema(*names) -> dict:
+    return {"param_schema": [{"name": n, "type": "float"} for n in names]}
+
+
+def _plan(settings, legs, strategies, shifts=SHIFTS_2, budget=100):
+    from services import stress_tester
+
+    return stress_tester.stack_sensitivity_plan(settings, legs, strategies, shifts, budget)
+
+
+def test_the_STACKS_OWN_settings_are_nudged_before_any_legs():
+    """Aaron's call, and the whole reason this phase is different from the single-run one: the
+    account risk budget, the starting balance and the smallest position it will still take are
+    the only settings that belong to the ACCOUNT rather than to a strategy, so a portfolio
+    answer spends its first replays on them.
+
+    ⚠ Watched RED by appending the stack's settings after the legs' instead of before.
+    """
+    plan, _skipped, _dropped = _plan(
+        _STACK_SETTINGS, [{"strategy_id": "a", "params": {"x": 1.0}}], {"a": _schema("x")}
+    )
+    assert list(dict.fromkeys(e["key"] for e in plan)) == [
+        "risk_cap_pct",
+        "account_size",
+        "entry_floor_pct",
+        "a.x",
+    ]
+
+
+def test_the_legs_take_TURNS_so_one_long_leg_cannot_eat_the_budget():
+    """A flat pass in leg order spends the whole budget on the first leg when it carries twenty
+    settings and the second carries three — and reports the account as though the second leg had
+    no settings at all.
+
+    ⚠ Watched RED by flattening the per-leg lists in order instead of interleaving them.
+    """
+    plan, _s, _d = _plan(
+        {},
+        [
+            {"strategy_id": "a", "params": {"x": 1.0, "y": 2.0, "z": 3.0}},
+            {"strategy_id": "b", "params": {"p": 4.0}},
+        ],
+        {"a": _schema("x", "y", "z"), "b": _schema("p")},
+    )
+    assert list(dict.fromkeys(e["key"] for e in plan)) == ["a.x", "b.p", "a.y", "a.z"]
+
+
+def test_the_budget_stops_at_a_SETTING_and_never_skips_ahead_to_a_cheaper_one():
+    """Two rules at once, and the second is the one worth the test.
+
+    A setting that makes the cut gets ALL of its shifts — half a setting's shifts would put a
+    max degradation on the record measured over a probe nobody chose. And once the budget stops,
+    it STAYS stopped: squeezing in a later setting that happens to be cheaper would quietly
+    reorder the priority the plan exists to enforce, with nothing on screen to show it happened.
+
+    ⚠ `z` is deliberately affordable — one of its two shifts is out of bounds, so it costs 1 and
+    the single remaining replay would fit it. It must still go unmeasured.
+    ⚠ Watched RED by `continue`-ing past an unaffordable setting instead of stopping, and again
+    by spending the budget shift by shift.
+    """
+    plan, _s, dropped = _plan(
+        {},
+        [{"strategy_id": "a", "params": {"x": 1.0, "y": 2.0, "z": 10.0}}],
+        {
+            "a": {
+                "param_schema": [
+                    {"name": "x", "type": "float"},
+                    {"name": "y", "type": "float"},
+                    {"name": "z", "type": "float", "max": 10.5},
+                ]
+            }
+        },
+        budget=3,
+    )
+    assert [e["key"] for e in plan] == ["a.x", "a.x"]
+    assert dropped == ["a.y", "a.z"]
+
+
+def test_a_refused_shift_names_WHICH_LEG_it_belonged_to():
+    """A two-leg stack reporting *"ratio +10% (above the parameter's maximum)"* does not say
+    whose ratio. The refusal messages are built off the name the planner hands down, so the name
+    it hands down is the leg-qualified key.
+
+    ⚠ Watched RED by passing the bare parameter name down instead of the key.
+    """
+    _plan_out, skipped, _d = _plan(
+        {},
+        [{"strategy_id": "b_leg", "params": {"ratio": 0.886}}],
+        {"b_leg": {"param_schema": [{"name": "ratio", "type": "float", "max": 0.9}]}},
+    )
+    assert any(s.startswith("b_leg.ratio +10%") and "maximum" in s for s in skipped)
+
+
+def test_a_stack_setting_that_was_never_recorded_is_ABSENT_from_the_record_entirely():
+    """A setting the stack never carried a number for was not probed and was not skipped — it
+    does not exist. Substituting 0 for it puts `account_size +10% (=0.0)` in the coverage record,
+    which reads as a setting that WAS probed and turned out to be flat.
+
+    🔴 The first version of this asserted only that the setting stayed out of the PLAN, and it
+    survived both of its own mutations: a `None` is refused by `shifted_value` as non-numeric and
+    a 0 is dropped as a no-op, so the plan comes out identical either way. A test whose two
+    behaviours cannot produce different output is not testing the thing it names.
+
+    ⚠ Watched RED by falling back to 0.0 for a missing setting.
+    """
+    plan, skipped, dropped = _plan(
+        {"risk_cap_pct": 10.0, "account_size": None, "entry_floor_pct": None}, [], {}
+    )
+    assert {e["key"] for e in plan} == {"risk_cap_pct"}
+    assert not [s for s in skipped + dropped if s.startswith(("account_size", "entry_floor"))]
+
+
+def test_applying_a_shift_COPIES_and_touches_only_the_named_leg():
+    """The plan is walked in a loop and every shift is measured against one baseline, so a
+    mutation in place would make each replay carry every earlier shift and report the
+    accumulation as the last setting's fragility.
+
+    ⚠ Watched RED by assigning into the leg's own params dict.
+    """
+    from services import stress_tester
+
+    legs = [
+        {"strategy_id": "a", "params": {"x": 1.0}},
+        {"strategy_id": "b", "params": {"x": 1.0}},
+    ]
+    settings = {"risk_cap_pct": 10.0}
+    out_legs, out_settings = stress_tester.stack_shift_applied(
+        legs, settings, {"scope": "leg", "leg": "a", "param": "x", "value": 1.1}
+    )
+    assert [leg["params"]["x"] for leg in out_legs] == [1.1, 1.0]
+    assert [leg["params"]["x"] for leg in legs] == [1.0, 1.0], "the originals are untouched"
+    assert out_settings is settings
+
+    _legs2, out_settings2 = stress_tester.stack_shift_applied(
+        legs, settings, {"scope": "stack", "leg": None, "param": "risk_cap_pct", "value": 11.0}
+    )
+    assert out_settings2["risk_cap_pct"] == 11.0
+    assert settings["risk_cap_pct"] == 10.0
+
+
+def _book_pf(pf: float, pnl: float = 1_000.0) -> dict:
+    return {
+        "cancelled": False,
+        "equity_curve": [{"index": 1, "equity": 10_000.0 + pnl, "profit": pnl}],
+        "daily_pnl": [],
+        "kpis": {"profit_factor": pf, "net_pnl": pnl, "trade_count": 40},
+        "trade_count": 40,
+        "net_pnl": pnl,
+        "total_r": 1.0,
+    }
+
+
+def _run_sens(stress_test_id="st_sens"):
+    import asyncio
+
+    from services import stress_tester
+
+    lab_db.insert_stress_test(
+        {
+            "stress_test_id": stress_test_id,
+            "stack_id": "stk_1",
+            "status": "running",
+            "created_at": 1,
+        }
+    )
+    return asyncio.run(stress_tester.run_sensitivity_task(stress_test_id))
+
+
+@pytest.fixture
+def sens(lab, monkeypatch):
+    """A stack ready for sensitivity, with the REPLAY stubbed and every call recorded.
+
+    ⚠ The replay is stubbed because a real one needs bar data and a live strategy package. What
+    is under test is the SHIFT LOOP — which settings move, one at a time, on how many legs, and
+    what the phase records when one fails — none of which the replay decides.
+
+    ⚠ The fixture's strategies carry NO param schema, so the plan is the stack's own settings
+    alone: the risk budget and the starting balance, four shifts each. The smallest-position
+    setting sits at 0.0, so every shift of it lands back on 0 and is dropped as a no-op.
+    """
+    _stack(lab, monkeypatch)
+    calls: list[dict] = []
+
+    def fake_replay(legs, settings, start_date, end_date, should_cancel=None):
+        calls.append(
+            {
+                "legs": [leg["strategy_id"] for leg in legs],
+                "risk_cap_pct": settings.get("risk_cap_pct"),
+                "account_size": settings.get("account_size"),
+                "start": start_date,
+                "end": end_date,
+            }
+        )
+        return _book_pf(pf=2.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", fake_replay)
+    return calls
+
+
+def test_every_NUDGE_replays_the_WHOLE_stack(sens):
+    """🔴 The point of the phase on a stack. The other legs are in there competing for the same
+    risk budget throughout, so what comes back is the ACCOUNT's number under that nudge.
+    Perturbing a leg on its own and adding the answers up measures a strategy and labels it a
+    portfolio.
+
+    ⚠ Watched RED by replaying `legs[:1]`.
+    """
+    ok, err = _run_sens()
+    assert (ok, err) == (True, None)
+    assert len(sens) == 9, "a baseline, plus four shifts each of the risk budget and the balance"
+    for call in sens:
+        assert call["legs"] == ["sos_fade", "b_leg"]
+
+
+def test_the_BASELINE_is_REPLAYED_through_the_same_path_not_read_off_the_stored_book(sens):
+    """🔴 Degradation divides a shifted profit factor by the baseline's, so a baseline measured
+    on a different code path reports the path difference as a setting's fragility. The stored
+    book is close, and close is exactly what makes it dangerous.
+
+    ⚠ Watched RED by taking the baseline from the stack's stored combined KPIs: eight calls
+    instead of nine, and the first one already carrying a shift.
+    """
+    _run_sens()
+    assert sens[0]["risk_cap_pct"] == 10.0
+    assert sens[0]["account_size"] == 10_000.0
+
+
+def test_only_ONE_setting_moves_per_replay(sens):
+    """Moving several at once is a grid — a different and far larger experiment answering a
+    different question.
+
+    ⚠ Watched RED by applying each shift on top of the previous one instead of on the baseline.
+    """
+    _run_sens()
+    base = sens[0]
+    for call in sens[1:]:
+        moved = [k for k in ("risk_cap_pct", "account_size") if call[k] != base[k]]
+        assert len(moved) == 1, call
+
+
+def test_a_STACK_is_probed_with_the_SAME_shifts_as_a_single_run(sens):
+    """Both paths write the same degradation field and are read against the same grading
+    thresholds, and the ±25% pair is usually the one that produces the maximum — so probing a
+    stack with ±10% only would make every stack grade EASIER than every run, on one letter
+    scale, with nothing saying so.
+
+    ⚠ Watched RED by giving the stack path its own two-shift list: four replays and a baseline
+    instead of eight and a baseline.
+    """
+    _run_sens()
+    st = lab_db.get_stress_test("st_sens")
+    assert sorted(st["sensitivity_summary"]["risk_cap_pct"]) == ["+10%", "+25%", "-10%", "-25%"]
+
+
+def test_a_shift_that_RAISES_is_recorded_as_UNMEASURED_never_a_zero(lab, monkeypatch):
+    """A shift that produced nothing is a hole in the coverage. Reporting a max degradation over
+    whatever survived, with nothing saying how much did not, is the failure this module is
+    written against — and a 0.0 in its place reads as *this setting was tested and did nothing*.
+
+    ⚠ Watched RED by letting the exception escape (one bad shift kills the phase), and again by
+    booking 0.0 for an unmeasurable shift.
+    """
+    from services import stress_tester
+
+    _stack(lab, monkeypatch)
+    calls = {"n": 0}
+
+    def flaky(legs, settings, start_date, end_date, should_cancel=None):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the first SHIFT; the baseline is call 1
+            raise RuntimeError("no bars")
+        return _book_pf(pf=2.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", flaky)
+    assert stress_tester is not None
+    ok, err = _run_sens()
+    assert ok is True, "one bad shift must not kill the phase"
+    st = lab_db.get_stress_test("st_sens")
+    first = st["sensitivity_summary"]["risk_cap_pct"]["+10%"]
+    assert first["degradation"] is None
+    assert first["profit_factor"] is None
+    assert st["sensitivity_coverage"]["shifts_failed"] == ["risk_cap_pct +10%"]
+
+
+def test_what_the_BUDGET_could_not_reach_is_recorded_with_what_it_did(lab, monkeypatch):
+    """A page reading *"2 settings tested"* over a phase that never reached the other thirty is
+    describing coverage that did not happen — the same reason the optimizer logs what its caps
+    dropped.
+
+    ⚠ Watched RED by dropping the extra coverage from the record.
+    """
+    from services import stress_tester
+
+    _stack(lab, monkeypatch)
+    monkeypatch.setattr(stress_tester, "_STACK_SENS_MAX_REPLAYS", 4)
+    monkeypatch.setattr(
+        portfolio_runner,
+        "replay_window",
+        lambda *a, **k: _book_pf(pf=2.0),
+    )
+    _run_sens()
+    cov = lab_db.get_stress_test("st_sens")["sensitivity_coverage"]
+    assert cov["replay_budget"] == 4
+    assert cov["settings_out_of_budget"] == ["account_size", "entry_floor_pct"]
+
+
+def test_an_unusable_baseline_profit_factor_books_NONE_for_every_shift(lab, monkeypatch):
+    """A baseline of zero gives nothing to measure a change against. That is NOT ASSESSABLE, and
+    a 0.0 there is the most reassuring answer available on a phase where nothing was measured.
+
+    ⚠ Watched RED by dropping the usability check inside the shared scorer.
+    """
+    _stack(lab, monkeypatch)
+    monkeypatch.setattr(
+        portfolio_runner, "replay_window", lambda *a, **k: _book_pf(pf=0.0, pnl=0.0)
+    )
+    ok, _err = _run_sens()
+    assert ok is True
+    st = lab_db.get_stress_test("st_sens")
+    assert st["sensitivity_max_degradation"] is None
+    assert st["sensitivity_summary"]["risk_cap_pct"]["+10%"]["degradation"] is None
+
+
+def test_CANCELLING_stops_the_remaining_replays(lab, monkeypatch):
+    """A cancel that only relabels the row leaves every core busy — the optimizer shipped exactly
+    that and then overwrote its own cancelled status when the work finished.
+
+    ⚠ Watched RED by dropping the cancellation check between shifts.
+    """
+    _stack(lab, monkeypatch)
+    calls = {"n": 0}
+
+    def cancelling(legs, settings, start_date, end_date, should_cancel=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            with sqlite3.connect(lab_db.DB_PATH) as c:
+                c.execute(
+                    "UPDATE stress_tests SET status='failed_cancelled' "
+                    "WHERE stress_test_id='st_sens'"
+                )
+        return _book_pf(pf=2.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", cancelling)
+    ok, err = _run_sens()
+    assert (ok, err) == (False, "cancelled")
+    assert calls["n"] == 2, "it stops rather than finishing the plan"
+
+
+def test_two_legs_of_the_SAME_strategy_are_refused(lab, monkeypatch):
+    """A shift is recorded under `<strategy>.<setting>`, so two legs of one strategy would file
+    both under one key — the second silently overwriting the first, and the phase grading on
+    whichever landed last.
+
+    ⚠ The duplicate is INJECTED, because the replay itself already requires unique leg names and
+    the app cannot build one today. That is the point: the day it can, the failure is silent.
+    ⚠ Watched RED by removing the duplicate check.
+    """
+    from services import gradable, stress_tester
+
+    _stack(lab, monkeypatch)
+    monkeypatch.setattr(
+        gradable,
+        "rebuild_legs",
+        lambda _sid: [
+            {"strategy_id": "sos_fade", "params": {}, "class_name": "X"},
+            {"strategy_id": "sos_fade", "params": {}, "class_name": "X"},
+        ],
+    )
+    monkeypatch.setattr(portfolio_runner, "replay_window", lambda *a, **k: _book_pf(pf=2.0))
+    assert stress_tester is not None
+    ok, err = _run_sens()
+    assert ok is False
+    assert "same strategy" in (err or "")

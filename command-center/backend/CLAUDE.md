@@ -5099,3 +5099,93 @@ something unique to the function you mean.**
 ⚠ **A fixture bug also read as a code failure**: the window book generated `2024-01-40`. Same shape
 as the thin `stress_tests` fixture two sections up — **when a new test fails, check the fixture
 before the code.**
+
+---
+
+## Sensitivity over a STACK — one setting nudged, the WHOLE stack replayed (2026-09-07)
+
+`services/stress_tester.py` → `_run_stack_sensitivity`, `stack_sensitivity_plan`,
+`stack_shift_applied`, `stack_sensitivity_preview`, `_finish_sensitivity`.
+
+**The last of the three deep phases to stop being single-strategy.** Monte Carlo and grading
+already read the combined book; walk-forward learned to replay the whole stack per window on
+2026-09-06; sensitivity was refused for a stack until this change, with the honest reason that a
+shift could not say which leg's setting it was nudging.
+
+🔴 **NUDGING ONE SETTING AND REPLAYING THE ENTIRE STACK IS WHAT MAKES THE ANSWER A PORTFOLIO
+ANSWER.** The other legs are in there competing for the same risk budget for the whole replay, so
+the profit factor that comes back is the ACCOUNT's under that nudge — not the leg's. Perturbing a
+leg on its own and adding the answers up measures a strategy and labels it a stack, which is
+exactly what Aaron ruled out: *"nothing should run on its own and then come at numbers at the
+end."*
+
+🔴 **THE STACK'S OWN SETTINGS ARE SPENT FIRST — the account risk budget, the starting balance,
+then the smallest position it will still take.** Those three are the only settings that belong to
+the ACCOUNT rather than to a strategy, so they are the ones a portfolio answer is actually about.
+After them the legs' settings take TURNS: a flat pass in leg order spends the whole budget on the
+first leg when it carries twenty settings and the second carries three, and then reports the
+account as though the second leg had no settings at all.
+
+🔴 **THE BASELINE IS REPLAYED HERE, THROUGH THE SAME FUNCTION, rather than read off the stack's
+stored combined book.** Degradation divides a shifted profit factor by the baseline's, so a
+baseline measured on a different code path reports the path difference as a setting's fragility —
+this repo's signature defect, and the reason every child run already carries its parent's
+measurement fields. The stored book is *close*, and close is what makes it dangerous. It costs one
+extra replay and removes the whole class of error.
+
+⚠ **EVERY SHIFT IS A FULL STACK REPLAY AND THEY RUN ONE AT A TIME.** A single strategy's shifts fan
+across every core through the optimizer's sweep; a stack cannot use that path — it replays several
+legs on one merged clock in this process — so the cost is one whole replay per shift, serial.
+`_STACK_SENS_MAX_REPLAYS` is **60**, about the same wait the single-run phase shipped with before
+it was parallelised (MEASURED there: 69s per 6.6-year M15 replay). **It is a CAP, not a target, and
+what it drops is NAMED** — in the coverage record, and in a warning on the trigger response so the
+reader can drop a leg and re-run before spending the hour rather than after.
+
+⚠ **The budget is spent a SETTING at a time, never a shift at a time**, and it STOPS rather than
+skipping ahead to a cheaper setting. Half a setting's shifts would put a max degradation on the
+record measured over a probe nobody chose; squeezing in a later setting would quietly reorder the
+priority the plan exists to enforce, with nothing on screen to show it happened.
+
+✅ **`_finish_sensitivity` is SHARED by the single-run path and the stack path, never copied** —
+same move as `_finish_walk_forward` the day before. Both write `sensitivity_max_degradation` and
+are read against the same grading thresholds, so a second copy would let a stack be scored under a
+rule a single run is not.
+
+✅ **`sensitivity_shifts` is now the one shift list, read by both paths and by the time estimate.**
+It was a COUNT in one place and a literal list in another, held together by a comment reading
+*"Matches SHIFTS below"* — a claim about code somewhere else rather than a mechanism (rule 7).
+⚠ **A stack is probed with the SAME shifts as a single run, and that is not a free choice**: the
+±25% pair is usually the one that produces the maximum, so probing a stack with ±10% only to buy
+back replays would make every stack grade EASIER than every run, on one letter scale, silently.
+
+⚠ **No child runs are spawned, so a shift has no run id and the page offers no drill-down into
+it.** That is honest rather than convenient — there is no row, because a stack replay is a function
+call in this process, not a job on a terminal.
+
+⚠ **A stack holding a loss-recovery leg is REFUSED sensitivity up front, exactly as it is refused
+walk-forward.** That leg's parent is passed at launch and never persisted, so a rebuilt stack would
+carry a leg that arms off nothing and returns an empty book, and every shift would be measured on
+an account quietly one strategy short. The fix when somebody wants it is to STORE the parent on the
+member row.
+
+⚠ **Two legs of the same strategy are refused**, because a shift is recorded under
+`<strategy>.<setting>` and the second would overwrite the first in silence. The replay itself
+already requires unique leg names so the app cannot build one today — it is asked here because the
+day it can, the failure is invisible.
+
+⚠ **The estimate is built by RUNNING THE PLANNER**, not by multiplying a param count by a shift
+count, so the modal cannot quote an experiment other than the one about to run. The per-replay
+figure comes from the legs' OWN measured durations added together and is labelled a floor — the
+shared replay also carries the risk budget, the contention log and a merged clock the solo runs
+never had.
+
+🔴 **ONE TEST HERE WAS WRITTEN, PASSED, AND COULD NOT HAVE FAILED — caught by asking what its
+mutation would do BEFORE running it, which is the only reason it is not still green and worthless.**
+It asserted that a stack setting the stack never recorded stays out of the PLAN. It does — whether
+the missing value is left as `None` (refused as non-numeric) or substituted with 0 (dropped as a
+no-op). **Two behaviours that cannot produce different output are not two behaviours, and a test
+that cannot tell them apart is describing a system where the thing under test does nothing.** Same
+shape as the period-window cases written against a scale of exactly 1. It now asserts the setting is
+absent from the COVERAGE RECORD as well, where the substitution shows up as
+`account_size +10% (=0.0)` — a setting reading as probed and flat when it was never set at all — and
+the mutation kills it.

@@ -12,6 +12,7 @@ import math
 import time
 import uuid
 from datetime import date, timedelta
+from itertools import zip_longest
 from pathlib import Path
 from typing import Optional
 
@@ -624,9 +625,29 @@ def shifted_value(param: dict, baseline_val, factor: float):
     return (new_val, None)
 
 
+def sensitivity_shifts(runner: str) -> list[tuple[str, float]]:
+    """The shifts ONE setting is probed with. MT5 runs ±10%; everything else adds ±25%.
+
+    🔴 **One list, read by every path that perturbs anything** — the single-run phase, the STACK
+    phase, and the time estimate the modal quotes. It used to be a count here and a literal list
+    inside the run loop, held together by a comment reading *"Matches SHIFTS below"* — which is a
+    claim about code somewhere else rather than a mechanism (rule 7).
+
+    ⚠ **A stack is probed with the SAME shifts as a single run, and that is not a free choice.**
+    Both paths write `sensitivity_max_degradation` and are read against the same grading
+    thresholds, and the ±25% pair is usually the one that produces the maximum — so dropping it
+    for a stack to buy back replays would make every stack grade EASIER than every run on the
+    same letter scale. Whatever the shifts are, the two must agree; this is what makes them
+    agree.
+    """
+    if runner == "mt5":
+        return [("+10%", 1.10), ("-10%", 0.90)]
+    return [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
+
+
 def sensitivity_shift_count(runner: str) -> int:
-    """Shifts per param: MT5 runs ±10% (2), NT8 runs ±10%/±25% (4). Matches SHIFTS below."""
-    return 2 if runner == "mt5" else 4
+    """Shifts per setting — READ off the list above, never stated twice."""
+    return len(sensitivity_shifts(runner))
 
 
 def _mins_per_job(runner: str) -> float:
@@ -732,6 +753,219 @@ def sensitivity_plan(
             seen_vals.add(new_val)
             plan.append({"param": pname, "label": shift_label, "value": new_val})
     return plan, skipped
+
+
+# ── Sensitivity over a STACK — the pure half ──────────────────────────────────
+
+# 🔴 EVERY SHIFT IS A WHOLE-STACK REPLAY, AND THEY RUN ONE AT A TIME, so the budget is the
+# difference between a phase and an afternoon. A single strategy's shifts fan across every core
+# through `run_sweep`; a stack cannot use that path — it replays several legs on one merged clock
+# in THIS process — so the cost is one full replay per shift, serial.
+#
+# ⚠ MEASURED on the single-strategy path this number is taken from: 69s per 6.6-year M15 replay,
+# and a stack's replay is longer because it steps every leg's bars. 60 replays is therefore about
+# an hour, which is exactly the wait the single-run phase shipped with before it was parallelised
+# — deliberately the same order, not a guess dressed as a limit.
+#
+# ⚠ It is a CAP, not a target. What it drops is recorded in the coverage record and reported, for
+# the same reason the optimizer logs what its caps dropped: a page reading "12 settings tested"
+# over a phase that never reached the other 30 is describing coverage that did not happen.
+_STACK_SENS_MAX_REPLAYS = 60
+
+# The stack's OWN settings, in Aaron's priority order: the account risk budget, the starting
+# balance, then the smallest position it will still take.
+#
+# 🔴 THESE COME FIRST, BEFORE ANY LEG'S SETTING. *"I have a stack of strategies that is gonna be
+# run on one account — when we stress it, it has to act as such."* The three below are the only
+# settings that belong to the ACCOUNT rather than to a strategy, so they are the ones a portfolio
+# answer is actually about, and they are the first thing the budget is spent on.
+#
+# ⚠ Bounds are declared so an out-of-range shift is REFUSED rather than clamped — the same rule
+# `shifted_value` already enforces for a strategy's own params, and for the same reason: a replay
+# at +12.8% under a label reading `+25%` is a magnitude that is not the one stated.
+_STACK_SETTING_SCHEMA: list[dict] = [
+    {"name": "risk_cap_pct", "type": "float", "min": 0.01, "max": 100.0},
+    {"name": "account_size", "type": "float", "min": 1.0},
+    {"name": "entry_floor_pct", "type": "float", "min": 0.0, "max": 100.0},
+]
+
+
+def stack_sensitivity_settings(settings: dict) -> list[dict]:
+    """The stack-level settings this stack actually carries a number for.
+
+    ⚠ A setting the stack never recorded is ABSENT, not zero. Perturbing a `None` raises; treating
+    it as 0 would book a guaranteed no-op shift, which reads as *tested, rock solid* for a setting
+    that was never set — the same false reassurance `param_is_reachable` exists to prevent.
+    """
+    out = []
+    for p in _STACK_SETTING_SCHEMA:
+        val = settings.get(p["name"])
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            out.append(p)
+    return out
+
+
+def stack_sensitivity_plan(
+    settings: dict,
+    legs: list[dict],
+    strategies: dict,
+    shifts: list,
+    budget: int,
+) -> tuple[list[dict], list[str], list[str]]:
+    """What to replay, what was refused, and what the budget could not reach. PURE — replays nothing.
+
+    Returns `(plan, skipped, out_of_budget)`. A plan entry names the setting, WHICH leg it belongs
+    to, and the shifted value: `{key, scope, leg, param, label, value}`.
+
+    Three decisions live here, and each is the answer to a question Aaron asked:
+
+    🔴 **ONE setting moves at a time, and the WHOLE STACK replays.** The other legs are in there
+    competing for the same risk budget throughout, so the number that comes back is the account's,
+    not the leg's. Moving several at once is a grid — a different and far larger experiment
+    answering a different question.
+
+    🔴 **The stack's own settings are spent first**, then the legs' — and the legs take turns. A
+    flat pass in leg order spends the entire budget on the first leg when it has twenty settings
+    and the second has three, and reports the account as though the second leg had no settings at
+    all.
+
+    🔴 **The budget is spent a SETTING at a time, never a shift at a time.** A setting that makes
+    the cut gets all of its shifts; one that does not gets none and is NAMED. Half a setting's
+    shifts would put a `max degradation` on the record measured over a probe nobody chose.
+
+    ⚠ It stops at the first setting that will not fit rather than skipping ahead to a cheaper one.
+    Squeezing in a later setting would quietly reorder the priority this function exists to
+    enforce, and the reader would have no way to see that it happened.
+    """
+    groups: list[tuple[str, str, Optional[str], dict, dict]] = [
+        (p["name"], "stack", None, p, settings) for p in stack_sensitivity_settings(settings)
+    ]
+
+    per_leg: list[list] = []
+    for leg in legs:
+        sid = leg.get("strategy_id", "")
+        base = leg.get("params") or {}
+        per_leg.append(
+            [
+                (f"{sid}.{p['name']}", "leg", sid, p, base)
+                for p in perturbable_params(strategies.get(sid) or {}, base)
+            ]
+        )
+    for row in zip_longest(*per_leg):
+        groups.extend(g for g in row if g is not None)
+
+    plan: list[dict] = []
+    skipped: list[str] = []
+    out_of_budget: list[str] = []
+    stopped = False
+    for key, scope, leg_id, param, base in groups:
+        if stopped:
+            out_of_budget.append(key)
+            continue
+        # The key is used as the param NAME so the refusal and no-op messages name the leg too —
+        # `sensitivity_plan` builds those strings off the name it is handed, and a message reading
+        # "exec_risk_pct -25% (below the minimum)" on a two-leg stack does not say whose.
+        keyed = {**param, "name": key}
+        entries, sk = sensitivity_plan([keyed], {key: base[param["name"]]}, shifts)
+        skipped.extend(sk)
+        if not entries:
+            continue
+        if len(plan) + len(entries) > budget:
+            stopped = True
+            out_of_budget.append(key)
+            continue
+        for e in entries:
+            plan.append(
+                {
+                    "key": key,
+                    "scope": scope,
+                    "leg": leg_id,
+                    "param": param["name"],
+                    "label": e["label"],
+                    "value": e["value"],
+                }
+            )
+    return plan, skipped, out_of_budget
+
+
+def stack_sensitivity_preview(stack_id: str) -> dict:
+    """What the stack's sensitivity phase WILL do, before it does any of it.
+
+    🔴 **It builds the plan through the SAME pure function the run does**, so the estimate the
+    modal quotes and the work the phase performs cannot describe different experiments. The
+    lab's own history here is a modal quoting ~12 minutes for a ~69 minute job; the fix then was
+    to measure, and the fix now is to not compute the number twice.
+
+    Returns `{replays, out_of_budget, minutes, legs}`. `minutes` is a floor — see
+    `_stack_replay_minutes`.
+    """
+    from services import gradable
+
+    settings = lab_db.get_stack_settings(stack_id) or {}
+    legs = gradable.rebuild_legs(stack_id)
+    rows = lab_db.list_stack_runs(stack_id)
+    strategies = {
+        leg.get("strategy_id"): (lab_db.get_strategy(leg.get("strategy_id", "")) or {})
+        for leg in legs
+    }
+    plan, _skipped, out_of_budget = stack_sensitivity_plan(
+        settings, legs, strategies, sensitivity_shifts("python"), _STACK_SENS_MAX_REPLAYS
+    )
+    # +1 for the BASELINE, which is replayed through the same path rather than read off the
+    # stored book. It is real work and it is on the clock, so it is in the estimate.
+    per_replay = _stack_replay_minutes(rows)
+    return {
+        "replays": len(plan),
+        "out_of_budget": out_of_budget,
+        "minutes": max(1, int(math.ceil((len(plan) + 1) * per_replay))),
+        "legs": len(legs),
+    }
+
+
+def _stack_replay_minutes(leg_rows: list[dict]) -> float:
+    """Minutes for ONE whole-stack replay, taken from the legs' OWN measured durations.
+
+    ⚠ **MEASURED where it can be.** A per-job constant is wrong by construction here — the cost
+    scales with the window and with how many legs' bars the merged clock has to step — and this
+    app has already quoted ~12 minutes for a job that took ~69 by doing exactly that. Each leg's
+    own run is the same replay over the same bars, so their durations ADDED is the closest
+    figure on the record.
+
+    ⚠ **It is a FLOOR, not a figure**, and the estimate is labelled as one: the shared replay
+    also carries the risk budget, the contention log and a merged clock the solo runs never had.
+
+    ⚠ `is not None`, never truthiness — a timestamp of 0 is a value, not an absence.
+    """
+    total = 0.0
+    for row in leg_rows:
+        started, completed = row.get("started_at"), row.get("completed_at")
+        if started is not None and completed is not None and completed > started:
+            total += (completed - started) / 60.0
+    if total > 0:
+        return total
+    return _mins_per_job("python") * max(1, len(leg_rows))
+
+
+def stack_shift_applied(legs: list[dict], settings: dict, entry: dict) -> tuple[list[dict], dict]:
+    """The legs and settings for ONE shift — copies, never the originals mutated.
+
+    ⚠ Copies matter more than they look: the plan is walked in a loop and the baseline is the
+    thing every shift is measured against, so a mutation in place would make every later replay
+    carry every earlier shift and report the accumulation as the last setting's fragility.
+    """
+    if entry["scope"] == "stack":
+        return legs, {**settings, entry["param"]: entry["value"]}
+    return (
+        [
+            (
+                {**leg, "params": {**(leg.get("params") or {}), entry["param"]: entry["value"]}}
+                if leg.get("strategy_id") == entry["leg"]
+                else leg
+            )
+            for leg in legs
+        ],
+        settings,
+    )
 
 
 def walk_forward_feasibility(trade_count: int, n_windows: int) -> tuple[bool, str]:
@@ -1502,12 +1736,12 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     if not st:
         return (False, "Stress test row disappeared")
 
-    # ⚠ A STACK-targeted test has no source run, and this phase is not built for one — it would
-    # replay a single leg and report the answer as the whole account's. The endpoint refuses it
-    # up front; this is the backstop, and it says the TRUE reason. Falling through to "Source
-    # run not found" would send the reader looking for a run nobody deleted.
-    if not st.get("run_id"):
-        return (False, "This phase is not built for a stack yet — it would replay one leg")
+    # ✅ A STACK gets its own executor (2026-09-07) — one setting at a time, the WHOLE stack
+    # replayed for each. Dispatched off the row's own target field, never off an argument: the
+    # row is the record of what was asked for, and a task told separately could perturb something
+    # the row does not name.
+    if st.get("stack_id"):
+        return await _run_stack_sensitivity(stress_test_id, st)
     source_run = lab_db.get_run(st["run_id"])
     if not source_run:
         return (False, "Source run not found")
@@ -1565,12 +1799,9 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
             baseline_pf,
         )
 
-    # MT5 runs one VPS job at a time — 4 shifts × N params = very long queues.
-    # Use 2 shifts for slow runners; ±10% is sufficient to flag parameter sensitivity.
-    if runner == "mt5":
-        SHIFTS = [("+10%", 1.10), ("-10%", 0.90)]
-    else:
-        SHIFTS = [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
+    # MT5 runs one VPS job at a time — 4 shifts × N params is a very long queue — so it probes
+    # ±10% only. Off the SHARED list, so the modal's estimate and this loop cannot disagree.
+    SHIFTS = sensitivity_shifts(runner)
     # The baseline's own physics. `degradation` divides a CHILD's profit factor by the BASELINE's,
     # so a child measured on a different cost model reports the cost gap as the parameter's
     # fragility. See child_measurement_fields.
@@ -1597,6 +1828,201 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
 
     if is_cancelled(stress_test_id):
         return (False, "cancelled")
+
+    return _finish_sensitivity(
+        stress_test_id,
+        results,
+        baseline_pf=baseline_pf,
+        baseline_pnl=baseline_pnl,
+        skipped=skipped,
+        unreachable=unreachable,
+    )
+
+
+async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, Optional[str]]:
+    """Sensitivity over a STACK — one setting nudged, the whole stack replayed, every time.
+
+    🔴 **NUDGING ONE SETTING AND REPLAYING THE WHOLE STACK IS WHAT MAKES THIS A PORTFOLIO
+    ANSWER.** The other legs are in there competing for the same risk budget for the entire
+    replay, so what comes back is the account's profit factor under that nudge — not the leg's.
+    Perturbing a leg on its own and adding the answers up would measure a strategy and label it a
+    stack, which is precisely the thing Aaron said must not happen: *"nothing should run on its
+    own and then come at numbers at the end."*
+
+    🔴 **THE BASELINE IS REPLAYED HERE, THROUGH THIS SAME FUNCTION, rather than read off the
+    stack's stored book.** Degradation divides a shifted profit factor by the baseline's, so a
+    baseline measured on a different code path reports the path difference as a setting's
+    fragility — this repo's signature defect, and the reason every child run carries
+    `child_measurement_fields`. The stored book is close and would look right; close is what
+    makes it dangerous. It costs one extra replay and removes the entire class of error.
+
+    ⚠ **The stack's OWN settings are perturbed first** — the account risk budget, the starting
+    balance, the smallest position it will still take — then the legs' settings, taking turns.
+    See `stack_sensitivity_plan`.
+
+    ⚠ **It spawns no child runs**, so a shift has no run id and the page offers no drill-down
+    into it. That is honest rather than convenient: there is no row, because a stack replay is a
+    function call in this process, not a job on a terminal.
+    """
+    from services import gradable, portfolio_runner
+
+    stack_id = st["stack_id"]
+    try:
+        gradable.resolve(stack_id=stack_id)
+        legs = gradable.rebuild_legs(stack_id)
+    except gradable.NotGradable as exc:
+        return (False, exc.reason)
+
+    settings = lab_db.get_stack_settings(stack_id)
+    if not settings:
+        return (False, "Stack settings not found")
+
+    # 🔴 CHECKED, never assumed. A shift is recorded under `<strategy>.<setting>`, and two legs
+    # of the same strategy would file both under one key — the second silently overwriting the
+    # first, so the phase would report half its work and grade on whichever landed last. The
+    # replay itself already requires unique leg names, so this cannot happen today; it is asked
+    # here because the day it can, the failure is silent.
+    ids = [leg.get("strategy_id") for leg in legs]
+    if len(set(ids)) != len(ids):
+        return (
+            False,
+            "two legs of this stack are the same strategy, so a nudge could not say which one "
+            "it moved",
+        )
+    strategies = {sid: (lab_db.get_strategy(sid) or {}) for sid in ids}
+
+    plan, skipped, out_of_budget = stack_sensitivity_plan(
+        settings,
+        legs,
+        strategies,
+        sensitivity_shifts("python"),
+        _STACK_SENS_MAX_REPLAYS,
+    )
+
+    # Every leg's settings that no shift of could move the result — the same reachability rule the
+    # single-run path applies, named per leg so the reader knows whose.
+    unreachable: list[str] = []
+    for leg in legs:
+        sid = leg.get("strategy_id", "")
+        base = leg.get("params") or {}
+        schema = (strategies.get(sid) or {}).get("param_schema") or []
+        unreachable.extend(
+            f"{sid}.{p['name']}"
+            for p in schema
+            if p.get("type") in ("int", "float", "double")
+            and p.get("name") in base
+            and not _is_foundational(p)
+            and not param_is_reachable(p, base, schema)
+        )
+
+    if not plan:
+        # A SUCCESSFUL run of the phase whose honest answer is "there is nothing here to nudge".
+        # None, never 0.0 — a 0.0 would report "no setting moved the result", the most reassuring
+        # answer available, on a stack nothing was measured on. Grading reads None as not-run.
+        lab_db.update_stress_test_sensitivity(stress_test_id, {}, None)
+        return (True, None)
+
+    def _replay(shift_legs, shift_settings):
+        return portfolio_runner.replay_window(
+            shift_legs,
+            shift_settings,
+            settings["start_date"],
+            settings["end_date"],
+            should_cancel=lambda: is_cancelled(stress_test_id),
+        )
+
+    try:
+        base_book = await asyncio.to_thread(_replay, legs, settings)
+    except Exception as exc:  # noqa: BLE001 — every failure here is the same answer
+        return (False, f"the stack's own baseline replay failed ({type(exc).__name__}: {exc})")
+    if base_book.get("cancelled"):
+        return (False, "cancelled")
+    baseline_pf = base_book["kpis"].get("profit_factor")
+    baseline_pnl = base_book["kpis"].get("net_pnl") or 0.0
+    if not (baseline_pf is not None and np.isfinite(baseline_pf) and baseline_pf > 0):
+        log.warning(
+            "Stack sensitivity %s: baseline profit factor is %r — degradation is not assessable",
+            stress_test_id,
+            baseline_pf,
+        )
+
+    results: list[dict] = []
+    for entry in plan:
+        if is_cancelled(stress_test_id):
+            return (False, "cancelled")
+        shift_legs, shift_settings = stack_shift_applied(legs, settings, entry)
+        try:
+            book = await asyncio.to_thread(_replay, shift_legs, shift_settings)
+        except Exception as exc:  # noqa: BLE001 — a bad shift must not kill the phase
+            # RECORDED, not dropped. A shift that never produced a result is a hole in the
+            # coverage, and the scorer counts it — reporting a max degradation over whatever
+            # survived, with nothing saying how much did not, is the failure this whole module
+            # is written against.
+            log.warning(
+                "Stack sensitivity %s: %s %s failed — %s",
+                stress_test_id,
+                entry["key"],
+                entry["label"],
+                exc,
+            )
+            results.append({"entry": entry, "run_id": None, "ok": False, "pf": None, "pnl": 0.0})
+            continue
+        if book.get("cancelled"):
+            return (False, "cancelled")
+        results.append(
+            {
+                # ⚠ `param` is the KEY (`<strategy>.<setting>` for a leg), because that is what
+                # the scorer files the result under and what the page labels the row with.
+                "entry": {**entry, "param": entry["key"]},
+                "run_id": None,
+                "ok": True,
+                "pf": book["kpis"].get("profit_factor"),
+                "pnl": book["kpis"].get("net_pnl") or 0.0,
+            }
+        )
+
+    if is_cancelled(stress_test_id):
+        return (False, "cancelled")
+
+    return _finish_sensitivity(
+        stress_test_id,
+        results,
+        baseline_pf=baseline_pf,
+        baseline_pnl=baseline_pnl,
+        skipped=skipped,
+        unreachable=unreachable,
+        extra_coverage={
+            "replay_budget": _STACK_SENS_MAX_REPLAYS,
+            "settings_out_of_budget": out_of_budget,
+        },
+    )
+
+
+def _finish_sensitivity(
+    stress_test_id: str,
+    results: list[dict],
+    *,
+    baseline_pf: Optional[float],
+    baseline_pnl: float,
+    skipped: list[str],
+    unreachable: list[str],
+    extra_coverage: Optional[dict] = None,
+) -> tuple[bool, Optional[str]]:
+    """Score the shifts, store the summary, and say whether the phase succeeded.
+
+    🔴 **SHARED by the single-run path and the STACK path (2026-09-07), never copied.** Both
+    write the same `sensitivity_max_degradation` field and are read against the same grading
+    thresholds, so a second copy would let a stack be scored under a rule a single run is not —
+    the same argument that made the two sensitivity metrics agree in the first place, and the
+    same one that made walk-forward's two paths share `_finish_walk_forward`.
+
+    ⚠ **A baseline profit factor that is missing, zero or infinite is NOT ASSESSABLE**, and every
+    shift then books `None` rather than 0.0. A 0.0 here reads as *no setting moved the result* —
+    the most reassuring answer available — on a phase where nothing was measured at all. The
+    check is made HERE rather than trusted from the caller, so neither path can hand in a
+    baseline the other would have refused.
+    """
+    pf_usable = baseline_pf is not None and np.isfinite(baseline_pf) and baseline_pf > 0
 
     sensitivity: dict = {}
     max_degradation: Optional[float] = None
@@ -1657,6 +2083,11 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
         "shifts_skipped": skipped,
         "shifts_failed": failed_shifts,
         "params_unreachable": unreachable,
+        # Whatever the caller measured that this scorer knows nothing about — for a stack, the
+        # replay budget and the settings it could not reach inside it. It goes in the SAME record
+        # as everything else that was not measured, because a reader deciding whether to trust a
+        # score needs one place to look for what the score did not cover.
+        **(extra_coverage or {}),
     }
     lab_db.update_stress_test_sensitivity(
         stress_test_id,

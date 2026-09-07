@@ -24,6 +24,7 @@ from services.stress_tester import (
     run_stress_test_task,
     sensitivity_param_count,
     sensitivity_shift_count,
+    stack_sensitivity_preview,
     walk_forward_feasibility,
 )
 
@@ -95,25 +96,15 @@ async def trigger_stress_test(body: StressTestCreate):
     except gradable.NotGradable as exc:
         raise HTTPException(exc.status, exc.reason) from exc
 
-    # ⚠ SENSITIVITY is not built for a stack yet: a shift has no way to name WHICH LEG's
-    # setting it is nudging, so it would perturb one strategy and report the answer as the
-    # whole account's. Refusing names the missing feature; running quietly would put a
-    # portfolio number on a single strategy's evidence.
+    # ✅ BOTH deep phases are built for a stack now — walk-forward on 2026-09-06, sensitivity on
+    # 2026-09-07. Each replays the WHOLE stack on one account rather than picking a leg out of it.
     #
-    # ✅ Walk-forward IS built for a stack (2026-09-06) — the whole stack replays per window on
-    # one account, so it stays allowed here.
-    if target.is_stack and body.include_sensitivity:
-        raise HTTPException(
-            400,
-            "Sensitivity is not built for a stack yet — a shift cannot say which leg's setting "
-            "it is nudging, so it would perturb one strategy and grade the whole account on it.",
-        )
-
-    # ⚠ A stack's walk-forward replays IN THIS PROCESS rather than spawning child backtests, so
-    # it is refused up front when the stack cannot be rebuilt — a dependent leg's parent is not
-    # persisted, and replaying without it would drop that leg in silence. Asked here so the
-    # answer is a 400 with the reason rather than a phase that fails ten minutes in.
-    if target.is_stack and body.include_walk_forward:
+    # ⚠ Both replay IN THIS PROCESS rather than spawning child backtests, so both are refused up
+    # front when the stack cannot be REBUILT — a dependent leg's parent is not persisted anywhere,
+    # and replaying without it would drop that leg in silence and grade the account one strategy
+    # short. Asked here so the answer is a 400 naming the reason rather than a phase that fails
+    # ten minutes in.
+    if target.is_stack and (body.include_walk_forward or body.include_sensitivity):
         try:
             gradable.rebuild_legs(target.target_id)
         except gradable.NotGradable as exc:
@@ -213,7 +204,28 @@ async def trigger_stress_test(body: StressTestCreate):
         feasible, why = walk_forward_feasibility(trade_count, body.walk_forward_windows)
         if not feasible:
             warnings.append(why)
-    if body.include_sensitivity:
+    if body.include_sensitivity and target.is_stack:
+        # ⚠ A stack's estimate is built by RUNNING THE PLANNER, not by multiplying a param count
+        # by a shift count. The plan is already decided — which settings, in which order, and
+        # where the replay budget runs out — so quoting anything else here would describe a
+        # different experiment from the one about to run.
+        preview = stack_sensitivity_preview(target.target_id)
+        est_min += preview["minutes"]
+        notes.append(
+            f"Sensitivity: at least ~{preview['minutes']} min "
+            f"({preview['replays']} whole-stack replays plus the baseline, one at a time)"
+        )
+        # What the budget could not reach travels WITH the estimate, not only into the record
+        # afterwards. A reader who can see it now can drop a leg and re-run; a reader who finds
+        # it in the coverage record afterwards has already spent the hour.
+        if preview["out_of_budget"]:
+            warnings.append(
+                f"{len(preview['out_of_budget'])} setting(s) will not be reached inside the "
+                f"replay budget and will go unmeasured: "
+                f"{', '.join(preview['out_of_budget'][:6])}"
+                + ("…" if len(preview["out_of_budget"]) > 6 else "")
+            )
+    elif body.include_sensitivity:
         # Count only the params sensitivity actually perturbs (numeric, non-foundational, and
         # REACHABLE — not behind a switch this run has off) and use the runner's real shift count
         # (MT5 = 2, NT8/python = 4) — both via the shared helpers, so the estimate can't drift
