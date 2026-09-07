@@ -61,6 +61,9 @@ from models import (
     BotVersionCompare,
     JobStatus,
     ProcessStatus,
+    StackSettingImportCap,
+    StackSettingImportLeg,
+    StackSettingImportPlan,
     TelegramUser,
     TelegramUserCreate,
     TelegramUserRoleUpdate,
@@ -72,8 +75,10 @@ from services import (
     bot_params,
     bot_settings_import,
     bot_versions,
+    gradable,
     lab_db,
     notify,
+    stack_settings_import,
     strategy_import,
 )
 from services.alert_format import alert, joined
@@ -2320,6 +2325,236 @@ def apply_settings_from_stress_test(bot_name: str, stress_test_id: str):
             f"({len(plan.changes)} changed: {names}) [command center]",
             "settings copied from a graded stress test onto a demo bot from the Command "
             "Center; the settings and their source test are named in the message",
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
+
+    resp.applied = True
+    resp.restart_required = True
+    resp.commit = out
+    return resp
+
+
+# ── A whole STACK's settings, onto the bots that run its legs ────────────────
+
+
+def _running_bot_keys() -> set:
+    """Every registered bot whose runner process is alive, in ONE round trip.
+
+    🔴 **Not `_bot_is_running` in a loop.** That is one SSH call per bot, and the cost scales
+    with the fleet for a question the box answers once — the fan-out shape this backend has
+    already paid for twice (`bot_versions.changes_between`, the runs list's N+1).
+
+    ⚠ **An unreadable process list answers EVERY BOT**, which is the opposite of
+    `_bot_is_running`'s single-bot fallback and is right for the opposite reason. There the
+    caller escalates to a kill; here the caller WRITES, and refusing to write is recoverable
+    while writing under a running bot leaves a page describing settings nothing is trading.
+    """
+    keys = set(_BY_KEY)
+    try:
+        out = _ssh("wmic process where \"name='python.exe'\" get commandline 2>nul")
+    except Exception:  # noqa: BLE001 — see the docstring: cannot ask means treat all as running
+        return keys
+    return {k for k in keys if f"--bot {k}" in out}
+
+
+def _bot_targets(running: set) -> list:
+    """Every REGISTERED bot, with what this plan needs to reason about it.
+
+    ⚠ Every bot, not just the stack's legs: the account's risk budget is stored per bot and its
+    shares are summed across the whole account, so a bot the stack never mentions still decides
+    whether the result fits.
+
+    ⚠ **An unreadable config becomes `config=None`, never `{}`.** The planner refuses on it by
+    name; an empty dict would read as a bot that states nothing and let it through.
+    """
+    out = []
+    for key, reg in _BY_KEY.items():
+        try:
+            config = _read_instance_config(key)
+        except HTTPException:
+            config = None
+        out.append(
+            stack_settings_import.BotTarget(
+                key=key,
+                display=reg.display,
+                account_type=reg.account_type,
+                running=key in running,
+                config=config,
+                declared=_declared_strategy_params(
+                    str((config or {}).get("strategy_package") or "")
+                ),
+            )
+        )
+    return out
+
+
+def _build_stack_settings_import_plan(stress_test_id: str):
+    """Read everything and plan the copy. Returns `(st, target, plan)`.
+
+    🔴 **ONE builder, called by BOTH the preview and the apply**, for the reason the single-bot
+    one is: the list the reader approves has to be the change that lands, and two functions that
+    each assemble a list are two lists that can drift with nothing comparing them.
+
+    ⚠ Reads only. Every write lives in the apply endpoint.
+    """
+    st = lab_db.get_stress_test(stress_test_id)
+    if not st:
+        raise HTTPException(status_code=404, detail=f"Stress test '{stress_test_id}' not found")
+    if not st.get("stack_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"stress test '{stress_test_id}' grades a single run, not a stack — use the "
+            f"bot's own settings-from-stress-test control for that.",
+        )
+
+    # 🔴 The SAME resolver the stress test itself was started through, so this cannot accept a
+    # target that one refuses — a SCREEN in particular, where every leg traded its own full
+    # account and nothing could block anything, which is not the configuration these bots would
+    # be put into.
+    try:
+        target = gradable.resolve(stack_id=str(st["stack_id"]))
+    except gradable.NotGradable as exc:
+        raise HTTPException(exc.status, exc.reason) from exc
+
+    settings = lab_db.get_stack_settings(str(st["stack_id"])) or {}
+    legs = [
+        {
+            "strategy_id": row.get("strategy_id"),
+            "params": row.get("params") or {},
+            "instrument": row.get("instrument") or settings.get("instrument") or "",
+            "bar_type": row.get("bar_type") or settings.get("bar_type") or "",
+            # ⚠ The LEG's own frame, falling back to the stack's only when it declares none —
+            # legs stopped sharing one frame on 2026-09-03, so reading the stack's would warn
+            # about a timeframe the leg was never replayed on.
+            "bar_value": row.get("bar_value") or settings.get("bar_value"),
+        }
+        for row in lab_db.list_stack_runs(str(st["stack_id"]))
+    ]
+
+    plan = stack_settings_import.plan_stack_import(
+        legs=legs,
+        bots=_bot_targets(_running_bot_keys()),
+        stack_risk_cap_pct=(
+            float(settings["risk_cap_pct"]) if settings.get("risk_cap_pct") is not None else None
+        ),
+        grade=st.get("grade"),
+        graded=_stress_test_was_graded(st),
+    )
+    return st, target, plan
+
+
+def _stack_plan_response(st: dict, plan) -> StackSettingImportPlan:
+    return StackSettingImportPlan(
+        stress_test_id=str(st.get("stress_test_id") or ""),
+        stack_id=str(st.get("stack_id") or ""),
+        account=plan.account,
+        blocked=plan.blocked,
+        grade=st.get("grade"),
+        graded=_stress_test_was_graded(st),
+        legs=[
+            StackSettingImportLeg(
+                strategy_id=leg.strategy_id,
+                bot=leg.bot_key,
+                changes=[
+                    BotSettingImportChange(name=c.name, current=c.current, proposed=c.proposed)
+                    for c in leg.plan.changes
+                ],
+                dropped_notes=leg.plan.dropped_notes,
+                unchanged_count=leg.plan.unchanged_count,
+                untouched=leg.plan.untouched,
+            )
+            for leg in plan.legs
+        ],
+        cap=(
+            StackSettingImportCap(
+                current=plan.cap.current,
+                proposed=plan.cap.proposed,
+                bots_to_write=plan.cap.bots_to_write,
+            )
+            if plan.cap
+            else None
+        ),
+        warnings=plan.warnings,
+    )
+
+
+@router.get(
+    "/stack-settings-from-stress-test/{stress_test_id}",
+    response_model=StackSettingImportPlan,
+)
+def preview_stack_settings_from_stress_test(stress_test_id: str):
+    """What copying this STACK's settings onto its bots WOULD do. Writes nothing.
+
+    The list this returns is the list the reader approves, and the apply writes exactly it.
+    """
+    st, _target, plan = _build_stack_settings_import_plan(stress_test_id)
+    return _stack_plan_response(st, plan)
+
+
+@router.post(
+    "/stack-settings-from-stress-test/{stress_test_id}",
+    response_model=StackSettingImportPlan,
+)
+def apply_stack_settings_from_stress_test(stress_test_id: str):
+    """Write this stack's settings onto every leg's bot AND the account's risk budget.
+
+    🔴 **ALL OR NOTHING, and the writes are staged before ANY of them lands.** The plan is
+    complete or it is blocked, so a refusal costs nothing; what this ordering buys is that a
+    config that cannot be serialised takes the whole apply down before the first file moves,
+    rather than after two of four bots have been written.
+
+    ⚠ **Every file goes into ONE commit.** A stack is a set of bots measured together; two
+    commits is two states of the fleet, and the one in between was never measured.
+
+    ⚠ **It never reports the change as in effect.** `restart_required` is always True — exactly
+    one setting reaches a running bot without a restart and this writes many, across bots.
+
+    ⚠ **It does NOT deploy code and does NOT restart.** Those stay separate deliberate steps.
+    """
+    st, _target, plan = _build_stack_settings_import_plan(stress_test_id)
+    resp = _stack_plan_response(st, plan)
+
+    if plan.blocked:
+        raise HTTPException(status_code=409, detail=plan.blocked)
+
+    if plan.is_noop:
+        # Not an error: the bots already match. Reported as applied=False so nothing claims a
+        # write that did not happen, and no empty commit is made.
+        return resp
+
+    # ── stage every file first, write none ───────────────────────────────────────────────
+    staged: dict = {}
+    for leg in plan.legs:
+        config = _read_instance_config(leg.bot_key)
+        params = dict(config.get("strategy_params") or {})
+        for change in leg.plan.changes:
+            params[change.name] = change.proposed
+        config["strategy_params"] = params
+        staged[leg.bot_key] = config
+
+    if plan.cap and plan.cap.moves:
+        for key in plan.cap.bots_to_write:
+            config = staged.get(key) or _read_instance_config(key)
+            config["account_risk_cap_pct"] = plan.cap.proposed
+            staged[key] = config
+
+    for key, config in staged.items():
+        _write_instance_config(key, config)
+
+    paths = [_BOT_INSTANCE_MAP[key]["path"] for key in sorted(staged)]
+    bots_written = ", ".join(sorted(staged))
+    cap_note = f", account budget {plan.cap.proposed:g}%" if plan.cap and plan.cap.moves else ""
+    try:
+        out = _git_commit_push(
+            paths,
+            f"bots: stack settings from stress test {stress_test_id[:8]} onto {bots_written} "
+            f"({plan.change_count} settings changed{cap_note}) [command center]",
+            "settings copied from a graded stack's stress test onto its demo bots from the "
+            "Command Center; the bots, the setting count and the source test are named in the "
+            "message",
         )
     except subprocess.CalledProcessError as e:
         raise HTTPException(

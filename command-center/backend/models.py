@@ -528,6 +528,54 @@ class BotSettingImportPlan(BaseModel):
     commit: str = ""
 
 
+class StackSettingImportLeg(BaseModel):
+    """One leg of a stack, and the bot it would be written to."""
+
+    strategy_id: str
+    bot: str
+    changes: list[BotSettingImportChange] = []
+    dropped_notes: list[str] = []
+    unchanged_count: int = 0
+    untouched: list[str] = []
+
+
+class StackSettingImportCap(BaseModel):
+    """The account's risk budget, and every bot that has to be written to move it.
+
+    ⚠ `bots_to_write` is EVERY bot on the account, not only the stack's legs — the ceiling is
+    stored per bot, so one left behind leaves the account with two of them.
+    """
+
+    current: Optional[float] = None
+    proposed: Optional[float] = None
+    bots_to_write: list[str] = []
+
+
+class StackSettingImportPlan(BaseModel):
+    """What copying a graded STACK's settings onto its bots would do.
+
+    🔴 **ALL OR NOTHING.** A shared-account stack is a measurement of several strategies
+    competing for one balance and one risk budget; writing three of its four legs produces a
+    strategy set nobody has measured, and it reads as a completed copy. `blocked` is a REASON,
+    and a caller holding one writes nothing at all.
+    """
+
+    stress_test_id: str
+    stack_id: str
+    account: Optional[int] = None
+    blocked: Optional[str] = None
+    grade: Optional[str] = None
+    graded: bool = False
+    legs: list[StackSettingImportLeg] = []
+    cap: Optional[StackSettingImportCap] = None
+    warnings: list[str] = []
+    # Set only on an APPLY, same contract as the single-bot plan: `restart_required` is always
+    # True, because this writes many settings and only one of them reaches a running bot.
+    applied: bool = False
+    restart_required: bool = False
+    commit: str = ""
+
+
 class BotDeployedVersion(BaseModel):
     """What a bot is ACTUALLY running, read off the VPS.
 

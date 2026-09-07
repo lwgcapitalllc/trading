@@ -5257,3 +5257,99 @@ confidently, with a shorter list and an open lock.
 10 RUN, 10 killed.** Eight were also watched RED against HEAD; the two that were not are labelled
 forward guards in their own docstrings — the grade exclusion (right by accident at HEAD) and the
 null run-id in the lock list.
+
+---
+
+## A graded STACK's settings, onto the bots that run its legs (2026-09-07)
+
+`services/stack_settings_import.py` + two endpoints on `routers/bots.py`
+(`GET`/`POST /bots/stack-settings-from-stress-test/{id}`). The demo hop of Aaron's pipeline, for
+the thing he actually runs: *"it doesn't matter if it's a single strategy or a stack of two or
+more strategies."* Before this, the single-bot control moved one strategy to one bot and a stack
+had to be hand-assembled bot by bot.
+
+🔴 **ALL OR NOTHING, and that is the whole feature rather than a safety flourish.** A
+shared-account stack is a measurement of several strategies competing for ONE balance and ONE
+risk budget. Writing three of its four legs produces a strategy set nobody has measured — **and
+it reads as a completed copy, because every bot it did reach is correct.** A plan is either
+`blocked` with a sentence or it is complete; there is no partial plan to apply.
+
+🔴 **THE PER-LEG WORK IS `bot_settings_import.plan_import`, CALLED ONCE PER LEG AND NEVER
+RE-IMPLEMENTED.** A second copy of *which settings move* is a second answer, and the copy is the
+one that goes stale. What this module adds is the half a per-bot planner cannot see:
+
+- every leg must land on a **DEMO** bot, and they must all be on the **same broker account** —
+  two bots on two accounts is not the stack that was replayed, and the contention behind every
+  number in it does not exist there;
+- the account's **RISK BUDGET is written too**, because the stack's own figures were produced
+  under it. ⚠ **To every bot on the account, not just the legs**: the ceiling is stored per bot
+  and the account's cap is whatever its bots agree on, so one left behind leaves the account with
+  two of them — the state `bot_accounts` refuses to report a cap for at all;
+- after everything is written the per-trade shares must still FIT under that budget
+  (`share_overflow`), or the bots quietly stop being the bots that were measured.
+
+🔴 **THE SHARE CHECK READS THE PROPOSED SHARES, NEVER TODAY'S.** Checking the current state
+passes every write that CREATES the problem and refuses every write that FIXES it — the same rule
+`bot_accounts` already records for a bot being moved onto an account. ⚠ **A bot on the account
+that is not a leg keeps its own share and still counts**: it spends the budget whether or not the
+stack mentions it. It is WARNED about rather than refused — benching it is the reader's call —
+but its share is in the sum.
+
+⚠ **An unreadable config refuses the whole copy, and it is checked FIRST for a reason found by
+test.** An unreadable config states no strategy package, so the leg's own bot silently fails to
+MATCH and the refusal came back as *"no registered bot runs extreme_leg"* — sending the reader to
+register a bot that already exists. It cannot be narrowed to the legs either: an unreadable bot
+may be a stranger sharing the account, and then its share and its ceiling are both unknown.
+
+⚠ **A leg is matched on the bot's own `strategy_package`**, which IS the lab's strategy id for a
+python package — never on a key-name convention. `sos_fade` → `sos_fade_demo` is a rule living in
+a string, and it breaks the first time a bot is named differently or a second bot runs one
+strategy. Two matches REFUSE rather than picking one.
+
+⚠ **`stack_risk_cap_pct = None` writes NOTHING to the ceiling and says so.** `None` means the
+stack recorded no budget, not that it recorded an absence of one; clearing a live account's
+ceiling because a stored figure was missing is the opposite of what an absent value means.
+
+⚠ **Every warning is LOUD and none refuses** — an ungraded test, a weak grade, a symbol or
+timeframe mismatch — and each leg's own warnings are NAMED with the bot they belong to. Rolled
+into one list a reader cannot tell which of four bots is on the wrong chart.
+
+⚠ **Every file goes into ONE commit**, and the writes are staged before any of them lands. A
+stack is a set of bots measured together; two commits is two states of the fleet, and the one in
+between was never measured.
+
+⚠ **`_running_bot_keys` is ONE round trip for the fleet**, not `_bot_is_running` per bot — the
+fan-out shape this backend has already paid for twice. **An unreadable process list answers EVERY
+bot**, which is the opposite of the single-bot helper's fallback and right for the opposite
+reason: there the caller escalates to a kill, here it WRITES, and refusing to write is
+recoverable while writing under a running bot leaves a page describing settings nothing trades.
+
+⚠ **The route resolves the stack through `gradable.resolve`, the same call the stress test itself
+was started through**, so it cannot accept a target that one refuses — a SCREEN in particular,
+where every leg traded its own full account and nothing could block anything.
+
+⚠ **It does NOT deploy code and does NOT restart**, and `restart_required` is always True.
+
+**Tests:** `tests/test_stack_settings_import.py` (27). ⚠ **A fail-watch against HEAD is VACUOUS**
+— none of it existed — so non-vacuity is by MUTATION.
+
+🔴 **TWO OF THE FAILURES DURING THE BUILD WERE THE FIXTURE, NOT THE CODE, AND BOTH WERE THE SAME
+MISTAKE: an account the stack itself could not have been replayed on.** 5% legs under an 8%
+ceiling is over-subscribed, so every apply was correctly refused — a premise that quietly turned
+two tests into a third copy of the share check. **When a new test fails, check the fixture before
+the code**; this file has now hit it twice, as has `test_gradable_resolver.py`.
+
+⚠ **Two endpoint tests were STRENGTHENED after asking what their mutation would do.** Comparing
+the preview's response to the apply's passes against an apply that plans correctly and then
+WRITES something else — both build their response from their own plan — so it now asserts what
+landed in each config. And counting commits passes against one commit staging a single bot, so it
+now asserts the commit carries every written file.
+
+🔴 **ONE MUTATION SURVIVED, AND IT WAS THE TEST ASKING TOO LITTLE.** With the stack-level demo
+check narrowed to the first leg, a live bot falls through to the per-leg planner — which refuses
+it too — and the test's assertion (the message names the bot and the word *demo*) was satisfied
+by that second refusal. **A refusal for a different reason passes a test that only asks whether
+it refused**, which is the trap `test_gradable_resolver.py` recorded on its own exactly-one-target
+case a day earlier. The per-leg planner IS the intended backstop and stays; what the test pins now
+is that the STACK-level check gets there first, so the reader is told the whole set is barred
+rather than reading it as one leg's problem.
