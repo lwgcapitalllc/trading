@@ -170,6 +170,12 @@ async def trigger_stress_test(body: StressTestCreate):
             "run_id": target.target_id if not target.is_stack else None,
             "stack_id": target.target_id if target.is_stack else None,
             "ruleset_id": body.ruleset_id,
+            # ⚠ The platform this test HOLDS and what it is grading, in words — both off the
+            # resolved target, both written here at creation. The market lock and the list used
+            # to join for these through `run_id`, which a stack does not have: a running stack
+            # test held no lock and did not appear in the list at all.
+            "runner": runner,
+            "target_label": target.label,
             "status": "running",
             "created_at": int(time.time()),
             "num_simulations": body.num_simulations,
@@ -276,9 +282,13 @@ async def cancel_stress_test(stress_test_id: str) -> dict:
             409, f"Stress test is '{st['status']}' — only a running test can be cancelled"
         )
 
-    run = lab_db.get_run(st["run_id"]) or {}
-    strategy = lab_db.get_strategy(run.get("strategy_id", "")) or {}
-    runner = strategy.get("runner", "ninjatrader")
+    # ⚠ The platform is READ OFF THE ROW, which is where the trigger wrote it. Looking it up
+    # through the run meant a stack — which has no run — resolved to NinjaTrader, and a strategy
+    # re-scanned onto a different runner mid-test would have been cancelled on the wrong one.
+    # The lookup is kept only as a fallback for rows written before that column existed.
+    run = lab_db.get_run(st["run_id"]) if st.get("run_id") else None
+    strategy = lab_db.get_strategy((run or {}).get("strategy_id", "")) or {}
+    runner = st.get("runner") or strategy.get("runner") or "ninjatrader"
 
     from services import runner_dispatch
 

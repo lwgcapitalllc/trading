@@ -2229,9 +2229,15 @@ async def run_stress_test_task(
             lab_db.update_stress_test_status(stress_test_id, "failed_no_data", exc.reason)
             return
 
-        # A single run still resolves a `backtest_runs` row, and the phases below read it for
-        # the window, the params and the measurement basis a child must inherit. A STACK has
-        # none — and cannot reach those phases, which the endpoint refuses for it.
+        # A single run still resolves a `backtest_runs` row, and the SINGLE-RUN branches of the
+        # phases below read it for the window, the params and the measurement basis a child must
+        # inherit. A STACK has none, and needs none: both deep phases now have their own executors
+        # that rebuild the stack and replay it whole, and neither ever reaches this row.
+        #
+        # ⚠ This comment said a stack "cannot reach those phases, which the endpoint refuses for
+        # it" until 2026-09-07, and both halves had stopped being true — walk-forward on
+        # 2026-09-06, sensitivity the day after. The CODE was right the whole time; only the
+        # sentence explaining it was wrong, which is the harder kind to notice.
         run = lab_db.get_run(target.target_id) if not target.is_stack else None
         trade_pnls = [t["profit"] for t in equity_curve if t.get("profit") is not None]
         if not trade_pnls:

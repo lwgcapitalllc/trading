@@ -5189,3 +5189,71 @@ shape as the period-window cases written against a scale of exactly 1. It now as
 absent from the COVERAGE RECORD as well, where the substitution shows up as
 `account_size +10% (=0.0)` — a setting reading as probed and flat when it was never set at all — and
 the mutation kills it.
+
+---
+
+## Grading judges the COMBINED ACCOUNT, and a stack's test is a first-class row (2026-09-07)
+
+Aaron: *"For grading, it's the combined account. You're not taking strategies, you're not running
+them separately and treating them as such."*
+
+✅ **`compute_grade` already did, and that was CHECKED rather than assumed.** It reads only the
+stress-test row's own Monte Carlo fields plus the walk-forward and sensitivity summaries — and for
+a stack all three are the combined account's: Monte Carlo runs on the combined equity curve the
+resolver hands it, walk-forward replays the whole stack per window, sensitivity replays the whole
+stack per nudge. There is no per-leg input to that function and there never was.
+
+🔴 **WHAT WAS BROKEN WAS EVERYTHING AROUND IT, AND BOTH DEFECTS WERE MEASURED RATHER THAN READ.**
+Two queries joined `backtest_runs` on `run_id` to reach a stress test's strategy and runner — and a
+stack-targeted row does not carry one, so an INNER JOIN dropped it in silence:
+
+```
+list_stress_tests()          -> ['st_run']                      # the stack's test, missing entirely
+running_stress_test_markets  -> {futures: False, forex: False}  # with a stack test RUNNING
+```
+
+**The second is the severe one.** `POST /stress-tests/run` refuses when a market is locked, so with
+the lock silently open a second stress test could start beside a running stack one — on one box
+driving one terminal. **A lock derived by joining through a nullable key is a lock that quietly
+opens for whatever that key cannot reach.**
+
+✅ **Two columns on the row fix both, and each is written at CREATION off the resolved target.**
+`stress_tests.runner` is the platform this test HOLDS; `stress_tests.target_label` is what it is
+grading, in words.
+
+- ⚠ **`runner` on the row is more correct than the join was, for a single run too.** It records the
+  platform the test was STARTED on, which a re-scanned strategy row cannot move under a live test.
+  The join is kept as the fallback for rows written before the column, so a test in flight across
+  the upgrade still locks.
+- ⚠ **`target_label` is the LAST fallback in the list query**, so a single run keeps its LIVE
+  strategy name and a rename still shows through. A stack has no live name to read — its name is
+  its legs joined — and that string is built once in `services/gradable.py` and stored, never
+  rebuilt in SQL.
+- ⚠ **A stack's `strategy_id` stays NULL in the list, deliberately.** A stack is not a strategy,
+  and filling it with a leg's id names one strategy as the subject of an account's result — the
+  same thing the nullable `run_id` exists to prevent one layer down.
+- ⚠ **A stack contributes no run id to the lock's id list — it has none — but it DOES set its
+  market.** The list is what the page points at to name the blocking run; the booleans are the
+  lock, and they must not depend on that list being non-empty.
+- ⚠ **Both columns are declared in the migration list AND in the `stress_tests` CREATE TABLE**, per
+  this file's standing note. The rebuild migration derives its column list from the table, so it
+  carries them without being told.
+- ⚠ **The cancel endpoint reads the platform off the row too.** Looking it up through the run meant
+  a stack — which has none — resolved to NinjaTrader.
+
+✅ **`best_grades_by_strategy` EXCLUDES a stack explicitly, and that exclusion is a forward guard
+rather than a fix.** A stack's grade judges a whole strategy set sharing one balance and one risk
+budget; hanging that letter on one leg claims evidence about that strategy which nothing measured.
+🔴 **The right answer already came out — by accident.** A stack row's `run_id` is NULL, so the
+inner join dropped it. **The next person to widen that query to a LEFT JOIN, or to reach for the
+stack's legs, gets no warning from an accident**, so the rule is now written and tested.
+
+⚠ **The standing lesson is about DERIVED identity, and it is the third time this file has recorded
+it.** When a row gains a second way of being addressed, every query that reached its old address by
+a join has to be asked whether it can still find it — and the ones that cannot will answer
+confidently, with a shorter list and an open lock.
+
+**Tests:** `tests/test_stack_stress_visibility.py` (10). ⚠ **Non-vacuity by MUTATION: 10 written,
+10 RUN, 10 killed.** Eight were also watched RED against HEAD; the two that were not are labelled
+forward guards in their own docstrings — the grade exclusion (right by accident at HEAD) and the
+null run-id in the lock list.

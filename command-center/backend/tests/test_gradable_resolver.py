@@ -326,6 +326,19 @@ def test_a_STACK_can_be_stress_tested_and_the_row_says_so(stack_client):
     assert st["run_id"] is None
 
 
+def _finish(stress_test_id: str) -> None:
+    """Mark a started stress test complete, releasing its market lock.
+
+    ⚠ A test that starts one and leaves it `running` blocks every later request in the same
+    case with a 409 — which is the lock doing its job, and reads as the endpoint refusing the
+    phase under test.
+    """
+    with sqlite3.connect(lab_db.DB_PATH) as c:
+        c.execute(
+            "UPDATE stress_tests SET status='complete' WHERE stress_test_id=?", (stress_test_id,)
+        )
+
+
 def test_BOTH_deep_phases_are_allowed_on_a_stack_and_sensitivity_quotes_its_own_plan(
     stack_client,
 ):
@@ -340,14 +353,22 @@ def test_BOTH_deep_phases_are_allowed_on_a_stack_and_sensitivity_quotes_its_own_
     ⚠ Watched RED by re-adding the old refusal, and again by pointing the estimate at the
     single-run counter (which reports 0 backtests here, the fixture's strategies having no
     param schema).
+
+    🔴 **Each accepted test is FINISHED before the next request, and the first version of this
+    was not** — it fired three requests back to back and passed, because a running stack test
+    held no market lock at all (fixed 2026-09-07, `test_stack_stress_visibility.py`). So this
+    test's premise was the defect. Needing the finish now is the lock working.
     """
     for phase in ("include_walk_forward", "include_sensitivity"):
         r = stack_client.post("/stress-tests/run", json={"stack_id": "stk_1", phase: True})
         assert r.status_code == 202, (phase, r.text)
+        _finish(r.json()["stress_test_id"])
 
     r = stack_client.post(
         "/stress-tests/run", json={"stack_id": "stk_1", "include_sensitivity": True}
     )
+    assert r.status_code == 202, r.text
+    _finish(r.json()["stress_test_id"])
     note = next(n for n in r.json()["notes"] if n.startswith("Sensitivity"))
     # The stack's own risk budget and starting balance, four shifts each. The smallest-position
     # setting is 0.0 in this fixture, so every shift of it lands back on 0 and is dropped as a

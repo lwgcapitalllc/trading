@@ -469,6 +469,17 @@ def init_db() -> None:
                 equity_paths_path  TEXT,
                 distribution_path  TEXT,
                 error_message      TEXT,
+                -- 🔴 WHICH PLATFORM THIS TEST HOLDS, and WHAT IT IS GRADING IN WORDS. Both are
+                -- written at creation off the resolved target, and both exist because the two
+                -- queries that need them USED TO JOIN THROUGH `run_id` — which a stack-targeted
+                -- row does not have. MEASURED 2026-09-07: a running stack stress test reported
+                -- no market locked at all, so a second test could start beside it; and it was
+                -- missing from the list endpoint entirely.
+                -- ⚠ `runner` is also more correct for a single run than the join was: it records
+                -- the platform the test was STARTED on, which cannot change under a live test the
+                -- way a re-scanned strategy row can.
+                runner             TEXT,
+                target_label       TEXT,
                 CHECK ((run_id IS NULL) <> (stack_id IS NULL))
             );
             CREATE INDEX IF NOT EXISTS idx_stress_tests_run ON stress_tests(run_id);
@@ -544,6 +555,12 @@ def init_db() -> None:
             # before this column, i.e. before the 2026-07-30 accuracy pass, whose grade and
             # degradation numbers the current code would not produce. See _restamp_stress_tests.
             "ALTER TABLE stress_tests ADD COLUMN grade_engine INTEGER",
+            # The platform this test holds and what it is grading, in words — see the note beside
+            # the CREATE TABLE. Both were joined for through `run_id` until 2026-09-07, which a
+            # stack-targeted row does not have, so a running stack test held no lock and did not
+            # appear in the list.
+            "ALTER TABLE stress_tests ADD COLUMN runner TEXT",
+            "ALTER TABLE stress_tests ADD COLUMN target_label TEXT",
             "ALTER TABLE optimizations ADD COLUMN regime_filter TEXT",
             # Pass 1 — foundational config columns
             "ALTER TABLE rulesets ADD COLUMN risk_per_trade_pct REAL",
@@ -4215,8 +4232,9 @@ def insert_stress_test(data: dict) -> None:
             """
             INSERT INTO stress_tests
                 (stress_test_id, run_id, stack_id, ruleset_id, status, created_at,
-                 num_simulations, num_bootstrap, walk_forward_windows, phases_requested)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 num_simulations, num_bootstrap, walk_forward_windows, phases_requested,
+                 runner, target_label)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["stress_test_id"],
@@ -4238,6 +4256,11 @@ def insert_stress_test(data: dict) -> None:
                 # record of what was asked for at all. The frontend comment claiming it was "written
                 # before anything can fail" was a label describing code that did not exist yet.
                 json.dumps(data["phases_requested"]) if data.get("phases_requested") else None,
+                # Off the RESOLVED target, both of them. A row written without them is a row
+                # from before 2026-09-07; every query that reads them falls back rather than
+                # treating an absence as a value.
+                data.get("runner"),
+                data.get("target_label"),
             ),
         )
 
@@ -4291,11 +4314,24 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
                    st.walk_forward_windows, st.walk_forward_degradation,
                    st.sensitivity_max_degradation, st.grade, st.grade_reasons,
                    st.phases_requested, st.phase_failures, st.error_message,
-                   r.strategy_id, r.instrument,
-                   COALESCE(s.name, r.strategy_id) AS strategy_name
+                   -- 🔴 LEFT JOINS, and every one of them matters. An INNER JOIN on
+                   -- `run_id` dropped every stack-targeted row from this list in silence —
+                   -- MEASURED 2026-09-07: a stack's stress test simply did not exist as far
+                   -- as the page was concerned, which reads as a test that was never started.
+                   -- ⚠ `strategy_id` stays NULL for a stack ON PURPOSE. A stack is not a
+                   -- strategy, and filling it with a leg's id would name one strategy as the
+                   -- subject of an account's result.
+                   r.strategy_id,
+                   COALESCE(r.instrument, k.instrument) AS instrument,
+                   -- ⚠ The stored label is the LAST fallback, so a single run keeps its LIVE
+                   -- strategy name and a rename still shows through. A stack has no live name
+                   -- to read — its name is its legs joined — and that string is built in one
+                   -- place (`services.gradable`) and stored, never rebuilt in SQL here.
+                   COALESCE(s.name, r.strategy_id, st.target_label) AS strategy_name
             FROM stress_tests st
-            JOIN backtest_runs r ON r.run_id = st.run_id
+            LEFT JOIN backtest_runs r ON r.run_id = st.run_id
             LEFT JOIN strategies s ON s.id = r.strategy_id
+            LEFT JOIN stacks k ON k.stack_id = st.stack_id
             {where}
             ORDER BY st.created_at DESC
         """,
@@ -4308,13 +4344,23 @@ _GRADE_ORDER = ["A", "B", "C", "D", "F"]
 
 
 def best_grades_by_strategy() -> dict:
-    """Returns {strategy_id: {grade, stress_test_id}} for the best completed grade per strategy."""
+    """Returns {strategy_id: {grade, stress_test_id}} for the best completed grade per strategy.
+
+    🔴 **A STACK'S GRADE IS THE ACCOUNT'S AND IS EXCLUDED HERE ON PURPOSE (2026-09-07).** It
+    judges a whole strategy set sharing one balance and one risk budget; hanging that letter on
+    one leg would claim evidence about that strategy which nothing here measured — and it is the
+    exact thing the nullable `run_id` was introduced to prevent one layer down.
+
+    ⚠ **The exclusion is WRITTEN, not left to the join.** A stack row has a NULL `run_id`, so the
+    inner join already dropped it and the right answer came out by accident. The next person to
+    widen this to a LEFT JOIN, or to reach for the stack's legs, gets no warning from an accident.
+    """
     with _connect() as conn:
         rows = conn.execute("""
             SELECT r.strategy_id, st.grade, st.stress_test_id
             FROM stress_tests st
             JOIN backtest_runs r ON r.run_id = st.run_id
-            WHERE st.grade IS NOT NULL
+            WHERE st.grade IS NOT NULL AND st.stack_id IS NULL
             ORDER BY st.created_at DESC
         """).fetchall()
     result: dict = {}
@@ -4514,18 +4560,32 @@ def stress_market_for_runner(runner: Optional[str]) -> str:
 
 
 def running_stress_test_markets() -> dict:
-    """Returns {futures, forex, run_ids} for currently running stress tests."""
+    """Returns {futures, forex, run_ids} for currently running stress tests.
+
+    🔴 **THIS IS THE LOCK, and until 2026-09-07 it could not see a stack.** It INNER JOINed
+    `backtest_runs` on `run_id`, which a stack-targeted row does not carry — MEASURED: a running
+    stack stress test reported `{futures: False, forex: False}`, so the endpoint's own check
+    passed and a second test could be started beside it, on one box driving one terminal.
+
+    ✅ The runner is now READ OFF THE ROW, written there at creation. The join is kept only as a
+    fallback for rows that predate the column. **A lock derived by joining through a nullable
+    key is a lock that silently opens for whatever the key cannot reach.**
+    """
     with _connect() as conn:
         rows = conn.execute("""
-            SELECT st.run_id, COALESCE(s.runner, 'ninjatrader') AS runner
+            SELECT st.run_id,
+                   COALESCE(st.runner, s.runner, 'ninjatrader') AS runner
             FROM stress_tests st
-            JOIN backtest_runs r ON r.run_id = st.run_id
+            LEFT JOIN backtest_runs r ON r.run_id = st.run_id
             LEFT JOIN strategies s ON s.id = r.strategy_id
             WHERE st.status LIKE 'running%'
         """).fetchall()
     result: dict = {"futures": False, "forex": False, "run_ids": []}
     for row in rows:
-        result["run_ids"].append(row["run_id"])
+        # ⚠ A stack contributes no run id — it has none — but it DOES set its market. The list
+        # is what the page uses to point at the blocking run; the booleans are the lock.
+        if row["run_id"]:
+            result["run_ids"].append(row["run_id"])
         result[stress_market_for_runner(row["runner"])] = True
     return result
 
