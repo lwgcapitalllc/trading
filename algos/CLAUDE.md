@@ -3309,3 +3309,35 @@ helper DIRECTLY, so a gate added in the CALLER could not fail it.** It drives `r
 
 ✅ 5 tests in `algos/tests/test_starting_balance_anchor.py`, **5/5 mutations RUN and every one
 red** — including both directions of the report-don't-adopt rule.
+
+### 🔴 …and until 2026-09-07 that refusal had NO TEST, while the shipped default started tripping it
+
+Two things landed together, and the second is the finding.
+
+**The refusal is now pinned** (`test_live_bridge.py` →
+`test_SCALE_IN_is_refused_because_the_bridge_has_no_second_entry`). It had none for three weeks:
+the rule that stops a bot trading a base position while the backtest shows a scaled book rested on
+nobody deleting it. Watched RED by mutation — disabling the branch reddens it.
+
+🔴 **`SosFadeConfig.exec_scale_in` moved off → on on 2026-09-06, so the strategy's OWN defaults now
+describe a mode this bridge refuses.** `test_dual_feed_merge.py` →
+`test_the_REAL_shipped_strategy_config_cannot_go_live_until_scale_in_is_turned_off` states that as
+a pin rather than leaving it to be rediscovered: build the real config, assert it is refused, and
+assert that turning the one setting off makes it supported. ⚠ **It is meant to go red when the
+default moves back, or when the bridge learns to place an add** — either is a change somebody has
+to come here and re-state.
+
+✅ **THE LIVE BOT IS UNAFFECTED, AND THE REASON IS THE 2026-08-26 PINNING.** `sos_fade_demo`'s
+instance config **STATES** `exec_scale_in: false` rather than inheriting it, which is exactly the
+hazard those 53 pinned settings were written against — *a setting the config does not state takes
+whatever the CODE defaults to, so a future version can move a default and change what this bot
+trades with nothing anywhere announcing it.* That is the first time the pinning has actually paid.
+⚠ `extreme_leg_demo` has no such field (its config class is standalone, not a SOS Fade subclass).
+⚠ **`b_leg_demo` does NOT state it and therefore inherits ON** — it is benched, so nothing is
+trading, but as configured it would be refused at startup. Pin it before arming it.
+
+🔴 **A test NAMED for a subject it does not build is how this went unseen.**
+`test_the_shipped_config_is_supported` asserted on a four-field stub, so it stayed green through a
+default change that made the real shipped config unsupported. It is
+`test_a_minimal_mirrorable_config_is_supported` now, and the real one is built by the two pins
+above. **The stub answers only the questions the test thought to ask.**

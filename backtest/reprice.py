@@ -193,6 +193,17 @@ def rollovers_between(entry_ms: int, exit_ms: int, close_hour_ny: int) -> list[d
     return out
 
 
+def _adds(row: dict) -> list[dict]:
+    """The scale-in lots this trade opened after its entry, or `[]`.
+
+    🔴 **They are LOTS OF THEIR OWN and are NOT in `legs` or in `size`.** `legs` records the exit
+    rungs of the BASE position and its quantities sum to `size` exactly, so nothing in either says
+    a trade grew — which is why a scaled run was silently UNDER-charged here rather than refused.
+    Each entry carries its own `qty`, its fill `ms` and its `exit_ms`.
+    """
+    return [a for a in (row.get("adds") or []) if float(a.get("qty") or 0.0) > 0]
+
+
 def _qty_open_at(row: dict, when_ms: int) -> float:
     """How much of the position was still open at `when_ms`.
 
@@ -200,6 +211,18 @@ def _qty_open_at(row: dict, when_ms: int) -> float:
     into the first and a third of it into the last. `legs` records each rung's fill time and size,
     which is the only way to know that after the fact — falling back to the entry size would
     overcharge every scale-out, and falling back to the final size would undercharge it.
+
+    🔴 **SCALE-IN LOTS ARE DELIBERATELY NOT COUNTED, and it is not an oversight — the REPLAY does
+    not charge financing on them either.** `Execution._charge_swap` bills
+    `self._qty - self._filled_qty`, which is the BASE position; an add is a separate lot and never
+    enters that number. This module's whole job is to reproduce a charged replay, so counting them
+    here would make the page disagree with the run it is describing — MEASURED at 0.20R over 42
+    trades, four times the swap bound, when it was tried on 2026-09-07.
+
+    ⚠ **Whether the REPLAY should bill them is a real and separate question**: a broker finances
+    the whole position, so a scaled trade held overnight is under-charged in the run itself. That
+    is a change to `execution.py` with its own measurement, and it would move every stored number
+    on a scaled run. Do not "fix" it here — here it would only hide the disagreement.
     """
     qty = float(row.get("size") or 0.0)
     for leg in row.get("legs") or []:
@@ -228,11 +251,17 @@ def _cost_r(
         )
     cost = 0.0
 
+    # 🔴 EVERY SCALE-IN LOT PAYS ITS OWN FULL ROUND TURN, exactly as the base does — commission
+    # and half the spread when it fills (`Execution._fill_pending_add`), and the same again when
+    # it banks (`_bank_adds`). They are lots of their own, absent from `size` and from `legs`, so
+    # a model reading only those two charges a scaled trade as though it never grew.
+    add_qty = [float(a.get("qty") or 0.0) for a in _adds(row)]
+
     if "spread" in layers:
         # Half on the entry, half across the exit rungs. The rungs sum to the entry size, so a
         # round turn is exactly one spread on the position — matching `_charge_spread`, which
         # charges `(spread/2) * qty` at `_open_position` and again over `_exit_portion`.
-        cost += float(getattr(profile, "spread", 0.0)) * qty
+        cost += float(getattr(profile, "spread", 0.0)) * (qty + sum(add_qty))
 
     if "commission" in layers:
         # Per LOT per SIDE. `profile.commission` already converts size to lots, so this cannot
@@ -240,6 +269,9 @@ def _cost_r(
         legs = row.get("legs") or []
         exit_qty = [float(lg.get("qty") or 0.0) for lg in legs] or [qty]
         cost += profile.commission(qty) + sum(profile.commission(q) for q in exit_qty)
+        # ⚠ Charged per ADD rather than on their total, because commission is per LOT and the
+        # profile rounds lots — summing first and charging once would round a different number.
+        cost += sum(profile.commission(q) for q in add_qty) * 2
 
     if "swap" in layers and getattr(profile, "swap", None) is not None:
         entry_ms, exit_ms = int(row.get("entry_ms") or 0), int(row.get("exit_ms") or 0)

@@ -829,12 +829,17 @@ def test_an_entry_the_wrong_side_of_its_stop_refuses_rather_than_sizing_off_it()
     assert out.l_armed is False
 
 
-def test_the_RECLAIM_trigger_and_the_0_886_stop_are_the_DEFAULTS_since_2026_08_27():
-    """What ships. The trigger moved to the reclaim on 2026-08-27 (Aaron); the 0.886 stop anchor
-    has not moved since 2026-08-20 and still may not be paired with the old one, which is refused
-    at construction. ⚠ The reclaim reads its OWN stop anchor, not this one — see
-    `exec_rec_stop`."""
-    assert SosFadeConfig().exec_sec_trigger == "Reclaim Entry"
+def test_BOTH_re_entry_triggers_together_and_the_0_886_stop_are_the_DEFAULTS():
+    """What ships. The trigger was the reclaim alone from 2026-08-27 and moved to BOTH triggers
+    together on 2026-09-06 (Aaron's call, in the same change that turned scale-ins on); the 0.886
+    stop anchor has not moved since 2026-08-20 and still may not be paired with the old shift-leg
+    trigger, which is refused at construction. ⚠ The reclaim reads its OWN stop anchor, not this
+    one — see `exec_rec_stop`.
+
+    ⚠ **This test is a PIN on a default, so it is meant to go red when one moves** — that is the
+    whole job, and the answer is to read why it moved and re-state it here, never to loosen the
+    assertion. It went red for four days after 2026-09-06 because nothing re-stated it."""
+    assert SosFadeConfig().exec_sec_trigger == "FVG in zone + Reclaim Entry"
     assert SosFadeConfig().exec_rec_tp_r == 3.25
     assert SosFadeConfig().exec_rec_tp1_pct == 100.0
     assert SosFadeConfig().exec_sec_stop == "0.886"

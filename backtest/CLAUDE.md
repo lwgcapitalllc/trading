@@ -2267,3 +2267,42 @@ candidate does, the answer is no.
 ⚠ **Re-measure before re-opening this.** The table is one profile on one window, and cProfile
 charges allocation pressure to whoever is running — the pivot fix returned four times its own
 profile share for exactly that reason, so a small entry here is not proof a change would be small.
+
+## 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
+
+`reprice.py` rebuilds a finished run's book at a different cost profile, and it rests on one
+identity: a cost's size in **R** does not depend on position size, so `qty` cancels. That holds.
+What did not hold was the **size it read**.
+
+**A scale-in lot is a lot of its own.** It is not in the trade's `size` and it is not in `legs` —
+`legs` records the BASE position's exit rungs and its quantities sum to `size` exactly — so
+nothing in either field says a trade grew. The model charged one round turn on the base and
+stopped, while the replay charges the add commission and half the spread when it fills and the
+same again when it banks. **Every add was free.**
+
+**MEASURED** on the reference window (PU Prime `XAUUSD.p` M15, 42 trades, 15 of them scaled): the
+rebuilt book came out **0.4328R** light against a real charged replay — spread `-1.0500R` against
+the replay's `-1.4827R` — on a check whose bound is **1e-5**. It is fixed by reading `adds` and
+charging each lot its own round turn, and it reproduces the replay exactly again.
+
+🔴 **IT WAS INVISIBLE UNTIL A DEFAULT MOVED.** Scale-in shipped OFF, so no run had adds and the
+model was right by accident for as long as it existed. `SosFadeConfig.exec_scale_in` went off →
+on on 2026-09-06 and `test_reprice.py` — which builds the SHIPPED config — went red the same day.
+**A model that is correct only while a feature is switched off is a model nobody has tested**, and
+the thing that caught it was a test constructing real defaults rather than a stub.
+
+⚠ **SWAP IS DELIBERATELY NOT CHARGED ON ADDS, and that is the sharp part.** `_charge_swap` in the
+replay bills `self._qty - self._filled_qty` — the base — so an add pays no financing there either.
+This module's job is to reproduce the replay, so counting them here makes the page disagree with
+the run it describes: **MEASURED at 0.20R, four times the swap bound, when it was tried.** ⚠ **The
+replay's own behaviour is a real open question** — a broker finances the whole position, so a
+scaled trade held overnight is under-charged in the run itself. That is a change to
+`execution.py`, with its own measurement, and it would move every stored number on a scaled run.
+**Do not close it here; here it would only hide the disagreement.**
+
+⚠ **Commission is charged per ADD, never on their total.** It is billed per LOT and the profile
+rounds lots, so summing first and charging once rounds a different number.
+
+⚠ Both halves proven by MUTATION: dropping the adds from the spread charge reddens the spread
+case, dropping them from the commission charge reddens the commission case, and neither touches
+the other.

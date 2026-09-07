@@ -3031,3 +3031,38 @@ from these runs until somebody has looked at it.
 which quotes gold as `XAUUSD.p`, so both runs above failed on the first attempt with *no bars
 returned*. ⚠ **The agent's `/health` says `ok` regardless** — it was probed for actual BARS, on both
 names, before the symbol was blamed. **Pass `--symbol XAUUSD.p` on this box.**
+
+## 🔴 The parity round trip disagreed with ITSELF, because a fixture was pinned to a moved default (2026-09-07)
+
+`test_compare_strategy.py` runs the bot, serialises its own decisions into an export-shaped CSV,
+and feeds that back through the tool demanding identity. It went red on **8 of its 32 cases** —
+`px_closed_r: py=2.2408 pine=2.8783` at bar 241, which reads exactly like a logic bug and was not
+one.
+
+**The encoder omitted the five scale-in columns the export Pine plots.** The decoder reads an
+absent `cfg_scale_in` as OFF — deliberately, and explicitly NOT as a fall-back on the base config,
+because the Pine shipped the feature off — so the fixture replayed a scaled book while the tool
+replayed an unscaled one, and the diff blamed the strategy for the harness's own configuration.
+It was harmless for as long as the Python default was also off; `exec_scale_in` moved off → on on
+2026-09-06 and the file started contradicting itself the same day.
+
+⚠ **The rule is the one the export Pine states about itself, and it cuts both ways: a
+trade-affecting input with no `cfg_` column is invisible to the tool BY CONSTRUCTION — the gate
+does not go quiet, it goes WRONG.** A fixture missing a column the Pine DOES plot fails in the
+same direction. **A default that moves has to move every fixture pinned to it, and an encoder is a
+fixture.**
+
+✅ The five columns are encoded now, the round trip is clean on every config field, and the replay
+genuinely places adds (2 across 6 closed trades on the synthetic window), so the gate walks the
+scaled path rather than being green over an unexercised one. Watched RED by mutation.
+
+⚠ **`config.py`'s own note on the setting still reads *`exec_scale_in` OFF (the default)*** — a
+stale claim sitting beside the line that now says `True`. It is left alone here on purpose: no
+TradingView export is present on this machine, so rule 22's gate cannot be run against a
+`config.py` change. **Fix it in a pass that can run the gate.**
+
+### The re-entry trigger default moved too, and its pin had to move with it
+
+`test_secondary.py` asserted the trigger ships as the reclaim alone. Both triggers ship together
+since 2026-09-06 (Aaron's call, the same change). ⚠ **That test is a PIN on a default, so going red
+is its whole job** — the answer is to read why it moved and re-state it, never to loosen it.

@@ -37,6 +37,7 @@ _MINSTOP = {v: k for k, v in cs._MIN_STOP.items()}
 _TIMESTOP = {v: k for k, v in cs._TIME_STOP.items()}
 _POI = {v: k for k, v in cs._POI_SOURCE.items()}
 _NOGAP = {v: k for k, v in cs._NOGAP_ARM.items()}
+_SCALETP = {v: k for k, v in cs._SCALE_TP.items()}
 
 
 def _encode_cfg(cfg: SosFadeConfig) -> dict:
@@ -84,6 +85,22 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             # pin drifting apart. It is here at all because the Pine plots it: this encoder
             # mirrors the export's plot block, and a column missing here is a column the
             # round trip silently never exercises.
+            # SCALE-IN, five columns, mirroring the export Pine's own plot block. They are here
+            # for the reason its comment gives: a trade-affecting input with no column is
+            # invisible to the tool BY CONSTRUCTION, and the gate then does not go quiet — it
+            # goes WRONG, comparing two runs it believes are configured the same.
+            #
+            # 🔴 THEY WERE MISSING, AND THE DAY THE PYTHON DEFAULT MOVED OFF → ON THIS FILE
+            # STARTED DISAGREEING WITH ITSELF (2026-09-06 → 2026-09-07). The decoder reads an
+            # absent column as OFF — correct, and deliberately NOT a fall-back on the base
+            # config — so the fixture replayed a scaled book and the tool replayed an unscaled
+            # one, and the diff reported a real trade's closed R as a logic bug. **A default
+            # that moves has to move every fixture pinned to it**, and the encoder is a fixture.
+            "cfg_scale_in": int(cfg.exec_scale_in),
+            "cfg_scale_mode": 0 if cfg.exec_scale_mode == "Trail" else 1,
+            "cfg_scale_adds": cfg.exec_scale_max_adds,
+            "cfg_scale_cap": cfg.exec_scale_cap_x,
+            "cfg_scale_tp": _SCALETP[cfg.exec_scale_tp_mode],
             "cfg_eq_exempt": int(SosFadeStrategy.engine_config().eq_exempt_fvg)}
 
 

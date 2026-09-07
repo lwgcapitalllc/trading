@@ -490,7 +490,13 @@ def test_the_REAL_strategy_with_the_re_entry_ON_gets_a_real_second_feed():
     """
     from sos_fade import LAB_STRATEGY
 
-    cfg = LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_secondary=True)
+    # ⚠ **`exec_scale_in` is pinned OFF and that is not tidying — the bridge REFUSES it**, and
+    # since 2026-09-06 the shipped default turns it ON, so building "the shipped config" now
+    # raises before this test reaches its own subject. The refusal is correct and is pinned by
+    # `test_live_bridge.py`; what THIS test is about is the second feed, so it asks for a
+    # configuration the bridge can actually take. Leaving it on would make this file red for a
+    # reason that has nothing to do with the seam it exists to check — which is what happened.
+    cfg = LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_secondary=True, exec_scale_in=False)
     strategy = LAB_STRATEGY["strategy"](cfg, initial_capital=10_000.0)
 
     live_bridge.assert_supported(cfg)  # the config half: no longer a reason to refuse
@@ -612,3 +618,31 @@ def test_a_shadow_record_is_written_on_a_DRY_RUN_and_never_beside_a_real_order()
     live._observe_secondary(_armed_step(bar))
     assert live.ledger.names == [], "a shadow record was written beside a real order"
     assert len(live.bridge.steps) == 1, "the bridge was not driven"
+
+
+def test_the_REAL_shipped_strategy_config_cannot_go_live_until_scale_in_is_turned_off():
+    """🔴 **A STATEMENT ABOUT WHAT SHIPS, built from the actual config class rather than a stub.**
+
+    `exec_scale_in` moved off → on for SOS Fade on 2026-09-06, so the strategy's OWN defaults now
+    describe a mode this bridge refuses — and the strategy's own notes say the same thing from the
+    other end: the account-level allocator an add needs does not exist, so it must not go live
+    before that is built.
+
+    ⚠ **This test is not a complaint, it is the pin that was missing.** It goes red the day the
+    default moves back, or the day the bridge learns to place an add — and either of those is a
+    change somebody has to come here and re-state.
+
+    ⚠ **The LIVE bot is unaffected and that is checked here rather than assumed**: its instance
+    config STATES the setting rather than inheriting it, which is exactly why 53 settings were
+    pinned there on 2026-08-26. Turn it off and the same config is supported.
+    """
+    from sos_fade import LAB_STRATEGY
+
+    shipped = LAB_STRATEGY["config"](symbol="XAUUSD.p")
+    assert shipped.exec_scale_in is True, "the default moved — re-state this test, do not loosen it"
+    with pytest.raises(
+        live_bridge.UnsupportedStrategyConfig, match="no path that places a second entry"
+    ):
+        live_bridge.assert_supported(shipped)
+
+    live_bridge.assert_supported(LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_scale_in=False))

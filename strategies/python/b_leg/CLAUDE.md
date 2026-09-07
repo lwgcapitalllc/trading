@@ -755,3 +755,33 @@ mutation reports coverage that is not there.
 **Tests: 4 in `tests/test_compare_bleg.py`, 5 mutations each watched RED against its own named
 test** with an unrelated control staying green. The first two are a PAIR — *it is ignored* alone
 would pass just as happily if the diff had stopped reading that column.
+
+## 🔴 This fork's parity gate CANNOT cover its own shipped default (2026-09-07)
+
+`BLegConfig` extends `SosFadeConfig`, so it inherited `exec_scale_in` when that default moved
+off → on for SOS Fade on 2026-09-06. **The B-LEG Pine has no scale-in at all** — no input, no code,
+and no `cfg_scale_in` column in `b_leg_strategy_export.pine` — so the tool decodes it OFF on every
+B-LEG export, correctly, and a fixture replaying with it ON compares a scaled book against an
+unscaled one. That is what turned `test_roundtrip_parity_under_nondefault_toggles` red.
+
+✅ `_write` pins it off, so no future case can forget it, and
+`test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one` states the hole as a
+test rather than as a comment — it goes red the day the Pine gains the feature and the export gains
+a column, which is exactly when the pin has to come out. Watched RED by mutation.
+
+🔴 **Say the uncovered half plainly: the SHIPPED B-LEG default is scale-in ON, its Pine cannot
+express it, and nothing in this gate reaches it.** Whether this fork should inherit that default is
+an open question — Aaron's 2026-09-06 note names *sos_fade* defaults, and every B-LEG measurement
+on file was taken without scaling. ⚠ `b_leg_demo`'s instance config does not state the setting, so
+it inherits ON, and the live bridge refuses that: as configured the benched bot would not start.
+
+### Two more columns the encoder was missing
+
+`cfg_time_stop` and `cfg_time_stop_hrs` are plotted by this fork's export Pine and were absent from
+the fixture, so the tool decoded the clock as OFF while the fixture replayed with it ON. Added.
+
+⚠ **The clock is set to TWO HOURS in the non-default case on purpose, and the number is measured.**
+At six hours and above the trade closes on its ladder either way (+1.26R with the clock on or off),
+so the mutation that drops those columns SURVIVED — the fixture could not tell the two
+configurations apart. At two hours the clock fires and the same trade closes −0.5753R, and the
+mutation dies. **A column nothing can distinguish is a column whose absence no test will report.**

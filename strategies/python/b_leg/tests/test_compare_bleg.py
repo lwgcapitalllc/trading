@@ -15,6 +15,7 @@ Python matches the Pine; only a real export does that.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -35,6 +36,7 @@ _SRC = {v: k for k, v in cs._HTF_SRC.items()}
 _REQ = {v: k for k, v in cs._HTF_REQ.items()}
 _TRAIL = {v: k for k, v in cs._RUNNER_TRAIL.items()}
 _TP2 = {v: k for k, v in cs._TP2_STOP.items()}
+_TIMESTOP = {v: k for k, v in cs._TIME_STOP.items()}
 
 
 def _nan(v):
@@ -69,6 +71,13 @@ def _encode_cfg(cfg: BLegConfig) -> dict:
             # Read off this fork's OWN engine_config(), which pins the coupling OFF where the
             # SOS Fade pins it on. Hardcoding a 0 here would pass just as well today and would stop
             # catching the day the fork's Pine catches up.
+            # THE TIME STOP, both columns, mirroring this fork's own export Pine. They were
+            # missing, and the decoder reads an absent `cfg_time_stop` as "Off" — deliberately,
+            # because that is a FACT about exports predating the lever rather than a guess — so
+            # the fixture replayed with the clock ON and the tool replayed with it OFF, and the
+            # diff reported the harness's own configuration as a logic bug.
+            "cfg_time_stop": _TIMESTOP[cfg.exec_time_stop_mode],
+            "cfg_time_stop_hrs": cfg.exec_time_stop_hrs,
             "cfg_eq_exempt": int(BLegStrategy.engine_config().eq_exempt_fvg)}
 
 
@@ -110,6 +119,18 @@ def _pack_bar(dec, bleg) -> dict:
 
 def _write(tmp_path, cfg=None):
     cfg = cfg or BLegConfig()
+    # 🔴 SCALE-IN IS PINNED OFF, AND IT IS NOT A TIDY-UP — THIS FORK'S PINE HAS NO SUCH INPUT.
+    # `BLegConfig` inherits the field from `SosFadeConfig`, whose default moved off → on for the
+    # SOS Fade bot on 2026-09-06; `b_leg_strategy_export.pine` plots no `cfg_scale_in` column
+    # because `b_leg_strategy.pine` has no scale-in code at all. So the tool decodes it OFF on
+    # every B-LEG export — correctly, that is a FACT about the Pine rather than a guess — and a
+    # fixture replaying with it ON would compare a scaled book against an unscaled one and report
+    # the harness's own configuration as a logic bug. It did exactly that on 2026-09-07.
+    # ⚠ It is pinned HERE rather than in each test so no future case can forget it.
+    # ⚠ The uncovered half is stated out loud by
+    #    `test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one` below:
+    #    the SHIPPED B-LEG default is scale-in ON, and nothing in this gate reaches it.
+    cfg = dataclasses.replace(cfg, exec_scale_in=False)
     # 30 days, not 10: on 10 the synthetic bars never ARM a leg (l_on = 0 on every bar), so
     # the bl_* columns would all be "no live leg" and the tracker diff would prove nothing.
     # 30 gives 56 armed bars and one completed trade, i.e. the harness is exercised on the
@@ -140,13 +161,39 @@ def test_roundtrip_parity_under_nondefault_toggles(tmp_path):
     """A different config must still round-trip — proves the cfg_* decode drives the bot
     rather than the defaults quietly agreeing. Includes `bleg_max_days`, this fork's only
     extra input, and the exit levers."""
+    # ⚠ The clock is at TWO HOURS on purpose, and it is the only value that makes those two
+    # columns load-bearing on this window: at 6 hours and above the trade closes on its ladder
+    # either way (+1.26R with the clock on or off), so a fixture that omitted `cfg_time_stop`
+    # passed. At 2 hours the clock fires and the same trade closes -0.5753R, so the diff can
+    # finally tell the two configurations apart. **A column nothing can distinguish is a column
+    # whose absence no test will ever report.**
     cfg = BLegConfig(bleg_max_days=2.5, exec_risk_pct=1.0, exec_runner_trail="Fixed step",
                      exec_tp2_stop_mode="Breakeven", exec_trail_step=2.5,
-                     exec_tp1_pct=50.0, exec_tp2_pct=25.0, aplus_window=1440)
+                     exec_tp1_pct=50.0, exec_tp2_pct=25.0, aplus_window=1440,
+                     exec_time_stop_hrs=2.0)
     p, _ = _write(tmp_path, cfg)
     assert cb.config_from_export(cb.load_export(p)).bleg_max_days == 2.5
     msgs = cb.run_parity(p, warmup=100)
     assert msgs == [], msgs[:3]
+
+
+def test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one(tmp_path):
+    """The B-LEG Pine has no scale-in, so no export can say whether it was on.
+
+    🔴 **This pins a HOLE, deliberately.** `BLegConfig` inherits `exec_scale_in` from the SOS Fade
+    config, and that default is ON since 2026-09-06 — so the B-LEG's own shipped default is a mode
+    its Pine cannot express and this gate can never reach. `_write` pins it off for that reason,
+    and without this test that pin is an invisible decision in a helper.
+
+    ⚠ **It goes RED the day the Pine gains scale-in and the export gains a column** — which is
+    exactly when the pin in `_write` has to come out and the encoder has to grow the five columns
+    the SOS Fade fixture already carries. A comment cannot do that; a test can.
+    """
+    p, _ = _write(tmp_path, BLegConfig(exec_scale_in=True))
+    df = cb.load_export(p)
+    assert "cfg_scale_in" not in df.columns
+    # ...and the decoder therefore answers OFF whatever the chart actually did.
+    assert cb.config_from_export(df).exec_scale_in is False
 
 
 def test_config_decode_accepts_exec_bleg_on(tmp_path):

@@ -571,11 +571,42 @@ def test_tick_fill_model_is_refused():
         live_bridge.assert_supported(cfg)
 
 
-def test_the_shipped_config_is_supported():
+def test_a_minimal_mirrorable_config_is_supported():
+    """The happy path, on a stub.
+
+    🔴 **This was called `test_the_shipped_config_is_supported` and it did not build the shipped
+    config — it built a stub with four fields.** So it went on passing on 2026-09-06, when a real
+    shipped default moved to a value this very function refuses, and the first thing to notice was
+    a parity fixture in another tree. **A test that NAMES a subject it does not construct is the
+    fixture-more-capable-than-production trap wearing a title**: the stub answers only the four
+    questions the test thought to ask, and the refusal it missed reads on the config it did not
+    build. The real one is pinned by the two tests below.
+    """
     cfg = types.SimpleNamespace(
         exec_tp1_pct=0.0, exec_tp2_pct=0.0, exec_secondary=False, fill_model="bar"
     )
     live_bridge.assert_supported(cfg)  # no raise
+
+
+def test_SCALE_IN_is_refused_because_the_bridge_has_no_second_entry():
+    """The refusal had NO test at all until 2026-09-07, and it guards a real divergence.
+
+    The bridge mirrors one entry limit and one ratcheting stop, so an add is simply never placed:
+    the bot would trade the base position, say nothing, and the backtest would show a scaled book
+    against an unscaled account. Refusing to start is the only honest answer, and that is what
+    this pins.
+    """
+    cfg = types.SimpleNamespace(
+        exec_tp1_pct=0.0,
+        exec_tp2_pct=0.0,
+        exec_secondary=False,
+        fill_model="bar",
+        exec_scale_in=True,
+    )
+    with pytest.raises(
+        live_bridge.UnsupportedStrategyConfig, match="no path that places a second entry"
+    ):
+        live_bridge.assert_supported(cfg)
 
 
 # ── the banking rungs the old check could not see (2026-09-01) ────────────────
