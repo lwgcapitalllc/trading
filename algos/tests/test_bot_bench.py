@@ -207,3 +207,62 @@ def test_the_display_names_agree_across_the_registries():
         assert monitor.BOTS[key]["name"] == name, key
         assert deadman.BOTS[key] == name, key
         assert coord_names[key] == name, key
+
+
+def test_every_bot_pins_every_setting_its_strategy_declares():
+    """An instance config states what the bot trades. A field it does NOT state resolves to
+    whatever the strategy dataclass happens to default to that day.
+
+    🔴 **This is a real failure, not a hypothetical: `b_leg_demo` was missing 57 fields on
+    2026-09-07.** Its config was dumped from the dataclass on 2026-08-09 and was complete THAT
+    DAY — but a dump is a snapshot and the dataclass kept growing, so every field added since
+    silently inherited a moving default. The one that bit: the add-size setting arrived
+    2026-08-16 and flipped off → on on 2026-09-06, so arming that bot would have started it
+    scaling in — a behaviour never measured on it, and one its Pine parity gate has no column to
+    check. Its own note claimed 'every field ... DUMPED' throughout, so the file asserted a
+    completeness it had quietly lost and nothing could fail.
+
+    ⚠ **A pin equal to the default changes nothing, which is exactly why this is cheap.** The
+    cost of pinning everything is one line per setting; the cost of pinning nothing is that a
+    default somebody else moves becomes a live behaviour change nobody decided.
+
+    ⚠ **It reads the BOT's own declared strategy rather than a hardcoded list**, so a bot added
+    tomorrow is covered without touching this file — and a benched bot is checked too, because
+    the bench is exactly when the drift accumulates unseen.
+
+    ⚠ **The reverse direction is checked in the same pass and it is the harsher failure:** the
+    runner REFUSES to start on a key the dataclass does not declare, so an undeclared key is a
+    bot that will not boot, discovered at startup rather than here.
+
+    MUTATION: delete any one key from any instance config's settings and this goes red naming
+    the bot and the field. Watched red by removing the add-size setting from `b_leg_demo`.
+    """
+    import dataclasses
+    import importlib
+
+    sys.path.insert(0, str(_REPO / "strategies" / "python"))
+    checked = 0
+    for key, path in bs.BOT_INSTANCES.items():
+        doc = json.loads((path / "config.json").read_text(encoding="utf-8"))
+        pkg, cls_name = doc.get("strategy_package"), doc.get("strategy_class")
+        assert pkg and cls_name, f"{key} names no strategy package/class"
+        cfg_cls = getattr(
+            importlib.import_module(f"{pkg}.config"), cls_name.replace("Strategy", "Config")
+        )
+        declared = {f.name for f in dataclasses.fields(cfg_cls)}
+        assert declared, f"{cfg_cls.__name__} declared no fields — this would pass for free"
+        pinned = set(doc.get("strategy_params") or {})
+
+        unpinned = sorted(declared - pinned)
+        assert not unpinned, (
+            f"{key} does not state {len(unpinned)} of {cfg_cls.__name__}'s settings, so each one "
+            f"trades at whatever that dataclass defaults to today: {unpinned}. Re-dump the "
+            f"config from the dataclass and diff it before this bot is armed."
+        )
+        undeclared = sorted(pinned - declared)
+        assert not undeclared, (
+            f"{key} states {undeclared}, which {cfg_cls.__name__} does not declare. The runner "
+            f"REFUSES to build a strategy on an unknown key, so this bot cannot start."
+        )
+        checked += 1
+    assert checked >= 3, f"only {checked} bots checked — the roster parsed as near-empty"

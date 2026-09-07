@@ -3341,3 +3341,46 @@ trading, but as configured it would be refused at startup. Pin it before arming 
 default change that made the real shipped config unsupported. It is
 `test_a_minimal_mirrorable_config_is_supported` now, and the real one is built by the two pins
 above. **The stub answers only the questions the test thought to ask.**
+
+### 🔴 A dumped config is complete only on the DAY it is dumped — `b_leg_demo` was 57 fields short (2026-09-07)
+
+An instance config states what a bot trades. `b_leg_demo`'s was **dumped from its strategy
+dataclass on 2026-08-09 rather than transcribed**, which is the right method and the file's own
+note said so: *"a hand-copied set is how a live bot ends up trading a value nobody chose."*
+
+🔴 **The method was right and the artefact still rotted, because a dump is a SNAPSHOT and the
+dataclass kept growing.** 57 fields were added after that date, and every one of them resolved to
+whatever the dataclass defaulted to on the day somebody armed the bot. **The note went on saying
+"Every field of `BLegConfig` … DUMPED" throughout, so the file asserted a completeness it had
+quietly lost, and nothing could fail.**
+
+🔴 **THE ONE THAT BIT: the add-size setting arrived 2026-08-16 and its default moved off → on on
+2026-09-06.** Arming this bot would have started it scaling in — a behaviour never measured on
+B-LEG, and one its Pine parity gate **cannot** check, because the B-LEG export scheme has no
+column for it. It is pinned **off** now, which is the only value in the re-dump that is not simply
+the current default.
+
+⚠ **The next one was already queued**: the recovery feature is unpinned too and is inert today
+*only because its default is still False*. That is the same sentence this incident is made of.
+
+✅ **Every setting is pinned now on all three bots** — checked, not assumed: `sos_fade_demo`
+116/116, `extreme_leg_demo` 26/26, `b_leg_demo` 117/117, with zero undeclared keys anywhere.
+`sos_fade_demo` was already complete because it was pinned deliberately on 2026-08-26 against
+exactly this hazard; **B-LEG was the bot nobody was watching, which is the point — the bench is
+precisely where drift accumulates unseen.**
+
+⚠ **Nothing already-pinned was touched, and that was verified semantically rather than by reading
+a diff**: all 60 previous values compare equal to `HEAD`, and of the 57 added, exactly one differs
+from its dataclass default. **A pin equal to the default changes nothing, which is why pinning
+everything is cheap** — the cost of pinning is one line per setting; the cost of not pinning is
+that a default somebody else moves becomes a live behaviour change nobody decided.
+
+✅ **`test_every_bot_pins_every_setting_its_strategy_declares` (`tests/test_bot_bench.py`) now
+enforces it, and it reads each bot's OWN declared strategy rather than a hardcoded list** — so a
+bot added tomorrow is covered without editing the test, and a benched bot is checked too. It
+asserts both directions: an unstated field (drift), and an undeclared key (which the runner
+refuses at startup, so that one is a bot that will not boot). **Watched RED both ways** — removing
+the add-size pin, and adding a made-up key.
+
+⚠ **The standing rule: re-dump and DIFF before assigning any bot.** A field that appears in that
+diff carrying a default nobody chose is this failure, caught at the one moment it is free.
