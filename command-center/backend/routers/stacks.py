@@ -324,6 +324,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
             "slippage_ticks": req.slippage_ticks,
             "cost_layers": cost_layers,
             "broker_profile": req.broker_profile,
+            # Stated on a SCREEN too, not only on a shared account. A screen leg reaches the
+            # same ceiling through its own account, so leaving it off the row here would record
+            # a screen as unclamped while it ran clamped — the exact gap this field closes.
+            "max_lots": req.max_lots,
             "created_at": now,
         }
     )
@@ -354,6 +358,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
                 "slippage_ticks": req.slippage_ticks,
                 "cost_layers": cost_layers,
                 "broker_profile": req.broker_profile,
+                # The ceiling this leg ran at, on the LEG row — where every reader of a leg
+                # already looks for its window, its costs and its params, and where the run
+                # detail page reads a standalone run's ceiling from.
+                "max_lots": req.max_lots,
                 "status": "running",
                 "created_at": now,
                 "stack_id": stack_id,
@@ -386,6 +394,12 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
                 "slippage_ticks": req.slippage_ticks,
                 "cost_layers": cost_layers,
                 "broker_profile": req.broker_profile,
+                # 🔴 THE KEY MUST BE PRESENT, and that is the whole point of sending it here.
+                # `python_runner._max_lots` reads an ABSENT key as "no opinion" and lets the
+                # strategy build its own account — which clamps at 100 anyway, so the leg ran
+                # the same either way and the row said nothing. Stating it makes the run
+                # REPRODUCIBLE, and lets a caller ask for a ceiling that is not the default.
+                "max_lots": req.max_lots,
             }
         )
 
@@ -455,22 +469,34 @@ def _validate_recovery_leg(req: StackRequest, ids: list[str]) -> None:
 # can run. `backtest/portfolio/legs.py::_refuse_unreplayable` is the AUTHORITY — it raises on
 # each of these — and this pins them ahead of it so the refusal never has to fire.
 #
-# ⚠ It is a structural impossibility, not a preference: `exec_secondary` is the 1-minute
-# re-entry, it needs a second bar stream through `run_dual`, and a leg on a merged clock is one
-# frame. Replaying it single-stream is the dangerous option — the leg comes back primary-only
-# while its own solo control and the screen both have the re-entries in them.
+# 🔴 **`exec_secondary` LEFT THIS LIST ON 2026-09-08, AND ONLY BECAUSE THE CAPABILITY IT STOOD IN
+# FOR NOW EXISTS.** Its ground was a structural impossibility rather than a preference — the
+# re-entry needs a second bar stream through `run_dual` and a leg on a merged clock is one frame.
+# That was never true of the SIMULATOR: `LegSpec.df_fast`, `build_leg`'s `DualFeedLeg` branch and
+# `run_stack`'s plumbing were all built and tested. **This app was the half that never supplied
+# the frame**, and pinning here meant `legs._refuse_unreplayable` — the authority — could never
+# fire, so the switch was silenced instead of being either honoured or refused.
+# `services/portfolio_runner._leg_fast_frame` supplies it now, asked of `run_feeds` so this path
+# does not grow a third copy of *which feeds does this run need*.
+#
+# ⚠ **WHAT THIS COST WHILE IT STOOD is the reason to be careful retiring the other one.** The
+# live SOS Fade bot runs its re-entries; a shared stack could not, so the stack was primary-only —
+# 157 trades against the bot's ~200 — while reading as a completed run with plausible numbers.
+# The pin was honest (it STORED the override, which is how it was found), and it was still a
+# result describing a bot nobody runs.
 #
 # ⚠ The pinned params are what gets STORED on the child run, deliberately. Overriding at replay
 # time while the row said otherwise is this app's most-repeated defect: a page stating a value
 # no code read. Here the row and the replay say the same thing, and the page says it was pinned.
 # `tests/test_shared_stack.py` reads `legs.py` and fails if it grows a refusal this misses.
-# ⚠ `exec_recovery` joins it for a DIFFERENT reason and the difference is worth stating. The
-# 1-minute re-entry is structurally unrunnable here; the recovery switch is merely INERT — it runs
-# from a `finalize` hook the simulator never calls, so the leg would come back with its recovery
-# trades silently missing. Pinned rather than refused so the stack still runs, and STORED as pinned
+# ⚠ `exec_recovery` REMAINS, for a DIFFERENT reason, and the difference is why it did not leave
+# with its neighbour. The re-entry was unrunnable for want of a frame somebody could supply; the
+# recovery switch is merely INERT — it runs from a `finalize` hook the simulator never calls, so
+# the leg would come back with its recovery trades silently missing. Nothing in this change makes
+# that hook get called. Pinned rather than refused so the stack still runs, and STORED as pinned
 # so the leg's own row says the switch was overridden. The way to get a recovery leg in a stack is
 # `recovery_parent`, which competes for the budget; the switch cannot, by construction.
-_SHARED_LEG_PINS = {"exec_secondary": False, "exec_recovery": False}
+_SHARED_LEG_PINS = {"exec_recovery": False}
 
 
 def _pin_for_shared(params: dict) -> dict:
@@ -486,8 +512,16 @@ def _leg_param_sets(req: StackRequest, strategies: list[dict]) -> list[dict]:
     * the request's per-strategy override wins, else the strategy's stored defaults — the same
       order `_resolve_leg` and `_trigger_shared_stack` apply;
     * a SHARED stack pins `_SHARED_LEG_PINS` on top, so it is not refused for a feed that path
-      switches off anyway. Skipping the pin here would refuse a shared stack whose legs default
-      `exec_secondary` on — legal, because that path never loads the secondary feed.
+      switches off anyway.
+
+    🔴 **THAT SECOND BULLET USED TO NAME `exec_secondary` AND IT MUST NOT AGAIN.** Its reasoning
+    was *"legal, because that path never loads the secondary feed"* — true until 2026-09-08, and
+    the exact sentence to delete rather than carry forward once a shared stack started loading
+    one. **The floor check now HAS to see the re-entry's feed**: the window is bounded per feed,
+    a fast frame has a shallower history than the frame above it, and a stack whose 5m bars
+    cannot reach the requested start would otherwise pass validation and die mid-replay. That is
+    the defect `run_feeds`' own comment records from the single-run path, and it arrives here by
+    the same route — a check that bounds one frame while the run replays two.
     """
     out = []
     for strat in strategies:
@@ -535,6 +569,10 @@ def _trigger_shared_stack(
             "slippage_ticks": req.slippage_ticks,
             "cost_layers": cost_layers,
             "broker_profile": req.broker_profile,
+            # The ceiling the shared account resizes every leg's entry down to. It sits OUTSIDE
+            # the risk budget and binds separately: the cap can grant a leg full room and the
+            # ceiling still shrink the position, which is why both are stored.
+            "max_lots": req.max_lots,
             "created_at": now,
             "mode": "shared",
             "account_size": req.account_size,
@@ -564,6 +602,10 @@ def _trigger_shared_stack(
                 "slippage_ticks": req.slippage_ticks,
                 "cost_layers": cost_layers,
                 "broker_profile": req.broker_profile,
+                # The ceiling this leg ran at, on the LEG row — where every reader of a leg
+                # already looks for its window, its costs and its params, and where the run
+                # detail page reads a standalone run's ceiling from.
+                "max_lots": req.max_lots,
                 "status": "running",
                 "created_at": now,
                 "stack_id": stack_id,
@@ -612,6 +654,10 @@ def _trigger_shared_stack(
                 "slippage_ticks": req.slippage_ticks,
                 "cost_layers": cost_layers,
                 "broker_profile": req.broker_profile,
+                # The ceiling this leg ran at, on the LEG row — where every reader of a leg
+                # already looks for its window, its costs and its params, and where the run
+                # detail page reads a standalone run's ceiling from.
+                "max_lots": req.max_lots,
                 "status": "running",
                 "created_at": now,
                 "stack_id": stack_id,
@@ -661,6 +707,12 @@ def _trigger_shared_stack(
             "slippage_ticks": req.slippage_ticks,
             "cost_layers": cost_layers,
             "broker_profile": req.broker_profile,
+            # 🔴 THE KEY MUST BE PRESENT here too, and for a sharper reason than on a screen
+            # leg: `run_stack` defaults the ceiling to 100 when nobody passes one, so an absent
+            # key and an explicit 100 replay identically — but an explicit `null` (no ceiling,
+            # what a parity anchor wants) is unreachable unless the key travels. An absent key
+            # cannot express it.
+            "max_lots": req.max_lots,
             "account_size": req.account_size,
             "risk_cap_pct": req.risk_cap_pct,
             "entry_floor_pct": req.entry_floor_pct,

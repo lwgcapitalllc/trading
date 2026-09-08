@@ -180,6 +180,206 @@ def test_a_stack_written_before_cost_layers_existed_stays_None_and_never_becomes
     assert lab_db.get_stack_settings("st_prelayer")["cost_layers"] is None
 
 
+# ── The venue lot ceiling: enforced since forever, stated since 2026-09-08 ────
+#
+# Every stack ever run here WAS clamped at 100 lots — `run_stack` defaults to it — and none of
+# them recorded it, because the field did not exist. So the gap these close is not enforcement,
+# it is REPRODUCIBILITY: the ceiling decides balance, drawdown and CAGR while leaving R exactly
+# alone, so two stacks measured at different ceilings agree perfectly on R and disagree on every
+# dollar figure, with nothing on either page to say why.
+
+
+def test_a_fresh_database_has_the_ceiling_column(tmp_path, monkeypatch):
+    """Same trap as the mode columns: the migration list runs BEFORE the `stacks` CREATE TABLE,
+    so `ALTER TABLE stacks` fails on a fresh database and is swallowed. Declared in only one of
+    the two places, a clone comes up without the column while every existing database has it."""
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "fresh.db")
+    lab_db.init_db()
+    cols = {c[1] for c in sqlite3.connect(lab_db.DB_PATH).execute("PRAGMA table_info(stacks)")}
+    assert "max_lots" in cols
+
+
+def _stack_with(tmp_path, monkeypatch, **extra):
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    lab_db.insert_stack(
+        {
+            "stack_id": "st_c",
+            "instrument": "XAUUSD",
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "created_at": 1,
+            "mode": "shared",
+            "account_size": 10_000.0,
+            "risk_cap_pct": 10.0,
+            **extra,
+        }
+    )
+    return lab_db.get_stack_settings("st_c")
+
+
+def test_a_stack_that_stated_no_ceiling_comes_back_with_NO_KEY(tmp_path, monkeypatch):
+    """The absent key IS the third state, and it has to survive the round trip as an absent key.
+
+    🔴 If this came back as `None` the replay would read it as *do not clamp at all* and every
+    stack stored before this column silently loses its 100-lot ceiling the moment somebody reruns
+    it — a bigger closing balance, a deeper drawdown, and an identical R to the run it claims to
+    reproduce. `None` and *unstated* are different claims (repo rule 1).
+    """
+    assert "max_lots" not in _stack_with(tmp_path, monkeypatch)
+
+
+def test_a_deliberately_unclamped_stack_comes_back_as_None(tmp_path, monkeypatch):
+    """`null` is a real instruction — it is what a parity anchor needs, because the Pine twin has
+    no lot ceiling and a clamped Python side would diverge on size alone."""
+    row = _stack_with(tmp_path, monkeypatch, max_lots=None)
+    assert "max_lots" in row and row["max_lots"] is None
+
+
+def test_a_stated_ceiling_comes_back_as_the_NUMBER_it_went_in_as(tmp_path, monkeypatch):
+    """It is stored as JSON in a TEXT column, so an undecoded read hands `float('250.0')`'s
+    caller a string — which happens to work here and raises on `'null'`, four layers down in a
+    background job, naming a converter rather than this column."""
+    row = _stack_with(tmp_path, monkeypatch, max_lots=250.0)
+    assert row["max_lots"] == 250.0 and isinstance(row["max_lots"], float)
+
+
+def test_a_stack_stored_before_the_column_existed_reads_as_UNSTATED(tmp_path, monkeypatch):
+    """Written by hand with the column absent, exactly as a pre-2026-09-08 row is — and NOT
+    back-filled to 100 even though 100 is what it actually ran at. A stored number reads to the
+    next person as a decision, and nobody decided this one (rule 4)."""
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    with sqlite3.connect(lab_db.DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO stacks (stack_id, instrument, bar_type, bar_value, start_date, "
+            "end_date, commission_per_side, slippage_ticks, created_at) "
+            "VALUES ('st_old', 'XAUUSD', 'Minute', 15, '2024-01-01', '2024-12-31', 0, 0, 1)"
+        )
+    assert "max_lots" not in lab_db.get_stack_settings("st_old")
+
+
+def test_a_LEG_records_the_ceiling_it_ran_at(tmp_path, monkeypatch):
+    """The stack row is not enough. A leg has its own detail page, and that page reads the
+    ceiling off the LEG the same way it reads a standalone run's — so a leg row that stores
+    nothing renders as a run with no ceiling beside a stack row that states one.
+
+    ⚠ Both stack legs measured on 2026-09-08 stored NULL here while running clamped at 100.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    # Foreign keys are ON: a leg row references a strategy and its stack, so both have to exist
+    # before one can be written. Seeded rather than stubbed — the constraint is the real schema's.
+    lab_db.upsert_strategy(
+        {
+            "id": "sos_fade",
+            "name": "SOS FADE",
+            "class_name": "SosFadeStrategy",
+            "source_path": "strategies/python/sos_fade",
+            "runner": "python",
+            "scanned_at": 1,
+            "source_hash": "h",
+        }
+    )
+    _stack_with(tmp_path, monkeypatch)
+
+    def _leg(run_id, **extra):
+        lab_db.insert_run_stack(
+            {
+                "run_id": run_id,
+                "strategy_id": "sos_fade",
+                "instrument": "XAUUSD",
+                "params": {},
+                "bar_type": "Minute",
+                "bar_value": 15,
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "commission_per_side": 0.0,
+                "slippage_ticks": 0,
+                "status": "running",
+                "created_at": 1,
+                "stack_id": "st_c",
+                **extra,
+            }
+        )
+        return lab_db.get_run(run_id)
+
+    # Stored as JSON in TEXT, exactly as a standalone run's is, so the one reader on the run
+    # detail page decodes both. The three states are the same three.
+    assert _leg("r_stated", max_lots=250.0)["max_lots"] == "250.0"
+    assert _leg("r_unclamped", max_lots=None)["max_lots"] == "null"
+    assert _leg("r_unstated")["max_lots"] is None
+
+
+def test_an_unstated_ceiling_leaves_the_KWARG_OFF(tmp_path, monkeypatch):
+    """Not `{"max_lots": None}` — the shapes mean opposite things.
+
+    Omitting the kwarg lets `run_stack` apply its own 100-lot default, which is what every stored
+    stack was measured at. Passing `None` says *no ceiling*, and would replay them all differently
+    while reporting itself as a faithful rerun.
+    """
+    from services import portfolio_runner
+
+    assert portfolio_runner._ceiling_kwargs({"instrument": "XAUUSD"}) == {}
+
+
+def test_a_deliberate_no_ceiling_REACHES_the_simulator(tmp_path, monkeypatch):
+    from services import portfolio_runner
+
+    assert portfolio_runner._ceiling_kwargs({"max_lots": None}) == {"max_lots": None}
+
+
+def test_a_stated_ceiling_reaches_the_simulator_as_a_float(tmp_path, monkeypatch):
+    from services import portfolio_runner
+
+    got = portfolio_runner._ceiling_kwargs({"max_lots": "250"})
+    assert got == {"max_lots": 250.0} and isinstance(got["max_lots"], float)
+
+
+def test_the_sentinel_is_NEVER_forwarded_as_a_value():
+    """`UNSTATED` means *no opinion*. Forwarded, it lands on the account as the ceiling itself and
+    the first comparison against a desired quantity raises inside the sizing, not here."""
+    from services import portfolio_runner
+
+    from backtest.replay import UNSTATED
+
+    assert UNSTATED not in portfolio_runner._ceiling_kwargs({}).values()
+
+
+def test_the_shared_replay_ACTUALLY_passes_the_ceiling_it_resolved():
+    """The resolver being right proves nothing if the call site does not use it.
+
+    ⚠ Read off the SOURCE rather than by driving `_build_and_run`, which loads real bars and
+    resolves real strategy classes before it reaches this line. A stub capable of standing in for
+    all of that is a fixture more capable than production (rule 13), and this is the one fact
+    worth having: the kwargs the resolver returns are unpacked into the simulator call.
+    """
+    src = Path(__file__).resolve().parents[1] / "services" / "portfolio_runner.py"
+    tree = ast.parse(src.read_text())
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "run_stack"
+    ]
+    assert calls, "portfolio_runner no longer calls run_stack — this test is aimed at nothing"
+    for call in calls:
+        unpacked = [
+            k.value
+            for k in call.keywords
+            if k.arg is None
+            and isinstance(k.value, ast.Call)
+            and isinstance(k.value.func, ast.Name)
+        ]
+        assert any(c.func.id == "_ceiling_kwargs" for c in unpacked), (
+            "run_stack is called without the resolved lot ceiling, so the stack replays at the "
+            "simulator's own default while the row records whatever the caller asked for"
+        )
+
+
 # ── The request refuses what the simulator refuses ────────────────────────────
 
 
@@ -200,6 +400,47 @@ def test_a_zero_risk_cap_is_refused_at_the_request():
         )
 
 
+def test_a_zero_or_negative_ceiling_is_refused_at_the_request():
+    """A 0 or negative ceiling can only be a mistake, and reading it as *unlimited* is the widest
+    possible reading of a typo — it would arrive as a stack whose page states a ceiling it never
+    enforced. Same refusal, same words, as the single-run request.
+    """
+    from models import StackRequest
+
+    for bad in (0, -1, -100.0):
+        with pytest.raises(ValueError):
+            StackRequest(
+                strategy_ids=["a", "b"],
+                instrument="XAUUSD",
+                start_date="2024-01-01",
+                end_date="2024-12-31",
+                max_lots=bad,
+            )
+
+
+def test_the_request_defaults_to_the_ceiling_every_stack_was_ALREADY_running_at():
+    """100, matching `BacktestRunRequest` and `account.DEFAULT_MAX_LOTS`.
+
+    ⚠ The default is what makes this change invisible in the numbers, which is the point: adding
+    the field must not move a single existing result. It changes what is RECORDED, not what runs.
+    ⚠ And `None` stays reachable — a default is not the same as no choice.
+    """
+    from models import StackRequest
+
+    def _req(**kw):
+        return StackRequest(
+            strategy_ids=["a", "b"],
+            instrument="XAUUSD",
+            start_date="2024-01-01",
+            end_date="2024-12-31",
+            **kw,
+        )
+
+    assert _req().max_lots == 100.0
+    assert _req(max_lots=None).max_lots is None
+    assert _req(max_lots=250).max_lots == 250.0
+
+
 def test_an_unknown_mode_is_refused():
     from models import StackRequest
 
@@ -216,24 +457,36 @@ def test_an_unknown_mode_is_refused():
 # ── The pin that keeps the router honest about what a leg cannot run ──────────
 
 
-def test_the_router_pins_every_setting_the_simulator_would_REFUSE():
+def test_every_setting_the_simulator_REFUSES_is_either_pinned_off_or_supplied():
     """⚠ This is the load-bearing test in this file.
 
     `backtest/portfolio/legs.py::_refuse_unreplayable` raises on any config a leg structurally
-    cannot run — today just `exec_secondary`, the 1-minute re-entry, which needs a second bar
-    stream a merged clock cannot supply. The router pins those settings AHEAD of it so the refusal
-    never fires.
-
-    The two must not drift. If `legs.py` grows a second refusal and the router does not pin it,
+    cannot run. If the app neither pins that setting off nor supplies what the refusal is about,
     every shared stack using that strategy dies in a background task with the message buried in a
     progress field — which is exactly how this feature failed on its first real run.
 
-    It reads `legs.py` rather than restating the list, because a hand-written copy here is a
-    second claim about the same rule and would go stale silently.
+    🔴 **THIS ASSERTED *PINNED* ALONE UNTIL 2026-09-08 AND THAT WAS TOO NARROW, NOT WRONG.**
+    `exec_secondary` was pinned off because a leg is one bar frame and the re-entry needs a
+    second one. The simulator could always take a second frame — `LegSpec.df_fast` and
+    `build_leg`'s `DualFeedLeg` branch were built and tested — so the honest fix was to SUPPLY
+    it (`portfolio_runner._leg_fast_frame`), not to keep silencing the switch. **A shared stack
+    was returning a primary-only leg while the live bot runs its re-entries: 157 trades against
+    ~200, reading as a completed run.**
+
+    ⚠ **Widening the rule must not weaken it, so both sides are still DERIVED.** The refusals are
+    parsed out of `legs.py`; *supplied* is established by checking the runner really passes a
+    second frame and asks `run_feeds` which setting that is. A hand-written list on either side
+    would be a second claim about the same rule and would go stale in silence.
+
+    ⚠ **A third refusal added tomorrow still fails here until somebody classifies it.** That is
+    the whole point: the choice between pinning and supplying is a decision, and this test is
+    what forces it to be made rather than defaulted.
     """
     from routers.stacks import _SHARED_LEG_PINS
+    from services import run_feeds
 
-    src = (Path(__file__).resolve().parents[3] / "backtest" / "portfolio" / "legs.py").read_text()
+    root = Path(__file__).resolve().parents[3]
+    src = (root / "backtest" / "portfolio" / "legs.py").read_text()
     tree = ast.parse(src)
     fn = next(
         n
@@ -241,7 +494,7 @@ def test_the_router_pins_every_setting_the_simulator_would_REFUSE():
         if isinstance(n, ast.FunctionDef) and n.name == "_refuse_unreplayable"
     )
 
-    # Every `getattr(config, "<field>", ...)` the refusal reads is a field the router must pin.
+    # Every `getattr(config, "<field>", ...)` the refusal reads is a field the app must cover.
     refused = {
         node.args[1].value
         for node in ast.walk(fn)
@@ -251,11 +504,24 @@ def test_the_router_pins_every_setting_the_simulator_would_REFUSE():
         and isinstance(node.args[1], ast.Constant)
     }
     assert refused, "found no getattr(config, ...) in _refuse_unreplayable — did it change shape?"
-    missing = refused - set(_SHARED_LEG_PINS)
+
+    # SUPPLIED, established from the runner rather than asserted: it must actually hand a second
+    # frame to the leg, and the setting that frame answers for is `run_feeds`' to name.
+    runner_src = (
+        root / "command-center" / "backend" / "services" / "portfolio_runner.py"
+    ).read_text()
+    supplies_fast_frame = "df_fast=_leg_fast_frame(" in runner_src and (
+        "run_feeds.uses_secondary(" in runner_src
+    )
+    supplied = {run_feeds.SECONDARY_FLAG} if supplies_fast_frame else set()
+
+    covered = set(_SHARED_LEG_PINS) | supplied
+    missing = refused - covered
     assert not missing, (
-        f"backtest/portfolio/legs.py refuses {sorted(missing)} and routers/stacks.py does not pin "
-        f"it. Every shared stack on a strategy with that setting on would die in a background "
-        f"task rather than being fixed before it started."
+        f"backtest/portfolio/legs.py refuses {sorted(missing)}, and routers/stacks.py neither "
+        f"pins it off nor does portfolio_runner.py supply what it refuses for. Every shared "
+        f"stack on a strategy with that setting on would die in a background task rather than "
+        f"being fixed before it started. Decide which: pin it, or supply it."
     )
 
 
@@ -268,10 +534,16 @@ def test_a_pinned_setting_is_written_to_the_row_not_only_to_the_replay():
     """
     from routers.stacks import _pin_for_shared
 
-    assert _pin_for_shared({"exec_secondary": True, "exec_risk_pct": 10})["exec_secondary"] is False
+    # ⚠ Demonstrated on `exec_recovery` since 2026-09-08. It used to be `exec_secondary`, which
+    # is no longer pinned at all — the runner supplies its second frame instead. The PROPERTY
+    # under test is unchanged: whatever is pinned is what the row stores.
+    assert _pin_for_shared({"exec_recovery": True, "exec_risk_pct": 10})["exec_recovery"] is False
     # A strategy without the field is untouched — pinning one in would hand the runner a param it
     # does not declare, which for MT5 silently degrades an optimization to a single backtest.
-    assert "exec_secondary" not in _pin_for_shared({"exec_risk_pct": 10})
+    assert "exec_recovery" not in _pin_for_shared({"exec_risk_pct": 10})
+    # 🔴 And the re-entry must NOT be silenced any more: a stack that pins it off returns a
+    # primary-only leg while its own solo control and the live bot both have the re-entries in.
+    assert _pin_for_shared({"exec_secondary": True})["exec_secondary"] is True
 
 
 # ── The report distinguishes its three "no answer" cases ──────────────────────
@@ -1116,7 +1388,7 @@ def _stack_leg_with_params(db: Path, reports: Path, params: dict, mode: str = "s
             # Deliberately DIFFERENT from what the leg ran with — that difference is the whole
             # subject. A fixture where the two agree cannot tell a carried-forward param from a
             # defaulted one.
-            "default_params": {"exec_secondary": True, "exec_risk_pct": 10.0},
+            "default_params": {"exec_recovery": True, "exec_risk_pct": 10.0},
         }
     )
     lab_db.insert_stack(
@@ -1181,11 +1453,16 @@ def _stack_leg_with_params(db: Path, reports: Path, params: dict, mode: str = "s
 def test_a_leg_carries_the_params_it_was_REPLAYED_with(client, tmp_path, monkeypatch):
     """🔴 `StackStrategyLeg` served no params, so the one value a stack PINS was invisible.
 
-    `_SHARED_LEG_PINS` forces `exec_secondary: false` onto every shared leg before it replays,
-    because a leg on a merged clock is one bar frame and the 1-minute re-entry cannot run there.
-    The strategy's own stored default is `true`. So the run genuinely differs from the strategy,
-    for a reason nothing on the stack page could state — the reader's only route to it was
-    opening the leg's own page and knowing to look for it.
+    `_SHARED_LEG_PINS` forces `exec_recovery: false` onto every shared leg before it replays,
+    because that rule runs from a `finalize` hook the simulator never calls and the leg would
+    come back with its recovery trades silently missing. A strategy whose stored default is
+    `true` therefore RAN with something else. So the run genuinely differs from the strategy, for
+    a reason nothing on the stack page could state — the reader's only route to it was opening
+    the leg's own page and knowing to look for it.
+
+    ⚠ **The example was `exec_secondary` until 2026-09-08**, when that setting stopped being
+    pinned at all — the runner supplies its second bar frame instead. The property under test
+    never moved: a leg serves the params it was REPLAYED with, whatever those turn out to be.
 
     MUTATION: drop `params=` from the `StackStrategyLeg(...)` constructor in `routers/stacks.py`
     and this goes red on the pinned value.
@@ -1195,13 +1472,13 @@ def test_a_leg_carries_the_params_it_was_REPLAYED_with(client, tmp_path, monkeyp
     monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
     monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
     _stack_leg_with_params(
-        tmp_path / "lab.db", tmp_path / "reports", {"exec_secondary": False, "exec_risk_pct": 2.5}
+        tmp_path / "lab.db", tmp_path / "reports", {"exec_recovery": False, "exec_risk_pct": 2.5}
     )
 
     leg = client.get("/backtests/stacks/st_p?timeline=false").json()["strategies"][0]
 
     # The PINNED value, which is the one that cannot be recovered from anywhere else on the page.
-    assert leg["params"]["exec_secondary"] is False
+    assert leg["params"]["exec_recovery"] is False
     # And it must be what the RUN carried, not what the strategy stores.
     assert leg["params"]["exec_risk_pct"] == 2.5
 

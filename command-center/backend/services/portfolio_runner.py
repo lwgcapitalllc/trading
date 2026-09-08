@@ -40,7 +40,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
-from services import evaluator, lab_db, worthiness
+from services import evaluator, lab_db, run_feeds, worthiness
 from services.metrics import apply_canonical_sharpe
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -130,6 +130,34 @@ def _bars_per_day(df) -> float:
     """
     step = df.index.to_series().diff().min().total_seconds()
     return 86_400.0 / step if step else 96.0
+
+
+def _ceiling_kwargs(settings: dict) -> dict:
+    """`{"max_lots": ...}` for `run_stack`, or `{}` when nobody stated a ceiling.
+
+    THE VENUE LOT CEILING HAS THREE STATES and this returns two different SHAPES, because a
+    kwarg cannot express the third any other way:
+
+      * unstated -> `{}`. `run_stack` applies its own default (100 lots). This is what every
+                    stack before 2026-09-08 got, and a rerun of one must keep getting it.
+      * `None`   -> `{"max_lots": None}`. A deliberate *do not clamp*, which a parity anchor
+                    wants. Only reachable because the key travels — an absent key cannot say it.
+      * a number -> `{"max_lots": n}`.
+
+    🔴 **`UNSTATED` must never be forwarded as a value.** It is a sentinel meaning *no opinion*;
+    handed to `run_stack` it would land on the account as a ceiling object, and the comparison
+    against a desired quantity would raise deep inside the sizing rather than here.
+
+    ⚠ **It asks `python_runner._max_lots`, the reader the single-run path already uses.** A
+    second copy of a three-state rule is how two paths come to disagree about what one stored
+    field means — and this field decides balance, drawdown and CAGR while leaving R untouched,
+    so a disagreement shows up as two runs that reconcile perfectly on R and on nothing else.
+    """
+    from backtest.replay import UNSTATED
+    from services.python_runner import _max_lots
+
+    ceiling = _max_lots(settings)
+    return {} if ceiling is UNSTATED else {"max_lots": ceiling}
 
 
 def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
@@ -227,6 +255,37 @@ def _build_and_run(
         every leg stored before per-leg frames existed, and they must keep replaying identically."""
         return _frame(int(leg.get("bar_value") or tf))
 
+    def _leg_fast_frame(config):
+        """The SECOND stream, for a leg whose re-entry is priced on a faster clock. `None` = none.
+
+        🔴 **A SHARED STACK PINNED `exec_secondary` OFF UNTIL 2026-09-08, AND THIS IS WHY IT NO
+        LONGER HAS TO.** The pin's stated ground was that a leg is ONE bar frame and the re-entry
+        needs a second one through `run_dual` — structural, not a preference. It stopped being
+        true here rather than in the simulator: `LegSpec.df_fast`, `build_leg`'s `DualFeedLeg`
+        branch and `run_stack`'s plumbing were all already built and tested. **This app was the
+        half that never filled the field in.**
+
+        ⚠ **The question is asked of `run_feeds`, never of the config by name.** That resolver is
+        already the ONE place the single-run path and the pre-flight history-floor check both
+        ask, and its own comment records what a second copy cost: the floor check bounded the
+        chart timeframe alone, so a run whose fast feed could not reach the requested start date
+        passed validation and died at 8%. A third copy here would be the same defect again.
+
+        ⚠ **It goes through `_frame`, so the fast bars are the SAME OBJECT any leg trading that
+        frame is replaying.** Two legs on one frame must see identical bars, and a second load is
+        a second chance to differ — the rule that cache already exists for. On the live pairing it
+        costs nothing extra: the extreme leg is on 5m and SOS Fade's fill clock is 5m, so the
+        frame is loaded once and shared.
+
+        ⚠ **A missing fast frame is NOT silently downgraded to one stream.**
+        `legs._refuse_unreplayable` raises when the switch is on and no second frame arrives, and
+        that refusal is the AUTHORITY — it is what makes wiring this wrong loud instead of
+        returning a primary-only leg beside controls that have the re-entries in them.
+        """
+        if not run_feeds.uses_secondary(config):
+            return None
+        return _frame(int(run_feeds.extra_feed_minutes(run_feeds.SECONDARY_FLAG, config)))
+
     df = _frame(tf)
 
     balance = float(settings["account_size"])
@@ -247,6 +306,7 @@ def _build_and_run(
                 strategy_cls=entry["strategy"],
                 config=config,
                 df=_leg_frame(leg),
+                df_fast=_leg_fast_frame(config),
                 cost_profile=profile,
                 source=leg.get("source"),
             )
@@ -314,6 +374,7 @@ def _build_and_run(
     run = run_stack(
         specs,
         balance=balance,
+        **_ceiling_kwargs(settings),
         risk_cap_pct=float(settings["risk_cap_pct"]) / 100.0,
         entry_floor_pct=float(settings.get("entry_floor_pct") or 0.0) / 100.0,
         # ⚠ The solo controls are `1 + N` replays and answer *what would this leg have made

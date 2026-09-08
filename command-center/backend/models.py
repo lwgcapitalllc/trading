@@ -1795,6 +1795,23 @@ class StackRequest(BaseModel):
     # with the attached terminal, exactly as the Run modal does.
     broker_profile: str = "vantage_demo"
     cost_layers: Optional[list[str]] = None
+    # 🔴 THE VENUE LOT CEILING, and it applies to BOTH modes — the shared account resizes every
+    # leg's entry down to it, and a screen leg reaches the same rule through its own account.
+    # It was ENFORCED at 100 lots on every stack ever run here and STATED by none of them: the
+    # field simply did not exist, so `run_stack` took its own default and the row recorded
+    # nothing. That is the half this closes. ⚠ It is a RESIZE at the decision, never a refusal
+    # at the order (repo rule 17), so a stack above the ceiling still trades — smaller — and
+    # stops compounding.
+    # ⚠ It is BASIS, not a preference: R is identical either side of a ceiling because profit
+    # and risk both scale with the quantity, while balance, drawdown and CAGR all move. That is
+    # exactly why it has to be stored — two stacks measured at different ceilings compare
+    # cleanly on R and disagree on every dollar figure, with nothing on the page to say why.
+    # ⚠ `None` means "do not clamp this stack at all" and is a real instruction, distinct from
+    # the field being absent (which takes the 100 below). Do not collapse them.
+    # ⚠ **A rerun of a stack stored before 2026-09-08 does NOT reproduce it**, and this field is
+    # not what broke it — those stacks were clamped at 100 without recording it. Storing the
+    # number is what makes it visible.
+    max_lots: Optional[float] = 100.0
     ruleset_ids: list[str] = []  # optional — scored per child run, like a normal run
     # Optional per-strategy param override, keyed by strategy id. A strategy not present here
     # uses its stored default_params. Lets the two sleeves carry different risk knobs.
@@ -1836,6 +1853,16 @@ class StackRequest(BaseModel):
     def _known_mode(cls, v: str) -> str:
         if v not in ("screen", "shared"):
             raise ValueError('mode must be "screen" or "shared"')
+        return v
+
+    @field_validator("max_lots")
+    @classmethod
+    def _max_lots_sane(cls, v):
+        # Same refusal, same words as `BacktestRunRequest`: a 0 or negative ceiling can only be
+        # a mistake, and reading it as "unlimited" is the widest possible reading of a typo —
+        # here it would arrive as a stack whose page states a ceiling it never enforced.
+        if v is not None and not (v > 0):
+            raise ValueError("max_lots must be greater than 0 lots, or null for no ceiling")
         return v
 
     @field_validator("bar_values_by_strategy")

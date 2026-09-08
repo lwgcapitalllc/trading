@@ -139,6 +139,35 @@ def _parse_json_fields(row: dict, fields: list[str]) -> dict:
     return row
 
 
+def _parse_three_state(row: dict, field: str) -> dict:
+    """Decode a JSON column whose SQL NULL means *nobody stated this*, by DROPPING the key.
+
+    `_parse_json_fields` cannot express this. It turns both a SQL NULL and the four characters
+    `null` into Python `None`, and for `cost_layers` that is fine — the reader branches on
+    `None` and there is nothing above it that means "no opinion". A venue lot ceiling has THREE
+    states, not two:
+
+      * SQL NULL   -> nobody stated a ceiling. The replay applies its OWN default (100 lots).
+      * `'null'`   -> a deliberate *do not clamp this at all*, which a parity anchor wants.
+      * `'100.0'`  -> that ceiling.
+
+    The readers downstream (`python_runner._max_lots`, and `portfolio_runner` through it) spell
+    the first state as an ABSENT KEY, because a dict has no other way to say it. So that is what
+    this returns. Collapsing NULL onto `None` would silently un-clamp every stack stored before
+    the column existed the moment one was rerun — the widest possible reading of *unknown*, and
+    the one that changes every dollar figure on the page while leaving R identical.
+    """
+    if field in row:
+        if row[field] is None:
+            del row[field]
+        elif isinstance(row[field], str):
+            try:
+                row[field] = json.loads(row[field])
+            except (json.JSONDecodeError, TypeError):
+                del row[field]
+    return row
+
+
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _connect() as conn:
@@ -427,6 +456,17 @@ def init_db() -> None:
             # `backtest_runs`; '[]' is the explicit "charge nothing".
             "ALTER TABLE stacks ADD COLUMN cost_layers TEXT",
             "ALTER TABLE stacks ADD COLUMN broker_profile TEXT",
+            # 2026-09-08 — the venue lot ceiling this stack was measured at. TEXT and JSON, the
+            # same three states `backtest_runs.max_lots` carries and read by the same rules:
+            #   NULL     -> nobody stated one. The account applied its own default.
+            #   'null'   -> deliberately unclamped.
+            #   '100.0'  -> clamped at 100 lots.
+            # 🔴 **Existing rows stay NULL and are NOT back-filled.** Every stack before this
+            # date WAS clamped at 100 by `run_stack`'s own default, so a number here would even
+            # be the right one — and writing it would still be wrong. It would put a figure on
+            # the row that no caller ever chose, and the next reader takes a stored number for a
+            # decision. NULL says "unknown", which is what it is (rule 1, and rule 4).
+            "ALTER TABLE stacks ADD COLUMN max_lots TEXT",
             # 2026-09-07 — the leg a DEPENDENT leg arms off, by strategy id.
             #
             # 🔴 It was passed at launch and written down NOWHERE, so a stack holding a
@@ -928,7 +968,10 @@ def init_db() -> None:
                 risk_cap_pct        REAL,
                 entry_floor_pct     REAL,
                 cost_layers         TEXT,
-                broker_profile      TEXT
+                broker_profile      TEXT,
+                -- The venue lot ceiling, JSON in TEXT. NULL = the stack predates the column and
+                -- nobody stated one; 'null' = deliberately unclamped; a number = that ceiling.
+                max_lots            TEXT
             );
 
             -- Membership is separate from ownership. owned=1 = a fresh run this stack
@@ -3540,8 +3583,9 @@ def insert_stack(data: dict) -> None:
         conn.execute(
             "INSERT INTO stacks (stack_id, instrument, bar_type, bar_value, start_date, "
             "end_date, commission_per_side, slippage_ticks, created_at, "
-            "mode, account_size, risk_cap_pct, entry_floor_pct, cost_layers, broker_profile) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "mode, account_size, risk_cap_pct, entry_floor_pct, cost_layers, broker_profile, "
+            "max_lots) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 data["stack_id"],
                 data["instrument"],
@@ -3565,6 +3609,11 @@ def insert_stack(data: dict) -> None:
                     else json.dumps(data.get("cost_layers") or [])
                 ),
                 data.get("broker_profile") or None,
+                # ⚠ ABSENT is not None, the same rule `insert_run`'s own ceiling follows:
+                # absent means nobody stated one and the account applied its default, and
+                # storing that default would put a number on the row that no caller chose.
+                # NULL says "unknown", which is what it is.
+                json.dumps(data["max_lots"]) if "max_lots" in data else None,
             ),
         )
 
@@ -3613,10 +3662,20 @@ def get_stack_settings(stack_id: str) -> Optional[dict]:
 
     ⚠ **Every model in this app declares `cost_layers` as `Optional[list[str]]`**, so the text
     form was out of contract with the whole codebase, not merely inconvenient here.
+
+    🔴 **`max_lots` is decoded HERE for exactly the reason above, and was wired at the read
+    before it had a single caller.** The venue lot ceiling is stored the same JSON-in-TEXT way,
+    and it is what walk-forward and sensitivity would hand to the replay — the two phases the
+    2026-09-07 bug hid in. A ceiling arriving as the string `'null'` does not fail politely:
+    `float('null')` raises four layers down, in a background job, naming a converter rather than
+    this column. It uses `_parse_three_state` rather than the helper beside it because SQL NULL
+    here means *unstated*, which is not `None` — see that function.
     """
     with _connect() as conn:
         row = conn.execute("SELECT * FROM stacks WHERE stack_id = ?", (stack_id,)).fetchone()
-    return _parse_json_fields(dict(row), ["cost_layers"]) if row else None
+    if not row:
+        return None
+    return _parse_three_state(_parse_json_fields(dict(row), ["cost_layers"]), "max_lots")
 
 
 def find_matching_stack_run(
@@ -3694,8 +3753,8 @@ def insert_run_stack(data: dict) -> None:
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, stack_id, runner,
-                 cost_layers, broker_profile)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cost_layers, broker_profile, max_lots)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["run_id"],
@@ -3719,6 +3778,11 @@ def insert_run_stack(data: dict) -> None:
                     else json.dumps(data.get("cost_layers") or [])
                 ),
                 data.get("broker_profile") or None,
+                # The ceiling this LEG ran at, so the run detail page reads it off the leg the
+                # same way it reads it off a standalone run. Absent → NULL, never the default:
+                # every stack leg before 2026-09-08 stored NULL here while running clamped at
+                # 100, and a back-filled number would read as a choice nobody made.
+                json.dumps(data["max_lots"]) if "max_lots" in data else None,
             ),
         )
 

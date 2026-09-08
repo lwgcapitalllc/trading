@@ -5791,3 +5791,98 @@ list against a literal and never read this file at all. **A guard named for a co
 not make is worth less than none.**
 
 **Add a shared tree to BOTH lists or to neither.**
+
+---
+
+## A shared stack can run the RE-ENTRY, and it states its LOT CEILING (2026-09-08)
+
+Two halves of one goal: make a shared-account stack replay what the live bots actually trade.
+
+### 🔴 The re-entry pin is retired — the app was the half that never filled the field in
+
+`_SHARED_LEG_PINS` forced `exec_secondary` OFF on every shared leg since 2026-08-09, so a stack of
+the two live bots replayed a SOS Fade nobody runs. **The stated ground was structural — a leg is one
+bar frame — and it had stopped being true in the SIMULATOR long before it stopped being true here:
+`LegSpec.df_fast`, `build_leg`'s dual-feed branch and `run_stack`'s plumbing were all built and
+tested.** `portfolio_runner._leg_fast_frame` supplies the frame; the pin is gone.
+
+⚠ **MEASURED on the live bots' own 116 settings** (PU Prime `XAUUSD.p`, 2020-01-01 → 2026-09-06,
+$10,000, 10% cap, ECN costs): the SOS Fade leg goes **157 trades / +169.75R → 246 / +232.11R**, and
+**exactly one of 116 settings differs between the two runs**, so the 89 extra trades are that
+switch's and nothing else's. Peak open risk and the contention log are byte-identical.
+
+⚠ **The question is asked of `run_feeds`, NEVER of the config by name.** That resolver is already
+the one place the single-run path and the pre-flight floor check both ask, and its own comment
+records what a second copy cost — a run whose fast feed could not reach the requested start date
+passed validation and died at 8%. A third copy here would be that defect again.
+
+⚠ **It goes through `_frame`, so the fast bars are the SAME OBJECT any leg trading that frame
+replays.** On the live pairing it costs nothing: the extreme leg is on 5m and SOS Fade's fill clock
+is 5m, so the frame is loaded once and shared.
+
+⚠ **`exec_recovery` STAYS pinned, for a different reason** — it is INERT here (it runs from a
+`finalize` hook the simulator never calls), not unrunnable. Do not read one retirement as the other's.
+
+🔴 **The guard test was WIDENED rather than deleted.** It now asserts that every setting
+`legs._refuse_unreplayable` refuses is either **pinned off OR supplied**, with both sides read from
+the code — the refusals parsed out of `legs.py`, "supplied" established by reading
+`portfolio_runner.py`. A third refusal added later fails until somebody classifies it. Three older
+tests were re-stated onto the setting that is still pinned; **a test whose premise is edited to keep
+it green has stopped guarding anything.**
+
+### The venue lot ceiling was ENFORCED on every stack and STATED by none
+
+🔴 **It was never missing — `run_stack` has defaulted to 100 lots since 2026-09-02, so every stack
+ever run here was clamped.** What was missing is the CONTROL and the RECORD: `StackRequest` had no
+such field, so nobody could ask for a different ceiling (or for none, which a parity anchor wants),
+and the row recorded nothing. ⚠ **An empty `max_lots` column means NEVER STATED, not *no ceiling*
+— reading it the other way is how this was first written up as "stacks compound uncapped".**
+
+⚠ **It is BASIS, and the obvious test misses it.** R is identical either side of a ceiling — profit
+and risk both scale with the quantity — so two stacks measured at different ceilings reconcile
+perfectly on R and disagree on every dollar figure, with nothing on the page to say why. That is the
+whole reason it has to be stored.
+
+⚠ **Stored on the STACK row AND on each LEG row**, TEXT and JSON, the same three states
+`backtest_runs.max_lots` carries: NULL = unstated, `'null'` = deliberately unclamped, a number =
+that ceiling. The leg row is what the run detail page reads a ceiling off.
+
+⚠ **Existing rows are NOT back-filled**, and here the number would even be right — every one ran at
+100. Writing it would still put a figure on the row that no caller chose, and the next reader takes
+a stored number for a decision.
+
+🔴 **`lab_db._parse_three_state` DROPS THE KEY when the column is NULL, and `_parse_json_fields`
+cannot express that** — it turns both a SQL NULL and the four characters `null` into `None`. The
+readers downstream (`python_runner._max_lots`, and `portfolio_runner` through it) spell *unstated*
+as an ABSENT KEY, because a dict has no other way to say it. Collapsing them silently un-clamps
+every stored stack the moment one is rerun.
+
+🔴 **DECODED AT THE READ, and it was wired there before it had a caller.** `get_stack_settings` is
+what walk-forward and sensitivity hand to the replay — the two phases the 2026-09-07 `cost_layers`
+bug hid in, for exactly this reason: **creating a stack takes its settings from the REQUEST, where
+they are real values, while REPLAYING one takes them from storage.** A ceiling arriving as the
+string `'null'` does not fail politely; `float('null')` raises four layers down in a background job,
+naming a converter rather than this column.
+
+⚠ **`portfolio_runner._ceiling_kwargs` returns two SHAPES, not two values**: `{}` when unstated (so
+`run_stack` applies its own default, which is what every stored stack got) and `{"max_lots": ...}`
+otherwise. **`UNSTATED` must never be forwarded as a value** — it would land on the account as the
+ceiling itself and raise inside the sizing rather than here. It asks `python_runner._max_lots`, the
+reader the single-run path already uses; a second copy of a three-state rule is how two paths come
+to disagree about one stored field.
+
+⚠ **The default is 100, matching `BacktestRunRequest` and `account.DEFAULT_MAX_LOTS`, so adding the
+field moves no existing result.** It changes what is RECORDED, not what runs. ⚠ **The column is
+declared in the migration list AND the `stacks` CREATE TABLE**, per this file's standing note.
+
+**Tests:** 13 more in `tests/test_shared_stack.py` (58). ⚠ **Non-vacuity by MUTATION: 11 written,
+11 RUN, 11 killed** — the NULL key decoded to `None`, the stored ceiling left as JSON text, the
+stack row and the leg row each failing to record it, the sentinel forwarded, a deliberate
+no-ceiling swallowed as unstated, the replay no longer passing what it resolved, the column left
+out of the CREATE, the zero refusal dropped, and the request default flipped. 🔴 **One survived
+first and it was the HARNESS** — the anchor matched `insert_run`, the single-run writer, which no
+stack test touches. **A mutation that lands somewhere else is not a surviving mutation, and it reads
+exactly like one.** It also exposed a real gap: nothing covered the LEG row, which now has its own
+test. ⚠ **The wiring check reads the CALL SITE out of the source** rather than driving
+`_build_and_run`, which loads real bars and resolves real strategy classes — a stub capable of
+standing in for all of that is a fixture more capable than production.
