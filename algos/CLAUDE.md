@@ -3607,3 +3607,90 @@ will not match its backtest, so it belongs beside the trade.
 success CONTROL included — killed by at least one.** ⚠ **The control needed its own mutation
 (alert on every move) and would otherwise have been decoration**: it survived all four of the
 others, which is exactly what a case that cannot fail looks like.
+
+### Exits close across EVERY ticket, and a banked add is reconciled (2026-09-08, add path 3/4)
+
+On a hedging account the strategy exits ONE position and the broker holds several. Two sites had
+to learn that, and they are different questions.
+
+**1. A commanded exit sweeps the adds.** `_mirror_strategy_exit` closed `_pos_ticket` alone, so a
+time stop, a target taking the lot or an operator's close left every scale-in lot live, unmanaged,
+with nothing but its own stop. 🔴 **The sweep runs BEFORE the "base already gone" early return** —
+put after it, the whole sweep is skipped in exactly the case that strands them, a base that filled
+its own stop in the same instant with the adds still open.
+
+**2. A banked add is CLOSED by reconciliation.** `_bank_adds` closes every open add lot in one step
+and leaves the base; nothing on the live side could mirror that, because every other exit path
+knows only the base ticket. `_sync_add_size` asks how many add units the strategy still holds and
+closes what is over — so a bank missed by a restart, a dropped link or a skipped bar is taken on
+the next sync, and one already done is a no-op.
+
+🔴 **IT RUNS AFTER `_observe_open` AND BEFORE `_agrees`, AND BOTH HALVES ARE LOAD-BEARING — the
+first ordering shipped was wrong and the tests caught it.** After the adoption, because an add is
+defined as *a position under our magic that is not the base*, and with no base adopted yet there is
+nothing for it to be "not". Before the agreement check, because banked adds leave the emulator
+holding a bare base against N broker positions, which `_agrees` reads as orders nobody intended and
+halts on — the bot would have halted on a state it caused itself.
+
+🔴 **THE 2026-09-07 SIZE FIX WAS A MIS-FIX IN THE OTHER DIRECTION AND IS CORRECTED HERE, ALSO
+BEFORE IT COULD FIRE.** It added the open add units to `_intended_open_lots`. But `_sync_partials`
+compares that against the BASE TICKET'S OWN VOLUME, and on a hedging account the adds are not in
+that number — so the sum was always larger than what it was compared against, the difference always
+negative, and **the reconciliation would have banked NOTHING for the whole life of any scaled
+trade**, silently riding every rung the strategy took off in its own book. It is base-to-base now,
+with the add tickets answered separately.
+
+⚠ **The rule worth more than either fix: a quantity is only additive with another when both are
+measured over the SAME set of tickets.** The defect being guarded against — adds counted as excess
+and closed — is real, and it belongs to a NETTING account.
+
+🔴 **THE FIXTURE MODELLED THE WRONG BROKER, AND PRODUCTION WAS CHANGED TO AGREE WITH IT.** The
+piece-2 test put a 1.0 add INSIDE the base ticket — one position of 1.5 lots, which is netting.
+**Rule 13 with the sign flipped: a fixture LESS capable than production hides just as much**, because
+one position cannot express the thing every check here turns on, which is *which ticket a lot
+belongs to*. Every test written against it was answering an easier question than the live one.
+
+⚠ **A PARTIAL bank is REFUSED rather than guessed at** (rule 9). The strategy banks its adds
+all-or-nothing, so a broker holding more than zero and less than it should is a state nothing
+produces. Closing whole tickets toward it would mean inventing a policy — which lot, and why that
+one — and picking wrong books the wrong lot's P&L with nothing in the output to say so.
+
+⚠ **A REFUSED close NAMES ITSELF in the halt** (`_add_close_failed`, read first by
+`_why_not_scaled`). Without it that state falls through to the *duplicate placements* sentence,
+which sends the reader hunting an order-placement bug the bridge has already recorded the broker
+refusing. ⚠ **It is not cleared on a later bar** — the lot is still open until somebody closes it.
+
+⚠ **When a lot refuses, the BASE IS LEFT OPEN.** Closing it would strand the leg whose stop this
+bridge is no longer ratcheting, which is the more dangerous half; `_agrees` halts either way.
+
+⚠ **Three new ledger events, all DECISIONS** (`add_closed`, `add_close_failed`,
+`add_partial_bank`) — they answer *what happened to this trade's size*, never *is the machinery
+working*. Per-lot price and P&L are written separately because a netted figure cannot be taken
+apart afterwards.
+
+⚠ **Behaviour is UNCHANGED with no adds** — every new path returns early, and the base's route is
+byte-identical to before.
+
+🔴 **`mt5_ops.hedging_account` MEASURES THE PREMISE ALL OF THIS RESTS ON, AND NOTHING READS IT
+YET — a stated gap, not an oversight.** It answers `None` for *cannot ask* (rule 1: `False` would
+refuse a scale-in on an account that would take it, `True` would run the add path against a book
+whose volumes do not mean what it thinks). **It is wired beside the retirement of the scale-in
+refusal**, which is the moment any of this becomes reachable; wiring it earlier is a check on a
+path no bot can enter.
+
+**Tests: 8 new in `test_live_bridge.py`, 4 in `test_mt5_ops_pending.py`. 13 mutations RUN and every
+one RED on its own named test**, including a CONTROL that closing every extra ticket
+unconditionally reddens the never-bank-away case. ⚠ **The harness asserts each test was SELECTED
+and green at baseline before mutating** — a `-k` filter that matches nothing reads exactly like a
+vacuous test, which this file has already recorded once.
+
+⚠ **The fake broker's close could only ever fail ALL-OR-NOTHING**, so the case that matters — one
+lot refusing while another succeeds — was unreachable. It refuses per-ticket now, the same fix
+`move_sl` needed in piece 2. **Fourth time this file has recorded a fixture that cannot fail the
+way production fails.**
+
+⚠ **This is three pieces of four. The placement route that actually BUYS the add is still missing,
+so the scale-in refusal stays up** — retired when the capability is real, never to get a bot
+started.
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and no bot can reach any of it today.

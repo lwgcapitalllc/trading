@@ -513,6 +513,10 @@ class OrderBridge:
         # when a position opens, so a later genuine problem still speaks.
         self._partial_alerted: str = ""
         self._pos_ticket: Optional[int] = None
+        # Set when a scale-in lot refuses to close, read by `_why_not_scaled` so the halt that
+        # follows names the real cause instead of the generic duplicate-orders one. Deliberately
+        # NOT cleared on a later bar: the lot is still open until somebody closes it by hand.
+        self._add_close_failed: str = ""
         # WHICH LEG opened the position, and therefore which clock manages it. The primary is
         # decided on 15-minute closes and the re-entry on the fill clock, so the two must not
         # both book the same trade or both ratchet the same stop. Read off the strategy at the
@@ -935,6 +939,13 @@ class OrderBridge:
             else:
                 return
 
+        # 🔴 **AFTER `_observe_open` AND BEFORE `_agrees`, AND BOTH HALVES ARE LOAD-BEARING.**
+        # After the adoption, because a scale-in lot is defined as *a position under our magic
+        # that is not the base* — with no base ticket adopted yet there is nothing for it to be
+        # "not", and this returns having done nothing. Before the agreement check, because a lot
+        # the strategy has already banked leaves the emulator holding a bare base against N
+        # broker positions, which `_agrees` reads as orders nobody intended and halts on.
+        positions = self._sync_add_size(positions)
         if not self._agrees(positions):
             return
 
@@ -1234,12 +1245,26 @@ class OrderBridge:
                     "open position by hand, then restart."
                 )
             return positions
+
+        label = tag.lstrip("-")
+        # 🔴 **THE SCALE-IN LOTS GO FIRST, AND BEFORE THE "base already gone" CHECK BELOW.** The
+        # strategy exits ONE position; on a hedging account the broker holds several, and closing
+        # only the ticket this bridge tracks leaves the rest live with nobody managing them. Put
+        # after that check, the whole sweep would be skipped in exactly the case that strands
+        # them — a base that filled its own stop in the same instant, with the adds still open.
+        if not self._close_add_tickets(positions, label):
+            # The book has parted and it has been alerted. Do NOT close the base as well: that
+            # would leave the account holding the leg whose stop this bridge is no longer
+            # ratcheting, and `_agrees` halts on the next check either way.
+            return positions
+        if not self.dry_run and self._add_positions(positions):
+            positions = self._mt5.get_open_positions()
+
         if not any(p.ticket == self._pos_ticket for p in positions):
             # Already gone — it filled a stop in the same instant, or a previous pass closed it.
             # Not an error, and not a second close: the ordinary path books it.
             return positions
 
-        label = tag.lstrip("-")
         side = "bullish" if self._pos_dir > 0 else "bearish"
         if self.dry_run:
             self._log.info(f"[DRY RUN] would close T{self._pos_ticket} at market ({label})")
@@ -1669,14 +1694,21 @@ class OrderBridge:
         milliseconds — is exactly the shape this must keep catching, and it looks like a scaled
         trade from a distance.
 
-        ⚠ **Three distinct causes, three distinct sentences** (a strategy holding no adds, a
-        ledger that cannot be read, positions off the strategy's own side). They call for
-        different work: the first is a duplicate-order incident, the second is a strategy this
-        bridge cannot interrogate, the third is a hedge nobody asked for.
+        ⚠ **Four distinct causes, four distinct sentences** (a lot that refused to close, a
+        strategy holding no adds, a ledger that cannot be read, positions off the strategy's own
+        side). They call for different work: a broker that refused, a duplicate-order incident, a
+        strategy this bridge cannot interrogate, and a hedge nobody asked for.
+
+        🔴 **THE REFUSED CLOSE IS NAMED FIRST BECAUSE IT IS THE ONE CAUSE ALREADY KNOWN**, and
+        without it that state falls through to the *duplicate placements* sentence — which is
+        both wrong and actively misleading, sending the reader hunting an order-placement bug
+        when the bridge has already recorded the broker refusing an exit.
 
         ⚠ **`None` from the ledger REFUSES** (rule 1). *Could not ask* may not buy the
         permissive answer here — that is how a duplicate-order incident gets read as a scale-in.
         """
+        if self._add_close_failed:
+            return self._add_close_failed
         if self._ex._pos_dir == 0:
             return "The strategy holds no position at all, so none of these is its own."
         add_units = self._open_add_units()
@@ -2450,6 +2482,132 @@ class OrderBridge:
         except (TypeError, IndexError, ValueError):
             return None
 
+    def _add_positions(self, positions):
+        """Every position under our magic that is NOT the base — the scale-in lots.
+
+        ⚠ **DERIVED FROM THE BROKER, never from a list this bridge keeps.** Same reason
+        `_sync_add_stops` does it: a tracked list is EMPTY after a restart while the broker still
+        holds the adds, and nothing would say so because the base's own record is correct.
+
+        ⚠ **`get_open_positions` is already magic-filtered**, so this cannot reach another bot's
+        position or a hand trade. Without that filter it would be a list of things to close.
+        """
+        if self._pos_ticket is None:
+            return []
+        return [p for p in positions if int(p.ticket) != self._pos_ticket]
+
+    def _close_add_tickets(self, positions, why: str) -> bool:
+        """Close every scale-in lot at market. True if none are left holding.
+
+        🔴 **A FULL EXIT MUST REACH EVERY TICKET, and on a hedging account the base close does
+        not touch them.** The strategy holds ONE position and exits it in one step; the broker
+        holds N, and closing only the one this bridge has a ticket for leaves the rest live,
+        unmanaged, with nothing but their own stops. The next bar halts on the disagreement —
+        correctly, but a commanded exit that half-executes and then halts is the bridge failing
+        at the one job it was asked to do, not a guard working.
+
+        ⚠ **Each lot's side is read from the POSITION, never from the strategy.** On a full exit
+        the strategy is already flat, so its direction is zero and would name the wrong side of
+        the book for every close.
+
+        ⚠ **A failed close is recorded and NAMED rather than retried.** Retrying inside one bar
+        is the recovery-repeating-its-own-fault shape this bridge refuses everywhere else; the
+        book has genuinely parted and the halt is the honest answer.
+        """
+        extras = self._add_positions(positions)
+        if not extras:
+            return True
+        every = True
+        for p in extras:
+            ticket = int(p.ticket)
+            side = "bullish" if int(p.type) == 0 else "bearish"
+            if self.dry_run:
+                self._log.info(f"[DRY RUN] would close scale-in lot T{ticket} at market ({why})")
+                self._ledger.event("dry_run_action", action="close_add", ticket=ticket)
+                continue
+            self._log.info(f"CLOSING SCALE-IN LOT | T{ticket} at market ({why})")
+            ok, price, pnl = self._mt5.close_position(ticket, side, why)
+            if ok:
+                self._ledger.event(
+                    "add_closed", ticket=ticket, price=price, pnl_usd=pnl, reason=why
+                )
+                continue
+            every = False
+            self._add_close_failed = (
+                f"A scale-in lot (T{ticket}) could not be closed, so the broker still holds "
+                f"size the strategy has already exited in its own book."
+            )
+            self._ledger.event("add_close_failed", ticket=ticket, reason=why)
+            self._notify(
+                alert(
+                    "⛔",
+                    "SCALE-IN CLOSE FAILED",
+                    self._mt5.bot_label,
+                    f"It was asked to close scale-in lot T{ticket} and the broker refused.",
+                    "That lot is STILL OPEN and the bot will halt. Close it by hand.",
+                ),
+                notify.HEALTH,
+            )
+        return every
+
+    def _sync_add_size(self, positions) -> None:
+        """Close scale-in lots the strategy's own ledger says are already banked.
+
+        🔴 **IT RUNS BEFORE `_agrees`, AND THAT ORDERING IS THE DESIGN — the same reason
+        `_mirror_strategy_exit` does.** Banked adds leave the emulator holding a bare base while
+        the broker still holds N positions, and the agreement check reads that as *the strategy
+        is not scaled in, so these are orders it did not intend* and halts. The broker is
+        brought into line first, so the check sees a book that already agrees.
+
+        🔴 **A RECONCILIATION, NOT A READ OF THIS BAR'S DECISION.** It asks how many add units
+        the strategy still holds and closes what is over — so a bank missed by a restart, a
+        dropped link or a skipped bar is simply taken on the next sync, and one already done is
+        a no-op. Reading the banking intent off `dec` instead would have to remember whether it
+        had acted, which is the state this bridge's whole history says goes wrong.
+
+        ⚠ **CANNOT ASK does nothing** (rule 1). An unreadable ledger must not be read as *no adds
+        are held*, which here would mean closing every scale-in lot. `_agrees` refuses the bar
+        on the same unreadable ledger, so the halt is not lost by returning quietly.
+
+        ⚠ **A PARTIAL bank is refused rather than guessed at.** The strategy banks its adds
+        all-or-nothing (`_bank_adds` closes every open lot in one step), so a broker holding
+        MORE than zero but less than it should is a state nothing produces. Closing whole
+        tickets toward it would be inventing a policy — which lot, and why that one — for a case
+        that has never occurred, and picking wrong silently books the wrong lot's P&L.
+
+        Returns the position list to carry on with — re-read from the broker after a successful
+        close, so what follows reconciles against the ACCOUNT rather than against a return code.
+        """
+        if self._pos_ticket is None:
+            return positions
+        extras = self._add_positions(positions)
+        if not extras:
+            return positions
+        want_units = self._open_add_units()
+        if want_units is None:
+            return positions
+        cs = self._contract_size()
+        if not cs:
+            return positions
+        want = want_units / cs
+        held = sum(float(p.volume) for p in extras)
+        if held <= want + 1e-9:
+            return positions
+        if want > 1e-9:
+            self._alert_once(
+                "add_partial_bank",
+                f"The broker holds {held:.2f}L of scale-in lots where the strategy expects "
+                f"{want:.2f}L. It banks its adds all at once, so nothing should ever land "
+                f"between. Nothing was closed and the bot will halt rather than choose a lot.",
+            )
+            self._ledger.event("add_partial_bank", held=round(held, 2), wanted=round(want, 2))
+            return positions
+        if not self._close_add_tickets(positions, "adds banked"):
+            return positions
+        if self.dry_run:
+            return positions
+        return self._mt5.get_open_positions()
+
     def _intended_open_lots(self):
         """How much the STRATEGY believes is still open, in LOTS. `None` = could not ask.
 
@@ -2475,10 +2633,35 @@ class OrderBridge:
         lots, it would have closed EVERY ADD moments after buying it** — the bridge banking away
         the position the strategy was still managing, with both sides' own checks passing.
 
+        🔴 **AND THE FIRST FIX FOR THAT WAS ITSELF WRONG, IN THE OPPOSITE DIRECTION — CORRECTED
+        2026-09-08, ALSO BEFORE IT COULD EVER FIRE.** It added the open add units to this total.
+        But `_sync_partials` compares this against the BASE TICKET'S OWN VOLUME, and on a hedging
+        account the adds are not in that number — they are separate tickets. So the sum was
+        always larger than what it was compared against, the difference was always negative, and
+        **the reconciliation would have banked NOTHING for the whole life of any scaled trade**,
+        silently riding every rung the strategy took off in its own book.
+
+        ⚠ **The two mistakes share one cause worth more than either: a quantity is only additive
+        with another when both are measured over the SAME set of tickets.** The defect being
+        guarded against — the adds counted as excess and closed — is real, but it belongs to a
+        NETTING account, where the add merges into the base ticket and its volume genuinely does
+        include them. The answer there is to REFUSE to scale in on such an account, not to carry
+        a term that is wrong on the account this bot does run on.
+
+        🔴 **THAT REFUSAL IS NOT WIRED YET AND THIS IS THE STATED GAP.** `mt5_ops.hedging_account`
+        measures the fact and answers `None` for *cannot ask*; nothing reads it. It goes in
+        beside the retirement of the scale-in refusal, which is the moment any of this becomes
+        reachable — wiring it earlier would be a check on a path no bot can enter, and this repo
+        already has a name for a feature nobody has run.
+
+        ⚠ **So this is the BASE position's remaining size, and nothing else.** The add tickets
+        are reconciled against the strategy's own add ledger by `_sync_add_size`, which is a
+        different question asked of a different set of tickets.
+
         ⚠ **It was inert only because `assert_supported` refuses scale-in**, so `_adds` is always
-        empty on a live bot today. **It becomes reachable the moment that refusal is retired**,
-        which is precisely what the add path is for — found by asking what the add path needs
-        rather than by anything going red.
+        empty on a live bot today — which is also why BOTH versions above were arithmetic nobody
+        could have caught by running the bot. **It becomes reachable the moment that refusal is
+        retired**, which is precisely what the add path is for.
 
         ⚠ **A wrong answer here is destructive in ONE direction.** Too small closes real size;
         too large banks nothing and leaves the broker heavy, which halts loudly on the next
@@ -2488,13 +2671,10 @@ class OrderBridge:
         filled = getattr(self._ex, "_filled_qty", None)
         if qty is None or filled is None:
             return None
-        add_qty = self._open_add_units()
-        if add_qty is None:
-            return None
         cs = self._contract_size()
         if not cs:
             return None
-        return max(0.0, (float(qty) - float(filled)) + add_qty) / cs
+        return max(0.0, float(qty) - float(filled)) / cs
 
     def _sync_partials(self, positions) -> None:
         """Bank the broker down to the size the strategy believes is still open.

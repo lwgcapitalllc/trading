@@ -45,6 +45,21 @@ class _Tick:
         self.bid, self.ask = bid, ask
 
 
+class _AccountInfo:
+    """What `mt5.account_info()` answers.
+
+    ⚠ **`margin_mode` is OPTIONAL on purpose.** A terminal that does not carry the field is a
+    real state — an older build, or a stub — and it must read as *cannot ask* rather than as
+    *not hedging*. A fake that always carried it could not express that, and the two answers
+    call for opposite behaviour from the scale-in path.
+    """
+
+    def __init__(self, margin_mode=2, margin_free=1_000_000.0):
+        self.margin_free = margin_free
+        if margin_mode is not None:
+            self.margin_mode = margin_mode
+
+
 class _Result:
     # `comment` carries the BROKER's own sentence ("AutoTrading disabled by client"). It is the
     # field a human acts on and no refusal path in `mt5_ops` logged it until 2026-08-10.
@@ -106,6 +121,9 @@ def _fake_mt5():
     m._positions = []
     m._rates = None
     m._next_ticket = 5000
+
+    m._account = _AccountInfo()
+    m.account_info = lambda: m._account
 
     m.symbol_info = lambda sym: m._symbol
     m.symbol_info_tick = lambda sym: m._tick
@@ -913,3 +931,47 @@ def test_every_code_the_placement_layer_can_emit_is_in_the_published_set(mt5ops)
 
     assert len(emitted) >= 5, emitted
     assert emitted <= mt5_ops.ORDER_REFUSAL_CODES, emitted - mt5_ops.ORDER_REFUSAL_CODES
+
+
+# ── which kind of account this is ─────────────────────────────────────────────
+#
+# 🔴 **The whole live scale-in path rests on this one fact.** On a HEDGING account an add is a
+# separate position with its own ticket and its own stop, which is what the bridge's add-stop
+# ratchet and its add-size reconciliation are built on. On a NETTING account the add MERGES into
+# the position already held, and every one of those reads means something else — the size check
+# would see the added lots as excess and bank away the position the strategy is still managing.
+
+
+def test_a_HEDGING_account_reports_that_an_add_is_its_own_position(mt5ops):
+    mt5_ops, fake = mt5ops
+    fake._account = _AccountInfo(margin_mode=2)
+    assert _bot(mt5_ops).hedging_account() is True
+
+
+def test_a_NETTING_account_reports_that_it_is_not(mt5ops):
+    """MEASURED as mode 2 on the live account, so this is the branch nothing here runs on — and
+    it is exactly why the value is read rather than assumed."""
+    mt5_ops, fake = mt5ops
+    fake._account = _AccountInfo(margin_mode=0)
+    assert _bot(mt5_ops).hedging_account() is False
+
+
+def test_a_terminal_that_CANNOT_BE_ASKED_answers_None_and_never_False(mt5ops):
+    """Rule 1, and here the two wrong answers are opposite kinds of wrong: `False` refuses a
+    scale-in on an account that would have taken it, and `True` runs the add path against a book
+    whose volumes do not mean what it thinks."""
+    mt5_ops, fake = mt5ops
+    fake.account_info = lambda: None
+    assert _bot(mt5_ops).hedging_account() is None
+
+
+def test_a_terminal_that_DOES_NOT_CARRY_THE_FIELD_also_answers_None(mt5ops):
+    """A build or a stub with no `margin_mode` has not told us it is netting — it has told us
+    nothing. `getattr(..., None)` collapses those two, so the absence is checked explicitly.
+
+    MUTATION: default the field to 0 instead of `None` and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    fake._account = _AccountInfo(margin_mode=None)
+    assert not hasattr(fake._account, "margin_mode"), "the fixture must model the ABSENCE"
+    assert _bot(mt5_ops).hedging_account() is None

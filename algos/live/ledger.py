@@ -154,6 +154,20 @@ _DECISION_EVENTS = {
     # the alternative — an add whose stop simply never moves — is indistinguishable from a trade
     # with nothing to ratchet, and the base's own record looks correct throughout. Rule 1.
     "add_stop_move_failed",
+    # ── a SCALE-IN lot COMING OFF (2026-09-08). All three are DECISIONS by the same subject test
+    # that settles every row above: they answer "what happened to this trade's size", not "is the
+    # machinery working". `add_closed` is the only record that a lot the strategy banked in one
+    # step actually left the account, and its price and P&L are per-lot — a netted figure cannot
+    # be taken apart afterwards, which is why each is written separately rather than summed.
+    "add_closed",
+    # ⚠ The books have genuinely parted: the strategy is flat on that size and the broker is not.
+    # A halt follows, and `_why_not_scaled` reads the same fact so the halt names THIS rather than
+    # the duplicate-order sentence it would otherwise fall through to.
+    "add_close_failed",
+    # ⚠ A state the strategy cannot produce — it banks its adds all at once. Written rather than
+    # acted on: closing "some" lots would mean inventing a policy for a case nobody has built
+    # (rule 9), and the record is what makes the first occurrence answerable.
+    "add_partial_bank",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

@@ -661,6 +661,34 @@ class BotMT5:
         info = mt5.account_info()
         return float(info.margin_free) if info else None
 
+    def hedging_account(self):
+        """True if a second order on the same side opens its OWN position. `None` = cannot ask.
+
+        🔴 **THE WHOLE LIVE SCALE-IN PATH RESTS ON THIS ONE FACT, and until now it was recorded
+        only in a comment.** On a HEDGING account (`margin_mode 2`) an add is a separate position
+        with its own ticket and its own stop, so the bridge ratchets each one and reconciles the
+        base ticket against the base size. On a NETTING account the add MERGES into the position
+        already held: one ticket, one stop, and a volume that silently includes the adds. Every
+        one of those three reconciliations then reads a number that means something else — the
+        size check would see the added lots as excess and bank away the position the strategy is
+        still managing.
+
+        ⚠ **`None` is CANNOT ASK, never *not hedging*** (rule 1). A terminal that cannot answer
+        must stop the caller acting, not be read as the safe answer — and here the two are
+        opposite kinds of wrong.
+
+        ⚠ **It is a fact about the ACCOUNT, so it is re-read rather than cached at startup.** A
+        startup check establishes a fact that is then free to change (rule 16), and this terminal
+        has already been observed switching accounts under a running bot.
+        """
+        info = mt5.account_info()
+        if info is None:
+            return None
+        mode = getattr(info, "margin_mode", None)
+        if mode is None:
+            return None
+        return int(mode) == 2
+
     def normalize_volume(self, lots: float, symbol: str = None) -> float:
         """Round `lots` DOWN to the symbol's volume step and clamp to its max.
 

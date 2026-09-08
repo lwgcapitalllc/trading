@@ -120,6 +120,11 @@ class _FakeMt5Ops:
         self.partial_result = True
         # Whether a full close at market succeeds. See `close_position` below.
         self.close_result = True
+        # Tickets whose close refuses, while every other ticket still succeeds. A single flag
+        # cannot model the case the scale-in exit turns on — several positions closed in one
+        # sweep where ONE of them refuses — and a fake that can only fail all-or-nothing would
+        # leave the partial-failure branch unreachable. Same reasoning as `move_sl_fails`.
+        self.close_fails: set = set()
         # ── refusing a PLACEMENT, the way the real broker layer refuses ──
         #
         # `None` places normally. A dict refuses AND records why, which is what
@@ -285,7 +290,7 @@ class _FakeMt5Ops:
         is the branch most worth being able to produce.
         """
         self.actions.append(("close", ticket, direction, reason))
-        if not self.close_result:
+        if not self.close_result or ticket in self.close_fails:
             return False, 0.0, 0.0
         self.positions = [p for p in self.positions if p.ticket != ticket]
         return True, 3300.0, 12.5
@@ -1637,55 +1642,176 @@ def test_the_intended_size_is_converted_from_UNITS_to_LOTS():
     # the division. A test whose two branches agree is describing neither.
 
 
-def test_the_intended_size_COUNTS_THE_SCALE_IN_LOTS():
-    """🔴 THE BRIDGE MUST NOT BANK AWAY THE POSITION IT JUST SCALED INTO.
+# ── a scaled trade, AS THIS ACCOUNT ACTUALLY HOLDS ONE ────────────────────────
+#
+# 🔴 **THE FIXTURE THAT WAS HERE MODELLED THE WRONG BROKER, AND PRODUCTION WAS CHANGED TO AGREE
+# WITH IT (found 2026-09-08).** It put a 1.0 add INSIDE the base ticket — one position of 1.5
+# lots — which is a NETTING account. This bot trades a RETAIL HEDGING account (`margin_mode 2`,
+# measured), where an add is a separate position with its own ticket and its own stop and the
+# base ticket's volume never moves. Reading the fixture as truth, the size arithmetic was
+# "fixed" by adding the open add units to the base's intended size — which on the real account
+# is a term measured over a different set of tickets, always larger than what it is compared
+# against, and would have banked NOTHING for the whole life of any scaled trade.
+#
+# ⚠ **Rule 13 with the sign flipped: a fixture LESS capable than production hides just as much.**
+# One position cannot express the thing every check below turns on — which ticket a lot belongs
+# to — so every test written against it was answering an easier question than the live one.
 
-    `_qty` is assigned in exactly three places — zero, the base entry fill, and the reset — and
-    NO line anywhere adds a scale-in lot to it. Adds live in their own ledger, which is why
-    `_charge_swap` already adds them as a separate term.
 
-    RED against HEAD: reading `_qty` alone the bridge wants 0.5 lots against 1.5 held and closes
-    1.0 — **exactly the add** — moments after buying it. Counting the lot it wants 1.5 and banks
-    nothing.
+def _open_scaled(base=0.5, qty=1.0, filled=0.5, adds=None, extra=((556, 1.0),), cfg=None):
+    """A long the strategy holds as ONE position and the broker holds as several.
 
-    ⚠ Latent rather than live: `assert_supported` refuses scale-in, so the ledger is always empty
-    on a bot today. It becomes reachable the moment that refusal is retired, which is the whole
-    point of the add path.
+    The base is listed first because that is the order the broker returns them in and the order
+    they open in — `_observe_open` adopts `positions[0]`.
     """
-    b, ops, _, _ = _open_bank(qty=1.0, filled=0.5, held=1.5, adds=[[3295.0, 1.0]])
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 0, 3290.0, base, 3280.0)]
+    for ticket, vol in extra:
+        ops.positions.append(_Pos(ticket, 0, 3295.0, vol, 3280.0))
+    ex = _FakeExecution(pos_dir=1, qty=qty, filled=filled, adds=adds, cfg=cfg or _banking_cfg())
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._contract_size = lambda: 1.0
+    return b, ops, ledger, notes
+
+
+def test_a_scale_in_lot_is_NEVER_banked_away_by_the_size_reconciliation():
+    """🔴 THE BRIDGE MUST NOT CLOSE THE LOT IT JUST BOUGHT.
+
+    The base ticket holds the base and nothing else, so once the intended size is the BASE's
+    alone the two agree and nothing comes off. The add is not the size reconciliation's business
+    at all — it is a different ticket, answered by `_sync_add_size`.
+
+    MUTATION: put the open add units back into `_intended_open_lots` and this still passes, which
+    is why the test below it exists — that is the case the wrong arithmetic actually breaks.
+    """
+    b, ops, _, _ = _open_scaled(base=0.5, qty=1.0, filled=0.5, adds=[[3295.0, 1.0]])
     b.sync(_Dec(stop=3280.0), _Sig())
-    assert not [a for a in ops.actions if a[0] == "partial"], (
-        "the bridge closed size the strategy is still holding — this is the defect"
-    )
-    assert ops.positions[0].volume == 1.5
+    assert not [a for a in ops.actions if a[0] == "partial"]
+    assert {p.ticket for p in ops.positions} == {555, 556}, "the add was closed"
 
 
-def test_a_SPENT_add_is_no_longer_COUNTED():
-    """The lots are zeroed IN PLACE rather than removed, so the arithmetic has to read the
-    QUANTITY and never the length. A spent add is `[price, 0.0]` and still in the list.
+def test_a_rung_STILL_BANKS_THE_BASE_while_scale_in_lots_are_open():
+    """🔴 RED AGAINST THE ARITHMETIC THAT COUNTED THE ADDS, and the reason that arithmetic was
+    wrong rather than merely redundant.
 
-    MUTATION: count `len(adds)` instead of summing quantities and this goes red.
+    The strategy wants 0.5 of a 1.0 base still open and holds a 1.0 add beside it. Counting the
+    add, the bridge wants 1.5 against the 1.0 the BASE ticket holds — the difference goes
+    negative and it banks nothing, riding a rung the strategy has already taken off in its own
+    book. Measured base-to-base it banks the 0.5 that is genuinely over.
+
+    ⚠ This is the direction that costs money silently: the position is bigger than the strategy
+    believes, so its risk is understated everywhere the bot reports it.
     """
-    b, ops, _, _ = _open_bank(qty=1.0, filled=0.5, held=1.5, adds=[[3295.0, 0.0]])
+    b, ops, _, _ = _open_scaled(base=1.0, qty=1.0, filled=0.5, adds=[[3295.0, 1.0]])
     b.sync(_Dec(stop=3280.0), _Sig())
-    # Nothing of the add remains, so 0.5 is wanted against 1.5 held — 1.0 comes off.
-    assert ("partial", 555, 1.0, "bullish") in ops.actions
+    assert ("partial", 555, 0.5, "bullish") in ops.actions
+    assert next(p for p in ops.positions if p.ticket == 556).volume == 1.0, "the add was touched"
 
 
-def test_a_strategy_with_NO_add_ledger_is_CANNOT_ASK_and_banks_NOTHING():
-    """Rule 1 where it is most destructive. An absent ledger is not *no adds* — it is a strategy
-    this bridge could not interrogate, and the whole function's `None` contract already says such
-    a strategy must stop it acting rather than licence it to close size.
+def test_a_SPENT_add_is_CLOSED_at_its_own_ticket():
+    """The strategy banked its adds in one step; the broker still holds them as live positions.
 
-    ⚠ The real `Execution` always has the ledger, so this shape is a strategy production does not
-    have. It is tested because the bridge reads it defensively and a defensive read is exactly
-    where the two meanings collapse.
+    Nothing else in this bridge can take them off — every other exit path knows only the base
+    ticket — so without this the lots ride on with their own stops, unmanaged, and the next
+    agreement check halts the bot on a state it caused itself.
     """
-    b, ops, _, _ = _open_bank(qty=1.0, filled=0.5, held=1.5)
+    b, ops, ledger, _ = _open_scaled(base=0.5, qty=1.0, filled=0.5, adds=[[3295.0, 0.0]])
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert ("close", 556, "bullish", "adds banked") in ops.actions
+    assert {p.ticket for p in ops.positions} == {555}
+    assert "event:add_closed" in ledger.kinds()
+
+
+def test_a_spent_add_is_read_by_QUANTITY_and_never_by_LENGTH():
+    """A spent lot is zeroed IN PLACE and stays in the list forever — the strategy caps its
+    ladder on the list's length, so nothing is ever removed from it.
+
+    MUTATION: read `len(adds)` instead of summing the quantities and this goes red — a spent
+    ladder still has entries, so the bridge would believe size is open and leave the tickets.
+    """
+    b, ops, _, _ = _open_scaled(base=0.5, qty=1.0, filled=0.5, adds=[[3295.0, 0.0]])
+    assert b._open_add_units() == 0.0, "one entry, no quantity"
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert ("close", 556, "bullish", "adds banked") in ops.actions
+
+
+def test_an_UNREADABLE_add_ledger_closes_NOTHING():
+    """Rule 1 where it is most destructive. An absent ledger is not *the adds are all banked* —
+    it is a strategy this bridge could not interrogate, and reading the two as one would close
+    every scale-in lot of a trade that is still running.
+
+    ⚠ Nothing is lost by returning quietly: the agreement check refuses the same bar on the same
+    unreadable ledger, so the bot halts rather than carrying on half-blind.
+    """
+    b, ops, _, _ = _open_scaled(base=0.5, qty=1.0, filled=0.5, adds=[[3295.0, 0.0]])
     del b._ex._adds
     b.sync(_Dec(stop=3280.0), _Sig())
-    assert b._intended_open_lots() is None
-    assert not [a for a in ops.actions if a[0] == "partial"]
+    assert b._open_add_units() is None
+    assert not [a for a in ops.actions if a[0] == "close"]
+    assert b.state is live_bridge.BridgeState.HALTED, "the disagreement must still stop the bot"
+
+
+def test_a_PARTIAL_add_bank_is_REFUSED_rather_than_guessed_at():
+    """The strategy banks its adds all at once, so a broker holding more than zero and less than
+    it should is a state nothing produces.
+
+    Closing "some" lots would mean inventing a policy — which ticket, and why that one — for a
+    case that has never occurred, and picking wrong books the wrong lot's P&L with nothing in the
+    output to say so. It says what it found and closes nothing (rule 9).
+    """
+    b, ops, ledger, notes = _open_scaled(
+        base=0.5, qty=1.0, filled=0.5, adds=[[3295.0, 1.0]], extra=((556, 1.0), (557, 1.0))
+    )
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert not [a for a in ops.actions if a[0] == "close"]
+    assert "event:add_partial_bank" in ledger.kinds()
+    assert any("banks its adds all at once" in str(m) for m in notes)
+
+
+def test_a_full_exit_closes_EVERY_scale_in_ticket_and_not_just_the_base():
+    """🔴 THE COMMANDED EXIT MUST REACH ALL OF THEM. The strategy exits one position; the broker
+    holds three. Closing only the ticket this bridge tracks leaves two live positions with
+    nobody ratcheting their stops — and the halt on the next bar is the bridge reporting its own
+    half-finished work as a disagreement.
+    """
+    b, ops, _, _ = _open_scaled(
+        base=1.0,
+        qty=1.0,
+        filled=0.0,
+        adds=[[3295.0, 1.0], [3296.0, 1.0]],
+        extra=((556, 1.0), (557, 1.0)),
+    )
+    b.sync(_Dec(stop=3280.0), _Sig())  # adopt the base; the two adds agree with the ledger
+    b._ex._pos_dir = 0  # the strategy has exited in its own book
+    b._ex._adds = [[3295.0, 0.0], [3296.0, 0.0]]
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_Fill("exit", "L-TIME", 3300.0, 3.0, 1)]
+    b.sync(dec, _Sig())
+    closed = {a[1] for a in ops.actions if a[0] == "close"}
+    assert closed == {555, 556, 557}, f"only {closed} were closed"
+    assert ops.positions == []
+
+
+def test_a_scale_in_lot_that_REFUSES_to_close_NAMES_ITSELF_in_the_halt():
+    """🔴 WITHOUT THIS THE HALT BLAMES DUPLICATE ORDERS FOR A BROKER REFUSAL IT ALREADY RECORDED.
+
+    The generic sentence sends the reader hunting an order-placement bug. The bridge knows
+    exactly what happened — it asked, and the broker said no — so it says that instead.
+
+    ⚠ The base is deliberately left OPEN when a lot refuses. Closing it would strand the leg
+    whose stop this bridge is no longer ratcheting, which is the more dangerous half.
+    """
+    b, ops, _, notes = _open_scaled(base=1.0, qty=1.0, filled=0.0, adds=[[3295.0, 1.0]])
+    b.sync(_Dec(stop=3280.0), _Sig())
+    ops.close_fails = {556}
+    b._ex._pos_dir = 0
+    b._ex._adds = [[3295.0, 0.0]]
+    dec = _Dec(stop=3280.0)
+    dec.fills = [_Fill("exit", "L-TIME", 3300.0, 2.0, 1)]
+    b.sync(dec, _Sig())
+    assert 555 not in {a[1] for a in ops.actions if a[0] == "close"}, "the base was stranded"
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert any("T556" in str(m) and "could not be closed" in str(m) for m in notes)
 
 
 def test_the_banked_record_says_it_filled_at_MARKET_not_at_the_rung():
