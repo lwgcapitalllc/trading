@@ -57,6 +57,38 @@ the gate green about a file nobody uses. Rule 22: an engine change is not commit
 
 ---
 
+## The display controls in `mpc_jarvis.pine` (2026-09-08) — three rules, all cosmetic
+
+**Only the BOS/SOS break tag has an adjustable size.** Swing points are fixed at small and the
+internal set at tiny. 🔴 **THE SURVIVING CONTROL IS THE THIRD `input.string` IN THE FILE, AND THAT
+POSITION IS LOAD-BEARING.** TradingView keys a chart's saved values off DECLARATION ORDER WITHIN
+EACH TYPE, so adding or removing a string before the level-tag size or the fib label style
+silently re-points what those two read on every chart already running the script — no error, no
+symptom, just two settings quietly reading their neighbour's value. Two controls were added and
+two removed on 2026-09-08 and the count came back to three deliberately. ⚠ **Count the strings
+before touching that block.**
+
+**The internal first-swing tags are hidden at DRAW time, never by changing their text.** The label
+text is a parity-checked value — `engines/market_structure/` carries it as a field and
+`structure_engine_export.pine` holds its own copy — so blanking the string here would put the
+chart and the Python engine into silent disagreement about the same bar. The text is built
+exactly as before; only its colour goes transparent. Same pattern the swing-point hide already
+used, and the reason it was chosen over the cheaper edit.
+
+**The sub-5m fib switch also lifts the 1-minute's aligned-leg gate, and that is the only reason it
+reaches the 1 minute at all.** 🔴 **The sub-5m hide EXEMPTS the 1m in the same expression that
+applies it**, so that hide was never what kept a fib off a 1m chart — the aligned-leg gate was,
+and the switch looked dead there while working perfectly on 2m/3m/4m. One flag now drives both,
+plus the 1m retirement rule and the Sniper Zone's twin; lifting one without the others draws the
+fib on every leg and still retires it early, which is neither behaviour. ⚠ **With it on, the 1m
+ENTRY row will call an entry on a leg the 15m does not support** — stated here rather than left to
+be discovered on a chart.
+
+⚠ **All three are TEXT SIZE, TEXT COLOUR and DRAW GATES.** No level, no state, no table value and
+no signal moves. The fib maths already ran on every timeframe regardless of whether it was drawn.
+
+---
+
 ## 🔴 The one real defect: `f_rev15` had three ways to die and the chart-side SOS Fade engine has four
 
 The missing one is the one that fires on a WIN — `fibo7Touched`, price back at the leg origin. So on the 15m chart the REV row read `Pass` the moment TP3 printed, while the **1m chart kept the same leg alive at stage 4 saying TAKE PROFIT** until an opposite SOS or a continuation BOS happened along, which can be hours. Two charts, two answers, one setup. Worse than a stale row: the RE-ENTRY round trip clears the TP latches when price returns to 0.618, so a finished trade could hand the 1m a fresh AWAIT and ask for a 1m SOS on a leg the 15m had closed the book on. Fixed with `or L_tp0` / `or S_tp0` on the two death conditions — `L_tp0` **is** TP3, since `p0` is `L_high`, the leg origin, the same 0.0 the drawn fib labels TP3. ⚠ **It kills one bar LATE**: the death block runs before the fib block that sets the latch, where the 15m side kills on the bar itself. Left as is — every other value this engine ships crosses the security boundary a bar late in the same way. ⚠ **It retires the whole 1m stack together, not just the row** — `rStage` falling below 3 drops `_m15Retraced`, which is what `fiboShowAligned`, the 1m External Fib, the 1m Sniper Zone and the 1m ENTRY row all hang off. ⚠ **Nothing on the 15m moves**: every consumer of `rStage`/`rTp50`/`rDeepCode`/`rZoneLo` sits behind `_fibOneMin`, `_sn1m`, `revOn1m` or the non-15m branch of the table, checked one by one; `f_rev15` exists only in `mpc_jarvis.pine` and `m15_playbook.pine`, so **no bot and no parity gate can see this.**

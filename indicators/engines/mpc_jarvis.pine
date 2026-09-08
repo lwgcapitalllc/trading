@@ -57,16 +57,31 @@ color iBearColor  = bearColor
 //============================================================
 var GRP_STRUCT = "Market Structure"
 bool   marketStructureOnly = not showTradeTools and not showFibTool
-string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, tooltip = "Draws the main swing highs and lows. BOS = a break that continues the trend, SOS = a break that reverses it.", display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, tooltip = "Draws the smaller structure inside the current swing. Same labels with an i in front.", display = display.none)
 bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving just BOS and SOS on the chart.", display = display.none)
 bool   showHistoricalInternal = input.bool(true, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "On keeps the internal labels from past swings. Off shows only the current swing's.", display = display.none)
+string extLabelSize     = input.string("Tiny", "External Structure Label Size", group = GRP_STRUCT, options = ["Tiny", "Small"], active = showExternal, tooltip = "Text size for the main BOS and SOS break tags.", display = display.none)
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
+// ONE size is adjustable — the BOS/SOS break tags. The swing points are fixed at small
+// and the internal set at tiny, which is what they were before either control existed.
+// ⚠ IT IS THE THIRD `input.string` IN THIS FILE, EXACTLY AS THE SWING-POINT INPUT IT
+// REPLACES WAS, AND THAT POSITION IS LOAD-BEARING. TradingView keys a chart's saved
+// values off DECLARATION ORDER WITHIN EACH TYPE, so a string added or removed before the
+// level-tag size or the fib label style silently re-points what those two read on every
+// chart already running this. Three strings before them yesterday, three today.
+// ⚠ A chart saved with the OLD five-option swing-point input lands HERE, holding a value
+// this menu may not offer ("Normal"/"Large"/"Huge"): the `else` takes it to tiny rather
+// than to a size that is no longer on the menu. Same reason as f_liqSize() below.
+// ⚠ It is a TEXT SIZE and nothing else reads it — no level, no state and no table value
+// moves when it changes.
 f_structSize() =>
-    not showExternal ? size.auto : structLabelSize == "Tiny" ? size.tiny : structLabelSize == "Normal" ? size.normal : structLabelSize == "Large" ? size.large : structLabelSize == "Huge" ? size.huge : size.small
+    not showExternal ? size.auto : size.small
+
+f_extSize() =>
+    extLabelSize == "Small" ? size.small : size.tiny
 
 // Swing-point labels are hidden by making their text transparent, not by skipping
 // their creation. The label objects still exist and the engine's state is untouched,
@@ -702,7 +717,10 @@ int    macroLineExtend = input.int(180, "   ↳ Cycle Fib Line Extension (bars)"
 bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "Draws the Sniper Zone - an area price tends to return to after a big move.", display = display.none)
 bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "Draws the area a late-retrace setup is waiting for price to come back to. 15m only.", display = display.none)
 
-bool hideFibsSub5m = true
+// The sub-5m hide is a DISPLAY gate and only a display gate: the fib maths runs on every
+// timeframe regardless (see showFibo below), so turning this on adds drawing and changes
+// no level, no table value and no signal.
+bool hideFibsSub5m = not input.bool(false, "Show Fib Below 5m", group = GRP_FIBO, active = showFiboInput, tooltip = "On draws the fib on every chart under 5 minutes, and drops the extra rule that limits the 1 minute chart to the entry leg. Off is the tuned behaviour.", display = display.none)
 // 1m is the entry-view timeframe — the External Fib always shows there (its SOS-leg
 // fib is the entry map), overriding the sub-5m hide.
 bool _fibTfOk = timeframe.in_seconds() == 60 or not (hideFibsSub5m and timeframe.in_seconds() < 300)
@@ -1068,7 +1086,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         if is_choch
             st.bull_sos := true
         int    mid_x       = math.round((st.ash_loc + bar_index) / 2)
-        label.new(mid_x, st.ash, "\n" + brk_lbl_txt, color=color(na), textcolor=bull_col, style=label.style_label_down, size=size.tiny)
+        label.new(mid_x, st.ash, "\n" + brk_lbl_txt, color=color(na), textcolor=bull_col, style=label.style_label_down, size=f_extSize())
 
         if is_choch
             st.choch_lock := true
@@ -1222,7 +1240,7 @@ method process(SMCStructure st, float ph_val, float pl_val, string prefix, color
         if is_choch
             st.bear_sos := true
         int    mid_x       = math.round((st.asl_loc + bar_index) / 2)
-        label.new(mid_x, st.asl, brk_lbl_txt + "\n", color=color(na), textcolor=bear_col, style=label.style_label_up, size=size.tiny)
+        label.new(mid_x, st.asl, brk_lbl_txt + "\n", color=color(na), textcolor=bear_col, style=label.style_label_up, size=f_extSize())
 
         if is_choch
             st.choch_lock := true
@@ -3348,7 +3366,7 @@ if internalActive and i_seeded and i_mode == 1
             i_confirmed_high_price := i_sw_price
             i_confirmed_high_loc   := i_sw_loc
             i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = showInternal ? color.new(i_h_col, 15) : color(na), style = line.style_dotted, width = 1)
-            i_sw_lbl   := label.new(i_sw_loc, i_sw_price, i_h_lbl + "\n", color = color(na), textcolor=f_swingCol(color.new(i_h_col, 15)), style = label.style_label_down, size = size.tiny)
+            i_sw_lbl   := label.new(i_sw_loc, i_sw_price, i_h_lbl + "\n", color = color(na), textcolor=i_had_bos ? f_swingCol(color.new(i_h_col, 15)) : color(na), style = label.style_label_down, size = size.tiny)
             array.push(intHistLines, i_sw_line)
             array.push(intHistLabels, i_sw_lbl)
             i_mode       := 0
@@ -3398,7 +3416,7 @@ if internalActive and i_seeded and i_mode == -1
             i_confirmed_low_price := i_sw_price
             i_confirmed_low_loc   := i_sw_loc
             i_sw_line  := line.new(i_sw_loc, i_sw_price, bar_index, i_sw_price, color = showInternal ? color.new(i_l_col, 15) : color(na), style = line.style_dotted, width = 1)
-            i_sw_lbl   := label.new(i_sw_loc, i_sw_price, "\n" + i_l_lbl, color = color(na), textcolor=f_swingCol(color.new(i_l_col, 15)), style = label.style_label_up, size = size.tiny)
+            i_sw_lbl   := label.new(i_sw_loc, i_sw_price, "\n" + i_l_lbl, color = color(na), textcolor=i_had_bos ? f_swingCol(color.new(i_l_col, 15)) : color(na), style = label.style_label_up, size = size.tiny)
             array.push(intHistLines, i_sw_line)
             array.push(intHistLabels, i_sw_lbl)
             i_mode       := 0
@@ -4752,7 +4770,19 @@ f_fibLevel(bool show, line lineId, label labelId, int x1, float y, int x2, color
 // reprint — the 1m can range and fire several SOS before one lines up. The
 // fibo_dir == m15Dir guard also hides the fib if the 15m simply flips underneath it.
 // No effect on any other timeframe (fiboShowAligned is always true off 1m).
-bool _fibOneMin = timeframe.in_seconds() == 60
+// 🔴 THE SUB-5m SWITCH LIFTS THIS WHOLE GATE, AND THAT IS THE ONLY REASON IT REACHES
+// THE 1 MINUTE AT ALL (Aaron, 2026-09-07). `_fibTfOk` EXEMPTS the 1m from the sub-5m
+// hide in the same expression that applies it, so that hide was never what kept the fib
+// off a 1m chart — this gate was, and the switch looked dead there while working
+// perfectly on 2m/3m/4m. Reading it here makes the switch mean one thing: ON treats the
+// 1 minute exactly like every other timeframe.
+// ⚠ It is read by TWO consumers, deliberately — the aligned-leg gate below AND the 1m
+// retirement rule (`fibo7Touched or rTp50`). Lifting one without the other would draw
+// the fib on every leg and still retire it early, which is neither behaviour.
+// ⚠ The Sniper Zone and the 1m ENTRY row follow it, because both read `fiboShowAligned`
+// and the zone reads its own twin flag below. That is stated rather than discovered: with
+// the switch on, the 1m ENTRY row will call an entry on a leg the 15m does not support.
+bool _fibOneMin = timeframe.in_seconds() == 60 and hideFibsSub5m
 // GATE (1m only): the External Fib shows ONLY on the aligned-SOS leg — the 1m's current
 // leg must have been opened by an SOS (a Shift) whose direction matches the 15m, while the
 // 15m is ≥50% into its own leg. Three conditions:
@@ -5316,7 +5346,10 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
 // ALIGNS with the 15m structure (m15Dir) — nowhere else. Every other timeframe keeps
 // the original per-BOS trigger. (A bull/bear SOS also sets bull_bos_*/bear_bos_*, so
 // the leg vars the sniper block reads below are populated on the SOS bar too.)
-bool _sn1m = timeframe.in_seconds() == 60
+// Twin of _fibOneMin, and it reads the same switch for the same reason — see the long
+// note there. With the switch on the 1m Sniper Zone reverts to the ordinary per-break
+// trigger every other timeframe uses.
+bool _sn1m = timeframe.in_seconds() == 60 and hideFibsSub5m
 // On the 1m the Sniper Zone only draws on an aligned SOS that fires AFTER the 15m
 // has retraced ≥ 50% (_m15Retraced) — same gate as the 1m fib, so nothing on the 1m
 // is considered until the 15m reaches its entry zone. Other timeframes: per-BOS as before.
