@@ -1248,7 +1248,7 @@ class Execution:
         # `_manage_open` would let a stop the market only reached mid-bar pre-empt a lot the
         # broker had already bought.
         if self._add_armed and self._pos_dir != 0:
-            self._fill_pending_add(sig)
+            self._fill_pending_add(sig, dec)
         opened = False
         if self._pos_dir == 0:
             opened = self._try_entry_fill(sig, dec)
@@ -3515,7 +3515,7 @@ class Execution:
         self._add_pend_stop = stop
         self._add_armed = True
 
-    def _fill_pending_add(self, sig) -> None:
+    def _fill_pending_add(self, sig, dec) -> None:
         """Fill an add order PLACED on an earlier bar. Called before anything can exit.
 
         🔴 THE ORDER TYPE IS THE WHOLE POINT, AND GETTING IT WRONG COST THE FEATURE ITS ONE
@@ -3590,6 +3590,26 @@ class Execution:
         self._add_last_px = price   # the scale-in target has to clear this
         self._charge_commission(qty)
         self._charge_spread(qty)    # half the round turn; `_exit_portion` pays the other half
+        # 🔴 **THE ONE ORDER SHAPE WITH NO `Fill` RECORD, WHICH IS WHY THE VOCABULARY HAD AN
+        # `ADD` KIND THAT NOTHING PRODUCED.** An add is separate LOTS, so it never entered
+        # `dec.fills` and a reader counting fills would conclude the strategy never scales in.
+        #
+        # ⚠ **NO STOP TRAVELS WITH IT, AND THAT IS A DECISION.** This lot shares the position's
+        # one ratcheting stop; it does not get its own. Attaching a stop here would put a second
+        # source of truth for the stop on the wire, which is the exact thing this seam removes.
+        #
+        # 🔴 **BUT THE STOP'S VOLUME MUST STILL GROW TO COVER THIS LOT, AND NOTHING ABOVE SAYS
+        # SO.** The stop is emitted on CHANGE only, and an add that fills while the stop price
+        # is unmoved emits no `MOVE_STOP` at all — so an executor that reconciles the stop's
+        # PRICE alone would leave the added size unprotected and never report a disagreement.
+        # Whoever consumes this must reconcile the stop's VOLUME on an `ADD`.
+        #
+        # ⚠ **`dec` IS REQUIRED, NOT DEFAULTED.** An optional one would let a future caller drop
+        # the add from the stream in silence, which is the same failure this emission exists to
+        # prevent, one level up.
+        dec.intents.append(OrderIntent(
+            kind=IntentKind.ADD, direction=d, qty=qty, price=price, reason="add",
+        ))
 
     def _stage_rungs(self) -> Tuple[float, float]:
         """The two rung prices ORDERED BY DISTANCE from the entry — (nearer, further).

@@ -119,3 +119,71 @@ def test_every_exit_fill_has_exactly_one_matching_close_instruction():
     )
     assert exits == closes
     assert exits, "nothing exited — this test would pass for free"
+
+
+# ── an add ────────────────────────────────────────────────────────────────────
+
+
+def _scaled_in(mode="Trail", **kw):
+    """A strategy holding a long, with an add armed and ready to fill at the next open."""
+    ex = _ex(exec_scale_in=True, exec_scale_mode=mode, **kw)
+    ex._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
+    assert ex._try_entry_fill(Sig(o=100.0, h=101.0, l=99.2), Decision(index=0)) is True
+    ex._add_armed = True
+    ex._add_pending = 40.0
+    ex._add_pend_stop = 99.4
+    return ex
+
+
+def test_an_add_asks_to_ADD_the_lot_it_actually_bought():
+    """🔴 The add is the ONE order shape with no `Fill` record — it is separate lots, so it never
+    reaches `dec.fills`. A reader counting fills would conclude this strategy never scales in,
+    and a live bridge built from `fills` alone would trade the base position and say nothing.
+
+    MUTATION: delete the emission and this goes red; emit `_add_pending` after it is cleared and
+    it goes red on the quantity.
+    """
+    ex = _scaled_in()
+    dec = Decision(index=1)
+    ex._fill_pending_add(Sig(index=1, time_ms=1, o=100.6, h=101.0, l=100.0), dec)
+
+    adds = [i for i in dec.intents if i.kind is IntentKind.ADD]
+    assert len(adds) == 1
+    # The instruction describes the lot the strategy actually recorded buying.
+    assert len(ex._add_lots) == 1
+    assert adds[0].qty == ex._add_lots[0]["qty"]
+    assert adds[0].price == ex._add_lots[0]["price"]
+    assert adds[0].direction == 1
+
+
+def test_an_add_that_does_not_fill_asks_for_NOTHING():
+    """A resting add that price never reached bought nothing, so there is nothing to instruct.
+
+    MUTATION: move the emission above the reached/return check and this goes red.
+    """
+    ex = _scaled_in(mode="Limit")
+    ex._add_limit = 98.0          # price never comes down to it on this bar
+    dec = Decision(index=1)
+    ex._fill_pending_add(Sig(index=1, time_ms=1, o=100.6, h=101.0, l=100.0), dec)
+    assert [i for i in dec.intents if i.kind is IntentKind.ADD] == []
+    assert ex._add_lots == [], "nothing was bought — this test would pass for free otherwise"
+
+
+def test_an_add_carries_NO_stop_of_its_own():
+    """🔴 A PIN ON A DELIBERATE OMISSION, not an accident of the data.
+
+    This lot shares the position's one ratcheting stop. Attaching a stop here would put a second
+    source of truth for it on the wire — the exact duplication this seam removes.
+
+    ⚠ The assertion is only worth anything because a stop genuinely EXISTS at this moment: the
+    add was sized against one, and `_add_stop` is set by the very call under test. Asserting
+    `is None` without that would be true of a strategy that has no stops at all.
+    """
+    ex = _scaled_in()
+    dec = Decision(index=1)
+    ex._fill_pending_add(Sig(index=1, time_ms=1, o=100.6, h=101.0, l=100.0), dec)
+
+    assert ex._add_stop == 99.4, "the add WAS sized against a stop"
+    assert ex._current_stop() is not None, "the position HAS a stop to share"
+    add = next(i for i in dec.intents if i.kind is IntentKind.ADD)
+    assert add.stop is None

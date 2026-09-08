@@ -61,7 +61,8 @@ the live path look as though a re-entry's slot could serve a scale-in. It cannot
 1. ✅ **The contract** — this module. Tested, 15 cases, three watched RED by mutation
    (the rule-1 guard, the frozen intent, the direction check), each killing exactly one test.
 2. ✅ **The strategy SPEAKS it** — every decision now carries the orders it would place,
-   alongside the booking it already did. Nothing reads them yet, by design.
+   alongside the booking it already did, **all four kinds including the add**. Nothing reads
+   them yet, by design.
 3. ⬜ **The live bridge consumes it** — refusals retire one at a time, add-size first.
 
 🔴 **Stage 2 was deliberately made SMALLER than first written down, and the reason is worth
@@ -91,6 +92,34 @@ copy of position state, which is the exact thing this whole exercise is removing
 ⚠ **The remembered stop is cleared where the position is cleared**, not on a timer. A stale one
 would swallow the first real move of the NEXT trade — silently, and only sometimes.
 
+## The add was the one kind nothing produced, and it took a hunt to notice
+
+🔴 **`ADD` sat in the vocabulary unemitted, and the reason is structural rather than an
+oversight.** The emission sites were found by reading what the strategy appends to its FILL
+list — three of them. **An add is separate LOTS and never reaches that list**, so a reader
+counting fills concludes this strategy does not scale in, and a live path built from fills
+alone would trade the base position and say nothing. That is the precise divergence the
+bridge's scale-in refusal exists to prevent, and it would have been rebuilt here.
+
+⚠ **The vocabulary being MEASURED is what saved it.** `ADD` existed because the config has a
+scale-in setting, not because a fill site produced one — so the gap showed up as a kind with no
+producer. **A vocabulary derived only from what the code emits would have had no `ADD` at all,
+and nothing would have looked wrong.**
+
+## 🔴 The hazard stage 3 must not walk into: a stop that is right and too small
+
+**An add fills. The stop price has not moved. No `MOVE_STOP` is emitted** — correctly, because
+the stop is emitted on change and it did not change. **The broker's stop order now covers less
+volume than the position holds**, and nothing in the stream says so.
+
+⚠ **Every symptom points the wrong way.** The stop price matches, the position size matches the
+strategy's, and the two books agree on every number a reconciler compares. The only thing wrong
+is the protective order's VOLUME, which is not a number either side is currently comparing.
+
+**Whoever consumes this must reconcile the stop's volume on an `ADD`, not just its price.** It
+is written at the emission site as well, because a rule that lives only in a design doc is a
+rule the next person does not read.
+
 ## The evidence stage 2 actually stands on
 
   * **The book did not move.** Stack `st_631986bbd9` replayed: 272 trades, 223.3339464065 R,
@@ -99,7 +128,16 @@ would swallow the first real move of the NEXT trade — silently, and only somet
     HEAD** on all four full-config exports — including each one's cold-start divergence, which
     is the part that would have shifted had anything real changed.
   * **Green where it is meant to be green:** exit 0 on all four exports at `--warmup 100` and
-    `1000` (`2a817` also at 200 / 500). 623 tests pass.
+    `1000` (`2a817` also at 200 / 500). 626 tests pass.
+  * **Each new test was watched RED by mutation, one mutation per claim.** Deleting the add
+    emission, attaching a stop to it, and instructing an add that never filled each redden their
+    own named test.
+
+🔴 **One of those mutations was MIS-ANCHORED on the first pass and the whole set looked fine
+anyway.** It was aimed below the check it claimed to test, so the unfilled-add case survived
+every mutation in the run — **unproven, while sitting in a report that said three of three
+killed something.** A mutation map is only worth what its anchors are: check that each one can
+actually reach the branch its test names.
 
 ⚠ **Read those three as one claim with rule 14 attached: they say the new stream costs nothing,
 never that it is RIGHT.** Nothing consumes it, so nothing can yet prove it useful — that is

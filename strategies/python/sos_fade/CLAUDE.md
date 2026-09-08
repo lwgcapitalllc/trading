@@ -3158,3 +3158,37 @@ durable half of this change.** It was a hand-rolled stand-in carrying two fields
 third and 51 tests broke at once. **They broke in the lucky direction** — an attribute error, not a
 wrong number — but the same drift on a field the double happened to have would have passed. Rule 13,
 arriving as a bill: the double was less capable than production, so it described a system nobody runs.
+
+### The add is the fourth order shape, and it had no fill record to be found by
+
+`_fill_pending_add` now states the lot it bought, in the same shared vocabulary as the entry, the
+partial exit and the stop. It takes the bar's decision to say it on, which is why its signature
+grew a second argument.
+
+🔴 **IT WAS MISSED ON THE FIRST PASS, AND THE REASON GENERALISES.** The other three emission sites
+were found by reading what the strategy appends to `dec.fills`. **An add is separate LOTS and never
+appears there** — so anything built by counting fills concludes this bot does not scale in. A live
+path built that way would trade the base position, place no adds, and report success. **That is
+exactly the divergence the bridge's scale-in refusal is written against**, and it would have been
+rebuilt one layer up.
+
+⚠ **`dec` is REQUIRED on that call, never defaulted.** An optional one would let a future caller
+drop the add from the stream in silence — the same failure, one level down.
+
+🔴 **NO STOP TRAVELS WITH AN ADD, AND THE CONSEQUENCE IS A TRAP FOR WHOEVER CONSUMES THIS.** The lot
+shares the position's one ratcheting stop, so attaching a stop here would be a second source of
+truth for it. **But the stop is emitted on CHANGE only — so an add that fills while the stop price
+is unmoved emits nothing at all, and a broker's stop order then covers less volume than the position
+holds.** Every number a reconciler compares still agrees: same stop price, same position size. The
+protective order's VOLUME is the one thing nothing is comparing. **Reconcile stop volume on an add.**
+
+**Tests: 3 more in `tests/test_intent_stream.py` (626 total).** Each watched RED by its own
+mutation — deleting the emission, attaching a stop to it, and instructing an add that never filled.
+🔴 **The first mutation pass was MIS-ANCHORED and still looked clean**: it was aimed below the check
+it claimed to test, so the unfilled-add case survived every mutation while the report said three of
+three killed something. **A mutation map is worth exactly what its anchors are.**
+
+**PARITY: byte-identical to the previous commit on all four exports at `--warmup 100`.** ⚠ **The
+gate cannot see this change at all** — every export ran with scale-in off, so no export walks the
+add path. What the green run establishes is that threading the decision through did not move the
+entry or exit logic; the add emission itself is covered by unit tests and the lab, never by Pine.
