@@ -5651,7 +5651,34 @@ nothing about whether the instrument's history is replayable.
 ⚠ **The venue lot ceiling travels with each symbol** (rule 17): it is part of what a run is measured
 on, so it is served rather than looked up again elsewhere.
 
-✅ **32 tests, 7 mutations RUN and 7 killed.** 🔴 **One SURVIVED and found a real gap: the
+🔴 **ONE DROPPED REQUEST USED TO BLANK THE WHOLE PICKER, AND IT WAS REPORTED OVER A TERMINAL THAT
+WAS CONNECTED THE ENTIRE TIME (2026-09-07).** Two faults, both here. The identity probe got **no
+retry**, and the observed failure is an immediate *"Remote end closed connection without response"*
+rather than a timeout — so a sub-second tunnel blip was indistinguishable from a dead terminal. And
+because the identity check runs BEFORE the cache is consulted, that blip **threw away 1,085
+instruments read seconds earlier** and told the reader the broker could not be reached. MEASURED
+minutes later: 30 probes out of 30 clean, 0.45s each; the symbol pull finishes in 0.8s and does not
+block the health probe, so the agent was never the problem.
+
+✅ **The probe is asked twice** (`_PROBE_ATTEMPTS`), and ⚠ **only a TRANSPORT failure is retried** —
+a terminal that answers and says it is not connected has given a real answer, and asking again is
+just being slower about believing it.
+
+✅ **A failed probe now serves the LAST GOOD read rather than a blank panel**, flagged `stale: true`
+with its `reason` and the time it was read. ⚠ **`available` still means "there is a list to show"**,
+so the picker keeps working. ⚠ **The payload keeps the server and account it was ACTUALLY read
+from** — the one real hazard is that the terminal moved during the gap, and an account number in
+front of the reader is what lets them notice. ⚠ **No TTL is applied on that path on purpose**: it is
+only reached when the terminal cannot be asked at all, and a list from an hour ago beats nothing —
+a broker's instruments change over months. The staleness is REPORTED, never enforced. ⚠ **With
+nothing ever read, it is still a refusal** — the fallback must not invent a list.
+
+⚠ **The generalisation is worth more than the fix: the rest of this app already tolerates a blip**
+(the health dot caches 30s, the bot snapshot and the calendar keep their last good rows and date
+them). This endpoint was the only thing on the page that panicked, so it was the only thing that
+looked broken — and it blamed the broker for its own brittleness.
+
+✅ **36 tests, 12 mutations RUN and 12 killed.** 🔴 **One SURVIVED and found a real gap: the
 disconnected-terminal test passed an explicit `False`, which `is False` and `is not True` both
 catch — so the two readings were indistinguishable and the suite was green either way. The case that
 separates them is a status dict with the key MISSING (the agent answered and did not say), which is

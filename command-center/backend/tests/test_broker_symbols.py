@@ -284,6 +284,109 @@ def test_a_terminal_that_changed_account_is_refetched(monkeypatch):
     assert out["server"] == "VantageMarkets-Demo"
 
 
+# ── The blip, and the list we already hold ────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _no_backoff(monkeypatch):
+    """The retry's sleep is real; the tests must not pay for it."""
+    monkeypatch.setattr(bs, "_PROBE_BACKOFF_S", 0)
+
+
+def test_a_dropped_request_is_asked_again_before_the_terminal_is_written_off(monkeypatch):
+    """🔴 Reported from the screen 2026-09-07 over a terminal that was connected the whole time.
+
+    The tunnel drops a single request now and then — an immediate "Remote end closed connection
+    without response", not a timeout — and with one attempt that blip was indistinguishable from a
+    dead terminal. The same terminal answered 30 probes out of 30 a minute later.
+    """
+    calls = {"n": 0}
+
+    def _status():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("MT5 agent /status: Remote end closed connection without response")
+        return CONNECTED
+
+    monkeypatch.setattr(bs.mt5_agent_client, "status", _status)
+    monkeypatch.setattr(
+        bs.mt5_agent_client,
+        "symbols",
+        lambda tradable_only=False: {
+            "symbols": [_raw("XAUUSD.p", "Gold .p\\XAUUSD.p")],
+            "total_on_terminal": 1,
+        },
+    )
+    out = bs.universe()
+    assert out["available"] is True
+    assert calls["n"] == 2
+
+
+def test_a_terminal_saying_it_is_disconnected_is_NOT_asked_twice(monkeypatch):
+    """That is a real answer, and asking again is just being slower about believing it.
+
+    Only a TRANSPORT failure is worth a second ask.
+    """
+    calls = {"n": 0}
+
+    def _status():
+        calls["n"] += 1
+        return {"mt5_connected": False, "error": "terminal not logged in"}
+
+    monkeypatch.setattr(bs.mt5_agent_client, "status", _status)
+    assert bs.universe()["available"] is False
+    assert calls["n"] == 1
+
+
+def test_a_blip_serves_the_list_we_already_hold_rather_than_a_blank_panel(monkeypatch):
+    """🔴 THE DEFECT THIS FIXES: 1,085 instruments read seconds earlier were thrown away.
+
+    The identity check runs before the cache is consulted — it has to, because the terminal can
+    switch accounts underneath us — and the first version RETURNED at that point. So one dropped
+    request told the reader the broker could not be reached, on a terminal that was connected.
+    """
+    state = {"up": True}
+
+    def _status():
+        if not state["up"]:
+            raise RuntimeError("MT5 agent /status: Remote end closed connection without response")
+        return CONNECTED
+
+    monkeypatch.setattr(bs.mt5_agent_client, "status", _status)
+    monkeypatch.setattr(
+        bs.mt5_agent_client,
+        "symbols",
+        lambda tradable_only=False: {
+            "symbols": [_raw("XAUUSD.p", "Gold .p\\XAUUSD.p")],
+            "total_on_terminal": 1,
+        },
+    )
+
+    good = bs.universe()
+    assert good["available"] is True and good["stale"] is False
+
+    state["up"] = False
+    out = bs.universe()
+    assert out["symbols"] is not None, "the list we already hold beats a blank panel"
+    assert out["available"] is True
+    assert out["stale"] is True, "and it must never pass as a fresh read"
+    assert "Remote end closed" in out["reason"]
+    # ⚠ It still names the terminal it was READ FROM — that is what lets a reader notice the
+    # account moved during the gap, which is the one real hazard of serving it at all.
+    assert out["server"] == "PUPrime-Demo"
+    assert out["account"] == 700152905
+    assert out["fetched_at"]
+
+
+def test_a_blip_with_NOTHING_held_is_still_a_refusal(monkeypatch):
+    """No cache, no answer. The stale path must not invent a list it never read."""
+    _agent(monkeypatch, status_exc=RuntimeError("MT5 agent /status: connection refused"))
+    out = bs.universe()
+    assert out["available"] is False
+    assert out["symbols"] is None
+    assert out["stale"] is False
+
+
 def test_refresh_skips_the_cache(monkeypatch):
     calls = {"n": 0}
 

@@ -4374,6 +4374,21 @@ rather than covered** — a ranking tier that was unreachable by construction, w
 reader as a covered branch. ⚠ **The fixture is cut from the live terminal and sorted exactly as the
 backend serves it**; in any other order it would pin an order the server never sends.
 
+🔴 **ONE DROPPED REQUEST BLANKED THE WHOLE PICKER, AND IT WAS REPORTED FROM THE SCREEN OVER A
+TERMINAL THAT WAS CONNECTED THE ENTIRE TIME (2026-09-07).** The form showed *"Could not read the
+broker's instrument list"* plus *"nobody has recorded how this account spells its symbols"*, and the
+broker had fallen back to the cent account — three faults reading as three problems, all caused by
+one blip on the identity probe. The cause and the fix are the backend's; what this file owes is the
+rendering rule. ⚠ **A remembered list must never pass as a fresh one**: when the served universe is
+`stale`, the caption names the TIME it was read and the ACCOUNT it came from, both inside the
+dropdown's footer and under the input, because the one real hazard is that the terminal moved during
+the gap and an account number in front of the reader is what lets them notice.
+
+⚠ **The broker's fallback when nothing is attached is the FIRST profile, which is a pre-existing
+behaviour this feature made loud.** It lands on the cent account — a different contract size, and
+the one profile with no recorded symbol spelling, so it produces a second warning that looks like an
+independent fault. **Worth fixing at the source rather than captioning here.**
+
 ⚠ **The populated dropdown was driven in a browser with the real payload injected** (12 chips with
 real counts, the 60-row cap, the footer naming the terminal) **and the unavailable path was driven
 against a real outage.** Story: `../docs/FRONTEND_BUILD_NOTES.md`.

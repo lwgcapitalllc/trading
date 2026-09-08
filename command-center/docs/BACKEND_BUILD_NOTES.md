@@ -349,3 +349,34 @@ separates them is a status dict with the key absent: the agent answered and did 
 working on a fault nobody arranged.
 
 **32 tests, all seven mutations killed after the gap was closed.**
+
+### The blip that blamed the broker (2026-09-07, same day)
+
+Reported from the screen within the hour: the Run form said the instrument list could not be read,
+over a terminal that was connected and trading.
+
+**Measured while diagnosing, in this order:**
+
+| check | result |
+|---|---|
+| agent `/status`, 5 probes | 200 in ~0.45s each |
+| SSH tunnel | bound on both IPv4 and IPv6 |
+| does the symbol pull block the health probe? | **no** — pull done in 0.82s, 4/4 status probes normal throughout |
+| agent `/status`, 30 probes | **30 ok, 0 failed** |
+| the endpoint itself | `available: true`, 1,085 symbols |
+
+The prime suspect was my own endpoint holding the agent's lock while enumerating 1,085 symbols. It
+was cleared: the pull is sub-second and the probe answers normally during it.
+
+**The fault was the error handling, and it was two things.** The identity probe had no retry — and
+the failure observed is an immediate *"Remote end closed connection without response"*, not a
+timeout, so a single dropped request read as a dead terminal. Worse, the identity check runs before
+the cache is consulted (it must, because the terminal can switch accounts), and the first version
+returned at that point — so the blip discarded 1,085 instruments read seconds earlier.
+
+**The rest of this app already tolerates a blip**: the health dot caches for 30 seconds, and both
+the bot snapshot and the calendar keep their last good rows and date them. This endpoint was the
+only thing on the page that panicked, so it was the only thing that looked broken.
+
+Fixed: probe twice, transport failures only; serve the last good read flagged stale with the time
+and the account it came from. **36 tests, 12 mutations run and 12 killed.**

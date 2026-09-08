@@ -50,6 +50,10 @@ _TTL_SECONDS = 30 * 60
 #: terminal that switches accounts cannot be served the previous account's universe.
 _cache: dict[tuple[str, Optional[int]], tuple[float, dict]] = {}
 
+#: The identity of the most recent SUCCESSFUL read, so a blip on the identity probe can still be
+#: answered from what we already hold. `None` until one has succeeded this process.
+_last_key: Optional[tuple[str, Optional[int]]] = None
+
 
 # ── Asset classes ──────────────────────────────────────────────────────────────
 
@@ -170,21 +174,43 @@ def _shape(raw: dict) -> dict:
     }
 
 
+#: How many times the identity probe is asked before the terminal is called unreachable.
+#: 🔴 **ONE ATTEMPT WAS NOT ENOUGH AND THE PICKER BLAMED THE BROKER FOR IT.** The tunnel drops a
+#: single request now and then — the observed failure is an immediate *"Remote end closed
+#: connection without response"*, not a timeout — and with no retry that blip is indistinguishable
+#: from a dead terminal. Reported from the screen 2026-09-07 over a terminal that was connected the
+#: whole time and answering 30 probes out of 30 a minute later.
+_PROBE_ATTEMPTS = 2
+_PROBE_BACKOFF_S = 0.4
+
+
 def _attached() -> tuple[str, Optional[int]]:
     """The terminal the lab is attached to right now, or a raised RuntimeError.
 
     ⚠ **An unreachable agent RAISES rather than returning blanks.** A blank server would key the
     cache the same way for every outage, and the second caller would then be served the previous
     broker's universe under a terminal nobody can reach.
+
+    ⚠ **Only a TRANSPORT failure is retried.** A terminal that answers and says it is not connected
+    has given a real answer, and asking it twice would just be slower about believing it.
     """
-    st = mt5_agent_client.status()
-    if st.get("mt5_connected") is not True:
-        raise RuntimeError(st.get("error") or "the terminal is not connected to a broker")
-    server = str(st.get("server") or "")
-    if not server:
-        raise RuntimeError("the terminal did not say which server it is on")
-    account = st.get("account")
-    return server, (int(account) if account is not None else None)
+    last: Exception = RuntimeError("the terminal was never asked")
+    for attempt in range(_PROBE_ATTEMPTS):
+        try:
+            st = mt5_agent_client.status()
+        except Exception as exc:  # noqa: BLE001 - a transport failure is worth one more ask
+            last = exc
+            if attempt + 1 < _PROBE_ATTEMPTS:
+                time.sleep(_PROBE_BACKOFF_S)
+            continue
+        if st.get("mt5_connected") is not True:
+            raise RuntimeError(st.get("error") or "the terminal is not connected to a broker")
+        server = str(st.get("server") or "")
+        if not server:
+            raise RuntimeError("the terminal did not say which server it is on")
+        account = st.get("account")
+        return server, (int(account) if account is not None else None)
+    raise RuntimeError(str(last))
 
 
 def universe(refresh: bool = False) -> dict:
@@ -197,6 +223,20 @@ def universe(refresh: bool = False) -> dict:
     try:
         server, account = _attached()
     except Exception as exc:  # noqa: BLE001 - every failure here means "cannot ask"
+        # 🔴 **A LIST WE ALREADY HOLD BEATS A BLANK PANEL, and serving nothing here was the defect.**
+        # The identity check runs before the cache is consulted (it has to — rule 16, the terminal
+        # can switch accounts underneath us) and the first version RETURNED at this point, so one
+        # dropped request threw away 1,085 instruments read seconds earlier and told the reader the
+        # broker could not be reached. On a terminal that was connected the entire time.
+        # ⚠ **It is served STALE, never as a fresh answer**: the payload keeps the server and
+        # account it was actually read from and carries the time, so the page says which terminal
+        # it describes and when. That is the honest form of the rule-16 hazard — the terminal MAY
+        # have moved during the blip, and a reader who can see the account it came from can tell.
+        # ⚠ **This is the pattern the rest of this app already uses** for a failed refetch (the bot
+        # snapshot and the calendar both keep their last good rows and date them).
+        stale = _last_good()
+        if stale is not None:
+            return {**stale, "stale": True, "reason": str(exc)}
         return _unavailable(str(exc))
 
     key = (server, account)
@@ -224,6 +264,7 @@ def universe(refresh: bool = False) -> dict:
 
     payload = {
         "available": True,
+        "stale": False,
         "reason": None,
         "server": server,
         "account": account,
@@ -236,6 +277,8 @@ def universe(refresh: bool = False) -> dict:
         "symbols": symbols,
     }
     _cache[key] = (time.monotonic(), payload)
+    global _last_key
+    _last_key = key
     return payload
 
 
@@ -246,6 +289,7 @@ def _unavailable(reason: str, server: str = "", account: Optional[int] = None) -
     """
     return {
         "available": False,
+        "stale": False,
         "reason": reason,
         "server": server,
         "account": account,
@@ -257,6 +301,22 @@ def _unavailable(reason: str, server: str = "", account: Optional[int] = None) -
     }
 
 
+def _last_good() -> Optional[dict]:
+    """The most recent successfully-read universe, or None if there has never been one.
+
+    ⚠ **No TTL is applied here on purpose.** This path is only reached when the terminal cannot be
+    asked at all, and at that moment a list from an hour ago is strictly more useful than nothing —
+    a broker's instruments change over months. The staleness is REPORTED rather than enforced, so
+    the decision about whether it is too old belongs to the person reading the timestamp.
+    """
+    if _last_key is None:
+        return None
+    hit = _cache.get(_last_key)
+    return hit[1] if hit else None
+
+
 def clear_cache() -> None:
     """Drop every cached universe. Used by the tests, and by an explicit refresh."""
+    global _last_key
     _cache.clear()
+    _last_key = None

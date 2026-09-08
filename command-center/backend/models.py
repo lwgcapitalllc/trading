@@ -1328,6 +1328,11 @@ class BrokerUniverse(BaseModel):
     """
 
     available: bool
+    #: True when the list is the LAST GOOD read being served because the terminal could not be
+    #: re-checked. ⚠ **`available` still means "there is a list to show"** — the reader gets the
+    #: instruments and the caption says when they were read and from which account, rather than a
+    #: blank panel blaming the broker for a dropped request.
+    stale: bool = False
     reason: Optional[str] = None
     server: str = ""
     account: Optional[int] = None

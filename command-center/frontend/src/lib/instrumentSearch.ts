@@ -46,6 +46,9 @@ export interface BrokerSymbolClass {
  *  array as "this broker offers nothing" would be describing an outage as a product decision. */
 export interface BrokerUniverse {
   available: boolean
+  /** True when this is the LAST GOOD list, served because the terminal could not be re-checked.
+   *  The instruments are still usable; the page says when they were read and from which account. */
+  stale: boolean
   reason: string | null
   server: string
   account: number | null

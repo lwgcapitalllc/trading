@@ -111,6 +111,15 @@ export function InstrumentPicker({
   }
 
   const unavailable = universe != null && !universe.available
+  // 🔴 **A REMEMBERED LIST MUST NEVER PASS AS A FRESH ONE.** When the terminal cannot be re-checked
+  // the backend serves the last good read rather than a blank panel — which is right, and is only
+  // honest if the page says so. The caption names the TIME and the ACCOUNT it was read from,
+  // because the one real hazard is that the terminal moved during the gap, and an account number
+  // in front of the reader is what lets them notice.
+  const stale = universe?.stale === true
+  const readAt = universe?.fetched_at
+    ? new Date(universe.fetched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null
   // 🔴 **The box only swaps to the QUERY while there is a list to filter.** Focusing blanks the
   // field so you can type a search over it — fine while the dropdown is open, because the current
   // pick is still on screen with a tick beside it. With the terminal unreachable there IS no
@@ -251,9 +260,14 @@ export function InstrumentPicker({
                 {hidden} more match — keep typing to narrow it.
               </div>
             )}
-            <div className="px-3 py-[6px] border-t border-border-subtle text-[10px] text-text-tertiary">
+            <div
+              className={`px-3 py-[6px] border-t border-border-subtle text-[10px] ${
+                stale ? 'text-warn-text' : 'text-text-tertiary'
+              }`}
+            >
               {universe?.count} instruments on <span className="font-mono">{universe?.server}</span>
               {universe?.account ? ` · ${universe.account}` : ''}
+              {stale && readAt ? ` · read at ${readAt}, not re-checked just now` : ''}
             </div>
           </div>
         )}
@@ -261,6 +275,15 @@ export function InstrumentPicker({
 
       {/* 🔴 "Could not ask" gets its own sentence. Silence here would read as a broker with
           nothing to offer, and the box still works — it is a plain text field again. */}
+      {/* ⚠ Stated OUTSIDE the dropdown too — a reader who never opens the list still has to know the
+          instrument in the box was checked against a remembered universe. */}
+      {stale && (
+        <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
+          Couldn’t re-check the terminal just now, so this is the list read
+          {readAt ? ` at ${readAt}` : ' earlier'} from {universe?.server}
+          {universe?.account ? ` · ${universe.account}` : ''}.
+        </div>
+      )}
       {unavailable && (
         <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
           Could not read the broker’s instrument list: {universe?.reason}. Type the symbol exactly
