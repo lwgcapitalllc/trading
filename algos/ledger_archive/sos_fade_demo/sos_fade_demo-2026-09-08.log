@@ -1,0 +1,17 @@
+2026-09-08 04:23:55,713 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_sl_deep: True → False, exec_sec_trigger: 'FVG in zone' → 'FVG in zone + Reclaim Entry'. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-08 04:24:07,132 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-08 04:24:07,135 [INFO] Stop requested — shutting down.
+2026-09-08 04:24:07,137 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-08 04:24:07,994 [INFO] MT5 disconnected.
+2026-09-08 04:24:45,873 [INFO] SOS Fade | SosFadeStrategy v190 | hash b7e118f236d0 | commit 9586bc1c | frozen | LIVE
+2026-09-08 04:24:46,465 [INFO] Connected | #700152905 | $14,538.88 | PUPrime-Demo
+2026-09-08 04:24:46,466 [INFO] MT5 connection lock released
+2026-09-08 04:24:46,712 [INFO] Sizing basis 10,020.65 = broker balance 14,538.88 - 4,518.23 stated adjustment
+2026-09-08 04:24:46,713 [INFO] Sizing against account balance $10,020.65
+2026-09-08 04:24:46,725 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-08 04:24:46,726 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-08 04:24:46,731 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-08 04:24:51,445 [INFO] Warmed 5000 bars (2026-06-23 12:45:00+00:00 → 2026-09-08 04:00:00+00:00) in 4.6s
+2026-09-08 04:24:55,075 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-23 12:50:00+00:00 → 2026-09-08 04:15:00+00:00).
+2026-09-08 04:24:55,077 [INFO] Equity re-anchored to the account after warm-up: 9,998.56 → 10,020.65
+2026-09-08 04:24:55,777 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
