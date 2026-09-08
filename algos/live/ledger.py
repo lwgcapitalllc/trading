@@ -168,6 +168,15 @@ _DECISION_EVENTS = {
     # acted on: closing "some" lots would mean inventing a policy for a case nobody has built
     # (rule 9), and the record is what makes the first occurrence answerable.
     "add_partial_bank",
+    # ── a scale-in lot the broker does NOT hold (2026-09-08). DECISIONS by the same subject test:
+    # they answer "how much of this trade is really on", which is the question every later stop
+    # move, bank and R is computed against. ⚠ The pair is deliberately split rather than one event
+    # with a flag: `add_shortfall` is a divergence that HALTS the bot, and `add_shortfall_
+    # unmeasurable` is the bridge saying it could not tell rounding from divergence and did
+    # nothing. Reading those as one row would make *we stopped* and *we could not ask* the same
+    # record, which is the collapse rule 1 exists to prevent.
+    "add_shortfall",
+    "add_shortfall_unmeasurable",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

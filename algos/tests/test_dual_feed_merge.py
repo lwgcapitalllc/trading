@@ -632,17 +632,27 @@ def test_the_REAL_shipped_strategy_config_cannot_go_live_until_scale_in_is_turne
     default moves back, or the day the bridge learns to place an add — and either of those is a
     change somebody has to come here and re-state.
 
+    ✅ **IT WENT RED ON 2026-09-08 FOR THE SECOND REASON, AND IS RE-STATED RATHER THAN LOOSENED.**
+    The bridge learned to place an add, so the shipped config is supported now. What the test
+    pins is the same claim from the other side: the shipped scale-in mode is the one this bridge
+    can actually mirror, and a mode it cannot is still refused by name.
+
     ⚠ **The LIVE bot is unaffected and that is checked here rather than assumed**: its instance
     config STATES the setting rather than inheriting it, which is exactly why 53 settings were
-    pinned there on 2026-08-26. Turn it off and the same config is supported.
+    pinned there on 2026-08-26.
     """
     from sos_fade import LAB_STRATEGY
 
     shipped = LAB_STRATEGY["config"](symbol="XAUUSD.p")
     assert shipped.exec_scale_in is True, "the default moved — re-state this test, do not loosen it"
-    with pytest.raises(
-        live_bridge.UnsupportedStrategyConfig, match="no path that places a second entry"
-    ):
-        live_bridge.assert_supported(shipped)
+    # The mode is the half that decides whether this bridge can mirror it at all.
+    assert shipped.exec_scale_mode == "Trail", (
+        "the shipped scale-in mode moved. Only a MARKET add is mirrorable today — re-state this "
+        "test against the new mode, and check `assert_supported` still refuses a resting one."
+    )
+    live_bridge.assert_supported(shipped)  # no raise
 
-    live_bridge.assert_supported(LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_scale_in=False))
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="rests a LIMIT"):
+        live_bridge.assert_supported(
+            LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_scale_mode="BOS retest")
+        )

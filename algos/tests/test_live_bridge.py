@@ -340,6 +340,7 @@ class _FakeExecution:
         entry_kind="primary",
         current_stop=None,
         entry_style="resting",
+        base_qty=None,
     ):
         # HOW this order layer opens a position. Every real execution declares it (the contract
         # requires it and `verify_live_ready` refuses without it), so this fake declares it too —
@@ -378,6 +379,10 @@ class _FakeExecution:
         self._current_stop_value = current_stop
         self._entry = 0.0
         self._stage = 0
+        # The BASE position's size in instrument units, set by the real `Execution` at the entry
+        # fill. It is the only thing that bounds a scale-in lot — the add's ceiling is a multiple
+        # of it — so a fake without it could not reach the check that keeps an add in range.
+        self._base_qty = base_qty
         self.blocks: list = []
         self.misses: list = []
         # The restart/re-warm seam. The real `Execution` has both (see its
@@ -386,6 +391,27 @@ class _FakeExecution:
         # production trap this file was already bitten by on 2026-08-07.
         self.snapshot: dict = {}
         self.restored = None
+
+    @property
+    def cfg(self):
+        """The PUBLIC read of the same object `_cfg` holds — which is what production does.
+
+        🔴 **The bridge reads BOTH names**: `_plan` and the scale-in ceiling read `cfg`, the
+        banking gate reads `_cfg`. On the real `Execution` they are one object behind a property,
+        so they cannot disagree. This fake had them as two independent attributes, so a test that
+        set one left the other `None` — and `_plan` was reading `None` for the config on every
+        test that passed one. Survivable for a base entry, whose sizing then falls back to its own
+        defaults; not survivable for a scale-in lot, whose ceiling is read straight off it.
+
+        ⚠ **The setter writes `_cfg`, so the two CANNOT be made to differ here either.** A double
+        whose two views of one object can diverge models a strategy that does not exist — the
+        trap this file has now recorded four times, arriving as an attribute rather than a method.
+        """
+        return self._cfg
+
+    @cfg.setter
+    def cfg(self, value):
+        self._cfg = value
 
     def _current_stop(self) -> float:
         """What the strategy wants the stop to be RIGHT NOW.
@@ -610,25 +636,67 @@ def test_a_minimal_mirrorable_config_is_supported():
     live_bridge.assert_supported(cfg)  # no raise
 
 
-def test_SCALE_IN_is_refused_because_the_bridge_has_no_second_entry():
-    """The refusal had NO test at all until 2026-09-07, and it guards a real divergence.
-
-    The bridge mirrors one entry limit and one ratcheting stop, so an add is simply never placed:
-    the bot would trade the base position, say nothing, and the backtest would show a scaled book
-    against an unscaled account. Refusing to start is the only honest answer, and that is what
-    this pins.
-    """
-    cfg = types.SimpleNamespace(
+def _scale_cfg(**kw):
+    base = dict(
         exec_tp1_pct=0.0,
         exec_tp2_pct=0.0,
         exec_secondary=False,
         fill_model="bar",
         exec_scale_in=True,
+        exec_scale_mode="Trail",
     )
-    with pytest.raises(
-        live_bridge.UnsupportedStrategyConfig, match="no path that places a second entry"
-    ):
-        live_bridge.assert_supported(cfg)
+    base.update(kw)
+    return types.SimpleNamespace(**base)
+
+
+def test_a_MARKET_scale_in_is_supported_now_that_the_add_path_exists():
+    """🔴 **THE BLANKET REFUSAL WAS RETIRED ON 2026-09-08, AND THIS TEST REPLACES ITS PIN.**
+
+    The old one asserted that any scale-in refuses, and it went RED the day the bridge learned to
+    place an add — which is exactly what it was written to do. **A refusal is retired when the
+    capability it stood in for exists, never to get a bot started**, and the four pieces it stood
+    in for are the placement route, the stop ratchet across every ticket, the exits across
+    tickets, and an agreement check that can tell a scaled trade from duplicate orders.
+    """
+    live_bridge.assert_supported(_scale_cfg())  # no raise
+
+
+def test_a_RESTING_scale_in_is_still_refused_because_nothing_here_rests_an_add():
+    """The mode that waits for price to come back to a level has no path here.
+
+    ⚠ **This is the narrow refusal that replaced the blanket one**, and it guards the same
+    divergence: the strategy would fill that limit in its own book and the account would never
+    hold the lot. The message names the setting and the value to use.
+    """
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="rests a LIMIT"):
+        live_bridge.assert_supported(_scale_cfg(exec_scale_mode="BOS retest"))
+
+
+def test_scale_in_on_a_NETTING_account_is_refused():
+    """🔴 On a netting account an add MERGES into the position already held, and every read in
+    the add path assumes it does not — the size reconciliation would see the added lots as excess
+    on the base ticket and bank away the position the strategy is still managing.
+
+    ⚠ It is a BROKER fact, so it is asked with the answer passed in rather than read from a
+    terminal: this module is imported by the promote preview, which has none.
+    """
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="NETS rather than hedges"):
+        live_bridge.assert_hedging_for_scale_in(_scale_cfg(), hedging=False)
+
+
+def test_scale_in_is_refused_when_the_account_kind_CANNOT_BE_ASKED():
+    """Rule 1. *Could not ask* may not buy the permissive answer when the answer decides whether
+    a live bot's whole add path is arithmetic about the right book."""
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="could not say"):
+        live_bridge.assert_hedging_for_scale_in(_scale_cfg(), hedging=None)
+
+
+def test_a_hedging_account_and_a_bot_with_no_scale_in_are_both_allowed():
+    """The CONTROL. A check that refuses everything is not a check — and the second half matters
+    just as much: a bot with scale-in off must not be asked about its account at all, or every
+    bot running today would need a terminal that can answer."""
+    live_bridge.assert_hedging_for_scale_in(_scale_cfg(), hedging=True)
+    live_bridge.assert_hedging_for_scale_in(_scale_cfg(exec_scale_in=False), hedging=None)
 
 
 # ── the banking rungs the old check could not see (2026-09-01) ────────────────
@@ -3443,3 +3511,204 @@ def test_NO_position_list_moves_NOTHING_rather_than_assuming_no_adds():
     b, ops, _, _ = _scaled_position()
     b._sync_stop(_Dec(stop=3285.0), None)
     assert ("move_sl", 556, 3285.0) not in ops.actions
+
+
+# ── buying the scale-in lot (2026-09-08, add path 4/4) ────────────────────────
+#
+# 🔴 **THE FIRST CONSUMER OF THE ORDER-INTENT STREAM.** An add leaves no `Fill` record — it is
+# separate lots, so it never reaches `dec.fills` — so a bridge reading fills alone trades the base
+# position and says nothing. These drive what the strategy ASKED FOR.
+
+
+def _add_config(cap_x=0.5, risk_pct=10.0, point_value=1.0):
+    c = _Cfg(risk_pct, point_value)
+    c.exec_scale_in = True
+    c.exec_scale_mode = "Trail"
+    c.exec_scale_cap_x = cap_x
+    return c
+
+
+def _add_intent(qty=20.0, price=3300.0, direction=1):
+    """Built from the REAL intent class, never a look-alike. A stand-in would accept a field name
+    production does not have, which is how a stream and its consumer drift apart in silence."""
+    from execution.intents import IntentKind, OrderIntent
+
+    return OrderIntent(kind=IntentKind.ADD, direction=direction, qty=qty, price=price, reason="add")
+
+
+def _scaled_bridge(base_qty=100.0, base_lots=1.0, stop=3280.0, cfg=None, adds=None):
+    """A bot holding an ADOPTED base position, ready for the strategy to add to it."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 0, 3290.0, base_lots, stop)]
+    ex = _FakeExecution(
+        pos_dir=1,
+        qty=base_qty,
+        filled=0.0,
+        base_qty=base_qty,
+        adds=adds,
+        cfg=cfg or _add_config(),
+        current_stop=stop,
+    )
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._contract_size = lambda: 1.0
+    b.sync(_Dec(stop=stop), _Sig())  # adopt the base position
+    return b, ops, ledger, notes
+
+
+def _add_bar(b, intents, stop=3280.0):
+    dec = _Dec(stop=stop)
+    dec.intents = intents
+    b.sync(dec, _Sig())
+    return dec
+
+
+def test_an_ADD_intent_sends_a_MARKET_order_to_the_broker():
+    """Without this the strategy scales in, the account does not, and nothing anywhere says so —
+    the divergence the scale-in refusal stood in for."""
+    b, ops, ledger, _ = _scaled_bridge()
+    b._ex._adds = [[3300.0, 20.0]]
+    _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
+    sent = [a for a in ops.actions if a[0] == "market"]
+    assert sent, f"nothing was sent; actions were {ops.actions}"
+    assert "event:order_placed" in ledger.kinds()
+
+
+def test_the_add_goes_out_with_THIS_BARS_POSITION_STOP():
+    """🔴 A market order's stop travels WITH it and there is no second chance. The intent carries
+    no stop of its own on purpose — every lot shares the position's one ratcheting stop — so the
+    bridge has to supply it, and the value has to be the one the ratchet is about to move every
+    other ticket to on this same bar.
+    """
+    b, ops, _, _ = _scaled_bridge()
+    b._ex._adds = [[3300.0, 20.0]]
+    _add_bar(b, [_add_intent()], stop=3285.0)
+    market = next(a for a in ops.actions if a[0] == "market")
+    assert 3285.0 in market, f"the add did not carry the bar's stop: {market}"
+
+
+def test_the_add_is_NOT_recorded_as_a_resting_order():
+    """`_rest` means an order of ours is WAITING at the venue. A market add has already filled, so
+    recording it there would make the vanished-order sweep read a live position as an order that
+    disappeared, and the cancel-everything path would try to cancel a position.
+
+    🔴 **THE FIRST VERSION SURVIVED THE MUTATION THAT MAKES EVERY ORDER REST, and the reason is
+    worth more than the fix.** It asserted only that `_rest` was empty — which is also true when
+    NOTHING WAS PLACED, and under that mutation nothing was: the order became a limit the fake
+    broker refused. **The test was green for a reason it did not name.** So it now establishes
+    that the order really happened before saying where it was not recorded.
+    """
+    b, ops, _, _ = _scaled_bridge()
+    b._ex._adds = [[3300.0, 20.0]]
+    _add_bar(b, [_add_intent()])
+    assert [a for a in ops.actions if a[0] == "market"], "nothing was placed — this proves nothing"
+    assert all(v is None for v in b._rest.values()), b._rest
+
+
+def test_the_add_LOT_COUNT_comes_from_the_sizing_seam_and_not_from_the_strategys_units():
+    """🔴 The strategy counts instrument UNITS and the broker takes LOTS. A bridge passing the
+    strategy's number straight through is the 54.82-lot order on a $2,000 account.
+
+    20 units at a contract size of 100 is 0.20 lots, and that is what must reach the wire.
+    """
+    b, ops, _, _ = _scaled_bridge()
+    b._contract_size = lambda: 100.0
+    b._ex._adds = [[3300.0, 20.0]]
+    _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
+    market = next(a for a in ops.actions if a[0] == "market")
+    assert 20.0 not in market, "the strategy's UNITS reached the broker as a lot count"
+    assert 0.2 in market, f"expected 0.20 lots on the wire, got {market}"
+
+
+def test_an_add_BIGGER_THAN_ITS_CAP_is_refused():
+    """🔴 THE BOUND THAT REPLACES THE RISK AUTHORISATION. `plan_order`'s check asks whether the
+    order equals a percentage of the balance — right for an entry, and wrong for an add, which is
+    sized off the profit the stop has locked. So it is switched off for an add, and this is what
+    goes back in its place: an add is never more than a multiple of the BASE position.
+    """
+    b, ops, ledger, _ = _scaled_bridge(base_qty=100.0, cfg=_add_config(cap_x=0.5))
+    b._ex._adds = [[3300.0, 80.0]]
+    _add_bar(b, [_add_intent(qty=80.0)])  # ceiling is 0.5 x 100 = 50
+    assert not [a for a in ops.actions if a[0] == "market"], "an over-cap add reached the broker"
+    codes = [kw.get("code") for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert "add_over_cap" in codes, codes
+
+
+def test_an_add_AT_its_cap_is_allowed():
+    """The CONTROL for the bound above. A check that refuses everything is not a check, and this
+    one sits exactly on the boundary the strategy's own arithmetic can reach."""
+    b, ops, _, _ = _scaled_bridge(base_qty=100.0, cfg=_add_config(cap_x=0.5))
+    b._ex._adds = [[3300.0, 50.0]]
+    _add_bar(b, [_add_intent(qty=50.0)])
+    assert [a for a in ops.actions if a[0] == "market"], "an add at its ceiling was refused"
+
+
+def test_an_add_whose_BOUND_CANNOT_BE_READ_is_refused():
+    """Rule 1. Without the base size or the cap there is nothing to check the lot against, and
+    *could not ask* may not buy the permissive answer when the answer is how much size reaches a
+    live account."""
+    b, ops, ledger, _ = _scaled_bridge(base_qty=None)
+    b._ex._adds = [[3300.0, 20.0]]
+    _add_bar(b, [_add_intent()])
+    assert not [a for a in ops.actions if a[0] == "market"]
+    codes = [kw.get("code") for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert "add_bound_unreadable" in codes, codes
+
+
+def test_an_add_with_NO_STOP_is_refused_rather_than_sent_naked():
+    """A market order carries its stop with it. Sending one now would open size nothing closes,
+    and the refusal codes are the add's own so a count can tell them from an entry's."""
+    b, ops, ledger, _ = _scaled_bridge()
+    b._ex._adds = [[3300.0, 20.0]]
+    _add_bar(b, [_add_intent()], stop=None)
+    assert not [a for a in ops.actions if a[0] == "market"]
+    codes = [kw.get("code") for kind, kw in ledger.rows if kind == "event:order_refused"]
+    assert "add_stop_unreadable" in codes, codes
+
+
+def test_a_bar_with_NO_add_intent_sends_nothing():
+    """The control that keeps every bot running today byte-identical: no intent, no order."""
+    b, ops, _, _ = _scaled_bridge()
+    before = list(ops.actions)
+    _add_bar(b, [])
+    assert [a for a in ops.actions if a[0] == "market"] == [a for a in before if a[0] == "market"]
+
+
+def test_a_REFUSED_add_HALTS_rather_than_trading_a_book_the_account_does_not_hold():
+    """🔴 THE AGREEMENT CHECK COMPARES DIRECTION AND PRESENCE, NEVER SIZE — so a refused add
+    leaves one position on each side and passes every other check, while the strategy ratchets,
+    banks and grades a position bigger than the account carries. This is the only thing that
+    notices.
+    """
+    b, ops, ledger, _ = _scaled_bridge(base_qty=100.0, cfg=_add_config(cap_x=0.5))
+    b._ex._adds = [[3300.0, 80.0]]
+    _add_bar(b, [_add_intent(qty=80.0)])  # refused: over cap
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "event:add_shortfall" in ledger.kinds()
+    assert b.halt_reason and "scale-in" in b.halt_reason
+
+
+def test_the_ORDINARY_ROUNDING_shortfall_does_not_halt():
+    """🔴 THE CONTROL THAT MAKES THE HALT USABLE. `plan_order` rounds a lot count DOWN to the
+    venue's step and never up (rule 17), so EVERY add that has ever been placed holds slightly
+    less than the units the strategy booked. Reading that as a divergence would halt the bot on
+    its own arithmetic, on every scaled trade.
+    """
+    b, ops, _, _ = _scaled_bridge()
+    # The broker holds 0.19L against 0.195 wanted — inside one 0.01 step.
+    b._ex._adds = [[3300.0, 0.195]]
+    ops.positions.append(_Pos(556, 0, 3300.0, 0.19, 3280.0))
+    _add_bar(b, [])
+    assert b.state is not live_bridge.BridgeState.HALTED, b.halt_reason
+
+
+def test_a_shortfall_that_CANNOT_BE_MEASURED_alerts_and_does_not_halt():
+    """Rule 1 at the halt. Without the volume step there is no way to tell this bridge's own
+    rounding from a real divergence, and halting a live bot on a number nobody could read is
+    acting on an answer that was never obtained. It is said out loud instead."""
+    b, ops, ledger, notes = _scaled_bridge()
+    b._ex._adds = [[3300.0, 20.0]]
+    ops.spec = None  # the terminal cannot describe the symbol
+    _add_bar(b, [])
+    assert b.state is not live_bridge.BridgeState.HALTED
+    assert "event:add_shortfall_unmeasurable" in ledger.kinds()
+    assert any("could not be read" in str(m) for m in notes)

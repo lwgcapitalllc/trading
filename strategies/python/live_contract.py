@@ -117,16 +117,33 @@ DECISION_FIELDS: Dict[str, Any] = {
     "s_stage": 0,
     "long_veto": False,
     "short_veto": False,
+    # 🔴 **What the strategy ASKED FOR, as `execution.intents.OrderIntent` values (2026-09-08).**
+    # Every other field here describes what the strategy DID; this one is the only channel for
+    # something it wants done that leaves no other trace. **A scale-in lot is separate lots, so
+    # it never reaches `fills` at all** — a live path reading fills alone trades the base position
+    # and says nothing, which is the divergence the whole add path exists to close.
+    #
+    # ⚠ **Empty is a legitimate answer**, and on most bars it is the right one. What is not
+    # legitimate is a strategy that adds size and leaves this empty: the read is a defensive
+    # `getattr`, so the bot would place no add, halt on the size shortfall, and the only clue
+    # would be a halt naming a lot nobody sent.
+    "intents": (),
 }
 
-#: The two that move money. Everything else in `DECISION_FIELDS` is reporting.
+#: The three that move money. Everything else in `DECISION_FIELDS` is reporting.
 #:
-#: 🔴 **A strategy that never populates these two is not broken-looking — it is SILENT.** `stop`
-#: is what ratchets the broker's stop; `fills` is what books the trade. Both are read defensively,
-#: so omitting them produces a bot that trades and never protects, with nothing in any log.
+#: 🔴 **A strategy that never populates these is not broken-looking — it is SILENT.** `stop` is
+#: what ratchets the broker's stop; `fills` is what books the trade; `intents` is what BUYS a
+#: scale-in lot. All three are read defensively, so omitting one produces a bot that trades and
+#: never protects, or that scales in on paper and not at the broker, with nothing in any log.
 #: **Any adopter's tests must assert these are POPULATED on a bar that should populate them.**
 #: Asserting that `step` returns an object passes against an adapter that sets nothing.
-LOAD_BEARING = ("stop", "fills")
+#:
+#: ⚠ **`intents` joined on 2026-09-08 and its "should populate" is narrower than the other two.**
+#: Most bars ask for no order at all, so empty is the ordinary answer and cannot be asserted
+#: blanket-fashion; what an adopter must pin is a bar that DOES add size. **It is here rather than
+#: in the reporting half because its value becomes a live order** — the same test `stop` passes.
+LOAD_BEARING = ("stop", "fills", "intents")
 
 
 class LiveContractError(RuntimeError):
@@ -170,6 +187,15 @@ class LiveDecision:
     s_stage: int = 0
     long_veto: bool = False
     short_veto: bool = False
+    #: What this bar ASKED FOR — `execution.intents.OrderIntent` values. Empty on most bars, and
+    #: the only channel for a scale-in lot, which leaves no `fills` record of its own.
+    #:
+    #: ⚠ **A LIST, defaulted per-instance like `fills` and never a shared `()`.** The producer
+    #: appends to it, so one mutable default shared across every decision ever built would grow
+    #: without bound and hand each bar the previous bars' orders. The CONTRACT declares the empty
+    #: tuple because that is what the live path READS WITH — an absent field must be safely
+    #: iterable — and the two agree on emptiness, which is the only property either side uses.
+    intents: List[Any] = field(default_factory=list)
 
 
 # ── the pass-through stages ──────────────────────────────────────────────────

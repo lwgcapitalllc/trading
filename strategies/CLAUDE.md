@@ -326,3 +326,36 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 - `command-center/backend/CLAUDE.md` — scanner, deploy endpoint, sync-status logic, MT5 agent client
 - `command-center/frontend/CLAUDE.md` — Strategies page, Deployed tab, Deploy button, MT5 compile button
 - `algos/markets/fx/tools/mt5_agent.py` — MT5 agent on VPS (port 8766); owns the Experts folder write path
+
+## The live contract gained `intents`, and it is LOAD-BEARING (2026-09-08)
+
+`DECISION_FIELDS` now declares `intents` — what a bar ASKED FOR, as `execution.intents.OrderIntent`
+values — and `LOAD_BEARING` is three fields rather than two.
+
+🔴 **EVERY OTHER FIELD IN THAT CONTRACT DESCRIBES WHAT THE STRATEGY DID; THIS ONE IS THE ONLY
+CHANNEL FOR SOMETHING IT WANTS DONE THAT LEAVES NO OTHER TRACE.** A scale-in lot is separate lots,
+so it never reaches `fills` at all — a live path reading fills alone trades the base position and
+says nothing, which is the divergence the whole add path exists to close.
+
+🔴 **IT IS LOAD-BEARING BECAUSE ITS VALUE BECOMES A LIVE ORDER**, the same test `stop` passes. A
+strategy that adds size and leaves this empty produces a bot that scales in on paper and not at the
+broker; the read is a defensive `getattr`, so nothing fails loudly and the only clue is a halt
+naming a lot nobody sent.
+
+⚠ **Its "should populate" is NARROWER than the other two.** Most bars ask for no order, so empty is
+the ordinary answer and cannot be asserted blanket-fashion. What an adopter must pin is a bar that
+DOES add size.
+
+⚠ **`LiveDecision` declares it as a LIST with a per-instance default, while the contract declares
+the empty tuple.** They are deliberately different and the difference is not sloppiness: the
+contract states what the live path READS WITH (an absent field must be safely iterable), and the
+dataclass states what a PRODUCER appends to — one shared mutable default would grow without bound
+and hand each bar the previous bars' orders. The two agree on emptiness, which is the only property
+either side uses.
+
+🔴 **NOBODY DECLARED IT FOR AS LONG AS IT EXISTED, AND THE GUARD IS WHAT FOUND IT.**
+`test_live_contract.py` greps `algos/live/` for decision reads and requires each to be declared —
+it went red the moment the bridge started reading `intents`, then red again on `LiveDecision` for
+the same field. **Two links of one chain, each catching the next.** ⚠ `sos_fade.execution.Decision`
+satisfies the contract independently and is still not being migrated onto `LiveDecision`; the test
+asserts the two agree, it does not merge them.

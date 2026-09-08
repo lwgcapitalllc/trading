@@ -3694,3 +3694,118 @@ so the scale-in refusal stays up** — retired when the capability is real, neve
 started.
 
 ⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and no bot can reach any of it today.
+
+### The bridge BUYS the scale-in lot, and the refusal is retired (2026-09-08, add path 4/4)
+
+**`_mirror_strategy_add` places the add at market, on the bar the strategy bought it.** With the
+placement route, the stop ratchet across every ticket, the exits across tickets and an agreement
+check that can tell a scaled trade from duplicate orders, the capability the blanket refusal stood
+in for exists — so `assert_supported` no longer refuses `exec_scale_in`. **A refusal is retired
+when the thing it refuses can be done, never to get a bot started.**
+
+🔴 **IT IS THE FIRST CONSUMER OF THE ORDER-INTENT STREAM, and that is the whole reason the stream
+exists.** An add leaves NO `Fill` record — it is separate lots, so it never reaches `dec.fills` —
+so a bridge reading fills alone trades the base position and says nothing. Every other mirror here
+reads a fill; this one reads what the strategy ASKED FOR.
+
+🔴 **THE SIZE STILL COMES FROM `_plan`, and exactly one argument differs.** `plan_order`'s
+authorisation check asks whether the intended risk equals `balance x exec_risk_pct` — right for an
+entry, which is sized that way by construction, and **wrong for an add, which is sized off the
+PROFIT THE STOP HAS ALREADY LOCKED.** Passing the percentage anyway would not be a stricter bridge;
+it would be a bridge whose scale-in never happens. `risk_authorised=False` switches that one check
+off and **nothing else** — units-to-lots, the two independent routes to a lot count, the venue's
+volume band, margin and the account-wide cap all still run.
+
+🔴 **REMOVING A CHECK MEANS PUTTING ONE BACK, and `_add_size_fault` is it.** What bounds an add is
+not a percentage of the account but a multiple of the BASE position (`exec_scale_cap_x`, 0.5
+shipped). A lot larger than that did not come from the affordability arithmetic, whatever produced
+it. ⚠ An unreadable base size or cap REFUSES (rule 1).
+
+🔴 **THE STOP IS THIS BAR'S POSITION STOP AND THE INTENT CARRIES NONE.** Every lot shares the
+position's one ratcheting stop, and a market order's stop goes out WITH it, so the bridge supplies
+`dec.stop` — the value the ratchet is about to move every other ticket to on the same bar, so the
+new lot lands already in step rather than waiting a bar to be found.
+
+⚠ **A scale-in lot has its own SLOT** (`ADD_LONG`/`ADD_SHORT`), so one placement path, one refusal
+vocabulary and one unknown-outcome latch serve every order this bridge sends. Nothing ever rests
+there today — the only supported mode enters at market — and the slot earns its keep through
+`_refused`, which is what lets `_agrees` name a refused add in the halt. ⚠ **`slot_label` is a
+MAPPING now**: the conditional it replaced answered "primary" for every kind it had not heard of,
+and a scale-in refusal reported as a primary one sends the reader to the entry logic for an order
+the entry logic never placed.
+
+⚠ **The coherence checks are ONE copy** (`_market_order_fault`). An entry and an add are the same
+order shape — both fill on arrival carrying their own stop — and this file has already paid for the
+same rule written twice. ⚠ **The CODES differ by kind**: a count of `entry_stop_wrong_side` says
+the entry logic is broken, `add_stop_wrong_side` says the trail and the add level have crossed.
+
+### 🔴 A refused add was SILENT, and `_agrees` was never going to catch it
+
+**The agreement check compares DIRECTION and PRESENCE, never SIZE.** So an add that never reached
+the broker leaves one position on each side and passes every check, while the strategy ratchets,
+banks and grades a position bigger than the account carries. `_add_shortfall` is the only thing
+that notices, and it halts.
+
+🔴 **A SHORTFALL IS NOT AUTOMATICALLY A DIVERGENCE.** `plan_order` rounds a lot count DOWN to the
+venue's step and never up (rule 17), so **every add that has ever been placed holds slightly less
+than the units the strategy booked.** Reading that as a divergence would halt the bot on its own
+arithmetic, on every scaled trade. So it is judged two ways, the first exact: **a refusal recorded
+on the add slot settles it outright** — the bridge asked and was told no — and otherwise a rounding
+budget of one volume step per lot held, plus one for a lot that may be missing entirely.
+
+⚠ **An unreadable volume step ALERTS and does NOT halt** (rule 1): without it there is no way to
+tell this bridge's own rounding from a real divergence, and halting a live bot on a number nobody
+could read is acting on an answer that was never obtained.
+
+🔴 **THE SHORTFALL IS TESTED BEFORE "are there any add tickets", AND THE FIRST VERSION HAD THAT
+ORDER WRONG — found by writing the test, not by reading.** The case worth catching is an add that
+reached NO ticket at all, and that case has an empty list by definition; returning early on *no add
+tickets* reads the most complete failure available as nothing to do.
+
+### The account must HEDGE, and that is asked of the terminal
+
+**`assert_hedging_for_scale_in` refuses scale-in unless a second order on the same side opens its
+OWN position.** On a netting account an add MERGES into the position already held — one ticket, one
+stop, one volume that silently includes the adds — and every read in the add path means something
+else. **The size reconciliation would see the added lots as excess on the base ticket and bank away
+the position the strategy is still managing.**
+
+⚠ **`None` REFUSES** (rule 1). ⚠ **It takes the fact as an ARGUMENT rather than reading a
+terminal**, the same shape as `assert_secondary_wired`: this module is imported by the promote
+preview, which has no terminal to ask. ⚠ **The runner asks it in `_build_strategy`**, the one place
+every caller shares, and RE-asks on every rebuild rather than caching the first answer (rule 16) —
+this terminal has already been observed switching accounts under a running bot. ⚠ **A bot with
+scale-in OFF is never asked**, so nothing running today changes.
+
+### What this changed about the tests, and two findings from doing it
+
+**Tests: 15 new in `test_live_bridge.py` and one re-stated in `test_dual_feed_merge.py`. 12
+mutations RUN, every one RED on its own named test**, including a control that refusing every add
+reddens the at-the-ceiling case.
+
+🔴 **THE TWO PINS ON THE OLD REFUSAL WENT RED, WHICH IS THEM WORKING.** Both were written on
+2026-09-07 to go red *"the day the default moves back, or the day the bridge learns to place an
+add"*. They are RE-STATED, not loosened: one now pins that a market add is supported and a resting
+one is still refused by name, the other that the shipped mode is the one this bridge can mirror.
+
+🔴 **ONE MUTATION SURVIVED FIRST, AND THE REASON IS WORTH MORE THAN THE FIX.** The test asserting an
+add is not recorded as a resting order passed under the mutation that makes every order rest —
+because under that mutation nothing was placed at all (the order became a limit the fake refused),
+so `_rest` was empty for a reason the test did not name. **It now establishes that the order really
+happened before saying where it was not recorded.** A test whose premise is not established is
+green against its own defect.
+
+🔴 **THE FAKE STRATEGY ANSWERED `None` WHERE PRODUCTION ANSWERS A CONFIG OBJECT.** The bridge reads
+both `cfg` and `_cfg`; on the real `Execution` they are one object behind a property and cannot
+disagree, and this double had them as two independent attributes — so `_plan` saw `None` for the
+config on every test that passed one. Survivable for a base entry, whose sizing then falls back to
+its own defaults; **not survivable for a scale-in lot, whose ceiling is read straight off it.**
+Fixed as a property with a setter, so the two cannot be made to differ here either. **Fifth time
+this file has recorded a fixture less capable than production.**
+
+⚠ **`intents` had to be declared in the live contract, and the guard chain found it in two
+links** — `test_live_contract.py` went red on the bridge reading an undeclared field, then again on
+`LiveDecision` not carrying it. Rules: `strategies/CLAUDE.md`.
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and `sos_fade_demo` still pins scale-in OFF
+in its instance config, so no bot reaches any of it until that is changed and the bot restarted.

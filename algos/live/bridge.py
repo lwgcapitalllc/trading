@@ -176,7 +176,16 @@ PRIMARY_LONG = ("primary", 1)
 PRIMARY_SHORT = ("primary", -1)
 SECONDARY_LONG = ("secondary", 1)
 SECONDARY_SHORT = ("secondary", -1)
-SLOTS = (PRIMARY_LONG, PRIMARY_SHORT, SECONDARY_LONG, SECONDARY_SHORT)
+#: A SCALE-IN lot. It is a slot like the other two so that one placement path, one refusal
+#: vocabulary and one unknown-outcome latch serve every order this bridge sends — a second
+#: placement path is how two code paths start disagreeing about one order.
+#:
+#: ⚠ **Nothing ever RESTS here today.** The only scale-in mode this bridge supports enters at
+#: market, so `_rest[ADD_*]` stays `None` for its whole life; the slot earns its keep through
+#: `_refused`, which is what lets `_agrees` name a refused add in the halt that follows.
+ADD_LONG = ("add", 1)
+ADD_SHORT = ("add", -1)
+SLOTS = (PRIMARY_LONG, PRIMARY_SHORT, SECONDARY_LONG, SECONDARY_SHORT, ADD_LONG, ADD_SHORT)
 
 
 def primary_slot(direction: int):
@@ -189,11 +198,25 @@ def secondary_slot(direction: int):
     return SECONDARY_LONG if direction > 0 else SECONDARY_SHORT
 
 
+def add_slot(direction: int):
+    """The scale-in lot's slot on one side."""
+    return ADD_LONG if direction > 0 else ADD_SHORT
+
+
+#: What each kind of slot is CALLED in a line somebody reads.
+#:
+#: 🔴 **A mapping rather than a conditional, because the conditional it replaced answered
+#: "primary" for every kind it had not heard of.** A scale-in refusal reported as a primary one
+#: sends the reader to the entry logic for an order the entry logic never placed — this file's
+#: standing rule that a refusal naming the wrong thing is worse than a vague one.
+_SLOT_NAMES = {"primary": "primary", "secondary": "re-entry", "add": "scale-in"}
+
+
 def slot_label(slot) -> str:
     """How a slot is named in a log line or an alert a person reads."""
     kind, direction = slot
     side = "bullish" if direction > 0 else "bearish"
-    return f"{side} {'re-entry' if kind == 'secondary' else 'primary'}"
+    return f"{side} {_SLOT_NAMES.get(kind, kind)}"
 
 
 class UnsupportedStrategyConfig(RuntimeError):
@@ -354,23 +377,80 @@ def assert_supported(strategy_config) -> None:
     # alone, so it is `assert_secondary_wired` below, asked by every caller that can answer it.
     #
     # ⚠ It has never run against a broker. Rule 9 applies to the first one.
+    # 🔴 **THE BLANKET SCALE-IN REFUSAL WAS RETIRED ON 2026-09-08, and only because the capability
+    # it stood in for now exists** — a placement route for the add, a stop ratchet that reaches
+    # every ticket, exits that close across tickets, and an agreement check that can tell a scaled
+    # trade from a duplicate-order incident. **A refusal is retired when the thing it refuses can
+    # be done, never to get a bot started.**
+    #
+    # ⚠ The account-level concern the old message raised is answered rather than dropped: an add
+    # goes through the same `_plan` seam as every other order, so the venue's volume band, the
+    # broker's MARGIN and the account-wide risk cap all price the full stacked position before a
+    # lot is sent.
+    #
+    # ⚠ What is NOT answered here is the kind of account this is. That is a broker fact rather
+    # than a config one, so it is `assert_hedging_for_scale_in` below, asked by the caller that
+    # can reach a terminal.
     if getattr(strategy_config, "exec_scale_in", False):
-        raise UnsupportedStrategyConfig(
-            "exec_scale_in adds SIZE to a winning position, and this bridge mirrors ONE entry "
-            "limit and one ratcheting stop — it has no path that places a second entry. Left "
-            "unrefused the bot would trade the base position, place no adds, and say nothing: "
-            "the backtest would show a scaled book and the account would show an unscaled one, "
-            "which is the exact divergence this function exists to prevent. Turn it off, or "
-            "build the add path (and the account-level allocator it needs — margin sees the "
-            "full stacked position even though risk-to-stop does not). See "
-            "docs/LIVE_TRADING_PIPELINE.md G10."
-        )
+        mode = getattr(strategy_config, "exec_scale_mode", "Trail")
+        if mode != "Trail":
+            raise UnsupportedStrategyConfig(
+                f"exec_scale_mode={mode!r} rests a LIMIT for the scale-in lot and waits for price "
+                f"to come back to it. This bridge places an add AT MARKET, on the bar the "
+                f"strategy bought it, which is what 'Trail' does — there is no path here that "
+                f"rests an add and reconciles it. Left unrefused the strategy would fill that "
+                f"limit in its own book and the account would never hold the lot, which is the "
+                f"exact divergence this function exists to prevent. Use 'Trail', or build the "
+                f"resting-add path."
+            )
     if getattr(strategy_config, "fill_model", "bar") != "bar":
         raise UnsupportedStrategyConfig(
             "fill_model must be 'bar' live. 'tick' is a BACKTEST cost model that resolves fills "
             "against historical tick data; live, the broker resolves fills and its real prices "
             "are recorded by the ledger."
         )
+
+
+def assert_hedging_for_scale_in(strategy_config, *, hedging) -> None:
+    """Refuse a scale-in on an account where an add would NOT be its own position.
+
+    🔴 **THE WHOLE LIVE ADD PATH IS BUILT ON THIS ONE FACT, and every piece of it reads a
+    different number if the fact is false.** On a HEDGING account each add is a separate position
+    with its own ticket and its own stop: the stop ratchet walks those tickets, the size
+    reconciliation compares the base ticket against the BASE size alone, and the exit sweep closes
+    them one by one. On a NETTING account the add MERGES into the position already held — one
+    ticket, one stop, one volume that silently includes the adds — and every one of those reads
+    means something else. **The size check would see the added lots as excess and bank away the
+    position the strategy is still managing.**
+
+    ⚠ **`None` REFUSES** (rule 1). *Could not ask* may not buy the permissive answer when the
+    answer decides whether a live bot's whole add path is arithmetic about the right book.
+
+    ⚠ **It takes the fact as an ARGUMENT rather than reading a terminal**, the same shape as
+    `assert_secondary_wired`. This module is imported by the promote preview, which has no
+    terminal at all, so a function that reached for one could not be asked there.
+
+    ⚠ **A bot with scale-in OFF is not asked**, so nothing that runs today changes.
+    """
+    if not getattr(strategy_config, "exec_scale_in", False):
+        return
+    if hedging is True:
+        return
+    if hedging is None:
+        raise UnsupportedStrategyConfig(
+            "exec_scale_in is ON and the terminal could not say whether this account HEDGES — "
+            "whether a second order on the same side opens its own position or merges into the "
+            "one already held. The whole add path is built on it: the stop ratchet, the size "
+            "reconciliation and the exit sweep all read a different number if it is wrong. "
+            "Refusing rather than guessing."
+        )
+    raise UnsupportedStrategyConfig(
+        "exec_scale_in is ON and this account NETS rather than hedges, so an add would merge "
+        "into the position already held instead of opening its own. This bridge's add path reads "
+        "a scale-in lot as a separate ticket everywhere — the size reconciliation would see the "
+        "added lots as excess on the base ticket and bank away the position the strategy is "
+        "still managing. Turn scale-in off, or move the bot to a hedging account."
+    )
 
 
 def assert_secondary_wired(strategy_config, *, fill_clock_minutes, has_merge: bool) -> None:
@@ -939,6 +1019,10 @@ class OrderBridge:
             else:
                 return
 
+        # BEFORE the reconciliation below, so a lot bought on this bar is already at the broker
+        # when the size check asks what is held — placed afterwards, every add would be read as a
+        # shortfall for one bar and halt the bot on its own order.
+        positions = self._mirror_strategy_add(positions, dec, sig)
         # 🔴 **AFTER `_observe_open` AND BEFORE `_agrees`, AND BOTH HALVES ARE LOAD-BEARING.**
         # After the adoption, because a scale-in lot is defined as *a position under our magic
         # that is not the base* — with no base ticket adopted yet there is nothing for it to be
@@ -1334,6 +1418,22 @@ class OrderBridge:
         and this names it** — there, the broker rejects the order and `_place` records a refusal,
         which is loud; here the order would fill and stop out in the same instant.
         """
+        return self._market_order_fault(pend, direction, kind="entry", did="opened a position")
+
+    def _market_order_fault(self, pend, direction: int, *, kind: str, did: str):
+        """The coherence rules above, for ANY market order this bridge sends.
+
+        🔴 **ONE COPY, because an entry and a scale-in lot are the same order shape.** Both fill
+        on arrival carrying their own stop, so both need the identical four questions asked. This
+        file has already paid for the same rule written twice (`_others_risk`, 2026-09-03), and a
+        premise in two copies is one that gets corrected in one of them.
+
+        ⚠ **The CODES differ by `kind` and that is deliberate, not decoration.** A count of
+        `entry_stop_wrong_side` answers a different question from `add_stop_wrong_side` — the
+        first says the entry logic is broken, the second says the trail and the add level have
+        crossed — and a shared code cannot show either. Same reasoning as `at_market` travelling
+        with a placement record.
+        """
         from order_sizing import SizingRefusal
 
         def _num(v):
@@ -1346,26 +1446,26 @@ class OrderBridge:
         edge, sl, qty = _num(pend.edge), _num(pend.sl), _num(pend.qty)
         if edge is None or edge <= 0:
             return SizingRefusal(
-                "entry_price_unreadable",
-                f"the strategy opened a position and reports its fill price as {pend.edge!r}; "
+                f"{kind}_price_unreadable",
+                f"the strategy {did} and reports its fill price as {pend.edge!r}; "
                 f"there is no price to size the order against.",
             )
         if qty is None or qty <= 0:
             return SizingRefusal(
-                "entry_qty_unreadable",
-                f"the strategy opened a position and reports its size as {pend.qty!r}.",
+                f"{kind}_qty_unreadable",
+                f"the strategy {did} and reports its size as {pend.qty!r}.",
             )
         if sl is None:
             return SizingRefusal(
-                "entry_stop_unreadable",
-                "the strategy opened a position at market and cannot say where its stop is. The "
-                "order is NOT being sent — a market order carries its stop with it, so sending "
-                "one now would open an unprotected position.",
+                f"{kind}_stop_unreadable",
+                f"the strategy {did} at market and cannot say where its stop is. The "
+                f"order is NOT being sent — a market order carries its stop with it, so sending "
+                f"one now would open an unprotected position.",
             )
         if sl <= 0:
             return SizingRefusal(
-                "entry_stop_absent",
-                f"the strategy's stop for this entry is {sl}, which reaches the terminal as NO "
+                f"{kind}_stop_absent",
+                f"the strategy's stop for this {kind} is {sl}, which reaches the terminal as NO "
                 f"STOP rather than as a stop at zero. Refusing rather than opening a position "
                 f"nothing would close.",
             )
@@ -1373,11 +1473,152 @@ class OrderBridge:
         if wrong_side:
             side = "long" if direction > 0 else "short"
             return SizingRefusal(
-                "entry_stop_wrong_side",
+                f"{kind}_stop_wrong_side",
                 f"a {side} at {edge} with its stop at {sl} would fill and stop out in the same "
                 f"instant. The two books have already parted; refusing is the answer.",
             )
         return None
+
+    def _add_size_fault(self, pend, direction: int):
+        """Why this scale-in lot is too big to send, or `None` if it is within its bound.
+
+        🔴 **THIS IS WHAT REPLACES THE RISK-PERCENTAGE AUTHORISATION, and without it the add path
+        has NO upper bound at all.** `_plan(risk_authorised=False)` deliberately stops asking
+        whether the order equals `balance x exec_risk_pct`, because an add is not sized that way
+        — so the check that catches a fabricated size has to be the one that genuinely applies.
+
+        The strategy's own rule caps an add at a multiple of the BASE position
+        (`exec_scale_cap_x`, 0.5 shipped), so a lot larger than that did not come from the
+        affordability arithmetic, whatever produced it. **That is the same class of guard as the
+        authorisation check — an independent second opinion on a size — asked against the number
+        that actually bounds this order.**
+
+        ⚠ **An unreadable base size or cap REFUSES** (rule 1). *Cannot ask* may not buy the
+        permissive answer when the answer decides how much size reaches a live account.
+
+        ⚠ **A small floating-point margin is allowed on the comparison** because the two sides are
+        reached by different arithmetic — the strategy divides a locked profit by a per-unit risk,
+        this multiplies a base size by a cap — and this repo has already refused 3,650 legitimate
+        entries to a threshold that met its own value in the last bit.
+        """
+        from order_sizing import SizingRefusal
+
+        cfg = getattr(self._ex, "cfg", None)
+        base = getattr(self._ex, "_base_qty", None)
+        cap = getattr(cfg, "exec_scale_cap_x", None)
+        try:
+            base = float(base)
+            cap = float(cap)
+            qty = float(pend.qty)
+        except (TypeError, ValueError):
+            return SizingRefusal(
+                "add_bound_unreadable",
+                f"the scale-in lot cannot be bounded: base size {base!r}, cap {cap!r}. Its size "
+                f"is only ever a multiple of the base position, so without both there is nothing "
+                f"to check it against.",
+            )
+        if not (base > 0 and cap > 0):
+            return SizingRefusal(
+                "add_bound_unreadable",
+                f"the scale-in lot cannot be bounded: base size {base}, cap {cap}.",
+            )
+        ceiling = base * cap
+        if qty > ceiling * (1 + 1e-9):
+            return SizingRefusal(
+                "add_over_cap",
+                f"the scale-in lot is {qty:,.4f} units against a ceiling of {ceiling:,.4f} "
+                f"({cap}x the {base:,.4f}-unit base position). A lot this size did not come from "
+                f"the affordability rule, so it is refused rather than sent.",
+            )
+        return None
+
+    def _mirror_strategy_add(self, positions, dec, sig):
+        """Buy the scale-in lot at the broker when the STRATEGY has already bought it.
+
+        🔴 **THE FIRST CONSUMER OF THE ORDER-INTENT STREAM, which is the whole point of it.** An
+        add is the one order shape that leaves NO `Fill` record — it is separate lots, so it never
+        reaches `dec.fills` — and a bridge reading fills alone would trade the base position and
+        say nothing. Every other mirror here reads a fill; this one reads what the strategy ASKED
+        FOR.
+
+        🔴 **THE SIZE COMES FROM `_plan`, exactly as every other order's does.** What differs is
+        one argument: the risk-percentage authorisation is off, because an add is sized off the
+        profit the stop has locked rather than off the balance. `_add_size_fault` puts an
+        independent bound back. **A second sizing path on the live route is the 221x incident, and
+        this is deliberately not one.**
+
+        🔴 **THE STOP IS THIS BAR'S POSITION STOP, NOT A STOP OF THE LOT'S OWN.** The intent
+        carries none on purpose — every lot shares the position's one ratcheting stop — and a
+        market order's stop goes out WITH it, so it has to be supplied here. `dec.stop` is the
+        value `_sync_stop` is about to ratchet every other ticket to on this same bar, so the new
+        lot lands already in step rather than waiting a bar for the ratchet to find it.
+
+        ⚠ **A refused add leaves the two books parted, ON PURPOSE.** The emulator has already
+        bought the lot; shrinking the order would leave the two holding different trades that
+        grade different R (rule 17), and un-booking the strategy's side would be this layer
+        editing its book. `_sync_add_size` sees the shortfall on this same bar and halts.
+
+        ⚠ **Each intent is placed on its OWN order and a refusal does not stop the next**, because
+        the ladder can arm more than one lot and one refused lot is not a reason to skip a
+        different one. Every refusal is recorded against the add slot, which is what lets
+        `_agrees` name it in the halt.
+
+        ⚠ **Nothing is adopted here and `_rest` is untouched** — a market order has already
+        filled, so recording it as resting would make `_observe_vanished` read a live position as
+        a vanished order. `_place` owns that rule and it is not repeated.
+        """
+        from execution.intents import IntentKind
+
+        if self.state is not BridgeState.LIVE:
+            return positions
+        # No base adopted means this is not a scale-in — an add is defined against a position
+        # that already exists, and placing one now would open a trade nobody is managing.
+        if self._pos_ticket is None:
+            return positions
+        direction = self._ex._pos_dir
+        if direction == 0:
+            return positions
+
+        wanted = [
+            i
+            for i in (getattr(dec, "intents", ()) or ())
+            if getattr(i, "kind", None) is IntentKind.ADD
+        ]
+        if not wanted:
+            return positions
+
+        slot = add_slot(direction)
+        placed = False
+        for intent in wanted:
+            pend = _MarketIntent(
+                dir=direction,
+                edge=getattr(intent, "price", None),
+                sl=getattr(dec, "stop", None),
+                qty=getattr(intent, "qty", None),
+            )
+            fault = self._market_order_fault(
+                pend, direction, kind="add", did="added to its position"
+            )
+            if fault is None:
+                fault = self._add_size_fault(pend, direction)
+            if fault is not None:
+                self._record_refusal(slot, fault, pend)
+                continue
+            plan = self._plan(direction, pend, risk_authorised=False)
+            if not plan.ok:
+                self._record_refusal(slot, plan, pend)
+                continue
+            self._refused[slot] = ""
+            self._refusal_alerted[slot] = ""
+            self._log.info(
+                f"MIRRORING SCALE-IN | the strategy added {pend.qty} units at {pend.edge} "
+                f"SL {pend.sl}; sending it to the broker at market"
+            )
+            self._place(slot, plan.lots, pend, sig, plan)
+            placed = True
+        if not placed or self.dry_run:
+            return positions
+        return self._mt5.get_open_positions()
 
     def _mirror_strategy_entry(self, positions, dec, sig):
         """Open at the broker when the STRATEGY has opened a trade the broker has not.
@@ -2102,8 +2343,25 @@ class OrderBridge:
             return
         account.max_lots = min(self._configured_max_lots, float(broker_max))
 
-    def _plan(self, direction: int, pend):
-        """How many lots, or why not. See `algos/shared/order_sizing.py` for the reasoning."""
+    def _plan(self, direction: int, pend, *, risk_authorised: bool = True):
+        """How many lots, or why not. See `algos/shared/order_sizing.py` for the reasoning.
+
+        🔴 **`risk_authorised=False` IS FOR AN ORDER THE RISK PERCENTAGE DID NOT SIZE, AND A
+        SCALE-IN LOT IS THE ONLY ONE.** `plan_order`'s authorisation check asks whether the
+        strategy's intended risk equals `balance x exec_risk_pct` — the guard on the
+        compounded-warm-up-equity fault, and exactly right for an entry, which is sized that way
+        by construction. **An add is sized off the PROFIT THE STOP HAS ALREADY LOCKED, not off
+        the balance**, so the two are unequal on purpose and the check would refuse every add
+        ever placed. Passing the percentage anyway would not be a stricter bridge; it would be a
+        bridge whose scale-in never happens, which is the same silent divergence the whole add
+        path exists to close.
+
+        ⚠ **It removes a real check, so the caller must put one back.** What bounds an add is not
+        a percentage of the account but a multiple of the BASE POSITION — see
+        `_add_size_fault`. Every other check here still runs: the units-to-lots conversion, the
+        two independent routes to a lot count, the venue's volume band, margin, and the
+        account-level cap.
+        """
         spec = self._mt5.symbol_spec()
         if spec is None:
             from order_sizing import SizingRefusal
@@ -2131,7 +2389,7 @@ class OrderBridge:
             # 2026-08-07 fix: the emulator compounds its warm-up replay, so its equity had drifted
             # to ~$4,423 against a real $2,000 and it sized every order off the fiction.
             account_equity=self._account_balance(),
-            risk_pct=getattr(cfg, "exec_risk_pct", None),
+            risk_pct=(getattr(cfg, "exec_risk_pct", None) if risk_authorised else None),
             free_margin=self._mt5.free_margin(),
             margin_for=lambda lots: self._mt5.margin_for(side, lots, pend.edge),
             margin_safety_pct=self._margin_safety_pct,
@@ -2580,17 +2838,25 @@ class OrderBridge:
         """
         if self._pos_ticket is None:
             return positions
-        extras = self._add_positions(positions)
-        if not extras:
-            return positions
         want_units = self._open_add_units()
         if want_units is None:
             return positions
         cs = self._contract_size()
         if not cs:
             return positions
+        extras = self._add_positions(positions)
         want = want_units / cs
         held = sum(float(p.volume) for p in extras)
+        # 🔴 **THE SHORTFALL IS TESTED BEFORE "are there any add tickets", AND THAT ORDER IS THE
+        # WHOLE POINT OF THE CHECK.** The case worth catching is an add that reached NO ticket at
+        # all — refused for size, refused by the broker, or never sent — and that case has an
+        # empty `extras` by definition. Returning early on "no add tickets" reads the most
+        # complete failure available as nothing to do, which is the silence this exists to break.
+        if want - held > 1e-9:
+            self._add_shortfall(want, held, extras, direction=self._ex._pos_dir)
+            return positions
+        if not extras:
+            return positions
         if held <= want + 1e-9:
             return positions
         if want > 1e-9:
@@ -2607,6 +2873,74 @@ class OrderBridge:
         if self.dry_run:
             return positions
         return self._mt5.get_open_positions()
+
+    def _add_shortfall(self, want, held, extras, direction: int) -> None:
+        """The broker holds LESS scale-in size than the strategy believes. Halt, or explain why not.
+
+        🔴 **THIS IS THE ONLY THING THAT NOTICES A SCALE-IN LOT THAT NEVER REACHED THE BROKER.**
+        `_agrees` compares DIRECTION and PRESENCE, never size, so a refused add leaves one
+        position on each side and passes every check — while the strategy goes on ratcheting,
+        banking and grading a position bigger than the account holds. **A silent divergence in
+        the direction that overstates the book is the worst answer available here.**
+
+        🔴 **A SHORTFALL IS NOT AUTOMATICALLY A DIVERGENCE, and reading it as one would halt the
+        bot on its own arithmetic.** `plan_order` rounds a lot count DOWN to the venue's volume
+        step (rule 17 — it never rounds up to fit), so every add that has ever been placed holds
+        slightly LESS than the units the strategy booked. That is expected and permanent.
+
+        So the shortfall is judged two ways, and the first is exact rather than a threshold:
+
+        - **A REFUSAL RECORDED ON THE ADD SLOT settles it outright.** The bridge asked and was
+          told no; there is nothing to weigh. It halts naming that reason, which is what the slot
+          exists for.
+        - **Otherwise the rounding budget decides** — one volume step per lot the broker holds,
+          plus one for a lot that may be missing entirely. Beyond that, the size did not come off
+          rounding.
+
+        ⚠ **An unreadable volume step ALERTS and does not halt** (rule 1). Without the step there
+        is no way to tell this bridge's own rounding from a real divergence, and halting a live
+        bot on a number nobody could read is acting on an answer that was never obtained. It is
+        said out loud rather than passed over in silence.
+
+        ⚠ **It does not close, shrink or re-place anything.** Re-sending the add would buy at
+        today's price a lot the strategy priced on the bar it armed, and this bridge's standing
+        rule is that a recovery repeating the fault it is recovering from is worse than none.
+        """
+        why = self._refused.get(add_slot(direction), "")
+        spec = self._mt5.symbol_spec()
+        step = getattr(spec, "volume_step", None) if spec is not None else None
+        short = want - held
+        if not why:
+            try:
+                budget = float(step) * (len(extras) + 1)
+            except (TypeError, ValueError):
+                self._alert_once(
+                    "add_shortfall_unmeasurable",
+                    f"The broker holds {held:.2f}L of scale-in lots where the strategy expects "
+                    f"{want:.2f}L, and the volume step could not be read — so whether that gap "
+                    f"is ordinary rounding or a lot that never reached the broker cannot be "
+                    f"established. Nothing was halted and nothing was re-sent.",
+                )
+                self._ledger.event(
+                    "add_shortfall_unmeasurable",
+                    held=round(held, 2),
+                    wanted=round(want, 2),
+                )
+                return
+            if short <= budget:
+                return  # this bridge's own rounding-down, which is permanent and expected
+        self._ledger.event(
+            "add_shortfall",
+            held=round(held, 2),
+            wanted=round(want, 2),
+            refusal=why or "",
+        )
+        self._halt(
+            f"The strategy is holding {want:.2f}L of scale-in lots and the broker has "
+            f"{held:.2f}L. It will go on ratcheting, banking and grading a position bigger than "
+            f"the account carries, so every later decision would be computed against a trade "
+            f"that does not exist." + (f"\nThe scale-in order was REFUSED: {why}" if why else "")
+        )
 
     def _intended_open_lots(self):
         """How much the STRATEGY believes is still open, in LOTS. `None` = could not ask.

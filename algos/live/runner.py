@@ -76,6 +76,7 @@ from alert_format import alert, joined, money  # noqa: E402
 from bridge import (  # noqa: E402
     BridgeState,
     OrderBridge,
+    assert_hedging_for_scale_in,
     assert_secondary_wired,
     assert_supported,
 )
@@ -445,6 +446,21 @@ class LiveRunner:
         params.setdefault("symbol", self.cfg.symbol)
         scfg = cfg_cls(**params)
         assert_supported(scfg)
+        # 🔴 **A BROKER FACT, so it is asked here rather than in `assert_supported`** — that
+        # function is also imported by the promote preview, which has no terminal to ask. Every
+        # caller of this method runs after `connect()`, which is why the check lives in the one
+        # place they share rather than at each of them.
+        #
+        # ⚠ **Re-asked on every rebuild, not cached from the first start** (rule 16). This
+        # terminal has already been observed switching accounts under a running bot, and the
+        # whole add path reads a different number if the answer changes.
+        #
+        # ⚠ **No broker handle is CANNOT ASK, never *not hedging*.** It refuses only when
+        # scale-in is on, so nothing without that setting is affected.
+        assert_hedging_for_scale_in(
+            scfg,
+            hedging=(self.mt5.hedging_account() if self.mt5 is not None else None),
+        )
 
         capital = self.cfg.initial_capital
         if not capital:
