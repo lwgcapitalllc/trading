@@ -105,15 +105,23 @@ def _clean_group(path: str) -> str:
     return re.sub(r"\s*\.[a-z]{1,2}$", "", head).strip() or "Ungrouped"
 
 
-def classify(path: str) -> str:
-    """The asset class for a broker group, or the broker's own label when nothing matches.
+def _group_segments(path: str) -> list[str]:
+    """The FOLDERS in a symbol's path, outermost first, with the symbol itself dropped.
 
-    ⚠ **The fallback is the broker's label, never "Other".** Two groups that fall through would
-    otherwise merge into one meaningless bucket — PU Prime's 24-hour share CFDs and its tokenised
-    names are 62 and 93 symbols and are not the same thing.
+    MT5 nests: `247 Product\\Stocks\\US\\AAPLUSD` is three folders and a symbol. The last
+    segment is the symbol's own name, so it is dropped — a leaf called `XAUUSD` sitting in a
+    forex folder would otherwise be read as a metals group.
+
+    ⚠ **A path with no separator is one folder, not a leaf.** Dropping unconditionally would
+    leave nothing to classify for every flat group on the terminal.
     """
-    label = _clean_group(path)
-    flat = re.sub(r"[^a-z0-9]+", " ", label.lower())
+    parts = [p.strip() for p in (path or "").replace("/", "\\").split("\\") if p.strip()]
+    return parts[:-1] if len(parts) > 1 else parts
+
+
+def _match_segment(segment: str) -> Optional[str]:
+    """The asset class one folder name states, or `None` when it states nothing."""
+    flat = re.sub(r"[^a-z0-9]+", " ", segment.lower())
     for cls, patterns in _CLASS_RULES:
         if any(p in flat for p in patterns):
             return cls
@@ -121,7 +129,36 @@ def classify(path: str) -> str:
     for cls, tokens in _CLASS_TOKENS:
         if words & set(tokens):
             return cls
-    return label
+    return None
+
+
+def classify(path: str) -> str:
+    """The asset class for a symbol, or the broker's own label when the path states nothing.
+
+    🔴 **IT READS THE WHOLE PATH, AND JUDGING ONLY THE OUTERMOST FOLDER HID 93 INSTRUMENTS.**
+    This used to classify `_clean_group(path)` — the first segment alone — so
+    `247 Product\\Stocks\\US\\AAPLUSD` was judged on `247 Product`, which names no asset
+    class, and Apple, Tesla, Amazon and 78 more landed in a chip called *247 Product* while the
+    reader looking for them checked *Shares*. The word that answers it, `Stocks`, was fetched
+    every time and thrown away one line before the rules ran. MEASURED on the live terminal:
+    81 symbols move to Shares and 12 to ETFs, and **nothing else in the 1,085 changes**.
+
+    ⚠ **Segments are tried DEEPEST FIRST, because the deepest folder is the most specific.**
+    `247 Product\\ETFs` has to answer ETFs rather than falling through to whatever the outer
+    folder suggests. Rule ORDER still decides within one segment.
+
+    ⚠ **The fallback is the broker's own label, never "Other".** Two groups that fall through
+    would otherwise merge into one meaningless bucket. PU Prime's `US.24H` is the live case and
+    it is NOT a classification failure to fix by hand: those 62 symbols sit flat under that one
+    folder with no sub-folder and no type word anywhere in the path, so the broker genuinely
+    states nothing, and its own label at least tells the reader it is a round-the-clock book.
+    **Inventing a class for it would be a guess wearing a measurement's clothes.**
+    """
+    for segment in reversed(_group_segments(path)):
+        hit = _match_segment(segment)
+        if hit is not None:
+            return hit
+    return _clean_group(path)
 
 
 #: The order categories are offered in — the liquid, frequently-traded classes first, because the

@@ -802,6 +802,25 @@ fix that reroutes a case can silently un-cover the branch that case used to exer
 ranking tier was DELETED rather than covered** — unreachable by construction, killable by no
 mutation, and reading to the next person as a covered branch.
 
+🔴 **Step 12 (2026-09-07) gates something no test in this repo could previously see: a COLOUR that
+does not exist.** `check_theme_tokens.mjs` checks every `bg-`/`text-`/`border-` class in the
+frontend against the palette in `tailwind.config.js`. **Tailwind DROPS a class it cannot resolve
+and says nothing** — no build error, no console warning — so the instrument dropdown shipped with
+`bg-bg-raised` as its background (the palette is base / sunken / surface / surface-2) and rendered
+with NO BACKGROUND at all: sixty rows drawn straight over the form underneath. ⚠ **A colour that
+does not exist and a colour deliberately set to transparent are THE SAME THING on screen**, so
+nothing in the running app can tell you which one you wrote — this is rule 7 arriving in CSS, a
+class name being a CLAIM about a definition somewhere else with nothing checking it. 🔴 **It found
+three more the same minute, live, in pages nobody suspected** (`bg-bg-elevated` on the run detail
+page, `text-gold-bright`, and a missing hyphen in `bg-bg-surface2`), each invisible for as long as
+it had existed. ⚠ **It reads the palette OUT of the config rather than from a list typed into the
+check**, so a colour added to the theme cannot start failing it. ⚠ **It carries a SELF-TEST,
+because otherwise "no findings" means *the app is clean* and *the scanner is broken* at the same
+time** — the exact defect it exists to stop. ⚠ **Nine mutations killed and one DELETED**: a guard
+rejecting arbitrary values (`text-[11px]`) that no mutation could kill, because the rule beside it
+already rejected every one of them — **a branch nothing can kill reads as a covered branch**, the
+same call step 11 made about its unreachable ranking tier.
+
 ⚠ **Playwright is deliberately NOT in the gate.** Its config has no `webServer` block on purpose —
 this backend talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand can
 start things on the trading box. `./start.sh` then `npm test` stays a person's decision; `tsc

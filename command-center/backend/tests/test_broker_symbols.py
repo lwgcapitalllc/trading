@@ -10,6 +10,10 @@ applied to `services/broker_symbols.py`, the suite re-run, and the failing test 
   `_unavailable`: return `[]` instead of `None` ................. test_an_unreachable_agent_is_not_an_empty_broker
   `universe`: cache on a constant key instead of the identity ... test_a_terminal_that_changed_account_is_refetched
   `_attached`: a missing `mt5_connected` reads as connected ..... test_a_status_that_never_mentions_the_connection
+  `classify`: judge the outermost folder alone (as shipped) .... test_a_nested_folder_is_read_not_just_the_outermost_one
+  `_group_segments`: drop the last segment unconditionally ..... test_a_flat_path_is_one_folder_not_a_bare_symbol
+  `_group_segments`: keep the symbol leaf as a folder .......... test_the_symbol_itself_never_decides_the_class
+  `classify`: try folders outermost-first instead of deepest ... test_the_deepest_folder_wins_because_it_is_the_most_specific
 
 ⚠ **The first row is the reason this file exists at all.** The trimmer that turns `Forex .p` into
 `Forex` was written as "drop a trailing dotted word", which silently renamed PU Prime's `US.24H`
@@ -31,32 +35,47 @@ def _clean_cache():
 
 # ── The grouping ───────────────────────────────────────────────────────────────
 
-#: Every group the attached PU Prime demo actually carries, read off the terminal 2026-09-07.
-#: ⚠ **These are MEASURED, not invented** — a fixture more capable (or more tidy) than the broker
-#: is a fixture describing a terminal nobody has.
-LIVE_GROUPS = [
-    ("Forex .p", "Forex"),
-    ("Forex", "Forex"),
-    ("Gold .p", "Metals"),
-    ("Silver .p", "Metals"),
-    ("Oil.p", "Energy"),
-    ("Commodities.s", "Commodities"),
-    ("Indices", "Indices"),
-    ("Indices-JP.s", "Indices"),
-    ("Equity-US", "Shares"),
-    ("Equity-EU", "Shares"),
-    ("Equity-UK", "Shares"),
-    ("ETFs", "ETFs"),
-    ("Cryptos", "Crypto"),
-    ("Bonds", "Bonds"),
-    ("247 Product", "247 Product"),
-    ("US.24H", "US.24H"),
+#: Every FOLDER PATH the attached PU Prime demo actually carries, read off the terminal
+#: 2026-09-07 as `(path, symbol, asset class)`.
+#:
+#: 🔴 **THESE WERE FLATTENED, AND THE FLATTENING HID A LIVE DEFECT FOR A DAY.** The first version
+#: of this fixture wrote every group as a single folder plus a symbol — `247 Product\\SPCXUSD` —
+#: while the terminal actually nests three deep: `247 Product\\Stocks\\US\\SPCXUSD`. The
+#: classifier judged only the outermost folder, so 93 US and Asian shares were filed under a chip
+#: called *247 Product* and were unreachable from *Shares*; **all 36 tests passed the whole time**,
+#: because a two-segment fixture cannot exercise a bug that needs three.
+#:
+#: ⚠ **This repo's rule 13 is "a fixture more capable than production hides the defect". This is
+#: the same rule from the other end: a fixture SIMPLER than production hides it just as well**, and
+#: is harder to notice, because nothing about a tidy path looks like a claim.
+LIVE_PATHS = [
+    ("Forex .p", "AUDCAD.p", "Forex"),
+    ("Forex", "EURUSD", "Forex"),
+    ("Gold .p", "XAUUSD.p", "Metals"),
+    ("Silver .p", "XAGUSD.p", "Metals"),
+    ("Oil.p", "CL-OIL.p", "Energy"),
+    ("Commodities.s", "COPPER-Cs", "Commodities"),
+    ("Indices", "FRA40ft", "Indices"),
+    ("Indices-JP.s", "Nikkei225.s", "Indices"),
+    ("Equity-US", "AAPL", "Shares"),
+    ("Equity-EU", "DHL", "Shares"),
+    ("Equity-UK", "ABDN", "Shares"),
+    ("ETFs\\ETF-C", "ARKG", "ETFs"),
+    ("ETFs\\ETF-R", "BITQ", "ETFs"),
+    ("ETFs\\ETFs-Crypto", "ARKB", "ETFs"),
+    ("Cryptos", "BCHUSD", "Crypto"),
+    ("Bonds", "EURIBOR3M", "Bonds"),
+    ("247 Product\\Stocks\\US", "SPCXUSD", "Shares"),
+    ("247 Product\\Stocks\\CN", "CXMTUSD", "Shares"),
+    ("247 Product\\Stocks\\HK", "MINIMAXUSD", "Shares"),
+    ("247 Product\\ETFs", "DRAMUSD", "ETFs"),
+    ("US.24H", "TSLA.24H", "US.24H"),
 ]
 
 
-@pytest.mark.parametrize("group,expected", LIVE_GROUPS)
-def test_every_group_on_the_live_terminal(group, expected):
-    assert bs.classify(f"{group}\\SOMESYM") == expected
+@pytest.mark.parametrize("folder,symbol,expected", LIVE_PATHS)
+def test_every_group_on_the_live_terminal(folder, symbol, expected):
+    assert bs.classify(f"{folder}\\{symbol}") == expected
 
 
 def test_a_dotted_group_name_survives():
@@ -71,16 +90,51 @@ def test_a_dotted_group_name_survives():
     assert bs.classify("Commodities.s\\COPPER-Cs") == "Commodities"
 
 
-def test_an_unrecognised_group_keeps_the_brokers_own_name():
-    """Two unrecognised groups must not merge into one bucket.
+def test_a_nested_folder_is_read_not_just_the_outermost_one():
+    """🔴 93 instruments were unreachable from the chip that names them.
 
-    PU Prime's tokenised names (93) and its 24-hour share CFDs (62) both fall through the keyword
-    rules, and an "Other" bucket would tell a reader those 155 instruments are the same kind of
-    thing. They are not.
+    `247 Product` states no asset class; the `Stocks` folder inside it does, and it was fetched
+    every time and thrown away before the rules ran. A reader hunting Apple checked *Shares* and
+    did not find it.
     """
-    assert bs.classify("247 Product\\SPCXUSD") == "247 Product"
+    assert bs.classify("247 Product\\Stocks\\US\\AAPLUSD") == "Shares"
+    assert bs.classify("247 Product\\ETFs\\SPYUSD") == "ETFs"
+
+
+def test_the_deepest_folder_wins_because_it_is_the_most_specific():
+    """Two folders in one path can each name a class. The inner one is the finer answer."""
+    assert bs.classify("Commodities\\Precious Metals\\XAUUSD") == "Metals"
+    assert bs.classify("Equity-US\\ETFs\\SPY") == "ETFs"
+
+
+def test_the_symbol_itself_never_decides_the_class():
+    """The last path segment is a SYMBOL, not a folder.
+
+    `Forex\\XAUUSD` is one broker filing gold in its forex book. Reading the leaf would answer
+    Metals off the symbol's own spelling — a classification from the name rather than from
+    anything the broker said.
+    """
+    assert bs.classify("Forex\\XAUUSD") == "Forex"
+    assert bs.classify("Equity-US\\GOLDMAN") == "Shares"
+
+
+def test_a_flat_path_is_one_folder_not_a_bare_symbol():
+    """Dropping the last segment unconditionally would leave nothing to classify."""
+    assert bs.classify("Cryptos") == "Crypto"
+    assert bs.classify("Bonds") == "Bonds"
+
+
+def test_an_unrecognised_group_keeps_the_brokers_own_name():
+    """A group the broker gives no type for keeps its own label, and must not merge with another.
+
+    ⚠ **`US.24H` is the live case and is NOT a classification failure to patch by hand.** Its 62
+    symbols sit flat under that one folder — no sub-folder, no type word anywhere in the path — so
+    the broker states nothing, and its own label at least tells the reader it is a round-the-clock
+    book. An invented class would be a guess wearing a measurement's clothes.
+    """
     assert bs.classify("US.24H\\TSLA.24H") == "US.24H"
-    assert bs.classify("247 Product\\X") != bs.classify("US.24H\\Y")
+    assert bs.classify("Tokenised\\X") == "Tokenised"
+    assert bs.classify("US.24H\\Y") != bs.classify("Tokenised\\Z")
 
 
 def test_a_symbol_with_no_path_is_ungrouped_not_blank():

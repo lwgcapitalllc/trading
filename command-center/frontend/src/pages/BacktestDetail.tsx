@@ -4168,7 +4168,7 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
             })}
           </tbody>
           <tfoot>
-            <tr className="border-t border-border-subtle bg-bg-elevated/30">
+            <tr className="border-t border-border-subtle bg-bg-surface-2/30">
               <td className="px-5 py-3.5 text-[11px] font-semibold text-text-secondary">Overall</td>
               <td className="text-right px-5 py-3.5 text-[11px] font-medium text-text-secondary tabular-nums">
                 {run.daily_pnl.length}
@@ -4234,7 +4234,7 @@ function SizedTimelineTable({ run }: { run: Run }) {
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full px-4 py-3 border-b border-border-subtle flex items-center justify-between text-left hover:bg-bg-elevated/30 transition-colors"
+        className="w-full px-4 py-3 border-b border-border-subtle flex items-center justify-between text-left hover:bg-bg-surface-2/30 transition-colors"
       >
         <div>
           <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">
@@ -4326,7 +4326,7 @@ function SizedTimelineTable({ run }: { run: Run }) {
               })}
             </tbody>
             <tfoot>
-              <tr className="border-t border-border-subtle bg-bg-elevated/30">
+              <tr className="border-t border-border-subtle bg-bg-surface-2/30">
                 <td className="px-5 py-3 text-[11px] font-semibold text-text-secondary">Final</td>
                 <td className="text-right px-5 py-3 text-[11px] font-medium text-text-secondary tabular-nums">
                   {run.trade_count ?? '—'}

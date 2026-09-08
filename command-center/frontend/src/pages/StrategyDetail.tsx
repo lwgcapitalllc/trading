@@ -200,7 +200,7 @@ function GroupTable({
     >
       <button
         onClick={onToggle}
-        className={`w-full flex items-center gap-3 px-4 py-3 bg-bg-sunken hover:bg-bg-surface2 text-left transition-colors ${isOpen ? 'border-b border-border-default' : ''}`}
+        className={`w-full flex items-center gap-3 px-4 py-3 bg-bg-sunken hover:bg-bg-surface-2 text-left transition-colors ${isOpen ? 'border-b border-border-default' : ''}`}
       >
         <ChevronRight
           size={15}

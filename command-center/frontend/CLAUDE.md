@@ -4393,6 +4393,57 @@ independent fault. **Worth fixing at the source rather than captioning here.**
 real counts, the 60-row cap, the footer naming the terminal) **and the unavailable path was driven
 against a real outage.** Story: `../docs/FRONTEND_BUILD_NOTES.md`.
 
+### 🔴 The dropdown had NO BACKGROUND, because a colour that does not exist is a colour that is transparent (2026-09-07)
+
+Reported from the screen — *"the ui has bugs"* — with a screenshot of sixty instrument rows drawn
+straight over the form underneath, every line tangled with the settings behind it.
+
+**The panel read `bg-bg-raised`. There is no such colour in this theme** — the palette is
+base / sunken / surface / surface-2 — and **Tailwind DROPS a class it cannot resolve without a
+word**: no build error, no console warning, no failing test. The same file also carried
+`hover:text-danger-text` (the colour is `neg-text`), which did nothing and read as a hover somebody
+chose not to style.
+
+⚠ **A colour that does not exist and a colour deliberately set to transparent are THE SAME THING on
+screen**, so nothing in the running app can tell you which one you wrote. That is rule 7 arriving in
+CSS: a class name is a CLAIM about a definition somewhere else, and nothing was checking.
+
+✅ **Gated: `scripts/check_theme_tokens.mjs`, step 12 of `../../scripts/run_all_tests.sh`, needs
+nothing running.** It reads the palette out of `tailwind.config.js` rather than from a list typed
+into the check — a second copy of the colour names would go stale in the direction that matters, so
+a colour ADDED to the theme would start failing. ⚠ **It judges only classes unambiguously naming a
+theme colour** (first or last segment matching the palette's own naming), so `text-left`,
+`border-t`, `bg-black/60` and `text-[11px]` are never candidates; a check that fires on healthy code
+is one people learn to dismiss. ⚠ **It carries a SELF-TEST** — without one, "no findings" means *the
+app is clean* and *the scanner is broken* at the same time, which is the exact defect it exists to
+stop.
+
+🔴 **It found THREE MORE, live, in pages nobody suspected**: `bg-bg-elevated` (BacktestDetail ×3,
+ConfigureTab), `text-gold-bright` (ConfigureTab ×2) and `bg-bg-surface2` — a missing hyphen — on
+StrategyDetail. **Every one had been invisible for as long as it existed.**
+
+⚠ **Nine mutations, nine killed, and the map was RE-RUN after a tenth was deleted.** One guard
+(rejecting arbitrary values like `text-[11px]`) **no mutation could kill** — the single-word rule
+already rejects every one of them and removing it changed not one finding across all 108 files — so
+it was DELETED rather than left in. **A branch nothing can kill reads to the next person as a
+covered branch**, the same call made for the ranking tier in `check_instrument_search.mjs`.
+
+### 🔴 The recents row moved BELOW the input, because it shares a grid row (2026-09-07)
+
+Reported in the same pass: *"after selecting everything goes out of sync."* Instrument, bar size and
+period are three columns of ONE grid aligned at the top, so a chip row appearing ABOVE the input
+shoved this field's box ~30px down while its two neighbours stayed put. **Picking a symbol knocked
+the row out of line, at the exact moment of the pick, so it read as the form breaking on the click.**
+
+⚠ **A control that CHANGES HEIGHT must grow DOWNWARD when it shares a row.** Anything added above it
+moves the control itself, and the reader's eye is on the control. ✅ MEASURED after the fix: all
+three controls at `top: 225`, the chip at 265.
+
+⚠ **And the box now shows the current pick as its PLACEHOLDER while filtering.** Focusing blanks the
+field so you can search over it; with the pick only visible as a tick on a row scrolled out of view,
+the field read as empty. The value was never lost either way, which is what made it the dangerous
+kind of wrong.
+
 ### The Stress Test button asks BEFORE it offers itself (2026-09-07)
 
 It was offered on stacks that cannot be graded, and **the page had no way to know**: the stack

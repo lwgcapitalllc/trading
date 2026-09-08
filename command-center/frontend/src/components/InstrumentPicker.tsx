@@ -133,34 +133,6 @@ export function InstrumentPicker({
     <div className="min-w-0" ref={wrapRef}>
       <label className={labelCls}>{label}</label>
 
-      {/* Recents — one click fills the box. Above the input, because it is the shortcut past it. */}
-      {recents.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-[6px]">
-          {recents.map((sym) => (
-            <span
-              key={sym}
-              className={`group inline-flex items-center gap-1 rounded px-[6px] py-[2px] text-[10px] font-mono border transition-colors ${
-                sym.toUpperCase() === value.trim().toUpperCase()
-                  ? 'border-accent text-accent'
-                  : 'border-border-subtle text-text-secondary hover:border-accent hover:text-accent'
-              }`}
-            >
-              <button type="button" onClick={() => choose(sym)} title={`Use ${sym}`}>
-                {sym}
-              </button>
-              <button
-                type="button"
-                onClick={() => setRecents(removeRecent(server, sym))}
-                className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-danger-text transition-opacity"
-                title="Forget this one"
-              >
-                <X size={9} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
       <div className="relative">
         <input
           type="text"
@@ -180,7 +152,12 @@ export function InstrumentPicker({
             if (!symbols) setOpen(false)
           }}
           onKeyDown={onKeyDown}
-          placeholder={loading ? 'Loading the broker’s instruments…' : placeholder}
+          /* ⚠ While the box is filtering it is EMPTY on purpose — you are typing a search over the
+             pick, not editing it. So the current pick becomes the placeholder rather than
+             vanishing: the field never reads as blank, and abandoning the search restores it. */
+          placeholder={
+            loading ? 'Loading the broker’s instruments…' : filtering && value ? value : placeholder
+          }
           className={`${inputCls} font-mono pr-7`}
           spellCheck={false}
           autoComplete="off"
@@ -194,8 +171,19 @@ export function InstrumentPicker({
           {open ? <Search size={12} /> : <ChevronDown size={12} />}
         </button>
 
+        {/* 🔴 **THE PANEL'S BACKGROUND IS A THEME TOKEN, AND IT MUST BE ONE THAT EXISTS.** This
+              read `bg-bg-raised` for its whole first life. There is no such colour in
+              `tailwind.config.js` — the palette is base/sunken/surface/surface-2 — and Tailwind
+              DROPS a class it cannot resolve without a word. So the dropdown rendered with no
+              background at all: 60 instrument rows drawn straight over the form underneath, every
+              line of the panel tangled with the settings behind it. ⚠ **A colour that does not
+              exist and a colour that is deliberately transparent are the same thing on screen**,
+              which is why nothing caught it until it was looked at. Gated now — see
+              `scripts/check_theme_tokens.mjs`.
+              ⚠ `bg-surface-2` rather than `bg-surface`: the modal itself is `bg-surface`, and a
+              panel the same colour as the thing it floats over has no edge. */}
         {open && symbols && (
-          <div className="absolute z-30 mt-1 w-full min-w-[320px] rounded-md border border-border-subtle bg-bg-raised shadow-lg">
+          <div className="absolute z-30 mt-1 w-full min-w-[420px] rounded-md border border-border-strong bg-bg-surface-2 shadow-pop">
             {/* Asset classes, in the broker's own terms. `All` first so the list is never
                 narrowed by something the reader did not choose. */}
             <div className="flex flex-wrap gap-1 p-2 border-b border-border-subtle">
@@ -272,6 +260,45 @@ export function InstrumentPicker({
           </div>
         )}
       </div>
+
+      {/* Recents — one click fills the box.
+          🔴 **BELOW THE INPUT, AND THE POSITION IS THE WHOLE POINT.** These sat ABOVE it, which
+          reads fine in isolation and is wrong in the form: instrument, bar size and period are
+          three columns of ONE grid row aligned at the top, so a chip row appearing above the
+          input shoved this field's box ~30px down while its two neighbours stayed put. Picking a
+          symbol therefore knocked the row out of line, and it did it at the exact moment of the
+          pick, so it read as the form breaking on the click. Reported from the screen 2026-09-07
+          (*"after selecting everything goes out of sync"*).
+          ⚠ **A control that CHANGES HEIGHT must grow downward when it shares a row.** Anything
+          added above it moves the control itself, and the reader's eye is on the control. */}
+      {recents.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-[6px]">
+          {recents.map((sym) => (
+            <span
+              key={sym}
+              className={`group inline-flex items-center gap-1 rounded px-[6px] py-[2px] text-[10px] font-mono border transition-colors ${
+                sym.toUpperCase() === value.trim().toUpperCase()
+                  ? 'border-accent text-accent'
+                  : 'border-border-subtle text-text-secondary hover:border-accent hover:text-accent'
+              }`}
+            >
+              <button type="button" onClick={() => choose(sym)} title={`Use ${sym}`}>
+                {sym}
+              </button>
+              {/* ⚠ `neg-text`, not `danger-text` — the latter is not a colour in this theme and
+                  Tailwind drops it silently, which left this hover doing nothing at all. */}
+              <button
+                type="button"
+                onClick={() => setRecents(removeRecent(server, sym))}
+                className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-neg-text transition-opacity"
+                title="Forget this one"
+              >
+                <X size={9} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* 🔴 "Could not ask" gets its own sentence. Silence here would read as a broker with
           nothing to offer, and the box still works — it is a plain text field again. */}

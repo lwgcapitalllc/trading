@@ -434,7 +434,7 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
       <div
         data-testid="version-banner"
         className="flex items-start gap-[8px] text-[11px] leading-[1.5] text-text-secondary
-                      bg-bg-elevated border border-border-subtle rounded-lg px-[14px] py-[12px]"
+                      bg-bg-surface-2 border border-border-subtle rounded-lg px-[14px] py-[12px]"
       >
         <HelpCircle size={13} className="shrink-0 mt-[1px] text-text-tertiary" />
         <span>
@@ -475,7 +475,7 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
       className={`inline-flex items-center gap-[6px] px-[14px] py-[7px] rounded-md font-medium
                   disabled:opacity-40 ${
                     behind > 0
-                      ? 'text-[12px] bg-gold-text/20 text-gold-bright hover:bg-gold-text/30 border border-gold-text/40'
+                      ? 'text-[12px] bg-gold-text/20 text-gold-text hover:bg-gold-text/30 border border-gold-text/40'
                       : 'text-[10px] text-text-tertiary hover:text-text-secondary'
                   }`}
     >
@@ -790,7 +790,7 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
                 }
                 disabled={busy}
                 className="inline-flex items-center gap-[5px] text-[11px] px-[12px] py-[5px]
-                           rounded bg-gold-text/20 text-gold-bright hover:bg-gold-text/30
+                           rounded bg-gold-text/20 text-gold-text hover:bg-gold-text/30
                            border border-gold-text/40 disabled:opacity-40"
               >
                 <PackageCheck size={12} /> Deploy &amp; restart{' '}

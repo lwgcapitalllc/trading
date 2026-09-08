@@ -5636,8 +5636,37 @@ caller is served the previous broker's list under a terminal nobody can reach.
 one broker's folder names** — a table is right on one broker and silently wrong on the next.
 ⚠ **The ORDER of the rules carries meaning** (metals before commodities, indices before shares) and
 must not be sorted. ⚠ **Anything the keywords do not recognise KEEPS THE BROKER'S OWN LABEL rather
-than being swept into "Other"** — 155 of PU Prime's symbols land that way and its 24-hour share CFDs
-and its tokenised names are not the same thing.
+than being swept into "Other"** — an "Other" bucket would tell a reader that two unrelated groups
+are the same kind of thing.
+
+🔴 **THE WHOLE PATH IS READ, AND JUDGING ONLY THE OUTERMOST FOLDER HID 93 INSTRUMENTS (fixed
+2026-09-07).** MT5 nests — `247 Product\Stocks\US\AAPLUSD` — and `classify` judged
+`_clean_group(path)`, the first segment alone. `247 Product` names no asset class, so **Apple,
+Tesla, Amazon and 78 more were filed under a chip called *247 Product* while a reader hunting them
+checked *Shares***. The word that answers it, `Stocks`, was fetched on every call and thrown away
+one line before the rules ran. ✅ MEASURED on the live terminal: **81 symbols move to Shares, 12 to
+ETFs, and nothing else in the 1,085 changes**; the picker's chip row went 12 categories to 10.
+
+⚠ **Segments are tried DEEPEST FIRST** — the innermost folder is the most specific, so
+`247 Product\ETFs` must answer ETFs rather than falling through to the outer folder. Rule ORDER
+still decides within one segment. ⚠ **The last segment is the SYMBOL and is dropped**: reading it
+would classify `Forex\XAUUSD` as Metals off the symbol's own spelling rather than off anything the
+broker said. ⚠ **A path with no separator is one FOLDER, not a leaf**, or every flat group on the
+terminal has nothing left to classify.
+
+⚠ **`US.24H` still falls through and that is NOT a failure to patch by hand.** Its 62 symbols sit
+flat under one folder with no sub-folder and no type word anywhere in the path, so the broker
+genuinely states nothing, and its own label at least tells the reader it is a round-the-clock book.
+**Inventing a class for it would be a guess wearing a measurement's clothes.**
+
+🔴 **ALL 36 TESTS PASSED THROUGHOUT, BECAUSE THE FIXTURE WAS FLATTER THAN THE TERMINAL.**
+`LIVE_GROUPS` wrote every group as one folder plus a symbol (`247 Product\SPCXUSD`) where the real
+path is three folders deep — **and a two-segment fixture cannot exercise a bug that needs three.**
+⚠ **Rule 13 says a fixture MORE capable than production hides the defect. This is the same rule from
+the other end: a fixture SIMPLER than production hides it just as well, and is harder to notice,
+because nothing about a tidy path looks like a claim.** The fixture now carries the terminal's real
+nesting, and four mutations were RUN — the shipped behaviour, an unconditional leaf drop, keeping
+the leaf, and outermost-first — each red on its own named test.
 
 🔴 **Only a one- or two-letter LOWERCASE tail is trimmed from a group name, and that narrowness was
 MEASURED.** The first version stripped any trailing dotted word, which turned the `US.24H` group —
