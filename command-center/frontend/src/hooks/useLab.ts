@@ -2,6 +2,10 @@ import { useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
+// The instrument universe's types live beside the ranking that consumes them, not in the
+// shared type barrel: they are the picker's contract with the backend and nothing else
+// reads them.
+import type { BrokerUniverse } from '@/lib/instrumentSearch'
 import type {
   Strategy,
   ScanResult,
@@ -316,6 +320,30 @@ export function useBrokerProfiles() {
     queryKey: ['lab', 'broker-profiles'],
     queryFn: () => api.get<BrokerProfile[]>('/backtests/broker-profiles'),
     staleTime: Infinity,
+  })
+}
+
+/** Every instrument the ATTACHED terminal quotes, grouped by asset class.
+ *
+ *  🔴 **This is what replaced ten symbol names typed into the source by hand** — and they were the
+ *  wrong broker's, describing Vantage while the lab sat attached to PU Prime. Same rule as
+ *  `useBrokerProfiles` above and for the same reason: a list of instruments carried in the
+ *  frontend is a second claim about what the broker offers, and this one had already gone stale.
+ *
+ *  ⚠ **`staleTime` is 30 minutes rather than Infinity.** A broker's universe is close to static —
+ *  it changes when the broker adds instruments, not when anybody presses anything — but "close to
+ *  static" is not the same claim as a cost profile's "only changes when somebody re-measures it",
+ *  and the ATTACHED TERMINAL can change under a running lab. The backend caches for the same
+ *  window against the terminal's identity, so a refetch here is usually free.
+ *
+ *  ⚠ **`enabled` exists so the picker asks only when a form is open.** Nothing about this belongs
+ *  on a page load; it is a 254 KB answer nobody reads until a modal opens. */
+export function useBrokerSymbols(enabled = true) {
+  return useQuery({
+    queryKey: ['lab', 'broker-symbols'],
+    queryFn: () => api.get<BrokerUniverse>('/backtests/broker-symbols'),
+    enabled,
+    staleTime: 30 * 60_000,
   })
 }
 

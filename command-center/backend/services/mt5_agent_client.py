@@ -226,3 +226,25 @@ def trigger_compile() -> dict:
 def get_compile_status(compile_job_id: str) -> dict:
     """GET /compile/<id> — poll MetaEditor compile job status."""
     return _get(f"/compile/{compile_job_id}")
+
+
+# ── The tradeable universe ─────────────────────────────────────────────────────
+
+
+def symbols(tradable_only: bool = False) -> dict:
+    """GET /symbols — every instrument the attached terminal carries.
+
+    Returns {"symbols": [...], "count": int, "total_on_terminal": int, ...}. Read-only, and the
+    agent deliberately does NOT select anything into Market Watch: enumerating the broker must
+    not change what the terminal is watching underneath a running backtest.
+
+    ⚠ **The timeout is longer than the default on purpose.** A retail terminal carries north of a
+    thousand instruments — PU Prime's demo returned 1,085 in 0.34s over the tunnel on 2026-09-07 —
+    and a shop with more would otherwise time out into "cannot ask" while the terminal was fine.
+
+    Raises RuntimeError when the agent is unreachable or answers an error, which is what the
+    caller needs: "the terminal could not be asked" and "the broker offers nothing" must never
+    arrive as the same value.
+    """
+    path = "/symbols" + ("?tradable_only=1" if tradable_only else "")
+    return _get(path, timeout=30)

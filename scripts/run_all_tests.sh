@@ -73,7 +73,7 @@ echo ""
 # `sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
 # else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
 # conversation, and the lever is coverage rather than scheduling.
-echo "  [1/10] engines / backtest / algos / strategies / smart-money ..."
+echo "  [1/11] engines / backtest / algos / strategies / smart-money ..."
 if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q $PYTEST_PARALLEL; then
   pass "root suite"
 else
@@ -85,7 +85,7 @@ echo ""
 # ~45s across 12 cores, 1,051 tests. MUST be run from its own directory: its pytest.ini carries the
 # `-m "not integration"` interlock that keeps the destructive live-VPS suite deselected, and a
 # `-m` from anywhere else would replace it.
-echo "  [2/10] command-center backend ..."
+echo "  [2/11] command-center backend ..."
 if (cd command-center/backend && ./.venv/bin/python -m pytest -q $PYTEST_PARALLEL); then
   pass "backend suite"
 else
@@ -101,7 +101,7 @@ echo ""
 # gate takes the half that needs nothing running — `tsc`, which is the check that would actually
 # have caught a broken build — and the browser tests stay a deliberate `./start.sh` then
 # `npm test` in `command-center/frontend`.
-echo "  [3/10] frontend typecheck ..."
+echo "  [3/11] frontend typecheck ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && npx --no-install tsc --noEmit); then
     pass "frontend typecheck (tsc --noEmit)"
@@ -122,7 +122,7 @@ echo ""
 # under it, deploying a strategy or rewriting a broker account row. It is in the suite because
 # a check nobody runs is not a check — and because the guard is a DENY-list, so a new live route
 # is allowed until somebody adds it here.
-echo "  [4/10] browser guard ..."
+echo "  [4/11] browser guard ..."
 if command -v node >/dev/null 2>&1; then
   if node .claude/mcp/check_browser_guard.js; then
     pass "browser guard (34 cases, refusals and allowances)"
@@ -140,7 +140,7 @@ echo ""
 # Claude is given instead of an open SSH prompt. This asserts the dangerous forms are still
 # absent from that menu, that a guarded operation refuses BEFORE touching the network, and
 # that an unreachable Command Center reads as "cannot ask" rather than as "the bot is stopped".
-echo "  [5/10] trading-box server ..."
+echo "  [5/11] trading-box server ..."
 if "$PYTHON" .claude/mcp/check_tradingbox.py; then
   pass "trading-box server (menu, refusals, cannot-ask)"
 else
@@ -156,7 +156,7 @@ echo ""
 # and silence is indistinguishable from "checked". Both halves are asserted here: the
 # reminder before an Edit/Write, and the after-the-fact size check that catches a file
 # rewritten by any other means.
-echo "  [6/10] documentation-size guard ..."
+echo "  [6/11] documentation-size guard ..."
 if "$PYTHON" .claude/hooks/check_guard.py; then
   pass "documentation-size guard (21 cases, warnings and silences)"
 else
@@ -170,7 +170,7 @@ echo ""
 # measured the same way — rule 11, broken four times in this app. The check that matters most
 # is the FIRST one: it parses `BacktestRunRequest` out of models.py, so adding an input to a
 # backtest goes red here until somebody decides whether it belongs to the measurement basis.
-echo "  [7/10] lab server ..."
+echo "  [7/11] lab server ..."
 if "$PYTHON" .claude/mcp/check_lab.py; then
   pass "lab server (basis contract, per-field refusals)"
 else
@@ -188,7 +188,7 @@ echo ""
 # ⚠ It is here and not in Playwright because a trade annotation is painted into a canvas and has
 # no element to assert on: the browser suite can only measure pixels, and it needs the app up.
 # These rules are arithmetic, so they run with nothing running.
-echo "  [8/10] trade-overlay geometry ..."
+echo "  [8/11] trade-overlay geometry ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_trade_geometry.mjs); then
     pass "trade geometry (26 cases, adverse band + exit marker)"
@@ -212,7 +212,7 @@ echo ""
 # `frontend/tests/fixtures/param-conditions.json`; `backend/tests/test_param_gates.py` drives the
 # python one over the same file, in step 2. A shape one side learns and the other does not fails
 # on the side that did not learn it — which is how the empty-condition disagreement was found.
-echo "  [9/10] parameter-condition evaluator ..."
+echo "  [9/11] parameter-condition evaluator ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_param_conditions.mjs); then
     pass "param conditions (28 cases, shared with the python evaluator)"
@@ -230,7 +230,7 @@ fi
 #
 # ⚠ A wrong scale here is not a broken chart. It is a plausible dollar figure with nothing on screen
 # to say it is wrong, on two pages at once.
-echo "  [10/10] period-window rebase ..."
+echo "  [10/11] period-window rebase ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_period_window.mjs); then
     pass "period window (25 cases, filter bounds + the rebase constant)"
@@ -239,6 +239,27 @@ if [ -d "command-center/frontend/node_modules" ]; then
   fi
 else
   fail "period window - command-center/frontend/node_modules missing (run: cd command-center/frontend && npm install)"
+fi
+
+# The instrument picker's RANKING, and the recents row that fills the box for you. Both decide from
+# data, neither has any pixels in it, and until 2026-09-07 the form they belong to offered ten
+# symbol names typed into the source by hand — which were the wrong broker's, describing Vantage
+# while the lab sat attached to PU Prime and its 1,085 instruments.
+#
+# ⚠ A wrong rank does not look broken. It looks like a list with the instrument you wanted three
+# pages down, which a reader takes for "the broker does not offer it". The fixture is cut from the
+# live terminal for exactly that reason — the two rows an invented one would have tidied away
+# (a disabled `EURUSD` beside a tradable `EURUSD.p`, and `TSLA` / `TSLAUSD` / `TSLA.24H`) are the
+# two that decide the tie-breaks, and without them a whole ranking tier was dead in green.
+echo "  [11/11] instrument search + recents ..."
+if [ -d "command-center/frontend/node_modules" ]; then
+  if (cd command-center/frontend && node scripts/check_instrument_search.mjs); then
+    pass "instrument search (31 cases, ranking + per-broker recents)"
+  else
+    fail "instrument search (31 cases, ranking + per-broker recents)"
+  fi
+else
+  fail "instrument search - command-center/frontend/node_modules missing (run: cd command-center/frontend && npm install)"
 fi
 
 echo ""

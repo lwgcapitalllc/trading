@@ -21,6 +21,7 @@ from models import (
     BacktestRunRequest,
     BacktestSummary,
     BrokerProfile,
+    BrokerUniverse,
     EvaluationDetail,
     HistoryLimit,
     RepricedPoint,
@@ -32,6 +33,7 @@ from models import (
     WorthinessScore,
 )
 from services import (
+    broker_symbols,
     chart_spec,
     history_limits,
     lab_db,
@@ -405,6 +407,30 @@ def list_broker_profiles() -> list[BrokerProfile]:
         )
         for key, p in sorted(PROFILES.items())
     ]
+
+
+@router.get("/broker-symbols", response_model=BrokerUniverse)
+def list_broker_symbols(refresh: bool = False) -> BrokerUniverse:
+    """Every instrument the ATTACHED terminal quotes, grouped by asset class.
+
+    🔴 **The Run form used to suggest ten symbol names typed in by hand, and they were the wrong
+    broker's.** They were Vantage's names — bare `XAUUSD`, bare `EURUSD` — while the lab has been
+    attached to PU Prime, which quotes gold as `XAUUSD.p` and disables its bare forex group
+    outright. So the list a reader picked from described a broker nobody was connected to, and the
+    only instruments reachable through it were the ten somebody happened to think of in July.
+    Measured on the attached terminal 2026-09-07: **1,085 instruments, 0.34s** — shares, ETFs,
+    crypto, indices, bonds, energy and softs, none of which could be reached from the form.
+
+    ⚠ **This is a 200 with an honest `available: false` when the terminal cannot be asked**, not a
+    503. The page has a legitimate question to ask and an unreachable agent is a real answer to
+    it; returning an error would make a working page look broken in the console and would push the
+    reason into a place nobody renders. The distinction that matters is inside the payload:
+    `symbols` is `None` rather than `[]` (rule 1).
+
+    ⚠ **`refresh=true` skips the cache.** Everything else reads a universe cached for 30 minutes
+    against the terminal's identity, so flicking between categories does not re-ask the broker.
+    """
+    return BrokerUniverse(**broker_symbols.universe(refresh=refresh))
 
 
 @router.get("/history-limit", response_model=Optional[HistoryLimit])

@@ -8,11 +8,14 @@ import {
   useRunningVpsJob,
   useHistoryLimit,
   useBrokerProfiles,
+  useBrokerSymbols,
 } from '@/hooks/useLab'
 import { ParamEditor, isChanged, visibleParams, type ParamValue } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
+import { InstrumentPicker } from '@/components/InstrumentPicker'
+import { isQuotedVerbatim } from '@/lib/instrumentSearch'
 import type { Strategy, Firm, SizingMode, BrokerProfile } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -91,22 +94,16 @@ function lookupInstrumentName(sym: string): string {
   return ''
 }
 
-// Vantage demo symbol names — no ".s" suffix (that was PU Prime). Backtests pull data ONLY from
-// MT5_Lab, which is logged into the Vantage demo (see algos/CLAUDE.md), so these must be the Vantage
-// names or the data pull caches Vantage bars under a wrong PU-Prime key. Confirmed against the live
-// terminal 2026-07-22 via the agent's /symbol_info (all ten resolve plain).
-const BROKER_SYMBOLS = [
-  'EURUSD',
-  'GBPUSD',
-  'USDJPY',
-  'XAUUSD',
-  'GBPJPY',
-  'AUDUSD',
-  'USDCAD',
-  'EURGBP',
-  'AUDJPY',
-  'CADJPY',
-]
+// 🔴 **TEN SYMBOL NAMES USED TO BE TYPED IN HERE, AND THEY WERE THE WRONG BROKER'S.** They were
+// Vantage's spellings, confirmed against a terminal in July 2026 — and the lab has since been
+// attached to PU Prime, which quotes gold as `XAUUSD.p` and has its bare forex group DISABLED
+// outright. So the list a reader picked from described a broker nobody was connected to, and the
+// 1,075 other instruments that terminal carries — every share, ETF, index, bond and crypto pair —
+// could not be reached from this form at all.
+//
+// The list now comes from the terminal itself (`useBrokerSymbols`). ⚠ **The lesson is the one this
+// repo keeps re-learning rather than anything about symbols: a list carried in the frontend is a
+// second claim about somebody else's system, and it goes stale the moment that system moves.**
 
 function getAllowedSymbols(firms: Firm[]): string[] {
   const set = new Set<string>()
@@ -165,6 +162,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // below fills it once, and only while the reader has not chosen for themselves.
   const [brokerProfile, setBrokerProfile] = useState<string | null>(null)
   const { data: brokerProfiles } = useBrokerProfiles()
+  // The attached terminal's own instrument list. ⚠ **NT8 is excluded on purpose** — a futures
+  // platform's symbols come from the prop-firm rulesets below, not from an MT5 terminal, and
+  // asking the trading box about them would be a confident answer to the wrong question.
+  const { data: universe, isLoading: universeLoading } = useBrokerSymbols(!isNt8)
   const attachedProfile = brokerProfiles?.find((b) => b.attached) ?? null
   // ⚠ Falls back to the first profile only when NOTHING is attached — an unreachable agent means
   // "cannot tell", and the mismatch note below then says so rather than blessing whatever is
@@ -186,9 +187,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     [strategy.suggested_instrument, frontMonth]
   )
 
-  const [instrumentSymbol, setInstrumentSymbol] = useState(
-    isNt8 ? parsed.symbol : scope === 'python' ? parsed.symbol || 'XAUUSD' : 'EURUSD'
-  )
+  // 🔴 **NO HARDCODED FALLBACK ANY MORE** (Aaron's call, 2026-09-07: *"no default, just a
+  // recents"*). This used to fall back to gold for python and to a currency pair for MT5, which is
+  // a default in the worst place a default can sit — it is a symbol the reader did not choose,
+  // spelled for a broker nobody checked, sitting in the box that decides what the run is measured
+  // on. The STRATEGY'S OWN suggestion is kept because that is data about the strategy rather than
+  // a guess; when it states none, the box starts empty and the recents row above it is the
+  // one-click way back to whatever you last ran.
+  // ⚠ **Empty is a legitimate state and the Run button already refuses it** — see `canSubmit`.
+  const [instrumentSymbol, setInstrumentSymbol] = useState(parsed.symbol)
   const [contractMonth, setContractMonth] = useState(parsed.month)
 
   // NT8 only: once firms load, ensure symbol is in allowed list
@@ -233,11 +240,32 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // lands on the attached terminal, and that is the common case: open the modal, press Run. An
   // onChange-only version leaves a bare `XAUUSD` sitting under a PU Prime selection, which is
   // precisely the bug.
+  //
+  // 🔴 **IT NOW STANDS DOWN FOR A NAME THE TERMINAL ITSELF QUOTES (2026-09-07), and that fixes a
+  // defect the rewrite had for its whole life.** It strips at the first dot and appends the
+  // profile's suffix unconditionally — correct for the 64 forex and metal names PU Prime spells
+  // with one, and WRONG for the other 1,021 on that terminal. Type `AAPL` and it produced
+  // `AAPL.p`, a symbol nothing quotes; `TSLA.24H` became `TSLA.p`; `Nikkei225.s` became
+  // `Nikkei225.p`. Nobody had ever hit it, because the form only offered ten currency-and-metal
+  // names — so opening the broker's real universe would have walked straight into it.
+  //
+  // ⚠ **The test is a MEASUREMENT, not a memory of what the reader clicked.** A "they picked it
+  // from the list" flag would be right until somebody typed the same name by hand, or pasted it,
+  // or came back to a form that restored it. Asking the terminal's own list whether it quotes
+  // this exact string is true in all of those.
+  //
+  // ⚠ **An unavailable universe falls back to rewriting, deliberately.** That is today's shipped
+  // behaviour, so an unreachable terminal changes nothing rather than quietly switching the form
+  // to a second set of rules nobody is watching.
   const suffix = broker?.symbol_suffix
   useEffect(() => {
     if (isNt8 || suffix == null) return
-    setInstrumentSymbol((prev) => (prev ? `${prev.split('.')[0]}${suffix}` : prev))
-  }, [suffix, isNt8])
+    setInstrumentSymbol((prev) => {
+      if (!prev) return prev
+      if (isQuotedVerbatim(universe?.symbols ?? null, prev)) return prev
+      return `${prev.split('.')[0]}${suffix}`
+    })
+  }, [suffix, isNt8, universe])
   const brokerNamingUnknown = !isNt8 && broker != null && broker.symbol_suffix == null
 
   const instrument = !isNt8
@@ -688,33 +716,27 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             {/* Instrument */}
             <div className="min-w-0">
               {!isNt8 ? (
-                <>
-                  <label className={labelCls}>Instrument</label>
-                  {/* A LIST, not a select: the preset chips were the only way to pick one, and a
-                      select would take away typing a symbol they do not cover. */}
-                  <input
-                    type="text"
-                    list="run-broker-symbols"
-                    value={instrumentSymbol}
-                    onChange={(e) => setInstrumentSymbol(e.target.value.toUpperCase())}
-                    placeholder="EURUSD"
-                    className={inputCls}
-                  />
-                  <datalist id="run-broker-symbols">
-                    {BROKER_SYMBOLS.map((sym) => (
-                      <option key={sym} value={sym} />
-                    ))}
-                  </datalist>
-                  {/* No caption saying what the broker "would" call it — the box itself now
-                      carries the resolved name. Three states, not two, so an UNRECORDED suffix
-                      still has to speak: silence here would read as "bare", which is a guess. */}
-                  {instrumentSymbol && brokerNamingUnknown && (
-                    <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
-                      Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
-                      exactly as typed.
-                    </div>
-                  )}
-                </>
+                /* The broker's OWN list, searchable, with a recents row. ⚠ Still an input rather
+                   than a select: a dropdown is the right way to browse 1,085 instruments and the
+                   wrong way to enter the one you already know. */
+                <InstrumentPicker
+                  value={instrumentSymbol}
+                  onChange={setInstrumentSymbol}
+                  universe={universe}
+                  loading={universeLoading}
+                  placeholder="Type a symbol or a name"
+                  note={
+                    /* No caption saying what the broker "would" call it — the box itself now
+                       carries the resolved name. Three states, not two, so an UNRECORDED suffix
+                       still has to speak: silence here would read as "bare", which is a guess. */
+                    instrumentSymbol && brokerNamingUnknown ? (
+                      <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
+                        Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
+                        exactly as typed.
+                      </div>
+                    ) : null
+                  }
+                />
               ) : (
                 <>
                   <div className="grid grid-cols-[1fr_auto] gap-2 items-start">

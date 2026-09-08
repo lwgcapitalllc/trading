@@ -5600,3 +5600,59 @@ replaced, no book written, the slug recorded despite a failed write, the baselin
 `book` field blanked, the writer allowed to raise, a missing directory read as an empty book, a
 corrupt half taking the whole book down, the endpoint serving an empty book instead of 404, and the
 endpoint skipping its row check.
+
+## The broker's own instrument universe — `GET /backtests/broker-symbols` (2026-09-07)
+
+🔴 **THE RUN FORM'S INSTRUMENT SUGGESTIONS WERE TEN NAMES TYPED INTO THE SOURCE, AND THEY WERE THE
+WRONG BROKER'S.** They were Vantage's spellings, confirmed against a terminal in July 2026, while
+the lab has since been attached to PU Prime — which quotes gold with a suffix and has its bare forex
+group DISABLED outright. MEASURED on the attached terminal: **1,085 instruments, 0.34s**, of which
+1,075 could not be reached from the form at all. `services/broker_symbols.py` serves them, grouped.
+
+⚠ **The agent endpoint it reads had existed since 2026-08-16 with NO consumer** — rule 9, a feature
+nobody has run. It was correct; nothing had ever asked it.
+
+🔴 **`symbols` is `None` when `available` is false, NEVER `[]`.** An unreachable agent, a
+disconnected terminal and a terminal answering with an error all come back as a reason, and a caller
+rendering an empty list would be describing an outage as a product decision. ✅ **Confirmed against
+a REAL outage the same day** — the agent went down mid-session and the endpoint answered
+`available: false · "MT5 agent /status: timed out"` with `symbols: null`.
+
+⚠ **It is a 200 carrying that refusal, not a 503.** The page has a legitimate question and an
+unreachable agent is a real answer to it; an error status makes a working page look broken and puts
+the reason where nothing renders it.
+
+🔴 **THE LIST BELONGS TO THE ATTACHED TERMINAL, NEVER TO THE BROKER PICKED IN THE FORM**, so every
+response names the server and account it was read from. One terminal is attached at a time; showing
+its 1,085 names under a different broker's selection is the mixed-basis defect one field over.
+
+🔴 **The cache is keyed on the terminal's IDENTITY and that identity is re-checked on every call**
+(rule 16 — the terminal has already switched accounts under a running bot once). A universe cached
+against a constant key keeps serving the previous broker's instruments under the new account's name.
+⚠ **An unreachable agent RAISES rather than keying the cache on a blank server**, or the second
+caller is served the previous broker's list under a terminal nobody can reach.
+
+⚠ **The asset classes are derived from KEYWORDS in the broker's own grouping, never from a table of
+one broker's folder names** — a table is right on one broker and silently wrong on the next.
+⚠ **The ORDER of the rules carries meaning** (metals before commodities, indices before shares) and
+must not be sorted. ⚠ **Anything the keywords do not recognise KEEPS THE BROKER'S OWN LABEL rather
+than being swept into "Other"** — 155 of PU Prime's symbols land that way and its 24-hour share CFDs
+and its tokenised names are not the same thing.
+
+🔴 **Only a one- or two-letter LOWERCASE tail is trimmed from a group name, and that narrowness was
+MEASURED.** The first version stripped any trailing dotted word, which turned the `US.24H` group —
+62 round-the-clock share CFDs — into a category called `US`. It did not fail; it produced a
+plausible label carrying no information, which is the worse half of getting it wrong.
+
+⚠ **A restricted symbol is LISTED and MARKED, never dropped.** 59 of the 1,085 are disabled,
+close-only or long-only, including the entire bare forex group — a restriction on the ACCOUNT says
+nothing about whether the instrument's history is replayable.
+
+⚠ **The venue lot ceiling travels with each symbol** (rule 17): it is part of what a run is measured
+on, so it is served rather than looked up again elsewhere.
+
+✅ **32 tests, 7 mutations RUN and 7 killed.** 🔴 **One SURVIVED and found a real gap: the
+disconnected-terminal test passed an explicit `False`, which `is False` and `is not True` both
+catch — so the two readings were indistinguishable and the suite was green either way. The case that
+separates them is a status dict with the key MISSING (the agent answered and did not say), which is
+"cannot tell".** Story and the measured counts: `../docs/BACKEND_BUILD_NOTES.md`.

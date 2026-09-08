@@ -788,6 +788,20 @@ They were green and two mutations survived them.** A scale of 1 is the arithmeti
 fixture more capable than production — the test describes a system where the thing under test does
 nothing. **Check that a test's inputs can distinguish the behaviours it names.**
 
+🔴 **Step 11 (2026-09-07) gates the list a reader picks the INSTRUMENT off.** `check_instrument_search.mjs`
+drives the picker's ranking and its per-broker recents — both decide from data, neither has any
+pixels in it, and the form they belong to offered ten symbol names typed into the source until that
+day, which were the WRONG BROKER'S: Vantage's spellings while the lab sat attached to PU Prime and
+its 1,085 instruments. ⚠ **A wrong rank does not look broken. It looks like a list with the
+instrument you wanted three pages down, which a reader takes for "the broker does not offer it".**
+🔴 **Its map carries the sharpest lesson yet, and it is one step past step 10's: SIX mutations
+survived across two passes, and the last three survived because a LATER FIX REROUTED their cases
+onto a code path the mutation could no longer reach.** Nothing went red and no case was edited — the
+map simply stopped being true, and re-running it end to end is the only thing that showed it. **A
+fix that reroutes a case can silently un-cover the branch that case used to exercise.** ⚠ **One
+ranking tier was DELETED rather than covered** — unreachable by construction, killable by no
+mutation, and reading to the next person as a covered branch.
+
 ⚠ **Playwright is deliberately NOT in the gate.** Its config has no `webServer` block on purpose —
 this backend talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand can
 start things on the trading box. `./start.sh` then `npm test` stays a person's decision; `tsc

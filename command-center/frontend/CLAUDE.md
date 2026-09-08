@@ -4311,3 +4311,69 @@ dev server that lands on 5174 because 5173 is taken is unreachable and fails as
 wrong. ⚠ **And Vite binds `localhost` as IPv6 here**, so `curl 127.0.0.1:5173` answers nothing
 while the server is up and serving; probe `http://[::1]:5173`. **Both of those cost time and
 neither is a defect** — write them down rather than rediscovering them.
+
+## The instrument picker — the broker's OWN list, searchable, with recents (2026-09-07)
+
+`components/InstrumentPicker.tsx`, driven by `useBrokerSymbols`, over the pure
+`lib/instrumentSearch.ts` + `lib/instrumentRecents.ts`. Used by the Run modal AND the stack builder.
+Backend rules and the three-state: `../backend/CLAUDE.md` → *The broker's own instrument universe*.
+
+🔴 **IT REPLACED TEN SYMBOL NAMES TYPED INTO `RunBacktestModal`, AND THEY WERE THE WRONG BROKER'S** —
+Vantage's spellings while the lab sat attached to PU Prime and its **1,085 instruments**. Every
+share, ETF, index, bond and crypto pair that terminal carries was unreachable from the form. The
+stack builder had no suggestions at all.
+
+⚠ **Still an INPUT, never a select.** A dropdown is the right way to browse 1,085 names and the
+wrong way to enter the one you already know.
+
+🔴 **NO HARDCODED DEFAULT ANY MORE** (Aaron, 2026-09-07: *"no default, just a recents"*). The gold
+fallback is gone; the STRATEGY'S own suggestion stays, because that is data about the strategy rather
+than a guess. Empty is legitimate and the Run button already refuses it.
+
+🔴 **THE BROKER REWRITE STANDS DOWN FOR A NAME THE TERMINAL ITSELF QUOTES, and that fixes a defect
+the rewrite had for its whole life.** It strips at the first dot and appends the profile's suffix
+unconditionally — right for the 64 forex and metal names PU Prime spells with one, WRONG for the
+other 1,021: `AAPL` became `AAPL.p`, `TSLA.24H` became `TSLA.p`. Nobody had hit it because the form
+only ever offered ten currency-and-metal names, **so opening the broker's real universe would have
+walked straight into it.** ⚠ **The test is a MEASUREMENT (`isQuotedVerbatim`), not a memory of what
+the reader clicked** — a "they picked it" flag is right until somebody types, pastes or returns to a
+restored form. ⚠ **An unavailable universe falls back to rewriting**, so an unreachable terminal
+changes nothing rather than quietly switching the form to a second set of rules.
+
+🔴 **RECENTS ARE BUCKETED BY SERVER.** A recent is a click that FILLS THE BOX, so one from another
+broker fills it with a name this terminal does not quote — the hardcoded-list failure arriving
+through a convenience. ⚠ **An unknown server reads back NOTHING, never the last bucket.**
+⚠ **De-duplication is case-insensitive but STORES what was passed** — `Nikkei225.s` is not
+`NIKKEI225.S` to MT5.
+
+🔴 **THE BOX ONLY BLANKS ITSELF WHEN THERE IS A LIST TO FILTER, and that was found by focusing the
+real field during a real agent outage.** Focusing swaps the value for the query so you can search
+over it — fine while the dropdown is open, because the current pick is on screen with a tick beside
+it. With the terminal unreachable there IS no dropdown, so the same blanking left an empty box with
+nothing anywhere saying what the run was set to. ⚠ **The value was never lost either way**, which is
+what makes it the dangerous kind of wrong: it looks cleared and it is not.
+
+🔴 **AN EMPTY QUERY KEEPS THE SERVER'S ORDER AND IS NOT RANKED — FOUND BY OPENING THE THING.** The
+backend orders the universe liquid class first; ranking an empty query flattened every symbol to one
+tier and handed the list to the length tie-break, so the panel opened on `A`, `AA`, `AC`, `ABT` —
+the shortest US share tickers on the terminal — for somebody running a gold strategy. **Every rule
+involved was individually correct and the composition was useless.**
+
+⚠ **A restricted symbol is listed and marked, never hidden** — its history is still replayable.
+⚠ **A truncated list says how many it hid**, because that and a genuinely short one look identical
+and only one means keep typing.
+
+✅ **`scripts/check_instrument_search.mjs` — 31 cases, step 11 of `../../scripts/run_all_tests.sh`,
+needs nothing running.** 🔴 **SIX mutations survived across two passes and every one was FIXED
+rather than documented away** — three because the fixture had no symbol of the shape that separates
+two tiers (it does now: `TSLA` / `TSLAUSD` / `TSLA.24H`, and a disabled `EURUSD` beside a tradable
+`EURUSD.p`), and three because a later fix REROUTED their cases onto a path the mutation could no
+longer reach. **A fix that reroutes a case can silently un-cover the branch that case used to
+exercise, and re-running the whole map is the only thing that shows it.** ⚠ **One branch was DELETED
+rather than covered** — a ranking tier that was unreachable by construction, which reads to the next
+reader as a covered branch. ⚠ **The fixture is cut from the live terminal and sorted exactly as the
+backend serves it**; in any other order it would pin an order the server never sends.
+
+⚠ **The populated dropdown was driven in a browser with the real payload injected** (12 chips with
+real counts, the 60-row cap, the footer naming the terminal) **and the unavailable path was driven
+against a real outage.** Story: `../docs/FRONTEND_BUILD_NOTES.md`.

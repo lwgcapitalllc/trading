@@ -541,3 +541,43 @@ Four mutations, all run:
 
 The first two are one defect and neither alone produces it. A check that only mutated one side
 would have passed against the other, which is the whole reason both are named in the test.
+
+## The instrument picker (2026-09-07)
+
+Replaced ten hardcoded symbol names with the terminal's own 1,085, searchable, grouped by asset
+class, with a per-broker recents row. Rules: `../frontend/CLAUDE.md` → *The instrument picker*.
+
+**Two defects were found by DRIVING it, and neither is visible in the source.**
+
+1. **The panel opened on `A`, `AA`, `AC`, `ABT`** — the shortest US share tickers on the terminal,
+   offered first to somebody running a gold strategy. The backend orders the universe liquid class
+   first; ranking an empty query flattened every symbol to one tier and handed the whole list to the
+   length tie-break. Every rule involved was individually correct.
+2. **Focusing the box blanked it during an agent outage.** The field swaps its value for the search
+   query while the dropdown is open — fine, because the current pick is on screen with a tick beside
+   it. With the terminal unreachable there is no dropdown, so the box read empty with nothing saying
+   what the run was set to. The value was never lost, which is what made it convincing.
+
+**Six mutations survived across two passes.** Three because the fixture had no symbol of the shape
+that separates two tiers — a base-name match is only distinguishable from a plain prefix against a
+pair like `TSLA.24H` / `TSLAUSD`, and a tradable tie-break is invisible when both fixture symbols are
+restricted. Three more because keeping the server's order for an empty query REROUTED the class and
+limit cases onto the early-return path, where a mutation of the ranked path can no longer reach them
+— and sorting the fixture the way the server sends it made the alphabetical compare unobservable,
+since a stable sort returning 0 then preserves the order the compare would have produced.
+
+**A fix that reroutes a case can silently un-cover the branch that case used to exercise.** Nothing
+went red; the map simply stopped being true, and re-running it end to end is the only thing that
+showed it.
+
+**One ranking tier was deleted rather than covered.** A "base name starts with the query" branch was
+unreachable by construction — the base is always a prefix of the symbol, so the check above it had
+already returned. No mutation could kill it, and unreachable code that reads like a rule is worse
+than no rule.
+
+**Driven in a browser.** The unavailable path against a real agent outage (the exact three-state
+sentence, the box still usable as free text). The populated dropdown with the real 1,085-symbol
+payload injected: 12 class chips with real counts, the 60-row cap, and the footer naming
+`PUPrime-Demo · 700152905`. Zero console errors.
+
+**31 pure cases in `scripts/check_instrument_search.mjs`, step 11 of `scripts/run_all_tests.sh`.**

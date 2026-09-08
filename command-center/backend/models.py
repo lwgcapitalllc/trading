@@ -1277,6 +1277,67 @@ class BrokerProfile(BaseModel):
     attached: bool = False
 
 
+class BrokerSymbol(BaseModel):
+    """One instrument the attached terminal carries, as the picker needs it.
+
+    `broker_group` is the broker's OWN folder name with its account-tier suffix trimmed, and
+    `asset_class` is that group read through keywords. Both are served because they answer
+    different questions: the class is how a reader browses, the group is what the broker actually
+    said. ⚠ **When the keywords do not recognise a group the two are EQUAL** — that is the honest
+    fallback, not a bug, and it is why nothing is filed under "Other".
+    """
+
+    symbol: str
+    description: str = ""
+    broker_group: str = ""
+    asset_class: str = ""
+    #: True only when the account may OPEN a new position. Disabled, close-only and long-only
+    #: symbols are still listed and still backtestable — a restriction on the account is not a
+    #: statement about the instrument's history.
+    tradable: bool = True
+    trade_mode_label: str = ""
+    digits: int = 0
+    contract_size: float = 0.0
+    volume_min: float = 0.0
+    volume_step: float = 0.0
+    #: The venue lot ceiling, carried with the symbol because it is part of what a run is measured
+    #: on — R is identical either side of it while balance, drawdown and CAGR all move.
+    volume_max: float = 0.0
+
+
+class BrokerSymbolClass(BaseModel):
+    """An asset-class tab and how many instruments sit under it."""
+
+    label: str
+    count: int
+
+
+class BrokerUniverse(BaseModel):
+    """Everything the ATTACHED terminal quotes, or an honest statement that it could not be asked.
+
+    🔴 **`symbols` is `None` when `available` is False, never an empty list.** An unreachable agent
+    and a broker offering nothing are different facts and this lab has already paid for collapsing
+    that distinction once — a dead terminal read as a quiet market, 50 minutes blind, every
+    dashboard green.
+
+    ⚠ **`server` and `account` name the terminal this list was READ FROM.** Only one terminal is
+    attached at a time, so a reader who has selected a different broker in the form must be told
+    that this universe is not that broker's — a page listing one broker's instruments under
+    another broker's name is the same mixed-basis defect as charging one broker's spread on
+    another's bars.
+    """
+
+    available: bool
+    reason: Optional[str] = None
+    server: str = ""
+    account: Optional[int] = None
+    fetched_at: Optional[str] = None
+    count: Optional[int] = None
+    total_on_terminal: Optional[int] = None
+    classes: list[BrokerSymbolClass] = []
+    symbols: Optional[list[BrokerSymbol]] = None
+
+
 class HistoryLimit(BaseModel):
     """How far back a backtest of a given (instrument, timeframe, runner) may start.
 

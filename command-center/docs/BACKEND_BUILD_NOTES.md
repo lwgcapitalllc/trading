@@ -306,3 +306,46 @@ wall-clock bound is flaky on a loaded laptop and vacuous on a fast one, and the 
 fan-out rather than the duration.
 
 **1,050 backend tests green (was 1,048), suite 221s → 156s.**
+
+## The broker's instrument universe (2026-09-07)
+
+**The ask:** stop hardcoding the instrument dropdown — connect to whatever broker a strategy is being
+practised on, pull everything it offers, group it by type, and let anything be chosen.
+
+**What was already there, and had never been called.** `algos/markets/fx/tools/mt5_agent.py` grew a
+`/symbols` endpoint on 2026-08-16 that enumerates the whole terminal. Nothing in the Command Center
+had ever asked it. It was correct on the first call.
+
+**Measured against the attached PU Prime demo (700152905), 2026-09-07:**
+
+| | |
+|---|---|
+| instruments on the terminal | **1,085** |
+| the Run form could reach | **10** |
+| fetch, over the SSH tunnel | **0.34s** (434 KB raw, 254 KB served) |
+| fully tradeable | 1,026 — 19 disabled, 17 close-only, 23 long-only |
+| the entire bare `Forex` group | **disabled on this account** |
+
+Classes served: Forex 68, Metals 5, Indices 29, Energy 4, Commodities 13, Shares 667, ETFs 73,
+Crypto 64, Bonds 7, plus two the keywords do not recognise and which keep the broker's own label —
+`247 Product` 93 (tokenised names) and `US.24H` 62 (round-the-clock share CFDs).
+
+**The suffix is NOT uniform on one terminal, which is what makes the run form's rewrite wrong.**
+954 of the 1,085 are bare, 64 carry `.p`, 62 `.24H`, 4 `.s`, 1 `.crp`. The form appends the broker
+profile's single suffix to whatever is typed, so it is right for 64 names and wrong for 1,021.
+
+**The group trimmer, and why it is narrow.** Written as "drop a trailing dotted word", it turned
+`US.24H` into a category called `US`. Nothing failed — it produced a plausible label carrying no
+information. Only a one- or two-letter lowercase tail is an account tier.
+
+**The mutation that survived, and the gap it found.** Seven mutations were run against the service;
+six went red. The seventh — reading a missing `mt5_connected` as connected — passed, because the
+disconnected-terminal test supplied an explicit `False`, which both readings catch. The case that
+separates them is a status dict with the key absent: the agent answered and did not say. That is
+"cannot tell", and rule 1 is that it must never take the same value as "connected".
+
+**Confirmed against a real outage.** The MT5 agent went down mid-session. The endpoint answered
+`available: false`, `symbols: null`, `reason: "MT5 agent /status: timed out"` — the three-state
+working on a fault nobody arranged.
+
+**32 tests, all seven mutations killed after the gap was closed.**

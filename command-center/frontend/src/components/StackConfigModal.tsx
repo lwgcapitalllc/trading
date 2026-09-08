@@ -8,7 +8,10 @@ import {
   useStackPreview,
   useHistoryLimit,
   useBrokerProfiles,
+  useBrokerSymbols,
 } from '@/hooks/useLab'
+import { InstrumentPicker } from '@/components/InstrumentPicker'
+import { isQuotedVerbatim } from '@/lib/instrumentSearch'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
 import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
 import { useDebounced } from '@/lib/useDebounced'
@@ -161,6 +164,9 @@ export function StackConfigModal({
   // modal, deliberately — two forms that default differently is how one of them starts lying.
   const [brokerProfile, setBrokerProfile] = useState<string | null>(initial?.brokerProfile ?? null)
   const { data: brokerProfiles } = useBrokerProfiles()
+  // The attached terminal's own instrument list — see `InstrumentPicker`. The stack form had no
+  // suggestions at all before this, just a free text box.
+  const { data: universe, isLoading: universeLoading } = useBrokerSymbols()
   const attachedProfile = brokerProfiles?.find((b) => b.attached) ?? null
   useEffect(() => {
     if (brokerProfile != null || !brokerProfiles?.length) return
@@ -196,11 +202,21 @@ export function StackConfigModal({
   // ⚠ **The BACKEND binds** — `routers/stacks.py` resolves again at creation and stores the
   // RESOLVED name. This is the half that makes the answer visible, never the half that
   // guarantees it.
+  // 🔴 **It stands down for a name the terminal itself quotes (2026-09-07).** The rewrite strips
+  // at the first dot and appends the profile's suffix unconditionally, which is right for the
+  // forex and metal names a broker spells with one and wrong for every share, ETF and index it
+  // does not — `AAPL` became `AAPL.p`, a symbol nothing quotes. Nobody had hit it because there
+  // was no way to reach those instruments from this form. The same guard is on the Run form, and
+  // the reasoning behind it lives there.
   const suffix = broker?.symbol_suffix
   useEffect(() => {
     if (suffix == null) return
-    setInstrument((prev) => (prev ? `${prev.split('.')[0]}${suffix}` : prev))
-  }, [suffix])
+    setInstrument((prev) => {
+      if (!prev) return prev
+      if (isQuotedVerbatim(universe?.symbols ?? null, prev)) return prev
+      return `${prev.split('.')[0]}${suffix}`
+    })
+  }, [suffix, universe])
   const brokerNamingUnknown = broker != null && broker.symbol_suffix == null
   const [chargeCosts, setChargeCosts] = useState(initial?.chargeCosts ?? true)
 
@@ -503,23 +519,22 @@ export function StackConfigModal({
               </select>
             </div>
 
-            <div className="min-w-0">
-              <label className={labelCls}>Instrument</label>
-              <input
-                value={instrument}
-                onChange={(e) => setInstrument(e.target.value.toUpperCase())}
-                placeholder="e.g. XAUUSD"
-                className={`${inputCls} font-mono`}
-              />
-              {/* Three states, not two: silence here would read as "this broker quotes it bare",
-                  which is a guess, and a guessed symbol is what the rewrite exists to prevent. */}
-              {brokerNamingUnknown && (
-                <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
-                  Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
-                  exactly as typed.
-                </div>
-              )}
-            </div>
+            <InstrumentPicker
+              value={instrument}
+              onChange={setInstrument}
+              universe={universe}
+              loading={universeLoading}
+              note={
+                /* Three states, not two: silence here would read as "this broker quotes it bare",
+                   which is a guess, and a guessed symbol is what the rewrite exists to prevent. */
+                brokerNamingUnknown ? (
+                  <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
+                    Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
+                    exactly as typed.
+                  </div>
+                ) : null
+              }
+            />
 
             <div className="min-w-0">
               <div className="flex items-center mb-1">
