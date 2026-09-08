@@ -53,7 +53,12 @@ from pathlib import Path
 import config as cfg
 
 # Mirrors algos/tools/promote.py::repo_trees. See the module docstring.
-_SHARED_TREES = ("engines", "backtest")
+# 🔴 **`execution` ADDED 2026-09-07 IN THE SAME CHANGE AS THE COPIER, AND THAT PAIRING IS THE
+# ONLY THING KEEPING THESE TWO HONEST.** This tuple is hand-mirrored — only the STRATEGY half of
+# `trees_for` shares a resolver with the promote tool — so a tree added there and not here
+# deploys while this page says the bot is up to date, which is the failure this module's own
+# docstring names. Add to both, or to neither.
+_SHARED_TREES = ("engines", "backtest", "execution")
 
 # 🔴 **The strategy side of that list is DERIVED, and this imports the SAME resolver the promote
 # tool uses** (`strategies/python/package_deps.py`) rather than mirroring it. A strategy package

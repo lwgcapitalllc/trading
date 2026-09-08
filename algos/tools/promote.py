@@ -109,6 +109,21 @@ def repo_trees(cfg) -> list[tuple[Path, Path]]:
         *strategy,
         (_REPO / "engines", Path("engines")),
         (_REPO / "backtest", Path("backtest")),
+        # 🔴 **ADDED 2026-09-07, AND IT BROKE EVERY PROMOTE FOR THE HOURS IT WAS MISSING.** The
+        # shared order vocabulary is imported by `sos_fade/execution.py` at module scope, so a
+        # snapshot without it cannot import the strategy at all — `verify` refused with
+        # `ModuleNotFoundError: No module named 'execution'` and no bot could be promoted.
+        #
+        # ⚠ **It is hardcoded HERE rather than found by `local_dependencies`, and that is the
+        # gap this fell through.** The resolver walks imports rooted at `strategies/python`, so it
+        # sees a strategy borrowing a SIBLING and is blind to a strategy borrowing a new
+        # TOP-LEVEL package. `engines/` and `backtest/` are on this list for the same reason and
+        # have always been: they are universal, so there is nothing per-bot to derive.
+        #
+        # 🔴 **THE RULE THIS LEAVES BEHIND: a new top-level package that a strategy imports must
+        # be added here in the SAME change.** Nothing derives it and nothing will tell you —
+        # except a promote, which is the last place you want to find out.
+        (_REPO / "execution", Path("execution")),
     ]
 
 

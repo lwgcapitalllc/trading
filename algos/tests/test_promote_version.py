@@ -121,12 +121,54 @@ def test_an_older_commit_counts_lower_than_HEAD(repo):
     assert promote_tool.version_at(first, trees) < promote_tool.version_at("HEAD", trees)
 
 
-def test_the_counted_trees_ARE_the_trees_promote_copies(repo):
-    """One roster. A tree that is COPIED but not COUNTED is a change that deploys while the
-    version says nothing happened — silent, and wrong in the reassuring direction."""
+def test_the_trees_promote_copies_are_PINNED(repo):
+    """A PIN on the roster, so adding a tree has to be re-stated here on purpose.
+
+    ⚠ **This is one side only.** It says what the copier copies; it cannot say whether anything
+    counts the same set — that is the test below, which is what this one's old name claimed.
+    `execution` was added 2026-09-07: the shared order vocabulary is imported by the strategy at
+    module scope, so a snapshot without it cannot import at all.
+    """
     trees = _trees(repo)
     dests = {str(dest).replace("\\", "/") for _, dest in trees}
-    assert dests == {"strategies/python/demo_pkg", "engines", "backtest"}
+    assert dests == {"strategies/python/demo_pkg", "engines", "backtest", "execution"}
+
+
+def test_the_counted_trees_ARE_the_trees_promote_copies(repo):
+    """🔴 A tree that is COPIED but not COUNTED deploys while the page says you are up to date.
+
+    🔴 **THE TEST THAT USED TO CARRY THIS NAME NEVER READ THE COUNTING SIDE.** It pinned the
+    copier's own list against a literal, so the two rosters could disagree with it green — and
+    on 2026-09-07 they nearly did: `execution` was added to the copier, and nothing here could
+    have noticed that the Command Center still counted two shared trees.
+
+    ⚠ **The other side is PARSED, not imported.** It lives in a package with its own venv that
+    imports FastAPI, and wiring two trees together to read a tuple of strings is worse than
+    reading the text — the same call `test_bot_bench.py` makes about that package's registry.
+
+    ⚠ **It REFUSES to pass on an empty parse.** A tuple this cannot find would compare equal to
+    nothing and make the check vacuous, which is how a mirror test certifies a drift.
+    """
+    import ast
+
+    src = (_REPO / "command-center" / "backend" / "services" / "bot_versions.py").read_text()
+    counted = None
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(t, "id", None) == "_SHARED_TREES" for t in node.targets
+        ):
+            counted = set(ast.literal_eval(node.value))
+    assert counted, "could not read _SHARED_TREES — a vacuous pass is the failure being prevented"
+
+    copied = {
+        str(dest).replace("\\", "/")
+        for _, dest in _trees(repo)
+        if not str(dest).startswith("strategies")
+    }
+    assert copied == counted, (
+        f"promote copies {sorted(copied)} but the Command Center counts {sorted(counted)} — "
+        "add the tree to BOTH or to neither"
+    )
 
 
 # ── refusing ────────────────────────────────────────────────────────────────────

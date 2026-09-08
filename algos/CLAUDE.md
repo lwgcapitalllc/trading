@@ -3384,3 +3384,77 @@ the add-size pin, and adding a made-up key.
 
 ⚠ **The standing rule: re-dump and DIFF before assigning any bot.** A field that appears in that
 diff carrying a default nobody chose is this failure, caught at the one moment it is free.
+
+### 🔴 A snapshot carries what the package imports — INCLUDING a new TOP-LEVEL package (2026-09-07)
+
+**`sos_fade/execution.py` gained `from execution.intents import ...` at module scope, and
+`repo_trees` did not copy it — so every promote failed with `ModuleNotFoundError: No module named
+'execution'`.** No bot could be deployed for the hours it was missing.
+
+✅ **The safety net held and is worth naming: `verify` refused, and a failed verify leaves the
+running bot untouched.** Nothing live was harmed; the two armed bots kept trading their frozen
+snapshots throughout. **A promote that cannot import is exactly what that subprocess exists to
+catch, and it caught it.**
+
+🔴 **THE 2026-09-04 FIX DOES NOT COVER THIS, AND THE DIFFERENCE IS THE FINDING.**
+`package_deps.local_dependencies` walks imports rooted at `strategies/python`, so it sees a
+strategy borrowing a SIBLING and is structurally blind to one borrowing a new TOP-LEVEL package.
+`engines/` and `backtest/` are hardcoded for the same reason and always have been: they are
+universal, so there is nothing per-bot to derive. **A derived list is only derived within its own
+root.**
+
+⚠ **THE RULE: a new top-level package a strategy imports goes in `repo_trees` in the SAME change.**
+Nothing derives it and nothing will tell you — except a promote, which is the last place to find
+out.
+
+🔴 **IT WAS MISSED BECAUSE THE STRATEGY SUITES WERE RUN AND THIS ONE WAS NOT.** 898 strategy tests
+were green while the deploy was broken. **The suite that fails is the one for the subsystem you did
+not think you had touched** — a strategy import is an `algos/` fact.
+
+### 🔴 …and the test guarding this could not see the half that mattered
+
+`test_the_counted_trees_ARE_the_trees_promote_copies` **never read the counting side.** It pinned
+the copier's own list against a literal, so `promote.repo_trees` and the Command Center's
+`bot_versions._SHARED_TREES` could disagree with it green — and they nearly did today, which would
+have deployed a tree the Configure tab does not count. **That is the promoted-but-not-counted
+failure the module's own docstring warns about, with the guard pointing the wrong way.**
+
+⚠ **Only the STRATEGY half of the two shares a resolver.** The shared trees are a hand-mirrored
+tuple in another package, and the docstring's *"calls the SAME resolver"* is true of one half and
+was read as true of both.
+
+✅ Split in two: a PIN on the copier's roster (re-stated on purpose when a tree is added), and a
+real cross-check that PARSES the other package's tuple — parsed, not imported, because it lives in
+a venv that pulls in FastAPI and wiring two trees together to read a tuple of strings is worse.
+**It refuses on an empty parse**, or a renamed tuple would compare equal to nothing and pass.
+**Three mutations RUN and all red**: either side dropping the tree, and the tuple made unparseable.
+
+⚠ **The pin covers what SHIPS, never what is HASHED.** `LiveConfig.source_roots` still hashes three
+roots, so `execution/` now deploys and is not pinned — the same stated gap the 2026-09-04 entry
+records for borrowed packages, one tree wider. Unchanged by this work and still open.
+
+### The live bot's two settings moved to the shipped defaults (2026-09-07)
+
+`sos_fade_demo` — **re-entry trigger `FVG in zone` → `FVG in zone + Reclaim Entry`**, and
+**`exec_sl_deep` ON → OFF**. Aaron's call, both confirmed against their measurements first. The
+evidence, the warnings and what does NOT change are in that bot's own `config.json`
+(`_reclaim_trigger_on_2026_09_07`, `_exec_sl_deep`) — **not restated here**, because a second copy
+of a decision is how two files come to disagree.
+
+🔴 **THE DEEP-STOP CHANGE REVERSES AARON'S OWN 2026-08-15 DECISION AND THE OLD REASONING IS KEPT
+RATHER THAN OVERWRITTEN.** It was a deliberate trade of return for a smaller ride, not a mistake:
++140.0R at 45.6% drawdown against +117.0R at 41.1%. **The deciding number was already in that
+file** — re-levered to equal drawdown it returns 3,830x against 4,868x, so the drawdown it bought
+could have been bought more cheaply on the risk dial. **A toggle that is worse at matched drawdown
+is not a drawdown tool.** ⚠ This gives back ~4.5 points of drawdown at the current risk setting.
+
+🔴 **THE TRIGGER CHANGE MOVES THIS BOT ONTO AN ORDER PATH NOTHING HAS EVER RUN.** Until today it
+banked **nothing** at a price — its three banking percentages are all 0 — so every trade rode its
+stop and the bridge's partial-bank and full-exit paths stayed unproven, as that config said in as
+many words. **The reclaim banks 100% at its first target, which is a full exit at a price.** Rule 9
+applies to the first one; watch it.
+
+⚠ **Neither field is runtime-reloadable, so the bot keeps trading the old rules until RESTARTED**
+and reports one blocked-config message meanwhile. ⚠ **PARAM changes, not code: no promote is needed
+and none should be run for them.** ⚠ **The add-size setting is still REFUSED at startup**, so the
+stack this is being matched to cannot be fully mirrored until the bridge has an add path.

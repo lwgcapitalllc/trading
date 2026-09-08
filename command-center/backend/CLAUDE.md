@@ -5763,3 +5763,31 @@ has the same class of precondition and would otherwise grow its own private copy
 ⚠ **The gate discriminates BOTH WAYS and that was checked**: disabled with the server's exact
 reason on a stack with no combined book, enabled with no reason on one that has it. An
 always-disabled button passes the first test alone.
+
+### 🔴 `_SHARED_TREES` gained `execution` — and it is HAND-MIRRORED, not derived (2026-09-07)
+
+`bot_versions.trees_for` answers *which trees ARE this bot's version*. Its strategy half shares a
+resolver with the promote tool; **its shared half is a tuple typed out here**, and that half is
+free to drift.
+
+🔴 **IT NEARLY DID, THE SAME DAY.** A new top-level `execution/` package was added to what a
+promote COPIES, because the strategy imports it at module scope and a snapshot without it cannot
+import. Had this tuple not moved with it, the tree would deploy while the Configure tab reported
+the bot up to date — **the promoted-but-not-counted failure this module's own docstring names.**
+
+⚠ **The docstring says both sides "call the SAME resolver". That is true of the STRATEGY half
+only**, and it was read as true of both. The shared trees have always been mirrored.
+
+✅ **The mirror is now enforced from the `algos/` side** —
+`algos/tests/test_promote_version.py::test_the_counted_trees_ARE_the_trees_promote_copies`
+PARSES this tuple and compares it against what `promote.repo_trees` actually returns. ⚠ **Parsed,
+not imported**: this package has its own venv and pulls in FastAPI, and wiring two trees together
+to read a tuple of strings is worse than reading the text — the same call `test_bot_bench.py`
+makes about the bot registry. ⚠ **It refuses on an empty parse**, or renaming the tuple would
+compare equal to nothing and pass. Three mutations run, all red.
+
+⚠ **The test that carried that name before could not have caught this** — it pinned the copier's
+list against a literal and never read this file at all. **A guard named for a comparison it does
+not make is worth less than none.**
+
+**Add a shared tree to BOTH lists or to neither.**
