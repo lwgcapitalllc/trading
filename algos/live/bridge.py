@@ -2386,22 +2386,50 @@ class OrderBridge:
         cannot interrogate must stop it acting, not licence it to close everything (rule 1).
 
         ⚠ **It reads the emulator's own fields**, the same coupling this bridge already has with
-        `_pend_long`, `_pend_short` and `_pos_dir`. `_qty` is everything the position has been
-        given (adds included) and `_filled_qty` is everything that has left it, so the difference
-        is the intended size whether or not the strategy has scaled. A public seam on `Execution`
-        would be the better shape and is deliberately NOT taken here: `execution.py` is a
-        strategy file, and rule 22 says a changed strategy does not ship until its parity gate
-        has actually RUN on a real export. That is a decision to make with an export in hand, not
-        while wiring a bridge.
+        `_pend_long`, `_pend_short` and `_pos_dir`. A public seam on `Execution` would be the
+        better shape and is deliberately NOT taken here: `execution.py` is a strategy file, and
+        rule 22 says a changed strategy does not ship until its parity gate has actually RUN on a
+        real export.
+
+        🔴 **THIS DOCSTRING CLAIMED `_qty` WAS "everything the position has been given (adds
+        included)" AND IT IS NOT — CORRECTED 2026-09-07, BEFORE IT COULD EVER FIRE.** `_qty` is
+        assigned in exactly three places — zero, the base entry fill, and the reset — and **no
+        line anywhere adds a scale-in lot to it.** Adds live in `_adds`, a separate ledger whose
+        spent lots are zeroed IN PLACE, which is why `_charge_swap` already adds them as their
+        own term.
+
+        🔴 **THE CONSEQUENCE IF IT HAD SHIPPED: this feeds `_sync_partials`, which closes the
+        difference between what the broker holds and what this returns. Understated by the add
+        lots, it would have closed EVERY ADD moments after buying it** — the bridge banking away
+        the position the strategy was still managing, with both sides' own checks passing.
+
+        ⚠ **It was inert only because `assert_supported` refuses scale-in**, so `_adds` is always
+        empty on a live bot today. **It becomes reachable the moment that refusal is retired**,
+        which is precisely what the add path is for — found by asking what the add path needs
+        rather than by anything going red.
+
+        ⚠ **A wrong answer here is destructive in ONE direction.** Too small closes real size;
+        too large banks nothing and leaves the broker heavy, which halts loudly on the next
+        disagreement. That asymmetry is why this is arithmetic rather than a guess.
         """
         qty = getattr(self._ex, "_qty", None)
         filled = getattr(self._ex, "_filled_qty", None)
         if qty is None or filled is None:
             return None
+        # The unspent scale-in lots. `None` — the field missing entirely — is CANNOT ASK and
+        # must not be read as *no adds*: a strategy this bridge cannot interrogate must stop it
+        # acting, which is what the whole function's `None` contract already says (rule 1).
+        adds = getattr(self._ex, "_adds", None)
+        if adds is None:
+            return None
+        try:
+            add_qty = sum(float(lot[1]) for lot in adds)
+        except (TypeError, IndexError, ValueError):
+            return None
         cs = self._contract_size()
         if not cs:
             return None
-        return max(0.0, (float(qty) - float(filled))) / cs
+        return max(0.0, (float(qty) - float(filled)) + add_qty) / cs
 
     def _sync_partials(self, positions) -> None:
         """Bank the broker down to the size the strategy believes is still open.

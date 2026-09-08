@@ -3458,3 +3458,68 @@ applies to the first one; watch it.
 and reports one blocked-config message meanwhile. ⚠ **PARAM changes, not code: no promote is needed
 and none should be run for them.** ⚠ **The add-size setting is still REFUSED at startup**, so the
 stack this is being matched to cannot be fully mirrored until the bridge has an add path.
+
+### 🔴 The bridge would have BANKED AWAY every scale-in lot, and the checklist found it (2026-09-07)
+
+**`_intended_open_lots` fed `_sync_partials`, which closes the difference between what the broker
+holds and what the strategy still wants. It counted `_qty` alone.**
+
+🔴 **`_qty` NEVER CONTAINED THE ADDS.** It is assigned in exactly three places — zero, the base
+entry fill, and the reset — and **no line anywhere adds a scale-in lot to it.** Adds live in
+`_adds`, their own ledger, which is why `_charge_swap` already adds them as a separate term. **The
+docstring claimed the opposite in as many words**, and had done since it was written.
+
+🔴 **THE CONSEQUENCE: with scale-in on, the bridge would have CLOSED EVERY ADD moments after
+buying it** — understating the position by exactly the add size, banking the difference, and
+leaving both sides' own checks passing. MEASURED as the mutation: 0.5 wanted against 1.5 held
+closes 1.0, which is the add.
+
+⚠ **It was inert only because `assert_supported` refuses scale-in**, so the ledger is always empty
+on a live bot. **It becomes reachable the moment that refusal is retired — which is the entire
+point of the add path.** ⚠ **Nothing was ever going to go red**: no test scaled in, because the
+feature is refused. **It was found by working the `/live-safety` checklist before writing code,
+which is the one thing that would have found it.**
+
+⚠ **A wrong answer here is destructive in ONE direction only.** Too small closes real size; too
+large banks nothing and halts loudly on the next disagreement. **The asymmetry is why this is
+arithmetic rather than a judgement.**
+
+⚠ **An absent ledger is CANNOT ASK, never *no adds*** — the function's own `None` contract already
+says a strategy this bridge cannot interrogate must stop it acting rather than licence it to close
+everything.
+
+🔴 **THE TEST DOUBLE DID NOT HAVE THE LEDGER AT ALL, AND THAT IS RULE 13 EXACTLY.** The real
+`Execution` sets `_adds = []` in its constructor, so a fake without it models a strategy that does
+not exist — survivable only while the bridge read `_qty` alone. **The fixture was fixed, not the
+bridge loosened.**
+
+**Tests: 3 in `test_live_bridge.py`, each watched RED under its own mutation — and the first
+mutation IS the behaviour at HEAD**, so this is a real defect watched red rather than a test
+written to pass. Counting lot COUNT instead of size, and reading a missing ledger as empty, redden
+their own named tests.
+
+### 🔴 The account is HEDGING, and nothing in the repo had ever recorded that (2026-09-07)
+
+**MEASURED on the live terminal, `broker_facts.py --bot sos_fade_demo --sample 0`: PU Prime demo
+700152905 reports `margin_mode 2` — RETAIL HEDGING.** Volume band 0.01–100.00, step 0.01, contract
+100 oz.
+
+🔴 **IT DECIDES THE WHOLE SHAPE OF AN ADD AND IT WAS AN ASSUMPTION NOBODY HAD WRITTEN DOWN.** On a
+NETTING account a second buy merges into one position and the venue's own stop covers the combined
+volume. On a HEDGING account **every add is a SEPARATE POSITION with its own ticket and its own
+stop** — so the add path is not *place one more order*, it is *the bridge stops holding one
+position*.
+
+🔴 **`_agrees` HALTS ON MORE THAN ONE POSITION TODAY** — *"this strategy takes one at a time"* —
+so on this account the halt fires the instant an add fills. **That halt is correct for every
+configuration that exists now**, and retiring the scale-in refusal without changing it would take
+a bot down on its first scaled trade.
+
+⚠ **What the add path therefore needs, and it is more than an order call**: a placement route for
+the add, an agreement check that compares total VOLUME rather than counting positions, a stop
+ratchet that moves EVERY ticket rather than one, and exits that close across tickets. **The
+refusal comes off last, when the capability it stands in for exists — never to get a bot started.**
+
+⚠ **Re-measure `margin_mode` before assuming this of any other account.** It is a property of the
+account, not of the broker, and this repo has already twice quoted one account's readings for
+another.

@@ -321,6 +321,7 @@ class _FakeExecution:
         pend_short=None,
         qty=None,
         filled=0.0,
+        adds=None,
         cfg=None,
         pend_sec=None,
         entry_kind="primary",
@@ -340,6 +341,14 @@ class _FakeExecution:
         # nothing — which is what those tests are about.
         self._qty = qty
         self._filled_qty = filled
+        # 🔴 **THE REAL `Execution` ALWAYS HAS THIS — it is `[]` from its constructor — so a
+        # double without it models a strategy that does not exist (rule 13).** It was missing
+        # here until 2026-09-07, which is survivable only because the bridge read `_qty` alone
+        # and `_qty` never contained the adds. It does now, and an absent ledger is CANNOT ASK.
+        # ⚠ Live lots, zeroed IN PLACE as they are spent — so a spent add is `[price, 0.0]` and
+        # still present, never removed. A fake that popped them would model a ledger the
+        # strategy does not keep.
+        self._adds = [] if adds is None else adds
         # The bridge asks THIS whether anything banks at all, and returns immediately if not.
         # None means the same as a config with every rung at zero: nothing to take off.
         self._cfg = cfg
@@ -1498,12 +1507,12 @@ def _banking_cfg(**over):
     return types.SimpleNamespace(**base)
 
 
-def _open_bank(qty=1.0, filled=0.5, held=1.0, cfg=None, partial=True):
+def _open_bank(qty=1.0, filled=0.5, held=1.0, cfg=None, partial=True, adds=None):
     """An open long of `held` lots where the strategy believes `qty - filled` should remain."""
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(555, 0, 3290.0, held, 3280.0)]
     ops.partial_result = partial
-    ex = _FakeExecution(pos_dir=1, qty=qty, filled=filled, cfg=cfg or _banking_cfg())
+    ex = _FakeExecution(pos_dir=1, qty=qty, filled=filled, adds=adds, cfg=cfg or _banking_cfg())
     b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
     b._contract_size = lambda: 1.0  # the units→lots conversion has its own test below
     return b, ops, ledger, notes
@@ -1618,6 +1627,57 @@ def test_the_intended_size_is_converted_from_UNITS_to_LOTS():
     # VACUOUS: unconverted, the bridge wants 100 lots against 1.5 held, the excess goes negative
     # and it banks nothing — the same observable answer. It survived the mutation that deletes
     # the division. A test whose two branches agree is describing neither.
+
+
+def test_the_intended_size_COUNTS_THE_SCALE_IN_LOTS():
+    """🔴 THE BRIDGE MUST NOT BANK AWAY THE POSITION IT JUST SCALED INTO.
+
+    `_qty` is assigned in exactly three places — zero, the base entry fill, and the reset — and
+    NO line anywhere adds a scale-in lot to it. Adds live in their own ledger, which is why
+    `_charge_swap` already adds them as a separate term.
+
+    RED against HEAD: reading `_qty` alone the bridge wants 0.5 lots against 1.5 held and closes
+    1.0 — **exactly the add** — moments after buying it. Counting the lot it wants 1.5 and banks
+    nothing.
+
+    ⚠ Latent rather than live: `assert_supported` refuses scale-in, so the ledger is always empty
+    on a bot today. It becomes reachable the moment that refusal is retired, which is the whole
+    point of the add path.
+    """
+    b, ops, _, _ = _open_bank(qty=1.0, filled=0.5, held=1.5, adds=[[3295.0, 1.0]])
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert not [a for a in ops.actions if a[0] == "partial"], (
+        "the bridge closed size the strategy is still holding — this is the defect"
+    )
+    assert ops.positions[0].volume == 1.5
+
+
+def test_a_SPENT_add_is_no_longer_COUNTED():
+    """The lots are zeroed IN PLACE rather than removed, so the arithmetic has to read the
+    QUANTITY and never the length. A spent add is `[price, 0.0]` and still in the list.
+
+    MUTATION: count `len(adds)` instead of summing quantities and this goes red.
+    """
+    b, ops, _, _ = _open_bank(qty=1.0, filled=0.5, held=1.5, adds=[[3295.0, 0.0]])
+    b.sync(_Dec(stop=3280.0), _Sig())
+    # Nothing of the add remains, so 0.5 is wanted against 1.5 held — 1.0 comes off.
+    assert ("partial", 555, 1.0, "bullish") in ops.actions
+
+
+def test_a_strategy_with_NO_add_ledger_is_CANNOT_ASK_and_banks_NOTHING():
+    """Rule 1 where it is most destructive. An absent ledger is not *no adds* — it is a strategy
+    this bridge could not interrogate, and the whole function's `None` contract already says such
+    a strategy must stop it acting rather than licence it to close size.
+
+    ⚠ The real `Execution` always has the ledger, so this shape is a strategy production does not
+    have. It is tested because the bridge reads it defensively and a defensive read is exactly
+    where the two meanings collapse.
+    """
+    b, ops, _, _ = _open_bank(qty=1.0, filled=0.5, held=1.5)
+    del b._ex._adds
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert b._intended_open_lots() is None
+    assert not [a for a in ops.actions if a[0] == "partial"]
 
 
 def test_the_banked_record_says_it_filled_at_MARKET_not_at_the_rung():
