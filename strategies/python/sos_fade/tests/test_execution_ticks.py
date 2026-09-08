@@ -20,7 +20,7 @@ if str(_ROOT) not in sys.path:
 from backtest.fills import AccountProfile, SwapModel, TickPathResolver
 from backtest.data.ticks import Tick
 from strategies.python.sos_fade.config import SosFadeConfig
-from strategies.python.sos_fade.execution import Execution, _Pending
+from strategies.python.sos_fade.execution import Decision, Execution, _Pending
 
 
 class FakeTicks:
@@ -63,10 +63,21 @@ def _ladder_cfg(**kw):
     return dataclasses.replace(SosFadeConfig(), exec_tp1_pct=30.0, exec_tp2_pct=40.0, **kw)
 
 
-class Dec:
-    def __init__(self):
-        self.fills = []
-        self.closed_r = None
+def Dec():
+    """The REAL `Decision`, not a stand-in for one.
+
+    🔴 **This was a hand-rolled stub with two fields, and it broke the day production grew a
+    third.** The strategy started emitting an order-intent stream and every test here died on
+    `'Dec' object has no attribute 'intents'` — 51 of them. That is rule 13 arriving in the
+    *lucky* direction: a double LESS capable than production fails loudly. The dangerous direction
+    is a double that answers something the real thing cannot, and a two-field stub was one edit
+    away from either.
+
+    ⚠ **Constructing the real object is the fix, not adding the missing field.** A stub that
+    mirrors a dataclass by hand has to be maintained in step with it forever, and nothing fails
+    when it drifts — which is the duplication this repo is actively removing everywhere else.
+    """
+    return Decision(index=0)
 
 
 # ── the parity guard ─────────────────────────────────────────────────────────────

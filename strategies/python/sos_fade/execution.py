@@ -40,6 +40,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from backtest import fills as _fills
+from execution.intents import IntentKind, OrderIntent
 from backtest.portfolio.account import SoloAccount
 from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSnapshot
 
@@ -112,6 +113,17 @@ class Decision:
     # only either way — no decision reads them back, so they are parity-safe.
     tp1: Optional[float] = None
     tp2: Optional[float] = None
+    #: 🔴 **WHAT THIS BAR ASKED THE MARKET FOR**, in the one vocabulary the backtest and the live
+    #: bot both speak (`execution/intents.py`). `fills` says what the emulator DID; this says what
+    #: was WANTED, which is the only half a broker can act on — it can refuse, or fill part of it.
+    #:
+    #: ⚠ **Emitted alongside the existing booking, and nothing consumes it yet.** That is
+    #: deliberate: the stream has to be proven to describe the book before anything is allowed to
+    #: act on it, and the book may not move while that is established.
+    #:
+    #: ⚠ **Reporting-only, so it is parity-safe** — no decision reads it back, exactly like
+    #: `tp1`/`tp2` above.
+    intents: List[OrderIntent] = field(default_factory=list)
 
 
 @dataclass
@@ -750,6 +762,12 @@ class Execution:
         # did this trade actually hold?" once the trade is closed. Reporting only.
         self._add_lots: List[dict] = []
         self._add_stop = None              # the stop the last add was sized against
+        # The stop this strategy last ASKED for. A stop is re-stated every bar, but
+        # only a CHANGE is an instruction — re-sending an unchanged stop would have a
+        # live bot modifying the same order on every bar for no reason.
+        # ⚠ Not persisted: after a restart the first change re-states it, which is the
+        # safe direction (one extra instruction, never a missed one).
+        self._last_asked_stop = None
         self._base_qty = 0.0               # size the trade OPENED with; every add sizes off it
         self._add_limit = None             # "BOS retest" mode: the price the next add rests at
         self._add_armed = False            # a break has fired and we are waiting for the retest
@@ -1269,6 +1287,14 @@ class Execution:
             if not opened:
                 self._advance_stage(sig)
             dec.stop = self._current_stop()
+            # ⚠ ON CHANGE ONLY — see `_last_asked_stop`. `dec.stop` is the STATE of the stop and
+            # is stated every bar; an intent is an INSTRUCTION and there is only one when it moves.
+            if dec.stop is not None and dec.stop != self._last_asked_stop:
+                dec.intents.append(OrderIntent(
+                    kind=IntentKind.MOVE_STOP, direction=self._pos_dir,
+                    stop=dec.stop, reason="stop",
+                ))
+                self._last_asked_stop = dec.stop
             # Re-rest the adds' target for the NEXT bar, in the same slot the stop is
             # staged in and for exactly the same reason: an exit order placed at THIS
             # close is what the next bar trades against (TradingView's one-bar delay).
@@ -2671,8 +2697,16 @@ class Execution:
             else:
                 self._traded_sos_s, self._traded_sos_s_ms = pend.sos_bar, sos_ms
         self._pend_long = self._pend_short = self._pend_sec = None
-        dec.fills.append(Fill("entry", "Long" if pend.dir > 0 else "Short",
-                              fill_price, granted, pend.dir))
+        side = "Long" if pend.dir > 0 else "Short"
+        dec.fills.append(Fill("entry", side, fill_price, granted, pend.dir))
+        # ⚠ The QUANTITY is `granted`, never `pend.qty`: the account has already sized this and
+        # may have shrunk it, and the instruction that reaches a venue must be the size actually
+        # taken. Asking for the desired size here would put a number on the wire that the
+        # account already refused.
+        dec.intents.append(OrderIntent(
+            kind=IntentKind.OPEN, direction=pend.dir, qty=granted,
+            price=fill_price, stop=pend.sl, reason=side,
+        ))
         return True
 
     # ── open-trade management (Phase A exits + Phase B staging) ───────────────────
@@ -2900,6 +2934,9 @@ class Execution:
         self._equity_realized += pnl
         self._account.book_pnl(self._leg, pnl)
         dec.fills.append(Fill("exit", oid, price, closed, d))
+        dec.intents.append(OrderIntent(
+            kind=IntentKind.CLOSE_PORTION, direction=d, qty=closed, price=price, reason=oid,
+        ))
         self._legs.append({"reason": oid, "price": price, "ms": sig.time_ms, "qty": closed})
 
     def _close_add_record(self, i, price, ms, reason, pnl) -> None:
@@ -3043,6 +3080,9 @@ class Execution:
         self._exit_reason = oid
         self._legs.append({"reason": oid, "price": price, "ms": sig.time_ms, "qty": qty})
         dec.fills.append(Fill("exit", oid, price, qty, d))
+        dec.intents.append(OrderIntent(
+            kind=IntentKind.CLOSE_PORTION, direction=d, qty=qty, price=price, reason=oid,
+        ))
         if self._filled_qty >= self._qty - 1e-9:
             self._finalise_trade(sig, dec)
 
@@ -3105,6 +3145,7 @@ class Execution:
         self._pos_dir = 0
         self._qty = 0.0
         self._filled_qty = 0.0
+        self._last_asked_stop = None   # a new trade's first stop is a real instruction
         self._stage = 0
         self._adds = []
         self._add_lots = []

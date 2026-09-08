@@ -3115,3 +3115,46 @@ and the lab, never by Pine parity.
 `test_secondary.py` asserted the trigger ships as the reclaim alone. Both triggers ship together
 since 2026-09-06 (Aaron's call, the same change). ⚠ **That test is a PIN on a default, so going red
 is its whole job** — the answer is to read why it moved and re-state it, never to loosen it.
+
+### The strategy now SAYS what it wants, as well as booking it (2026-09-07)
+
+Every decision carries the orders it would place — an entry, the banking of added lots, a partial
+exit, and the stop — in the shared vocabulary in `execution/`. **Nothing reads them yet.** The
+inline booking is untouched and is still the thing that decides the book.
+
+⚠ **This is an ADDITION, not a replacement, and the distinction is the whole safety argument.**
+The emission appends to a reporting field and reads nothing back, so it cannot change a fill.
+Retiring the inline booking is a separate change with its own proof; until then, calling this
+"the emulator runs on intents" would be a label claiming code that does not exist — rule 7.
+
+🔴 **The stop is emitted only when it MOVES, and that filter belongs HERE rather than on the
+executor.** This strategy re-states its stop every bar, which a backtest absorbs silently and a
+broker turns into an order-modify on the wire every bar for the life of the trade. Putting the
+filter on the live side would mean the executor remembering the last stop — a second copy of
+position state, which is precisely what this work exists to delete. ⚠ **The remembered value is
+cleared where the position is cleared**, not on a timer: a stale one would swallow the first real
+stop move of the NEXT trade, silently and only sometimes.
+
+**PARITY: byte-identical to HEAD, which is a stronger statement than green.**
+`compare_strategy.py` output matches HEAD character for character on all four full-config exports
+— including each one's cold-start divergence, the part that would have shifted had anything real
+moved. Exit 0 on all four at `--warmup 100` and `1000` (`2a817` also at 200 / 500). **Book
+unmoved:** stack `st_631986bbd9` replays 272 trades / 223.3339464065 R, sha256 identical.
+
+🔴 **RUNNING THE GATE AT ITS DEFAULT IS RUNNING IT WRONG, and it cost a detour to re-learn.**
+With no warm-up all four exports diverge at bar 16 — `px_s_stage`, py=1 pine=0 — which reads
+exactly like a regression and is cold start, true on HEAD as much as here. It is already written
+down under the commanded-close section; it was found again the hard way because the bare command
+looks like the honest one. **The warm-up ladder IS the invocation.** ⚠ **And a gate piped into
+`tail` reports the pipe's exit code, not the gate's** — the first run of this looked like exit 0
+on a mismatch.
+
+**Tests: 3 in `tests/test_intent_stream.py`**, plus the whole existing suite as the regression
+(623 green). ⚠ **Two more were written and DELETED for being unable to fail** — the note saying so
+is in the file, because a test count is not evidence and a vacuous test is worse than a missing one.
+
+🔴 **The shared test double for a decision was replaced with the REAL object, and that is the
+durable half of this change.** It was a hand-rolled stand-in carrying two fields; production grew a
+third and 51 tests broke at once. **They broke in the lucky direction** — an attribute error, not a
+wrong number — but the same drift on a field the double happened to have would have passed. Rule 13,
+arriving as a bill: the double was less capable than production, so it described a system nobody runs.
