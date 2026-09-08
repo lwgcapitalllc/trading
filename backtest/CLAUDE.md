@@ -449,6 +449,28 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   DIFFERENT setup take the slot. Add the counter to `Execution` if the column is wanted again.
   ⚠ Reads the R column only. Costs are size-independent in R while dollars compound, and this
   strategy's run-to-run spread is **sd 15.06R** (`jitter_audit.py`) — a smaller gap is noise.
+- **`tools/axis_sweep.py`** (2026-09-07) — move ONE setting at a time off a strategy's shipped
+  defaults and score every value in R, with its neighbours, both calendar halves and a control
+  beside it. Strategy-agnostic: it reads `LAB_STRATEGY` off any package under
+  `strategies/python/`.
+  🔴 **It ENFORCES four rules rather than reminding you of them, and each is one somebody here has
+  broken.** `--split` is REQUIRED and echoed above the table, so the out-of-sample boundary cannot
+  be chosen after seeing the grid. A CONTROL row at the shipped defaults always runs first, and
+  with `--expect-trades` / `--expect-r` it REFUSES the whole sweep when it misses — if the control
+  moved, the harness moved and no row under it is readable. Everything is scored in R. `--server`
+  names the broker whose cached bars were replayed, because two brokers' gold histories differ in
+  LENGTH and a re-run on the other cache disagrees with every figure while looking healthy.
+  ⚠ **An UNASSERTED control prints a loud line saying so** — a control nobody can check is
+  decoration, and staying silent about it would let the next reader take it for a verified one.
+  ⚠ **One axis at a time, never a cartesian product, and that is the point rather than a
+  limitation.** A grid over a ~100-trade book returns a winner whether or not one exists; sweeping
+  an axis puts every winner's NEIGHBOURS in the table by construction, which is the only thing
+  that tells a hill from a spike. Combine survivors deliberately afterwards and re-check both
+  halves — **a one-at-a-time sweep cannot see an interaction, so its winners are candidates.**
+  ⚠ **It reads each row's TRADE LIST through `run_sweep`'s `extract` hook and does NOT reproduce
+  the bar loop** — see the `extract` section below for why that matters.
+  ⚠ **`--pin` states a BASIS for every row including the control. It is not a second axis**; a
+  value that varies belongs in `--axis` where its neighbours are printed.
 - **`tools/verify_parity.py`** — the one "is everything in sync?" command. Point it at the TradingView
   export CSV(s) you just pulled; it runs every parity check (all nine engine `compare_*.py` + the
   sos_fade `compare_strategy.py` + the b_leg `compare_bleg.py`) whose MARKER column is present in the CSV, and prints one
@@ -2120,6 +2142,32 @@ when it first appears rather than passing an average.
 watched RED**, each reddening its own named test while a control stayed green — two mutations that
 reddened everything were re-aimed rather than kept, because a mutation that breaks the module
 proves nothing.
+
+## `optimizer.py` — `run_sweep(extract=…)`, and why it is not "just read the KPIs" (2026-09-07)
+
+An optional callable handed each combo's FINISHED strategy; its return value arrives on that row
+as `extra`. It exists because `build_kpis` reports TOTALS, and an out-of-sample split needs each
+trade's own entry time — so without it every caller wanting a calendar half has to write its own
+bar loop.
+
+🔴 **That second bar loop is the thing this hook prevents, and the failure it prevents is silent.**
+`_replay_one` is not `strategy.run()`: it sets `bar_ms` off the frame and calls `finalize()`
+afterwards, and the section below already records that a runner forgetting the second one grades
+every combo on a book missing an end-of-book pass, confidently. **A hook is cheaper than a fourth
+copy of this loop.**
+
+⚠ **The key is ABSENT when nobody asked, never `None`.** A row carrying `extra: None` cannot be
+told apart from one whose extractor genuinely found nothing — rule 1, one field along.
+
+⚠ **It is PICKLED to the workers**, so it must be a module-level function returning small plain
+data, and the parallel path is tested separately: a hook that works only serially stops working
+the moment a grid is big enough to fan out.
+
+✅ **NO DOCUMENTED BASELINE MOVES AND NO STORED RUN RE-PRICES.** The parameter defaults to `None`,
+which is the path every existing caller takes, and on that path the row is byte-identical to what
+it has always been. 4 tests in `tests/test_optimizer.py`; 3 mutations watched RED, each reddening
+exactly its own case (the extraction taken before `finalize`, the absent key emitted as `None`,
+the worker dropping the extractor).
 
 ## `optimizer.py::_replay_one` finalizes the strategy (2026-08-20)
 

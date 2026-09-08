@@ -202,3 +202,80 @@ def test_always_at_least_one_worker(monkeypatch):
     assert default_workers(100) == 1
     monkeypatch.setattr("backtest.optimizer.os.cpu_count", lambda: None)
     assert default_workers(100) == 1
+
+
+# ── the `extract` hook (2026-09-07) ───────────────────────────────────────────
+#
+# It exists so a caller needing something `build_kpis` does not carry — an out-of-sample split
+# needs each trade's own entry time, and the KPI dict reports totals — can have it WITHOUT
+# reproducing `_replay_one`. That matters because `_replay_one` is not `strategy.run()`: it sets
+# `bar_ms` off the frame and calls `finalize()` afterwards, and a second bar loop that forgets
+# either is wrong in silence.
+#
+# The extractors are module-level because they are PICKLED to the worker processes.
+
+# A package whose end-of-book pass adds a trade — the only way to tell "extract sees the finished
+# strategy" apart from "extract sees the strategy mid-flight". The distinction is the whole reason
+# `_replay_one` calls `finalize` at all.
+_ANCHOR = "    def step(self, bar_state):"
+_FINALIZING_PKG = _FAKE_PKG.replace(
+    _ANCHOR,
+    "    def finalize(self, df):\n        self.execution.trades.append(_Trade(999.0))\n" + _ANCHOR,
+)
+# A fixture that quietly fails to patch is a fixture describing a strategy with no end-of-book
+# pass — and the test built on it then passes against the very bug it names. Refuse instead.
+assert "def finalize" in _FINALIZING_PKG, "the finalizing fixture did not patch — check _ANCHOR"
+
+
+def _count_trades(strategy):
+    return len(strategy.execution.trades)
+
+
+def _first_pnl(strategy):
+    return strategy.execution.trades[0].pnl_usd
+
+
+@pytest.fixture
+def finalizing_pkg(tmp_path, monkeypatch):
+    pkg = tmp_path / "finalstrat"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(_FINALIZING_PKG)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for mod in [m for m in sys.modules if m.startswith("finalstrat")]:
+        del sys.modules[mod]
+    yield "finalstrat"
+
+
+def test_extract_rides_on_each_row_and_tracks_that_combo(fake_pkg, df):
+    """Every row carries its OWN extraction, not the last combo's."""
+    rows = _serial(fake_pkg, df, _combos(fake_pkg, [1.0, 2.0, 3.0]), extract=_first_pnl)
+    assert [r["extra"] for r in rows] == [10.0, 20.0, 30.0]
+
+
+def test_no_extractor_means_the_key_is_ABSENT_not_None(fake_pkg, df):
+    """`extra: None` could not be told apart from an extractor that genuinely found nothing —
+    the "no" versus "cannot ask" distinction root rule 1 is about. Absence is the answer."""
+    rows = _serial(fake_pkg, df, _combos(fake_pkg, [1.0]))
+    assert "extra" not in rows[0]
+
+
+def test_extract_sees_the_FINISHED_strategy_not_the_mid_flight_one(finalizing_pkg, df):
+    """5 bars = 5 trades, plus the one the end-of-book pass adds. An extractor called before
+    `finalize()` would report 5 and rank every combo on a book missing that pass's trades."""
+    rows = _serial(finalizing_pkg, df, _combos(finalizing_pkg, [1.0]), extract=_count_trades)
+    assert rows[0]["extra"] == len(df) + 1
+
+
+def test_extract_survives_the_process_pool(fake_pkg, df, tmp_path):
+    """The parallel path pickles the extractor to the workers and the result back. A hook that
+    only works serially is a hook that silently stops working the moment a grid is big enough."""
+    combos = _combos(fake_pkg, [1.0, 2.0, 3.0])
+    parallel = run_sweep(
+        module_path=fake_pkg,
+        df=df,
+        combos=combos,
+        max_workers=2,
+        monorepo_root=str(tmp_path),
+        extract=_first_pnl,
+    )
+    assert [r["extra"] for r in parallel] == [10.0, 20.0, 30.0]

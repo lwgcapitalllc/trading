@@ -5,9 +5,11 @@
 B LEG is the SOS whose retrace arrived LATE: an SOS Fade reversal dies at 2/3 on a continuation
 BOS before it retraces, the Sniper-Zone band (0.382–0.5) of that break is frozen, and a
 resting limit at the 0.5 edge waits for the late return.
-**Sweeps:** `b_leg_optimization.md`, next to this file — **empty on purpose**, because no
-sweep has ever been run here. It carries the two named tuning candidates and the rule that must be
-obeyed before the first grid: state the out-of-sample split BEFORE it runs, at n=50.
+**Sweeps:** `b_leg_optimization.md`, next to this file. 🔴 **THE FIRST SWEEP RAN 2026-09-07 AND
+NOTHING BEAT THE SHIPPED SETTINGS** — 8 settings one at a time, charged, on **PU Prime demo ECN**
+(Aaron's call: the attached terminal and the account these bots trade), so **no figure there may be
+compared against the Vantage numbers below.** Read its *basis* and its CONTROL — **116 trades /
++20.76R / PF 1.54 / maxDD −6.42R**, which every later sweep asserts — before quoting any of it.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
@@ -540,6 +542,15 @@ Two defaults moved. Both are FORK PINS in `config.py` and matched defaults in
 | was | 1.0 (inherited) | 1.25 (`maxval` 3) |
 | now | **0.05** | **4.0** (`maxval` 6) |
 | SOS Fade parent | keeps 1.0 — its sweep gives 0.25% → 43.6R vs 109.3R at 1.0 | n/a, B-LEG-only input |
+
+🔴 **EVERY NUMBER IN THIS SECTION PREDATES THE 2026-08-22 STRUCTURE FIX AND NO LONGER DESCRIBES
+THIS BOT — and the free-book figure below never reproduced at all.** `f4b0410b` stopped the
+structure engine anchoring backwards onto a candle a break had just rejected; on these exact bars
+it moves B-LEG **+23.28R → +20.91R** across an unchanged 114 trades. ⚠ **And replaying the
+2026-08-06 commit itself gives 114 / +23.28R, not the 112 / +17.64R recorded here** — so that free
+figure came from a run whose settings nobody wrote down and **may not be used as a control.** The
+usable control is `b_leg_optimization.md` → *The control*, measured on the account this bot trades.
+**The RANKINGS in this section still stand — every row moved together — the totals do not.**
 
 **Charged (spread + swap, `vantage_demo`), 186,312 M15 bars, 2018-09-13 → 2026-08-05:**
 

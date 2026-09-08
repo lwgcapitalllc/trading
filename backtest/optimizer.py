@@ -46,7 +46,7 @@ _W: Dict[str, Any] = {}
 
 
 def _init_worker(
-    monorepo_root: str, module_path: str, df, capital: float, cost_profile=None
+    monorepo_root: str, module_path: str, df, capital: float, cost_profile=None, extract=None
 ) -> None:
     """Runs once per worker process. Its args are plain values (str/float/DataFrame) on purpose:
     they are unpickled BEFORE this body runs, so they must not need `sys.path` to already be set.
@@ -57,11 +57,24 @@ def _init_worker(
     if monorepo_root and monorepo_root not in sys.path:
         sys.path.insert(0, monorepo_root)
     entry = importlib.import_module(module_path).LAB_STRATEGY
-    _W.update(strategy_cls=entry["strategy"], df=df, capital=capital, cost_profile=cost_profile)
+    _W.update(
+        strategy_cls=entry["strategy"],
+        df=df,
+        capital=capital,
+        cost_profile=cost_profile,
+        extract=extract,
+    )
 
 
 def _run_in_worker(combo: Combo) -> dict:
-    return _replay_one(_W["strategy_cls"], _W["df"], _W["capital"], combo, _W.get("cost_profile"))
+    return _replay_one(
+        _W["strategy_cls"],
+        _W["df"],
+        _W["capital"],
+        combo,
+        _W.get("cost_profile"),
+        _W.get("extract"),
+    )
 
 
 def _refuse_unreplayable(config) -> None:
@@ -86,12 +99,22 @@ def _refuse_unreplayable(config) -> None:
         )
 
 
-def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=None) -> dict:
+def _replay_one(
+    strategy_cls, df, capital: float, combo: Combo, cost_profile=None, extract=None
+) -> dict:
     """Replay the whole frame under one config and return {params, kpis}.
 
     Each combo gets a FRESH strategy and a FRESH engine stack. Reusing either across combos would
     carry state from the previous parameter set into the next one — the results would be a function
     of grid order, which is the kind of bug that produces a plausible number and no error.
+
+    `extract` is an optional callable handed the FINISHED strategy, whose return value is attached
+    to the row as `extra`. It exists so a caller needing something the KPI dict does not carry —
+    an out-of-sample split needs each trade's own entry time, and `build_kpis` reports totals — can
+    have it WITHOUT reproducing this function. That matters more than it looks: this is not
+    `strategy.run()`, it sets `bar_ms` off the frame and calls `finalize` afterwards, and a second
+    bar loop that forgets either is wrong in silence (see `backtest/CLAUDE.md`). Omit it and the
+    row is byte-identical to what it has always been.
     """
     from backtest.output import build_kpis
     from backtest.replay import EngineStack, build_strategy, iter_bars
@@ -117,7 +140,13 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=Non
         strategy.finalize(df)
 
     trades = strategy.execution.trades
-    return {"params": dict(combo.params), "kpis": build_kpis(trades, initial_capital=capital)}
+    row = {"params": dict(combo.params), "kpis": build_kpis(trades, initial_capital=capital)}
+    # The key is ABSENT when nobody asked, never None: a row carrying `extra: None` cannot be told
+    # apart from one whose extractor genuinely found nothing, which is the "no" vs "cannot ask"
+    # distinction root rule 1 is about.
+    if extract is not None:
+        row["extra"] = extract(strategy)
+    return row
 
 
 def default_workers(n_combos: int) -> int:
@@ -141,6 +170,7 @@ def run_sweep(
     progress: Optional[Callable[[int, int], None]] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
     cost_profile=None,
+    extract: Optional[Callable[[Any], Any]] = None,
 ) -> List[dict]:
     """Replay `df` once per combo and return [{params, kpis}] — one row per combo, in combo order.
 
@@ -154,6 +184,11 @@ def run_sweep(
     run's stated costs would rank combos on a frictionless book and then hand the winner to a
     validation run that is not — which is the same defect this parameter exists to close on the
     single-run path. It is a frozen dataclass, so it pickles to the worker processes unchanged.
+
+    `extract` is an optional callable handed each combo's FINISHED strategy; its return value
+    arrives on that row as `extra`. It must be a module-level function — it is pickled to the
+    workers — and it should return small, plain data, since whatever it builds is shipped back
+    from another process. Omit it and every row is exactly what it has always been.
     """
     combos = list(combos)
     if not combos:
@@ -170,7 +205,15 @@ def run_sweep(
 
     if workers <= 1:
         return _sweep_serial(
-            module_path, root, df, combos, initial_capital, progress, should_cancel, cost_profile
+            module_path,
+            root,
+            df,
+            combos,
+            initial_capital,
+            progress,
+            should_cancel,
+            cost_profile,
+            extract,
         )
 
     results: List[Optional[dict]] = [None] * total
@@ -178,7 +221,7 @@ def run_sweep(
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_worker,
-        initargs=(root, module_path, df, initial_capital, cost_profile),
+        initargs=(root, module_path, df, initial_capital, cost_profile, extract),
     ) as pool:
         futures = {pool.submit(_run_in_worker, c): i for i, c in enumerate(combos)}
         pending = set(futures)
@@ -198,7 +241,7 @@ def run_sweep(
 
 
 def _sweep_serial(
-    module_path, root, df, combos, capital, progress, should_cancel, cost_profile=None
+    module_path, root, df, combos, capital, progress, should_cancel, cost_profile=None, extract=None
 ) -> List[dict]:
     """The single-worker path — also what the tests drive, since it needs no pickling or spawn."""
     import importlib
@@ -212,7 +255,7 @@ def _sweep_serial(
     for i, combo in enumerate(combos, 1):
         if should_cancel is not None and should_cancel():
             break
-        out.append(_replay_one(strategy_cls, df, capital, combo, cost_profile))
+        out.append(_replay_one(strategy_cls, df, capital, combo, cost_profile, extract))
         if progress is not None:
             progress(i, len(combos))
     return out
