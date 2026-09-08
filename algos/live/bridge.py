@@ -944,7 +944,7 @@ class OrderBridge:
             # the stop behind what is left. Reversed, a stop staged for the post-bank size would
             # be sent while the broker still holds the pre-bank size.
             self._sync_partials(positions)
-            self._sync_stop(dec)
+            self._sync_stop(dec, positions)
         else:
             # The PRIMARY's two slots only. The re-entry's slot is reconciled on the fill
             # clock by `sync_fast`, and reaching across from here would price its limit off a
@@ -2597,27 +2597,90 @@ class OrderBridge:
             fill="market_on_bar_close",
         )
 
-    def _sync_stop(self, dec) -> None:
+    def _sync_stop(self, dec, positions=None) -> None:
         """Keep the broker's stop on the open position equal to the strategy's current stop.
 
         The stop lives AT THE BROKER by design (D4): a crash, a reboot or a dropped network must
         not leave a position unprotected. The bot's job is only to ratchet it.
+
+        🔴 **ON A HEDGING ACCOUNT A SCALE-IN LOT IS ITS OWN POSITION WITH ITS OWN STOP**, so the
+        one ratchet above protects the BASE and would leave every add riding its original stop —
+        under-protected, silently, with the base's own record looking perfectly correct.
         """
         want = getattr(dec, "stop", None)
         if want is None or self._pos_ticket is None:
             return
-        if not self._moved(self._pos_stop, want):
+        if self._moved(self._pos_stop, want):
+            ok = self._exec(
+                lambda: self._mt5.move_sl(self._pos_ticket, want),
+                f"move stop T{self._pos_ticket} {self._pos_stop} → {want}",
+            )
+            if ok:
+                self._ledger.event(
+                    "stop_moved", ticket=self._pos_ticket, was=self._pos_stop, now=want
+                )
+                self._pos_stop = want
+                # Re-record: the stop is the field that moves, and a record holding the previous
+                # stop would be REFUSED at the next start because the broker's real one
+                # disagrees.
+                self._save_position()
+        self._sync_add_stops(want, positions)
+
+    def _sync_add_stops(self, want, positions) -> None:
+        """Ratchet every OTHER position under our magic onto the same stop.
+
+        🔴 **A RECONCILIATION, NOT AN EVENT, AND THAT IS DELIBERATE — the same shape
+        `_sync_partials` is built on.** It does not remember which tickets are adds; it asks the
+        broker what is open and brings each one onto the wanted stop. **A tracked list would be
+        empty after a restart while the broker still held the adds**, so their stops would never
+        move again — and nothing would say so, because the base's record would be correct.
+
+        ⚠ **It compares each position's OWN stop, never the base's recorded one.** Gating these
+        on the base having moved is how an add that filled at a moment the stop was still would
+        keep its original stop for the life of the trade: the base is already correct, so the
+        outer check returns early and never looks.
+
+        ⚠ **A FAILED move is ALERTED, because the failure is silent and the position is real.**
+        The strategy goes on managing size whose broker-side stop is further away than it
+        believes — the one direction that costs money — so it must be said rather than retried
+        into a log nobody reads.
+
+        ⚠ **No positions passed means CANNOT ASK, so nothing is moved and nothing is claimed.**
+        An empty list would otherwise read as *there are no adds*, which is the same collapse
+        rule 1 exists to prevent — and every caller that has the list passes it.
+        """
+        if not positions:
             return
-        ok = self._exec(
-            lambda: self._mt5.move_sl(self._pos_ticket, want),
-            f"move stop T{self._pos_ticket} {self._pos_stop} → {want}",
-        )
-        if ok:
-            self._ledger.event("stop_moved", ticket=self._pos_ticket, was=self._pos_stop, now=want)
-            self._pos_stop = want
-            # Re-record: the stop is the field that moves, and a record holding the previous
-            # stop would be REFUSED at the next start because the broker's real one disagrees.
-            self._save_position()
+        for p in positions:
+            if int(p.ticket) == self._pos_ticket:
+                continue
+            if not self._moved(getattr(p, "sl", None), want):
+                continue
+            ok = self._exec(
+                lambda t=int(p.ticket): self._mt5.move_sl(t, want),
+                f"move stop T{int(p.ticket)} {getattr(p, 'sl', None)} → {want} (scale-in lot)",
+            )
+            if ok:
+                self._ledger.event(
+                    "stop_moved",
+                    ticket=int(p.ticket),
+                    was=getattr(p, "sl", None),
+                    now=want,
+                    leg="add",
+                )
+            else:
+                self._alert_once(
+                    f"add_stop_stuck_{int(p.ticket)}",
+                    f"Could not move the stop on scale-in lot T{int(p.ticket)} to {want}. That "
+                    f"size is still protected at {getattr(p, 'sl', None)}, further away than the "
+                    f"strategy believes, so a stop-out there will cost more than the backtest.",
+                )
+                self._ledger.event(
+                    "add_stop_move_failed",
+                    ticket=int(p.ticket),
+                    was=getattr(p, "sl", None),
+                    wanted=want,
+                )
 
     def _cancel_all_rest(self, why: str) -> None:
         for slot, held in list(self._rest.items()):

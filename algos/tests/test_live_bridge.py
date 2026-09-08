@@ -303,8 +303,16 @@ class _FakeMt5Ops:
         return self.cancel_result
 
     def move_sl(self, ticket, new_sl, tp=None):
+        """⚠ **It can REFUSE.** It could only ever answer True until 2026-09-07, and a fake that
+        cannot produce a failure mode certifies the code against a system you do not have — the
+        same trap this file already records for `cancel_pending`. The scale-in stop ratchet has
+        a real failure branch (size left protected further away than the strategy believes), and
+        it is the branch most worth being able to reach.
+
+        `move_sl_fails` holds the tickets to refuse, so one lot can fail while another succeeds —
+        which is the case that matters, and a single global flag could not express it."""
         self.actions.append(("move_sl", ticket, new_sl))
-        return True
+        return ticket not in getattr(self, "move_sl_fails", ())
 
     def get_deal_result(self, ticket):
         return self.deal
@@ -3233,3 +3241,79 @@ def test_the_three_refusals_do_NOT_share_a_message():
     b._agrees(ops.positions)
     reasons.add(b.halt_reason)
     assert len(reasons) == 3, reasons
+
+
+# ── the stop on a scale-in lot ────────────────────────────────────────────────
+# On a hedging account each add is its own position with its own stop. The base's ratchet
+# protects the base alone, so without these the adds ride their original stop for the life of
+# the trade — under-protected, with the base's own record looking perfectly correct.
+
+
+def _scaled_position(base_sl=3280.0, add_sl=3270.0, pos_stop=3280.0):
+    """A base long and one scale-in lot, each with its own stop."""
+    ops = _FakeMt5Ops()
+    ops.positions = [
+        _Pos(555, 0, 3290.0, 1.0, base_sl),
+        _Pos(556, 0, 3295.0, 0.5, add_sl),
+    ]
+    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, adds=[[3295.0, 0.5]])
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._pos_ticket = 555
+    b._pos_stop = pos_stop
+    return b, ops, ledger, notes
+
+
+def test_a_scale_in_lots_stop_is_RATCHETED_with_the_base():
+    """MUTATION: skip the add loop and this goes red — the lot keeps its original stop."""
+    b, ops, _, _ = _scaled_position()
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)
+    assert ("move_sl", 555, 3285.0) in ops.actions
+    assert ("move_sl", 556, 3285.0) in ops.actions
+
+
+def test_an_add_is_reconciled_from_ITS_OWN_stop_not_the_bases():
+    """🔴 THE CASE THAT MAKES THIS A RECONCILIATION RATHER THAN AN EVENT.
+
+    The base is ALREADY at the wanted stop, so the outer ratchet returns early. An add that
+    filled while the stop was still would keep its original stop for the whole trade if the loop
+    were gated on the base having moved.
+
+    MUTATION: gate the add loop behind the base's `_moved` check and this goes red.
+    """
+    b, ops, _, _ = _scaled_position(base_sl=3285.0, add_sl=3270.0, pos_stop=3285.0)
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)
+    assert ("move_sl", 555, 3285.0) not in ops.actions, "the base was already there"
+    assert ("move_sl", 556, 3285.0) in ops.actions, "the add was not, and must be moved"
+
+
+def test_a_FAILED_add_stop_move_is_alerted_and_recorded():
+    """The failure is silent and the position is real: the strategy goes on managing size whose
+    broker stop is further away than it believes. It must be SAID, not retried into a log.
+
+    MUTATION: drop the else branch and this goes red.
+    """
+    b, ops, ledger, notes = _scaled_position()
+    ops.move_sl_fails = (556,)
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)
+    assert "event:add_stop_move_failed" in ledger.kinds()
+    assert any("scale-in lot" in n for n in notes)
+
+
+def test_a_SUCCESSFUL_add_stop_move_alerts_NOTHING():
+    """The control. A suite whose every case asserts a failure certifies a ratchet that always
+    fails — this repo has already shipped exactly that once."""
+    b, ops, ledger, notes = _scaled_position()
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)
+    assert "event:add_stop_move_failed" not in ledger.kinds()
+    assert not [n for n in notes if "scale-in lot" in n]
+
+
+def test_NO_position_list_moves_NOTHING_rather_than_assuming_no_adds():
+    """Rule 1. An absent list is *could not ask*, and reading it as *there are no adds* would
+    leave every add unprotected while the base's record looked correct.
+
+    MUTATION: default the list to the broker's book inside the helper and this goes red.
+    """
+    b, ops, _, _ = _scaled_position()
+    b._sync_stop(_Dec(stop=3285.0), None)
+    assert ("move_sl", 556, 3285.0) not in ops.actions

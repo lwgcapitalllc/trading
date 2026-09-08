@@ -147,6 +147,13 @@ _DECISION_EVENTS = {
     # known to be wrong. ⚠ It is written because the alternative — a stop that simply does not
     # move — is indistinguishable from a trade with nothing to ratchet. Rule 1.
     "secondary_stop_unreadable",
+    # ── a SCALE-IN lot's stop, on a hedging account where each add is its own position
+    # (2026-09-07). A DECISION by the same reasoning as the two above: it says a live trade is
+    # carrying size protected further away than the strategy believes, which is exactly why that
+    # trade will not match its backtest, and it belongs beside the trade. ⚠ It is written because
+    # the alternative — an add whose stop simply never moves — is indistinguishable from a trade
+    # with nothing to ratchet, and the base's own record looks correct throughout. Rule 1.
+    "add_stop_move_failed",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

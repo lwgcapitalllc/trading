@@ -3562,3 +3562,48 @@ checks are the ones killed precisely.
 ⚠ **This is one piece of four.** The placement route, the stop ratchet across every ticket and the
 exits across tickets are still missing, and **the scale-in refusal stays up until they exist** —
 retired when the capability is real, never to get a bot started.
+
+### Every scale-in lot's stop is ratcheted, and it is a RECONCILIATION (2026-09-07, add path 2/4)
+
+On a hedging account each add is its own position with its own stop, so the existing ratchet
+protects the BASE alone. Without this, every add rides its original stop for the life of the trade
+— **under-protected, silently, while the base's own record reads perfectly correct.**
+
+🔴 **`_sync_add_stops` DERIVES the lots from the broker each bar rather than remembering them, and
+that is the load-bearing choice.** A tracked list would be EMPTY after a restart while the broker
+still held the adds — so their stops would never move again, and nothing would say so, because the
+base's record would still be right. **Same shape as `_sync_partials`, for the same reason.**
+
+🔴 **EACH LOT IS COMPARED AGAINST ITS OWN STOP, NEVER THE BASE'S RECORDED ONE.** Gating the loop on
+*the base moved this bar* is how an add that filled at a moment the stop was still keeps its
+original stop for the whole trade: the base is already correct, the outer check returns early, and
+the lot is never looked at. **That case has its own test, and it is the one that makes this a
+reconciliation rather than an event.**
+
+⚠ **A FAILED move is ALERTED and RECORDED, never retried into a log.** The strategy goes on
+managing size whose broker stop is further away than it believes — the one direction that costs
+money — and an add whose stop simply never moves is indistinguishable from a trade with nothing to
+ratchet (rule 1).
+
+⚠ **An absent position list is CANNOT ASK: nothing is moved and nothing is claimed.** Reading it as
+*there are no adds* is the same collapse rule 1 exists to prevent, and every caller that has the
+list passes it.
+
+⚠ **Behaviour is UNCHANGED with no adds** — the loop has nothing to iterate, and the base's path is
+byte-identical to before.
+
+🔴 **THE FAKE BROKER'S STOP MOVE COULD ONLY EVER SUCCEED**, so the failure branch was unreachable
+by any test. It can refuse per-ticket now — one lot failing while another succeeds is the case that
+matters, and a single global flag could not express it. **A fixture that cannot fail the way
+production fails certifies the code against a system you do not have** — the third time this file
+has recorded that shape.
+
+🔴 **THE EVENT ROUTING GUARD CAUGHT THE NEW RECORD, WHICH IS THE GUARD EARNING ITS KEEP.** An
+unclassified event falls into the health stream and reads as a process fault. It is a DECISION by
+the same reasoning as `partial_refused` and `secondary_stop_unreadable`: it says why a live trade
+will not match its backtest, so it belongs beside the trade.
+
+**Tests: 5 in `test_live_bridge.py`, 5 mutations RUN and every one red, with every test — the
+success CONTROL included — killed by at least one.** ⚠ **The control needed its own mutation
+(alert on every move) and would otherwise have been decoration**: it survived all four of the
+others, which is exactly what a case that cannot fail looks like.
