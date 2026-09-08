@@ -5656,3 +5656,54 @@ disconnected-terminal test passed an explicit `False`, which `is False` and `is 
 catch — so the two readings were indistinguishable and the suite was green either way. The case that
 separates them is a status dict with the key MISSING (the agent answered and did not say), which is
 "cannot tell".** Story and the measured counts: `../docs/BACKEND_BUILD_NOTES.md`.
+
+### 🔴 A stack's cost layers were WRITTEN as a list and READ BACK as text (2026-09-07)
+
+`insert_stack` JSON-encodes `cost_layers` with a careful three-state comment. `get_stack_settings`
+was a bare `SELECT *` that decoded nothing, so what went in as `["spread", "commission", "swap"]`
+came back as those 31 CHARACTERS. Handed to `python_runner._cost_profile`, **a string iterates** —
+every real layer name fails to match and the validator refuses, naming `' '`, `'"'`, `','`, `'['`,
+`']'`, `'a'`, `'c'`, `'d'`… which are exactly the distinct characters of that JSON.
+
+🔴 **It killed two of the three stack stress-test phases and had done since the column existed.**
+Walk-forward lost all 8 periods; sensitivity died on the stack's own baseline replay. The grade
+came back a **D** off Monte Carlo alone, with the tool honestly reporting that the other two "are
+not evidence either way" — which is the right behaviour and is also why nobody chased it.
+
+🔴 **THE REASON IT HID IS THE PART TO KEEP: the round trip was only ever HALF MADE.** CREATING a
+stack takes its settings from the REQUEST, where they are a real list, so stacks built, replayed
+and reported correct books for months. Only the phases that RE-READ the row later ever saw the
+text. **A round trip that is never completed looks exactly like one that works.**
+
+✅ Fixed at the READ, with the helper this module already has (`_parse_json_fields`), so every
+consumer gets what was written and nobody has to remember. ⚠ **NULL stays None and must** — it
+means *this row predates layers*, against `[]` meaning *charge nothing*, and collapsing them
+silently re-prices every stored stack the moment one is rerun.
+
+⚠ **One TEST was pinned to the broken contract** and went red: it did
+`json.loads(stored["cost_layers"])` to work around the text, which was never part of what it
+asserted. It compares directly now, so a regression to text fails there rather than three phases
+later. **A workaround inside a test is a record of a defect nobody named.**
+
+⚠ **Every model in this app declares `cost_layers` as `Optional[list[str]]`**, so the text form
+was out of contract with the whole codebase — checked, not assumed. Both new tests watched RED by
+their own mutation (drop the decode; collapse NULL to `[]`).
+
+### `GET /stress-tests/gradable` — the refusal moved to BEFORE the click (2026-09-07)
+
+Promoting a stack to a stress test was offered on stacks that cannot be graded, and **nothing on
+the page could tell**: the stack reported 272 combined trades and its contention data as
+`available: true`, so every check the screen could make PASSED. The missing piece was a file only
+this process can see. The reader clicked, waited, and got a 400.
+
+✅ It calls `gradable.resolve` and returns its reason — **never re-asking its questions.** A second
+copy of *"is this gradable"* is two answers about a stack somebody is about to spend an hour on,
+and the copy that goes stale is the one the button reads (rule 7).
+
+⚠ **`gradable: false` is a 200, not an error.** A page asking a legitimate question must not look
+broken in the console. ⚠ It takes a run OR a stack because the resolver does — the single-run flow
+has the same class of precondition and would otherwise grow its own private copy later.
+
+⚠ **The gate discriminates BOTH WAYS and that was checked**: disabled with the server's exact
+reason on a stack with no combined book, enabled with no reason on one that has it. An
+always-disabled button passes the first test alone.

@@ -107,6 +107,79 @@ def test_a_shared_stack_stores_its_account(tmp_path, monkeypatch):
     )
 
 
+def test_a_stacks_cost_layers_come_back_as_the_LIST_they_went_in_as(tmp_path, monkeypatch):
+    """What `insert_stack` is handed is what `get_stack_settings` returns. Round trip, not halves.
+
+    🔴 **This was broken for as long as the column existed and it cost two thirds of a stack
+    stress test on 2026-09-07.** The write side JSON-encodes; the read side was a bare
+    `SELECT *`, so the list came back as its 31 characters. Handed on to the cost builder, a
+    string ITERATES — so the validator refused with a list of single letters (`' '`, `'"'`,
+    `','`, `'['`, `']'`, `'a'`, `'c'`, `'d'`…), which are exactly the distinct characters of
+    `["spread", "commission", "swap"]`.
+
+    🔴 **It hid because the round trip was only ever half-made.** CREATING a stack takes its
+    settings from the request, where they are a real list, so the stack built, replayed and
+    reported a correct book. Only the phases that RE-READ it later — walk-forward and
+    sensitivity — ever saw the text, and they are the two that failed.
+
+    MUTATION: drop the decode from `get_stack_settings` and this goes red on the type.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    layers = ["spread", "commission", "swap"]
+    lab_db.insert_stack(
+        {
+            "stack_id": "st_layers",
+            "instrument": "XAUUSD.p",
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "created_at": 1,
+            "mode": "shared",
+            "cost_layers": layers,
+        }
+    )
+    got = lab_db.get_stack_settings("st_layers")["cost_layers"]
+    assert got == layers
+    # The type is the whole point: a string of the right characters compares unequal above, but
+    # `"spread" in got` would be TRUE for the text form too. Assert what it IS.
+    assert isinstance(got, list)
+
+
+def test_a_stack_written_before_cost_layers_existed_stays_None_and_never_becomes_empty(
+    tmp_path, monkeypatch
+):
+    """NULL and `[]` are different claims and the decode may not collapse them.
+
+    ⚠ NULL means *this row predates layers*; `[]` means *charge nothing*. `insert_stack` spells
+    that three-state out on the way in, and a decode that turned NULL into `[]` would silently
+    re-price every stored stack the moment one was rerun — the expensive direction, and invisible.
+
+    MUTATION: make the decode return `[]` for a missing column and this goes red.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    lab_db.insert_stack(
+        {
+            "stack_id": "st_prelayer",
+            "instrument": "XAUUSD.p",
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "commission_per_side": 0.0,
+            "slippage_ticks": 0,
+            "created_at": 1,
+            "mode": "shared",
+            "cost_layers": None,
+        }
+    )
+    assert lab_db.get_stack_settings("st_prelayer")["cost_layers"] is None
+
+
 # ── The request refuses what the simulator refuses ────────────────────────────
 
 
@@ -1399,8 +1472,13 @@ def test_the_shared_LAUNCH_can_actually_be_CALLED(client, tmp_path, monkeypatch)
     assert fired["settings"]["broker_profile"]
 
     # And the same basis is STORED, or the page would describe a run it did not price.
+    # ⚠ Compared DIRECTLY since 2026-09-07. This read `json.loads(stored["cost_layers"])`, which
+    # was not part of the assertion — it was working around `get_stack_settings` handing back the
+    # raw JSON text. That asymmetry (written as a list, read back as a string) is what broke two
+    # thirds of a stack stress test, and the read decodes now. Comparing directly pins the value
+    # AND the type, so a regression to text fails here rather than three phases later.
     stored = lab_db.get_stack_settings(stack_id)
-    assert json.loads(stored["cost_layers"]) == fired["settings"]["cost_layers"]
+    assert stored["cost_layers"] == fired["settings"]["cost_layers"]
 
 
 # ── The Stacks LIST could not be read without opening every row ────────────────────────────

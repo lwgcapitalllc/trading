@@ -46,6 +46,38 @@ def strategy_best_grades():
     return lab_db.best_grades_by_strategy()
 
 
+@router.get("/gradable")
+def can_be_stress_tested(run_id: Optional[str] = None, stack_id: Optional[str] = None):
+    """Can this run or stack be stress tested, and if not, why — WITHOUT starting anything.
+
+    🔴 **It exists because a refusal that only arrives after the click is a refusal in the wrong
+    place.** Promoting a stack was offered on stacks that cannot be graded, and the screen had no
+    way to know: the stack reported 272 combined trades and its contention data as available, so
+    every check the page could make PASSED. What was missing was the combined account book on
+    disk, which only this process can see. The reader clicked, waited, and got a 400.
+
+    🔴 **IT CALLS `gradable.resolve` RATHER THAN RE-ASKING ITS QUESTIONS, and that is the whole
+    design.** A second copy of *"is this gradable"* is two answers about the same stack, and the
+    one the button reads would be the one nobody kept up to date — the exact shape of defect this
+    repo names as a label being a claim about code somewhere else. Every reason returned here is
+    the reason the run endpoint would itself raise, produced by the same lines.
+
+    ⚠ **Read-only and free.** It resolves the target and throws it away; nothing is written, no
+    replay starts, and it is safe to call on every render.
+
+    ⚠ **It takes a run OR a stack** because the resolver does. The single-run flow has the same
+    class of precondition (no equity curve, run not complete) and would otherwise grow its own
+    private copy of this check later.
+    """
+    try:
+        target = gradable.resolve(run_id=run_id, stack_id=stack_id)
+    except gradable.NotGradable as exc:
+        # NOT an HTTP error: "cannot be graded" is this endpoint's ANSWER, and raising would make
+        # a page asking a legitimate question look broken in the console.
+        return {"gradable": False, "reason": exc.reason, "trade_count": None}
+    return {"gradable": True, "reason": None, "trade_count": target.trade_count}
+
+
 @router.get("/{stress_test_id}/shift-book/{slug}", response_model=StressShiftBook)
 def get_stress_shift_book(stress_test_id: str, slug: str):
     """The combined ACCOUNT book one sensitivity shift produced, so a stack shift can be opened.

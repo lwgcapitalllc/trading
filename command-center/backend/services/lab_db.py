@@ -3591,9 +3591,32 @@ def add_stack_member(
 
 
 def get_stack_settings(stack_id: str) -> Optional[dict]:
+    """A stack's stored settings, with `cost_layers` decoded back to the LIST it was written as.
+
+    🔴 **It returned the raw JSON TEXT until 2026-09-07, and that broke two thirds of a stack
+    stress test.** `insert_stack` is careful to JSON-encode this column; this read was a bare
+    `SELECT *`, so what went in as `["spread", "commission", "swap"]` came back as those 31
+    CHARACTERS. Handed to `python_runner._cost_profile`, a string iterates — every real layer
+    name fails to match and the validator refuses with a list of single letters.
+
+    🔴 **The reason it hid for so long is the part worth keeping: CREATING a stack takes its
+    settings from the REQUEST, where they are a real list, while REPLAYING one from storage takes
+    them from here.** So the stack built and ran perfectly, its book was right, and only the
+    phases that re-read it later — walk-forward and sensitivity — failed. **A round trip that is
+    only ever half-made looks like it works.**
+
+    ⚠ **The three-state is preserved** and it is why the shared helper is used rather than a
+    `json.loads`: NULL is not a string, so a pre-layer stack stays `None` and does not become
+    `[]`. Those are different claims — *this row predates layers* against *charge nothing* — and
+    collapsing them silently re-prices every stored stack the moment one is rerun, which is the
+    contract `insert_stack` spells out on the way in.
+
+    ⚠ **Every model in this app declares `cost_layers` as `Optional[list[str]]`**, so the text
+    form was out of contract with the whole codebase, not merely inconvenient here.
+    """
     with _connect() as conn:
         row = conn.execute("SELECT * FROM stacks WHERE stack_id = ?", (stack_id,)).fetchone()
-    return dict(row) if row else None
+    return _parse_json_fields(dict(row), ["cost_layers"]) if row else None
 
 
 def find_matching_stack_run(
