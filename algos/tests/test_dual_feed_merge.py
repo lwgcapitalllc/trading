@@ -490,12 +490,14 @@ def test_the_REAL_strategy_with_the_re_entry_ON_gets_a_real_second_feed():
     """
     from sos_fade import LAB_STRATEGY
 
-    # ⚠ **`exec_scale_in` is pinned OFF and that is not tidying — the bridge REFUSES it**, and
-    # since 2026-09-06 the shipped default turns it ON, so building "the shipped config" now
-    # raises before this test reaches its own subject. The refusal is correct and is pinned by
-    # `test_live_bridge.py`; what THIS test is about is the second feed, so it asks for a
-    # configuration the bridge can actually take. Leaving it on would make this file red for a
-    # reason that has nothing to do with the seam it exists to check — which is what happened.
+    # ⚠ **`exec_scale_in` is held OFF to ISOLATE THE SUBJECT, and the reason changed on
+    # 2026-09-08.** It used to be that the bridge refused the setting outright, so the shipped
+    # config raised before this test reached its own subject. That refusal is retired — the add
+    # path exists — so leaving it on would no longer raise. It stays off because this test is
+    # about the SECOND FEED seam and nothing else: an add places orders, and a failure there
+    # would redden this file for a reason that has nothing to do with the seam it checks.
+    # ⚠ Do not read this line as evidence that scale-in is unsupported; `test_live_bridge.py`
+    # pins what the bridge does and does not take.
     cfg = LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_secondary=True, exec_scale_in=False)
     strategy = LAB_STRATEGY["strategy"](cfg, initial_capital=10_000.0)
 

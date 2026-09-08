@@ -3807,5 +3807,32 @@ this file has recorded a fixture less capable than production.**
 links** — `test_live_contract.py` went red on the bridge reading an undeclared field, then again on
 `LiveDecision` not carrying it. Rules: `strategies/CLAUDE.md`.
 
-⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and `sos_fade_demo` still pins scale-in OFF
-in its instance config, so no bot reaches any of it until that is changed and the bot restarted.
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9.** ⚠ **`sos_fade_demo` pinned scale-in OFF until
+2026-09-08 — see the section below, which is the change that makes all of it reachable.**
+
+### Scale-in is ON for `sos_fade_demo` (2026-09-08) — and this one needs a PROMOTE
+
+Aaron's call, bringing the live bot onto the strategy default that moved 2026-09-06. **The
+measurement, every warning and what does NOT change are in that bot's own `config.json`
+(`_scale_in_on_2026_09_08`) — not restated here**, because a second copy of a decision is how two
+files come to disagree.
+
+🔴 **A PROMOTE IS REQUIRED, WHICH IS THE OPPOSITE OF THE THREE PARAM CHANGES BEFORE IT.** Every
+setting change on this bot since 2026-09-02 has carried *"no promote is needed and none should be
+run"* — true, because the code they needed was in `algos/`, which arrives by `git pull`. **This one
+is not.** `sos_fade/execution.py` imports the shared order vocabulary in `execution/` at module
+scope, that tree only joined `promote.py`'s copy list on 2026-09-07, and this bot's snapshot was
+built **2026-09-05** — so it predates the tree and cannot import the new strategy. ⚠ **The failure
+would be loud rather than silent** (the promote's own verify subprocess refuses, and a bot that
+cannot import does not start), but the ordering is still promote → restart, never the other way.
+
+🔴 **THE RESTART ALSO LANDS THE TWO SETTINGS FROM 2026-09-07, WHICH HAVE NEVER TAKEN EFFECT.**
+Neither the deeper-entry stop nor the widened re-entry trigger is runtime-reloadable, and no restart
+happened on the day they were written — MEASURED on the box 2026-09-08, the running snapshot still
+carries the deep stop ON and the gap trigger alone. **So one restart arms three decisions, not one,
+and two of them are three days old.** ⚠ **A param change that needs a restart is not applied when it
+is committed; it is applied when somebody restarts the bot** — and nothing schedules that, so the
+gap is however long it takes for the next deploy.
+
+⚠ **RULE 9 IS NOT CLOSED BY SWITCHING IT ON.** No add has ever reached a broker and no parity gate
+covers the path. **Watch the first one.**
