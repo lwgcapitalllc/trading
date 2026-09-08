@@ -1,24 +1,24 @@
 {
-  "_comment": "Editor UI metadata for Extreme Leg. Overlaid onto the schema built from ExtremeLegConfig. UI ONLY \u2014 it never touches a trade decision or the source hash. Click Scan Strategies after editing. LABELS are the Pine input titles VERBATIM (one parameter, one name, two UIs \u2014 changed in the same commit as the Pine). DESCRIPTIONS are NOT verbatim, and that is deliberate: docs/STRATEGY_WORKFLOW.md still says the desc should be the tooltip word for word, but the later copy rule (Aaron, 2026-08-10) says every desc is SHORT and PLAIN \u2014 what the setting does, what each choice means, and the one fact that changes the decision. No measurement dumps, no trade counts, no R figures, no dates, no file references. This strategy's Pine tooltips carry measurements, so the two rules genuinely conflict here and the newer, explicit one wins. The evidence behind each default lives in this package's CLAUDE.md. The platform fields on the config (point value, symbol, the structure constants) have no Pine input behind them and are deliberately absent below.",
-  "edge": "This is the move that happens BEFORE the setup the main bot trades. Price runs to an extreme, grabs the liquidity sitting above or below a level, and then turns \u2014 and the turn is what breaks structure. The main bot waits for that break and then trades the pullback. This one takes the run into it. Stop goes beyond the extreme that just held, and the exit rests part of the way to the swing being aimed at, because the point is to take money off and free the slot rather than to hold for the whole move.",
+  "_comment": "Editor UI metadata for Extreme Leg. Overlaid onto the schema built from ExtremeLegConfig. UI ONLY — it never touches a trade decision or the source hash. Click Scan Strategies after editing. LABELS are the Pine input titles VERBATIM (one parameter, one name, two UIs — changed in the same commit as the Pine). DESCRIPTIONS are NOT verbatim, and that is deliberate: docs/STRATEGY_WORKFLOW.md still says the desc should be the tooltip word for word, but the later copy rule (Aaron, 2026-08-10) says every desc is SHORT and PLAIN — what the setting does, what each choice means, and the one fact that changes the decision. No measurement dumps, no trade counts, no R figures, no dates, no file references. This strategy's Pine tooltips carry measurements, so the two rules genuinely conflict here and the newer, explicit one wins. The evidence behind each default lives in this package's CLAUDE.md. The platform fields on the config (point value, symbol, the structure constants) have no Pine input behind them and are deliberately absent below.",
+  "edge": "This is the move that happens BEFORE the setup the main bot trades. Price runs to an extreme, grabs the liquidity sitting above or below a level, and then turns — and the turn is what breaks structure. The main bot waits for that break and then trades the pullback. This one takes the run into it. Stop goes beyond the extreme that just held, and the exit rests part of the way to the swing being aimed at, because the point is to take money off and free the slot rather than to hold for the whole move.",
   "steps": [
     {
-      "label": "01 \u00b7 Grab",
+      "label": "01 · Grab",
       "title": "A level gets taken",
-      "detail": "Price runs through a high or low that other traders were using \u2014 yesterday's, the session's, the last four hours', or last week's. Nothing arms without that."
+      "detail": "Price runs through a high or low that other traders were using — yesterday's, the session's, the last four hours', or last week's. Nothing arms without that."
     },
     {
-      "label": "02 \u00b7 Turn",
+      "label": "02 · Turn",
       "title": "The turn confirms",
       "detail": "Within a few hours of the grab, the short-term structure shifts the other way. That shift is the trigger, and it has to go against the fifteen-minute trend to count."
     },
     {
-      "label": "03 \u00b7 Price it",
+      "label": "03 · Price it",
       "title": "The stop and the target",
       "detail": "The stop sits beyond the extreme that just held, plus a little room. The target is the fifteen-minute swing overhead. If that swing is too close to be worth the risk, the setup is refused."
     },
     {
-      "label": "04 \u00b7 Bank it",
+      "label": "04 · Bank it",
       "title": "Take money off and free the slot",
       "detail": "The exit rests part of the way to the swing rather than at it. Only one position is held at a time, so getting out sooner is what makes the next setup possible."
     }
@@ -29,7 +29,7 @@
       "group": "Sizing",
       "core": true,
       "unit": "%",
-      "label": "   \u21b3 Risk % per trade",
+      "label": "   ↳ Risk % per trade",
       "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk."
     },
     {
@@ -42,8 +42,11 @@
     {
       "name": "fixed_qty",
       "group": "Sizing",
-      "label": "   \u21b3 Contracts",
-      "desc": "The quantity used when sizing is set to fixed contracts. Ignored otherwise."
+      "label": "   ↳ Contracts",
+      "desc": "The quantity used when sizing is set to fixed contracts. Ignored otherwise — and that 'otherwise' is now stated in show_if as well as in this sentence, because a sentence is not something the lab can read.",
+      "show_if": {
+        "size_mode": "Fixed contracts"
+      }
     },
     {
       "name": "exec_longs",
@@ -148,7 +151,7 @@
       "desc": "How many different kinds of level must be grabbed together on the same bar. Two is better than one and roughly halves the number of setups.",
       "guide": [
         "Any single level arms it",
-        "Needs several kinds at once \u2014 far fewer, better setups"
+        "Needs several kinds at once — far fewer, better setups"
       ],
       "min": 1,
       "max": 4
@@ -172,10 +175,7 @@
       "unit": "min",
       "label": "Look back for the extreme (minutes)",
       "desc": "How far back to look for the high or low the stop goes beyond. That extreme is the thing the trade is betting has held.",
-      "guide": [
-        "Tight stop, close to the turn",
-        "Wider stop, further back \u2014 smaller position"
-      ],
+      "guide": ["Tight stop, close to the turn", "Wider stop, further back — smaller position"],
       "min": 15,
       "max": 720,
       "step": 15
@@ -188,7 +188,7 @@
       "desc": "Extra room beyond the extreme, as a fraction of the average range. Zero puts the stop exactly on the extreme.",
       "guide": [
         "Stop sits right on the extreme",
-        "Plenty of room beyond it \u2014 wider stop, smaller position"
+        "Plenty of room beyond it — wider stop, smaller position"
       ],
       "min": 0.0,
       "max": 1.0,
@@ -199,10 +199,10 @@
       "group": "Stop & targets",
       "core": true,
       "label": "Take profit at this much of the way to the swing",
-      "desc": "One aims at the swing itself. A half books half the distance and wins far more often \u2014 and because only one position is held at a time, getting out sooner frees the slot for the next setup.",
+      "desc": "One aims at the swing itself. A half books half the distance and wins far more often — and because only one position is held at a time, getting out sooner frees the slot for the next setup.",
       "guide": [
         "Books a small piece and gets out fast",
-        "Holds for the whole swing \u2014 wins less often"
+        "Holds for the whole swing — wins less often"
       ],
       "min": 0.1,
       "max": 1.0,
@@ -222,7 +222,7 @@
     {
       "name": "be_arm_frac",
       "group": "Stop & targets",
-      "label": "   \u21b3 Arm at this much of the way to the target",
+      "label": "   ↳ Arm at this much of the way to the target",
       "desc": "How far price has to travel before the stop moves up. Below about two thirds of the way this costs money.",
       "min": 0.1,
       "max": 0.99,
