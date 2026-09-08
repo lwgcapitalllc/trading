@@ -1509,6 +1509,22 @@ export interface StressLock {
   run_ids: string[]
 }
 
+/** Whether a run or stack can be stress tested AT ALL, asked before the click.
+ *
+ *  🔴 `gradable: false` is an ANSWER, not an error — the endpoint returns 200 with the reason.
+ *  A page asking a legitimate question must not look broken in the console.
+ *
+ *  ⚠ `reason` is the SERVER'S sentence and is rendered verbatim. It is produced by the same code
+ *  that would refuse the run, so a reason invented here would be a second opinion about a stack
+ *  the reader is about to spend an hour on. */
+export interface Gradable {
+  gradable: boolean
+  reason: string | null
+  /** The combined book's trade count when gradable, `null` when not — three-state on purpose:
+   *  "cannot be graded" is not "traded nothing". */
+  trade_count: number | null
+}
+
 // ── App Settings ─────────────────────────────────────────────────────────────
 
 export interface AppSettings {

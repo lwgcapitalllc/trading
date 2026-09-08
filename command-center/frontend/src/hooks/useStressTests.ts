@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
+  Gradable,
   StressTest,
   StressTestDetail,
   StressTestCreate,
@@ -18,6 +19,33 @@ export function useStressTests(runId?: string, grade?: string) {
     queryKey: ['stress-tests', runId, grade],
     queryFn: () => api.get<StressTest[]>(`/stress-tests${qs ? '?' + qs : ''}`),
     refetchInterval: 10_000,
+  })
+}
+
+/** Can this stack (or run) be stress tested, and if not, why — asked BEFORE the reader commits.
+ *
+ * 🔴 **It exists because the refusal used to arrive after the click.** Promoting a stack was
+ * offered on stacks that cannot be graded, and nothing on the page could tell: the stack reported
+ * 272 combined trades and its contention data as available, so every check the screen could make
+ * PASSED. What was missing was a file only the backend can see, and the reader found out by
+ * waiting for a 400.
+ *
+ * 🔴 **The answer comes from the SAME resolver that would refuse the run.** Re-deriving the
+ * question here would be a second opinion about a stack somebody is about to spend an hour on,
+ * and the copy that goes stale is always the one the button reads.
+ *
+ * ⚠ **`gradable: false` is a 200.** The endpoint answers rather than erroring, so this never
+ * enters the error branch and a legitimate question never looks like a broken page.
+ */
+export function useGradable(stackId: string | null) {
+  return useQuery({
+    queryKey: ['stress-tests', 'gradable', stackId],
+    queryFn: () =>
+      api.get<Gradable>(`/stress-tests/gradable?stack_id=${encodeURIComponent(stackId as string)}`),
+    enabled: !!stackId,
+    // A stack that finishes replaying becomes gradable, so a stale "no" would outlive its reason.
+    staleTime: 0,
+    gcTime: 0,
   })
 }
 

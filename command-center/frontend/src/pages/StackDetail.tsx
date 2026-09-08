@@ -24,6 +24,7 @@ import {
   useStackContention,
   useStackRegimeTimeline,
 } from '@/hooks/useLab'
+import { useGradable } from '@/hooks/useStressTests'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { RunStackStressTestModal } from '@/components/RunStackStressTestModal'
@@ -1009,6 +1010,10 @@ export function StackDetail() {
   // Gated on the mode: a screen has no account to contend over, so polling one would be asking a
   // question that can never be answered. `stackRunning` is the other half — see `useStackContention`.
   const { data: shared } = useStackContention(stackId ?? null, isShared, stackRunning)
+  // Asked BEFORE the click, and only of a shared stack that has finished — a running one is not
+  // gradable yet for a reason that will stop being true on its own, and saying so mid-replay
+  // reads as a verdict on the stack rather than on the clock.
+  const { data: gradable } = useGradable(isShared && !stackRunning ? (stackId ?? null) : null)
   const deleteStack = useDeleteStack()
   const cancelStack = useCancelStack()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -1414,10 +1419,26 @@ export function StackDetail() {
                     to block anything, so its combined figure is an upper bound and grading it would
                     put a letter on a result no account can produce. The server refuses it in those
                     words; offering the button anyway would make an error toast the only outcome. */}
+                {/* 🔴 AND GRADABLE — a second precondition the page CANNOT work out for itself.
+                    This stack reports its trade count and its contention data as available while
+                    the combined account book is missing from disk, so every check available here
+                    passes and only the backend knows. Until 2026-09-07 the reader found out by
+                    clicking, waiting, and getting a 400. The reason below is the SERVER'S own
+                    sentence, rendered verbatim: a reason invented here would be a second opinion
+                    about a stack somebody is about to spend an hour on. */}
                 {isShared && (
                   <button
+                    data-testid="stack-stress-test"
                     onClick={() => setShowStress(true)}
-                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium text-text-secondary hover:text-text-primary border border-border-default hover:bg-bg-hover transition-colors"
+                    disabled={gradable ? !gradable.gradable : false}
+                    title={
+                      gradable && !gradable.gradable ? (gradable.reason ?? undefined) : undefined
+                    }
+                    className={`flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border transition-colors ${
+                      gradable && !gradable.gradable
+                        ? 'text-text-tertiary border-border-subtle cursor-not-allowed'
+                        : 'text-text-secondary hover:text-text-primary border-border-default hover:bg-bg-hover'
+                    }`}
                   >
                     <Gauge size={12} /> Stress Test
                   </button>

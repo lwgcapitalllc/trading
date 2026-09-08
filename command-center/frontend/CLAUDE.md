@@ -4377,3 +4377,26 @@ backend serves it**; in any other order it would pin an order the server never s
 ⚠ **The populated dropdown was driven in a browser with the real payload injected** (12 chips with
 real counts, the 60-row cap, the footer naming the terminal) **and the unavailable path was driven
 against a real outage.** Story: `../docs/FRONTEND_BUILD_NOTES.md`.
+
+### The Stress Test button asks BEFORE it offers itself (2026-09-07)
+
+It was offered on stacks that cannot be graded, and **the page had no way to know**: the stack
+reported 272 combined trades and its contention data as available, so every check available here
+PASSED. What was missing was a file only the backend can see. The reader clicked, waited, and got
+a 400 — the exact failure the modal's own sample-floor check exists to avoid, arriving through a
+precondition the modal never knew about.
+
+✅ `useGradable` asks the server, and the button disables itself carrying **the server's own
+sentence**, verbatim. A reason invented here would be a second opinion about a stack somebody is
+about to spend an hour on, and the copy that goes stale is always the one the button reads.
+
+⚠ **Asked only of a shared stack that has FINISHED.** A running one is not gradable yet for a
+reason that stops being true on its own, and saying so mid-replay reads as a verdict on the stack
+rather than on the clock.
+
+⚠ **`staleTime: 0`** — a stack becomes gradable when its replay lands, so a cached "no" would
+outlive its reason.
+
+⚠ **It was checked in BOTH directions**, and that is the half that matters: disabled with the real
+reason on a stack with no combined book, **enabled with no reason on one that has it**. An
+always-disabled button passes the first check on its own and looks identical.
