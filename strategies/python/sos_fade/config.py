@@ -818,11 +818,26 @@ class SosFadeConfig:
     #   ⚠ MEASURED because three of the seven shipped re-entries exited at EXACTLY +$0.30, the
     #   30-tick breakeven buffer, after touching TP1 — one of them $2.65 past it.
 
-    exec_sec_tp1_pct: float = 50.0     # "Secondary banks at TP1 (%)"
-    #   A SECONDARY-ONLY take-profit percentage at TP1. 50.0 (default since 2026-08-20) banks half
-    #   the re-entry at `exec_sec_tp_r` and runs the rest. -1.0 restores the pre-2026-08-20 rule,
-    #   which inherited `exec_tp1_pct` — shipped at 0, i.e. bank NOTHING and only ratchet the stop
-    #   to breakeven.
+    exec_sec_tp1_pct: float = 0.0      # "Secondary banks at TP1 (%)"
+    #   A SECONDARY-ONLY take-profit percentage at TP1. 0.0 banks NOTHING and only ratchets the
+    #   stop to breakeven; 50.0 banks half at `exec_sec_tp_r` and runs the rest. -1.0 restores the
+    #   pre-2026-08-20 rule, which inherited `exec_tp1_pct`.
+    #   🔴 **DEFAULT MOVED 50.0 → 0.0 ON 2026-09-07 (Aaron's call, on the measurement below).**
+    #   MEASURED over the full window, one replay per row, base params the LIVE bot's own config
+    #   with only this field moved: banking half returns **+12.62R** of re-entry contribution
+    #   against **+20.11R** letting it run — **banking COSTS 7.49R**, on the same 205 trades and
+    #   the same 47 re-entries either way. Its target is NEAR (`exec_sec_tp_r` = 1.25), so taking
+    #   half off there caps the trades that were going much further while doing nothing for the
+    #   ones that fail. ⚠ Total R 116.72 → 124.21; drawdown widens slightly, −4.65R → −5.16R.
+    #   🔴 **DO NOT CARRY THIS ACROSS TO THE RECLAIM — IT IS MEASURED THE OTHER WAY THERE.**
+    #   `exec_rec_tp1_pct` stays **100**: banking nothing on the reclaim costs −13.84R of a
+    #   +21.00R contribution, two thirds of its edge, because its target is far out
+    #   (`exec_rec_tp_r` = 3.25) and the trade does not survive the retrace back from it.
+    #   **The two halves read SEPARATE fields and both are live under the combined trigger**, so
+    #   "re-entries bank nothing" is true of one half and expensive on the other.
+    #   ⚠ The shipped 50 was never wrong for the trigger it was measured on — it was the RECLAIM's
+    #   answer sitting on the GAP's field, and the two were never read against each other because
+    #   every published re-entry figure came from the reclaim while the bot stated the gap.
     #
     #   🔴 THIS IS THE HALF OF THE PAIR THAT TURNS SCRATCHES INTO SOMETHING. MEASURED 2026-08-20,
     #   7.9 years, rung at 1.25R: banking nothing left 15 of 54 re-entries finishing inside the

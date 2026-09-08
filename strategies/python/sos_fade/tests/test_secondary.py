@@ -683,11 +683,27 @@ def test_be_at_TP2_does_NOT_touch_a_PRIMARY():
     assert ex._current_stop() == 100.0 + 30 * SosFadeConfig().mintick
 
 
-def test_the_secondary_banks_HALF_by_default_and_inherits_at_minus_one():
-    """50 since 2026-08-20. It is the half of the pair that turns a favourable excursion into a
-    booked one — with nothing banked, 15 of 54 re-entries over 7.9 years finished flat."""
-    assert SosFadeConfig().exec_sec_tp1_pct == 50.0
-    assert _open_secondary()._tp1_pct() == 50.0
+def test_the_secondary_banks_NOTHING_by_default_and_inherits_at_minus_one():
+    """0 since 2026-09-07 (was 50 from 2026-08-20). A PIN on a default, so going red is its job.
+
+    🔴 **MOVED ON A MEASUREMENT, AND THE OLD DOCSTRING'S FACT IS KEPT BECAUSE IT IS STILL TRUE.**
+    Banking nothing does leave more re-entries flat — 15 of 54 over 7.9 years finished at
+    scratch. It is still the better setting: on the same 205 trades and the same 47 re-entries,
+    banking half returns +12.62R of re-entry contribution against +20.11R letting it run, so the
+    bank COSTS 7.49R. The gap's target is near (1.25R), so taking half off caps the trades that
+    were going much further and does nothing for the ones that fail. Drawdown widens −4.65R →
+    −5.16R.
+
+    ⚠ **This is the GAP half only. The reclaim is measured the OTHER way** and `exec_rec_tp1_pct`
+    stays 100 — banking nothing there costs two thirds of its edge. The two halves read separate
+    fields and both are live under the combined trigger, so "re-entries bank nothing" is true of
+    one half and expensive on the other.
+    """
+    assert SosFadeConfig().exec_sec_tp1_pct == 0.0
+    assert _open_secondary()._tp1_pct() == 0.0
+    # The sibling that must NOT follow it — pinned here so a future "make them consistent" edit
+    # goes red instead of quietly costing the reclaim two thirds of its contribution.
+    assert SosFadeConfig().exec_rec_tp1_pct == 100.0
     inherit = _open_secondary(exec_sec_tp1_pct=-1.0)
     assert inherit._tp1_pct() == SosFadeConfig().exec_tp1_pct      # -1.0 = inherit
     own = _open_secondary(exec_sec_tp1_pct=25.0)

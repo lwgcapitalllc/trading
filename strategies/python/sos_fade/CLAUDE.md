@@ -1003,7 +1003,12 @@ bot states the gap, and that field decides which banking percentage is even READ
   **−7.49R** against letting it run (+12.62R vs +20.11R). Its target is near
   (`exec_sec_tp_r` = 1.25), so taking half off there caps the trades that were going much
   further while doing nothing for the ones that fail.
-- **The shipped 50 is therefore the WRONG value for the trigger the bot is actually set to**, and
+- ✅ **FIXED 2026-09-07: the default moved 50 → 0** (Aaron's call, on this table). The pin in
+  `tests/test_secondary.py` moved with it and now also pins `exec_rec_tp1_pct` at 100, so a future
+  "make these two agree" edit goes red instead of quietly costing the reclaim two thirds of its
+  edge. ⚠ **The live bot was ALREADY at 0 and it was the DEFAULT that was wrong** — the drift ran
+  the other way from every other setting on that bot.
+- **The shipped 50 was therefore the WRONG value for the trigger the bot is actually set to**, and
   the two facts were never read against each other because every published re-entry figure came
   from the reclaim while `config.json` states the gap.
 
@@ -2197,7 +2202,7 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The B-LEG bo
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *`Trade.tp_rungs` — the closed record says how much each rung TAKES OFF (2026-08-21)*.
 
 ⚠ **The percentage is resolved for the trade that was actually OPEN, not read off the config.**
-A re-entry may bank its own (`exec_sec_tp1_pct`, 50 by default) and the reclaim half a different
+A re-entry may bank its own (`exec_sec_tp1_pct`, **0** by default since 2026-09-07) and the reclaim half a different
 one again (`exec_rec_tp1_pct`, 100), so it goes through `_tp1_pct()` exactly as the live ladder
 does. Reading `cfg.exec_tp1_pct` here would report a primary's percentage for every re-entry.
 
@@ -3192,3 +3197,45 @@ three killed something. **A mutation map is worth exactly what its anchors are.*
 gate cannot see this change at all** — every export ran with scale-in off, so no export walks the
 add path. What the green run establishes is that threading the decision through did not move the
 entry or exit logic; the add emission itself is covered by unit tests and the lab, never by Pine.
+
+### "Re-entries should bank nothing" is true of ONE half and expensive on the other (2026-09-07)
+
+Aaron asked for two defaults to be confirmed before being made the rule. **One was confirmed, one
+was half right, and the half that was wrong would have cost two thirds of a leg's edge.**
+
+- ✅ **Bank nothing on the FAIR-VALUE-GAP re-entry.** Confirmed and shipped: the default moved
+  50 → 0. Banking half returns +12.62R of re-entry contribution against +20.11R letting it run, on
+  the same 205 trades and the same 47 re-entries — the bank COSTS 7.49R. Its target is near
+  (1.25R), so half off caps the trades that were going much further and does nothing for the ones
+  that fail.
+- 🔴 **NOT true of the RECLAIM re-entry, which is measured the OTHER way.** Banking nothing there
+  costs −13.84R of a +21.00R contribution. Its target is far out (3.25R) and the trade does not
+  survive the retrace back from it. `exec_rec_tp1_pct` stays **100**.
+
+🔴 **THE TWO HALVES READ SEPARATE FIELDS AND BOTH ARE LIVE UNDER THE COMBINED TRIGGER**, so a
+sentence beginning *"re-entries should…"* cannot be executed as written — it names a behaviour that
+has two independent settings with opposite best values. ⚠ **The pin now asserts BOTH**, so a future
+edit tidying them into agreement goes red rather than costing the reclaim quietly.
+
+⚠ **THE COST OF LETTING IT RUN IS CONCENTRATION, AND THAT IS WORTH SAYING OUT LOUD RATHER THAN
+BURYING UNDER A BIGGER TOTAL.** With nothing banked, 15 of 54 re-entries finish flat. An earlier run
+found banking half took a leg from −0.4R to +7.2R once its single best trade was removed — **but
+that run was measured on the RECLAIM while the bot stated the gap**, which is exactly how the wrong
+value came to be shipped. Read every pre-2026-09-07 robustness figure as the reclaim's.
+
+🔴 **THE DRIFT RAN BACKWARDS ON THIS ONE, AND IT IS THE REASON TO CHECK BOTH SIDES RATHER THAN
+ASSUME THE BOT IS BEHIND.** The live bot was ALREADY at 0 and correct; the DEFAULT was the stale
+half. Every other setting on that bot was behind the defaults, so "sync the bot to the defaults"
+would have made this one worse while fixing the rest.
+
+**PARITY: byte-identical to the previous commit on all four exports at `--warmup 100`.** ⚠ **The
+gate is structurally blind to this** — the exports carry no re-entry columns at all, because the
+Pine has no re-entry, so neither side ever enters the branch. Rule 14 in its exact stated form.
+
+### The deep-entry stop rule was confirmed too, and it was already right
+
+Default **OFF**, and it stays off. Measured 2026-08-16: switching it on costs **24.0R with the
+re-entry live and 23.0R without**, over a full 2×2 on one window. ⚠ **It does hold a shallower
+drawdown** (−4.8R vs −5.5R), so it is expensive rather than worthless if drawdown ever becomes the
+objective. **No code change was needed — but the LIVE BOT has it ON**, which is the single most
+expensive drift found on that bot.
