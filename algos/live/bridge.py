@@ -1660,17 +1660,64 @@ class OrderBridge:
                 notify.HEALTH,
             )
 
+    def _why_not_scaled(self, positions) -> str:
+        """Empty when N positions are legitimately ONE scaled trade; otherwise the reason.
+
+        🔴 **THE DEFAULT IS REFUSAL.** Every path that cannot positively establish a scaled
+        trade returns a sentence, so a state nobody anticipated halts rather than being waved
+        through as an add. The 2026-08-25 incident — five copies of one limit filling within 69
+        milliseconds — is exactly the shape this must keep catching, and it looks like a scaled
+        trade from a distance.
+
+        ⚠ **Three distinct causes, three distinct sentences** (a strategy holding no adds, a
+        ledger that cannot be read, positions off the strategy's own side). They call for
+        different work: the first is a duplicate-order incident, the second is a strategy this
+        bridge cannot interrogate, the third is a hedge nobody asked for.
+
+        ⚠ **`None` from the ledger REFUSES** (rule 1). *Could not ask* may not buy the
+        permissive answer here — that is how a duplicate-order incident gets read as a scale-in.
+        """
+        if self._ex._pos_dir == 0:
+            return "The strategy holds no position at all, so none of these is its own."
+        add_units = self._open_add_units()
+        if add_units is None:
+            return (
+                "The strategy's scale-in ledger could not be read, so whether these are one "
+                "scaled trade or duplicate orders cannot be established. Refusing to guess."
+            )
+        if add_units <= 0:
+            return (
+                "The strategy is NOT scaled in — it takes one position at a time, so these are "
+                "orders it did not intend. Check for duplicate placements."
+            )
+        wrong = [p for p in positions if (1 if p.type == 0 else -1) != self._ex._pos_dir]
+        if wrong:
+            return (
+                f"{len(wrong)} of them are on the opposite side to the strategy's own "
+                f"position. A scale-in only ever adds to the side already held."
+            )
+        return ""
+
     def _agrees(self, positions) -> bool:
         """Both ledgers must tell the same story. Anything else halts — see the module
         docstring for why this is not 'log and continue'."""
         emu = self._ex._pos_dir != 0
         broker = bool(positions)
         if len(positions) > 1:
-            self._halt(
-                f"MT5 holds {len(positions)} positions under magic {self._mt5.magic}; "
-                f"this strategy takes one at a time."
-            )
-            return False
+            # 🔴 **THIS ACCOUNT IS HEDGING (`margin_mode 2`, MEASURED 2026-09-07), so an add is
+            # a SEPARATE position with its own ticket — it does not merge into the one already
+            # held.** A scaled trade therefore shows N positions where the strategy holds one,
+            # and counting them cannot tell that apart from the 2026-08-25 incident where five
+            # copies of one order filled.
+            #
+            # ⚠ **The permission is deliberately narrow, and each refusal names its OWN cause** —
+            # two failures must never share one message, because they call for different work.
+            why = self._why_not_scaled(positions)
+            if why:
+                self._halt(
+                    f"MT5 holds {len(positions)} positions under magic {self._mt5.magic}. {why}"
+                )
+                return False
         if emu and not broker:
             # Name the refusal if there was one. The generic sentence below is true but useless
             # on its own — it describes the symptom of every cause at once, and on 2026-08-07 it
@@ -2378,6 +2425,31 @@ class OrderBridge:
             notify.HEALTH,
         )
 
+    def _open_add_units(self):
+        """The scale-in lots still OPEN, in the strategy's own units. `None` = could not ask.
+
+        🔴 **ONE DEFINITION, read by the size reconciliation AND by the agreement check.** The
+        premise inside it — *a spent lot is zeroed in place rather than removed* — has to be the
+        same in both, and this file has already been bitten once by the same rule written twice
+        (`_others_risk`, 2026-09-03): a premise in two copies is one that gets corrected in one
+        of them.
+
+        ⚠ **Reads the QUANTITY, never the length.** `_bank_adds` zeroes a spent lot IN PLACE and
+        the strategy caps its ladder on the list's length, so a spent add is `[price, 0.0]` and
+        stays in the list forever. Counting entries would report size that has already gone.
+
+        ⚠ **An absent ledger is CANNOT ASK, never *no adds*** (rule 1). Both callers treat `None`
+        as *stop acting*: the size read refuses to bank, and the agreement check refuses to
+        permit a second position.
+        """
+        adds = getattr(self._ex, "_adds", None)
+        if adds is None:
+            return None
+        try:
+            return sum(float(lot[1]) for lot in adds)
+        except (TypeError, IndexError, ValueError):
+            return None
+
     def _intended_open_lots(self):
         """How much the STRATEGY believes is still open, in LOTS. `None` = could not ask.
 
@@ -2416,15 +2488,8 @@ class OrderBridge:
         filled = getattr(self._ex, "_filled_qty", None)
         if qty is None or filled is None:
             return None
-        # The unspent scale-in lots. `None` — the field missing entirely — is CANNOT ASK and
-        # must not be read as *no adds*: a strategy this bridge cannot interrogate must stop it
-        # acting, which is what the whole function's `None` contract already says (rule 1).
-        adds = getattr(self._ex, "_adds", None)
-        if adds is None:
-            return None
-        try:
-            add_qty = sum(float(lot[1]) for lot in adds)
-        except (TypeError, IndexError, ValueError):
+        add_qty = self._open_add_units()
+        if add_qty is None:
             return None
         cs = self._contract_size()
         if not cs:

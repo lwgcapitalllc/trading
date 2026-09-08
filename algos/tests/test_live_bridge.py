@@ -3146,3 +3146,90 @@ def test_a_SUCCESSFUL_placement_records_no_refusal_at_all():
     b.sync(_Dec(), _Sig())
     assert not [kw for kind, kw in ledger.rows if kind == "event:order_refused"], ledger.rows
     assert "event:order_placed" in ledger.kinds()
+
+
+# ── N positions: one scaled trade, or a duplicate-order incident? ──────────────
+# 🔴 **THE MULTI-POSITION HALT HAD NO TEST AT ALL UNTIL 2026-09-07**, which is why the whole
+# suite stayed green while it was rewritten. It is the check that caught the 2026-08-25
+# incident — five copies of one limit filling within 69 milliseconds — and on a HEDGING account
+# (this one: `margin_mode 2`, measured) that shape is indistinguishable by COUNT from a
+# legitimate scale-in. Every case below is about telling those two apart.
+
+
+def _two_positions(adds=None, pos_dir=1, second_type=0):
+    """Two positions under our magic. `second_type` 0 = long, 1 = short."""
+    ops = _FakeMt5Ops()
+    ops.positions = [
+        _Pos(555, 0, 3290.0, 1.0, 3280.0),
+        _Pos(556, second_type, 3295.0, 0.5, 3280.0),
+    ]
+    ex = _FakeExecution(pos_dir=pos_dir, qty=1.0, filled=0.0, adds=adds)
+    b, ops, _, _ = _bridge(ex, mt5ops=ops)
+    return b, ops
+
+
+def test_TWO_positions_with_NO_scale_in_still_HALTS():
+    """🔴 The 2026-08-25 incident must keep halting. This strategy takes one position at a time,
+    so a second one it did not intend is duplicate orders — and the message says so, because a
+    refusal that does not name the work is a doorbell.
+
+    MUTATION: permit N positions unconditionally and this goes red.
+    """
+    b, ops = _two_positions(adds=[])
+    assert b._agrees(ops.positions) is False
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "duplicate" in b.halt_reason.lower()
+
+
+def test_TWO_positions_ARE_allowed_when_the_strategy_is_genuinely_SCALED_IN():
+    """The capability the add path needs. On a hedging account an add is its own ticket, so a
+    scaled trade legitimately shows two positions on one side.
+
+    MUTATION: ignore the add ledger and this goes red — the bot would halt on its first scaled
+    trade, which is what retiring the refusal without this would have done.
+    """
+    b, ops = _two_positions(adds=[[3295.0, 0.5]])
+    assert b._agrees(ops.positions) is True
+    assert b.state is not live_bridge.BridgeState.HALTED
+
+
+def test_an_UNREADABLE_scale_in_ledger_HALTS_rather_than_permitting():
+    """Rule 1 in the destructive direction. *Could not ask* may not buy the permissive answer:
+    that is how a duplicate-order incident gets waved through as a scale-in.
+
+    MUTATION: read a missing ledger as *no adds* and this goes red on the wording; read it as
+    *scaled* and it goes red on the halt.
+    """
+    b, ops = _two_positions(adds=[[3295.0, 0.5]])
+    del b._ex._adds
+    assert b._agrees(ops.positions) is False
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "could not be read" in b.halt_reason
+
+
+def test_a_position_on_the_OPPOSITE_side_HALTS_even_while_scaled_in():
+    """A scale-in only ever adds to the side already held, so an opposite position is a hedge
+    nobody asked for — not an add, whatever the ledger says.
+
+    MUTATION: drop the side check and this goes red.
+    """
+    b, ops = _two_positions(adds=[[3295.0, 0.5]], second_type=1)
+    assert b._agrees(ops.positions) is False
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "opposite side" in b.halt_reason
+
+
+def test_the_three_refusals_do_NOT_share_a_message():
+    """Two failures must never render as one sentence — they call for different work: a
+    duplicate-order incident, a strategy that cannot be interrogated, and an unasked-for hedge.
+    """
+    reasons = set()
+    for adds, second in ([], 0), ([[3295.0, 0.5]], 1):
+        b, ops = _two_positions(adds=adds, second_type=second)
+        b._agrees(ops.positions)
+        reasons.add(b.halt_reason)
+    b, ops = _two_positions(adds=[[3295.0, 0.5]])
+    del b._ex._adds
+    b._agrees(ops.positions)
+    reasons.add(b.halt_reason)
+    assert len(reasons) == 3, reasons

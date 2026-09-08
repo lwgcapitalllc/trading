@@ -3523,3 +3523,42 @@ refusal comes off last, when the capability it stands in for exists — never to
 ⚠ **Re-measure `margin_mode` before assuming this of any other account.** It is a property of the
 account, not of the broker, and this repo has already twice quoted one account's readings for
 another.
+
+### The agreement check can now tell a SCALED TRADE from a duplicate-order incident (2026-09-07)
+
+`_agrees` halted on more than one position outright. On a hedging account that is the same
+observable state as a legitimate scale-in, so the count alone cannot separate them — and the halt
+it must keep producing is the 2026-08-25 incident, five copies of one limit filling inside 69
+milliseconds.
+
+🔴 **THE DEFAULT IS REFUSAL AND `_why_not_scaled` IS WRITTEN THAT WAY ROUND.** It returns a
+SENTENCE unless it can positively establish a scaled trade, so a state nobody anticipated halts
+rather than being waved through as an add. **A permission written as *"halt unless X"* lets every
+unimagined case through; this one is *"refuse unless all of these hold"*.**
+
+⚠ **Three causes, three sentences, because they call for different work**: a strategy holding no
+adds is a duplicate-order incident; an unreadable ledger is a strategy this bridge cannot
+interrogate; a position on the other side is a hedge nobody asked for. **A test asserts all three
+render differently** — this file has already paid for two failures sharing one message.
+
+⚠ **`None` from the ledger REFUSES** (rule 1). *Could not ask* may not buy the permissive answer,
+because that is precisely how a duplicate-order incident would be read as a scale-in.
+
+⚠ **Behaviour is UNCHANGED for every configuration that exists today** — no bot can scale in, so
+the ledger is always empty and the refusal fires exactly as before, with a clearer sentence.
+
+🔴 **THE MULTI-POSITION HALT HAD NO TEST AT ALL, AND THE WHOLE SUITE STAYED GREEN WHILE IT WAS
+REWRITTEN.** 150 tests passed on the rewrite before a single one of them was about it. **The check
+that catches this repo's most expensive order incident was resting on nobody deleting it** — the
+same shape as the scale-in refusal, which had no test for three weeks. **When you touch a halt,
+ask what covers it before you trust the green.**
+
+**Tests: 5 in `test_live_bridge.py`, 4 mutations RUN and every one red**, with every test killed by
+at least one — permitting N positions unconditionally, refusing them unconditionally, reading a
+missing ledger as empty, and dropping the side check. ⚠ **The first two are COARSE by nature and
+are labelled so**: they break every refusal at once and prove no single claim. The ledger and side
+checks are the ones killed precisely.
+
+⚠ **This is one piece of four.** The placement route, the stop ratchet across every ticket and the
+exits across tickets are still missing, and **the scale-in refusal stays up until they exist** —
+retired when the capability is real, never to get a bot started.
