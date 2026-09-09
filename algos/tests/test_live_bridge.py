@@ -62,9 +62,18 @@ class _Pend:
 
 
 class _Pos:
-    def __init__(self, ticket, type_, price_open, volume, sl):
+    def __init__(self, ticket, type_, price_open, volume, sl, tp=0.0):
         self.ticket, self.type = ticket, type_
         self.price_open, self.volume, self.sl = price_open, volume, sl
+        # 🔴 **A REAL MT5 POSITION ALWAYS CARRIES THIS AND THIS FAKE DID NOT UNTIL 2026-09-08.**
+        # The target reconciliation reads `p.tp` to decide whether the broker already holds the
+        # price it wants, so a double without the field could not express *a target is already
+        # set* — and every test would have described a bot that re-sends the same instruction on
+        # every bar for the life of the trade. **`0.0` is the default because that is what MT5
+        # reports for a position with no target**, not `None`: the broker has answered, and the
+        # answer is *none set*. Rule 1 lives on the other side of this — `None` there means the
+        # STRATEGY has not said, which is a different fact and must not borrow this value.
+        self.tp = tp
 
 
 class _Order:
@@ -315,9 +324,28 @@ class _FakeMt5Ops:
         it is the branch most worth being able to reach.
 
         `move_sl_fails` holds the tickets to refuse, so one lot can fail while another succeeds —
-        which is the case that matters, and a single global flag could not express it."""
-        self.actions.append(("move_sl", ticket, new_sl))
-        return ticket not in getattr(self, "move_sl_fails", ())
+        which is the case that matters, and a single global flag could not express it.
+
+        🔴 **IT RECORDED NEITHER THE TARGET NOR THE RESULT UNTIL 2026-09-08, AND BOTH GAPS HIDE
+        THE SAME CLASS OF BUG.** `tp` was accepted and thrown away, so a test could not tell a
+        call that set the strategy's target from one that cleared it — the fake would have passed
+        either. And nothing was APPLIED to the position, so the broker's state never changed: a
+        reconciliation that re-sent the same instruction on every bar for the life of a trade
+        would have looked identical to one that converged. **A double that discards the argument
+        under test certifies a system you do not have** (rule 13).
+
+        ⚠ **`tp=None` PRESERVES the position's existing target**, exactly as production does with
+        `pos[0].tp` — that is what makes an ordinary stop ratchet safe to run against a trade
+        carrying a target, and a fake that blanked it would report a bug that is not there."""
+        self.actions.append(("move_sl", ticket, new_sl, tp))
+        if ticket in getattr(self, "move_sl_fails", ()):
+            return False
+        for p in self.positions:
+            if int(p.ticket) == int(ticket):
+                p.sl = new_sl
+                if tp is not None:
+                    p.tp = tp
+        return True
 
     def get_deal_result(self, ticket):
         return self.deal
@@ -341,7 +369,16 @@ class _FakeExecution:
         current_stop=None,
         entry_style="resting",
         base_qty=None,
+        tp1_pct=None,
     ):
+        # 🔴 **THE TWO LIVE STRATEGIES HAVE DIFFERENT SHAPES HERE AND BOTH ARE REAL.** SOS Fade's
+        # `Execution` always carries `_tp1_pct()` — the percentage of the position its first target
+        # takes, which decides whether that target can be a POSITION-level one at the broker. The
+        # extreme leg has no such method at all. `None` models the second, and the bridge's reading
+        # of it is *the strategy has not said*, never *it takes nothing* (rule 1). A fake that
+        # always answered a number could not reach the branch the benched bot runs through.
+        if tp1_pct is not None:
+            self._tp1_pct = lambda: tp1_pct
         # HOW this order layer opens a position. Every real execution declares it (the contract
         # requires it and `verify_live_ready` refuses without it), so this fake declares it too —
         # a double that could only ever be one of the two would make the gate untestable, and one
@@ -920,7 +957,7 @@ def test_the_stop_is_ratcheted_to_the_strategys_current_stop():
     ex = _FakeExecution(pos_dir=1)
     b, ops, ledger, _ = _bridge(ex, mt5ops=ops)
     b.sync(_Dec(stop=3285.0), _Sig())
-    assert ("move_sl", 555, 3285.0) in ops.actions
+    assert ("move_sl", 555, 3285.0, None) in ops.actions
     assert "event:stop_moved" in ledger.kinds()
 
 
@@ -2353,7 +2390,7 @@ def test_the_fill_clock_ratchets_a_RE_ENTRYS_stop_and_not_a_PRIMARYS():
     assert any(a[0] == "move_sl" for a in ops2.actions), "the re-entry's stop never ratcheted"
 
 
-def test_a_strategy_that_cannot_report_its_stop_SAYS_SO():
+def test_a_strategy_that_cannot_report_its_stop_SAYS_SO(monkeypatch):
     """🔴 Rule 1. Leaving the broker's stop alone happens to be the safe direction, but it is
     also exactly what a correctly ratcheting trade looks like from outside — so "cannot ask" and
     "nothing to move" must not be the same outcome.
@@ -2366,7 +2403,13 @@ def test_a_strategy_that_cannot_report_its_stop_SAYS_SO():
     ops.positions = [_Pos(557, 0, 3290.0, 0.42, 3280.0)]
     b.sync_fast(_fast_step())  # books it while the strategy can still answer
 
-    del type(ex)._current_stop  # ...and now it cannot
+    # 🔴 **`monkeypatch`, NOT a bare `del`, AND THAT IS A FIX RATHER THAN A STYLE CHOICE.**
+    # `_current_stop` is a method on the CLASS, so deleting it removed it for every test that ran
+    # afterwards in the same process — permanently, for the rest of the session. It was invisible
+    # for as long as nothing downstream needed it, and the first test that did (the re-entry's
+    # target, 2026-09-08) failed in the SUITE while passing alone, which is the worst failure
+    # shape a suite has. `monkeypatch` restores it, so nobody has to remember to.
+    monkeypatch.delattr(type(ex), "_current_stop")  # ...and now it cannot
     b.sync_fast(_fast_step())
 
     assert "event:secondary_stop_unreadable" in ledger.kinds()
@@ -3461,8 +3504,8 @@ def test_a_scale_in_lots_stop_is_RATCHETED_with_the_base():
     """MUTATION: skip the add loop and this goes red — the lot keeps its original stop."""
     b, ops, _, _ = _scaled_position()
     b._sync_stop(_Dec(stop=3285.0), ops.positions)
-    assert ("move_sl", 555, 3285.0) in ops.actions
-    assert ("move_sl", 556, 3285.0) in ops.actions
+    assert ("move_sl", 555, 3285.0, None) in ops.actions
+    assert ("move_sl", 556, 3285.0, None) in ops.actions
 
 
 def test_an_add_is_reconciled_from_ITS_OWN_stop_not_the_bases():
@@ -3476,8 +3519,8 @@ def test_an_add_is_reconciled_from_ITS_OWN_stop_not_the_bases():
     """
     b, ops, _, _ = _scaled_position(base_sl=3285.0, add_sl=3270.0, pos_stop=3285.0)
     b._sync_stop(_Dec(stop=3285.0), ops.positions)
-    assert ("move_sl", 555, 3285.0) not in ops.actions, "the base was already there"
-    assert ("move_sl", 556, 3285.0) in ops.actions, "the add was not, and must be moved"
+    assert ("move_sl", 555, 3285.0, None) not in ops.actions, "the base was already there"
+    assert ("move_sl", 556, 3285.0, None) in ops.actions, "the add was not, and must be moved"
 
 
 def test_a_FAILED_add_stop_move_is_alerted_and_recorded():
@@ -3510,7 +3553,169 @@ def test_NO_position_list_moves_NOTHING_rather_than_assuming_no_adds():
     """
     b, ops, _, _ = _scaled_position()
     b._sync_stop(_Dec(stop=3285.0), None)
-    assert ("move_sl", 556, 3285.0) not in ops.actions
+    assert ("move_sl", 556, 3285.0, None) not in ops.actions
+
+
+# ── the whole-position target, put on the broker (2026-09-08) ─────────────────
+#
+# 🔴 **WHY THIS EXISTS.** The strategy rests its first rung's order at `tp1` and its emulator
+# fills THERE; the bridge had no exit order of any kind, so the same rung reached the broker as
+# `_mirror_strategy_exit` closing at MARKET on the next bar close — up to a whole bar of drift
+# from the price the backtest booked. These drive the reconciliation that hands the broker the
+# price up front, and the market close stays as the safety net rather than the mechanism.
+
+
+def _targeted_position(tp1_pct=100.0, tp1=3320.0, base_tp=0.0, add_tp=0.0):
+    """A base long and one scale-in lot, and a strategy whose first rung takes `tp1_pct`."""
+    ops = _FakeMt5Ops()
+    ops.positions = [
+        _Pos(555, 0, 3290.0, 1.0, 3280.0, tp=base_tp),
+        _Pos(556, 0, 3295.0, 0.5, 3280.0, tp=add_tp),
+    ]
+    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, adds=[[3295.0, 0.5]], tp1_pct=tp1_pct)
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b._pos_ticket = 555
+    b._pos_stop = 3280.0
+    return b, ops, ledger, notes, _Dec(stop=3280.0, tp1=tp1)
+
+
+def test_a_target_that_takes_the_WHOLE_position_is_put_on_the_broker():
+    """The whole point: the exit fills AT the target instead of at market a bar later.
+
+    MUTATION: return None unconditionally from `_wanted_take_profit` and this goes red.
+    """
+    b, ops, ledger, _, dec = _targeted_position()
+    b._sync_take_profit(dec, ops.positions)
+    assert ("move_sl", 555, 3280.0, 3320.0) in ops.actions
+    assert "event:target_set" in ledger.kinds()
+
+
+def test_a_target_that_banks_only_PART_of_the_position_is_NOT_sent():
+    """🔴 THE CASE THAT WOULD DELETE A RUNNER. MT5's take-profit closes the WHOLE position, so
+    pointing it at a rung that banks half exits size the strategy is still managing.
+    `_sync_partials` owns that case, at market, and says so on every record it writes.
+
+    MUTATION: drop the `< 100.0` guard and this goes red.
+    """
+    b, ops, ledger, _, dec = _targeted_position(tp1_pct=50.0)
+    b._sync_take_profit(dec, ops.positions)
+    assert not [a for a in ops.actions if a[0] == "move_sl"]
+    assert "event:target_set" not in ledger.kinds()
+
+
+def test_a_strategy_that_has_not_SAID_gets_no_target():
+    """Rule 1 — *no such rung* and *the strategy cannot be asked* must not collapse into a price.
+    The extreme-leg bot is exactly this shape: its target really is 100%, and wiring it needs
+    that strategy to DECLARE the rung rather than this layer assuming one.
+
+    MUTATION: treat a missing `_tp1_pct` as 100 and this goes red.
+    """
+    b, ops, _, _, dec = _targeted_position(tp1_pct=None)
+    assert not hasattr(b._ex, "_tp1_pct")
+    b._sync_take_profit(dec, ops.positions)
+    assert not [a for a in ops.actions if a[0] == "move_sl"]
+
+
+def test_a_target_ALREADY_at_the_wanted_price_is_not_re_sent():
+    """It is a RECONCILIATION: it reads what the broker holds and brings it into line. Without
+    this it re-sends the same instruction on every bar for the life of the trade.
+
+    MUTATION: drop the `_moved` check and this goes red.
+    """
+    b, ops, _, _, dec = _targeted_position(base_tp=3320.0, add_tp=3320.0)
+    b._sync_take_profit(dec, ops.positions)
+    assert not [a for a in ops.actions if a[0] == "move_sl"]
+
+
+def test_EVERY_scale_in_lot_gets_the_target_too():
+    """On a hedging account an add is its own position. A target on the base alone would close
+    part of the trade at the rung and leave the adds riding — the same silent half-management
+    `_sync_add_stops` exists to prevent, arriving through the exit instead of the stop.
+
+    MUTATION: act on `_pos_ticket` alone and this goes red.
+    """
+    b, ops, _, _, dec = _targeted_position()
+    b._sync_take_profit(dec, ops.positions)
+    assert ("move_sl", 556, 3280.0, 3320.0) in ops.actions
+
+
+def test_the_STOP_travels_with_the_target_so_the_ratchet_is_not_undone():
+    """One MT5 instruction carries both fields. Sending a stale stop here would undo the ratchet
+    in the very instruction that sets the target.
+
+    MUTATION: pass `self._pos_stop` instead of the decision's stop and this goes red.
+    """
+    b, ops, _, _, _ = _targeted_position()
+    b._pos_stop = 3280.0
+    b._sync_take_profit(_Dec(stop=3285.0, tp1=3320.0), ops.positions)
+    assert ("move_sl", 555, 3285.0, 3320.0) in ops.actions
+
+
+def test_a_FAILED_target_is_alerted_and_recorded_and_does_NOT_halt():
+    """A broker rejects a target on the wrong side of the market or inside its stop level. The
+    honest consequence is that this one trade exits the old way — a divergence worth saying out
+    loud, not a reason to stop trading, and `_mirror_strategy_exit` still takes it off.
+
+    MUTATION: drop the else branch and this goes red.
+    """
+    b, ops, ledger, notes, dec = _targeted_position()
+    ops.move_sl_fails = (555, 556)
+    b._sync_take_profit(dec, ops.positions)
+    assert "event:target_set_failed" in ledger.kinds()
+    assert any("target" in n for n in notes)
+    assert b.state is not live_bridge.BridgeState.HALTED
+
+
+def test_a_SUCCESSFUL_target_alerts_NOTHING():
+    """The control. A suite whose every case asserts a failure certifies a path that always
+    fails — this repo has already shipped exactly that once.
+
+    MUTATION: alert on every set and this goes red.
+    """
+    b, ops, ledger, notes, dec = _targeted_position()
+    b._sync_take_profit(dec, ops.positions)
+    assert "event:target_set_failed" not in ledger.kinds()
+    assert not [n for n in notes if "target" in n]
+
+
+def test_NO_position_list_sends_NOTHING_rather_than_assuming_no_positions():
+    """Rule 1 again, and the same reading `_sync_add_stops` gives an empty list.
+
+    MUTATION: default the list to the broker's book inside the helper and this goes red.
+    """
+    b, ops, _, _, dec = _targeted_position()
+    b._sync_take_profit(dec, None)
+    assert not [a for a in ops.actions if a[0] == "move_sl"]
+
+
+def test_an_unreadable_STOP_sends_no_target():
+    """The stop goes out in the same instruction, so a target cannot be set without one — and a
+    `0.0` stop reaches MT5 as *no stop at all*, an unprotected position.
+
+    MUTATION: fall back to 0.0 for a missing stop and this goes red.
+    """
+    b, ops, _, _, _ = _targeted_position()
+    b._sync_take_profit(_Dec(stop=None, tp1=3320.0), ops.positions)
+    assert not [a for a in ops.actions if a[0] == "move_sl"]
+
+
+def test_the_RE_ENTRYS_clock_sets_the_target_too():
+    """🔴 THE ONE THAT MATTERS TODAY. The armed bot's only rung that banks at a price belongs to
+    the re-entry after a stop-out, and the re-entry is managed on the FILL clock — so a target
+    wired only into `sync` would never be set on the single trade this change exists for.
+
+    MUTATION: drop the call from `sync_fast` and this goes red.
+    """
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 0, 3290.0, 1.0, 3280.0)]
+    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, current_stop=3280.0, tp1_pct=100.0)
+    ex._tp1 = 3320.0
+    b, ops, _, _ = _bridge(ex, mt5ops=ops)
+    b._pos_ticket = 555
+    b._pos_stop = 3280.0
+    b._pos_intent = "secondary"
+    b.sync_fast(_fast_step())
+    assert ("move_sl", 555, 3280.0, 3320.0) in ops.actions
 
 
 # ── buying the scale-in lot (2026-09-08, add path 4/4) ────────────────────────

@@ -177,6 +177,17 @@ _DECISION_EVENTS = {
     # record, which is the collapse rule 1 exists to prevent.
     "add_shortfall",
     "add_shortfall_unmeasurable",
+    # ── the whole-position TARGET, handed to the broker up front (2026-09-08). DECISIONS by the
+    # same subject test as every row above: they answer "where will this trade exit", not "is the
+    # machinery working". ⚠ `target_set` is the record that a rung the lab fills AT ITS PRICE will
+    # now do the same live — without it, the only evidence is the absence of a `partial_banked`
+    # carrying `fill="market_on_bar_close"`, and an absence is not a record. ⚠ `target_set_failed`
+    # is the one that matters most: the broker refused the price, so that trade falls back to
+    # closing at market on bar close and WILL differ from its backtest — which is precisely the
+    # reason this stream exists, and it belongs beside the trade rather than in a health file read
+    # only once something is already known to be wrong.
+    "target_set",
+    "target_set_failed",
 }
 
 # Lifecycle records that mark the boundary of a RUN. `last_run_status()` reads back the most

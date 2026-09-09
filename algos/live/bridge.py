@@ -36,6 +36,7 @@ them is a refusal in `assert_supported()`, not a silent skip.
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -1040,6 +1041,10 @@ class OrderBridge:
             # be sent while the broker still holds the pre-bank size.
             self._sync_partials(positions)
             self._sync_stop(dec, positions)
+            # AFTER the stop, and the order is load-bearing: one MT5 instruction carries both
+            # fields, so this re-sends whatever `_sync_stop` has just staged. Before it, the
+            # target would go out alongside the PREVIOUS stop and undo the ratchet.
+            self._sync_take_profit(dec, positions)
         else:
             # The PRIMARY's two slots only. The re-entry's slot is reconciled on the fill
             # clock by `sync_fast`, and reaching across from here would price its limit off a
@@ -1115,6 +1120,13 @@ class OrderBridge:
             if self._pos_intent == "secondary":
                 self._sync_partials(positions)
                 self._sync_stop(dec)
+                # 🔴 **THE ONE THAT MATTERS TODAY.** The armed bot's only rung that banks at a
+                # price belongs to the re-entry after a stop-out, and the re-entry is managed on
+                # THIS clock — so a target wired only into `sync` above would never be set on the
+                # single trade this change exists for. `_sync_stop` deliberately passes no
+                # positions here (adds are not managed on the fast clock); the target reads the
+                # broker's own `tp` and needs them, so they are passed.
+                self._sync_take_profit(dec, positions)
             return
 
         pend = getattr(self._ex, "_pend_sec", None)
@@ -3194,6 +3206,114 @@ class OrderBridge:
                     ticket=int(p.ticket),
                     was=getattr(p, "sl", None),
                     wanted=want,
+                )
+
+    def _wanted_take_profit(self, dec) -> Optional[float]:
+        """The price the strategy takes the WHOLE position off at, or `None` if it does not.
+
+        🔴 **THIS IS WHY A TARGET NOW FILLS AT THE TARGET AND NOT AT MARKET A BAR LATER.** The
+        strategy rests its first rung's order at `tp1` and its emulator fills THERE; this bridge
+        had no exit order of any kind, so the same rung reached the broker as
+        `_mirror_strategy_exit` closing at MARKET on the next bar close. On a 15-minute clock that
+        is up to a whole bar of drift from the price the backtest booked, in whichever direction
+        the bar happened to run. Handing the broker the price up front makes the two agree and
+        demotes the market close to a safety net rather than the mechanism.
+
+        ⚠ **ONLY a rung that takes 100%, and that is not caution — it is what a POSITION-level
+        take-profit can EXPRESS.** MT5's `tp` closes the whole position, so pointing it at a rung
+        that banks half would delete a runner the strategy is still managing. A partial bank needs
+        its own resting limit order, which this bridge does not have: `_sync_partials` keeps that
+        case, still at market on bar close, and still names the fill on every event it writes.
+
+        ⚠ **`None` is *no such rung, or the strategy has not said* — never `0.0`**, which reaches
+        MT5 as *no take-profit at all* and is a real instruction (rule 1). A strategy with no
+        `_tp1_pct` makes no claim and gets no target, which is exactly today's behaviour rather
+        than a new refusal. **The extreme-leg bot is one of those and its target is a genuine
+        100%** (`extreme_leg.execution` publishes `tp_rungs=((take_profit, 100.0),)`); wiring it
+        needs that strategy to DECLARE the rung, not this layer to assume one.
+
+        ⚠ **It asks the STRATEGY, never the config.** `bank_ladders` above mirrors the same rule
+        for the startup refusal and cannot answer it for an OPEN trade: a re-entry after a
+        stop-out and a re-entry into a gap read different fields, and on the armed bot those are
+        100 and 0. Reading the config here would hang a target on a trade the strategy rides.
+        """
+        pct = getattr(self._ex, "_tp1_pct", None)
+        if not callable(pct):
+            return None
+        if float(pct()) < 100.0:
+            return None
+        price = getattr(dec, "tp1", None)
+        if price is None:
+            return None
+        price = float(price)
+        return price if math.isfinite(price) and price > 0 else None
+
+    def _sync_take_profit(self, dec, positions) -> None:
+        """Put the strategy's whole-position target on the broker, so the exit fills at it.
+
+        🔴 **A RECONCILIATION, NOT AN EVENT — the same shape `_sync_add_stops` is built on.** It
+        does not remember whether it has set a target; it reads what the broker is holding and
+        brings it into line. A remembered flag would be empty after a restart while the broker
+        still held the position, so the target would never be re-stated and that trade would drop
+        back to closing at market with nothing anywhere saying so.
+
+        ⚠ **Every position under our magic, not just the base.** On a hedging account a scale-in
+        lot is its own position, so a target on the base alone would close part of the trade at
+        the rung and leave the adds riding — the same silent half-management `_sync_add_stops`
+        exists to prevent, arriving through the exit instead of the stop.
+
+        ⚠ **It SETS and never CLEARS, and that is a decision rather than an omission.** Clearing
+        would need this layer to tell a target IT set from one a person set by hand, and it holds
+        no record that survives a restart, so it would eventually delete somebody's own exit.
+        Nothing on the armed bots sets a target today, and a target belongs to ONE ticket — so a
+        rung that stops applying cannot strand a stale one on the next trade.
+
+        ⚠ **A refusal is ALERTED and does NOT halt.** A broker rejects a target on the wrong side
+        of the market or inside its stop level, and the honest consequence is that this one trade
+        exits the old way, at market on bar close. That is a divergence worth saying out loud, not
+        a reason to stop trading — and `_mirror_strategy_exit` still takes it off.
+
+        ⚠ **The stop travels with it, because `TRADE_ACTION_SLTP` sends both fields.** So this runs
+        AFTER `_sync_stop` and passes the stop that call has just staged; sending a stale one here
+        would undo the ratchet in the same instruction that sets the target.
+
+        ⚠ **No positions passed means CANNOT ASK, so nothing is sent and nothing is claimed** —
+        rule 1, and the same reading `_sync_add_stops` gives an empty list.
+        """
+        want = self._wanted_take_profit(dec)
+        stop = getattr(dec, "stop", None)
+        if want is None or stop is None or self._pos_ticket is None or not positions:
+            return
+        for p in positions:
+            if not self._moved(getattr(p, "tp", None), want):
+                continue
+            ticket = int(p.ticket)
+            leg = "base" if ticket == self._pos_ticket else "add"
+            ok = self._exec(
+                lambda t=ticket: self._mt5.move_sl(t, stop, tp=want),
+                f"set target T{ticket} {getattr(p, 'tp', None)} → {want} ({leg})",
+            )
+            if ok:
+                self._ledger.event(
+                    "target_set",
+                    ticket=ticket,
+                    was=getattr(p, "tp", None),
+                    now=want,
+                    leg=leg,
+                )
+            else:
+                self._alert_once(
+                    f"target_stuck_{ticket}",
+                    f"Could not put the target {want} on T{ticket}. That trade will still be "
+                    f"closed at market on the bar its target is reached, so its exit price will "
+                    f"differ from the backtest's by however far the bar ran after the touch.",
+                )
+                self._ledger.event(
+                    "target_set_failed",
+                    ticket=ticket,
+                    was=getattr(p, "tp", None),
+                    wanted=want,
+                    leg=leg,
                 )
 
     def _cancel_all_rest(self, why: str) -> None:

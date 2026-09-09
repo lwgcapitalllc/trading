@@ -3836,3 +3836,88 @@ gap is however long it takes for the next deploy.
 
 ⚠ **RULE 9 IS NOT CLOSED BY SWITCHING IT ON.** No add has ever reached a broker and no parity gate
 covers the path. **Watch the first one.**
+
+### The whole-position target goes to the BROKER, so it fills at the target (2026-09-08)
+
+**`_sync_take_profit` puts the price on the position.** A rung that takes the whole position off
+reached the broker as `_mirror_strategy_exit` closing at MARKET on the next bar close — so the lab
+booked the rung's own price and the live bot booked whatever the market was when the bar shut. On a
+15-minute clock that is up to a whole bar of drift, in whichever direction the bar happened to run.
+
+🔴 **THE MARKET CLOSE IS NOW THE SAFETY NET RATHER THAN THE MECHANISM, and `_mirror_strategy_exit`
+is UNCHANGED.** If the broker's target fills, the position is simply gone by the next sync and the
+mirror's own *"already gone — the ordinary path books it"* branch takes it; `_observe_close` then
+books the REAL fill price off the deal, net of swap and commission, exactly as it does a stop-out.
+**That is not a new path — it is the path every stop-out has always taken.** If the target never
+went on, or the broker refused it, the mirror closes at market as before.
+
+🔴 **ONLY A RUNG THAT TAKES 100%, AND THAT IS WHAT A POSITION-LEVEL TARGET CAN EXPRESS — not
+caution.** MT5's `tp` closes the WHOLE position, so pointing it at a rung banking half would delete
+a runner the strategy is still managing. `_sync_partials` keeps that case, still at market on bar
+close, still naming `fill="market_on_bar_close"` on every record. **A partial bank needs its own
+resting limit order and this bridge does not have one.**
+
+🔴 **IT ASKS THE STRATEGY (`_tp1_pct`), NEVER THE CONFIG, AND THAT IS THE WHOLE REASON NO STRATEGY
+FILE CHANGED.** `bank_ladders` mirrors the same rule for the startup refusal and **cannot answer it
+for an OPEN trade**: a re-entry after a stop-out and a re-entry into a gap read different fields,
+and on the armed bot those are **100 and 0**. Reading the config here would hang a target on a
+trade the strategy rides. ⚠ **Rule 22 is satisfied by not being triggered** — `strategies/` is
+untouched, so no parity gate is owed.
+
+⚠ **`None` is *no such rung, or the strategy has not said* — never `0.0`**, which reaches MT5 as
+*no target at all*. 🔴 **A STATED GAP: the extreme-leg bot has no `_tp1_pct` and its target really
+IS 100%** (`extreme_leg.execution` publishes `tp_rungs=((take_profit, 100.0),)`), so it keeps
+closing at market and nothing announces that. Wiring it needs that strategy to DECLARE the rung —
+**this layer must not assume one**, because absence and *banks nothing* are the same value here and
+only the strategy can separate them.
+
+⚠ **A RECONCILIATION, not an event** — it reads the broker's own `tp` and brings it into line, the
+same shape as `_sync_add_stops`. A remembered flag would be empty after a restart while the broker
+still held the position, so the target would never be re-stated.
+
+⚠ **Every position under our magic, not just the base.** On a hedging account an add is its own
+position; a target on the base alone banks part of the trade at the rung and leaves the adds riding.
+
+⚠ **It SETS and never CLEARS.** Clearing needs this layer to tell a target IT set from one a person
+set by hand, and it holds no record surviving a restart — so it would eventually delete somebody's
+own exit. A target belongs to ONE ticket, so a rung that stops applying cannot strand a stale one.
+
+⚠ **The stop travels with it** (`TRADE_ACTION_SLTP` sends both fields), so it runs AFTER
+`_sync_stop` and passes the stop that call has just staged. ⚠ **`move_sl(tp=None)` PRESERVES an
+existing target**, checked in `mt5_ops`, so the ordinary ratchet cannot wipe one.
+
+⚠ **A refusal is ALERTED and does NOT halt.** The broker rejects a target on the wrong side or
+inside its stop level; the honest consequence is that one trade exits the old way.
+
+🔴 **IT IS WIRED INTO BOTH CLOCKS AND `sync_fast` IS THE ONE THAT MATTERS TODAY** — the armed bot's
+only price-triggered rung belongs to the re-entry after a stop-out, which is managed on the fill
+clock. Wired only into `sync` it would never fire on the single trade this exists for.
+
+**Tests: 11 in `test_live_bridge.py`, 11 mutations RUN and every one RED on its own named test** —
+and the harness asserts each test was SELECTED and green at baseline first, because a `-k` filter
+matching nothing reads exactly like a vacuous test.
+
+🔴 **THE FAKE BROKER DISCARDED THE ARGUMENT UNDER TEST, AND THE FAKE POSITION HAD NO `tp` AT ALL.**
+`move_sl` accepted a target and threw it away, so a call setting the strategy's target and one
+clearing it were indistinguishable; and nothing was APPLIED to the position, so a reconciliation
+re-sending the same instruction every bar for the life of a trade looked identical to one that
+converged. **Sixth time this file has recorded a fixture less capable than production.**
+
+🔴 **A PRE-EXISTING TEST WAS POISONING EVERY TEST THAT RAN AFTER IT, AND THIS IS THE FINDING WORTH
+MORE THAN THE FEATURE.** `test_a_strategy_that_cannot_report_its_stop_SAYS_SO` did
+`del type(ex)._current_stop` — deleting the method from the CLASS, for the rest of the session.
+Nothing downstream had ever needed it, so it was invisible; the first test that did **failed in the
+SUITE while passing alone**, which is the worst failure shape a suite has. It is `monkeypatch.delattr`
+now, so the restore cannot be forgotten. ⚠ **Ask what a `del` in a test is deleting FROM** — an
+instance is local, a class is global and permanent.
+
+⚠ **Two new ledger events, both DECISIONS** (`target_set`, `target_set_failed`) — they answer
+*where will this trade exit*, never *is the machinery working*. The routing guard caught them, which
+is that guard earning its keep. ⚠ **`target_set` matters because the alternative evidence is an
+ABSENCE** — no `partial_banked` carrying `market_on_bar_close` — and an absence is not a record.
+
+⚠ **It reaches the running bot by `git pull` plus a RESTART** (`algos/` is not in the frozen
+snapshot). No promote is needed for it.
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and the first target to watch is a reclaim
+re-entry's, on a bot that has never banked anything at a price.
