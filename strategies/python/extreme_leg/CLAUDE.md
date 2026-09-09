@@ -767,3 +767,24 @@ the mechanism that makes the next one automatic.
 exit 0 at the DERIVED warm-up. ⚠ **Let the gate compute its own warm-up.** Passing `--warmup 500`
 or `1000` by hand OVERRIDES a larger derived value and reports a cold start as four diverged
 fields — that happened twice on 2026-09-09 and read as a red gate both times.
+
+## `planned_full_exit_price` is always `None` here, and that is a FACT rather than a stub (2026-09-09)
+
+The live contract asks every strategy where an order it is PLACING would close a whole position, so
+the target reaches the broker in the same message as the stop. **This bot answers `None`, always.**
+
+🔴 **NOTHING IS LOST BY IT, AND SAYING SO IS THE POINT OF THE ENTRY.** This strategy declares it
+enters at MARKET: it fills inside its own emulator on the bar's close, so by the time the bridge
+sends an order the position is already open and the bridge asks `full_exit_price` instead — the
+EXACT price, not a forecast. **A resting strategy is the one that has to estimate; this one never
+does.** A future reader meeting a constant `None` will otherwise read it as a missing feature.
+
+⚠ **Two tests pin it**, and the second is the one that matters: it holds a trade with a perfectly
+good target and still asserts `None`. Returning the open trade's target here would put a target
+meant for the position already held onto the next order placed — and because this bot is always
+already open when an order goes out, **that would read as correct in every log**. Watched red.
+
+⚠ **PARITY RE-RUN AND GREEN.** `compare_extreme_leg.py` on `VANTAGE_XAUUSD, 5_821a8.csv` — 20,265
+bars, 2026-05-24 → 2026-09-03, warm-up 2,016 derived, **18,248 bars compared, exit 0**. ⚠ Coverage
+unchanged and still narrow: **6 entries, and four refusal codes never reached**. ⚠ The gate still
+cannot see the shipped form — the market-condition cut is ON in config and the chart cannot make it.

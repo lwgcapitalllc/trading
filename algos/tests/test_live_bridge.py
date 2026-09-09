@@ -77,12 +77,16 @@ class _Pos:
 
 
 class _Order:
-    def __init__(self, ticket, price=0.0, sl=0.0, volume=0.0, buy=True):
+    def __init__(self, ticket, price=0.0, sl=0.0, volume=0.0, buy=True, tp=0.0):
         self.ticket = ticket
         # Carried so `account_exposure` below can be DERIVED from this book rather than
         # hand-listed beside it. A fake whose exposure disagrees with its own order book is the
         # 2026-08-07 trap one level up: it would test a shape production never produces.
         self.price, self.sl, self.volume, self.buy = price, sl, volume, buy
+        # A real MT5 pending order carries its target the moment it is placed, so this one does
+        # too. `0.0` is MT5's *no target*. Rule 13: a double that cannot hold what production
+        # holds lets a test pass against a system we do not have.
+        self.tp = tp
         # MT5 names these fields `price_open` and `volume_current` on a real order, and the
         # orphan sweep reads them by those names. Mirrored rather than renamed: the existing
         # `price`/`volume` are load-bearing for the exposure derivation above, and a fake that
@@ -249,9 +253,9 @@ class _FakeMt5Ops:
         if self._refused_placement():
             return None, None
         self._ticket += 1
-        self.actions.append(("place", direction, lots, price, sl))
+        self.actions.append(("place", direction, lots, price, sl, tp))
         self.orders.append(
-            _Order(self._ticket, price=price, sl=sl, volume=lots, buy=direction == "bullish")
+            _Order(self._ticket, price=price, sl=sl, volume=lots, buy=direction == "bullish", tp=tp)
         )
         return self._ticket, price
 
@@ -265,10 +269,13 @@ class _FakeMt5Ops:
         if self._refused_placement():
             return None, None
         self._ticket += 1
-        self.actions.append(("market", direction, lots, sl))
+        self.actions.append(("market", direction, lots, sl, tp))
         fill = self.fill_price if self.fill_price is not None else 100.0
+        # ⚠ The target is carried onto the POSITION, because that is what a filled market order
+        # with a target produces at the venue — and it is what makes the reconciliation's "is a
+        # target already on this ticket" question answerable here at all.
         self.positions.append(
-            _Pos(self._ticket, 0 if direction == "bullish" else 1, fill, lots, sl)
+            _Pos(self._ticket, 0 if direction == "bullish" else 1, fill, lots, sl, tp=tp)
         )
         return self._ticket, fill
 
@@ -370,6 +377,7 @@ class _FakeExecution:
         entry_style="resting",
         base_qty=None,
         full_exit=None,
+        planned_exit=None,
     ):
         # 🔴 **EVERY LIVE STRATEGY ANSWERS THIS, WHICH IS WHY THE FAKE ALWAYS HAS IT.**
         # `full_exit_price` is in the live contract's `EXECUTION_ATTRS`, so a strategy without it
@@ -378,6 +386,12 @@ class _FakeExecution:
         # is the ANSWER: a price when this trade takes the whole position off there, and `None`
         # when it does not — flat, or a first rung that leaves a runner behind.
         self._full_exit = full_exit
+        # 🔴 **THE SAME QUESTION ABOUT AN ORDER THAT HAS NOT FILLED**, and it is on the fake for
+        # the same reason: `planned_full_exit_price` is in the live contract, so a strategy
+        # without it is one production cannot hand the bridge. It is a SEPARATE knob from
+        # `full_exit` above because the two genuinely differ — the live re-entry has a target the
+        # instant its limit is placed, and no open trade to read it off.
+        self._planned_exit = planned_exit
         # HOW this order layer opens a position. Every real execution declares it (the contract
         # requires it and `verify_live_ready` refuses without it), so this fake declares it too —
         # a double that could only ever be one of the two would make the gate untestable, and one
@@ -469,6 +483,21 @@ class _FakeExecution:
         model, and a fake offering one would describe a bot that could never have started.
         """
         return self._full_exit
+
+    def planned_full_exit_price(self, pend):
+        """The whole-position target an order being PLACED would carry, or `None`.
+
+        ⚠ **Always present, for the same reason `full_exit_price` above is** — it is in the live
+        contract, so a strategy lacking it is refused at startup and the bridge reads it
+        directly. The tests that exercise the bridge's cannot-answer branch remove it from the
+        CLASS rather than making it return a sentinel, because a `None` here is a real answer
+        (this order has no target) and must never double as *nobody implemented this*.
+
+        ⚠ **It ignores the order it is handed**, which is honest for a double: the real rule needs
+        the trade's kind, its trigger, its price and its stop, and reproducing that here would be
+        a second implementation of the strategy inside its own test fake.
+        """
+        return self._planned_exit
 
     def snapshot_position(self) -> dict:
         return dict(self.snapshot)
@@ -892,7 +921,7 @@ def test_a_strategy_limit_becomes_a_broker_limit():
     ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
     b, ops, ledger, _ = _bridge(ex)
     b.sync(_Dec(), _Sig())
-    assert ops.actions == [("place", "bullish", 0.42, 3290.0, 3280.0)]
+    assert ops.actions == [("place", "bullish", 0.42, 3290.0, 3280.0, 0.0)]
     assert "event:order_placed" in ledger.kinds()
 
 
@@ -1244,7 +1273,7 @@ def test_the_bridge_goes_live_once_the_warmup_position_closes():
     b.sync(_Dec(), _Sig())
     assert b.state is live_bridge.BridgeState.LIVE
     assert "event:went_live" in ledger.kinds()
-    assert ops.actions == [("place", "bullish", 0.42, 3290.0, 3280.0)]
+    assert ops.actions == [("place", "bullish", 0.42, 3290.0, 3280.0, 0.0)]
 
 
 # ── dry run ───────────────────────────────────────────────────────────────────
@@ -1304,7 +1333,7 @@ def test_the_bridge_sends_LOTS_where_the_strategy_computed_UNITS():
     b, ops, _, _ = _sizing_bridge(_Pend(1, 4286.75448, 24.79, 4294.82248))
     b.sync(_Dec(), _Sig())
     assert len(ops.actions) == 1
-    verb, side, lots, price, sl = ops.actions[0]
+    verb, side, lots, price, sl, tp = ops.actions[0]
     assert (verb, side) == ("place", "bullish")
     assert lots == 0.24, f"sent {lots} lots — units were not converted to lots"
 
@@ -3939,3 +3968,109 @@ def test_a_shortfall_that_CANNOT_BE_MEASURED_alerts_and_does_not_halt():
     assert b.state is not live_bridge.BridgeState.HALTED
     assert "event:add_shortfall_unmeasurable" in ledger.kinds()
     assert any("could not be read" in str(m) for m in notes)
+
+
+# ── the target travels WITH the order (added 2026-09-09) ──────────────────────
+#
+# 🔴 Until this date both placement branches sent a hardcoded zero, so every trade was open at the
+# broker with NO target until the next reconciliation pass — up to a whole fill-clock bar, during
+# which a trade that reached its price closed at MARKET instead. The stop had always travelled in
+# the same message; the target was the half left behind.
+#
+# ⚠ **`0.0` is MT5's *no take-profit*, which is a real instruction rather than an absence** — so
+# the tests below assert the value SENT in both directions, never just that a target appeared.
+
+
+def _order_bridge(*, planned=None, full_exit=None, market=False):
+    """A flat bot with one resting order ready to place."""
+    ex = _FakeExecution(
+        pend_long=_Pend(1, 3290.0, 42.0, 3280.0, market=market),
+        planned_exit=planned,
+        full_exit=full_exit,
+    )
+    return _bridge(ex)
+
+
+def test_a_RESTING_order_carries_the_target_the_strategy_planned_for_it():
+    """🔴 THE FEATURE. The order reaches the broker with its target already on it, so a trade that
+    runs to its price fills THERE instead of being closed at market a bar later.
+
+    MUTATION: send `0.0` instead of the planned price and this goes red.
+    """
+    b, ops, _, _ = _order_bridge(planned=3311.25)
+    b.sync(_Dec(), _Sig())
+    assert ops.actions == [("place", "bullish", 0.42, 3290.0, 3280.0, 3311.25)]
+
+
+def test_the_order_book_HOLDS_that_target_and_not_merely_the_call():
+    """🔴 A CALL IS NOT A STATE. Asserting the arguments alone would pass against a broker that
+    accepted the target and discarded it, which is the shape rule 13 is about — so the resting
+    order itself is read back.
+    """
+    b, ops, _, _ = _order_bridge(planned=3311.25)
+    b.sync(_Dec(), _Sig())
+    assert [o.tp for o in ops.orders] == [3311.25]
+
+
+def test_an_order_with_NO_target_sends_a_ZERO_rather_than_omitting_the_field():
+    """`None` from the strategy means *this trade banks nothing at a price*, and MT5 spells that
+    `0.0`. Sending nothing at all would leave whatever the venue defaults to.
+
+    MUTATION: drop the `0.0 if tp is None` conversion and this raises instead of going quiet.
+    """
+    b, ops, _, _ = _order_bridge(planned=None)
+    b.sync(_Dec(), _Sig())
+    assert ops.actions == [("place", "bullish", 0.42, 3290.0, 3280.0, 0.0)]
+
+
+def test_a_RESTING_order_does_NOT_read_the_open_positions_answer():
+    """🔴 THE TWO QUESTIONS ARE DIFFERENT AND THIS PINS WHICH ONE IS ASKED.
+
+    Nothing is open when a limit is placed, so `full_exit_price` answers `None` for every trade —
+    reading it here would ship a feature that never sends a target and looks implemented. The
+    fixture answers a PRICE from the open-position seam precisely so that reading the wrong one
+    cannot pass.
+
+    MUTATION: call `_wanted_take_profit` in the resting branch and this goes red.
+    """
+    b, ops, _, _ = _order_bridge(planned=3311.25, full_exit=9999.0)
+    b.sync(_Dec(), _Sig())
+    assert ops.actions[0][-1] == 3311.25, "the resting branch must ask the PLANNED question"
+
+
+def test_a_MARKET_order_reads_the_OPEN_answer_because_the_trade_ALREADY_FILLED():
+    """🔴 THE MIRROR CASE, AND IT IS THE OPPOSITE CHOICE ON PURPOSE. A market order is sent AFTER
+    the strategy opened its own position — the bridge is catching the broker up — so the exact
+    price is available and no forecast is needed. Asking the planned question here would get
+    `None` for every trade and the extreme-leg bot would never carry a target.
+
+    MUTATION: call `planned_full_exit_price` in the market branch and this goes red.
+    """
+    b, ops, _, _, dec = _market_bridge()
+    b._ex._full_exit = 4406.9
+    b._ex._planned_exit = None
+    b.sync(dec, _Sig())
+    assert [a[0] for a in ops.actions] == ["market"], ops.actions
+    assert ops.actions[0][-1] == 4406.9
+
+
+def test_a_strategy_that_cannot_say_what_a_PLANNED_order_closes_at_HALTS(monkeypatch):
+    """🔴 RULE 1 AT THE ORDER BOUNDARY. Read defensively, *never implemented* and *this order has
+    no target* are one value — and the first is a bot that silently never sends one for its whole
+    life. The state is reachable: `algos/` arrives by git pull, a strategy only by a promote, so
+    a box pulled before it is promoted runs this bridge against a strategy that has never heard
+    of the seam.
+
+    ⚠ Removed from the CLASS via monkeypatch, which restores it. A bare `del` here deleted it for
+    the rest of the session and made an unrelated test fail depending on ordering — that is the
+    defect this file already carries a note about on `_current_stop`.
+
+    MUTATION: default the seam to `None` with a `getattr` and this goes red — the bot places an
+    untargeted order and reports success.
+    """
+    b, ops, _, _ = _order_bridge(planned=3311.25)
+    monkeypatch.delattr(type(b._ex), "planned_full_exit_price")
+    b.sync(_Dec(), _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert ops.actions == [], "a halted bot places nothing"
+    assert "promote.py" in b.halt_reason, b.halt_reason

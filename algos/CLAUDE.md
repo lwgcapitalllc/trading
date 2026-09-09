@@ -3959,3 +3959,64 @@ one bar of drift on the exit. The reconcile covers both bots within a bar of the
 
 **Tests: 11 in `test_live_bridge.py`; 16 mutations RUN across the bridge, both strategies and the
 contract, every one red on its own named test.**
+
+## The target now travels WITH the order, the way the stop always has (2026-09-09)
+
+**Both placement branches in `bridge._place` sent a hardcoded `tp=0.0` until this date.** So every
+trade was open at the broker with NO target until the next reconciliation pass — up to a whole
+fill-clock bar — and a trade that reached its price inside that window closed at MARKET instead, at
+whatever the bar had run to. **That is the last of the close-at-target drift.**
+
+⚠ **`0.0` is MT5's *no take-profit*, which is a real instruction rather than an absence**, so it is
+still what an untargeted order sends. Tests assert the value in both directions, never merely that
+a target appeared.
+
+🔴 **WHICH QUESTION THE BRIDGE ASKS DEPENDS ON WHETHER THE STRATEGY HAS ALREADY FILLED, AND GETTING
+IT BACKWARDS IS SILENT EITHER WAY.** A MARKET order is sent after the strategy opened its own
+position — the bridge is catching the broker up — so `_wanted_take_profit` reads the exact price. A
+RESTING limit is placed before anything fills, so the strategy is asked what that order WOULD close
+at (`_order_take_profit`). ⚠ **Asking the open-position question about an unfilled order returns
+`None` for every trade** — a feature that never sends a target and looks implemented. ⚠ **Asking
+the planned question on the market path returns `None` for every trade too**, and the extreme-leg
+bot would never carry one. Both directions are pinned by tests that would pass if only one were.
+
+🔴 **A STRATEGY THAT CANNOT ANSWER HALTS THE BOT AND THE HALT NAMES THE PROMOTE.** `algos/` arrives
+by `git pull`; a strategy arrives only by `promote.py`. **A box pulled before it is promoted runs
+this bridge against a frozen strategy that has never heard of the seam** — so the state is
+reachable, not theoretical. A defensive read would make *never implemented* and *this order has no
+target* one value (rule 1), whose first meaning is a bot quietly closing at market for its whole
+life. ⚠ **It still halts at the moment of USE rather than at startup, because `verify_live_ready`
+is called by nothing in this package.** That remains open and is its own change.
+
+### The venue's opinion of a target DROPS the target — the stop's REFUSES the order
+
+`mt5_ops.usable_take_profit` is the one place a target is checked before it leaves for the venue.
+
+🔴 **THE ASYMMETRY IS THE DESIGN, NOT AN OVERSIGHT.** An unacceptable STOP refuses the whole order —
+a trade with no stop is unbounded risk. An unacceptable TARGET is dropped and the order still goes:
+a trade with no venue target is exactly what every trade here had before this date, the bridge sets
+one on its next pass, and the strategy still closes it at market. **Losing a whole setup to a target
+the broker disliked is a far worse trade than being a bar late with the target.**
+
+⚠ **Two different faults, two different sentences.** Inside the venue's minimum distance is a BROKER
+limit and says nothing about the strategy. On the wrong side of the entry is a STRATEGY fault — a
+target already passed, which a venue would either refuse the order over or fill on the spot.
+
+⚠ **A DROP IS NEVER SILENT, and that is rule 1 in the record.** `0.0` reaches the venue as *no
+target*, identical to an order that never asked for one — so without a line in the log, *asked for
+none* and *asked and was refused* read the same forever after. ⚠ **The success line reports the
+target SENT, never the one asked for** (rule 3, same rule that makes it report normalised lots).
+
+### DEPLOY ORDER: PROMOTE, THEN PULL, THEN RESTART — the reverse takes a bot down
+
+Both halves of this change must land together. `algos/` (the bridge, the broker layer) arrives by
+`git pull`; `strategies/` (the seam both bots implement) arrives ONLY by `promote.py`. **Pull first
+and the new bridge runs against a frozen strategy that cannot answer — which now halts, by design.**
+
+⚠ **A bot holding an open position cannot be promoted** (`promote.py` refuses), so a bot with a live
+trade waits for it to close.
+
+⚠ **19 new tests here, every one watched RED by mutation** (15 mutations across four files, all
+killed). Gates re-run and green: `compare_strategy.py` exit 0 at warmups 500/1000 with a
+byte-identical HEAD control, `compare_extreme_leg.py` exit 0 on 18,248 bars. **Rule 9 still stands:
+no order carrying a target placed at send time has reached a broker.**

@@ -3274,3 +3274,43 @@ distinguish the behaviours it names.** It now carries a stale target and asserts
 **19,542 bars, exit 0 at `--warmup 500`**, identical to its pre-change baseline. ⚠ **The gate is
 structurally blind to this method** — nothing in the decision stream reads it, and the Pine has no
 counterpart. A green run says the decisions did not move, nothing more.
+
+## The first rung's price has ONE implementation, and the live bridge asks it too (2026-09-09)
+
+**`_first_rung` and `_tp1_pct_for` are the rule; `_open_position`, `full_exit_price` and
+`planned_full_exit_price` are its callers.** The arithmetic used to be written out inline at the
+fill and nowhere else.
+
+🔴 **THE ALTERNATIVE WAS A SECOND COPY IN `algos/live/`, WHICH IS THE SHAPE THIS REPO KEEPS PAYING
+FOR.** The live bridge needs the whole-position target for an order it is about to SEND, so the
+target reaches the broker in the same message as the stop instead of a bar later. That answer is
+this strategy's to give — which trade kind banks what is a trading rule, and the live layer holds
+none — so the seam is a question asked of the strategy rather than a branch copied into the bridge.
+
+🔴 **THE PLANNED ANSWER IS AN ESTIMATE AND ITS ONE-WAY SAFETY IS THE ARGUMENT FOR SENDING IT.** The
+rung is priced off the FILL. A limit fills at its price **or better**; a better fill is a **smaller**
+risk; a smaller risk puts the rung **nearer**. So the estimate is always at or BEYOND where this
+strategy banks, the strategy's own trigger fires first, and the broker's target is never reached
+early. ⚠ **For a SHORT, *nearer* means HIGHER** — the direction an eyeball check gets backwards, and
+the reason both directions carry their own test.
+
+⚠ **A MARKET re-entry (`exec_rec_entry_mode = "Market"`) answers `None` rather than estimating.**
+Its fill can land either side of the arming price, so the property above does not hold. **The live
+bot rests a limit for its reclaim, so this refusal costs it nothing today.**
+
+⚠ **The order carries its own `kind` now.** Deriving it from `src` is wrong: `None` is both a
+primary and a re-entry whose trigger never named itself. The fill path is TOLD the kind; the
+planned answer is asked before there is a trade to read it off.
+
+⚠ **PARITY UNAFFECTED, MEASURED RATHER THAN ARGUED.** `compare_strategy.py` on
+`VANTAGE_XAUUSD, 15_53f52.csv` (20,056 rows) is **exit 0 at warmups 500 and 1000 (19,542 / 19,042
+bars)** and diverges at bar 293 at warmups 100 / 200 — and a HEAD worktree gives the **byte-identical
+ladder**, so the shallow-warm-up divergence is a pre-existing cold start and not this change.
+🔴 **`export_truncation()` returned 0 on an export carrying 12 `dbg_` columns, so the harness could
+not name its own warm-up floor and the ladder is what settled it.** That is rule 1 inside the gate:
+*not truncated* and *cannot measure it* are the same value. Still open.
+
+⚠ **6 new tests, every one watched RED by mutation** — including one rewritten after a mutation
+survived it: the first version asserted `None` on a config whose shared percentage was also 0, so
+*read the primary's rule* and *read the secondary's and fall through* were the same assertion. **A
+test whose inputs cannot separate the behaviours it names is green and worthless.**

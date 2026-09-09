@@ -975,3 +975,92 @@ def test_a_terminal_that_DOES_NOT_CARRY_THE_FIELD_also_answers_None(mt5ops):
     fake._account = _AccountInfo(margin_mode=None)
     assert not hasattr(fake._account, "margin_mode"), "the fixture must model the ABSENCE"
     assert _bot(mt5_ops).hedging_account() is None
+
+
+# ── the target on an order, and the venue's opinion of it (added 2026-09-09) ──────────────────
+#
+# 🔴 **THE STOP AND THE TARGET ARE HANDLED OPPOSITELY HERE AND THE ASYMMETRY IS THE DESIGN.** An
+# unacceptable STOP refuses the whole order — a trade with no stop is unbounded risk. An
+# unacceptable TARGET drops the target and lets the order go: a trade with no venue target is
+# exactly what every trade here had before this date, the bridge still sets one on its next pass,
+# and the strategy still closes it at market. **Losing a whole setup to a target the broker
+# disliked is a far worse trade than being a bar late with the target.**
+
+
+def test_a_resting_limit_carries_its_target_to_the_venue(mt5ops):
+    mt5_ops, fake = mt5ops
+    _bot(mt5_ops).place_pending_limit("bullish", 0.42, 3290.00, 3280.00, tp=3320.00)
+    assert fake.sent[-1]["tp"] == 3320.00
+
+
+def test_a_market_order_carries_its_target_to_the_venue(mt5ops):
+    mt5_ops, fake = mt5ops
+    _bot(mt5_ops).place_order("bullish", 0.42, 3280.00, 3320.00)
+    assert fake.sent[-1]["tp"] == 3320.00
+
+
+def test_an_order_with_no_target_sends_ZERO_which_is_the_venues_word_for_none(mt5ops):
+    """`0.0` is a real instruction to MT5, not an omission — so it is what an absent target must
+    still send, and asserting it keeps a future refactor from leaving the field off entirely."""
+    mt5_ops, fake = mt5ops
+    _bot(mt5_ops).place_pending_limit("bullish", 0.42, 3290.00, 3280.00)
+    assert fake.sent[-1]["tp"] == 0.0
+
+
+def test_a_target_inside_the_stops_level_is_DROPPED_and_the_order_STILL_GOES(mt5ops):
+    """🔴 THE WHOLE POINT OF THE ASYMMETRY. The identical distance on the STOP refuses the order
+    (the test above); on the target it costs the target and keeps the trade.
+
+    MUTATION: refuse the order here instead of dropping the target and this goes red.
+    """
+    mt5_ops, fake = mt5ops
+    fake._symbol.trade_stops_level = 500  # 500 points x 0.01 = $5.00
+    log = _Log()
+    ticket, _ = _bot(mt5_ops, log).place_pending_limit(
+        "bullish", 0.42, 3290.00, 3280.00, tp=3292.00
+    )
+    assert ticket is not None, "the trade must survive a target the venue will not take"
+    assert fake.sent[-1]["tp"] == 0.0
+    assert log.saw("TP DROPPED")
+
+
+def test_a_target_on_the_WRONG_SIDE_of_the_entry_is_dropped_too(mt5ops):
+    """A long taking profit BELOW its entry is not a target — a venue either refuses the order
+    over it or fills it on the spot. This is a STRATEGY fault rather than a broker limit, which
+    is why the two are separate checks with separate sentences."""
+    mt5_ops, fake = mt5ops
+    log = _Log()
+    ticket, _ = _bot(mt5_ops, log).place_pending_limit(
+        "bullish", 0.42, 3290.00, 3280.00, tp=3285.00
+    )
+    assert ticket is not None
+    assert fake.sent[-1]["tp"] == 0.0
+    assert log.saw("not beyond the order price")
+
+
+def test_a_dropped_target_is_never_SILENT(mt5ops):
+    """🔴 RULE 1 IN THE RECORD. `0.0` reaches the venue as *no target*, which is exactly what an
+    order that never asked for one sends — so without a line in the log, *asked for none* and
+    *asked and was refused* read identically forever after.
+
+    MUTATION: drop the two warning calls and this goes red while every other test here passes.
+    """
+    mt5_ops, fake = mt5ops
+    quiet = _Log()
+    _bot(mt5_ops, quiet).place_pending_limit("bullish", 0.42, 3290.00, 3280.00)
+    assert not quiet.saw("TP DROPPED"), "no target asked for is not an event"
+
+    loud = _Log()
+    _bot(mt5_ops, loud).place_pending_limit("bullish", 0.42, 3290.00, 3280.00, tp=3285.00)
+    assert loud.saw("TP DROPPED")
+
+
+def test_the_success_line_reports_the_target_that_was_SENT_not_the_one_asked_for(mt5ops):
+    """Rule 3, the same rule that makes the volume line report the normalised lots. A log saying
+    3292.00 went out when the guard dropped it is a record that will be believed later."""
+    mt5_ops, fake = mt5ops
+    fake._symbol.trade_stops_level = 500
+    log = _Log()
+    _bot(mt5_ops, log).place_pending_limit("bullish", 0.42, 3290.00, 3280.00, tp=3292.00)
+    assert log.saw("TP=none")
+    assert not log.saw("TP=3292.00")

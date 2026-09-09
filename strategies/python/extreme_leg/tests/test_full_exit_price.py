@@ -68,3 +68,33 @@ def test_a_ZERO_target_answers_None_because_zero_is_not_a_price():
     ex = _ex()
     ex.pos = _open(0.0)
     assert ex.full_exit_price() is None
+
+
+# ── `planned_full_exit_price` — asked of every strategy, constant for this one ────────────────
+
+
+def test_this_strategy_has_no_planned_target_because_it_never_RESTS_an_order():
+    """🔴 A CONSTANT ANSWER THAT IS A FACT, NOT A STUB, AND THE DISTINCTION IS WORTH A TEST.
+
+    This bot declares it enters at MARKET: it fills inside its own emulator on the bar's close,
+    so by the time the bridge sends anything the position is already open and the bridge asks
+    `full_exit_price` — the exact price, not a forecast. **A resting strategy is the one that
+    needs an estimate here; this one never has to make one**, so `None` costs it nothing.
+
+    ⚠ Pinned rather than left implicit because the alternative reading — *this bot is missing the
+    feature* — is the one a future reader will reach for, and it is wrong.
+    """
+    assert _ex().planned_full_exit_price(None) is None
+
+
+def test_it_answers_None_even_holding_a_trade_with_a_perfectly_good_target():
+    """🔴 THE HALF THAT COULD GO WRONG SILENTLY. Answering the OPEN trade's target here would put
+    a target meant for the position already held onto the next order placed — and since this bot
+    is always already open when an order goes out, that reads correct in every log.
+
+    MUTATION: return `self.full_exit_price()` here and this goes red.
+    """
+    ex = _ex()
+    ex.pos = _open(4406.895)
+    assert ex.full_exit_price() == 4406.895
+    assert ex.planned_full_exit_price(None) is None

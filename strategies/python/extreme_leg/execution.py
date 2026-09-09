@@ -396,6 +396,26 @@ class ExtremeLegExecution(LivePositionMixin):
         tp = float(self.pos.take_profit)
         return tp if math.isfinite(tp) and tp > 0 else None
 
+    def planned_full_exit_price(self, pend) -> Optional[float]:
+        """Always `None` here — this strategy never rests an order for the bridge to price.
+
+        Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`), and
+        it exists so the question is ASKED of every strategy rather than assumed of some. The
+        answer being constant is a fact about this bot, not a stub.
+
+        🔴 **NOTHING IS LOST BY IT, AND THAT IS WORTH SAYING BECAUSE IT LOOKS LIKE A GAP.** This
+        strategy declares `entry_style = "market"`: it fills inside its own emulator on the bar's
+        close, and the bridge's job is to catch the BROKER up afterwards. So by the time an order
+        is sent the position is already open, and the bridge asks `full_exit_price` above — the
+        exact price, not an estimate. **A resting strategy is the one that needs a forecast here;
+        this one never has to make it.**
+
+        ⚠ **A `_Pending` reaching this would be a caller error, not a case to serve.** The two
+        resting-order seams the bridge reads are pinned to `None` on this class, so no order of
+        this bot's is ever placed ahead of a fill.
+        """
+        return None
+
     # ── sizing ───────────────────────────────────────────────────────────────
     def _qty(self, risk: float) -> float:
         """Pine `f_qty`. `risk` is the stop distance in price.

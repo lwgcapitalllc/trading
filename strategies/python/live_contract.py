@@ -91,6 +91,24 @@ EXECUTION_ATTRS = (
     # reconcile that rung at market. Answering the rung's price would delete a runner the
     # strategy is still managing.
     "full_exit_price",
+    # (pend) -> Optional[float]. The same question asked about an order that has NOT filled: if
+    # this resting order filled at its own price, would the whole position come off at a price,
+    # and which. `None` when it would not — a rung that leaves a runner, or a fill price this
+    # strategy cannot know in advance.
+    #
+    # 🔴 **IT EXISTS SO A TRADE IS NEVER OPEN AT THE BROKER WITHOUT ITS TARGET.** The stop has
+    # always travelled in the same message as the entry; the target did not, so every trade spent
+    # its first bar targetless and closed at market if it ran that far. Answering here puts both
+    # on the order at once.
+    #
+    # 🔴 **REQUIRED, for the reason `full_exit_price` is.** A defensive read makes *never
+    # implemented* and *this order has no target* one value, and the first is a bot that silently
+    # never sends one. Rule 1.
+    #
+    # ⚠ **A strategy that never rests an order answers `None` and loses nothing** — it has already
+    # filled by the time the bridge places anything, so the bridge asks `full_exit_price` instead
+    # and gets the exact price rather than a forecast. See `ENTRY_STYLES`.
+    "planned_full_exit_price",
 )
 
 #: How a strategy OPENS a position — and therefore what `algos/live/` has to do about it.

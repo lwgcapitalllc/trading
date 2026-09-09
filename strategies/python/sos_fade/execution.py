@@ -606,6 +606,15 @@ class _Pending:
     # sized off, exactly as a real market order is sized off the price on the screen. The trade's
     # own R is measured off the FILL, never off this.
     market: bool = False
+    #: Which HALF of the strategy built this order — "primary" or "secondary".
+    #:
+    #: 🔴 **DERIVING THIS FROM `src` IS WRONG AND THAT IS WHY THE FIELD EXISTS.** `src` is None on
+    #: every primary AND on a secondary whose caller did not name a trigger (the arming record is
+    #: duck-typed, and several callers build a bare stand-in), so the two are genuinely
+    #: indistinguishable by it. The fill path has never had to guess — `_open_position` is TOLD
+    #: the kind by its caller — but `planned_full_exit_price` is asked BEFORE the fill and has
+    #: only this object to go on. Rule 1: *primary* and *unnamed secondary* must not be one value.
+    kind: str = "primary"
 
 
 def _intrabar_targets_first(o: float, h: float, l: float) -> bool:
@@ -1191,7 +1200,8 @@ class Execution:
                     return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg,
                                     src=getattr(arm, "l_src", None),
                                     after=getattr(arm, "l_after", None),
-                                    market=self._market_entry(getattr(arm, "l_src", None)))
+                                    market=self._market_entry(getattr(arm, "l_src", None)),
+                                    kind="secondary")
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
@@ -1202,7 +1212,8 @@ class Execution:
                                     arm.s_leg,
                                     src=getattr(arm, "s_src", None),
                                     after=getattr(arm, "s_after", None),
-                                    market=self._market_entry(getattr(arm, "s_src", None)))
+                                    market=self._market_entry(getattr(arm, "s_src", None)),
+                                    kind="secondary")
         return None
 
     # ── main step ───────────────────────────────────────────────────────────────
@@ -2566,45 +2577,17 @@ class Execution:
         self._exit_ms = sig.time_ms
         self._exit_reason = ""
         self._sl = pend.sl
-        self._tp1 = pend.tp1
+        # 🔴 **THE FIRST RUNG'S PRICE IS COMPUTED BY `_first_rung`, WHICH IS ALSO WHAT THE LIVE
+        # BRIDGE ASKS BEFORE THE ORDER IS SENT.** It used to be written out here and nowhere
+        # else; the bridge now needs the same answer for an order that has NOT filled yet, and a
+        # second copy of this arithmetic in the live layer is the exact shape this repo keeps
+        # paying for. One function, two callers, one rule.
+        self._tp1 = self._first_rung(
+            dir_=pend.dir, entry=fill_price, stop=pend.sl, kind=kind,
+            src=pend.src, fib_tp1=pend.tp1,
+        )
         self._tp2 = pend.tp2
-        # `exec_sec_tp_r` — a SECONDARY may put its first rung at a multiple of its own risk
-        # instead of the 15m 0.5 fib. Applied HERE, after `pend.tp1`, so the resting order still
-        # carries the fib rung it was priced on and only the open trade's ladder moves. Off by
-        # default (-1.0), so the shipped ladder is untouched and every stored figure reproduces.
-        # ⚠ Priced off the INITIAL stop, not the trailed one: 1R must mean the risk the trade was
-        # sized against, or the target would creep in as the stop ratchets.
-        if kind == "primary" and self._cfg.exec_short_hold and self._cfg.exec_sh_tp_r > 0:
-            # SHORT-HOLD: the whole position comes off at a multiple of its own risk, replacing
-            # the fib ladder for this trade. Priced the same way the re-entry below prices its
-            # rung — one convention for "a target in R" rather than two — and off the INITIAL
-            # stop, so 1R means the risk the trade was sized against and the target cannot creep
-            # in as the stop ratchets.
-            # ⚠ `_tp2` is deliberately LEFT where the fib put it. With the first rung banking
-            # 100% (`exec_sh_tp1_pct`) nothing survives to reach it, and blanking it would erase
-            # the target ladder the chart draws — the record of what the trade AIMED at, which no
-            # decision reads and a reader does.
-            sh_dist = abs(fill_price - pend.sl)
-            if sh_dist > 0:
-                self._tp1 = fill_price + (1 if pend.dir > 0 else -1) \
-                    * self._cfg.exec_sh_tp_r * sh_dist
         if kind == "secondary":
-            # The RECLAIM half reads its own rung (`exec_rec_tp_r`), because under the combined
-            # trigger the two halves are different trades: the reclaim enters at the deep edge with
-            # a stop a median 0.43R away, so a rung that suits the gap entry is the wrong distance
-            # here. MEASURED 2026-08-21: all-out at 3x made 6,740x over 7.9 years where the shipped
-            # bank-half-at-1.25x ladder made 3,111x — worse than taking no re-entry at all.
-            if pend.src == "reclaim":
-                # ⚠ The fallback MIRRORS the config default and must move with it. It is
-                # unreachable through a real config (the field always exists), but a duck-typed
-                # stand-in that fell back to a stale number would price the rung differently from
-                # every shipped run while looking correct.
-                tp_r = getattr(self._cfg, "exec_rec_tp_r", 3.25)
-            else:
-                tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
-            dist = abs(fill_price - pend.sl)
-            if tp_r > 0 and dist > 0:
-                self._tp1 = fill_price + (1 if pend.dir > 0 else -1) * tp_r * dist
             # `exec_sec_tp2_x` — REPLACE the second rung with a multiple of the FIRST one's
             # distance, so a re-entry's two targets are in order by construction. Off by default.
             # ⚠ Unlike the floor below, this overrides the fib in BOTH directions: it pulls IN a
@@ -3642,17 +3625,74 @@ class Execution:
             return self._tp2, self._tp1
         return self._tp1, self._tp2
 
-    def _tp1_pct(self) -> float:
-        """The TP1 rung's percentage for the trade that is actually open.
+    def _first_rung(self, *, dir_: int, entry: float, stop: float, kind: str,
+                    src: Optional[str], fib_tp1: float) -> float:
+        """Where this trade's FIRST rung sits, for a trade of this KIND entered at `entry`.
+
+        🔴 **TWO CALLERS AND THAT IS WHY IT IS A FUNCTION.** `_open_position` calls it at the FILL,
+        with the price the trade actually got. `planned_full_exit_price` calls it BEFORE the fill,
+        with the price the resting order will get, so the live bridge can hand the target to the
+        broker in the same message as the entry. The arithmetic was written out inline in the
+        first of those and nowhere else; copying it into `algos/live/` would have put a second
+        implementation of a pricing rule in a layer that holds no trading logic.
+
+        ⚠ **Priced off the INITIAL stop, never a trailed one.** 1R must mean the risk the trade
+        was sized against, or the target creeps outward every time the stop ratchets.
+
+        ⚠ **The fib rung is the DEFAULT and every branch below REPLACES it.** A configuration with
+        no R-multiple set gets the frozen 15-minute level the resting order was priced on, which
+        is what every shipped figure reproduces.
+
+        ⚠ **`kind` is passed rather than read off `self`**, because at placement time there is no
+        open trade to read it from — that is the whole reason this is parameterised.
+        """
+        tp = fib_tp1
+        d = 1 if dir_ > 0 else -1
+        dist = abs(entry - stop)
+        if kind == "primary" and self._cfg.exec_short_hold and self._cfg.exec_sh_tp_r > 0:
+            # SHORT-HOLD: the whole position comes off at a multiple of its own risk, replacing
+            # the fib ladder for this trade. Priced the same way the re-entry below prices its
+            # rung — one convention for "a target in R" rather than two.
+            # ⚠ The SECOND rung is deliberately LEFT where the fib put it, by the caller. With
+            # this one banking 100% (`exec_sh_tp1_pct`) nothing survives to reach it, and blanking
+            # it would erase the ladder the chart draws — the record of what the trade AIMED at,
+            # which no decision reads and a reader does.
+            if dist > 0:
+                tp = entry + d * self._cfg.exec_sh_tp_r * dist
+        if kind == "secondary":
+            # The RECLAIM half reads its own rung (`exec_rec_tp_r`), because under the combined
+            # trigger the two halves are different trades: the reclaim enters at the deep edge with
+            # a stop a median 0.43R away, so a rung that suits the gap entry is the wrong distance
+            # here. MEASURED 2026-08-21: all-out at 3x made 6,740x over 7.9 years where the shipped
+            # bank-half-at-1.25x ladder made 3,111x — worse than taking no re-entry at all.
+            if src == "reclaim":
+                # ⚠ The fallback MIRRORS the config default and must move with it. It is
+                # unreachable through a real config (the field always exists), but a duck-typed
+                # stand-in that fell back to a stale number would price the rung differently from
+                # every shipped run while looking correct.
+                tp_r = getattr(self._cfg, "exec_rec_tp_r", 3.25)
+            else:
+                tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
+            if tp_r > 0 and dist > 0:
+                tp = entry + d * tp_r * dist
+        return tp
+
+    def _tp1_pct_for(self, kind: str, src: Optional[str]) -> float:
+        """The TP1 rung's percentage for a trade of this KIND and trigger.
+
+        ⚠ **Parameterised for the same reason `_first_rung` is**: the live bridge asks this
+        question about an order that has not filled, where there is no open trade to read the
+        kind off. `_tp1_pct` below is this function asked about the trade that IS open.
 
         A SECONDARY may bank its own percentage (`exec_sec_tp1_pct`); -1.0 means inherit the
         shared `exec_tp1_pct`, which is what the shipped ladder does, so the default cannot move
-        a stored figure. A primary never reads the override."""
-        if self._entry_kind == "secondary":
+        a stored figure. A primary never reads the override.
+        """
+        if kind == "secondary":
             # The RECLAIM half banks its own percentage — see the note on the first-target rung in
             # `_open_position`. Its default is 100 (the whole position off at its target, no
             # runner), which is the configuration that measured 6,740x.
-            if self._entry_src == "reclaim":
+            if src == "reclaim":
                 own = getattr(self._cfg, "exec_rec_tp1_pct", 100.0)
             else:
                 own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
@@ -3664,6 +3704,10 @@ class Execution:
             # only for a PRIMARY: a re-entry keeps its own ladder above.
             return self._cfg.exec_sh_tp1_pct
         return self._cfg.exec_tp1_pct
+
+    def _tp1_pct(self) -> float:
+        """The TP1 rung's percentage for the trade that is actually open."""
+        return self._tp1_pct_for(self._entry_kind, self._entry_src)
 
     def full_exit_price(self) -> Optional[float]:
         """The price this trade takes the WHOLE position off at, or `None` if it does not.
@@ -3702,6 +3746,65 @@ class Execution:
             return None
         tp = float(tp)
         return tp if math.isfinite(tp) and tp > 0 else None
+
+    def planned_full_exit_price(self, pend) -> Optional[float]:
+        """The whole-position target a RESTING order would carry if it filled at its own price.
+
+        Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`). The
+        bridge sends this in the SAME message as the entry, the way the stop already travels, so a
+        trade is never open at the broker without its target. `full_exit_price` above answers the
+        same question about a trade that is already OPEN; this one answers it about an order that
+        has not filled.
+
+        🔴 **THE SAFETY PROPERTY IS THAT A LIMIT NEVER FILLS WORSE THAN ITS PRICE, AND IT IS WHAT
+        MAKES ANSWERING AT ALL SAFE.** The rung is priced off the FILL, which is not known yet — so
+        this is an estimate. But a buy limit fills at its price or LOWER and a sell limit at its
+        price or HIGHER, and either way a better fill means a SMALLER risk, which puts the rung
+        NEARER the entry. **So this estimate is always at or BEYOND the price the strategy will
+        actually bank at, never nearer — the broker's target cannot fire before the strategy's own
+        trigger.** Worked both ways, not reasoned: long edge 100 stop 98 at 3.25R gives 106.5, and
+        a gap fill at 99 gives 102.25 (nearer); short edge 100 stop 102 gives 93.5, and a gap fill
+        at 101 gives 97.75 (nearer, because for a short nearer means higher).
+        ⚠ **The bridge's once-a-bar reconciliation trues it up within one fill-clock bar**, so an
+        estimate that came out beyond the truth is corrected rather than left standing.
+
+        🔴 **`None` FOR A MARKET ENTRY, and that is the case the property above does NOT cover.**
+        `exec_rec_entry_mode = "Market"` fills at the NEXT bar's open, which can be either side of
+        the arming price — so a better-or-equal fill is not guaranteed and the estimate could land
+        NEARER than the truth, closing the trade early at a price this strategy never chose.
+        **The live bot's re-entry is set to rest a limit, so this refusal costs it nothing today.**
+
+        ⚠ **`None` for a rung that leaves a RUNNER**, for the same reason `full_exit_price` gives:
+        a venue take-profit closes the ENTIRE position.
+
+        ⚠ **The KIND comes off the order, never off `self`.** Nothing is open when this is asked,
+        and deriving it from the trigger name would read an unnamed re-entry as a primary — see
+        the note on that field in `_Pending`.
+        """
+        if pend is None:
+            return None
+        if getattr(pend, "market", False):
+            return None
+        kind = getattr(pend, "kind", "primary")
+        src = getattr(pend, "src", None)
+        if float(self._tp1_pct_for(kind, src)) < 100.0:
+            return None
+        edge, stop = getattr(pend, "edge", None), getattr(pend, "sl", None)
+        if edge is None or stop is None:
+            return None
+        edge, stop = float(edge), float(stop)
+        if not (math.isfinite(edge) and math.isfinite(stop)):
+            return None
+        tp = float(self._first_rung(
+            dir_=pend.dir, entry=edge, stop=stop, kind=kind, src=src,
+            fib_tp1=getattr(pend, "tp1", None),
+        ))
+        if not (math.isfinite(tp) and tp > 0):
+            return None
+        # ⚠ A target that is not BEYOND the entry is not a target — it is a price already passed,
+        # and a venue would either refuse it or fill it on the spot. Refusing here keeps that out
+        # of the order rather than letting the broker decide what we meant.
+        return tp if (tp - edge) * (1 if pend.dir > 0 else -1) > 0 else None
 
     def _accrued_cost_price(self) -> float:
         """This trade's costs SO FAR plus the exit side it has not paid yet, as a price distance.

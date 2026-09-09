@@ -2581,18 +2581,30 @@ class OrderBridge:
         # sets this flag on `Retest` with the feature off. This is additive for the running bot,
         # which is why it may land while it trades.
         at_market = bool(getattr(pend, "market", False))
+        # 🔴 **THE TARGET TRAVELS WITH THE ORDER, THE WAY THE STOP ALWAYS HAS.** Until 2026-09-09
+        # both branches below sent a zero here, so every trade was open at the broker with no
+        # target until the next reconciliation pass — up to a whole fill-clock bar during which
+        # a trade that reached its price closed at MARKET instead, which is the drift this whole
+        # change exists to remove. **`0.0` is MT5's *no target at all*, a real instruction, so it
+        # is what an absent one must still send.**
+        #
+        # ⚠ **`_order_take_profit` can HALT** (a strategy that cannot answer), and a halted bot
+        # places nothing — hence the re-check rather than sending whatever came back.
+        tp = self._order_take_profit(pend, at_market)
+        if self.state is not BridgeState.LIVE:
+            return
+        tp_txt = "none" if tp is None else tp
         if at_market:
             sent = self._exec(
-                # `tp=0.0` — every strategy here manages its own targets and banks them itself,
-                # exactly as the limit path does. A broker-side TP would close a position the
-                # emulator still holds.
-                lambda: self._mt5.place_order(side, lots, pend.sl, 0.0),
-                f"place {slot_label(slot)} MARKET {lots}L SL {pend.sl}",
+                lambda: self._mt5.place_order(side, lots, pend.sl, 0.0 if tp is None else tp),
+                f"place {slot_label(slot)} MARKET {lots}L SL {pend.sl} TP {tp_txt}",
             )
         else:
             sent = self._exec(
-                lambda: self._mt5.place_pending_limit(side, lots, pend.edge, pend.sl),
-                f"place {slot_label(slot)} limit {lots}L @ {pend.edge} SL {pend.sl}",
+                lambda: self._mt5.place_pending_limit(
+                    side, lots, pend.edge, pend.sl, 0.0 if tp is None else tp
+                ),
+                f"place {slot_label(slot)} limit {lots}L @ {pend.edge} SL {pend.sl} TP {tp_txt}",
             )
         ticket = sent
         # The fill price, MARKET ONLY. `None` means "no fill to report", never "filled at zero"
@@ -3269,6 +3281,56 @@ class OrderBridge:
             )
             return None
         price = self._ex.full_exit_price()
+        if price is None:
+            return None
+        price = float(price)
+        return price if math.isfinite(price) and price > 0 else None
+
+    def _order_take_profit(self, pend, at_market: bool) -> Optional[float]:
+        """The target to put on an order being SENT, or `None` for no target.
+
+        🔴 **WHICH QUESTION IS ASKED DEPENDS ON WHETHER THE STRATEGY HAS ALREADY FILLED, AND THAT
+        IS THE WHOLE SPLIT.** A `market` order is sent AFTER the strategy opened its own position
+        — the bridge is catching the broker up — so the exact price is available and
+        `_wanted_take_profit` reads it. A resting limit is placed BEFORE anything fills, so there
+        is no trade to read and the strategy is asked what this order WOULD come off at. Asking
+        the open-position question about an unfilled order returns `None` for every trade, which
+        is the silent version of this feature not existing.
+
+        ⚠ **The forecast is safe in one direction only, and the strategy owns that argument** —
+        a limit fills at its price or better, a better fill puts the rung nearer, so the estimate
+        is at or beyond the truth and cannot fire early. The reasoning and the worked numbers are
+        in `sos_fade.execution.planned_full_exit_price`, where the rule lives; this layer holds no
+        trading logic and must not restate it as a check of its own.
+
+        🔴 **A STRATEGY THAT CANNOT ANSWER HALTS THE BOT.** Same reasoning as
+        `_wanted_take_profit`: read defensively, *never implemented* and *this order has no
+        target* are one value, and the first is a bot that quietly never sends one for its whole
+        life. `planned_full_exit_price` is in the live contract's `EXECUTION_ATTRS`, and the state
+        this guards is reachable — `algos/` arrives by `git pull` while a strategy arrives only by
+        `promote.py`, so a box pulled before it is promoted runs this bridge against a frozen
+        strategy that has never heard of the seam.
+
+        ⚠ **The call is a plain attribute read on purpose.** `test_live_contract.py` derives what
+        this package needs by grepping `self._ex.<name>` out of this source, so a purely defensive
+        read would drop the seam out of the contract and the requirement would stop being one.
+
+        ⚠ **Finite and positive is re-tested here even though both strategies already test it.**
+        This is the boundary where a number leaves our code for a venue, and a strategy is free to
+        be wrong; a zero reaching MT5 is *no target*, which is a real instruction rather than a
+        refusal.
+        """
+        if at_market:
+            return self._wanted_take_profit()
+        if not callable(getattr(self._ex, "planned_full_exit_price", None)):
+            self._halt(
+                "This strategy cannot say where an order it is resting would close a whole "
+                "position, so the bridge cannot put a target on it and cannot tell that apart "
+                "from an order that has none. The usual cause is a git pull moving algos/ ahead "
+                "of the frozen strategy: run promote.py for this bot, then restart it."
+            )
+            return None
+        price = self._ex.planned_full_exit_price(pend)
         if price is None:
             return None
         price = float(price)

@@ -387,3 +387,44 @@ only caller anywhere is `extreme_leg/tests/test_live_seams.py` (grepped, not ass
 **So adding a required attribute does NOT produce a startup refusal today** — the bridge halts at
 the moment of use instead, and that is a workaround rather than the design. Wiring it is its own
 change: it would refuse bots that currently start, so it needs its own measurement.
+
+## The contract gained `planned_full_exit_price`, and it is REQUIRED (2026-09-09)
+
+**`EXECUTION_ATTRS` now asks the whole-position-target question TWICE, about two different things.**
+`full_exit_price` answers for the trade that is OPEN. This one answers for an order being PLACED:
+*if this resting order filled at its own price, where would the whole position come off?*
+
+🔴 **IT EXISTS BECAUSE THE STOP TRAVELLED WITH THE ORDER AND THE TARGET DID NOT.** Both placement
+branches in `algos/live/` sent a hardcoded zero, so every trade was open at the broker with no
+target until the next reconciliation pass — and a trade that reached its price inside that window
+closed at MARKET instead, which is the drift the 2026-09-09 work exists to remove.
+
+🔴 **THE ANSWER IS AN ESTIMATE AND IT IS SAFE IN EXACTLY ONE DIRECTION — THAT PROPERTY IS THE WHOLE
+JUSTIFICATION, AND IT WAS WORKED RATHER THAN REASONED.** A rung priced in R depends on the FILL,
+which is not known when the order is placed. But a limit fills at its price **or better**, a better
+fill is a **smaller** risk, and a smaller risk puts the rung **nearer** the entry — so the estimate
+always sits at or BEYOND the price the strategy will bank at, and the broker's target cannot fire
+before the strategy's own trigger. ⚠ **It reads backwards for a short and the first pass through it
+here got it backwards**: for a short, *nearer* means HIGHER. Both directions are pinned by a test.
+
+🔴 **A MARKET entry is REFUSED rather than estimated, and that is the case the property does not
+cover.** A market order fills at the next bar's open, which can be worse as easily as better — and
+a worse fill puts the real rung FURTHER out, leaving the estimate NEARER, which closes a trade
+early at a price the strategy never chose.
+
+⚠ **REQUIRED, for the reason `full_exit_price` is.** Read defensively, *never implemented* and
+*this order has no target* are one value, and the first is a bot that silently never sends one.
+Rule 1. ⚠ **`verify_live_ready` is still not wired**, so the refusal happens at the moment of use
+in the bridge, not at startup — see the note under `full_exit_price` above.
+
+⚠ **A strategy that never rests an order answers `None` and loses NOTHING.** `extreme_leg` declares
+it enters at market, so it has already filled by the time the bridge sends anything and the bridge
+asks `full_exit_price` — the exact price, no forecast. **The constant answer is a fact about that
+bot, not a stub**, and it is pinned by a test so the next reader does not read it as a gap.
+
+🔴 **THE ORDER NOW CARRIES ITS OWN TRADE KIND (`_Pending.kind`) AND DERIVING IT WAS A RULE-1 BUG
+WAITING TO HAPPEN.** Which share the first rung takes depends on whether the trade is a primary or
+a re-entry — but `src` is `None` on every primary AND on a re-entry whose trigger did not name
+itself, so the two were genuinely one value. The fill path was never exposed to this (it is TOLD
+the kind by its caller); the planned answer is asked before the fill and has only the order to go
+on. **Pinned by a pair of tests on one config where only the kind differs and it flips the answer.**

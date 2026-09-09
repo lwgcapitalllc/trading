@@ -69,6 +69,7 @@ Usage in a bot:
     # ... etc.
 """
 
+import math
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -516,6 +517,7 @@ class BotMT5:
                 f"({si.volume_min if si else '?'}). Position too small to place — NOT rounding up.",
             )
 
+        tp_send = self.usable_take_profit(tp, price, direction == "bullish", sym, digits, "market")
         result = mt5.order_send(
             {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -524,7 +526,11 @@ class BotMT5:
                 "type": order_type,
                 "price": price,
                 "sl": round(sl, digits),
-                "tp": round(tp, digits),
+                # ⚠ Through `usable_take_profit`, never `round(tp, digits)`. The venue rejects the
+                # WHOLE order over a target it dislikes, and losing a setup to a target is a far
+                # worse trade than being a bar late with one — so an unusable target is dropped
+                # (loudly) and the order still goes. See that method.
+                "tp": tp_send,
                 "deviation": 20,
                 "magic": self.magic,
                 "comment": comment or f"{self.bot_label}-ENTRY",
@@ -538,7 +544,10 @@ class BotMT5:
                 # for. They differ whenever the request did not land on the venue's volume step.
                 f"ORDER FILLED | ticket={result.order} | "
                 f"{direction} {vol}L @ {result.price:.{digits}f} | "
-                f"SL={sl:.{digits}f} TP={tp:.{digits}f}"
+                # `tp_send`, never `tp` — rule 3, the same reason `vol` is used above: a record
+                # says what was SENT, not what was asked for, and the two differ whenever the
+                # guard dropped the target. "none" rather than 0.0, because zero is not a price.
+                f"SL={sl:.{digits}f} TP={f'{tp_send:.{digits}f}' if tp_send else 'none'}"
             )
             return result.order, result.price
         # ⚠ **A market send is NOT reconciled the way the pending one below is**, so this stays a
@@ -584,6 +593,57 @@ class BotMT5:
         if not si or si.trade_stops_level <= 0:
             return 0.0
         return si.trade_stops_level * si.point
+
+    def usable_take_profit(
+        self, tp, order_price: float, is_buy: bool, sym: str, digits: int, what: str
+    ) -> float:
+        """The target this venue will accept on this order — `0.0` when it will not accept one.
+
+        🔴 **IT DROPS THE TARGET AND KEEPS THE ORDER, WHERE THE STOP CHECK REFUSES THE ORDER, AND
+        THE ASYMMETRY IS THE POINT.** A trade with no stop is unbounded risk, so an unacceptable
+        stop must stop the trade. A trade with no venue target is simply the behaviour every trade
+        here had before 2026-09-09 — the bridge's once-a-bar reconciliation still puts one on, and
+        failing that the strategy still closes it at market. **Losing a whole setup to a target the
+        broker disliked would be a far worse trade than being a bar late with the target**, and
+        that trade is not this layer's to make.
+
+        ⚠ **It is NOT silent.** `0.0` reaches MT5 as *no take-profit*, which is indistinguishable
+        from never having asked — so every drop is logged with the reason and the distance, and
+        the caller's own success line then reports the target it really sent. Rule 1: the record
+        must not read the same for *asked for none* and *asked and was refused*.
+
+        ⚠ **Two ways a target is unusable and they are different faults.** Inside the venue's
+        minimum distance is a BROKER limit and says nothing about the strategy. On the wrong side
+        of the entry is a STRATEGY fault — a target already passed — and it is dropped here rather
+        than sent, because a venue asked to take profit at a price behind the entry either refuses
+        the whole order or fills it immediately.
+
+        ⚠ **`None` and `0.0` both mean *no target asked for* and return `0.0` in silence.** Only a
+        target that was ASKED FOR and cannot be used is worth a line.
+        """
+        if tp is None:
+            return 0.0
+        tp = float(tp)
+        if not math.isfinite(tp) or tp <= 0:
+            return 0.0
+        d = 1 if is_buy else -1
+        if (tp - order_price) * d <= 0:
+            self.log.warning(
+                f"TP DROPPED ({what}): {tp:.{digits}f} is not beyond the order price "
+                f"{order_price:.{digits}f} for a {'buy' if is_buy else 'sell'} ({sym}). Order "
+                f"sent with NO target; the bridge will set one once the trade is open."
+            )
+            return 0.0
+        min_dist = self.min_stop_distance(sym)
+        if min_dist > 0 and abs(tp - order_price) < min_dist:
+            self.log.warning(
+                f"TP DROPPED ({what}): {tp:.{digits}f} is {abs(tp - order_price):.{digits}f} from "
+                f"the order price {order_price:.{digits}f}, inside the broker stops_level "
+                f"{min_dist:.{digits}f} ({sym}). Order sent with NO target; the bridge will set "
+                f"one once the trade is open."
+            )
+            return 0.0
+        return round(tp, digits)
 
     # ── what one lot of this symbol IS (added 2026-08-07) ─────────────────────
     #
@@ -850,7 +910,6 @@ class BotMT5:
         digits = si.digits
         price = round(price, digits)
         sl = round(sl, digits)
-        tp = round(tp, digits) if tp else 0.0
 
         vol = self.normalize_volume(lots, sym)
         if vol <= 0:
@@ -901,6 +960,11 @@ class BotMT5:
                     f"{min_dist:.{digits}f} ({sym}).",
                 )
 
+        # ⚠ Measured against the LIMIT price, never the market: this order fills at its own
+        # level, so that is the price the target has to clear the venue's floor from. Rounding
+        # and the drop-rather-than-refuse rule both live in `usable_take_profit`.
+        tp = self.usable_take_profit(tp, price, is_buy, sym, digits, "limit")
+
         # Snapshot the order book BEFORE the send. This is the only way to answer "did it
         # land" without trusting a return code — see the reconciliation below.
         before = self.pending_orders_strict(sym)
@@ -923,7 +987,11 @@ class BotMT5:
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(
                 f"PENDING PLACED | ticket={result.order} | {direction} {vol}L "
-                f"@ {price:.{digits}f} | SL={sl:.{digits}f}"
+                # The target joined this line on 2026-09-09, when a resting order first carried
+                # one. It says what was SENT — "none" whenever there is no target or the guard
+                # dropped it — so the log can never read as though one went out that did not.
+                f"@ {price:.{digits}f} | SL={sl:.{digits}f} "
+                f"TP={f'{tp:.{digits}f}' if tp else 'none'}"
             )
             return result.order, price
 
