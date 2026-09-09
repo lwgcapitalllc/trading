@@ -359,3 +359,31 @@ it went red the moment the bridge started reading `intents`, then red again on `
 the same field. **Two links of one chain, each catching the next.** ⚠ `sos_fade.execution.Decision`
 satisfies the contract independently and is still not being migrated onto `LiveDecision`; the test
 asserts the two agree, it does not merge them.
+
+## The contract gained `full_exit_price`, and it is REQUIRED (2026-09-09)
+
+**`EXECUTION_ATTRS` now asks one more question: at what price do you close the WHOLE position, or
+`None`.** The live bridge hands the answer to the broker so a target fills AT its price instead of
+at market on the next bar close.
+
+🔴 **REQUIRED RATHER THAN OPTIONAL, AND THAT IS THE WHOLE REASON IT IS IN THE CONTRACT.** Read
+defensively, *never implemented* and *this trade has no price target* are the same answer — and the
+first means a bot closing at market for its whole life with nothing anywhere saying so. Requiring
+it makes a strategy SAY none. Rule 1, in the place this module exists for.
+
+⚠ **A WHOLE-position price, never a partial rung's.** A venue take-profit closes the entire
+position, so a strategy banking half at a price answers `None` and lets the bridge reconcile that
+rung at market. Answering the rung's price deletes a runner the strategy is still managing.
+
+⚠ **Two implementations cover every live bot, and they decide it differently** — which is why this
+is a question rather than a shared helper. `sos_fade.Execution` branches on what KIND of trade is
+open (on the live bot a re-entry after a stop-out banks 100% and one into a gap banks 0);
+`ExtremeLegExecution` has one target that always takes the lot. `b_leg`, `bos` and `realign`
+inherit the first. **Neither strategy can answer for the other.**
+
+🔴 **`verify_live_ready` IS NOT WIRED, so this contract is not enforced at startup.** Four
+docstrings in `algos/live/` describe it as the gate that refuses a non-conforming bot by name; its
+only caller anywhere is `extreme_leg/tests/test_live_seams.py` (grepped, not assumed, 2026-09-09).
+**So adding a required attribute does NOT produce a startup refusal today** — the bridge halts at
+the moment of use instead, and that is a workaround rather than the design. Wiring it is its own
+change: it would refuse bots that currently start, so it needs its own measurement.

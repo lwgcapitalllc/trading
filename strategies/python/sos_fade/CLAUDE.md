@@ -3239,3 +3239,38 @@ re-entry live and 23.0R without**, over a full 2×2 on one window. ⚠ **It does
 drawdown** (−4.8R vs −5.5R), so it is expensive rather than worthless if drawdown ever becomes the
 objective. **No code change was needed — but the LIVE BOT has it ON**, which is the single most
 expensive drift found on that bot.
+
+## `full_exit_price()` — where this bot closes the WHOLE position (2026-09-09)
+
+Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`). The bridge
+hands the answer to the broker, so a target fills AT its price instead of at market on the next bar
+close — up to a whole 15-minute bar of drift from the price the backtest booked.
+
+🔴 **THE RULE LIVES HERE BECAUSE ONLY THIS FILE CAN ANSWER IT.** Which share the first rung takes
+depends on what KIND of trade is open: a re-entry after a stop-out banks **100** and one into a gap
+banks **0** on the live bot. `algos/live/` holds no trading logic and its `bank_ladders` mirrors
+that rule for the STARTUP refusal only — it cannot answer for an OPEN trade. A copy over there
+would be a second implementation free to drift from the one that books the fills.
+
+⚠ **`None` for a rung that leaves a RUNNER.** A venue take-profit closes the entire position, so a
+price there would bank size this strategy is still managing. The bridge reconciles those at market.
+
+⚠ **`None` while FLAT — and that guard is LOAD-BEARING, not defensive.** `_finalise_trade` does not
+clear `_tp1` (assigned only in the constructor and at the entry fill), so a strategy that has traded
+and gone flat still carries its last trade's target. Without the guard that stale price would be
+handed to the broker for whatever opens next.
+
+⚠ **Off `_tp1`, never `_stage_rungs()`.** That method orders the two rungs by DISTANCE for the stop
+ladder and explicitly does not move where profit banks, so reading the reordered pair would name a
+price this strategy does not bank at.
+
+**Tests: 6 in `tests/test_full_exit_price.py`, 3 mutations RUN and every one red.**
+🔴 **The FLAT test was VACUOUS on its first pass and the fixture was the fault.** It asserted `None`
+on a fresh object, where `_tp1` is 0.0 — so *flat* and *no price* were the same assertion and the
+mutation deleting the guard survived it. **The scale-of-1 trap: check that a test's inputs can
+distinguish the behaviours it names.** It now carries a stale target and asserts it does.
+
+✅ **PARITY GREEN after the change** — `compare_strategy.py` on `VANTAGE_XAUUSD, 15_53f52.csv`,
+**19,542 bars, exit 0 at `--warmup 500`**, identical to its pre-change baseline. ⚠ **The gate is
+structurally blind to this method** — nothing in the decision stream reads it, and the Pine has no
+counterpart. A green run says the decisions did not move, nothing more.

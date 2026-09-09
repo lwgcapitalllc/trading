@@ -3921,3 +3921,41 @@ snapshot). No promote is needed for it.
 
 ⚠ **NOTHING HERE HAS RUN AGAINST A BROKER. Rule 9** — and the first target to watch is a reclaim
 re-entry's, on a bot that has never banked anything at a price.
+
+### The target now comes from a DECLARED contract, not from one strategy's internals (2026-09-09)
+
+`_wanted_take_profit` asked SOS Fade's own `_tp1_pct` and read `dec.tp1`. It now asks
+`full_exit_price()` — a required entry in the live contract's `EXECUTION_ATTRS` — so the rule about
+which share a rung takes lives in the strategy that books the fills, and every bot answers.
+
+🔴 **THAT MOVED THE PERCENTAGE RULE OUT OF THIS PACKAGE, WHICH IS THE POINT.** `algos/live/` holds
+no trading logic. `bank_ladders` still mirrors the same rule for the STARTUP refusal and cannot
+answer it for an OPEN trade — a re-entry after a stop-out and one into a gap read different fields,
+100 and 0 on the armed bot. **Reading the config here hangs a target on a trade the strategy rides.**
+
+🔴 **A STRATEGY THAT CANNOT ANSWER HALTS THE BOT, AND IT HALTS HERE BECAUSE THE STARTUP GATE IS NOT
+WIRED.** Four docstrings in this package call `verify_live_ready` the check that refuses a
+non-conforming strategy by name; **nothing in `algos/live/` calls it** — grepped 2026-09-09, its
+only caller anywhere is one strategy's own test. **The state is reachable and ordinary:** `algos/`
+arrives by `git pull` and a strategy only by `promote.py`, so a box pulled before it is promoted
+runs this bridge against a frozen strategy that has never heard of the seam. Left as a bare
+attribute read, that is an exception mid-bar on a live position; the halt names the promote.
+
+⚠ **The guard is a `getattr` and the CALL is a plain attribute read, deliberately.**
+`test_live_contract.py` derives what this package needs by grepping `self._ex.<name>` out of this
+source, so a purely defensive read would drop the seam out of the contract and the requirement
+would stop being one with nothing failing.
+
+🔴 **DEPLOY ORDER: PROMOTE, THEN PULL, THEN RESTART — the reverse takes a bot down.** This is the
+first change here whose two halves are split across the two delivery routes and cannot be applied
+in either order. ⚠ **A bot holding an open position cannot be promoted** (`promote.py` refuses), so
+a bot with a live trade waits.
+
+⚠ **Placement-time targeting was SPECCED AND NOT BUILT, and the reason is a measurement.** SOS Fade
+enters on a RESTING order, so it is flat when the order is placed and its own rule returns no
+target there — the placement half could only ever help the extreme leg, buying one bar, while
+adding a way for an ENTRY to be refused. A refused entry costs a whole trade; a late target costs
+one bar of drift on the exit. The reconcile covers both bots within a bar of the fill.
+
+**Tests: 11 in `test_live_bridge.py`; 16 mutations RUN across the bridge, both strategies and the
+contract, every one red on its own named test.**

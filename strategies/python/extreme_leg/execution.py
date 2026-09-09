@@ -369,6 +369,33 @@ class ExtremeLegExecution(LivePositionMixin):
         """
         return self.pos is None
 
+    def full_exit_price(self) -> Optional[float]:
+        """The price this trade takes the WHOLE position off at, or `None` if it does not.
+
+        Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`), and
+        the bridge hands the answer to the broker so the exit fills AT this price rather than at
+        market when the 5-minute bar shuts.
+
+        🔴 **THIS STRATEGY HAS ONLY ONE KIND OF TARGET AND IT ALWAYS TAKES THE LOT.** There is no
+        rung ladder here — `_close` books the whole position at `take_profit` and the trade's
+        record says so in as many words (`tp_rungs=((take_profit, 100.0),)`). So the answer is the
+        target itself whenever one exists, and the branch SOS Fade needs for a partial rung has no
+        counterpart here. **That is why this is two small implementations rather than one shared
+        one**: the two strategies decide it differently and neither can answer for the other.
+
+        ⚠ **An INFINITE target means there is none, and it is a real state this strategy
+        produces** — `_close` and the trade record both test `math.isfinite` for exactly this. It
+        must come back as `None`, never as a price: passed through, the bridge would hand a
+        venue an infinity and the refusal would name a number nobody chose.
+
+        ⚠ **`None` while FLAT**, because there is no trade to have a target. Answering the last
+        trade's price would put a target on whatever opened next.
+        """
+        if self.pos is None:
+            return None
+        tp = float(self.pos.take_profit)
+        return tp if math.isfinite(tp) and tp > 0 else None
+
     # ── sizing ───────────────────────────────────────────────────────────────
     def _qty(self, risk: float) -> float:
         """Pine `f_qty`. `risk` is the stop distance in price.

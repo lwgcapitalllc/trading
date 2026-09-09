@@ -737,3 +737,33 @@ cannot happen, so it is unreachable in practice — not by construction.
 
 ⚠ **The lab reads its stored copy, not this file.** The condition changes nothing until the
 strategy is rescanned; a scan reported `updated: 1` and only then did the probe list move.
+
+## `full_exit_price()` — this bot's target always takes the lot (2026-09-09)
+
+Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`). The bridge
+hands the answer to the broker so the exit fills AT its price rather than at market when the
+5-minute bar shuts.
+
+🔴 **TWO LINES HERE WHERE SOS Fade NEEDS A BRANCH PER TRADE KIND**, and that asymmetry is why this is
+a question each strategy answers rather than a shared helper. There is no rung ladder in this bot:
+`_close` books the whole position at `take_profit` and the trade record says so
+(`tp_rungs=((take_profit, 100.0),)`). **Neither strategy can answer for the other.**
+
+⚠ **An INFINITE target means there is none, and it is a real state this strategy produces** —
+`_close` and the trade record both test `math.isfinite` for exactly it. Passed through, the bridge
+would hand a venue an infinity and the refusal would name a number nobody chose. ⚠ **Zero likewise**:
+it reaches MT5 as *no take-profit at all*, which is an instruction rather than a price.
+
+⚠ **`None` while FLAT**, or the last trade's target lands on whatever opens next.
+
+🔴 **THIS BOT WAS THE REASON THE WORK WAS NEEDED AND IS THE SECOND TO GET IT.** Its live trade on
+2026-09-09 (T367577331, long, target 4406.895) opened with **`TP=0.00` at the broker**, so it would
+have closed at market on a 5-minute bar close. The target was put on that position BY HAND; this is
+the mechanism that makes the next one automatic.
+
+**Tests: 4 in `tests/test_full_exit_price.py`, 2 mutations RUN and both red.**
+
+✅ **PARITY GREEN after the change** — `compare_extreme_leg.py` on `VANTAGE_XAUUSD, 5_821a8.csv`,
+exit 0 at the DERIVED warm-up. ⚠ **Let the gate compute its own warm-up.** Passing `--warmup 500`
+or `1000` by hand OVERRIDES a larger derived value and reports a cold start as four diverged
+fields — that happened twice on 2026-09-09 and read as a red gate both times.

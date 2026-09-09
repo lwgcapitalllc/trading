@@ -369,16 +369,15 @@ class _FakeExecution:
         current_stop=None,
         entry_style="resting",
         base_qty=None,
-        tp1_pct=None,
+        full_exit=None,
     ):
-        # 🔴 **THE TWO LIVE STRATEGIES HAVE DIFFERENT SHAPES HERE AND BOTH ARE REAL.** SOS Fade's
-        # `Execution` always carries `_tp1_pct()` — the percentage of the position its first target
-        # takes, which decides whether that target can be a POSITION-level one at the broker. The
-        # extreme leg has no such method at all. `None` models the second, and the bridge's reading
-        # of it is *the strategy has not said*, never *it takes nothing* (rule 1). A fake that
-        # always answered a number could not reach the branch the benched bot runs through.
-        if tp1_pct is not None:
-            self._tp1_pct = lambda: tp1_pct
+        # 🔴 **EVERY LIVE STRATEGY ANSWERS THIS, WHICH IS WHY THE FAKE ALWAYS HAS IT.**
+        # `full_exit_price` is in the live contract's `EXECUTION_ATTRS`, so a strategy without it
+        # is refused BY NAME at startup — production can never hand the bridge one that lacks it,
+        # and a double without it would model a strategy that cannot exist (rule 13). What varies
+        # is the ANSWER: a price when this trade takes the whole position off there, and `None`
+        # when it does not — flat, or a first rung that leaves a runner behind.
+        self._full_exit = full_exit
         # HOW this order layer opens a position. Every real execution declares it (the contract
         # requires it and `verify_live_ready` refuses without it), so this fake declares it too —
         # a double that could only ever be one of the two would make the gate untestable, and one
@@ -459,6 +458,17 @@ class _FakeExecution:
         method rather than making it return a sentinel.
         """
         return self._current_stop_value
+
+    def full_exit_price(self):
+        """The price this trade takes the WHOLE position off at, or `None`.
+
+        ⚠ **Always present, unlike `_current_stop` above.** That one is deleted by the tests that
+        exercise the cannot-answer branch, because the bridge reads it defensively and has to SAY
+        so. This one is in the live contract, so `verify_live_ready` refuses a strategy without it
+        at startup and the bridge reads it directly — there is no cannot-answer branch here to
+        model, and a fake offering one would describe a bot that could never have started.
+        """
+        return self._full_exit
 
     def snapshot_position(self) -> dict:
         return dict(self.snapshot)
@@ -3565,18 +3575,18 @@ def test_NO_position_list_moves_NOTHING_rather_than_assuming_no_adds():
 # price up front, and the market close stays as the safety net rather than the mechanism.
 
 
-def _targeted_position(tp1_pct=100.0, tp1=3320.0, base_tp=0.0, add_tp=0.0):
-    """A base long and one scale-in lot, and a strategy whose first rung takes `tp1_pct`."""
+def _targeted_position(full_exit=3320.0, base_tp=0.0, add_tp=0.0):
+    """A base long and one scale-in lot, and a strategy answering `full_exit` for the trade."""
     ops = _FakeMt5Ops()
     ops.positions = [
         _Pos(555, 0, 3290.0, 1.0, 3280.0, tp=base_tp),
         _Pos(556, 0, 3295.0, 0.5, 3280.0, tp=add_tp),
     ]
-    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, adds=[[3295.0, 0.5]], tp1_pct=tp1_pct)
+    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, adds=[[3295.0, 0.5]], full_exit=full_exit)
     b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
     b._pos_ticket = 555
     b._pos_stop = 3280.0
-    return b, ops, ledger, notes, _Dec(stop=3280.0, tp1=tp1)
+    return b, ops, ledger, notes, _Dec(stop=3280.0)
 
 
 def test_a_target_that_takes_the_WHOLE_position_is_put_on_the_broker():
@@ -3597,22 +3607,35 @@ def test_a_target_that_banks_only_PART_of_the_position_is_NOT_sent():
 
     MUTATION: drop the `< 100.0` guard and this goes red.
     """
-    b, ops, ledger, _, dec = _targeted_position(tp1_pct=50.0)
+    b, ops, ledger, _, dec = _targeted_position(full_exit=None)
     b._sync_take_profit(dec, ops.positions)
     assert not [a for a in ops.actions if a[0] == "move_sl"]
     assert "event:target_set" not in ledger.kinds()
 
 
-def test_a_strategy_that_has_not_SAID_gets_no_target():
-    """Rule 1 — *no such rung* and *the strategy cannot be asked* must not collapse into a price.
-    The extreme-leg bot is exactly this shape: its target really is 100%, and wiring it needs
-    that strategy to DECLARE the rung rather than this layer assuming one.
+def test_the_strategys_answer_is_read_DIRECTLY_so_a_missing_one_cannot_pass_as_None(monkeypatch):
+    """🔴 Rule 1, and the reason a quiet `None` is the wrong answer here.
 
-    MUTATION: treat a missing `_tp1_pct` as 100 and this goes red.
+    *Never implemented* and *this trade has no whole-position target* must not answer alike: the
+    first would leave a bot closing at market for its whole life with nothing saying so. So a
+    strategy that cannot answer HALTS the bot.
+
+    🔴 It halts rather than leaning on `verify_live_ready`, which four docstrings in this package
+    call the startup gate and which **nothing in `algos/live/` calls** (grepped 2026-09-09). The
+    state is reachable: `algos/` arrives by pull and a strategy only by promote, so a box pulled
+    early runs this bridge against a frozen strategy without the seam.
+
+    MUTATION: drop the callable guard and this goes red — the missing method becomes an
+    AttributeError mid-bar instead of a halt, on a live position.
     """
-    b, ops, _, _, dec = _targeted_position(tp1_pct=None)
-    assert not hasattr(b._ex, "_tp1_pct")
+    b, ops, ledger, _, dec = _targeted_position()
+    # `monkeypatch`, never a bare `del` — this deletes from the CLASS, and a hand-rolled restore
+    # is exactly the leak that poisoned every test after it earlier in this file.
+    monkeypatch.delattr(type(b._ex), "full_exit_price")
     b._sync_take_profit(dec, ops.positions)
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "promote" in (b.halt_reason or ""), "the halt must name the fix"
+    assert "event:halted" in ledger.kinds()
     assert not [a for a in ops.actions if a[0] == "move_sl"]
 
 
@@ -3708,8 +3731,7 @@ def test_the_RE_ENTRYS_clock_sets_the_target_too():
     """
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(555, 0, 3290.0, 1.0, 3280.0)]
-    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, current_stop=3280.0, tp1_pct=100.0)
-    ex._tp1 = 3320.0
+    ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, current_stop=3280.0, full_exit=3320.0)
     b, ops, _, _ = _bridge(ex, mt5ops=ops)
     b._pos_ticket = 555
     b._pos_stop = 3280.0

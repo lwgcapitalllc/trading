@@ -3665,6 +3665,44 @@ class Execution:
             return self._cfg.exec_sh_tp1_pct
         return self._cfg.exec_tp1_pct
 
+    def full_exit_price(self) -> Optional[float]:
+        """The price this trade takes the WHOLE position off at, or `None` if it does not.
+
+        Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`), and
+        the bridge hands the answer to the broker so the exit fills AT this price instead of at
+        market on the next bar close. **Public surface among private neighbours on purpose** — it
+        belongs beside `_tp1_pct`, which is the rule it reads, and a reader of one wants the other.
+
+        🔴 **THE RULE LIVES HERE RATHER THAN IN `algos/live/`, AND THAT IS THE POINT.** Which
+        percentage a trade's first rung takes depends on what KIND of trade it is — a re-entry
+        after a stop-out and a re-entry into a gap read different settings, and on the live bot
+        those are 100 and 0. The live layer holds no trading logic, so it cannot answer that; a
+        copy of this branch over there would be a second implementation free to drift from the one
+        that actually books the fills.
+
+        ⚠ **`None` for a rung that leaves a RUNNER, and that is not caution.** A venue take-profit
+        closes the ENTIRE position, so handing it a rung that banks half would delete size this
+        strategy is still managing. The bridge reconciles those at market and says so on every
+        record it writes.
+
+        ⚠ **`None` while FLAT**, because there is no trade to have a target. Answering the last
+        trade's price would put a target on whatever opened next.
+
+        ⚠ **Off `_tp1`, never `_stage_rungs()`.** That method orders the two rungs by DISTANCE for
+        the stop ladder and explicitly does not move where profit banks — `_remaining_brackets`
+        rests the first rung at `_tp1` whatever the ordering says, so reading the reordered pair
+        here would name a price this strategy does not bank at.
+        """
+        if self._pos_dir == 0:
+            return None
+        if float(self._tp1_pct()) < 100.0:
+            return None
+        tp = self._tp1
+        if tp is None:
+            return None
+        tp = float(tp)
+        return tp if math.isfinite(tp) and tp > 0 else None
+
     def _accrued_cost_price(self) -> float:
         """This trade's costs SO FAR plus the exit side it has not paid yet, as a price distance.
 

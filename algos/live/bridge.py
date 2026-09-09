@@ -3208,7 +3208,7 @@ class OrderBridge:
                     wanted=want,
                 )
 
-    def _wanted_take_profit(self, dec) -> Optional[float]:
+    def _wanted_take_profit(self) -> Optional[float]:
         """The price the strategy takes the WHOLE position off at, or `None` if it does not.
 
         🔴 **THIS IS WHY A TARGET NOW FILLS AT THE TARGET AND NOT AT MARKET A BAR LATER.** The
@@ -3225,24 +3225,50 @@ class OrderBridge:
         its own resting limit order, which this bridge does not have: `_sync_partials` keeps that
         case, still at market on bar close, and still names the fill on every event it writes.
 
-        ⚠ **`None` is *no such rung, or the strategy has not said* — never `0.0`**, which reaches
-        MT5 as *no take-profit at all* and is a real instruction (rule 1). A strategy with no
-        `_tp1_pct` makes no claim and gets no target, which is exactly today's behaviour rather
-        than a new refusal. **The extreme-leg bot is one of those and its target is a genuine
-        100%** (`extreme_leg.execution` publishes `tp_rungs=((take_profit, 100.0),)`); wiring it
-        needs that strategy to DECLARE the rung, not this layer to assume one.
+        🔴 **A STRATEGY THAT CANNOT ANSWER HALTS THE BOT — IT DOES NOT GET A QUIET `None`.**
+        `full_exit_price` is in the live contract's `EXECUTION_ATTRS`, and a `getattr` default here
+        would make *never implemented* and *this trade has no price target* the same answer, whose
+        first meaning is a bot closing at market for its whole life with nothing saying so. Rule 1.
 
-        ⚠ **It asks the STRATEGY, never the config.** `bank_ladders` above mirrors the same rule
-        for the startup refusal and cannot answer it for an OPEN trade: a re-entry after a
-        stop-out and a re-entry into a gap read different fields, and on the armed bot those are
-        100 and 0. Reading the config here would hang a target on a trade the strategy rides.
+        🔴 **AND IT HALTS HERE RATHER THAN TRUSTING A STARTUP CHECK, BECAUSE THAT CHECK IS NOT
+        WIRED.** `verify_live_ready` is described as the startup gate in four docstrings across
+        this package and **nothing in `algos/live/` calls it** — its only caller is one strategy's
+        own test (grepped, not assumed, 2026-09-09). So the refusal those comments promise does not
+        happen, and the state this guard exists for is REACHABLE: `algos/` arrives by `git pull`
+        while a strategy arrives only by `promote.py`, so a box pulled before it is promoted runs
+        this bridge against a frozen strategy that has never heard of this seam. **Left as a bare
+        attribute read that is an exception mid-bar, on a live position.**
+
+        ⚠ **The halt is the honest answer rather than a fallback**: the two sides disagree about
+        what this bot IS, exactly as they do when the emulator and the broker part company, and
+        this package's standing answer to that is to stop placing orders and say why.
+
+        ⚠ **The percentage rule lives in the STRATEGY, not here.** Which share a trade's first
+        rung takes depends on what kind of trade it is — on the live bot a re-entry after a
+        stop-out banks 100% and one into a gap banks 0 — and `algos/live/` holds no trading logic.
+        `bank_ladders` above mirrors that rule for the STARTUP refusal and cannot answer it for an
+        OPEN trade; reading it here would hang a target on a trade the strategy rides.
+
+        ⚠ **`None` is *this trade has no whole-position target* — never `0.0`**, which reaches MT5
+        as *no take-profit at all* and is a real instruction.
+
+        ⚠ **The finite-and-positive test is repeated here even though both strategies already make
+        it.** This is the boundary where a number leaves our code for a venue, and a strategy is
+        free to be wrong; an infinity or a zero arriving at MT5 is refused as a price nobody chose.
         """
-        pct = getattr(self._ex, "_tp1_pct", None)
-        if not callable(pct):
+        # ⚠ The guard is a `getattr` and the CALL below is a plain attribute read, deliberately.
+        # `test_live_contract.py` derives what this package needs by grepping `self._ex.<name>`
+        # out of this source, so a purely defensive read here would quietly drop this seam out of
+        # the contract — the requirement would stop being a requirement and nothing would fail.
+        if not callable(getattr(self._ex, "full_exit_price", None)):
+            self._halt(
+                "This strategy cannot say where it closes a whole position, so the bridge can "
+                "neither put a target on the broker nor tell that apart from a trade that has "
+                "none. The usual cause is a git pull moving algos/ ahead of the frozen strategy: "
+                "run promote.py for this bot, then restart it."
+            )
             return None
-        if float(pct()) < 100.0:
-            return None
-        price = getattr(dec, "tp1", None)
+        price = self._ex.full_exit_price()
         if price is None:
             return None
         price = float(price)
@@ -3280,7 +3306,7 @@ class OrderBridge:
         ⚠ **No positions passed means CANNOT ASK, so nothing is sent and nothing is claimed** —
         rule 1, and the same reading `_sync_add_stops` gives an empty list.
         """
-        want = self._wanted_take_profit(dec)
+        want = self._wanted_take_profit()
         stop = getattr(dec, "stop", None)
         if want is None or stop is None or self._pos_ticket is None or not positions:
             return

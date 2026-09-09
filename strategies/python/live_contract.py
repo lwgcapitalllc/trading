@@ -75,6 +75,22 @@ EXECUTION_ATTRS = (
     "misses",            # cleared by the runner each bar
     "is_flat",
     "equity",
+    # () -> Optional[float]. The price at which this strategy closes the WHOLE open position,
+    # or None when it has none — no position, or a first rung that leaves a runner behind.
+    #
+    # 🔴 **REQUIRED RATHER THAN OPTIONAL, AND THAT IS THE WHOLE POINT OF DECLARING IT HERE.**
+    # The bridge hands this price to the broker so the exit fills AT it instead of at market on
+    # the next bar close. Read defensively, a strategy that never implemented it and one holding
+    # a trade with no price target are the SAME answer — and the consequence of the first is a
+    # bot quietly closing at market for the life of the bot, which is exactly the divergence this
+    # exists to end. Requiring it makes a strategy SAY none, refused by name at startup if it
+    # cannot. Rule 1, in the place this module was written for.
+    #
+    # ⚠ **A WHOLE-position price, never a partial rung's.** A venue take-profit closes the entire
+    # position, so a strategy banking half at a price must answer None here and let the bridge
+    # reconcile that rung at market. Answering the rung's price would delete a runner the
+    # strategy is still managing.
+    "full_exit_price",
 )
 
 #: How a strategy OPENS a position — and therefore what `algos/live/` has to do about it.
