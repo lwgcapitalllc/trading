@@ -4007,14 +4007,42 @@ target*, identical to an order that never asked for one — so without a line in
 none* and *asked and was refused* read the same forever after. ⚠ **The success line reports the
 target SENT, never the one asked for** (rule 3, same rule that makes it report normalised lots).
 
-### DEPLOY ORDER: PROMOTE, THEN PULL, THEN RESTART — the reverse takes a bot down
+### DEPLOY ORDER: PULL, THEN PROMOTE, THEN RESTART — and the RESTART is the one that must be last
 
-Both halves of this change must land together. `algos/` (the bridge, the broker layer) arrives by
-`git pull`; `strategies/` (the seam both bots implement) arrives ONLY by `promote.py`. **Pull first
-and the new bridge runs against a frozen strategy that cannot answer — which now halts, by design.**
+🔴 **THIS SECTION SAID *PROMOTE, THEN PULL* FOR THE FIRST HALF-DAY OF ITS LIFE AND THAT ORDER IS
+IMPOSSIBLE.** `promote.py` copies out of the box's OWN checkout, so there is nothing new to promote
+until the box has pulled. Written from the hazard rather than from the tool, and caught only by
+reading `promote.py` before running it. ⚠ **A deploy order is a claim about what a tool READS —
+check the tool, not the story you are telling about the risk.**
+
+Both halves must land before either bot comes back up. `algos/` (the bridge, the broker layer)
+arrives by `git pull` and is picked up on RESTART; `strategies/` (the seam both bots implement)
+arrives ONLY by `promote.py`.
+
+1. **`git pull` on the box.** Safe while both bots run — a running process keeps the modules it
+   already imported, so nothing changes underneath it.
+2. **`promote.py` for each bot.** Also safe while running: it swaps the frozen snapshot on disk and
+   never touches the process.
+3. **Restart each bot.**
+
+⚠ **THE REAL CONSTRAINT IS THAT NOTHING MAY RESTART BETWEEN 1 AND 2.** A bot that restarts after the
+pull and before its promote runs the new bridge against a frozen strategy that has never heard of
+the seam — which HALTS, by design. ⚠ **`SYS_MONITOR` restarts a dead bot on its own within ~60s**,
+so the window is not only about what you type: do not leave a bot stopped between those two steps.
 
 ⚠ **A bot holding an open position cannot be promoted** (`promote.py` refuses), so a bot with a live
 trade waits for it to close.
+
+✅ **RUN 2026-09-09, both bots, and every step probed rather than assumed.** Pull reported *Already
+up to date* while the fetch showed the range moving — read as a QUESTION, not an answer, and the
+box's HEAD, the commit's presence and the seam's presence in the working tree were each checked
+separately. `sos_fade_demo` v199 → **v201** (`7ce428cc1d74`), `extreme_leg_demo` v193 → **v206**
+(`1b6665f322e3`), both hashes matched back against the promote output. Both stopped by REQUEST and
+both cleared their own stop file (checked — a leftover would stop the bot the instant it came up).
+`schtasks` said SUCCESS, which proves nothing, so the processes and both startup banners were read.
+Neither halted. ⚠ **The reversal bot carried ONLY the two target commits; the extreme leg carried
+12**, of which the other ten are `sos_fade`/`backtest` code it holds solely through its dependency
+closure. **That gap is read per bot before promoting, never assumed from the version jump.**
 
 ⚠ **19 new tests here, every one watched RED by mutation** (15 mutations across four files, all
 killed). Gates re-run and green: `compare_strategy.py` exit 0 at warmups 500/1000 with a
