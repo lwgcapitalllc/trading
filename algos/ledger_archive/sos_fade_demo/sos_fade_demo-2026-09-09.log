@@ -16,3 +16,5 @@
 2026-09-09 02:51:20,408 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-24 11:20:00+00:00 → 2026-09-09 02:45:00+00:00).
 2026-09-09 02:51:20,418 [INFO] Equity re-anchored to the account after warm-up: 10,442.35 → 10,020.36
 2026-09-09 02:51:21,822 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-09 07:14:08,708 [INFO] Sizing basis 11,326.23 = broker balance 15,844.46 - 4,518.23 stated adjustment
+2026-09-09 07:14:08,791 [INFO] Equity re-anchored to the account flat between trades: 10,020.36 → 11,326.23
