@@ -727,6 +727,9 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         else None
     )
     merged_params = runner_dispatch.inject_foundational(req.params, primary_ruleset)
+    # The row must SAY the instrument the run loads. `instrument` is already resolved against the
+    # broker above, and a params dict carrying the typed name would describe a different run.
+    merged_params = python_runner.with_run_symbol(merged_params, instrument)
 
     # ── Costs: one switch, resolved HERE so the row records what was CHARGED ─────────────
     # What this run is CHARGED. Resolved by `routers/_costs.py`, which the stack path calls too —

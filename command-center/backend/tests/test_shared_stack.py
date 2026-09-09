@@ -1758,6 +1758,69 @@ def test_the_shared_LAUNCH_can_actually_be_CALLED(client, tmp_path, monkeypatch)
     assert stored["cost_layers"] == fired["settings"]["cost_layers"]
 
 
+def test_a_LEG_S_STORED_PARAMS_NAME_THE_INSTRUMENT_IT_LOADS(client, tmp_path, monkeypatch):
+    """🔴 A leg's SCANNED DEFAULTS beat the broker's own spelling, and it was live (2026-09-09).
+
+    PU Prime quotes gold suffixed and Vantage bare, so the lab resolves the instrument against the
+    broker at run creation. A strategy package declares its own default symbol, and `extreme_leg`'s
+    is the bare name — which `_build_config` then preferred over the resolved one, because the
+    fill-in was guarded on the params carrying nothing. **The leg replayed suffixed BARS with a
+    config that said the bare name**, and its stored row said the bare name too.
+
+    ⚠ Found by diffing a stack leg against the bot it is supposed to mirror, not by any test:
+    the field only feeds the news filter's instrument, that filter is off on the bot, and so
+    nothing errored and nothing could have.
+
+    ⚠ The check has to run against a broker whose suffix is RECORDED — on `vantage_demo` the
+    resolved name and the typed name are the same string, so both the fixed and the broken code
+    produce identical output and the case proves nothing.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    for sid, cls in (("b_leg", "BLegStrategy"), ("sos_fade", "SosFadeStrategy")):
+        lab_db.upsert_strategy(
+            {
+                "id": sid,
+                "name": sid,
+                "runner": "python",
+                "class_name": cls,
+                "source_path": f"strategies/python/{sid}",
+                "scanned_at": 1,
+                "param_schema": [],
+                # The package's own spelling, which is what the scanner stores and what beat the
+                # broker's. A leg with no symbol at all could not show this.
+                "default_params": {"symbol": "XAUUSD"},
+            }
+        )
+
+    monkeypatch.setattr("routers.stacks.portfolio_runner.launch", lambda *a, **k: None)
+
+    resp = client.post(
+        "/backtests/stack",
+        json={
+            "strategy_ids": ["b_leg", "sos_fade"],
+            "instrument": "XAUUSD",
+            "bar_type": "Minute",
+            "bar_value": 15,
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "mode": "shared",
+            "account_size": 10_000.0,
+            "risk_cap_pct": 10.0,
+            "broker_profile": "puprime_ecn",
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    stack_id = resp.json()["stack_id"]
+
+    legs = lab_db.list_stack_runs(stack_id)
+    assert legs, "the launch stored no legs, so this asserts nothing"
+    for leg in legs:
+        # The row records what the run LOADS, not what the package happens to call it.
+        assert leg["instrument"] == "XAUUSD.p"
+        assert (leg["params"] or {}).get("symbol") == "XAUUSD.p", leg["strategy_id"]
+
+
 # ── The Stacks LIST could not be read without opening every row ────────────────────────────
 
 

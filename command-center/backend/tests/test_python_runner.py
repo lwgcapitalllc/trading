@@ -85,6 +85,60 @@ def test_the_symbol_comes_from_the_run_not_the_param_form():
     assert python_runner._build_config(SosFadeConfig, {}, "XAUUSD.s").symbol == "XAUUSD.s"
 
 
+def test_a_STORED_symbol_does_not_beat_the_instrument_the_run_LOADS():
+    """🔴 The half the test above could not catch, and the bug it missed was live.
+
+    It only ever asked what happens with NO symbol in the params. The fill-in was guarded on the
+    params carrying nothing, so a stored value WON — and `extreme_leg`'s scanned defaults carry the
+    bare name while PU Prime quotes gold suffixed. A stack leg therefore replayed `XAUUSD.p` bars
+    with a config that said `XAUUSD`.
+
+    ⚠ Inert only because the one field that reads it (the news filter's instrument) is switched
+    off on that bot. Nothing errored, and nothing could have.
+    """
+    from strategies.python.sos_fade.config import SosFadeConfig
+
+    cfg = python_runner._build_config(SosFadeConfig, {"symbol": "XAUUSD"}, "XAUUSD.p")
+    assert cfg.symbol == "XAUUSD.p"
+
+
+def test_an_unresolved_instrument_leaves_the_stated_symbol_alone():
+    """A broker whose naming was never recorded resolves to the name as typed, and `_build_config`
+    is handed that. It must not blank a symbol the params do carry."""
+    from strategies.python.sos_fade.config import SosFadeConfig
+
+    assert python_runner._build_config(SosFadeConfig, {"symbol": "XAUUSD"}, "").symbol == "XAUUSD"
+
+
+def test_the_stored_params_are_rebased_onto_the_instrument_the_run_LOADS():
+    """The RECORD half. `_build_config` makes the replay right; this makes the row SAY so, or a
+    reader, a rerun and a settings copy are all looking at a name the run never used."""
+    assert python_runner.with_run_symbol({"symbol": "XAUUSD", "x": 1}, "XAUUSD.p") == {
+        "symbol": "XAUUSD.p",
+        "x": 1,
+    }
+
+
+def test_a_strategy_that_states_no_symbol_does_not_GROW_one():
+    """The bot settings import diffs a run's params against a bot's declared fields, so an invented
+    key would show up there as a setting somebody chose."""
+    assert python_runner.with_run_symbol({"x": 1}, "XAUUSD.p") == {"x": 1}
+
+
+@pytest.mark.parametrize("unresolved", ["", None])
+def test_an_unresolved_instrument_makes_no_claim_about_the_symbol(unresolved):
+    """Rule 1 — *could not resolve* is not a name, and writing one would be a claim nobody made."""
+    assert python_runner.with_run_symbol({"symbol": "XAUUSD"}, unresolved) == {"symbol": "XAUUSD"}
+
+
+def test_the_rebase_does_not_mutate_the_params_it_was_HANDED():
+    """A leg's params come straight off the scanned strategy row, which the caller may reuse for
+    another leg. Rewriting in place would rebase a dict somebody else is still holding."""
+    original = {"symbol": "XAUUSD"}
+    python_runner.with_run_symbol(original, "XAUUSD.p")
+    assert original == {"symbol": "XAUUSD"}
+
+
 # ── job bookkeeping ───────────────────────────────────────────────────────────
 
 

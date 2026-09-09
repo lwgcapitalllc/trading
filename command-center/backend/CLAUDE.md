@@ -5886,3 +5886,59 @@ exactly like one.** It also exposed a real gap: nothing covered the LEG row, whi
 test. ⚠ **The wiring check reads the CALL SITE out of the source** rather than driving
 `_build_and_run`, which loads real bars and resolves real strategy classes — a stub capable of
 standing in for all of that is a fixture more capable than production.
+
+---
+
+## 🔴 A stored symbol beat the instrument the run LOADS (2026-09-09)
+
+`_build_config` filled the symbol in only when the params carried nothing
+(`not kwargs.get("symbol")`), so a SCANNED DEFAULT won over the resolved instrument. PU Prime
+quotes gold suffixed and Vantage bare — the lab has resolved the instrument against the broker
+since 2026-08-26 — and `extreme_leg`'s package declares the bare name. **So that stack leg
+replayed `XAUUSD.p` BARS with a config that said `XAUUSD`, and its stored row said the bare name
+too.**
+
+⚠ **Found by diffing a stack leg against the bot it mirrors, not by a test.** The one field that
+reads it is the news filter's instrument, that filter is OFF on the bot, so nothing errored and
+nothing could have. **A wrong instrument name in a config is not an error, it is a question asked
+about a different market.**
+
+🔴 **THE TEST THAT WAS SUPPOSED TO COVER THIS ASKED ONLY THE EASY HALF.**
+`test_the_symbol_comes_from_the_run_not_the_param_form` passes an EMPTY param dict, which the
+broken code handles correctly — so it was green against the bug for as long as both existed.
+**A test named for a rule must exercise the case where the rule can be broken**, and here that is
+a params dict that already carries a symbol.
+
+✅ **Two halves, and neither is sufficient alone:**
+
+- **`_build_config` — the RUN'S INSTRUMENT ALWAYS WINS.** There is no case where a param should
+  override it: a run measured on one instrument while telling the strategy it is on another is
+  not a configuration, it is two runs. ⚠ An UNRESOLVED instrument (a broker whose naming was
+  never recorded resolves to the name as typed) leaves a stated symbol alone rather than blanking
+  it.
+- **`with_run_symbol` — the RECORD.** The stored row must SAY the instrument the run loads, or a
+  reader, a rerun, a settings copy and a comparison are all looking at a name the run never used
+  (rule 3). Called by the single-run path and by BOTH stack paths.
+
+⚠ **It only rewrites a key that is ALREADY there.** A strategy declaring no symbol must not grow
+one: the bot settings import diffs a run's params against a bot's declared fields, and an invented
+key would show up there as a setting somebody chose.
+
+⚠ **It copies rather than mutating.** A leg's params come straight off the scanned strategy row,
+which the caller may hand to another leg.
+
+**Tests:** 7 new (43 in `test_python_runner.py`, 59 in `test_shared_stack.py`). ⚠ **Non-vacuity by
+MUTATION: 6 written, 6 RUN, 6 killed** — the old guard restored, the unresolved case blanking a
+stated symbol, the rebase inventing a key, writing an unresolved name as a claim, mutating in
+place, and the shared launch no longer rebasing.
+
+🔴 **ONE SURVIVED FIRST AND IT WAS THE HARNESS AGAIN — third time in this file.** The anchor
+carried a blank line, which matched the SCREEN path while the test drives a SHARED stack, so the
+mutation landed on a path the case never enters. **A mutation that lands somewhere else is not a
+surviving mutation, and it reads exactly like one.** Anchor on something unique to the branch you
+mean.
+
+⚠ **The end-to-end case must run against a broker whose suffix is RECORDED.** On `vantage_demo`
+the resolved name and the typed name are the same string, so the fixed and the broken code produce
+identical output and the case proves nothing — the same shape as a scaling test written against a
+scale of exactly 1.

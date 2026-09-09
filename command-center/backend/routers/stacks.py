@@ -212,6 +212,8 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
 
 @router.post("/stack", status_code=202, response_model=StackResponse)
 async def trigger_stack(req: StackRequest) -> StackResponse:
+    from services import python_runner
+
     ids = list(dict.fromkeys(req.strategy_ids))  # dedupe, keep order
     # The recovery leg is counted BEFORE its own validation so a one-strategy stack carrying one
     # is not turned away by the leg count it satisfies. `_validate_recovery_leg` is still what
@@ -343,6 +345,9 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
         params = req.params_by_strategy.get(strat["id"]) or strat.get("default_params") or {}
+        # A leg's SCANNED defaults carry whatever spelling its package declares, and the broker
+        # decides the real one. Rebased so the leg row says the instrument it loads.
+        params = python_runner.with_run_symbol(params, instrument)
 
         lab_db.insert_run_stack(
             {
@@ -553,6 +558,8 @@ def _trigger_shared_stack(
     * **One job, not N.** The legs share a clock and an account, so they cannot be serialised
       one after another the way `run_sweep` fans out a screen's legs.
     """
+    from services import python_runner
+
     if lab_db.has_running_job("python"):
         raise HTTPException(409, "A Python job is already running — wait for it to finish")
 
@@ -588,6 +595,9 @@ def _trigger_shared_stack(
         run_ids.append(run_id)
         params = dict(req.params_by_strategy.get(strat["id"]) or strat.get("default_params") or {})
         params = _pin_for_shared(params)
+        # Same rebase as the screen path — the leg row must name the instrument it loads, not the
+        # spelling its package happens to declare.
+        params = python_runner.with_run_symbol(params, instrument)
         lab_db.insert_run_stack(
             {
                 "run_id": run_id,

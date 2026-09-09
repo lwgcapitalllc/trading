@@ -597,6 +597,26 @@ def _resolve(class_name: str) -> Optional[tuple]:
     return None
 
 
+def with_run_symbol(params: dict, symbol: str) -> dict:
+    """`params` with its symbol set to the instrument this run actually loads.
+
+    The RECORD half of the rule `_build_config` enforces at replay time. That one makes the run's
+    instrument win whatever the params say; this one makes the stored row SAY the same thing, so a
+    reader, a rerun, a settings copy and a comparison are not looking at a name the run never used
+    (rule 3 — record what was received, never what was requested).
+
+    ⚠ **It only rewrites a key that is ALREADY there.** A strategy declaring no symbol must not
+    grow one: the bot settings import diffs a run's params against a bot's declared fields, and an
+    invented key would show up there as a setting somebody chose.
+
+    ⚠ **An unresolved symbol changes nothing.** A broker whose naming was never recorded leaves the
+    instrument exactly as typed, and this must not turn that into a claim.
+    """
+    if not symbol or "symbol" not in params:
+        return params
+    return {**params, "symbol": symbol}
+
+
 def _build_config(config_cls, params: dict, symbol: str) -> Any:
     """Build the strategy's config dataclass from the lab's param dict.
 
@@ -615,9 +635,22 @@ def _build_config(config_cls, params: dict, symbol: str) -> Any:
         if f is None or value is None:
             continue
         kwargs[name] = _coerce(value, f.type)
-    # The symbol is a run fact, not a tunable — the lab already knows it, so tick mode should
-    # never need it typed into the param form as well.
-    if "symbol" in fields and not kwargs.get("symbol"):
+    # 🔴 THE RUN'S INSTRUMENT ALWAYS WINS, and it did NOT until 2026-09-09.
+    #
+    # The symbol is a run fact, not a tunable — the lab resolves it against the broker at run
+    # creation (`run_symbol`), because PU Prime quotes gold with a suffix and Vantage bare. This
+    # line used to fill it in only when the params carried nothing, so a STORED value beat the
+    # instrument the run actually loaded: `extreme_leg`'s scanned defaults carry the bare name, so
+    # a stack leg replayed `XAUUSD.p` BARS while its config said `XAUUSD`.
+    #
+    # ⚠ Inert on that leg only because its news filter is off — that filter is the one thing which
+    # reads this field, and with it on the run would have asked the calendar about an instrument it
+    # was not trading. Nothing would have errored.
+    #
+    # ⚠ It is not a preference and there is no case where a param should override it: a run
+    # measured on one instrument while telling the strategy it is on another is not a
+    # configuration, it is two runs. The param form still cannot usefully carry one.
+    if "symbol" in fields and symbol:
         kwargs["symbol"] = symbol
     return config_cls(**kwargs)
 
