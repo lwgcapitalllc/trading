@@ -6,6 +6,39 @@ Implementation-level history and war-story detail relocated out of `command-cent
 
 ---
 
+## Checking the account list against the box, and the false alarm on the correct row (2026-09-10)
+
+Aaron logged one of the VPS's MT5 terminals into a live account and the Command Center never
+noticed. The account list is hand-typed and nothing had ever compared it with the machine.
+
+**What the scan found on the first real run.** Five terminal installs (two of them under Program
+Files, which a `C:\MT5_*` glob would miss), three running: the bots' terminal, the lab's, and
+`C:\MT5_Scalper` — **34957946 on PUPrime-Live**, dormant since June and started that day. The
+endpoint returned it as `new`, pre-filled with server, broker, currency, leverage and a measured
+`.p` suffix, and with the label, tier and cost profile deliberately left empty.
+
+🔴 **And it reported the one entirely correct row in the list as WRONG.** Account 700152905 is
+registered against the bots' terminal, correctly. The lab's terminal is ALSO logged into 700152905
+— that is the backtest agent's normal state — so the reconciler, which compared a row's terminal
+claim against wherever it happened to find the account, called the row contradicted.
+
+**The assumption was one account, one terminal, and it is false.** A row's terminal claim can only
+be judged by asking THAT terminal what it is logged into. Broker facts — server, demo-or-live, the
+suffix — belong to the account, so a reading from any terminal on it is evidence about those; where
+it is open is not. **A false alarm on the correct row is worse than silence: it is what teaches
+somebody to scroll past the real one.** Only running it against the real box surfaced this; every
+test passed both before and after, because the tests encoded the same assumption the code did.
+
+**The limit that remains, stated rather than left to be discovered.** A row pointing at the bots'
+terminal cannot be verified at all, because the scan deliberately never attaches there. That is
+exactly where 700107749's stale claim lives, so it comes back UNVERIFIED — honest, and not the same
+as fine. Closing it needs the live runner to report its OBSERVED account rather than its configured
+one; it measures that at startup, checks it, and throws it away.
+
+**Proof.** 36 tests across the pure reconciler and the endpoint; 16 mutations applied, none
+survived. The endpoint was then driven against the live box, which is where the real defect was.
+
+
 ## NT8 Strategy Analyzer UI automation (nt8_backtest_runner.py)
 
 Hard-won rules for pywinauto + NT8 WPF — violating these causes silent wrong-strategy runs or broken SA state:

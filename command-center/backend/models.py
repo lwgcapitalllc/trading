@@ -930,6 +930,78 @@ class BotAccountPassword(BaseModel):
         return v
 
 
+class ScannedTerminal(BaseModel):
+    """One MT5 terminal on the VPS, and how it lines up with the account list.
+
+    🔴 **`account: None` NEVER means "this terminal has no account".** It means nobody asked, and
+    `state` says why — the terminal is stopped, or a bot trades through it and was deliberately
+    not attached to. A page that renders a null here as an empty terminal has converted "cannot
+    ask" into a measurement.
+
+    ⚠ **`kind` is three-state.** `"demo"`/`"live"`/`"contest"` come from the broker's own account
+    flag; `None` means the flag was unrecognised, which is UNKNOWN rather than the safe-sounding
+    word. Never infer it from the server name.
+
+    ⚠ **`symbol_suffix` is three-state too** — a string is the suffix, `""` means this broker
+    quotes bare symbols, and `None` means it could not be measured.
+    """
+
+    key: str  # normalised install dir — what the join is done on
+    install: str  # as the box spells it, for a person to read
+    state: str  # "probed" | "not_running" | "owned_by_bot"
+    running: bool = False
+    owned_by_bots: list[str] = []
+    account: Optional[int] = None
+    server: Optional[str] = None
+    kind: Optional[str] = None
+    company: Optional[str] = None
+    currency: Optional[str] = None
+    leverage: Optional[int] = None
+    symbol_suffix: Optional[str] = None
+    symbol_suffix_how: Optional[str] = None
+    reason: Optional[str] = None  # why it was not probed
+    error: Optional[str] = None  # why a probe failed
+    verdict: str = "unasked"  # "new" | "known" | "conflict" | "unasked"
+    conflicts: list[str] = []
+    suggested: Optional[dict] = None  # pre-filled registration for a "new" account
+
+
+class RegistryCheck(BaseModel):
+    """One row of the account list, and whether the box backs it up.
+
+    🔴 **`"unverified"` is not a finding against the row.** A stopped terminal, or one a bot
+    trades through, produces no reading — and reporting that as a contradiction fills the page
+    with false alarms and teaches everyone to scroll past the real one.
+    """
+
+    account: int
+    label: str = ""
+    verdict: str  # "confirmed" | "contradicted" | "unverified"
+    detail: str = ""
+    conflicts: list[str] = []
+    seen_on: Optional[str] = None
+
+
+class TerminalScan(BaseModel):
+    """What the VPS is actually logged into, checked against the account list.
+
+    🔴 **`asked=False` is NOT an empty box.** It means the scan could not run — unreachable VPS,
+    a refusal, or output that could not be read — and `reason` says which. Rendering it as "no
+    terminals found" is the mistake this whole feature exists to stop somebody making about
+    accounts.
+
+    ⚠ **Nothing here has been written anywhere.** These are findings; adopting one is a separate,
+    explicit action through the registry write endpoint, which validates it exactly as it
+    validates an account typed in by hand.
+    """
+
+    asked: bool
+    scanned_at: Optional[str] = None
+    reason: Optional[str] = None  # set only when asked is False
+    terminals: list[ScannedTerminal] = []
+    registry: list[RegistryCheck] = []
+
+
 # The roles `algos/notifications/telegram_bot.py` keys `ROLE_COMMANDS` on. A value outside
 # this set is not a new role — it is a user with NO permissions, because `get_role` returns
 # the string and the command lookup then misses. `"Admin"` is the shape of that mistake.

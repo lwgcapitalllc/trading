@@ -71,6 +71,7 @@ from models import (
     TelegramUser,
     TelegramUserCreate,
     TelegramUserRoleUpdate,
+    TerminalScan,
 )
 from services import (
     bot_account_registry,
@@ -85,6 +86,7 @@ from services import (
     notify,
     stack_settings_import,
     strategy_import,
+    terminal_scan,
 )
 from services.alert_format import alert, joined
 from services.notify import send_telegram_id
@@ -1478,6 +1480,98 @@ def list_registered_accounts():
 
     with_password = _accounts_with_a_password()
     return [_registration(e, on_account.get(e.account, []), with_password) for e in entries]
+
+
+_SCAN_SCRIPT = r"C:\trading\algos\tools\scan_terminals.py"
+
+# The scan attaches to each unowned terminal in its own subprocess and gives each one 45s before
+# giving up, so three stopped-but-installed terminals can legitimately take minutes. `_ssh`'s 30s
+# is right for the status reads it was built for and wrong here — a timeout would report the box
+# as unreachable, which is a statement about the CHANNEL and would be false.
+_SCAN_TIMEOUT_S = 180
+
+
+def _scan_terminals() -> dict:
+    """Ask the box which account each of its MT5 terminals is logged into.
+
+    ⚠ **Every failure raises rather than returning an empty scan.** Unreachable, a non-zero exit,
+    output that is not JSON — all of them mean the question was not answered, and the one thing
+    this must never do is hand back a well-formed result describing zero terminals. That is the
+    same defect the tool exists to find in the account list.
+    """
+    try:
+        result = subprocess.run(
+            ["ssh", VPS_HOST, f"{_PYTHON_EXE} {_SCAN_SCRIPT}"],
+            capture_output=True,
+            timeout=_SCAN_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        raise terminal_scan.ScanUnavailable(
+            f"the terminal scan did not finish within {_SCAN_TIMEOUT_S}s, so what the box is "
+            f"logged into is unknown"
+        )
+    out = result.stdout.decode("utf-8", errors="replace").strip()
+    if result.returncode == 255 and not out:
+        err = result.stderr.decode("utf-8", errors="replace").strip()
+        raise terminal_scan.ScanUnavailable(err or f"ssh to {VPS_HOST} failed and said nothing")
+    try:
+        return json.loads(out)
+    except ValueError:
+        err = result.stderr.decode("utf-8", errors="replace").strip()
+        raise terminal_scan.ScanUnavailable(
+            f"the box did not return a readable scan - {err or out[:200] or 'it said nothing'}"
+        )
+
+
+@router.get("/accounts/scan", response_model=TerminalScan)
+def scan_box_terminals():
+    """What the VPS is ACTUALLY logged into, checked against the account list.
+
+    🔴 **The account list is a stored claim and nothing checked it against the machine until this
+    existed.** It named a terminal for 700107749 that is not logged into it, and a third terminal
+    sat on a LIVE account for a day invisible to this app.
+
+    ⚠ **It reads and writes nothing.** Adopting a discovered account is a separate, explicit
+    action through the registry write endpoint, which validates it exactly as it validates one
+    typed by hand. Auto-adopting would turn an accidental login into configuration, and the
+    account-mismatch halt on the bot side exists precisely because a terminal's login can change
+    under a running bot — a feature that wrote the new account into the registry would be
+    resolving that alarm by agreeing with it.
+
+    ⚠ **It is NOT on the 60-second poll, deliberately.** A scan can take minutes when several
+    installed terminals are stopped, so polling it would stack slow requests against the box. It
+    is an explicit refresh.
+
+    ⚠ **A failure is a 502 carrying WHY, never an empty result.** `asked=false` and "no terminals
+    found" must never be the same response.
+    """
+    try:
+        payload = _scan_terminals()
+    except terminal_scan.ScanUnavailable as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    try:
+        entries = bot_account_registry.load_accounts(_registry_path())
+    except bot_account_registry.RegistryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        found = terminal_scan.reconcile(payload, entries)
+    except terminal_scan.ScanUnavailable as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    terminals = []
+    for t in found.terminals:
+        row = {k: v for k, v in vars(t).items()}
+        row["suggested"] = terminal_scan.suggested_registration(t) if t.actionable else None
+        terminals.append(row)
+    return TerminalScan(
+        asked=found.asked,
+        scanned_at=found.scanned_at,
+        reason=found.reason,
+        terminals=terminals,
+        registry=[vars(r) for r in found.registry],
+    )
 
 
 @router.put("/accounts/registry/{account}", response_model=BotAccountRegistration)

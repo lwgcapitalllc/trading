@@ -1582,6 +1582,60 @@ bots was right, and it left a hole shaped exactly like the first bot on a new ac
 looks like a missing feature and is really the derivation being asked a question it has no input
 for. When a value is derived, ask what it answers before the thing it derives from exists.**
 
+## Checking the account list against the BOX — `services/terminal_scan.py` (2026-09-10)
+
+`GET /bots/accounts/scan` asks the VPS which account each MT5 terminal is logged into
+(`algos/tools/scan_terminals.py`) and joins it against the registry. Until this existed **nothing
+ever compared the account list with the machine**, and a terminal had been sitting on a LIVE
+account (34957946, PUPrime-Live) for a day with this app unable to see it.
+
+🔴 **The box is authoritative about what is LOGGED IN; the repo stays authoritative about INTENT.**
+The two are shown side by side and **never merged automatically**. Adopting the box's answer would
+turn an accidental login into configuration — and `runner._check_account_identity` halts a bot
+precisely because a terminal's login can change under it, so auto-writing would be resolving that
+alarm by agreeing with it. Adoption is a separate, explicit write through the registry endpoint,
+which validates a discovered account exactly as it validates a typed one.
+
+🔴 **AN ACCOUNT CAN BE LOGGED IN ON MORE THAN ONE TERMINAL, and the first version assumed it could
+not.** On this box the demo account is open in the bots' terminal AND the lab's at the same time,
+which is normal. Comparing a row's terminal against wherever the account was found reported **the
+one entirely correct row in the list as wrong** on the first live run. A row's terminal claim is
+judged by asking THAT terminal what it is logged into; nothing else can contradict it. Broker facts
+(server, demo-or-live, suffix) belong to the ACCOUNT and any terminal on it is evidence about them.
+
+🔴 **`asked=false` is not an empty box.** A scan that could not RUN is a **502 carrying why**; a
+scan the box REFUSED is a **200 saying so** — the channel worked and the answer was "I will not",
+so a 502 there would send the reader at the network instead of at the script. A payload that is
+not readable JSON raises rather than defaulting: a truncated pipe or an SSH banner would otherwise
+read as a healthy scan of zero terminals.
+
+⚠ **"Could not be asked" is UNVERIFIED, never contradicted.** A stopped terminal, or one a bot
+trades through and is deliberately not attached to, produces no reading. Grading those as findings
+fills the page with false alarms and teaches everyone to scroll past the real one.
+
+⚠ **A registry field that is UNSET is not a conflict.** Only a field that is set and different
+counts, or incomplete rows bury the real disagreements.
+
+⚠ **A discovered account pre-fills only what the box MEASURED** (`suggested_registration`). Label,
+tier, cost profile and note stay empty for a person — a guessed cost profile prices every backtest
+on that account, and this repo refuses an unmeasured cost rather than borrowing a sibling's.
+
+⚠ **There is no password and there cannot be** — the terminal encrypts it at rest, so a discovered
+account arrives unusable by a bot until somebody stores one. That is the honest state rather than a
+surprise at connect time, and a present-but-empty field would read as "this account has no
+password", which is a different claim.
+
+⚠ **It is NOT on the 60-second poll, deliberately** — a scan can take minutes when several
+installed terminals are stopped, so polling would stack slow requests against the box. `_ssh`'s 30s
+timeout is wrong here for the same reason and this call has its own.
+
+⚠ **KNOWN LIMIT: a row pointing at a bot's terminal cannot be verified at all.** That is where
+700107749's stale claim lives, so the scan reports it UNVERIFIED rather than wrong. Closing it
+needs the bot to report its OBSERVED account rather than its configured one — `runner` measures it
+and currently throws it away. Do not read "unverified" as "fine".
+
+Story and the false alarm: `command-center/docs/BACKEND_BUILD_NOTES.md`.
+
 ## 🔴 An assignment may only write a param the RECEIVING strategy declares (2026-09-04)
 
 **`runner._build_strategy` refuses to start on any `strategy_params` key the strategy's config
