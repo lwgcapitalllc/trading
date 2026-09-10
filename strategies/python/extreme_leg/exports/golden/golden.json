@@ -1,0 +1,14 @@
+{
+  "csv": ["VANTAGE_XAUUSD_M5_20288bars.csv"],
+  "gate": "tools/compare_extreme_leg.py",
+  "warmup": 0,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M5",
+  "bars": 20288,
+  "harness": "strategies/tradingview/extreme_leg_strategy_export.pine",
+  "taken": "2026-09-10",
+  "_why_warmup": "0 means the GATE's own, and the runner then passes no flag: it derives a full week at the export's frame (2,016 bars at 5m), because the weekly-sweep family cannot be known before one, and compares every bar after it - 18,271, all matching. Passing an explicit 0 would compare the week too and go red.",
+  "_what_it_ran": "Both Pine-less cuts are forced OFF for the comparison (no chart can make them), so this is parity of the SHARED logic, not of the shipped strategy - the gate says so on every run.",
+  "_exercise_check": "7 entries and 513 bars with a sweep; refusal codes 2, 4, 5 and 7 never reached - the gate names them on every run."
+}

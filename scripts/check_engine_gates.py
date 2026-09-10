@@ -30,10 +30,16 @@ implementation is RIGHT rather than merely in agreement (rule 14).
 
 HOW IT FINDS WORK
 -----------------
-Discovery, never a list: `engines/*/exports/golden/*.csv` paired with that engine's
-`tools/compare_*.py`. Adding a golden export for another engine wires it in with no edit here.
+Discovery, never a list: `engines/*/exports/golden/*.csv` AND, since 2026-09-10,
+`strategies/python/*/exports/golden/*.csv`, each paired with its own `tools/compare_*.py`.
+Adding a golden export for another engine or strategy wires it in with no edit here.
 ⚠ That is deliberate — a hardcoded list is one more thing to forget, and this repo has already
 paid for a count that lived only in prose.
+⚠ A folder with SEVERAL compare_*.py must name its gate in golden.json (`"gate"`). Taking the
+first alphabetically ran SOS Fade's right tool by luck, and luck is not a mechanism — an
+unnamed choice between two is refused, loudly.
+⚠ The file keeps its engine-only name so nothing that calls it moves; strategies are the same
+job — a committed export, a gate, a measured warm-up — one directory over.
 
 SELF-TEST
 ---------
@@ -55,37 +61,34 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 ENGINES = REPO / "engines"
+STRATEGIES = REPO / "strategies" / "python"
+ROOTS = (ENGINES, STRATEGIES)
 
 # Raise this as golden exports are added, so losing one is a failure rather than a quieter run.
-MIN_GOLDEN_EXPORTS = 13
+MIN_GOLDEN_EXPORTS = 15
 
 
-def _gateable_engines():
-    """Every engine that HAS a compare_*.py, i.e. every engine that COULD carry a golden export.
+def _gateable(root):
+    """Every engine or strategy under `root` that HAS a compare_*.py, i.e. could carry a golden.
 
     Reported alongside the covered count so a green run can never be read as full coverage - see
     the coverage note in main().
     """
-    return sorted({g.parent.parent for g in ENGINES.glob("*/tools/compare_*.py")})
+    return sorted({g.parent.parent for g in root.glob("*/tools/compare_*.py")})
 
 
 def _discover():
-    """(engine_dir, gate_script, golden_csv) for every engine carrying a golden export."""
+    """(component_dir, gate_script, golden_csv, warmup, extra) for every golden export found."""
     found = []
-    for golden_dir in sorted(ENGINES.glob("*/exports/golden")):
+    for golden_dir in sorted(d for root in ROOTS for d in root.glob("*/exports/golden")):
         engine = golden_dir.parent.parent
         csvs = sorted(golden_dir.glob("*.csv"))
         if not csvs:
             continue
-        gates = sorted(engine.glob("tools/compare_*.py"))
-        if not gates:
-            print(f"🔴 {engine.name}: has a golden export but NO compare_*.py to run on it.")
-            found.append((engine, None, csvs[0], 0, []))
-            continue
         # golden.json carries the MEASURED warm-up and the provenance. A missing manifest means
         # warm-up 0 rather than a skip: silently not running a gate is the failure this whole file
         # exists to stop.
-        warmup, extra = {}, []
+        warmup, extra, data = {}, [], {}
         manifest = golden_dir / "golden.json"
         if manifest.exists():
             try:
@@ -107,15 +110,41 @@ def _discover():
                 extra = [str(a) for a in data.get("extra_args", [])]
             except (ValueError, OSError, AttributeError, TypeError) as exc:
                 print(f"🔴 {engine.name}: unreadable golden.json ({exc}) - running at warm-up 0.")
+        gate = _gate_for(engine, data if isinstance(data, dict) else {})
         for csv in csvs:
-            found.append((engine, gates[0], csv, warmup.get(csv.name, 0), extra))
+            found.append((engine, gate, csv, warmup.get(csv.name, 0), extra))
     return found
 
 
+def _gate_for(component, manifest):
+    """The one compare_*.py to run: the manifest's `gate`, else the folder's only one, else None.
+
+    None is a FAILURE in main(), never a skip. Two tools and no name is refused rather than
+    resolved alphabetically — see HOW IT FINDS WORK.
+    """
+    named = manifest.get("gate")
+    if named:
+        gate = component / named
+        if gate.is_file():
+            return gate
+        print(f"🔴 {component.name}: golden.json names gate {named!r}, which does not exist.")
+        return None
+    gates = sorted(component.glob("tools/compare_*.py"))
+    if len(gates) == 1:
+        return gates[0]
+    if not gates:
+        print(f"🔴 {component.name}: has a golden export but NO compare_*.py to run on it.")
+    else:
+        names = ", ".join(g.name for g in gates)
+        print(f"🔴 {component.name}: {len(gates)} gates ({names}) and golden.json names none.")
+    return None
+
+
 def main() -> int:
-    if not ENGINES.is_dir():
-        print(f"ERROR: no engines directory at {ENGINES} - the path is wrong, not the repo empty.")
-        return 1
+    for root in ROOTS:
+        if not root.is_dir():
+            print(f"ERROR: no directory at {root} - the path is wrong, not the repo empty.")
+            return 1
 
     work = _discover()
 
@@ -163,27 +192,30 @@ def main() -> int:
                 print(f"      {line}")
 
     if failures:
-        print(f"\n{failures} engine gate(s) RED against a committed golden export.")
+        print(f"\n{failures} gate(s) RED against a committed golden export.")
         print("That means the PYTHON moved away from a known-good answer - this cannot be a stale")
-        print("export, because the export is pinned in git next to the engine it validates.")
+        print("export, because the export is pinned in git next to the code it validates.")
+        print("⚠ The one exception: a Pine twin that gained a compared column since the file was")
+        print("  taken makes its gate REFUSE the export - that is a re-export, not a Python bug.")
         return 1
 
-    gateable = _gateable_engines()
     covered = {e for e, _g, _c, _w, _x in work}
-    missing = [e.name for e in gateable if e not in covered]
-
-    print(f"\n✓ {len(work)} engine gate(s) green against their golden exports.")
+    print(f"\n✓ {len(work)} gate(s) green against their golden exports.")
     # 🔴 STATE THE COVERAGE FRACTION OUT LOUD, ALWAYS.
     # A bare green tick on this step reads as "the engine gates pass" when it may mean "the ONE
     # engine with a committed export passes". That is the misleading-green shape this repo keeps
     # paying for, and it would be self-inflicted here: the step is new, so nobody yet has a prior
     # expectation of what it covers. Printing the fraction and NAMING the uncovered engines makes
     # the gap impossible to mistake for coverage.
-    print(f"⚠ COVERAGE: {len(covered)} of {len(gateable)} gateable engines have a golden export.")
-    if missing:
-        print("⚠ NO golden export, so NOT regression-tested on any machine but the one holding a")
-        print("  scratch CSV: " + ", ".join(missing))
-        print("  Each needs one fresh TradingView export, once, to join this step permanently.")
+    for root, kind in ((ENGINES, "engines"), (STRATEGIES, "strategies")):
+        gateable = _gateable(root)
+        missing = [e.name for e in gateable if e not in covered]
+        have = len(gateable) - len(missing)
+        print(f"⚠ COVERAGE: {have} of {len(gateable)} gateable {kind} have a golden export.")
+        if missing:
+            print("⚠ NO golden export, so NOT regression-tested on any machine but the one holding")
+            print("  a scratch CSV: " + ", ".join(missing))
+            print("  Each needs one fresh TradingView export, once, to join this step permanently.")
     print("⚠ Regression only. A Pine change still needs a FRESH export before it may be trusted.")
     return 0
 

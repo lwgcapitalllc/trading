@@ -404,19 +404,27 @@ def main(argv=None) -> int:
         n = counts.get(f"blk{code}", 0)
         flag = "   ← never reached" if n == 0 else ""
         print(f"  refusal code {code}           {n:>7,}{flag}")
+    # One ⚠ line naming them, because the table above is dropped when this gate runs green inside
+    # scripts/check_engine_gates.py — that runner keeps a passing gate's 🔴/⚠ lines and nothing
+    # else, and a tick over four unexercised branches is the misleading green it exists to stop.
+    unreached = [str(c) for c in range(0, 8) if counts.get(f"blk{c}", 0) == 0]
+    if unreached:
+        print(f"⚠ NEVER REACHED in this export — this run says NOTHING about refusal code(s) "
+              f"{', '.join(unreached)}.")
 
     bad = {k: v for k, v in counts.items() if not k.startswith(("_", "blk"))}
     if not bad:
         if unchecked:
             # On the verdict line, not under it. "✓ PARITY" read alone is exactly the sentence
             # somebody quotes six weeks later.
+            # ⚠ Each caveat line starts with the marker AND reads alone: the suite's golden runner
+            # keeps a passing gate's ⚠ lines and drops the rest, verdict included.
             print("\n✓ PARITY OF THE SHARED LOGIC — the Python made the same decisions as the "
                   "Pine on every compared bar,\n"
-                  "  but this is NOT a check of the shipped strategy: " + " and ".join(unchecked) +
-                  " is switched ON\n"
-                  "  in config.py, the chart cannot make it, and this run was necessarily "
-                  "measured with it OFF.\n"
-                  "  What ships takes FEWER trades than what was just compared.")
+                  "  ⚠ but this is NOT a check of the shipped strategy: " + " and ".join(unchecked) +
+                  " is switched ON in config.py and the chart cannot make it,\n"
+                  "  ⚠ so this run was necessarily measured with it OFF — what ships takes FEWER "
+                  "trades than what was just compared.")
         else:
             print("\n✓ PARITY — the Python made the same decisions as the Pine on every compared "
                   "bar.")

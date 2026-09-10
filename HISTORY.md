@@ -21,6 +21,23 @@ the other one did.
 
 ## Latest
 
+### The live bots' parity gates now run on every clone (2026-09-10)
+
+Aaron exported SOS Fade's twin on 15m and the extreme leg's on 5m, and both gates went green:
+SOS Fade on 19,668 bars from a measured warm-up of 468 (8 trades), the extreme leg on 18,271 after
+its derived week (7 entries). Earlier real exports had used a warm-up of 100 or 1,000 for SOS
+Fade, and a sweep put this file's floor at 468 exactly — **a warm-up borrowed from another export
+is a guess about this one.**
+
+Both are now committed goldens, so step 15 runs the two LIVE bots' gates wherever the repo is
+cloned, not only where a CSV happened to sit — the same unsatisfiable-rule problem the engine
+goldens fixed the day before, one directory over. Two things surfaced on the way in. SOS Fade's
+`tools/` holds two compare scripts, and the runner took the first alphabetically — the right one,
+by luck; a manifest now names its gate, and an unnamed choice is refused. And the runner keeps
+only a passing gate's warning lines, so the extreme leg's "this is not the shipped strategy" and
+its four never-reached refusal codes would have shown as a bare tick; the gate now prints both as
+warning lines.
+
 ### The gap cap moved to the indicator's 7, and the chart stopped drawing gaps TradingView does not (2026-09-10)
 
 The one real mismatch the defaults inventory found. The gap engine's default cap was 8 while the

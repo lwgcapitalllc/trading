@@ -1,0 +1,15 @@
+{
+  "csv": ["VANTAGE_XAUUSD_M15_20218bars.csv"],
+  "gate": "tools/compare_strategy.py",
+  "warmup": 468,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M15",
+  "bars": 20218,
+  "harness": "strategies/tradingview/sos_fade_strategy_export.pine",
+  "taken": "2026-09-10",
+  "_why_gate": "Named rather than discovered: tools/ holds two compare_*.py, and picking the first alphabetically would run the right one by luck.",
+  "_why_warmup": "MEASURED, not borrowed from an earlier export (those ran at 100 and 1,000, and neither is this file's number). Red at 467, green at 468, with all 19,668 bars after it matching and the export's final calendar day left out by the gate's own default. Every first mismatch a warm-up sweep found before 468 was the short-side arm stage - state the chart carries in from history before the export began, which a cold Python cannot have.",
+  "_what_it_ran": "The chart's settings at export time, read back by the gate from the cfg_* columns: scale-in OFF, B-leg OFF, arm on sweep only, require-FVG ON, dead-market floor 0.3 (the bot ships 0.08), time stop 36h before TP1. So this golden says NOTHING about adding to winners, the B leg, divergence arming or the no-gap fallback - the gate names the last one on every run.",
+  "_exercise_check": "8 trades enter and close inside the compared window, +10.63R on the chart."
+}

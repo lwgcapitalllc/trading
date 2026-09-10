@@ -331,13 +331,13 @@ fi
 #     golden (here)  catches the PYTHON drifting from a known-good answer. Always runnable.
 #     fresh export   catches PINE and Python disagreeing after a Pine edit. Needs a human.
 #   A green run here says nothing about a Pine change made after the golden file was taken.
-# ⚠ Engines are DISCOVERED (engines/*/exports/golden/*.csv), never listed, and finding zero
+# ⚠ Engines and strategies are DISCOVERED (*/exports/golden/*.csv), never listed, and finding zero
 #   is a FAILURE - a runner that quietly finds nothing reads as coverage.
-echo "  [15/18] engine parity gates (golden exports) ..."
+echo "  [15/18] engine + strategy parity gates (golden exports) ..."
 if "$PYTHON" scripts/check_engine_gates.py; then
-  pass "engine parity gates vs golden exports (PARTIAL coverage - the step prints the fraction)"
+  pass "engine + strategy parity gates vs golden exports (PARTIAL coverage - the step prints the fraction)"
 else
-  fail "engine parity gates vs committed golden exports"
+  fail "engine + strategy parity gates vs committed golden exports"
 fi
 
 # ── 16. The generated zone harness is still what its sources say it is ──────

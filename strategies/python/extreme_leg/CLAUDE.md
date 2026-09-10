@@ -10,6 +10,7 @@ BEFORE proposing a tuning idea.** Four searches have each landed back on the shi
 a cut is scored on the setup pool BEFORE the one-position rule or its number is fiction.
 **Status:** ✅ **PARITY GREEN — `compare_extreme_leg.py` exits 0 (2026-09-02).** Stage 6 of six is
 done: the Python makes the same decisions as the Pine on every one of 20,327 compared bars.
+✅ **Re-run green on a fresh export 2026-09-10, now committed as step 15's golden** — last section.
 ⚠ **READ THE COVERAGE BEFORE QUOTING THAT.** The export is **3.5 months with 7 entries**, and
 **four of the eight refusal codes were never reached at all** — a green gate says the two
 implementations AGREE, never that either is RIGHT, and says nothing about a branch neither entered.
@@ -830,3 +831,14 @@ gate's shared `missing_columns_refusal` (`strategies/python/sos_fade/CLAUDE.md`)
 this file's synthetic export to the twin's own plot titles caught a real misread on its first run**:
 the settings-flags plot wraps across two lines and the reader took one line at a time.
 
+## A fresh export, green, and now COMMITTED as a golden (2026-09-10)
+
+`compare_extreme_leg.py` exits 0 on a fresh export of the twin — 20,288 M5 bars, 2026-05-31 →
+2026-09-10, all 18,271 bars after the gate's derived one-week warm-up matching. It overlaps the
+first export (2026-05-24 → 2026-09-03) and adds a week, so the coverage is the SAME narrow shape:
+**7 entries, refusal codes 2, 4, 5 and 7 never reached.** ✅ Committed at `exports/golden/`, so
+step 15 runs this gate on every clone.
+🔴 **Its two caveats would have vanished under that step's tick**, because the runner keeps only
+a passing gate's 🔴/⚠ lines. The not-the-shipped-strategy qualifier now prints as two ⚠ lines that
+read alone, and the unreached codes as one ⚠ line naming them.
+`test_the_caveats_survive_a_runner_that_keeps_only_warning_lines`, three mutations watched RED.

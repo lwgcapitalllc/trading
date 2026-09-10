@@ -332,6 +332,28 @@ def test_gate_QUALIFIES_its_verdict_when_a_pine_less_cut_ships_on(export, tmp_pa
         assert "NOT a check of the shipped strategy" in out, out
 
 
+def test_the_caveats_survive_a_runner_that_keeps_only_warning_lines(export, tmp_path):
+    """Mutation: drop the ⚠ from either caveat line, or delete the never-reached summary.
+
+    scripts/check_engine_gates.py prints a passing gate's 🔴/⚠ lines and nothing else — the verdict
+    and the coverage table go. So what a green run cannot vouch for has to arrive as ⚠ lines that
+    read alone, or a golden run of this gate shows a bare tick over a strategy it did not check.
+    """
+    r = _run(export, tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    kept = [ln.strip() for ln in r.stdout.splitlines() if ln.strip().startswith(("🔴", "⚠"))]
+    zero = [ln.split()[2] for ln in r.stdout.splitlines()
+            if ln.strip().startswith("refusal code") and "never reached" in ln]
+    # Premises, or the checks below could pass by checking nothing: the synthetic export leaves
+    # at least one refusal code unreached, and the shipped config runs a cut the chart cannot.
+    assert zero, r.stdout
+    assert "PARITY OF THE SHARED LOGIC" in r.stdout, r.stdout
+    summary = [ln for ln in kept if ln.startswith("⚠ NEVER REACHED")]
+    assert summary and all(f" {c}" in summary[0] for c in zero), kept
+    assert any("NOT a check of the shipped strategy" in ln for ln in kept), kept
+    assert any("FEWER trades" in ln for ln in kept), kept
+
+
 def test_gate_gives_an_UNQUALIFIED_verdict_when_nothing_pine_less_ships_on(export, tmp_path,
                                                                           capsys):
     """The other half. A qualifier that is always printed carries no information.

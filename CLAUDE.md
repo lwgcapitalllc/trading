@@ -330,7 +330,16 @@ when price closes past it), while fibonacci's macro half is genuine.
 runnable on every machine forever, and it is worth stating so nobody re-litigates it later.
 
 ⚠ **Engines are DISCOVERED, never listed** — drop a CSV in the golden folder and it is wired in
-with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass. Both paths watched
+with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass.
+
+✅ **STRATEGIES JOINED ON 2026-09-10: SOS Fade and the extreme leg**, from
+`strategies/python/*/exports/golden/`, so the LIVE bots' parity gates now run on every clone too
+(2 of 4 gateable strategies; B-LEG and BOS still need one export each). ⚠ **A folder with two
+compare scripts must NAME its gate in `golden.json`** — SOS Fade has two, and the runner took the
+first alphabetically, right by luck; unnamed ambiguity is now refused. ⚠ **A Pine twin that gains
+a compared column makes its golden REFUSED rather than stale** — the step goes red and the answer
+is a re-export. ⚠ Each manifest says what the chart's settings did NOT exercise, and a passing
+gate's ⚠ lines print under its tick, so read them before quoting a green. Both paths watched
 RED by mutation: reverting the engine's rule turns the gate red through this runner, and raising the
 minimum makes the self-test fire and exit 1.
 
