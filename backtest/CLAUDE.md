@@ -567,7 +567,7 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   27 shared bars in 155,453, one same-direction cluster in 6.5 years. ⚠ **It deliberately does NOT
   net the two into a combined equity curve**: both bots are `self_sizing`, so running them on one
   account changes both bots' sizes from the first shared trade and the result is a third thing
-  neither bot is. That question belongs to the unbuilt allocator (G10); this tool measures how often
+  neither bot is. That question belongs to the allocator (G10); this tool measures how often
   the allocator would have had anything to arbitrate. ⚠ **Re-run it after any entry-logic change on
   either bot** — the output is a fact about today's config. The bar arithmetic is unit-tested
   (`tests/test_overlap_audit.py`), because a slip in it would report "the legs never overlap" exactly
@@ -647,9 +647,13 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   three replays to work out that 157,004 bars is PU Prime and 156,819 is Vantage. **A basis nobody
   wrote down is a number nobody can check.**
 
-  Its first two-frame run (SOS Fade 15m vs the extreme-leg bot 5m) is a fact about those two BOTS rather
-  than about this tool, so it lives in the root `CLAUDE.md` next to the SOS Fade/B-LEG result it belongs
-  beside; story and full numbers in `HISTORY.md`.
+  ⚠ **The account line reads each config's own risk (2026-09-10)** — it printed a typed *10% → 20%*,
+  wrong for the extreme-leg pairing since 2026-09-02. It states the STRATEGY defaults it replayed,
+  never a deployment. Tests use UNEQUAL risks: a matched pair prints the same figure under the
+  typed line, a doubling and the true sum.
+
+  Its results are facts about the BOTS, so they live in root `CLAUDE.md`; story and full numbers in
+  `HISTORY.md`.
 - **`tools/jitter_audit.py`** — how much of a backtest survives a few cents of feed difference?
   Replays a `strategies/python/` bot over the same bars N times with a small random offset added to
   each BAR's four prices, and classifies every jittered trade against the baseline: **flipped** (the

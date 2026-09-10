@@ -347,6 +347,41 @@ def _replay(spec, StrategyCls, cfg, df, warmup: int, capital: float, fast_df):
     return strat
 
 
+def account_risk_lines(name_a, cfg_a, name_b, cfg_b, both: int, same: int) -> list[str]:
+    """What one account carries on the shared bars, read off the configs that RAN.
+
+    🔴 **THIS WAS A TYPED SENTENCE UNTIL 2026-09-10 — "At exec_risk_pct = 10 that is 20%" — AND
+    IT WAS RIGHT FOR ONE PAIRING BY COINCIDENCE.** SOS Fade and B-LEG both default to 10%, so it
+    held there; the extreme leg has defaulted to 5% since 2026-09-02, so the other pairing carries
+    15% on the defaults this tool replays, and it printed 20% anyway. The root `CLAUDE.md` had to
+    carry a warning against this tool's own line. **A doubling shorthand is only right while two
+    legs are matched, and nothing was checking that they were.**
+
+    ⚠ **It reports the STRATEGY defaults this tool replayed, never a deployment.** A live bot's
+    share is set on its account in the Command Center and can differ — SOS Fade defaults to 10%
+    and trades 5% live — so the line says which it is rather than letting a default pass for one.
+    ⚠ A config that declares no per-trade risk prints NO figure: an absent number is not a zero.
+    """
+    ra = getattr(cfg_a, "exec_risk_pct", None)
+    rb = getattr(cfg_b, "exec_risk_pct", None)
+    lines = [
+        "  ⚠ each bot sizes off its OWN equity, so 2 positions carry BOTH bots' per-trade risk."
+    ]
+    if ra is None or rb is None:
+        lines.append(
+            "    per-trade risk is not declared by both configs, so no account figure is printed."
+        )
+        return lines
+    lines.append(
+        f"    At the replayed defaults ({name_a} {ra:g}% + {name_b} {rb:g}% per trade) that is "
+        f"{ra + rb:g}% of the account on {both:,} bars, {same:,} of them on the SAME side."
+    )
+    lines.append(
+        "    ⚠ strategy DEFAULTS, not deployments: a live bot's share is set on its account and can differ."
+    )
+    return lines
+
+
 def _pct(part: int, whole: int) -> str:
     return f"{100.0 * part / whole:.1f}%" if whole else "—"
 
@@ -674,11 +709,8 @@ def main(argv=None) -> int:
     print("\n--- WHAT ONE ACCOUNT WOULD HAVE CARRIED ---")
     print(f"  bars at 1 position   {in_a + in_b - 2 * both:6,d}")
     print(f"  bars at 2 positions  {both:6,d}   (peak concurrent positions: {2 if both else 1})")
-    print("  ⚠ each bot sizes off its OWN equity, so 2 positions is 2x the per-trade risk %.")
-    print(
-        f"    At exec_risk_pct = 10 that is 20% of the account at risk on {both:,} bars,"
-        f" {same:,} of them on the SAME side."
-    )
+    for line in account_risk_lines(args.a, cfg_a, args.b, cfg_b, both, same):
+        print(line)
 
     print("\n--- MONTHLY R CORRELATION ---")
     print(f"  months with any trade: {len(months)}  (both traded in {len(both_traded)})")

@@ -224,13 +224,14 @@ moves.
 
 ### What the stack is expected to do
 
-MEASURED 2026-09-03, 470,995 M5 bars, PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23:
+MEASURED 2026-09-10, 470,995 M5 bars, PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23, against the
+244-trade SOS Fade (current figures: root `CLAUDE.md` → *The extreme-leg bot does not clash*):
 
-- Shared bars: **1,049** — 3.1% of SOS Fade's hold time, 6.0% of the extreme leg's.
+- Shared bars: **1,049** — 2.6% of SOS Fade's hold time, 6.0% of the extreme leg's.
 - Same-side: **ZERO**. All 1,049 are opposite-direction, i.e. partly hedged.
-- Trade pairs touching at all: 6, **none same-direction**. No same-direction entry within four hours
-  in 6.6 years.
-- Monthly R correlation **+0.035** over 79 months — a floor, not a figure.
+- Trade pairs touching at all: 6, **none same-direction**. **ONE** same-direction entry within four
+  hours in 6.6 years (2025-04-07 — an SOS Fade re-entry, stopped out before the extreme leg entered).
+- Monthly R correlation **−0.038** over 79 months — a floor, not a figure.
 - Extreme leg alone: **113 trades / +58.53R**.
 
 ⚠ **Peak concurrent positions is still 2**, so one account carries both legs' risk on those 1,049

@@ -289,7 +289,7 @@ still true. It is still the wrong thing to draw as an indent.
 
 🔴 **AN INDENT READS AS "CHILD OF", AND THIS BOT IS A SIBLING.** It has its own Pine source, its own
 parity gate, its own config, and it runs standalone, in any stack, on any instrument. Measured over
-6.6 years it holds ZERO same-side overlap with SOS Fade, correlates +0.035 month to month, and on one
+6.6 years it holds ZERO same-side overlap with SOS Fade, correlates −0.038 month to month, and on one
 shared account the two refuse each other essentially never.
 
 🔴 **What made it misread is that ONE VISUAL LEVEL WAS CARRYING TWO RELATIONSHIPS.** `loss_recovery`
@@ -481,12 +481,11 @@ runs can differ.
 ⚠ **Asked only when a setup exists, not per bar.** 550 questions over 6.6 years rather than 470,995;
 the classifier walks its whole frame on every call.
 
-✅ **THE CLASH AUDIT WAS RE-RUN THE MOMENT THE CUT WENT ON (2026-09-02), AND THE ANSWER HOLDS.**
+✅ **THE CLASH AUDIT WAS RE-RUN THE MOMENT THE CUT WENT ON (2026-09-02), AND THE ANSWER HELD.**
 Switching it on drops 19 trades, so the previous day's figures stopped describing this bot within a
-day of being written. Re-measured over the same 470,995 PU Prime `XAUUSD.p` M5 bars: **1,049 shared
-bars** with the live SOS Fade bot — 3.5% of SOS Fade's hold time, down from 1,066 / 3.6% — of which **ZERO are
-same-side**, 6 trade pairs touch at all, none same-direction, and no same-direction entry lands
-within four hours of the other's in 6.6 years. Monthly R correlation +0.035 over 79 months.
+day of being written. Current figures live in root `CLAUDE.md` → *The extreme-leg bot does not
+clash with SOS Fade either* — re-measured 2026-09-10: 1,049 shared bars, ZERO same-side, and ONE
+same-direction entry within four hours where there had been none.
 ⚠ **It does not retire the account-level allocator**: peak concurrent positions is still 2.
 
 🔴 **THE RULE THIS OBEYS IS THE ONE THIS REPO KEEPS RE-LEARNING: a cross-cutting measurement is

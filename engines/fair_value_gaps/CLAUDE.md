@@ -407,16 +407,16 @@ the setup arms or after it is over.
 - **B-LEG and BOS were not measured.** B-LEG pins the equal-level exemption off and prices off its own
   frozen band; BOS reads its own anchor leg. Neither inherits this result.
 
-⚠ **The OFF baseline does not match the 200 trades / +164.27R that root `CLAUDE.md` quotes for this
-same window, and the bars are not why** — both bar counts reproduce exactly, and so do the 156
-primaries. The re-entries moved 44 → 88, and the 244-row list was already recorded in
-`backtest/CLAUDE.md` on 2026-09-09. The 2026-09-07 re-entry commits are the likely cause — **not
-bisected.** Every figure in root's overlap audit was taken on the 200-trade bot.
+⚠ **The OFF baseline (244 / +248.59R) is today's bot, and root's old 200 / +164.27R was not.** Two
+SOS Fade defaults moved on 2026-09-06 (scale-ins on, both re-entry triggers); put back, the same
+replay gives exactly 200 / +164.27R. Root's overlap audit was re-measured on the 244-trade bot on
+2026-09-10.
 
 ## The golden export (2026-09-09) — this engine's gate runs on every machine
 
-`exports/golden/VANTAGE_XAUUSD_M15_20155bars.csv` is COMMITTED, and `scripts/check_engine_gates.py` (step 15 of
-`scripts/run_all_tests.sh`) runs the parity gate against it on every clone, in seconds, with no
+`exports/golden/VANTAGE_XAUUSD_M15_20187bars_plain.csv` and `..._zone.csv` are COMMITTED (plain gap
+block, and the entry-band harness — see *The entry-band exemption*), and `scripts/check_engine_gates.py` (step 15 of
+`scripts/run_all_tests.sh`) runs the parity gate against both on every clone, in seconds, with no
 human. `exports/golden/golden.json` carries the warm-up and the provenance.
 
 ✅ **Warm-up 0 — this export matches from row 0.** Where a warm-up IS needed elsewhere it is measured, never guessed, and never raised to bury a late mismatch.
@@ -430,6 +430,6 @@ of gating it.
 file was taken. It cannot see a Pine edit made afterwards — that still needs a fresh export. A green
 step 15 must never stand in for one.
 
-⚠ **Provenance is recorded (Vantage XAUUSD M15, 20155 bars) because a
+⚠ **Provenance is recorded (Vantage XAUUSD M15, 20,187 bars each) because a
 cross-cutting run on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays** — two
 brokers disagree on the bar count for the same window while both look perfectly healthy.

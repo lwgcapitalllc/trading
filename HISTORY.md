@@ -21,6 +21,73 @@ the other one did.
 
 ## Latest
 
+### The overlap audit outlived its inputs a third time (2026-09-10)
+
+Aaron: *"ok you can run the overlap check."* It had been flagged earlier the same day: the fib
+entry-band replay reproduced SOS Fade's bars and its 156 primaries exactly, but not the book root
+`CLAUDE.md` quoted — 244 trades / +248.59R against 200 / +164.27R.
+
+**What moved.** On 2026-09-06 a Command Center commit (`a4b71b8e`, copying a stress test's settings
+onto a demo bot) also moved two SOS Fade defaults on Aaron's call: scale-ins on, and the re-entry
+trigger from the reclaim alone to the gap and the reclaim together. The live bot followed — trigger
+2026-09-07, scale-in 2026-09-08. Re-entries went 44 → 88 and R +164.27 → +248.59. ✅ **Proven by
+replay, not read off the log**: today's code with only those two fields put back gives exactly
+200 / +164.27R (156 + 44), so nothing else committed that week moved the bot.
+
+**What it did to the clash — nothing that matters.** PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23,
+warm-up 1000, `--server PUPrime-Demo`, both bots on their strategy defaults (the live SOS Fade
+instance differs only in risk and cost tier, and replays the same trades to 2.5e-14 R).
+
+| | 2026-09-03 | 2026-09-10 |
+|---|---|---|
+| SOS Fade | 200 / +164.27R (156 + 44) | **244 / +248.59R (156 + 88)** |
+| vs B-LEG: shared bars (same-side) | 46 (0) | 46 (0) |
+| vs B-LEG: % of SOS Fade's hold time | 0.41% | 0.345% |
+| vs B-LEG: pairs / same-direction entries ≤ 4h | 5 / 1 | 5 / 1 |
+| vs B-LEG: monthly r | +0.107 (78 months) | +0.063 (78) |
+| B-LEG | 101 / +20.20R | 101 / +20.07R |
+| vs extreme leg: shared bars (same-side) | 1,049 (0) | 1,049 (0) |
+| vs extreme leg: % of SOS Fade's hold time | 3.13% | 2.62% |
+| vs extreme leg: pairs / same-direction entries ≤ 4h | 6 / 0 | 6 / **1** |
+| vs extreme leg: monthly r | +0.035 (79) | −0.038 (79) |
+| extreme leg | 113 / +58.53R | 113 / +58.53R |
+
+**The one new thing is that cluster, and it is not doubled risk.** 2025-04-07: an SOS Fade primary
+long 13:30–14:30 UTC scratched (+0.01R), its re-entry went long 14:50 and was stopped at 15:30
+(−1.00R), and the extreme leg went long at 17:50 (+2.49R). No shared bar. It is the first time the
+two read the same move inside four hours, and it arrived with the new re-entry trigger.
+
+**B-LEG moved by inheritance, not by anything done to it.** Its settings extend SOS Fade's, so its
+DEFAULT picked up scale-ins on 2026-09-06 while its Pine cannot express one. Replayed both ways: the
+same 101 trades with identical entry, exit and direction; 9 trades' R differs; **+20.07R on, +20.20R
+off.** So scale-ins move no hold, and no clash figure depends on them. Its benched instance pins them
+off (since 2026-09-07, `ca39c72b`).
+
+**The tool carried a typed number too.** *"At exec_risk_pct = 10 that is 20% of the account"* — right
+for SOS Fade/B-LEG on defaults by coincidence (10 + 10), wrong for the extreme-leg pairing since
+2026-09-02 (10 + 5 on the defaults it replays; 5 + 5 live, which is the cap exactly). Root had to
+carry a warning against the tool's own line. It now reads each config's own risk. 🔴 **The first
+test uses unequal risks on purpose**: with matched legs the typed sentence, a doubling of either side
+and the true sum all print the same figure, so a matched case could not have told the fix from the
+bug. Three mutations killed — the typed sentence back, one side doubled, the missing-risk guard
+removed.
+
+🔴 **Why it was stale — the rule failed a third time, in a new shape.** *"A cross-cutting measurement
+is re-run by whoever MOVES the inputs"* was already written down twice. This time the inputs moved
+inside a commit whose subject was a Command Center feature, carrying a MEASURED line about something
+else, so nothing about it read as an entry-logic change. **A sentence cannot catch a change nobody
+recognises as the kind the sentence is about.**
+
+#### What root `CLAUDE.md` said until today (moved here, not deleted)
+
+**The overlap audit — the legs really do trade different parts of the move, RE-MEASURED 2026-09-02 ON A BOT THAT CAN ACTUALLY FIRE ITS RE-ENTRIES.** Over 157,004 M15 bars of **PU Prime `XAUUSD.p`** (2020-01-01 → 2026-08-23) SOS Fade and B-LEG held a position at the same time on **46 bars** — 0.4% of SOS Fade's hold time, 1.9% of B-LEG's — of which **ZERO were same-side** (all 46 are opposite-direction, i.e. partly hedged). SOS Fade **200 trades / +164.27R** (156 primary + **44 re-entries**), B-LEG 101 / +20.20R; 5 trade pairs touch at all and **none is same-direction**, and exactly ONE same-direction entry lands within four hours of the other's in 6.6 years. Monthly R correlation **+0.107** over 78 months, which is a FLOOR rather than a figure — a month only one bot traded contributes a zero for the other and pulls it toward 0.
+🔴 **EVERY EARLIER READING OF THIS AUDIT MEASURED AN SOS Fade THAT NOBODY RUNS, AND THE TOOL WAS THE THING AT FAULT.** `overlap_audit.py` always called the single-frame replay, while SOS Fade's re-entries need a second frame — and that switch is on in the strategy's DEFAULT config *and* in the live bot's own instance config. So it built a config saying re-entries were on, ran a path that cannot fire one, and printed a clean report with a third of SOS Fade's trades missing. **156 trades / +131.77R was never this bot**; it is the primary half of it. ⚠ **Only SOS Fade was affected** — B-LEG sets that switch False and the extreme leg has no such field, both CHECKED rather than assumed. Fix and the refusal that replaced the silent downgrade: `backtest/CLAUDE.md` → `tools/overlap_audit.py`.
+🔴 **RETRACTED 2026-09-03: THIS SAID *SOS Fade HOLDS TWO POSITIONS OF ITS OWN ON 20 BARS* AND IT WAS AN ARTEFACT OF THE AUDIT TOOL, NOT A FACT ABOUT THE BOT.** The tool placed every re-entry by a bar number counted in a DIFFERENT frame, which stacked several of them on the last bars of the series and tripped the tool's own two-position guard. **That guard was right; the reading of it was wrong, and the guard was then rewritten to permit what it had caught.** SOS Fade arms a re-entry only when it is FLAT (`Execution.step_secondary`), so it holds one position at a time — placed by timestamp the count is **zero**, and the refusal is back. **The corollary is the rule worth keeping: a guard firing is a QUESTION, not an answer.** ⚠ **Every clash figure published 2026-09-02 → 2026-09-03 carried this** — shared bars, the direction split, the pairs and both correlations were all re-measured; trade counts and R were never affected, because they come from the replay rather than from the placement. Story: `backtest/CLAUDE.md` → `tools/overlap_audit.py`, and `HISTORY.md` → *The guard that was deleted for being right*. ⚠ **The 2026-08-09 reading (49 bars, ONE same-side) was measured before the dead-market entry filter landed on 2026-08-26 and no longer describes either bot.** ⚠ **Re-run `backtest/tools/overlap_audit.py` after any entry-logic change on either bot**: this is a fact about today's config, not about the setups, and the 2026-08-04 run was already measured on a B-LEG that no longer existed. ⚠ **A cross-cutting measurement is re-run by whoever MOVES the inputs, not by whoever wrote the conclusion** — that is why it was stale. ⚠ **Do not read a bigger overlap number as a regression without reading the direction split under it**: the absolute count went UP 27 → 49 while same-side went DOWN 18 → 1, from one change — and on the 2026-09-01 re-run both fell (49 → 45, 1 → 0). ⚠ **It does not make the two independent** (one structure stream, one instrument), and ⚠ **it does not retire the allocator** — the peak was still 2 concurrent positions, so one account would have carried 2× `exec_risk_pct` on those bars. Full numbers, the jitter audit that followed, and what it changed for bot #2: `HISTORY.md` → *The overlap audit, re-measured*. ⚠ **The broker and symbol are named above because the 2026-09-01 re-run recorded NEITHER, and reproducing it cost three replays** — 156,819 bars is Vantage's count for the same window and 157,004 is PU Prime's, so a re-run on the wrong cache disagrees with every figure here while looking perfectly healthy. Pass `--server` and record it.
+
+**The extreme-leg bot does not clash with SOS Fade either — RE-MEASURED 2026-09-02, and this is the first audit across two different bar frames.** Over 470,995 M5 bars of PU Prime `XAUUSD.p` (2020-01-01 → 2026-08-23) SOS Fade (15m) and the extreme-leg bot (5m) held a position at the same time on **1,049 bars** — 3.1% of SOS Fade's hold time, 6.0% of the extreme leg's — of which **ZERO were same-side** (all 1,049 opposite, i.e. partly hedged). SOS Fade **200 trades / +164.27R** (156 primary + 44 re-entries), extreme leg 113 / +58.53R; 6 trade pairs touch at all, **none** same-direction, and **not one same-direction entry lands within four hours of the other's** in 6.6 years. Monthly R correlation **+0.035** over 79 months — same floor caveat as above.
+✅ **RE-MEASURED AGAIN 2026-09-03 ON A FIXED TOOL, and every headline figure here HELD: 1,049 shared bars, zero same-side, 6 pairs, no same-direction entry within four hours.** Only the correlation moved (+0.011 over 80 months → **+0.035 over 79**), because the monthly bucket was keyed off the same bad bar number. ⚠ **The bar counts held because this audit's grid is the 5-minute frame, where a re-entry's timestamp IS a grid bar open** — the SOS Fade/B-LEG audit, on a 15-minute grid, did move. **Do not read one audit's survival as evidence for the other's.** 🔴 **RE-MEASURED 2026-09-02 WITH SOS Fade'S RE-ENTRIES ACTUALLY FIRING, and the shared bar count did not move at all — 1,049 before and after.** The 44 re-entry trades add hold time without landing on the extreme leg, so the PERCENTAGE fell (3.5% → 3.1%) purely because SOS Fade's own denominator grew. ⚠ **Read that as the two bots being measured on a longer SOS Fade, not as less clash.** Every earlier reading here understated SOS Fade the same way — see the correction under the SOS Fade/B-LEG audit above. 🔴 **THIS PARAGRAPH SAID SOS Fade ALSO HOLDS TWO POSITIONS OF ITS OWN ON 60 BARS. IT DOES NOT AND CANNOT — THAT FIGURE WAS AN ARTEFACT OF THE AUDIT TOOL AND IS RETRACTED (2026-09-03).** The tool was placing every re-entry by a bar number counted in a DIFFERENT frame, which stacked several of them on the last bars of the series; the strategy fills a re-entry only while flat, so it holds one position at a time. Placed correctly the count is **zero**, and the tool refuses again rather than representing two. Story: `backtest/CLAUDE.md` → `tools/overlap_audit.py`. ⚠ **The 2026-09-01 reading (1,066 bars, 132 trades, +57.10R, r=+0.025) went stale in one day** — a market-condition refusal was switched on and it drops 19 trades. Re-run by the session that MOVED the inputs, which is the only reason these figures are current. ⚠ **This is a WEAKER claim than the SOS Fade/B-LEG one, not an equal one, and for a second reason now**: the extreme-leg bot's parity gate covers 3.5 months and 7 entries, and it cannot cover the refusal that produced these very numbers — the chart has no such engine. So the figures describe the Python port, and the shipped form of it is the half no gate reaches. ⚠ **It does not retire the allocator** — peak concurrent positions is still 2, so one account carries BOTH legs' risk on those 1,049 bars, and this bot puts SOS Fade at raised risk for **7.6× longer than B-LEG does** — 3.13% of SOS Fade's hold time against B-LEG's 0.41% (both re-measured 2026-09-03). ⚠ **It read "7×" against the pre-2026-09-02 figures**; both percentages moved when SOS Fade's own hold time grew by its re-entries, so the ratio had to be recomputed rather than carried over. 🔴 **THAT WAS "2× `exec_risk_pct`" UNTIL 2026-09-02 AND THE TWO LEGS NO LONGER RISK THE SAME AMOUNT**: the extreme leg's per-trade risk was moved 1% → **5%** (Aaron's call) while SOS Fade stays at 10%, so the concurrent figure is **15% of one account, not 20%** — and it exceeds the 10% cap either way. ⚠ **The trade lists behind every number in this paragraph are UNCHANGED by that**, because the audit replays each bot off its own equity and the size refusal only tests finite-and-positive; it is the concurrent-RISK arithmetic that moved, nothing else. ⚠ **A doubling shorthand is only ever right while two legs are matched, and nothing was enforcing that** — read each leg's own `exec_risk_pct` before restating this. 🔴 **THAT RATIO DIVIDES THE PERCENTAGES, NEVER THE BAR COUNTS — earlier revisions divided the counts and printed "24×", wrong by 3×.** A bar here is a third of a bar there, so no bar count survives crossing between these two audits. ⚠ **The line that made that mistake was the line carrying the warning against it.** Why the shared time axis is the finer frame's own index rather than a clock: `backtest/CLAUDE.md` → `tools/overlap_audit.py`.
+
+
 ### The tag that would have looked per-strategy without being it (2026-09-02, second pass)
 
 Aaron: *"All strategies should have their named chip on the price chart so that if I stack I see the

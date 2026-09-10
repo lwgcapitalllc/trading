@@ -781,10 +781,10 @@ test rather than as a comment — it goes red the day the Pine gains the feature
 a column, which is exactly when the pin has to come out. Watched RED by mutation.
 
 🔴 **Say the uncovered half plainly: the SHIPPED B-LEG default is scale-in ON, its Pine cannot
-express it, and nothing in this gate reaches it.** Whether this fork should inherit that default is
-an open question — Aaron's 2026-09-06 note names *sos_fade* defaults, and every B-LEG measurement
-on file was taken without scaling. ⚠ `b_leg_demo`'s instance config does not state the setting, so
-it inherits ON, and the live bridge refuses that: as configured the benched bot would not start.
+express it, and nothing in this gate reaches it.** Whether this fork should inherit it is open —
+Aaron's 2026-09-06 call named *sos_fade* defaults. `b_leg_demo` pins it OFF (`ca39c72b`). MEASURED
+2026-09-10 (PU Prime `XAUUSD.p`, 2020 → 2026-08-23): no trade's timing moves — same 101 trades, 9
+R values differ, **+20.07R on, +20.20R off**.
 
 ### Two more columns the encoder was missing
 

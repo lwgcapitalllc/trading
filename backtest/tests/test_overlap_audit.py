@@ -407,3 +407,33 @@ def test_a_bar_OPEN_is_an_exact_hit_and_counts_as_neither():
     grid = oa.Grid(_frame(15, 200, start="2024-01-01 00:00:00"))
     assert grid.unit_ms(int(pd.Timestamp("2024-01-01 10:00:00").value // 1_000_000)) == 40
     assert (grid.inside, grid.misses) == (0, 0)
+
+
+# ── the account line: read off the configs that ran, never typed ───────────────────────────
+
+
+class _Cfg:
+    """A config double carrying only the per-trade risk, or nothing at all."""
+
+    def __init__(self, risk=None):
+        if risk is not None:
+            self.exec_risk_pct = risk
+
+
+def test_the_account_line_ADDS_each_bots_OWN_risk_rather_than_doubling_one():
+    """🔴 Unequal risks ON PURPOSE. With both legs at 10% the old typed sentence, a doubling of
+    either side and the true sum all print 20%, so a matched-leg case cannot tell the fix from
+    the bug it replaces. 10 + 5 is 15 only by adding the two. Watched RED against the typed
+    sentence and against `ra * 2`."""
+    text = "\n".join(
+        oa.account_risk_lines("sos_fade", _Cfg(10.0), "extreme_leg", _Cfg(5.0), 1049, 0)
+    )
+    assert "sos_fade 10% + extreme_leg 5%" in text
+    assert "15% of the account on 1,049 bars" in text
+
+
+def test_a_config_that_declares_NO_risk_prints_no_figure_rather_than_a_zero():
+    """An absent number is not a zero (rule 1). Watched RED with the guard removed."""
+    text = "\n".join(oa.account_risk_lines("a", _Cfg(10.0), "b", _Cfg(), 3, 1))
+    assert "not declared" in text
+    assert "% of the account" not in text
