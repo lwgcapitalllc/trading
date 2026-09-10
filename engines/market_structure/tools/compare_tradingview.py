@@ -45,6 +45,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from gate_common import drop_live_final_bar  # noqa: E402
 from market_structure import Bar, StructureEngine
 
 # px_ columns that carry a PRICE (compared with a float tolerance; may be blank/na).
@@ -250,7 +251,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols, present_optional = _resolve_columns(header)
-    rows = _load_rows(path, cols)
+    rows = drop_live_final_bar(_load_rows(path, cols))
 
     compare_fields = ALL_FIELDS + present_optional
 

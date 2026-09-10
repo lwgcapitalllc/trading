@@ -69,6 +69,7 @@ if str(_ENGINES_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENGINES_ROOT))
 
 from candlesticks import PATTERN_KEYS, CandlestickEngine
+from gate_common import drop_live_final_bar  # noqa: E402
 
 # logical pattern key -> the export column that carries it. Keys are the registry's, so a pattern
 # added to the engine with no column here fails loudly below instead of quietly going unchecked.
@@ -307,7 +308,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols = _resolve_columns(header)
-    rows = _drop_forming_tail(_load_rows(path, cols), cols)
+    rows = drop_live_final_bar(_drop_forming_tail(_load_rows(path, cols), cols))
     if not rows:
         raise SystemExit("ERROR: the export has no usable rows.")
 

@@ -59,6 +59,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from sessions import SessionEngine
+from gate_common import drop_live_final_bar  # noqa: E402
 
 # ── column groups ──
 FLAG_FIELDS = [
@@ -216,7 +217,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols = _resolve_columns(header)
-    rows = _load_rows(path, cols)
+    rows = drop_live_final_bar(_load_rows(path, cols))
 
     bar_seconds = _bar_seconds(rows, cols)
     fields = [f for f in ALL_FIELDS if f not in NYR_FIELDS] if args.skip_nyr else list(ALL_FIELDS)

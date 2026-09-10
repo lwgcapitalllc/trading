@@ -51,6 +51,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from market_structure import Bar, StructureEngine
+from gate_common import drop_live_final_bar  # noqa: E402
 from fibonacci import InternalFib, MacroFib, SniperFib, StructureFib, StructureSnapshot
 
 # Column suffix -> Python level name (see fib_export.pine plot titles). TP4 (-0.270) and TP5
@@ -271,7 +272,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols = _resolve_columns(header)
-    rows = _load_rows(path, cols)
+    rows = drop_live_final_bar(_load_rows(path, cols))
 
     have_sniper = any(cols.get(fld) is not None for fld in SNIPER_FIELDS)
     have_macro = any(cols.get(fld) is not None for fld in MACRO_FIELDS)

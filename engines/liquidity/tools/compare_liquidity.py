@@ -68,6 +68,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from liquidity import LiquidityEngine
+from gate_common import drop_live_final_bar  # noqa: E402
 from liquidity.engine import _key_day, _key_week, _key_h4
 from sessions.engine import _resolve_tz
 
@@ -217,7 +218,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols = _resolve_columns(header)
-    rows = _load_rows(path, cols)
+    rows = drop_live_final_bar(_load_rows(path, cols))
 
     engine = LiquidityEngine(htf_timezone=args.htf_tz, htf_rollover_hours=args.htf_rollover,
                              hide_mitigated_on_new_day=False)

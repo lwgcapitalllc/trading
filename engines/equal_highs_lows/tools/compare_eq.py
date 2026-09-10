@@ -58,6 +58,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from equal_highs_lows import EqualHighsLowsEngine
+from gate_common import drop_live_final_bar  # noqa: E402
 
 # ── column groups ──
 PRICE_FIELDS = (["px_eq_tol", "px_eq_ph", "px_eq_pl", "px_eqh_new", "px_eql_new"]
@@ -182,7 +183,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols = _resolve_columns(header)
-    rows = _load_rows(path, cols)
+    rows = drop_live_final_bar(_load_rows(path, cols))
 
     eng = EqualHighsLowsEngine(pivot_len=args.pivot_len, atr_mult=args.atr_mult, max_levels=args.max_levels)
 

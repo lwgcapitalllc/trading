@@ -58,6 +58,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from gate_common import drop_live_final_bar  # noqa: E402
 from vwap import VwapEngine
 
 PRICE_FIELDS = ["px_vwap"]
@@ -183,7 +184,7 @@ def main(argv=None):
     with open(path, newline="") as f:
         header = next(csv.reader(f))
     cols = _resolve_columns(header)
-    rows = _load_rows(path, cols)
+    rows = drop_live_final_bar(_load_rows(path, cols))
 
     engine = VwapEngine(htf_timezone=args.htf_tz, htf_rollover_hours=args.htf_rollover)
     compared_fields = [f for f in ALL_FIELDS if cols.get(f) is not None]
