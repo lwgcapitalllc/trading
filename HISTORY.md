@@ -70,6 +70,12 @@ so `golden.json` may now key the warm-up per file and `scripts/check_engine_gate
 table. 13 golden exports, all green; three runner mutations red (every file at warm-up 0, the table
 read as one number, the new file removed).
 
+**And one stale note on a live bot.** `extreme_leg_demo`'s config note said *IT IS ON THE BENCH*
+for six days after the bot went live — and the Command Center shows that note on the bot's page.
+Rewritten to state rules only. The live loader drops the note and the runner treats a note-only
+change as cosmetic (no rebuild, no alert), which was read in `algos/live/runner.py` before the file
+was touched; the box's own copy had no local edits to collide with the pull.
+
 ### The overlap audit outlived its inputs a third time (2026-09-10)
 
 Aaron: *"ok you can run the overlap check."* It had been flagged earlier the same day: the fib
