@@ -51,6 +51,14 @@ edits before. Use `git worktree` or check with the user.
 Break the rule the test claims to pin, in the smallest way that is still a real break. Run the
 test. It must fail. Put the code back.
 
+⚠ **Script a batch of Python mutations with `PYTHONDONTWRITEBYTECODE=1`.** Python reuses a
+compiled copy while the source keeps its size and whole-second timestamp, so a mutant restored
+inside the same second at the same length (`7` → `8` → `7`) stays in charge of the NEXT run. On
+2026-09-10 that reported a false SURVIVED, and it can just as easily hand a later mutation a red
+that is not its own. ⚠ **And pytest's exit 5 means no test matched your filter, not that one
+failed** — a driver counting every non-zero exit as red certified a mutation nothing ran against,
+because a test had been renamed under its `-k`. Print the pass/fail line, never just the verdict.
+
 Then answer: **which test caught it?** If a DIFFERENT test caught your mutation than the one
 whose docstring claims it, fix the docstring — do not pick a new mutation. It is not enough to
 know the suite catches a shortcut; you have to know which test does.
