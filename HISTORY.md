@@ -21,6 +21,27 @@ the other one did.
 
 ## Latest
 
+### The export twins stopped being copies (2026-09-10)
+
+Each Pine export twin is its parent strategy — 1,100 to 4,300 lines — with " Export" on the title
+and one block of `plot()` calls on the end. Only the extreme leg's was generated
+(`build_extreme_leg.py`); the other five were kept by hand, so every edit to a parent had to be
+pasted into its twin, and a twin that drifts proves parity against a file nobody trades while its
+gate stays green.
+
+`strategies/tradingview/tools/build_export_twins.py` now builds all six from one rule: the parent,
+its title plus " Export", and its block from `strategies/tradingview/export_blocks/`. **Proven, not
+argued**: before anything was written, each committed twin was checked to be exactly its parent
+plus a block, and the first build came out byte-identical on five. The sixth — the session sweep —
+had kept its parent's title, the only twin that did, and it now follows the rule: one line, no
+exported column moves. The extreme leg's generator writes its parent and calls the shared builder;
+re-run, both its files came out unchanged. `--check` is **step 18** of `scripts/run_all_tests.sh`.
+
+**TESTED:** 6 mutations red, control green before and after — a parent edited without
+regenerating, a block edited without regenerating, the title rule broken, a block pushed past
+Pine's 64-plot cap, a block file removed (its twin is refused as a hand-kept copy), and the
+self-test floor raised.
+
 ### A parity gate passed a file that was not its twin (2026-09-10)
 
 Found while clearing the raw exports out of `engines/`: two docs named

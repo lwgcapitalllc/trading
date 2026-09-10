@@ -383,6 +383,13 @@ the committed CSV was taken from the old one.
 ⚠ **It does not prove the harness is RIGHT**, only that it matches its sources — rule 14 again. What
 proves it right is `compare_fvg.py` going green on a real export.
 
+### Step 18 — the Pine export twins are build artifacts too (2026-09-10)
+
+`strategies/tradingview/tools/build_export_twins.py --check`: each `_export.pine` twin must be its
+parent with " Export" on the title plus its block from `strategies/tradingview/export_blocks/`. 🔴
+**Five of the six twins were kept by hand until this step existed.** Rules:
+`strategies/tradingview/CLAUDE.md`.
+
 ### tools/
 Standalone utilities that belong to no subsystem and are run by hand. One today: `tools/skool-transcript/` — rips course video transcripts and indexes them into `education/`. It has its own CLAUDE.md. ⚠ **Nothing imports it and nothing schedules it**, which is the point — it is a dev-machine tool, not part of any deployable, so it is out of scope for the commit hook's money-path rule and for every parity gate.
 

@@ -33,7 +33,8 @@ strategies/
     ├── smc_session_sweep_strategy.pine + _export           (session sweep)
     ├── realign_strategy.pine, recovery_strategy.pine   (no export twin — see below)
     ├── docs/                (one <family>.md per strategy — the prose lifted out of the Pine)
-    ├── tools/               (build_extreme_leg.py, derive_htf_structure.py)
+    ├── export_blocks/       (each twin's appended plot block — a twin is parent + this)
+    ├── tools/               (build_export_twins.py, build_extreme_leg.py, derive_htf_structure.py)
     └── research/            ← scratch: hand-tested only, no twin, no gate, no port
         ├── london_breakout.pine
         └── ny_orb.pine

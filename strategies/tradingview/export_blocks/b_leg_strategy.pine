@@ -1,0 +1,80 @@
+
+
+// [doc 133] PARITY EXPORT — the B-LEG decision stream as plotted columns  -> docs/b_leg_strategy.md
+
+// Per-bar values computed in functions, so the main body pays one statement each.
+f_bxExits() =>
+    var int _seen = 0
+    float _tp1 = na, float _tp2 = na, float _run = na
+    if strategy.closedtrades > _seen
+        for _xi = _seen to strategy.closedtrades - 1
+            if strategy.closedtrades.exit_bar_index(_xi) == bar_index
+                string _xid = strategy.closedtrades.exit_id(_xi)
+                float  _xpx = strategy.closedtrades.exit_price(_xi)
+                if str.contains(_xid, "TP1")
+                    _tp1 := _xpx
+                else if str.contains(_xid, "TP2")
+                    _tp2 := _xpx
+                else
+                    _run := _xpx                 // L-RUN / S-RUN and any force-close
+        _seen := strategy.closedtrades
+    [_tp1, _tp2, _run]
+
+f_bxTrade() =>
+    float _ep = (strategy.position_size != 0 and strategy.position_size[1] == 0) ? strategy.position_avg_price : na
+    int   _ed = (strategy.position_size > 0 and strategy.position_size[1] <= 0) ? 1 : (strategy.position_size < 0 and strategy.position_size[1] >= 0) ? -1 : 0
+    float _st = strategy.position_size > 0 ? lStop : strategy.position_size < 0 ? sStop : na
+    [_ep, _ed, _st]
+
+[_bxTP1, _bxTP2, _bxRUN] = f_bxExits()
+[_bxEntryPx, _bxEntryDir, _bxStop] = f_bxTrade()
+color _BINV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on chart
+
+// [doc 134] DECISION STREAM (packed — compare_bleg.py unpacks with the same scheme):  -> docs/b_leg_strategy.md
+plot((bLegLongArm ? 1 : 0) + (bLegShortArm ? 2 : 0) + (_bxEntryDir == 1 ? 4 : _bxEntryDir == -1 ? 8 : 0), "px_dec_bits", _BINV, editable = false)
+plot(bLegLongArm ? bLegL_top : bLegShortArm ? bLegS_bot : na, "px_edge", _BINV, editable = false)
+plot(aplusL_stage * 10 + aplusS_stage, "px_stages", _BINV, editable = false)
+plot(_bxStop,     "px_stop",        _BINV, editable = false)
+plot(_bxEntryPx,  "px_entry_price", _BINV, editable = false)
+plot(_bxTP1,      "px_exit_tp1",    _BINV, editable = false)
+plot(_bxTP2,      "px_exit_tp2",    _BINV, editable = false)
+plot(_bxRUN,      "px_exit_run",    _BINV, editable = false)
+plot(closedR,     "px_closed_r",    _BINV, editable = false)
+// [doc 135] The frozen ladder of the OPEN trade. The B LEG computes its own TP1/TP2   -> docs/b_leg_strategy.md
+plot(strategy.position_size > 0 ? lTP1 : strategy.position_size < 0 ? sTP1 : na, "px_tp1", _BINV, editable = false)
+plot(strategy.position_size > 0 ? lTP2 : strategy.position_size < 0 ? sTP2 : na, "px_tp2", _BINV, editable = false)
+
+// [doc 136] B-LEG TRACKER STATE — the whole point of this harness (see the note abov  -> docs/b_leg_strategy.md
+plot((bLegL_on ? 1 : 0) + (bLegL_tap ? 2 : 0) + (bLegS_on ? 4 : 0) + (bLegS_tap ? 8 : 0), "bl_bits", _BINV, editable = false)
+plot(nz(bLegL_bar + 1, 0) * 1000000 + nz(bLegS_bar + 1, 0), "bl_bars", _BINV, editable = false)
+plot(bLegL_top, "bl_l_top", _BINV, editable = false)
+plot(bLegL_bot, "bl_l_bot", _BINV, editable = false)
+plot(bLegL_inv, "bl_l_inv", _BINV, editable = false)
+plot(bLegL_tgt, "bl_l_tgt", _BINV, editable = false)
+plot(bLegS_top, "bl_s_top", _BINV, editable = false)
+plot(bLegS_bot, "bl_s_bot", _BINV, editable = false)
+plot(bLegS_inv, "bl_s_inv", _BINV, editable = false)
+plot(bLegS_tgt, "bl_s_tgt", _BINV, editable = false)
+
+// [doc 137] CONFIG (packed) — the SAME scheme sos_fade_strategy_export.pine uses, so  -> docs/b_leg_strategy.md
+plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0)+(execAplus?16384:0)+(execBLeg?32768:0)+(execFvg50?65536:0), "cfg_bits", _BINV, editable = false)
+plot(4*1000 + (execHtfSource=="Weekly"?0:execHtfSource=="Daily"?1:2)*100 + (execHtfWeekly=="Ignore"?0:execHtfWeekly=="Must agree"?1:execHtfWeekly=="Must not oppose"?2:3)*10 + (execHtfDaily=="Ignore"?0:execHtfDaily=="Must agree"?1:execHtfDaily=="Must not oppose"?2:3), "cfg_strcodes", _BINV, editable = false)
+plot(divExtremeOS + divExtremeOB*1000 + divRsiLen*1000000 + divPivotLen*1000000000 + divValidBars*1000000000000, "cfg_divints", _BINV, editable = false)
+plot(aplusWindow, "cfg_window",   _BINV, editable = false)
+plot(execRiskPct, "cfg_risk_pct", _BINV, editable = false)
+plot((execRunnerTrail=="Fixed step"?0:execRunnerTrail=="Structure (swing)"?1:2)*10 + (execTp2StopMode=="TP1 price"?0:execTp2StopMode=="Breakeven"?1:2), "cfg_exitmode", _BINV, editable = false)
+plot(execStructTrailBufTk, "cfg_struct_buf",  _BINV, editable = false)
+plot(execTrailPct,         "cfg_trail_pct",   _BINV, editable = false)
+plot(execTrailStep,        "cfg_trail_step",  _BINV, editable = false)
+plot(execTp1Pct,           "cfg_tp1_pct",     _BINV, editable = false)
+plot(execTp2Pct,           "cfg_tp2_pct",     _BINV, editable = false)
+plot(execBeBufTk,          "cfg_be_buf",      _BINV, editable = false)
+plot(execSlBufTk,          "cfg_sl_buf",      _BINV, editable = false)
+plot(execBeBandR,          "cfg_scratch_r",   _BINV, editable = false)
+plot(bLegMaxDays,          "cfg_bleg_days",   _BINV, editable = false)
+// [doc 138] TIME STOP (2026-08-05) — the shared exit ladder's clock lever, carried h  -> docs/b_leg_strategy.md
+plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _BINV, editable = false)
+plot(execTimeStopHrs,      "cfg_time_stop_hrs", _BINV, editable = false)
+
+// [doc 139] EQ/FVG COUPLING (2026-08-06) — `eqExemptFvg`, a gap on an active EQH/EQL  -> docs/b_leg_strategy.md
+plot(eqExemptFvg ? 1 : 0,  "cfg_eq_exempt", _BINV, editable = false)

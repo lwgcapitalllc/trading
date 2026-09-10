@@ -1,0 +1,100 @@
+
+// [doc 50] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// [doc 51] ── Bar classification ──────────────────────────────────────────────────  -> docs/h4_sweep_strategy.md
+float _xSeq = (newLiqBar ? 1 : 0) + (armedNow ? 4 : 0) + (hTrigBar == bar_index ? 8 : 0) +
+  ((tookShort or tookLong) ? 16 : 0) +
+  (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 32 : 0) +
+  (setupDir != 0 and (na(setupDir[1]) or setupDir[1] == 0) ? 2 : 0)
+
+// ── The refusal record, on the trigger bar only ─────────────────────────────
+bool  _onTrig    = hTrigBar == bar_index
+float _xBlk      = _onTrig ? hTrigCode : na
+float _xCandPx   = _onTrig ? hTrigPx   : na
+float _xCandStop = _onTrig ? hTrigStop : na
+
+// ── The live setup, on any bar it exists ────────────────────────────────────
+float _xSetupDir = setupDir  == 0 ? na : setupDir
+float _xTradeDir = ccTradeDir == 0 ? na : ccTradeDir
+float _xCcCode   = ccCode    == 0 ? na : ccCode
+
+// ── Excursion, in R, excluding the fill bar ─────────────────────────────────
+var float _xMfe = na
+var float _xMae = na
+float _x1r = na(tEntry) or na(tStop) ? na : math.abs(tEntry - tStop)
+if tookShort or tookLong
+    _xMfe := 0.0
+    _xMae := 0.0
+if strategy.position_size != 0 and bar_index > tBar and not na(_x1r) and _x1r > 0
+    _xMfe := math.max(nz(_xMfe, 0.0), (tDir > 0 ? high - tEntry : tEntry - low) / _x1r)
+    _xMae := math.min(nz(_xMae, 0.0), (tDir > 0 ? low  - tEntry : tEntry - high) / _x1r)
+
+// ── Trade columns, on the bars they mean something ──────────────────────────
+bool  _onFill = tookShort or tookLong
+float _xFill  = _onFill ? tEntry : na
+float _xRisk  = _onFill ? _x1r   : na
+float _xStop  = _onFill ? tStop  : na
+float _xTp1   = _onFill ? tTp1   : na
+float _xLive  = strategy.position_size != 0 ? curStop : na
+float _xStage = strategy.position_size != 0 or not na(closedR) ? tStage : na
+float _xMfeC  = strategy.position_size != 0 or not na(closedR) ? _xMfe : na
+float _xMaeC  = strategy.position_size != 0 or not na(closedR) ? _xMae : na
+
+// [doc 52] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
+plot(_xSeq,        "px_seq",        _INV, editable = false)
+plot(lvlHi,        "px_lvl_hi",     _INV, editable = false)   // previous liquidity candle's high
+plot(lvlLo,        "px_lvl_lo",     _INV, editable = false)   // …and its low
+plot(_xSetupDir,   "px_setup_dir",  _INV, editable = false)   // -1 short (high taken) · +1 long
+plot(ccLine,       "px_cc_line",    _INV, editable = false)   // the trigger line — the pattern's close
+plot(ccStop,       "px_cc_stop",    _INV, editable = false)   // the pattern's extreme — the stop anchor
+plot(_xCcCode,     "px_cc_code",    _INV, editable = false)   // which pattern armed it (see f_patName)
+plot(_xTradeDir,   "px_trade_dir",  _INV, editable = false)   // the ORDER's side — flips with invertTrade
+plot(_xBlk,        "px_blk",        _INV, editable = false)   // 0 taken · 1-4 refused, see header
+plot(_xCandPx,     "px_cand_entry", _INV, editable = false)   // set for TAKEN and REFUSED alike
+plot(_xCandStop,   "px_cand_stop",  _INV, editable = false)   // …and the stop it would have carried
+
+plot(_xFill,       "px_fill",       _INV, editable = false)   // fill price, on the fill bar only
+plot(_xRisk,       "px_1r",         _INV, editable = false)   // 1R in PRICE, so R and dollars reconcile
+plot(_xStop,       "px_stop",       _INV, editable = false)   // the FROZEN opening stop
+plot(_xTp1,        "px_tp1",        _INV, editable = false)
+plot(_xLive,       "px_cur_stop",   _INV, editable = false)   // the LIVE stop — watch the ratchet climb
+plot(_xStage,      "px_stage",      _INV, editable = false)   // 0 opening stop · 1 TP1 touched
+plot(_xMfeC,       "px_mfe_r",      _INV, editable = false)   // running favourable excursion, in R
+plot(_xMaeC,       "px_mae_r",      _INV, editable = false)   // running adverse excursion, in R (negative)
+plot(closedR,      "px_closed_r",   _INV, editable = false)   // the trade's own R, on its close bar
+plot(strategy.equity, "px_equity",  _INV, editable = false)
+plot(cAtr,         "px_atr_conf",   _INV, editable = false)   // ATR on the CONFIRMATION timeframe
+plot(useEma ? emaVal : na, "px_ema", _INV, editable = false)
+plot(volume,       "px_volume",     _INV, editable = false)   // plotted HERE — see the header gotcha
+
+// [doc 53] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
+plot((reqSweep ? 1 : 0) + (entryAtConf ? 2 : 0) + (confLive ? 4 : 0) + (invertTrade ? 8 : 0) +
+  (useEma ? 16 : 0), "cfg_bits", _INV, editable = false)
+
+// [doc 54] The fifteen pattern toggles, packed in the order they are declared. Kept  -> docs/h4_sweep_strategy.md
+plot((patBearSwpEng ? 1 : 0) + (patBearHarami ? 2 : 0) + (patBearEng ? 4 : 0) +
+  (patInvHammer ? 8 : 0) + (patBearDoji ? 16 : 0) + (patHangingMan ? 32 : 0) +
+  (patEveningStar ? 64 : 0) + (patShootStar ? 128 : 0) + (patBearKick ? 256 : 0) +
+  (patBullSwpEng ? 512 : 0) + (patBullHarami ? 1024 : 0) + (patBullEng ? 2048 : 0) +
+  (patHammer ? 4096 : 0) + (patBullDoji ? 8192 : 0) + (patMornStar ? 16384 : 0) +
+  (patPiercing ? 32768 : 0) + (patBullBelt ? 65536 : 0) + (patBullKick ? 131072 : 0),
+  "cfg_pat_bits", _INV, editable = false)
+
+plot(dojiSize,     "cfg_doji_size",   _INV, editable = false)
+plot(sizeMode == "Risk % of equity" ? 0 : 1, "cfg_size_mode", _INV, editable = false)
+plot(fixedQty,     "cfg_fixed_qty",   _INV, editable = false)
+plot(riskPct,      "cfg_risk_pct",    _INV, editable = false)
+plot(tp1R,         "cfg_tp1_r",       _INV, editable = false)
+plot(tp1Pct,       "cfg_tp1_pct",     _INV, editable = false)
+plot(beBufTk,      "cfg_be_buf",      _INV, editable = false)
+plot(trailPct,     "cfg_trail_pct",   _INV, editable = false)
+plot(slMode == "Pattern extreme" ? 0 : 1, "cfg_sl_mode", _INV, editable = false)
+plot(atrLen,       "cfg_atr_len",     _INV, editable = false)
+plot(slMult,       "cfg_sl_mult",     _INV, editable = false)
+plot(stopBufTk,    "cfg_stop_buf",    _INV, editable = false)
+plot(minStopPct,   "cfg_min_stop_pct", _INV, editable = false)
+plot(prevDir == "Any" ? 0 : prevDir == "Ran into the level" ? 1 : 2, "cfg_prev_dir", _INV, editable = false)
+plot(emaLen,       "cfg_ema_len",     _INV, editable = false)
+plot(maxTrigPct,   "cfg_max_trig_pct", _INV, editable = false)

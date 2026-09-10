@@ -18,6 +18,17 @@ Two hand-tested Pine ideas with no panel contract, no export twin, no parity gat
 port. A new strategy starts there and moves up here when it earns a twin. ⚠ **Read the folder, not
 the filename** — this is the same mistake the declaration rule already exists to stop.
 
+## 🔴 The export twins are GENERATED — edit the parent or its block, never the twin (2026-09-10)
+
+`<name>_export.pine` = `<name>.pine` with " Export" on its title + `export_blocks/<name>.pine`, all
+six built by `tools/build_export_twins.py` and checked by **step 18** of `scripts/run_all_tests.sh`
+(`--check` regenerates and diffs). 🔴 **Five of the six were kept BY HAND until then**, and a twin
+that drifts proves parity against a file nobody trades while its gate stays green. ⚠ The first
+build was byte-identical on five; the session sweep's twin had kept its parent's title and now
+follows the one rule (one line, no column moves). ⚠ A `_export.pine` with no block file is REFUSED
+as a hand-kept copy, and a twin over Pine's 64-plot cap is refused before it can fail on paste.
+⚠ `tools/build_extreme_leg.py` still writes the extreme leg's parent, then calls the shared builder.
+
 ⚠ **Every `../` link in this file was repointed in that move and each was checked to resolve.** The
 one exception is `m15_playbook.pine`, which is dead on purpose — the file was deleted on
 2026-08-15 and the sentence around the link says so.
@@ -282,9 +293,9 @@ file is wrong by a different number of hours on a different instrument.
 `tools/build_extreme_leg.py` now writes both files from ONE body: the strategy, and
 `extreme_leg_strategy_export.pine`, which is the same body with a different title and 62
 `plot()` columns appended. The build asserts the two bodies are byte-identical apart from that, and
-asserts the column count against Pine's 64-plot ceiling. **Every other twin in this directory is
-kept by hand, and a twin that has drifted from its parent proves parity against a file nobody
-trades.** ⚠ **Edit the generator, never either `.pine`.**
+asserts the column count against Pine's 64-plot ceiling. **It was the only generated twin here
+until 2026-09-10**, when the shared builder took over all six (see the top of this file). ⚠ **Edit
+the generator or `export_blocks/extreme_leg_strategy.pine`, never either `.pine`.**
 
 🔴 **THIS FILE TOOK EVERY LIQUIDITY LEVEL ON A WICK, AND ITS OWN PARENT DOES NOT (found by the
 first real parity run, 2026-09-02, fixed the same day).** The sweep tracker used `high > level` /

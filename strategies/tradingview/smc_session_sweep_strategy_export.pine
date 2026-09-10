@@ -2,7 +2,7 @@
 //@version=6
 // [doc 1] SMC SESSION SWEEP STRATEGY — five-step session-sweep continuation model,  -> docs/smc_session_sweep_strategy.md
 
-strategy("SMC Session Sweep Strategy", overlay = true, pyramiding = 0,
+strategy("SMC Session Sweep Strategy Export", overlay = true, pyramiding = 0,
   initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
   margin_long = 0.2, margin_short = 0.2, slippage = 0,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 2000)

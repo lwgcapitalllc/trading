@@ -1,0 +1,106 @@
+
+
+// [doc 162] PARITY EXPORT — per-bar DECISION STREAM  (for compare_strategy.py)  -> docs/sos_fade_strategy.md
+
+// Per-bar values computed in functions (keeps the main body under the CE10295 cap).
+f_pxExits() =>
+    var int _seen = 0
+    float _tp1 = na, float _tp2 = na, float _run = na
+    if strategy.closedtrades > _seen
+        for _xi = _seen to strategy.closedtrades - 1
+            if strategy.closedtrades.exit_bar_index(_xi) == bar_index
+                string _xid = strategy.closedtrades.exit_id(_xi)
+                float  _xpx = strategy.closedtrades.exit_price(_xi)
+                if str.contains(_xid, "TP1")
+                    _tp1 := _xpx
+                else if str.contains(_xid, "TP2")
+                    _tp2 := _xpx
+                else
+                    _run := _xpx                 // L-RUN / S-RUN and any force-close
+        _seen := strategy.closedtrades
+    [_tp1, _tp2, _run]
+
+f_pxTrade() =>
+    float _ep = (strategy.position_size != 0 and strategy.position_size[1] == 0) ? strategy.position_avg_price : na
+    int   _ed = (strategy.position_size > 0 and strategy.position_size[1] <= 0) ? 1 : (strategy.position_size < 0 and strategy.position_size[1] >= 0) ? -1 : 0
+    float _st = strategy.position_size > 0 ? lStop : strategy.position_size < 0 ? sStop : na
+    [_ep, _ed, _st]
+
+[_exTP1, _exTP2, _exRUN] = f_pxExits()
+[_entryPx, _entryDir, _stop] = f_pxTrade()
+color _INV = color.new(color.gray, 100)   // transparent — present in the export, invisible on chart
+
+// [doc 163] DECISION STREAM (packed — compare_strategy.py unpacks with the same sche  -> docs/sos_fade_strategy.md
+plot((longArmed ? 1 : 0) + (shortArmed ? 2 : 0) + (longVetoA ? 4 : 0) + (shortVetoA ? 8 : 0) + (_entryDir == 1 ? 16 : _entryDir == -1 ? 32 : 0), "px_dec_bits", _INV, editable = false)
+plot(aplusL_stage * 10 + aplusS_stage, "px_stages", _INV, editable = false)
+plot(na(longEdge) ? shortEdge : longEdge, "px_edge", _INV, editable = false)
+plot(_stop,     "px_stop",        _INV, editable = false)
+plot(_entryPx,  "px_entry_price", _INV, editable = false)
+plot(_exTP1,    "px_exit_tp1",    _INV, editable = false)
+plot(_exTP2,    "px_exit_tp2",    _INV, editable = false)
+plot(_exRUN,    "px_exit_run",    _INV, editable = false)
+plot(closedR,   "px_closed_r",    _INV, editable = false)
+
+// [doc 164] BLOCKED TRADES (packed) — the setups that were ready to rest a limit and  -> docs/sos_fade_strategy.md
+plot((lBlkReady ? lBlkCode : 0) + (sBlkReady ? sBlkCode : 0) * 10, "px_block", _INV, editable = false)
+
+// [doc 165] CONFIG (packed). cfg_bits packs 16 booleans (4096 = execConfSZ, 2026-07-  -> docs/sos_fade_strategy.md
+plot((execLongs?1:0)+(execShorts?2:0)+(execArmSweep?4:0)+(execArmDiv?8:0)+(execReqFVG?16:0)+(execFvgDeepOnly?32:0)+(execRespectVeto?64:0)+(execCloseOppSOS?128:0)+(execHtfExhaustOnly?256:0)+(execNoLateDay?512:0)+(showDiv?1024:0)+(divVeto?2048:0)+(execConfSZ?4096:0)+(execDeepFib?8192:0)+(execAplus?16384:0)+(execBLeg?32768:0)+(execFibOverlap?131072:0)+(execFibDeepEdge?262144:0)+(execFibNearest?524288:0)+(execFvgPreZone?1048576:0)+(execSlDeep?2097152:0), "cfg_bits", _INV, editable = false)
+plot((execSlLevel=="0.618"?0:execSlLevel=="0.702"?1:execSlLevel=="0.786"?2:execSlLevel=="0.886"?3:4)*1000 + (execHtfSource=="Weekly"?0:execHtfSource=="Daily"?1:2)*100 + (execHtfWeekly=="Ignore"?0:execHtfWeekly=="Must agree"?1:execHtfWeekly=="Must not oppose"?2:3)*10 + (execHtfDaily=="Ignore"?0:execHtfDaily=="Must agree"?1:execHtfDaily=="Must not oppose"?2:3), "cfg_strcodes", _INV, editable = false)
+plot(divExtremeOS + divExtremeOB*1000 + divRsiLen*1000000 + divPivotLen*1000000000 + divValidBars*1000000000000, "cfg_divints", _INV, editable = false)
+plot(aplusWindow, "cfg_window",   _INV, editable = false)
+plot(execRiskPct, "cfg_risk_pct", _INV, editable = false)
+// [doc 166] EXIT LADDER — the levers that decide where the stop and the partials sit  -> docs/sos_fade_strategy.md
+plot((execRunnerTrail=="Fixed step"?0:execRunnerTrail=="Structure (swing)"?1:2)*10 + (execTp2StopMode=="TP1 price"?0:execTp2StopMode=="Breakeven"?1:2), "cfg_exitmode", _INV, editable = false)
+plot(execStructTrailBufTk, "cfg_struct_buf",  _INV, editable = false)
+plot(execTrailPct,         "cfg_trail_pct",   _INV, editable = false)
+plot(execTrailStep,        "cfg_trail_step",  _INV, editable = false)
+plot(execTp1Pct,           "cfg_tp1_pct",     _INV, editable = false)
+plot(execTp2Pct,           "cfg_tp2_pct",     _INV, editable = false)
+plot(execBeBufTk,          "cfg_be_buf",      _INV, editable = false)
+plot(execSlBufTk,          "cfg_sl_buf",      _INV, editable = false)
+plot(execBeBandR,          "cfg_scratch_r",   _INV, editable = false)
+// [doc 167] MINIMUM STOP DISTANCE (2026-07-30) — an ENTRY filter, so it is deliberat  -> docs/sos_fade_strategy.md
+plot((execMinStopMode=="Off"?0:execMinStopMode=="% of price"?1:execMinStopMode=="Fixed $"?2:3), "cfg_min_stop", _INV, editable = false)
+plot(execMinStopVal,       "cfg_min_stop_val", _INV, editable = false)
+plot(execMinAtrPct,        "cfg_min_atr", _INV, editable = false)
+// [doc 168] TIME STOP (2026-08-05) — an EXIT lever, but kept out of cfg_exitmode for  -> docs/sos_fade_strategy.md
+plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _INV, editable = false)
+plot(execTimeStopHrs,      "cfg_time_stop_hrs", _INV, editable = false)
+
+// [doc 169] NO-FVG ARM GATE (2026-08-10) — `execNoGapArm`. It gates the FALLBACK ent  -> docs/sos_fade_strategy.md
+plot((execNoGapArm=="Any"?0:1), "cfg_nogap_arm", _INV, editable = false)
+
+// [doc 170] EQ/FVG COUPLING (2026-08-06) — `eqExemptFvg`. A gap sitting on an active  -> docs/sos_fade_strategy.md
+plot(eqExemptFvg ? 1 : 0,  "cfg_eq_exempt", _INV, editable = false)
+
+// [doc 179] SCALE-IN (2026-08-17) — four columns, because a trade-affecting input with no  -> docs/sos_fade_strategy.md
+plot(execScaleIn ? 1 : 0,                        "cfg_scale_in",   _INV, editable = false)
+plot(execScaleMode == "Trail" ? 0 : 1,           "cfg_scale_mode", _INV, editable = false)
+plot(execScaleAdds,                              "cfg_scale_adds", _INV, editable = false)
+plot(execScaleCapX,                              "cfg_scale_cap",  _INV, editable = false)
+// [doc 183] ...and a FIFTH, for where the adds bank. Same reason as the four above:
+// a trade-affecting input with no cfg_ column is invisible to compare_strategy.py BY
+// CONSTRUCTION -- the gate does not go quiet, it goes WRONG, comparing two runs it
+// believes are configured the same.
+plot(execScaleTpMode == "Ride" ? 0 : execScaleTpMode == "Prev week H/L" ? 1 : execScaleTpMode == "Prev day H/L" ? 2 : 3, "cfg_scale_tp", _INV, editable = false)
+
+// [doc 171] DIAGNOSTIC (temporary — pins the SOS Fade Stage-1 arming gap vs the Python bot  -> docs/sos_fade_strategy.md
+_dbgSslCode = recentSSL == "H4 Low" ? 1 : recentSSL == "Day Low" ? 2 : recentSSL == "Asia Low" ? 3 : recentSSL == "Ldn Low" ? 4 : recentSSL == "NY Low" ? 5 : 0
+_dbgBslCode = recentBSL == "H4 High" ? 1 : recentBSL == "Day High" ? 2 : recentBSL == "Asia High" ? 3 : recentBSL == "Ldn High" ? 4 : recentBSL == "NY High" ? 5 : 0
+plot((recentSSL_bar + 1) * 1000000 + (recentBSL_bar + 1), "dbg_recent_bars", _INV, editable = false)
+plot(_dbgSslCode * 10 + _dbgBslCode,                       "dbg_recent_src",  _INV, editable = false)
+plot((newSweepL?1:0)+(newSweepS?2:0)+(dailySweepTooOldL?4:0)+(dailySweepTooOldS?8:0)+(sessionGapBar?16:0), "dbg_sweep_bits", _INV, editable = false)
+plot((na(aplusL_sweepBar)?0:aplusL_sweepBar+1) * 1000000 + (na(aplusL_sosBar)?0:aplusL_sosBar+1), "dbg_armL_bars", _INV, editable = false)
+plot((na(aplusS_sweepBar)?0:aplusS_sweepBar+1) * 1000000 + (na(aplusS_sosBar)?0:aplusS_sosBar+1), "dbg_armS_bars", _INV, editable = false)
+
+// [doc 172] DIVERGENCE INTERNALS (temporary — the arm gap above traces to a bear div  -> docs/sos_fade_strategy.md
+plot((nz(lastBullDivBar, -1) + 1) * 1000000 + (nz(lastBearDivBar, -1) + 1), "dbg_div_bars", _INV, editable = false)
+plot(divPhRsi,       "dbg_div_ph",     _INV, editable = false)
+plot(divPrevRsiHigh, "dbg_div_prevhi", _INV, editable = false)
+
+// [doc 173] FIB LIVE-ANCHOR (temporary — an arm gap traces to the fib entry band; th  -> docs/sos_fade_strategy.md
+plot(fibo_ash, "dbg_fib_ash", _INV, editable = false)
+plot(fibo_asl, "dbg_fib_asl", _INV, editable = false)
+plot(fiboP2,   "dbg_fib_p2",  _INV, editable = false)
+plot(fiboP6,   "dbg_fib_p6",  _INV, editable = false)

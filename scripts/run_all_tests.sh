@@ -73,7 +73,7 @@ echo ""
 # `sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
 # else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
 # conversation, and the lever is coverage rather than scheduling.
-echo "  [1/17] engines / backtest / algos / strategies / smart-money ..."
+echo "  [1/18] engines / backtest / algos / strategies / smart-money ..."
 if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q $PYTEST_PARALLEL; then
   pass "root suite"
 else
@@ -85,7 +85,7 @@ echo ""
 # ~45s across 12 cores, 1,051 tests. MUST be run from its own directory: its pytest.ini carries the
 # `-m "not integration"` interlock that keeps the destructive live-VPS suite deselected, and a
 # `-m` from anywhere else would replace it.
-echo "  [2/17] command-center backend ..."
+echo "  [2/18] command-center backend ..."
 if (cd command-center/backend && ./.venv/bin/python -m pytest -q $PYTEST_PARALLEL); then
   pass "backend suite"
 else
@@ -101,7 +101,7 @@ echo ""
 # gate takes the half that needs nothing running — `tsc`, which is the check that would actually
 # have caught a broken build — and the browser tests stay a deliberate `./start.sh` then
 # `npm test` in `command-center/frontend`.
-echo "  [3/17] frontend typecheck ..."
+echo "  [3/18] frontend typecheck ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && npx --no-install tsc --noEmit); then
     pass "frontend typecheck (tsc --noEmit)"
@@ -122,7 +122,7 @@ echo ""
 # under it, deploying a strategy or rewriting a broker account row. It is in the suite because
 # a check nobody runs is not a check — and because the guard is a DENY-list, so a new live route
 # is allowed until somebody adds it here.
-echo "  [4/17] browser guard ..."
+echo "  [4/18] browser guard ..."
 if command -v node >/dev/null 2>&1; then
   if node .claude/mcp/check_browser_guard.js; then
     pass "browser guard (34 cases, refusals and allowances)"
@@ -140,7 +140,7 @@ echo ""
 # Claude is given instead of an open SSH prompt. This asserts the dangerous forms are still
 # absent from that menu, that a guarded operation refuses BEFORE touching the network, and
 # that an unreachable Command Center reads as "cannot ask" rather than as "the bot is stopped".
-echo "  [5/17] trading-box server ..."
+echo "  [5/18] trading-box server ..."
 if "$PYTHON" .claude/mcp/check_tradingbox.py; then
   pass "trading-box server (menu, refusals, cannot-ask)"
 else
@@ -156,7 +156,7 @@ echo ""
 # and silence is indistinguishable from "checked". Both halves are asserted here: the
 # reminder before an Edit/Write, and the after-the-fact size check that catches a file
 # rewritten by any other means.
-echo "  [6/17] documentation-size guard ..."
+echo "  [6/18] documentation-size guard ..."
 if "$PYTHON" .claude/hooks/check_guard.py; then
   pass "documentation-size guard (21 cases, warnings and silences)"
 else
@@ -170,7 +170,7 @@ echo ""
 # measured the same way — rule 11, broken four times in this app. The check that matters most
 # is the FIRST one: it parses `BacktestRunRequest` out of models.py, so adding an input to a
 # backtest goes red here until somebody decides whether it belongs to the measurement basis.
-echo "  [7/17] lab server ..."
+echo "  [7/18] lab server ..."
 if "$PYTHON" .claude/mcp/check_lab.py; then
   pass "lab server (basis contract, per-field refusals)"
 else
@@ -188,7 +188,7 @@ echo ""
 # ⚠ It is here and not in Playwright because a trade annotation is painted into a canvas and has
 # no element to assert on: the browser suite can only measure pixels, and it needs the app up.
 # These rules are arithmetic, so they run with nothing running.
-echo "  [8/17] trade-overlay geometry ..."
+echo "  [8/18] trade-overlay geometry ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_trade_geometry.mjs); then
     pass "trade geometry (26 cases, adverse band + exit marker)"
@@ -212,7 +212,7 @@ echo ""
 # `frontend/tests/fixtures/param-conditions.json`; `backend/tests/test_param_gates.py` drives the
 # python one over the same file, in step 2. A shape one side learns and the other does not fails
 # on the side that did not learn it — which is how the empty-condition disagreement was found.
-echo "  [9/17] parameter-condition evaluator ..."
+echo "  [9/18] parameter-condition evaluator ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_param_conditions.mjs); then
     pass "param conditions (28 cases, shared with the python evaluator)"
@@ -230,7 +230,7 @@ fi
 #
 # ⚠ A wrong scale here is not a broken chart. It is a plausible dollar figure with nothing on screen
 # to say it is wrong, on two pages at once.
-echo "  [10/17] period-window rebase ..."
+echo "  [10/18] period-window rebase ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_period_window.mjs); then
     pass "period window (25 cases, filter bounds + the rebase constant)"
@@ -251,7 +251,7 @@ fi
 # live terminal for exactly that reason — the two rows an invented one would have tidied away
 # (a disabled `EURUSD` beside a tradable `EURUSD.p`, and `TSLA` / `TSLAUSD` / `TSLA.24H`) are the
 # two that decide the tie-breaks, and without them a whole ranking tier was dead in green.
-echo "  [11/17] instrument search + recents ..."
+echo "  [11/18] instrument search + recents ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_instrument_search.mjs); then
     pass "instrument search (31 cases, ranking + per-broker recents)"
@@ -271,7 +271,7 @@ fi
 # underneath. The same pass found three more, live, in pages nobody had suspected. This is rule 7
 # arriving in CSS: a class name is a CLAIM about a definition somewhere else, and nothing was
 # checking the definition was there.
-echo "  [12/17] theme colour tokens ..."
+echo "  [12/18] theme colour tokens ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && node scripts/check_theme_tokens.mjs); then
     pass "theme colour tokens (every bg-/text-/border- colour resolves)"
@@ -292,7 +292,7 @@ echo ""
 # 15 refusals, 13 silences and one command it cannot parse — because a guard that refused an
 # ordinary commit would be switched off within a day, and a guard that refused nothing would
 # read as protection while providing none.
-echo "  [13/17] git-hook bypass guard ..."
+echo "  [13/18] git-hook bypass guard ..."
 if "$PYTHON" .claude/hooks/check_no_verify.py; then
   pass "git-hook bypass guard (29 cases, refusals and silences)"
 else
@@ -312,7 +312,7 @@ fi
 # ⚠ It compares each copy against the INDICATOR rather than against a value typed into the
 # checker, so a deliberate future rule change needs no edit here - move the indicator, move
 # the copies, this stays green.
-echo "  [14/17] pine block drift (copies vs the indicator) ..."
+echo "  [14/18] pine block drift (copies vs the indicator) ..."
 if "$PYTHON" scripts/check_pine_blocks.py; then
   pass "pine block drift (7 rules across 11 Pine copies)"
 else
@@ -333,7 +333,7 @@ fi
 #   A green run here says nothing about a Pine change made after the golden file was taken.
 # ⚠ Engines are DISCOVERED (engines/*/exports/golden/*.csv), never listed, and finding zero
 #   is a FAILURE - a runner that quietly finds nothing reads as coverage.
-echo "  [15/17] engine parity gates (golden exports) ..."
+echo "  [15/18] engine parity gates (golden exports) ..."
 if "$PYTHON" scripts/check_engine_gates.py; then
   pass "engine parity gates vs golden exports (PARTIAL coverage - the step prints the fraction)"
 else
@@ -351,7 +351,7 @@ fi
 # ⚠ A red here means the harness is validating Python against a Pine block the repo no longer has.
 #   Regenerate, then RE-EXPORT before trusting its gate: a regenerated harness is a changed harness,
 #   and the committed CSV was taken from the old one.
-echo "  [16/17] generated pine harness in sync with its sources ..."
+echo "  [16/18] generated pine harness in sync with its sources ..."
 if "$PYTHON" scripts/build_fvg_zone_harness.py --check; then
   pass "fvg_zone_export.pine matches fib_export.pine + fvg_export.pine"
 else
@@ -369,11 +369,26 @@ fi
 # ⚠ Clearing it means MEASURING - `overlap_audit.py ... --record` rewrites a pair's entry from a
 #   finished run, and the red output prints the exact command. Editing overlap_baseline.json by
 #   hand turns this step into decoration.
-echo "  [17/17] overlap audit still measured on today's bot settings ..."
+echo "  [17/18] overlap audit still measured on today's bot settings ..."
 if "$PYTHON" backtest/tools/overlap_audit.py --check-baseline; then
   pass "overlap audit baseline matches today's bot settings"
 else
   fail "overlap audit is STALE - a bot's settings moved since its clash figures were measured"
+fi
+
+# ── 18. Every Pine export twin is still its parent plus its export block ─────
+# 🔴 A TWIN IS HALF OF A PARITY GATE AND FIVE OF THE SIX WERE KEPT BY HAND - every edit to a strategy
+# of 1,100-4,300 lines had to be pasted into its twin, and a twin that drifts proves parity against
+# a file nobody trades while the gate stays green. They are GENERATED now: the parent with " Export"
+# on its title plus its own block from strategies/tradingview/export_blocks/. Edit the parent or the
+# block, never the twin, then run strategies/tradingview/tools/build_export_twins.py.
+# ⚠ A red here means a twin no longer matches the strategy it claims to instrument. Regenerate it,
+#   and read any export taken off the old twin as describing a file that has since moved.
+echo "  [18/18] pine export twins match their parents ..."
+if "$PYTHON" strategies/tradingview/tools/build_export_twins.py --check; then
+  pass "every export twin is its parent plus its export block"
+else
+  fail "a pine export twin is stale against its parent or its export block"
 fi
 
 echo ""

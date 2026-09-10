@@ -1,0 +1,99 @@
+
+// [doc 102] cat /tmp/blk >> <export>  -> docs/bos_strategy.md
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// [doc 103] ── STRUCTURE + ARM STATE ───────────────────────────────────────────────  -> docs/bos_strategy.md
+plot((st.bull_bos ? 1 : 0) + (st.bear_bos ? 2 : 0) + (st.bull_sos ? 4 : 0) + (st.bear_sos ? 8 : 0) + (sessionGapBar ? 16 : 0) + (bosFireL ? 32 : 0) + (bosFireS ? 64 : 0), "px_struct", _INV, editable = false)
+plot((bosL_on ? 1 : 0) + (bosS_on ? 2 : 0) + (bosRegL ? 4 : 0) + (bosRegS ? 8 : 0) + (longArmed ? 16 : 0) + (shortArmed ? 32 : 0) + (strategy.position_size > 0 ? 64 : 0) + (strategy.position_size < 0 ? 128 : 0) + (strategy.position_size != 0 and strategy.position_size[1] == 0 ? 256 : 0) + (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 512 : 0), "px_arm", _INV, editable = false)
+
+plot(bosL_n,   "px_ord_l", _INV, editable = false)   // the armed leg's BOS ordinal since the SOS
+plot(bosS_n,   "px_ord_s", _INV, editable = false)
+
+// The FROZEN break leg, per side. This is what `bosFibAnchor = "Break leg"` prices off.
+plot(bosL_high, "px_leg_l_hi", _INV, editable = false)
+plot(bosL_low,  "px_leg_l_lo", _INV, editable = false)
+plot(bosS_high, "px_leg_s_hi", _INV, editable = false)
+plot(bosS_low,  "px_leg_s_lo", _INV, editable = false)
+
+// [doc 104] AGE, never the raw bar index — see the warning at the top of this block.  -> docs/bos_strategy.md
+float _ageL = na
+if bosL_on and not na(bosL_bar)
+    _ageL := bar_index - bosL_bar
+float _ageS = na
+if bosS_on and not na(bosS_bar)
+    _ageS := bar_index - bosS_bar
+plot(_ageL, "px_age_l", _INV, editable = false)
+plot(_ageS, "px_age_s", _INV, editable = false)
+
+// [doc 105] ── THE ANCHOR — four numbers that regenerate every level ───────────────  -> docs/bos_strategy.md
+plot(lExt, "px_l_ext", _INV, editable = false)
+plot(lOrg, "px_l_org", _INV, editable = false)
+plot(sExt, "px_s_ext", _INV, editable = false)
+plot(sOrg, "px_s_org", _INV, editable = false)
+plot((lFibsReady ? 1 : 0) + (sFibsReady ? 2 : 0) + (bosL_half ? 4 : 0) + (bosS_half ? 8 : 0), "px_ready", _INV, editable = false)
+
+// ── THE ENTRY LADDER — what it chose and what priced it ──────────────────────
+//   px_src  1 longFvgOk · 2 longEdgeSz · 4 shortFvgOk · 8 shortEdgeSz
+plot(longEdge,  "px_edge_l", _INV, editable = false)
+plot(shortEdge, "px_edge_s", _INV, editable = false)
+plot(longTier,  "px_tier_l", _INV, editable = false)
+plot(shortTier, "px_tier_s", _INV, editable = false)
+plot((longFvgOk ? 1 : 0) + (longEdgeSz ? 2 : 0) + (shortFvgOk ? 4 : 0) + (shortEdgeSz ? 8 : 0), "px_src", _INV, editable = false)
+plot(array.size(fvgTops), "px_fvg_n", _INV, editable = false)   // live gap count — the cap and the EQ exemption both move it
+
+// [doc 106] ── THE GATES — why a ready setup was refused ───────────────────────────  -> docs/bos_strategy.md
+plot(lBlkCode, "px_blk_l", _INV, editable = false)
+plot(sBlkCode, "px_blk_s", _INV, editable = false)
+plot((lateDayBlock ? 1 : 0) + (htfBiasBlockLong ? 2 : 0) + (htfBiasBlockShort ? 4 : 0) + (vwapBlockLong ? 8 : 0) + (vwapBlockShort ? 16 : 0) + (bosVetoL ? 32 : 0) + (bosVetoS ? 64 : 0) + (lBlkReady ? 128 : 0) + (sBlkReady ? 256 : 0), "px_gate", _INV, editable = false)
+
+// ── CONTEXT the gates read ───────────────────────────────────────────────────
+plot(bosVwap, "px_vwap",  _INV, editable = false)
+plot(atr14,   "px_atr14", _INV, editable = false)
+// [doc 107] ⚠ THE VOLUME IS PLOTTED, NOT ASSUMED, and this file shipped without it b  -> docs/bos_strategy.md
+plot(volume,  "px_volume", _INV, editable = false)
+
+// [doc 108] ── THE TRADE ───────────────────────────────────────────────────────────  -> docs/bos_strategy.md
+plot(strategy.position_size != 0 ? (strategy.position_size > 0 ? lEntry : sEntry) : na, "px_fill", _INV, editable = false)
+plot(strategy.position_size != 0 ? (strategy.position_size > 0 ? lSL  : sSL)  : na, "px_sl",  _INV, editable = false)
+plot(strategy.position_size != 0 ? (strategy.position_size > 0 ? lTP1 : sTP1) : na, "px_tp1", _INV, editable = false)
+plot(strategy.position_size != 0 ? (strategy.position_size > 0 ? lTP2 : sTP2) : na, "px_tp2", _INV, editable = false)
+plot(strategy.position_size != 0 ? (strategy.position_size > 0 ? lTP3 : sTP3) : na, "px_tp3", _INV, editable = false)
+plot(strategy.position_size != 0 ? (strategy.position_size > 0 ? lStop : sStop) : na, "px_stop_live", _INV, editable = false)
+// ⚠ Same int-against-na trap as the ages above: lStage/sStage are ints.
+float _stg = na
+if strategy.position_size != 0
+    _stg := strategy.position_size > 0 ? lStage : sStage
+plot(_stg, "px_stage", _INV, editable = false)
+plot(closedR, "px_closed_r", _INV, editable = false)
+
+// [doc 109] ── CONFIG — the run describes ITSELF, which is what stops a green gate l  -> docs/bos_strategy.md
+plot((execLongs ? 1 : 0) + (execShorts ? 2 : 0) + (bosUseFvg ? 4 : 0) + (execReqFVG ? 8 : 0) + (execFvgDeepOnly ? 16 : 0) + (execDeepFib ? 32 : 0) + (execConfSZ2 ? 64 : 0) + (execFvg50 ? 128 : 0) + (bosReqHold ? 256 : 0) + (bosRespectVeto ? 512 : 0) + (execNoLateDay ? 1024 : 0) + (bosTp3Measured ? 2048 : 0) + (bosCloseOppDiv ? 4096 : 0) + (fvgRequireClose ? 8192 : 0) + (fvgKeepUntilBroken ? 16384 : 0) + (eqExemptFvg ? 32768 : 0) + (bosShallow ? 65536 : 0) + (bosExpAnchor ? 131072 : 0) + (bosVwapReq != "Off" ? 262144 : 0) + (useStructTrail ? 524288 : 0), "cfg_bits", _INV, editable = false)
+
+// [doc 110] Enums packed as DECIMAL DIGITS, each field < 10, so decoding is division  -> docs/bos_strategy.md
+plot((bosEntryFib == "0.382" ? 0 : bosEntryFib == "0.5" ? 1 : bosEntryFib == "0.618" ? 2 : bosEntryFib == "0.702" ? 3 : bosEntryFib == "0.786" ? 4 : 5)
+   + 10 * (bosWhich == "1st only" ? 0 : bosWhich == "1st + 2nd" ? 1 : 2)
+   + 100 * (bosSlModel == "Fib 1.0 (leg origin)" ? 0 : bosSlModel == "Broken swing level" ? 1 : bosSlModel == "Fib 0.886" ? 2 : bosSlModel == "Last confirmed swing" ? 3 : 4)
+   + 1000 * (execMinStopMode == "Off" ? 0 : execMinStopMode == "% of price" ? 1 : execMinStopMode == "Fixed $" ? 2 : 3)
+   + 10000 * (execMoveStop == "Off" ? 0 : execMoveStop == "$ of price" ? 1 : 2), "cfg_enum1", _INV, editable = false)
+plot((execTp2StopMode == "TP1 price" ? 0 : execTp2StopMode == "Breakeven" ? 1 : 2)
+   + 10 * (execHtfWeekly == "Ignore" ? 0 : execHtfWeekly == "Must agree" ? 1 : execHtfWeekly == "Must not oppose" ? 2 : 3)
+   + 100 * (execHtfDaily == "Ignore" ? 0 : execHtfDaily == "Must agree" ? 1 : execHtfDaily == "Must not oppose" ? 2 : 3), "cfg_enum2", _INV, editable = false)
+
+plot(bosMinDispAtr,        "cfg_min_disp",      _INV, editable = false)
+plot(bosMinLegAtr,         "cfg_min_leg",       _INV, editable = false)
+plot(bosMaxDays,           "cfg_max_days",      _INV, editable = false)
+plot(bosMaxPerRegime,      "cfg_max_regime",    _INV, editable = false)
+plot(bosSlAtr,             "cfg_sl_atr",        _INV, editable = false)
+plot(execSlBufTk,          "cfg_sl_buf",        _INV, editable = false)
+plot(execMinStopVal,       "cfg_min_stop_val",  _INV, editable = false)
+plot(execMoveStopVal,      "cfg_move_stop_val", _INV, editable = false)
+plot(execTp1Pct,           "cfg_tp1_pct",       _INV, editable = false)
+plot(execTp2Pct,           "cfg_tp2_pct",       _INV, editable = false)
+plot(execTp3Pct,           "cfg_tp3_pct",       _INV, editable = false)
+plot(execBeBufTk,          "cfg_be_buf",        _INV, editable = false)
+plot(execStructTrailBufTk, "cfg_struct_buf",    _INV, editable = false)
+plot(execTrailStep,        "cfg_trail_step",    _INV, editable = false)
+plot(execRiskPct,          "cfg_risk_pct",      _INV, editable = false)
+plot(fvgThreshPct,         "cfg_fvg_thresh",    _INV, editable = false)
+plot(fvgMaxCount,          "cfg_fvg_max",       _INV, editable = false)
