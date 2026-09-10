@@ -1303,9 +1303,27 @@ function acctEarn(account: number, bots: ReturnType<typeof earn>[]) {
 /** Demo: SOS Fade +$1,500 / +0.91R over 2, Extreme Leg +$1,305 / +2.10R over 1 → +1.00R a trade.
  *  Live: SOS Fade live +$412 / +2.95R over 2 → +1.48R a trade, plus a second live bot. */
 const SCORED = {
-  sos_fade: { closed_trades: 2, realised_usd: 1500, realised_r: 0.91, wins: 2 },
-  ext_leg: { closed_trades: 1, realised_usd: 1305.58, realised_r: 2.1, wins: 1 },
-  sos_live: { closed_trades: 2, realised_usd: 412.3, realised_r: 2.95, wins: 2 },
+  sos_fade: {
+    closed_trades: 2,
+    realised_usd: 1500,
+    realised_r: 0.91,
+    wins: 2,
+    pct_of_opening: 16.7,
+  },
+  ext_leg: {
+    closed_trades: 1,
+    realised_usd: 1305.58,
+    realised_r: 2.1,
+    wins: 1,
+    pct_of_opening: 14.5,
+  },
+  sos_live: {
+    closed_trades: 2,
+    realised_usd: 412.3,
+    realised_r: 2.95,
+    wins: 2,
+    pct_of_opening: 20.6,
+  },
   ext_live: {},
 }
 
@@ -1428,15 +1446,16 @@ test('the first look is ONLY accounts with bots — the rest is one tab away, gr
   await expect(page.getByTestId('section-no-account')).toContainText('B-LEG')
 })
 
-test('an unpressed pill LOOKS unpressed; a pressed one wears its side’s colour', async ({
+test('live and demo are two switches, both ON at first, each looking exactly as on as it is', async ({
   page,
 }) => {
-  // Aaron, 2026-09-10: *"the Live and demo button… both look selected by default but they are
-  // not."* Both were painted in their kind's colour while unpressed, which is how a pressed toggle
-  // looks. Unpressed is grey with a coloured dot now; pressed is filled in the colour.
-  // MUTATION: paint the unpressed pills in their kind colour again → red on "the same grey".
-  // MUTATION: leave the pressed pill unfilled → red on "no longer transparent".
-  // MUTATION: draw the pressed pill in a colour its heading does not use → red on the match.
+  // Aaron, 2026-09-10: *"both look selected by default but they are not"*, then *"I should be
+  // able to turn on both live and demo at the same time."* Both sides are shown at first, so both
+  // pills are ON; each switches its own side off; the last one on stays on.
+  // MUTATION: start with both pills off (a pick-one filter again) → red on the first aria-pressed.
+  // MUTATION: leave an on pill unfilled → red on "filled".
+  // MUTATION: paint an off pill in its side's colour → red on "an off pill is grey".
+  // MUTATION: let the last side on be switched off → red on "stays on".
   await mockBothSides(page, SCORED)
   const style = (l: ReturnType<Page['getByTestId']>) =>
     l.evaluate((e) => ({
@@ -1445,23 +1464,38 @@ test('an unpressed pill LOOKS unpressed; a pressed one wears its side’s colour
     }))
   const live = page.getByTestId('kind-live')
   const demo = page.getByTestId('kind-demo')
-  await expect(live).toHaveAttribute('aria-pressed', 'false')
-  await expect(demo).toHaveAttribute('aria-pressed', 'false')
-  const idleLive = await style(live)
-  const idleDemo = await style(demo)
-  // The two kinds share one unpressed look — only their dots differ.
-  expect(idleLive.color).toBe(idleDemo.color)
-  expect(idleLive.bg).toBe('rgba(0, 0, 0, 0)')
+  await expect(live).toHaveAttribute('aria-pressed', 'true')
+  await expect(demo).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('section-live')).toBeVisible()
+  await expect(page.getByTestId('section-demo')).toBeVisible()
+  // On is filled, in the colour its own heading uses. Polled: the pill eases between looks.
+  const heading = page.getByTestId('section-live').getByText('Live · real money')
+  const liveColor = await heading.evaluate((e) => getComputedStyle(e).color)
+  await expect.poll(async () => (await style(live)).color).toBe(liveColor)
+  await expect.poll(async () => (await style(live)).bg).not.toBe('rgba(0, 0, 0, 0)')
 
+  // Live OFF: its side goes, demo stays, and the page says why.
+  await live.click()
+  await expect(live).toHaveAttribute('aria-pressed', 'false')
+  await expect(demo).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('section-live')).toHaveCount(0)
+  await expect(page.getByTestId('section-demo')).toBeVisible()
+  await expect(page.getByTestId('filter-note')).toContainText('Live is off')
+  // Off is grey and unfilled. The pointer leaves first — a hovered off pill previews its colour.
+  await page.mouse.move(0, 0)
+  await expect.poll(async () => (await style(live)).bg).toBe('rgba(0, 0, 0, 0)')
+  await expect.poll(async () => (await style(live)).color).not.toBe(liveColor)
+
+  // The last side on stays on: a page switched to show nothing looks like one that failed.
+  await demo.click()
+  await expect(demo).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('section-demo')).toBeVisible()
+
+  // And live switches back on beside it.
   await live.click()
   await expect(live).toHaveAttribute('aria-pressed', 'true')
-  // Polled: the pill eases between looks, and a read mid-transition is neither.
-  const heading = page.getByTestId('section-live').getByText('Live · real money')
-  const headingColor = await heading.evaluate((e) => getComputedStyle(e).color)
-  expect(headingColor).not.toBe(idleLive.color)
-  await expect.poll(async () => (await style(live)).color).toBe(headingColor)
-  await expect.poll(async () => (await style(live)).bg).not.toBe('rgba(0, 0, 0, 0)')
-  expect((await style(demo)).color).toBe(idleDemo.color)
+  await expect(demo).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('section-live')).toBeVisible()
 })
 
 test('no fact is said twice: the heading names the side, so no card repeats it', async ({
@@ -1506,13 +1540,13 @@ test('the side ahead on R PER TRADE leads — not the one with more dollars or m
   await expect(page.getByTestId('leading')).toHaveCount(1)
 })
 
-test('the best bot on R per trade holds the one trophy, with its sample under it', async ({
+test('the best bot on R per trade holds the one trophy, with its sample beside it', async ({
   page,
 }) => {
   // MUTATION: rank bots by dollars → red (SOS Fade's $1,500 is the most money).
   // MUTATION: rank bots by total R → red (SOS Fade live's 2.95R is the most R).
-  // MUTATION: drop the trade count under the score → red. On one trade a lead is not a verdict,
-  // and the count is the only thing on the row that says so.
+  // MUTATION: drop the Trades column → red. On one trade a lead is not a verdict, and the count
+  // beside the score is the only thing on the row that says so.
   await mockBothSides(page, SCORED)
   const top = page.locator('[data-testid="per-trade"][data-top="true"]')
   await expect(top).toHaveCount(1)
@@ -1521,8 +1555,50 @@ test('the best bot on R per trade holds the one trophy, with its sample under it
     .filter({ hasText: 'Extreme Leg' })
     .filter({ hasNotText: 'live' })
   await expect(ext.locator('[data-top="true"]')).toHaveCount(1)
-  await expect(ext.getByTestId('per-trade')).toContainText('+2.10R')
-  await expect(ext.getByTestId('per-trade')).toContainText('1 trade')
+  await expect(ext.getByTestId('per-trade')).toHaveText('+2.10R')
+  await expect(ext.getByTestId('trades')).toHaveText('1')
+})
+
+test('one value per cell — return % and the trade count each have their own column', async ({
+  page,
+}) => {
+  // Aaron, 2026-09-10: *"I don't want anything stacked on top of each other in columns like
+  // that."* The % sat under the dollars and the count under the R, and the two stacked figures read
+  // as one thing.
+  // MUTATION: stack the % back under the dollars → red on the P&L cell holding only dollars.
+  // MUTATION: stack the count back under the R → red on the Per trade cell holding only R.
+  // MUTATION: drop the Return % column → red.
+  // MUTATION: count a record holding no closed trade as "no record" → red on its "0".
+  await mockBothSides(page, SCORED)
+  const heads = page.getByTestId('section-demo').getByTestId('account-card').first()
+  await expect(heads).toContainText('Return %')
+  await expect(heads).toContainText('Trades')
+  const ext = page
+    .getByTestId('bot-row')
+    .filter({ hasText: 'Extreme Leg' })
+    .filter({ hasNotText: 'live' })
+  await expect(ext.getByTestId('bot-pnl')).toHaveText('+$1,305.58')
+  await expect(ext.getByTestId('return-pct')).toHaveText('+14.5%')
+  await expect(ext.getByTestId('trades')).toHaveText('1')
+  await expect(ext.getByTestId('per-trade')).toHaveText('+2.10R')
+  // A record that was read and holds no closed trade: a measured 0, never a dash.
+  const idle = page.getByTestId('bot-row').filter({ hasText: 'Extreme Leg live' })
+  await expect(idle.getByTestId('trades')).toHaveText('0')
+})
+
+test('every value sits under its own heading — on a 1280px screen too', async ({ page }) => {
+  // 🔴 Each row is its own grid. With the actions track sized to its content, the heading row held
+  // the word "Actions" and a bot row ~185px of buttons, so at 1280px the bot row squeezed its name
+  // column and every value sat ~50px left of its heading. Wide screens never showed it.
+  // MUTATION: size the actions column to its content again → red on the offset.
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await mockBothSides(page, SCORED)
+  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  const left = (l: ReturnType<Page['getByTestId']>) =>
+    l.evaluate((e) => e.getBoundingClientRect().left)
+  const head = await left(card.getByText('Trades', { exact: true }))
+  const cell = await left(card.getByTestId('bot-row').first().getByTestId('trades'))
+  expect(Math.abs(head - cell)).toBeLessThan(2)
 })
 
 test('no side leads, and no trophy is awarded, until there is a contest', async ({ page }) => {
@@ -1574,12 +1650,15 @@ test('a filter shows one side — and that side keeps its score and its lead', a
   // MUTATION: score sides off the FILTERED accounts → red: live alone "leads" nothing.
   // MUTATION: withhold the score line under a filter → red on both halves.
   await mockBothSides(page, SCORED)
-  await page.getByTestId('kind-live').click()
+  // Demo off → live alone.
+  await page.getByTestId('kind-demo').click()
   await expect(page.getByTestId('section-live')).toBeVisible()
   await expect(page.getByTestId('section-demo')).toHaveCount(0)
   await expect(page.getByTestId('score-live')).toHaveAttribute('data-leading', 'true')
 
+  // Demo back on, live off → demo alone.
   await page.getByTestId('kind-demo').click()
+  await page.getByTestId('kind-live').click()
   await expect(page.getByTestId('section-live')).toHaveCount(0)
   await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })

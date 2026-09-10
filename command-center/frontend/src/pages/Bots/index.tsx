@@ -250,10 +250,23 @@ function pnlCls(v: number | null | undefined): string {
  *  against pos `#00ff82`), which is how a stack leg once drew in the portfolio's own colour. */
 
 /** ONE column template for the heading row and every bot row under it. Two hand-written
- *  lists is how a heading ends up over the wrong column. */
-/** ⚠ The version column is 136px because a behind pill ("v201 · 7 behind") MEASURES 115px on
- *  one line (2026-09-10); at 92px it wrapped into a two-line blob. Room left for a 2-digit count. */
-const GRID = 'grid-cols-[minmax(150px,225px)_142px_92px_136px_50px_74px_1fr_auto]'
+ *  lists is how a heading ends up over the wrong column.
+ *
+ *  🔴 **One value per cell (2026-09-10, Aaron: *"I don't want anything stacked on top of each
+ *  other in columns like that"*).** The return % sat under the dollars and the trade count under
+ *  the R, so each cell held two different measurements and the reader could not tell whether the
+ *  % and the R said the same thing. They are their own columns now: Bot | P&L | Return % | Trades |
+ *  Per trade | Version | Risk | Uptime | Actions.
+ *
+ *  ⚠ The version column is 136px because a behind pill ("v201 · 7 behind") MEASURES 115px on
+ *  one line (2026-09-10); at 92px it wrapped into a two-line blob. ⚠ The rest are sized to their
+ *  widest real value so every column still fits a 1280px screen with the name at its 150px floor.
+ *
+ *  🔴 **Every track is FIXED except the name and the spacer — the actions too.** Each row is its
+ *  own grid, and an `auto` actions track sizes to ITS row: the word "Actions" in the heading row,
+ *  ~185px of buttons in a bot row. On a 1280px screen the bot row ran out of room, squeezed its name
+ *  column, and every value sat ~50px left of its heading while the heading row did not move. */
+const GRID = 'grid-cols-[minmax(150px,225px)_100px_64px_52px_80px_136px_48px_64px_1fr_190px]'
 
 /** R per trade: what a bot's closed trades made on average, in units of the risk each one took.
  *  `null` when there is nothing to average — no record, or no closed trade — never 0. */
@@ -270,7 +283,7 @@ function fmtR(r: number): string {
 const TIE_R = 0.005
 
 /**
- * The score a winner is picked on — R per trade — with the sample it rests on under it.
+ * The score a winner is picked on — R per trade. Its sample is the Trades column beside it.
  *
  * 🔴 **The winner is judged in R per trade, never dollars** (Aaron, 2026-09-10: *"I want to be able
  * to easily identify the winner"*, with live and demo both running). A live account is smaller,
@@ -279,8 +292,9 @@ const TIE_R = 0.005
  * three can move. MEASURED the day it landed: the two demo bots read $1,305.58 against $1,197.09 —
  * near a tie in dollars — and +2.10R against +0.46R a trade.
  *
- * ⚠ **The trade count always sits under it.** On one or two trades a lead is not a verdict; that is
- * said as a caveat ON the number, never by hiding it (root CLAUDE.md → Trading Philosophy).
+ * ⚠ **The trade count sits BESIDE it, in the Trades column.** On one or two trades a lead is not a
+ * verdict; that is said as a caveat next to the number, never by hiding it (root CLAUDE.md →
+ * Trading Philosophy).
  */
 function PerTrade({
   e,
@@ -291,16 +305,9 @@ function PerTrade({
   asking: boolean
   top: boolean
 }) {
-  if (!e && asking)
-    return (
-      <span className="flex flex-col gap-[6px]">
-        <Shimmer className="h-[13px] w-[56px]" />
-        <Shimmer className="h-[10px] w-[44px]" />
-      </span>
-    )
+  if (!e && asking) return <Shimmer className="h-[13px] w-[56px]" />
   const r = perTradeOf(e)
-  if (r == null || !e?.closed_trades)
-    return <span className="text-[12px] text-text-tertiary cursor-default">—</span>
+  if (r == null || !e?.closed_trades) return <Dash />
   const n = e.closed_trades
   return (
     <span
@@ -309,17 +316,50 @@ function PerTrade({
       title={`${fmtR(r)} a trade over ${n} closed ${n === 1 ? 'trade' : 'trades'} (${fmtR(e.realised_r ?? 0)} in all)${
         top ? ' — the best of every bot shown, so it holds the trophy' : ''
       }${n < 10 ? '. A handful of trades is a lead, not a verdict.' : ''}`}
-      className="flex flex-col leading-tight cursor-default"
+      className={`flex items-center gap-[5px] text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(r)}`}
     >
-      <span
-        className={`flex items-center gap-[5px] text-[13px] font-mono tabular-nums font-medium ${pnlCls(r)}`}
-      >
-        {top && <Trophy size={12} className="text-gold-text shrink-0" />}
-        {fmtR(r)}
-      </span>
-      <span className="text-[10px] font-mono tabular-nums text-text-tertiary">
-        {n} {n === 1 ? 'trade' : 'trades'}
-      </span>
+      {top && <Trophy size={12} className="text-gold-text shrink-0" />}
+      {fmtR(r)}
+    </span>
+  )
+}
+
+/** An empty cell. A dash, never `0` — nothing was measured here. */
+function Dash() {
+  return <span className="text-[12px] text-text-tertiary cursor-default">—</span>
+}
+
+/** What this bot's own closed trades made as a share of the account's OPENING balance.
+ *  ⚠ Its own column, never under the dollars: it is a different measurement from R per trade
+ *  (the account's size is in it; R is not), and stacked under the P&L the two read as one. */
+function ReturnPct({ e, asking }: { e: BotEarnings | undefined; asking: boolean }) {
+  if (!e && asking) return <Shimmer className="h-[13px] w-[44px]" />
+  if (!e?.traded || e.pct_of_opening == null) return <Dash />
+  const p = e.pct_of_opening
+  return (
+    <span
+      data-testid="return-pct"
+      title={`${p > 0 ? '+' : ''}${p.toFixed(2)}% — this bot's own closed trades as a share of the account's opening balance`}
+      className={`text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(p)}`}
+    >
+      {p > 0 ? '+' : p < 0 ? '−' : ''}
+      {Math.abs(p).toFixed(1)}%
+    </span>
+  )
+}
+
+/** How many trades this bot has CLOSED — the sample every figure beside it rests on.
+ *  ⚠ `0` is a measurement (its record was read and holds none); a dash means no record. */
+function TradeCount({ e, asking }: { e: BotEarnings | undefined; asking: boolean }) {
+  if (!e && asking) return <Shimmer className="h-[13px] w-[22px]" />
+  if (!e?.traded) return <Dash />
+  return (
+    <span
+      data-testid="trades"
+      title={`${e.wins ?? 0} won, ${e.losses ?? 0} lost · recorded ${e.records_from} → ${e.records_to}`}
+      className="text-[13px] font-mono tabular-nums text-text-secondary cursor-default"
+    >
+      {e.closed_trades ?? 0}
     </span>
   )
 }
@@ -453,6 +493,7 @@ const NEUTRAL_TINT = {
   dot: 'bg-text-tertiary',
 }
 const tintOf = (kind: string | undefined) => (kind && KIND_TINT[kind]) || NEUTRAL_TINT
+const KIND_NAME: Record<'live' | 'demo', string> = { live: 'Live', demo: 'Demo' }
 
 /** An account's kind as a chip — the same look on its card and on its one-liner. */
 function KindChip({ kind }: { kind: string | undefined }) {
@@ -469,33 +510,48 @@ function KindChip({ kind }: { kind: string | undefined }) {
 }
 
 /**
- * Live / demo, as a filter — TWO pills, and no pill pressed means both.
+ * Live / demo — TWO independent switches, both ON by default, each turning its side on or off.
  *
- * 🔴 **Pressed and unpressed must look different, and for a day they did not** (Aaron, 2026-09-10:
- * *"both look selected by default but they are not"*). The fix for grey pills that read like the
- * Sync button beside them painted the unpressed state in its kind's colour, which is what a
- * pressed toggle looks like. **Unpressed is now grey with only its dot in colour; pressed is filled
- * and outlined in the colour.** ⚠ They sit with the tabs, not the actions, because both decide WHAT
- * you are looking at. ⚠ Pressed carries `aria-pressed`: a filter you cannot see is still applied.
+ * 🔴 **The pill's look IS its state.** It was a pick-one filter where *no pill pressed* meant both,
+ * so the default showed both sides under two pills that looked off — and when the unpressed look
+ * was painted in colour, two pills that looked on while neither was (Aaron, 2026-09-10: *"both look
+ * selected by default but they are not"*, then *"I should be able to turn on both live and demo at
+ * the same time"*). Now on is filled in the side's colour, off is grey with only its dot coloured,
+ * and both start on because both are shown.
+ *
+ * ⚠ **The last side on stays on**: a page switched to show nothing looks exactly like one that
+ * failed to load. ⚠ So the URL still holds one of three states (`?kind=` absent = both, or the one
+ * side left on) and nothing downstream changed. ⚠ They sit with the tabs, not the actions, because
+ * both decide WHAT you are looking at.
  */
 function KindFilter({ kind, onPick }: { kind: string | null; onPick: (k: string | null) => void }) {
   return (
     <div className="flex items-center gap-[6px]">
       {(['live', 'demo'] as const).map((k) => {
-        const on = kind === k
+        const other = k === 'live' ? 'demo' : 'live'
+        const on = !kind || kind === k
+        const last = kind === k
         const t = KIND_TINT[k]
+        const name = KIND_NAME[k]
         return (
           <button
             key={k}
             data-testid={`kind-${k}`}
             aria-pressed={on}
-            onClick={() => onPick(on ? null : k)}
+            onClick={() => {
+              if (!on) onPick(null)
+              else if (!last) onPick(other)
+            }}
             title={
-              on ? `Showing ${k} accounts only — click to show both` : `Show only ${k} accounts`
+              !on
+                ? `${name} is off — click to show it too`
+                : last
+                  ? `${name} is the only side shown — turn ${KIND_NAME[other]} on to add it back`
+                  : `Showing ${name} — click to hide it`
             }
             className={`inline-flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-[0.6px] px-[11px] py-[4px] rounded-pill border transition-colors ${
               on ? t.on : t.off
-            }`}
+            } ${last ? 'cursor-default' : ''}`}
           >
             <span className={`w-[7px] h-[7px] rounded-full ${t.dot}`} />
             {k}
@@ -545,18 +601,14 @@ function SideSection({
  *  only from the SOS Fade. That should still be showing zero percent from the extreme leg."*
  *
  *  ⚠ **A bot with no record says so in words.** *Never traded* and *no record to read* are
- *  different answers and only one is a measurement; printing a confident `0.0%` for the second
- *  is this repo's rule 1 in a table cell. */
+ *  different answers and only one is a measurement; printing a confident `$0.00` for the second
+ *  is this repo's rule 1 in a table cell. A record holding no closed trade IS a measurement, so
+ *  it reads `$0.00` here and `0` in Trades — "nothing closed" went with the Trades column.
+ *
+ *  ⚠ **One line.** The return % used to sit under the dollars; it has its own column now. */
 function Contribution({ e, asking }: { e: BotEarnings | undefined; asking: boolean }) {
-  // Two lines, the shape of the figure and its percentage, so the row does not grow when it lands.
-  if (!e && asking)
-    return (
-      <span className="flex flex-col gap-[6px]">
-        <Shimmer className="h-[13px] w-[86px]" />
-        <Shimmer className="h-[10px] w-[104px]" />
-      </span>
-    )
-  if (!e) return <span className="text-[12px] text-text-tertiary">—</span>
+  if (!e && asking) return <Shimmer className="h-[13px] w-[80px]" />
+  if (!e) return <Dash />
   if (!e.traded)
     return (
       <span
@@ -566,28 +618,13 @@ function Contribution({ e, asking }: { e: BotEarnings | undefined; asking: boole
         no record yet
       </span>
     )
-  if (!e.closed_trades)
-    return (
-      <span
-        title={`Its record runs ${e.records_from} → ${e.records_to} and holds no closed trade.`}
-        className="text-[11.5px] text-text-secondary cursor-default"
-      >
-        nothing closed
-      </span>
-    )
   return (
     <span
-      title={`${e.closed_trades} closed ${e.closed_trades === 1 ? 'trade' : 'trades'} · ${e.wins}W / ${e.losses}L · ${(e.realised_r ?? 0) > 0 ? '+' : ''}${e.realised_r?.toFixed(2)}R · recorded ${e.records_from} → ${e.records_to}`}
-      className="flex flex-col leading-tight cursor-default"
+      data-testid="bot-pnl"
+      title={`What this bot's own closed trades came to · recorded ${e.records_from} → ${e.records_to}`}
+      className={`text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(e.realised_usd)}`}
     >
-      <span className={`text-[13px] font-mono tabular-nums font-medium ${pnlCls(e.realised_usd)}`}>
-        {money(e.realised_usd)}
-      </span>
-      <span className="text-[10px] font-mono tabular-nums text-text-tertiary">
-        {e.pct_of_opening != null
-          ? `${e.pct_of_opening > 0 ? '+' : ''}${e.pct_of_opening.toFixed(1)}% of account`
-          : ''}
-      </span>
+      {money(e.realised_usd)}
     </span>
   )
 }
@@ -698,6 +735,12 @@ function ColumnHeadings() {
     >
       <span className="pl-4">Bot</span>
       <span title="What this bot's own closed trades came to">P&amp;L</span>
+      <span title="Return % — this bot's own closed trades as a share of the account's opening balance">
+        Return %
+      </span>
+      <span title="How many trades this bot has closed — the sample every figure beside it rests on">
+        Trades
+      </span>
       <span title="R per trade — what each closed trade made on average, in units of the risk it took. The top bot is picked on this, never on dollars.">
         Per trade
       </span>
@@ -750,6 +793,8 @@ function BotsPageSkeleton() {
               <Shimmer className="h-[13px] w-[96px]" />
             </span>
             <Contribution e={undefined} asking />
+            <ReturnPct e={undefined} asking />
+            <TradeCount e={undefined} asking />
             <PerTrade e={undefined} asking top={false} />
             <VersionPill version={undefined} loading />
             <Shimmer className="h-[12px] w-[26px]" />
@@ -815,14 +860,13 @@ export function Bots() {
   // Selection lives in the URL, like every other view state in this app, so a link to one bot is
   // a real link and a refresh does not move you to a different bot's Deploy button.
   const view = params.get('view')
-  // Live / demo, in the URL like every other view state here — so a link to "just the live
-  // accounts" is a real link and a refresh does not put the demos back.
-  //
-  // ⚠ **Absent means ALL, and that is the default deliberately.** Aaron asked for live-vs-demo
-  // and said he does not care about an "all" — but every account on this box is a demo today, so
-  // defaulting to LIVE would open the page empty, which is indistinguishable from a page that
-  // failed to load. The control is what he asked for; the default is the one that cannot lie.
-  const kind = params.get('kind')
+  // Which sides are ON, in the URL like every other view state here — so a link to "just the live
+  // accounts" is a real link and a refresh does not put the demos back. Absent = both on; `live`
+  // or `demo` = the one side left on. ⚠ **Both on is the default**: every account on this box is a
+  // demo today, so opening on live alone would show an empty page, which looks like a failed load.
+  // ⚠ Anything else in the parameter reads as both — a hand-typed value may not hide the fleet.
+  const kindParam = params.get('kind')
+  const kind = kindParam === 'live' || kindParam === 'demo' ? kindParam : null
   // Which tab. ⚠ Absent means TRADING — the first look is the accounts that have bots on them.
   const show = params.get('show') === 'unassigned' ? 'unassigned' : 'trading'
   const selBot = params.get('bot') ? (botByKey.get(params.get('bot') as string) ?? null) : null
@@ -915,6 +959,19 @@ export function Bots() {
     show === 'trading'
       ? withBots.length - shownAccounts.length
       : emptyAccounts.length - shownEmpty.length + (unassigned.length - shownUnassigned.length)
+  // ⚠ A switched-off side that empties the page must SAY it did. A blank list and a fleet that
+  // really is empty look identical, and only one of them is a finding. One note, both tabs.
+  const filterNote = kind && hiddenByFilter > 0 && (
+    <p data-testid="filter-note" className="text-[11.5px] text-text-tertiary px-[2px]">
+      {hiddenByFilter} {hiddenByFilter === 1 ? 'account or bot is' : 'accounts and bots are'} hidden
+      because{' '}
+      <span className="text-text-secondary">{KIND_NAME[kind === 'live' ? 'demo' : 'live']}</span> is
+      off.{' '}
+      <button onClick={() => set('kind', null)} className="text-accent hover:underline">
+        Show both
+      </button>
+    </p>
+  )
 
   const running = bots.filter((b) => b.status === 'RUNNING').length
   const unread = withBots.filter((a) => balanceOf(a.rows) == null).length
@@ -1188,6 +1245,8 @@ export function Bots() {
                  *  what has this bot done — and 400px of empty grid between the two made
                  *  the row read as a name with some settings after it. */}
                 <Contribution e={be} asking={asking} />
+                <ReturnPct e={be} asking={asking} />
+                <TradeCount e={be} asking={asking} />
                 <PerTrade e={be} asking={asking} top={topBot === cfg.key} />
 
                 <VersionPill
@@ -1578,18 +1637,7 @@ export function Bots() {
             </div>
           )}
 
-          {/* ⚠ A filter that empties the page must SAY it did. A blank list and a fleet that
-           *  really is empty look identical, and only one of them is a finding. */}
-          {kind && hiddenByFilter > 0 && (
-            <p className="text-[11.5px] text-text-tertiary px-[2px]">
-              {hiddenByFilter}{' '}
-              {hiddenByFilter === 1 ? 'account or bot is' : 'accounts and bots are'} hidden by the{' '}
-              <span className="text-text-secondary">{kind}</span> filter.{' '}
-              <button onClick={() => set('kind', null)} className="text-accent hover:underline">
-                Show everything
-              </button>
-            </p>
-          )}
+          {filterNote}
 
           {/* 🔴 Only once the box has ANSWERED (2026-09-10). The bot list comes from the
            *  snapshot, so for the ~4s it takes — and for as long as the box is unreachable — it
@@ -1676,18 +1724,7 @@ export function Bots() {
               </p>
             )}
 
-          {/* ⚠ A filter that empties the page must SAY it did. A blank list and a fleet that
-           *  really is empty look identical, and only one of them is a finding. */}
-          {kind && hiddenByFilter > 0 && (
-            <p className="text-[11.5px] text-text-tertiary px-[2px]">
-              {hiddenByFilter}{' '}
-              {hiddenByFilter === 1 ? 'account or bot is' : 'accounts and bots are'} hidden by the{' '}
-              <span className="text-text-secondary">{kind}</span> filter.{' '}
-              <button onClick={() => set('kind', null)} className="text-accent hover:underline">
-                Show everything
-              </button>
-            </p>
-          )}
+          {filterNote}
         </div>
       )}
 

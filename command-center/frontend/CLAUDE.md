@@ -4345,11 +4345,15 @@ identify the winner."*
   a tab, and nothing says that bot is not running. ⚠ In the URL (`?show=unassigned`).
 - **On Trading, accounts sit under *Live · real money* then *Demo*.** ⚠ An account whose type is
   still being asked waits under a shimmering heading, never under "neither", or it jumps on arrival.
-- 🔴 **ONE colour per kind — amber live, cyan demo** (`KIND_TINT`): the filter pills, the headings
-  and the chips on the Unassigned list. ⚠ **An unpressed pill is GREY with only its dot in colour;
-  pressed is filled in it.** Painting the unpressed state in its colour, to set the pills apart from
-  the action buttons, made both read as pressed (*"both look selected by default but they are
-  not"*). ⚠ Never green or red — those mean P&L here. ⚠ A kind nobody stated stays grey.
+- 🔴 **ONE colour per kind — amber live, cyan demo** (`KIND_TINT`): the switches, the headings and
+  the chips on the Unassigned list. ⚠ Never green or red — those mean P&L here. ⚠ A kind nobody
+  stated stays grey.
+- 🔴 **Live and Demo are two SWITCHES, both on at first; each turns its own side off, and the last
+  one on stays on** (*"both look selected by default but they are not"*, then *"I should be able to
+  turn on both live and demo at the same time"*). On is filled in the colour, off is grey with its
+  dot coloured, so a pill looks exactly as on as it is. ⚠ It was a pick-one filter where no pill
+  pressed meant both. ⚠ `?kind=` still holds one of three states (absent = both), so nothing
+  downstream moved.
 - 🔴 **Nothing on the page says a fact twice** (*"we don't need to be redundant on data anywhere on
   this page"*): no live/demo chip on a card (its heading says it), no up/down edge colour (the net
   pill carries the sign), no "no bots" tag under *Accounts with no bots*, and the bot panel keeps
@@ -4366,17 +4370,23 @@ identify the winner."*
   above the page and they went the same day (*"what is the purpose of this section? If I select
   demo only then it goes away"*): a comparison block has to vanish under a filter. ⚠ **Scored off
   EVERY account, never the filtered ones**, so a filter never changes a side's number or who leads.
-- **A Per trade column carries each bot's score with its trade count; the best bot holds the ONE
-  trophy.** ⚠ **Different icons on purpose** — the best bot can sit on the side that is behind.
+- 🔴 **One value per cell: P&L | Return % | Trades | Per trade** (*"I don't want anything stacked
+  on top of each other"*). Stacked, the % under the dollars and the R read as one thing; they are
+  not — Return % is the bot's dollars over the account's opening balance, and R per trade has no
+  account size in it. The best bot holds the ONE trophy. ⚠ **Different icons on purpose** — the
+  best bot can sit on the side that is behind. ⚠ A record with no closed trade reads `$0.00` and
+  `0`; a missing record reads `no record yet` and dashes. 🔴 **Every column but the name is a
+  FIXED width, the actions too**: each row is its own grid, and a content-sized actions column put
+  every value ~50px left of its heading on a 1280px screen.
 - ⚠ **Nothing is awarded without a contest**: a side with no closed trade is not "behind" (a
   default is not a result), a lone scored bot gets no trophy, a tie within 0.005R gets neither, and
   a side missing a bot's record is PARTIAL and cannot lead. ⚠ **Summed from the bots' own records,
-  never the account's growth.** ⚠ **The trade count is the caveat, on the number, never a reason to
-  hide it** (root `CLAUDE.md` → Trading Philosophy).
+  never the account's growth.** ⚠ **The trade count is the caveat, beside the number, never a reason
+  to hide it** (root `CLAUDE.md` → Trading Philosophy).
 
-Tests: `tests/bots-accounts.spec.ts` (10 checks; the fixture gives demo more dollars AND more total
+Tests: `tests/bots-accounts.spec.ts` (12 checks; the fixture gives demo more dollars AND more total
 R while live wins per trade, and lists the demo spare before the live one, so every wrong rule goes
-red); **35 mutations run across two passes, 35 killed**, each confirmed served by the dev server
+red); **47 mutations run across three passes, 47 killed**, each confirmed served by the dev server
 before its check. 🔴 **One first SURVIVED: a check matched the text "R a trade", but the number and
 the words are separate spans, so the page's text reads "+1.48Ra trade" and the match could never
 fail.** It asserts the pooled block's own testid now, with demo's block as the positive control.
