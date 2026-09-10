@@ -194,9 +194,33 @@ class ExtremeLegStrategy:
         `major_length` 15 is the Pine's own `majorLength`. `htf_rollover_hours` 18 is gold's
         session open in New York, which is what decides where the previous DAY and WEEK levels cut
         — a level family this strategy arms on.
+
+        ⚠ **It also declares that this bot reads TWO engines and nothing else, so nothing else is
+        run.** `step()` is the whole of what this strategy sees of the engine stack, and it reads
+        exactly `bar_state.bar`, `bar_state.structure.external` and `bar_state.liquidity.mitigated`
+        — no fib of any kind, no gaps, no RSI divergence, no sessions. The other seven engines
+        produced output nothing looked at, on every bar of every replay, optimizer combo and sweep
+        this bot has ever run. MEASURED 2026-09-09 on 190,159 real M5 bars, best of three
+        interleaved runs: the two engines this bot reads cost **11.89s against the full stack's
+        26.91s — 44.2%**. This is the 5-minute frame, three bars for every one on 15m, so it is the
+        expensive frame carrying the bot that reads the least.
+
+        ⚠ **A switch here cannot change what an engine EMITS**, only whether it is asked, so it
+        needs no Pine input behind it and no export column can carry it — same standing as the
+        order-block switch, and the reason the paragraph above does not apply to it.
         """
         from backtest.replay import EngineConfig
-        return EngineConfig(major_length=15, htf_rollover_hours=18)
+        return EngineConfig(
+            major_length=15,
+            htf_rollover_hours=18,
+            fib=False,
+            sniper=False,
+            macro=False,
+            internal=False,
+            fvg=False,
+            rsi=False,
+            sessions=False,
+        )
 
     def set_timeframe_minutes(self, minutes: int) -> None:
         """Tell the strategy what frame it is on, rather than letting it infer.

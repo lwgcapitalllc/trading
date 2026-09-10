@@ -154,10 +154,23 @@ class SosFadeStrategy:
         it is exported as `cfg_eq_exempt` and `compare_strategy.py` configures the bot FROM the
         export. A run replaying an export that predates that column is configured OFF.
         If a bot ever tunes another engine input off its default, add it here (and export it
-        if it must vary per run)."""
+        if it must vary per run).
+        ⚠ **It also declares the two engines this bot never READS, so they are never run.**
+        `SignalAdapter.update` is the whole of what this strategy sees of the engine stack, and
+        it reads the snapshot, the structure fib, the sniper zone, the macro fib, the gaps, the
+        RSI divergence and the liquidity levels — never the internal fib and never the sessions
+        engine. Those two produced output nothing looked at on every bar of every replay,
+        optimizer combo and sweep this bot has ever run. MEASURED 2026-09-09 on 190,159 real M5
+        bars: the seven engines this bot reads cost 81.8% of the full stack.
+        ⚠ **`show_internal=False` above already blanks the snapshot fields the internal fib seeds
+        from, so it was producing output that was doubly dead.** The two switches are still
+        separate facts: one is a Pine input about what the STRUCTURE engine exposes, the other is
+        about whether a downstream engine is asked at all.
+        """
         from backtest.replay import EngineConfig
         return EngineConfig(fvg_max_count=7, show_internal=False, fvg_require_close=True,
-                            fvg_threshold_pct=0.1, eq_exempt_fvg=True)
+                            fvg_threshold_pct=0.1, eq_exempt_fvg=True,
+                            internal=False, sessions=False)
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "SosFadeStrategy":
         """Replay a canonical bar frame end-to-end. Engines warm on every bar; the

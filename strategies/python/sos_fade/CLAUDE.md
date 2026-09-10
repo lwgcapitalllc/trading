@@ -3314,3 +3314,35 @@ not name its own warm-up floor and the ladder is what settled it.** That is rule
 survived it: the first version asserted `None` on a config whose shared percentage was also 0, so
 *read the primary's rule* and *read the secondary's and fall through* were the same assertion. **A
 test whose inputs cannot separate the behaviours it names is green and worthless.**
+
+## Two engines this bot never reads are no longer RUN (2026-09-10)
+
+`engine_config()` now also declares `internal=False, sessions=False`. **`SignalAdapter.update` is
+the whole of what this strategy sees of the engine stack** — the snapshot, the structure fib, the
+sniper zone, the macro fib, the gaps, the RSI divergence and the liquidity levels. It has never
+read the internal fib or the sessions engine, and both were stepped on every bar of every replay,
+optimizer combo and sweep this bot has ever run.
+
+⚠ **`show_internal=False` was already blanking the snapshot fields the internal fib seeds from, so
+that engine's output was doubly dead.** The two are still separate facts: one is a Pine input about
+what the STRUCTURE engine exposes, the other is whether a downstream engine is asked at all.
+
+✅ **PROVEN RESULT-IDENTICAL, not argued.** The live two-bot stack replayed twice in one process —
+every engine on, then gated — over 2020-01-01 → 2026-09-06: **361 trades either way, identical on
+every field of every record**, 277.5s → 182.6s. Per-engine on 190,159 M5 bars, the seven this bot
+reads cost 81.8% of the full stack.
+
+✅ **PARITY GREEN** — `compare_strategy.py` on `engines/VANTAGE_XAUUSD, 15_e98ec.csv`, exit 0 at
+`--warmup 500`, 19,636 bars compared. ⚠ **A green run here is the strong evidence, not a formality:
+the gate replays this strategy's real decision stream against the Pine's, so an engine wrongly
+switched off would move a decision and turn it red.**
+
+⚠ **A switch is a CLAIM about what this package reads, and the guard is
+`backtest/tests/test_replay_engine_gates.py`** — it parses every module here and fails by name if
+one starts reading a gated engine. **The failure it prevents is silent**: a gated engine hands back
+`None`, and `None` read as *nothing happened this bar* is a bot refusing every setup with nothing
+anywhere saying so. Rules and the measurement: `backtest/CLAUDE.md` → *An engine a strategy never
+READS is never RUN*.
+
+⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package — and it
+changes no decision there either, only how long a warm-up takes.

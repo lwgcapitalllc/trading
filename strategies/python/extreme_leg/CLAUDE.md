@@ -788,3 +788,35 @@ already open when an order goes out, **that would read as correct in every log**
 bars, 2026-05-24 → 2026-09-03, warm-up 2,016 derived, **18,248 bars compared, exit 0**. ⚠ Coverage
 unchanged and still narrow: **6 entries, and four refusal codes never reached**. ⚠ The gate still
 cannot see the shipped form — the market-condition cut is ON in config and the chart cannot make it.
+
+## This bot reads TWO engines, so only two are RUN (2026-09-10)
+
+`engine_config()` now declares `fib`, `sniper`, `macro`, `internal`, `fvg`, `rsi` and `sessions`
+all **False**. `step()` is the whole of what this strategy sees of the engine stack and it reads
+exactly `bar_state.bar`, `bar_state.structure.external` and `bar_state.liquidity.mitigated`. The
+other seven engines produced output nothing looked at, on every bar of every replay, optimizer
+combo and sweep this bot has ever run.
+
+🔴 **THIS BOT IS THE EXPENSIVE HALF OF THE STACK AND THE ONE THAT READS THE LEAST.** It runs on
+5-minute bars — three for every one the 15m leg sees — so its engine stack is stepped 471,000 times
+over the full window against the other leg's 157,000. **MEASURED on 190,159 real M5 bars, best of
+three interleaved runs: the two engines it reads cost 11.89s against the full stack's 26.91s —
+44.2%.**
+
+✅ **PROVEN RESULT-IDENTICAL.** The live two-bot stack replayed twice in one process — every engine
+on, then gated — over 2020-01-01 → 2026-09-06: **361 trades either way, identical on every field of
+every record**, 277.5s → 182.6s for the whole stack.
+
+🔴 **NO PARITY GATE HAS RUN FOR THIS, AND IT IS NOT A FORMALITY.**
+`compare_extreme_leg.py` needs an export and **no extreme-leg export is on this machine** — the
+`VANTAGE_XAUUSD, 5_821a8.csv` this file names elsewhere is not here. That is the "9 of 14 gates
+could not answer" condition the root doc records. **The A/B replay above is this bot's evidence and
+it is a different claim: it says the gated stack produces the same book as the ungated one, never
+that either agrees with the Pine.** Re-run the gate on the next export.
+
+⚠ **A switch is a CLAIM about what this package reads.**
+`backtest/tests/test_replay_engine_gates.py` parses every module here and fails by name if one
+starts reading a gated engine — because the failure is otherwise silent: a gated engine hands back
+`None`, and `None` read as *nothing happened this bar* is a bot refusing every setup with every
+dashboard green. Rules and the measurement: `backtest/CLAUDE.md` → *An engine a strategy never
+READS is never RUN*.

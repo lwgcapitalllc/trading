@@ -134,25 +134,72 @@ class EngineConfig:
     # liquidity — XAUUSD trading day opens 18:00 NY (the baked-in engine default)
     htf_rollover_hours: int = 18
 
+    # ── WHICH ENGINES RUN AT ALL ────────────────────────────────────────────────────────────
+    # Every one defaults ON, so a stack built the way every existing caller builds it is
+    # byte-identical to the one this repo has always had. A STRATEGY turns off what it never
+    # reads, in its own `engine_config()`.
+    #
+    # 🔴 **THE COST IS NOT SMALL AND IT IS NOT SHARED.** `order_blocks` above already carries this
+    # argument — an unused engine still costs a per-bar pass on every replay, sweep combo and
+    # optimizer core in the repo — and it was the only engine that acted on it. MEASURED 2026-09-09
+    # on 190,159 real M5 bars, best of three interleaved runs: the full stack 26.91s, the two
+    # engines `extreme_leg` actually reads 11.89s (**44.2%**), the seven `sos_fade` reads 22.01s
+    # (81.8%). The 5-minute frame is the expensive one — three bars for every one on 15m — and it
+    # is the frame carrying the bot that reads the least.
+    #
+    # ⚠ **A skipped engine's events are `None`, never an empty events object**, and that is the
+    # `order_blocks` rule applied to seven more fields: `None` means THE QUESTION WAS NEVER ASKED,
+    # an empty list means the engine RAN and found nothing this bar. A strategy reading
+    # `state.sessions.in_ny` off a stack that never ran it gets an AttributeError, which is loud; an
+    # empty events object would read as *no session here* and the bot would refuse every setup
+    # while looking perfectly healthy. That is rule 1, and it is the failure this repo has already
+    # paid for on a dead terminal, an empty registry and an unfetched news calendar.
+    #
+    # ⚠ **A switch here is NOT a tuning input and needs no Pine input behind it** — same standing
+    # as `order_blocks` and for the same reason. It cannot change what any engine emits; it can
+    # only decide whether that engine is asked. Every field ABOVE this line is a value the Pine
+    # sets and a parity gate can see; these are not.
+    #
+    # ⚠ **They belong in `engine_config()`, not in `stack_config()`, and the difference matters.**
+    # The parity harnesses call `engine_config()` off the CLASS, so putting the gating there makes
+    # the gate replay the same stack production replays. In `stack_config()` — the per-INSTANCE
+    # layer — the gate would keep running the full stack while the bot ran a narrower one, which is
+    # a fixture more capable than production, i.e. rule 13.
+    fib: bool = True  # StructureFib
+    sniper: bool = True  # SniperFib
+    macro: bool = True  # MacroFib
+    internal: bool = True  # InternalFib
+    fvg: bool = True  # FairValueGapEngine
+    rsi: bool = True  # RsiDivergenceEngine
+    liquidity: bool = True  # LiquidityEngine
+    sessions: bool = True  # SessionEngine
+
 
 @dataclass
 class BarState:
     """Everything the engine stack produced for one bar — the seam the strategy
     reads. `snapshot` is the structure engine's public read for this bar; the fib /
     fvg / rsi / liquidity / sessions events each also carry their live `active`
-    state where the engine exposes it."""
+    state where the engine exposes it.
+
+    ⚠ **Every field but `bar`, `structure` and `snapshot` may be `None`, and `None` means the
+    stack was built without that engine — the question was never asked.** An events object with
+    empty lists means the engine RAN and found nothing this bar. See the switches at the bottom of
+    `EngineConfig` for why those two facts may not share a value. The structure engine has no
+    switch: the snapshot is built from it and every strategy in this repo reads one.
+    """
 
     bar: ReplayBar
     structure: StructureEvents
     snapshot: StructureSnapshot
-    fib: StructureFibEvents
-    sniper: SniperFibEvents
-    macro: MacroFibEvents
-    internal: InternalFibEvents
-    fvg: FvgEvents
-    rsi: RsiDivEvents
-    liquidity: LiquidityEvents
-    sessions: SessionEvents
+    fib: StructureFibEvents | None
+    sniper: SniperFibEvents | None
+    macro: MacroFibEvents | None
+    internal: InternalFibEvents | None
+    fvg: FvgEvents | None
+    rsi: RsiDivEvents | None
+    liquidity: LiquidityEvents | None
+    sessions: SessionEvents | None
     # None = the stack was built with `order_blocks=False`, i.e. the question was never asked.
     # An OrderBlockEvents with empty lists means the engine RAN and found nothing this bar.
     # Those are different facts and must not share a value — the `mt5_link` rule, which this repo
@@ -164,31 +211,59 @@ class BarState:
 
 
 class EngineStack:
-    """Owns one instance of each canonical engine and steps them all per bar."""
+    """Owns one instance of every canonical engine its config asks for, and steps them per bar.
+
+    ⚠ **"Every engine its config asks for" is not "every engine".** A strategy declares the ones
+    it reads and the rest are never built — see the switches at the bottom of `EngineConfig`.
+    A skipped engine's attribute here is `None`, exactly as its `BarState` field is.
+    """
 
     def __init__(self, config: EngineConfig | None = None) -> None:
         self.config = config or EngineConfig()
         c = self.config
 
+        # 🔴 REFUSED rather than quietly resolved: the EQ engine exists ONLY to exempt gaps from
+        # the FVG cap, so this pair asks the FVG engine to consult levels for a stack that will
+        # never run it. Building the EQ engine anyway would cost a per-bar ATR and pivot scan for
+        # output nothing can read, and skipping it silently would leave a config saying the
+        # exemption is on beside a replay where it never was — which is the shape of every "looked
+        # fine, measured something else" failure in this repo.
+        if c.eq_exempt_fvg and not c.fvg:
+            raise ValueError(
+                "eq_exempt_fvg=True needs fvg=True — the equal-highs/lows engine is only ever "
+                "read by the FVG cap, so this config asks for an exemption on an engine that "
+                "never runs."
+            )
+
         self.structure = StructureEngine(major_length=c.major_length)
-        self.fib = StructureFib()
-        self.sniper = SniperFib()
-        self.macro = MacroFib()
-        self.internal = InternalFib()
-        self.fvg = FairValueGapEngine(
-            max_count=c.fvg_max_count,
-            threshold_pct=c.fvg_threshold_pct,
-            require_close=c.fvg_require_close,
+        self.fib = StructureFib() if c.fib else None
+        self.sniper = SniperFib() if c.sniper else None
+        self.macro = MacroFib() if c.macro else None
+        self.internal = InternalFib() if c.internal else None
+        self.fvg = (
+            FairValueGapEngine(
+                max_count=c.fvg_max_count,
+                threshold_pct=c.fvg_threshold_pct,
+                require_close=c.fvg_require_close,
+            )
+            if c.fvg
+            else None
         )
-        self.rsi = RsiDivergenceEngine(
-            rsi_len=c.rsi_len,
-            pivot_len=c.rsi_pivot_len,
-            oversold=c.rsi_oversold,
-            overbought=c.rsi_overbought,
-            valid_bars=c.rsi_valid_bars,
+        self.rsi = (
+            RsiDivergenceEngine(
+                rsi_len=c.rsi_len,
+                pivot_len=c.rsi_pivot_len,
+                oversold=c.rsi_oversold,
+                overbought=c.rsi_overbought,
+                valid_bars=c.rsi_valid_bars,
+            )
+            if c.rsi
+            else None
         )
-        self.liquidity = LiquidityEngine(htf_rollover_hours=c.htf_rollover_hours)
-        self.sessions = SessionEngine()
+        self.liquidity = (
+            LiquidityEngine(htf_rollover_hours=c.htf_rollover_hours) if c.liquidity else None
+        )
+        self.sessions = SessionEngine() if c.sessions else None
         # Only built when the coupling is on: an unused engine still costs a per-bar ATR and a
         # pivot scan on every replay in the repo, and the flag is off for every consumer but one.
         self.eq = (
@@ -238,10 +313,12 @@ class EngineStack:
         # already the Pine's and not a thing to rediscover.
         ob_ev = self.order_blocks.update(i, o, h, l, c) if self.order_blocks else None
 
-        fib_ev = self.fib.update(h, l, snap)
-        sniper_ev = self.sniper.update(h, l, snap)
-        macro_ev = self.macro.update(i, h, l, c, snap)
-        internal_ev = self.internal.update(i, h, l, snap)
+        # `None` when the stack was built without the engine — never a blank events object. The
+        # order of these four is still the Pine's; a skipped one leaves a hole rather than a gap.
+        fib_ev = self.fib.update(h, l, snap) if self.fib is not None else None
+        sniper_ev = self.sniper.update(h, l, snap) if self.sniper is not None else None
+        macro_ev = self.macro.update(i, h, l, c, snap) if self.macro is not None else None
+        internal_ev = self.internal.update(i, h, l, snap) if self.internal is not None else None
 
         # EQ runs BEFORE FVG, the Pine order — the exemption tests this bar's active levels, and
         # the tolerance is this bar's ATR(50). Passing None/0.0 is the exemption-off path and leaves
@@ -251,10 +328,14 @@ class EngineStack:
             eq_ev = self.eq.update(i, h, l, c)
             eq_levels = eq_ev.active_eqh + eq_ev.active_eql
             eq_tol = eq_ev.tolerance
-        fvg_ev = self.fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol)
-        rsi_ev = self.rsi.update(i, h, l, c)
-        liq_ev = self.liquidity.update(i, ts, h, l, c)
-        sess_ev = self.sessions.update(i, ts, h, l)
+        fvg_ev = (
+            self.fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol)
+            if self.fvg is not None
+            else None
+        )
+        rsi_ev = self.rsi.update(i, h, l, c) if self.rsi is not None else None
+        liq_ev = self.liquidity.update(i, ts, h, l, c) if self.liquidity is not None else None
+        sess_ev = self.sessions.update(i, ts, h, l) if self.sessions is not None else None
 
         return BarState(
             bar=bar,

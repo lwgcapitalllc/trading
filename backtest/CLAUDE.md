@@ -2395,3 +2395,75 @@ rounds lots, so summing first and charging once rounds a different number.
 ⚠ Both halves proven by MUTATION: dropping the adds from the spread charge reddens the spread
 case, dropping them from the commission charge reddens the commission case, and neither touches
 the other.
+
+## An engine a strategy never READS is never RUN — `EngineConfig`'s switches (2026-09-10)
+
+**Eight new booleans on `EngineConfig` — the structure fib, the sniper zone, the macro fib, the
+internal fib, the gaps, the RSI divergence, the liquidity levels and the sessions engine — each
+deciding whether that engine is BUILT and STEPPED at all. Every one defaults ON, so a stack built
+the way every existing caller builds it is byte-identical to the one this package has always had.
+A STRATEGY turns off what it never reads, in its own `engine_config()`.**
+
+🔴 **THE COST WAS NEVER SMALL AND WAS NEVER SHARED.** `order_blocks` has carried this argument
+since 2026-07-31 — an unused engine still costs a per-bar pass on every replay, sweep combo and
+optimizer core in the repo — and it was the only engine acting on it. **MEASURED on the two live
+bots' own stack (`st_e358caddd0`, PU Prime `XAUUSD.p`, 2020-01-01 → 2026-09-06, both legs, no solo
+controls): 277.5s → 182.6s, a 1.52x speed-up, with the 361-trade book IDENTICAL on every field of
+every record.** Per engine, on 190,159 real M5 bars, best of three interleaved runs: the full stack
+26.91s, the two engines `extreme_leg` reads **11.89s (44.2%)**, the seven `sos_fade` reads 22.01s
+(81.8%).
+
+⚠ **The 5-minute frame is the expensive one and it carries the bot that reads the least.** Three
+bars for every one on 15m, and `extreme_leg` reads the bar, the external structure events and the
+mitigated liquidity levels — nothing else.
+
+⚠ **A skipped engine's events are `None`, never an empty events object.** That is the
+`order_blocks` rule applied to seven more fields: `None` means THE QUESTION WAS NEVER ASKED, an
+empty list means the engine RAN and found nothing this bar. A strategy reading `state.sessions.in_ny`
+off a stack that never ran it gets an AttributeError, which is loud; an empty events object reads as
+*no session here* and the bot refuses every setup while looking perfectly healthy. **Rule 1, and
+this repo has already paid for it on a dead terminal, an empty registry and an unfetched calendar.**
+
+⚠ **A switch here is NOT a tuning input and needs no Pine input behind it** — same standing as
+`order_blocks`. It cannot change what any engine EMITS; it can only decide whether that engine is
+asked. Every field above them in the dataclass is a value the Pine sets and a parity gate can see;
+these are not, and no `cfg_` column could ever carry one.
+
+⚠ **The structure engine has NO switch.** The snapshot is built from it and every strategy here
+reads one, so a switch would be a branch nothing can take.
+
+🔴 **THEY GO IN `engine_config()`, NOT `stack_config()`, AND THE DIFFERENCE IS THE GATE.** The
+parity harnesses call `engine_config()` off the CLASS — and so do `optimizer._replay_one`,
+`python_runner._replay` and `algos/live/runner.py`, all three of which build their own stack. In
+`stack_config()` — the per-INSTANCE layer — the gate would keep replaying the full stack while
+production replayed a narrower one, which is a fixture more capable than production, i.e. rule 13.
+
+🔴 **`eq_exempt_fvg=True` with `fvg=False` RAISES rather than being quietly resolved.** The
+equal-highs/lows engine exists only to exempt gaps from the FVG cap, so that pair asks for an
+exemption on an engine that never runs. Building EQ anyway costs a per-bar ATR and pivot scan for
+output nothing can read; skipping it silently leaves a config saying the exemption is on beside a
+replay where it never was.
+
+⚠ **Two bots gate today and three do not.** `sos_fade` switches off the internal fib and the
+sessions engine; `extreme_leg` switches off everything but liquidity. `b_leg`, `bos` and
+`realign` are untouched and still run the full stack — they are not slower than they were, they
+simply have not been measured, and each needs its own read of what it consumes before it gates.
+
+**TESTED:** `tests/test_replay_engine_gates.py`, 25 tests, **7 mutations run and 7 killed** —
+building a skipped engine anyway, reading the wrong gate when stepping, dropping the EQ refusal, a
+switch defaulting off, the gate feeding back into the snapshot, a bot gating an engine it reads,
+and the source probe finding nothing.
+
+🔴 **The test that matters is the one asking whether a bot READS what it has switched off**, and it
+scans the strategy package's parsed AST rather than its text, so a mention in a comment cannot make
+an engine look needed. **It is deliberately conservative in one direction**: a false positive says
+*enable this engine*, which costs time; a false negative says *safe to skip* about one that is
+read, which is the failure. ⚠ **It carries a self-test**, because otherwise *nobody reads it* and
+*the scanner is broken* are the same green — the exact defect it exists to stop.
+
+**PARITY:** `compare_strategy.py` on `engines/VANTAGE_XAUUSD, 15_e98ec.csv` — **exit 0 at warm-up
+500, 19,636 bars compared.** `scripts/run_all_tests.sh` all green, 11 of 11 golden engine gates
+included. ⚠ **`compare_extreme_leg.py` COULD NOT RUN — no extreme-leg export is on this machine**
+(the `5_821a8` file its own CLAUDE.md names is not here), which is the "9 of 14 gates could not
+answer" condition the root doc records. **The 6.6-year A/B above is that bot's evidence, and it is
+a different claim from a parity pass.**
