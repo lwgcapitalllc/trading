@@ -607,6 +607,9 @@ export interface ScannedTerminal {
   reason: string | null
   /** Why a probe failed. */
   error: string | null
+  /** Where `account` came from: `terminal` (the scan asked), `bot` (the bot trading through it
+   *  reports what it observes), or `null` (nobody could say). Different strengths of evidence. */
+  account_source: string | null
   /** `new` | `known` | `conflict` | `unasked` */
   verdict: string
   conflicts: string[]

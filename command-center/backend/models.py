@@ -961,6 +961,12 @@ class ScannedTerminal(BaseModel):
     symbol_suffix_how: Optional[str] = None
     reason: Optional[str] = None  # why it was not probed
     error: Optional[str] = None  # why a probe failed
+    # WHERE `account` came from: "terminal" = the scan attached and asked; "bot" = the bot trading
+    # through it reported what it OBSERVES; None = nobody could say. ⚠ Served rather than folded
+    # away, because the two are different strengths of evidence — and a field on the dataclass that
+    # the response model does not declare is DROPPED without a word, which is how this first went
+    # missing.
+    account_source: Optional[str] = None
     verdict: str = "unasked"  # "new" | "known" | "conflict" | "unasked"
     conflicts: list[str] = []
     suggested: Optional[dict] = None  # pre-filled registration for a "new" account
