@@ -5,6 +5,7 @@
 - **Answer in a short bulleted list, grouped by outcome.** Findings go under **Broken** and **Working**, worst first, and anything needing a decision goes last under its own heading. One line per bullet — a fact and its consequence, nothing else. No nested bullets, no closing summary repeating what the bullets said. *(Aaron, 2026-08-24: "this is the most efficient way to speak to me." He asked twice in one session after two prose answers, so a long-form reply is now the exception that has to earn itself. It applies to everyone working this repo.)*
 - **Prose only when he asks for it, or when a bullet would hide the reasoning** — a design trade-off, a measurement that needs its caveat attached, why something broke. Then keep it to a paragraph and put it UNDER the bullets, never above them.
 - Say the answer in the first bullet. Never build up to it.
+- **Keep the headings; cut the CONTENT to the bone.** The section structure above stays, "needs a decision" included — what gets shortened is each bullet: state the fact, drop the explanation, and let him ask you to expand on the one he cares about. *(Aaron, 2026-09-09. Applies to everyone working this repo.)*
 - No preamble. No "Great question." No "Sure, I can help with that."
 - Spawn subagents for routine tasks. Work sequentially unless the task explicitly requires parallel execution.
 

@@ -203,7 +203,8 @@
       "Bash(./run_sweep.sh)",
       "Bash(cp command-center/backend/services/portfolio_runner.py /private/tmp/claude-501/-Users-alwg-trading/405a57c4-0197-4bcc-83b8-872afe93892b/scratchpad/portfolio_runner.orig)",
       "Bash(./run_grid2.sh)",
-      "Bash(./run_energy1.sh)"
+      "Bash(./run_energy1.sh)",
+      "Bash(cat)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
