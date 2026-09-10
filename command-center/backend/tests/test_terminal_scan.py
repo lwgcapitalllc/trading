@@ -261,7 +261,7 @@ def test_a_confirmed_row_says_where_else_the_account_is_open():
     )
     (check,) = reconcile(payload, [row]).registry
     assert check.verdict == "confirmed"
-    assert "also open in" in check.detail and "MT5_Lab" in check.detail
+    assert "Also open on" in check.detail and "MT5_Lab" in check.detail
 
 
 def test_a_terminal_on_a_different_account_contradicts_the_row():
@@ -297,7 +297,7 @@ def test_a_row_whose_terminal_a_bot_owns_is_unverified_not_wrong():
     )
     (check,) = reconcile(payload, [row]).registry
     assert check.verdict == "unverified"
-    assert "bot trades through" in check.detail
+    assert "your bots' terminal" in check.detail
 
 
 def test_a_row_whose_terminal_is_stopped_is_unverified():
@@ -328,7 +328,7 @@ def test_a_row_naming_a_terminal_the_box_does_not_have_is_unverified():
 def test_a_row_naming_no_terminal_at_all_is_unverified():
     (check,) = reconcile(_scan(_probed()), [_Row(account=999, mt5_path="")]).registry
     assert check.verdict == "unverified"
-    assert "names no terminal" in check.detail
+    assert "No terminal is recorded" in check.detail
 
 
 def test_a_terminal_with_no_account_is_never_given_a_verdict():
@@ -434,7 +434,7 @@ def test_the_stale_row_is_finally_CONTRADICTED_rather_than_unverified():
     (check,) = out.registry
     assert check.verdict == "contradicted"
     assert "700152905" in check.detail
-    assert any("bot trading through it reports" in c for c in check.conflicts)
+    assert any("reported by the bot there" in c and "MT5_FFT" in c for c in check.conflicts)
 
 
 def test_a_bot_that_could_not_ask_contributes_nothing():
@@ -445,7 +445,7 @@ def test_a_bot_that_could_not_ask_contributes_nothing():
     assert t.account is None and t.account_source is None
     (check,) = out.registry
     assert check.verdict == "unverified"
-    assert "no bot on it could say" in check.detail
+    assert "no bot on it has reported" in check.detail
 
 
 def test_bots_that_DISAGREE_resolve_to_unknown_rather_than_a_guess():
@@ -474,3 +474,50 @@ def test_no_bots_map_at_all_behaves_exactly_as_before():
     row = _Row(account=700152905, mt5_path=r"C:\MT5_FFT\terminal64.exe")
     (check,) = reconcile(_scan(_OWNED), [row]).registry
     assert check.verdict == "unverified"
+
+
+def test_no_sentence_a_person_reads_carries_a_raw_windows_path():
+    """🔴 Aaron, 2026-09-10, looking at this panel: *"I don't know what I'm looking at."*
+
+    The first wording put full Windows paths into sentences — *"this row claims
+    C:\\MT5_FFT\\terminal64.exe"* — which reads as a log line, not an answer. Every detail and
+    conflict now names a terminal by its folder, the name it goes by on the box.
+
+    Watched red against the previous wording: `terminal64.exe` appears in three of these strings.
+    """
+    rows = [
+        _Row(account=700107749, mt5_path=r"C:\MT5_FFT\terminal64.exe"),
+        _Row(
+            account=700152905,
+            server="PUPrime-Demo",
+            kind="demo",
+            mt5_path=r"C:\MT5_Lab\terminal64.exe",
+            symbol_suffix=".p",
+        ),
+        _Row(account=111, mt5_path=r"C:\MT5_Ghost\terminal64.exe"),
+        _Row(account=222, mt5_path=r"C:\Program Files\MetaTrader 5\terminal64.exe"),
+    ]
+    payload = _scan(
+        _OWNED,
+        _probed(
+            key=r"c:\mt5_lab",
+            install=r"C:\MT5_Lab",
+            account=700152905,
+            server="PUPrime-Demo",
+            kind="demo",
+        ),
+        {
+            "key": r"c:\program files\metatrader 5",
+            "install": r"C:\Program Files\MetaTrader 5",
+            "state": "not_running",
+            "running": False,
+            "owned_by_bots": [],
+            "account": None,
+        },
+    )
+    out = reconcile(payload, rows, {"sos_fade_demo": 700152905})
+    said = [r.detail for r in out.registry] + [c for r in out.registry for c in r.conflicts]
+    assert said, "the fixture must produce sentences to check"
+    for sentence in said:
+        assert "terminal64.exe" not in sentence, sentence
+        assert ":\\" not in sentence, sentence

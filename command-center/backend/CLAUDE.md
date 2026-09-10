@@ -1642,6 +1642,19 @@ dataclass field the model does not declare is DROPPED without a word, and this o
 ⚠ **It lights up only once a bot restarts onto the new runner** — until then the bots report
 nothing and the row stays unverified, which is the honest answer.
 
+⚠ **Every `detail` and conflict string is a sentence a PERSON reads** in the Scan VPS drawer, so
+it names a terminal by its folder (`_short`: `C:\\MT5_FFT\\terminal64.exe` → `MT5_FFT`) and never
+carries a path. A test fails on `terminal64.exe` in any of them.
+
+⚠ **A scan briefly slows the lab's MT5 agent, and the sidebar reads slow as DOWN — MEASURED, and
+mostly not this feature's doing.** Polled every second: 22/22 answers with nothing running, 3
+missed during a scan, and **the page's own 60s fleet refresh alone misses one too**. The agent's
+terminal link never dropped; its `/status` answered past the health check's timeout while the box
+was busy. So the "MT5 Agent down" flicker predates this and is the health light reading a slow
+answer as a dead one (rule 2). This scan adds load by making TWO box calls — the scan, then the
+fleet snapshot just to read each bot's observed account; folding that read into the box-side
+script would make it one.
+
 Story and the false alarm: `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
 ## 🔴 An assignment may only write a param the RECEIVING strategy declares (2026-09-04)
