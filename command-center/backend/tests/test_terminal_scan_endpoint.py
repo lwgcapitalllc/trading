@@ -168,7 +168,7 @@ def test_a_row_whose_terminal_could_not_be_asked_is_unverified_not_contradicted(
 
     (check,) = client.get("/bots/accounts/scan").json()["registry"]
     assert check["verdict"] == "unverified"
-    assert "bot trades through" in check["detail"]
+    assert "your bots' terminal" in check["detail"]
 
 
 def test_an_unreachable_box_is_a_502_carrying_why_not_an_empty_scan(client, registry, monkeypatch):
