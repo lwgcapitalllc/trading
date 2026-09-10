@@ -3333,10 +3333,12 @@ every engine on, then gated — over 2020-01-01 → 2026-09-06: **361 trades eit
 every field of every record**, 277.5s → 182.6s. Per-engine on 190,159 M5 bars, the seven this bot
 reads cost 81.8% of the full stack.
 
-✅ **PARITY GREEN** — `compare_strategy.py` on `engines/VANTAGE_XAUUSD, 15_e98ec.csv`, exit 0 at
-`--warmup 500`, 19,636 bars compared. ⚠ **A green run here is the strong evidence, not a formality:
-the gate replays this strategy's real decision stream against the Pine's, so an engine wrongly
-switched off would move a decision and turn it red.**
+🔴 **THIS SAID "PARITY GREEN" AND THE GATE HAD COMPARED NOTHING.** `engines/VANTAGE_XAUUSD,
+15_e98ec.csv` is an export of the GAP engine's harness, not this bot's twin: no decision column, so
+the diff skipped every field and printed `PARITY OK — 19636 bars compared`. **No SOS Fade strategy
+export is on this machine, so this change has NO parity evidence** — the A/B above only says the
+gated stack books what the ungated one does, never that either agrees with the Pine. A real run is
+the strong check here (a wrongly gated engine moves a decision). The gate now refuses that file.
 
 ⚠ **A switch is a CLAIM about what this package reads, and the guard is
 `backtest/tests/test_replay_engine_gates.py`** — it parses every module here and fails by name if
@@ -3381,3 +3383,19 @@ warm-up floor. Refusing them would take the gate away from every export on this 
 **TESTED:** 6 in `tests/test_compare_strategy.py` — a measured zero still reads zero, a measured
 gap reads the gap, no column and other-`dbg_`-columns-only both read `None`, the subset case, and
 one asserting each of the three columns is enough on its own so the two lists cannot drift.
+
+## 🔴 The gate REFUSES an export missing a column it compares (2026-09-10)
+
+`missing_columns_refusal()`, called by `run_parity` before the replay: **an export lacking ANY column
+the diff reads exits 2** — none of them reads *not an export of the twin*, some of them are named.
+🔴 **The diff skipped every column an export lacked, so a file that was not the twin passed** (the
+paragraph above), and a PARTIAL export passed the same way over whatever was left. ⚠ **Refused, not
+narrowed** — `compare_bos.py`'s policy; today's twin plots every compared column, so an older export
+is re-exported, never read around. The loop's skips are DELETED, so no dead branch reads as covered.
+⚠ **Shared, not copied**: B-LEG's and the extreme leg's gates call it too. ⚠ **Its one way to backfire
+is a diff column the Pine never plots** — every real export refused — so a test reads the twin's own
+plot titles (`plot_titles()`, which follows a call wrapped across lines). ⚠ **Rule 13 on the
+encoder**: its one column no real export carries is `cfg_poi_source` (the Pine input was reverted),
+so the zone-source round trips test plumbing, not parity; a test names it as the only exemption.
+**Tests:** 13 here, 24 in B-LEG's file, 2 in the extreme leg's; **18 mutations run, all red.**
+Story: `HISTORY.md` → *A parity gate passed a file that was not its twin*.

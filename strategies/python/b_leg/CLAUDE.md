@@ -796,3 +796,12 @@ At six hours and above the trade closes on its ladder either way (+1.26R with th
 so the mutation that drops those columns SURVIVED — the fixture could not tell the two
 configurations apart. At two hours the clock fires and the same trade closes −0.5753R, and the
 mutation dies. **A column nothing can distinguish is a column whose absence no test will report.**
+
+## 🔴 The gate REFUSES an export missing a column it compares (2026-09-10)
+
+A file that is not this fork's twin crashed the gate with a `KeyError` out of `_expand`, and a
+PARTIAL export passed, because the diff skipped any column it lacked. **Both now exit 2 by name**
+through `missing_columns_refusal` — the SOS Fade gate's function, shared rather than copied; rule and
+story in `strategies/python/sos_fade/CLAUDE.md`. The loop's skips are deleted, and a test holds every
+compared column to this fork's own twin (every one is plotted today, so no real export is refused).
+

@@ -21,6 +21,45 @@ the other one did.
 
 ## Latest
 
+### A parity gate passed a file that was not its twin (2026-09-10)
+
+Found while clearing the raw exports out of `engines/`: two docs named
+`engines/VANTAGE_XAUUSD, 15_e98ec.csv` as the SOS Fade bot's parity evidence for `f84e6a38` (*an
+engine a strategy never reads is never run*) — "exit 0 at `--warmup 500`, 19,636 bars compared".
+
+**The file is not the twin.** Its 45 columns are an old-layout export of the GAP engine's harness —
+gap slots and equal-level settings, and none of the decision columns the gate compares. Re-run as
+cited: `PARITY OK — Python == Pine on every bar from 500 on (19636 bars compared).` — 20,155 rows
+less the 500 warm-up and the 19-bar tail. **The diff skipped every column the export lacked, so it
+compared nothing on every bar and passed.** No SOS Fade strategy export exists anywhere in the repo,
+so that change has no parity evidence at all; its 361-trade identical A/B stands, as the weaker
+claim it always was.
+
+**The siblings, run on files that are not their twins:** the extreme leg's gate refused the file (a
+header check, from the 2026-09-02 trade-list lesson) but skipped a missing table column the same
+way, so a partial export passed; B-LEG's crashed with a `KeyError` out of its unpacking; BOS refused
+and named the missing columns — the only one already right.
+
+**The fix is BOS's policy, written once.** `missing_columns_refusal()` in the SOS Fade tool: SOS
+Fade's and B-LEG's replay step call it before the replay, the extreme leg's gate before its loop.
+Any compared column missing exits 2 and names it; all of them missing reads *not an export of the
+twin*. Every twin plots every column its gate compares today — checked off the twins' own plot
+titles — so no real export is refused. The loops' per-column skips were deleted rather than left
+standing behind the guard.
+
+**Two findings on the way, both by tests written for this.** The SOS Fade encoder writes one column
+no real export carries — `cfg_poi_source`, whose Pine input was reverted while the Python field
+lived on — so its zone-source round trips test plumbing, never parity; it is now the one named
+exemption. And the first plot-title reader missed the extreme leg's settings-flags plot because the
+call wraps across two lines; the fixture check caught it on its first run.
+
+**TESTED:** 39 new cases across the three gates' test files, the refusal cases watched RED against
+HEAD — `PARITY OK` on a real gap export, all 9 + 21 single-column drops returning parity, the
+extreme leg passing with three columns gone, B-LEG's traceback. **18 mutations run, 18 red**, each
+on the case written for it: the refusal disabled, each gate's call removed, the wording branch, the
+names dropped, the compared list grown or shrunk, four reader shapes, the fixture exemption, and a
+fixture column added in each gate.
+
 ### The overlap audit outlived its inputs a third time (2026-09-10)
 
 Aaron: *"ok you can run the overlap check."* It had been flagged earlier the same day: the fib

@@ -421,3 +421,34 @@ def test_the_week_is_NOT_waited_for_when_the_weekly_family_is_off():
     object.__setattr__(cfg, "use_weekly_level", False) if hasattr(cfg, "__dataclass_fields__") \
         else setattr(cfg, "use_weekly_level", False)
     assert derived_warmup(5, cfg) == floor
+
+
+def test_gate_REFUSES_an_export_missing_compared_columns_and_names_them(export, tmp_path):
+    """🔴 The diff skipped any column the export lacked, so an export missing some passed over the
+    fields left — the hole that let the SOS Fade gate print PARITY OK over a file that was not its
+    twin at all (2026-09-10). First, middle and last of the table, so a refusal that only ever
+    looked at one end of it cannot pass.
+
+    Watched RED against HEAD: exit 0 and a parity verdict over the other seventeen.
+    """
+    gone = ["px_dir15", "px_cand_r", "px_agg_c"]
+    r = _run(export.drop(columns=gone), tmp_path)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert [c for c in gone if c not in r.stdout] == [], r.stdout
+    assert "PARITY" not in r.stdout
+
+
+def test_the_synthetic_export_writes_NO_column_the_real_twin_cannot(export):
+    """Rule 13 on this file's own fixture, and the half that makes the strict refusal safe: the
+    undisturbed-export control goes green only if the diff reads nothing this fixture lacks, and
+    this case holds the fixture to the twin — so between them, every column the diff reads is one
+    a real export carries.
+
+    Watched RED by adding a column to `_synthetic_export`.
+    """
+    from sos_fade.tools.compare_strategy import plot_titles
+
+    titles = set(plot_titles(_ROOT / "strategies/tradingview/extreme_leg_strategy_export.pine"))
+    extra = [c for c in export.columns
+             if c not in ("time", "open", "high", "low", "close") and c not in titles]
+    assert extra == [], f"the fixture writes columns no export has: {extra}"

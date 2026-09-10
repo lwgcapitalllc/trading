@@ -2488,9 +2488,9 @@ an engine look needed. **It is deliberately conservative in one direction**: a f
 read, which is the failure. ⚠ **It carries a self-test**, because otherwise *nobody reads it* and
 *the scanner is broken* are the same green — the exact defect it exists to stop.
 
-**PARITY:** `compare_strategy.py` on `engines/VANTAGE_XAUUSD, 15_e98ec.csv` — **exit 0 at warm-up
-500, 19,636 bars compared.** `scripts/run_all_tests.sh` all green, 11 of 11 golden engine gates
-included. ⚠ **`compare_extreme_leg.py` COULD NOT RUN — no extreme-leg export is on this machine**
-(the `5_821a8` file its own CLAUDE.md names is not here), which is the "9 of 14 gates could not
-answer" condition the root doc records. **The 6.6-year A/B above is that bot's evidence, and it is
-a different claim from a parity pass.**
+**PARITY: NEITHER strategy gate has run for this change.** 🔴 **This said `compare_strategy.py`
+exited 0 on `engines/VANTAGE_XAUUSD, 15_e98ec.csv` — a gap-harness export with no decision column, so
+the gate compared nothing** (such a file is refused since 2026-09-10:
+`strategies/python/sos_fade/CLAUDE.md`). No SOS Fade or extreme-leg strategy export is on this
+machine. `scripts/run_all_tests.sh` all green, 11 of 11 golden engine gates included. **The 6.6-year
+A/B above is the evidence for both bots, and it is a different claim from a parity pass.**

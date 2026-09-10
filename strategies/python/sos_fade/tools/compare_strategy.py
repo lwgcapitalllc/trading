@@ -23,6 +23,7 @@ Stdlib + pandas (matches backtest/tools/compare_feeds.py).
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -67,6 +68,9 @@ _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
 _DEC_INT = ["px_l_stage", "px_s_stage"]
 _DEC_PRICE = ["px_edge", "px_stop", "px_entry_price",
               "px_exit_tp1", "px_exit_tp2", "px_exit_run"]
+# EVERY column the diff reads, by its unpacked name. `missing_columns_refusal` is checked against
+# this list, so "the decision stream" means one thing here and cannot drift from the loop.
+_COMPARED = _DEC_BOOL + _DEC_INT + _DEC_PRICE + ["px_entry_dir", "px_closed_r"]
 
 
 def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
@@ -407,6 +411,45 @@ def _expand_packed(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _code_only(line: str) -> str:
+    """A Pine line with its `//` comment cut off — the first `//` that is not inside a string."""
+    in_str = False
+    for i, ch in enumerate(line):
+        if ch == '"':
+            in_str = not in_str
+        elif not in_str and line.startswith("//", i):
+            return line[:i]
+    return line
+
+
+def plot_titles(pine: Path) -> List[str]:
+    """The columns a Pine export twin writes: the title of every `plot()` call, in file order.
+
+    Read as the LAST snake_case string literal in the call, because the title follows the
+    expression and an expression can carry string literals of its own (`execSlLevel == "0.618"`
+    sits in the same call as its title). ⚠ **A call may WRAP onto following lines** — the extreme
+    leg's settings-flags plot does, and a first version that read one line at a time dropped it —
+    so a call is collected until its brackets close, counting none that sit inside a string.
+    A misread can only drop or add a name, and each gate's tests compare these titles against the
+    columns that gate reads, so a misread fails LOUD. Tests use it; no gate reads it at run time.
+    """
+    out: List[str] = []
+    call = ""
+    for line in pine.read_text(encoding="utf-8").splitlines():
+        code = _code_only(line)
+        if not call and not code.lstrip().startswith("plot("):
+            continue
+        call += " " + code.strip()
+        bare = re.sub(r'"[^"]*"', '""', call)
+        if bare.count("(") > bare.count(")"):
+            continue
+        found = re.findall(r'"([a-z]+_[A-Za-z0-9_]+)"', call)
+        if found:
+            out.append(found[-1])
+        call = ""
+    return out
+
+
 def load_export(path: Path) -> pd.DataFrame:
     """Read the export CSV into a canonical frame: DatetimeIndex 'time' (UTC) + OHLC +
     whatever px_* / cfg_* columns are present, with packed columns expanded."""
@@ -490,13 +533,50 @@ def _decision_row(dec: Decision) -> Dict[str, object]:
 # ⚠ The replay is always the FULL export — this narrows only what is COMPARED, so the engines stay
 # warm and a drift that starts inside the tail persists and shows on the next export.
 class NothingToCompare(Exception):
-    """The warmup and the tail together leave no bars to diff.
+    """The export leaves nothing, or less than a PARITY OK would claim, to diff.
+
+    Two ways in: the warmup and the tail together swallow every bar, or the export lacks a column
+    the diff reads (`missing_columns_refusal`).
 
     🔴 REFUSING IS THE ANSWER, because the alternative is what this gate did on its first run with
     a tail: `--tail 99999` compared ZERO bars and printed `PARITY OK`. *Could not run* and *ran and
     passed* must never be the same outcome — that is the rule this repo keeps re-learning, and a
     parity gate reporting agreement it never checked is the worst shape it has.
     """
+
+
+def missing_columns_refusal(df: pd.DataFrame, compared: List[str], twin: str,
+                            chart: str) -> Optional[str]:
+    """The refusal for an export that lacks ANY column the diff reads, or None if it has them all.
+
+    🔴 **THE STRATEGY GATES SKIPPED EVERY COLUMN AN EXPORT DID NOT CARRY, AND ON 2026-09-10 THAT
+    PASSED A FILE THAT WAS NOT THE TWIN AT ALL.** This gate printed `PARITY OK — 19636 bars
+    compared` over an export of the GAP engine's harness: no decision column, so every bar skipped
+    every comparison, and the run was recorded as the SOS Fade bot's parity evidence in a commit
+    and two docs. The same skip passed a PARTIAL export in silence, green over whichever fields
+    happened to be there. B-LEG's gate crashed on the same file; the extreme leg's refused it but
+    skipped a missing column the same way.
+
+    ⚠ **REFUSED rather than narrowed — the policy `compare_bos.py` already had.** An export missing a
+    column compares less than PARITY OK claims, and the fix is always the same: re-export off the
+    current twin, which plots every column its gate reads (each gate's tests hold it to that, off
+    the twin's own plot titles). ⚠ Checked against the columns the diff READS, by their unpacked
+    names, so it cannot disagree with the loop about what the decision stream is.
+    """
+    missing = [c for c in compared if c not in df.columns]
+    if not missing:
+        return None
+    if len(missing) == len(compared):
+        what = (f"this file is not an export of {twin}: it carries none of the {len(compared)} "
+                f"per-bar decision columns the diff reads, so there is nothing here to compare.")
+    else:
+        what = (f"this export lacks {len(missing)} of the {len(compared)} columns the diff reads "
+                f"({', '.join(missing)}), so a pass would cover fields it never compared.")
+    return (f"{what}\n"
+            f"  Take the export off the CURRENT twin, not off the strategy:\n"
+            f"    1. Paste strategies/tradingview/{twin} onto XAUUSD {chart}\n"
+            f"    2. \u22ee (top right of the chart) \u2192 Export chart data\n"
+            f"    3. Choose 'Bar data and indicator values' \u2014 NOT 'List of trades'")
 
 
 def unsettled_tail(df: pd.DataFrame, engine_cfg=None) -> int:
@@ -540,38 +620,32 @@ def compare(df: pd.DataFrame, decisions: List[Decision], warmup: int,
         py = _decision_row(decisions[i])
         when = df.index[i]
 
+        # Every column read below is PRESENT: `run_parity` refuses an export missing any of them,
+        # so there is no per-column skip left here to pass over a field in silence.
         # booleans + ints — exact
         for col in _DEC_BOOL:
-            if col not in df.columns:
-                continue
             pine = _as_bool(row[col])
             if bool(py[col]) != pine:
                 msgs.append(f"bar {i} {when} {col}: py={py[col]} pine={pine}")
         for col in _DEC_INT:
-            if col not in df.columns:
-                continue
             pine = int(round(row[col])) if not pd.isna(row[col]) else 0
             if int(py[col]) != pine:
                 msgs.append(f"bar {i} {when} {col}: py={py[col]} pine={pine}")
 
         # prices — tolerance; na on both sides is a match
         for col in _DEC_PRICE:
-            if col not in df.columns:
-                continue
             pine = None if pd.isna(row[col]) else float(row[col])
             got = py[col]
             if not _num_match(got, pine, price_tol):
                 msgs.append(f"bar {i} {when} {col}: py={got} pine={pine}")
 
         # entry direction + R
-        if "px_entry_dir" in df.columns:
-            pine = int(round(row["px_entry_dir"])) if not pd.isna(row["px_entry_dir"]) else 0
-            if int(py["px_entry_dir"]) != pine:
-                msgs.append(f"bar {i} {when} px_entry_dir: py={py['px_entry_dir']} pine={pine}")
-        if "px_closed_r" in df.columns:
-            pine = None if pd.isna(row["px_closed_r"]) else float(row["px_closed_r"])
-            if not _num_match(py["px_closed_r"], pine, r_tol):
-                msgs.append(f"bar {i} {when} px_closed_r: py={py['px_closed_r']} pine={pine}")
+        pine = int(round(row["px_entry_dir"])) if not pd.isna(row["px_entry_dir"]) else 0
+        if int(py["px_entry_dir"]) != pine:
+            msgs.append(f"bar {i} {when} px_entry_dir: py={py['px_entry_dir']} pine={pine}")
+        pine = None if pd.isna(row["px_closed_r"]) else float(row["px_closed_r"])
+        if not _num_match(py["px_closed_r"], pine, r_tol):
+            msgs.append(f"bar {i} {when} px_closed_r: py={py['px_closed_r']} pine={pine}")
 
         if msgs:  # stop at the FIRST diverging bar — that's the actionable one
             break
@@ -605,6 +679,11 @@ def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
     the default from the export itself. Pass 0 to diff the unsettled tail anyway.
     """
     df = load_export(path)
+    # Before the replay, so a wrong file costs a read rather than a full replay, and inside the one
+    # function every caller goes through, so none can reach the diff around it.
+    why = missing_columns_refusal(df, _COMPARED, "sos_fade_strategy_export.pine", "15m")
+    if why is not None:
+        raise NothingToCompare(why)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
     eng = engine_config_from_export(df, SosFadeStrategy.engine_config(), eq_exempt)

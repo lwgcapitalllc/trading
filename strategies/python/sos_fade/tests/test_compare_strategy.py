@@ -616,3 +616,115 @@ def test_the_columns_it_LOOKS_for_are_the_columns_it_MEASURES():
         one = df.copy()
         one[col] = [_packed(99, 0)] * 10
         assert cs.export_truncation(one) is not None, f"{col} alone was not enough to measure"
+
+
+# ── an export without the decision stream is REFUSED, never compared over nothing ────────────
+# 🔴 On 2026-09-10 this gate printed `PARITY OK — 19636 bars compared` over an export of the GAP
+# engine's harness, which carries none of the decision columns: the diff skipped every column the
+# export lacked, so it compared nothing and passed, and that run was recorded as this bot's parity
+# evidence. The skip was per column, so a PARTIAL export passed the same way over whatever was
+# left. Refused now — the policy `compare_bos.py` already had.
+
+_REAL_GAP_EXPORT = (_ROOT / "engines" / "fair_value_gaps" / "exports" / "golden"
+                    / "VANTAGE_XAUUSD_M15_20187bars_plain.csv")
+_TWIN = _ROOT / "strategies" / "tradingview" / "sos_fade_strategy_export.pine"
+# The decision columns as the twin writes them — packed, the way they arrive in the CSV. The twin
+# also plots `px_block`, which nothing diffs, so it is not a case here.
+_EXPORT_DECISION_COLUMNS = ["px_dec_bits", "px_stages", "px_edge", "px_stop", "px_entry_price",
+                            "px_exit_tp1", "px_exit_tp2", "px_exit_run", "px_closed_r"]
+
+
+@pytest.fixture(scope="module")
+def _clean_export(tmp_path_factory):
+    p, _ = _write(tmp_path_factory.mktemp("sos_fade_clean"))
+    return pd.read_csv(p)
+
+
+def test_a_REAL_export_of_another_script_is_REFUSED_not_passed(capsys):
+    """The exact shape that passed: a real TradingView export of a DIFFERENT Pine script.
+
+    ⚠ A committed golden export, not a hand-built frame — a stub would only prove the gate refuses
+    the file somebody imagined (rule 13). It is 15-minute, so the timeframe refusal cannot answer
+    first and hide this one.
+
+    Watched RED against HEAD: exit 0 and `PARITY OK` after replaying all 20,188 bars.
+    """
+    rc = cs.main([str(_REAL_GAP_EXPORT), "--warmup", "500"])
+    out = capsys.readouterr().out
+    assert rc == 2, out
+    # The VERDICT line, not the phrase: the truncation caveat printed first says "A PARITY OK
+    # below ..." on every export without the diagnostic block, this one included.
+    assert not any(line.startswith("PARITY OK") for line in out.splitlines()), out
+    assert "not an export of sos_fade_strategy_export.pine" in out
+    # The fix, not only the fault: "wrong file" alone sends somebody back to guess the menu.
+    assert "Bar data and indicator values" in out
+
+
+@pytest.mark.parametrize("column", _EXPORT_DECISION_COLUMNS)
+def test_an_export_MISSING_one_decision_column_is_REFUSED_and_names_what_the_diff_lost(
+        _clean_export, tmp_path, column):
+    """Any ONE decision column gone and the run refuses, naming every compared field it took.
+
+    Watched RED against HEAD: all nine returned `[]`, i.e. parity over the columns left.
+    """
+    p = tmp_path / "export.csv"
+    _clean_export.drop(columns=[column]).to_csv(p, index=False)
+    lost = [c for c in cs._COMPARED if c not in cs.load_export(p).columns]
+    assert lost, f"dropping {column} took nothing the diff reads, so this case proves nothing"
+    with pytest.raises(cs.NothingToCompare) as exc:
+        cs.run_parity(p, warmup=100)
+    assert [c for c in lost if c not in str(exc.value)] == [], str(exc.value)
+
+
+def test_every_column_the_diff_reads_is_one_todays_twin_WRITES():
+    """The strict refusal's one way to backfire: a column added to the diff and never to the Pine
+    would turn away EVERY real export. Read off the twin's own plot titles and unpacked by the
+    tool's own decoder, so neither side is a list typed twice.
+
+    Watched RED by appending a name the twin never plots to `_COMPARED`.
+    """
+    titles = cs.plot_titles(_TWIN)
+    assert set(_EXPORT_DECISION_COLUMNS) <= set(titles), "this file's case list has drifted"
+    unpacked = cs._expand_packed(pd.DataFrame({t: [0.0] for t in titles}))
+    assert [c for c in cs._COMPARED if c not in unpacked.columns] == []
+
+
+# The one column this file's encoder writes that no real export can carry. `exec_poi_source` has no
+# Pine input at all — the Pine seam was reverted and the Python field outlived it (this package's
+# CLAUDE.md says so) — so every real export decodes as FVG, and the round trips above that encode
+# another source test the tool's plumbing, never parity with any Pine.
+_PYTHON_ONLY = {"cfg_poi_source"}
+
+
+def test_this_files_fixture_writes_NO_column_the_real_twin_cannot(_clean_export):
+    """Rule 13 on the encoder: a fixture more capable than production hides the defect. Every column
+    it writes beyond time and OHLC is one the twin plots, or is named above with its reason — so the
+    next column that exists only in the fixture is caught here rather than inside a green run.
+
+    Watched RED by removing the exemption above.
+    """
+    titles = set(cs.plot_titles(_TWIN))
+    extra = [c for c in _clean_export.columns
+             if c not in ("time", "open", "high", "low", "close") and c not in titles]
+    assert sorted(extra) == sorted(_PYTHON_ONLY), f"the fixture writes columns no export has: {extra}"
+
+
+def test_plot_titles_reads_the_TITLE_through_every_shape_a_twin_can_write(tmp_path):
+    """The shapes a twin contains or can: an expression carrying snake_case literals of its own, a
+    call wrapped onto the next line (the extreme leg's settings flags), a trailing comment quoting
+    an old name, a lone bracket inside a string, and a chart-only plot whose title is not a column.
+
+    Watched RED four ways, each on its own line of this fixture: reading the FIRST literal instead
+    of the last, reading one line at a time, keeping the comment, and counting a bracket that sits
+    inside a string.
+    """
+    pine = tmp_path / "twin.pine"
+    pine.write_text(
+        'plot(src == "ob_first" ? 1 : 0, "cfg_poi", display = display.data_window)\n'
+        "plot((a ? 1 : 0) +\n"
+        '  (b ? 2 : 0), "cfg_flags", editable = false)\n'
+        'plot(x, "px_stop")  // was "px_old_stop"\n'
+        'plot(tag == "(" ? 1 : 0, "px_paren")\n'
+        'plot(close, "DH")\n'
+        'plot(y, "px_last")\n', encoding="utf-8")
+    assert cs.plot_titles(pine) == ["cfg_poi", "cfg_flags", "px_stop", "px_paren", "px_last"]

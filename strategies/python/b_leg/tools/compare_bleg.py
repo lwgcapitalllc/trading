@@ -48,6 +48,7 @@ from sos_fade.tools.compare_strategy import (  # noqa: E402
     engine_config_from_export as _engine_config_from_export,
     EqExemptUnknown,
     load_export,
+    missing_columns_refusal,
     NothingToCompare,
     timeframe_refusal,
     unsettled_tail,
@@ -128,8 +129,11 @@ def _expand(df: pd.DataFrame) -> pd.DataFrame:
     # TradingView leaves the final (still-forming) bar's plotted series blank, so its packed
     # columns read as 0 and would look like a real "nothing armed / no leg live". Mark it and
     # skip it, rather than reporting a phantom mismatch on the last row.
-    marker = "px_dec_bits" if "px_dec_bits" in df.columns else "bl_bits"
-    df["_px_present"] = df[marker].notna()
+    # ⚠ Neither marker is a file that is not the twin at all: leave the flag alone rather than
+    # raise a KeyError from here — `run_parity` refuses that file by name before any diff runs.
+    marker = next((c for c in ("px_dec_bits", "bl_bits") if c in df.columns), None)
+    if marker is not None:
+        df["_px_present"] = df[marker].notna()
     return df
 
 
@@ -182,6 +186,8 @@ _PRICE = ["px_edge", "px_stop", "px_entry_price", "px_tp1", "px_tp2",
           "px_exit_tp1", "px_exit_tp2", "px_exit_run",
           "bl_l_top", "bl_l_bot", "bl_l_inv", "bl_l_tgt",
           "bl_s_top", "bl_s_bot", "bl_s_inv", "bl_s_tgt"]
+# EVERY column the diff reads, by its unpacked name — see `missing_columns_refusal`.
+_COMPARED = _BOOL + _INT + _PRICE + ["px_closed_r"]
 
 
 def _py_row(dec, bleg) -> dict:
@@ -268,13 +274,9 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
         py = _py_row(decisions[i], bleg_states[i])
         when = pd.to_datetime(row["time"], unit="s") if "time" in ex.columns else i
         for col in _BOOL:
-            if col not in ex.columns:
-                continue
             if bool(row[col]) != bool(py[col]):
                 msgs.append(f"bar {i} {when} {col}: py={py[col]} pine={row[col]}")
         for col in _INT:
-            if col not in ex.columns:
-                continue
             a, b = py[col], row[col]
             if (a is None) != (b is None or pd.isna(b)):
                 msgs.append(f"bar {i} {when} {col}: py={a} pine={b}")
@@ -285,22 +287,19 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
                 if int(a) != pine:
                     msgs.append(f"bar {i} {when} {col}: py={a} pine={pine}")
         for col in _PRICE:
-            if col not in ex.columns:
-                continue
             a, b = py[col], row[col]
             b = None if b is None or pd.isna(b) else float(b)
             if (a is None) != (b is None):
                 msgs.append(f"bar {i} {when} {col}: py={a} pine={b}")
             elif a is not None and abs(a - b) > price_tol:
                 msgs.append(f"bar {i} {when} {col}: py={a} pine={b}")
-        if "px_closed_r" in ex.columns:
-            a = py["px_closed_r"]
-            b = row["px_closed_r"]
-            b = None if b is None or pd.isna(b) else float(b)
-            if (a is None) != (b is None):
-                msgs.append(f"bar {i} {when} px_closed_r: py={a} pine={b}")
-            elif a is not None and abs(a - b) > r_tol:
-                msgs.append(f"bar {i} {when} px_closed_r: py={a} pine={b}")
+        a = py["px_closed_r"]
+        b = row["px_closed_r"]
+        b = None if b is None or pd.isna(b) else float(b)
+        if (a is None) != (b is None):
+            msgs.append(f"bar {i} {when} px_closed_r: py={a} pine={b}")
+        elif a is not None and abs(a - b) > r_tol:
+            msgs.append(f"bar {i} {when} px_closed_r: py={a} pine={b}")
         if msgs:
             break        # first divergence is the only useful one — everything after it is downstream
     return msgs
@@ -316,6 +315,10 @@ def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.
     state carried into the compared bars is the state the whole export produced.
     """
     df = load_export(path)
+    # Before the replay and shared with the SOS Fade gate — see `missing_columns_refusal`.
+    why = missing_columns_refusal(_expand(df), _COMPARED, "b_leg_strategy_export.pine", "15m")
+    if why is not None:
+        raise NothingToCompare(why)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
     # The EQ/FVG coupling comes off the export, not off this fork's pin — the two Pines genuinely
@@ -331,7 +334,7 @@ def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.
                    tail, tail_is_default)
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="B-LEG strategy logic-parity check (Python vs Pine export)")
     ap.add_argument("csv", help="b_leg_strategy_export.pine chart-data CSV")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)")
@@ -349,7 +352,7 @@ def main() -> int:
                     help="diff an export from a chart faster than 15m anyway. Only correct "
                          "if the inherited engine pins have been changed to match what that "
                          "chart's Pine ran.")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     # 🔴 THIS FORK INHERITS THE PARENT'S 15m GAP PINS, so it inherits the parent's exposure:
     # below 15m the Pine runs a different gap set from the one the Python replays, and any

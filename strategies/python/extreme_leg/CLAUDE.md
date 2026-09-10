@@ -819,3 +819,12 @@ starts reading a gated engine — because the failure is otherwise silent: a gat
 `None`, and `None` read as *nothing happened this bar* is a bot refusing every setup with every
 dashboard green. Rules and the measurement: `backtest/CLAUDE.md` → *An engine a strategy never
 READS is never RUN*.
+
+## 🔴 An export missing a compared column is REFUSED (2026-09-10)
+
+The wrong-FILE refusal above held, but the diff skipped any table column the export lacked, so a
+partial export passed over the rest. **Now exit 2, naming the missing columns**, through the SOS Fade
+gate's shared `missing_columns_refusal` (`strategies/python/sos_fade/CLAUDE.md`). ⚠ **The test holding
+this file's synthetic export to the twin's own plot titles caught a real misread on its first run**:
+the settings-flags plot wraps across two lines and the reader took one line at a time.
+

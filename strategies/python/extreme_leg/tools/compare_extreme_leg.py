@@ -65,7 +65,7 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
         sys.path.insert(0, _p)
 
 from extreme_leg import ExtremeLegConfig, ExtremeLegStrategy  # noqa: E402
-from sos_fade.tools.compare_strategy import load_export  # noqa: E402
+from sos_fade.tools.compare_strategy import load_export, missing_columns_refusal  # noqa: E402
 
 # ⚠ These MUST match the export block's own bit scheme, which is documented at `[doc 15]` and
 # `[doc 16]` of `extreme_leg_strategy_export.pine`. Written as literal dicts rather than
@@ -347,6 +347,15 @@ def main(argv=None) -> int:
         ("took_short", lambda st: st.entered == -1),
     ]
 
+    # 🔴 Every column in the table must be IN the export. The loop below skipped any it could not
+    # find, so an export missing some passed over the rest — the hole that let the SOS Fade gate
+    # print PARITY OK over a file that was not its twin (2026-09-10). Shared refusal, same policy.
+    why = missing_columns_refusal(df, [c for c, _, _, kind in checks if kind != "skip"],
+                                  "extreme_leg_strategy_export.pine", "5m")
+    if why is not None:
+        print(f"\u2717 {why}")
+        return 2
+
     first: dict = {}
     counts: Counter = Counter()
     compared = 0
@@ -366,7 +375,7 @@ def main(argv=None) -> int:
                 counts[name] += 1
                 first.setdefault(name, (row, ts, read(st), pine))
         for col, read, tol, kind in checks:
-            if kind == "skip" or col not in df.columns:
+            if kind == "skip":
                 continue
             pine = _f(df[col].iat[row])
             py = read(st)

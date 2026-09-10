@@ -346,25 +346,21 @@ def test_the_BLEG_harness_REFUSES_an_export_from_a_chart_faster_than_15m(tmp_pat
 def test_the_BLEG_refusal_can_be_overridden_deliberately(tmp_path, capsys):
     """The override exists because the pins CAN be changed; a wall with no door gets
     worked around in ways that leave no trace. With it passed, the run proceeds past the
-    check (and then fails on this stub file's missing columns, which is a different and
-    honest failure).
+    timeframe check — and this stub, which carries no decision column, is then refused BY
+    NAME as not an export of the twin. That second answer was a KeyError traceback until
+    2026-09-10, which this case used to swallow with a bare `except`.
 
-    Watched RED by ignoring the flag: the output goes back to CANNOT DIFF.
+    Watched RED by ignoring the flag: the timeframe refusal comes back.
     """
     csv = tmp_path / "fast.csv"
     idx = pd.date_range("2026-01-01", periods=40, freq="5min")
     pd.DataFrame({"time": idx.astype("int64") // 10**9, "open": 1.0, "high": 1.0,
                   "low": 1.0, "close": 1.0, "cfg_eq_exempt": 0}).to_csv(csv, index=False)
-    argv = sys.argv
-    sys.argv = ["compare_bleg.py", str(csv), "--allow-fast-timeframe"]
-    try:
-        try:
-            cb.main()
-        except Exception:
-            pass
-    finally:
-        sys.argv = argv
-    assert "CANNOT DIFF" not in capsys.readouterr().out
+    rc = cb.main([str(csv), "--allow-fast-timeframe"])
+    out = capsys.readouterr().out
+    assert "5-minute chart" not in out, out
+    assert rc == 2, out
+    assert "not an export of b_leg_strategy_export.pine" in out
 
 
 # ── the unconfirmed tail (2026-09-02) ──────────────────────────────────────────
@@ -538,3 +534,72 @@ def test_the_tail_is_the_CALENDAR_DAY_when_the_day_is_the_wider_one(tmp_path):
     assert not msgs, (
         f"bar {i} sits inside the {tail}-bar unsettled day and was compared anyway — the trim has "
         f"reverted to the {look}-bar pivot constant: {msgs[:2]}")
+
+
+# ── an export without the decision stream is REFUSED, never compared over nothing ────────────
+# 🔴 2026-09-10. The SOS Fade gate passed a file that was not its twin at all, and this gate CRASHED
+# on the same file (a KeyError out of the unpacking) while its diff skipped, in silence, any column
+# a partial export lacked. One refusal now, shared with that gate.
+
+_REAL_GAP_EXPORT = (_ROOT / "engines" / "fair_value_gaps" / "exports" / "golden"
+                    / "VANTAGE_XAUUSD_M15_20187bars_plain.csv")
+_TWIN = _ROOT / "strategies" / "tradingview" / "b_leg_strategy_export.pine"
+_EXPORT_DECISION_COLUMNS = [
+    "px_dec_bits", "px_stages", "px_edge", "px_stop", "px_entry_price", "px_tp1", "px_tp2",
+    "px_exit_tp1", "px_exit_tp2", "px_exit_run", "px_closed_r", "bl_bits", "bl_bars",
+    "bl_l_top", "bl_l_bot", "bl_l_inv", "bl_l_tgt", "bl_s_top", "bl_s_bot", "bl_s_inv", "bl_s_tgt"]
+
+
+@pytest.fixture(scope="module")
+def _clean_export(tmp_path_factory):
+    p, _ = _write(tmp_path_factory.mktemp("bleg_clean"))
+    return pd.read_csv(p)
+
+
+def test_a_REAL_export_of_another_script_is_REFUSED_not_a_traceback(capsys):
+    """A real TradingView export of a different Pine script, at 15m so the timeframe refusal
+    cannot answer first.
+
+    Watched RED against HEAD: a KeyError traceback out of the unpacking, after a full replay.
+    """
+    rc = cb.main([str(_REAL_GAP_EXPORT), "--warmup", "500"])
+    out = capsys.readouterr().out
+    assert rc == 2, out
+    assert not any(line.startswith("PARITY OK") for line in out.splitlines()), out
+    assert "not an export of b_leg_strategy_export.pine" in out
+    assert "Bar data and indicator values" in out
+
+
+@pytest.mark.parametrize("column", _EXPORT_DECISION_COLUMNS)
+def test_an_export_MISSING_one_decision_column_is_REFUSED_and_names_what_the_diff_lost(
+        _clean_export, tmp_path, column):
+    """Watched RED against HEAD: every case returned `[]`, i.e. parity over the columns left."""
+    p = tmp_path / "bleg_export.csv"
+    _clean_export.drop(columns=[column]).to_csv(p, index=False)
+    lost = [c for c in cb._COMPARED if c not in cb._expand(cb.load_export(p)).columns]
+    assert lost, f"dropping {column} took nothing the diff reads, so this case proves nothing"
+    with pytest.raises(cb.NothingToCompare) as exc:
+        cb.run_parity(p, warmup=100)
+    assert [c for c in lost if c not in str(exc.value)] == [], str(exc.value)
+
+
+def test_every_column_the_diff_reads_is_one_todays_twin_WRITES():
+    """A column added to the diff and never to the Pine would turn away EVERY real export.
+
+    Watched RED by appending a name the twin never plots to `_COMPARED`.
+    """
+    titles = cs.plot_titles(_TWIN)
+    assert set(_EXPORT_DECISION_COLUMNS) <= set(titles), "this file's case list has drifted"
+    unpacked = cb._expand(cs._expand_packed(pd.DataFrame({t: [0.0] for t in titles})))
+    assert [c for c in cb._COMPARED if c not in unpacked.columns] == []
+
+
+def test_this_files_fixture_writes_NO_column_the_real_twin_cannot(_clean_export):
+    """Rule 13 on the encoder: every column it writes beyond time and OHLC is one the twin plots.
+
+    Watched RED by writing one extra column in `_pack_bar`.
+    """
+    titles = set(cs.plot_titles(_TWIN))
+    extra = [c for c in _clean_export.columns
+             if c not in ("time", "open", "high", "low", "close") and c not in titles]
+    assert extra == [], f"the fixture writes columns no export has: {extra}"
