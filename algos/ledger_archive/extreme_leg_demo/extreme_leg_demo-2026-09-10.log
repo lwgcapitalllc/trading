@@ -25,3 +25,20 @@
 2026-09-10 15:53:22,247 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
 2026-09-10 15:53:23,090 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-10 15:56:03,980 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json.5328.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json'
+2026-09-10 21:33:21,255 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-10 21:33:21,271 [INFO] Stop requested — shutting down.
+2026-09-10 21:33:21,271 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-10 21:33:21,989 [INFO] MT5 disconnected.
+2026-09-10 21:33:33,381 [INFO] Extreme Leg | ExtremeLegStrategy v223 | hash c06b7889a3c5 | commit 719ba7f9 | frozen | LIVE
+2026-09-10 21:33:33,906 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-10 21:33:33,906 [INFO] MT5 connection lock released
+2026-09-10 21:33:34,038 [INFO] Sizing against account balance $15,844.46
+2026-09-10 21:33:34,038 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-10 21:33:34,038 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-10 21:33:36,694 [INFO] Warmed 15000 bars (2026-06-26 06:25:00+00:00 → 2026-09-10 20:50:00+00:00) in 2.5s
+2026-09-10 21:33:36,694 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-10 21:33:37,131 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-10 22:05:09,371 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-10 22:05:09,371 [INFO] Sizing against account balance $15,844.46
+2026-09-10 22:05:12,403 [INFO] Warmed 15000 bars (2026-06-26 06:35:00+00:00 → 2026-09-10 22:00:00+00:00) in 2.8s
+2026-09-10 22:05:12,403 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
