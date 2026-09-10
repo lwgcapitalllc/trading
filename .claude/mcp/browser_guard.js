@@ -34,8 +34,11 @@
     {
       what: 'promote code under a running bot',
       methods: ['POST'],
-      // /bots/<name>/promote is refused; /bots/<name>/promote/preview is not.
-      path: /^\/bots\/[^/]+\/promote$/,
+      // /bots/<name>/promote is refused; /bots/<name>/promote/preview is not. POST
+      // /promote/job (2026-09-10) runs the SAME deploy as a background job for the page's
+      // progress readout, so it is the same action and is refused the same way; GETting a
+      // job only reads its progress and stays allowed.
+      path: /^\/bots\/[^/]+\/promote(\/job)?$/,
     },
     {
       what: 'deploy a strategy to the VPS',

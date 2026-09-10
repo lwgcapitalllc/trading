@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   AlertTriangle,
@@ -9,8 +9,8 @@ import {
   GitCommitHorizontal,
   HelpCircle,
   Info,
+  Loader2,
   Lock,
-  PackageCheck,
   Snowflake,
   RotateCcw,
   SlidersHorizontal,
@@ -20,12 +20,20 @@ import {
   useBotParams,
   useSaveBotRuntime,
   useBotVersion,
-  usePreviewPromote,
-  usePromoteBot,
+  usePromoteJob,
+  useStartPromoteJob,
 } from '@/hooks/useBots'
 import { isRestartPending } from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
-import type { BotDeployedVersion, BotParamRow, BotParamsView, BotStatus } from '@/types'
+import { StepProgress, type Step } from '@/components/StepProgress'
+import type {
+  BotDeployedVersion,
+  BotParamRow,
+  BotParamsView,
+  BotPromoteJob,
+  BotPromoteStage,
+  BotStatus,
+} from '@/types'
 
 /**
  * What each live bot is actually configured with — and the one lever allowed to move
@@ -383,42 +391,99 @@ function Warn({ children }: { children: React.ReactNode }) {
 // and two controls firing one destructive action is two places for the confirmation copy, the
 // disabled state and the preview gate to drift apart — on the one control that changes what a
 // live account trades.
-export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string }) {
+//
+// 🔴 **ONE BUTTON AND ONE PROGRESS READOUT, SINCE 2026-09-10.** Aaron: *"a static disabled button
+// doesn't catch my focus"* and *"I have to scroll down and there is another button to click to
+// deploy and restart … I am only acting on one CTA and there is only 1 progress indicator."* It
+// was a Deploy button that ran a dry-run preview, printed its output at the bottom of the panel,
+// and put a SECOND button under that output; pressing it greyed out and said nothing for the
+// 30–60 seconds the deploy took.
+//
+// ⚠ **The preview step was dropped, not hidden, and that is a decision about what it bought.** It
+// showed `git pull` output nobody reads. What the reader decides on — the settings that would
+// change and the code changes — is on this banner BEFORE the click. And the checks the preview ran
+// (does it pull, does it build, does it import) are the same checks the real promote runs before it
+// swaps anything, refusing and leaving the bot untouched if any fails — they are now the progress
+// readout's first steps instead of a separate gate.
+//
+// ⚠ **A bot on a LIVE account still takes a second click, on the SAME button** — it re-labels
+// itself and disarms after a few seconds. One place to act, one extra deliberate press where the
+// money is real.
+//
+// ⚠ **The steps come from the backend job doing them** (`POST /bots/{bot}/promote/job`), never from
+// a timer here, and the last one — the bot reporting the new code — is a measurement. The job is
+// read by BOT, so closing the drawer mid-deploy and reopening it finds the run already going.
+const STEP_LABEL: Record<BotPromoteStage['key'], string> = {
+  pull: 'Pull code',
+  build: 'Build & check',
+  stop: 'Stop bot',
+  start: 'Start bot',
+  confirm: 'Running new code',
+}
+
+const STEP_DOING: Record<BotPromoteStage['key'], string> = {
+  pull: 'Pulling the latest code onto the trading box.',
+  build: 'Building the new version and checking it loads. The bot keeps trading until this passes.',
+  stop: 'Asking the bot to stop. It finishes its current pass first.',
+  start: 'Starting the bot on the new version.',
+  confirm: 'Waiting for the bot to report that it is running the new version.',
+}
+
+function jobSteps(job: BotPromoteJob, target: number | null): Step[] {
+  return job.stages.map((s) => ({
+    key: s.key,
+    label: s.key === 'confirm' && target != null ? `Running v${target}` : STEP_LABEL[s.key],
+    state: s.state === 'unconfirmed' ? 'warn' : s.state,
+    seconds: s.seconds,
+  }))
+}
+
+export function VersionBanner({
+  botKey,
+  botLabel,
+  live = false,
+}: {
+  botKey: string
+  botLabel: string
+  /** The bot trades a LIVE account — its deploy takes a second, deliberate click. */
+  live?: boolean
+}) {
   const { data: v, isLoading, isFetching } = useBotVersion(botKey)
-  const preview = usePreviewPromote()
-  const promote = usePromoteBot()
-  // 🔴 This was a bare `output: string | null`, so a FINISHED deploy rendered under the
-  // preview's own caption ("nothing deployed yet") with the Deploy button still sitting
-  // there — Aaron pressed Deploy, it worked, and the page gave him no way to tell. **A
-  // panel that shows a result has to say which ACTION produced it**; the text alone cannot,
-  // because promote.py's own output reads much the same either way.
-  const [result, setResult] = useState<{
-    kind: 'preview' | 'deploy'
-    ok: boolean
-    restarted: boolean
-    output: string
-  } | null>(null)
+  const { data: job } = usePromoteJob(botKey)
+  const start = useStartPromoteJob()
+  // The job this panel is showing. A deploy that is RUNNING is always shown; a finished one only
+  // if this panel started it or watched it run — a result from hours ago is not news.
+  const [shownJob, setShownJob] = useState<string | null>(null)
+  // Where the deploy is heading, captured at the click. A version quoted from the payload AFTER
+  // the deploy is a claim about the thing that just changed, so the step label uses the intent.
+  const [target, setTarget] = useState<number | null>(null)
+  const [armed, setArmed] = useState(false)
   const [showChanges, setShowChanges] = useState(false)
-  // A FINISHED deploy shows its `<pre>` only on request. The output is the thing you read
-  // while deciding whether to press the button and the thing you read when it FAILS — after a
-  // success it is 40 lines of confirmation sitting under a green line that already said so,
-  // holding the panel open in the shape it had before the deploy. A failure keeps it open.
+  // A FINISHED deploy shows its output only on request — after a success it is forty lines of
+  // confirmation under a line that already said so. A failure keeps it open; the reason lives there.
   const [showOutput, setShowOutput] = useState(false)
 
-  // 🔴 `usePromoteBot` invalidates this bot's version on success, so for the length of that
-  // refetch EVERY number on this banner still describes the state BEFORE the deploy — the
-  // versions behind, the settings that would change, and the Deploy button's own `v163 → v165`
-  // label. Leaving the button live across that window is what makes a finished deploy read as
-  // a pending one and invites a second press on stale data.
-  const deployed = result?.kind === 'deploy' && result.ok
-  const refreshing = deployed && isFetching
-  const busy = preview.isPending || promote.isPending || refreshing
-  // 🔴 A preview on screen means the question has MOVED to the confirm button below, and this
-  // one has nothing left to do — pressing it re-runs the same dry run and re-renders the same
-  // panel, which reads as *nothing happened*. Aaron, 2026-08-14: *"I click it. It just keeps
-  // repeating the process over and over."* The two-step is the whole safety property of this
-  // control, so exactly one of the two buttons may be live at a time; `Cancel` puts it back.
-  const awaitingConfirm = result?.kind === 'preview'
+  const running = job?.status === 'running'
+  // A deploy found RUNNING (the drawer reopened mid-deploy) is adopted, so it stays on screen once
+  // it finishes. Set during render, React's pattern for state derived from a changed input — an
+  // effect would paint one frame without it first.
+  if (running && job && job.job_id !== shownJob) setShownJob(job.job_id)
+  // The live confirm disarms itself, so a stray click minutes later cannot be the second one.
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 6_000)
+    return () => clearTimeout(t)
+  }, [armed])
+
+  // No `running ||` here: the line above has already adopted any running job, so it would be a
+  // branch nothing can reach — MEASURED, a mutation deleting it survived every check.
+  const shown = job && job.job_id === shownJob ? job : null
+  const finished = shown && shown.status !== 'running' ? shown : null
+  // 🔴 The finish invalidates this bot's version, and for the length of that refetch every number
+  // on the banner still describes the state BEFORE the deploy. The panel stays in its deploying
+  // shape over that window rather than flashing the old "N versions behind".
+  const refreshing = !!finished && isFetching
+  const busy = running || refreshing || start.isPending
   const c = v?.compare ?? null
 
   // The first read is ~4.5s over SSH. It holds the banner's footprint as a shimmer rather than a
@@ -456,47 +521,94 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
   // `null` is "no upstream to ask" — not "everything is pushed". Both render nothing here, but
   // they must never be collapsed into one value upstream of this line.
   const unpushed = c.unpushed_commits ?? []
-  // The highest version a promote could actually land right now.
+  // The highest version a promote could actually land right now. The button names THIS, not the
+  // backtester's version — a promote pulls on the VPS and cannot reach an unpushed commit.
   const deployable = c.local_version == null ? null : c.local_version - unpushed.length
+  const heading = deployable ?? c.local_version
 
-  const deployBtn = (
+  const confirmState = finished?.stages.find((s) => s.key === 'confirm')?.state
+  // The header is the loudest thing on the panel, so while a deploy is going it SAYS so — the
+  // reader's eye lands on the heading before anything else.
+  const deploying = running || refreshing || start.isPending
+  const failed = finished?.status === 'failed'
+
+  const fire = () => {
+    if (live && !armed) {
+      setArmed(true)
+      return
+    }
+    setArmed(false)
+    setShowOutput(false)
+    setTarget(heading ?? null)
+    start.mutate({ botName: botKey }, { onSuccess: (j) => setShownJob(j.job_id) })
+  }
+
+  // ONE button. It is withdrawn while a deploy runs (the progress readout is the thing to look
+  // at) and after a successful one (the header already says up to date); after a FAILED one it
+  // comes back as the way to try again.
+  const showButton = !deploying && (!finished || failed)
+  const deployBtn = showButton && (
     <button
-      onClick={() => {
-        setResult(null)
-        setShowOutput(false)
-        preview.mutate(
-          { botName: botKey },
-          {
-            onSuccess: (r) =>
-              setResult({ kind: 'preview', ok: r.ok, restarted: false, output: r.output }),
-          }
-        )
-      }}
-      disabled={busy || awaitingConfirm}
+      data-testid="deploy-button"
+      onClick={fire}
+      disabled={busy}
       className={`inline-flex items-center gap-[6px] px-[14px] py-[7px] rounded-md font-medium
                   disabled:opacity-40 ${
-                    behind > 0
-                      ? 'text-[12px] bg-gold-text/20 text-gold-text hover:bg-gold-text/30 border border-gold-text/40'
-                      : 'text-[10px] text-text-tertiary hover:text-text-secondary'
+                    armed
+                      ? 'text-[12px] bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 border border-amber-400/50'
+                      : behind > 0 || failed
+                        ? 'text-[12px] bg-gold-text/20 text-gold-text hover:bg-gold-text/30 border border-gold-text/40'
+                        : 'text-[10px] text-text-tertiary hover:text-text-secondary'
                   }`}
     >
-      <Upload size={behind > 0 ? 13 : 10} />
-      {/* A greyed button still labelled `Deploy v164 → v167` reads as BROKEN rather than as
-          done-its-part, and the reader's next move is to click it again — which is the report.
-          The label names where the action went. */}
-      {promote.isPending
-        ? 'deploying…'
-        : refreshing
-          ? 'checking…'
-          : preview.isPending
-            ? 'working…'
-            : awaitingConfirm
-              ? 'checked — confirm below'
-              : behind > 0
-                ? `Deploy v${c.deployed_version} → v${c.local_version}`
-                : 'Re-deploy'}
+      {armed ? <AlertTriangle size={13} /> : <Upload size={behind > 0 || failed ? 13 : 10} />}
+      {armed
+        ? 'Click again — this bot trades real money'
+        : failed
+          ? 'Try again'
+          : behind > 0
+            ? `Deploy & restart v${c.deployed_version} → v${heading}`
+            : 'Re-deploy'}
     </button>
   )
+
+  // The one sentence under the progress bar: what the running step is doing, or how it ended.
+  let caption: React.ReactNode = null
+  let captionTone = ''
+  if (shown && !finished) {
+    const active = shown.stages.find((s) => s.state === 'active')
+    caption = (
+      <>
+        {active ? STEP_DOING[active.key] : 'Starting…'}
+        <span className="font-mono tabular-nums text-text-tertiary">
+          {' '}
+          · {Math.round(shown.seconds)}s
+        </span>
+      </>
+    )
+  } else if (finished && refreshing) {
+    caption = 'Re-reading what landed on the trading box…'
+  } else if (finished && !failed) {
+    if (!finished.result?.restarted) {
+      caption = `Deployed — restart ${botLabel} to pick it up.`
+      captionTone = 'text-amber-300'
+    } else if (confirmState === 'unconfirmed') {
+      // The deploy worked; the bot has not SHOWN it yet. Never green — that would claim a
+      // measurement nobody took.
+      caption = `Deployed and restarted, but ${botLabel} had not reported the new version when the check stopped waiting. Check the bot.`
+      captionTone = 'text-amber-300'
+    } else {
+      caption = `Deployed — ${botLabel} restarted and reported the new version.`
+      captionTone = 'text-pos-text font-semibold'
+    }
+  } else if (failed) {
+    // `error` is the backend saying what state the failure left the bot in, which depends on the
+    // step it hit. Without one the build REFUSED, and a refused promote touches nothing.
+    caption =
+      finished.error ??
+      `Deploy refused — ${botLabel} is untouched and still on v${c.deployed_version}. The reason is in the output below.`
+    captionTone = 'text-neg-text font-semibold'
+  }
 
   return (
     /* `data-testid` is a declared TEST SEAM, and it is load-bearing rather than convenience:
@@ -507,22 +619,35 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
     <div
       data-testid="version-banner"
       className={`rounded-lg border px-[14px] py-[12px] ${
-        behind > 0
-          ? 'bg-amber-400/[0.07] border-amber-400/30'
-          : 'bg-pos-muted/40 border-pos-text/25'
+        deploying
+          ? 'bg-accent/[0.05] border-accent/40'
+          : failed
+            ? 'bg-neg-muted/30 border-neg-text/40'
+            : behind > 0
+              ? 'bg-amber-400/[0.07] border-amber-400/30'
+              : 'bg-pos-muted/40 border-pos-text/25'
       }`}
     >
       <div className="flex items-start justify-between gap-[16px] flex-wrap">
         <div>
           <p
+            data-testid="version-heading"
             className={`flex items-center gap-[7px] text-[13px] font-semibold ${
-              behind > 0 ? 'text-amber-300' : 'text-pos-text'
+              deploying ? 'text-accent' : behind > 0 ? 'text-amber-300' : 'text-pos-text'
             }`}
           >
-            {behind > 0 ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
-            {behind > 0
-              ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
-              : `${botLabel} is up to date`}
+            {deploying ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : behind > 0 ? (
+              <AlertTriangle size={14} />
+            ) : (
+              <CheckCircle2 size={14} />
+            )}
+            {deploying
+              ? `Deploying ${botLabel}${(target ?? heading) != null ? ` → v${target ?? heading}` : ''}`
+              : behind > 0
+                ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
+                : `${botLabel} is up to date`}
           </p>
           <div className="flex items-center gap-[22px] mt-[9px] text-[11px]">
             <span className="text-text-tertiary">
@@ -540,6 +665,55 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
         </div>
         {deployBtn}
       </div>
+
+      {/* THE progress readout — directly under the heading, so nobody scrolls to find where the
+          deploy is. It stays after a deploy finishes, showing how each step ended, until Close. */}
+      {shown && (
+        <div className="mt-[12px] border-t border-border-subtle/60 pt-[12px]">
+          <StepProgress
+            testId="deploy-progress"
+            steps={jobSteps(shown, target ?? (running ? heading : c.deployed_version))}
+            caption={
+              <span data-testid="deploy-caption" className={captionTone}>
+                {caption}
+              </span>
+            }
+          />
+          {finished && (
+            <>
+              {finished.result?.output && (failed || showOutput) && (
+                <pre
+                  className="text-[10px] leading-[1.45] font-mono text-text-secondary mt-[10px]
+                                whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto
+                                bg-bg-base/60 rounded p-[8px]"
+                >
+                  {finished.result.output}
+                </pre>
+              )}
+              <div className="flex items-center gap-[8px] mt-[9px] flex-wrap">
+                {!failed && finished.result?.output && (
+                  <button
+                    data-testid="deploy-output-toggle"
+                    onClick={() => setShowOutput((s) => !s)}
+                    className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
+                  >
+                    {showOutput ? 'Hide output' : 'Show output'}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShownJob(null)
+                    setShowOutput(false)
+                  }}
+                  className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
+                >
+                  Close
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* 🔴 **THE THREE WARNINGS THAT SAY THE HEADLINE ABOVE IS FALSE (restored 2026-09-06).**
           They lived in `DeployCard` and the fleet strip, and the tab collapse left both
@@ -655,7 +829,10 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
         </p>
       )}
 
-      {behind > 0 && !refreshing && (
+      {/* What a deploy would change — read BEFORE the click, so it is withdrawn once a deploy is
+          on screen: the question has moved to the progress readout, and after a finish these
+          rows describe the state before it. */}
+      {behind > 0 && !shown && (
         <div className="mt-[11px] border-t border-amber-400/20 pt-[10px] space-y-[9px]">
           {willChange.length > 0 ? (
             <div>
@@ -714,109 +891,6 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {result && (
-        <div className="mt-[11px] border-t border-border-subtle/60 pt-[9px]">
-          {result.kind === 'deploy' ? (
-            <p
-              className={`flex items-center gap-[6px] text-[12px] font-semibold mb-[6px] ${
-                result.ok ? 'text-pos-text' : 'text-neg-text'
-              }`}
-            >
-              {result.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-              {/* 🔴 It named `c.local_version` — the BACKTESTER's version, i.e. what the reader
-                  asked for rather than what landed. Those differ whenever the deploy could not
-                  reach HEAD, which is exactly the unpushed case above: on 2026-08-14 this line
-                  read "running v165" over a bot running v164. It is `deployed_version` now, and
-                  it is withheld until the refetch answers — a version quoted from the pre-deploy
-                  payload is a claim about the thing that just changed. */}
-              {/* Terse on SUCCESS, explicit on FAILURE, and the asymmetry is the point. The
-                  header directly above already reads "up to date · Deployed v168 · Backtester
-                  v168", so naming the bot and the version again is the same fact three times
-                  and it is what made a working confirmation read as complicated. A FAILURE has
-                  no such header — the banner still describes the state before the attempt — so
-                  it has to say the version itself. */}
-              {result.ok
-                ? result.restarted
-                  ? 'Deployed and restarted'
-                  : `Deployed — restart ${botLabel} to pick it up`
-                : `Deploy failed — ${botLabel} is untouched and still on v${c.deployed_version}`}
-            </p>
-          ) : (
-            <p className="text-[10px] uppercase tracking-[0.4px] text-text-tertiary mb-[6px]">
-              Checked the code on the VPS — nothing deployed yet
-            </p>
-          )}
-          {refreshing && (
-            <p className="text-[10px] text-text-tertiary mb-[6px]">
-              re-reading the deployed version…
-            </p>
-          )}
-          {/* A preview's output IS the thing you read before deciding, and a failure's output is
-              the only place the reason lives. A SUCCESS has already been summarised by the green
-              line above, so it collapses behind a toggle — that `<pre>` holding the panel open in
-              its pre-deploy shape is what made a finished deploy look like a pending one. */}
-          {(result.kind === 'preview' || !result.ok || showOutput) && (
-            <pre
-              className="text-[10px] leading-[1.45] font-mono text-text-secondary
-                            whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto
-                            bg-bg-base/60 rounded p-[8px]"
-            >
-              {result.output}
-            </pre>
-          )}
-          <div className="flex items-center gap-[8px] mt-[9px] flex-wrap">
-            {/* The deploy button exists ONLY on the preview. Leaving it up after a successful
-                deploy is what made a finished promote read as a pending one. */}
-            {result.kind === 'preview' && (
-              /* The bot is NAMED on the button, not just above it. This is the one control on
-                 the page that changes what a live account trades, and the reader arrived here
-                 by clicking a rail row — the name is the thing being confirmed. */
-              <button
-                onClick={() =>
-                  promote.mutate(
-                    { botName: botKey, restart: true },
-                    {
-                      onSuccess: (r) =>
-                        setResult({
-                          kind: 'deploy',
-                          ok: r.ok,
-                          restarted: r.restarted,
-                          output: r.output,
-                        }),
-                    }
-                  )
-                }
-                disabled={busy}
-                className="inline-flex items-center gap-[5px] text-[11px] px-[12px] py-[5px]
-                           rounded bg-gold-text/20 text-gold-text hover:bg-gold-text/30
-                           border border-gold-text/40 disabled:opacity-40"
-              >
-                <PackageCheck size={12} /> Deploy &amp; restart{' '}
-                <span className="font-mono">{botLabel}</span>
-              </button>
-            )}
-            {deployed && (
-              <button
-                data-testid="deploy-output-toggle"
-                onClick={() => setShowOutput((s) => !s)}
-                className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
-              >
-                {showOutput ? 'Hide output' : 'Show output'}
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setResult(null)
-                setShowOutput(false)
-              }}
-              className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
-            >
-              {result.kind === 'deploy' ? 'Close' : 'Cancel'}
-            </button>
-          </div>
         </div>
       )}
     </div>

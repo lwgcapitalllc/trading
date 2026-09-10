@@ -5,7 +5,7 @@
 // a different way from one that refuses nothing, and only checking the refusals would
 // pass either. Same reasoning as .claude/hooks/check_guard.py.
 //
-// WATCHED RED by mutation: emptying the rule list reddens exactly the 20 "must refuse"
+// WATCHED RED by mutation: emptying the rule list reddens exactly the 21 "must refuse"
 // cases and no others; widening the promote rule to /promote/ reddens exactly the
 // promote-preview case.
 //
@@ -32,6 +32,7 @@ const CASES = [
 
   // --- promote and deploy ---
   [REFUSE, 'POST', '/api/bots/sos_fade_demo/promote', 'promote'],
+  [REFUSE, 'POST', '/api/bots/sos_fade_demo/promote/job', 'promote as a background job'],
   [REFUSE, 'POST', '/api/strategies/17/deploy', 'deploy to the VPS'],
   [REFUSE, 'DELETE', '/api/strategies/17', 'delete a strategy file'],
 
@@ -48,6 +49,7 @@ const CASES = [
   [ALLOW, 'GET', '/api/bots/sos_fade_demo/stop', 'a GET is not the stop action'],
   [ALLOW, 'GET', '/api/bots/accounts/registry', 'read the account list'],
   [ALLOW, 'GET', '/api/system/mt5-agent/start', 'GET is not a start'],
+  [ALLOW, 'GET', '/api/bots/sos_fade_demo/promote/job', 'reading a deploy job is not starting one'],
 
   // --- must stay ALLOWED: the read-only twin of a refused action ---
   [ALLOW, 'POST', '/api/bots/sos_fade_demo/promote/preview', 'promote PREVIEW changes nothing'],

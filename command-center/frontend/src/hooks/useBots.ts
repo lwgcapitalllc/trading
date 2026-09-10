@@ -16,7 +16,7 @@ import type {
   BotAccountRegistrationWrite,
   TerminalScan,
   BotDeployedVersion,
-  BotPromoteResult,
+  BotPromoteJob,
   BotSnapshot,
 } from '@/types'
 
@@ -198,44 +198,66 @@ export function useBotVersions(botNames: string[]) {
   })
 }
 
-/** Stage + verify a promote without deploying it. The running bot is untouched. */
-export function usePreviewPromote() {
-  return useMutation({
-    mutationFn: ({ botName }: { botName: string }) =>
-      api.post<BotPromoteResult>(`/bots/${encodeURIComponent(botName)}/promote/preview`, {
-        pull: true,
-        restart: false,
-      }),
-    onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
+/**
+ * This bot's most recent deploy job — the source of the ONE progress readout on the deploy panel.
+ *
+ * ⚠ **Addressed by the BOT, not a job id held in component state.** Closing the drawer mid-deploy
+ * and reopening it must find the run already going rather than offer a second Deploy over it.
+ * `null` is an answer: this backend has run no deploy of this bot.
+ *
+ * ⚠ **Polled every second only while it runs**, and the read is in memory on the backend. It is
+ * `silent` because a polling read that toasts turns one blip into a queue of popups.
+ *
+ * ⚠ **The finish is noticed HERE, in the read that sees it**, so the version, params and snapshot
+ * are re-read exactly once — the version read is what the page's last step then watches.
+ */
+export function usePromoteJob(botName: string | null) {
+  const qc = useQueryClient()
+  const key = ['bots', 'promote-job', botName]
+  return useQuery({
+    queryKey: key,
+    queryFn: async () => {
+      const next = await api.get<BotPromoteJob | null>(
+        `/bots/${encodeURIComponent(botName!)}/promote/job`,
+        { silent: true }
+      )
+      const prev = qc.getQueryData<BotPromoteJob | null>(key)
+      if (
+        prev?.status === 'running' &&
+        next &&
+        next.job_id === prev.job_id &&
+        next.status !== 'running'
+      ) {
+        if (next.status === 'done') toast.success(`${botName}: deployed`)
+        else toast.error(`${botName}: deploy failed — see the panel`)
+        qc.invalidateQueries({ queryKey: ['bots', 'version', botName] })
+        qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
+        qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+      }
+      return next
+    },
+    enabled: !!botName,
+    retry: false,
+    staleTime: 0,
+    refetchInterval: (q) => (q.state.data?.status === 'running' ? 1_000 : false),
   })
 }
 
-/** The only action that changes what a bot trades. */
-export function usePromoteBot() {
+/** Start a deploy as a background job. The only action on the panel that changes what a bot
+ *  trades. No `onError` toast — `api.post` already surfaces the server's reason (a 409 for a
+ *  deploy already running names it). */
+export function useStartPromoteJob() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ botName, restart }: { botName: string; restart: boolean }) =>
-      api.post<BotPromoteResult>(`/bots/${encodeURIComponent(botName)}/promote`, {
+    mutationFn: ({ botName }: { botName: string }) =>
+      api.post<BotPromoteJob>(`/bots/${encodeURIComponent(botName)}/promote/job`, {
         pull: true,
-        restart,
+        restart: true,
       }),
-    onSuccess: (data, { botName }) => {
-      if (data.ok) {
-        toast.success(
-          data.restarted
-            ? `${botName} promoted and restarting`
-            : `${botName} promoted — restart it to run the new version`
-        )
-      } else {
-        // Not a thrown error: promote REFUSES cleanly (dirty tree, a snapshot that will not
-        // import) and leaves the running bot alone. That is a result to read, not a crash.
-        toast.error(`${botName}: promote refused — see the output`)
-      }
-      qc.invalidateQueries({ queryKey: ['bots', 'version', botName] })
-      qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
-      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+    onSuccess: (job, { botName }) => {
+      // Seed the read so the progress shows on the same frame, then let it poll.
+      qc.setQueryData(['bots', 'promote-job', botName], job)
     },
-    onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
   })
 }
 

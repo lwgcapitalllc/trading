@@ -11,12 +11,13 @@
  * for the trivial reason that the element is absent, which proves the locator and nothing else.
  * Non-vacuity is established by MUTATION instead, and the mutations are named per check.
  *
- * ⚠ Like `calendar.spec.ts` this needs NO BACKEND and no VPS — the two bot endpoints are
- * intercepted whole. That matters more here than anywhere: the real `/version` route SSHes to the
- * live trading box, and `/promote` deploys code onto it.
+ * ⚠ Like `calendar.spec.ts` the bot endpoints it acts through are intercepted whole. That matters
+ * more here than anywhere: the real `/version` route SSHes to the live trading box, and
+ * `/promote/job` deploys code onto it — which is why `refuseLiveWrites` backstops every write.
  */
 import { test, expect, type Page } from '@playwright/test'
-import type { BotDeployedVersion, BotVersionCompare } from '../src/types'
+import type { BotDeployedVersion, BotPromoteJob, BotVersionCompare } from '../src/types'
+import { refuseLiveWrites } from './fixtures'
 
 // ── fixture ─────────────────────────────────────────────────────────────────────
 
@@ -84,26 +85,106 @@ function version(cmp: BotVersionCompare | null): BotDeployedVersion {
 }
 
 /**
- * Intercept every bot endpoint the Configure tab touches. Nothing reaches the live box.
+ * How a scripted deploy JOB ends. The page reads `GET /promote/job` once a second and each read
+ * here advances one step, so the progress readout is driven the way the backend drives it — step
+ * by step — rather than jumping straight to an answer.
+ */
+type JobPlan = {
+  /** `done` (default), `refused` (promote.py said no), or `raised` (the box dropped mid-stop). */
+  outcome?: 'done' | 'refused' | 'raised'
+  restarted?: boolean
+  confirm?: 'done' | 'unconfirmed'
+}
+
+const STEP_KEYS = ['pull', 'build', 'stop', 'start', 'confirm'] as const
+
+function jobFrames(plan: JobPlan): BotPromoteJob[] {
+  const outcome = plan.outcome ?? 'done'
+  const restarted = plan.restarted ?? true
+  // How far the job gets before it ends.
+  const reach = outcome === 'refused' ? 1 : outcome === 'raised' ? 2 : restarted ? 4 : 1
+  const frame = (active: number): BotPromoteJob => ({
+    job_id: 'pj_test',
+    bot: 'sos_fade_demo',
+    status: 'running',
+    seconds: active * 3 + 1,
+    result: null,
+    error: null,
+    stages: STEP_KEYS.map((key, i) => ({
+      key,
+      state: i < active ? 'done' : i === active ? 'active' : 'pending',
+      seconds: i <= active ? 3 : null,
+    })),
+  })
+  const frames = Array.from({ length: reach + 1 }, (_, i) => frame(i))
+  const last = frames[frames.length - 1]
+  const settled: BotPromoteJob = {
+    ...last,
+    status: outcome === 'done' ? 'done' : 'failed',
+    result:
+      outcome === 'raised'
+        ? null
+        : {
+            ok: outcome === 'done',
+            restarted: outcome === 'done' && restarted,
+            output:
+              outcome === 'refused'
+                ? 'Refusing to promote — the staged snapshot does not import\n  pinned 556bf70c18b7'
+                : 'pinned 556bf70c18b7 (a9bf348, 2026-08-07)',
+          },
+    error:
+      outcome === 'raised'
+        ? 'Stopping the bot could not reach the trading box. The new code IS deployed; check the bot.'
+        : null,
+    stages: last.stages.map((s, i) => ({
+      ...s,
+      state:
+        i < reach
+          ? 'done'
+          : i === reach
+            ? outcome === 'done'
+              ? s.key === 'confirm'
+                ? plan.confirm === 'unconfirmed'
+                  ? 'unconfirmed'
+                  : 'done'
+                : 'done'
+              : 'failed'
+            : 'skipped',
+    })),
+  }
+  return [...frames, settled]
+}
+
+/**
+ * Intercept every bot endpoint the deploy panel touches. Nothing reaches the live box.
  *
- * ⚠ **`/version` ANSWERS DIFFERENTLY AFTER A SUCCESSFUL PROMOTE, and a fixed payload would make
- * three of these checks vacuous.** `usePromoteBot` invalidates that query on success, so the real
- * banner re-reads the deployed version and re-renders off the NEW state. A mock frozen at
+ * 🔴 **`refuseLiveWrites` is registered FIRST and it is not optional here.** The deploy is a POST
+ * that, unrouted, would reach the real backend and deploy code onto the live trading box. Routes
+ * match newest-first, so the backstop only ever sees what these routes did not answer.
+ *
+ * ⚠ **`/version` ANSWERS DIFFERENTLY AFTER A SUCCESSFUL DEPLOY, and a fixed payload would make
+ * several of these checks vacuous.** The job's finish invalidates that query, so the real banner
+ * re-reads the deployed version and re-renders off the NEW state. A mock frozen at
  * `deployed_version: 100` would leave the page saying "21 versions behind" after a deploy —
- * indistinguishable from the defect being tested — and would let the success line quote
- * `local_version` for ever without anything noticing. `landsAt` is the version the promote
- * actually reaches, which is NOT always `local_version`: see the unpushed-commits check.
+ * indistinguishable from the defect being tested. `landsAt` is the version the deploy actually
+ * reaches, which is NOT always `local_version`: see the unpushed-commits check.
  */
 async function mockBot(
   page: Page,
   cmp: BotVersionCompare | null,
-  opts: {
-    promoteOk?: boolean
-    restarted?: boolean
+  opts: JobPlan & {
     landsAt?: number
+    /** A job already RUNNING when the page opens — the drawer reopened mid-deploy. */
+    runningOnOpen?: boolean
+    /** Put the bot on a LIVE account (the real snapshot, mutated — never a hand-written one). */
+    live?: boolean
   } = {}
 ) {
+  await refuseLiveWrites(page)
   let promoted = false
+  let frames: BotPromoteJob[] | null = opts.runningOnOpen ? jobFrames(opts) : null
+  let idx = 0
+  const posts: string[] = []
   const after = (): BotVersionCompare | null => {
     if (!cmp || !promoted) return cmp
     const at = opts.landsAt ?? cmp.local_version ?? 0
@@ -117,19 +198,28 @@ async function mockBot(
     }
   }
   await page.route('**/api/bots/*/version', (r) => r.fulfill({ json: version(after()) }))
-  await page.route('**/api/bots/*/promote/preview', (r) =>
-    r.fulfill({ json: { ok: true, output: 'dry run — nothing was deployed.', restarted: false } })
-  )
-  await page.route('**/api/bots/*/promote', (r) => {
-    if (opts.promoteOk ?? true) promoted = true
-    return r.fulfill({
-      json: {
-        ok: opts.promoteOk ?? true,
-        restarted: opts.restarted ?? true,
-        output: 'pinned 556bf70c18b7 (a9bf348, 2026-08-07)',
-      },
-    })
+  await page.route('**/api/bots/*/promote/job', (r) => {
+    if (r.request().method() === 'POST') {
+      posts.push(r.request().url())
+      frames = jobFrames(opts)
+      idx = 1
+      return r.fulfill({ status: 202, json: frames[0] })
+    }
+    if (!frames) return r.fulfill({ json: null })
+    const f = frames[Math.min(idx, frames.length - 1)]
+    idx++
+    if (f.status === 'done') promoted = true
+    return r.fulfill({ json: f })
   })
+  if (opts.live) {
+    await page.route('**/api/bots/snapshot', async (r) => {
+      const res = await r.fetch()
+      const snap = await res.json()
+      for (const b of snap.bots ?? []) if (b.key === 'sos_fade_demo') b.account_type = 'live'
+      return r.fulfill({ response: res, json: snap })
+    })
+  }
+  return { posts }
 }
 
 /** ⚠ Every assertion is scoped to this. The Risk-per-trade card carries its OWN `Deploy`
@@ -170,7 +260,9 @@ test('the deploy button names the version it would move the bot to', async ({ pa
   // said nothing about what it would change.
   await mockBot(page, compare())
   await openConfigure(page)
-  await expect(banner(page).getByRole('button', { name: /Deploy v100 → v121/ })).toBeVisible()
+  await expect(
+    banner(page).getByRole('button', { name: /Deploy & restart v100 → v121/ })
+  ).toBeVisible()
 })
 
 test('an up-to-date bot offers no prominent deploy, only a quiet re-deploy', async ({ page }) => {
@@ -182,7 +274,7 @@ test('an up-to-date bot offers no prominent deploy, only a quiet re-deploy', asy
   )
   await openConfigure(page)
   await expect(banner(page).getByText(/is up to date/)).toBeVisible()
-  await expect(banner(page).getByRole('button', { name: /Deploy v/ })).toHaveCount(0)
+  await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: /Re-deploy/ })).toBeVisible()
 })
 
@@ -252,165 +344,161 @@ test('uncommitted edits are called out with the file named', async ({ page }) =>
   await expect(banner(page).getByText(/refuses a dirty tree/)).toHaveCount(0)
 })
 
-// ── the bug Aaron hit: a finished deploy that read as a pending one ─────────────
+// ── ONE button, ONE progress readout (2026-09-10) ──────────────────────────────
+//
+// Aaron: *"When I am promoting I want to see a progress bar of some sort; a static disabled button
+// doesn't catch my focus"* and *"I have to scroll down and there is another button to click to
+// deploy and restart … I am only acting on one CTA and there is only 1 progress indicator."*
+//
+// ⚠ A fail-watch against the previous panel is VACUOUS for most of these — the progress readout
+// did not exist — so each check names the MUTATION that turns it red.
 
-test('a finished deploy says DEPLOYED and withdraws the deploy button', async ({ page }) => {
-  // 🔴 THE REGRESSION. `output` was a bare string, so the promote's result rendered under the
-  // PREVIEW's caption ("nothing deployed yet") with Deploy & restart still sitting there — Aaron
-  // pressed it, it worked, and the page gave him no way to tell.
-  // MUTATION: collapse `result.kind` back to a plain string.
-  await mockBot(page, compare(), { promoteOk: true, restarted: true })
+const progress = (page: Page) => banner(page).getByTestId('deploy-progress')
+const step = (page: Page, key: string) => progress(page).locator(`[data-step="${key}"]`)
+const caption = (page: Page) => banner(page).getByTestId('deploy-caption')
+
+test('ONE click deploys — no preview, no second button to scroll to', async ({ page }) => {
+  // MUTATION: restore the preview-then-confirm flow — the first click then starts nothing, no job
+  // POST is made, and the progress readout never appears.
+  const { posts } = await mockBot(page, compare())
   await openConfigure(page)
 
   await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
+    .getByRole('button', { name: /Deploy & restart v100 → v121/ })
     .click()
-  await expect(banner(page).getByText(/nothing deployed yet/)).toBeVisible()
-
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  // The confirmation is TERSE — the header beside it already reads "up to date · Deployed v121
-  // · Backtester v121", and repeating the bot and the version there is what made a working
-  // confirmation read as complicated.
-  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
-  await expect(banner(page).getByText(/SOS Fade restarted/)).toHaveCount(0)
-  await expect(banner(page).getByText(/nothing deployed yet/)).toHaveCount(0)
-  await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
-  await expect(banner(page).getByRole('button', { name: 'Close' })).toBeVisible()
+  await expect(progress(page)).toBeVisible()
+  expect(posts).toHaveLength(1)
+  // While it runs there is nothing else to press — the readout is the thing to look at.
+  await expect(
+    banner(page).getByRole('button', { name: /Deploy|Try again|Re-deploy/ })
+  ).toHaveCount(0)
+  await expect(banner(page).getByTestId('version-heading')).toContainText(/Deploying SOS Fade/)
 })
 
-test('a FAILED deploy says the bot is untouched rather than reporting a version it is not on', async ({
+test('the readout moves step by step, with the step it is on MOVING', async ({ page }) => {
+  // MUTATION: map every job step to `done` in `jobSteps` — the stop step is never seen `active`.
+  await mockBot(page, compare())
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(step(page, 'stop')).toHaveAttribute('data-state', 'active', { timeout: 15_000 })
+  await expect(caption(page)).toContainText(/Asking the bot to stop/)
+  // The earlier steps are finished by then, the later ones not started.
+  await expect(step(page, 'build')).toHaveAttribute('data-state', 'done')
+  await expect(step(page, 'start')).toHaveAttribute('data-state', 'pending')
+})
+
+test('a finished deploy says DEPLOYED, is confirmed by the bot, and withdraws the button', async ({
   page,
 }) => {
-  // MUTATION: branch on nothing and always print the success line. A promote that failed leaves
-  // the running bot exactly as it was — saying otherwise sends somebody to debug a bot that is fine.
-  await mockBot(page, compare(), { promoteOk: false, restarted: false })
+  // MUTATION: drop the `confirmState` branch and always print the confirmed line — then an
+  // unconfirmed restart reads green too (see the next check).
+  await mockBot(page, compare(), { confirm: 'done' })
   await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
 
-  await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
-    .click()
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  await expect(banner(page).getByText(/Deploy failed/)).toBeVisible()
-  await expect(banner(page).getByText(/still on v100/)).toBeVisible()
+  await expect(caption(page)).toContainText(/restarted and reported the new version/, {
+    timeout: 20_000,
+  })
+  await expect(step(page, 'confirm')).toHaveAttribute('data-state', 'done')
+  await expect(banner(page).getByText(/is up to date/)).toBeVisible()
+  await expect(banner(page).getByTestId('deploy-button')).toHaveCount(0)
+  // What a deploy would change describes the state BEFORE it — gone once one is on screen.
+  await expect(banner(page).getByText(/setting would change on this bot/)).toHaveCount(0)
+  // The output is not holding the panel open after a success…
+  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toHaveCount(0)
+  // …but it is one click away rather than thrown away.
+  await banner(page).getByTestId('deploy-output-toggle').click()
+  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toBeVisible()
+  await banner(page).getByRole('button', { name: 'Close' }).click()
+  await expect(progress(page)).toHaveCount(0)
+})
+
+test('a restart the bot never CONFIRMED is amber — never the green success', async ({ page }) => {
+  // MUTATION: map `unconfirmed` to `done` in `jobSteps` and drop its caption branch. Green there
+  // would claim a measurement nobody took.
+  await mockBot(page, compare(), { confirm: 'unconfirmed' })
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(caption(page)).toContainText(/had not reported the new version/, { timeout: 20_000 })
+  await expect(step(page, 'confirm')).toHaveAttribute('data-state', 'warn')
+  await expect(caption(page)).not.toContainText(/reported the new version\./)
+})
+
+test('a REFUSED deploy says the bot is untouched, keeps its output open, and offers Try again', async ({
+  page,
+}) => {
+  // MUTATION: branch on nothing and print the success line. A refused promote leaves the running
+  // bot exactly as it was — saying otherwise sends somebody to debug a bot that is fine.
+  await mockBot(page, compare(), { outcome: 'refused' })
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(caption(page)).toContainText(/Deploy refused/, { timeout: 15_000 })
+  await expect(caption(page)).toContainText(/still on v100/)
+  await expect(step(page, 'build')).toHaveAttribute('data-state', 'failed')
+  // A step the failure never reached reads as SKIPPED, never as done.
+  await expect(step(page, 'stop')).toHaveAttribute('data-state', 'skipped')
+  // The reason lives in the output, so it is on screen without a click.
+  await expect(banner(page).getByText(/does not import/)).toBeVisible()
+  await expect(banner(page).getByTestId('deploy-output-toggle')).toHaveCount(0)
+  // The same ONE button comes back, as the way to try again.
+  await expect(banner(page).getByRole('button', { name: 'Try again' })).toBeVisible()
+})
+
+test('a failure that RAISED shows what the backend said, never a stock "untouched"', async ({
+  page,
+}) => {
+  // MUTATION: ignore `job.error` and print the refused sentence. Mid-stop the code IS deployed;
+  // "untouched" there would send the reader to redeploy code that is already live.
+  await mockBot(page, compare(), { outcome: 'raised' })
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(caption(page)).toContainText(/IS deployed/, { timeout: 15_000 })
+  await expect(caption(page)).not.toContainText(/untouched/)
+  await expect(step(page, 'stop')).toHaveAttribute('data-state', 'failed')
 })
 
 test('a deploy that did NOT restart says the bot is still on the old code', async ({ page }) => {
-  // MUTATION: ignore `restarted` and always claim it is running the new version. The snapshot is
-  // on disk and the OLD one is still trading — the single most misleading state this page can be in.
-  await mockBot(page, compare(), { promoteOk: true, restarted: false })
+  // MUTATION: ignore `restarted` and always claim the new version is running. The snapshot is on
+  // disk and the OLD one is still trading — the single most misleading state this page can be in.
+  await mockBot(page, compare(), { restarted: false })
   await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
 
-  await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
-    .click()
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  await expect(banner(page).getByText(/restart .* to pick it up/)).toBeVisible()
-  await expect(banner(page).getByText(/is running v121/)).toHaveCount(0)
+  await expect(caption(page)).toContainText(/restart .* to pick it up/, { timeout: 15_000 })
+  await expect(step(page, 'start')).toHaveAttribute('data-state', 'skipped')
 })
 
-// ── the accordion that would not close (2026-08-14) ─────────────────────────────
-//
-// Reported off the screen: *"even after I click the deploy button it always stays there enabled
-// like it wants me to click it again … after deployment is successful still looks like I can
-// click deploy still. The whole accordion should collapse and be back in a successful state."*
-
-test('a successful deploy collapses the panel and stops offering the deploy it just did', async ({
+test('a deploy already RUNNING when the panel opens is shown — not a second Deploy over it', async ({
   page,
 }) => {
-  // MUTATION: render the `<pre>` unconditionally again — it leaves the banner in its pre-deploy
-  // shape under a green success line, which is what made a finished deploy read as a pending one
-  // for a SECOND time.
-  // ⚠ **The `!refreshing` guard on the changes block is NOT covered here, and the mutation for it
-  // was RUN and stayed green.** That guard only governs the seconds between the promote returning
-  // and the version refetch landing; a Playwright assertion retries until it settles, so it can
-  // only ever see the settled state. Named rather than claimed.
-  await mockBot(page, compare(), { promoteOk: true, restarted: true })
+  // MUTATION: delete the line that ADOPTS a running job into `shownJob` — the reopened drawer then
+  // offers Deploy over a deploy that is mid-flight.
+  const { posts } = await mockBot(page, compare(), { runningOnOpen: true })
   await openConfigure(page)
 
-  // The PREVIEW's output is shown without being asked for — it is what you read before deciding.
-  await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
-    .click()
-  await expect(banner(page).getByText(/dry run — nothing was deployed/)).toBeVisible()
-
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
-
-  // The banner has re-read the version and turned over to the up-to-date state.
-  await expect(banner(page).getByText(/is up to date/)).toBeVisible()
-  await expect(banner(page).getByRole('button', { name: /Deploy v100 → v121/ })).toHaveCount(0)
-  await expect(banner(page).getByText(/setting would change on this bot/)).toHaveCount(0)
-  // The promote output is no longer holding the panel open.
-  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toHaveCount(0)
+  await expect(progress(page)).toBeVisible()
+  await expect(banner(page).getByTestId('deploy-button')).toHaveCount(0)
+  // …and once it finishes, its result stays on screen rather than vanishing: this panel watched it.
+  await expect(caption(page)).toContainText(/reported the new version/, { timeout: 20_000 })
+  expect(posts).toHaveLength(0)
 })
 
-test('a preview disables the button that produced it — one live control at a time', async ({
-  page,
-}) => {
-  // 🔴 THE SECOND HALF OF THE SAME REPORT, 2026-08-14: *"I click it. It just keeps repeating the
-  // process over and over."* The top button stayed live over its own preview, so pressing it
-  // re-ran the dry run and re-rendered an identical panel — indistinguishable from a dead button.
-  // MUTATION: `disabled={busy}`. Goes red on the toBeDisabled line.
-  await mockBot(page, compare())
+test('a LIVE-account bot takes a second click on the SAME button', async ({ page }) => {
+  // MUTATION: drop the `live && !armed` branch — the first click then deploys to real money.
+  const { posts } = await mockBot(page, compare(), { live: true })
   await openConfigure(page)
 
-  const top = banner(page).getByRole('button', { name: /Deploy v100 → v121/ })
-  await top.click()
-  await expect(banner(page).getByText(/nothing deployed yet/)).toBeVisible()
-
-  // The decision has moved down. Exactly one of the two is live, which is what makes the
-  // two-step a confirmation rather than two ways to press the same thing.
-  await expect(banner(page).getByRole('button', { name: /checked/ })).toBeDisabled()
-  await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toBeEnabled()
-
-  // Cancel hands it back. The gate is re-runnable — the repo can move while you are reading.
-  await banner(page).getByRole('button', { name: 'Cancel' }).click()
-  await expect(top).toBeEnabled()
-})
-
-test('the promote output is one click away, not thrown away', async ({ page }) => {
-  // MUTATION: drop the toggle and render nothing after a success. Collapsing a panel is only
-  // honest if the thing collapsed can still be read — the same rule the Missed layer follows for
-  // the reasons it unticks by default.
-  await mockBot(page, compare(), { promoteOk: true, restarted: true })
-  await openConfigure(page)
-
-  await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
-    .click()
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
-
-  await banner(page).getByTestId('deploy-output-toggle').click()
-  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toBeVisible()
-})
-
-test('a FAILED deploy keeps its output on screen without being asked', async ({ page }) => {
-  // MUTATION: collapse the output on every deploy rather than on a successful one. A failure's
-  // output is the only place the reason lives, so hiding it behind a click is the one case where
-  // collapsing costs the reader the answer.
-  await mockBot(page, compare(), { promoteOk: false, restarted: false })
-  await openConfigure(page)
-
-  await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
-    .click()
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  await expect(banner(page).getByText(/Deploy failed/)).toBeVisible()
-  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toBeVisible()
-  await expect(banner(page).getByTestId('deploy-output-toggle')).toHaveCount(0)
+  const btn = banner(page).getByTestId('deploy-button')
+  await btn.click()
+  await expect(btn).toContainText(/Click again — this bot trades real money/)
+  expect(posts).toHaveLength(0)
+  await btn.click()
+  await expect(progress(page)).toBeVisible()
+  expect(posts).toHaveLength(1)
 })
 
 // ── the reason a successful deploy can leave a bot behind ───────────────────────
@@ -447,38 +535,29 @@ test('nothing unpushed says nothing, and so does an unmeasurable upstream', asyn
   await expect(banner(page).getByText(/not pushed/)).toHaveCount(0)
 })
 
-test('the success line names the version that LANDED, not the one in the backtester', async ({
-  page,
-}) => {
-  // 🔴 MEASURED 2026-08-14: it read `v{local_version}` — what the reader ASKED for — so a deploy
-  // that could only reach v164 announced "running v165". Those differ exactly when the deploy
-  // fell short, which is precisely when the sentence is read.
-  // MUTATION: put `c.local_version` back in that line.
+test('the deploy names — and lands on — the version a promote can REACH', async ({ page }) => {
+  // 🔴 MEASURED 2026-08-14: a deploy that could only reach v164 announced "running v165" — what
+  // the reader ASKED for, not what landed. Those differ exactly when the deploy falls short, which
+  // is precisely when the sentence is read. The button now names the reachable version too.
+  // MUTATION: label the button with `c.local_version` — it then promises v121.
   await mockBot(
     page,
     compare({
       unpushed_commits: ['6a71a9f feat(signals): announce on the retrace'],
     }),
-    { promoteOk: true, restarted: true, landsAt: 120 }
+    { landsAt: 120 }
   )
   await openConfigure(page)
 
   await banner(page)
-    .getByRole('button', { name: /Deploy v100 → v121/ })
+    .getByRole('button', { name: /Deploy & restart v100 → v120/ })
     .click()
-  await banner(page)
-    .getByRole('button', { name: /Deploy & restart/ })
-    .click()
-  // ⚠ **The success line no longer names a version and this check MOVED rather than went**
-  // (2026-08-14): the header carries it, so that is where the claim is now pinned. The rule is
-  // unchanged and is the one that was live — a deploy that could not reach HEAD must never be
-  // described as having landed there.
-  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
+  await expect(caption(page)).toContainText(/reported the new version/, { timeout: 20_000 })
+  await expect(step(page, 'confirm')).toContainText('Running v120')
   await expect(banner(page).getByText('v120').first()).toBeVisible()
-  // Nowhere on the banner does v121 read as the DEPLOYED version.
-  await expect(banner(page).getByText(/running v121/)).toHaveCount(0)
+  // Nowhere on the banner does v121 read as the DEPLOYED version…
   await expect(banner(page).getByText(/Deployed v121/)).toHaveCount(0)
-  // And it is honest that the bot is still short of the backtester.
+  // …and it is honest that the bot is still short of the backtester.
   await expect(banner(page).getByText(/is 1 version behind/)).toBeVisible()
 })
 
@@ -542,9 +621,8 @@ async function mockRestartSettling(
       },
     })
   })
-  await page.route('**/api/bots/*/promote/preview', (r) =>
-    r.fulfill({ json: { ok: true, output: 'dry run', restarted: false } })
-  )
+  // No deploy job — these checks are about the version read, and the page asks for one on open.
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
 }
 
 test('a restart-pending warning clears ITSELF once the bot comes back — no reload', async ({

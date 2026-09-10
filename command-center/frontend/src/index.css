@@ -73,6 +73,29 @@
       animation: none;
     }
   }
+
+  /* The ACTIVE step of a progress readout (components/StepProgress.tsx): a band travelling along
+   * that step's own track, so the one step the job is on moves and nothing else does. It says
+   * "this step is running", never how far through it — no step reports a fraction, and a band
+   * that advanced on a clock would be a claim nothing measured. Here for the same reason as the
+   * sweep above: this file hot-reloads, the Tailwind config does not. */
+  .animate-step-sweep {
+    animation: step-sweep 1.3s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-step-sweep {
+      animation: none;
+    }
+  }
+}
+
+@keyframes step-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
 }
 
 @keyframes skeleton-sweep {
