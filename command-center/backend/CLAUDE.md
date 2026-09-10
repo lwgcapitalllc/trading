@@ -122,6 +122,7 @@ backend/
 │   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel). `health()`
 │   │                      is the AGENT; `status()` is the TERMINAL (mt5_connected/account/server) —
 │   │                      two different questions, and only the second says a run can fetch bars
+│   ├── stack_risk_budget.py do a SHARED stack's legs fit under its risk cap? The form's total and the launch's refusal both ask it; the decision is `bot_accounts.share_overflow`. See *A shared stack's legs may not add up past its cap*
 │   ├── python_runner.py     local Python runner — runs strategies/python/ packages in-process via the top-level backtest/ package (backtests + A4 optimizer sweep). No VPS, no agent. Resolves strategies by `strategy_class` (the class `__name__` the scanner stored) — NEVER by package id
 │   └── notify.py            Telegram notifier (urllib, no extra deps). Holds NO token: it reads env vars, else the git-ignored `algos/credentials.json`, by PATH (`cfg.MONOREPO_ROOT / "algos" / "credentials.json"`) — the same file `algos/shared/credentials.py` reads, without importing across the app boundary, which the subsystem-independence rule forbids. `routers/bots.py` delegates here; it must never grow its own sender again. `telegram_configured()` answers whether a send would go anywhere. **Every send states a `kind`** (`HEALTH` for everything this app produces) and the kind picks the chat — see the Telegram row in the feature table
 ├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
@@ -1504,6 +1505,36 @@ cases), an unreadable share counted as zero, uncapped read as a cap of zero, and
 endpoint checks deleted in turn. ⚠ **One mutation did NOT APPLY on its first attempt and proved
 nothing** — the pattern did not match, the suite stayed green, and that reads exactly like a
 surviving mutation. Assert the edit landed before believing the result.
+
+## A shared stack's legs may not add up past its cap (2026-09-10)
+
+Aaron: *"if I put ten percent cap, then the strategies that I choose cannot trade more than the
+cap… they cannot add up to more than the risk cap."* `services/stack_risk_budget.py`; the launch
+refuses (400) and `POST /backtests/stacks/risk-budget` serves the same answer to the form.
+
+🔴 **The decision is `share_overflow`, the rule above — never a second comparison.** Only the
+sentence is the stack's own. Over the cap the legs take turns, which is an account the Bots page
+refuses to assign, so the stack would measure something nobody can deploy.
+
+- ⚠ **A leg's share is its per-trade risk setting** (`risk_pct_of`, the Bots page's reader): one
+  position per leg, a re-entry risks less and only follows a closed primary, an add only spends
+  locked profit. **An unreadable one refuses** (rule 1).
+- ⚠ **The loss-recovery leg COUNTS** — it can hold while its parent opens the next trade. Share =
+  parent risk × the rule's fraction: the request's, else the rule's stored default. A stated but
+  unreadable fraction refuses rather than falling back.
+- ⚠ **Checked before the history floor**, which can reach the box. **Screens are never checked** —
+  no shared account to cap.
+- ⚠ **`fits=false` is a 200** from the check — a legitimate question, not an error.
+- 🔴 **The shipped defaults do not fit**: SOS Fade 10% + extreme leg 5% = 15% under the 10% default
+  cap, so that pair is blocked until a leg comes down (the live bots run 5 + 5). A rerun of an older
+  over-cap stack is refused the same way.
+- ⚠ **Nine existing launch tests went red and none was a defect**: their fixtures stated no risk. Each
+  now states one that fits and says why; none had risk as its subject.
+
+**Tests:** `tests/test_stack_risk_budget.py` (13), **8 mutations run, 8 killed** — a private sum
+with no tolerance (0.1 + 0.2 under 0.3, premise asserted), an unreadable share read as zero, the
+recovery left out, the launch refusal dropped, the refusal applied to screens, a malformed fraction
+falling back, the check ignoring overrides, an over-cap total reported as fitting.
 
 ## The account REGISTRY — the gap that made moving a bot a manual afternoon (2026-08-12)
 

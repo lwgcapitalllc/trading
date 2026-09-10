@@ -73,7 +73,10 @@ const STRATEGIES = [
     name: 'SOS Fade',
     runner: 'python',
     suggested_instrument: 'XAUUSD',
-    default_params: { exec_risk_pct: 10, exec_sl_deep: true, exec_tp1_pct: 40 },
+    // 5%, not 10%: with the extreme leg's 1% the pair must FIT the 10% cap, because the budget
+    // check below answers "fits" by default and a fixture whose own numbers do not fit would be
+    // describing a rule that is not there (2026-09-10).
+    default_params: { exec_risk_pct: 5, exec_sl_deep: true, exec_tp1_pct: 40 },
     param_schema: [],
   },
   {
@@ -101,9 +104,46 @@ const STRATEGIES = [
  * The app fetches through the Vite proxy (`api/client.ts` → `const BASE = '/api'`), so a route
  * keyed on the backend's own origin matches NOTHING and the page quietly reads the live lab.
  */
-async function mock(page: Page, opts: { profiles?: typeof PROFILES } = {}) {
+/** The backend's answer to "do the legs fit under the cap?" — or a status to fail with. */
+type BudgetAnswer =
+  | {
+      cap_pct: number
+      legs: unknown[]
+      total_pct: number | null
+      fits: boolean
+      reason: string | null
+    }
+  | { status: number }
+
+/** The fixture's own legs: SOS Fade 5% + Extreme Leg 1% = 6% under the 10% cap. */
+const FITS: BudgetAnswer = { cap_pct: 10, legs: [], total_pct: 6, fits: true, reason: null }
+
+async function mock(
+  page: Page,
+  opts: {
+    profiles?: typeof PROFILES
+    budget?: (body: Record<string, unknown>) => BudgetAnswer | Promise<BudgetAnswer>
+  } = {}
+) {
   const launches: Record<string, unknown>[] = []
   const previews: Record<string, unknown>[] = []
+  const budgets: Record<string, unknown>[] = []
+
+  // ⚠ Registered BEFORE the catch-all at the bottom: routes are tried most-recent-first, and the
+  // catch-all only falls back to routes registered earlier than itself.
+  await page.route(
+    (u) => u.pathname.endsWith('/api/backtests/stacks/risk-budget'),
+    async (r) => {
+      const body = JSON.parse(r.request().postData() ?? '{}')
+      budgets.push(body)
+      const answer = await (opts.budget ?? (() => FITS))(body)
+      if ('status' in answer) {
+        await r.fulfill({ status: answer.status, json: { detail: 'mocked failure' } })
+      } else {
+        await r.fulfill({ json: answer })
+      }
+    }
+  )
 
   await page.route(
     (u) => u.pathname.endsWith('/api/strategies'),
@@ -204,7 +244,7 @@ async function mock(page: Page, opts: { profiles?: typeof PROFILES } = {}) {
     (u) => u.pathname.includes('/api/') && !u.pathname.endsWith('/api/backtests/stack'),
     (r) => r.fallback()
   )
-  return { launches, previews }
+  return { launches, previews, budgets }
 }
 
 /** Open the Stacks tab and the New-stack modal, and return the modal's own root. */
@@ -317,13 +357,13 @@ test.describe('the stack form carries a broker, a cost switch and per-leg risk',
     // By the leg's own test id, so the account's Balance and Risk-cap boxes cannot be picked up
     // instead — a page-wide locator is the vacuous pass this folder has recorded five times.
     const risk = page.getByTestId('leg-risk-sos_fade')
-    await expect(risk).toHaveValue('10') // the leg's stored default, before any edit
-    await risk.fill('5')
+    await expect(risk).toHaveValue('5') // the leg's stored default, before any edit
+    await risk.fill('4')
 
     await page.getByRole('button', { name: /Run stack/ }).click()
     await expect.poll(() => launches.length).toBe(1)
     const byStrategy = launches[0].params_by_strategy as Record<string, Record<string, unknown>>
-    expect(byStrategy.sos_fade.exec_risk_pct).toBe(5)
+    expect(byStrategy.sos_fade.exec_risk_pct).toBe(4)
     // The two settings the reader never touched must survive the override.
     expect(byStrategy.sos_fade.exec_sl_deep).toBe(true)
     expect(byStrategy.sos_fade.exec_tp1_pct).toBe(40)
@@ -403,7 +443,7 @@ test.describe('the stack form reads in the order its numbers depend on', () => {
     await expect(run).toBeDisabled()
     await expect(page.getByTestId('stack-modal')).toContainText('enter a risk above 0%')
 
-    await page.getByTestId('leg-risk-sos_fade').fill('5')
+    await page.getByTestId('leg-risk-sos_fade').fill('4')
     await expect(run).toBeEnabled()
     await page.getByTestId('stack-risk-cap').fill('')
     await expect(run).toBeDisabled()
@@ -432,5 +472,105 @@ test.describe('the stack form reads in the order its numbers depend on', () => {
       .getByRole('button', { name: /SOS Fade/ })
       .click()
     expect(await order()).toEqual(['b_leg', 'sos_fade', 'extreme_leg'])
+  })
+})
+
+// ── 2026-09-10: the legs' risk may not add up past the cap ──────────────────────────────────
+//
+// Aaron: *"if I put ten percent cap, then the strategies that I choose cannot trade more than the
+// cap… they cannot add up to more than the risk cap."* The total and the reason are the BACKEND's
+// (`services/stack_risk_budget.py`, the function the launch refuses with) — so these checks pin
+// that the form asks it with what it would launch, shows its answer, and never runs on an answer
+// that is missing, failed or stale.
+
+test.describe("the legs' risk may not add up past the cap", () => {
+  /**
+   * MUTATION: drop `budgetOk` from `canRun` → the button stays enabled over a refusal and this
+   * goes red.
+   */
+  test('legs that add past the cap block the run, and the form says why', async ({ page }) => {
+    const reason =
+      'These legs risk 11% per trade together (SOS Fade 10% + Extreme Leg 1%), more than the 10% cap.'
+    await mock(page, {
+      budget: () => ({ cap_pct: 10, legs: [], total_pct: 11, fits: false, reason }),
+    })
+    await openModal(page)
+    await fillForm(page)
+    const total = page.getByTestId('stack-risk-total')
+    await expect(total).toContainText('11% of 10% cap')
+    await expect(total).toContainText(reason)
+    await expect(page.getByRole('button', { name: /Run stack/ })).toBeDisabled()
+  })
+
+  /**
+   * The check must total the stack the LAUNCH would send, or the page says "fits" about numbers
+   * the launch does not carry. MUTATION: send `params_by_strategy: {}` in the budget body → the
+   * edited risk never reaches the check and this goes red.
+   */
+  test('the check is asked with exactly what the launch would send', async ({ page }) => {
+    const { budgets, launches } = await mock(page)
+    await openModal(page)
+    await fillForm(page)
+    await page.getByTestId('leg-risk-sos_fade').fill('4')
+
+    const run = page.getByRole('button', { name: /Run stack/ })
+    await expect(run).toBeEnabled() // positive control: a "fits" answer arrived for these numbers
+    await run.click()
+    await expect.poll(() => launches.length).toBe(1)
+
+    const asked = budgets.at(-1)!
+    expect(asked.strategy_ids).toEqual(launches[0].strategy_ids)
+    expect(asked.params_by_strategy).toEqual(launches[0].params_by_strategy)
+    expect(asked.risk_cap_pct).toBe(launches[0].risk_cap_pct)
+    expect(
+      (asked.params_by_strategy as Record<string, Record<string, unknown>>).sos_fade.exec_risk_pct
+    ).toBe(4)
+  })
+
+  /**
+   * 🔴 An answer counts only for the numbers on screen. MUTATION: read `budgetQuery.data` straight
+   * (drop the freshness check) → the previous "fits" keeps the button enabled for the debounce
+   * window after an edit, and the immediate read below goes red.
+   */
+  test('a stale or pending answer never enables the run', async ({ page }) => {
+    let hold = false
+    const held: { release?: () => void } = {}
+    await mock(page, {
+      budget: async () => {
+        if (hold) await new Promise<void>((res) => (held.release = res))
+        return FITS
+      },
+    })
+    await openModal(page)
+    await fillForm(page)
+    const run = page.getByRole('button', { name: /Run stack/ })
+    await expect(run).toBeEnabled() // the first answer: these numbers fit
+
+    hold = true
+    await page.getByTestId('leg-risk-sos_fade').fill('4')
+    // Read at once, NOT polled: the answer on hand describes the OLD numbers, and a poll would
+    // wait out the debounce and pass for the wrong reason.
+    expect(await run.isDisabled()).toBe(true)
+    await expect(page.getByTestId('stack-risk-total')).toContainText('checking')
+
+    // ⚠ Wait for the held request to ARRIVE before releasing it. "checking" shows during the
+    // debounce as well, before any request exists — releasing then frees nothing, and the request
+    // that follows is held for ever. The first version of this check did exactly that.
+    await expect.poll(() => typeof held.release).toBe('function')
+    await expect(run).toBeDisabled() // still pending: the request is out, no answer yet
+    held.release!()
+    await expect(run).toBeEnabled()
+  })
+
+  /**
+   * Rule 1: "could not ask" is not "fits". MUTATION: accept anything but an explicit refusal
+   * (`budget?.fits !== false`) → a failed check leaves the button enabled and this goes red.
+   */
+  test('a check that fails blocks the run and says so', async ({ page }) => {
+    await mock(page, { budget: () => ({ status: 500 }) })
+    await openModal(page)
+    await fillForm(page)
+    await expect(page.getByTestId('stack-risk-total')).toContainText('could not check')
+    await expect(page.getByRole('button', { name: /Run stack/ })).toBeDisabled()
   })
 })

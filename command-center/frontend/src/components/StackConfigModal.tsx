@@ -6,6 +6,7 @@ import {
   useTriggerStack,
   useRunningVpsJob,
   useStackPreview,
+  useStackRiskBudget,
   useHistoryLimit,
   useBrokerProfiles,
   useBrokerSymbols,
@@ -16,7 +17,10 @@ import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
 import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
 import { DecimalInput } from '@/components/DecimalInput'
 import { useDebounced } from '@/lib/useDebounced'
-import type { StackMode } from '@/types'
+import type { StackMode, StackRiskBudgetRequest } from '@/types'
+
+// A percentage as a person reads it: no float noise (0.1 + 0.2), no trailing zeros.
+const pct = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 4 })
 
 const BAR_PRESETS: [number, string][] = [
   [5, '5m'],
@@ -456,6 +460,37 @@ export function StackConfigModal({
     return m
   }, [preview])
 
+  // ── Do the legs fit under the cap? ─────────────────────────────────────────
+  // Aaron, 2026-09-10: "if I put ten percent cap, then the strategies that I choose cannot trade
+  // more than the cap… they cannot add up to more than the risk cap." SHARED only — a screen has
+  // no account to cap. Asked of the backend with exactly what the launch would send, because the
+  // launch refuses with the same function (`services/stack_risk_budget.py`); a sum written here
+  // would be the Bots page's `?? 0` drift all over again.
+  // ⚠ Not asked while a box is empty or the cap is not a positive number — those already block
+  // the run with their own message, and a request built from them would total a stack nobody asked.
+  const riskBoxesOk = riskBoxProblems.length === 0
+  const budgetBody = useMemo<StackRiskBudgetRequest | null>(
+    () =>
+      shared && riskCapPct != null && riskCapPct > 0 && selected.size > 0 && riskBoxesOk
+        ? {
+            strategy_ids: Array.from(selected),
+            params_by_strategy: paramsByStrategy,
+            risk_cap_pct: riskCapPct,
+            ...(recoveryFor ? { recovery_parent: recoveryFor } : {}),
+          }
+        : null,
+    [shared, riskCapPct, selected, riskBoxesOk, paramsByStrategy, recoveryFor]
+  )
+  const debouncedBudget = useDebounced(budgetBody, 300)
+  const budgetQuery = useStackRiskBudget(debouncedBudget)
+  // 🔴 THE ANSWER COUNTS ONLY FOR THE NUMBERS ON SCREEN. While the debounce holds a newer body,
+  // the cached answer describes the PREVIOUS numbers — reading it would let a "fits" for 5% enable
+  // Run on a box the reader has just typed 50 into. Pending, stale or failed all block the run.
+  const budgetFresh = JSON.stringify(debouncedBudget) === JSON.stringify(budgetBody)
+  const budget = budgetFresh ? budgetQuery.data : undefined
+  const budgetOk = !shared || budget?.fits === true
+  const recoveryShare = budget?.legs.find((l) => l.recovery_of != null)?.risk_pct ?? null
+
   // ⚠ Derived from the MODE first, never from `preview == null`. The old expression was accidentally
   // right for a shared stack only because the preview happened to be in flight; the moment it is not
   // fetched at all, "we have no answer" and "nothing needs running" must not collapse into one.
@@ -467,7 +502,9 @@ export function StackConfigModal({
     // A broker whose spread has never been measured refuses at the backend rather than borrowing a
     // sibling tier's number — PU Prime's tiers measured 2.7x apart. Stopping here means the answer
     // arrives before the click instead of as a 400 after it.
-    !(chargeCosts && brokerUnpriced)
+    !(chargeCosts && brokerUnpriced) &&
+    // The legs fit under the cap, per a CURRENT answer from the backend — see the budget above.
+    budgetOk
 
   const submit = () => {
     if (!canRun) return
@@ -886,6 +923,48 @@ export function StackConfigModal({
                     </div>
                   )}
                 </div>
+
+                {/* 🔴 THE LEGS' RISK, ADDED UP, AGAINST THE CAP — under the column it totals. The
+                    number and the sentence are the backend's (the same function the launch refuses
+                    with), never a sum of the boxes: the Bots page once added its shares here with
+                    `?? 0` and printed a total that fitted while the save was refused. */}
+                {shared && budgetBody && (
+                  <div data-testid="stack-risk-total" className="pt-2">
+                    <div className="flex items-center gap-2 px-3 text-[12px]">
+                      <span className="flex-1 text-right text-text-tertiary">
+                        Together, per trade
+                        {recoveryShare != null && (
+                          <span> · includes the loss recovery at {pct(recoveryShare)}%</span>
+                        )}
+                      </span>
+                      <span
+                        className={`w-[232px] flex-shrink-0 text-right font-mono tabular-nums ${
+                          budget && !budget.fits ? 'text-neg-text' : 'text-text-primary'
+                        }`}
+                      >
+                        {budget
+                          ? budget.total_pct != null
+                            ? `${pct(budget.total_pct)}% of ${pct(budget.cap_pct)}% cap`
+                            : 'cannot be added up'
+                          : budgetQuery.isError && budgetFresh
+                            ? 'could not check'
+                            : 'checking…'}
+                      </span>
+                    </div>
+                    {budget && !budget.fits && budget.reason && (
+                      <p className="mt-1 px-3 text-[11px] text-neg-text leading-snug">
+                        {budget.reason}
+                      </p>
+                    )}
+                    {budgetQuery.isError && budgetFresh && (
+                      <p className="mt-1 px-3 text-[11px] text-neg-text leading-snug">
+                        Could not check the legs against the cap —{' '}
+                        {(budgetQuery.error as Error)?.message ?? 'the backend did not answer'}. The
+                        run stays blocked until it can be checked.
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
 

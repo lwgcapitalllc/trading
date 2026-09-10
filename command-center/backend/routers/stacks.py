@@ -33,11 +33,14 @@ from models import (
     StackPreviewResponse,
     StackRequest,
     StackResponse,
+    StackRiskBudgetRequest,
+    StackRiskBudgetResponse,
+    StackRiskLeg,
     StackSharedReport,
     StackStrategyLeg,
     StackSummary,
 )
-from services import chart_spec, history_limits, lab_db, portfolio_runner
+from services import chart_spec, history_limits, lab_db, portfolio_runner, stack_risk_budget
 from services.sweep_runner import run_sweep
 
 from routers import _costs
@@ -92,6 +95,11 @@ def _validate_stack_strategies(ids: list[str], *, extra_legs: int = 0) -> list[d
             "A stack needs at least 2 legs — pick another strategy, or tick loss recovery "
             "under the one you have.",
         )
+    return _python_strategies(ids)
+
+
+def _python_strategies(ids: list[str]) -> list[dict]:
+    """Each id's strategy row — 404 for a missing one, 409 for one that is not Python."""
     strategies = []
     for sid in ids:
         strat = lab_db.get_strategy(sid)
@@ -220,6 +228,22 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     # decides whether the recovery itself is legal (parent in the stack, shared mode, and so on).
     strategies = _validate_stack_strategies(ids, extra_legs=1 if req.recovery_parent else 0)
     _validate_recovery_leg(req, ids)
+
+    # 🔴 A SHARED stack whose legs risk more per trade than its cap is REFUSED (Aaron, 2026-09-10:
+    # "they cannot add up to more than the risk cap"). Over the cap the legs take turns instead
+    # of sharing, which is an account the Bots page refuses to assign — so the stack would be a
+    # measurement of something nobody can deploy. Same function the form's total reads, so the
+    # page and this 400 cannot disagree. Checked BEFORE the history floor, which can reach the box.
+    if req.mode == "shared":
+        verdict = _risk_budget(
+            strategies,
+            _leg_param_sets(req, strategies),
+            req.risk_cap_pct,
+            req.recovery_parent,
+            req.recovery_params,
+        )
+        if not verdict.fits:
+            raise HTTPException(400, verdict.reason)
 
     for rid in req.ruleset_ids:
         if not lab_db.get_ruleset(rid):
@@ -528,11 +552,89 @@ def _leg_param_sets(req: StackRequest, strategies: list[dict]) -> list[dict]:
     the defect `run_feeds`' own comment records from the single-run path, and it arrives here by
     the same route — a check that bounds one frame while the run replays two.
     """
-    out = []
-    for strat in strategies:
-        params = dict(req.params_by_strategy.get(strat["id"]) or strat.get("default_params") or {})
-        out.append(_pin_for_shared(params) if req.mode == "shared" else params)
-    return out
+    return [_leg_params(req.params_by_strategy, strat, req.mode) for strat in strategies]
+
+
+def _leg_params(params_by_strategy: dict, strat: dict, mode: str) -> dict:
+    """One leg's run settings — the override, else the stored defaults, pinned on a shared stack.
+
+    Split out of `_leg_param_sets` so the risk-budget endpoint reads a leg's risk off exactly what
+    the launch would run, rather than a second resolution of the same thing.
+    """
+    params = dict(params_by_strategy.get(strat["id"]) or strat.get("default_params") or {})
+    return _pin_for_shared(params) if mode == "shared" else params
+
+
+def _risk_budget(
+    strategies: list[dict],
+    param_sets: list[dict],
+    cap_pct: float,
+    recovery_parent: Optional[str],
+    recovery_params: Optional[dict],
+) -> stack_risk_budget.RiskBudget:
+    """Each leg's per-trade share plus the recovery leg's, judged against the cap.
+
+    The recovery leg counts: it can hold a position while its parent opens the next one, so it
+    spends the same budget. Its share is the parent's risk times the rule's size fraction.
+    """
+    legs = [
+        stack_risk_budget.leg_share(s["id"], s.get("name") or s["id"], p)
+        for s, p in zip(strategies, param_sets)
+    ]
+    if recovery_parent:
+        parent = next((leg for leg in legs if leg.strategy_id == recovery_parent), None)
+        rule = lab_db.get_strategy(_RECOVERY_ID) or {}
+        rule_name = rule.get("name") or "Loss recovery"
+        legs.append(
+            stack_risk_budget.recovery_share(
+                parent,
+                recovery_params,
+                rule.get("default_params"),
+                f"{rule_name} (on {parent.name})" if parent else rule_name,
+            )
+        )
+    return stack_risk_budget.budget(legs, cap_pct)
+
+
+@router.post("/stacks/risk-budget", response_model=StackRiskBudgetResponse)
+def stack_risk_budget_check(req: StackRiskBudgetRequest) -> StackRiskBudgetResponse:
+    """Do these legs fit under the cap? Runs nothing and writes nothing.
+
+    The stack form's total reads this rather than adding the boxes up itself — deciding *does it
+    fit* in the browser is the same rule written twice, and the Bots page shipped exactly that
+    drift. `fits=false` is a 200 carrying the reason: the question is legitimate, and a refusal
+    status would make a working form look broken.
+    """
+    ids = list(dict.fromkeys(req.strategy_ids))
+    strategies = _python_strategies(ids)
+    if req.recovery_parent and req.recovery_parent not in ids:
+        raise HTTPException(
+            400,
+            f"recovery_parent '{req.recovery_parent}' is not one of these strategies "
+            f"({', '.join(ids) or 'none'}).",
+        )
+    verdict = _risk_budget(
+        strategies,
+        [_leg_params(req.params_by_strategy, s, "shared") for s in strategies],
+        req.risk_cap_pct,
+        req.recovery_parent,
+        req.recovery_params,
+    )
+    return StackRiskBudgetResponse(
+        cap_pct=verdict.cap_pct,
+        legs=[
+            StackRiskLeg(
+                strategy_id=leg.strategy_id,
+                name=leg.name,
+                risk_pct=leg.risk_pct,
+                recovery_of=leg.recovery_of,
+            )
+            for leg in verdict.legs
+        ],
+        total_pct=verdict.total_pct,
+        fits=verdict.fits,
+        reason=verdict.reason,
+    )
 
 
 def _trigger_shared_stack(

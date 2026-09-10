@@ -2167,6 +2167,38 @@ class StackPreviewResponse(BaseModel):
     run_count: int
 
 
+class StackRiskBudgetRequest(BaseModel):
+    """Do a SHARED stack's legs fit under its risk cap? The stack form asks while the reader
+    types; the launch refuses with the same function (`services/stack_risk_budget.py`), so the
+    total on the page and the 400 cannot disagree.
+
+    ⚠ No two-leg minimum and no window: the form asks while legs are still being picked.
+    """
+
+    strategy_ids: list[str]
+    params_by_strategy: dict[str, dict] = {}
+    risk_cap_pct: float = Field(..., gt=0)
+    recovery_parent: Optional[str] = None
+    recovery_params: dict = {}
+
+
+class StackRiskLeg(BaseModel):
+    strategy_id: str
+    name: str
+    # What one entry of this leg risks, % of the balance. None = the leg states no readable risk
+    # per trade — never 0, which would let an over-subscribed stack pass.
+    risk_pct: Optional[float] = None
+    recovery_of: Optional[str] = None  # the loss-recovery leg only: whose losses it recovers
+
+
+class StackRiskBudgetResponse(BaseModel):
+    cap_pct: float
+    legs: list[StackRiskLeg]
+    total_pct: Optional[float] = None  # None when ANY leg is unreadable — never a partial sum
+    fits: bool
+    reason: Optional[str] = None  # the sentence the launch refuses with; None when it fits
+
+
 class StackResponse(BaseModel):
     stack_id: str
     run_ids: list[str]

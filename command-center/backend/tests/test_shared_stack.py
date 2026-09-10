@@ -1703,7 +1703,9 @@ def test_the_shared_LAUNCH_can_actually_be_CALLED(client, tmp_path, monkeypatch)
                 "source_path": f"strategies/python/{sid}",
                 "scanned_at": 1,
                 "param_schema": [],
-                "default_params": {},
+                # A risk that fits the 10% cap. A shared stack whose legs state none is refused
+                # since 2026-09-10, and this test is about the launch being CALLABLE, not that.
+                "default_params": {"exec_risk_pct": 4.0},
             }
         )
 
@@ -1788,8 +1790,9 @@ def test_a_LEG_S_STORED_PARAMS_NAME_THE_INSTRUMENT_IT_LOADS(client, tmp_path, mo
                 "scanned_at": 1,
                 "param_schema": [],
                 # The package's own spelling, which is what the scanner stores and what beat the
-                # broker's. A leg with no symbol at all could not show this.
-                "default_params": {"symbol": "XAUUSD"},
+                # broker's. A leg with no symbol at all could not show this. The risk fits the
+                # 10% cap — a shared stack stating none is refused since 2026-09-10.
+                "default_params": {"symbol": "XAUUSD", "exec_risk_pct": 4.0},
             }
         )
 

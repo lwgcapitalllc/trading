@@ -1850,6 +1850,33 @@ export interface StackPreviewResponse {
   run_count: number
 }
 
+/** Do a SHARED stack's legs fit under its cap? Mirrors `models.StackRiskBudgetRequest`. */
+export interface StackRiskBudgetRequest {
+  strategy_ids: string[]
+  params_by_strategy?: Record<string, Record<string, unknown>>
+  risk_cap_pct: number
+  recovery_parent?: string
+}
+
+export interface StackRiskLeg {
+  strategy_id: string
+  name: string
+  /** What one entry of this leg risks, % of the balance. `null` = unreadable — never 0. */
+  risk_pct: number | null
+  /** The loss-recovery leg only: the strategy whose losses it recovers. */
+  recovery_of: string | null
+}
+
+export interface StackRiskBudget {
+  cap_pct: number
+  legs: StackRiskLeg[]
+  /** `null` when ANY leg is unreadable — never a partial sum. */
+  total_pct: number | null
+  fits: boolean
+  /** The sentence the launch refuses with; `null` when the legs fit. */
+  reason: string | null
+}
+
 export interface StackSummary {
   stack_id: string
   instrument: string

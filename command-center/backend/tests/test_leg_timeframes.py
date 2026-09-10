@@ -202,7 +202,12 @@ def _seed(monkeypatch, tmp_path, ids=("sos_fade", "extreme_leg")):
                 "source_path": f"strategies/python/{sid}",
                 "scanned_at": 1,
                 "param_schema": [],
-                "default_params": {},
+                # A risk that FITS the 10% cap (4 + 4, or 4 plus a quarter-size recovery). Since
+                # 2026-09-10 a shared stack whose legs state no risk per trade is refused, which
+                # is not this file's subject — so the fixture states one out loud.
+                "default_params": (
+                    {"rec_risk_frac": 0.25} if sid == "loss_recovery" else {"exec_risk_pct": 4.0}
+                ),
             }
         )
 

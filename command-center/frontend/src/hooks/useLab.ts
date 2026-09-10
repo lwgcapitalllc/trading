@@ -36,6 +36,8 @@ import type {
   StackChartSpec,
   StackPreviewRequest,
   StackPreviewResponse,
+  StackRiskBudget,
+  StackRiskBudgetRequest,
   StackSharedReport,
   OptimizationRequest,
   OptimizationSummary,
@@ -973,6 +975,21 @@ export function useStackPreview(body: StackPreviewRequest, enabled: boolean) {
     queryKey: ['lab', 'stack-preview', body],
     queryFn: () => api.post<StackPreviewResponse>('/backtests/stacks/preview', body),
     enabled,
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+
+/** Do a SHARED stack's legs fit under its cap? Pass `null` to ask nothing.
+ *
+ *  🔴 SERVED, never added up here. The Bots page once summed the shares in the browser with
+ *  `?? 0`, printed a total that fitted, and had the save refused — the same rule written twice.
+ *  This asks the function the launch refuses with, so the total and the 400 cannot disagree. */
+export function useStackRiskBudget(body: StackRiskBudgetRequest | null) {
+  return useQuery({
+    queryKey: ['lab', 'stack-risk-budget', body],
+    queryFn: () => api.post<StackRiskBudget>('/backtests/stacks/risk-budget', body),
+    enabled: body != null,
     staleTime: 30_000,
     retry: false,
   })

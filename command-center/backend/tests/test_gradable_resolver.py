@@ -1199,6 +1199,10 @@ def test_the_LAUNCH_records_the_recovery_parent_on_the_member_row(client, monkey
             "account_size": 10_000.0,
             "risk_cap_pct": 10.0,
             "recovery_parent": "sos_fade",
+            # Risks that fit the 10% cap (4 + a quarter of 4). The shared seeder states none, and
+            # since 2026-09-10 a shared stack that states none is refused — not this test's subject.
+            "params_by_strategy": {"sos_fade": {"exec_risk_pct": 4.0}},
+            "recovery_params": {"rec_risk_frac": 0.25},
         },
     )
     # 202, not "any 2xx": a shared launch that never reached the runner would still answer,

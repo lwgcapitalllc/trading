@@ -4084,12 +4084,25 @@ stays where it is… the percentage field is not wide enough."*
   the rows ticked on the Strategies page): those legs go first, and ticking afterwards never moves a
   row. Sorting on the live selection makes a row jump out from under the pointer mid-click.
 - The risk box is 128px — room for `12.5` and its `%`.
-- ⚠ **The cap does NOT yet refuse legs whose risk adds up past it** — this change moved and
-  retyped the boxes; nothing here totals them.
+- 🔴 **The legs' risk may not add up past the cap, and the TOTAL is the backend's**
+  (`useStackRiskBudget` → `POST /backtests/stacks/risk-budget`, shared only). A row under the risk
+  column reads *N% of M% cap*, the backend's sentence goes under it when the legs do not fit, and
+  it counts the loss recovery (a quarter of its parent by default). ⚠ **Never summed here** — the
+  Bots page once added its shares in the browser with `?? 0` and printed a total that fitted while
+  the save was refused. The launch refuses with the same function, so page and 400 cannot disagree.
+- 🔴 **Run needs a CURRENT "fits".** An answer counts only while its body matches the numbers on
+  screen (`budgetFresh`): inside the debounce the cached answer describes the PREVIOUS numbers, so
+  a "fits" for 5% would enable Run on a box just typed to 50. Pending, stale and failed all block
+  — *could not ask* is not *fits* (rule 1).
 
 ✅ **`stack-config.spec.ts` ran 10/10 against the running app**, and each of the three new specs
 was watched RED by mutation — the order sorted on the live selection, the keystroke filter removed,
-the empty-risk-box block removed. 🔴 **Seven of that file's specs could not have passed since
+the empty-risk-box block removed. **The budget added four more (14/14), each red by mutation**: the
+gate dropped from Run, the check asked without the leg overrides, the freshness check dropped, and
+a failed check read as fitting. ⚠ **The fixture's SOS Fade default is 5%, not 10%** — the mock
+answers "fits" by default, and a fixture whose own legs do not fit would describe a rule that is
+not there. 🔴 **The stale check first released its held answer before the request existed** —
+*checking…* also shows during the debounce — so it now waits for the request to arrive. 🔴 **Seven of that file's specs could not have passed since
 2026-09-07**: `fillForm` typed into the `e.g. XAUUSD` placeholder, which died with the instrument
 picker. It now finds the picker's own placeholder and asserts a PREFIX (`/^XAUUSD/`), because in
 the fixture the broker's suffix is not re-applied when the default instrument arrives after the
