@@ -188,7 +188,11 @@ pins it, so both inherit the stack default of off — checked, not assumed.
 (step 15 of `scripts/run_all_tests.sh`) runs `compare_eq.py` against it on every clone. It is taken
 at the shipped defaults, so the gate runs with NO flags.
 
-🔴 **This engine is the FIRST of eleven to have one, and the other ten are still un-regressed.**
+⚠ **`exports/golden/golden.json` carries the measured warm-up (0 here) and the provenance** —
+broker, symbol, timeframe, bar count, harness. Provenance is recorded because a cross-cutting run on
+2026-09-01 recorded NEITHER and cost three replays.
+
+🔴 **This engine was the FIRST of eleven to have one; TEN now do, and only fibonacci is left.**
 Before it, whether any gate could run depended on which scratch CSVs sat on one laptop — nine of
 fourteen could not answer at all on the day this was written, which made rule 22 a blocker rather
 than a gate.

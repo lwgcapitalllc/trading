@@ -191,3 +191,26 @@ Re-run `compare_svp.py` after any change to the SVP blocks in `mpc_jarvis.pine` 
   `engines/liquidity/CLAUDE.md`.
 - Roadmap: `docs/ENGINE_EXTRACTION_ROADMAP.md` (SVP was the last SMC-port engine).
 - Monorepo context: `../CLAUDE.md`.
+
+---
+
+## The golden export (2026-09-09) — this engine's gate runs on every machine
+
+`exports/golden/VANTAGE_XAUUSD_M5_20097bars.csv` is COMMITTED, and `scripts/check_engine_gates.py` (step 15 of
+`scripts/run_all_tests.sh`) runs the parity gate against it on every clone, in seconds, with no
+human. `exports/golden/golden.json` carries the warm-up and the provenance.
+
+✅ **Warm-up 0 — this export matches from row 0.** Where a warm-up IS needed elsewhere it is measured, never guessed, and never raised to bury a late mismatch.
+
+🔴 **Before this, rule 22 was unsatisfiable here.** Exports were git-ignored scratch, so whether
+this gate could run depended on which CSVs sat on one laptop — nine of fourteen could not answer on
+the day this landed. **A rule that cannot be satisfied stops being a rule**; it blocked work instead
+of gating it.
+
+⚠ **Golden is REGRESSION, not ACCEPTANCE.** It proves this engine still does what it did when the
+file was taken. It cannot see a Pine edit made afterwards — that still needs a fresh export. A green
+step 15 must never stand in for one.
+
+⚠ **Provenance is recorded (Vantage XAUUSD M5, 20097 bars) because a
+cross-cutting run on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays** — two
+brokers disagree on the bar count for the same window while both look perfectly healthy.

@@ -228,3 +228,26 @@ Re-run `compare_sessions.py` after any change to the session blocks in `mpc_jarv
   anchors on the trading-day boundary, not this engine's session windows — see `docs/ENGINE_EXTRACTION_ROADMAP.md`.
 - Sibling engines / the shared porting pattern: `engines/order_blocks/CLAUDE.md`, `engines/fibonacci/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.
+
+---
+
+## The golden export (2026-09-09) — this engine's gate runs on every machine
+
+`exports/golden/VANTAGE_XAUUSD_M5_20096bars.csv` is COMMITTED, and `scripts/check_engine_gates.py` (step 15 of
+`scripts/run_all_tests.sh`) runs the parity gate against it on every clone, in seconds, with no
+human. `exports/golden/golden.json` carries the warm-up and the provenance.
+
+⚠ **Warm-up 10, and it was MEASURED rather than guessed.** The export begins mid-history with the Pine engine already warm while this engine starts cold at row 0, so the opening mismatches are expected. 10 is past the last mismatching bar with the whole remaining tail confirmed clean. 🔴 **A warm-up is never raised to bury a LATE mismatch** — mismatches that recur after a clean stretch are real divergence, and hiding them behind a bigger number turns the gate into decoration.
+
+🔴 **Before this, rule 22 was unsatisfiable here.** Exports were git-ignored scratch, so whether
+this gate could run depended on which CSVs sat on one laptop — nine of fourteen could not answer on
+the day this landed. **A rule that cannot be satisfied stops being a rule**; it blocked work instead
+of gating it.
+
+⚠ **Golden is REGRESSION, not ACCEPTANCE.** It proves this engine still does what it did when the
+file was taken. It cannot see a Pine edit made afterwards — that still needs a fresh export. A green
+step 15 must never stand in for one.
+
+⚠ **Provenance is recorded (Vantage XAUUSD M5, 20096 bars) because a
+cross-cutting run on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays** — two
+brokers disagree on the bar count for the same window while both look perfectly healthy.

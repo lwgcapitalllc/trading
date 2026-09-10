@@ -285,8 +285,26 @@ file was taken.**
 
 ⚠ **It prints its COVERAGE FRACTION and names the engines that lack an export**, because a bare
 green tick on this step would read as *the engine gates pass* when it means *the one engine with a
-committed export passes*. Coverage at landing: **1 of 11** gateable engines. Each of the other ten
-needs one fresh export, once, to join permanently.
+committed export passes*. Coverage: **10 of 11** gateable engines, from ten fresh exports taken 2026-09-09. Only the
+fibonacci gate is still uncovered, and NOT for want of an export — its macro component is the
+already-recorded re-port (11,356 of 13,304 bars diverge, while the structure fib and sniper converge
+in 96 and 149). **Say that plainly rather than letting the gap read as a missing file.**
+
+⚠ **Each golden folder carries a `golden.json`** holding the MEASURED warm-up and the provenance
+(broker, symbol, timeframe, bar count, harness). Provenance is recorded because a cross-cutting run
+on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays — two brokers disagree on
+the bar count for the same window while both look perfectly healthy.
+
+🔴 **A warm-up is MEASURED, never guessed, and never raised to bury a LATE mismatch.** The export
+starts warm and the Python starts cold, so an opening prefix of mismatches is expected; the number
+is set past the last mismatching bar with the whole remaining tail confirmed clean. Mismatches that
+RECUR after a clean stretch are real divergence — raising the warm-up to swallow them turns the gate
+into decoration. Two of the ten were diagnosed that way on landing: the gaps engine looked 100%
+divergent and was a window too short (seven gaps born before the export began, and a gap only dies
+when price closes past it), while fibonacci's macro half is genuine.
+
+⚠ **Cost: ~25 MB raw, ~4 MB compressed in git, once.** That is the price of every gate being
+runnable on every machine forever, and it is worth stating so nobody re-litigates it later.
 
 ⚠ **Engines are DISCOVERED, never listed** — drop a CSV in the golden folder and it is wired in
 with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass. Both paths watched

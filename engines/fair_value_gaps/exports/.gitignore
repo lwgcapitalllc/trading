@@ -1,4 +1,17 @@
-# Drop folder for TradingView Pine chart-data exports used by
-# ../tools/compare_fvg.py. These CSVs are large, local-only test data —
-# never commit them. This file keeps the folder present in the repo.
+# Drop folder for TradingView Pine chart-data exports used by ../tools/compare_fvg.py.
+# Ad-hoc exports are large, local-only scratch — never commit them.
 *.csv
+
+# 🔴 EXCEPT golden/ — ONE committed export per engine, so the parity gate can run on EVERY
+# clone, on every machine, forever. Before this existed, whether a gate could run at all
+# depended on which CSVs happened to be sitting on one laptop: on 2026-09-09 NINE of fourteen
+# gates could not answer, so rule 22 ("no engine change without a green gate") was
+# unsatisfiable and blocked work instead of gating it.
+#
+# ⚠ golden is REGRESSION, fresh is ACCEPTANCE, and you need both:
+#     golden → catches the PYTHON drifting. Always available, runs in seconds, no human.
+#     fresh  → catches PINE and Python disagreeing after a Pine edit. Needs TradingView.
+#   A green golden run says NOTHING about a Pine edit made after the file was taken.
+!golden/
+!golden/*.csv
+!golden/*.json

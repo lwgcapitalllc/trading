@@ -48,6 +48,7 @@ Standard library only. Step of `scripts/run_all_tests.sh`.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -56,7 +57,7 @@ REPO = Path(__file__).resolve().parents[1]
 ENGINES = REPO / "engines"
 
 # Raise this as golden exports are added, so losing one is a failure rather than a quieter run.
-MIN_GOLDEN_EXPORTS = 1
+MIN_GOLDEN_EXPORTS = 10
 
 
 def _gateable_engines():
@@ -79,10 +80,20 @@ def _discover():
         gates = sorted(engine.glob("tools/compare_*.py"))
         if not gates:
             print(f"🔴 {engine.name}: has a golden export but NO compare_*.py to run on it.")
-            found.append((engine, None, csvs[0]))
+            found.append((engine, None, csvs[0], 0))
             continue
+        # golden.json carries the MEASURED warm-up and the provenance. A missing manifest means
+        # warm-up 0 rather than a skip: silently not running a gate is the failure this whole file
+        # exists to stop.
+        warmup = 0
+        manifest = golden_dir / "golden.json"
+        if manifest.exists():
+            try:
+                warmup = int(json.loads(manifest.read_text()).get("warmup", 0))
+            except (ValueError, OSError) as exc:
+                print(f"🔴 {engine.name}: unreadable golden.json ({exc}) - running at warm-up 0.")
         for csv in csvs:
-            found.append((engine, gates[0], csv))
+            found.append((engine, gates[0], csv, warmup))
     return found
 
 
@@ -104,17 +115,15 @@ def main() -> int:
         return 1
 
     failures = 0
-    for engine, gate, csv in work:
-        label = f"{engine.name} ({csv.name})"
+    for engine, gate, csv, warmup in work:
+        label = f"{engine.name} ({csv.name}, warm-up {warmup})"
         if gate is None:
             failures += 1
             continue
-        proc = subprocess.run(
-            [sys.executable, str(gate), str(csv)],
-            cwd=str(REPO),
-            capture_output=True,
-            text=True,
-        )
+        cmd = [sys.executable, str(gate), str(csv)]
+        if warmup:
+            cmd += ["--warmup", str(warmup)]
+        proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True)
         if proc.returncode == 0:
             print(f"  ✓ {label}")
         else:
@@ -131,7 +140,7 @@ def main() -> int:
         return 1
 
     gateable = _gateable_engines()
-    covered = {e for e, _g, _c in work}
+    covered = {e for e, _g, _c, _w in work}
     missing = [e.name for e in gateable if e not in covered]
 
     print(f"\n✓ {len(work)} engine gate(s) green against their golden exports.")

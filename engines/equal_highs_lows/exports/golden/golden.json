@@ -1,0 +1,12 @@
+{
+  "csv": "VANTAGE_XAUUSD_M15_20148bars.csv",
+  "warmup": 0,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M15",
+  "bars": 20148,
+  "harness": "indicators/engines/eq_export.pine",
+  "taken": "2026-09-09",
+  "_why_provenance": "Broker, symbol and timeframe are recorded because a cross-cutting run on 2026-09-01 recorded NEITHER and reproducing it cost three replays.",
+  "_why_warmup": "Zero because this export matches from row 0. Where a warmup IS needed it is MEASURED - last mismatching bar, with the whole remaining tail confirmed clean - never guessed, and never raised to bury a late mismatch, which would be real divergence rather than warm-up."
+}

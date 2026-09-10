@@ -1,0 +1,13 @@
+{
+  "csv": "VANTAGE_XAUUSD_M5_20096bars.csv",
+  "warmup": 10,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M5",
+  "bars": 20096,
+  "first_bar_epoch": 1780264800,
+  "harness": "indicators/engines/sessions_export.pine",
+  "taken": "2026-09-09",
+  "_why_provenance": "Broker, symbol and timeframe are recorded because a cross-cutting run on 2026-09-01 recorded NEITHER and reproducing it cost three replays - two brokers disagree on the bar count for the same window while both look perfectly healthy.",
+  "_why_warmup": "The Pine export begins mid-history with its engine already warm; the Python engine starts cold at row 0. Mismatches in that opening prefix are expected. This number was MEASURED per engine by finding the last mismatching bar and confirming the whole remaining tail is clean - never guessed, and never raised to hide a late mismatch, which would be real divergence rather than warm-up."
+}
