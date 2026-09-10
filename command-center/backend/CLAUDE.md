@@ -83,9 +83,8 @@ backend/
 │   │                      mutating a REAL detail response, so an empty table is a dead suite. MC only:
 │   │                      no child backtests, no VPS, no platform lock. ⚠ It drives the real
 │   │                      `run_stress_test_task` (a shortcut would be a hand-written fixture in a row's
-│   │                      clothes), refuses when the lab already holds one, and STUBS the Telegram
-│   │                      sender — a fixture is not a result, and an ops channel that pings for test
-│   │                      scaffolding is one people mute
+│   │                      clothes) and refuses when the lab already holds one. (It stubbed the
+│   │                      Telegram sender until 2026-09-10; a stress test sends nothing now)
 │   ├── scripts/run_diff.py          read-only: why do two runs disagree? Prints the MEASUREMENT BASIS
 │   │                      difference before the params and the results, and exits 1 when the two were
 │   │                      not measured on the same footing — see *Comparing two runs* below
@@ -1005,8 +1004,8 @@ absence produces no error anywhere, just a feature that quietly does nothing:
   nastier case and is reported with the date it ends — recent trades come back *untagged, not
   unaffected*.
 - **Missing `algos/credentials.json` makes every Telegram send a no-op.** Deliberate (a notifier
-  must never be able to stop a trading loop) and it means a stress-test grade can finish with
-  nobody told.
+  must never be able to stop a trading loop) and it means a bot can be stopped, restarted or
+  deployed with nobody told.
 
 It **reports and does not act** — neither is repairable from here, and neither is worth refusing to
 boot over. `_news_calendar()` catches everything: it runs inside the startup hook, and an exception
@@ -1391,6 +1390,21 @@ is the same defect as the zero bar for a failed shift, one level up.
 It rebuilds each stored test's walk-forward and sensitivity summaries under today's rules and
 re-grades. ⚠ **It may only RE-DERIVE from stored inputs — it never re-runs a backtest** — so a row
 whose child data is gone is left alone rather than being given a number nothing measured.
+
+### A stress test posts NOTHING to Telegram (2026-09-10)
+
+🔴 **The grade was posted to the health room on every finish** — the room that carries a dead bot,
+a halted order bridge, a deploy. Aaron: *"I shouldn't get notification about these things… that is
+not related to health."* A lab result there is noise, and noise is how the real alert stops being
+read. The send, its formatter and the fixture script's stub are gone; the grade lives on the Stress
+Tests page.
+
+⚠ **Pinned by `test_notification_routing.py::test_a_stress_test_sends_nothing`**, which sweeps both
+stress modules for a send AND refuses an import of the notifier — the sweep matches the function by
+NAME, so an aliased import would slip past it alone. Both halves watched RED by mutation.
+
+⚠ **If lab pings are wanted again, they get their OWN chat and their own kind** — never `HEALTH`.
+Adding a kind means adding its credential key on both sides (`test_the_keys_match_the_algos_side`).
 
 ---
 

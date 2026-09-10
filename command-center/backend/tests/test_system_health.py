@@ -176,7 +176,7 @@ def test_a_clean_machine_reports_nothing(monkeypatch):
 
 def test_missing_telegram_credentials_are_reported(monkeypatch):
     """Silent by design — a notifier must never be able to stop a trading loop —
-    so a stress-test grade can finish with nobody told."""
+    so a bot can be stopped or deployed with nobody told."""
     monkeypatch.setattr("services.notify.telegram_configured", lambda: False)
     monkeypatch.setattr(readiness, "_news_calendar", lambda: None)
     warnings = readiness.check()

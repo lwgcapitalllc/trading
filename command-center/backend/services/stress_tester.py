@@ -22,8 +22,7 @@ from typing import Optional
 
 import numpy as np
 
-from services import lab_db, notify
-from services.alert_format import alert, joined
+from services import lab_db
 from services.metrics import (
     apply_canonical_sharpe,
     daily_sharpe,
@@ -2712,56 +2711,6 @@ async def _apply_grid_sensitivity_if_available(st: dict, stress_test_id: str) ->
     return True
 
 
-# ── Telegram grade notification ───────────────────────────────────────────────
-
-
-def _fire_grade_notification(
-    stress_test_id: str, target, st: dict, grade: Optional[str], reasons: list[str]
-) -> None:
-    # ⚠ Named off the RESOLVED target rather than off a run row. A stack has no run row, and
-    # naming it after its first leg would send an alert crediting one strategy with a whole
-    # account's grade. `label` is every leg's name for a stack and the strategy's for a run.
-    strat_name = target.label or "Unknown"
-    if target.is_stack:
-        strat_name = f"Stack: {strat_name}"
-    instrument = target.instrument or "?"
-    prob_pass = st.get("prob_pass_eval")
-    p1_dd = st.get("pct1_max_dd")
-
-    # The house shape (`services/alert_format.py`): icon, LABEL, subject, grouped facts, then
-    # the thing to act on. Plain text — a strategy name is full of underscores and Telegram drops
-    # the whole message on an unbalanced Markdown entity.
-    facts = [
-        # `grade` is None when the ruleset states no drawdown limit, so nothing could be graded.
-        # "not graded" is the honest word; "Grade: None" reads as a crash.
-        f"Grade {grade}" if grade else "Not graded — the ruleset states no drawdown limit",
-    ]
-    if prob_pass is not None:
-        facts.append(f"{round(prob_pass * 100, 1)}% pass probability")
-    # Quote the drawdown in the unit the GRADE read. This always printed dollars, so on a
-    # compounding run the message quoted a figure the letter beside it had not looked at.
-    if st.get("dd_basis") == "percent" and st.get("pct1_max_dd_pct") is not None:
-        facts.append(f"worst-1% drawdown {st['pct1_max_dd_pct']:.1f}%")
-    elif p1_dd is not None:
-        facts.append(f"worst-1% drawdown ${p1_dd:,.0f}")
-
-    tail = []
-    failures = st.get("phase_failures") or {}
-    if failures:
-        # A phase that RAN AND CRASHED leaves a NULL summary, which grading reads as "not run"
-        # and does not penalise. Saying so is the difference between a caveat and a fiction.
-        tail.append(
-            "Phase failed: " + ", ".join(failures) + " — the grade does not account for it."
-        )
-    if reasons:
-        tail.append("Why: " + "; ".join(reasons[:3]))
-
-    notify.send_telegram(
-        alert("🧪", "STRESS TEST", f"{strat_name} {instrument}", joined(facts), *tail),
-        notify.HEALTH,
-    )
-
-
 # ── Main stress test background task ──────────────────────────────────────────
 
 
@@ -2912,7 +2861,10 @@ async def run_stress_test_task(
                 sens_failed="sensitivity" in phase_failures,
             )
             lab_db.update_stress_test_grade(stress_test_id, grade, reasons)
-            _fire_grade_notification(stress_test_id, target, st_updated, grade, reasons)
+            # ⚠ No Telegram here, on purpose. The grade used to post to the health room, which is
+            # for the MACHINERY — a lab result there is noise, and noise is how a real alert stops
+            # being read (Aaron, 2026-09-10: "I shouldn't get notification about these things").
+            # The grade lives on the Stress Tests page.
         else:
             # No ruleset means no letter is possible, which is not a failure — but a phase that
             # died still has to be visible, so it goes in the row's own error field rather than

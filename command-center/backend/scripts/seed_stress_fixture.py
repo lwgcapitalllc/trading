@@ -17,9 +17,6 @@ What it does, and what it deliberately does NOT do:
 
 - Monte Carlo ONLY. No walk-forward and no sensitivity, so it spawns no child backtests, touches
   no VPS, and takes no platform lock. Seconds, not the ~70 minutes a full test costs.
-- ⚠ **The Telegram sender is stubbed.** Completion notifies `notify.HEALTH`, and a fixture is not a
-  result anybody asked to be told about — an ops channel that pings for test scaffolding is one
-  people mute, and a muted channel is worth less than none.
 - ⚠ It runs the REAL `run_stress_test_task`, not a shortcut. A row written by a shortcut would be a
   hand-written fixture wearing a database row's clothes, which is the exact thing the suite avoids.
 - ⚠ It REFUSES when the lab already holds one — the suite takes whichever row is first, so a second
@@ -43,7 +40,7 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services import lab_db, notify  # noqa: E402
+from services import lab_db  # noqa: E402
 from services.stress_tester import (  # noqa: E402
     MIN_TRADES_FOR_STRESS,
     phases_requested,
@@ -91,9 +88,6 @@ def main() -> None:
     trades = run.get("trade_count") or 0
     if trades < MIN_TRADES_FOR_STRESS:
         raise SystemExit(f"{run_id} has {trades} trades; the floor is {MIN_TRADES_FOR_STRESS}")
-
-    # A fixture is not a result. See the module docstring.
-    notify.send_telegram = lambda *a, **k: None
 
     st_id = uuid.uuid4().hex[:16]
     lab_db.insert_stress_test(

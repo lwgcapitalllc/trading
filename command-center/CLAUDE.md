@@ -118,7 +118,7 @@ result can show you which code produced it.
 | Tuning workbench | ✅ Live | `/backtests/runs/:id/tune` — edit a winner's params, run iterations, leaderboard + deltas + regime-aware equity overlay |
 | Per-platform job lock | ✅ Live | One job per platform (NT8/MT5/Python), platforms independent; DB is the single lock source (`has_running_job`) |
 | Worthiness badges | ✅ Live | Tier 1/2/3 worthiness badge auto-assigned on every completed run |
-| Stress Tests | ✅ Live | Monte Carlo, walk-forward, sensitivity, A–F grade with Telegram notification. MC picks its own shuffle series (dollars, or per-trade returns compounded when a run's trade size drifts) and reports drawdown in the matching unit; the grade is `None`, not D, when the ruleset states no drawdown limit. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#stress-tests) |
+| Stress Tests | ✅ Live | Monte Carlo, walk-forward, sensitivity, A–F grade. No Telegram since 2026-09-10 — the grade stays on the page. MC picks its own shuffle series (dollars, or per-trade returns compounded when a run's trade size drifts) and reports drawdown in the matching unit; the grade is `None`, not D, when the ruleset states no drawdown limit. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#stress-tests) |
 | Portfolio stacks | ✅ Live | Stacks tab on Backtests + `StackDetail`. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#portfolio-stacks) |
 | Regime tagging (M4) | ✅ Live | Every trading day in a run's window classified once into `regime_timeline.json` (regime is a property of the market on a date, not of a run); daily PnL tagged from that same map; regime overlays and filters |
 | Blocked setups | ✅ Live (Python) | **The trades that never happened.** [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#blocked-setups) |

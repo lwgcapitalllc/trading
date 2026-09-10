@@ -12,7 +12,7 @@ that quietly does nothing:
     identical to a broken one.
   * missing `algos/credentials.json` makes every Telegram notification a no-op.
     That is deliberate (a notifier must never be able to stop a trading loop)
-    and it means a stress-test grade can finish with nobody told.
+    and it means a bot can be stopped, restarted or deployed with nobody told.
 
 Neither is worth failing startup over and neither can be repaired from here, so
 this REPORTS and does not act. It runs once, on boot, and writes one line per
@@ -72,8 +72,8 @@ def _telegram() -> str | None:
         return None
     path = cfg.MONOREPO_ROOT / "algos" / "credentials.json"
     return (
-        f"Telegram not configured — stress-test grades and bot alerts will be dropped "
-        f"silently. Set LWG_TELEGRAM_TOKEN / LWG_TELEGRAM_CHAT_ID or fill {path}"
+        f"Telegram not configured — bot alerts will be dropped silently. "
+        f"Set LWG_TELEGRAM_TOKEN / LWG_TELEGRAM_CHAT_ID or fill {path}"
     )
 
 

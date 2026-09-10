@@ -1,10 +1,11 @@
 """Which Telegram room this app's messages land in.
 
 **Context.** Everything this backend announces is about the MACHINERY — a bot started, stopped,
-restarted, promoted, its runtime params applied, a stress test finished. Not one of them is a
-fill; the live bot sends those itself from the VPS. They were all going to the chat Aaron reads
-for fills, alongside the bot's own twelve lifecycle messages and the watchdog's nine, which is
-how a trade alert stops being read.
+restarted, promoted, its runtime params applied. Not one of them is a fill; the live bot sends
+those itself from the VPS. They were all going to the chat Aaron reads for fills, alongside the
+bot's own twelve lifecycle messages and the watchdog's nine, which is how a trade alert stops
+being read. (A stress test's grade was on that list until 2026-09-10 and is not any more — a lab
+result is not news about the machinery either; see the test at the bottom.)
 
 So `send_telegram` takes a KIND and the kind picks the chat. This file pins the resolution and,
 more usefully, pins that no sender in this app can quietly aim at the trades room.
@@ -156,8 +157,9 @@ def _call_sites():
 
 
 def test_the_sweep_actually_finds_call_sites():
-    """A grep test matching nothing passes for ever and proves nothing."""
-    assert len(list(_call_sites())) >= 2
+    """A grep test matching nothing passes for ever and proves nothing. ONE site since 2026-09-10
+    (the bots router) — the stress-test grade was the other, and it was removed on purpose."""
+    assert len(list(_call_sites())) >= 1
 
 
 def test_no_backend_sender_uses_the_trades_room():
@@ -174,3 +176,41 @@ def test_every_backend_send_states_a_kind():
         if not re.search(r"\b(notify\.HEALTH|notify\.TRADE|HEALTH|TRADE|kind)\b", text)
     ]
     assert not unrouted, f"these Telegram sends do not say which room they belong in: {unrouted}"
+
+
+# ── a stress test sends nothing ──────────────────────────────────────────────────────────────
+
+_STRESS_MODULES = (
+    _BACKEND / "services" / "stress_tester.py",
+    _BACKEND / "routers" / "stress_tests.py",
+)
+
+
+def test_a_stress_test_sends_nothing():
+    """A stress-test grade is a LAB result. It posted to the health room until 2026-09-10 — the
+    room that carries a dead bot or a halted order bridge — and a lab result there is how the
+    real alert stops being read (Aaron: *"I shouldn't get notification about these things"*).
+    The grade lives on the Stress Tests page.
+
+    Two checks, because the sweep alone has a hole: it matches `send_telegram(` by NAME, so an
+    import under another name would call it unseen. The import check closes that.
+
+    ⚠ Proven by mutation, both halves: re-adding the send turns the first red, and importing the
+    notifier under an alias turns the second red."""
+    sends = [f"{p.name}:{n}" for p, n, _ in _call_sites() if p in _STRESS_MODULES]
+    assert not sends, f"a stress test must not post to Telegram: {sends}"
+
+    import ast
+
+    for path in _STRESS_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                names = {a.name for a in node.names}
+                assert not (node.module == "services.notify" or "notify" in names), (
+                    f"{path.name}:{node.lineno} imports the Telegram notifier"
+                )
+            elif isinstance(node, ast.Import):
+                assert not any(a.name.endswith("notify") for a in node.names), (
+                    f"{path.name}:{node.lineno} imports the Telegram notifier"
+                )
