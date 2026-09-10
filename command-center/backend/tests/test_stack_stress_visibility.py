@@ -158,6 +158,48 @@ def test_a_single_run_keeps_its_LIVE_strategy_name(lab):
     assert row["strategy_name"] == "SOS Fade (renamed)"
 
 
+def test_a_stacks_row_NAMES_its_stack_in_the_list(lab):
+    """The model declared `stack_id` and the list query never selected it, so every row reached
+    the browser saying `null` — a stack's test looking like one whose target was never recorded.
+
+    ⚠ Watched RED against HEAD (the key was absent from the row).
+    """
+    _stack_test()
+    _run_test()
+    rows = {r["stress_test_id"]: r for r in lab_db.list_stress_tests()}
+    assert rows["st_stack"]["stack_id"] == "stk"
+    assert rows["st_run"]["stack_id"] is None
+
+
+def test_the_list_FILTERS_by_stack_newest_first(lab):
+    """The stack's stress-test window reads this to default to the ruleset the stack was last
+    graded against, so it must return only that stack's tests and the newest first.
+
+    ⚠ The older test is inserted FIRST, so insertion order and newest-first disagree — dropping the
+    ORDER BY would hand back the old test first. Watched RED against HEAD (no such argument).
+    """
+    _stack_test(stress_test_id="st_old", created_at=2, ruleset_id=None)
+    _stack_test(stress_test_id="st_new", created_at=5)
+    _run_test()
+    ids = [r["stress_test_id"] for r in lab_db.list_stress_tests(stack_id="stk")]
+    assert ids == ["st_new", "st_old"]
+    assert lab_db.list_stress_tests(stack_id="some_other_stack") == []
+
+
+def test_the_ENDPOINT_passes_the_stack_filter_through(client):
+    """A filter the service honours and the router drops is a filter nobody has.
+
+    ⚠ Watched RED against HEAD (the query string was ignored and both rows came back).
+    """
+    _seed()
+    _stack_test()
+    _run_test()
+    resp = client.get("/stress-tests?stack_id=stk")
+    assert resp.status_code == 200, resp.text
+    assert [r["stress_test_id"] for r in resp.json()] == ["st_stack"]
+    assert resp.json()[0]["stack_id"] == "stk"
+
+
 # ── The lock ──────────────────────────────────────────────────────────────────
 
 

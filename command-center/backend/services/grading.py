@@ -5,9 +5,35 @@ compute_grade() is called after Monte Carlo (and optionally walk-forward + sensi
 
 from __future__ import annotations
 
-from typing import Optional
+import math
+from typing import Callable, Optional
 
 from services.metrics import effective_dd_limit_pct, effective_dd_limit_usd
+
+# The walk-forward and sensitivity bars each grade is decided on, stated ONCE so the sentence that
+# names a missed bar cannot drift from the comparison that missed it.
+_WF_SOLID, _WF_OK = 0.20, 0.30
+_SENS_SOLID, _SENS_OK = 0.25, 0.40
+
+
+def _pct_of(fraction: float, places: int) -> str:
+    return f"{fraction * 100:.{places}f}%"
+
+
+def _apart(
+    value: float, bar: float, render: Callable[[float, int], str], places: int
+) -> tuple[str, str]:
+    """Render a measured value and the bar it missed with enough decimals that they read apart.
+
+    A worst-1% drawdown of 55.04% misses a 55% limit, and at one decimal the reason would print
+    "55.0% … over the 55.0% limit" — a sentence that contradicts itself and sends the reader looking
+    for a bug in the grade. Two more places is enough for anything Monte Carlo reports."""
+    got, need = render(value, places), render(bar, places)
+    for extra in (1, 2):
+        if got != need:
+            break
+        got, need = render(value, places + extra), render(bar, places + extra)
+    return got, need
 
 
 def _num(value, fallback: float) -> float:
@@ -87,16 +113,21 @@ def compute_grade(
         pct5_max_dd = _num(st.get("pct5_max_dd"), float("inf"))
         median_max_dd = _num(st.get("median_max_dd"), float("inf"))
 
+    def _fmt_at(v: float, places: int) -> str:
+        return f"{v:.{places}f}%" if unit == "%" else f"${v:,.{places}f}"
+
+    dd_places = 1 if unit == "%" else 0
+
     def _fmt(v: float) -> str:
-        return f"{v:.1f}%" if unit == "%" else f"${v:,.0f}"
+        return _fmt_at(v, dd_places)
 
     pct1_passes = limit > 0 and pct1_max_dd <= limit
     pct5_passes = limit > 0 and pct5_max_dd <= limit
     median_passes = limit > 0 and median_max_dd <= limit
 
     wf_degradation = st.get("walk_forward_degradation")
-    wf_solid = wf_degradation is not None and wf_degradation < 0.20
-    wf_ok = wf_degradation is not None and wf_degradation < 0.30
+    wf_solid = wf_degradation is not None and wf_degradation < _WF_SOLID
+    wf_ok = wf_degradation is not None and wf_degradation < _WF_OK
     # WF ran but degradation is None = not assessable (1 - OOS/IS is a meaningless signed ratio
     # when the in-sample metric is ≤ 0). Treat it like not-run: don't read the absent number as
     # "solid" and don't penalise on it either. The metric depends on the WF path: the serial path
@@ -108,8 +139,8 @@ def compute_grade(
     # Sensitivity is a PROFIT-FACTOR change fraction on both paths — the perturbation runner and
     # the optimizer-grid injection (they used to disagree; see stress_tester.run_sensitivity_task).
     sens_degradation = st.get("sensitivity_max_degradation")
-    sens_solid = sens_degradation is not None and sens_degradation < 0.25
-    sens_ok = sens_degradation is not None and sens_degradation < 0.40
+    sens_solid = sens_degradation is not None and sens_degradation < _SENS_SOLID
+    sens_ok = sens_degradation is not None and sens_degradation < _SENS_OK
     # Ran but produced no measurable number (no tunable params, or an unusable baseline profit
     # factor). Same rule as the walk-forward above: treat it as not-run — neither credit nor
     # penalty. Without this an unassessable sensitivity silently BLOCKED A and B, punishing a
@@ -235,15 +266,44 @@ def compute_grade(
     # ── B: worst-5% passes, WF ok (or not run), sensitivity ok (or not run)
     if pct5_passes and (wf_ok or wf_not_run) and (sens_ok or sens_not_run):
         reasons.append("Worst 5% of Monte Carlo simulations stays under ruleset limit")
-        if a_blocked_no_evidence and pct1_passes:
+        # Every B names EVERY bar it missed that an A needs, in the unit the A rule compared. A B
+        # that lists only what passed leaves the reader to reverse-engineer the A rule to learn what
+        # to fix — and naming one miss while hiding a second implies fixing the first earns the A.
+        if not pct1_passes:
+            if math.isfinite(pct1_max_dd):
+                got, need = _apart(pct1_max_dd, limit, _fmt_at, dd_places)
+                reasons.append(
+                    f"Worst 1% of simulations reaches a {got} drawdown — an A needs it at or "
+                    f"under the {need} limit"
+                )
+            else:
+                reasons.append(
+                    f"Worst 1% of simulations was not measured — an A needs it at or under "
+                    f"the {_fmt(limit)} limit"
+                )
+        if a_blocked_no_evidence:
             reasons.append(
                 "Capped at B — the worst 1% passes too, but an A needs walk-forward "
                 "evidence and this run produced none"
+                if pct1_passes
+                else "An A also needs walk-forward evidence, and this run produced none"
             )
         if not wf_not_run:
-            reasons.append(f"Walk-forward degradation {wf_degradation * 100:.0f}%")
+            if wf_solid:
+                reasons.append(f"Walk-forward degradation {wf_degradation * 100:.0f}%")
+            else:
+                got, need = _apart(wf_degradation, _WF_SOLID, _pct_of, 0)
+                reasons.append(f"Walk-forward degradation {got} — an A needs under {need}")
         if not sens_not_run:
-            reasons.append(f"Parameter sensitivity worst case {sens_degradation * 100:.0f}% drop")
+            if sens_solid:
+                reasons.append(
+                    f"Parameter sensitivity worst case {sens_degradation * 100:.0f}% drop"
+                )
+            else:
+                got, need = _apart(sens_degradation, _SENS_SOLID, _pct_of, 0)
+                reasons.append(
+                    f"Parameter sensitivity worst case {got} drop — an A needs under {need}"
+                )
         if genuinely_not_run:
             reasons.append(
                 "Walk-forward / sensitivity not run — grade may improve with full analysis"
@@ -254,9 +314,9 @@ def compute_grade(
     if median_passes:
         if not pct5_passes and limit > 0:
             reasons.append(f"Worst 5% breaches limit by {_fmt(pct5_max_dd - limit)}")
-        if wf_degradation is not None and wf_degradation >= 0.30:
+        if wf_degradation is not None and wf_degradation >= _WF_OK:
             reasons.append(f"Walk-forward shows {wf_degradation * 100:.0f}% IS→OOS degradation")
-        if sens_degradation is not None and sens_degradation >= 0.40:
+        if sens_degradation is not None and sens_degradation >= _SENS_OK:
             reasons.append(f"Parameter sensitivity worst case is {sens_degradation * 100:.0f}%")
         if not reasons:
             reasons.append("Median simulation passes but tail risk is elevated")

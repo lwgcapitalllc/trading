@@ -20,7 +20,7 @@
 
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { useRunStressTest } from '@/hooks/useStressTests'
+import { useRunStressTest, useStressTests } from '@/hooks/useStressTests'
 import { useRulesets } from '@/hooks/useLab'
 
 /** Mirrors the backend's own floor (`routers/stress_tests.MIN_TRADES_FOR_STRESS`). Below it the
@@ -52,14 +52,29 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
   // python stack can be graded by. Every leg here is a python strategy by construction.
   const options = useMemo(() => (rulesets ?? []).filter((r) => r.market === 'forex'), [rulesets])
 
+  // 🔴 The default is the ruleset this stack was LAST stress tested against, not the first one in
+  // the list. The first forex ruleset is the 15% prop-firm figure, so every re-test of a stack
+  // graded on the 55% ruleset silently switched limits unless the reader caught it — and a grade
+  // against a different limit is not comparable to the last one (rule 11). The newest test that
+  // named a ruleset still on offer wins, whatever its outcome: a cancelled test still records what
+  // the reader meant to grade against. A stack never tested falls back to the first forex ruleset.
+  const history = useStressTests({ stackId })
+  const lastRulesetId = useMemo(() => {
+    const offered = new Set(options.map((r) => r.id))
+    return (history.data ?? []).find((t) => t.ruleset_id && offered.has(t.ruleset_id))?.ruleset_id
+  }, [history.data, options])
+
   // THREE states, and the third is why this is not a plain string. `undefined` means the reader has
-  // not chosen, so the first ruleset stands in once they load; `null` means they chose to grade
+  // not chosen, so the default stands in once the lists load; `null` means they chose to grade
   // against NOTHING, which is a real answer (Monte Carlo only, no letter). Collapsing the two would
   // make an explicit "no ruleset" silently revert to the default the moment the list arrives.
   //
   // ⚠ DERIVED rather than filled by an effect, so nothing can overwrite a choice already made.
   const [chosen, setChosen] = useState<string | null | undefined>(undefined)
-  const rulesetId = chosen === undefined ? options[0]?.id : (chosen ?? undefined)
+  const rulesetId = chosen === undefined ? (lastRulesetId ?? options[0]?.id) : (chosen ?? undefined)
+  // ⚠ Run waits for the history. Clicking before it lands would grade against the list's first
+  // ruleset while the select was about to change to the one this stack was last graded against.
+  const historyPending = history.isPending
 
   const [windows, setWindows] = useState(5)
   const known = trades != null
@@ -117,6 +132,11 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
                 </option>
               ))}
             </select>
+            {chosen === undefined && lastRulesetId && rulesetId === lastRulesetId && (
+              <p data-testid="stack-ruleset-from-last" className="text-[11px] text-text-tertiary">
+                The ruleset this account was last stress tested against, so the two grades compare.
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-xs text-text-tertiary">
@@ -200,7 +220,7 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
                 }
               )
             }}
-            disabled={runTest.isPending || belowFloor}
+            disabled={runTest.isPending || belowFloor || historyPending}
             className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"
           >
             {runTest.isPending ? 'Starting…' : 'Run Stress Test'}

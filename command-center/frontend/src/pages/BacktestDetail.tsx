@@ -6466,7 +6466,7 @@ export function BacktestDetail() {
   const refreshChartSpec = useRefreshChartSpec()
   const retryBacktest = useRetryBacktest()
   const { data: runningJob } = useRunningVpsJob()
-  const { data: stressTests } = useStressTests(run?.run_id)
+  const { data: stressTests } = useStressTests({ runId: run?.run_id })
   const { data: stressLock } = useRunningStressLock()
   const latestStress = stressTests?.[0]
   const [showStressModal, setShowStressModal] = useState(false)

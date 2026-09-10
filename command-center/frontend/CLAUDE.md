@@ -4395,9 +4395,23 @@ reader cannot act on — and the server holds the real gate and names the figure
 
 ⚠ **A stack carries no stored evaluations**, so the ruleset choice is over the FOREX rulesets rather
 than over what the subject was scored against. ⚠ **The default is DERIVED, not filled by an effect**
-(`chosen === undefined ? options[0]?.id : chosen`): three states, because *not chosen yet* and
+(`chosen === undefined ? default : chosen`): three states, because *not chosen yet* and
 *chosen to grade against nothing* are different answers, and an effect that filled the first would
 overwrite the second the moment the list arrived.
+
+🔴 **The default is the ruleset this stack was LAST stress tested against (2026-09-10)**, off
+`useStressTests({ stackId })`, falling back to the first forex ruleset only for a stack never
+tested. The first forex ruleset is the 15% prop-firm figure, so every re-test of a stack graded on
+55% silently switched limits and graded it D — a grade against a different limit is not comparable
+to the last one (rule 11). ⚠ **The newest test naming a ruleset still on offer wins, whatever its
+outcome** — a cancelled test still records what the reader meant. ⚠ **Run is disabled until that
+history lands**, or a quick click grades against the fallback while the select is about to change.
+⚠ **The hint (`stack-ruleset-from-last`) renders only when the SELECTED ruleset is that one** — tied
+to the value, not to the history existing, or it claims "last graded" beside a different ruleset.
+Driven in a browser: real history, empty history, a slow history and an explicit "No ruleset"; the
+old default and the dropped Run guard each watched red. ⚠ `useStressTests` takes a FILTER OBJECT now
+and keys under `'list'`, so slot 1 of the key stays free for a detail's own id — the delete refresh
+excludes the deleted test by comparing that slot.
 
 ### The stress test page routes on the ROW, not on a missing run
 

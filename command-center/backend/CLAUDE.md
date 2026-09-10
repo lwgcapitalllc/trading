@@ -2523,6 +2523,8 @@ event loop — for NT8/MT5 that is an HTTP round trip over the SSH tunnel, polle
 
 **An unassessable walk-forward CAPS the grade at B** (Aaron's call, 2026-07-30). An A is the only grade that claims out-of-sample evidence, so awarding one off Monte Carlo alone overstates what was measured. The cap is a CEILING, not a deduction — a run that would have graded C stays C — and it applies only when WF *ran and could not be assessed*, never when it was genuinely not run (an MC-only auto-trigger is not evidence of overfitting). When the cap binds and the worst-1% would otherwise have passed, a reason says so explicitly rather than leaving the user to infer why an A became a B.
 
+🔴 **Every B names EVERY bar it missed that an A needs (2026-09-10).** A B listed only what passed, so the reader had to reverse-engineer the A rule to learn what to fix — Aaron's 55% stack test read B with nothing saying its worst-1% drawdown was 55.5% against the 55% limit. Each miss is one reason in the pattern *measured — an A needs bar*: worst 1% over the limit, walk-forward degradation at or past 20%, sensitivity at or past 25%, and no walk-forward evidence (the capped line above, or *"An A also needs…"* when the worst 1% missed too). ⚠ **All of them, never the first** — naming one miss while hiding a second implies fixing the first earns the A. ⚠ **`_apart` widens the decimals until the value and the bar read apart**, so 55.04% against 55% never prints as *55.0% over the 55.0% limit*. ⚠ **The 20/30/25/40 bars are module constants now**, so a sentence naming a bar cannot drift from the comparison. ⚠ **Stored grades do NOT gain the line — `GRADE_ENGINE` was deliberately not bumped.** The restamp it would trigger re-derives walk-forward and sensitivity from child runs and calls `compute_grade` WITHOUT the failed-phase flags, so a bump would re-grade every completed test and could hand a test whose walk-forward crashed the "not run" treatment. A text-only addition is not worth that; a re-run gets the line. ⚠ **That restamp gap is latent and unfixed** — anyone bumping `GRADE_ENGINE` for a real scoring change must pass the failure flags first. Tests: 7 in `tests/test_grading.py`, 5 mutations run, 5 killed.
+
 When walk-forward/sensitivity weren't run, those conditions are skipped (grade is based on MC alone — still valid but grade_reasons notes the gap). A WF that ran but couldn't be assessed (degradation `None` — all IS Sharpe ≤ 0 on the serial path, or all IS profit factor ≤ 0 on the native path) is treated the same as not-run — neither credit nor penalty — with a distinct grade_reason that names the path's metric ("Walk-forward ran but IS→OOS degradation is not assessable (IS Sharpe ≤ 0)" serial / "(IS profit factor ≤ 0)" native; chosen by summary shape — native rows carry `is_pf`); the "not run" caveat is scoped to genuinely-not-run so the two messages don't contradict.
 
 **Deployment gates (UI only, soft):** A = funded; B = eval purchase; C = demo. Shown as warnings, never blocking.
@@ -5377,6 +5379,11 @@ grading, in words.
   carries them without being told.
 - ⚠ **The cancel endpoint reads the platform off the row too.** Looking it up through the run meant
   a stack — which has none — resolved to NinjaTrader.
+- 🔴 **The LIST never selected `st.stack_id` (fixed 2026-09-10)** — declared on the model, assigned
+  by nothing, so every row reached the browser saying `null`. It is selected now, and
+  `GET /stress-tests?stack_id=` filters on it (symmetric with `run_id`, newest first), because the
+  stack's stress-test window reads it to default to the ruleset that stack was last graded against.
+  3 tests in `test_stack_stress_visibility.py`, 4 mutations run, 4 killed.
 
 ✅ **`best_grades_by_strategy` EXCLUDES a stack explicitly, and that exclusion is a forward guard
 rather than a fix.** A stack's grade judges a whole strategy set sharing one balance and one risk

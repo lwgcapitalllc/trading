@@ -4403,8 +4403,16 @@ def get_stress_test(stress_test_id: str) -> Optional[dict]:
     return _parse_json_fields(dict(row), _STRESS_JSON_FIELDS)
 
 
-def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None) -> list[dict]:
+def list_stress_tests(
+    run_id: Optional[str] = None, grade: Optional[str] = None, stack_id: Optional[str] = None
+) -> list[dict]:
     """The LIST view — deliberately without the two big JSON blobs.
+
+    🔴 **`st.stack_id` is SELECTED, and it was not until 2026-09-10.** The model declared it and
+    nothing assigned it, so every row reached the browser with `stack_id: null` — a stack's test
+    indistinguishable from one whose target was never recorded. Rule 10, a declared field is not an
+    assigned one. `stack_id` also FILTERS, symmetric with `run_id`, because the stack's stress-test
+    window reads this list to find the ruleset that stack was last graded against.
 
     `SELECT st.*` shipped every test's full `walk_forward_summary` and `sensitivity_summary` (a
     sensitivity grid is one object per param per shift, ~60 of them) to render a grade, a status
@@ -4428,11 +4436,15 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
     if grade:
         clauses.append("st.grade = ?")
         params.append(grade)
+    if stack_id:
+        clauses.append("st.stack_id = ?")
+        params.append(stack_id)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     with _connect() as conn:
         rows = conn.execute(
             f"""
-            SELECT st.stress_test_id, st.run_id, st.ruleset_id, st.status, st.created_at,
+            SELECT st.stress_test_id, st.run_id, st.stack_id, st.ruleset_id, st.status,
+                   st.created_at,
                    st.completed_at, st.mc_completed_at, st.wf_completed_at,
                    st.num_simulations, st.num_bootstrap,
                    st.median_final_pnl, st.pct5_final_pnl, st.pct1_final_pnl,

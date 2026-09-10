@@ -1040,7 +1040,9 @@ export function OptimizationDetail() {
   const { data: baselineRun } = useBacktestRun(opt?.source_run_id ?? null)
   const tuneRunning = tuneIterations.filter((r) => r.status === 'running').length
   const hasRunningStress = !!bestRunId && stressRunIds.has(bestRunId)
-  const { data: bestRunStressTests } = useStressTests(hasRunningStress ? bestRunId : undefined)
+  const { data: bestRunStressTests } = useStressTests({
+    runId: hasRunningStress ? bestRunId : undefined,
+  })
   const latestStress = bestRunStressTests?.find(
     (s) => !s.status.startsWith('failed') && s.status !== 'complete'
   )

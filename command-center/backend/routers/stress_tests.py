@@ -32,8 +32,10 @@ router = APIRouter(prefix="/stress-tests", tags=["stress-tests"])
 
 
 @router.get("", response_model=list[StressTest])
-def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None):
-    return lab_db.list_stress_tests(run_id=run_id, grade=grade)
+def list_stress_tests(
+    run_id: Optional[str] = None, grade: Optional[str] = None, stack_id: Optional[str] = None
+):
+    return lab_db.list_stress_tests(run_id=run_id, grade=grade, stack_id=stack_id)
 
 
 @router.get("/running-lock")

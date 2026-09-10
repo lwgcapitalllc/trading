@@ -10,13 +10,19 @@ import type {
   StressLock,
 } from '@/types'
 
-export function useStressTests(runId?: string, grade?: string) {
+/** The stress-test LIST, narrowed to one run, one stack or one grade — newest first.
+ *
+ *  ⚠ The key sits under `'list'` rather than putting a run id at position 1, where a stress test's
+ *  own detail keeps ITS id: the delete refresh excludes an entry by comparing that slot. */
+export function useStressTests(filter: { runId?: string; stackId?: string; grade?: string } = {}) {
+  const { runId, stackId, grade } = filter
   const params = new URLSearchParams()
   if (runId) params.set('run_id', runId)
+  if (stackId) params.set('stack_id', stackId)
   if (grade) params.set('grade', grade)
   const qs = params.toString()
   return useQuery({
-    queryKey: ['stress-tests', runId, grade],
+    queryKey: ['stress-tests', 'list', { runId, stackId, grade }],
     queryFn: () => api.get<StressTest[]>(`/stress-tests${qs ? '?' + qs : ''}`),
     refetchInterval: 10_000,
   })
