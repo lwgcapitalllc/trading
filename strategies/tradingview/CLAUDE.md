@@ -372,6 +372,32 @@ until a twin exists.
 
 ---
 
+## The equal-level wick fix (2026-09-09) — all SEVEN files here, and nothing noticed for a month
+
+`mpc_jarvis.pine` moved equal-high/low mitigation from a CLOSE through the level to a WICK through
+it on **2026-08-04**. Every file in this folder stayed on `close` until 2026-09-09, along with the
+tolerance (0.1 against the indicator's 0.25) and the level cap (6 against 14). All three are now
+synced in `sos_fade_strategy.pine`, `b_leg_strategy.pine`, `bos_strategy.pine`,
+`recovery_strategy.pine` and each of their export twins.
+
+🔴 **THE GATES COULD NOT HAVE CAUGHT THIS AND IT IS WORTH UNDERSTANDING WHY.** A `compare_*.py`
+asks whether the PYTHON agrees with ONE Pine file. Two Pine files disagreeing with each other is
+outside the question it asks. So the indicator and these seven drifted for a month with every gate
+that could run reporting green.
+
+✅ **`scripts/check_pine_blocks.py` closes it** — step 14 of `scripts/run_all_tests.sh`. It went red
+on 28 findings the moment it existed. ⚠ **It compares each copy against the INDICATOR rather than
+against a value typed into the checker**, so a future rule change needs no edit there: move the
+indicator, move the copies, it stays green.
+
+⚠ **It matters here more than in a harness: these levels feed the gap-cap exemption, so they change
+which GAPS survive, and the entry rule reads gaps.** The trade impact was measured as nil over 6.6
+years (see `engines/equal_highs_lows/CLAUDE.md`), which is a fact about this window and this
+configuration, not a reason the drift was harmless.
+
+⚠ **An export twin moves WITH its strategy, always.** Twin and strategy are one unit; moving one
+alone turns that strategy's gate red and sends the reader at the engine.
+
 ## The refused-wick structure fix (2026-08-21) — every strategy file and its export twin
 
 The sequel to the tie fix below, and the tie guard could not see it: structure breaks on a CLOSE

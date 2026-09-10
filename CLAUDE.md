@@ -235,6 +235,36 @@ not restate them here.
 
 **`setup_learning_mode.sh` (2026-08-11) is the odd one out — it targets a DEV MACHINE, not the VPS**, and is the one-time install behind `/learn <video-url>`: it puts `ffmpeg`/`yt-dlp` on the PATH and clones the third-party `watch` skill (MIT, `bradautomates/claude-video`) to `~/.claude/vendor/`, symlinked into `~/.claude/skills/watch`. ⚠ **The watch skill is deliberately NOT vendored into this repo**, so a clone alone does not make `/learn` work — the skill checks for the install and names the script rather than shelling out to `yt-dlp` itself. **Re-running the script is also how it UPDATES**, which is the part that bites: `yt-dlp` breaks whenever a video site changes its markup, and a stale copy fails on real URLs while looking perfectly installed.
 
+### `scripts/check_pine_blocks.py` — the drift check the parity gates cannot do
+
+**Step 14 of `scripts/run_all_tests.sh`.** Pine has no import, so every engine block is copy-pasted
+into the indicator, into that engine's own parity harness, into any OTHER harness embedding it for a
+coupling, and into each strategy plus that strategy's export twin — **~10 files per rule, with
+nothing asserting they matched.**
+
+🔴 **A `compare_*.py` is structurally blind to this.** It asks whether the PYTHON agrees with ONE
+Pine file, on ONE export, on ONE machine. Two PINE files disagreeing with each other is outside the
+question. On 2026-09-09 the equal-level mitigation rule moved close → wick in the indicator, the
+Python engine and two harnesses while SEVEN strategy files stayed on close — and every gate that
+could run stayed green. This step went red on 28 findings the moment it existed.
+
+⚠ **It compares each copy against the INDICATOR, never against a value typed into the checker.**
+Hardcoding the answer would make the checker one more place the rule is written down, and then a
+rule change has to edit it too — which is the disease, not the cure. Move the indicator, move the
+copies, and this stays green with no edit.
+
+⚠ **It DISCOVERS copies rather than listing them.** The engine's own doc said the rule lived in
+three files; it lived in eight. That was not carelessness — the true count lived nowhere, so anyone
+checking checked the files they knew about. **A count that exists only in prose is a count that is
+wrong.**
+
+⚠ **Every spec declares a minimum number of copies and finding fewer is a FAILURE**, because a
+regex that stops matching after somebody reformats a file would otherwise report a clean repo.
+Watched RED by mutation, and the mutant exits 1 rather than passing quietly.
+
+⚠ **It cannot tell you the INDICATOR is right** — only that the copies match it. That is rule 14
+arriving in a new place.
+
 ### tools/
 Standalone utilities that belong to no subsystem and are run by hand. One today: `tools/skool-transcript/` — rips course video transcripts and indexes them into `education/`. It has its own CLAUDE.md. ⚠ **Nothing imports it and nothing schedules it**, which is the point — it is a dev-machine tool, not part of any deployable, so it is out of scope for the commit hook's money-path rule and for every parity gate.
 

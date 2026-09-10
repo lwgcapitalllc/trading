@@ -89,6 +89,20 @@ no signal moves. The fib maths already ran on every timeframe regardless of whet
 
 ---
 
+## 🔴 `fvg_export.pine` embeds the equal-level block, and that copy was missed (fixed 2026-09-09)
+
+The gap harness embeds the equal-level block ONLY to reproduce the cap exemption — its own detection
+is gated by `eq_export.pine`. That embedded copy kept the old CLOSE mitigation and the old 0.1/6
+settings when everything else moved, so the next gap export would have put `compare_fvg.py` red
+against a correct Python engine.
+
+⚠ **A harness that embeds another engine's block OWNS a copy of that engine's rules, and nothing in
+the owning engine's directory points at it.** That is why it was missed twice: once when the rule
+moved, and once when the settings did. It is the seventh and eighth copy of things whose recorded
+count was three.
+
+✅ Found by `scripts/check_pine_blocks.py`, which DISCOVERS the copies rather than listing them.
+
 ## 🔴 `eq_export.pine` claimed its defaults matched mpc and they never did (fixed 2026-09-09)
 
 The equal-highs/lows parity harness carried a comment saying *defaults == mpc_jarvis.pine* while its

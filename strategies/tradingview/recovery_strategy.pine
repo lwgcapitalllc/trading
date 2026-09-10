@@ -1660,8 +1660,8 @@ if internalActive and not na(i_sw_line)
 
 // [doc 38] EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools  -> docs/sos_fade_strategy.md
 int   eqPivotLen  = 2
-float eqAtrMult   = 0.1
-int   eqMax       = 6
+float eqAtrMult   = 0.25
+int   eqMax       = 14
 color eqhColor    = color.new(color.black, 0)
 color eqlColor    = color.new(color.black, 0)
 // [doc 39] An unmitigated EQ level can outlive its pivot by thousands of bars, and   -> docs/sos_fade_strategy.md
@@ -1686,6 +1686,9 @@ f_fvgNearEq(float gTop, float gBot, float prox) =>
     bool near = false
     if array.size(eqhPx) > 0
         for i = 0 to array.size(eqhPx) - 1
+            // 🔴 WICK, not close (2026-09-09): mpc_jarvis.pine moved this rule on 2026-08-04 and
+            // this copy did not. Pine has no import, so the equal-level block lives in EIGHT files and
+            // nothing compared them until scripts/check_pine_blocks.py. Run it after touching this block.
             float lvl = array.get(eqhPx, i)
             if lvl >= gBot - prox and lvl <= gTop + prox
                 near := true
@@ -1744,7 +1747,7 @@ f_processEq() =>
     if eqShow and array.size(eqhLines) > 0
         for i = array.size(eqhLines) - 1 to 0
             float lvl = array.get(eqhPx, i)
-            if close > lvl
+            if high > lvl
                 line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
                 array.remove(eqhLines, i), array.remove(eqhLbls, i), array.remove(eqhPx, i), array.remove(eqhBar, i)
             else
@@ -1759,7 +1762,7 @@ f_processEq() =>
     if eqShow and array.size(eqlLines) > 0
         for i = array.size(eqlLines) - 1 to 0
             float lvl = array.get(eqlPx, i)
-            if close < lvl
+            if low < lvl
                 line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
                 array.remove(eqlLines, i), array.remove(eqlLbls, i), array.remove(eqlPx, i), array.remove(eqlBar, i)
             else

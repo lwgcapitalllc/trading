@@ -39,11 +39,13 @@ bool  fvgRequireClose = input.bool(false, "Require Displacement Close")
 
 // ── EQ coupling (mpc eqExemptFvg): an FVG behind an active EQH/EQL level is exempt from the cap.
 //    The EQ block below is embedded ONLY to reproduce that exemption; its own detection is validated
-//    separately by eq_export.pine. Defaults MIRROR mpc's GRP_EQ. Exported as cfg_eq_* so compare_fvg.py
+//    separately by eq_export.pine. Defaults MIRROR mpc's GRP_EQ — 🔴 and they did NOT until
+//    2026-09-09: 0.1/6 here against mpc's 0.25/14, the SEVENTH copy of those three numbers and the
+//    one nobody counted. It was found only by reading this file for another reason. Exported as cfg_eq_* so compare_fvg.py
 //    drives the Python EqualHighsLowsEngine with the same settings. ──
 int   eqPivotLen  = input.int(2,   "EQ Pivot Length",       minval = 1, maxval = 20)
-float eqAtrMult   = input.float(0.1, "EQ Tolerance (x ATR)", minval = 0.0, maxval = 2.0, step = 0.05)
-int   eqMax       = input.int(6,   "Max Active EQ (per side)", minval = 1, maxval = 20)
+float eqAtrMult   = input.float(0.25, "EQ Tolerance (x ATR)", minval = 0.0, maxval = 2.0, step = 0.05)
+int   eqMax       = input.int(14,  "Max Active EQ (per side)", minval = 1, maxval = 20)
 bool  eqExemptFvg = input.bool(true, "Keep FVGs behind EQH/EQL until mitigated")
 
 // State arrays (the Pine fvgBoxes drawing array is intentionally dropped).
@@ -77,13 +79,18 @@ if not na(eqPl)
         while array.size(eqlPx) > eqMax
             array.shift(eqlPx)
     eqPrevPl := eqPl
+// 🔴 WICK, not close (2026-09-09) — mirrors mpc and eq_export.pine. This embedded copy was
+// MISSED when the engine moved on the same day, and the miss is instructive: the EQ rule lives in
+// FOUR places (mpc, eq_export, this harness, the Python engine) and only three were named in the
+// note that recorded the split. A gate embedding another engine's block owns a copy of that
+// engine's rules, and nothing points at it from the engine's own directory.
 if array.size(eqhPx) > 0
     for i = array.size(eqhPx) - 1 to 0
-        if close > array.get(eqhPx, i)
+        if high > array.get(eqhPx, i)
             array.remove(eqhPx, i)
 if array.size(eqlPx) > 0
     for i = array.size(eqlPx) - 1 to 0
-        if close < array.get(eqlPx, i)
+        if low < array.get(eqlPx, i)
             array.remove(eqlPx, i)
 
 // True when an FVG (gTop..gBot) sits within `prox` of any active EQH/EQL level (mpc f_fvgNearEq).
