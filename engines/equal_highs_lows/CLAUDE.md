@@ -131,7 +131,7 @@ computes** (a consumer that wants it off ignores the events) = `showEq = true`, 
 ```python
 from equal_highs_lows import EqualHighsLowsEngine
 
-eq = EqualHighsLowsEngine()   # pivot_len=2, atr_mult=0.25, max_levels=14 — the mpc defaults
+eq = EqualHighsLowsEngine()   # engine.py's DEFAULT_* constants — the indicator's settings
 
 ev = eq.update(bar.index, bar.high, bar.low, bar.close)   # each closed bar, in order
 for lvl in ev.formed:        # levels that printed THIS bar (event)
@@ -248,3 +248,9 @@ pivot-tie bug now fixed (see "Pivot tie semantics" above). The harness:
   `engines/fair_value_gaps/CLAUDE.md`, `engines/rsi_divergence/CLAUDE.md`.
 - Pivot semantics reused from: `engines/market_structure/engine.py` / `engines/rsi_divergence/engine.py`.
 - Monorepo context: `../CLAUDE.md`.
+
+## Defaults are typed once, and held to the Pine (2026-09-10)
+
+Each default is declared ONCE in `engine.py` (the `DEFAULT_*` constants) and every Python consumer that means *the engine's default* — this engine's gate, the lab's `backtest/replay/stack.py` — imports it rather than retyping it. **`engines/tests/test_defaults_mirror_the_indicator.py` reads the value out of the Pine and goes red when the two differ**, so the next number the indicator moves turns a test red instead of leaving the chart and the engine quietly disagreeing (the 2026-09-09 equal-level move had to land in seven places, and an eighth copy turned up a day later). Watched RED by mutation from both sides — the engine's number and the Pine's. ⚠ A strategy's OWN pin is deliberately NOT routed through these: it mirrors its own Pine file, not the indicator.
+
+⚠ The unit tests' reference model now takes its settings EXPLICITLY — it carried its own stale 0.1 / 6 copy of them, unused only because every caller happened to pass settings.

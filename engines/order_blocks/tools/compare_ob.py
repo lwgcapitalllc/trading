@@ -67,6 +67,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from order_blocks import OrderBlockEngine
+from order_blocks import engine as _ob  # the defaults, typed once in the engine
 from gate_common import drop_live_final_bar  # noqa: E402
 
 _MAX_SLOTS = 10  # mpc maxActiveOB default; ob_export.pine plots 10 slots per direction
@@ -202,8 +203,8 @@ def _load_rows(path, cols):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with ob_export.pine on the chart")
-    ap.add_argument("--max-active", type=int, default=10,
-                    help="fallback if the export has no cfg_ob_maxactive column (Pine default 10)")
+    ap.add_argument("--max-active", type=int, default=_ob.DEFAULT_MAX_ACTIVE,
+                    help="fallback if the export has no cfg_ob_maxactive column (default %(default)s)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engines)")

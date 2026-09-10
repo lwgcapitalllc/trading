@@ -117,27 +117,38 @@ class _Bar:
         self.rsi = rsi
 
 
+# ── The defaults: mpc_jarvis.pine's locked GRP_DIV constants (the live window has no Pine twin
+#    there; rsi_div_export.pine carries it) ──
+# Typed ONCE: every Python consumer that means "the engine's default" imports these rather than
+# retyping them, and engines/tests/test_defaults_mirror_the_indicator.py holds them to the Pine.
+DEFAULT_RSI_LEN = 14  # Pine divRsiLen
+DEFAULT_PIVOT_LEN = 5  # Pine divPivotLen
+DEFAULT_OVERSOLD = 25.0  # Pine divOS
+DEFAULT_OVERBOUGHT = 75.0  # Pine divOB
+DEFAULT_VALID_BARS = 100  # rsi_div_export.pine divValidBars
+
+
 class RsiDivergenceEngine:
     """Streaming RSI-divergence detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_jarvis.pine's default `GRP_DIV` settings: RSI length 14, pivot width 5, oversold
-    25, overbought 75, and a divergence stays "live" confluence for 100 bars after its pivot.
+    Mirrors mpc_jarvis.pine's `GRP_DIV` settings — the DEFAULT_* constants above: RSI length, pivot
+    width, the oversold/overbought extremes, and how many bars a divergence stays live after its pivot.
     """
 
     def __init__(
         self,
-        rsi_len: int = 14,
-        pivot_len: int = 5,
-        oversold: float = 25.0,
-        overbought: float = 75.0,
-        valid_bars: int = 100,
+        rsi_len: int = DEFAULT_RSI_LEN,
+        pivot_len: int = DEFAULT_PIVOT_LEN,
+        oversold: float = DEFAULT_OVERSOLD,
+        overbought: float = DEFAULT_OVERBOUGHT,
+        valid_bars: int = DEFAULT_VALID_BARS,
     ) -> None:
-        self._rsi_len = rsi_len  # Pine divRsiLen (default 14)
-        self._pivot_len = pivot_len  # Pine divPivotLen (default 5)
-        self._oversold = oversold  # Pine divOS (default 25)
-        self._overbought = overbought  # Pine divOB (default 75)
-        self._valid_bars = valid_bars  # Pine divValidBars (default 100)
+        self._rsi_len = rsi_len  # Pine divRsiLen
+        self._pivot_len = pivot_len  # Pine divPivotLen
+        self._oversold = oversold  # Pine divOS
+        self._overbought = overbought  # Pine divOB
+        self._valid_bars = valid_bars  # Pine divValidBars
 
         self._rsi = _RsiState(rsi_len)
 

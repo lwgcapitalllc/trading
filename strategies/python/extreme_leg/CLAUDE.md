@@ -424,6 +424,8 @@ bit-identical to the chart's; with one on, the divergence lands on its own code 
 than changing which of the Pine's codes a bar records. `test_the_new_cuts_sit_AFTER_every_refusal_the_pine_can_also_make`
 pins it and the whole design rests on it.
 
+⚠ **The market cut's history floor is the classifier's own (2026-09-10).** It answers *unknown* without asking while either frame is shorter than `engines/regime/`'s minimum — that only skips building two frames the classifier would refuse anyway — and it typed that minimum as 34. It now reads it, and `test_the_history_floor_is_the_classifiers_own` goes red if a typed copy returns, if the two minimums are swapped, or if the kept window drops below them (all three watched RED). Nothing moves today: the classifier's minimum is still 34.
+
 🔴 **One IS on, so the bot and the chart are now different strategies.** The chart is no longer
 a picture of what the bot does — it takes 19 trades the bot refuses. That is the price of the row
 below, not a caveat on it, and anyone reading a TradingView result for this strategy is reading the

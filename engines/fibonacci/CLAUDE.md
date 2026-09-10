@@ -412,3 +412,7 @@ invisible, which is a worse failure than a cosmetic one, and rule 1 is the reaso
 inherent.** The fibs cannot exist until structure has produced an anchor, so this engine's first
 compared bar is always a first activation; structure's never is. **A fib gate that needs no warm-up
 at all would be the surprising result, not this one.**
+
+## Defaults are typed once, and held to the Pine (2026-09-10)
+
+⚠ This engine has no tuning default of its own; its gate now takes the structure engine's swing length from `market_structure/engine.py` rather than typing 15.

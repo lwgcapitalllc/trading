@@ -122,6 +122,12 @@ class _PeriodTracker:
         return False
 
 
+# ── The trading-day rollover: XAUUSD's session opens 18:00 New York, validated at Pine parity.
+#    No Pine input carries it — the chart reads the exchange's own daily bars. ──
+# Typed ONCE: a consumer that means "the engine's default" imports it rather than retyping it.
+DEFAULT_HTF_ROLLOVER_HOURS = 18
+
+
 class LiquidityEngine:
     """Streaming liquidity-levels detector.
 
@@ -130,14 +136,18 @@ class LiquidityEngine:
     day/week/H4 levels from the bar stream (non-repainting — see the module docstring).
 
     Defaults mirror the mpc_jarvis.pine liquidity inputs: previous day/week H/L, PWC, the
-    H4 sweep, and all three session H/Ls enabled; mitigated levels are dropped on a new NY day
-    (`hide_mitigated_on_new_day`, Pine i_currentDayOnly = true).
+    H4 sweep, and all three session H/Ls enabled. ⚠ One default does NOT mirror the chart:
+    `hide_mitigated_on_new_day` defaults True (the Pine's i_currentDayOnly tidy), but the indicator
+    gates that tidy on `not showMitLiq` and has shipped showMitLiq on since 2026-08-07, so the chart
+    never runs it. A consumer that must match the chart passes False — the parity run and the
+    Command Center's liquidity layer both do. The default is left alone because the research tools
+    under backtest/tools/ were measured on it.
     """
 
     def __init__(
         self,
         htf_timezone: str = _DEFAULT_HTF_TZ,
-        htf_rollover_hours: int = 18,   # XAUUSD session opens 18:00 NY — validated at 100% Pine parity
+        htf_rollover_hours: int = DEFAULT_HTF_ROLLOVER_HOURS,
         hide_mitigated_on_new_day: bool = True,
         enable_daily: bool = True,
         enable_weekly: bool = True,

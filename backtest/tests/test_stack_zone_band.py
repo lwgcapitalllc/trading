@@ -13,9 +13,10 @@ both pass every unit test in the engine, and only one matches the chart. MUTATIO
 this bar's band instead of last bar's diverges on 2,972 of 20,187 bars, throughout the file.
 
 The export is `engines/fair_value_gaps/exports/golden/..._zone.csv`, taken off
-`indicators/engines/fvg_zone_export.pine`. Its settings are the INDICATOR's (cap 8, 0.04 floor, no
-middle-bar close test, EQ exemption on), not any bot's - so this pins the wiring, and says nothing
-about what the band does to a strategy. That is a separate measurement.
+`indicators/engines/fvg_zone_export.pine`. Its settings are that HARNESS's (cap 8, 0.04 floor, no
+middle-bar close test, EQ exemption on) - neither the indicator's (cap 7, a 0.1 floor and the close
+test from 15m up) nor any bot's. So this pins the wiring, and says nothing about what the band does
+to a strategy. That is a separate measurement.
 """
 
 from __future__ import annotations

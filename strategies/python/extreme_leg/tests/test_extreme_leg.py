@@ -672,6 +672,36 @@ def test_too_little_history_is_UNKNOWN_and_allows_rather_than_refusing():
     assert cut.refused == 0
 
 
+def test_the_history_floor_is_the_classifiers_own(monkeypatch):
+    """Mutation: type 34 back in, swap the two minimums, or shrink the kept window below them.
+
+    The cut answers UNKNOWN before asking the classifier on a short frame, which only saves
+    building two frames — so its floor must BE the classifier's. A lower copy refuses to ask on
+    rows the classifier would answer; a kept window below the floor never asks at all. The two
+    minimums are patched to DIFFERENT values so a short/long mix-up cannot pass.
+    """
+    import regime
+
+    from .. import filters
+
+    assert filters._KEEP >= max(regime.MIN_ROWS_SHORT, regime.MIN_ROWS_LONG)
+    calls = []
+    monkeypatch.setattr(regime, "MIN_ROWS_SHORT", 5)
+    monkeypatch.setattr(regime, "MIN_ROWS_LONG", 7)
+    monkeypatch.setattr(
+        regime, "classify_regime", lambda s, lo: calls.append((len(s), len(lo))) or "RANGING"
+    )
+    cut = TransitioningCut()
+    for _ in range(6):
+        cut.on_bar(1.0, 2.0, 0.5, 1.5)
+        cut.on_htf_bar(1.0, 2.0, 0.5, 1.5)
+    assert cut.ask() == UNKNOWN
+    assert calls == []
+    cut.on_htf_bar(1.0, 2.0, 0.5, 1.5)
+    assert cut.ask() == ALLOW
+    assert calls == [(6, 7)]
+
+
 def test_an_empty_calendar_is_UNKNOWN_never_ALLOW():
     """Mutation: return ALLOW when the store has no events.
 

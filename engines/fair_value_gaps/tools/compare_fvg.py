@@ -23,10 +23,10 @@ chart data). Each row carries the candle (fed to Python) and the Pine FVG engine
 sides come from the same file, so there is no data-source mismatch. The export's `cfg_fvg_*` columns
 carry the Pine's own settings and are read automatically — run with NO config flags. The
 --max-count / --threshold-pct / --require-close flags are FALLBACKS for an export taken before those
-columns existed; their defaults are the mpc defaults (8 / 0.0 sub-15m / off).
+columns existed; their defaults are the engine's, read from it (mpc's sub-15m row).
 
-Note the minimum-gap floor is timeframe-split in mpc and in the export (0.0 below 15m, 0.04 at 15m
-and above), so `cfg_fvg_thresh` differs between a 5m and a 15m export of the same build. That is
+Note the minimum-gap floor is timeframe-split in mpc and in the export (0.0 below 15m, higher at
+15m and above), so `cfg_fvg_thresh` differs between a 5m and a 15m export of the same build. That is
 correct, not drift — the column carries whatever the chart actually ran.
 
 Warmup
@@ -56,6 +56,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from fair_value_gaps import FairValueGapEngine
+from fair_value_gaps import engine as _fvg  # the defaults, typed once in the engine
 from gate_common import drop_live_final_bar  # noqa: E402
 
 # 🔴 THE EXPORT COMES IN TWO SHAPES AND THE TOOL MUST NOT PRETEND THEY COVER THE SAME THING.
@@ -269,9 +270,12 @@ def _read_cfg(header, rows):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with fvg_export.pine on the chart")
-    ap.add_argument("--max-count", type=int, default=8, help="fallback if the export has no cfg_fvg_maxcount column (Pine default 8)")
-    ap.add_argument("--threshold-pct", type=float, default=0.0, help="fallback if the export has no cfg_fvg_thresh column (Pine sub-15m default 0.0)")
-    ap.add_argument("--require-close", action="store_true", help="fallback if the export has no cfg_fvg_requireclose column (Pine default off)")
+    ap.add_argument("--max-count", type=int, default=_fvg.DEFAULT_MAX_COUNT,
+                    help="fallback if the export has no cfg_fvg_maxcount column (default %(default)s)")
+    ap.add_argument("--threshold-pct", type=float, default=_fvg.DEFAULT_THRESHOLD_PCT,
+                    help="fallback if the export has no cfg_fvg_thresh column (default %(default)s)")
+    ap.add_argument("--require-close", action="store_true", default=_fvg.DEFAULT_REQUIRE_CLOSE,
+                    help="fallback if the export has no cfg_fvg_requireclose column (default %(default)s)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--agg-tolerance", type=float, default=1e-3,
                     help="abs tolerance for the whole-array SUM columns (default 1e-3) - a sum of "
@@ -321,12 +325,24 @@ def main(argv=None):
     eq = None
     if eq_exempt:
         from equal_highs_lows import EqualHighsLowsEngine
+        # 🔴 An export that turns the exemption ON must say which levels it drew. This fell back to
+        # 2 / 0.1 / 6 - the equal-level settings before 2026-09-09 - for a file recording the switch
+        # but not the settings, which no harness here has ever written: an eighth copy of three
+        # numbers, still on the old values a day after the other seven moved. A guess about what an
+        # export ran is the one thing a gate may not make, so it refuses.
+        missing = [k for k in ("eq_pivotlen", "eq_atrmult", "eq_max") if cfg.get(k) is None]
+        if missing:
+            raise SystemExit(
+                "ERROR: the export turns the EQ exemption ON but carries no "
+                + ", ".join("cfg_" + k for k in missing)
+                + " - re-export off the current harness."
+            )
         eq = EqualHighsLowsEngine(
-            pivot_len=int(cfg.get("eq_pivotlen") or 2),
-            atr_mult=cfg.get("eq_atrmult") if cfg.get("eq_atrmult") is not None else 0.1,
-            max_levels=int(cfg.get("eq_max") or 6),
+            pivot_len=int(cfg["eq_pivotlen"]),
+            atr_mult=cfg["eq_atrmult"],
+            max_levels=int(cfg["eq_max"]),
         )
-    eq_note = f", EQ-exempt ON (pivot={int(cfg.get('eq_pivotlen') or 2)}, mult={cfg.get('eq_atrmult')})" if eq_exempt else ""
+    eq_note = f", EQ-exempt ON (pivot={int(cfg['eq_pivotlen'])}, mult={cfg['eq_atrmult']})" if eq_exempt else ""
 
     # ── The fib ENTRY-BAND exemption (mpc fvgExemptZone). Only fvg_zone_export.pine can carry it:
     #    the band is the live fib's 0.382-0.886, recomputed every bar, so it is not an input and the

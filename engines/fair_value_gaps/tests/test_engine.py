@@ -6,8 +6,9 @@ mitigated"): a 3-candle imbalance (LuxAlgo definition) — the two outer candles
 (`low > high[2]` bull / `high < low[2]` bear) and the gap is at least `threshold_pct`% of price —
 forms a gap spanning that void; the middle-bar close-cleared check (`close[1] > high[2]` bull /
 `close[1] < low[2]` bear) is OPTIONAL, gated by `require_close` (Pine `fvgRequireClose`, default
-False). There is NO clean-impulse / progressive-close requirement. Defaults match the Pine:
-max_count=8, threshold_pct=0.0, require_close=False. A
+False below 15m). There is NO clean-impulse / progressive-close requirement. The engine's defaults
+are the DEFAULT_* constants in engine.py, held to the indicator by
+engines/tests/test_defaults_mirror_the_indicator.py rather than typed here. A
 gap is never mitigated on its own creation bar; it is mitigated only when a candle CLOSES fully past
 its far edge (bull `close <= bottom`, bear `close >= top`) — a wick into the gap leaves it alive; the
 list is capped at max_count with oldest-first (FIFO) eviction. Full Pine<->Python parity is validated
@@ -135,8 +136,8 @@ def test_no_gap_when_middle_close_does_not_clear_with_require_close():
 
 
 def test_gap_forms_by_default_even_when_middle_close_does_not_clear():
-    # The Pine DEFAULT is require_close=False (classic FVG): the same void forms a gap regardless of
-    # where the middle bar closed. This is the mpc-default behaviour the engine now matches.
+    # Below 15m the indicator runs require_close=False (classic FVG), and that is the engine's
+    # default: the same void forms a gap regardless of where the middle bar closed.
     ev = _run(FairValueGapEngine(), _MIDDLE_NO_CLEAR)
     assert len(ev.formed) == 1
     assert ev.formed[0].top == 105.5 and ev.formed[0].bottom == 105.0

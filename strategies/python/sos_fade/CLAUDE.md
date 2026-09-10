@@ -3399,3 +3399,15 @@ encoder**: its one column no real export carries is `cfg_poi_source` (the Pine i
 so the zone-source round trips test plumbing, not parity; a test names it as the only exemption.
 **Tests:** 13 here, 24 in B-LEG's file, 2 in the extreme leg's; **18 mutations run, all red.**
 Story: `HISTORY.md` → *A parity gate passed a file that was not its twin*.
+
+## ⚠ Two divergence settings reach NO engine (found 2026-09-10, NOT fixed)
+
+The divergence RSI length and pivot width live on the config and are read by nothing: the RSI
+engine is built from the stack's own config, which `engine_config()` never maps them onto. So a
+run at any other value replays exactly the defaults. **Harmless today only because both sides are
+14 / 5** — the Pine locks them as constants, and the editor hides them. 🔴 **The stress test's
+sensitivity pass still perturbs them** (stress test 630cefbebd8347db did), and every such shift is
+a replay that CANNOT move, reported as a measured shift — which reads as *insensitive to this
+setting* rather than *never consulted*. The parity gate reads both from an export's settings
+columns and still cannot catch it at 14 / 5. The fix is to map them in `engine_config()`'s caller —
+value-neutral at the defaults.

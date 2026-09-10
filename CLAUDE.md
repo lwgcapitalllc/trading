@@ -360,6 +360,22 @@ all eleven demonstrably share.
 a passing tick because those are caveats about that RUN; this one is a constant of the format and
 would print identically twelve times, which is how a reader learns to skip the marker that matters.
 
+### `engines/pine_constants.py` + `engines/tests/` — every engine default is held to the Pine (2026-09-10)
+
+🔴 **On 2026-09-09 three equal-level numbers moved in the indicator and had to move in SEVEN Python
+places; an eighth copy turned up a day later.** Now each engine declares its defaults ONCE
+(`DEFAULT_*` in its `engine.py`), every Python consumer imports them — the gates, the lab's
+`backtest/replay/stack.py` — and `engines/tests/test_defaults_mirror_the_indicator.py` READS each
+paired value out of the Pine and goes red when the engine disagrees. 27 pairs across seven engines,
+plus the profile's row count; watched RED from both sides and on the reader's three shapes.
+
+⚠ **The table in that test is the one place the PAIRING is written** — which Python default mirrors
+which Pine name. A default with no Pine counterpart (the trading-day rollover, regime, news) is not in
+it, and a Pine value split by timeframe is held to its below-15m branch, because an engine takes one
+value per run. ⚠ **A strategy's own pin is deliberately NOT routed through these** — it mirrors its
+own Pine file. ⚠ `pine_constants.py` refuses unless exactly ONE declaration matches, and it is
+tests-only: nothing deployed imports it.
+
 ### `scripts/build_fvg_zone_harness.py` — a Pine harness that is a BUILD ARTIFACT
 
 **Step 16 of `scripts/run_all_tests.sh`.** Generates `indicators/engines/fvg_zone_export.pine` by

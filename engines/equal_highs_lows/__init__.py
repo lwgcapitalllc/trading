@@ -12,7 +12,7 @@ canonical implementation — no consumer builds its own.
 
     from equal_highs_lows import EqualHighsLowsEngine
 
-    eq = EqualHighsLowsEngine()   # pivot_len=2, atr_mult=0.1, max_levels=6 — the mpc defaults
+    eq = EqualHighsLowsEngine()   # engine.DEFAULT_* — the indicator's own settings
 
     # Each closed bar, in order:
     ev = eq.update(bar.index, bar.high, bar.low, bar.close)

@@ -241,3 +241,9 @@ step 15 must never stand in for one.
 ⚠ **Provenance is recorded (Vantage XAUUSD M15, 20154 bars) because a
 cross-cutting run on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays** — two
 brokers disagree on the bar count for the same window while both look perfectly healthy.
+
+## Defaults are typed once, and held to the Pine (2026-09-10)
+
+Each default is declared ONCE in `engine.py` (the `DEFAULT_*` constants) and every Python consumer that means *the engine's default* — this engine's gate, the lab's `backtest/replay/stack.py` — imports it rather than retyping it. **`engines/tests/test_defaults_mirror_the_indicator.py` reads the value out of the Pine and goes red when the two differ**, so the next number the indicator moves turns a test red instead of leaving the chart and the engine quietly disagreeing (the 2026-09-09 equal-level move had to land in seven places, and an eighth copy turned up a day later). Watched RED by mutation from both sides — the engine's number and the Pine's. ⚠ A strategy's OWN pin is deliberately NOT routed through these: it mirrors its own Pine file, not the indicator.
+
+⚠ The trading-day rollover (18:00 New York) has NO Pine counterpart — the chart reads the exchange's own daily bars — so it is typed once but checked only by the parity gate. The gate's own notes said 17 until 2026-09-10 while the validated value was 18. 🔴 **The new-day tidy's default does NOT mirror the chart**: it defaults on, while the indicator gates it on `not showMitLiq` and has shipped `showMitLiq` on since 2026-08-07, so the chart never runs it. The parity run and the Command Center's liquidity layer both turn it off. The default is left alone because the research tools under `backtest/tools/` were measured on it — moving it is a decision, not a sync.

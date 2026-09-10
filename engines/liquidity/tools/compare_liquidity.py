@@ -28,10 +28,10 @@ So the level values here are the real, live, non-repainting ones a bot would act
 Calibration
 -----------
 TradingView's daily/weekly/H4 bars align to the instrument's exchange session, which is broker
-dependent. For XAUUSD that is usually a 17:00-New-York roll, i.e.
-`--htf-tz America/New_York --htf-rollover 17`. If px_*_roll or the level prices mismatch on otherwise
-warm bars, sweep --htf-rollover (and/or --htf-tz) until px_day_roll matches, then the prices follow.
-The winning pair is the LiquidityEngine default; bake it in once confirmed. Run with
+dependent. For XAUUSD it is an 18:00-New-York roll — validated at parity and baked in as the
+engine's default, which --htf-rollover takes unless told otherwise. If px_*_roll or the level prices
+mismatch on otherwise warm bars (another instrument), sweep --htf-rollover (and/or --htf-tz) until
+px_day_roll matches, then the prices follow. Run with
 hide_mitigated_on_new_day=False (the export drops that drawing-only tidy; it is unit-tested).
 
 Data lineup
@@ -50,7 +50,7 @@ history before the window Pine's HTF security may already hold a value while Pyt
 Usage
 -----
     python3 liquidity/tools/compare_liquidity.py path/to/liquidity_export.csv
-    python3 liquidity/tools/compare_liquidity.py liquidity_export.csv --htf-rollover 17 --warmup 400
+    python3 liquidity/tools/compare_liquidity.py liquidity_export.csv --htf-rollover 17 --warmup 400   # another instrument
 
 Exit 0 if every compared field matches on every warm bar, 1 otherwise. Standard library only.
 """
@@ -68,6 +68,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from liquidity import LiquidityEngine
+from liquidity import engine as _liq  # the default, typed once in the engine
 from gate_common import drop_live_final_bar  # noqa: E402
 from liquidity.engine import _key_day, _key_week, _key_h4
 from sessions.engine import _resolve_tz
@@ -205,7 +206,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with liquidity_export.pine on the chart")
     ap.add_argument("--htf-tz", default="America/New_York", help="timezone the day/week/month/H4 boundary is cut in (default America/New_York)")
-    ap.add_argument("--htf-rollover", type=int, default=18, help="local hour the HTF session OPENS (XAUUSD = 18:00 NY, the validated default)")
+    ap.add_argument("--htf-rollover", type=int, default=_liq.DEFAULT_HTF_ROLLOVER_HOURS,
+                    help="local hour the HTF session OPENS (XAUUSD 18:00 NY; default %(default)s)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")

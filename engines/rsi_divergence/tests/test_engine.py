@@ -31,6 +31,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from rsi_divergence import RsiDivergenceEngine
+from rsi_divergence import engine as _rsi_engine
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Independent reference implementation (array-based, structurally different from
@@ -85,7 +86,7 @@ def ref_pivots(vals, L):
     return pl, ph
 
 
-def ref_run(highs, lows, rsi, pivot_len=5, os_=25.0, ob=75.0, valid=100):
+def ref_run(highs, lows, rsi, *, pivot_len, os_, ob, valid):
     """Full reference output per bar, mirroring the Pine block with array logic.
 
     Takes a precomputed `rsi` array (rather than closes) so the structural pivot/divergence/flag
@@ -250,9 +251,19 @@ def test_pivot_low_confirms_late_at_the_trough():
 
 def test_engine_matches_reference_and_fires_both_divergences():
     highs, lows, closes = _swing_series()
-    eng = RsiDivergenceEngine()  # defaults: 14 / 5 / 25 / 75 / 100
+    eng = RsiDivergenceEngine()  # the engine's shipped defaults
     got, rsi = _feed_all(eng, highs, lows, closes)
-    ref = ref_run(highs, lows, rsi)
+    # The reference is handed the SAME settings rather than keeping its own copy of them, so a
+    # moved default is a red about logic or nothing — never a red about two configurations.
+    ref = ref_run(
+        highs,
+        lows,
+        rsi,
+        pivot_len=_rsi_engine.DEFAULT_PIVOT_LEN,
+        os_=_rsi_engine.DEFAULT_OVERSOLD,
+        ob=_rsi_engine.DEFAULT_OVERBOUGHT,
+        valid=_rsi_engine.DEFAULT_VALID_BARS,
+    )
 
     for i, (g, r) in enumerate(zip(got, ref)):
         assert _approx(g["rsi"], r["rsi"]), f"rsi mismatch bar {i}"

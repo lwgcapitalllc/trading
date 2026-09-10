@@ -57,6 +57,12 @@ def _key_day(dt: datetime):
     return (dt.year, dt.month, dt.day)
 
 
+# ── The trading-day rollover: XAUUSD's session opens 18:00 New York, validated at Pine parity.
+#    No Pine input carries it — the chart reads the exchange's own daily bars. ──
+# Typed ONCE: a consumer that means "the engine's default" imports it rather than retyping it.
+DEFAULT_HTF_ROLLOVER_HOURS = 18
+
+
 class VwapEngine:
     """Streaming session-VWAP.
 
@@ -70,7 +76,7 @@ class VwapEngine:
     def __init__(
         self,
         htf_timezone: str = _DEFAULT_HTF_TZ,
-        htf_rollover_hours: int = 18,  # XAUUSD trading day opens 18:00 NY — validated at Pine parity
+        htf_rollover_hours: int = DEFAULT_HTF_ROLLOVER_HOURS,
     ) -> None:
         self._tz: tzinfo = _resolve_tz(htf_timezone)
         # Shift the clock FORWARD so the session-open hour becomes midnight — this rolls an EVENING

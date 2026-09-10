@@ -60,6 +60,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from gate_common import drop_live_final_bar  # noqa: E402
 from vwap import VwapEngine
+from vwap import engine as _vwap  # the default, typed once in the engine
 
 PRICE_FIELDS = ["px_vwap"]
 FLAG_FIELDS = ["px_vwap_anchor"]
@@ -159,8 +160,8 @@ def main(argv=None):
     ap.add_argument(
         "--htf-rollover",
         type=int,
-        default=18,
-        help="local hour the trading day OPENS (XAUUSD = 18:00 NY, the validated default)",
+        default=_vwap.DEFAULT_HTF_ROLLOVER_HOURS,
+        help="local hour the trading day OPENS (XAUUSD 18:00 NY; default %(default)s)",
     )
     ap.add_argument(
         "--tolerance",

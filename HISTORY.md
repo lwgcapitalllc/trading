@@ -21,6 +21,32 @@ the other one did.
 
 ## Latest
 
+### Every engine default got one home, and a test that reads the Pine (2026-09-10)
+
+The 2026-09-09 equal-level move (0.1 / 6 → 0.25 / 14) had to land in seven Python places and an
+eighth turned up the next day, in the gap gate's fallback. An inventory of every typed engine
+default found the same shape everywhere: each engine's signature, its gate's command-line flags, the
+lab stack's config and two test reference models each carried their own copy, with nothing asserting
+they matched each other or the indicator.
+
+**What changed, and it moves no value.** Each engine declares its defaults once; every Python
+consumer imports them; a new test reads 27 of them out of the Pine and fails on a mismatch. Proven
+value-neutral by the golden gates, the overlap audit's settings snapshot (which records the engine
+config) and the full suite. The gap gate's fallback became a refusal: it had only ever been able to
+run on a file it would guess wrong about.
+
+**What it surfaced, and what was left alone.**
+- The gap engine's cap is 8 against the indicator's 7 — the one real mismatch, moved in its own
+  commit because it changes what the Command Center's gap layer draws.
+- The liquidity engine's new-day tidy defaults on while the chart never runs it (the indicator gates
+  it off since 2026-08-07). Left alone: research tools were measured on it, so moving it is a decision.
+- The gap-zone test called its harness's settings the indicator's, and the liquidity gate's notes
+  said 17 against a validated 18. Both corrected.
+- SOS Fade's two divergence settings are never handed to the RSI engine — harmless only while they
+  equal its defaults, which they do. Realign's chart-frame swing length is 10 in its Pine ("on both
+  frames") and 15 in its port, which inherits SOS Fade's config — a real difference, in a strategy
+  with no parity gate to catch it. Both noted, not fixed.
+
 ### Three suite steps were checking this Mac's checkout from any clone (2026-09-10)
 
 Found while modelling the twin builder on step 16's generator, which opened with

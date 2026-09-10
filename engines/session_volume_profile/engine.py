@@ -75,7 +75,7 @@ from .types import SvpEvents
 # which is why liquidity is stale and this engine is not.
 _ASIA_SPEC = SessionSpec.from_pine("Asia", "0900-1800", "Asia/Tokyo")
 
-_SVP_ROWS = 50  # svpRows (mpc line 317) — fixed row count of the profile (was 100 pre-2026-07-08)
+_SVP_ROWS = 50  # Pine svpRows — fixed row count of the profile (was 100 pre-2026-07-08); held to the Pine by engines/tests/
 _SVP_HISTORY = 2  # svpHistory input default (mpc line 224) — FIFO cap on kept POCs
 # Pine caps the replay at `math.min(svp_sLen - 1, 1490)`, i.e. the newest 1491 bars of the session.
 # On a 5m feed the Asia session is ~108 bars so this never bites, but it is ported for fidelity.

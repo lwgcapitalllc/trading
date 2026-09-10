@@ -177,6 +177,12 @@ broke a new fork.
 - **`show_internal` switched back ON.** The parent pins it **False**. Inheriting that blanks the
   internal stream, and with `realign_*_source = "internal"` the bot would simply never trigger on
   that side — **a wrong RESULT with no error anywhere.** Tested.
+- 🔴 **The chart-frame swing length is inherited too, and it is NOT the Pine's (found 2026-09-10,
+  NOT fixed).** `realign_strategy.pine` runs its structure pivot length at **10 "on both frames"**.
+  The port uses 10 on the 15m frame (`htf.py`) but the engine default **15** on the 5m frame — the
+  parent's `engine_config()` never pins it — and the default `"swing"` trigger reads exactly that
+  5m stream. No gate exists to catch it. Pinning 10 moves every realign figure, so it is a
+  re-measure, not a tidy.
 - **The entry-side SOS Fade fields are left alone deliberately** (`exec_fib_nearest`, `exec_deep_fib`,
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.

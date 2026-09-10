@@ -47,6 +47,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from gate_common import drop_live_final_bar  # noqa: E402
 from market_structure import Bar, StructureEngine
+from market_structure import engine as _ms  # the default, typed once in the engine
 
 # px_ columns that carry a PRICE (compared with a float tolerance; may be blank/na).
 PRICE_FIELDS = ["px_ash", "px_asl", "px_lch", "px_lcl", "px_i_sw"]
@@ -225,7 +226,10 @@ def main(argv=None):
         "csv", help="CSV exported from TradingView with structure_engine_export.pine on the chart"
     )
     ap.add_argument(
-        "--major-length", type=int, default=15, help="must match the Pine build (default 15)"
+        "--major-length",
+        type=int,
+        default=_ms.DEFAULT_MAJOR_LENGTH,
+        help="must match the Pine build (default %(default)s)",
     )
     ap.add_argument(
         "--tolerance",

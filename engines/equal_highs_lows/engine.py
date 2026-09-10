@@ -126,19 +126,29 @@ class _Bar:
         self.low = low
 
 
+# ── The defaults: mpc_jarvis.pine's locked GRP_EQ constants ──
+# Typed ONCE: every Python consumer that means "the engine's default" imports these rather than
+# retyping them, and engines/tests/test_defaults_mirror_the_indicator.py holds them to the Pine.
+# 🔴 On 2026-09-09 these three moved 0.1/6 -> 0.25/14 and had to be changed in seven places; an
+# eighth copy, a gate fallback, was found still on the old values a day later.
+DEFAULT_PIVOT_LEN = 2  # Pine eqPivotLen
+DEFAULT_ATR_MULT = 0.25  # Pine eqAtrMult
+DEFAULT_MAX_LEVELS = 14  # Pine eqMax, per side
+
+
 class EqualHighsLowsEngine:
     """Streaming Equal Highs/Lows detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_jarvis.pine's default `GRP_EQ` settings: pivot width 2, tolerance 0.1×ATR(50),
-    up to 6 active levels per side (oldest evicted first).
+    Mirrors mpc_jarvis.pine's `GRP_EQ` settings — the DEFAULT_* constants above: pivot width,
+    tolerance as a multiple of ATR(50), and the active levels kept per side (oldest evicted first).
     """
 
-    def __init__(self, pivot_len: int = 2, atr_mult: float = 0.25, max_levels: int = 14,
-                 atr_len: int = 50) -> None:
-        self._pivot_len = pivot_len        # Pine eqPivotLen (default 2)
-        self._atr_mult = atr_mult          # Pine eqAtrMult (default 0.25)
-        self._max_levels = max_levels      # Pine eqMax (default 14, per side)
+    def __init__(self, pivot_len: int = DEFAULT_PIVOT_LEN, atr_mult: float = DEFAULT_ATR_MULT,
+                 max_levels: int = DEFAULT_MAX_LEVELS, atr_len: int = 50) -> None:
+        self._pivot_len = pivot_len        # Pine eqPivotLen
+        self._atr_mult = atr_mult          # Pine eqAtrMult
+        self._max_levels = max_levels      # Pine eqMax, per side
         self._atr = _Atr(atr_len)          # Pine ta.atr(50)
 
         # Rolling window of the last (2·pivot_len + 1) bars — enough to test the centred candidate.

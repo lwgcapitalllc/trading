@@ -51,6 +51,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from market_structure import Bar, StructureEngine
+from market_structure import engine as _ms  # the default, typed once in the engine
 from gate_common import drop_live_final_bar  # noqa: E402
 from fibonacci import InternalFib, MacroFib, SniperFib, StructureFib, StructureSnapshot
 
@@ -247,7 +248,8 @@ def _load_rows(path, cols):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with fib_export.pine on the chart")
-    ap.add_argument("--major-length", type=int, default=15, help="must match the Pine build (default 15)")
+    ap.add_argument("--major-length", type=int, default=_ms.DEFAULT_MAJOR_LENGTH,
+        help="must match the Pine build (default %(default)s)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engines)")

@@ -58,6 +58,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from equal_highs_lows import EqualHighsLowsEngine
+from equal_highs_lows import engine as _eq  # the defaults, typed once in the engine
 from gate_common import drop_live_final_bar  # noqa: E402
 
 # ── column groups ──
@@ -168,9 +169,9 @@ def _load_rows(path, cols):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with eq_export.pine on the chart")
-    ap.add_argument("--pivot-len", type=int, default=2, help="must match the Pine eqPivotLen (default 2)")
-    ap.add_argument("--atr-mult", type=float, default=0.25, help="must match the Pine eqAtrMult (default 0.25)")
-    ap.add_argument("--max-levels", type=int, default=14, help="must match the Pine eqMax (default 14, per side)")
+    ap.add_argument("--pivot-len", type=int, default=_eq.DEFAULT_PIVOT_LEN, help="must match the Pine eqPivotLen (default %(default)s)")
+    ap.add_argument("--atr-mult", type=float, default=_eq.DEFAULT_ATR_MULT, help="must match the Pine eqAtrMult (default %(default)s)")
+    ap.add_argument("--max-levels", type=int, default=_eq.DEFAULT_MAX_LEVELS, help="must match the Pine eqMax, per side (default %(default)s)")
     ap.add_argument("--tolerance", type=float, default=1e-2, help="abs tolerance for price/tolerance fields (default 1e-2, covers CSV rounding)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")

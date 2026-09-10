@@ -151,6 +151,12 @@ class _InternalState:
         self.sos_watch_ll_loc: Optional[int] = None
 
 
+# ── The default swing length: mpc_jarvis.pine majorLength ──
+# Typed ONCE: every Python consumer that means "the engine's default" imports it rather than
+# retyping it, and engines/tests/test_defaults_mirror_the_indicator.py holds it to the Pine.
+DEFAULT_MAJOR_LENGTH = 15
+
+
 class StructureEngine:
     """
     Streaming port of indicators/engines/structure_engine.pine.
@@ -160,7 +166,7 @@ class StructureEngine:
     not a pure function. See CLAUDE.md for why.
     """
 
-    def __init__(self, major_length: int = 15):
+    def __init__(self, major_length: int = DEFAULT_MAJOR_LENGTH):
         self.major_length = major_length
 
         # Rolling OHLC history, bounded like the Pine indicator's max_bars_back=2000.

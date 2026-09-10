@@ -58,6 +58,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from gate_common import drop_live_final_bar  # noqa: E402
 from rsi_divergence import RsiDivergenceEngine
+from rsi_divergence import engine as _rsi  # the defaults, typed once in the engine
 
 # ── column groups ──
 RSI_FIELDS = ["px_div_rsi", "px_div_pl", "px_div_ph"]  # RSI-scale, tolerance, na-aware
@@ -196,19 +197,34 @@ def main(argv=None):
         "csv", help="CSV exported from TradingView with rsi_div_export.pine on the chart"
     )
     ap.add_argument(
-        "--rsi-len", type=int, default=14, help="must match the Pine divRsiLen (default 14)"
+        "--rsi-len",
+        type=int,
+        default=_rsi.DEFAULT_RSI_LEN,
+        help="must match the Pine divRsiLen (default %(default)s)",
     )
     ap.add_argument(
-        "--pivot-len", type=int, default=5, help="must match the Pine divPivotLen (default 5)"
+        "--pivot-len",
+        type=int,
+        default=_rsi.DEFAULT_PIVOT_LEN,
+        help="must match the Pine divPivotLen (default %(default)s)",
     )
     ap.add_argument(
-        "--oversold", type=float, default=25.0, help="must match the Pine divOS (default 25)"
+        "--oversold",
+        type=float,
+        default=_rsi.DEFAULT_OVERSOLD,
+        help="must match the Pine divOS (default %(default)s)",
     )
     ap.add_argument(
-        "--overbought", type=float, default=75.0, help="must match the Pine divOB (default 75)"
+        "--overbought",
+        type=float,
+        default=_rsi.DEFAULT_OVERBOUGHT,
+        help="must match the Pine divOB (default %(default)s)",
     )
     ap.add_argument(
-        "--valid-bars", type=int, default=100, help="must match the Pine divValidBars (default 100)"
+        "--valid-bars",
+        type=int,
+        default=_rsi.DEFAULT_VALID_BARS,
+        help="must match the Pine divValidBars (default %(default)s)",
     )
     ap.add_argument(
         "--tolerance",

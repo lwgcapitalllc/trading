@@ -127,7 +127,7 @@ the value the parity harness uses.
 ```python
 from rsi_divergence import RsiDivergenceEngine
 
-div = RsiDivergenceEngine()  # rsi_len=14, pivot_len=5, oversold=25, overbought=75, valid_bars=100
+div = RsiDivergenceEngine()  # engine.py's DEFAULT_* constants
 
 # Each closed bar, in order:
 ev = div.update(bar.index, bar.high, bar.low, bar.close)
@@ -238,3 +238,9 @@ step 15 must never stand in for one.
 ⚠ **Provenance is recorded (Vantage XAUUSD M15, 20154 bars) because a
 cross-cutting run on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays** — two
 brokers disagree on the bar count for the same window while both look perfectly healthy.
+
+## Defaults are typed once, and held to the Pine (2026-09-10)
+
+Each default is declared ONCE in `engine.py` (the `DEFAULT_*` constants) and every Python consumer that means *the engine's default* — this engine's gate, the lab's `backtest/replay/stack.py` — imports it rather than retyping it. **`engines/tests/test_defaults_mirror_the_indicator.py` reads the value out of the Pine and goes red when the two differ**, so the next number the indicator moves turns a test red instead of leaving the chart and the engine quietly disagreeing (the 2026-09-09 equal-level move had to land in seven places, and an eighth copy turned up a day later). Watched RED by mutation from both sides — the engine's number and the Pine's. ⚠ A strategy's OWN pin is deliberately NOT routed through these: it mirrors its own Pine file, not the indicator.
+
+⚠ The expiry window is held to `indicators/engines/rsi_div_export.pine`, because the indicator carries no named value for it. The unit tests' reference model now takes its settings explicitly rather than keeping its own copy.

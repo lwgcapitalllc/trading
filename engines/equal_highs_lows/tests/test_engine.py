@@ -33,6 +33,7 @@ if str(_ENGINES_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENGINES_ROOT))
 
 from equal_highs_lows import EqualHighsLowsEngine
+from equal_highs_lows import engine as _eq_engine
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,7 +101,9 @@ def ref_pivots_conf(vals, L, is_high):
     return conf
 
 
-def ref_run(highs, lows, closes, pivot_len=2, atr_mult=0.1, max_levels=6, atr_len=50):
+def ref_run(highs, lows, closes, *, pivot_len, atr_mult, max_levels, atr_len=50):
+    # Settings are REQUIRED: a reference carrying its own copy of the engine's defaults disagrees
+    # with it the day a default moves, which is a red about configuration rather than logic.
     n = len(highs)
     atr = ref_atr(highs, lows, closes, atr_len)
     conf_h = ref_pivots_conf(highs, pivot_len, True)
@@ -159,14 +162,20 @@ def ref_run(highs, lows, closes, pivot_len=2, atr_mult=0.1, max_levels=6, atr_le
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_shipped_defaults_are_the_indicators():
-    """The defaults ARE the contract: mpc_jarvis.pine runs eqPivotLen 2 / eqAtrMult 0.25 / eqMax 14.
+    """A default-built engine runs the module's declared defaults.
 
-    Pinned because they were 0.1 / 6 here until 2026-09-09 while the indicator ran 0.25 / 14, so
-    the live bot and the chart disagreed about which pivots count as equal and how many levels
-    survive. Six files carried these numbers; this is the one that fails if they drift again.
+    They were 0.1 / 6 here until 2026-09-09 while the indicator ran 0.25 / 14, so the live bot and
+    the chart disagreed about which pivots count as equal and how many levels survive. Whether the
+    declared defaults ARE the indicator's is read off mpc_jarvis.pine itself by
+    engines/tests/test_defaults_mirror_the_indicator.py — typed here, it would be one more copy to
+    edit when the indicator moves. This half pins that the constructor actually uses them.
     """
     eng = EqualHighsLowsEngine()
-    assert (eng._pivot_len, eng._atr_mult, eng._max_levels) == (2, 0.25, 14)
+    assert (eng._pivot_len, eng._atr_mult, eng._max_levels) == (
+        _eq_engine.DEFAULT_PIVOT_LEN,
+        _eq_engine.DEFAULT_ATR_MULT,
+        _eq_engine.DEFAULT_MAX_LEVELS,
+    )
 
 
 def test_atr_tolerance_warmup():

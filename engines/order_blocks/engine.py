@@ -79,6 +79,12 @@ class _Bar(NamedTuple):
 _HISTORY = 64
 
 
+# ── The one default a consumer outside this file retypes ──
+# Typed ONCE: every Python consumer that means "the engine's default" imports it rather than
+# retyping it, and engines/tests/test_defaults_mirror_the_indicator.py holds it to the Pine.
+DEFAULT_MAX_ACTIVE = 10  # Pine maxActiveOB
+
+
 class OrderBlockEngine:
     """Streaming order-block detector (turn-anchored).
 
@@ -87,7 +93,7 @@ class OrderBlockEngine:
     """
 
     def __init__(self,
-                 max_active: int = 10,        # Pine maxActiveOB
+                 max_active: int = DEFAULT_MAX_ACTIVE,  # Pine maxActiveOB
                  body_only: bool = False,     # Pine obBodyOnly
                  max_age: int = 500,          # Pine OB_MAX_AGE
                  min_back: int = 3,           # Pine OB_MIN_BACK

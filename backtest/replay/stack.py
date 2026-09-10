@@ -27,8 +27,15 @@ if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
 import pandas as pd  # noqa: E402
+
+# Each `engine as _x` import below is there for its DEFAULT_* constants: an engine's defaults are
+# typed ONCE, in the engine, and EngineConfig's fields read them rather than retyping them — on
+# 2026-09-09 three equal-level numbers had to move in seven places, this file among them.
+# engines/tests/test_defaults_mirror_the_indicator.py holds the engines to the Pine.
 from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
+from equal_highs_lows import engine as _eq_engine  # noqa: E402
 from fair_value_gaps import FairValueGapEngine, FvgEvents  # noqa: E402
+from fair_value_gaps import engine as _fvg_engine  # noqa: E402
 from fibonacci import (  # noqa: E402
     InternalFib,
     InternalFibEvents,
@@ -41,9 +48,12 @@ from fibonacci import (  # noqa: E402
     StructureSnapshot,
 )
 from liquidity import LiquidityEngine, LiquidityEvents  # noqa: E402
+from liquidity import engine as _liq_engine  # noqa: E402
 from market_structure import Bar, StructureEngine, StructureEvents  # noqa: E402
+from market_structure import engine as _ms_engine  # noqa: E402
 from order_blocks import OrderBlockEngine, OrderBlockEvents  # noqa: E402
 from rsi_divergence import RsiDivergenceEngine, RsiDivEvents  # noqa: E402
+from rsi_divergence import engine as _rsi_engine  # noqa: E402
 from sessions import SessionEngine, SessionEvents  # noqa: E402
 
 from .loop import ReplayBar, iter_bars
@@ -58,7 +68,7 @@ class EngineConfig:
     construction time."""
 
     # market_structure
-    major_length: int = 15
+    major_length: int = _ms_engine.DEFAULT_MAJOR_LENGTH
     # Internal-structure exposure. The market_structure engine ALWAYS computes internal
     # structure, but the Pine gates the whole internal block behind `showInternal`
     # (`internalActive = showInternal`) — and when it is OFF, the internal-confirmed swings
@@ -67,26 +77,26 @@ class EngineConfig:
     # internal-derived fields before the fibs read them. Default True keeps the canonical
     # behaviour the fib-parity harness (fib_export.pine, showInternal ON) was validated at.
     show_internal: bool = True
-    # fair_value_gaps. These mirror the ENGINE defaults (== `mpc_jarvis.pine`, the indicator),
+    # fair_value_gaps. These ARE the engine defaults, read from it (mpc_jarvis.pine's sub-15m row),
     # NOT any one strategy — this package is strategy-agnostic and cannot encode one bot's tuning.
     # A consumer replaying a specific Pine must pin every value that Pine does not leave at the
     # engine default; see the unpinned-engine-input rule in `backtest/CLAUDE.md`.
     #
     # ⚠ `fvg_threshold_pct` is LOAD-BEARING and was 0.1 here until 2026-07-31 — not as a considered
     # default but because `sos_fade` silently relied on it (it pins max_count and require_close
-    # and forgot this one). `sos_fade_strategy.pine`'s 15m floor is 0.1 while the indicator's is 0.04,
+    # and forgot this one). `sos_fade_strategy.pine`'s 15m floor is 0.1 (the indicator's was 0.04 then),
     # so the bot now pins 0.1 explicitly and this default is free to mirror the engine again.
     # Verified the hard way: setting this to 0.0 while the bot was unpinned broke
     # `compare_strategy.py` on the first compared bar (`px_edge` 3478.99 vs 3475.43).
-    fvg_max_count: int = 8
-    fvg_threshold_pct: float = 0.0
-    # Middle-bar close-cleared requirement (Pine `fvgRequireClose`). `mpc_jarvis.pine`
-    # exposes it as an input defaulting OFF — the classic 3-candle FVG — which is why this
-    # defaults False. But `sos_fade_strategy.pine` HARDCODES the check (`close[1] > high[2]` /
+    fvg_max_count: int = _fvg_engine.DEFAULT_MAX_COUNT
+    fvg_threshold_pct: float = _fvg_engine.DEFAULT_THRESHOLD_PCT
+    # Middle-bar close-cleared requirement (Pine `fvgRequireClose`). `mpc_jarvis.pine` runs it
+    # OFF below 15m — the classic 3-candle FVG — and ON from 15m up; this defaults to the sub-15m
+    # row, as every field here does. `sos_fade_strategy.pine` HARDCODES the check (`close[1] > high[2]` /
     # `close[1] < low[2]`), so a consumer replaying THAT Pine must pin this True or it will
     # hold gaps the Pine never created. Same class of trap as `fvg_max_count`: an engine
     # input the decision stream does not export, so the consumer has to know it.
-    fvg_require_close: bool = False
+    fvg_require_close: bool = _fvg_engine.DEFAULT_REQUIRE_CLOSE
     # Pine `eqExemptFvg` — an FVG sitting on an active EQH/EQL is exempt from the FVG cap and lives
     # until price mitigates it. OFF here because it is an input in every Pine that has it, and
     # because turning it on CHANGES WHICH GAPS EXIST, hence which entries fire. `sos_fade_strategy.pine`
@@ -119,9 +129,9 @@ class EngineConfig:
     # equal_highs_lows — LOCKED to mpc's constants (`eqPivotLen` / `eqAtrMult` / `eqMax`), which are
     # hardcoded in the Pine rather than exposed, so the indicator and the strategy cannot draw
     # different levels. Only read when `eq_exempt_fvg` is on.
-    eq_pivot_len: int = 2
-    eq_atr_mult: float = 0.25
-    eq_max_levels: int = 14
+    eq_pivot_len: int = _eq_engine.DEFAULT_PIVOT_LEN
+    eq_atr_mult: float = _eq_engine.DEFAULT_ATR_MULT
+    eq_max_levels: int = _eq_engine.DEFAULT_MAX_LEVELS
     # order_blocks — OPT-IN, and off by default for the same reason the EQ engine is: no strategy
     # in this repo reads an order block today (`sos_fade`, `b_leg` and `bos` all ignore
     # them), and an unused engine still costs a per-bar ATR, two pivot scans and a live-zone walk on
@@ -142,13 +152,13 @@ class EngineConfig:
     # one as an `input.*`, add the field THEN, with the export column in the same commit.
     order_blocks: bool = False
     # rsi_divergence
-    rsi_len: int = 14
-    rsi_pivot_len: int = 5
-    rsi_oversold: float = 25.0
-    rsi_overbought: float = 75.0
-    rsi_valid_bars: int = 100
+    rsi_len: int = _rsi_engine.DEFAULT_RSI_LEN
+    rsi_pivot_len: int = _rsi_engine.DEFAULT_PIVOT_LEN
+    rsi_oversold: float = _rsi_engine.DEFAULT_OVERSOLD
+    rsi_overbought: float = _rsi_engine.DEFAULT_OVERBOUGHT
+    rsi_valid_bars: int = _rsi_engine.DEFAULT_VALID_BARS
     # liquidity — XAUUSD trading day opens 18:00 NY (the baked-in engine default)
-    htf_rollover_hours: int = 18
+    htf_rollover_hours: int = _liq_engine.DEFAULT_HTF_ROLLOVER_HOURS
 
     # ── WHICH ENGINES RUN AT ALL ────────────────────────────────────────────────────────────
     # Every one defaults ON, so a stack built the way every existing caller builds it is

@@ -54,9 +54,10 @@ if str(_ENGINES) not in sys.path:
 
 REFUSE, ALLOW, UNKNOWN = "REFUSE", "ALLOW", "UNKNOWN"
 
-# The classifier needs 34 rows of each frame (`engines/regime/thresholds.py`). This is that with
-# room to spare, and it bounds the memory a replay carries. It is NOT a tuning knob — a longer
-# window would change the ADX and ATR readings and therefore the labels.
+# The classifier needs a minimum of rows of each frame (`engines/regime/thresholds.py`, 34 today).
+# This is that with room to spare, and it bounds the memory a replay carries. It is NOT a tuning
+# knob — a longer window would change the ADX and ATR readings and therefore the labels. A test
+# refuses it falling below the classifier's minimum, which would leave the cut never asking.
 _KEEP = 120
 
 
@@ -88,10 +89,13 @@ class TransitioningCut:
         # __init__, and pandas plus the classifier cost real time on a lab that scans every
         # strategy package at startup whether or not a run is coming.
         import pandas as pd
-        from regime import classify_regime
+        from regime import MIN_ROWS_LONG, MIN_ROWS_SHORT, classify_regime
 
         self.asked += 1
-        if len(self._short) < 34 or len(self._long) < 34:
+        # The classifier answers UNKNOWN on a short frame itself; this only skips building two
+        # frames to hear it. So the floor is the classifier's own — a typed copy that drifted low
+        # would refuse to ask on rows the classifier answers.
+        if len(self._short) < MIN_ROWS_SHORT or len(self._long) < MIN_ROWS_LONG:
             self.unknown_count += 1
             return UNKNOWN
 

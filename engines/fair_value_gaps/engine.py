@@ -43,22 +43,33 @@ from typing import Deque, List, Tuple
 from .types import FairValueGap, FvgEvents
 
 
+# ── The defaults: mpc_jarvis.pine's BELOW-15m gap settings ──
+# Typed ONCE: every Python consumer that means "the engine's default" imports these rather than
+# retyping them, and engines/tests/test_defaults_mirror_the_indicator.py holds them to the Pine.
+# ⚠ The Pine splits two of them by timeframe (a 0.1% floor and the middle-bar close test from 15m
+# up). The engine takes ONE value per run, so its default is the sub-15m row; a 15m consumer pins
+# the other row itself, as sos_fade does.
+DEFAULT_MAX_COUNT = 8  # ⚠ Pine fvgMaxCount is 7 — the one default not yet synced (next commit)
+DEFAULT_THRESHOLD_PCT = 0.0  # Pine fvgThreshLTF
+DEFAULT_REQUIRE_CLOSE = False  # Pine fvgRequireClose below 15m
+
+
 class FairValueGapEngine:
     """Streaming fair-value-gap detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_jarvis.pine's default FVG settings: max_count = 8 gaps total, threshold_pct = 0.0
-    (the sub-15m value the Pine uses — no minimum gap; on 15m+ the Pine passes 0.04), and
-    require_close = False (the Pine default `fvgRequireClose`: the classic 3-candle FVG where bars A
-    and C simply don't overlap; the middle-bar close-cleared check is OPTIONAL). Match these to the
-    Pine inputs the export carried — compare_fvg.py reads them from the CSV's cfg_* columns.
+    Defaults are the DEFAULT_* constants above — mpc_jarvis.pine's sub-15m gap settings: the gap
+    cap, no minimum gap size, and the classic 3-candle gap where bars A and C simply do not overlap
+    (the middle-bar close-cleared check off). Match them to what an export carried —
+    compare_fvg.py reads them from the CSV's cfg_* columns.
     """
 
-    def __init__(self, max_count: int = 8, threshold_pct: float = 0.0,
-                 require_close: bool = False) -> None:
-        self._max_count = max_count            # Pine fvgMaxCount (default 8)
-        self._threshold_pct = threshold_pct    # Pine fvgThreshPct (0.0 sub-15m / 0.04 15m+)
-        self._require_close = require_close     # Pine fvgRequireClose (default False = classic FVG)
+    def __init__(self, max_count: int = DEFAULT_MAX_COUNT,
+                 threshold_pct: float = DEFAULT_THRESHOLD_PCT,
+                 require_close: bool = DEFAULT_REQUIRE_CLOSE) -> None:
+        self._max_count = max_count            # Pine fvgMaxCount
+        self._threshold_pct = threshold_pct    # Pine fvgThreshPct (split by timeframe)
+        self._require_close = require_close     # Pine fvgRequireClose (split by timeframe)
 
         # The single live gap list, oldest-first — the Pine fvg* parallel arrays as one list.
         self._active: List[FairValueGap] = []
