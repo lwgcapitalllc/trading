@@ -21,8 +21,11 @@ the watchdog like an ordinary crash worth restarting. That is the loop behind fi
     launcher cannot take it and exits quietly. **It cannot time out and it cannot fail open** —
     the OS either grants the lock or it does not, and this process holds it for as long as the
     bot it started is alive (`subprocess.run` below blocks until the child exits).
-  * `telegram_bot.pid` records the child's PID, so an ORPHAN left by a launcher that died can be
-    killed by PID rather than by enumerating the process table. No timeout, nothing to swallow.
+  * `telegram_launcher_child.pid` records the child's PID, so an ORPHAN left by a launcher that
+    died can be killed by PID rather than by enumerating the process table. No timeout, nothing
+    to swallow. ⚠ **NOT `telegram_bot.pid`** — the bot owns that one and reads it to decide
+    whether a copy of itself is already up. See the note on `PID_FILE` below; writing it here
+    left the box with no chat bot at all.
 
 ⚠ **The wmic sweep is KEPT as a backstop and is no longer the guard.** It catches an orphan from
 before this file existed, or one whose PID file was lost. It still cannot be trusted, which is
@@ -55,7 +58,18 @@ from pathlib import Path
 ALGOS = Path(__file__).resolve().parent.parent
 
 LOCK_FILE = ALGOS / "telegram_launcher.lock"
-PID_FILE = ALGOS / "telegram_bot.pid"
+
+# 🔴 **NOT `telegram_bot.pid` — THAT FILE BELONGS TO THE BOT AND THIS ONE MAY NEVER WRITE IT.**
+# `telegram_bot.py::acquire_singleton` has its own instance guard: it reads `telegram_bot.pid`,
+# asks whether that PID is still a telegram_bot, and exits if it is. The first version of this
+# launcher recorded its CHILD's pid there — so the bot started, read its OWN pid out of the file
+# its parent had just written, concluded another copy was already running, and exited. **The
+# launcher then had nothing to wait on, released the lock, and the box was left with no chat bot
+# at all** (measured on the box 2026-09-09, `Another telegram_bot is already running (PID 10572)`).
+# ⚠ **Rule 7: a file written here is a CLAIM about whoever reads it, and that reader has to be
+# found before the write.** Two writers of one path is the same defect the ledger sync records.
+PID_FILE = ALGOS / "telegram_launcher_child.pid"
+
 START_FILE = ALGOS / "telegram_start.json"
 BOT_SCRIPT = ALGOS / "notifications" / "telegram_bot.py"
 

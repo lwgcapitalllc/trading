@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -629,6 +630,33 @@ def test_the_chat_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
     assert ran == [], "fired SYS_TELEGRAM beside a chat bot that was probably running"
     assert sent == []
     assert out["running"] is True
+
+
+def test_the_launcher_never_writes_the_file_the_chat_bot_owns():
+    """🔴 MEASURED on the box 2026-09-09: it did, and the box was left with NO chat bot at all.
+
+    `telegram_bot.py::acquire_singleton` reads `telegram_bot.pid`, asks whether that PID is still
+    a telegram_bot, and exits if it is. The launcher recorded its CHILD's pid there — so the bot
+    started, read its OWN pid out of the file its parent had just written, decided a copy was
+    already running and exited. The launcher had nothing left to wait on, released its lock, and
+    nothing was up.
+
+    **Rule 7: a file written in one module is a CLAIM about whoever reads it, and the reader has
+    to be found before the write.** Two writers of one path, which is the defect the ledger sync
+    already records.
+    """
+    import start_telegram as st
+
+    src = (_REPO / "algos" / "notifications" / "telegram_bot.py").read_text()
+    m = re.search(r"^PID_FILE\s*=\s*ALGOS_ROOT\s*/\s*\"([^\"]+)\"", src, re.M)
+    # REFUSE on a failed parse. A regex that quietly matches nothing passes for ever, which is
+    # the vacuous-check shape this repo records against its own guards.
+    assert m, "could not find the chat bot's PID_FILE - re-aim this check, do not delete it"
+
+    assert st.PID_FILE.name != m.group(1), (
+        f"the launcher writes {st.PID_FILE.name}, which the chat bot reads to decide whether "
+        f"another copy of itself is running - it will refuse to start"
+    )
 
 
 def _launcher_in(tmp_path, monkeypatch):

@@ -1284,6 +1284,19 @@ and a task that fails every minute gets ignored.
 ⚠ **No watchdog here can see a duplicate**, because every one of them asks a yes/no question and
 two copies both answer yes. **The guard has to be at the thing that STARTS the process.**
 
+🔴 **THE FIRST VERSION OF THAT LAUNCHER LEFT THE BOX WITH NO CHAT BOT AT ALL, AND THE CAUSE IS
+RULE 7.** `telegram_bot.py` has an instance guard of its own: it reads **`telegram_bot.pid`**,
+asks whether that PID is still a telegram_bot, and exits if it is. The launcher recorded its
+CHILD's pid into that same file — so the bot started, read its OWN pid out of the file its parent
+had just written, decided a copy was already running, and exited; the launcher then had nothing
+to wait on and released its lock. **`telegram_bot.pid` belongs to the BOT and nothing else may
+write it**; the launcher's record is `telegram_launcher_child.pid`, pinned apart by
+`test_the_launcher_never_writes_the_file_the_chat_bot_owns`. ⚠ **A file written in one module is
+a CLAIM about whoever reads it, and the reader has to be found BEFORE the write** — two writers
+of one path is the defect `ledger_sync.py` already records. ⚠ **Found by RUNNING it on the box,
+not by the suite**: every test passed, because the collision only exists where both programs
+share one directory.
+
 ### The dead-man's switch waits for a problem to OUTLAST a restart (2026-09-09)
 
 🔴 **A 5-minute pass landing in the ~60s hole a restart punches sent `/fail` and paged for a
