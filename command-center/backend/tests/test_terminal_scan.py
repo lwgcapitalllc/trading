@@ -378,3 +378,99 @@ def test_an_unmeasured_suffix_stays_none_rather_than_becoming_empty():
     """`""` would tell a move to strip the suffix off a live symbol."""
     s = suggested_registration(reconcile(_scan(_probed(symbol_suffix=None)), []).terminals[0])
     assert s["symbol_suffix"] is None
+
+
+# ---------------------------------------------------------------------------------------
+# The one terminal this tool refuses to attach to, checked via the bots on it
+# ---------------------------------------------------------------------------------------
+
+
+_OWNED = {
+    "key": r"c:\mt5_fft",
+    "install": r"C:\MT5_FFT",
+    "state": "owned_by_bot",
+    "running": True,
+    "owned_by_bots": ["extreme_leg_demo", "sos_fade_demo"],
+    "account": None,
+    "reason": "a bot trades through this terminal, so it was deliberately not attached to",
+}
+
+
+def test_a_bots_terminal_is_resolved_from_what_the_BOTS_observe():
+    """🔴 The gap that left a stale row unverifiable for weeks.
+
+    The scan never attaches to the bots' terminal, so nothing could say what it is on. The live
+    runner measures exactly that at every poll — it halts on a mismatch — and now reports it, which
+    is the only outside evidence about this terminal.
+    """
+    row = _Row(
+        account=700152905,
+        server="PUPrime-Demo",
+        kind="demo",
+        mt5_path=r"C:\MT5_FFT\terminal64.exe",
+        symbol_suffix=".p",
+    )
+    out = reconcile(
+        _scan(_OWNED), [row], {"sos_fade_demo": 700152905, "extreme_leg_demo": 700152905}
+    )
+    (t,) = out.terminals
+    assert t.account == 700152905
+    assert t.account_source == "bot"
+    (check,) = out.registry
+    assert check.verdict == "confirmed"
+    assert "reported by the bot" in check.detail
+
+
+def test_the_stale_row_is_finally_CONTRADICTED_rather_than_unverified():
+    """🔴 700107749, the row that started this. It claims the bots' terminal; the bots are on
+    700152905, so the claim is wrong — and until the runner reported its observed account there
+    was no way to say so.
+
+    Watched red by dropping the bot-reported resolution: it falls back to "unverified", which is
+    honest and useless.
+    """
+    row = _Row(account=700107749, label="retired", mt5_path=r"C:\MT5_FFT\terminal64.exe")
+    out = reconcile(_scan(_OWNED), [row], {"sos_fade_demo": 700152905})
+    (check,) = out.registry
+    assert check.verdict == "contradicted"
+    assert "700152905" in check.detail
+    assert any("bot trading through it reports" in c for c in check.conflicts)
+
+
+def test_a_bot_that_could_not_ask_contributes_nothing():
+    """`None` from a bot is "cannot say", not a vote and not a zero."""
+    row = _Row(account=700107749, mt5_path=r"C:\MT5_FFT\terminal64.exe")
+    out = reconcile(_scan(_OWNED), [row], {"sos_fade_demo": None, "extreme_leg_demo": None})
+    (t,) = out.terminals
+    assert t.account is None and t.account_source is None
+    (check,) = out.registry
+    assert check.verdict == "unverified"
+    assert "no bot on it could say" in check.detail
+
+
+def test_bots_that_DISAGREE_resolve_to_unknown_rather_than_a_guess():
+    """One terminal holds one login, so a disagreement means somebody is reporting stale state.
+    Picking between them would be inventing a fact about a live terminal."""
+    row = _Row(account=700152905, mt5_path=r"C:\MT5_FFT\terminal64.exe")
+    out = reconcile(
+        _scan(_OWNED), [row], {"sos_fade_demo": 700152905, "extreme_leg_demo": 700107749}
+    )
+    (t,) = out.terminals
+    assert t.account is None
+    (check,) = out.registry
+    assert check.verdict == "unverified"
+
+
+def test_a_terminal_this_tool_probed_keeps_its_own_reading():
+    """A bot's report may not override a number this tool measured itself."""
+    out = reconcile(_scan(_probed()), [], {"sos_fade_demo": 999999})
+    (t,) = out.terminals
+    assert t.account == 34957946
+    assert t.account_source == "terminal"
+
+
+def test_no_bots_map_at_all_behaves_exactly_as_before():
+    """The argument is optional, so an older caller keeps the previous, honest answer."""
+    row = _Row(account=700152905, mt5_path=r"C:\MT5_FFT\terminal64.exe")
+    (check,) = reconcile(_scan(_OWNED), [row]).registry
+    assert check.verdict == "unverified"

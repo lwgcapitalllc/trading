@@ -195,6 +195,10 @@ passed every gate — and **could not have appeared on screen**, which only open
 ⚠ **Anything added there is dead on arrival**; put it in `index.tsx`. That the file still reads like
 a live page is the trap, and it is rule 9 in the frontend: a feature nobody has RUN is not a feature.
 
+⚠ **A terminal's account can come from the bot trading through it rather than from the scan, and
+the row says so** ("reported by the bot"). The two are different strengths of evidence, so the
+source is on screen rather than implied.
+
 Story: `command-center/docs/FRONTEND_BUILD_NOTES.md`.
 
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
