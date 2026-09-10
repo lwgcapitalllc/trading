@@ -567,13 +567,143 @@ def test_the_runner_does_not_mistake_itself_for_a_duplicate(monkeypatch):
     assert r.already_running() is False
 
 
-def test_sys_telegram_still_force_restarts():
+# ── "cannot ask" is not "it is dead" ────────────────────────────────────────────
+#
+# 🔴 `is_running` returned False when the process query failed, and it is the root cause behind
+# TWO chat bots found running on the box on 2026-09-09. `wmic` misses its 10s timeout on a loaded
+# box — precisely when a restart storm is happening — so a healthy process read as gone, this
+# watchdog fired SYS_TELEGRAM beside it, and two long-pollers then knocked each other off one
+# Telegram token. Each death looked like an ordinary crash worth restarting: a self-sustaining
+# loop. The same line restarts healthy TRADING bots for the same reason.
+#
+# Rule 1, in the one place it costs the most: never let "no" and "cannot ask" be the same value.
+
+
+def test_an_unreadable_process_list_is_not_a_dead_bot(monkeypatch):
+    """The query raising must answer `None`, never `False`."""
+    monkeypatch.setattr(
+        monitor.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("boom"))
+    )
+    assert monitor.is_running("runner.py") is None
+
+
+def test_a_failed_process_query_is_not_a_dead_bot(monkeypatch):
+    """A non-zero exit prints nothing and so does a box with no bots running. Only the exit code
+    separates them, and reading the empty string as "gone" is the whole defect."""
+    monkeypatch.setattr(
+        monitor.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1, stdout="")
+    )
+    assert monitor.is_running("runner.py") is None
+
+
+def test_a_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
+    """`check_bot` must leave everything alone — no alert, no restart, no stored state moved.
+
+    Restarting here starts a SECOND copy of a bot that is almost certainly still running, on a
+    live broker account. The cost of doing nothing is 60 seconds of not knowing.
+    """
+    sent, attempts = [], []
+    monkeypatch.setattr(monitor, "send_alert", lambda msg: sent.append(msg))
+    monkeypatch.setattr(monitor, "is_running", lambda script: None)
+    monkeypatch.setattr(monitor, "restart_bot", lambda k: attempts.append(k) or True)
+    monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {})
+
+    carried = {"running": True, "restart_tries": 0}
+    out = monitor.check_bot("sos_fade_demo", {"sos_fade_demo": carried}, "2026-08-03")
+
+    assert attempts == [], "restarted a bot on an answer that was never obtained"
+    assert sent == [], "alerted OFFLINE without knowing the process was gone"
+    assert out["running"] is True, "recorded a dead bot from an unread process list"
+
+
+def test_the_chat_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
+    """🔴 This is the exact path that produced the duplicate. It must fire nothing at all."""
+    sent, ran = [], []
+    monkeypatch.setattr(monitor, "send_alert", lambda msg: sent.append(msg))
+    monkeypatch.setattr(monitor, "is_running", lambda script: None)
+    monkeypatch.setattr(monitor.subprocess, "run", lambda *a, **k: ran.append(a) or None)
+
+    out = monitor.check_telegram_bot({"telegram_bot": {"running": True}})
+
+    assert ran == [], "fired SYS_TELEGRAM beside a chat bot that was probably running"
+    assert sent == []
+    assert out["running"] is True
+
+
+def _launcher_in(tmp_path, monkeypatch):
+    """The real launcher with its three files redirected into a scratch dir.
+
+    ⚠ Its paths are module constants derived from `__file__`, so without this a test would write
+    a lock into the real `algos/` tree — a fixed path shared by every test, which is how a suite
+    starts failing non-deterministically under `-n auto`.
+    """
+    import start_telegram as st
+
+    monkeypatch.setattr(st, "LOCK_FILE", tmp_path / "launcher.lock")
+    monkeypatch.setattr(st, "PID_FILE", tmp_path / "bot.pid")
+    monkeypatch.setattr(st, "START_FILE", tmp_path / "start.json")
+    monkeypatch.setattr(st, "_KILL_SETTLE_SECS", 0)
+    return st
+
+
+def test_sys_telegram_still_force_restarts(tmp_path, monkeypatch):
     """The skip is about COLLATERAL damage only. `SYS_TELEGRAM` exists to recover a bot that is
-    alive but wedged, and it is what this watchdog fires — so `start_telegram.py` must keep its
-    kill-then-start behaviour, or a hung Telegram can never be recovered automatically."""
-    src = (_REPO / "algos" / "notifications" / "start_telegram.py").read_text()
-    assert "def kill_existing" in src
-    assert "kill_existing()" in src, "SYS_TELEGRAM lost its force-restart"
+    alive but wedged, and it is what this watchdog fires — so the launcher must keep its
+    kill-then-start behaviour, or a hung Telegram can never be recovered automatically.
+
+    🔴 This asserted `"def kill_existing" in src` until 2026-09-09 — a source grep pinned to a
+    NAME. It went red on a rewrite that kept the behaviour exactly and renamed the function,
+    which is the *case pinned to a path that moved* shape this repo already records twice. It
+    drives the real launcher now, so only the BEHAVIOUR can redden it.
+    """
+    st = _launcher_in(tmp_path, monkeypatch)
+    (tmp_path / "bot.pid").write_text("4242")
+
+    order = []
+    monkeypatch.setattr(st, "_commandline_of", lambda pid: "python.exe telegram_bot.py")
+    monkeypatch.setattr(st, "_kill", lambda pid, why: order.append(("kill", pid)) or True)
+    monkeypatch.setattr(st, "sweep_stray_bots", lambda: 0)
+
+    class _Proc:
+        pid = 99
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(
+        st.subprocess, "Popen", lambda *a, **k: order.append(("start", None)) or _Proc()
+    )
+
+    assert st.main([]) == 0
+    assert order == [("kill", 4242), ("start", None)], "SYS_TELEGRAM lost its force-restart"
+
+
+def test_a_second_launcher_cannot_start_a_second_chat_bot(tmp_path, monkeypatch):
+    """🔴 The defect this whole guard exists for: two copies of the chat bot were found running
+    on the box on 2026-09-09. The old guard SURVEYED the process table under a 10s timeout inside
+    a bare `except` — so on a loaded box it failed open and started a duplicate.
+
+    The lock cannot time out and cannot fail open, so this holds whatever the box is doing.
+    """
+    st = _launcher_in(tmp_path, monkeypatch)
+
+    held = st.acquire_lock()
+    try:
+        with pytest.raises(st.LockNotAcquired):
+            st.acquire_lock()
+
+        started = []
+        monkeypatch.setattr(st, "kill_recorded_bot", lambda: started.append("kill") or False)
+        monkeypatch.setattr(st, "sweep_stray_bots", lambda: started.append("sweep") or 0)
+        monkeypatch.setattr(st.subprocess, "Popen", lambda *a, **k: started.append("start") or None)
+
+        # Exit 0: from the task's point of view "already up" is success. A task that fails every
+        # minute is one everybody learns to ignore.
+        assert st.main([]) == 0
+        assert started == [], "a second launcher started something while the first held the lock"
+    finally:
+        held.close()
 
 
 def test_the_stall_threshold_is_well_clear_of_the_poll_interval():

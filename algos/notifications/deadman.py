@@ -89,6 +89,25 @@ BOTS = {
 # would alert on different bars and each look wrong to the other.
 HEARTBEAT_STALE_SECS = 5 * 60
 
+# 🔴 **How long a problem must PERSIST before it is worth waking somebody for.**
+#
+# Every restart — a deploy, or the watchdog recovering a crash — takes a bot away for about a
+# minute, and a 5-minute pass landing in that window sent `/fail` and paged for a button
+# somebody had just pressed on purpose. **An alarm that fires when you press the button is one
+# you learn to scroll past**, which this repo has already paid for twice, and then it cannot
+# tell you about the thing it exists for.
+#
+# ⚠ **MEASURED, not picked** (rule 4). From the bots' own logs on 2026-09-09, a deliberate
+# stop-to-online cycle is **~55s** (`sos_fade_demo` 12:19:33 → 12:20:28) and **~60s**
+# (`extreme_leg_demo` 12:19:38 → 12:20:38, of which 19.7s is warm-up). The watchdog's own
+# recovery is slower and is the real ceiling: up to 60s to notice, then a restart it confirms
+# after an 8s settle — **~130s worst case**. 180s clears that with margin and is still well
+# inside the time a genuinely dead box stays dead.
+CONFIRM_SECS = 180
+
+# Where the first-seen times live. Git-ignored, beside the other watchdog state.
+PENDING_FILE = ALGOS_ROOT / "deadman_pending.json"
+
 # Appended to the configured URL to report a detected failure. This is healthchecks.io's
 # shape and Cronitor's `?state=fail` is the other common one — if the provider changes, this
 # is the single line that changes.
@@ -201,6 +220,84 @@ def check_health(now: float | None = None) -> list[str]:
     return problems
 
 
+def _read_pending() -> dict:
+    """When each outstanding problem was FIRST seen, or `None` if that cannot be read.
+
+    ⚠ **`None` is CANNOT ASK and the caller must not read it as "nothing outstanding".** Not
+    knowing how long a problem has been going on may never buy the reassuring answer — that is
+    rule 1, and here it decides whether a real failure is held quiet.
+    """
+    try:
+        data = json.loads(PENDING_FILE.read_text())
+    except FileNotFoundError:
+        return {}  # genuinely nothing outstanding — different from unreadable
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def confirmed_problems(problems: list, now: float | None = None, persist: bool = True) -> list:
+    """The problems that have lasted longer than `CONFIRM_SECS`, and therefore deserve an alarm.
+
+    **A problem seen for the first time is RECORDED and withheld**, so the ~60s hole a restart
+    punches in the world does not page anybody. One that is still there on the next pass is
+    real and goes out with its full age attached.
+
+    🔴 **This is deliberately NOT flap detection, and that boundary is the module's charter.**
+    A bot dying and being restarted repeatedly is `monitor.py`'s finding — it already sends an
+    OFFLINE and a RESTARTED message per occurrence, into the room somebody reads. **This switch
+    answers one question: can anything on that box still talk to me.** Teaching it a second
+    question is how one event becomes two alarms and the channel gets muted.
+
+    ⚠ **An unreadable state file ALARMS rather than suppressing.** Noisy once beats silent
+    forever, and it is the same call `log_review.py` makes for the same reason.
+
+    ⚠ **`persist=False` for a dry run**, so a preview cannot start somebody's grace clock and
+    make the next real pass alarm early — the same call `watch_broker_costs.py` makes about not
+    consuming tomorrow's first reading.
+    """
+    now = time.time() if now is None else now
+    if not problems:
+        # Nothing wrong: forget everything, so the next problem earns its own grace rather than
+        # inheriting a stale timestamp and alarming instantly.
+        if persist:
+            try:
+                PENDING_FILE.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                print(f"  ! could not clear the pending file: {e}")
+        return []
+
+    pending = _read_pending()
+    if pending is None:
+        print("  ! pending file unreadable - reporting everything rather than holding it quiet")
+        return list(problems)
+
+    fresh, confirmed = {}, []
+    for p in problems:
+        first_seen = pending.get(p)
+        if not isinstance(first_seen, (int, float)):
+            first_seen = now
+        fresh[p] = first_seen
+        age = now - first_seen
+        if age >= CONFIRM_SECS:
+            confirmed.append(f"{p} (for {int(age)}s)")
+        else:
+            print(f"  holding (only {int(age)}s old, confirming at {CONFIRM_SECS}s): {p}")
+
+    if persist:
+        try:
+            PENDING_FILE.write_text(json.dumps(fresh))
+        except Exception as e:
+            # We still hold a correct verdict for THIS pass; we just cannot remember it. Say so —
+            # silently forgetting would reset every problem's age on every pass and mean nothing
+            # ever reaches CONFIRM_SECS, i.e. an alarm that can never fire.
+            print(f"  ! could not record pending problems ({e}) - ages will restart next pass")
+
+    return confirmed
+
+
 def deadman_url() -> str:
     return (get("deadman_url") or "").strip()
 
@@ -244,14 +341,22 @@ def main(argv=None) -> int:
             )
         return 0
 
-    problems = check_health()
+    found = check_health()
 
-    if problems:
-        print("UNHEALTHY:")
-        for p in problems:
+    if found:
+        print("PROBLEMS SEEN:")
+        for p in found:
             print(f"  - {p}")
     else:
         print("healthy")
+
+    # Only a problem that OUTLASTS a restart is worth an alarm. Everything below reads
+    # `problems`, so a held-back problem pings healthy exactly as a clean pass does — which is
+    # the point: the box is answering, and the thing that is briefly wrong is already being
+    # dealt with by the watchdog that owns recovery.
+    problems = confirmed_problems(found, persist=not args.dry_run)
+    if found and not problems:
+        print("nothing confirmed yet - too new to alarm on")
 
     if not url:
         # Not an error. A box with no switch configured is a known gap, and a task that

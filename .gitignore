@@ -150,6 +150,9 @@ algos/markets/fx/instances/*/ledger/
 algos/monitor_state.json
 algos/stop_suppress.json
 algos/*.pid
+# How long each outstanding problem has been outstanding, so the dead-man's switch can tell a
+# real failure from the ~60s hole a restart punches in the world.
+algos/deadman_pending.json
 
 # Zipped raw logs from SYS_LOGBACKUP. VPS-local housekeeping with a 90-day window — the
 # artefact that must survive the box is the LEDGER, and ledger_sync.py commits that.
@@ -160,6 +163,8 @@ algos/users.json
 algos/telegram_offset.json
 algos/telegram_start.json
 algos/telegram_monitor_state.json
+# The launcher's single-instance lock. Held for the life of the running chat bot.
+algos/telegram_launcher.lock
 # What the ledger backup's alarm has already said, so it does not repeat itself hourly.
 algos/ledgersync_alert_state.json
 # The log reviewer's bookmark. Per-machine runtime state, written on the trading box.

@@ -18,6 +18,7 @@ ABSENCE, and the repo's standing rule is that absence must never be scored as he
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import time
 from pathlib import Path
@@ -47,18 +48,34 @@ def _healthy_state(**over):
 
 
 @pytest.fixture
-def wired(monkeypatch):
+def wired(monkeypatch, tmp_path):
     """Everything the box would supply, defaulted to healthy. Tests break one thing each.
 
     ⚠ `_is_assigned` is stubbed rather than left to read the real configs. `BOTS` now carries a
     bot that sits on the BENCH, and without this every test here would depend on what a config
     in the repo happens to say — so assigning that bot from the Bots page would turn this whole
     file red for a reason that has nothing to do with the dead-man's switch.
+
+    ⚠ **`PENDING_FILE` is redirected into a scratch dir.** It is a module constant under the real
+    `algos/` tree, so without this every test driving `main()` writes one shared path — which
+    both litters the repo and makes tests order-dependent under `-n auto`, the worst failure
+    shape a suite has.
     """
     monkeypatch.setattr(dm, "_running_keys", lambda: {"sos_fade_demo"})
     monkeypatch.setattr(dm, "_bot_state", _healthy_state)
     monkeypatch.setattr(dm, "_is_assigned", lambda key: key == "sos_fade_demo")
+    monkeypatch.setattr(dm, "PENDING_FILE", tmp_path / "deadman_pending.json")
     return monkeypatch
+
+
+def _already_outstanding(*problems, age=None):
+    """Pre-date each problem so it has already outlasted the confirmation window.
+
+    Used by tests whose subject is what an alarm SAYS, not how long it waits — without it they
+    would be asserting the holding behaviour by accident.
+    """
+    age = dm.CONFIRM_SECS + 60 if age is None else age
+    dm.PENDING_FILE.write_text(json.dumps({p: time.time() - age for p in problems}))
 
 
 # ── the bench ────────────────────────────────────────────────────────────────
@@ -203,10 +220,15 @@ def test_a_healthy_box_pings_the_plain_url_with_no_body(wired, sent):
 
 
 def test_a_problem_pings_the_FAIL_url_and_names_the_reason(wired, sent):
-    # The whole point of the second signal: a detected failure is an immediate alert that says
-    # what it is, instead of a silence you decode after the grace period.
+    # The whole point of the second signal: a CONFIRMED failure says what it is, instead of a
+    # silence you decode after the external service's grace period.
+    #
+    # ⚠ The problem is pre-dated because since 2026-09-09 a failure has to OUTLAST a restart
+    # before it alarms. This test's subject is what the alarm SAYS; the waiting has its own
+    # tests below, and leaving this one to assert both would mean it pinned neither clearly.
     wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
     wired.setattr(dm, "_running_keys", lambda: set())
+    _already_outstanding("SOS Fade: process is not running")
     assert dm.main([]) == 0
     url, body = sent[0]
     assert url == "https://hc-ping.com/abc" + dm.FAIL_SUFFIX
@@ -218,9 +240,78 @@ def test_every_problem_reaches_the_body_not_just_the_first(wired, sent):
     wired.setattr(
         dm, "_bot_state", lambda: _healthy_state(heartbeat=time.time() - 99_999, mt5_link=False)
     )
+    _already_outstanding(*dm.check_health())
     dm.main([])
     body = sent[0][1]
     assert "stalled" in body and "MT5 link" in body
+
+
+# ── a problem has to OUTLAST a restart before it alarms ──────────────────────
+#
+# 🔴 Every restart — a deploy, or the watchdog recovering a crash — takes a bot away for about a
+# minute, and a 5-minute pass landing in that hole sent `/fail` and paged for a button somebody
+# had just pressed. MEASURED from the health channel, 2026-09-04 → 2026-09-09: every one of those
+# pages tracked a restart. **An alarm that fires when you press the button is one you learn to
+# scroll past**, and then it cannot tell you about the thing it exists for.
+#
+# The cases below are weighted the same way the rest of this file is — toward the ways the new
+# holding logic could wrongly say "fine", because that is still the failure nobody hears.
+
+
+def test_a_brand_new_problem_is_held_rather_than_paged(wired, sent):
+    """The restart hole. The box is plainly answering, so it pings HEALTHY."""
+    wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
+    wired.setattr(dm, "_running_keys", lambda: set())
+    assert dm.main([]) == 0
+    assert sent == [("https://hc-ping.com/abc", "")], "paged on a problem one pass old"
+
+
+def test_a_problem_that_outlasts_the_window_still_alarms(wired, sent):
+    """🔴 The half that must not be lost. Holding a REAL failure quiet is this module's one
+    unrecoverable bug, because its silence is also what health looks like."""
+    wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
+    wired.setattr(dm, "_running_keys", lambda: set())
+    _already_outstanding("SOS Fade: process is not running")
+    dm.main([])
+    url, body = sent[0]
+    assert url.endswith(dm.FAIL_SUFFIX), "a confirmed failure did not reach the FAIL url"
+    assert "not running" in body
+    assert "for " in body, "the alarm does not say how long it has been going on"
+
+
+def test_a_problem_that_clears_does_not_leave_its_clock_running(wired, sent):
+    """Otherwise the NEXT problem inherits a stale timestamp and pages instantly — turning the
+    fix into a different false alarm rather than removing one."""
+    wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
+    _already_outstanding("SOS Fade: process is not running")
+
+    dm.main([])  # healthy pass: forgets everything
+    assert not dm.PENDING_FILE.exists()
+
+    wired.setattr(dm, "_running_keys", lambda: set())
+    sent.clear()
+    dm.main([])
+    assert sent == [("https://hc-ping.com/abc", "")], "a fresh problem inherited an old clock"
+
+
+def test_an_unreadable_pending_file_alarms_rather_than_holding_quiet(wired, sent):
+    """Rule 1. *Cannot tell how long this has been wrong* may not buy the reassuring answer —
+    noisy once beats silent forever, the same call `log_review.py` makes."""
+    wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
+    wired.setattr(dm, "_running_keys", lambda: set())
+    dm.PENDING_FILE.write_text("{not json")
+    dm.main([])
+    assert sent[0][0].endswith(dm.FAIL_SUFFIX)
+
+
+def test_a_dry_run_does_not_start_the_clock(wired, sent):
+    """A preview that starts somebody's grace clock makes the next REAL pass alarm early — the
+    same reason `watch_broker_costs.py` refuses to consume tomorrow's first reading."""
+    wired.setattr(dm, "deadman_url", lambda: "https://hc-ping.com/abc")
+    wired.setattr(dm, "_running_keys", lambda: set())
+    dm.main(["--dry-run"])
+    assert not dm.PENDING_FILE.exists()
+    assert sent == []
 
 
 def test_an_unconfigured_switch_sends_nothing_and_still_exits_0(wired, sent):

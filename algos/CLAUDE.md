@@ -1256,6 +1256,69 @@ switch described in the header. It is the only alert here that does not originat
 honestly and sends nothing rather than failing every five minutes). Check with
 `deadman.py --status`, and treat an unset URL as an open gap rather than a configured switch.
 
+### 🔴 A PROCESS CHECK THAT CANNOT ASK MUST NOT ANSWER "DEAD" (2026-09-09)
+
+**Two copies of the chat bot were found running on the box, both long-polling one Telegram
+token.** Story and the measured restart series: `docs/ALGOS_BUILD_NOTES.md` → *The duplicate chat
+bot*.
+
+🔴 **`monitor.is_running` returned `False` when `wmic` missed its 10s timeout — which happens on a
+loaded box, i.e. exactly when a restart storm is happening.** So the watchdog started a second
+copy of a process that was never dead. **Rule 1, in the one place it costs the most**, and the
+same line restarts healthy TRADING bots the same way.
+
+✅ **It answers `True` / `False` / `None`, and every caller reads `None` as *do nothing this
+pass*.** ⚠ **A non-zero exit is `None` too, not `False`** — a failed query and a box with no bots
+print the same empty string, and only the exit code separates them. ⚠ **The two POST-restart
+re-checks make the OPPOSITE call and read `None` as NOT CONFIRMED**: there the restart has already
+been requested and the only question left is whether to claim it worked, which is what
+`schtasks`'s own SUCCESS is worth.
+
+✅ **The launcher's guard is a LOCK, not a survey** — an exclusive lock held for the life of the
+bot it starts, so a second launcher cannot begin. **It cannot time out and it cannot fail open.**
+⚠ **A recorded child PID lets an ORPHAN be killed by PID rather than by enumerating the process
+table**, which is the step that failed. ⚠ **The wmic sweep is KEPT as a backstop and must never
+again be treated as the guard.** ⚠ **Failing to take the lock exits 0** — "already up" is success,
+and a task that fails every minute gets ignored.
+
+⚠ **No watchdog here can see a duplicate**, because every one of them asks a yes/no question and
+two copies both answer yes. **The guard has to be at the thing that STARTS the process.**
+
+### The dead-man's switch waits for a problem to OUTLAST a restart (2026-09-09)
+
+🔴 **A 5-minute pass landing in the ~60s hole a restart punches sent `/fail` and paged for a
+button somebody had just pressed.** **An alarm that fires when you press the button is one you
+learn to scroll past** — the fourth time this repo has paid for that.
+
+✅ **`confirmed_problems` withholds a problem until it has persisted `CONFIRM_SECS`.** ⚠ **180s is
+MEASURED, not picked** (rule 4): a deliberate stop-to-online cycle is ~55–60s from the bots' own
+logs, and the watchdog's own recovery is the ceiling at ~130s worst case — up to 60s to notice,
+then a restart it confirms after an 8s settle. **Re-measure before moving it.**
+
+⚠ **A held problem pings HEALTHY**, deliberately: the box is plainly answering, and the thing
+briefly wrong is already owned by the watchdog that does recovery. ⚠ **An unreadable state file
+ALARMS rather than suppressing** (rule 1) — *cannot tell how long this has been wrong* may not buy
+the reassuring answer. ⚠ **A cleared problem is FORGOTTEN**, or the next one inherits a stale
+timestamp and pages instantly, turning the fix into a different false alarm. ⚠ **A dry run does
+not start the clock.**
+
+🔴 **DELIBERATELY NOT FLAP DETECTION, and that boundary is the module's charter.** A bot dying and
+being restarted repeatedly is `monitor.py`'s finding and it already sends a message per
+occurrence. **This switch answers one question: can anything on that box still talk to me.**
+Teaching it a second question is how one event becomes two alarms and the channel gets muted.
+
+**Tests: 4 new in `tests/test_watchdog.py`, 5 in `tests/test_deadman.py`; 10 mutations RUN, every
+one RED on its own named test.** ⚠ **`test_deadman.py`'s fixture redirects the pending-state file
+into a scratch dir** — it is a module constant under the real `algos/` tree, and a test writing
+one shared path is the worst failure shape a suite has. 🔴 **One pre-existing test was pinned to a
+FUNCTION NAME and went red on a rewrite that kept its behaviour exactly** — the *case pinned to a
+path that moved* shape recorded twice already here. It drives the real launcher now.
+
+⚠ **All three files reach the box by `git pull`** — `algos/` is not in the frozen snapshot — **so
+no promote is needed and none should be run.** The watchdog and the switch are fresh processes per
+scheduled run and pick the change up themselves; **the launcher needs `SYS_TELEGRAM` restarted.**
+Nothing here touches what either bot trades.
+
 **`SYS_LOGBACKUP` is ON as of 2026-07-31.** Daily 00:30 UTC (the VPS clock is UTC), runs
 `tools/log_backup.py`: zips the instance `.log` files into `algos/log_archive/`, prunes past 90
 days, reports closed AND open record files. **It does no git.** The record reaches the repo

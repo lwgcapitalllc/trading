@@ -137,7 +137,24 @@ def save_state(state: dict):
         json.dump(state, f, indent=2)
 
 
-def is_running(script: str) -> bool:
+def is_running(script: str):
+    """True / False / **None**, and the third value is the whole point.
+
+    🔴 **This returned `False` when it could not ASK, and that is rule 1 in the one place it costs
+    the most.** `wmic` misses its 10s timeout on a loaded box — which is exactly when a restart
+    storm is happening — and the old body reported a perfectly healthy bot as gone. The watchdog
+    then alerted OFFLINE and started a second copy of a process that was never dead. On
+    2026-09-09 two copies of the chat bot were found running on the box, and this is the line
+    that lets that happen.
+
+    **`None` means the question was not answered.** Every caller must treat it as *do nothing
+    this pass*, never as *it is down* — a watchdog that acts on an answer it never received is
+    doing the damage it exists to prevent.
+
+    ⚠ **A non-zero exit is also `None`, not `False`.** `wmic` printing nothing because it failed
+    and printing nothing because no bot is running are the same empty string, and only the exit
+    code separates them.
+    """
     try:
         result = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
@@ -145,9 +162,13 @@ def is_running(script: str) -> bool:
             text=True,
             timeout=10,
         )
-        return script in result.stdout
-    except Exception:
-        return False
+    except Exception as e:
+        print(f"  ! could not read the process list ({e}) - not treating that as a dead bot")
+        return None
+    if result.returncode != 0:
+        print(f"  ! process list query failed (exit {result.returncode}) - answering 'cannot ask'")
+        return None
+    return script in result.stdout
 
 
 def _is_stop_suppressed(suppress_key: str) -> bool:
@@ -200,7 +221,16 @@ def restart_bot(bot_key: str) -> bool:
     # the PROCESS exists almost immediately, and that is all this needs to confirm. Waiting for
     # the warm-up would hold the whole monitor pass open for a minute every time.
     time.sleep(8)
-    return is_running(BOTS[bot_key]["script"])
+    confirmed = is_running(BOTS[bot_key]["script"])
+    # ⚠ CANNOT ASK reports NOT CONFIRMED, which is the conservative direction here and the
+    # opposite of the call `check_bot` makes. There, an unread process list must not trigger a
+    # restart; here the restart has ALREADY been launched, so the only question left is whether
+    # to claim it worked — and claiming a start nobody verified is what `schtasks` does, which
+    # this repo has been bitten by twice.
+    if confirmed is None:
+        print(f"Restarted {bot_key} but could not confirm the process - not claiming success")
+        return False
+    return confirmed
 
 
 def check_bot(bot_key: str, state: dict, today: str) -> dict:
@@ -209,6 +239,14 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     bot_state = state.get(bot_key, {})
 
     running = is_running(cfg["script"])
+    # 🔴 CANNOT ASK. Leave every stored fact exactly as it was and take no action: alerting would
+    # cry wolf and restarting would start a second copy of a bot that is probably still running.
+    # The next pass is 60 seconds away, so the cost of doing nothing is one minute of not knowing;
+    # the cost of guessing has already been paid once (2026-09-09, two chat bots on one token).
+    if running is None:
+        print(f"{bot_key}: could not read the process list - skipping this pass")
+        return bot_state
+
     was_running = bot_state.get("running", None)
 
     # ── Running state change alerts ───────────────────────────────────────
@@ -367,6 +405,15 @@ def check_telegram_bot(state: dict) -> dict:
     running = is_running("telegram_bot.py")
     max_tries = 3
 
+    # 🔴 CANNOT ASK — do nothing. This is the exact path that produced TWO chat bots on one
+    # Telegram token (2026-09-09): an unread process list read as "it is down", so this fired
+    # SYS_TELEGRAM beside a bot that was running fine. Two long-pollers then knock each other
+    # off the connection, and each death looks to this watchdog like an ordinary crash worth
+    # restarting — a loop that sustains itself.
+    if running is None:
+        print("Telegram bot: could not read the process list - skipping this pass")
+        return tg_state
+
     if not running:
         tries = tg_state.get("restart_tries", 0)
         print(f"Telegram bot is DOWN. Restart attempt {tries + 1}/{max_tries}...")
@@ -383,7 +430,11 @@ def check_telegram_bot(state: dict) -> dict:
                     import time
 
                     time.sleep(5)
-                    if is_running("telegram_bot.py"):
+                    # ⚠ CANNOT ASK counts as NOT CONFIRMED here (falsy), the same conservative
+                    # call `restart_bot` makes: the restart has already been requested, so the
+                    # only question left is whether to claim it worked, and an unverified claim
+                    # is exactly what `schtasks`'s own SUCCESS means and is worth nothing.
+                    if is_running("telegram_bot.py") is True:
                         print("Telegram bot restarted successfully.")
                         send_alert(
                             alert(
