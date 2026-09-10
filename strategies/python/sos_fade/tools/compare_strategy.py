@@ -685,20 +685,44 @@ def _capture_arm(df: pd.DataFrame, cfg: SosFadeConfig) -> List[Dict[str, int]]:
     return rows
 
 
-def export_truncation(df: pd.DataFrame) -> int:
-    """How many warmup bars the export is MISSING. Pine's bar_index counts from the
-    chart's first loaded bar; if TradingView truncated the CSV to the most recent N
-    rows, the dbg_* columns reference bar indices far past the row count. Returns the
-    gap (max referenced Pine bar - last row index); >0 means the export starts mid-
-    history and NO bot can match it — Pine warmed on bars that aren't in the file.
-    Returns 0 when there are no dbg_* columns to measure."""
-    if "dbg_recent_bars" not in df.columns:
-        return 0
+# The three columns that carry a Pine BAR INDEX, which is what makes truncation measurable at
+# all. Named once so the measurement and the refusal below cannot disagree about what was looked
+# for — a list typed out twice is how one of them quietly stops matching the export.
+_TRUNCATION_COLUMNS = ("dbg_recent_bars", "dbg_armL_bars", "dbg_armS_bars")
+
+
+def export_truncation(df: pd.DataFrame) -> Optional[int]:
+    """How many warmup bars the export is MISSING, or `None` when it cannot be measured.
+
+    Pine's `bar_index` counts from the chart's first loaded bar; if TradingView truncated the CSV
+    to the most recent N rows, the `dbg_*` columns reference bar indices far past the row count.
+    The gap is `max referenced Pine bar - last row index`, and a positive one means the export
+    starts mid-history and NO bot can match it — Pine warmed on bars that are not in the file.
+
+    🔴 **`0` AND *CANNOT MEASURE* WERE THE SAME VALUE UNTIL 2026-09-10, AND THE SECOND ONE IS WHAT
+    THIS EXPORT ACTUALLY IS MOST OF THE TIME.** Every column read here is a `dbg_*` diagnostic, and
+    the export twin only carries those when the diagnostic block is exported — so on an ordinary
+    export the old code returned 0, the caller printed nothing, and the harness reported *this file
+    is complete* about a file it had no way to inspect. Caught by a real ladder: an export carrying
+    twelve `dbg_` columns still answered 0 here, and the warm-up floor had to be found by trying
+    warm-ups until the diff went green. **Rule 1 inside the gate** — never let *no* and *cannot ask*
+    share a value.
+
+    ⚠ **The column test is now the SAME LIST the measurement walks.** It asked for one column and
+    then summed over three: an export carrying two of the three passed the test and was measured
+    off a subset, silently, reporting a smaller gap than the file really has — and a gap reported
+    too SMALL is the dangerous direction, because it is what lets a cold engine be diffed.
+
+    ⚠ **`None`, never a negative sentinel or a raise.** A caller has something honest to say about
+    it (it cannot vouch for the warm-up floor) and no reason to stop; raising would refuse exports
+    that diff perfectly well today.
+    """
+    present = [c for c in _TRUNCATION_COLUMNS if c in df.columns]
+    if not present:
+        return None
     n = len(df)
     max_bar = 0
-    for col in ("dbg_recent_bars", "dbg_armL_bars", "dbg_armS_bars"):
-        if col not in df.columns:
-            continue
+    for col in present:
         s = df[col].fillna(0).round().astype("int64")
         # each packs two (value+1) fields base-1e6; the high field is the larger bar
         hi = (s // 1_000_000 - 1).max()
@@ -841,7 +865,17 @@ def main(argv=None) -> int:
         return 2
 
     _gap = export_truncation(_df)
-    if _gap > 0:
+    if _gap is None:
+        # ⚠ NOT the same sentence as "the export is complete", and printing it is the whole point
+        # of the None. The harness cannot see how far back Pine's engine warmed, so it cannot name
+        # a warm-up floor — and a silent pass here reads as though it had checked and found none.
+        print("CANNOT MEASURE TRUNCATION — this export carries none of the dbg_* bar-index "
+              f"columns ({', '.join(_TRUNCATION_COLUMNS)}), so there is no way to tell whether "
+              "TradingView cut the history short.")
+        print("  A PARITY OK below therefore rests on --warmup being high enough, which nothing "
+              "here can confirm. Re-export sos_fade_strategy_export.pine with the diagnostic "
+              "block to have it measured.")
+    elif _gap > 0:
         print(f"PARTIAL EXPORT — the CSV is missing ~{_gap} warmup bars.")
         print(f"  Pine's bar_index runs past the {len(_df)} exported rows, so its engine state was")
         print(f"  built on ~{_gap} bars that aren't in this file. For a clean run, re-export the")

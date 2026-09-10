@@ -3308,7 +3308,8 @@ bars)** and diverges at bar 293 at warmups 100 / 200 — and a HEAD worktree giv
 ladder**, so the shallow-warm-up divergence is a pre-existing cold start and not this change.
 🔴 **`export_truncation()` returned 0 on an export carrying 12 `dbg_` columns, so the harness could
 not name its own warm-up floor and the ladder is what settled it.** That is rule 1 inside the gate:
-*not truncated* and *cannot measure it* are the same value. Still open.
+*not truncated* and *cannot measure it* are the same value. ✅ **FIXED 2026-09-10 — it returns
+`None` for *cannot measure* and the gate SAYS SO before it prints a verdict.** See below.
 
 ⚠ **6 new tests, every one watched RED by mutation** — including one rewritten after a mutation
 survived it: the first version asserted `None` on a config whose shared percentage was also 0, so
@@ -3346,3 +3347,37 @@ READS is never RUN*.
 
 ⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package — and it
 changes no decision there either, only how long a warm-up takes.
+
+
+## The gate says "cannot measure truncation" instead of "not truncated" (2026-09-10)
+
+`export_truncation()` returns `Optional[int]`: **`None` = the export carries no bar-index column,
+so there is no way to tell; `0` = measured, and complete; `>0` = measured, and this many warm-up
+bars are missing.** The command prints the `None` case out loud before any verdict.
+
+🔴 **`0` MEANT BOTH THINGS, AND *CANNOT MEASURE* IS WHAT AN ORDINARY EXPORT ACTUALLY IS.** Every
+column the reading needs is a `dbg_*` diagnostic, present only when the diagnostic block is
+exported — so on a normal export the old code returned 0, the caller printed nothing, and the
+harness reported *this file is complete* about a file it had never inspected. **Rule 1, inside the
+gate**, which is the one place it is most expensive: a `PARITY OK` rests on `--warmup` being past
+whatever Pine warmed on, and this is the only thing that can say what that floor is.
+
+🔴 **IT WAS CAUGHT BY A REAL LADDER, NOT BY A TEST.** The 2026-09-09 run on
+`VANTAGE_XAUUSD, 15_53f52.csv` diverged at bar 293 at warm-ups 100 and 200 and was green at 500 and
+1000 — and the file carried twelve `dbg_` columns while this function answered 0. **The floor had to
+be found by trying warm-ups until the diff went green**, which is exactly the work this function
+exists to remove.
+
+🔴 **A SECOND DEFECT WAS FOUND WHILE FIXING THE FIRST, AND IT FAILS IN THE DANGEROUS DIRECTION.**
+The presence test asked for ONE column and the measurement then summed over THREE, so an export
+carrying a subset passed the test and was measured off that subset — reporting a gap SMALLER than
+the file really has. **A gap read too small is what lets a cold engine be diffed and the result
+called parity.** The list is now named once and both halves walk it.
+
+⚠ **`None` rather than a raise.** The harness has something honest to say and no reason to stop:
+exports with no diagnostic block diff perfectly well, they simply cannot vouch for their own
+warm-up floor. Refusing them would take the gate away from every export on this machine.
+
+**TESTED:** 6 in `tests/test_compare_strategy.py` — a measured zero still reads zero, a measured
+gap reads the gap, no column and other-`dbg_`-columns-only both read `None`, the subset case, and
+one asserting each of the three columns is enough on its own so the two lists cannot drift.

@@ -558,3 +558,61 @@ def test_a_defaulted_tail_and_an_explicit_zero_agree_on_a_clean_export(tmp_path)
     p, _ = _write(tmp_path)
     assert cs.run_parity(p, warmup=100, tail=0) == []
     assert cs.run_parity(p, warmup=100) == []
+
+
+# ── the truncation reading, and the difference between NONE and ZERO ──────────────────
+def _packed(hi: int, lo: int) -> int:
+    """One `dbg_*_bars` cell — two Pine bar indices packed as (value+1) base 1e6."""
+    return (hi + 1) * 1_000_000 + (lo + 1)
+
+
+def _export_with_bar_indices(rows: int, max_bar: int, columns=("dbg_recent_bars",)):
+    """An export of `rows` rows whose dbg columns reference a Pine bar as high as `max_bar`."""
+    data = {"open": [1.0] * rows}
+    for col in columns:
+        data[col] = [_packed(max_bar, 0)] * rows
+    return pd.DataFrame(data)
+
+
+def test_a_MEASURED_complete_export_reads_ZERO_not_None():
+    """The whole point of the split: a real 0 still has to mean *measured, and complete*."""
+    df = _export_with_bar_indices(rows=100, max_bar=99)
+    assert cs.export_truncation(df) == 0
+
+
+def test_a_MEASURED_truncated_export_reads_the_GAP():
+    df = _export_with_bar_indices(rows=100, max_bar=349)
+    assert cs.export_truncation(df) == 250
+
+
+def test_an_export_with_NO_bar_index_column_says_it_CANNOT_MEASURE():
+    """`0` here would report *this file is complete* about a file nothing inspected — rule 1,
+    and it is what the harness did on every ordinary export until 2026-09-10."""
+    assert cs.export_truncation(pd.DataFrame({"open": [1.0] * 100})) is None
+
+
+def test_an_export_carrying_OTHER_dbg_columns_still_cannot_measure():
+    """A `dbg_` prefix is not a bar index. The reading needs one of the three packed columns,
+    and an export can carry a dozen diagnostics without any of them."""
+    df = pd.DataFrame({"open": [1.0] * 10, "dbg_bits": [7] * 10, "dbg_stage": [1] * 10})
+    assert cs.export_truncation(df) is None
+
+
+def test_the_reading_uses_EVERY_bar_index_column_the_export_carries():
+    """It asked for one column and summed over three. An export carrying a SUBSET was measured
+    off that subset and reported a gap SMALLER than the file's — the dangerous direction, since
+    a gap read too small is what lets a cold engine be diffed."""
+    df = _export_with_bar_indices(
+        rows=100, max_bar=0, columns=("dbg_recent_bars",)
+    )
+    df["dbg_armS_bars"] = [_packed(499, 0)] * 100
+    assert cs.export_truncation(df) == 400
+
+
+def test_the_columns_it_LOOKS_for_are_the_columns_it_MEASURES():
+    """One list, so the presence test and the measurement cannot drift apart."""
+    df = pd.DataFrame({"open": [1.0] * 10})
+    for col in cs._TRUNCATION_COLUMNS:
+        one = df.copy()
+        one[col] = [_packed(99, 0)] * 10
+        assert cs.export_truncation(one) is not None, f"{col} alone was not enough to measure"
