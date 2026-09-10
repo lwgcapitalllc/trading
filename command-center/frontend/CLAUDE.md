@@ -4332,6 +4332,55 @@ own *"how long it has been running without a re**start**"*. **A locator loose en
 own neighbours reports the opposite of the truth** — the mirror image of the vacuous-locator trap
 this file records six times. `{ exact: true }`.
 
+### Two tabs, live and demo split, and scored against each other (2026-09-10)
+
+Aaron: *"when I click on this page… I just only wanna focus on the accounts that have bots on them.
+If an account has no bots on them, then I don't care"*, and *"I want live and demo split… easily
+identify the winner."*
+
+- 🔴 **TWO TABS: *Trading* (the default) holds only accounts with a bot on them; *Unassigned* holds
+  accounts with no bot and bots on no account.** The one scroll mixed all three and read as
+  scattered. ⚠ **Not the tab mistake above** — those tabs showed the SAME objects several ways;
+  these hold DISJOINT sets. ⚠ **An unreadable config stays on Trading**: a fault may not sit behind
+  a tab, and nothing says that bot is not running. ⚠ In the URL (`?show=unassigned`).
+- **On Trading, accounts sit under *Live · real money* then *Demo*.** ⚠ An account whose type is
+  still being asked waits under a shimmering heading, never under "neither", or it jumps on arrival.
+- 🔴 **ONE colour per kind — amber live, cyan demo** (`KIND_TINT`): the filter pills, the headings
+  and the chips on the Unassigned list. ⚠ **An unpressed pill is GREY with only its dot in colour;
+  pressed is filled in it.** Painting the unpressed state in its colour, to set the pills apart from
+  the action buttons, made both read as pressed (*"both look selected by default but they are
+  not"*). ⚠ Never green or red — those mean P&L here. ⚠ A kind nobody stated stays grey.
+- 🔴 **Nothing on the page says a fact twice** (*"we don't need to be redundant on data anywhere on
+  this page"*): no live/demo chip on a card (its heading says it), no up/down edge colour (the net
+  pill carries the sign), no "no bots" tag under *Accounts with no bots*, and the bot panel keeps
+  only won/lost and the record's dates — its dollars, % of the account, trade count and R are all on
+  the row. ⚠ **A figure DERIVED from the rows is withheld when it can only restate one of them; an
+  independent MEASUREMENT stays even when it agrees** — the account's net and a lone bot's P&L are
+  two readings, and their agreement is what keeps the *Not from these bots* line away.
+- 🔴 **The winner is judged in R PER TRADE — never dollars, share of the account, or total R.** A
+  live account is smaller, runs lower risk and started later than the demo beside it, so each of
+  those three crowns demo by default. MEASURED the day it landed: the two demo bots read $1,305.58
+  against $1,197.09 — near a tie — and +2.10R against +0.46R a trade.
+- 🔴 **The side ahead reads *Leading* on its heading, and a side's POOLED score sits there only when
+  it pools two or more scored bots** — a pool of one is that bot's own row. It was a pair of tiles
+  above the page and they went the same day (*"what is the purpose of this section? If I select
+  demo only then it goes away"*): a comparison block has to vanish under a filter. ⚠ **Scored off
+  EVERY account, never the filtered ones**, so a filter never changes a side's number or who leads.
+- **A Per trade column carries each bot's score with its trade count; the best bot holds the ONE
+  trophy.** ⚠ **Different icons on purpose** — the best bot can sit on the side that is behind.
+- ⚠ **Nothing is awarded without a contest**: a side with no closed trade is not "behind" (a
+  default is not a result), a lone scored bot gets no trophy, a tie within 0.005R gets neither, and
+  a side missing a bot's record is PARTIAL and cannot lead. ⚠ **Summed from the bots' own records,
+  never the account's growth.** ⚠ **The trade count is the caveat, on the number, never a reason to
+  hide it** (root `CLAUDE.md` → Trading Philosophy).
+
+Tests: `tests/bots-accounts.spec.ts` (10 checks; the fixture gives demo more dollars AND more total
+R while live wins per trade, and lists the demo spare before the live one, so every wrong rule goes
+red); **35 mutations run across two passes, 35 killed**, each confirmed served by the dev server
+before its check. 🔴 **One first SURVIVED: a check matched the text "R a trade", but the number and
+the words are separate spans, so the page's text reads "+1.48Ra trade" and the match could never
+fail.** It asserts the pooled block's own testid now, with demo's block as the positive control.
+
 ## Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
 
 `components/SettingsImportModal.tsx`, opened from a FINISHED stress test's header, driven by

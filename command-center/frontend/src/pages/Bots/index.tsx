@@ -22,8 +22,19 @@
  * 2026-09-05. This page manages bots one at a time; those act on all of them or on the box, and
  * sitting the two together is what made each row's own buttons read like a fleet kill.
  *
- * ⚠ **An account with no bots collapses to one line.** It still has to be visible — you cannot
- * move a bot onto an account you cannot see — but it earns one line, not a card.
+ * 🔴 **Two tabs (2026-09-10): *Trading* holds only accounts with a bot on them, *Unassigned* the
+ * accounts with none and the bots on none** (Aaron: *"I just only wanna focus on the accounts that
+ * have bots on them"*). An account with no bots still earns a line there — you cannot move a bot
+ * onto an account you cannot see — but not a place in the first look.
+ *
+ * 🔴 **On Trading, live and demo are two sections, and the side ahead reads "Leading"** (*"I want
+ * live and demo split… easily identify the winner"*). The winner is judged in R per trade — see
+ * `PerTrade` for why dollars, share of the account and total R all crown demo.
+ *
+ * 🔴 **Nothing on the page says a fact twice (2026-09-10, *"we don't need to be redundant on data
+ * anywhere on this page"*).** A section heading names the kind, so no card repeats it; the net pill
+ * carries the account's sign, so no edge colour repeats it; a side's pooled score shows only when it
+ * pools two or more bots, because a pool of one is that bot's row.
  */
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -38,6 +49,8 @@ import {
   Unplug,
   AlertTriangle,
   SlidersHorizontal,
+  TrendingUp,
+  Trophy,
 } from 'lucide-react'
 import {
   useBotSnapshot,
@@ -240,7 +253,289 @@ function pnlCls(v: number | null | undefined): string {
  *  lists is how a heading ends up over the wrong column. */
 /** ⚠ The version column is 136px because a behind pill ("v201 · 7 behind") MEASURES 115px on
  *  one line (2026-09-10); at 92px it wrapped into a two-line blob. Room left for a 2-digit count. */
-const GRID = 'grid-cols-[minmax(150px,225px)_142px_136px_50px_74px_1fr_auto]'
+const GRID = 'grid-cols-[minmax(150px,225px)_142px_92px_136px_50px_74px_1fr_auto]'
+
+/** R per trade: what a bot's closed trades made on average, in units of the risk each one took.
+ *  `null` when there is nothing to average — no record, or no closed trade — never 0. */
+function perTradeOf(e: BotEarnings | undefined): number | null {
+  if (!e?.traded || !e.closed_trades || e.realised_r == null) return null
+  return e.realised_r / e.closed_trades
+}
+
+function fmtR(r: number): string {
+  return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r).toFixed(2)}R`
+}
+
+/** Two scores closer than this read the same at two decimals, so neither may be called ahead. */
+const TIE_R = 0.005
+
+/**
+ * The score a winner is picked on — R per trade — with the sample it rests on under it.
+ *
+ * 🔴 **The winner is judged in R per trade, never dollars** (Aaron, 2026-09-10: *"I want to be able
+ * to easily identify the winner"*, with live and demo both running). A live account is smaller,
+ * runs lower risk and started later than the demo beside it, so dollars, a share of the account and
+ * even total R would all crown the demo by default. R per trade is the one figure none of those
+ * three can move. MEASURED the day it landed: the two demo bots read $1,305.58 against $1,197.09 —
+ * near a tie in dollars — and +2.10R against +0.46R a trade.
+ *
+ * ⚠ **The trade count always sits under it.** On one or two trades a lead is not a verdict; that is
+ * said as a caveat ON the number, never by hiding it (root CLAUDE.md → Trading Philosophy).
+ */
+function PerTrade({
+  e,
+  asking,
+  top,
+}: {
+  e: BotEarnings | undefined
+  asking: boolean
+  top: boolean
+}) {
+  if (!e && asking)
+    return (
+      <span className="flex flex-col gap-[6px]">
+        <Shimmer className="h-[13px] w-[56px]" />
+        <Shimmer className="h-[10px] w-[44px]" />
+      </span>
+    )
+  const r = perTradeOf(e)
+  if (r == null || !e?.closed_trades)
+    return <span className="text-[12px] text-text-tertiary cursor-default">—</span>
+  const n = e.closed_trades
+  return (
+    <span
+      data-testid="per-trade"
+      data-top={top ? 'true' : undefined}
+      title={`${fmtR(r)} a trade over ${n} closed ${n === 1 ? 'trade' : 'trades'} (${fmtR(e.realised_r ?? 0)} in all)${
+        top ? ' — the best of every bot shown, so it holds the trophy' : ''
+      }${n < 10 ? '. A handful of trades is a lead, not a verdict.' : ''}`}
+      className="flex flex-col leading-tight cursor-default"
+    >
+      <span
+        className={`flex items-center gap-[5px] text-[13px] font-mono tabular-nums font-medium ${pnlCls(r)}`}
+      >
+        {top && <Trophy size={12} className="text-gold-text shrink-0" />}
+        {fmtR(r)}
+      </span>
+      <span className="text-[10px] font-mono tabular-nums text-text-tertiary">
+        {n} {n === 1 ? 'trade' : 'trades'}
+      </span>
+    </span>
+  )
+}
+
+/** One side's score in the live-vs-demo head-to-head. Summed from the bots' own records, so it
+ *  is never the account's growth — `scored` counts the bots with a closed trade, `unread` the bots
+ *  whose record could not be read, and a side carrying one is PARTIAL. */
+interface SideScore {
+  key: 'live' | 'demo'
+  r: number
+  trades: number
+  bots: number
+  scored: number
+  unread: number
+}
+
+/**
+ * Which side is ahead on R per trade, or nobody.
+ *
+ * ⚠ **A leader is called only when BOTH sides have closed trades and every bot on both has been
+ * read.** "Demo leads" against a live side that has not traded yet is a default, not a result, and
+ * a side missing a bot's record is a partial score that could flip once it lands.
+ */
+function leadOf(live: SideScore, demo: SideScore): 'live' | 'demo' | null {
+  const per = (s: SideScore) => (s.trades ? s.r / s.trades : null)
+  const pl = per(live)
+  const pd = per(demo)
+  if (pl == null || pd == null || live.unread || demo.unread || Math.abs(pl - pd) < TIE_R)
+    return null
+  return pl > pd ? 'live' : 'demo'
+}
+
+/**
+ * One side's POOLED score, at the end of its own section heading — and only when it pools.
+ *
+ * 🔴 **It was a pair of tiles above the page, and they went (2026-09-10).** Aaron: *"what is the
+ * purpose of this section? If I select demo only then it goes away."* A comparison block has to
+ * vanish under a filter; a side's score on its own heading survives one.
+ *
+ * 🔴 **A pool of ONE scored bot is that bot's own number, so it is withheld** (Aaron, same day:
+ * *"we don't need to be redundant on data anywhere on this page"*). A subtotal of one row is a copy
+ * of the row, so the heading carries a number only when two or more bots on the side have closed
+ * trades; otherwise the bot's own Per trade cell IS the side's score. ⚠ **Nothing is lost**: total R
+ * and won/lost went too — the first is this figure times the trade count, the second is on the
+ * bot's row tooltip — and the rows already say "no record yet" and "nothing closed", so the heading
+ * no longer repeats them. ⚠ **The Leading chip stays either way** — who is ahead is the verdict.
+ */
+function SideScoreLine({
+  side,
+  leading,
+  asking,
+}: {
+  side: SideScore
+  leading: boolean
+  asking: boolean
+}) {
+  const r = side.scored >= 2 ? side.r / side.trades : null
+  // Shimmer only where a pooled number could land — a side with one bot never shows one.
+  if (asking && side.bots >= 2 && !side.trades) return <Shimmer className="h-[12px] w-[150px]" />
+  return (
+    <span
+      data-testid={`score-${side.key}`}
+      data-leading={leading ? 'true' : undefined}
+      className="flex items-baseline gap-[8px] text-[11.5px] cursor-default"
+    >
+      {r != null && (
+        <span data-testid="side-pooled" className="flex items-baseline gap-[8px]">
+          <span
+            title="R per trade: what each closed trade made on average, in units of the risk it took — every bot on this side pooled."
+            className={`text-[14px] font-mono tabular-nums font-semibold ${pnlCls(r)}`}
+          >
+            {fmtR(r)}
+          </span>
+          <span className="text-text-tertiary">
+            a trade · {side.trades} trades from {side.scored} bots
+          </span>
+          {side.unread > 0 && (
+            <span className="text-warn-text">
+              · {side.unread} {side.unread === 1 ? 'record' : 'records'} not read — partial
+            </span>
+          )}
+        </span>
+      )}
+      {leading && (
+        <span
+          data-testid="leading"
+          title="Ahead of the other side on R per trade — what each closed trade made in units of the risk it took, so account size, risk and how long a side has run cannot decide it."
+          className="self-center inline-flex items-center gap-[4px] ml-[4px] px-[7px] py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.6px] bg-gold-muted text-gold-text border border-gold/40"
+        >
+          {/* ⚠ NOT the trophy. The trophy marks the one best BOT; this marks the SIDE ahead on
+              average — two questions, and the best bot can sit on the side that is behind.
+              The same icon for both would read as one winner in two places. */}
+          <TrendingUp size={11} /> Leading
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * ONE colour per kind of account, used everywhere a kind appears on this page — the filter pills,
+ * the section headings and the chips on the Unassigned list (Aaron, 2026-09-10: *"the live and demo
+ * pills should stand out"*). Amber is real money; cyan is demo.
+ *
+ * ⚠ **Neither is green or red** — those are reserved for P&L here, so a coloured figure keeps
+ * meaning up or down. ⚠ **A kind nobody stated stays grey**: painting it either colour is a guess,
+ * and guessing "demo" for real money is the one direction that may not happen.
+ */
+const KIND_TINT: Record<
+  string,
+  { chip: string; text: string; dot: string; on: string; off: string }
+> = {
+  live: {
+    chip: 'bg-warn-muted text-warn-text border-warn/50',
+    text: 'text-warn-text',
+    dot: 'bg-warn',
+    on: 'bg-warn/15 text-warn-text border-warn',
+    off: 'text-text-tertiary border-border-default hover:text-warn-text hover:border-warn/50',
+  },
+  demo: {
+    chip: 'bg-accent-muted text-accent-text border-accent/40',
+    text: 'text-accent-text',
+    dot: 'bg-accent',
+    on: 'bg-accent/15 text-accent-text border-accent',
+    off: 'text-text-tertiary border-border-default hover:text-accent-text hover:border-accent/50',
+  },
+}
+const NEUTRAL_TINT = {
+  chip: 'bg-bg-surface-2 text-text-tertiary border-border-strong',
+  text: 'text-text-secondary',
+  dot: 'bg-text-tertiary',
+}
+const tintOf = (kind: string | undefined) => (kind && KIND_TINT[kind]) || NEUTRAL_TINT
+
+/** An account's kind as a chip — the same look on its card and on its one-liner. */
+function KindChip({ kind }: { kind: string | undefined }) {
+  return (
+    <span
+      data-testid="kind-chip"
+      className={`inline-flex text-[10px] font-semibold px-[7px] py-[2px] rounded-pill uppercase tracking-[0.5px] border ${
+        tintOf(kind).chip
+      }`}
+    >
+      {kind ?? 'type unknown'}
+    </span>
+  )
+}
+
+/**
+ * Live / demo, as a filter — TWO pills, and no pill pressed means both.
+ *
+ * 🔴 **Pressed and unpressed must look different, and for a day they did not** (Aaron, 2026-09-10:
+ * *"both look selected by default but they are not"*). The fix for grey pills that read like the
+ * Sync button beside them painted the unpressed state in its kind's colour, which is what a
+ * pressed toggle looks like. **Unpressed is now grey with only its dot in colour; pressed is filled
+ * and outlined in the colour.** ⚠ They sit with the tabs, not the actions, because both decide WHAT
+ * you are looking at. ⚠ Pressed carries `aria-pressed`: a filter you cannot see is still applied.
+ */
+function KindFilter({ kind, onPick }: { kind: string | null; onPick: (k: string | null) => void }) {
+  return (
+    <div className="flex items-center gap-[6px]">
+      {(['live', 'demo'] as const).map((k) => {
+        const on = kind === k
+        const t = KIND_TINT[k]
+        return (
+          <button
+            key={k}
+            data-testid={`kind-${k}`}
+            aria-pressed={on}
+            onClick={() => onPick(on ? null : k)}
+            title={
+              on ? `Showing ${k} accounts only — click to show both` : `Show only ${k} accounts`
+            }
+            className={`inline-flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-[0.6px] px-[11px] py-[4px] rounded-pill border transition-colors ${
+              on ? t.on : t.off
+            }`}
+          >
+            <span className={`w-[7px] h-[7px] rounded-full ${t.dot}`} />
+            {k}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** A labelled group — one side's accounts, or one kind of unassigned thing — so nothing interleaves. */
+function SideSection({
+  side,
+  label,
+  hint,
+  aside,
+  children,
+}: {
+  side: string
+  label: React.ReactNode
+  hint?: React.ReactNode
+  aside?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const t = tintOf(side)
+  return (
+    <section data-testid={`section-${side}`} className="flex flex-col gap-[12px]">
+      <div className="flex items-center gap-[9px] px-[2px]">
+        {KIND_TINT[side] && <span className={`w-[8px] h-[8px] rounded-full ${t.dot}`} />}
+        <span className={`text-[11.5px] font-semibold uppercase tracking-[0.7px] ${t.text}`}>
+          {label}
+        </span>
+        {hint && <span className="text-[11.5px] text-text-tertiary">{hint}</span>}
+        <span className="h-px flex-1 bg-border-subtle" />
+        {aside}
+      </div>
+      {children}
+    </section>
+  )
+}
 
 /** What ONE bot's own closed trades came to.
  *
@@ -401,8 +696,11 @@ function ColumnHeadings() {
     <div
       className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
     >
-      <span className="pl-[19px]">Bot</span>
+      <span className="pl-4">Bot</span>
       <span title="What this bot's own closed trades came to">P&amp;L</span>
+      <span title="R per trade — what each closed trade made on average, in units of the risk it took. The top bot is picked on this, never on dollars.">
+        Per trade
+      </span>
       <span>Version</span>
       <span title="Risk per trade">Risk</span>
       <span>Uptime</span>
@@ -422,13 +720,11 @@ function BotsPageSkeleton() {
       aria-busy="true"
       aria-label="Loading bots"
       data-testid="bots-skeleton"
-      className="relative bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
+      className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
     >
-      <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-border-default" />
-      <div className="flex items-center gap-3 pl-[19px] pr-4 py-[13px]">
+      <div className="flex items-center gap-3 px-4 py-[13px]">
         <Shimmer className="h-[15px] w-[92px]" />
         <Shimmer className="h-[13px] w-[64px]" />
-        <Shimmer shape="pill" className="h-[20px] w-[48px]" />
         <Shimmer shape="pill" className="h-[22px] w-[64px]" />
         {/* The SAME loading states the real card renders — never a private copy of them. */}
         <span className="ml-auto flex items-baseline gap-[10px]">
@@ -449,11 +745,12 @@ function BotsPageSkeleton() {
               i > 0 ? 'border-t border-border-subtle' : ''
             }`}
           >
-            <span className="flex items-center gap-[9px] pl-[19px]">
+            <span className="flex items-center gap-[9px] pl-4">
               <Shimmer shape="dot" className="h-[7px] w-[7px]" />
               <Shimmer className="h-[13px] w-[96px]" />
             </span>
             <Contribution e={undefined} asking />
+            <PerTrade e={undefined} asking top={false} />
             <VersionPill version={undefined} loading />
             <Shimmer className="h-[12px] w-[26px]" />
             <Shimmer className="h-[12px] w-[44px]" />
@@ -526,6 +823,8 @@ export function Bots() {
   // defaulting to LIVE would open the page empty, which is indistinguishable from a page that
   // failed to load. The control is what he asked for; the default is the one that cannot lie.
   const kind = params.get('kind')
+  // Which tab. ⚠ Absent means TRADING — the first look is the accounts that have bots on them.
+  const show = params.get('show') === 'unassigned' ? 'unassigned' : 'trading'
   const selBot = params.get('bot') ? (botByKey.get(params.get('bot') as string) ?? null) : null
   const selAccount = params.get('account')
 
@@ -611,11 +910,11 @@ export function Bots() {
   const shownEmpty = emptyAccounts.filter((a) => keep(a.kind))
   const shownUnassigned = unassigned.filter((b) => keep(b.account_type))
   const shownBroken = broken.filter((b) => keep(b.account_type))
+  // Per TAB, so the note under each one counts only what that tab would have shown.
   const hiddenByFilter =
-    withBots.length -
-    shownAccounts.length +
-    (emptyAccounts.length - shownEmpty.length) +
-    (unassigned.length - shownUnassigned.length)
+    show === 'trading'
+      ? withBots.length - shownAccounts.length
+      : emptyAccounts.length - shownEmpty.length + (unassigned.length - shownUnassigned.length)
 
   const running = bots.filter((b) => b.status === 'RUNNING').length
   const unread = withBots.filter((a) => balanceOf(a.rows) == null).length
@@ -629,6 +928,69 @@ export function Bots() {
     (snapshot?.earnings ?? []).flatMap((e) => e.bots.map((b) => [b.bot_key, b] as const))
   )
 
+  // ── live against demo ─────────────────────────────────────────────────────
+  /** Which side an account sits on. ⚠ While neither the box nor the registry has answered, its
+   *  type is still being ASKED — filing it under "neither" would move the card between sections
+   *  the moment the answer lands, so it waits in a section of its own with a shimmering heading. */
+  type Side = 'pending' | 'live' | 'demo' | 'other'
+  const sideOf = (t: string | undefined): Side =>
+    t === 'live'
+      ? 'live'
+      : t === 'demo'
+        ? 'demo'
+        : t === undefined && (asking || registryPending)
+          ? 'pending'
+          : 'other'
+  // Real money first. ⚠ "Neither" is a section, never a silent drop: an account whose type nobody
+  // stated still has to be on the page.
+  const SECTIONS: { key: Side; label: React.ReactNode }[] = [
+    { key: 'pending', label: <Shimmer className="h-[10px] w-[70px]" /> },
+    { key: 'live', label: 'Live · real money' },
+    { key: 'demo', label: 'Demo' },
+    { key: 'other', label: 'Not marked demo or live' },
+  ]
+
+  /** One side's score, summed from its bots' OWN records — never from the account's growth, which
+   *  carries money no bot here made. A bot whose record could not be read makes the side PARTIAL. */
+  const scoreOf = (key: 'live' | 'demo'): SideScore => {
+    const s: SideScore = { key, r: 0, trades: 0, bots: 0, scored: 0, unread: 0 }
+    for (const a of withBots) {
+      if (sideOf(typeOf(a.account, a.rows)) !== key) continue
+      for (const { cfg } of a.rows) {
+        s.bots += 1
+        const e = earnByBot.get(cfg.key)
+        if (!e?.traded) {
+          s.unread += 1
+          continue
+        }
+        if (e.closed_trades && e.realised_r != null) {
+          s.r += e.realised_r
+          s.trades += e.closed_trades
+          s.scored += 1
+        }
+      }
+    }
+    return s
+  }
+
+  // 🔴 From EVERY account, never the filtered ones: a filter changes what is on screen, and a side's
+  // score or who leads changing with it would be the filter talking.
+  const liveScore = scoreOf('live')
+  const demoScore = scoreOf('demo')
+  const lead = leadOf(liveScore, demoScore)
+
+  /** The bot holding the trophy: best R per trade among the bots shown. ⚠ Only when there is a
+   *  CONTEST — two bots with a score, a clear gap between the first two, and every shown bot's
+   *  record read. One bot alone, a tie, or a missing record all leave the trophy unawarded. */
+  const shownRows = shownAccounts.flatMap((a) => a.rows)
+  const ranked = shownRows
+    .map(({ cfg }) => ({ key: cfg.key, r: perTradeOf(earnByBot.get(cfg.key)) }))
+    .filter((x): x is { key: string; r: number } => x.r != null)
+    .sort((a, b) => b.r - a.r)
+  const allRead = shownRows.every(({ cfg }) => earnByBot.get(cfg.key)?.traded)
+  const topBot =
+    allRead && ranked.length >= 2 && ranked[0].r - ranked[1].r >= TIE_R ? ranked[0].key : null
+
   // ⚠ THERE IS DELIBERATELY NO FLEET TOTAL HERE ANY MORE (2026-09-06). Summing balances across
   // ACCOUNTS was correct — two bots on one balance share one pot, and summing across BOTS is what
   // added the same money twice on 2026-09-04 — but the figure was a second copy of what each
@@ -640,6 +1002,334 @@ export function Bots() {
     setPending(key)
     fn()
   }
+
+  /** One account's card: its heading, then one row per bot. A function rather than inline JSX
+   *  because the live and demo sections both draw it — one card, never a copy per section. */
+  const renderAccount = ({ account, group, rows }: (typeof withBots)[number]) => {
+    const balance = balanceOf(rows)
+    const cap = group.cap_agrees ? group.risk_cap_pct : null
+    const reg = regByAccount.get(account)
+    const earn = earnByAccount.get(account)
+    // 🔴 NO COLOURED EDGE, AND NO LIVE/DEMO CHIP (2026-09-10, Aaron: *"we don't need to be
+    // redundant on data anywhere on this page"*). The edge was green when the account was up and
+    // red when down — the sign the net pill beside the balance already carries in the same colours.
+    // The chip said live or demo under a section heading that says it. Each was a second copy of a
+    // fact on screen. ⚠ Unknown-kind accounts lose nothing: they sit under their own heading.
+    return (
+      <div
+        key={account}
+        data-testid="account-card"
+        className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
+      >
+        <button
+          onClick={() => set('account', String(account))}
+          title="Open this account — balance, risk cap, and which bots are on it"
+          className="w-full flex items-center gap-3 px-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
+        >
+          {/* 🔴 THE NUMBER LEADS (2026-09-06, Aaron: *"the account number should be the
+           *  thing prefix in the account"*). The login is what the broker, the terminal,
+           *  the instance config and every refusal message name it by; the label is a
+           *  nickname somebody typed here. When the two disagree the number is the one
+           *  that is right, so it is the one the eye lands on first. */}
+          <span className="text-[14px] font-mono font-semibold tabular-nums">{account}</span>
+          {/* The broker name comes off the registry, which asks the box whether a
+           *  password is stored and so is slow — until it answers, the fallback
+           *  "Account N" would be a guess at a name, so the name shimmers instead. */}
+          {!reg && registryPending ? (
+            <Shimmer className="h-[13px] w-[64px]" />
+          ) : (
+            <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
+          )}
+
+          {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
+           *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
+           *  The rows below state both, and a number restating what is already on
+           *  screen is the duplication this page was rebuilt to remove.
+           *
+           *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
+           *  number it read as another piece of identity — Aaron: *"the cap is missing.
+           *  Well, not missing. It's just not obvious."* It is the one number here that
+           *  can refuse a trade, so it gets a border and the gold the page reserves for
+           *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
+           *  is the condition worth noticing, and rendering it quieter than a set cap
+           *  is backwards. */}
+          {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
+           *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
+           *  *nothing here refuses a trade for being too large* — the opposite of what
+           *  is true. When the bots on one balance state different ceilings, NONE of
+           *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
+           *  a chip: *nobody set one* and *they cannot agree* are different facts and
+           *  only one of them is safe to read as quiet.**
+           *
+           *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
+           *  forced to null above, because printing one bot's number would name a
+           *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
+           *  fix beside it; this is the half a reader sees without opening anything. */}
+          {!group.cap_agrees ? (
+            <span
+              data-testid="cap-chip"
+              title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
+              className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
+            >
+              cap disagreement
+            </span>
+          ) : cap == null ? (
+            <span
+              data-testid="cap-chip"
+              title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
+              className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
+            >
+              no cap
+            </span>
+          ) : (
+            <span
+              data-testid="cap-chip"
+              title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
+              className="inline-flex items-baseline gap-[4px] text-[11px] px-[7px] py-[3px] rounded-pill bg-gold-muted border border-gold/30 cursor-default"
+            >
+              <span className="font-mono tabular-nums font-semibold text-gold-text">{cap}%</span>
+              <span className="text-[10px] text-gold-text/70 uppercase tracking-[0.4px]">cap</span>
+            </span>
+          )}
+
+          <span className="ml-auto flex items-baseline gap-[10px]">
+            <span className="text-[17px] font-mono tabular-nums font-medium">
+              {/* ⚠ `balance unread` is a warning and is only true once the box has
+               *  answered without one — while it is still being asked it shimmers. */}
+              {balance == null && asking ? (
+                <Shimmer>$00,000.00</Shimmer>
+              ) : balance == null ? (
+                <span className="text-[12px] text-warn-text">balance unread</span>
+              ) : (
+                money(balance, false)
+              )}
+            </span>
+            <AccountNet e={earn} asking={asking} />
+          </span>
+        </button>
+
+        <div className="border-t border-border-subtle">
+          {/* 🔴 The rows are a TABLE and were unlabelled — Aaron: *"since this is a kind
+           *  of a table format, I would like titles."* Four numeric columns with no
+           *  heading means the reader decodes them from their own shape, and `5%` beside
+           *  `+12.0% of account` is exactly the pair that gets read as the same kind of
+           *  thing.
+           *
+           *  ⚠ ONE grid template, shared with the rows below by a constant. A hand-copied
+           *  column list is how a heading ends up over the wrong column — and a heading
+           *  that is confidently over the wrong number is worse than none. The loading
+           *  placeholder renders the same component for the same reason. */}
+          <ColumnHeadings />
+          {rows.map(({ cfg, live }, i) => {
+            const be = earnByBot.get(cfg.key)
+            // ⚠ THREE states. `asked` is whether the box answered for this bot at all —
+            // an unanswered snapshot is not a stopped bot, and the controls below branch
+            // on it rather than on `running`, so nothing offers Start for a bot whose
+            // state nobody knows.
+            const asked = live !== undefined
+            const running = live?.status === 'RUNNING'
+            // The NAME comes from the config, which is always readable — a bot the box
+            // has not answered for still has one, and falling back to its key would make
+            // an unreachable box look like a page full of unknown bots.
+            const name = live?.name ?? cfg.display
+            return (
+              <div
+                key={cfg.key}
+                data-testid="bot-row"
+                className={`group grid ${GRID} items-center gap-3 pr-4 py-[10px] transition-colors hover:bg-bg-surface-2 ${
+                  i > 0 ? 'border-t border-border-subtle' : ''
+                }`}
+              >
+                {/* The NAME is the button, not the whole row — the row now carries
+                 *  four controls and a row-wide click behind them makes every miss
+                 *  open a drawer over the thing you were aiming at. */}
+                <button
+                  onClick={() => set('bot', cfg.key)}
+                  title={`Open ${name} — risk, version, account and its settings`}
+                  className="flex items-center gap-[9px] font-medium text-[13px] text-left min-w-0 pl-4"
+                >
+                  {/* ⚠ NO identity rail here. It was a 3px bar per bot and Aaron read it
+                   *  as meaningless decoration — which it was, on a row that already
+                   *  names the bot.
+                   *
+                   *  🔴 **THREE states, not two (2026-09-06).** Red meant *stopped* and
+                   *  was also what an UNANSWERED box drew — so a dead link to the VPS
+                   *  rendered as a fleet sitting quietly, which is the failure this repo
+                   *  keeps paying for. Unknown is hollow and says so on hover. */}
+                  {/* A FOURTH look for the first read: shimmering, it is still being
+                   *  asked; hollow, it was asked and nobody answered. */}
+                  {!asked && asking ? (
+                    <Shimmer shape="dot" className="h-[7px] w-[7px]" />
+                  ) : (
+                    <span
+                      title={
+                        asked
+                          ? running
+                            ? 'Running'
+                            : 'Stopped'
+                          : 'The trading box has not answered for this bot — its state is unknown, not stopped.'
+                      }
+                      className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
+                        !asked
+                          ? 'border border-text-tertiary'
+                          : running
+                            ? 'bg-pos shadow-[0_0_7px_#00ff7f]'
+                            : 'bg-neg'
+                      }`}
+                    />
+                  )}
+                  <span className="truncate group-hover:text-accent transition-colors">{name}</span>
+                  {live?.mt5_link === false && <NoLinkChip />}
+                  {live?.review && <ReviewChip review={live.review} />}
+                </button>
+
+                {/* 🔴 The money sits NEXT TO THE NAME, not out at the far edge with the
+                 *  machinery. It is the answer to the question this row is read with —
+                 *  what has this bot done — and 400px of empty grid between the two made
+                 *  the row read as a name with some settings after it. */}
+                <Contribution e={be} asking={asking} />
+                <PerTrade e={be} asking={asking} top={topBot === cfg.key} />
+
+                <VersionPill
+                  version={versionByKey.get(cfg.key)?.data}
+                  loading={versionByKey.get(cfg.key)?.isPending}
+                />
+
+                <span
+                  title="Risk per trade — its share of this account's ceiling"
+                  className="text-[12px] font-mono text-text-secondary cursor-default"
+                >
+                  {typeof cfg.risk_pct === 'number' ? `${cfg.risk_pct}%` : '—'}
+                </span>
+
+                <span
+                  title="How long it has been running without a restart"
+                  className="text-[12px] font-mono text-text-tertiary cursor-default"
+                >
+                  {live?.uptime_seconds != null ? (
+                    formatUptime(live.uptime_seconds)
+                  ) : !asked && asking ? (
+                    <Shimmer className="h-[12px] w-[44px]" />
+                  ) : (
+                    '—'
+                  )}
+                </span>
+
+                <span />
+
+                <span className="flex gap-[3px] justify-end">
+                  {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).**
+                   *  The old branch was `running ? stop/restart : start`, so a bot the box
+                   *  had not answered for was handed a START button — and pressing start
+                   *  on a bot that is already trading is the one mistake this row can
+                   *  make that costs money. An unanswered box is a reason to ask again,
+                   *  never a reason to act. */}
+                  {pending === cfg.key ? (
+                    <span className="text-[11px] text-accent animate-pulse pr-1">…</span>
+                  ) : !asked && asking ? (
+                    // The Start/Stop controls are withheld until the state is known —
+                    // their SHAPE stands in, so the row's actions do not jump when they
+                    // land. Still nothing to press: an unknown state offers no action.
+                    <>
+                      <Shimmer className="h-[26px] w-[26px]" />
+                      <Shimmer className="h-[26px] w-[26px]" />
+                    </>
+                  ) : !asked ? (
+                    <span
+                      title="The trading box has not answered for this bot, so there is nothing safe to offer here — its state is unknown, not stopped."
+                      className="text-[11px] text-text-tertiary pr-1 cursor-default"
+                    >
+                      unknown
+                    </span>
+                  ) : running ? (
+                    <>
+                      <IconBtn
+                        icon={Square}
+                        title="Stop"
+                        tone="neg"
+                        disabled={busy}
+                        onClick={() => act(cfg.key, () => stopOne.mutate(cfg.key))}
+                      />
+                      <IconBtn
+                        icon={RotateCcw}
+                        title="Restart"
+                        disabled={busy}
+                        onClick={() => act(cfg.key, () => restartOne.mutate(cfg.key))}
+                      />
+                    </>
+                  ) : (
+                    <IconBtn
+                      icon={Play}
+                      title="Start"
+                      tone="pos"
+                      disabled={busy}
+                      onClick={() => act(cfg.key, () => startOne.mutate(cfg.key))}
+                    />
+                  )}
+                  <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(cfg.key)} />
+                  {/* 🔴 THE CONTROL AARON COULD NOT FIND, TWICE. First it was only the
+                   *  row itself; then it was an ICON among three other icons, and he
+                   *  still asked *"where is configure? We used to have a Configure tab.
+                   *  That's gone completely now."*
+                   *
+                   *  ⚠ **It says the word.** An icon is a rebus for anybody who has not
+                   *  already learned it, and the whole reason this control keeps going
+                   *  missing is that the tab it replaced had a NAME. The other three
+                   *  stay icons because they are verbs you can guess from a shape;
+                   *  "configure" is not a shape.
+                   *
+                   *  ⚠ It is the same target as clicking the name — one drawer, one
+                   *  route in. A second way in is fine; a second IMPLEMENTATION is what
+                   *  this page keeps being rebuilt to remove. */}
+                  <button
+                    data-testid="configure-bot"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      set('bot', cfg.key)
+                    }}
+                    title={`Configure ${name} — risk per trade, version, account and all its settings`}
+                    className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
+                  >
+                    <SlidersHorizontal size={11} />
+                    Configure
+                  </button>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        {earn && <Unattributed e={earn} />}
+      </div>
+    )
+  }
+
+  /** Accounts with nothing on them: one line each. The NUMBER leads, as it does on a card.
+   *  ⚠ The kind chip stays HERE — this list mixes live and demo under one heading, so the chip is
+   *  the only place a row says which. ⚠ No "no bots" tag: the heading says it. */
+  const renderEmpty = (list: BotAccountRegistration[]) => (
+    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+      {list.map((a: BotAccountRegistration, i) => (
+        <button
+          key={a.account}
+          data-testid="empty-account"
+          onClick={() => set('account', String(a.account))}
+          title="Open this account — put a bot on it from here"
+          className={`w-full flex items-center gap-3 px-4 py-[9px] text-left text-text-tertiary hover:bg-bg-surface-2 transition-colors ${
+            i > 0 ? 'border-t border-border-subtle' : ''
+          }`}
+        >
+          <span className="text-[13px] font-mono font-semibold tabular-nums text-text-primary">
+            {a.account}
+          </span>
+          <span className="text-[13px] text-text-secondary">
+            {a.label || a.broker || `Account ${a.account}`}
+          </span>
+          <KindChip kind={a.kind} />
+        </button>
+      ))}
+    </div>
+  )
 
   if (view === 'users') {
     return (
@@ -661,7 +1351,7 @@ export function Bots() {
   return (
     <div>
       {/* ── one line, where three stat cards and a fleet strip used to be ──────── */}
-      <div className="flex items-baseline gap-[14px] flex-wrap pb-[14px] mb-[18px] border-b border-border-subtle">
+      <div className="flex items-baseline gap-[14px] flex-wrap pb-[10px]">
         <h1 className="text-[19px] font-semibold">Bots</h1>
         {/* 🔴 THE MONEY CAME OFF THIS LINE (2026-09-06). It carried the fleet balance and the
          *  fleet net, and both are already on the account they belong to a few pixels below —
@@ -688,32 +1378,6 @@ export function Bots() {
           </p>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {/* 🔴 TWO CHIPS, NOT THREE. Aaron asked for live-vs-demo and said plainly he does not
-           *  care about an "All" — so ALL is the state with NEITHER chip pressed, reached by
-           *  pressing the active one again, rather than a third button competing for the eye.
-           *  ⚠ The pressed chip carries `aria-pressed` and a border: a filter you cannot see is
-           *  still a filter that is applied, and this page can hide an entire account. */}
-          {(['live', 'demo'] as const).map((k) => (
-            <button
-              key={k}
-              aria-pressed={kind === k}
-              onClick={() => set('kind', kind === k ? null : k)}
-              title={
-                kind === k
-                  ? `Showing ${k} accounts only — click to show every account`
-                  : `Show only ${k} accounts`
-              }
-              className={`text-[11px] font-semibold uppercase tracking-[0.4px] px-[9px] py-[5px] rounded-md border transition-colors ${
-                kind === k
-                  ? k === 'live'
-                    ? 'bg-warn-muted text-warn-text border-warn/50'
-                    : 'bg-accent-muted text-accent border-accent/50'
-                  : 'border-border-default text-text-tertiary hover:text-text-primary hover:bg-bg-hover'
-              }`}
-            >
-              {k}
-            </button>
-          ))}
           {/* 🔴 **IT OPENS THE DRAWER AND NOTHING ELSE (Aaron, 2026-09-10: "it doesn't show me
            *  what it is going to do before I do it").** The drawer scans — a read — and lists
            *  every change; the Sync button there is the only thing that writes. It is also the
@@ -747,6 +1411,65 @@ export function Bots() {
         </div>
       </div>
 
+      {/* ── what you are looking at: which half, and which side ──────────────────
+       *  🔴 **TWO TABS, AND THE FIRST LOOK IS ONLY WHAT IS TRADING** (Aaron, 2026-09-10: *"when I
+       *  click on this page… I just only wanna focus on the accounts that have bots on them. If an
+       *  account has no bots on them, then I don't care"*). The page mixed three kinds of thing
+       *  in one scroll — accounts with bots, accounts with none, bots on no account — and read as
+       *  scattered. ⚠ **This is NOT the tab mistake this page was rebuilt to remove**: those tabs
+       *  were several views of the SAME objects; these two hold DISJOINT sets, so nothing is shown
+       *  twice. ⚠ Tab state lives in the URL, like every tab in this app. */}
+      <div className="flex items-end justify-between border-b border-border-subtle mb-[18px]">
+        <div role="tablist" className="flex items-center">
+          {(
+            [
+              {
+                id: 'trading',
+                label: 'Trading',
+                count: accountGroups ? shownAccounts.length : null,
+                title: 'Accounts with a bot on them',
+              },
+              {
+                id: 'unassigned',
+                label: 'Unassigned',
+                // Only once every source it counts has answered — a count that grows as the box
+                // replies would read as things appearing.
+                count: registry && snapshot ? shownEmpty.length + shownUnassigned.length : null,
+                title: 'Accounts with no bot on them, and bots on no account',
+              },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              data-testid={`tab-${t.id}`}
+              aria-selected={show === t.id}
+              onClick={() => set('show', t.id === 'trading' ? null : t.id)}
+              title={t.title}
+              className={`flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium transition-colors -mb-px border-b-2 ${
+                show === t.id
+                  ? 'text-text-primary border-accent'
+                  : 'text-text-tertiary border-transparent hover:text-text-secondary'
+              }`}
+            >
+              {t.label}
+              {t.count != null && (
+                <span
+                  className={`text-[11px] font-mono tabular-nums px-[5px] py-[1px] rounded-full ${
+                    show === t.id ? 'bg-accent/15 text-accent' : 'bg-bg-hover text-text-tertiary'
+                  }`}
+                >
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="pb-[7px]">
+          <KindFilter kind={kind} onPick={(k) => set('kind', k)} />
+        </div>
+      </div>
+
       {/* A DRAWER, not an inline panel (Aaron, 2026-09-10: "I don't know what I'm looking at").
        *  Inline, it pushed the fleet down and read as part of whichever demo/live filter was on,
        *  when it has nothing to do with either. */}
@@ -771,400 +1494,52 @@ export function Bots() {
        *  ⚠ The failure banner above still says the box could not be reached, and each row's own
        *  dot says its state is unknown rather than stopped. **Three separate statements, none of
        *  which may be collapsed into an empty page.** */}
-      {(accountGroups || registry) && (
-        <div className="flex flex-col gap-[14px]">
-          {/* ── accounts that are trading ──────────────────────────────────── */}
-          {shownAccounts.map(({ account, group, rows }) => {
-            const balance = balanceOf(rows)
-            const acctType = typeOf(account, rows)
-            const cap = group.cap_agrees ? group.risk_cap_pct : null
-            const reg = regByAccount.get(account)
-            const earn = earnByAccount.get(account)
-            // Green when the account is up, red when it is down, neutral when nothing has
-            // measured it. The rail is the only large block of colour on the card, so it may
-            // not be decorative — it says one thing and it is the same thing everywhere.
-            const railCls =
-              earn?.net_usd == null
-                ? 'bg-border-default'
-                : earn.net_usd > 0
-                  ? 'bg-pos/70'
-                  : earn.net_usd < 0
-                    ? 'bg-neg/70'
-                    : 'bg-border-strong'
+      {/* 🔴 **NOT GATED ON THE SNAPSHOT** — see the note above: the accounts come from the
+       *  instance configs, and an unreachable box must never read as a page with no accounts. */}
+      {(accountGroups || registry) && show === 'trading' && (
+        <div className="flex flex-col gap-[22px]">
+          {SECTIONS.map(({ key, label }) => {
+            const accounts = shownAccounts.filter((a) => sideOf(typeOf(a.account, a.rows)) === key)
+            if (!accounts.length) return null
             return (
-              <div
-                key={account}
-                data-testid="account-card"
-                className="relative bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
+              <SideSection
+                key={key}
+                side={key}
+                label={label}
+                aside={
+                  key === 'live' || key === 'demo' ? (
+                    <SideScoreLine
+                      side={key === 'live' ? liveScore : demoScore}
+                      leading={lead === key}
+                      asking={asking}
+                    />
+                  ) : undefined
+                }
               >
-                <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${railCls}`} />
-
-                <button
-                  onClick={() => set('account', String(account))}
-                  title="Open this account — balance, risk cap, and which bots are on it"
-                  className="w-full flex items-center gap-3 pl-[19px] pr-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
-                >
-                  {/* 🔴 THE NUMBER LEADS (2026-09-06, Aaron: *"the account number should be the
-                   *  thing prefix in the account"*). The login is what the broker, the terminal,
-                   *  the instance config and every refusal message name it by; the label is a
-                   *  nickname somebody typed here. When the two disagree the number is the one
-                   *  that is right, so it is the one the eye lands on first. */}
-                  <span className="text-[14px] font-mono font-semibold tabular-nums">
-                    {account}
-                  </span>
-                  {/* The broker name comes off the registry, which asks the box whether a
-                   *  password is stored and so is slow — until it answers, the fallback
-                   *  "Account N" would be a guess at a name, so the name shimmers instead. */}
-                  {!reg && registryPending ? (
-                    <Shimmer className="h-[13px] w-[64px]" />
-                  ) : (
-                    <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
-                  )}
-                  {/* ⚠ A LIVE account is tinted, a demo is not. Same treatment everywhere an
-                   *  account appears — its cost is different in KIND, not degree. */}
-                  {/* ⚠ Three states, and the third may not borrow the demo styling: with the box
-                   *  quiet and no registry row, nobody has said which this is — and rendering
-                   *  that as the untinted DEMO chip is the one direction that cannot be allowed
-                   *  to guess. */}
-                  {/* `type unknown` is only true once BOTH sources have answered without one. */}
-                  {acctType === undefined && (asking || registryPending) ? (
-                    <Shimmer shape="pill" className="h-[20px] w-[48px]" />
-                  ) : (
-                    <span
-                      className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border ${
-                        acctType === 'live'
-                          ? 'bg-warn-muted text-warn-text border-warn/40'
-                          : acctType === undefined
-                            ? 'bg-bg-surface-2 text-text-tertiary border-border-strong'
-                            : 'bg-bg-surface-2 text-text-secondary border-border-subtle'
-                      }`}
-                    >
-                      {acctType ?? 'type unknown'}
-                    </span>
-                  )}
-
-                  {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
-                   *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
-                   *  The rows below state both, and a number restating what is already on
-                   *  screen is the duplication this page was rebuilt to remove.
-                   *
-                   *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
-                   *  number it read as another piece of identity — Aaron: *"the cap is missing.
-                   *  Well, not missing. It's just not obvious."* It is the one number here that
-                   *  can refuse a trade, so it gets a border and the gold the page reserves for
-                   *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
-                   *  is the condition worth noticing, and rendering it quieter than a set cap
-                   *  is backwards. */}
-                  {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
-                   *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
-                   *  *nothing here refuses a trade for being too large* — the opposite of what
-                   *  is true. When the bots on one balance state different ceilings, NONE of
-                   *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
-                   *  a chip: *nobody set one* and *they cannot agree* are different facts and
-                   *  only one of them is safe to read as quiet.**
-                   *
-                   *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
-                   *  forced to null above, because printing one bot's number would name a
-                   *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
-                   *  fix beside it; this is the half a reader sees without opening anything. */}
-                  {!group.cap_agrees ? (
-                    <span
-                      data-testid="cap-chip"
-                      title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
-                      className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
-                    >
-                      cap disagreement
-                    </span>
-                  ) : cap == null ? (
-                    <span
-                      data-testid="cap-chip"
-                      title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
-                      className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
-                    >
-                      no cap
-                    </span>
-                  ) : (
-                    <span
-                      data-testid="cap-chip"
-                      title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
-                      className="inline-flex items-baseline gap-[4px] text-[11px] px-[7px] py-[3px] rounded-pill bg-gold-muted border border-gold/30 cursor-default"
-                    >
-                      <span className="font-mono tabular-nums font-semibold text-gold-text">
-                        {cap}%
-                      </span>
-                      <span className="text-[10px] text-gold-text/70 uppercase tracking-[0.4px]">
-                        cap
-                      </span>
-                    </span>
-                  )}
-
-                  <span className="ml-auto flex items-baseline gap-[10px]">
-                    <span className="text-[17px] font-mono tabular-nums font-medium">
-                      {/* ⚠ `balance unread` is a warning and is only true once the box has
-                       *  answered without one — while it is still being asked it shimmers. */}
-                      {balance == null && asking ? (
-                        <Shimmer>$00,000.00</Shimmer>
-                      ) : balance == null ? (
-                        <span className="text-[12px] text-warn-text">balance unread</span>
-                      ) : (
-                        money(balance, false)
-                      )}
-                    </span>
-                    <AccountNet e={earn} asking={asking} />
-                  </span>
-                </button>
-
-                <div className="border-t border-border-subtle">
-                  {/* 🔴 The rows are a TABLE and were unlabelled — Aaron: *"since this is a kind
-                   *  of a table format, I would like titles."* Four numeric columns with no
-                   *  heading means the reader decodes them from their own shape, and `5%` beside
-                   *  `+12.0% of account` is exactly the pair that gets read as the same kind of
-                   *  thing.
-                   *
-                   *  ⚠ ONE grid template, shared with the rows below by a constant. A hand-copied
-                   *  column list is how a heading ends up over the wrong column — and a heading
-                   *  that is confidently over the wrong number is worse than none. The loading
-                   *  placeholder renders the same component for the same reason. */}
-                  <ColumnHeadings />
-                  {rows.map(({ cfg, live }, i) => {
-                    const be = earnByBot.get(cfg.key)
-                    // ⚠ THREE states. `asked` is whether the box answered for this bot at all —
-                    // an unanswered snapshot is not a stopped bot, and the controls below branch
-                    // on it rather than on `running`, so nothing offers Start for a bot whose
-                    // state nobody knows.
-                    const asked = live !== undefined
-                    const running = live?.status === 'RUNNING'
-                    // The NAME comes from the config, which is always readable — a bot the box
-                    // has not answered for still has one, and falling back to its key would make
-                    // an unreachable box look like a page full of unknown bots.
-                    const name = live?.name ?? cfg.display
-                    return (
-                      <div
-                        key={cfg.key}
-                        data-testid="bot-row"
-                        className={`group grid ${GRID} items-center gap-3 pr-4 py-[10px] transition-colors hover:bg-bg-surface-2 ${
-                          i > 0 ? 'border-t border-border-subtle' : ''
-                        }`}
-                      >
-                        {/* The NAME is the button, not the whole row — the row now carries
-                         *  four controls and a row-wide click behind them makes every miss
-                         *  open a drawer over the thing you were aiming at. */}
-                        <button
-                          onClick={() => set('bot', cfg.key)}
-                          title={`Open ${name} — risk, version, account and its settings`}
-                          className="flex items-center gap-[9px] font-medium text-[13px] text-left min-w-0 pl-[19px]"
-                        >
-                          {/* ⚠ NO identity rail here. It was a 3px bar per bot and Aaron read it
-                           *  as meaningless decoration — which it was, on a row that already
-                           *  names the bot. The split bar below still tints its segments,
-                           *  because two segments have no other way to be told apart, and its
-                           *  legend spells out which is which.
-                           *
-                           *  🔴 **THREE states, not two (2026-09-06).** Red meant *stopped* and
-                           *  was also what an UNANSWERED box drew — so a dead link to the VPS
-                           *  rendered as a fleet sitting quietly, which is the failure this repo
-                           *  keeps paying for. Unknown is hollow and says so on hover. */}
-                          {/* A FOURTH look for the first read: shimmering, it is still being
-                           *  asked; hollow, it was asked and nobody answered. */}
-                          {!asked && asking ? (
-                            <Shimmer shape="dot" className="h-[7px] w-[7px]" />
-                          ) : (
-                            <span
-                              title={
-                                asked
-                                  ? running
-                                    ? 'Running'
-                                    : 'Stopped'
-                                  : 'The trading box has not answered for this bot — its state is unknown, not stopped.'
-                              }
-                              className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
-                                !asked
-                                  ? 'border border-text-tertiary'
-                                  : running
-                                    ? 'bg-pos shadow-[0_0_7px_#00ff7f]'
-                                    : 'bg-neg'
-                              }`}
-                            />
-                          )}
-                          <span className="truncate group-hover:text-accent transition-colors">
-                            {name}
-                          </span>
-                          {live?.mt5_link === false && <NoLinkChip />}
-                          {live?.review && <ReviewChip review={live.review} />}
-                        </button>
-
-                        {/* 🔴 The money sits NEXT TO THE NAME, not out at the far edge with the
-                         *  machinery. It is the answer to the question this row is read with —
-                         *  what has this bot done — and 400px of empty grid between the two made
-                         *  the row read as a name with some settings after it. */}
-                        <Contribution e={be} asking={asking} />
-
-                        <VersionPill
-                          version={versionByKey.get(cfg.key)?.data}
-                          loading={versionByKey.get(cfg.key)?.isPending}
-                        />
-
-                        <span
-                          title="Risk per trade — its share of this account's ceiling"
-                          className="text-[12px] font-mono text-text-secondary cursor-default"
-                        >
-                          {typeof cfg.risk_pct === 'number' ? `${cfg.risk_pct}%` : '—'}
-                        </span>
-
-                        <span
-                          title="How long it has been running without a restart"
-                          className="text-[12px] font-mono text-text-tertiary cursor-default"
-                        >
-                          {live?.uptime_seconds != null ? (
-                            formatUptime(live.uptime_seconds)
-                          ) : !asked && asking ? (
-                            <Shimmer className="h-[12px] w-[44px]" />
-                          ) : (
-                            '—'
-                          )}
-                        </span>
-
-                        <span />
-
-                        <span className="flex gap-[3px] justify-end">
-                          {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).**
-                           *  The old branch was `running ? stop/restart : start`, so a bot the box
-                           *  had not answered for was handed a START button — and pressing start
-                           *  on a bot that is already trading is the one mistake this row can
-                           *  make that costs money. An unanswered box is a reason to ask again,
-                           *  never a reason to act. */}
-                          {pending === cfg.key ? (
-                            <span className="text-[11px] text-accent animate-pulse pr-1">…</span>
-                          ) : !asked && asking ? (
-                            // The Start/Stop controls are withheld until the state is known —
-                            // their SHAPE stands in, so the row's actions do not jump when they
-                            // land. Still nothing to press: an unknown state offers no action.
-                            <>
-                              <Shimmer className="h-[26px] w-[26px]" />
-                              <Shimmer className="h-[26px] w-[26px]" />
-                            </>
-                          ) : !asked ? (
-                            <span
-                              title="The trading box has not answered for this bot, so there is nothing safe to offer here — its state is unknown, not stopped."
-                              className="text-[11px] text-text-tertiary pr-1 cursor-default"
-                            >
-                              unknown
-                            </span>
-                          ) : running ? (
-                            <>
-                              <IconBtn
-                                icon={Square}
-                                title="Stop"
-                                tone="neg"
-                                disabled={busy}
-                                onClick={() => act(cfg.key, () => stopOne.mutate(cfg.key))}
-                              />
-                              <IconBtn
-                                icon={RotateCcw}
-                                title="Restart"
-                                disabled={busy}
-                                onClick={() => act(cfg.key, () => restartOne.mutate(cfg.key))}
-                              />
-                            </>
-                          ) : (
-                            <IconBtn
-                              icon={Play}
-                              title="Start"
-                              tone="pos"
-                              disabled={busy}
-                              onClick={() => act(cfg.key, () => startOne.mutate(cfg.key))}
-                            />
-                          )}
-                          <IconBtn
-                            icon={FileText}
-                            title="Logs"
-                            onClick={() => setLogBot(cfg.key)}
-                          />
-                          {/* 🔴 THE CONTROL AARON COULD NOT FIND, TWICE. First it was only the
-                           *  row itself; then it was an ICON among three other icons, and he
-                           *  still asked *"where is configure? We used to have a Configure tab.
-                           *  That's gone completely now."*
-                           *
-                           *  ⚠ **It says the word.** An icon is a rebus for anybody who has not
-                           *  already learned it, and the whole reason this control keeps going
-                           *  missing is that the tab it replaced had a NAME. The other three
-                           *  stay icons because they are verbs you can guess from a shape;
-                           *  "configure" is not a shape.
-                           *
-                           *  ⚠ It is the same target as clicking the name — one drawer, one
-                           *  route in. A second way in is fine; a second IMPLEMENTATION is what
-                           *  this page keeps being rebuilt to remove. */}
-                          <button
-                            data-testid="configure-bot"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              set('bot', cfg.key)
-                            }}
-                            title={`Configure ${name} — risk per trade, version, account and all its settings`}
-                            className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
-                          >
-                            <SlidersHorizontal size={11} />
-                            Configure
-                          </button>
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {earn && <Unattributed e={earn} />}
-              </div>
+                {accounts.map(renderAccount)}
+              </SideSection>
             )
           })}
 
-          {/* ── bots with no account ───────────────────────────────────────── */}
-          {shownUnassigned.length > 0 && (
-            <div>
-              <p className="text-[12px] text-text-secondary mb-[7px] px-[2px]">
-                Not on an account{' '}
-                <span className="text-text-tertiary">— trades nothing until you give it one</span>
-              </p>
-              <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-                {/* 🔴 A row is a DIV whose NAME is the button, never a button holding
-                 *  buttons. `<button>` inside `<button>` is invalid markup — React says so at
-                 *  runtime and this row had been saying it since the rewrite — and the nested
-                 *  control's click is what the browser is entitled to do anything with. */}
-                {shownUnassigned.map((bot, i) => (
-                  <div
-                    key={bot.key}
-                    data-testid="bot-row"
-                    className={`group flex items-center gap-3 pr-4 py-[10px] hover:bg-bg-surface-2 transition-colors ${
-                      i > 0 ? 'border-t border-border-subtle' : ''
-                    }`}
-                  >
-                    <button
-                      onClick={() => set('bot', bot.key)}
-                      title={`Open ${bot.name} — put it on an account, then configure it`}
-                      className="flex items-center gap-[9px] font-medium text-[13px] text-left pl-4"
-                    >
-                      <span className="inline-block w-[7px] h-[7px] rounded-full shrink-0 bg-text-tertiary/50" />
-                      <span className="group-hover:text-accent transition-colors">{bot.name}</span>
-                      {bot.review && <ReviewChip review={bot.review} />}
-                    </button>
-                    <span className="ml-auto text-[12px] text-text-tertiary">
-                      {versionByKey.get(bot.key)?.data?.frozen ? 'idle' : 'never deployed'}
-                    </span>
-                    <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(bot.key)} />
-                    <button
-                      data-testid="configure-bot"
-                      onClick={() => set('bot', bot.key)}
-                      title={`Configure ${bot.name}`}
-                      className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
-                    >
-                      <SlidersHorizontal size={11} />
-                      Configure
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* An empty Trading tab says where everything went, rather than reading as a page with
+           *  nothing on it. A FILTER that emptied it is said by the note below instead. */}
+          {accountGroups && withBots.length === 0 && (
+            <p
+              data-testid="trading-empty"
+              className="text-[12.5px] text-text-tertiary py-6 text-center"
+            >
+              No account has a bot on it.{' '}
+              <button
+                onClick={() => set('show', 'unassigned')}
+                className="text-accent hover:underline"
+              >
+                See what is unassigned
+              </button>
+            </p>
           )}
 
+          {/* ⚠ A config that cannot be READ stays on THIS tab. It is a fault, not a resting state,
+           *  and nothing says the bot behind it is not running — a fault may not sit behind a tab. */}
           {/* ── bots whose config could not be READ ─────────────────────────── */}
           {/* 🔴 **A SEPARATE SECTION, and merging it with the one above was the defect (fixed
            *  2026-09-06).** A benched bot is a state somebody chose; an unreadable config is a
@@ -1203,30 +1578,6 @@ export function Bots() {
             </div>
           )}
 
-          {/* ── accounts with nothing on them: one line each ───────────────── */}
-          {shownEmpty.length > 0 && (
-            <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-              {shownEmpty.map((a: BotAccountRegistration, i) => (
-                <button
-                  key={a.account}
-                  onClick={() => set('account', String(a.account))}
-                  className={`w-full flex items-center gap-3 px-4 py-[9px] text-left text-text-tertiary hover:bg-bg-surface-2 transition-colors ${
-                    i > 0 ? 'border-t border-border-subtle' : ''
-                  }`}
-                >
-                  <span className="text-[13px] text-text-secondary font-medium">
-                    {a.label || a.broker || `Account ${a.account}`}
-                  </span>
-                  <span className="inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary border border-border-subtle">
-                    {a.kind}
-                  </span>
-                  <span className="text-[12px] font-mono">{a.account}</span>
-                  <span className="ml-auto text-[12px]">no bots</span>
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* ⚠ A filter that empties the page must SAY it did. A blank list and a fleet that
            *  really is empty look identical, and only one of them is a finding. */}
           {kind && hiddenByFilter > 0 && (
@@ -1245,6 +1596,97 @@ export function Bots() {
            *  is empty, and this line printed "No bots registered" over a fleet of three. */}
           {snapshot && bots.length === 0 && (
             <p className="text-[12px] text-text-tertiary py-8 text-center">No bots registered.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── the Unassigned tab: accounts with no bot, and bots on no account ─────────
+       *  ⚠ Grouped by WHAT each thing is, not by live or demo — every account here says its kind
+       *  on its own chip, live first, and nothing on this tab trades. */}
+      {(accountGroups || registry) && show === 'unassigned' && (
+        <div className="flex flex-col gap-[22px]">
+          {shownEmpty.length > 0 && (
+            <SideSection
+              side="no-bots"
+              label="Accounts with no bots"
+              hint="— open one to put a bot on it"
+            >
+              {renderEmpty(
+                [...shownEmpty].sort(
+                  (a, b) => (a.kind === 'live' ? 0 : 1) - (b.kind === 'live' ? 0 : 1)
+                )
+              )}
+            </SideSection>
+          )}
+
+          {shownUnassigned.length > 0 && (
+            <SideSection
+              side="no-account"
+              label="Bots on no account"
+              hint="— trade nothing until you give them one"
+            >
+              <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+                {/* 🔴 A row is a DIV whose NAME is the button, never a button holding
+                 *  buttons. `<button>` inside `<button>` is invalid markup — React says so at
+                 *  runtime and this row had been saying it since the rewrite — and the nested
+                 *  control's click is what the browser is entitled to do anything with. */}
+                {shownUnassigned.map((bot, i) => (
+                  <div
+                    key={bot.key}
+                    data-testid="bot-row"
+                    className={`group flex items-center gap-3 pr-4 py-[10px] hover:bg-bg-surface-2 transition-colors ${
+                      i > 0 ? 'border-t border-border-subtle' : ''
+                    }`}
+                  >
+                    <button
+                      onClick={() => set('bot', bot.key)}
+                      title={`Open ${bot.name} — put it on an account, then configure it`}
+                      className="flex items-center gap-[9px] font-medium text-[13px] text-left pl-4"
+                    >
+                      <span className="inline-block w-[7px] h-[7px] rounded-full shrink-0 bg-text-tertiary/50" />
+                      <span className="group-hover:text-accent transition-colors">{bot.name}</span>
+                      {bot.review && <ReviewChip review={bot.review} />}
+                    </button>
+                    <span className="ml-auto text-[12px] text-text-tertiary">
+                      {versionByKey.get(bot.key)?.data?.frozen ? 'idle' : 'never deployed'}
+                    </span>
+                    <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(bot.key)} />
+                    <button
+                      data-testid="configure-bot"
+                      onClick={() => set('bot', bot.key)}
+                      title={`Configure ${bot.name}`}
+                      className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
+                    >
+                      <SlidersHorizontal size={11} />
+                      Configure
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </SideSection>
+          )}
+
+          {registry &&
+            snapshot &&
+            shownEmpty.length === 0 &&
+            shownUnassigned.length === 0 &&
+            !kind && (
+              <p className="text-[12.5px] text-text-tertiary py-6 text-center">
+                Nothing is unassigned — every account has a bot and every bot has an account.
+              </p>
+            )}
+
+          {/* ⚠ A filter that empties the page must SAY it did. A blank list and a fleet that
+           *  really is empty look identical, and only one of them is a finding. */}
+          {kind && hiddenByFilter > 0 && (
+            <p className="text-[11.5px] text-text-tertiary px-[2px]">
+              {hiddenByFilter}{' '}
+              {hiddenByFilter === 1 ? 'account or bot is' : 'accounts and bots are'} hidden by the{' '}
+              <span className="text-text-secondary">{kind}</span> filter.{' '}
+              <button onClick={() => set('kind', null)} className="text-accent hover:underline">
+                Show everything
+              </button>
+            </p>
           )}
         </div>
       )}
