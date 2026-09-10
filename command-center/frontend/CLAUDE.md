@@ -4019,7 +4019,8 @@ condition worth noticing, and rendering it quieter than a set cap is backwards.
 every other column is grey the version stopped registering as a claim. ⚠ **Green means UP TO DATE,
 never "good bot"**: it answers one question, is the box running the code you tested. ⚠ The unknown
 state stays NEUTRAL and still gets a border, or it is the one state that looks like a rendering
-failure rather than a finding.
+failure rather than a finding. ⚠ **It never wraps and sizes to its text (2026-09-10)** — in a 92px
+column the behind state broke onto two lines; the column is 136px against a MEASURED 115px pill.
 
 ⚠ **The per-bot identity rail was REMOVED from the rows** — Aaron read it as decoration, which on a
 row that already names the bot is what it was. **The split bar keeps its segment tints**, because

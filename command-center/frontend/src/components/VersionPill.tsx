@@ -30,6 +30,12 @@ import type { BotDeployedVersion } from '@/types'
  * running the code you tested — and that is the only thing it may ever be read as. ⚠ **The unknown
  * state stays NEUTRAL and gets a border too**: it must not borrow either verdict's colour, and
  * without a border it is the one state that looks like a rendering failure rather than a finding.
+ *
+ * ⚠ **It never wraps (2026-09-10).** In the Bots table's version column "v206 · 7 behind" broke
+ * onto two lines and turned the pill into a fat two-line blob — the one state that needs reading
+ * was the ugliest. `whitespace-nowrap` here, and the column is sized to the behind state.
+ * ⚠ **`justify-self-start` too** — as a grid item the pill STRETCHED to the whole column, so a
+ * short "✓ v206" drew as wide as the longest state. It sizes to its own text.
  */
 export function VersionPill({
   version,
@@ -53,7 +59,7 @@ export function VersionPill({
         title={c?.reason || 'Could not work out which version this bot is running.'}
         className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
                    rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary
-                   border border-border-strong cursor-default"
+                   border border-border-strong cursor-default whitespace-nowrap justify-self-start"
       >
         <HelpCircle size={9} /> No version
       </span>
@@ -75,7 +81,8 @@ export function VersionPill({
           : `Deployed v${c.deployed_version} — the same code the backtester runs.`
       }
       className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                  rounded-pill uppercase tracking-[0.4px] border cursor-default ${
+                  rounded-pill uppercase tracking-[0.4px] border cursor-default whitespace-nowrap
+                  justify-self-start ${
                     behind > 0
                       ? 'bg-warn-muted text-warn-text border-warn/50'
                       : 'bg-pos-muted text-pos-text border-pos/40'

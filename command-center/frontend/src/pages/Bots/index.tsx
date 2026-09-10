@@ -238,7 +238,9 @@ function pnlCls(v: number | null | undefined): string {
 
 /** ONE column template for the heading row and every bot row under it. Two hand-written
  *  lists is how a heading ends up over the wrong column. */
-const GRID = 'grid-cols-[minmax(150px,225px)_142px_92px_50px_74px_1fr_auto]'
+/** ⚠ The version column is 136px because a behind pill ("v201 · 7 behind") MEASURES 115px on
+ *  one line (2026-09-10); at 92px it wrapped into a two-line blob. Room left for a 2-digit count. */
+const GRID = 'grid-cols-[minmax(150px,225px)_142px_136px_50px_74px_1fr_auto]'
 
 /** What ONE bot's own closed trades came to.
  *
