@@ -200,47 +200,60 @@ export function useBotVersions(botNames: string[]) {
 }
 
 /**
- * This bot's most recent deploy job — the source of the ONE progress readout on the deploy panel.
+ * Every listed bot's most recent deploy job — watched from the PAGE, the one place that is always
+ * mounted. The row's version pill and the deploy panel both read what this holds.
  *
- * ⚠ **Addressed by the BOT, not a job id held in component state.** Closing the drawer mid-deploy
- * and reopening it must find the run already going rather than offer a second Deploy over it.
- * `null` is an answer: this backend has run no deploy of this bot.
+ * 🔴 **It lived inside the deploy panel until 2026-09-10, so closing the drawer mid-deploy stopped
+ * the polling** — the row kept saying "behind" through the whole deploy, and nothing noticed the
+ * finish until the drawer was reopened. Keep it here, and keep it the ONLY watcher: every observer
+ * runs its own 1s timer, so a second one polls twice.
  *
- * ⚠ **Polled every second only while it runs**, and the read is in memory on the backend. It is
- * `silent` because a polling read that toasts turns one blip into a queue of popups.
+ * ⚠ **Addressed by the BOT, not a job id held in component state**, so a drawer opened mid-deploy
+ * finds the run already going. `null` is an answer: this backend has run no deploy of that bot.
  *
- * ⚠ **The finish is noticed HERE, in the read that sees it**, so the version, params and snapshot
- * are re-read exactly once — the version read is what the page's last step then watches.
+ * ⚠ **Polled every second only while one runs**; the read is in memory on the backend. `silent`,
+ * because a polling read that toasts turns one blip into a queue of popups.
+ *
+ * 🔴 **A finished deploy is HELD as running until the bot's version has been re-read.** The finish
+ * invalidates the version, and for that one SSH round trip every readout still shows the state
+ * BEFORE the deploy — the row flashed "behind" straight after a deploy that worked. Awaiting the
+ * re-read here means the job and the version change on the same render, on every surface, with no
+ * per-surface guard.
  */
-export function usePromoteJob(botName: string | null) {
+export function usePromoteJobs(botNames: string[]) {
   const qc = useQueryClient()
-  const key = ['bots', 'promote-job', botName]
-  return useQuery({
-    queryKey: key,
-    queryFn: async () => {
-      const next = await api.get<BotPromoteJob | null>(
-        `/bots/${encodeURIComponent(botName!)}/promote/job`,
-        { silent: true }
-      )
-      const prev = qc.getQueryData<BotPromoteJob | null>(key)
-      if (
-        prev?.status === 'running' &&
-        next &&
-        next.job_id === prev.job_id &&
-        next.status !== 'running'
-      ) {
-        if (next.status === 'done') toast.success(`${botName}: deployed`)
-        else toast.error(`${botName}: deploy failed — see the panel`)
-        qc.invalidateQueries({ queryKey: ['bots', 'version', botName] })
-        qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
-        qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+  return useQueries({
+    queries: botNames.map((name) => {
+      const key = ['bots', 'promote-job', name]
+      return {
+        queryKey: key,
+        queryFn: async () => {
+          const next = await api.get<BotPromoteJob | null>(
+            `/bots/${encodeURIComponent(name)}/promote/job`,
+            { silent: true }
+          )
+          const prev = qc.getQueryData<BotPromoteJob | null>(key)
+          if (
+            prev?.status === 'running' &&
+            next &&
+            next.job_id === prev.job_id &&
+            next.status !== 'running'
+          ) {
+            qc.invalidateQueries({ queryKey: ['bots', 'params', name] })
+            qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+            // Resolves once the re-read lands, failed or not — it never throws.
+            await qc.invalidateQueries({ queryKey: ['bots', 'version', name] })
+            if (next.status === 'done') toast.success(`${name}: deployed`)
+            else toast.error(`${name}: deploy failed — see the panel`)
+          }
+          return next
+        },
+        retry: false,
+        staleTime: 0,
+        refetchInterval: (q: Query<BotPromoteJob | null>) =>
+          q.state.data?.status === 'running' ? 1_000 : false,
       }
-      return next
-    },
-    enabled: !!botName,
-    retry: false,
-    staleTime: 0,
-    refetchInterval: (q) => (q.state.data?.status === 'running' ? 1_000 : false),
+    }),
   })
 }
 

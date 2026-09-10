@@ -31,7 +31,7 @@ import {
   useBotAccounts,
   useRegisteredAccounts,
 } from '@/hooks/useBots'
-import type { BotParamRow, BotParamsView, BotStatus, BotEarnings } from '@/types'
+import type { BotParamRow, BotParamsView, BotPromoteJob, BotStatus, BotEarnings } from '@/types'
 import { VersionBanner, RuntimeEditor, ParamGroup } from './ConfigureTab'
 import { Shimmer } from '@/components/Shimmer'
 
@@ -64,6 +64,7 @@ function Facts({ rows }: { rows: [string, React.ReactNode][] }) {
 export function BotDrawer({
   bot,
   earnings,
+  job,
   onClose,
   onLogs,
   onStart,
@@ -76,6 +77,9 @@ export function BotDrawer({
    *  ⚠ Never the account's growth: two bots on one balance share that, and crediting each with
    *  all of it is the defect this whole section replaced. */
   earnings: BotEarnings | undefined
+  /** This bot's latest deploy job, from the PAGE's watcher — never polled here, or closing the
+   *  drawer mid-deploy would stop the watch. */
+  job: BotPromoteJob | null | undefined
   onClose: () => void
   onLogs: () => void
   onStart: () => void
@@ -300,6 +304,7 @@ export function BotDrawer({
             <VersionBanner
               botKey={bot.key}
               botLabel={bot.name}
+              job={job}
               live={bot.account_type === 'live'}
             />
           </div>

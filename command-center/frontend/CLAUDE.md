@@ -2880,17 +2880,29 @@ check → Stop bot → Start bot → Running vY.
   step is a MEASUREMENT (the restarted bot reporting the deployed code); `unconfirmed` renders
   amber, never green. ⚠ **ONE spinner, on the heading** — the active step's icon is a still dot,
   because its band already moves (Aaron: *"I don't need a spinner and a progress bar"*).
-- ⚠ **The job is read BY BOT (`usePromoteJob`)**, so a drawer reopened mid-deploy shows the running
-  deploy instead of a Deploy button over it. The render-time adopt line is what does it — a
-  `running ||` beside it was unreachable (a mutation deleting it survived) and was removed.
+- 🔴 **The PAGE watches every bot's job (`usePromoteJobs`) and hands it to the panel (2026-09-10).**
+  It was polled from inside the drawer, so closing it mid-deploy stopped the watch: the row said
+  *behind* through the whole deploy and nobody saw the finish until a reopen. ⚠ Keep ONE watcher —
+  each observer runs its own 1s timer. A reopened drawer still adopts a running job (render-time line).
+- 🔴 **A finish is HELD as running until the version is re-read** — the watcher awaits that re-read,
+  so the job and the version change on one render everywhere; without it the row flashed *behind*
+  for one SSH round trip. It replaced the panel's own `isFetching` guard, which no check could reach.
+- ⚠ **The row's pill reads `Deploying vN`** while a job runs, winning over its other states.
 - ⚠ **The button names the version a promote can REACH** (`deployable`), never the backtester's.
+- 🔴 **Behind ONLY by unpushed commits is its own state** (`deployWouldAdvance` in `lib/botVersion.ts`,
+  read by the panel AND the pill). The panel offered *Deploy & restart v218 → v218* straight after a
+  deploy that worked. Now no big button and no *would change* list; the heading says *has everything
+  that is pushed*, a note names what to push, and the pill reads `vN · not pushed`.
 - ⚠ **A failure's caption is `job.error` verbatim when present** — it says what state the step it
   hit left the bot in. Without one the build REFUSED, which touches nothing. Never read promote.py's
   prose to decide.
 - `usePreviewPromote` / `usePromoteBot` were deleted with no consumer left. The endpoints stay: the
   trading-box MCP calls them.
-- ✅ `tests/bots-version.spec.ts` → 23 checks; the deploy ones run a scripted job that advances one
-  step per poll, behind `refuseLiveWrites`. **7 mutations run, 7 killed.** ⚠ The first full run had
+- ✅ `tests/bots-version.spec.ts` → 27 checks; the deploy ones run a scripted job that advances one
+  step per poll, behind `refuseLiveWrites`. **20 mutations run, 20 killed.** ⚠ Only
+  `sos_fade_demo` has a scripted job — the page watches every bot, so a shared script puts every
+  row mid-deploy. ⚠ A flash lasting one round trip is caught by RECORDING the row pill's states
+  (`recordPillStates`); reading it once can land either side of it and pass. ⚠ The first full run had
   4 failures that did not reproduce in 55 later runs — concurrent backend reloads suspected, not
   confirmed. 🔴 **A check about the panel MID-deploy must HOLD the job on a step (`holdAt`)** — the
   spinner check first raced a job advancing every second and went red on the wrong line under its
@@ -2977,12 +2989,9 @@ described the state before the deploy. A success now collapses to the green line
 behind a **Show output** toggle; a **preview** and a **FAILED** deploy keep theirs open unasked,
 because that text is what you read before deciding and the only place a failure's reason lives.
 
-🔴 **And the Deploy button stayed live across the refetch.** `usePromoteBot` invalidates the version
-on success, so for the length of that request every number on the banner — including the button's own
-`v163 → v165` label — still describes the state before the deploy. It reads `isFetching` now
-(`checking…`, disabled) and the changes block is withheld over that window. ⚠ **That last guard has
-NO browser check and its mutation was RUN and stayed green**: it governs only a transient, and a
-Playwright assertion retries until the state settles. Named rather than glossed.
+🔴 **And the Deploy button stayed live across the refetch** — for that request every number on the
+banner still described the state before the deploy. ⚠ Superseded 2026-09-10: the page's watcher
+holds the finish until the re-read lands (see *ONE button*), and that hold has a check.
 
 🔴 **THE SAME BUTTON WAS ALSO LIVE OVER ITS OWN PREVIEW, and that half was reported separately the
 same day:** *"I click deploy and then it expanded to show me all the things that it will commit. But
@@ -4206,7 +4215,8 @@ every other column is grey the version stopped registering as a claim. ⚠ **Gre
 never "good bot"**: it answers one question, is the box running the code you tested. ⚠ The unknown
 state stays NEUTRAL and still gets a border, or it is the one state that looks like a rendering
 failure rather than a finding. ⚠ **It never wraps and sizes to its text (2026-09-10)** — in a 92px
-column the behind state broke onto two lines; the column is 136px against a MEASURED 115px pill.
+column the behind state broke onto two lines; the column is 136px, and the widest state
+(`v218 · not pushed`) MEASURED 134px. Re-measure before adding a longer one.
 
 ⚠ **The per-bot identity rail was REMOVED from the rows** — Aaron read it as decoration, which on a
 row that already names the bot is what it was. **The split bar keeps its segment tints**, because

@@ -1,6 +1,7 @@
-import { AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Upload } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
 import { Shimmer } from '@/components/Shimmer'
+import { deployableVersion, deployWouldAdvance } from '@/lib/botVersion'
 
 /**
  * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed.
@@ -37,23 +38,50 @@ import { Shimmer } from '@/components/Shimmer'
  * was the ugliest. `whitespace-nowrap` here, and the column is sized to the behind state.
  * ⚠ **`justify-self-start` too** — as a grid item the pill STRETCHED to the whole column, so a
  * short "✓ v206" drew as wide as the longest state. It sizes to its own text.
+ *
+ * 🔴 **Two more states (2026-09-10).** DEPLOYING, while a deploy of this bot runs — the row said
+ * "behind" through a whole deploy with its drawer closed. And NOT PUSHED, when every version the
+ * bot is behind is a commit only on this machine: "behind" there pointed at a deploy that cannot
+ * move it, straight after a deploy that had worked. `deployWouldAdvance` decides it, the same
+ * function the deploy panel's button reads.
  */
 export function VersionPill({
   version,
   loading,
+  deploying,
 }: {
   version: BotDeployedVersion | null | undefined
   /** The query has not answered yet. Distinct from "answered, cannot say" — one is a wait and
    *  the other is a finding, and an em-dash for both makes a slow fetch look like a fault. */
   loading?: boolean
+  /** A deploy of this bot is running. Wins over every other state, `loading` included. */
+  deploying?: boolean
 }) {
+  const c = version?.compare ?? null
+
+  if (deploying) {
+    const to = deployableVersion(c)
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="deploying"
+        title="A deploy of this bot is running. Open it to watch the steps."
+        className="inline-flex items-center gap-[4px] text-[10px] font-semibold px-2 py-[3px]
+                   rounded-pill uppercase tracking-[0.4px] bg-accent/10 text-accent
+                   border border-accent/50 cursor-default whitespace-nowrap justify-self-start"
+      >
+        <Loader2 size={9} className="animate-spin" />
+        Deploying{to != null ? ` v${to}` : ''}
+      </span>
+    )
+  }
+
   // The first read is a SHAPE, not a word — the same height as the pill that will land here, so
   // the row does not move when the version answers. See `components/Shimmer.tsx`.
   if (loading) {
     return <Shimmer shape="pill" className="h-[24px] w-[92px] justify-self-start" />
   }
 
-  const c = version?.compare ?? null
   if (!c || !c.comparable || c.deployed_version === null) {
     return (
       <span
@@ -71,6 +99,28 @@ export function VersionPill({
 
   const behind = c.versions_behind ?? 0
   const label = `v${c.deployed_version}`
+
+  if (behind > 0 && !deployWouldAdvance(c)) {
+    const n = c.unpushed_commits?.length ?? 0
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="unpushed"
+        title={
+          `Deployed v${c.deployed_version} — everything that is pushed. Your backtester is on ` +
+          `v${c.local_version}, and the ${n} newer commit${n === 1 ? '' : 's'} touching this bot ` +
+          `${n === 1 ? 'is' : 'are'} only on this machine, so a deploy cannot reach ` +
+          `${n === 1 ? 'it' : 'them'}. Push, then deploy.`
+        }
+        className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                   rounded-pill uppercase tracking-[0.4px] border cursor-default whitespace-nowrap
+                   justify-self-start bg-warn-muted text-warn-text border-warn/50"
+      >
+        <Upload size={9} />
+        {label} · not pushed
+      </span>
+    )
+  }
 
   return (
     <span

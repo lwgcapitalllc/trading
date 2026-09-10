@@ -226,6 +226,15 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
     if (u.pathname === '/api/bots/accounts/scan') {
       return route.fulfill({ json: preview() })
     }
+    // Every bot's latest deploy, which the page watches for the row's version pill. `null` is
+    // "no deploy run" — left to the real backend, a deploy somebody ran there today would turn a
+    // pill in these checks into "deploying".
+    if (
+      /^\/api\/bots\/[^/]+\/promote\/job$/.test(u.pathname) &&
+      route.request().method() === 'GET'
+    ) {
+      return route.fulfill({ json: null })
+    }
     // Every bot's version, keyed by bot in the path. The Monitor and Accounts tables both
     // render a VersionPill off this, and without the mock they would fall through to the live
     // backend, which SSHes to the VPS.

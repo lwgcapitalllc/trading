@@ -173,22 +173,31 @@ function jobFrames(plan: JobPlan): BotPromoteJob[] {
  * `deployed_version: 100` would leave the page saying "21 versions behind" after a deploy —
  * indistinguishable from the defect being tested. `landsAt` is the version the deploy actually
  * reaches, which is NOT always `local_version`: see the unpushed-commits check.
+ *
+ * ⚠ **Only `sos_fade_demo` has a deploy (2026-09-10).** The page watches EVERY bot's job, so a
+ * script answered to all of them would put every row mid-deploy and step the frames once per bot.
  */
 async function mockBot(
   page: Page,
   cmp: BotVersionCompare | null,
   opts: JobPlan & {
     landsAt?: number
-    /** A job already RUNNING when the page opens — the drawer reopened mid-deploy. */
+    /** A job already RUNNING when the page opens — the drawer reopened mid-deploy. HELD on its
+     *  first step until `release()`: the page watches deploys from load, so a job that advanced
+     *  through the snapshot's few seconds could finish before the drawer ever opened. */
     runningOnOpen?: boolean
     /** Put the bot on a LIVE account (the real snapshot, mutated — never a hand-written one). */
     live?: boolean
+    /** Hold the version re-read a deploy's finish triggers — the window where every readout
+     *  would otherwise still describe the state before the deploy. */
+    reReadDelayMs?: number
   } = {}
 ) {
   await refuseLiveWrites(page)
   let promoted = false
   let frames: BotPromoteJob[] | null = opts.runningOnOpen ? jobFrames(opts) : null
   let idx = 0
+  let held = !!opts.runningOnOpen
   const posts: string[] = []
   const after = (): BotVersionCompare | null => {
     if (!cmp || !promoted) return cmp
@@ -202,8 +211,15 @@ async function mockBot(
       setting_changes: behind ? cmp.setting_changes : [],
     }
   }
-  await page.route('**/api/bots/*/version', (r) => r.fulfill({ json: version(after()) }))
+  await page.route('**/api/bots/*/version', async (r) => {
+    if (promoted && opts.reReadDelayMs)
+      await new Promise((ok) => setTimeout(ok, opts.reReadDelayMs))
+    return r.fulfill({ json: version(after()) })
+  })
   await page.route('**/api/bots/*/promote/job', (r) => {
+    if (!r.request().url().includes('/bots/sos_fade_demo/')) {
+      return r.request().method() === 'GET' ? r.fulfill({ json: null }) : r.fallback()
+    }
     if (r.request().method() === 'POST') {
       posts.push(r.request().url())
       frames = jobFrames(opts)
@@ -211,6 +227,7 @@ async function mockBot(
       return r.fulfill({ status: 202, json: frames[0] })
     }
     if (!frames) return r.fulfill({ json: null })
+    if (held) return r.fulfill({ json: frames[0] })
     const f = frames[Math.min(idx, frames.length - 1)]
     idx++
     if (f.status === 'done') promoted = true
@@ -224,7 +241,7 @@ async function mockBot(
       return r.fulfill({ response: res, json: snap })
     })
   }
-  return { posts }
+  return { posts, release: () => (held = false) }
 }
 
 /** ⚠ Every assertion is scoped to this. The Risk-per-trade card carries its OWN `Deploy`
@@ -248,6 +265,32 @@ async function openConfigure(page: Page) {
   await page.goto('/bots?tab=setup&bot=sos_fade_demo')
   await expect(banner(page)).toBeVisible({ timeout: 20_000 })
 }
+
+/** The version pill on `sos_fade_demo`'s ROW — outside the drawer, so it answers with it closed. */
+const rowPill = (page: Page) =>
+  page.locator('[data-testid="bot-row"][data-bot="sos_fade_demo"] [data-testid="version-pill"]')
+
+/**
+ * Record every state the row's pill passes through, from now on. A check that reads the pill at
+ * one moment can land either side of a flash that lasts one SSH round trip, and pass on luck.
+ */
+async function recordPillStates(page: Page) {
+  await expect(rowPill(page)).toBeVisible()
+  await page.evaluate(() => {
+    const w = window as unknown as { __pill: string[] }
+    w.__pill = []
+    const row = document.querySelector('[data-testid="bot-row"][data-bot="sos_fade_demo"]')!
+    const read = () => {
+      const s =
+        row.querySelector('[data-testid="version-pill"]')?.getAttribute('data-state') ?? 'none'
+      if (w.__pill[w.__pill.length - 1] !== s) w.__pill.push(s)
+    }
+    read()
+    new MutationObserver(read).observe(row, { subtree: true, childList: true, attributes: true })
+  })
+}
+const pillStates = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __pill: string[] }).__pill)
 
 // ── the headline ────────────────────────────────────────────────────────────────
 
@@ -500,14 +543,81 @@ test('a deploy already RUNNING when the panel opens is shown — not a second De
 }) => {
   // MUTATION: delete the line that ADOPTS a running job into `shownJob` — the reopened drawer then
   // offers Deploy over a deploy that is mid-flight.
-  const { posts } = await mockBot(page, compare(), { runningOnOpen: true })
+  const { posts, release } = await mockBot(page, compare(), { runningOnOpen: true })
   await openConfigure(page)
 
   await expect(progress(page)).toBeVisible()
   await expect(banner(page).getByTestId('deploy-button')).toHaveCount(0)
   // …and once it finishes, its result stays on screen rather than vanishing: this panel watched it.
+  release()
   await expect(caption(page)).toContainText(/reported the new version/, { timeout: 20_000 })
   expect(posts).toHaveLength(0)
+})
+
+// ── the deploy is watched by the PAGE, not by the drawer ────────────────────────
+//
+// 🔴 Aaron, 2026-09-10: *"while it was deploying, I closed the side drawer… on the row that's being
+// deployed, all it says is behind still… it should have some indicator."* The job was watched from
+// inside the drawer, so closing it stopped the watch: the row never learned a deploy was running,
+// and nothing noticed the finish until the drawer was reopened.
+
+const closeDrawer = (page: Page) =>
+  page
+    .getByRole('complementary', { name: /settings/ })
+    .getByRole('button', { name: 'Close', exact: true })
+    .first()
+    .click()
+
+test('with the drawer CLOSED mid-deploy, the row says deploying and names the target', async ({
+  page,
+}) => {
+  // MUTATION: watch only the bot whose drawer is open (the old placement) — the row reads
+  // "behind" through the deploy and never moves on. MUTATION: drop `deploying` from the row's pill.
+  await mockBot(page, compare(), { holdAt: 'stop' })
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+  await expect(progress(page)).toBeVisible()
+  await closeDrawer(page)
+  await expect(banner(page)).toHaveCount(0)
+
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'deploying')
+  await expect(rowPill(page)).toContainText('Deploying v121')
+})
+
+test('the finish is noticed with the drawer closed, and the row moves to the new version', async ({
+  page,
+}) => {
+  // MUTATION: watch only the bot whose drawer is open — the finish is never seen, so the version
+  // is never re-read and the row sits on "21 behind" for ever.
+  await mockBot(page, compare())
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+  await expect(progress(page)).toBeVisible()
+  await closeDrawer(page)
+
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'current', { timeout: 20_000 })
+  await expect(rowPill(page)).toContainText('v121')
+})
+
+test('a finished deploy never flashes the old "behind" while its version is re-read', async ({
+  page,
+}) => {
+  // 🔴 The finish re-reads the version over SSH, and for that round trip every readout still shows
+  // the state BEFORE the deploy. MUTATION: drop the `await` on that re-read in `usePromoteJobs` —
+  // the job reads done at once and the row falls back to "behind" for the 3s held here.
+  await mockBot(page, compare(), { reReadDelayMs: 3_000 })
+  await openConfigure(page)
+  await recordPillStates(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'current', { timeout: 25_000 })
+  const states = await pillStates(page)
+  const from = states.indexOf('deploying')
+  // Positive control: it WAS seen deploying, so the slice below is not empty by construction.
+  expect(from).toBeGreaterThanOrEqual(0)
+  expect(states.slice(from)).not.toContain('behind')
+  // …and the drawer's own heading moved straight to the answer too.
+  await expect(banner(page).getByText(/is up to date/)).toBeVisible()
 })
 
 test('a LIVE-account bot takes a second click on the SAME button', async ({ page }) => {
@@ -580,8 +690,42 @@ test('the deploy names — and lands on — the version a promote can REACH', as
   await expect(banner(page).getByText('v120').first()).toBeVisible()
   // Nowhere on the banner does v121 read as the DEPLOYED version…
   await expect(banner(page).getByText(/Deployed v121/)).toHaveCount(0)
-  // …and it is honest that the bot is still short of the backtester.
-  await expect(banner(page).getByText(/is 1 version behind/)).toBeVisible()
+  // …and it is honest that the bot is still short of the backtester — by a PUSH, not a deploy.
+  await expect(banner(page).getByTestId('version-heading')).toContainText(
+    /has everything that is pushed/
+  )
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'unpushed')
+})
+
+test('behind ONLY by unpushed commits: no deploy is offered, and the fix is named as a push', async ({
+  page,
+}) => {
+  // 🔴 Aaron, 2026-09-10, straight after a deploy that worked: the row said "1 behind" and the panel
+  // offered "Deploy & restart v218 → v218" — a restart for nothing, under a heading saying behind.
+  // MUTATION: gate the big button on `behind > 0` again → it offers "Deploy & restart v120 → v120".
+  // MUTATION: gate the pill on `behind > 0` alone → the row reads "1 behind".
+  await mockBot(
+    page,
+    compare({
+      deployed_version: 120,
+      versions_behind: 1,
+      unpushed_commits: ['035f28d docs(sos_fade): golden export notes'],
+    })
+  )
+  await openConfigure(page)
+
+  await expect(banner(page).getByTestId('version-heading')).toContainText(
+    /has everything that is pushed/
+  )
+  await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
+  await expect(banner(page).getByRole('button', { name: 'Re-deploy' })).toBeVisible()
+  const note = banner(page).getByTestId('banner-unpushed-only')
+  await expect(note).toContainText(/1 commit touching this bot is only on this machine/)
+  await expect(note).toContainText('v121')
+  // A deploy changes none of these, so "would change" is not offered either.
+  await expect(banner(page).getByText(/would change on this bot/)).toHaveCount(0)
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'unpushed')
+  await expect(rowPill(page)).toContainText('v120 · not pushed')
 })
 
 // ── a badge that goes stale is a badge that lies ───────────────────────────────

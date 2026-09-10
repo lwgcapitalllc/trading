@@ -1,4 +1,30 @@
-import type { BotDeployedVersion } from '@/types'
+import type { BotDeployedVersion, BotVersionCompare } from '@/types'
+
+/**
+ * The highest version a deploy could land NOW: the backtester's, less every commit touching this
+ * bot that is not pushed. A deploy pulls on the trading box, which cannot fetch a commit that only
+ * exists on this machine. `null` when the backtester's version is unknown.
+ *
+ * ⚠ ONE definition, read by the row's version pill and the deploy panel, so the two can never name
+ * different targets for one deploy.
+ */
+export function deployableVersion(c: BotVersionCompare | null | undefined): number | null {
+  if (!c || c.local_version == null) return null
+  return c.local_version - (c.unpushed_commits?.length ?? 0)
+}
+
+/**
+ * Would a deploy move this bot FORWARD?
+ *
+ * 🔴 **False when every version between the bot and the backtester is unpushed (2026-09-10).** The
+ * panel offered "Deploy & restart v218 → v218" straight after a deploy that had worked, under a
+ * heading saying the bot was still behind — a button that reinstalls what is running and restarts
+ * the bot for nothing, and it read as the deploy being stuck. Pushing is the fix there, not deploying.
+ */
+export function deployWouldAdvance(c: BotVersionCompare | null | undefined): boolean {
+  const to = deployableVersion(c)
+  return to != null && c?.deployed_version != null && to > c.deployed_version
+}
 
 /**
  * Is the NEW code on disk while the OLD code is still trading?

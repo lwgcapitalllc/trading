@@ -20,10 +20,10 @@ import {
   useBotParams,
   useSaveBotRuntime,
   useBotVersion,
-  usePromoteJob,
+  usePromoteJobs,
   useStartPromoteJob,
 } from '@/hooks/useBots'
-import { isRestartPending } from '@/lib/botVersion'
+import { deployableVersion, deployWouldAdvance, isRestartPending } from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
 import { StepProgress, type Step } from '@/components/StepProgress'
 import type {
@@ -412,7 +412,8 @@ function Warn({ children }: { children: React.ReactNode }) {
 //
 // ⚠ **The steps come from the backend job doing them** (`POST /bots/{bot}/promote/job`), never from
 // a timer here, and the last one — the bot reporting the new code — is a measurement. The job is
-// read by BOT, so closing the drawer mid-deploy and reopening it finds the run already going.
+// watched by the PAGE (`usePromoteJobs`) and handed in, so closing the drawer mid-deploy neither
+// stops the watch nor loses the finish.
 const STEP_LABEL: Record<BotPromoteStage['key'], string> = {
   pull: 'Pull code',
   build: 'Build & check',
@@ -441,15 +442,19 @@ function jobSteps(job: BotPromoteJob, target: number | null): Step[] {
 export function VersionBanner({
   botKey,
   botLabel,
+  job,
   live = false,
 }: {
   botKey: string
   botLabel: string
+  /** This bot's latest deploy job, from the page's watcher (`usePromoteJobs`). The banner does not
+   *  poll for it itself: a second watcher is a second 1s timer, and one inside the drawer stops
+   *  the moment the drawer closes. */
+  job: BotPromoteJob | null | undefined
   /** The bot trades a LIVE account — its deploy takes a second, deliberate click. */
   live?: boolean
 }) {
-  const { data: v, isLoading, isFetching } = useBotVersion(botKey)
-  const { data: job } = usePromoteJob(botKey)
+  const { data: v, isLoading } = useBotVersion(botKey)
   const start = useStartPromoteJob()
   // The job this panel is showing. A deploy that is RUNNING is always shown; a finished one only
   // if this panel started it or watched it run — a result from hours ago is not news.
@@ -478,12 +483,10 @@ export function VersionBanner({
   // No `running ||` here: the line above has already adopted any running job, so it would be a
   // branch nothing can reach — MEASURED, a mutation deleting it survived every check.
   const shown = job && job.job_id === shownJob ? job : null
+  // ⚠ A job reads finished only once the page has re-read the version (`usePromoteJobs` holds it),
+  // so nothing here guards the window where the numbers still describe the state BEFORE the deploy.
   const finished = shown && shown.status !== 'running' ? shown : null
-  // 🔴 The finish invalidates this bot's version, and for the length of that refetch every number
-  // on the banner still describes the state BEFORE the deploy. The panel stays in its deploying
-  // shape over that window rather than flashing the old "N versions behind".
-  const refreshing = !!finished && isFetching
-  const busy = running || refreshing || start.isPending
+  const busy = running || start.isPending
   const c = v?.compare ?? null
 
   // The first read is ~4.5s over SSH. It holds the banner's footprint as a shimmer rather than a
@@ -523,13 +526,16 @@ export function VersionBanner({
   const unpushed = c.unpushed_commits ?? []
   // The highest version a promote could actually land right now. The button names THIS, not the
   // backtester's version — a promote pulls on the VPS and cannot reach an unpushed commit.
-  const deployable = c.local_version == null ? null : c.local_version - unpushed.length
+  const deployable = deployableVersion(c)
   const heading = deployable ?? c.local_version
+  // 🔴 Behind, but only by unpushed commits: a deploy would reinstall what is running. The big
+  // button and the "would change" list are withheld, and the heading says push is the fix.
+  const advance = deployWouldAdvance(c)
 
   const confirmState = finished?.stages.find((s) => s.key === 'confirm')?.state
   // The header is the loudest thing on the panel, so while a deploy is going it SAYS so — the
   // reader's eye lands on the heading before anything else.
-  const deploying = running || refreshing || start.isPending
+  const deploying = running || start.isPending
   const failed = finished?.status === 'failed'
 
   const fire = () => {
@@ -556,17 +562,17 @@ export function VersionBanner({
                   disabled:opacity-40 ${
                     armed
                       ? 'text-[12px] bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 border border-amber-400/50'
-                      : behind > 0 || failed
+                      : advance || failed
                         ? 'text-[12px] bg-gold-text/20 text-gold-text hover:bg-gold-text/30 border border-gold-text/40'
                         : 'text-[10px] text-text-tertiary hover:text-text-secondary'
                   }`}
     >
-      {armed ? <AlertTriangle size={13} /> : <Upload size={behind > 0 || failed ? 13 : 10} />}
+      {armed ? <AlertTriangle size={13} /> : <Upload size={advance || failed ? 13 : 10} />}
       {armed
         ? 'Click again — this bot trades real money'
         : failed
           ? 'Try again'
-          : behind > 0
+          : advance
             ? `Deploy & restart v${c.deployed_version} → v${heading}`
             : 'Re-deploy'}
     </button>
@@ -586,8 +592,6 @@ export function VersionBanner({
         </span>
       </>
     )
-  } else if (finished && refreshing) {
-    caption = 'Re-reading what landed on the trading box…'
   } else if (finished && !failed) {
     if (!finished.result?.restarted) {
       caption = `Deployed — restart ${botLabel} to pick it up.`
@@ -638,6 +642,8 @@ export function VersionBanner({
           >
             {deploying ? (
               <Loader2 size={14} className="animate-spin" />
+            ) : behind > 0 && !advance ? (
+              <Upload size={14} />
             ) : behind > 0 ? (
               <AlertTriangle size={14} />
             ) : (
@@ -645,9 +651,11 @@ export function VersionBanner({
             )}
             {deploying
               ? `Deploying ${botLabel}${(target ?? heading) != null ? ` → v${target ?? heading}` : ''}`
-              : behind > 0
-                ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
-                : `${botLabel} is up to date`}
+              : behind > 0 && !advance
+                ? `${botLabel} has everything that is pushed`
+                : behind > 0
+                  ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
+                  : `${botLabel} is up to date`}
           </p>
           <div className="flex items-center gap-[22px] mt-[9px] text-[11px]">
             <span className="text-text-tertiary">
@@ -806,33 +814,50 @@ export function VersionBanner({
           however many times Deploy is pressed. `null` means there is no upstream to compare
           against and renders nothing; `[]` is the measured "all pushed" and renders nothing
           too. Only a real count speaks. */}
-      {unpushed.length > 0 && (
-        <p
-          className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
-          title={unpushed.join('\n')}
-        >
-          <strong>
-            {unpushed.length} commit{unpushed.length === 1 ? '' : 's'} touching this bot
-            {unpushed.length === 1 ? ' is' : ' are'} not pushed.
-          </strong>{' '}
-          A promote pulls on the VPS, so it can only reach{' '}
-          <span className="font-mono">v{deployable}</span>
-          {deployable != null && c.local_version != null && deployable < c.local_version ? (
-            <>
-              {' '}
-              — push first, or the bot lands {c.local_version - deployable} version
-              {c.local_version - deployable === 1 ? '' : 's'} short of your backtester.
-            </>
-          ) : (
-            '.'
-          )}
-        </p>
-      )}
+      {unpushed.length > 0 &&
+        (advance || behind <= 0 ? (
+          <p
+            className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+            title={unpushed.join('\n')}
+          >
+            <strong>
+              {unpushed.length} commit{unpushed.length === 1 ? '' : 's'} touching this bot
+              {unpushed.length === 1 ? ' is' : ' are'} not pushed.
+            </strong>{' '}
+            A promote pulls on the VPS, so it can only reach{' '}
+            <span className="font-mono">v{deployable}</span>
+            {deployable != null && c.local_version != null && deployable < c.local_version ? (
+              <>
+                {' '}
+                — push first, or the bot lands {c.local_version - deployable} version
+                {c.local_version - deployable === 1 ? '' : 's'} short of your backtester.
+              </>
+            ) : (
+              '.'
+            )}
+          </p>
+        ) : (
+          // Every version the bot is behind is unpushed — so the heading above says push, and this
+          // says exactly what to push, rather than the "can only reach vN" a deploy would land on.
+          <p
+            data-testid="banner-unpushed-only"
+            className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+            title={unpushed.join('\n')}
+          >
+            <strong>
+              {unpushed.length} commit{unpushed.length === 1 ? '' : 's'} touching this bot{' '}
+              {unpushed.length === 1 ? 'is' : 'are'} only on this machine
+            </strong>
+            , so the trading box cannot get {unpushed.length === 1 ? 'it' : 'them'} yet. Push, then
+            deploy to reach <span className="font-mono">v{c.local_version}</span>.
+          </p>
+        ))}
 
       {/* What a deploy would change — read BEFORE the click, so it is withdrawn once a deploy is
           on screen: the question has moved to the progress readout, and after a finish these
-          rows describe the state before it. */}
-      {behind > 0 && !shown && (
+          rows describe the state before it. ⚠ Gated on `advance`, not on being behind: when only
+          unpushed commits are ahead, a deploy changes none of these. */}
+      {advance && !shown && (
         <div className="mt-[11px] border-t border-amber-400/20 pt-[10px] space-y-[9px]">
           {willChange.length > 0 ? (
             <div>
@@ -1232,6 +1257,9 @@ export function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[]
 export function BotPanel({ bot }: { bot: BotStatus }) {
   // Every API path takes the KEY — the routes accept either, new code passes the key.
   const { data, isLoading, error } = useBotParams(bot.key)
+  // Nothing renders this panel today; if it comes back it must not sit beside the Bots page,
+  // whose own watcher would then be a second 1s poll of the same job.
+  const [jobQ] = usePromoteJobs([bot.key])
 
   if (isLoading) {
     return <div className="text-[11px] text-text-tertiary">Loading {bot.name}…</div>
@@ -1260,7 +1288,7 @@ export function BotPanel({ bot }: { bot: BotStatus }) {
           much" is the question this tab is opened to answer, and it had no answer on the page
           at all until 2026-08-07. It also carries the only Deploy control. */}
       <div className="col-span-2">
-        <VersionBanner botKey={bot.key} botLabel={bot.name} />
+        <VersionBanner botKey={bot.key} botLabel={bot.name} job={jobQ?.data} />
       </div>
 
       {/* Risk — the only thing on this page that can be changed */}

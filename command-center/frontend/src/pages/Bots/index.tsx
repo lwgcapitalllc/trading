@@ -58,6 +58,7 @@ import {
   useRegisteredAccounts,
   useBotLog,
   useBotVersions,
+  usePromoteJobs,
   useUsers,
   useBotStartOne,
   useBotStopOne,
@@ -853,6 +854,11 @@ export function Bots() {
   ]
   const versionQueries = useBotVersions(fleetKeys)
   const versionByKey = new Map(fleetKeys.map((k, i) => [k, versionQueries[i]]))
+  // 🔴 Every bot's deploy is watched HERE, on the page, never inside the drawer (2026-09-10) — a
+  // drawer closed mid-deploy stopped the watch, so the row said "behind" through the whole deploy
+  // and the finish went unnoticed. The row's pill and the drawer both read this one watch.
+  const jobQueries = usePromoteJobs(fleetKeys)
+  const jobByKey = new Map(fleetKeys.map((k, i) => [k, jobQueries[i]?.data]))
 
   const statusByKey = new Map<string, string>(bots.map((b) => [b.key, b.status]))
   const botByKey = new Map(bots.map((b) => [b.key, b]))
@@ -1193,6 +1199,7 @@ export function Bots() {
               <div
                 key={cfg.key}
                 data-testid="bot-row"
+                data-bot={cfg.key}
                 className={`group grid ${GRID} items-center gap-3 pr-4 py-[10px] transition-colors hover:bg-bg-surface-2 ${
                   i > 0 ? 'border-t border-border-subtle' : ''
                 }`}
@@ -1252,6 +1259,7 @@ export function Bots() {
                 <VersionPill
                   version={versionByKey.get(cfg.key)?.data}
                   loading={versionByKey.get(cfg.key)?.isPending}
+                  deploying={jobByKey.get(cfg.key)?.status === 'running'}
                 />
 
                 <span
@@ -1732,6 +1740,7 @@ export function Bots() {
         <BotDrawer
           bot={selBot}
           earnings={earnByBot.get(selBot.key)}
+          job={jobByKey.get(selBot.key)}
           busy={busy}
           onClose={() => set('bot', null)}
           onLogs={() => setLogBot(selBot.key)}
