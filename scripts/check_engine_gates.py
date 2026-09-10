@@ -134,6 +134,18 @@ def main() -> int:
         proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True)
         if proc.returncode == 0:
             print(f"  ✓ {label}")
+            # 🔴 A GATE'S OWN WARNINGS MUST SURVIVE ITS GREEN, and this runner swallowed them.
+            # compare_fvg.py prints how much of its export it could actually SEE - measured at 52%
+            # of bars on the committed golden file, because the gap list outgrew the plotted slots.
+            # That line went to a captured stdout that was discarded on success, so the step showed
+            # a tick over a half-blind gate. **A tool that hides a caveat when things pass is the
+            # misleading-green shape this whole file exists to stop**, one level up. Generic on
+            # purpose: any gate can raise a caveat this way and none of them needs an if-statement
+            # here.
+            for line in (proc.stdout or "").splitlines():
+                s = line.strip()
+                if s.startswith("🔴") or s.startswith("⚠"):
+                    print(f"      {s}")
         else:
             failures += 1
             print(f"  🔴 {label} - gate exit {proc.returncode}")

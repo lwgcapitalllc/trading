@@ -265,6 +265,13 @@ Watched RED by mutation, and the mutant exits 1 rather than passing quietly.
 ⚠ **It cannot tell you the INDICATOR is right** — only that the copies match it. That is rule 14
 arriving in a new place.
 
+⚠ **Seven rules as of 2026-09-10** — the five equal-level ones plus the gap cap's counting basis and
+the gap mitigation rule. The cap spec went red the moment it existed: four strategy files were
+counting EVERY gap against the cap while their drop scan skipped the protected ones, which makes the
+exemption a swap rather than an addition. **It was DORMANT — those files ship the exemption off, and
+the two forms are then identical by construction — so it could only ever have been found by a tool
+that compares Pine against Pine.** Story: `strategies/tradingview/CLAUDE.md`.
+
 ### `scripts/check_engine_gates.py` — golden exports, so a gate can always run
 
 **Step 15 of `scripts/run_all_tests.sh`.** Runs each engine's `compare_*.py` against a COMMITTED
@@ -286,6 +293,14 @@ file was taken.**
 ⚠ **It prints its COVERAGE FRACTION and names the engines that lack an export**, because a bare
 green tick on this step would read as *the engine gates pass* when it means *the one engine with a
 committed export passes*. Coverage: **11 of 11** gateable engines, from eleven fresh exports taken 2026-09-09.
+
+🔴 **A GATE'S OWN WARNINGS NOW SURVIVE ITS GREEN, and they did not until 2026-09-10.** Each gate's
+stdout was captured and DISCARDED on success, so a caveat the gate printed on every run reached
+nobody. Two were hiding behind ticks: `compare_fvg.py` reporting that it could only see **48%** of
+its export's bars, and `compare_candles.py` naming a pattern that **never fired on either side** —
+i.e. rule 14's *says nothing about a branch neither one entered*, printed and swallowed. Any 🔴/⚠
+line a gate prints is now echoed under its tick. ⚠ **Generic on purpose** — any gate can raise a
+caveat this way and none of them needs an if-statement in the runner.
 
 🔴 **The fibonacci gate excludes its MACRO half deliberately, and that is a decision rather than
 a gap.** The macro fib diverges on 11,356 of 13,304 bars because the engine matches the STRATEGY
@@ -318,6 +333,29 @@ runnable on every machine forever, and it is worth stating so nobody re-litigate
 with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass. Both paths watched
 RED by mutation: reverting the engine's rule turns the gate red through this runner, and raising the
 minimum makes the self-test fire and exit 1.
+
+### `scripts/build_fvg_zone_harness.py` — a Pine harness that is a BUILD ARTIFACT
+
+**Step 16 of `scripts/run_all_tests.sh`.** Generates `indicators/engines/fvg_zone_export.pine` by
+slicing blocks verbatim out of `fib_export.pine` and `fvg_export.pine`; `--check` regenerates and
+diffs.
+
+🔴 **It exists because that harness has to be a TENTH copy of the gap block.** The cap's entry-band
+exemption needs four engine blocks in one script — the band is the live fib recomputed every bar, so
+it cannot be an input — and step 14 exists precisely because copies drift with nothing asserting they
+match. **A generated harness cannot drift from its sources without this step going red**, which is
+the one thing a hand-maintained copy could never offer.
+
+⚠ **It slices on TEXT ANCHORS, never line numbers** — the first version used line numbers and they
+were stale within the hour; a numeric slice would have cut a block in half while still producing a
+file that looks fine.
+
+⚠ **A red here means the harness is validating Python against a Pine block the repo no longer has.**
+Regenerate, then RE-EXPORT before trusting its gate: a regenerated harness is a changed harness, and
+the committed CSV was taken from the old one.
+
+⚠ **It does not prove the harness is RIGHT**, only that it matches its sources — rule 14 again. What
+proves it right is `compare_fvg.py` going green on a real export.
 
 ### tools/
 Standalone utilities that belong to no subsystem and are run by hand. One today: `tools/skool-transcript/` — rips course video transcripts and indexes them into `education/`. It has its own CLAUDE.md. ⚠ **Nothing imports it and nothing schedules it**, which is the point — it is a dev-machine tool, not part of any deployable, so it is out of scope for the commit hook's money-path rule and for every parity gate.

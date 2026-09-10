@@ -57,22 +57,55 @@ if str(_REPO_ROOT) not in sys.path:
 
 from fair_value_gaps import FairValueGapEngine
 
-# fvg_export.pine plots this many slots per array, and its fvgMaxCount input is capped to match.
-# It used to be 6 while the cap was 8, so the two newest gaps were live in Pine and never compared.
-# If you widen the export, widen this in the SAME commit — the guard below refuses the mismatch
-# rather than reporting a green that only covered part of the array.
-_MAX_SLOTS = 10
+# 🔴 THE EXPORT COMES IN TWO SHAPES AND THE TOOL MUST NOT PRETEND THEY COVER THE SAME THING.
+#
+#   MODERN  (2026-09-10 onward)  18 slots per array + a packed direction mask + WHOLE-ARRAY
+#           aggregates. The aggregates are what make a gap list LONGER than the slots visible:
+#           they run to array.size(), so a gap in slot 19 still moves a compared number.
+#   LEGACY  10 slots + one direction column each. No aggregates, so ANY gap past slot 10 is
+#           invisible — and that is not hypothetical. MEASURED on the committed golden export:
+#           the live list reaches 17 and exceeds 10 on 52.2% of bars, every one of which the diff
+#           reported green while never looking at gaps 11 and up.
+#
+# ⚠ The old guard here asked whether `cfg_fvg_maxcount` exceeded the slot count. That question
+#   stopped meaning anything on 2026-08-03, when a gap became able to be EXEMPT from the cap — the
+#   live total is bounded by the EQ engine from that day on, not by the input, so the guard was
+#   checking a number that no longer bounds the thing it was protecting. It passed happily on an
+#   export where half the bars were under-checked. **A guard whose premise has expired is worse
+#   than no guard: it reads as coverage.**
+_MODERN_SLOTS = 18
+_LEGACY_SLOTS = 10
 
-# ── column groups ──
-TOP_FIELDS = [f"px_fvg_top_{k}" for k in range(1, _MAX_SLOTS + 1)]
-BOT_FIELDS = [f"px_fvg_bot_{k}" for k in range(1, _MAX_SLOTS + 1)]
-PRICE_FIELDS = TOP_FIELDS + BOT_FIELDS                    # tolerance-compared, na-aware
-BULL_FIELDS = [f"px_fvg_bull_{k}" for k in range(1, _MAX_SLOTS + 1)]  # 1/0 state, na-aware
-COUNT_FIELDS = ["px_fvg_count"]
-PULSE_FIELDS = ["px_fvg_formed", "px_fvg_mit"]
-STATE_FIELDS = BULL_FIELDS + COUNT_FIELDS + PULSE_FIELDS  # integer-compared, na-aware
+_AGG_FIELDS = ["px_fvg_topsum", "px_fvg_botsum"]           # tolerance-compared, whole array
+_COUNT_FIELDS = ["px_fvg_count", "px_fvg_formed", "px_fvg_mit"]
 
-ALL_FIELDS = PRICE_FIELDS + STATE_FIELDS
+
+def _field_groups(modern):
+    """The comparable columns for this export's shape, plus how each is compared."""
+    slots = _MODERN_SLOTS if modern else _LEGACY_SLOTS
+    tops = [f"px_fvg_top_{k}" for k in range(1, slots + 1)]
+    bots = [f"px_fvg_bot_{k}" for k in range(1, slots + 1)]
+    price = tops + bots + (_AGG_FIELDS if modern else [])
+    if modern:
+        # One packed column: bit k set when slot k+1 is bullish. Exact in float64 to 2**18.
+        state = ["px_fvg_bullmask", "px_fvg_bulltotal"] + _COUNT_FIELDS
+        bull = []
+    else:
+        bull = [f"px_fvg_bull_{k}" for k in range(1, slots + 1)]
+        state = bull + _COUNT_FIELDS
+    return {
+        "slots": slots,
+        "tops": tops,
+        "bots": bots,
+        "price": price,
+        "bull": bull,
+        "state": state,
+        "all": price + state,
+    }
+
+
+# Filled in by main() once the export's shape is known; the comparison helpers read them.
+GROUPS = _field_groups(modern=True)
 
 
 def _num(s):
@@ -112,27 +145,54 @@ def _resolve_columns(header):
 
     cols = {k: find(k) for k in ("open", "high", "low", "close")}
     cols["time"] = find("time", required=False)
-    for f in ALL_FIELDS:
+    for f in GROUPS["all"]:
         cols[f] = find(f)
+    # The entry-band columns exist only in fvg_zone_export.pine. Absent = the plain harness, and the
+    # band exemption is then OFF on both sides rather than guessed at.
+    for f in ("px_fvgzone_lo", "px_fvgzone_hi", "px_fvgzone_dir",
+              "px_fibband_lo", "px_fibband_hi", "px_fibband_dir"):
+        cols[f] = find(f, required=False)
     return cols
 
 
 def _python_row(ev):
-    """Map the Python FVG events to each px_fvg_* column value."""
+    """Map the Python FVG events to each px_fvg_* column value, in this export's shape."""
     row = {}
-    for slot, (tf, bf, bull) in enumerate(zip(TOP_FIELDS, BOT_FIELDS, BULL_FIELDS)):
+    for slot, (tf, bf) in enumerate(zip(GROUPS["tops"], GROUPS["bots"])):
         g = ev.active[slot] if slot < len(ev.active) else None
         row[tf] = g.top if g else None
         row[bf] = g.bottom if g else None
-        row[bull] = (1.0 if g.is_bullish else 0.0) if g else None
+    if GROUPS["bull"]:
+        for slot, bull in enumerate(GROUPS["bull"]):
+            g = ev.active[slot] if slot < len(ev.active) else None
+            row[bull] = (1.0 if g.is_bullish else 0.0) if g else None
+    else:
+        mask = 0.0
+        for slot, g in enumerate(ev.active[: GROUPS["slots"]]):
+            if g.is_bullish:
+                mask += 2.0 ** slot
+        row["px_fvg_bullmask"] = mask
+        row["px_fvg_bulltotal"] = float(sum(1 for g in ev.active if g.is_bullish))
+        # Whole-array sums: the only thing that can see a gap past the last plotted slot.
+        row["px_fvg_topsum"] = float(sum(g.top for g in ev.active))
+        row["px_fvg_botsum"] = float(sum(g.bottom for g in ev.active))
     row["px_fvg_count"] = float(len(ev.active))
     row["px_fvg_formed"] = float(len(ev.formed))
     row["px_fvg_mit"] = float(len(ev.mitigated))
     return row
 
 
-def _values_match(field, py_val, pine_val, tol):
-    if field in PRICE_FIELDS:
+def _values_match(field, py_val, pine_val, tol, agg_tol=None):
+    if field in _AGG_FIELDS:
+        # A sum of up to ~18 four-figure prices. Compared on its own tolerance because it is an
+        # ACCUMULATION - the per-price tolerance is the wrong scale for it, and tightening a sum to
+        # 1e-6 makes the gate go red on the CSV's own formatting rather than on the engine.
+        if py_val is None and pine_val is None:
+            return True
+        if py_val is None or pine_val is None:
+            return False
+        return abs(py_val - pine_val) <= (agg_tol if agg_tol is not None else tol)
+    if field in GROUPS["price"]:
         if py_val is None and pine_val is None:
             return True
         if py_val is None or pine_val is None:
@@ -140,7 +200,7 @@ def _values_match(field, py_val, pine_val, tol):
         return abs(py_val - pine_val) <= tol
     # state fields. bull slots are na when the slot is empty (both sides None -> match); counts /
     # pulses have no na — a missing Pine cell is 0.
-    if field in BULL_FIELDS:
+    if field in GROUPS["bull"]:
         if py_val is None and pine_val is None:
             return True
         if py_val is None or pine_val is None:
@@ -192,7 +252,8 @@ def _read_cfg(header, rows):
     for key, suffix in (("thresh", "cfg_fvg_thresh"), ("maxcount", "cfg_fvg_maxcount"),
                         ("requireclose", "cfg_fvg_requireclose"),
                         ("eq_pivotlen", "cfg_eq_pivotlen"), ("eq_atrmult", "cfg_eq_atrmult"),
-                        ("eq_max", "cfg_eq_max"), ("eq_exempt", "cfg_eq_exempt")):
+                        ("eq_max", "cfg_eq_max"), ("eq_exempt", "cfg_eq_exempt"),
+                        ("zone_exempt", "cfg_fvg_exemptzone")):
         col = find(suffix)
         if col is None:
             continue
@@ -211,6 +272,9 @@ def main(argv=None):
     ap.add_argument("--threshold-pct", type=float, default=0.0, help="fallback if the export has no cfg_fvg_thresh column (Pine sub-15m default 0.0)")
     ap.add_argument("--require-close", action="store_true", help="fallback if the export has no cfg_fvg_requireclose column (Pine default off)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
+    ap.add_argument("--agg-tolerance", type=float, default=1e-3,
+                    help="abs tolerance for the whole-array SUM columns (default 1e-3) - a sum of "
+                         "~18 four-figure prices needs a different scale from one price")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
     args = ap.parse_args(argv)
@@ -221,6 +285,13 @@ def main(argv=None):
 
     with open(path, newline="") as f:
         header = next(csv.reader(f))
+
+    # Which harness produced this file? Decided from the COLUMNS, never from a flag - an export
+    # cannot be argued into a shape it does not have.
+    global GROUPS
+    modern = any(h.strip().lower().endswith("px_fvg_bullmask") for h in header)
+    GROUPS = _field_groups(modern=modern)
+
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
@@ -232,15 +303,6 @@ def main(argv=None):
     require_close = bool(round(cfg["requireclose"])) if cfg.get("requireclose") is not None else args.require_close
     cfg_src = "export cfg_* columns" if cfg else "CLI args (no cfg_* columns in export)"
 
-    # A cap above the number of plotted slots means the export cannot describe its own state: gaps
-    # past slot _MAX_SLOTS would be live in Pine and invisible here, so a green would be partial.
-    if max_count > _MAX_SLOTS:
-        raise SystemExit(
-            f"ERROR: the export ran with fvgMaxCount={max_count} but fvg_export.pine plots only "
-            f"{_MAX_SLOTS} slots per array, so gaps {_MAX_SLOTS + 1}..{max_count} are never exported "
-            f"and could not be compared.\nWiden the px_fvg_top_/bot_/bull_ plots in "
-            f"indicators/engines/fvg_export.pine and _MAX_SLOTS here to match, then re-export."
-        )
 
     # EQ coupling (mpc eqExemptFvg): when the export carries the cfg_eq_* columns AND the exemption is
     # on, run the EQ engine alongside and feed its active levels + tolerance into the FVG cap each bar.
@@ -255,10 +317,34 @@ def main(argv=None):
         )
     eq_note = f", EQ-exempt ON (pivot={int(cfg.get('eq_pivotlen') or 2)}, mult={cfg.get('eq_atrmult')})" if eq_exempt else ""
 
+    # ── The fib ENTRY-BAND exemption (mpc fvgExemptZone). Only fvg_zone_export.pine can carry it:
+    #    the band is the live fib's 0.382-0.886, recomputed every bar, so it is not an input and the
+    #    plain harness has no fib in it. Absent columns = exemption OFF on both sides, which is what
+    #    every consumer of this engine runs today. ──
+    zone_cols_present = cols.get("px_fvgzone_dir") is not None
+    zone_exempt = zone_cols_present and (
+        cfg.get("zone_exempt") is None or bool(round(cfg["zone_exempt"]))
+    )
+    zone_note = ", ENTRY-BAND exemption ON" if zone_exempt else ""
+
     fvg = FairValueGapEngine(max_count=max_count, threshold_pct=threshold_pct, require_close=require_close)
 
+    # ── COVERAGE, measured off this export rather than assumed. ──
+    # A legacy export has no whole-array aggregate, so every gap past the last plotted slot is
+    # invisible to the diff. Count those bars and SAY SO on every run: a green that covered 48% of
+    # the bars must not print the same line as one that covered all of them.
+    blind_bars = 0
+    if not modern:
+        ccol = cols["px_fvg_count"]
+        for i, r in enumerate(rows):
+            if i < args.warmup:
+                continue
+            v = _num(r.get(ccol))
+            if v is not None and v > GROUPS["slots"]:
+                blind_bars += 1
+
     total = 0
-    per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
+    per_field_mismatch = {fld: 0 for fld in GROUPS["all"]}
     detailed = []
     last_mismatch_bar = None
 
@@ -277,7 +363,18 @@ def main(argv=None):
             eq_ev = eq.update(i, h, l, c)
             eq_levels = eq_ev.active_eqh + eq_ev.active_eql
             eq_tol = eq_ev.tolerance
-        ev = fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol)
+        # The band the Pine cap ACTUALLY CONSUMED on this bar. Exported as the value it held
+        # BEFORE the fib block moved it, so no off-by-one can hide inside this tool - the lag is
+        # checked separately below against the published band.
+        zone_lo = zone_hi = None
+        zone_dir = 0
+        if zone_exempt:
+            zone_lo = _num(row[cols["px_fvgzone_lo"]])
+            zone_hi = _num(row[cols["px_fvgzone_hi"]])
+            zd = _num(row[cols["px_fvgzone_dir"]])
+            zone_dir = int(round(zd)) if zd is not None else 0
+        ev = fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol,
+                        zone_lo=zone_lo, zone_hi=zone_hi, zone_dir=zone_dir)
         py = _python_row(ev)
         total += 1
 
@@ -285,9 +382,9 @@ def main(argv=None):
             continue
 
         bar_mismatches = []
-        for fld in ALL_FIELDS:
+        for fld in GROUPS["all"]:
             pine_val = _num(row[cols[fld]])
-            if not _values_match(fld, py[fld], pine_val, args.tolerance):
+            if not _values_match(fld, py[fld], pine_val, args.tolerance, args.agg_tolerance):
                 per_field_mismatch[fld] += 1
                 bar_mismatches.append((fld, py[fld], pine_val))
 
@@ -297,16 +394,58 @@ def main(argv=None):
                 tval = row[cols["time"]] if cols.get("time") else ""
                 detailed.append((i, tval, bar_mismatches))
 
+    # ── The one-bar lag, checked rather than asserted in a comment ──
+    # In mpc the FVG block runs ~800 lines ABOVE the fib block, so the cap can only ever see the
+    # PREVIOUS bar's band. That is deliberate there and it is the single easiest thing for a port to
+    # get wrong, because both readings look reasonable and only one matches the chart. The zone
+    # harness exports the band twice - as CONSUMED and as PUBLISHED - so the relation is testable:
+    # consumed[i] must equal published[i-1] on every bar.
+    lag_note = ""
+    if zone_exempt and cols.get("px_fibband_dir") is not None:
+        bad_lag = 0
+        for i in range(1, len(rows)):
+            for used, pub in (("px_fvgzone_lo", "px_fibband_lo"),
+                              ("px_fvgzone_hi", "px_fibband_hi"),
+                              ("px_fvgzone_dir", "px_fibband_dir")):
+                a = _num(rows[i][cols[used]])
+                b = _num(rows[i - 1][cols[pub]])
+                if a is None and b is None:
+                    continue
+                if a is None or b is None or abs(a - b) > args.tolerance:
+                    bad_lag += 1
+                    break
+        if bad_lag:
+            lag_note = (f"\n🔴 LAG SELF-TEST FAILED on {bad_lag} bar(s): the band the cap consumed is "
+                        f"not the previous bar's published band.\n   Either the FVG block moved BELOW "
+                        f"the fib block in fvg_zone_export.pine, or the export is stale. The harness "
+                        f"is wrong before the engine is.")
+        else:
+            lag_note = "\n✓ LAG SELF-TEST: the cap consumed the PREVIOUS bar's band on every bar (mpc's own ordering)."
+
     # ── Report ──
+    shape = f"{GROUPS['slots']} slots" + (" + whole-array sums" if modern else ", NO whole-array sums")
     print(f"\nCompared {total} bars from {path.name}  (max_count={max_count}, threshold_pct={threshold_pct}, "
-          f"require_close={require_close}{eq_note}, tol={args.tolerance})  [config from {cfg_src}]")
+          f"require_close={require_close}{eq_note}{zone_note}, tol={args.tolerance})  [config from {cfg_src}]")
+    print(f"Export shape: {shape}")
+    if not modern:
+        pct = (blind_bars / max(total - args.warmup, 1)) * 100
+        print(f"🔴 PARTIAL COVERAGE: this is a LEGACY export with no whole-array aggregate, so any gap "
+              f"past slot {GROUPS['slots']} is invisible to this diff.")
+        print(f"   {blind_bars} of {max(total - args.warmup, 1)} compared bars ({pct:.1f}%) hold a longer "
+              f"list than that. Re-export from the current indicators/engines/fvg_export.pine to close it.")
+    if lag_note:
+        print(lag_note.lstrip("\n"))
     print("-" * 72)
     if not any(per_field_mismatch.values()):
+        if lag_note.startswith("\n🔴"):
+            return 1
         print("✓ FVG PARITY: every compared field matched on every bar. Python FVG engine == Pine source.")
+        if not modern:
+            print("⚠ ...on the columns this export carries. See the PARTIAL COVERAGE line above.")
         return 0
 
     print("MISMATCHES BY FIELD:")
-    for fld in ALL_FIELDS:
+    for fld in GROUPS["all"]:
         n = per_field_mismatch[fld]
         if n:
             print(f"  {fld:<20} {n} bar(s)")

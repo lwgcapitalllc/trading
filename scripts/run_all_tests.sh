@@ -292,7 +292,7 @@ echo ""
 # 15 refusals, 13 silences and one command it cannot parse — because a guard that refused an
 # ordinary commit would be switched off within a day, and a guard that refused nothing would
 # read as protection while providing none.
-echo "  [13/15] git-hook bypass guard ..."
+echo "  [13/16] git-hook bypass guard ..."
 if "$PYTHON" .claude/hooks/check_no_verify.py; then
   pass "git-hook bypass guard (29 cases, refusals and silences)"
 else
@@ -312,11 +312,11 @@ fi
 # ⚠ It compares each copy against the INDICATOR rather than against a value typed into the
 # checker, so a deliberate future rule change needs no edit here - move the indicator, move
 # the copies, this stays green.
-echo "  [14/15] pine block drift (copies vs the indicator) ..."
+echo "  [14/16] pine block drift (copies vs the indicator) ..."
 if "$PYTHON" scripts/check_pine_blocks.py; then
-  pass "pine block drift (5 rules across 10 Pine copies)"
+  pass "pine block drift (7 rules across 11 Pine copies)"
 else
-  fail "pine block drift (5 rules across 10 Pine copies)"
+  fail "pine block drift (7 rules across 11 Pine copies)"
 fi
 
 # ── 15. Engine parity gates, against COMMITTED golden exports ────────────────
@@ -333,11 +333,29 @@ fi
 #   A green run here says nothing about a Pine change made after the golden file was taken.
 # ⚠ Engines are DISCOVERED (engines/*/exports/golden/*.csv), never listed, and finding zero
 #   is a FAILURE - a runner that quietly finds nothing reads as coverage.
-echo "  [15/15] engine parity gates (golden exports) ..."
+echo "  [15/16] engine parity gates (golden exports) ..."
 if "$PYTHON" scripts/check_engine_gates.py; then
   pass "engine parity gates vs golden exports (PARTIAL coverage - the step prints the fraction)"
 else
   fail "engine parity gates vs committed golden exports"
+fi
+
+# ── 16. The generated zone harness is still what its sources say it is ──────
+# 🔴 THE ENTRY-BAND EXEMPTION NEEDS FOUR ENGINE BLOCKS IN ONE PINE SCRIPT, so its harness is a
+# TENTH copy of the FVG block plus a fresh copy of the structure engine - in a repo whose most
+# expensive class of defect is exactly that (step 14 exists because seven strategy files sat on a
+# superseded rule while every gate stayed green).
+# So that harness is GENERATED: every block is sliced verbatim out of fib_export.pine or
+# fvg_export.pine, and this step regenerates and diffs. Edit either source without regenerating and
+# it goes RED - the one thing a hand-maintained tenth copy could never give you.
+# ⚠ A red here means the harness is validating Python against a Pine block the repo no longer has.
+#   Regenerate, then RE-EXPORT before trusting its gate: a regenerated harness is a changed harness,
+#   and the committed CSV was taken from the old one.
+echo "  [16/16] generated pine harness in sync with its sources ..."
+if "$PYTHON" scripts/build_fvg_zone_harness.py --check; then
+  pass "fvg_zone_export.pine matches fib_export.pine + fvg_export.pine"
+else
+  fail "fvg_zone_export.pine is stale against its generator sources"
 fi
 
 echo ""

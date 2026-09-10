@@ -34,6 +34,29 @@ has been asking for since 2026-08-12 now exists and has been run on all fourteen
 `strategies/` and `engines/`; the rules below moved verbatim.
 
 
+## 🔴 Four files carried a superseded gap cap, dormant, for five weeks (2026-09-10)
+
+`b_leg_strategy.pine`, `bos_strategy.pine` and both export twins counted EVERY gap against
+`fvgMaxCount` while their drop scan skipped the ones an equal-level exemption protects. That makes
+the exemption a **SWAP**: a protected gap holds a slot, so keeping it evicts an ordinary gap in its
+place. `mpc_jarvis.pine` fixed the identical bug on 2026-08-03 and measured it over 40,000 M15 bars
+as costing the SOS Fade bot 2 setups and gaining none.
+
+⚠ **It was DORMANT, and that is why nobody found it.** Both files ship `eqExemptFvg` OFF, and with
+the exemption off the two forms are identical by construction. The divergence appears only when
+somebody ticks the box on a chart — at which point the Pine silently disagrees with the shared
+Python engine, which has had the corrected form since 2026-08-06. **A bug held off by a default is
+not fixed, it is armed**, and this file already records that lesson from the opposite direction (the
+`qty_percent = 0` rung).
+
+✅ **Fixed in all four, byte-identical to `sos_fade_strategy.pine`'s block**, and now checked on every
+run: `scripts/check_pine_blocks.py` carries a *gap cap counting basis* spec across all ten Pine
+copies, watched RED by reverting one file.
+
+⚠ **NOT COMPILED and NOT GATED.** No strategy export exists on this machine, so no `compare_*.py`
+could be run. The change is a no-op at the shipped default by construction — that is the argument,
+and it is the whole argument. **Take a fresh export before turning `eqExemptFvg` on in either file.**
+
 ## `recovery_strategy.pine` — the SOS Fade book plus a LOSS RECOVERY leg (new 2026-08-19)
 
 **A FORK of `sos_fade_strategy.pine`, not an edit to it, and the reason is mechanical.** A recovery

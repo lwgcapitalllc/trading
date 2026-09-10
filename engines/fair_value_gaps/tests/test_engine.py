@@ -231,12 +231,13 @@ def test_custom_threshold_rejects_and_allows():
 
 # ── EQ-exemption coupling (Pine eqExemptFvg) ──
 
-def _staircase(eng, n=5, eq_levels=None, eq_tol=0.0):
+def _staircase(eng, n=5, eq_levels=None, eq_tol=0.0, zone_lo=None, zone_hi=None, zone_dir=0):
     """Ascending staircase (o=100,110,120,…) — bars 2..n-1 each form a bull gap."""
     ev = None
     for k in range(n):
         o = 100.0 + 10 * k
-        ev = eng.update(k, o, o + 6.0, o, o + 5.0, eq_levels=eq_levels, eq_tol=eq_tol)
+        ev = eng.update(k, o, o + 6.0, o, o + 5.0, eq_levels=eq_levels, eq_tol=eq_tol,
+                        zone_lo=zone_lo, zone_hi=zone_hi, zone_dir=zone_dir)
     return ev
 
 
@@ -281,3 +282,135 @@ def test_no_eq_levels_is_plain_fifo():
         ev = eng.update(k, o, o + 6.0, o, o + 5.0)
     assert [g.born_index for g in ev.active] == [3, 4]
     assert ev.evicted[0].born_index == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The fib ENTRY-BAND exemption (mpc fvgExemptZone) — a gap in the live fib's
+# 0.382-0.886 band, ON THE TRADE'S OWN SIDE, is exempt from the cap.
+#
+# ⚠ These pin BEHAVIOUR, not parity. The band branch has never been compared
+#   against Pine on a real export — that is fvg_zone_export.pine's job and it is
+#   outstanding. A green here says the rule does what this file says it does.
+#
+# Geometry of the shared staircase, worked out once so each test can be read:
+#   bar 2 gap = [106, 120]   bar 3 gap = [116, 130]
+#   bar 4 gap = [126, 140]   bar 5 gap = [136, 150]      (all bullish)
+# A band of 110..115 therefore overlaps the bar-2 gap ONLY: bar 3 starts at 116,
+# above the band's top, so nothing else is protected by accident.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BAND = dict(zone_lo=110.0, zone_hi=115.0, zone_dir=1)
+
+
+def test_band_gap_is_held_IN_ADDITION_to_the_cap():
+    """Same shape as the EQ test above, and for the same reason.
+
+    A protected gap must NOT hold a slot: `max_count` bounds the ORDINARY gaps only. Counting it
+    would make the exemption a SWAP — keeping the band gap would evict an ordinary one in its
+    place, which is a loss dressed as a feature. cap=2, ordinary gaps are bars 3 and 4 = the cap,
+    so nothing is dropped and all three survive.
+    """
+    ev = _staircase(FairValueGapEngine(max_count=2), **_BAND)
+    assert [g.born_index for g in ev.active] == [2, 3, 4]
+    assert ev.evicted == []
+
+
+def test_the_cap_still_bites_on_ordinary_gaps_while_a_band_gap_is_held():
+    """The other half of the pair — without it the test above passes for a cap that stopped working.
+
+    One bar longer: the ordinary gaps (3, 4, 5) now exceed the cap of 2, so the OLDEST ORDINARY
+    one is dropped while the band gap is skipped over.
+    """
+    ev = _staircase(FairValueGapEngine(max_count=2), n=6, **_BAND)
+    assert [g.born_index for g in ev.active] == [2, 4, 5]
+    assert len(ev.evicted) == 1 and ev.evicted[0].born_index == 3
+
+
+def test_band_does_not_protect_a_gap_on_the_wrong_side():
+    """DIRECTION-MATCHED, deliberately (mpc's own comment).
+
+    On a bearish leg the bullish gaps printing inside the same band belong to the move AGAINST the
+    setup, and the entry rule cannot read them either — so protecting them would pin levels nothing
+    trades. Same band, direction flipped: the bar-2 gap is bullish, so it is ordinary again and the
+    cap evicts it.
+    """
+    ev = _staircase(FairValueGapEngine(max_count=2), zone_lo=110.0, zone_hi=115.0, zone_dir=-1)
+    assert [g.born_index for g in ev.active] == [3, 4]
+    assert ev.evicted[0].born_index == 2
+
+
+def _bear_staircase(eng, n=5, zone_lo=None, zone_hi=None, zone_dir=0):
+    """Descending staircase (o=100,90,80,…) — bars 2..n-1 each form a BEAR gap.
+
+    bar 2 gap = [80, 94]   bar 3 gap = [70, 84]   bar 4 gap = [60, 74]
+    A band of 85..90 overlaps the bar-2 gap ONLY (bar 3 tops out at 84, below the band).
+    """
+    ev = None
+    for k in range(n):
+        o = 100.0 - 10 * k
+        ev = eng.update(k, o, o, o - 6.0, o - 5.0,
+                        zone_lo=zone_lo, zone_hi=zone_hi, zone_dir=zone_dir)
+    return ev
+
+
+def test_band_protects_a_bearish_gap_on_a_bearish_leg():
+    """The mirror of the bullish case, and the setup this exemption was actually written for.
+
+    After a bearish shift price prints gap after gap on the way down; the FIFO drops from the FRONT,
+    and the oldest gaps on a retrace setup are the ones UP IN THE ENTRY ZONE — the only gaps the
+    trade is ever taken from. cap=2, ordinary gaps are bars 3 and 4, so all three survive.
+    """
+    ev = _bear_staircase(FairValueGapEngine(max_count=2), zone_lo=85.0, zone_hi=90.0, zone_dir=-1)
+    assert [g.born_index for g in ev.active] == [2, 3, 4]
+
+
+def test_a_finished_leg_stops_pinning_gaps():
+    """`zone_dir == 0` means the leg has completed (mpc `fiboResetActive ? 0 : fibo_dir`).
+
+    The CONSUMER owns that zeroing; this engine only has to stop protecting when it arrives. Its
+    levels go back into the ordinary FIFO queue, which is the whole point — a setup that is over
+    must not keep holding slots away from the next one.
+
+    🔴 THIS TEST USED A BULLISH GAP FOR ONE DRAFT AND COULD NOT SEE THE GUARD IT NAMES. With
+    `zone_dir == 0` the direction test alone already rejects a BULLISH gap — `is_bullish != (0 == 1)`
+    is True — so deleting the `zone_dir == 0` guard entirely left the whole suite green. The guard is
+    reachable only from the BEARISH side, where `False != False` waves the direction test through.
+    **Watched RED by deleting the guard**, which is the only reason this docstring is trustworthy.
+    """
+    ev = _bear_staircase(FairValueGapEngine(max_count=2), zone_lo=85.0, zone_hi=90.0, zone_dir=0)
+    assert [g.born_index for g in ev.active] == [3, 4]
+
+
+def test_no_band_passed_is_plain_fifo():
+    """The shipped path for every consumer today: no band, so nothing changes at all."""
+    ev = _staircase(FairValueGapEngine(max_count=2))
+    assert [g.born_index for g in ev.active] == [3, 4]
+
+
+def test_band_overlap_not_containment():
+    """`gTop >= zoneLo and gBot <= zoneHi` — OVERLAP, mirroring Pine.
+
+    A band sitting entirely INSIDE a large gap still protects it. Requiring containment instead
+    would silently drop exactly the big displacement gaps a retrace is entered from, and the
+    symptom would be an absence — nothing on screen to say a level was thrown away.
+    """
+    ev = _staircase(FairValueGapEngine(max_count=2), zone_lo=112.0, zone_hi=114.0, zone_dir=1)
+    assert [g.born_index for g in ev.active] == [2, 3, 4]
+
+
+def test_band_and_eq_exemptions_compose():
+    """Two exemptions, either of which alone protects a gap (mpc composes them with `or`).
+
+    The band covers the bar-2 gap; an EQ level at 125 sits inside the bar-3 gap [116,130] and in no
+    other. With a cap of 1 the only ORDINARY gap is bar 4, so all three survive — which neither
+    exemption could achieve alone.
+
+    🔴 THE LEVEL WAS 120 FOR ONE DRAFT AND THE TEST WAS VACUOUS, in green. 120 is the bar-2 gap's
+    top edge, so the EQ rule protected BOTH gaps by itself and the test passed just as happily with
+    the band exemption deleted — proven by mutation, not by reading. **A test whose inputs cannot
+    distinguish the behaviours it names is describing a system where the thing under test does
+    nothing**, which is the same defect this repo already recorded as a scale factor of 1.
+    """
+    ev = _staircase(FairValueGapEngine(max_count=1), eq_levels=[125.0], **_BAND)
+    assert [g.born_index for g in ev.active] == [2, 3, 4]
+    assert ev.evicted == []

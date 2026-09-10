@@ -1747,7 +1747,21 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
         array.push(fvgIsBull, false)
         array.push(fvgBorn, bar_index)
     // [doc 36] Cap: drop oldest gaps beyond the limit  -> docs/bos_strategy.md
-    while array.size(fvgBoxes) > fvgMaxCount
+    // 🔴 THE CAP COUNTS NON-EXEMPT GAPS ONLY. This file carried the pre-2026-08-03 form until
+    //    2026-09-10 - it counted EVERY gap while the drop scan below skipped the exempt ones, so an
+    //    exempt gap still held a slot and keeping it evicted an ordinary gap in its place. That is a
+    //    SWAP, not an exemption, and mpc_jarvis.pine measured it over 40,000 M15 bars as costing the
+    //    SOS Fade bot 2 setups for 0 gained. ⚠ It was DORMANT here, because eqExemptFvg ships OFF in this
+    //    file and the two forms are then identical by construction - which is exactly why nobody
+    //    found it: the divergence only appears the moment somebody ticks the box on a chart, and it
+    //    would have disagreed silently with the shared Python engine, which has had the fixed form
+    //    since 2026-08-06. **A bug held off by a default is not fixed, it is armed.**
+    int _nonEq = 0
+    if array.size(fvgBoxes) > 0
+        for _di = 0 to array.size(fvgBoxes) - 1
+            if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                _nonEq += 1
+    while _nonEq > fvgMaxCount
         int _dropIdx = -1
         for _di = 0 to array.size(fvgBoxes) - 1
             if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
@@ -1761,6 +1775,7 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
         array.remove(fvgBots, _dropIdx)
         array.remove(fvgIsBull, _dropIdx)
         array.remove(fvgBorn, _dropIdx)
+        _nonEq -= 1
 
 // ── Extend live gaps, delete tapped ones, apply directional visibility ──
 if showFVG and array.size(fvgBoxes) > 0

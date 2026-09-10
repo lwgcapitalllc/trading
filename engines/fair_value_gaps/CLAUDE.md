@@ -249,6 +249,82 @@ check must exit 0 on a fresh export before the engine is committed as validated.
 
 ---
 
+## 🔴 The gate was HALF BLIND and green with it (2026-09-10)
+
+**MEASURED on the committed golden export: the live gap list reaches 17 and exceeds the 10 plotted
+slots on 52.2% of compared bars.** Every one of those bars was reported green while the diff never
+looked at gaps 11 and up.
+
+🔴 **The guard that was supposed to catch this had an EXPIRY DATE nobody wrote down.**
+`compare_fvg.py` refused an export whose `cfg_fvg_maxcount` exceeded the plotted slots — a correct
+check until **2026-08-03**, when a gap became able to be EXEMPT from the cap. From that day the live
+total is bounded by the EQ engine, not by that input, so the guard was interrogating a number that
+no longer bounds the thing it protected. **A guard whose premise has expired is worse than no guard:
+it reads as coverage.** This engine's own docs say the total is *"UNBOUNDED by `max_count`"* three
+paragraphs above the guard that assumed it was not.
+
+✅ **Two changes, and BOTH are needed — they answer different questions.**
+- **18 slots** (was 10) give ORDER, which is what proves the FIFO evicts the right gap.
+- **`px_fvg_topsum` / `px_fvg_botsum` / `px_fvg_bulltotal`** run to `array.size()` and give
+  MEMBERSHIP at any length, so a list longer than the slots still moves a compared number.
+
+⚠ **Direction is now ONE packed column (`px_fvg_bullmask`, bit k = slot k+1), not one per slot**, and
+that is what paid for the aggregates. TradingView's ceiling is 64 plots: three columns per slot buys
+21 slots and nothing else; two per slot plus a mask buys 18 slots AND whole-array coverage. ⚠ `2**18`
+is exact in the float64 a CSV cell carries, so nothing rounds.
+
+⚠ **The sums are compared on their OWN tolerance** (`--agg-tolerance`, default 1e-3). A sum of ~18
+four-figure prices is an accumulation, not a price; holding it to 1e-6 makes the gate red on the
+CSV's formatting rather than on the engine.
+
+⚠ **`compare_fvg.py` reads BOTH shapes and says which it got**, so the committed golden file still
+runs — and prints its partial coverage on every run rather than a bare tick. **A green that covered
+48% of the bars must not print the same line as one that covered all of them.** ✅ `scripts/check_engine_gates.py` now
+echoes any 🔴/⚠ line a gate prints even when the gate PASSES; it was discarding them on success, so
+the caveat existed and no runner ever showed it.
+
+🔴 **THE COMMITTED GOLDEN EXPORT IS THE LEGACY SHAPE AND STILL NEEDS RE-TAKING.** Until it is, this
+engine's regression gate covers the oldest 10 gaps on every bar and nothing beyond them.
+
+## The entry-band exemption, and the harness built to gate it (2026-09-10)
+
+`update()` takes `zone_lo` / `zone_hi` / `zone_dir` — mpc's `fvgExemptZone`: a gap overlapping the
+live fib's **0.382→0.886** band, **on the trade's own side**, is exempt from the cap exactly as an
+EQ-backed gap is. `_exempt()` composes the two, and BOTH are applied to BOTH cap loops — the count
+and the drop scan. Applying one to only the count is the self-cancelling SWAP this file already
+records from 2026-08-06.
+
+🔴 **IT EXISTS IN `mpc_jarvis.pine` AND NOWHERE ELSE, AND HAS SINCE 2026-08-05.** `git log -S` finds
+`f_fvgZoneKeep` in no strategy file under any path it has ever had. So the CHART has been protecting
+the gaps a retrace setup is entered from for five weeks while the bot, its Pine strategy and this
+engine have all been evicting them. ⚠ **Read that as an improvement that never propagated, NOT as a
+broken bot** — the live SOS Fade bot and `sos_fade_strategy.pine` agree with each other; the indicator is the
+odd one out. ⚠ **It stays INERT here until it is measured**: no consumer passes the band, so every
+existing result reproduces to the byte.
+
+⚠ **Gating it needs FOUR engine blocks in one Pine script** — structure, the Structure fib, EQ and
+FVG — because the band is not an input, it is the live fib recomputed every bar. That harness is
+`indicators/engines/fvg_zone_export.pine` and it is GENERATED (`scripts/build_fvg_zone_harness.py`,
+step 16 of `scripts/run_all_tests.sh`); the reasoning lives in `indicators/engines/CLAUDE.md`.
+
+🔴 **THE BAND THE CAP READS IS LAST BAR'S, and reproducing that is the whole design of the
+harness.** In mpc the FVG block runs ~800 lines ABOVE the fib block, so it can only ever see the
+previous bar's publish — deliberate there, because *"this decides which gap to THROW AWAY, never
+which one to trade"*. ⚠ **A consumer wiring this up owns the lag**: `backtest/replay/stack.py` runs
+the fib BEFORE the FVG, so it must pass the PREVIOUS bar's band, not this bar's. The harness exports
+the band twice — as CONSUMED (`px_fvgzone_*`) and as PUBLISHED (`px_fibband_*`) — and the gate
+asserts `consumed[i] == published[i-1]`, which turns the lag from a sentence in a comment into a
+checked fact.
+
+⚠ **`zone_dir` arrives already zeroed once the leg completes** (mpc `fiboResetActive ? 0 : fibo_dir`)
+— the CONSUMER owns that. ⚠ **That zeroing is 1-MINUTE ONLY in mpc** (`if _fibOneMin and ...`), so
+above 1m the term is plain `fibo_dir` there too, and the harness reproduces mpc-above-1m rather than
+pretending to cover a branch it cannot reach.
+
+🔴 **UNGATED UNTIL A REAL EXPORT ARRIVES.** The default path (no band) is green on the golden export
+and the new branch is inert at it, so nothing shipped is at risk — but *the band branch itself has
+never been compared against Pine*, and no number may be quoted from it until it has.
+
 ## The golden export (2026-09-09) — this engine's gate runs on every machine
 
 `exports/golden/VANTAGE_XAUUSD_M15_20155bars.csv` is COMMITTED, and `scripts/check_engine_gates.py` (step 15 of

@@ -31,10 +31,17 @@ indicator("FVG Export", overlay = false, max_bars_back = 2000)
 float fvgThreshLTF    = input.float(0.0,  "Min Gap Size, below 15m (% of price)",  minval = 0.0, maxval = 5.0, step = 0.01)
 float fvgThreshHTF    = input.float(0.04, "Min Gap Size, 15m and above (% of price)", minval = 0.0, maxval = 5.0, step = 0.01)
 float fvgThreshPct    = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
-// maxval is 10 because this file plots exactly 10 slots per array. Raise BOTH together or the
-// harness silently stops checking the gaps past the last plotted slot — which is what it did at
-// maxval 20 / 6 slots: the cap is 8, so gaps 7 and 8 were live and invisible to the diff.
-int   fvgMaxCount     = input.int(8, "Max Active FVGs", minval = 1, maxval = 10)
+// 🔴 THIS INPUT STOPPED BOUNDING THE LIVE LIST ON 2026-08-03 AND THE HARNESS DID NOT NOTICE FOR
+// FIVE WEEKS. Once a gap can be EXEMPT from the cap it rides on top of the count, so the live total
+// is bounded by the EQ engine (eqMax per side), not by this number. The file plotted 10 slots and
+// tied its own maxval to them, which reads as coverage — MEASURED on the committed golden export
+// (20,155 M15 bars): the live list reaches 17 and exceeds 10 on 52.2% of bars, every one of which
+// the parity diff reported green while never looking at gaps 11 and up.
+// Two changes, and BOTH are needed. The slots go to 18, which covers the observed range with room;
+// and px_fvg_topsum/botsum/bulltotal aggregate the WHOLE array, so a list longer than the slots is
+// still compared rather than silently dropped. ⚠ The slots give ORDER (which is what proves the
+// FIFO evicts the right gap); the sums give MEMBERSHIP at any length. Neither alone is the check.
+int   fvgMaxCount     = input.int(8, "Max Active FVGs", minval = 1, maxval = 18)
 bool  fvgRequireClose = input.bool(false, "Require Displacement Close")
 
 // ── EQ coupling (mpc eqExemptFvg): an FVG behind an active EQH/EQL level is exempt from the cap.
@@ -174,39 +181,77 @@ if array.size(fvgTops) > 0
 // TradingView's "Export chart data" excludes display.none plots from the CSV, so hidden
 // columns never make it into the export. Transparent plots stay invisible on the chart but
 // DO export (same trick fib_export.pine uses).
-plot(array.size(fvgTops) > 0 ? array.get(fvgTops, 0) : na, "px_fvg_top_1",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 1 ? array.get(fvgTops, 1) : na, "px_fvg_top_2",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 2 ? array.get(fvgTops, 2) : na, "px_fvg_top_3",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 3 ? array.get(fvgTops, 3) : na, "px_fvg_top_4",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 4 ? array.get(fvgTops, 4) : na, "px_fvg_top_5",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 5 ? array.get(fvgTops, 5) : na, "px_fvg_top_6",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 6 ? array.get(fvgTops, 6) : na, "px_fvg_top_7",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 7 ? array.get(fvgTops, 7) : na, "px_fvg_top_8",  color = color.new(color.green, 100))
-plot(array.size(fvgTops) > 8 ? array.get(fvgTops, 8) : na, "px_fvg_top_9",  color = color.new(color.green, 100))
+//
+// 🔴 THE COLUMN SET IS SHAPED BY TRADINGVIEW'S 64-PLOT CEILING, AND THE SHAPE IS THE POINT.
+// Three columns per slot (top/bot/bull) buys 21 slots and nothing else; two per slot plus ONE
+// packed direction mask buys 18 slots AND the whole-array aggregates that make a longer list
+// visible at all. The second is strictly more coverage per plot, so that is what this is.
+
+plot(array.size(fvgTops) > 0 ? array.get(fvgTops, 0) : na, "px_fvg_top_1", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 1 ? array.get(fvgTops, 1) : na, "px_fvg_top_2", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 2 ? array.get(fvgTops, 2) : na, "px_fvg_top_3", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 3 ? array.get(fvgTops, 3) : na, "px_fvg_top_4", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 4 ? array.get(fvgTops, 4) : na, "px_fvg_top_5", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 5 ? array.get(fvgTops, 5) : na, "px_fvg_top_6", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 6 ? array.get(fvgTops, 6) : na, "px_fvg_top_7", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 7 ? array.get(fvgTops, 7) : na, "px_fvg_top_8", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 8 ? array.get(fvgTops, 8) : na, "px_fvg_top_9", color = color.new(color.green, 100))
 plot(array.size(fvgTops) > 9 ? array.get(fvgTops, 9) : na, "px_fvg_top_10", color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 0 ? array.get(fvgBots, 0) : na, "px_fvg_bot_1",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 1 ? array.get(fvgBots, 1) : na, "px_fvg_bot_2",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 2 ? array.get(fvgBots, 2) : na, "px_fvg_bot_3",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 3 ? array.get(fvgBots, 3) : na, "px_fvg_bot_4",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 4 ? array.get(fvgBots, 4) : na, "px_fvg_bot_5",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 5 ? array.get(fvgBots, 5) : na, "px_fvg_bot_6",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 6 ? array.get(fvgBots, 6) : na, "px_fvg_bot_7",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 7 ? array.get(fvgBots, 7) : na, "px_fvg_bot_8",  color = color.new(color.green, 100))
-plot(array.size(fvgBots) > 8 ? array.get(fvgBots, 8) : na, "px_fvg_bot_9",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 10 ? array.get(fvgTops, 10) : na, "px_fvg_top_11", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 11 ? array.get(fvgTops, 11) : na, "px_fvg_top_12", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 12 ? array.get(fvgTops, 12) : na, "px_fvg_top_13", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 13 ? array.get(fvgTops, 13) : na, "px_fvg_top_14", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 14 ? array.get(fvgTops, 14) : na, "px_fvg_top_15", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 15 ? array.get(fvgTops, 15) : na, "px_fvg_top_16", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 16 ? array.get(fvgTops, 16) : na, "px_fvg_top_17", color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 17 ? array.get(fvgTops, 17) : na, "px_fvg_top_18", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 0 ? array.get(fvgBots, 0) : na, "px_fvg_bot_1", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 1 ? array.get(fvgBots, 1) : na, "px_fvg_bot_2", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 2 ? array.get(fvgBots, 2) : na, "px_fvg_bot_3", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 3 ? array.get(fvgBots, 3) : na, "px_fvg_bot_4", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 4 ? array.get(fvgBots, 4) : na, "px_fvg_bot_5", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 5 ? array.get(fvgBots, 5) : na, "px_fvg_bot_6", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 6 ? array.get(fvgBots, 6) : na, "px_fvg_bot_7", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 7 ? array.get(fvgBots, 7) : na, "px_fvg_bot_8", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 8 ? array.get(fvgBots, 8) : na, "px_fvg_bot_9", color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 9 ? array.get(fvgBots, 9) : na, "px_fvg_bot_10", color = color.new(color.green, 100))
-plot(array.size(fvgIsBull) > 0 ? (array.get(fvgIsBull, 0) ? 1.0 : 0.0) : na, "px_fvg_bull_1",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 1 ? (array.get(fvgIsBull, 1) ? 1.0 : 0.0) : na, "px_fvg_bull_2",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 2 ? (array.get(fvgIsBull, 2) ? 1.0 : 0.0) : na, "px_fvg_bull_3",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 3 ? (array.get(fvgIsBull, 3) ? 1.0 : 0.0) : na, "px_fvg_bull_4",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 4 ? (array.get(fvgIsBull, 4) ? 1.0 : 0.0) : na, "px_fvg_bull_5",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 5 ? (array.get(fvgIsBull, 5) ? 1.0 : 0.0) : na, "px_fvg_bull_6",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 6 ? (array.get(fvgIsBull, 6) ? 1.0 : 0.0) : na, "px_fvg_bull_7",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 7 ? (array.get(fvgIsBull, 7) ? 1.0 : 0.0) : na, "px_fvg_bull_8",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 8 ? (array.get(fvgIsBull, 8) ? 1.0 : 0.0) : na, "px_fvg_bull_9",  color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 9 ? (array.get(fvgIsBull, 9) ? 1.0 : 0.0) : na, "px_fvg_bull_10", color = color.new(color.gray, 100))
-plot(array.size(fvgTops), "px_fvg_count",  color = color.new(color.gray, 100))
-plot(fvgFormed,           "px_fvg_formed", color = color.new(color.gray, 100))
-plot(fvgMit,              "px_fvg_mit",    color = color.new(color.gray, 100))
+plot(array.size(fvgBots) > 10 ? array.get(fvgBots, 10) : na, "px_fvg_bot_11", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 11 ? array.get(fvgBots, 11) : na, "px_fvg_bot_12", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 12 ? array.get(fvgBots, 12) : na, "px_fvg_bot_13", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 13 ? array.get(fvgBots, 13) : na, "px_fvg_bot_14", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 14 ? array.get(fvgBots, 14) : na, "px_fvg_bot_15", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 15 ? array.get(fvgBots, 15) : na, "px_fvg_bot_16", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 16 ? array.get(fvgBots, 16) : na, "px_fvg_bot_17", color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 17 ? array.get(fvgBots, 17) : na, "px_fvg_bot_18", color = color.new(color.green, 100))
+
+// Direction for the first 18 slots, packed one bit per slot (slot 1 = bit 0). One column instead
+// of 18; 2^18 is exactly representable in the float64 a CSV cell carries, so nothing rounds.
+float fvgBullMask = 0.0
+if array.size(fvgIsBull) > 0
+    for _bi = 0 to math.min(array.size(fvgIsBull), 18) - 1
+        if array.get(fvgIsBull, _bi)
+            fvgBullMask += math.pow(2, _bi)
+
+// ── WHOLE-ARRAY aggregates. These are what make a list longer than 18 slots CHECKABLE rather
+//    than invisible: they run to array.size(), so a gap in slot 19 still moves a compared number.
+//    ⚠ They prove MEMBERSHIP, not ORDER — that is why the per-slot columns above are kept. ──
+float fvgTopSum = 0.0
+float fvgBotSum = 0.0
+int   fvgBullTot = 0
+if array.size(fvgTops) > 0
+    for _si = 0 to array.size(fvgTops) - 1
+        fvgTopSum += array.get(fvgTops, _si)
+        fvgBotSum += array.get(fvgBots, _si)
+        if array.get(fvgIsBull, _si)
+            fvgBullTot += 1
+
+plot(fvgBullMask,          "px_fvg_bullmask",  color = color.new(color.gray, 100))
+plot(array.size(fvgTops),  "px_fvg_count",     color = color.new(color.gray, 100))
+plot(fvgFormed,            "px_fvg_formed",    color = color.new(color.gray, 100))
+plot(fvgMit,               "px_fvg_mit",       color = color.new(color.gray, 100))
+plot(fvgTopSum,            "px_fvg_topsum",    color = color.new(color.gray, 100))
+plot(fvgBotSum,            "px_fvg_botsum",    color = color.new(color.gray, 100))
+plot(fvgBullTot,           "px_fvg_bulltotal", color = color.new(color.gray, 100))
 
 // ── cfg_* columns: the exact settings this export ran with, so compare_fvg.py configures the Python
 //    engine to match (never a hardcoded guess). Constant every bar; the tool reads them once. ──

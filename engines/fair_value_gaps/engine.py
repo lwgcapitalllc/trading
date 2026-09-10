@@ -69,12 +69,17 @@ class FairValueGapEngine:
         # EQ-coupling state for the current bar (set each update; None = exemption off).
         self._eq_levels = None
         self._eq_tol = 0.0
+        # Entry-band exemption state (Pine fvgZoneLo/Hi/Dir). dir 0 = no live band.
+        self._zone_lo = None
+        self._zone_hi = None
+        self._zone_dir = 0
 
         self._next_id = 0
 
     # ------------------------------------------------------------------
     def update(self, bar_index: int, open_: float, high: float, low: float,
-               close: float, eq_levels=None, eq_tol: float = 0.0) -> FvgEvents:
+               close: float, eq_levels=None, eq_tol: float = 0.0,
+               zone_lo=None, zone_hi=None, zone_dir: int = 0) -> FvgEvents:
         """Feed one closed bar (index + OHLC). Returns this bar's FVG events.
 
         `eq_levels` / `eq_tol` model the Pine `eqExemptFvg` coupling: an FVG that overlaps (or sits
@@ -88,6 +93,9 @@ class FairValueGapEngine:
         self._window.append((open_, high, low, close))
         self._eq_levels = eq_levels          # active EQ level prices this bar (or None = no exemption)
         self._eq_tol = eq_tol                # Pine eqTol — the proximity band for the exemption
+        self._zone_lo = zone_lo              # Pine fvgZoneLo — the live fib entry band, low edge
+        self._zone_hi = zone_hi              # Pine fvgZoneHi — high edge
+        self._zone_dir = zone_dir            # Pine fvgZoneDir — 0 once the leg completes
         events = FvgEvents()
 
         # ── Detection: confirmed bars only (we only ever feed closed bars) and bar_index >= 2 so
@@ -120,11 +128,11 @@ class FairValueGapEngine:
             # it protected cost it the gaps it would have traded. The live total is therefore
             # UNBOUNDED by `max_count`; it is bounded by the EQ engine instead (`max_levels` per
             # side, each dying on a close through it).
-            non_eq = sum(1 for gap in self._active if not self._near_eq(gap))
+            non_eq = sum(1 for gap in self._active if not self._exempt(gap))
             while non_eq > self._max_count:
                 drop_idx = None
                 for idx, gap in enumerate(self._active):
-                    if not self._near_eq(gap):
+                    if not self._exempt(gap):
                         drop_idx = idx
                         break
                 if drop_idx is None:
@@ -162,6 +170,42 @@ class FairValueGapEngine:
         )
         self._active.append(gap)
         events.formed.append(gap)
+
+    def _exempt(self, gap: "FairValueGap") -> bool:
+        """Pine's composed test: a gap is protected if it is EQ-backed OR sits in the entry band.
+
+        ⚠ BOTH exemptions must be applied to BOTH loops — the count and the drop scan. Applying
+        one to only the count is what made the EQ exemption self-cancelling before 2026-08-06: a
+        protected gap held a slot, so keeping it evicted an ordinary gap in its place. That is a
+        swap, not an addition, and in Pine it cost the SOS Fade bot 2 setups over 40,000 M15 bars.
+        Composing here rather than at the two call sites is what stops the two drifting apart.
+        """
+        return self._near_eq(gap) or self._zone_keep(gap)
+
+    def _zone_keep(self, gap: "FairValueGap") -> bool:
+        """Pine f_fvgZoneKeep: is this gap in the live fib entry band, ON THE TRADE'S OWN SIDE?
+
+        The band is the fib's 0.382→0.886 — one rung shallower than the bot's own 0.5–0.886 entry
+        zone, so a gap sitting just above 0.5 survives to be looked at instead of being evicted for
+        being a hair too shallow.
+
+        Why it exists: after a bearish SOS, price prints gap after gap on the way down. Each takes a
+        slot and the FIFO drops from the FRONT — and the oldest gaps on a retrace setup are the ones
+        UP IN THE ENTRY ZONE, the only gaps the trade is ever taken from. The cap was throwing away
+        the levels being watched to make room for levels below price that nothing reads.
+
+        ⚠ DIRECTION-MATCHED, deliberately. On a bearish leg only BEARISH gaps are protected: the
+        bullish gaps printing inside the same band belong to the move AGAINST the setup, and the
+        entry rule cannot read them either. ⚠ `zone_dir` arrives already zeroed once the leg has
+        completed, so a finished setup stops pinning gaps — the CONSUMER owns that, mirroring Pine's
+        `fvgZoneDir := fiboResetActive ? 0 : fibo_dir`.
+        """
+        if self._zone_dir == 0 or self._zone_lo is None or self._zone_hi is None:
+            return False
+        if gap.is_bullish != (self._zone_dir == 1):
+            return False
+        # Overlap, not containment (Pine `gTop >= fvgZoneLo and gBot <= fvgZoneHi`).
+        return gap.top >= self._zone_lo and gap.bottom <= self._zone_hi
 
     def _near_eq(self, gap: "FairValueGap") -> bool:
         """Pine f_fvgNearEq: does any active EQ level sit within `eq_tol` of this gap's span?

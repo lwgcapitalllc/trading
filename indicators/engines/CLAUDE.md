@@ -89,6 +89,53 @@ no signal moves. The fib maths already ran on every timeframe regardless of whet
 
 ---
 
+## `fvg_zone_export.pine` (2026-09-10) — the harness that is a GENERATED file, and why
+
+The gap cap's ENTRY-BAND exemption cannot be tested by `fvg_export.pine`, and not for want of
+trying: the band is the live fib's 0.382-0.886, recomputed every bar from the current leg. It is not
+an input. Reproducing it needs the market-structure engine AND the Structure fib in the same script,
+so this harness carries four engine blocks — structure, fib, EQ, FVG.
+
+🔴 **THAT MAKES IT A TENTH PINE COPY OF THE GAP BLOCK, so it is GENERATED rather than written.**
+`scripts/build_fvg_zone_harness.py` slices every block verbatim out of `fib_export.pine` or
+`fvg_export.pine`; `--check` regenerates and diffs, and it is **step 16 of
+`scripts/run_all_tests.sh`**. Edit either source without regenerating and the step goes red — the one
+thing a hand-maintained tenth copy could never give you. ⚠ **Do not hand-edit the harness**; the
+check catches it, but the edit is lost on the next regeneration.
+
+⚠ **The generator slices on TEXT ANCHORS, never line numbers.** The first version used line numbers
+and they were stale within the hour — widening `fvg_export.pine`'s plot block moved every boundary,
+and a numeric slice would have cut the new block in half while still producing a file.
+
+⚠ **The only text authored in the generator is the band exemption itself**, because it exists in
+exactly one place in the repo (`mpc_jarvis.pine`) with no harness to lift it from. Every line of it
+carries the mpc line numbers it was copied from.
+
+🔴 **BLOCK ORDER IS THE POINT AND MUST NOT BE "TIDIED".** The FVG block sits BEFORE the fib block,
+exactly as in `mpc_jarvis.pine` (~3830 vs ~4810). That is what gives the cap LAST BAR's band, which
+is mpc's deliberate behaviour. Moving the fib above the FVG produces a harness that is
+self-consistent, green, and describing an indicator nobody runs. ⚠ The band is exported twice — as
+CONSUMED and as PUBLISHED — and `compare_fvg.py` asserts `consumed[i] == published[i-1]`, so the
+ordering is a checked fact rather than a comment.
+
+⚠ **Export it ABOVE the 1-minute timeframe.** mpc only ever zeroes the band's direction on a 1m
+chart, and reaching that needs the whole MTF-alignment block; above 1m this harness reproduces mpc
+faithfully instead of pretending to cover a branch it cannot reach.
+
+⚠ **57 of TradingView's 64 plot slots.** `fib_export.pine` is at 63 of 64, which is why the band
+could not simply be added there — that direction is closed, not merely unattractive.
+
+## 🔴 `fvg_export.pine` was under-checking half its own bars (2026-09-10)
+
+It plotted 10 slots per array while the live gap list reaches **17**, exceeding 10 on **52.2%** of
+bars on the committed golden export — all reported green. Now **18 slots**, direction packed into ONE
+column, plus whole-array aggregates so a longer list is still compared. The measurement, the expired
+guard behind it and the tolerance rules live in `engines/fair_value_gaps/CLAUDE.md` and are not
+restated here.
+
+⚠ **The `fvgMaxCount` maxval, the plotted slots and `compare_fvg.py`'s slot count still move
+together** — but the aggregates are what make a mismatch between them VISIBLE rather than silent.
+
 ## 🔴 `fvg_export.pine` embeds the equal-level block, and that copy was missed (fixed 2026-09-09)
 
 The gap harness embeds the equal-level block ONLY to reproduce the cap exemption — its own detection

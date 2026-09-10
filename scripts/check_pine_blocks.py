@@ -105,6 +105,40 @@ def _numeric_setting(text: str, name: str):
     return float(m.group(1)) if m else None
 
 
+def _fvg_cap_basis(text: str):
+    """Does the gap cap count EVERY gap, or only the ones no exemption is protecting?
+
+    Two shapes, and the difference is a real bug rather than a style:
+
+        while _nonEq > fvgMaxCount                  -> "non-exempt"  (mpc since 2026-08-03)
+        while array.size(fvgBoxes) > fvgMaxCount    -> "all"         (the superseded form)
+
+    Counting every gap while the drop scan skips the protected ones makes the exemption a SWAP: the
+    protected gap holds a slot, so keeping it evicts an ordinary gap in its place. Measured in Pine
+    over 40,000 M15 bars as costing the SOS Fade bot 2 setups and gaining none. It sat in four strategy
+    files until 2026-09-10, DORMANT because their exemption input ships off - so the two forms are
+    identical there by construction, and the divergence only appears when somebody ticks the box.
+    That is precisely the kind of drift no parity gate can see and no chart can show you.
+    """
+    if not re.search(r"array\.push\(fvgTops", text):
+        return None  # this file has no gap block
+    if re.search(r"while\s+_nonEq\s*>\s*fvgMaxCount", text):
+        return "non-exempt"
+    if re.search(r"while\s+array\.size\(fvg\w+\)\s*>\s*fvgMaxCount", text):
+        return "all"
+    return None
+
+
+def _fvg_mitigation(text: str):
+    """Which price field retires a gap — the CLOSE through its far edge, or a wick into it?
+
+    Returns the field named on the bull side of the ternary. The equal-level rule drifted on exactly
+    this axis across eight files on 2026-09-09; the gap rule is one regex away from the same fate.
+    """
+    m = re.search(r"isBull\s*\?\s*(\w+)\s*<=\s*gBot\s*:\s*\w+\s*>=\s*gTop", text)
+    return m.group(1) if m else None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Specs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +169,19 @@ SPECS = [
         "extract": lambda t: _numeric_setting(t, "eqMax"),
         "min_files": 8,
         "why": "decides how many levels survive, which feeds the gap cap exemption",
+    },
+    {
+        "name": "gap cap counting basis (all gaps vs non-exempt only)",
+        "extract": _fvg_cap_basis,
+        "min_files": 10,
+        "why": "counting the protected gaps makes the exemption a SWAP - it evicts an ordinary gap "
+        "in the protected one's place, which is a loss dressed as a feature",
+    },
+    {
+        "name": "gap mitigation (close through the far edge vs a wick)",
+        "extract": _fvg_mitigation,
+        "min_files": 9,
+        "why": "a wick into a gap leaves it alive; only a close through its far edge consumes it",
     },
     {
         "name": "equal-level pivot width",
