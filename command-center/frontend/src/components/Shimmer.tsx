@@ -23,18 +23,20 @@
  * together pulse together rather than each flashing on its own — the difference between
  * "loading" and "noise".
  *
- * 🔴 **A change to the animation in `tailwind.config.js` needs the DEV SERVER RESTARTED.** The
- * running Vite reads that file once at startup and kept serving the OLD keyframe — a slide right
- * across the screen — so every block drew hundreds of pixels from where it sat and then left the
- * page. It looked exactly like a layout bug and was only a stale server; check the served
- * `@keyframes shimmer` before debugging a block that is in the wrong place.
+ * 🔴 **The sweep is `animate-skeleton-sweep` in `src/index.css`, NEVER Tailwind's `animate-shimmer`.**
+ * The config's `shimmer` keyframe SLIDES an element across the whole screen. The first build
+ * redefined it there, but a running dev server reads the config only at startup, so every running
+ * app kept the slide and drew each block flying over the page — reported off Aaron's screen as
+ * *"a thing moving across the screen over the text"*. index.css hot-reloads, and a new name
+ * cannot meet a stale definition, so nobody has to remember to restart anything.
  *
  * ⚠ **The block must be visible BETWEEN sweeps.** The first build used the raised-surface colour
  * as its base, which is 6 units off the card behind it — MEASURED invisible on screen, so the page
  * read as blank half the time. The base is the active-surface colour and the sweep is a soft light
  * band laid over it.
  *
- * ⚠ **Theme tokens only**, and it stops for anyone who has asked their OS for reduced motion.
+ * ⚠ **Theme tokens only**, and it stops for anyone who has asked their OS for reduced motion (the
+ * media query sits beside the animation in index.css).
  */
 export function Shimmer({
   className = '',
@@ -67,8 +69,8 @@ export function Shimmer({
       // own baseline, which is the whole point of passing it.
       className={`inline-block ${children ? '' : 'align-middle'} shrink-0 ${radius} bg-bg-active
                   bg-no-repeat bg-[length:300%_100%] bg-gradient-to-r from-transparent from-40%
-                  via-text-tertiary/20 via-50% to-transparent to-60% animate-shimmer
-                  motion-reduce:animate-none ${className}`}
+                  via-text-tertiary/20 via-50% to-transparent to-60% animate-skeleton-sweep
+                  ${className}`}
     >
       {children && <span className="invisible">{children}</span>}
     </span>

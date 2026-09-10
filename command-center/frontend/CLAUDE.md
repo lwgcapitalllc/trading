@@ -378,10 +378,11 @@ Each now shimmers until its OWN source has answered.
   until that one lands; the Bots version pills waited ~4s for the snapshot before their own ~4.5s
   read could start, and are now keyed off the config list instead.
 
-⚠ **Theme tokens only**; the sweep stops under reduced-motion. ⚠ **The animation lives in
-`tailwind.config.js` and a change to it needs the DEV SERVER RESTARTED** — the running Vite kept
-serving the old keyframe, which slid every block hundreds of pixels across the page and looked
-exactly like a layout bug. Check the served `@keyframes shimmer` first.
+⚠ **Theme tokens only**; the sweep stops under reduced-motion. 🔴 **The sweep is
+`animate-skeleton-sweep` in `src/index.css` — never Tailwind's `animate-shimmer`, which SLIDES an
+element across the screen.** The first build redefined that one in `tailwind.config.js`, which a
+running dev server reads only at startup, so Aaron's app drew every block flying over the text.
+**Put an animation a shared component depends on where a running server hot-reloads it.**
 
 ⚠ **Pages still carrying a PRIVATE skeleton** (built on `animate-pulse`, before this existed) —
 migrate each to `Shimmer` when you are next in the file, never as a drive-by across all of them:

@@ -54,4 +54,32 @@
     font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
   }
+
+  /* The loading placeholder's sweep (components/Shimmer.tsx). The gradient is 3x the block's
+   * width and does not repeat, so its light band starts off the left edge and ends off the right
+   * one — seamless with no tiling.
+   *
+   * ⚠ It lives HERE, not in tailwind.config.js, on purpose. A running dev server reloads this file
+   * live but reads the Tailwind config only when it starts — and the config already had an unused
+   * `shimmer` keyframe that SLIDES an element across the screen. Defined there, every running
+   * server (and every machine that pulled) drew the blocks flying over the page until somebody
+   * restarted it, which is exactly how it first reached Aaron's screen. A new name, in a file
+   * that hot-reloads, cannot meet a stale definition. */
+  .animate-skeleton-sweep {
+    animation: skeleton-sweep 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-skeleton-sweep {
+      animation: none;
+    }
+  }
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
 }
