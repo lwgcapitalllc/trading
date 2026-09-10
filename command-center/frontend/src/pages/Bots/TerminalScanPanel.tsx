@@ -223,6 +223,11 @@ function TerminalRow({ terminal }: { terminal: ScannedTerminal }) {
         {terminal.account !== null ? (
           <span className="text-small text-text-primary shrink-0">
             #{terminal.account} <KindPill kind={terminal.kind} />
+            {/* A bot's report and the scan's own reading are different strengths of evidence,
+                so where the number came from is on screen rather than implied. */}
+            {terminal.account_source === 'bot' && (
+              <span className="text-text-tertiary"> · reported by the bot</span>
+            )}
           </span>
         ) : (
           <span className="text-small text-text-tertiary shrink-0">not asked</span>

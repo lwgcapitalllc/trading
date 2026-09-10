@@ -76,6 +76,10 @@ class TerminalReading:
     symbol_suffix_how: Optional[str] = None
     reason: Optional[str] = None  # why it was not probed
     error: Optional[str] = None  # why a probe failed
+    # WHERE the account number came from. "terminal" = this tool attached and asked; "bot" = the
+    # bot trading through it reported what IT observes; None = nobody could say. The provenance is
+    # kept because the two are different strengths of evidence and a reader deserves to know which.
+    account_source: Optional[str] = None
     verdict: str = "unasked"  # "new" | "known" | "conflict" | "unasked"
     conflicts: list = field(default_factory=list)
 
@@ -180,7 +184,34 @@ def _compare(reading: TerminalReading, row: Any) -> list:
     return out
 
 
-def reconcile(payload: Any, registered: Any) -> Reconciliation:
+def _account_from_bots(raw: dict, observed_by_bot: dict) -> tuple:
+    """What the bots trading through a terminal say they are ACTUALLY on.
+
+    🔴 **This is the only way a terminal a bot owns can be checked at all.** The scan deliberately
+    never attaches there, so before the live runner reported its observed account every row
+    pointing at the bots' terminal came back UNVERIFIED — which is exactly where a stale claim had
+    been sitting for weeks.
+
+    ⚠ **It uses the OBSERVED account, never the configured one.** A bot's configured account comes
+    from a file in the same repo as the account list, so checking one against the other proves
+    nothing. The observed number is the terminal's own answer, read off `account_info()`.
+
+    ⚠ **A bot that could not ask contributes NOTHING**, rather than a zero or its configured
+    number. ⚠ **Bots that disagree resolve to unknown**: one terminal holds one login, so a
+    disagreement means somebody is reporting stale state and guessing between them would be
+    inventing a fact.
+    """
+    seen = set()
+    for bot in raw.get("owned_by_bots") or []:
+        value = observed_by_bot.get(bot)
+        if value is not None:
+            seen.add(int(value))
+    if len(seen) != 1:
+        return None, None
+    return seen.pop(), "bot"
+
+
+def reconcile(payload: Any, registered: Any, observed_by_bot: Any = None) -> Reconciliation:
     """Join what the box reports against the account list. Writes nothing.
 
     `registered` is the list of `RegisteredAccount` rows. Only their attributes are read, so this
@@ -194,8 +225,19 @@ def reconcile(payload: Any, registered: Any) -> Reconciliation:
     by_account = {int(r.account): r for r in rows}
 
     seen_accounts = {}
+    by_bot = dict(observed_by_bot or {})
     for raw in payload.get("terminals") or []:
         reading = _reading(raw)
+        if reading.account is not None:
+            reading.account_source = "terminal"
+        elif raw.get("state") == "owned_by_bot":
+            found, source = _account_from_bots(raw, by_bot)
+            if found is not None:
+                reading.account, reading.account_source = found, source
+                reading.reason = (
+                    f"{reading.reason or 'not attached to'} - "
+                    f"account {found} reported by the bot trading through it"
+                )
         if reading.account is None:
             # Not probed, or probed and unreadable. Either way there is no account to judge, and
             # the record already carries WHY in `reason`/`error`.
@@ -216,12 +258,16 @@ def reconcile(payload: Any, registered: Any) -> Reconciliation:
             reading.verdict = "conflict" if reading.conflicts else "known"
         result.terminals.append(reading)
 
+    # Keyed on the RESOLVED readings rather than the raw payload, so a terminal whose account
+    # came from the bot trading through it is visible here too. Passing the payload meant the one
+    # terminal this tool cannot attach to was also the one no row could ever be checked against.
+    by_key = {r.key: r for r in result.terminals}
     for row in rows:
-        result.registry.append(_check_row(row, seen_accounts, payload))
+        result.registry.append(_check_row(row, seen_accounts, by_key))
     return result
 
 
-def _check_row(row: Any, seen: dict, payload: dict) -> RegistryCheck:
+def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
     """Whether the box backs up one row of the account list.
 
     🔴 **An account can be logged in on MORE THAN ONE terminal, and this function was written as
@@ -259,45 +305,40 @@ def _check_row(row: Any, seen: dict, payload: dict) -> RegistryCheck:
         return RegistryCheck(account, label, "unverified", detail)
 
     key = _install_key(claimed)
-    terminal = next((t for t in (payload.get("terminals") or []) if t.get("key") == key), None)
+    terminal = by_key.get(key)
 
     if terminal is None:
         detail = f"the box has no terminal installed at {claimed}"
-    elif terminal.get("state") == "owned_by_bot":
+    elif terminal.account is None and terminal.state == "owned_by_bot":
         detail = (
             f"{claimed} is the terminal a bot trades through, so it was deliberately not "
-            f"attached to - that bot reports its own account"
+            f"attached to, and no bot on it could say which account it is on"
         )
-    elif terminal.get("state") == "not_running":
+    elif terminal.account is None:
         detail = f"{claimed} is not running, so it could not be asked"
-    elif terminal.get("account") == account:
-        # The claimed terminal WAS asked and it is on this account. That is the row confirmed,
-        # whatever else the account is also open in.
-        also = sorted(
-            str(t.get("install"))
-            for t in (payload.get("terminals") or [])
-            if t.get("account") == account and t.get("key") != key
+    elif terminal.account == account:
+        # The claimed terminal was ASKED — by this tool, or by the bot trading through it — and
+        # it is on this account. That is the row confirmed, whatever else the account is open in.
+        also = sorted(t.install for t in by_key.values() if t.account == account and t.key != key)
+        how = (
+            " (reported by the bot trading through it)" if terminal.account_source == "bot" else ""
         )
-        detail = f"logged in at {terminal.get('install')}"
+        detail = f"logged in at {terminal.install}{how}"
         if also:
             detail += f" (also open in {', '.join(also)})"
         verdict = "contradicted" if conflicts else "confirmed"
-        return RegistryCheck(
-            account, label, verdict, detail, conflicts, str(terminal.get("install") or "")
-        )
+        return RegistryCheck(account, label, verdict, detail, conflicts, terminal.install)
     else:
-        # Asked, and logged into something else. A measurement, not a gap.
-        conflicts = conflicts + [
-            f"this row claims {claimed}; that terminal is on account {terminal.get('account')}"
-        ]
+        # Asked, and on something else. A measurement, not a gap.
+        via = "the bot trading through it reports" if terminal.account_source == "bot" else "it is"
+        conflicts = conflicts + [f"this row claims {claimed}; {via} account {terminal.account}"]
         return RegistryCheck(
             account,
             label,
             "contradicted",
-            f"{claimed} is running and logged into account {terminal.get('account')}, "
-            f"not {account}",
+            f"{claimed} is on account {terminal.account}, not {account}",
             conflicts,
-            str(terminal.get("install") or ""),
+            terminal.install,
         )
 
     # The claimed terminal could not be asked. Broker-fact conflicts still stand on their own.

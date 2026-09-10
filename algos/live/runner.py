@@ -2442,6 +2442,30 @@ class LiveRunner:
                     "total_pnl_pct": total_pct,
                     "mt5_link": bool(link_up),
                     "account": self.cfg.account,
+                    # 🔴 **What the bot was TOLD to trade, and what it is ACTUALLY on.** The line
+                    # above is the config's claim; this one is the terminal's own answer, captured
+                    # off the same `account_info()` call as the balance (`probe_link`). They are
+                    # written together and separately because a check that reads only the first
+                    # cannot tell an account list that is right from one that is stale — that is
+                    # what left a registry row claiming a terminal for an account it is not on,
+                    # for weeks, with nothing able to notice.
+                    #
+                    # ⚠ **`None` means COULD NOT ASK, never "no account".** A dead link sets it
+                    # `None` in `probe_link`, and `mt5_link` beside it is what distinguishes the
+                    # two. Any reader must test `is None`, never falsy.
+                    #
+                    # ⚠ It is REPORTED here and ACTED ON in `_check_account_identity`, which halts.
+                    # This field must never become the thing that decides anything: a mismatch is
+                    # already a latching halt, and a second consumer that merely displays it must
+                    # not look like the guard.
+                    # `getattr` because a MISSING attribute is "could not ask", exactly as a
+                    # missing `login` is in `probe_link`. The whole write lives in one try/except
+                    # whose failure mode is NO HEARTBEAT AT ALL — and the heartbeat is what
+                    # SYS_MONITOR reads to catch a bot that is alive but no longer stepping. A
+                    # field that only DISPLAYS something must never be able to suppress the signal
+                    # the watchdog runs on. Caught by a test that builds a bare runner: the write
+                    # raised, the except logged a warning, and the bot silently stopped stamping.
+                    "observed_account": getattr(self, "_observed_account", None),
                     "symbol": self.cfg.symbol,
                     "version": self.cfg.strategy_version,
                     "source_hash": self.source_hash[:12],

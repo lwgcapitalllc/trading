@@ -185,3 +185,153 @@ def test_an_account_info_without_a_login_is_unreadable_not_a_match(monkeypatch):
 
     assert up is True, "the balance answered, so the link is alive"
     assert r._observed_account is None, "but the identity was not established"
+
+
+# ---------------------------------------------------------------------------------------
+# Reporting the observed account, not just acting on it
+# ---------------------------------------------------------------------------------------
+
+
+class _FakeBotState:
+    """Records what the heartbeat wrote. Deliberately does NOT invent a starting balance."""
+
+    def __init__(self):
+        self.written = {}
+
+    def ensure_starting_balance(self, key, balance, account):
+        pass
+
+    def read_bot(self, key):
+        return {}
+
+    def write_bot(self, key, payload):
+        self.written = payload
+
+
+def _heartbeat_runner(monkeypatch, *, observed, link_up, balance):
+    r = LiveRunner.__new__(LiveRunner)
+    r.cfg = SimpleNamespace(
+        bot_key="bot",
+        display_name="Bot",
+        account=MINE,
+        symbol="XAUUSD.p",
+        strategy_version=3,
+        promoted_commit="abc",
+        promoted_at="2026-09-10",
+        is_frozen=True,
+        strategy_package="sos_fade",
+    )
+    r.bridge = SimpleNamespace(state=SimpleNamespace(value="running"))
+    r.source_hash = "0123456789abcdef"
+    r.dry_run = False
+    r.feed = SimpleNamespace(last_bar_time=None)
+    r._observed_account = observed
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: None,
+        warning=lambda m, *a, **k: None,
+        error=lambda m, *a, **k: None,
+    )
+    state = _FakeBotState()
+    r._heartbeat(state, link_up=link_up, balance=balance)
+    return state.written
+
+
+def test_the_heartbeat_reports_what_the_terminal_IS_on_not_only_what_it_was_told(monkeypatch):
+    """🔴 The bot MEASURED this at every poll and threw it away.
+
+    `_check_account_identity` reads the terminal's own login, halts on a mismatch, and nothing
+    else ever saw the number. So every consumer outside this process — the Bots page, the account
+    list, a cross-check against the registry — had only the CONFIGURED account to go on, which is
+    the same file it would be checking. A row claiming a terminal for an account it is not on sat
+    wrong for weeks because nothing outside the bot could contradict it.
+
+    Watched red by dropping the field: the payload then carries `account` alone and the two claims
+    are indistinguishable.
+    """
+    written = _heartbeat_runner(monkeypatch, observed=MINE, link_up=True, balance=10_000.0)
+    assert written["account"] == MINE, "what the config says"
+    assert written["observed_account"] == MINE, "what the terminal answered"
+
+
+def test_a_mismatch_is_REPORTED_as_well_as_halted_on(monkeypatch):
+    """The halt stops the trading; it does not tell anybody WHICH account the terminal is on.
+
+    Suppressing the field during a mismatch would leave the one screen that could explain the halt
+    showing the configured number — the very thing that is wrong.
+    """
+    written = _heartbeat_runner(monkeypatch, observed=THEIRS, link_up=True, balance=10_000.0)
+    assert written["account"] == MINE
+    assert written["observed_account"] == THEIRS
+
+
+def test_a_dead_link_writes_None_not_a_stale_or_zero_account(monkeypatch):
+    """🔴 `None` here means COULD NOT ASK and must never collapse into "no account".
+
+    `mt5_link` beside it is what makes the two readable apart, which is the same pairing that
+    exists because `balance: null` alone went unattributed for 50 minutes on 2026-08-04.
+
+    Watched red by writing `0` or by falling back to the configured account: a reader then cannot
+    tell a terminal it could not reach from one it confirmed.
+    """
+    written = _heartbeat_runner(monkeypatch, observed=None, link_up=False, balance=None)
+    assert written["observed_account"] is None
+    assert written["mt5_link"] is False
+    assert written["balance"] is None
+    # the configured claim survives, so the page still knows which account this bot is FOR
+    assert written["account"] == MINE
+
+
+def test_the_observed_account_is_not_read_falsily(monkeypatch):
+    """A guard written as `if observed:` would treat "could not ask" as a match.
+
+    There is no account number 0, so this cannot bite through a real login — it is pinned because
+    the NEXT reader of this field is the one at risk, and the rule is about the value's meaning
+    rather than about which integers happen to occur.
+    """
+    written = _heartbeat_runner(monkeypatch, observed=None, link_up=True, balance=10_000.0)
+    assert written["observed_account"] is None
+    assert written["observed_account"] != 0
+
+
+def test_a_missing_observed_account_cannot_suppress_the_HEARTBEAT(monkeypatch):
+    """🔴 A field that only DISPLAYS something must not be able to stop the watchdog's signal.
+
+    The whole state write sits in one try/except that logs a warning and moves on, so ANY error
+    raised while building the payload costs the entire heartbeat — and `heartbeat` is the field
+    SYS_MONITOR reads to catch a bot that is alive but no longer stepping. Reading the observed
+    account as a plain attribute made a display value able to take that down.
+
+    Found by a suite test that builds a bare runner: the write raised `AttributeError`, the except
+    swallowed it, and the bot silently stopped stamping while looking perfectly healthy.
+
+    Watched red by restoring the plain attribute access: `written` comes back empty.
+    """
+    r = LiveRunner.__new__(LiveRunner)
+    r.cfg = SimpleNamespace(
+        bot_key="bot",
+        display_name="Bot",
+        account=MINE,
+        symbol="XAUUSD.p",
+        strategy_version=3,
+        promoted_commit="abc",
+        promoted_at="2026-09-10",
+        is_frozen=True,
+        strategy_package="sos_fade",
+    )
+    r.bridge = SimpleNamespace(state=SimpleNamespace(value="running"))
+    r.source_hash = "0123456789abcdef"
+    r.dry_run = False
+    r.feed = SimpleNamespace(last_bar_time=None)
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: None,
+        warning=lambda m, *a, **k: None,
+        error=lambda m, *a, **k: None,
+    )
+    assert not hasattr(r, "_observed_account"), "the fixture must not define it"
+
+    state = _FakeBotState()
+    r._heartbeat(state, link_up=True, balance=10_000.0)
+
+    assert state.written, "the heartbeat must still be written"
+    assert state.written["heartbeat"], "the stamp the watchdog reads must be there"
+    assert state.written["observed_account"] is None, "unknown, not absent and not fabricated"

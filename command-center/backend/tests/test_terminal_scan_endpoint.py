@@ -90,10 +90,18 @@ _OWNED = {
 }
 
 
-def _stub(monkeypatch, payload):
+def _stub(monkeypatch, payload, observed=None):
+    """Stub BOTH box calls the route makes.
+
+    ⚠ **The second one was missed at first and the harness caught it.** The route also reads each
+    bot's observed account off the VPS snapshot, and `conftest` guarantees no test reaches the live
+    box — so every endpoint test here errored at teardown the moment that call was added. That is
+    the interlock working, and the fix is to stub it rather than to loosen it.
+    """
     from routers import bots as bots_router
 
     monkeypatch.setattr(bots_router, "_scan_terminals", lambda: payload)
+    monkeypatch.setattr(bots_router, "_observed_accounts", lambda: dict(observed or {}))
 
 
 def test_a_live_account_nobody_registered_comes_back_as_new_and_prefilled(
@@ -176,6 +184,7 @@ def test_an_unreachable_box_is_a_502_carrying_why_not_an_empty_scan(client, regi
         raise terminal_scan.ScanUnavailable("ssh to forexvps failed and said nothing")
 
     monkeypatch.setattr(bots_router, "_scan_terminals", _boom)
+    monkeypatch.setattr(bots_router, "_observed_accounts", lambda: {})
 
     r = client.get("/bots/accounts/scan")
     assert r.status_code == 502
@@ -229,3 +238,31 @@ def test_no_password_appears_anywhere_in_the_response(client, registry, monkeypa
 
     body = json.dumps(client.get("/bots/accounts/scan").json()).lower()
     assert "password" not in body
+
+
+def test_the_stale_row_on_the_bots_terminal_is_contradicted_end_to_end(
+    client, registry, monkeypatch
+):
+    """🔴 700107749 through the real route: the row claims the bots' terminal, the bots report
+    700152905, so the claim is wrong. Before the runner reported its observed account this came
+    back UNVERIFIED on every scan."""
+    reg.upsert_account(
+        registry,
+        _acct(account=700107749, label="retired", mt5_path=r"C:\MT5_FFT\terminal64.exe"),
+        _PROFILES,
+    )
+    _stub(monkeypatch, _payload(_OWNED), observed={"sos_fade_demo": 700152905})
+
+    (check,) = client.get("/bots/accounts/scan").json()["registry"]
+    assert check["verdict"] == "contradicted"
+    assert "700152905" in check["detail"]
+
+
+def test_the_bots_terminal_carries_where_its_account_came_from(client, registry, monkeypatch):
+    """Provenance is served, because a bot's report and this tool's own reading are different
+    strengths of evidence."""
+    _stub(monkeypatch, _payload(_OWNED), observed={"sos_fade_demo": 700152905})
+
+    (t,) = client.get("/bots/accounts/scan").json()["terminals"]
+    assert t["account"] == 700152905
+    assert t["account_source"] == "bot"

@@ -748,6 +748,19 @@ these against paths typed by hand.
 
 Story, and the two defects only a real terminal could show: `algos/docs/ALGOS_BUILD_NOTES.md`.
 
+🔴 **The heartbeat reports the account the terminal is ACTUALLY on (`observed_account`), beside the
+configured one (2026-09-10).** `_check_account_identity` measured it every poll and threw it away,
+so nothing outside the process could check an account-list row pointing at the bots' terminal —
+which is where the scan above refuses to attach. ⚠ **Reported here, ACTED ON only by the halt**; a
+field that displays a mismatch must never look like the guard. ⚠ **`None` = could not ask**, paired
+with `mt5_link` so the two stay readable apart. 🔴 **It is read with `getattr`, and that is
+load-bearing**: the whole state write sits in one try/except whose failure mode is NO HEARTBEAT, and
+the heartbeat is what SYS_MONITOR reads to catch a frozen bot. A plain attribute read made a display
+field able to silence the watchdog — a suite test building a bare runner caught it.
+⚠ **This is a RUNNER change, and the frozen `deployed/` snapshot does not cover the runner** — it
+freezes the trees that decide what a bot TRADES (`version.py`). So it reaches a live bot on its next
+restart after a pull, with no promote. Nothing here changes a trading decision.
+
 ## Fast Index
 
 ### The Bots
