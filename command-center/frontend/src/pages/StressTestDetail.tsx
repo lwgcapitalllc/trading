@@ -811,7 +811,9 @@ export default function StressTestDetail() {
   // A graded test already carries the skip in its own reasons (the grader writes it), so it is
   // added here only when there are none — a test graded against no ruleset would otherwise say
   // nothing at all about a phase that was ruled out, and a duplicate line would say it twice.
-  const skipLine = st.sensitivity_skipped && !st.grade_reasons?.length
+  // While it runs the pipeline already prints the skip under its steps, and a card headed "not
+  // graded" mid-run reads as a verdict on a test that has not reached its grade yet.
+  const skipLine = st.sensitivity_skipped && !st.grade_reasons?.length && !isRunning
   const reasonsCard =
     st.grade_reasons?.length || phaseFailures.length || st.results_error || skipLine ? (
       <div className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-3 space-y-2">

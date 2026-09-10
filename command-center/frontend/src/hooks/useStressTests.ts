@@ -129,10 +129,20 @@ export function useDeleteStressTest() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (stressTestId: string) => api.delete(`/stress-tests/${stressTestId}`),
-    onSuccess: () => {
+    onSuccess: (_, stressTestId) => {
       toast.success('Stress test deleted')
-      qc.invalidateQueries({ queryKey: ['stress-tests'] })
+      // 🔴 The list and the detail share the `['stress-tests']` prefix, so refreshing the prefix
+      // re-asked the server for the test it had just deleted — while its page was still mounted
+      // — and the 404 toasted as a red "Stress test not found" on every delete. Everything under
+      // the prefix refreshes EXCEPT the deleted test's own entry.
+      // ⚠ Excluded, never removed: removing it while its page is still mounted makes that page's
+      // next render rebuild the entry and fetch it — the same 404 by a different route. The page
+      // leaves on its own; the orphaned entry is collected once nothing reads it.
+      qc.invalidateQueries({
+        queryKey: ['stress-tests'],
+        predicate: (q) => q.queryKey[1] !== stressTestId,
+      })
     },
-    onError: () => toast.error('Delete failed'),
+    // No onError toast — `api.request` already shows the server's own reason.
   })
 }

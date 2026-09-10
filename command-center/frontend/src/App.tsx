@@ -28,6 +28,7 @@ export default function App() {
         position="bottom-right"
         theme="dark"
         richColors
+        expand
         toastOptions={{ style: { fontFamily: 'inherit', fontSize: '13px' } }}
       />
       <div className="flex h-screen overflow-hidden bg-bg-base text-text-primary">
