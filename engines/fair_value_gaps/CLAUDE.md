@@ -359,8 +359,59 @@ sums are the ONLY thing comparing them — without the aggregates this would hav
 covering 93% of bars, which is the exact defect being fixed, one size smaller.
 
 ⚠ **It stays INERT in the engine regardless.** No consumer passes the band, so every existing
-result still reproduces to the byte. Gating it makes shipping it *possible*; it does not make it
-decided, and the measurement of what it does to the bot has not been run.
+result still reproduces to the byte. Gating it made shipping it *possible*; the measurement below is
+what decided against it.
+
+## Measured on the bot (2026-09-10) — the band changes NOTHING the SOS Fade bot trades, so it is not ported
+
+🔴 **DECISION: the entry-band exemption stays on the CHART and is NOT ported to any strategy.** Over
+6.6 years of the live broker's bars it changed **zero** of the bot's trades. Porting it would put a
+copy of the Structure fib's band above the gap block of every strategy Pine — there is no import in
+Pine, so that is ~10 more copies of a fib-to-gap coupling, in files that have already hit the
+compiled-token ceiling — for a measured benefit of nothing. **Over-engineering is also a corner cut.**
+
+**MEASURED**: PU Prime `XAUUSD.p`, 2020-01-01 → 2026-08-23, **157,004 M15 bars + 470,995 M5** (the
+re-entries' fill clock — the two-frame path, so re-entries actually fire), warm-up 1,000, bar fills.
+The ONLY difference between the two runs is `EngineConfig.fvg_exempt_zone`.
+
+| | band OFF (shipped) | band ON |
+|---|---|---|
+| trades | 244 (156 primary + 88 re-entries) | **244 — every record identical** |
+| total | +248.59R | **+248.59R** |
+
+✅ **Re-run on the LIVE bot's own settings** (`algos/markets/fx/instances/sos_fade_demo/config.json` —
+risk 5%, the PU Prime ECN profile; nothing else differs from the default): **band ON and OFF identical
+again, all 244 records.** That list equals the default-settings one to within 2.5e-14 R, which is
+rounding from the risk percentage.
+
+⚠ **Identical RECORD FOR RECORD** — entry time, direction, entry price, stop distance and R, all 244.
+That makes this an unusually strong null: identical trade lists stay identical under any cost model,
+any sizing and any risk percentage, so nothing about the free-fill run can flip it.
+
+🔴 **AND THE SWITCH DEMONSTRABLY REACHED THE BOT, which is what makes the zero believable.** A change
+that moves nothing is also what a switch that never arrived looks like. It arrived: on the bot's own
+gap settings the band changes the live gap list on **64.7% of bars** (101,516 of 157,004; up to 19
+live gaps against 15), and it changes **1,139 of 156,004** per-bar decisions.
+
+⚠ **WHERE it acts is why it cannot reach a trade: 1,137 of those 1,139 are on bars where the bot is
+not armed** — it computes an entry price nothing uses. The remaining **2** moved a resting order, and
+neither changed a fill. Why the cap never reaches the zone's gaps during an armed window is INFERRED,
+not traced: the bot reads gaps only on a live leg, while the eviction the band prevents lands before
+the setup arms or after it is over.
+
+⚠ **Re-run this before believing it still holds if any of these move:**
+- **`exec_fvg_pre_zone` is switched on** (live: off). That rule uses only gaps already alive when price
+  first tagged 0.5 — precisely the OLDER gaps the cap evicts and the band protects, so it is the one
+  existing setting under which the band has a real path to a trade.
+- The bot's gap settings (cap 7, 0.1% floor, middle-bar close test) or its entry-zone rule.
+- **B-LEG and BOS were not measured.** B-LEG pins the equal-level exemption off and prices off its own
+  frozen band; BOS reads its own anchor leg. Neither inherits this result.
+
+⚠ **The OFF baseline does not match the 200 trades / +164.27R that root `CLAUDE.md` quotes for this
+same window, and the bars are not why** — both bar counts reproduce exactly, and so do the 156
+primaries. The re-entries moved 44 → 88, and the 244-row list was already recorded in
+`backtest/CLAUDE.md` on 2026-09-09. The 2026-09-07 re-entry commits are the likely cause — **not
+bisected.** Every figure in root's overlap audit was taken on the 200-trade bot.
 
 ## The golden export (2026-09-09) — this engine's gate runs on every machine
 

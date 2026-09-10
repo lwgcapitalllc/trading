@@ -65,6 +65,17 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   parity gate cannot see them either, which is this file's own *an engine input the decision stream
   does not export is a silent parity trap*, arriving from the config end instead. Full record:
   `engines/equal_highs_lows/CLAUDE.md`.
+  **`fvg_exempt_zone` (2026-09-10, default OFF, OFF in every strategy)** is mpc's fib ENTRY-BAND
+  exemption on the gap cap. It exists in `mpc_jarvis.pine` and in no strategy Pine, so it is a
+  MEASUREMENT switch for a proposed change, not a mirror of one. 🔴 **The stack builds a one-bar LAG
+  on purpose**: mpc's gap block runs ~800 lines above its fib, so the cap reads LAST bar's band, while
+  here the fib runs first inside one `step` — the natural wiring is a look-ahead that passes every
+  engine test. `tests/test_stack_zone_band.py` replays the committed zone export through the whole
+  stack (its own structure and fib computing the band) and matches Pine's gap list on **all 20,187
+  bars from bar 0**; watched RED — reading this bar's band instead diverges on 2,972. ⚠ The band
+  publishes only while the fib is active and HOLDS otherwise, as mpc's `var` globals do. ⚠ Refused
+  without `fvg` and `fib`, the same shape as `eq_exempt_fvg`. **What it does to the SOS Fade bot, and
+  why it stays off: `engines/fair_value_gaps/CLAUDE.md` → *Measured on the bot*.**
   `EngineConfig` carries the engine-construction knobs; note `show_internal` (default True): the
   `market_structure` engine always computes internal structure, but a consumer whose Pine has
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields

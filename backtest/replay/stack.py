@@ -100,6 +100,22 @@ class EngineConfig:
     # carried the input, so the harness could not see the difference and blamed the entry rule.**
     # A trade-affecting Pine input with no export column is invisible to the gate by construction.
     eq_exempt_fvg: bool = False
+    # mpc `fvgExemptZone` — a gap overlapping the live Structure fib's 0.382-0.886 band, ON THE
+    # TRADE'S OWN SIDE, is exempt from the FVG cap exactly as an EQ-backed gap is. OFF by default
+    # and OFF in every strategy: it exists in `mpc_jarvis.pine` (a constant there, like the eq_*
+    # values below) and in NO strategy Pine file, so turning it on is a proposed change to what a
+    # bot trades, not a mirror of one. It is here so that change can be MEASURED before it is made.
+    #
+    # 🔴 THE BAND THE CAP READS IS LAST BAR'S, AND THIS STACK HAS TO BUILD THAT LAG ON PURPOSE.
+    # In mpc the FVG block runs ~800 lines ABOVE the fib block, so it can only ever see the
+    # previous bar's publish. Here the fib runs BEFORE the FVG inside one `step`, so passing this
+    # bar's band would be a look-AHEAD of one bar - harmless-looking, green on every unit test, and
+    # describing an indicator nobody runs. `step` therefore hands the FVG the band captured BEFORE
+    # this bar's fib moved it. Validated against Pine on the committed zone export
+    # (`tests/test_stack_zone_band.py`), which is the only thing that can tell the two apart.
+    # ⚠ The band is published only while the fib is ACTIVE and HOLDS its last value otherwise -
+    # mpc publishes inside the fib's active branch, into `var` globals.
+    fvg_exempt_zone: bool = False
     # equal_highs_lows — LOCKED to mpc's constants (`eqPivotLen` / `eqAtrMult` / `eqMax`), which are
     # hardcoded in the Pine rather than exposed, so the indicator and the strategy cannot draw
     # different levels. Only read when `eq_exempt_fvg` is on.
@@ -235,6 +251,15 @@ class EngineStack:
                 "never runs."
             )
 
+        if c.fvg_exempt_zone and not (c.fvg and c.fib):
+            raise ValueError(
+                "fvg_exempt_zone=True needs fvg=True AND fib=True - the band IS the Structure "
+                "fib's 0.382-0.886, and the exemption acts on the FVG cap. A stack missing either "
+                "would carry a config saying the exemption is on beside a replay where it never was."
+            )
+        # (lo, hi, dir) as PUBLISHED at the end of the last bar - see `fvg_exempt_zone`.
+        self._zone_band = (None, None, 0)
+
         self.structure = StructureEngine(major_length=c.major_length)
         self.fib = StructureFib() if c.fib else None
         self.sniper = SniperFib() if c.sniper else None
@@ -313,9 +338,23 @@ class EngineStack:
         # already the Pine's and not a thing to rediscover.
         ob_ev = self.order_blocks.update(i, o, h, l, c) if self.order_blocks else None
 
+        # The entry band the FVG cap may read on THIS bar is the one published at the end of the
+        # LAST - captured here, before the fib below moves it. See `EngineConfig.fvg_exempt_zone`.
+        zone_lo, zone_hi, zone_dir = self._zone_band
+
         # `None` when the stack was built without the engine — never a blank events object. The
         # order of these four is still the Pine's; a skipped one leaves a hole rather than a gap.
         fib_ev = self.fib.update(h, l, snap) if self.fib is not None else None
+        if self.config.fvg_exempt_zone and fib_ev is not None and fib_ev.active:
+            p1 = fib_ev.levels.get("TP2")  # 0.382 - mpc fiboP1
+            p6 = fib_ev.levels.get("E4")  # 0.886 - mpc fiboP6
+            if p1 is not None and p6 is not None:
+                # mpc: fvgZoneDir := fiboResetActive ? 0 : fibo_dir
+                self._zone_band = (
+                    min(p1, p6),
+                    max(p1, p6),
+                    0 if fib_ev.reset_active else fib_ev.direction,
+                )
         sniper_ev = self.sniper.update(h, l, snap) if self.sniper is not None else None
         macro_ev = self.macro.update(i, h, l, c, snap) if self.macro is not None else None
         internal_ev = self.internal.update(i, h, l, snap) if self.internal is not None else None
@@ -329,7 +368,18 @@ class EngineStack:
             eq_levels = eq_ev.active_eqh + eq_ev.active_eql
             eq_tol = eq_ev.tolerance
         fvg_ev = (
-            self.fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol)
+            self.fvg.update(
+                i,
+                o,
+                h,
+                l,
+                c,
+                eq_levels=eq_levels,
+                eq_tol=eq_tol,
+                zone_lo=zone_lo,
+                zone_hi=zone_hi,
+                zone_dir=zone_dir,
+            )
             if self.fvg is not None
             else None
         )
