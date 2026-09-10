@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
+import { Shimmer } from '@/components/Shimmer'
 
 /**
  * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed.
@@ -46,8 +47,10 @@ export function VersionPill({
    *  the other is a finding, and an em-dash for both makes a slow fetch look like a fault. */
   loading?: boolean
 }) {
+  // The first read is a SHAPE, not a word — the same height as the pill that will land here, so
+  // the row does not move when the version answers. See `components/Shimmer.tsx`.
   if (loading) {
-    return <span className="text-micro text-text-tertiary">checking…</span>
+    return <Shimmer shape="pill" className="h-[24px] w-[92px] justify-self-start" />
   }
 
   const c = version?.compare ?? null

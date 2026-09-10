@@ -19,6 +19,7 @@ import { useSetAccountRiskCap, useUnregisterAccount, useAssignBotAccount } from 
 import type { AccountEarnings, BotAccountGroup, BotAccountRegistration } from '@/types'
 import { AccountForm, AddBotRow, nameOf } from './AccountsTab'
 import { GoLiveModal } from './GoLiveModal'
+import { Shimmer } from '@/components/Shimmer'
 
 export function AccountDrawer({
   group,
@@ -26,6 +27,7 @@ export function AccountDrawer({
   registry,
   balance,
   earnings,
+  asking = false,
   statusByKey,
   onClose,
 }: {
@@ -41,6 +43,9 @@ export function AccountDrawer({
    *  its own version of that arithmetic is how one surface starts crediting a bot with money
    *  another surface says it did not make. */
   earnings: AccountEarnings | undefined
+  /** The trading box's FIRST read is still in flight — the balance shimmers rather than saying
+   *  nobody is answering, which is only true once it has been asked and failed. */
+  asking?: boolean
   statusByKey: Map<string, string>
   onClose: () => void
 }) {
@@ -195,7 +200,9 @@ export function AccountDrawer({
               Balance
             </p>
             <p className="text-[22px] font-mono tabular-nums leading-none">
-              {balance == null ? (
+              {balance == null && asking ? (
+                <Shimmer className="h-[22px] w-[150px]" />
+              ) : balance == null ? (
                 <span className="text-[13px] text-text-tertiary">
                   not reported — no bot here is answering
                 </span>

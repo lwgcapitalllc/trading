@@ -24,6 +24,7 @@ import {
   usePromoteBot,
 } from '@/hooks/useBots'
 import { isRestartPending } from '@/lib/botVersion'
+import { Shimmer } from '@/components/Shimmer'
 import type { BotDeployedVersion, BotParamRow, BotParamsView, BotStatus } from '@/types'
 
 /**
@@ -420,10 +421,10 @@ export function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: 
   const awaitingConfirm = result?.kind === 'preview'
   const c = v?.compare ?? null
 
+  // The first read is ~4.5s over SSH. It holds the banner's footprint as a shimmer rather than a
+  // line of text, so the drawer does not jump when the answer lands. `components/Shimmer.tsx`.
   if (isLoading) {
-    return (
-      <div className="text-[11px] text-text-tertiary px-[14px] py-[12px]">checking versions…</div>
-    )
+    return <Shimmer shape="block" className="block w-full h-[58px]" />
   }
 
   // Every state that makes this unanswerable has its own fix and none of them is "deploy", so

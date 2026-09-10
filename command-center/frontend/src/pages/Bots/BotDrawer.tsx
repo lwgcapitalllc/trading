@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useBots'
 import type { BotParamRow, BotParamsView, BotStatus, BotEarnings } from '@/types'
 import { VersionBanner, RuntimeEditor, ParamGroup } from './ConfigureTab'
+import { Shimmer } from '@/components/Shimmer'
 
 function Fold({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -200,7 +201,7 @@ export function BotDrawer({
             </button>
           </div>
 
-          {isLoading && <p className="text-[11px] text-text-tertiary py-4">Loading…</p>}
+          {/* "Loading…" went (2026-09-10) — the Risk section below shimmers in place instead. */}
           {error && (
             <p className="text-[11px] text-neg-text py-4">
               Could not read this bot's configuration: {String(error)}
@@ -281,14 +282,36 @@ export function BotDrawer({
             )}
           </div>
 
-          {v && (
+          {/* 🔴 ONLY the Risk section and the Details fold read this bot's settings, so only they
+           *  wait for them (2026-09-10). Version and Account read their own sources and used to
+           *  sit behind the same gate — hidden while the settings loaded, and hidden for good if
+           *  that one read failed, which is a working Deploy control withheld because a
+           *  DIFFERENT read was quiet. The page-level rule, one panel down. */}
+          {(v || isLoading) && (
             <>
               {/* ── risk ──────────────────────────────────────────────────── */}
               <div className="py-[16px] border-b border-border-subtle">
                 <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
                   Risk per trade
                 </p>
-                {v.runtime.length === 0 ? (
+                {!v ? (
+                  // The editor's shape — label, the figure, what it costs, and the input with its
+                  // button — so nothing moves when the real one lands.
+                  <div aria-busy="true" className="flex items-end gap-3">
+                    <div className="flex flex-col gap-[10px]">
+                      <Shimmer className="h-[10px] w-[92px]" />
+                      <Shimmer className="h-[30px] w-[64px]" />
+                      <Shimmer className="h-[10px] w-[160px]" />
+                    </div>
+                    <div className="ml-auto flex items-end gap-2">
+                      <span className="flex flex-col gap-[6px]">
+                        <Shimmer className="h-[10px] w-[52px]" />
+                        <Shimmer className="h-[29px] w-[78px]" />
+                      </span>
+                      <Shimmer className="h-[29px] w-[72px]" />
+                    </div>
+                  </div>
+                ) : v.runtime.length === 0 ? (
                   <p className="text-[11px] text-text-tertiary">
                     Nothing here can be changed while it runs.
                   </p>
@@ -305,128 +328,130 @@ export function BotDrawer({
                   ))
                 )}
               </div>
-
-              {/* ── version, and the only Deploy control ──────────────────── */}
-              <div className="py-[16px] border-b border-border-subtle">
-                {/* 🔴 IT SAYS "DEPLOY" IN THE HEADING (2026-09-06). Aaron opened with *"you're
-                 *  still not telling me how do I promote a bot"* and then found it here himself
-                 *  — so the control was reachable and the SECTION NAME was not answering the
-                 *  question anybody arrives with. *Version* names the noun; the reader is
-                 *  looking for the verb. */}
-                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[3px]">
-                  Version · deploy new code to this bot
-                </p>
-                <p className="text-[10px] text-text-tertiary mb-[10px] leading-[1.5]">
-                  Deploying copies the code on the trading box and restarts the bot on it. Until you
-                  do, it keeps running the version it started with.
-                </p>
-                <VersionBanner botKey={bot.key} botLabel={bot.name} />
-              </div>
-
-              {/* ── account ───────────────────────────────────────────────── */}
-              <div className="py-[16px]">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
-                  Account
-                </p>
-                {/* 🔴 **A RUNNING bot cannot be moved, and it is said BEFORE the gesture
-                 *  (restored 2026-09-06).** The control was offered unconditionally, so moving a
-                 *  live bot took the click and came back as an error toast from the server. The
-                 *  server does refuse it — but a page that offers a control the box will reject
-                 *  is teaching the reader that its own controls mean nothing.
-                 *
-                 *  ⚠ It read its account at startup, so the write could not reach the live
-                 *  process: the page would show it under the new account while it went on trading
-                 *  the old one. That is a screen lying about a live position, not a stale setting.
-                 *
-                 *  ⚠ **An account with no terminal is LISTED and DISABLED, with the reason in the
-                 *  option.** Hiding it makes an account that exists look like one that does not,
-                 *  and the write would otherwise be committed and pushed before failing at
-                 *  connect() with a message about credentials — pointing whoever reads it at the
-                 *  password rather than at the missing terminal. */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <select
-                    data-testid={`move-${bot.key}`}
-                    value={bot.account || ''}
-                    disabled={running || assign.isPending}
-                    title={
-                      running
-                        ? `Stop ${bot.name} first — it read its account at startup, so a move ` +
-                          'cannot reach the running process.'
-                        : `Move ${bot.name} to another account.`
-                    }
-                    onChange={(e) =>
-                      assign.mutate({
-                        botKey: bot.key,
-                        account: e.target.value === '' ? null : Number(e.target.value),
-                      })
-                    }
-                    className="text-[12px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {destinations.map((d) => (
-                      <option key={d.account} value={d.account} disabled={!d.assignable}>
-                        {d.account}
-                        {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
-                      </option>
-                    ))}
-                    <option value="">Not on an account</option>
-                  </select>
-                  {assign.isPending && (
-                    <span className="text-[11px] text-accent animate-pulse">Moving…</span>
-                  )}
-                </div>
-                <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]">
-                  {running
-                    ? `Stop ${bot.name} before moving it — it reads its account when it starts.`
-                    : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
-                </p>
-              </div>
-
-              {/* ── everything you only read ──────────────────────────────── */}
-              <Fold label={`Details — where it trades, and the ${v.strategy.length} parameters`}>
-                <Facts
-                  rows={[
-                    ['Strategy', v.version.strategy_package ?? '—'],
-                    ['Server', v.identity.server ?? '—'],
-                    ['Symbol', v.identity.symbol ?? '—'],
-                    ['Timeframe', v.identity.timeframe ?? '—'],
-                    ['Terminal', terminal],
-                    ['Trade id', v.identity.magic ?? '—'],
-                  ]}
-                />
-
-                {/* The prose the risk editor no longer prints. Here, where somebody asking
-                 *why is it 5%* will look, and nobody else has to read it. */}
-                {v.runtime.filter((r) => r.note).length > 0 && (
-                  <div className="mt-[16px] pt-[12px] border-t border-border-subtle/60">
-                    <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-text-tertiary mb-[6px]">
-                      Why these values
-                    </p>
-                    {v.runtime
-                      .filter((r) => r.note)
-                      .map((r) => (
-                        <p
-                          key={r.name}
-                          className="text-[10px] text-text-tertiary leading-[1.55] mb-[10px]"
-                        >
-                          <span className="text-text-secondary">{r.label}: </span>
-                          {r.note}
-                        </p>
-                      ))}
-                  </div>
-                )}
-
-                <div className="mt-[16px] pt-[12px] border-t border-border-subtle/60">
-                  <p className="text-[10px] text-text-tertiary mb-[8px] leading-[1.5]">
-                    These decide <strong className="text-text-secondary">which trades</strong> it
-                    takes, so changing one means it is no longer the bot that was backtested. Edit
-                    in the lab, backtest, then deploy.
-                  </p>
-                  {Object.entries(strategyGroups).map(([g, rows]) => (
-                    <ParamGroup key={g} group={g} rows={rows} />
-                  ))}
-                </div>
-              </Fold>
             </>
+          )}
+
+          {/* ── version, and the only Deploy control ──────────────────── */}
+          <div className="py-[16px] border-b border-border-subtle">
+            {/* 🔴 IT SAYS "DEPLOY" IN THE HEADING (2026-09-06). Aaron opened with *"you're
+             *  still not telling me how do I promote a bot"* and then found it here himself
+             *  — so the control was reachable and the SECTION NAME was not answering the
+             *  question anybody arrives with. *Version* names the noun; the reader is
+             *  looking for the verb. */}
+            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[3px]">
+              Version · deploy new code to this bot
+            </p>
+            <p className="text-[10px] text-text-tertiary mb-[10px] leading-[1.5]">
+              Deploying copies the code on the trading box and restarts the bot on it. Until you do,
+              it keeps running the version it started with.
+            </p>
+            <VersionBanner botKey={bot.key} botLabel={bot.name} />
+          </div>
+
+          {/* ── account ───────────────────────────────────────────────── */}
+          <div className="py-[16px]">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
+              Account
+            </p>
+            {/* 🔴 **A RUNNING bot cannot be moved, and it is said BEFORE the gesture
+             *  (restored 2026-09-06).** The control was offered unconditionally, so moving a
+             *  live bot took the click and came back as an error toast from the server. The
+             *  server does refuse it — but a page that offers a control the box will reject
+             *  is teaching the reader that its own controls mean nothing.
+             *
+             *  ⚠ It read its account at startup, so the write could not reach the live
+             *  process: the page would show it under the new account while it went on trading
+             *  the old one. That is a screen lying about a live position, not a stale setting.
+             *
+             *  ⚠ **An account with no terminal is LISTED and DISABLED, with the reason in the
+             *  option.** Hiding it makes an account that exists look like one that does not,
+             *  and the write would otherwise be committed and pushed before failing at
+             *  connect() with a message about credentials — pointing whoever reads it at the
+             *  password rather than at the missing terminal. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                data-testid={`move-${bot.key}`}
+                value={bot.account || ''}
+                disabled={running || assign.isPending}
+                title={
+                  running
+                    ? `Stop ${bot.name} first — it read its account at startup, so a move ` +
+                      'cannot reach the running process.'
+                    : `Move ${bot.name} to another account.`
+                }
+                onChange={(e) =>
+                  assign.mutate({
+                    botKey: bot.key,
+                    account: e.target.value === '' ? null : Number(e.target.value),
+                  })
+                }
+                className="text-[12px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {destinations.map((d) => (
+                  <option key={d.account} value={d.account} disabled={!d.assignable}>
+                    {d.account}
+                    {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
+                  </option>
+                ))}
+                <option value="">Not on an account</option>
+              </select>
+              {assign.isPending && (
+                <span className="text-[11px] text-accent animate-pulse">Moving…</span>
+              )}
+            </div>
+            <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]">
+              {running
+                ? `Stop ${bot.name} before moving it — it reads its account when it starts.`
+                : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
+            </p>
+          </div>
+
+          {/* ── everything you only read ──────────────────────────────── */}
+          {v && (
+            <Fold label={`Details — where it trades, and the ${v.strategy.length} parameters`}>
+              <Facts
+                rows={[
+                  ['Strategy', v.version.strategy_package ?? '—'],
+                  ['Server', v.identity.server ?? '—'],
+                  ['Symbol', v.identity.symbol ?? '—'],
+                  ['Timeframe', v.identity.timeframe ?? '—'],
+                  ['Terminal', terminal],
+                  ['Trade id', v.identity.magic ?? '—'],
+                ]}
+              />
+
+              {/* The prose the risk editor no longer prints. Here, where somebody asking
+               *why is it 5%* will look, and nobody else has to read it. */}
+              {v.runtime.filter((r) => r.note).length > 0 && (
+                <div className="mt-[16px] pt-[12px] border-t border-border-subtle/60">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-text-tertiary mb-[6px]">
+                    Why these values
+                  </p>
+                  {v.runtime
+                    .filter((r) => r.note)
+                    .map((r) => (
+                      <p
+                        key={r.name}
+                        className="text-[10px] text-text-tertiary leading-[1.55] mb-[10px]"
+                      >
+                        <span className="text-text-secondary">{r.label}: </span>
+                        {r.note}
+                      </p>
+                    ))}
+                </div>
+              )}
+
+              <div className="mt-[16px] pt-[12px] border-t border-border-subtle/60">
+                <p className="text-[10px] text-text-tertiary mb-[8px] leading-[1.5]">
+                  These decide <strong className="text-text-secondary">which trades</strong> it
+                  takes, so changing one means it is no longer the bot that was backtested. Edit in
+                  the lab, backtest, then deploy.
+                </p>
+                {Object.entries(strategyGroups).map(([g, rows]) => (
+                  <ParamGroup key={g} group={g} rows={rows} />
+                ))}
+              </div>
+            </Fold>
           )}
         </div>
       </aside>

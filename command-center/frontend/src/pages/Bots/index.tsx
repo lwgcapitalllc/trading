@@ -51,6 +51,7 @@ import {
   useBotRestartOne,
 } from '@/hooks/useBots'
 import { VersionPill } from '@/components/VersionPill'
+import { Shimmer } from '@/components/Shimmer'
 import type {
   BotStatus,
   BotReview,
@@ -252,7 +253,15 @@ const GRID = 'grid-cols-[minmax(150px,225px)_142px_136px_50px_74px_1fr_auto]'
  *  ⚠ **A bot with no record says so in words.** *Never traded* and *no record to read* are
  *  different answers and only one is a measurement; printing a confident `0.0%` for the second
  *  is this repo's rule 1 in a table cell. */
-function Contribution({ e }: { e: BotEarnings | undefined }) {
+function Contribution({ e, asking }: { e: BotEarnings | undefined; asking: boolean }) {
+  // Two lines, the shape of the figure and its percentage, so the row does not grow when it lands.
+  if (!e && asking)
+    return (
+      <span className="flex flex-col gap-[6px]">
+        <Shimmer className="h-[13px] w-[86px]" />
+        <Shimmer className="h-[10px] w-[104px]" />
+      </span>
+    )
   if (!e) return <span className="text-[12px] text-text-tertiary">—</span>
   if (!e.traded)
     return (
@@ -295,7 +304,19 @@ function Contribution({ e }: { e: BotEarnings | undefined }) {
  *  the backtest page already recorded: *1439.7x of what*. Here it is worse — two bots on one
  *  balance state different anchors, so the number is only checkable if the page says which one
  *  it divided by and which bot stated it. */
-function AccountNet({ e }: { e: AccountEarnings | undefined }) {
+function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boolean }) {
+  // ⚠ `net unknown` is a FINDING and may only appear once the box has answered — while it is
+  // still being asked, the same words would report a fault that has not happened.
+  // Ghost content in the pill's own layout, so it lands on the same baseline as the real one.
+  if (!e && asking)
+    return (
+      <Shimmer shape="pill">
+        <span className="inline-flex items-baseline gap-[6px] px-[8px] py-[3px]">
+          <span className="text-[13px] font-mono tabular-nums font-semibold">+00.0%</span>
+          <span className="text-[11px] font-mono tabular-nums">+$0,000.00</span>
+        </span>
+      </Shimmer>
+    )
   if (!e || e.net_usd == null || e.net_pct == null)
     return (
       <span
@@ -374,10 +395,94 @@ function Unattributed({ e }: { e: AccountEarnings }) {
   )
 }
 
+/** The labels over a card's bot rows — ONE component for the real card and its placeholder, on
+ *  the same column template, so neither can end up with a heading over the wrong column. */
+function ColumnHeadings() {
+  return (
+    <div
+      className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
+    >
+      <span className="pl-[19px]">Bot</span>
+      <span title="What this bot's own closed trades came to">P&amp;L</span>
+      <span>Version</span>
+      <span title="Risk per trade">Risk</span>
+      <span>Uptime</span>
+      <span />
+      <span className="text-right">Actions</span>
+    </div>
+  )
+}
+
+/** The page before the ACCOUNT LIST has answered: one account card, the shape the real one will
+ *  take, built on the same column template so the swap does not shift a pixel. It is on screen
+ *  only for the local read of the instance configs; the slow part — the trading box — shimmers
+ *  inside the real cards instead, because the account list does not have to wait for it. */
+function BotsPageSkeleton() {
+  return (
+    <div
+      aria-busy="true"
+      aria-label="Loading bots"
+      data-testid="bots-skeleton"
+      className="relative bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
+    >
+      <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-border-default" />
+      <div className="flex items-center gap-3 pl-[19px] pr-4 py-[13px]">
+        <Shimmer className="h-[15px] w-[92px]" />
+        <Shimmer className="h-[13px] w-[64px]" />
+        <Shimmer shape="pill" className="h-[20px] w-[48px]" />
+        <Shimmer shape="pill" className="h-[22px] w-[64px]" />
+        {/* The SAME loading states the real card renders — never a private copy of them. */}
+        <span className="ml-auto flex items-baseline gap-[10px]">
+          <span className="text-[17px] font-mono tabular-nums font-medium">
+            <Shimmer>$00,000.00</Shimmer>
+          </span>
+          <AccountNet e={undefined} asking />
+        </span>
+      </div>
+      <div className="border-t border-border-subtle">
+        {/* The headings are fixed words, so they are REAL, not shimmered — a placeholder stands in
+         *  for what is not known yet, never for what already is. */}
+        <ColumnHeadings />
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className={`grid ${GRID} items-center gap-3 pr-4 py-[10px] ${
+              i > 0 ? 'border-t border-border-subtle' : ''
+            }`}
+          >
+            <span className="flex items-center gap-[9px] pl-[19px]">
+              <Shimmer shape="dot" className="h-[7px] w-[7px]" />
+              <Shimmer className="h-[13px] w-[96px]" />
+            </span>
+            <Contribution e={undefined} asking />
+            <VersionPill version={undefined} loading />
+            <Shimmer className="h-[12px] w-[26px]" />
+            <Shimmer className="h-[12px] w-[44px]" />
+            <span />
+            <span className="flex gap-[3px] justify-end">
+              <Shimmer className="h-[26px] w-[26px]" />
+              <Shimmer className="h-[26px] w-[26px]" />
+              <Shimmer className="h-[26px] w-[26px]" />
+              <Shimmer className="h-[26px] w-[92px] ml-[6px]" />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
-  const { data: accountGroups } = useBotAccounts()
-  const { data: registry } = useRegisteredAccounts()
+  const { data: accountGroups, isPending: accountsPending } = useBotAccounts()
+  const { data: registry, isPending: registryPending } = useRegisteredAccounts()
+  // 🔴 THE TRADING BOX HAS NOT ANSWERED YET — its FIRST read is in flight. This is the only thing
+  // the snapshot shimmers decide on, and it is deliberately NOT `!snapshot`: a snapshot that
+  // FAILED is also absent, and shimmering over a dead link would make a page that looks busy for
+  // ever while the box is down. Once the read fails, the words (`unknown`, `balance unread`) and
+  // the error line take over; once it answers, the numbers do. A 60s background refetch keeps the
+  // numbers on screen and never shimmers.
+  const asking = isLoading
   const { data: users } = useUsers()
   const [params, setParams] = useSearchParams()
 
@@ -398,8 +503,19 @@ export function Bots() {
   }, [busy])
 
   const bots: BotStatus[] = snapshot?.bots ?? []
-  const versionQueries = useBotVersions(bots.map((b) => b.key))
-  const versionByKey = new Map(bots.map((b, i) => [b.key, versionQueries[i]]))
+  // 🔴 The version reads are keyed off the CONFIG list as well as the snapshot (2026-09-10). A
+  // version needs only the bot's key, and the config list answers in milliseconds — keyed off the
+  // snapshot alone, the ~4.5s version reads could not START until the ~4s snapshot had finished,
+  // so the column waited for both back to back, and until then every pill said "No version"
+  // (a finding) instead of loading. Now they run side by side with the snapshot.
+  const fleetKeys = [
+    ...new Set([
+      ...(accountGroups ?? []).flatMap((g) => g.bots.map((b) => b.key)),
+      ...bots.map((b) => b.key),
+    ]),
+  ]
+  const versionQueries = useBotVersions(fleetKeys)
+  const versionByKey = new Map(fleetKeys.map((k, i) => [k, versionQueries[i]]))
 
   const statusByKey = new Map<string, string>(bots.map((b) => [b.key, b.status]))
   const botByKey = new Map(bots.map((b) => [b.key, b]))
@@ -559,6 +675,7 @@ export function Bots() {
          *  what is already on screen is not a summary, it is a second copy that can disagree.
          *  ⚠ The count STAYS, because *how many are running* is the one thing you cannot read
          *  off the rows without counting them yourself. */}
+        {asking && <Shimmer className="h-[13px] w-[96px] self-center" />}
         {snapshot && (
           <p className="text-[13px] text-text-secondary">
             <span className={running > 0 ? 'text-pos-text font-medium' : 'text-text-primary'}>
@@ -667,7 +784,9 @@ export function Bots() {
         </div>
       )}
 
-      {isLoading && <p className="text-[12px] text-text-tertiary">Reading the box…</p>}
+      {/* "Reading the box…" went (2026-09-10): the values waiting on the box now shimmer where
+       *  they will land, which says the same thing without a line of text above the page. */}
+      {(accountsPending || registryPending) && !accountGroups && !registry && <BotsPageSkeleton />}
       {error && (
         <p className="text-[12px] text-neg-text">
           Could not reach the trading box: {String(error)}
@@ -725,24 +844,36 @@ export function Bots() {
                   <span className="text-[14px] font-mono font-semibold tabular-nums">
                     {account}
                   </span>
-                  <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
+                  {/* The broker name comes off the registry, which asks the box whether a
+                   *  password is stored and so is slow — until it answers, the fallback
+                   *  "Account N" would be a guess at a name, so the name shimmers instead. */}
+                  {!reg && registryPending ? (
+                    <Shimmer className="h-[13px] w-[64px]" />
+                  ) : (
+                    <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
+                  )}
                   {/* ⚠ A LIVE account is tinted, a demo is not. Same treatment everywhere an
                    *  account appears — its cost is different in KIND, not degree. */}
                   {/* ⚠ Three states, and the third may not borrow the demo styling: with the box
                    *  quiet and no registry row, nobody has said which this is — and rendering
                    *  that as the untinted DEMO chip is the one direction that cannot be allowed
                    *  to guess. */}
-                  <span
-                    className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border ${
-                      acctType === 'live'
-                        ? 'bg-warn-muted text-warn-text border-warn/40'
-                        : acctType === undefined
-                          ? 'bg-bg-surface-2 text-text-tertiary border-border-strong'
-                          : 'bg-bg-surface-2 text-text-secondary border-border-subtle'
-                    }`}
-                  >
-                    {acctType ?? 'type unknown'}
-                  </span>
+                  {/* `type unknown` is only true once BOTH sources have answered without one. */}
+                  {acctType === undefined && (asking || registryPending) ? (
+                    <Shimmer shape="pill" className="h-[20px] w-[48px]" />
+                  ) : (
+                    <span
+                      className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border ${
+                        acctType === 'live'
+                          ? 'bg-warn-muted text-warn-text border-warn/40'
+                          : acctType === undefined
+                            ? 'bg-bg-surface-2 text-text-tertiary border-border-strong'
+                            : 'bg-bg-surface-2 text-text-secondary border-border-subtle'
+                      }`}
+                    >
+                      {acctType ?? 'type unknown'}
+                    </span>
+                  )}
 
                   {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
                    *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
@@ -801,13 +932,17 @@ export function Bots() {
 
                   <span className="ml-auto flex items-baseline gap-[10px]">
                     <span className="text-[17px] font-mono tabular-nums font-medium">
-                      {balance == null ? (
+                      {/* ⚠ `balance unread` is a warning and is only true once the box has
+                       *  answered without one — while it is still being asked it shimmers. */}
+                      {balance == null && asking ? (
+                        <Shimmer>$00,000.00</Shimmer>
+                      ) : balance == null ? (
                         <span className="text-[12px] text-warn-text">balance unread</span>
                       ) : (
                         money(balance, false)
                       )}
                     </span>
-                    <AccountNet e={earn} />
+                    <AccountNet e={earn} asking={asking} />
                   </span>
                 </button>
 
@@ -820,18 +955,9 @@ export function Bots() {
                    *
                    *  ⚠ ONE grid template, shared with the rows below by a constant. A hand-copied
                    *  column list is how a heading ends up over the wrong column — and a heading
-                   *  that is confidently over the wrong number is worse than none. */}
-                  <div
-                    className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
-                  >
-                    <span className="pl-[19px]">Bot</span>
-                    <span title="What this bot's own closed trades came to">P&amp;L</span>
-                    <span>Version</span>
-                    <span title="Risk per trade">Risk</span>
-                    <span>Uptime</span>
-                    <span />
-                    <span className="text-right">Actions</span>
-                  </div>
+                   *  that is confidently over the wrong number is worse than none. The loading
+                   *  placeholder renders the same component for the same reason. */}
+                  <ColumnHeadings />
                   {rows.map(({ cfg, live }, i) => {
                     const be = earnByBot.get(cfg.key)
                     // ⚠ THREE states. `asked` is whether the box answered for this bot at all —
@@ -870,22 +996,28 @@ export function Bots() {
                            *  was also what an UNANSWERED box drew — so a dead link to the VPS
                            *  rendered as a fleet sitting quietly, which is the failure this repo
                            *  keeps paying for. Unknown is hollow and says so on hover. */}
-                          <span
-                            title={
-                              asked
-                                ? running
-                                  ? 'Running'
-                                  : 'Stopped'
-                                : 'The trading box has not answered for this bot — its state is unknown, not stopped.'
-                            }
-                            className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
-                              !asked
-                                ? 'border border-text-tertiary'
-                                : running
-                                  ? 'bg-pos shadow-[0_0_7px_#00ff7f]'
-                                  : 'bg-neg'
-                            }`}
-                          />
+                          {/* A FOURTH look for the first read: shimmering, it is still being
+                           *  asked; hollow, it was asked and nobody answered. */}
+                          {!asked && asking ? (
+                            <Shimmer shape="dot" className="h-[7px] w-[7px]" />
+                          ) : (
+                            <span
+                              title={
+                                asked
+                                  ? running
+                                    ? 'Running'
+                                    : 'Stopped'
+                                  : 'The trading box has not answered for this bot — its state is unknown, not stopped.'
+                              }
+                              className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
+                                !asked
+                                  ? 'border border-text-tertiary'
+                                  : running
+                                    ? 'bg-pos shadow-[0_0_7px_#00ff7f]'
+                                    : 'bg-neg'
+                              }`}
+                            />
+                          )}
                           <span className="truncate group-hover:text-accent transition-colors">
                             {name}
                           </span>
@@ -897,7 +1029,7 @@ export function Bots() {
                          *  machinery. It is the answer to the question this row is read with —
                          *  what has this bot done — and 400px of empty grid between the two made
                          *  the row read as a name with some settings after it. */}
-                        <Contribution e={be} />
+                        <Contribution e={be} asking={asking} />
 
                         <VersionPill
                           version={versionByKey.get(cfg.key)?.data}
@@ -915,7 +1047,13 @@ export function Bots() {
                           title="How long it has been running without a restart"
                           className="text-[12px] font-mono text-text-tertiary cursor-default"
                         >
-                          {live?.uptime_seconds != null ? formatUptime(live.uptime_seconds) : '—'}
+                          {live?.uptime_seconds != null ? (
+                            formatUptime(live.uptime_seconds)
+                          ) : !asked && asking ? (
+                            <Shimmer className="h-[12px] w-[44px]" />
+                          ) : (
+                            '—'
+                          )}
                         </span>
 
                         <span />
@@ -929,6 +1067,14 @@ export function Bots() {
                            *  never a reason to act. */}
                           {pending === cfg.key ? (
                             <span className="text-[11px] text-accent animate-pulse pr-1">…</span>
+                          ) : !asked && asking ? (
+                            // The Start/Stop controls are withheld until the state is known —
+                            // their SHAPE stands in, so the row's actions do not jump when they
+                            // land. Still nothing to press: an unknown state offers no action.
+                            <>
+                              <Shimmer className="h-[26px] w-[26px]" />
+                              <Shimmer className="h-[26px] w-[26px]" />
+                            </>
                           ) : !asked ? (
                             <span
                               title="The trading box has not answered for this bot, so there is nothing safe to offer here — its state is unknown, not stopped."
@@ -1126,7 +1272,10 @@ export function Bots() {
             </p>
           )}
 
-          {bots.length === 0 && (
+          {/* 🔴 Only once the box has ANSWERED (2026-09-10). The bot list comes from the
+           *  snapshot, so for the ~4s it takes — and for as long as the box is unreachable — it
+           *  is empty, and this line printed "No bots registered" over a fleet of three. */}
+          {snapshot && bots.length === 0 && (
             <p className="text-[12px] text-text-tertiary py-8 text-center">No bots registered.</p>
           )}
         </div>
@@ -1166,6 +1315,7 @@ export function Bots() {
                 live: botByKey.get(b.key),
               }))
             )}
+            asking={asking}
             statusByKey={statusByKey}
             onClose={() => set('account', null)}
           />

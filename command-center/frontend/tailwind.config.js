@@ -100,9 +100,12 @@ export default {
         ease: 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
       keyframes: {
+        // The loading placeholder's sweep (components/Shimmer.tsx). The gradient is 3x the block's
+        // width and does not repeat, so its light band starts off the left edge and ends off the
+        // right one — the loop is seamless without any tiling.
         shimmer: {
-          '0%':   { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(calc(100vw + 60px))' },
+          '0%':   { backgroundPosition: '100% 0' },
+          '100%': { backgroundPosition: '0% 0' },
         },
         fadein: {
           '0%':   { opacity: '0', transform: 'translateY(-6px)' },

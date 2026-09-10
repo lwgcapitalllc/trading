@@ -324,7 +324,7 @@ export function useCreateThing() {
 Pages own data fetching. Components own rendering. No business logic in components.
 
 - Numbers → `font-mono tabular-nums`
-- Loading → skeleton for tables/cards; `value="—"` for `StatCard`
+- Loading → `Shimmer` placeholders, per *Loading states — the shimmer pattern* below; `value="—"` for `StatCard`
 - Status indicators → use existing `StatusPill` / `StatusDot` patterns, don't invent new shapes
 - All tab state → `useSearchParams` (see above)
 
@@ -336,8 +336,57 @@ Pages own data fetching. Components own rendering. No business logic in componen
 |---|---|
 | `StatCard` | All stat tiles. Supports `value="—"` loading, `onClick`, `disabled` |
 | `EmptyState` | Empty data screens — icon + title + description |
+| `Shimmer` | Every loading placeholder — see the next section |
 
 Extend an existing component with a new prop before forking a near-duplicate.
+
+---
+
+## Loading states — the shimmer pattern (2026-09-10)
+
+**The app's ONE way to show that data is on its way: `components/Shimmer.tsx`**, a block shaped
+like the content it stands in for, with a light band sweeping across it. Aaron: *"so that the UX
+looks clean and it doesn't look like the page is hung or waiting on anything."* First applied to
+the Bots page and its two drawers; **apply it to any page you touch that has a loading state.**
+
+🔴 **A shimmer means STILL ASKING, and never "could not ask".** Gate it on the query's FIRST read
+(`isLoading` / `isPending`), never on the data being absent — a FAILED read is also absent, and a
+shimmer over a dead link is a page that looks busy for ever while the thing behind it is down.
+Failed renders its words (`unknown`, `balance unread`, the error line); answered-with-nothing
+renders that. **Three states, three looks** — the repo's rule 1, applied to loading.
+
+🔴 **A finding may not be shown while its source is still being asked.** The Bots page printed
+`balance unread`, `net unknown`, `type unknown`, `No version` and **`No bots registered`** for the
+~4s the trading box takes to answer — five faults reported about a healthy fleet on every load.
+Each now shimmers until its OWN source has answered.
+
+- **Only the first read shimmers.** A background refetch keeps the data on screen; blanking a 60s
+  poll back to placeholders makes a live page flicker every minute.
+- **Same size, same place.** Size each block to the value that lands there, so nothing moves when
+  it arrives — MEASURE before/after heights, never eyeball them. ⚠ **In a row aligned on text
+  baseline, pass GHOST CONTENT** (`<Shimmer>$00,000.00</Shimmer>`): it renders invisible and gives
+  the block the real value's exact size and baseline. An empty block has no baseline and sat 3px
+  low on the Bots account heading.
+- **Shimmer only what is waiting.** Render what is already known — headings, labels, the account
+  list — and never gate a whole page on its slowest read. Fixed words (a column heading, a section
+  title) are rendered REAL, not shimmered.
+- **Reuse the real component's loading state** in a page-level placeholder rather than drawing a
+  private copy of it — the Bots page skeleton renders the same net pill, P&L cell and version pill
+  the real card does.
+- **No "Loading…" text or spinner beside a shimmer** — they say the same thing twice.
+- **Start independent reads in parallel.** A read keyed off another read's answer cannot begin
+  until that one lands; the Bots version pills waited ~4s for the snapshot before their own ~4.5s
+  read could start, and are now keyed off the config list instead.
+
+⚠ **Theme tokens only**; the sweep stops under reduced-motion. ⚠ **The animation lives in
+`tailwind.config.js` and a change to it needs the DEV SERVER RESTARTED** — the running Vite kept
+serving the old keyframe, which slid every block hundreds of pixels across the page and looked
+exactly like a layout bug. Check the served `@keyframes shimmer` first.
+
+⚠ **Pages still carrying a PRIVATE skeleton** (built on `animate-pulse`, before this existed) —
+migrate each to `Shimmer` when you are next in the file, never as a drive-by across all of them:
+`Backtests` (`RunsTableSkeleton`, also used by `Optimizations`), `Strategies`, `Rulesets`,
+`Overview` (`BotsCardSkeleton`), `StrategyDetail`, `BacktestDetail` (page and chart skeletons).
 
 ---
 
