@@ -35,9 +35,22 @@ def _before_the_last(n: int = 8, package: str = "sos_fade") -> str:
     this repo is measuring the robot's schedule instead, and it DEGRADES daily rather than
     failing once — which is the kind of red that gets rerun, shrugged at and eventually
     excluded. Reach for the commit you actually mean.
+
+    ⚠ **It asks with the VERSION's own file rule (2026-09-10)**, so it reaches back over commits
+    that changed code that ships. Asked with the raw trees it could land on a stretch of CLAUDE.md
+    edits, where the version does not move and every "older is lower" case goes red for nothing.
     """
     out = subprocess.run(
-        ["git", "-C", str(_REPO), "rev-list", f"-{n}", "HEAD", "--", *bv.trees_for(package)],
+        [
+            "git",
+            "-C",
+            str(_REPO),
+            "rev-list",
+            f"-{n}",
+            "HEAD",
+            "--",
+            *bv._specs(bv.trees_for(package)),
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -135,15 +148,52 @@ def test_a_bot_with_no_strategy_package_counts_nothing():
 # ── versions are real counts, not guesses ───────────────────────────────────────
 
 
-def test_a_version_is_the_count_of_commits_touching_the_trees():
+def test_a_commit_moves_the_version_exactly_when_it_changes_a_file_that_SHIPS():
+    """🔴 Until 2026-09-10 a version counted every commit TOUCHING the trees, so a commit editing
+    only an engine's CLAUDE.md read as a new version for every bot — both live bots showed "1
+    behind" and the page offered to deploy byte-identical code.
+
+    Checked against REAL history with an independent answer: for recent commits touching this
+    bot's trees, the file list decides (a `.py` outside a `tests/` folder ships), and the version
+    must step by exactly 1 for a commit that ships and by 0 for one that does not. ⚠ The sample
+    must hold BOTH kinds, or half the rule goes unchecked. ⚠ `--no-renames`, so a file moved out
+    of shipping code is seen leaving it. MUTATION: count the raw trees and the ships-nothing half
+    reddens."""
     trees = bv.trees_for("sos_fade")
-    out = subprocess.run(
-        ["git", "-C", str(_REPO), "rev-list", "--count", "HEAD", "--", *trees],
+    log = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(_REPO),
+            "log",
+            "-n",
+            "120",
+            "--no-merges",
+            "--no-renames",
+            "--format=%x1e%H",
+            "--name-only",
+            "HEAD",
+            "--",
+            *trees,
+        ],
         capture_output=True,
         text=True,
         check=True,
-    )
-    assert bv.version_at("HEAD", trees) == int(out.stdout.strip())
+    ).stdout
+    skip = {"tests", "__pycache__", ".pytest_cache", ".git"}
+    ships, ships_nothing = [], []
+    for record in log.split("\x1e"):
+        if not record.strip():
+            continue
+        sha, _, files = record.partition("\n")
+        paths = [p for p in files.split() if p]
+        shipped = any(p.endswith(".py") and not (skip & set(p.split("/"))) for p in paths)
+        (ships if shipped else ships_nothing).append(sha.strip())
+    assert ships and ships_nothing, "the sample holds only one kind of commit — widen it"
+    for sha in ships[:3]:
+        assert bv.version_at(sha, trees) == bv.version_at(f"{sha}~1", trees) + 1, sha
+    for sha in ships_nothing[:3]:
+        assert bv.version_at(sha, trees) == bv.version_at(f"{sha}~1", trees), sha
 
 
 def test_an_older_commit_has_a_lower_version_than_head():
@@ -446,7 +496,48 @@ def test_it_asks_only_about_THIS_BOTS_trees(monkeypatch):
     bv.unpushed_commits(["strategies/python/sos_fade", "engines", "backtest"])
     log = next(a for a in seen if a[0] == "log")
     assert "--" in log
-    assert log[log.index("--") + 1 :] == ("strategies/python/sos_fade", "engines", "backtest")
+    specs = log[log.index("--") + 1 :]
+    # ⚠ Only the files a deploy ships (2026-09-10): an unpushed CLAUDE.md edit is not something
+    # a deploy could fail to reach, so it must not say "push first".
+    assert ":(glob)strategies/python/sos_fade/**/*.py" in specs
+    assert ":(glob)engines/**/*.py" in specs
+    assert ":(exclude,glob)**/tests/**" in specs
+    assert "engines" not in specs, "a bare tree counts every doc and test inside it"
+
+
+def test_uncommitted_edits_count_only_files_a_deploy_ships(monkeypatch):
+    """An edited CLAUDE.md does not change what a lab run tests, so it must not raise the
+    *your backtester has edited files* line. MUTATION: pass the raw trees and this reddens."""
+    seen: list[tuple] = []
+
+    def fake(*a):
+        seen.append(a)
+        return ""
+
+    monkeypatch.setattr(bv, "_git", fake)
+    bv.uncommitted_edits(["engines"])
+    status = next(a for a in seen if a[0] == "status")
+    specs = status[status.index("--") + 1 :]
+    assert ":(glob)engines/**/*.py" in specs
+    assert "engines" not in specs
+
+
+def test_a_change_to_a_LOOSE_MODULE_names_that_module_as_its_tree(monkeypatch):
+    """A loose module is a tree that is one FILE, so it matches by equality. Matched only by
+    `startswith(tree + "/")`, a commit touching nothing else named no tree at all, which is what a
+    MERGE looks like. MUTATION: drop the equality and this reddens."""
+    record = "\x1eabc1234\x1ffix(contract): a seam\x1f2026-09-10\x1fdef5678\n\nstrategies/python/live_contract.py\n"
+    monkeypatch.setattr(bv, "_git", lambda *a: record)
+    got = bv.changes_between("A", "B", ["strategies/python/live_contract.py", "engines"])
+    assert got == [
+        {
+            "commit": "abc1234",
+            "subject": "fix(contract): a seam",
+            "date": "2026-09-10",
+            "areas": ["strategies/python/live_contract.py"],
+            "merge": False,
+        }
+    ]
 
 
 def test_compare_carries_the_unpushed_list_so_the_banner_can_explain_a_short_deploy():

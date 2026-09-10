@@ -50,7 +50,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Iterator, List, Optional, Set, Tuple
+from typing import Iterable, Iterator, List, Optional, Set, Tuple
 
 __all__ = [
     "PYTHON_ROOT",
@@ -58,6 +58,7 @@ __all__ = [
     "SKIP_DIRS",
     "snapshot_sources",
     "local_dependencies",
+    "version_pathspecs",
 ]
 
 PYTHON_ROOT = Path(__file__).resolve().parent
@@ -87,6 +88,37 @@ def snapshot_sources(root: Path) -> Iterator[Tuple[Path, Path]]:
         if SKIP_DIRS & set(rel.parts):
             continue
         yield py, rel
+
+
+def version_pathspecs(trees: Iterable[str]) -> List[str]:
+    """Git pathspecs selecting exactly the files `snapshot_sources` SHIPS out of `trees`.
+
+    🔴 **A version counts a commit only when it changes a file a deploy COPIES (2026-09-10,
+    Aaron's call).** It used to count every commit touching the trees at all, so a commit that
+    edited nothing but a CLAUDE.md, a test or a golden export read as a new version: the Bots page
+    said the bot was behind, and the deploy it offered reinstalled byte-identical code and
+    restarted the bot for nothing. MEASURED on the day: the one commit holding the live bot
+    "1 version behind" changed docs, test data and a test file, and no file that ships.
+
+    ⚠ **ONE rule, and it is the snapshot's own.** The deploy tool stamps a bot's version and the
+    Command Center computes it from the other side; both call this, so the two agree by
+    construction rather than by being kept in step — and neither can count a file the copier
+    would never ship, or skip one it would.
+
+    Pure: no git, no filesystem. `trees` are repo-relative, as `local_dependencies` returns them
+    plus the shared trees; a loose module is a FILE entry and selects itself. Backslashes are
+    normalised because a glob reads `\\` as an escape, and the deploy tool runs on Windows.
+    Returns `[]` for no trees, so a caller's "nothing to count" guard still fires.
+    """
+    specs: List[str] = []
+    for tree in trees:
+        t = str(tree).replace("\\", "/").rstrip("/")
+        if not t:
+            continue
+        specs.append(f":(glob){t}" if t.endswith(".py") else f":(glob){t}/**/*.py")
+    if specs:
+        specs.extend(f":(exclude,glob)**/{d}/**" for d in sorted(SKIP_DIRS))
+    return specs
 
 
 def _resolve(name: str, root: Path) -> Optional[Path]:

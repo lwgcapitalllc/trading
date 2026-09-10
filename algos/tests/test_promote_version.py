@@ -114,6 +114,25 @@ def test_a_commit_OUTSIDE_the_promoted_trees_does_not_move_the_version(repo):
     assert promote_tool.version_at("HEAD", trees) == before
 
 
+def test_a_commit_INSIDE_the_trees_that_ships_nothing_does_not_move_the_version(repo):
+    """🔴 Until 2026-09-10 a version counted every commit TOUCHING the trees, so an edit to a
+    CLAUDE.md inside `engines/` stamped a new version on every bot and the Bots page offered a
+    deploy of byte-identical code. A version now moves only when a file this tool COPIES moves.
+
+    MUTATION: count the raw trees again (drop `version_pathspecs` from `version_at`) and the
+    unchanged count reddens. The code commit after it is the control that proves the count can
+    still move at all."""
+    trees = _trees(repo)
+    _commit(repo, "engines/e.py", "A = 1\n", "engine")
+    before = promote_tool.version_at("HEAD", trees)
+    _commit(repo, "engines/CLAUDE.md", "notes\n", "docs")
+    _commit(repo, "engines/tests/test_e.py", "def test_e():\n    pass\n", "a test")
+    _commit(repo, "strategies/python/demo_pkg/exports/golden/g.csv", "a,b\n", "golden data")
+    assert promote_tool.version_at("HEAD", trees) == before
+    _commit(repo, "engines/e.py", "A = 2\n", "code")
+    assert promote_tool.version_at("HEAD", trees) == before + 1
+
+
 def test_an_older_commit_counts_lower_than_HEAD(repo):
     trees = _trees(repo)
     first = _commit(repo, "engines/e.py", "A = 1\n", "one")

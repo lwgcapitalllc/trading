@@ -1879,12 +1879,26 @@ should be a big nice button."*
 
 `services/bot_versions.py` builds the real one, served as `BotDeployedVersion.compare`.
 
-**A version is the number of commits that have touched the bot's trees, counted at a commit.**
-Three properties fall out of that and the page needs all three: it moves when — and only when —
+**A version is the number of commits that changed a file the bot's deploy COPIES, counted at a
+commit.** Three properties fall out of that and the page needs all three: it moves when — and only when —
 the code this bot runs moves; it is derived from the git history, so this machine and Aaron's
 brother's compute the SAME number with no registry to sync; and subtracting two of them is not an
 estimate of the work waiting to go out, it IS it. Measured on the live deployment: **v100 → v121,
 21 behind**, which is exactly the 21 commits `git log 4e97565..HEAD -- <trees>` returns.
+
+🔴 **IT COUNTED EVERY COMMIT *TOUCHING* THE TREES UNTIL 2026-09-10, SO A NOTES EDIT WAS A NEW
+VERSION.** MEASURED that day: both live bots read "1 behind" because another session's commit
+edited `engines/market_structure/CLAUDE.md`, and the page offered to deploy byte-identical code and
+restart both for nothing. **Aaron's call: count only commits that change what ships.**
+`strategies/python/package_deps.version_pathspecs` is the rule — the snapshot's own (a `.py`
+outside `tests/`), called by every function here AND by `algos/tools/promote.py`, so the stamped
+number and this one cannot drift. On the day: 154 files selected for the SOS Fade bot, 162 for the
+extreme leg, each set identical to what the copier ships.
+
+⚠ **EVERY VERSION NUMBER DROPPED ONCE** (SOS Fade v220 → v174, extreme leg v225 → v178). The bot's
+own banner and ledger keep the OLD stamp until its next deploy, while this page shows the new
+count — expected for one deploy, not a fault. ⚠ **A change to a LOOSE MODULE names that module as
+its tree** (equality, not `startswith(tree + "/")`), or it named no tree and read as a merge.
 
 ⚠ **Not the lab's own `strategy_versions` registry, and the reason is the whole design.** That
 table is content-addressed and monotonic and it hashes the **strategy package**, while a bot runs

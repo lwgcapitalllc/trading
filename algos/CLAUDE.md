@@ -2025,10 +2025,16 @@ measurement** — the same defect as `running=False` in the lab and `is_compiled
 
 **`algos/tools/promote.py::version_at` measures it and stamps it into `deployed.json`** (which
 overrides `config.json` for the version fields, as `promoted_commit` already did). A version is
-the **count of commits touching this bot's PROMOTED trees**, derived from `repo_trees` — the same
-function that decides what is COPIED, so a tree that deploys is a tree that counts. It moves when
-and only when the code this bot runs moves, and subtracting two of them is the work between two
-deployments.
+the **count of commits that changed a file this bot's deploy COPIES**, derived from `repo_trees` —
+the same function that decides what is COPIED, so a tree that deploys is a tree that counts. It
+moves when and only when the code this bot runs moves, and subtracting two of them is the work
+between two deployments.
+
+🔴 **It counted every commit TOUCHING those trees until 2026-09-10**, so a CLAUDE.md edit inside
+`engines/` stamped a new version on every bot. The file rule is `package_deps.version_pathspecs`,
+shared with the Command Center. ⚠ **Every number dropped once, and a running bot keeps its OLD
+stamp until its next promote** — the deploy message stays coherent because it recounts the "from"
+side off the previous commit with the new rule rather than reading the old stamp.
 
 ⚠ **`None`, never 0, and it renders `v?` through the single `LiveConfig.version_label`.** 0 is a
 version somebody could genuinely be on, and it is precisely the value that was lying. Four

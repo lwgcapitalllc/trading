@@ -61,7 +61,7 @@ from bridge import (  # noqa: E402
 )
 from feed import fast_feed_timeframe  # noqa: E402
 from live_config import deployed_record  # noqa: E402
-from package_deps import local_dependencies, snapshot_sources  # noqa: E402
+from package_deps import local_dependencies, snapshot_sources, version_pathspecs  # noqa: E402
 from version import current_commit, deployment_hash  # noqa: E402
 
 # Machine-readable "which versions did this move between", for a caller that has to report
@@ -163,11 +163,17 @@ def version_at(commit: str, trees) -> Optional[int]:
     declared and never written is indistinguishable from a measurement, which is the defect
     this repo has now met in `running=False`, in `is_compiled`, and here.
 
-    **A version is the count of commits touching THIS BOT'S TREES**, so it moves when — and
-    only when — the code this bot runs moves, and subtracting two of them is the work between
-    two deployments. It is derived from `repo_trees`, the same function that decides what is
-    COPIED, so a tree that is promoted is a tree that is counted; a second roster here is how
-    a change deploys while the number says nothing happened.
+    **A version is the count of commits that changed a file THIS BOT'S DEPLOY COPIES**, so it
+    moves when — and only when — the code this bot runs moves, and subtracting two of them is
+    the work between two deployments. It is derived from `repo_trees`, the same function that
+    decides what is COPIED, so a tree that is promoted is a tree that is counted; a second
+    roster here is how a change deploys while the number says nothing happened.
+
+    🔴 **It counted every commit TOUCHING those trees until 2026-09-10**, so a commit editing only
+    a CLAUDE.md or a test inside `engines/` bumped every bot's version — the Bots page said both
+    live bots were behind and offered a deploy of byte-identical code. `version_pathspecs` is the
+    snapshot's own file rule, shared with the Command Center, so a version moves exactly when
+    the files this tool copies move.
 
     ⚠ **`None`, never 0.** 0 is a real version (a tree with no history yet) and is also the
     value that has been lying on this field since it was declared. An unfetched commit, a
@@ -175,7 +181,8 @@ def version_at(commit: str, trees) -> Optional[int]:
     say*, and the bot renders it `v?`.
 
     ⚠ **`command-center/backend/services/bot_versions.version_at` runs the SAME command over
-    the SAME trees**, so the two agree by construction rather than by being kept in step.
+    the SAME trees through the SAME pathspec rule**, so the two agree by construction rather
+    than by being kept in step.
     They are one definition evaluated in two places, and the difference is WHEN: this one is
     stamped at the moment the promote is true, which is what lets the bot — with no git and no
     backend — state its own version.
@@ -185,7 +192,16 @@ def version_at(commit: str, trees) -> Optional[int]:
     rels = [str(dest).replace("\\", "/") for _, dest in trees]
     try:
         out = subprocess.run(
-            ["git", "-C", str(_REPO), "rev-list", "--count", commit, "--", *rels],
+            [
+                "git",
+                "-C",
+                str(_REPO),
+                "rev-list",
+                "--count",
+                commit,
+                "--",
+                *version_pathspecs(rels),
+            ],
             capture_output=True,
             text=True,
             timeout=20,

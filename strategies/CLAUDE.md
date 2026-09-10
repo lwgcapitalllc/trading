@@ -225,6 +225,10 @@ The deploy story, the pin gap it exposes, and what it does to a bot's version nu
 - ⚠ **A borrowing is a REAL coupling and the closure makes it visible rather than acceptable.**
   Every bot that borrows `sos_fade` now carries it, which is honest and is also a reason to think
   before adding one: the snapshot, the version count and the parity surface all grow with it.
+- 🔴 **It also owns what a VERSION counts (`version_pathspecs`, 2026-09-10): a commit counts only
+  when it changes a file `snapshot_sources` ships.** Counting every commit touching the trees made
+  a notes edit a new version for every bot. The deploy tool and the Command Center both call it,
+  so an edit to a CLAUDE.md, a test, a meta file or a golden export here is never a version.
 
 ### Every order layer DECLARES how it opens a position (`entry_style`, 2026-09-03)
 

@@ -18,14 +18,21 @@ deployment pin was built to prevent, re-introduced one layer up as a label.
 **Why not just show the hash.** A hash answers *are these the same* and structurally cannot
 answer *how far apart*. "Behind by 21" is the whole ask.
 
-So a version is **the number of commits in this repo's history that have touched any of the
-bot's trees**, counted at a given commit. Three properties fall out of that, and the page needs
+So a version is **the number of commits in this repo's history that have changed a file the bot's
+deploy COPIES**, counted at a given commit. Three properties fall out of that, and the page needs
 all three:
 
 * it moves when — and only when — the code this bot runs moves;
 * it is DERIVED FROM THE GIT HISTORY, so this machine and Aaron's brother's compute the same
   number for the same commit, with no registry to keep in sync and nothing to migrate;
 * subtracting two of them is not an estimate of how much is waiting to go out, it IS it.
+
+🔴 **"Touched the trees" was the rule until 2026-09-10, and it counted commits that ship nothing.**
+A commit editing only a CLAUDE.md, a test or a golden export inside `engines/` read as a new
+version for EVERY bot, so the page said both live bots were behind and offered a deploy that
+reinstalled byte-identical code and restarted them for nothing. `package_deps.version_pathspecs`
+is the rule now — the snapshot's own file rule, called by this module AND by the deploy tool, so
+the stamped number and this one cannot drift. Every function below asks with it.
 
 ⚠ **`trees_for` mirrors `algos/tools/promote.py::repo_trees`, and the two must not drift.**
 That function decides what is COPIED into a snapshot; this one decides what is COUNTED. A tree
@@ -137,11 +144,18 @@ def has_commit(commit: str) -> bool:
     return _git("cat-file", "-e", f"{commit}^{{commit}}") is not None
 
 
+def _specs(trees: list[str]) -> list[str]:
+    """The files in `trees` a deploy ships, as git pathspecs — the ONE rule, shared with promote."""
+    from package_deps import version_pathspecs
+
+    return version_pathspecs(trees)
+
+
 def version_at(commit: str, trees: list[str]) -> int | None:
-    """How many commits up to `commit` have touched any of `trees`."""
+    """How many commits up to `commit` have changed a file the bot's deploy copies."""
     if not commit or not trees:
         return None
-    out = _git("rev-list", "--count", commit, "--", *trees)
+    out = _git("rev-list", "--count", commit, "--", *_specs(trees))
     if out is None:
         return None
     try:
@@ -160,7 +174,8 @@ def uncommitted_edits(trees: list[str]) -> list[str]:
     """
     if not trees:
         return []
-    out = _git("status", "--porcelain", "--", *trees)
+    # Only files a deploy ships: an edited CLAUDE.md or test does not change what a lab run tests.
+    out = _git("status", "--porcelain", "--", *_specs(trees))
     if not out:
         return []
     return [ln[3:].strip() for ln in out.splitlines() if ln.strip()]
@@ -189,7 +204,7 @@ def unpushed_commits(trees: list[str]) -> list[str] | None:
     upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
     if not upstream or not upstream.strip():
         return None
-    out = _git("log", "--format=%h %s", f"{upstream.strip()}..HEAD", "--", *trees)
+    out = _git("log", "--format=%h %s", f"{upstream.strip()}..HEAD", "--", *_specs(trees))
     if out is None:
         return None
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
@@ -229,7 +244,7 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
         "--name-only",
         f"{from_commit}..{to_commit}",
         "--",
-        *trees,
+        *_specs(trees),
     )
     if out is None:
         return None
@@ -254,14 +269,12 @@ def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[
         # would have put two different numbers for "the version" into the product.
         is_merge = len(parents.split()) > 1
         # ⚠ The `tree + "/"` test is KEPT even though the pathspec above already filters git's
-        # output. A pathspec of `engines` also matches a top-level FILE named `engines`, which
-        # this test excludes — dropping it would quietly widen what counts as touching a tree.
+        # output — it is what maps a file back to the tree it belongs to. ⚠ A LOOSE MODULE is a
+        # tree that is one file, so it matches by EQUALITY: `startswith(tree + "/")` alone left a
+        # commit touching only that file naming no tree, which reads as a merge.
+        paths = [f.strip() for f in files.splitlines() if f.strip()]
         areas = sorted(
-            {
-                tree
-                for tree in trees
-                if any(f.strip().startswith(tree + "/") for f in files.splitlines())
-            }
+            {tree for tree in trees if any(f == tree or f.startswith(tree + "/") for f in paths)}
         )
         changes.append(
             {

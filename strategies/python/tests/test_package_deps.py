@@ -30,6 +30,7 @@ whose negative result a healthy system can produce, met in a test harness.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -178,6 +179,125 @@ def test_a_FILE_root_yields_itself(tmp_path):
     mod = tmp_path / "solo.py"
     mod.write_text("A = 1\n", encoding="utf-8")
     assert [rel.name for _, rel in pd.snapshot_sources(mod)] == ["solo.py"]
+
+
+# ── which files a VERSION counts ──────────────────────────────────────────────
+#
+# 🔴 A version counted every commit TOUCHING a bot's trees until 2026-09-10, so an edit to a
+# CLAUDE.md inside `engines/` read as a new version for every bot and the Bots page offered to
+# deploy byte-identical code. The rule is now the snapshot's own: a commit counts only when it
+# changes a file `snapshot_sources` would ship.
+#
+# MUTATION MAP (run, not reasoned):
+#   drop the exclusions                    -> the equivalence and the ships-nothing cases
+#   treat a loose module as a folder       -> the equivalence and the loose-module step
+#   drop the backslash normalisation       -> the Windows case
+#   emit exclusions with no trees          -> the no-trees case
+
+
+def _git(root: Path, *args: str) -> str:
+    out = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    assert out.returncode == 0, f"git {' '.join(args)}: {out.stderr}"
+    return out.stdout
+
+
+def _write(root: Path, rel: str, body: str = "x = 1\n") -> None:
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+
+
+def _commit(root: Path, message: str) -> None:
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=T", "commit", "-q", "-m", message)
+
+
+# A package, a loose module and a shared tree, each holding files that ship AND files that do not.
+_TREES = ["strategies/python/pkg", "strategies/python/loose.py", "engines"]
+_FILES = [
+    "strategies/python/pkg/__init__.py",
+    "strategies/python/pkg/execution.py",
+    "strategies/python/pkg/tools/compare_pkg.py",  # ships: a parity harness travels with it
+    "strategies/python/pkg/tests/test_pkg.py",
+    "strategies/python/pkg/CLAUDE.md",
+    "strategies/python/pkg/pkg.meta.json",
+    "strategies/python/pkg/exports/golden/golden.csv",
+    "strategies/python/loose.py",
+    "engines/me/engine.py",
+    "engines/me/CLAUDE.md",
+    "engines/me/tests/test_me.py",
+    "engines/me/__pycache__/engine.cpython-39.py",
+    "engines/tests/test_all.py",
+    "algos/live/runner.py",  # outside every tree
+]
+
+
+@pytest.fixture
+def repo(tmp_path):
+    """A REAL git repo, because the claim is about what git's own pathspec matching selects."""
+    _git(tmp_path, "init", "-q")
+    for rel in _FILES:
+        _write(tmp_path, rel)
+    _commit(tmp_path, "everything")
+    return tmp_path
+
+
+def _count(root: Path) -> int:
+    return int(_git(root, "rev-list", "--count", "HEAD", "--", *pd.version_pathspecs(_TREES)))
+
+
+def test_a_VERSION_counts_exactly_the_files_a_snapshot_SHIPS(repo):
+    """The contract, checked against an independent answer: the files git selects must be the
+    files `snapshot_sources` would copy — no more (a counted doc) and no fewer (a skipped file
+    that ships)."""
+    selected = set(_git(repo, "ls-files", "--", *pd.version_pathspecs(_TREES)).split())
+    shipped = {
+        (repo / t).joinpath(rel).relative_to(repo).as_posix() if (repo / t).is_dir() else t
+        for t in _TREES
+        for _, rel in pd.snapshot_sources(repo / t)
+    }
+    in_trees = set(_git(repo, "ls-files", "--", *_TREES).split())
+    assert in_trees - shipped, "the fixture holds nothing that must NOT ship — it cannot fail"
+    assert selected == shipped
+
+
+def test_a_commit_that_ships_NOTHING_does_not_move_the_version(repo):
+    """Docs, tests, a golden export, a meta file: none of them is copied, so none of them is a
+    new version. The positive control is what makes the unchanged count mean something."""
+    before = _count(repo)
+    for rel in (
+        "strategies/python/pkg/CLAUDE.md",
+        "strategies/python/pkg/tests/test_pkg.py",
+        "strategies/python/pkg/exports/golden/golden.csv",
+        "strategies/python/pkg/pkg.meta.json",
+        "engines/me/CLAUDE.md",
+        "engines/tests/test_all.py",
+    ):
+        _write(repo, rel, "changed\n")
+        _commit(repo, f"edit {rel}")
+    assert _count(repo) == before
+    _write(repo, "strategies/python/pkg/execution.py", "x = 2\n")
+    _commit(repo, "code")
+    assert _count(repo) == before + 1
+    _write(repo, "strategies/python/loose.py", "x = 2\n")
+    _commit(repo, "a loose module is a tree that is one file")
+    assert _count(repo) == before + 2
+
+
+def test_the_pathspecs_are_forward_slashed_for_a_Windows_caller():
+    """The deploy tool runs on Windows, and a glob reads a backslash as an escape — so an
+    unnormalised tree would match nothing and count every bot at v0."""
+    specs = pd.version_pathspecs(["strategies\\python\\pkg"])
+    assert ":(glob)strategies/python/pkg/**/*.py" in specs
+    assert not any("\\" in s for s in specs)
+
+
+def test_no_trees_is_NO_pathspecs_never_exclusions_alone():
+    """🔴 An exclude-only pathspec means *everything except tests* to git, so a bot with no
+    trees would count every commit in the repo. `[]` keeps each caller's *nothing to count*
+    guard firing instead."""
+    assert pd.version_pathspecs([]) == []
+    assert pd.version_pathspecs([""]) == []
 
 
 # ── against the real repo ─────────────────────────────────────────────────────
