@@ -1100,14 +1100,29 @@ test('a bot the box has not answered for reads UNKNOWN, never stopped', async ({
   // ⚠ Scoped to the CARD: the no-account list renders `bot-row` too, so a page-wide locator is
   // a strict-mode violation that reads as a missing row rather than as two matches.
   const row = page.getByTestId('account-card').getByTestId('bot-row')
+  const start = row.getByTitle('Start', { exact: true })
+
+  // 🔴 **WHILE THE FIRST READ IS IN FLIGHT the row may not say `unknown` yet (repointed
+  // 2026-09-10).** This check used to assert `unknown` with the snapshot still HELD — which was
+  // right until the shimmer pass made "a finding may not be shown while its source is still being
+  // asked" a rule, and then it failed against a page doing exactly that. The hold is kept, because
+  // the still-asking moment is a real state with its own rule; the release below is what reaches
+  // the state this check is named for.
+  // MUTATION: drop the still-asking branch from the row's controls → `unknown` shows mid-read and
+  // the first assertion goes red.
+  await expect(row).toContainText('SOS Fade')
+  await expect(row).not.toContainText('unknown')
+  await expect(start).toHaveCount(0)
+
+  // The box ANSWERED, and this bot was not in the answer. Now it is a finding, and it says so.
+  release()
   await expect(row).toContainText('unknown')
   // ⚠ `{ exact: true }`, and it is not tidiness: Playwright's title matcher is a CASE-INSENSITIVE
   // SUBSTRING by default, so a bare 'Start' matches the uptime cell's own
   // *"how long it has been running without a re**start**"* and this check failed against a page
   // that was behaving perfectly. **A locator loose enough to match its own neighbours reports the
   // opposite of the truth** — the mirror image of the vacuous-locator trap this file records.
-  await expect(row.getByTitle('Start', { exact: true })).toHaveCount(0)
-  release()
+  await expect(start).toHaveCount(0)
 })
 
 test('a bot the box DID answer for still offers the control its state allows', async ({ page }) => {
