@@ -84,6 +84,16 @@ const STRATEGIES = [
     default_params: { exec_risk_pct: 1, exec_tp1_pct: 50 },
     param_schema: [],
   },
+  // LAST in the list on purpose: the ordering check picks it before opening the form, so a form
+  // that kept the list's own order would draw it at the bottom.
+  {
+    id: 'b_leg',
+    name: 'B-LEG',
+    runner: 'python',
+    suggested_instrument: 'XAUUSD',
+    default_params: { exec_risk_pct: 2 },
+    param_schema: [],
+  },
 ]
 
 /**
@@ -117,6 +127,37 @@ async function mock(page: Page, opts: { profiles?: typeof PROFILES } = {}) {
   await page.route(
     (u) => u.pathname.includes('/api/backtests/history-limit'),
     (r) => r.fulfill({ json: null })
+  )
+  // The attached terminal's instrument list. Answered as UNAVAILABLE so the broker's suffix rewrite
+  // is deterministic (`XAUUSD` → `XAUUSD.p` under PU Prime) — the live terminal's list decides
+  // whether that rewrite stands down, which is a fact about the box, not about this form.
+  await page.route(
+    (u) => u.pathname.endsWith('/api/backtests/broker-symbols'),
+    (r) =>
+      r.fulfill({
+        json: {
+          available: false,
+          stale: false,
+          reason: 'mocked',
+          server: '',
+          account: null,
+          fetched_at: null,
+          count: null,
+          total_on_terminal: null,
+          classes: [],
+          symbols: null,
+        },
+      })
+  )
+  // The Strategies page (where a stack can be opened with strategies already picked) asks the VPS
+  // agents for their file state. Answered here so no check reaches the live box.
+  await page.route(
+    (u) => u.pathname.endsWith('/api/strategy-files/sync-status'),
+    (r) => r.fulfill({ json: { statuses: [], nt8_error: null, mt5_error: null } })
+  )
+  await page.route(
+    (u) => u.pathname.endsWith('/api/strategy-files'),
+    (r) => r.fulfill({ json: { files: [], nt8_error: null, mt5_error: null } })
   )
   // ONE existing stack, so the header's "New stack" button renders (the empty state has its own).
   await page.route(
@@ -179,8 +220,15 @@ async function openModal(page: Page) {
 async function fillForm(page: Page) {
   await page.getByRole('button', { name: /SOS Fade/ }).click()
   await page.getByRole('button', { name: /Extreme Leg/ }).click()
-  const instrument = page.getByPlaceholder('e.g. XAUUSD')
-  await expect(instrument).toHaveValue('XAUUSD')
+  // 🔴 This read `getByPlaceholder('e.g. XAUUSD')` until 2026-09-10 and had matched NOTHING since
+  // the instrument picker replaced the plain box on 2026-09-07 — so every check calling this
+  // helper was red on setup, which reads as the checks' subjects being broken.
+  // ⚠ A PREFIX, deliberately: a shared precondition may assert only what every caller needs —
+  // that the form filled an instrument in. Whether the box shows the broker's suffix depends on
+  // whether the broker landed before or after the strategy was ticked, and the backend binds the
+  // suffix at creation either way (`routers/stacks.py::_run_instrument`).
+  const instrument = page.getByTestId('stack-modal').getByPlaceholder('Type a symbol or a name')
+  await expect(instrument).toHaveValue(/^XAUUSD/)
 }
 
 test.describe('the stack form carries a broker, a cost switch and per-leg risk', () => {
@@ -266,10 +314,9 @@ test.describe('the stack form carries a broker, a cost switch and per-leg risk',
     await openModal(page)
     await fillForm(page)
 
-    // Scoped by the risk box's own step/min, so the account Balance and Risk-cap inputs above
-    // cannot be picked up instead — a page-wide spinbutton locator is the vacuous pass this
-    // folder has recorded five times.
-    const risk = page.locator('input[type="number"][step="0.5"][min="0.1"]').first()
+    // By the leg's own test id, so the account's Balance and Risk-cap boxes cannot be picked up
+    // instead — a page-wide locator is the vacuous pass this folder has recorded five times.
+    const risk = page.getByTestId('leg-risk-sos_fade')
     await expect(risk).toHaveValue('10') // the leg's stored default, before any edit
     await risk.fill('5')
 
@@ -296,5 +343,94 @@ test.describe('the stack form carries a broker, a cost switch and per-leg risk',
     await page.getByRole('button', { name: /Run stack/ }).click()
     await expect.poll(() => launches.length).toBe(1)
     expect(launches[0].params_by_strategy).toEqual({})
+  })
+})
+
+// ── 2026-09-10: the account above the legs, typed boxes, and a frozen leg order ─────────────
+//
+// Aaron: *"the shared account… should be at the top, right after the broker information, but
+// before the strategies… I don't like the browser default thing with an arrow up and an arrow
+// down. Just let me freeform enter digits… if I selected strategies before I hit stack, let
+// those be at the top of the list."* A fail-watch against HEAD is VACUOUS for most of these (the
+// test ids are new), so each names the MUTATION it was watched red against.
+
+test.describe('the stack form reads in the order its numbers depend on', () => {
+  /**
+   * MUTATION: move the account section back below the strategy list → red. The cap every leg's
+   * risk is measured against was being set AFTER the legs.
+   */
+  test('the shared account is set BEFORE the strategies', async ({ page }) => {
+    await mock(page)
+    await openModal(page)
+    const account = await page.getByTestId('stack-account-fields').boundingBox()
+    const firstLeg = await page.getByTestId('stack-leg-row').first().boundingBox()
+    expect(account && firstLeg).toBeTruthy()
+    expect(account!.y).toBeLessThan(firstLeg!.y)
+  })
+
+  /**
+   * MUTATION: put `type="number"` back on the box → the spinbutton count goes red; drop the
+   * character filter in `DecimalInput` → the typed value goes red.
+   */
+  test('every number is TYPED — no spinner, and letters are refused', async ({ page }) => {
+    await mock(page)
+    await openModal(page)
+    await fillForm(page)
+    // Positive control first: the risk box exists, so a count of zero spinbuttons is about the
+    // box's KIND and not about a form that never drew one.
+    const risk = page.getByTestId('leg-risk-sos_fade')
+    await expect(risk).toBeVisible()
+    await expect(page.getByTestId('stack-modal').getByRole('spinbutton')).toHaveCount(0)
+
+    await risk.fill('')
+    await risk.pressSequentially('7.5x%')
+    await expect(risk).toHaveValue('7.5')
+  })
+
+  /**
+   * An emptied box is NOT zero. MUTATION: drop `riskBoxProblems` from `settingsReady` → the run
+   * button stays enabled over an empty box and this goes red; read `null` as 0 in the account
+   * check → the cap half goes red.
+   */
+  test('an emptied box blocks the run and says which one', async ({ page }) => {
+    await mock(page)
+    await openModal(page)
+    await fillForm(page)
+    const run = page.getByRole('button', { name: /Run stack/ })
+    await expect(run).toBeEnabled() // positive control — everything filled in
+
+    await page.getByTestId('leg-risk-sos_fade').fill('')
+    await expect(run).toBeDisabled()
+    await expect(page.getByTestId('stack-modal')).toContainText('enter a risk above 0%')
+
+    await page.getByTestId('leg-risk-sos_fade').fill('5')
+    await expect(run).toBeEnabled()
+    await page.getByTestId('stack-risk-cap').fill('')
+    await expect(run).toBeDisabled()
+  })
+
+  /**
+   * MUTATION: sort on the LIVE selection instead of the set captured at mount → ticking SOS Fade
+   * moves B-LEG off the top and this goes red; drop the sort → B-LEG opens at the bottom.
+   */
+  test('strategies picked before opening are listed FIRST, and stay put', async ({ page }) => {
+    await mock(page)
+    await page.goto(`${UI}/strategies`)
+    const bleg = page.locator('tr', { hasText: 'B-LEG' }).first()
+    await bleg.locator('input[type="checkbox"]').check()
+    await page.getByRole('button', { name: /Stack strategies/ }).click()
+    await expect(page.getByTestId('stack-modal')).toBeVisible()
+
+    const order = () =>
+      page
+        .getByTestId('stack-leg-row')
+        .evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.strategy))
+    await expect.poll(order).toEqual(['b_leg', 'sos_fade', 'extreme_leg'])
+
+    await page
+      .getByTestId('stack-modal')
+      .getByRole('button', { name: /SOS Fade/ })
+      .click()
+    expect(await order()).toEqual(['b_leg', 'sos_fade', 'extreme_leg'])
   })
 })

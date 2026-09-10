@@ -14,6 +14,7 @@ import { InstrumentPicker } from '@/components/InstrumentPicker'
 import { isQuotedVerbatim } from '@/lib/instrumentSearch'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
 import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
+import { DecimalInput } from '@/components/DecimalInput'
 import { useDebounced } from '@/lib/useDebounced'
 import type { StackMode } from '@/types'
 
@@ -115,6 +116,20 @@ export function StackConfigModal({
   )
 
   const [selected, setSelected] = useState<Set<string>>(new Set(initial?.strategyIds ?? []))
+  // 🔴 THE STRATEGIES THE READER ARRIVED WITH GO AT THE TOP, AND THE ORDER IS FROZEN THERE.
+  // Aaron, 2026-09-10: *"if I selected strategies before I hit stack, let those be at the top of
+  // the list, then the others below… that's only when I enter the modal for the first time. After
+  // that, if I start toggling, everything stays where it needs to be."* So the sort key is the
+  // set captured at MOUNT, never the live selection — sorting on `selected` would move a row out
+  // from under the pointer the moment it is ticked, which is the opposite of what was asked.
+  const [arrivedWith] = useState(() => new Set(initial?.strategyIds ?? []))
+  const listed = useMemo(
+    () => [
+      ...pyStrategies.filter((s) => arrivedWith.has(s.id)),
+      ...pyStrategies.filter((s) => !arrivedWith.has(s.id)),
+    ],
+    [pyStrategies, arrivedWith]
+  )
   // At most ONE recovery leg per stack, so this is the PARENT's id rather than a set. The
   // shared account keys an open position by leg NAME, and two recovery legs would both be
   // `loss_recovery` — a duplicate silently overwrites a live reservation and the cap
@@ -146,13 +161,17 @@ export function StackConfigModal({
   // asked for a number, showed it back, and changed nothing. It is still SENT, because a
   // rerun of a stack stored before that has to reproduce the figure it was stored with.
   const commPerSide = initial?.commPerSide ?? 0
-  const [slippageTicks, setSlippageTicks] = useState(initial?.slippageTicks ?? 0)
+  // ⚠ Every typed number below is `number | null`, and `null` is an EMPTY BOX — never zero. The
+  // boxes are free-typed (`DecimalInput`), so a reader clearing one to type a new value passes
+  // through empty on the way, and a form that read that as 0 would run a 0% cap or a $0 account.
+  // An empty box blocks the Run button and says which box instead.
+  const [slippageTicks, setSlippageTicks] = useState<number | null>(initial?.slippageTicks ?? 0)
   // A NEW stack is always shared; a RERUN keeps whatever the stored stack was, so rerunning one of
   // the three existing screens does not silently turn it into a different experiment.
   const [mode] = useState<StackMode>(initial?.mode ?? 'shared')
-  const [accountSize, setAccountSize] = useState(initial?.accountSize ?? 10_000)
-  const [riskCapPct, setRiskCapPct] = useState(initial?.riskCapPct ?? 10)
-  const [entryFloorPct, setEntryFloorPct] = useState(initial?.entryFloorPct ?? 0)
+  const [accountSize, setAccountSize] = useState<number | null>(initial?.accountSize ?? 10_000)
+  const [riskCapPct, setRiskCapPct] = useState<number | null>(initial?.riskCapPct ?? 10)
+  const [entryFloorPct, setEntryFloorPct] = useState<number | null>(initial?.entryFloorPct ?? 0)
   const shared = mode === 'shared'
 
   // ── Broker account, and what the stack is CHARGED ────────────────────────────
@@ -224,7 +243,9 @@ export function StackConfigModal({
   // Only holds legs the reader has actually EDITED. An untouched leg must send no override at
   // all: an override disables reuse for that leg, so pre-filling every one would silently turn
   // every screen rerun into a full replay.
-  const [legRisk, setLegRisk] = useState<Record<string, number>>({})
+  // `null` = the reader cleared the box and has not typed a number yet (see the note on the typed
+  // numbers above) — it blocks the run rather than falling back to the baseline unseen.
+  const [legRisk, setLegRisk] = useState<Record<string, number | null>>({})
   // What a leg risks today — its rerun override if it has one, else its stored default. This is
   // the number the box shows and the baseline an edit is compared against.
   const baselineRisk = (id: string): number | undefined => {
@@ -283,13 +304,38 @@ export function StackConfigModal({
   // A cap of zero refuses every entry, so a "portfolio" under it takes no trades at all — the
   // backend refuses it and the button must not offer it either. Account size is guarded the same
   // way: a leg sizes off the balance, so zero produces zero-size positions.
-  const accountValid = !shared || (riskCapPct > 0 && accountSize > 0)
+  const accountValid =
+    !shared ||
+    (riskCapPct != null &&
+      riskCapPct > 0 &&
+      accountSize != null &&
+      accountSize > 0 &&
+      entryFloorPct != null)
+  // A leg whose risk box was cleared, or typed to 0. Zero is not "a small leg" — the strategy would
+  // size every entry to nothing and land in the table as a leg that took no trades. Named, so the
+  // disabled button says which box to fix.
+  const riskBoxProblems = listed
+    .filter((s) => selected.has(s.id) && s.id in legRisk)
+    .filter((s) => {
+      const v = legRisk[s.id]
+      return v == null || !(v > 0)
+    })
+    .map((s) => s.name)
+  // Slippage is only read when costs are charged (`routers/_costs.py`), so an empty box only
+  // matters then — and it is only ON SCREEN then.
+  const slippageValid = !chargeCosts || slippageTicks != null
   // 🔴 TWO **LEGS**, NOT TWO STRATEGIES. A recovery is a full leg — its own reservation, its own
   // trades, its own KPIs — so one strategy plus a recovery on it IS a stack, and it is the one the
   // recovery leg exists to make possible. Counting only ticked strategies greyed out exactly that
   // case, and the backend refused it too. The backend counts the same way (`_validate_stack_strategies`).
   const legCount = selected.size + (shared && recoveryFor ? 1 : 0)
-  const settingsReady = legCount >= 2 && !!instrument.trim() && validPeriod && accountValid
+  const settingsReady =
+    legCount >= 2 &&
+    !!instrument.trim() &&
+    validPeriod &&
+    accountValid &&
+    riskBoxProblems.length === 0 &&
+    slippageValid
 
   // Scoped to the legs that are actually SELECTED. The backend ignores an override for a strategy
   // outside `strategy_ids`, so this changes no result — but it does change the preview's query key,
@@ -312,7 +358,9 @@ export function StackConfigModal({
       const base = src?.[id] ?? pyStrategies.find((s) => s.id === id)?.default_params ?? null
       const edited = legRisk[id]
       const baseline = baselineRisk(id)
-      if (edited !== undefined && edited !== baseline && base) {
+      // `typeof … number`, not `!== undefined`: a cleared box is `null`, which blocks the run —
+      // it must never reach a request as a risk of null.
+      if (typeof edited === 'number' && edited !== baseline && base) {
         out[id] = { ...base, [RISK_FIELD]: edited }
       } else if (src?.[id]) {
         out[id] = src[id]
@@ -359,7 +407,9 @@ export function StackConfigModal({
       start_date: start,
       end_date: end,
       commission_per_side: commPerSide,
-      slippage_ticks: slippageTicks,
+      // An empty box only reaches here while costs are OFF (it blocks the run when they are on),
+      // and with costs off the backend never reads slippage — so 0 changes nothing it measures.
+      slippage_ticks: slippageTicks ?? 0,
       mode,
       // Sent to the PREVIEW as well as to the launch, because an override disables reuse for that
       // leg — a preview that did not know about it would badge the leg green "Reuse" and then watch
@@ -421,16 +471,20 @@ export function StackConfigModal({
 
   const submit = () => {
     if (!canRun) return
+    // Sent only in shared mode. On a screen the backend stores NULL for all three, because a
+    // screen has no account — every leg traded its own — and a number here would be recorded as a
+    // setting the run never had. `canRun` has already refused an empty box on a shared stack; the
+    // narrowing is repeated so a null can never reach the request as "no opinion".
+    const account =
+      shared && accountSize != null && riskCapPct != null && entryFloorPct != null
+        ? { account_size: accountSize, risk_cap_pct: riskCapPct, entry_floor_pct: entryFloorPct }
+        : null
+    if (shared && !account) return
     triggerStack.mutate(
       {
         ...previewBody,
         strategy_ids: Array.from(selected),
-        // Sent only in shared mode. On a screen the backend stores NULL for all three, because a
-        // screen has no account — every leg traded its own — and a number here would be recorded
-        // as a setting the run never had.
-        ...(shared
-          ? { account_size: accountSize, risk_cap_pct: riskCapPct, entry_floor_pct: entryFloorPct }
-          : {}),
+        ...(account ?? {}),
         // The recovery leg, if one was ticked. SHARED ONLY — on a screen every leg trades its own
         // full account, so a recovery could never take room off its parent, which is the entire
         // question it exists to answer. The backend refuses it there; this never sends it.
@@ -554,6 +608,76 @@ export function StackConfigModal({
             </div>
           </div>
 
+          {/* ── The shared account — ABOVE the strategies, because it bounds them ─────
+              🔴 Aaron, 2026-09-10: *"the shared account's risk cap, the balance and the entry
+              floor should be at the top, right after the broker information, but before the
+              strategies that I choose… if I put a ten percent cap, then the strategies I choose
+              cannot trade more than that."* It sat BELOW the strategy list, so the ceiling every
+              leg's risk is measured against was set after the legs — the form read in the opposite
+              order from the one its numbers depend on. A screen has no account, so nothing here. */}
+          {shared && (
+            <>
+              <Divider />
+              <div data-testid="stack-account-fields">
+                <SectionHead
+                  label="The shared account"
+                  tooltip="One balance and one risk budget for every leg. This is what makes a stack a portfolio rather than a sum of separate runs."
+                />
+                <div className="grid grid-cols-1 md:grid-cols-[repeat(3,minmax(130px,170px))_minmax(0,1fr)] gap-x-4 gap-y-3 items-start">
+                  <div>
+                    <label className={labelCls}>Balance</label>
+                    <DecimalInput
+                      value={accountSize}
+                      onChange={setAccountSize}
+                      prefix="$"
+                      grouping
+                      invalid={!(accountSize != null && accountSize > 0)}
+                      aria-label="Balance"
+                      data-testid="stack-balance"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Risk cap</label>
+                    <DecimalInput
+                      value={riskCapPct}
+                      onChange={setRiskCapPct}
+                      suffix="%"
+                      invalid={!(riskCapPct != null && riskCapPct > 0)}
+                      aria-label="Risk cap"
+                      data-testid="stack-risk-cap"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Entry floor</label>
+                    <DecimalInput
+                      value={entryFloorPct}
+                      onChange={setEntryFloorPct}
+                      suffix="%"
+                      invalid={entryFloorPct == null}
+                      aria-label="Entry floor"
+                      data-testid="stack-entry-floor"
+                    />
+                  </div>
+                  <p className="text-[11px] text-text-tertiary leading-snug md:pt-[19px]">
+                    The cap is the most OPEN risk all strategies may hold at once, as a % of the
+                    <strong className="text-text-secondary"> live </strong> balance — and an open
+                    trade only reserves risk down to its{' '}
+                    <strong className="text-text-secondary">current</strong> stop, so a stop moved
+                    to breakeven frees its room. An entry with no room is shrunk to fit, or skipped
+                    if what is left falls under the floor.
+                  </p>
+                </div>
+                {!accountValid && (
+                  <p className="text-[11px] text-neg-text mt-1.5">
+                    Balance and risk cap must both be above zero, and the entry floor needs a number
+                    (0 for none) — a cap of zero refuses every entry, which is a stopped bot rather
+                    than a portfolio.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
           <Divider />
 
           {/* ── The legs ───────────────────────────────────────────────────────
@@ -576,19 +700,23 @@ export function StackConfigModal({
                 <div className="flex items-center gap-2 px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">
                   <span className="flex-1">Pick at least 2</span>
                   <span className="w-[96px] text-center flex-shrink-0">Timeframe</span>
-                  <span className="w-[104px] text-center flex-shrink-0">Risk / trade</span>
+                  <span className="w-[128px] text-center flex-shrink-0">Risk / trade</span>
                 </div>
                 <div className="space-y-1.5">
-                  {pyStrategies.map((s) => {
+                  {listed.map((s) => {
                     const on = selected.has(s.id)
                     const action = on ? actionByStrategy.get(s.id) : undefined
                     const base = baselineRisk(s.id)
-                    const shownRisk = legRisk[s.id] ?? base
-                    const edited = legRisk[s.id] !== undefined && legRisk[s.id] !== base
+                    // `in`, never `??`: a cleared box is `null`, and `??` would paint the baseline
+                    // back into a box the reader just emptied.
+                    const hasEdit = s.id in legRisk
+                    const typedRisk = legRisk[s.id]
+                    const edited = hasEdit && typedRisk !== base
+                    const riskBad = hasEdit && (typedRisk == null || !(typedRisk > 0))
                     const offMeasured =
                       s.suggested_bar_value != null && barByLeg[s.id] !== s.suggested_bar_value
                     return (
-                      <div key={s.id}>
+                      <div key={s.id} data-testid="stack-leg-row" data-strategy={s.id}>
                         {/* ⚠ The ROW is a div and only the NAME is the button. An input inside a
                             button is invalid markup and every keystroke would toggle the leg off
                             — which is why these controls used to be exiled to their own block. */}
@@ -662,27 +790,24 @@ export function StackConfigModal({
                             ) : (
                               <span className="w-[96px]" />
                             )}
-                            {on && shownRisk !== undefined ? (
-                              <div className="relative w-[104px]">
-                                <input
-                                  type="number"
-                                  step="0.5"
-                                  min="0.1"
-                                  value={shownRisk}
-                                  onChange={(e) =>
-                                    setLegRisk((prev) => ({
-                                      ...prev,
-                                      [s.id]: Number(e.target.value),
-                                    }))
-                                  }
-                                  className={`${inputCls} py-[4px] pr-6 font-mono ${edited ? 'border-warn-text/50' : ''}`}
-                                />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-text-tertiary pointer-events-none">
-                                  %
-                                </span>
-                              </div>
+                            {/* Free-typed, and 128px wide: the browser's number box drew spinner
+                                arrows inside a 104px field, which left room for about two digits
+                                (reported from the screen, 2026-09-10). */}
+                            {on && base !== undefined ? (
+                              <DecimalInput
+                                className="w-[128px] flex-shrink-0"
+                                inputClassName={`py-[4px] ${
+                                  edited && !riskBad ? 'border-warn-text/50' : ''
+                                }`}
+                                value={hasEdit ? typedRisk : base}
+                                onChange={(v) => setLegRisk((prev) => ({ ...prev, [s.id]: v }))}
+                                suffix="%"
+                                invalid={riskBad}
+                                aria-label={`${s.name} risk per trade`}
+                                data-testid={`leg-risk-${s.id}`}
+                              />
                             ) : (
-                              <span className="w-[104px]" />
+                              <span className="w-[128px]" />
                             )}
                           </div>
                         </div>
@@ -697,7 +822,13 @@ export function StackConfigModal({
                                 — this is a different experiment
                               </span>
                             )}
-                            {edited && <span>risk was {base} · this leg runs fresh</span>}
+                            {riskBad ? (
+                              <span className="text-neg-text">
+                                enter a risk above 0% — this leg would trade nothing
+                              </span>
+                            ) : (
+                              edited && <span>risk was {base}% · this leg runs fresh</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -770,68 +901,11 @@ export function StackConfigModal({
 
           <Divider />
 
-          {/* ── How it runs: the account it shares, and what it is charged ──────
-              Side by side, because they are the two halves of one question and each is short.
-              Stacked in a 520px column they read as two more items on a list of eight. */}
-          <div className={`grid gap-5 ${shared ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
-            {shared && (
-              <div data-testid="stack-account-fields">
-                <SectionHead
-                  label="The shared account"
-                  tooltip="One balance and one risk budget for every leg. This is what makes a stack a portfolio rather than a sum of separate runs."
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className={labelCls}>Balance ($)</label>
-                    <input
-                      type="number"
-                      step="100"
-                      min="1"
-                      value={accountSize}
-                      onChange={(e) => setAccountSize(Number(e.target.value))}
-                      className={`${inputCls} font-mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Risk cap (%)</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0.5"
-                      value={riskCapPct}
-                      onChange={(e) => setRiskCapPct(Number(e.target.value))}
-                      className={`${inputCls} font-mono`}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Entry floor (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={entryFloorPct}
-                      onChange={(e) => setEntryFloorPct(Number(e.target.value))}
-                      className={`${inputCls} font-mono`}
-                    />
-                  </div>
-                </div>
-                <p className="text-[11px] text-text-tertiary mt-1.5 leading-snug">
-                  The cap is the most OPEN risk all strategies may hold at once, as a % of the
-                  <strong className="text-text-secondary"> live </strong> balance — and an open
-                  trade only reserves risk down to its{' '}
-                  <strong className="text-text-secondary">current</strong> stop, so a stop moved to
-                  breakeven frees its room. An entry with no room is shrunk to fit, or skipped if
-                  what is left falls under the floor.
-                </p>
-                {!accountValid && (
-                  <p className="text-[11px] text-neg-text mt-1.5">
-                    Balance and risk cap must both be above zero — a cap of zero refuses every
-                    entry, which is a stopped bot rather than a portfolio.
-                  </p>
-                )}
-              </div>
-            )}
-
+          {/* ── What it is charged ───────────────────────────────────────────────
+              The shared account moved ABOVE the strategies on 2026-09-10 (see there), so costs
+              stand alone here. Held to a readable width: at the modal's full 1,140px its warning
+              sentences ran to a single line the eye loses halfway along. */}
+          <div className="max-w-[640px]">
             {/* ── Costs — ONE switch, on by default ─────────────────────────────
                 🔴 Every stack this lab ran before 2026-09-02 was GROSS while its page showed a
                 cost row: a stack carried no broker and no layers, so it fell through to two typed
@@ -920,16 +994,22 @@ export function StackConfigModal({
                     Nobody has measured this. Leave it at 0 unless you mean to charge an assumption;
                     it is charged on market exits only.
                   </span>
-                  <div className="max-w-[220px]">
-                    <input
-                      type="number"
-                      step="1"
-                      min="0"
-                      value={slippageTicks}
-                      onChange={(e) => setSlippageTicks(Number(e.target.value))}
-                      className={`${inputCls} font-mono`}
-                    />
-                  </div>
+                  {/* `integer`: the backend stores ticks as a whole number, and a typed 1.5
+                      would come back as a 422 naming a field the reader cannot see. */}
+                  <DecimalInput
+                    className="max-w-[220px]"
+                    value={slippageTicks}
+                    onChange={setSlippageTicks}
+                    integer
+                    invalid={slippageTicks == null}
+                    aria-label="Slippage ticks"
+                    data-testid="stack-slippage"
+                  />
+                  {slippageTicks == null && (
+                    <p className="mt-1 text-[11px] text-neg-text">
+                      Enter a number of ticks — 0 charges none.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
