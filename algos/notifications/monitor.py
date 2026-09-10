@@ -171,6 +171,90 @@ def is_running(script: str):
     return script in result.stdout
 
 
+# The exact closing line `runner._run` writes when a stop was ASKED for — the `stop.request`
+# path, which is what the Bots page, the Telegram bot and the documented CLI all drive. Every
+# other ending (a crash, a failed connect, a halted bridge, ten loop errors) writes a different
+# reason or a non-zero code and is left to the restart logic exactly as before.
+_REQUESTED_STOP = ("stop requested", 0)
+
+
+def _newest_shutdown(bot_key: str):
+    """The bot's own last closing record as `(reason, exit_code, when)`, or `None`.
+
+    ⚠ **`None` is CANNOT ASK and must never be read as "it was stopped on purpose".** Of the two
+    wrong answers here, restarting a bot somebody stopped is a nuisance they can see and undo;
+    DECLINING to restart a bot that crashed is the failure this watchdog exists to prevent, and
+    it is silent. So an unreadable record falls through to today's behaviour.
+    """
+    try:
+        ledger_dir = _bot_state.BOT_INSTANCES[bot_key] / "ledger"
+        # Two files, because a bot stopped at 23:58 is read at 00:02 from the previous day's.
+        files = sorted(ledger_dir.glob("health-*.jsonl"))[-2:]
+    except Exception:
+        return None
+    if not files:
+        return None
+
+    newest = None
+    for path in files:
+        try:
+            lines = path.read_text().splitlines()
+        except Exception:
+            return None  # a file we cannot read may hold the very record that matters
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue  # a torn last line is ordinary; the file is written live
+            if rec.get("event") != "shutdown":
+                continue
+            try:
+                when = datetime.fromisoformat(rec["ts"]).timestamp()
+            except Exception:
+                continue
+            if newest is None or when > newest[2]:
+                newest = (rec.get("reason"), rec.get("exit_code"), when)
+    return newest
+
+
+def stopped_on_request(bot_key: str, started) -> bool:
+    """Whether this bot's absence is a stop somebody ASKED for, per the bot's own record.
+
+    🔴 **This exists because the watchdog was RACING deliberate stops.** The suppression flag
+    beside it is written by whoever issues the stop, so it only covers the routes that remember
+    to write it — the Bots page does, and the documented CLI (`echo stop > stop.request`) does
+    not. MEASURED on the health channel: a clean `STOPPED` was followed by `OFFLINE ... restarting
+    it now` three times between 2026-09-08 and 2026-09-09, so a promote-then-restart had the
+    watchdog start the bot before the operator could. **Two things issuing starts for one bot is
+    how a book gets doubled**, which this module's own restart function is written against.
+
+    ✅ **It reads the BOT's record rather than a flag somebody had to remember to write**, so
+    every stop route is covered by construction — that is the whole point, and it is why this is
+    not simply another suppress key.
+
+    🔴 **The record has to belong to the run that just ENDED, or a stale one suppresses a real
+    crash.** A bot stopped on purpose, started again, then hard-killed leaves the old *stop
+    requested* line as the newest shutdown on file — and restarting it is exactly what should
+    happen. So the record is only believed when it is NEWER than this run's start. **Same shape
+    as the `max(heartbeat, started)` rule above: two fields that are not the same age across a
+    restart.**
+
+    ⚠ **An unreadable record, an unparseable timestamp, or a missing `started` all answer
+    False** — meaning *restart it*, which is today's behaviour and the recoverable direction.
+    """
+    rec = _newest_shutdown(bot_key)
+    if rec is None:
+        return False
+    reason, code, when = rec
+    if (reason, code) != _REQUESTED_STOP:
+        return False
+    if not isinstance(started, (int, float)):
+        # Cannot place the record against this run. Believing it would let one deliberate stop
+        # suppress every later crash for as long as the file survives.
+        return False
+    return when > started
+
+
 def _is_stop_suppressed(suppress_key: str) -> bool:
     """Consume and return True if this bot's offline alert should be suppressed."""
     try:
@@ -249,11 +333,28 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
 
     was_running = bot_state.get("running", None)
 
+    # Did the bot itself record that it was ASKED to stop? Read once, used by BOTH the alert and
+    # the restart below — deciding it twice is how the two come to disagree and the bot is
+    # relaunched under a message saying nothing is wrong.
+    asked_to_stop = False
+    if not running:
+        try:
+            asked_to_stop = stopped_on_request(bot_key, _bot_state.read_bot(bot_key).get("started"))
+        except Exception as e:
+            # Never let reading a record stop the watchdog doing its job.
+            print(f"{bot_key}: could not check for a requested stop ({e})")
+
     # ── Running state change alerts ───────────────────────────────────────
     if was_running is not None and running != was_running:
         if not running:
             suppress_key = cfg.get("suppress_key", "")
             suppressed = _is_stop_suppressed(suppress_key) if suppress_key else False
+            if asked_to_stop and not suppressed:
+                # The stop was deliberate and whoever issued it did not write the flag — the
+                # documented CLI route does not. Say so on the console so the difference between
+                # "suppressed by the button" and "recognised from the record" stays visible.
+                print(f"{bot_key}: its own record says it was asked to stop - not fighting it")
+                suppressed = True
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
                 send_alert(
@@ -288,6 +389,15 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     if not running:
         bot_state["stale_alerted"] = False
         if bot_state.get("stop_suppressed"):
+            return bot_state
+
+        # 🔴 `asked_to_stop` is re-checked HERE and not left to the flag above, because the
+        # transition block only runs when the state CHANGED. A pass whose first ever sight of
+        # this bot is "down" — a fresh `monitor_state.json`, a new bot, the file deleted — sets
+        # no flag at all, and would restart a bot somebody had deliberately stopped. Reading the
+        # bot's own record needs no memory of a previous pass, which is the point of using it.
+        if asked_to_stop:
+            bot_state["stop_suppressed"] = True
             return bot_state
 
         tries = bot_state.get("restart_tries", 0)

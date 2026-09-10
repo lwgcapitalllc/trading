@@ -18,10 +18,12 @@ No MT5 and no Telegram: `send_alert` is stubbed, so a test can never post to a r
 from __future__ import annotations
 
 import ast
+import json
 import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -630,6 +632,124 @@ def test_the_chat_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
     assert ran == [], "fired SYS_TELEGRAM beside a chat bot that was probably running"
     assert sent == []
     assert out["running"] is True
+
+
+# ── the watchdog must not RACE a deliberate stop ────────────────────────────────
+#
+# 🔴 MEASURED on the health channel: a clean `STOPPED` was followed by `OFFLINE - restarting it
+# now` three times between 2026-09-08 and 2026-09-09. The suppression flag beside this is written
+# by whoever ISSUES the stop, so it only covers the routes that remember to write it — the Bots
+# page does, and the documented CLI (`echo stop > stop.request`) does not. So a promote-then-
+# restart had the watchdog start the bot before the operator could.
+#
+# The fix reads the BOT's own closing record, which every stop route goes through, so no caller
+# has to remember anything. The cases below are weighted toward the dangerous direction: this
+# must never decline to restart a bot that actually died.
+
+
+def _with_ledger(monkeypatch, tmp_path, records):
+    """Point the bot's instance dir at a scratch ledger holding `records`."""
+    inst = tmp_path / "sos_fade_demo"
+    (inst / "ledger").mkdir(parents=True)
+    (inst / "ledger" / "health-2026-09-09.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in records)
+    )
+    monkeypatch.setattr(monitor._bot_state, "BOT_INSTANCES", {"sos_fade_demo": inst})
+    return inst
+
+
+def _shutdown(when, reason="stop requested", code=0):
+    return {
+        "ts": datetime.fromtimestamp(when, tz=timezone.utc).isoformat(),
+        "bot": "sos_fade_demo",
+        "kind": "event",
+        "event": "shutdown",
+        "exit_code": code,
+        "reason": reason,
+    }
+
+
+def test_a_stop_the_bot_was_ASKED_for_is_not_fought(down, monkeypatch, tmp_path):
+    """The whole point: no restart, and no OFFLINE message either."""
+    started = time.time() - 3600
+    _with_ledger(monkeypatch, tmp_path, [_shutdown(started + 60)])
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {"started": started})
+
+    out = down.run()
+    assert down.attempts == [], "restarted a bot somebody had deliberately stopped"
+    assert down.sent == [], "alerted OFFLINE on a stop that was asked for"
+    assert out["stop_suppressed"] is True
+
+
+def test_a_bot_that_CRASHED_is_still_restarted(down, monkeypatch, tmp_path):
+    """🔴 The control, and the one that matters. A bot that dies must still come back — that is
+    what this watchdog is for, and the 31 July outage is what it cost when it did not."""
+    started = time.time() - 3600
+    _with_ledger(monkeypatch, tmp_path, [_shutdown(started + 60, "10 consecutive loop errors", 6)])
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {"started": started})
+
+    down.run()
+    assert down.attempts == ["sos_fade_demo"], "declined to restart a bot that crashed"
+
+
+def test_a_STALE_stop_record_does_not_suppress_a_real_crash(down, monkeypatch, tmp_path):
+    """🔴 The subtle one. Stopped on purpose, started again, then hard-killed: the old *stop
+    requested* line is still the newest shutdown on file, and a hard kill writes none of its own.
+
+    Believing it would let ONE deliberate stop suppress every later crash for as long as that
+    file survives. **Same shape as the `max(heartbeat, started)` rule — two fields that are not
+    the same age across a restart.**
+    """
+    started = time.time() - 600
+    _with_ledger(monkeypatch, tmp_path, [_shutdown(started - 3600)])  # from the PREVIOUS run
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {"started": started})
+
+    down.run()
+    assert down.attempts == ["sos_fade_demo"], "a stale stop record suppressed a real crash"
+
+
+def test_an_unreadable_record_restarts_rather_than_assuming_a_deliberate_stop(
+    down, monkeypatch, tmp_path
+):
+    """Rule 1, pointed the recoverable way. Restarting a bot somebody stopped is a nuisance they
+    can see and undo; declining to restart one that crashed is silent and is the failure this
+    module exists to prevent.
+
+    🔴 **This asserted ONLY that a restart happened, and it was green against its own defect.**
+    `check_bot` wraps the lookup in a try/except, so a version that RAISED on an unreadable
+    record produced exactly the same restart as one that returned False cleanly — the mutation
+    that removes the guard survived the whole file. **A test whose premise is not established
+    passes for the wrong reason.** It now pins the function's own answer as well, which is the
+    only place the two behaviours differ.
+    """
+    monkeypatch.setattr(monitor._bot_state, "BOT_INSTANCES", {"sos_fade_demo": tmp_path / "gone"})
+    started = time.time() - 600
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {"started": started})
+
+    # The claim that actually distinguishes the two: it ANSWERS, it does not raise.
+    assert monitor.stopped_on_request("sos_fade_demo", started) is False
+
+    down.run()
+    assert down.attempts == ["sos_fade_demo"], "an unreadable record was read as a deliberate stop"
+
+
+def test_a_requested_stop_is_honoured_on_the_FIRST_sighting_too(monkeypatch, tmp_path):
+    """🔴 No state transition fires when the watchdog's first ever sight of a bot is "down" — a
+    fresh monitor_state.json, a new bot, the file deleted. The flag is never set on that pass, so
+    the restart guard has to read the record itself rather than trust a previous pass."""
+    sent, attempts = [], []
+    monkeypatch.setattr(monitor, "send_alert", lambda m: sent.append(m))
+    monkeypatch.setattr(monitor, "is_running", lambda script: False)
+    monkeypatch.setattr(monitor, "restart_bot", lambda k: attempts.append(k) or True)
+    monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
+
+    started = time.time() - 3600
+    _with_ledger(monkeypatch, tmp_path, [_shutdown(started + 60)])
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {"started": started})
+
+    # No carried state at all: `was_running` is None, so the transition block does not run.
+    monitor.check_bot("sos_fade_demo", {}, "2026-09-09")
+    assert attempts == [], "restarted a deliberately stopped bot on the first pass after a reset"
 
 
 def test_the_launcher_never_writes_the_file_the_chat_bot_owns():

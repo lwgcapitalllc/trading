@@ -1297,6 +1297,50 @@ of one path is the defect `ledger_sync.py` already records. ⚠ **Found by RUNNI
 not by the suite**: every test passed, because the collision only exists where both programs
 share one directory.
 
+### 🔴 The watchdog was RACING deliberate stops, and the flag could never have covered it (2026-09-09)
+
+**MEASURED on the health channel: a clean `STOPPED` was followed by `OFFLINE — restarting it now`
+three times between 2026-09-08 and 2026-09-09.** A promote-then-restart had the watchdog start the
+bot before the operator could. **Two things issuing starts for one bot is how a book gets
+doubled** — the hazard `restart_bot`'s own docstring is written against.
+
+🔴 **THE SUPPRESSION FLAG IS WRITTEN BY WHOEVER ISSUES THE STOP, SO IT ONLY EVER COVERED THE
+ROUTES THAT REMEMBER TO WRITE IT.** The Bots page writes it; **the documented CLI route
+(`echo stop > stop.request`, in the root workflow) does not**, and neither does anything else
+somebody reaches for at 2am. **A rule that depends on every caller remembering it is a rule with a
+hole per caller.**
+
+✅ **`monitor.stopped_on_request` reads the BOT's OWN closing record instead** — `shutdown` with
+`exit_code 0` and reason `stop requested`, which `runner._run` writes on the `stop.request` path
+every stop route drives. **No caller has to remember anything**, which is the whole reason this is
+not simply another suppress key.
+
+🔴 **THE RECORD MUST BE NEWER THAN THE RUN'S OWN START, OR A STALE ONE SUPPRESSES A REAL CRASH.**
+Stopped on purpose → started again → hard-killed leaves that old *stop requested* line as the
+newest shutdown on file, and a hard kill writes none of its own. Believing it would let ONE
+deliberate stop suppress every later crash for as long as that file survives. **Same shape as the
+`max(heartbeat, started)` rule above: two fields that are not the same age across a restart.**
+
+⚠ **It is re-checked in the RESTART block, not left to the flag the transition sets** — the
+transition only runs when the state CHANGED, so a pass whose first sight of a bot is *down* (a
+fresh `monitor_state.json`, a new bot, the file deleted) sets no flag and would restart a bot
+somebody had stopped. Reading the record needs no memory of a previous pass.
+
+⚠ **Every unreadable answer means RESTART** (rule 1 pointed the recoverable way): restarting a bot
+somebody stopped is a nuisance they can see and undo; declining to restart one that crashed is
+silent, and is the failure this watchdog exists to prevent. **A crash still restarts, and that
+control is the one that matters.**
+
+⚠ **It reaches the box by `git pull` alone** — the watchdog is a fresh process every minute, so
+there is nothing to restart.
+
+**Tests: 5 in `tests/test_watchdog.py`, 5 mutations RUN and every one RED on its own named test.**
+🔴 **One mutation SURVIVED the first pass and the reason is the lesson: the unreadable-record test
+asserted only that a restart happened, and `check_bot` wraps the lookup in a `try/except` — so a
+version that RAISED produced exactly the same restart as one that returned False cleanly.** It
+pins the function's own answer now, which is the only place the two behaviours differ. **A test
+whose premise is not established is green against its own defect.**
+
 ### The dead-man's switch waits for a problem to OUTLAST a restart (2026-09-09)
 
 🔴 **A 5-minute pass landing in the ~60s hole a restart punches sent `/fail` and paged for a
