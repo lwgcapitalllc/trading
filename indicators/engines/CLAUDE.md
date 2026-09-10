@@ -80,9 +80,9 @@ reaches the 1 minute at all.** 🔴 **The sub-5m hide EXEMPTS the 1m in the same
 applies it**, so that hide was never what kept a fib off a 1m chart — the aligned-leg gate was,
 and the switch looked dead there while working perfectly on 2m/3m/4m. One flag now drives both,
 plus the 1m retirement rule and the Sniper Zone's twin; lifting one without the others draws the
-fib on every leg and still retires it early, which is neither behaviour. ⚠ **With it on, the 1m
-ENTRY row will call an entry on a leg the 15m does not support** — stated here rather than left to
-be discovered on a chart.
+fib on every leg and still retires it early, which is neither behaviour. 🔴 **The TABLE ignores
+it**: the 1m ENTRY row reads the switch-free aligned-leg test, so a draw option cannot add a
+row on a leg the 15m never backed.
 
 ⚠ **All three are TEXT SIZE, TEXT COLOUR and DRAW GATES.** No level, no state, no table value and
 no signal moves. The fib maths already ran on every timeframe regardless of whether it was drawn.
