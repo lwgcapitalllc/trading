@@ -652,6 +652,18 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   never a deployment. Tests use UNEQUAL risks: a matched pair prints the same figure under the
   typed line, a doubling and the true sum.
 
+  🔴 **`--record` / `--check-baseline` (2026-09-10): the clash figures can no longer outlive the
+  settings they were measured on.** They went stale three times and each time a DEFAULT had moved
+  — the last inside a Command Center commit where nothing read as an entry-logic change.
+  `--record` writes a pair's full settings (strategy AND engine config, read off what the replay
+  builds, through `_build`), its basis and its headline results to `tools/overlap_baseline.json`
+  at the end of a finished run. `--check-baseline` is step 17 of `scripts/run_all_tests.sh`: red
+  on any moved, NEW or REMOVED setting, naming each one and printing the re-measure command.
+  ⚠ **Settings, not code** — a rule changed inside a strategy still needs a re-run by hand.
+  ⚠ **Clearing it means measuring**; a hand-edited record is decoration. ⚠ **No recorded pair
+  FAILS.** ⚠ `--record` refuses without `--server`, because the record is the basis a re-run
+  reproduces.
+
   Its results are facts about the BOTS, so they live in root `CLAUDE.md`; story and full numbers in
   `HISTORY.md`.
 - **`tools/jitter_audit.py`** — how much of a backtest survives a few cents of feed difference?

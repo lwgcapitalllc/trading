@@ -78,6 +78,11 @@ _STRATEGIES = {
 # 15-minute case still resolves to exactly 16 units, so nothing already measured moved.
 _CLUSTER_MINUTES = 240
 
+# The settings every published clash figure was measured on, one entry per audited pair. WRITTEN BY
+# `--record` AT THE END OF A REAL RUN and read by `--check-baseline` (step 17 of
+# `scripts/run_all_tests.sh`) — see `check_baseline` for why it exists.
+_BASELINE = Path(__file__).resolve().with_name("overlap_baseline.json")
+
 
 class Hold:
     """One bot holding one position, as a half-open bar range plus its direction.
@@ -382,6 +387,157 @@ def account_risk_lines(name_a, cfg_a, name_b, cfg_b, both: int, same: int) -> li
     return lines
 
 
+def settings_snapshot(StrategyCls, cfg) -> dict:
+    """Every setting that decides what a replayed bot trades, flattened to JSON-safe values.
+
+    Two layers, both read off what the replay ACTUALLY builds: the strategy config `_build`
+    resolved — the function the audit replays through, so this check and the audit cannot disagree
+    about what a bot is — and the engine config the strategy's own replay constructs, through
+    `stack_config()` where it has one, because SOS Fade adds an engine per instance.
+
+    ⚠ **It cannot see a change in CODE** — a new rule inside a strategy, an engine fix. Those still
+    need the audit re-run by hand. It covers the failure that actually happened: each of the three
+    times the published clash figures went stale, a DEFAULT had moved.
+    """
+    import dataclasses
+    import json
+
+    strat = StrategyCls(config=cfg, initial_capital=10_000.0)
+    eng = strat.stack_config() if hasattr(strat, "stack_config") else strat.engine_config()
+    flat = {f"config.{k}": v for k, v in dataclasses.asdict(cfg).items()}
+    flat.update({f"engine.{k}": v for k, v in dataclasses.asdict(eng).items()})
+    # A JSON round-trip, so today's values compare like-for-like with the recorded file.
+    return json.loads(json.dumps(flat, default=str, sort_keys=True))
+
+
+def settings_drift(recorded: dict, current: dict) -> list[str]:
+    """Every setting that differs between a recorded snapshot and today's, one readable line each.
+
+    ⚠ **A NEW setting is drift and so is a REMOVED one.** The 2026-08-26 dead-market filter arrived
+    as a brand-new field, so comparing only the keys both sides share would have passed the change
+    that made one of the three stale readings.
+    """
+    out = []
+    for k in sorted(set(recorded) | set(current)):
+        if k not in recorded:
+            out.append(f"{k}: NEW, now {current[k]!r}")
+        elif k not in current:
+            out.append(f"{k}: REMOVED, was {recorded[k]!r}")
+        elif recorded[k] != current[k]:
+            out.append(f"{k}: {recorded[k]!r} -> {current[k]!r}")
+    return out
+
+
+def record_baseline(path: Path, pair: str, entry: dict) -> None:
+    """Write one pair's record and leave every other pair's exactly as it was."""
+    import json
+
+    data = json.loads(path.read_text()) if path.exists() else {}
+    data["_what"] = (
+        "The settings each audited pair's clash figures were measured on. Written by "
+        "backtest/tools/overlap_audit.py --record at the end of a finished run; read by "
+        "--check-baseline (step 17 of scripts/run_all_tests.sh). Never edit by hand - "
+        "re-measuring is the only honest way to clear a stale check."
+    )
+    data.setdefault("pairs", {})[pair] = entry
+    path.write_text(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+
+
+def _rerun_command(pair: str, basis: dict) -> str:
+    """The command that re-measures a pair on its recorded basis and records the result."""
+    a, b = pair.split("|")
+    tf = basis.get("tf") or {}
+    cmd = [
+        f"python backtest/tools/overlap_audit.py --a {a} --b {b}",
+        f"--symbol {basis['symbol']} --start {basis['start']} --end {basis['end']}",
+        f"--server {basis['server']}",
+    ]
+    if str(tf.get(a, "15")) != "15":
+        cmd.append(f"--tf-a {tf[a]}")
+    if str(tf.get(b, "15")) != "15":
+        cmd.append(f"--tf-b {tf[b]}")
+    if basis.get("warmup", 1000) != 1000:
+        cmd.append(f"--warmup {basis['warmup']}")
+    if basis.get("no_secondary"):
+        cmd.append("--no-secondary")
+    if basis.get("cluster_minutes", _CLUSTER_MINUTES) != _CLUSTER_MINUTES:
+        cmd.append(f"--cluster-minutes {basis['cluster_minutes']}")
+    return " ".join(cmd + ["--record"])
+
+
+def check_baseline(path: Path = _BASELINE) -> int:
+    """Step 17: are the published clash figures still measured on the bots we have?
+
+    🔴 **THE CLASH FIGURES WENT STALE THREE TIMES, AND EACH TIME A DEFAULT HAD MOVED** — B-LEG's
+    on 2026-08-06, SOS Fade's dead-market filter on 2026-08-26, SOS Fade's scale-ins and re-entry
+    trigger on 2026-09-06, the last inside a Command Center commit where nothing read as an
+    entry-logic change. *"Re-run it after any entry-logic change"* was written down all three
+    times. **A sentence cannot catch a change nobody recognises as the kind it is about**, so this
+    compares the settings each recorded pair was measured on with the settings the bots have
+    today, whoever moved them and whatever the commit said it was about.
+
+    ⚠ **Finding NO recorded pair FAILS** — a check with nothing to compare reads exactly like one
+    that compared and found nothing.
+    ⚠ **Clearing it means MEASURING.** The record is written by a finished run with `--record`, so
+    the only way back to green is to re-run the audit. Editing the file by hand turns this into
+    decoration.
+    """
+    import json
+
+    if not path.exists():
+        print(
+            f"🔴 no overlap baseline at {path} - nothing records what the clash figures were measured on."
+        )
+        return 1
+    recorded = json.loads(path.read_text()).get("pairs") or {}
+    if not recorded:
+        print(
+            f"🔴 {path.name} records NO audited pair - a check with nothing to compare is not a pass."
+        )
+        return 1
+
+    stale: dict[str, list[tuple[str, list[str]]]] = {}
+    for pair, entry in sorted(recorded.items()):
+        basis = entry["basis"]
+        for bot in pair.split("|"):
+            _, cls, cfg, _ = _build(bot, basis["symbol"], {}, bool(basis.get("no_secondary")))
+            drift = settings_drift(entry["settings"][bot], settings_snapshot(cls, cfg))
+            if drift:
+                stale.setdefault(pair, []).append((bot, drift))
+
+    if not stale:
+        when = ", ".join(f"{p} ({e['measured_on']})" for p, e in sorted(recorded.items()))
+        print(
+            f"overlap baseline: {len(recorded)} audited pair(s), every bot's settings unchanged - {when}"
+        )
+        print(
+            "note: settings only - a rule changed in strategy or engine CODE still needs a re-run by hand."
+        )
+        return 0
+
+    print(
+        "🔴 THE OVERLAP AUDIT IS STALE - a bot's settings moved since its clash figures were measured."
+    )
+    for pair, bots in stale.items():
+        b = recorded[pair]["basis"]
+        print(
+            f"\n  {pair} - measured {recorded[pair]['measured_on']} on {b['server']} {b['symbol']}, "
+            f"{b['start']} -> {b['end']}"
+        )
+        for bot, drift in bots:
+            for line in drift[:12]:
+                print(f"    {bot:<12} {line}")
+            if len(drift) > 12:
+                print(f"    {bot:<12} ... and {len(drift) - 12} more")
+    print("\n  Re-measure each stale pair; a finished run rewrites its own entry:")
+    for pair in stale:
+        print(f"    {_rerun_command(pair, recorded[pair]['basis'])}")
+    print(
+        "  then update the figures in root CLAUDE.md -> *The overlap audit*, and the copies it names."
+    )
+    return 1
+
+
 def _pct(part: int, whole: int) -> str:
     return f"{100.0 * part / whole:.1f}%" if whole else "—"
 
@@ -480,8 +636,27 @@ def main(argv=None) -> int:
         "already holds. Name the server this audit was measured on.",
     )
     ap.add_argument("--out", default=None)
+    ap.add_argument(
+        "--record",
+        action="store_true",
+        help="after the run, write this pair's settings and results to overlap_baseline.json - "
+        "the record step 17 checks today's bots against. Needs --server.",
+    )
+    ap.add_argument(
+        "--check-baseline",
+        action="store_true",
+        help="compare every recorded pair's settings with today's bots and exit 1 if any moved "
+        "(step 17 of scripts/run_all_tests.sh). Replays nothing.",
+    )
     args = ap.parse_args(argv)
 
+    if args.check_baseline:
+        return check_baseline()
+    if args.record and not args.server:
+        raise SystemExit(
+            "--record needs --server: the record is the basis a later re-run reproduces, and a "
+            "re-run on another broker's cache disagrees with every figure while looking healthy."
+        )
     if args.a == args.b:
         raise SystemExit("--a and --b must be different strategies")
 
@@ -777,6 +952,44 @@ def main(argv=None) -> int:
             wr.writerow([m, round(ma.get(m, 0.0), 3), round(mb.get(m, 0.0), 3)])
 
     print(f"\nwrote {out}/pairs.csv, clusters.csv, monthly.csv")
+
+    if args.record:
+        pair = f"{args.a}|{args.b}"
+        entry = {
+            "measured_on": dt.datetime.now(dt.timezone.utc).date().isoformat(),
+            "basis": {
+                "server": args.server,
+                "symbol": args.symbol,
+                "start": start,
+                "end": end,
+                "warmup": args.warmup,
+                "capital": args.capital,
+                "no_secondary": args.no_secondary,
+                "cluster_minutes": args.cluster_minutes,
+                "tf": {args.a: tf_a, args.b: tf_b},
+                "bars": {tf: len(frames[tf]) for tf in frames},
+            },
+            "result": {
+                args.a: {"trades": len(ta), "r": round(sum(t.r for t in ta), 2)},
+                args.b: {"trades": len(tb), "r": round(sum(t.r for t in tb), 2)},
+                "shared_bars": both,
+                "same_side": same,
+                "opposite": opp,
+                "trade_pairs": len(pairs),
+                "same_direction_pairs": len(same_dir_pairs),
+                "same_direction_entries_in_window": len(clusters),
+                "monthly_r": None if corr is None else round(corr, 3),
+                "months": len(months),
+            },
+            "settings": {
+                args.a: settings_snapshot(cls_a, cfg_a),
+                args.b: settings_snapshot(cls_b, cfg_b),
+            },
+        }
+        record_baseline(_BASELINE, pair, entry)
+        print(
+            f"recorded {pair} in {_BASELINE.relative_to(_ROOT)} - step 17 checks today's bots against it"
+        )
     return 0
 
 

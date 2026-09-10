@@ -78,6 +78,16 @@ inside a commit whose subject was a Command Center feature, carrying a MEASURED 
 else, so nothing about it read as an entry-logic change. **A sentence cannot catch a change nobody
 recognises as the kind the sentence is about.**
 
+✅ **Closed the same day with a check, not another sentence (Aaron: *"lets do it"*).** The audit
+now records, per pair, every strategy and engine setting its figures were measured on, and step
+17 of `scripts/run_all_tests.sh` goes red the moment any of them differs from today's bots —
+whoever moved it, whatever the commit said it was about. Replayed against the 2026-09-06 change
+in a test, it names the moved setting and prints the re-measure command. **Six mutations, each
+killed by the test named for it.** ⚠ It checks settings, not code: a rule changed inside a
+strategy is still a manual re-run. ⚠ **Deliberately a test step and not a commit hook** — a hook
+can only read the working tree, and in a clone two sessions share it would fire on the other
+session's uncommitted edits.
+
 #### What root `CLAUDE.md` said until today (moved here, not deleted)
 
 **The overlap audit — the legs really do trade different parts of the move, RE-MEASURED 2026-09-02 ON A BOT THAT CAN ACTUALLY FIRE ITS RE-ENTRIES.** Over 157,004 M15 bars of **PU Prime `XAUUSD.p`** (2020-01-01 → 2026-08-23) SOS Fade and B-LEG held a position at the same time on **46 bars** — 0.4% of SOS Fade's hold time, 1.9% of B-LEG's — of which **ZERO were same-side** (all 46 are opposite-direction, i.e. partly hedged). SOS Fade **200 trades / +164.27R** (156 primary + **44 re-entries**), B-LEG 101 / +20.20R; 5 trade pairs touch at all and **none is same-direction**, and exactly ONE same-direction entry lands within four hours of the other's in 6.6 years. Monthly R correlation **+0.107** over 78 months, which is a FLOOR rather than a figure — a month only one bot traded contributes a zero for the other and pulls it toward 0.

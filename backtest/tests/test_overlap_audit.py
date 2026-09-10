@@ -12,6 +12,7 @@ is everything between a trade list and a printed number.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -437,3 +438,105 @@ def test_a_config_that_declares_NO_risk_prints_no_figure_rather_than_a_zero():
     text = "\n".join(oa.account_risk_lines("a", _Cfg(10.0), "b", _Cfg(), 3, 1))
     assert "not declared" in text
     assert "% of the account" not in text
+
+
+# ── the baseline: the settings the published clash figures were measured on ────────────────
+
+
+def test_a_moved_setting_is_NAMED_with_both_values():
+    assert oa.settings_drift({"config.x": False}, {"config.x": True}) == ["config.x: False -> True"]
+
+
+def test_identical_snapshots_have_no_drift():
+    snap = {"config.x": 1, "engine.y": [1, 2]}
+    assert oa.settings_drift(snap, dict(snap)) == []
+
+
+def test_a_NEW_setting_is_drift_too():
+    """The 2026-08-26 dead-market filter arrived as a brand-new field, so a comparison of only the
+    keys both sides share would have passed one of the three changes this check exists for.
+    Watched RED with the comparison narrowed to shared keys."""
+    assert oa.settings_drift({}, {"config.new": 0.08}) == ["config.new: NEW, now 0.08"]
+
+
+def test_a_REMOVED_setting_is_drift_too():
+    assert oa.settings_drift({"config.gone": 1}, {}) == ["config.gone: REMOVED, was 1"]
+
+
+def test_a_missing_or_empty_baseline_FAILS_rather_than_passing(tmp_path):
+    """A check with nothing to compare reads exactly like one that compared and found nothing.
+    Watched RED with the empty case returning 0."""
+    assert oa.check_baseline(tmp_path / "absent.json") == 1
+    empty = tmp_path / "empty.json"
+    empty.write_text('{"pairs": {}}')
+    assert oa.check_baseline(empty) == 1
+
+
+def test_recording_one_pair_leaves_every_other_pair_alone(tmp_path):
+    """Watched RED with the record rewriting the whole file."""
+    path = tmp_path / "baseline.json"
+    oa.record_baseline(path, "a|b", {"v": 1})
+    oa.record_baseline(path, "a|c", {"v": 2})
+    oa.record_baseline(path, "a|b", {"v": 3})
+    assert json.loads(path.read_text())["pairs"] == {"a|b": {"v": 3}, "a|c": {"v": 2}}
+
+
+def _real_entry():
+    """A record built from TODAY's real bots through the audit's own config build.
+
+    ⚠ Not a double, on purpose: the check reads real strategy configs and real engine configs, and
+    a hand-made snapshot could describe settings no bot has — a fixture more capable than
+    production (rule 13)."""
+    settings = {}
+    for bot in ("sos_fade", "extreme_leg"):
+        _, cls, cfg, _ = oa._build(bot, "XAUUSD.p", {}, False)
+        settings[bot] = oa.settings_snapshot(cls, cfg)
+    basis = {
+        "server": "PUPrime-Demo",
+        "symbol": "XAUUSD.p",
+        "start": "2020-01-01",
+        "end": "2026-08-23",
+        "no_secondary": False,
+        "tf": {"sos_fade": "15", "extreme_leg": "5"},
+    }
+    return {"measured_on": "2026-09-10", "basis": basis, "settings": settings}
+
+
+def test_the_check_is_GREEN_on_todays_bots_and_RED_the_moment_one_setting_moved(tmp_path, capsys):
+    """The 2026-09-06 change, replayed: one recorded setting differs from today's bot. Watched RED
+    with the comparison skipped, and with `--record` dropped from the instructions."""
+    entry = _real_entry()
+    path = tmp_path / "baseline.json"
+    oa.record_baseline(path, "sos_fade|extreme_leg", entry)
+    assert oa.check_baseline(path) == 0
+
+    was = entry["settings"]["sos_fade"]["config.exec_scale_in"]
+    entry["settings"]["sos_fade"]["config.exec_scale_in"] = not was
+    oa.record_baseline(path, "sos_fade|extreme_leg", entry)
+    capsys.readouterr()
+    assert oa.check_baseline(path) == 1
+    out = capsys.readouterr().out
+    assert f"config.exec_scale_in: {not was!r} -> {was!r}" in out
+    # It says how to clear it, and the only way is to measure on the recorded basis.
+    assert "--server PUPrime-Demo" in out
+    assert "--tf-b 5" in out
+    assert out.rstrip().splitlines()[-2].rstrip().endswith("--record")
+
+
+def test_the_ENGINE_settings_are_covered_not_only_the_strategy_config():
+    """The gap cap and the internal-structure switch decide what SOS Fade trades as much as its
+    own config does, and they live on the engine side. Watched RED with that layer dropped."""
+    _, cls, cfg, _ = oa._build("sos_fade", "XAUUSD.p", {}, False)
+    snap = oa.settings_snapshot(cls, cfg)
+    assert any(k.startswith("engine.") for k in snap)
+    assert any(k.startswith("config.") for k in snap)
+
+
+def test_the_snapshot_holds_no_value_that_changes_from_run_to_run():
+    """A value serialised as '<... object at 0x...>' would differ on every run and turn the check
+    into noise that gets switched off."""
+    for bot in ("sos_fade", "b_leg", "extreme_leg"):
+        _, cls, cfg, _ = oa._build(bot, "XAUUSD.p", {}, False)
+        snap = oa.settings_snapshot(cls, cfg)
+        assert snap == oa.settings_snapshot(cls, cfg)
+        assert not any(" at 0x" in str(v) for v in snap.values()), bot
