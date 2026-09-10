@@ -6234,7 +6234,7 @@ about.**
 one.** Raising it to ~85 would put the phase back at the hour it was designed around and take the
 settings actually probed from **15 of 38 to about 21**. Both are honest — what the budget cannot
 reach is named in the coverage record and in the start-up estimate — so which one the speed-up buys
-is Aaron's call and it has not been made unilaterally here.
+was Aaron's call, and he made it on 2026-09-10: **stay at 60 and keep the time.** Do not re-raise it unless something new changes the trade.
 
 ### The start screen's wait is MEASURED once a stack has been stressed (2026-09-10)
 
