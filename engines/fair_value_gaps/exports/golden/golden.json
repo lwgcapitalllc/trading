@@ -1,13 +1,16 @@
 {
-  "csv": "VANTAGE_XAUUSD_M15_20155bars.csv",
+  "csv": ["VANTAGE_XAUUSD_M15_20187bars_plain.csv", "VANTAGE_XAUUSD_M15_20187bars_zone.csv"],
   "warmup": 0,
   "broker": "Vantage",
   "symbol": "XAUUSD",
   "timeframe": "M15",
-  "bars": 20155,
+  "bars": 20187,
   "first_bar_epoch": 1762124400,
-  "harness": "indicators/engines/fvg_export.pine",
-  "taken": "2026-09-09",
+  "harness": ["indicators/engines/fvg_export.pine", "indicators/engines/fvg_zone_export.pine"],
+  "taken": "2026-09-10",
+  "_why_two_files": "TWO EXPORTS BECAUSE THEY GATE DIFFERENT BRANCHES, and neither can stand in for the other. `plain` is what every consumer of this engine actually runs today - no entry band, the cap exempting only EQ-backed gaps. `zone` adds the fib ENTRY-BAND exemption, which needs a whole structure + fib engine in the same Pine script and therefore its own harness. The band changes the live gap list on 87.2% of bars here, so a green on one says nothing about the other.",
+  "_why_warmup": "MEASURED, not guessed: both files match from row 0, so the number is 0. It is never raised to hide a late mismatch - the export starts warm and Python starts cold, so an opening prefix of mismatches is warm-up, while mismatches that RECUR after a clean stretch are real divergence.",
   "_why_provenance": "Broker, symbol and timeframe are recorded because a cross-cutting run on 2026-09-01 recorded NEITHER and reproducing it cost three replays - two brokers disagree on the bar count for the same window while both look perfectly healthy.",
-  "_why_warmup": "The Pine export begins mid-history with its engine already warm; the Python engine starts cold at row 0. Mismatches in that opening prefix are expected. This number was MEASURED per engine by finding the last mismatching bar and confirming the whole remaining tail is clean - never guessed, and never raised to hide a late mismatch, which would be real divergence rather than warm-up."
+  "_exercise_check": "A green gate says nothing about a branch neither side entered, so both were MEASURED on this export. Band live on 99.7% of bars; a gap protected by the BAND ALONE (EQ would not have saved it) on 86.2%; the live gap list reaches 29 with the band on against 17 without. The list exceeds the 18 plotted slots on 7.0% of bars (1,413), and on those the whole-array sum columns are the ONLY thing comparing them - without the aggregates this would have been a green covering 93%.",
+  "_last_row": "compare_fvg.py drops the export's FINAL row: TradingView's last bar is live and unconfirmed, so Pine's `barstate.isconfirmed` detection never ran on it while the CSV carries its current OHLC. Both files red on exactly that one bar until the tool was fixed."
 }

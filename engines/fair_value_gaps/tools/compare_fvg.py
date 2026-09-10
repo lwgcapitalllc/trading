@@ -56,6 +56,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from fair_value_gaps import FairValueGapEngine
+from gate_common import drop_live_final_bar  # noqa: E402
 
 # 🔴 THE EXPORT COMES IN TWO SHAPES AND THE TOOL MUST NOT PRETEND THEY COVER THE SAME THING.
 #
@@ -277,6 +278,9 @@ def main(argv=None):
                          "~18 four-figure prices needs a different scale from one price")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
+    ap.add_argument("--include-last-bar", action="store_true",
+                    help="compare the export's FINAL row too. Off by default because that row is "
+                         "TradingView's live, still-forming bar - see the note in main()")
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -294,6 +298,13 @@ def main(argv=None):
 
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
+
+    # The live final bar is dropped by the shared rule - see engines/gate_common.py for why it
+    # cannot be decided from the clock, and why it is not the same test as compare_candles.py's
+    # trailing-blank trim. It fired HERE first: one bar in 20,188, on both harnesses, identically.
+    dropped_last = not args.include_last_bar and len(rows) > 1
+    if dropped_last:
+        rows = drop_live_final_bar(rows)
 
     # The export carries its own settings as cfg_* columns (constant every bar) so parity survives any
     # Pine input tweak — never a hardcoded guess. Read them when present; else fall back to the CLI.

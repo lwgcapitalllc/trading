@@ -57,7 +57,7 @@ REPO = Path(__file__).resolve().parents[1]
 ENGINES = REPO / "engines"
 
 # Raise this as golden exports are added, so losing one is a failure rather than a quieter run.
-MIN_GOLDEN_EXPORTS = 11
+MIN_GOLDEN_EXPORTS = 12
 
 
 def _gateable_engines():

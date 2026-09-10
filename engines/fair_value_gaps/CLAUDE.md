@@ -283,8 +283,29 @@ runs — and prints its partial coverage on every run rather than a bare tick. *
 echoes any 🔴/⚠ line a gate prints even when the gate PASSES; it was discarding them on success, so
 the caveat existed and no runner ever showed it.
 
-🔴 **THE COMMITTED GOLDEN EXPORT IS THE LEGACY SHAPE AND STILL NEEDS RE-TAKING.** Until it is, this
-engine's regression gate covers the oldest 10 gaps on every bar and nothing beyond them.
+✅ **CLOSED 2026-09-10.** The legacy export is replaced by two 20,187-bar files taken off the current
+harnesses — `_plain` (what every consumer runs) and `_zone` (the band branch). ⚠ **Both are needed
+and neither substitutes for the other**: the band changes the gap list on 87.2% of bars, so a green
+on one says nothing about the other.
+
+## 🔴 Every gate in the repo was feeding TradingView's LIVE bar (2026-09-10)
+
+The last row of an export is the still-forming bar. Most Pine blocks gate detection on
+`barstate.isconfirmed` so they do not run on it — while the CSV carries that bar's CURRENT OHLC.
+Handed to a Python engine, which has no concept of an unconfirmed bar, it forms events Pine never
+had. **A defect in the COMPARISON, not in either implementation, landing on the one bar a reader is
+least able to explain.**
+
+⚠ **It fired here first — one bar in 20,188, on both harnesses, identically — and ALL TWELVE golden
+exports end on a row carrying values, so every gate carried it.** They were green because their last
+bar happened to form and mitigate nothing. **A bug that has never fired is not absent, it is
+unobserved**, and one bar in twenty thousand is the hit rate that keeps it that way.
+
+✅ Fixed once in `engines/gate_common.py` and used by all eleven tools. ⚠ **NOT decided from the
+clock** — whether a bar is still open is a question about when the export was TAKEN, so a committed
+golden file would answer it wrong for ever. ⚠ **NOT the same rule as `compare_candles.py`'s
+trailing-blank trim**, and both are needed: that one sees a live bar whose harness plots per-bar
+PULSES, and is blind to one plotting ARRAY STATE. Measured: it finds nothing on any of the twelve.
 
 ## The entry-band exemption, and the harness built to gate it (2026-09-10)
 
@@ -321,9 +342,25 @@ checked fact.
 above 1m the term is plain `fibo_dir` there too, and the harness reproduces mpc-above-1m rather than
 pretending to cover a branch it cannot reach.
 
-🔴 **UNGATED UNTIL A REAL EXPORT ARRIVES.** The default path (no band) is green on the golden export
-and the new branch is inert at it, so nothing shipped is at risk — but *the band branch itself has
-never been compared against Pine*, and no number may be quoted from it until it has.
+✅ **GATED AND GREEN, 2026-09-10.** Both harnesses compiled first time and were exported off one
+Vantage XAUUSD M15 chart, 20,187 bars. `compare_fvg.py` exit 0 on both, across 18 slots, the packed
+direction mask AND the whole-array sums.
+
+🔴 **AND THE RUN IS NOT VACUOUS, which is the half that matters** — a green says nothing about a
+branch neither side entered. MEASURED on that export: a band was live on **99.7%** of bars; a gap was
+protected by the BAND ALONE, where the EQ rule would not have saved it, on **86.2%**; the live gap
+list is **different on 87.2%** of bars with the band on, and reaches **29 gaps against 17** without
+it. ⚠ **Do not settle for "the flag was on" as evidence** — that proves the input. The changed gap
+list is what proves the behaviour.
+
+🔴 **THE AGGREGATE COLUMNS EARNED THEIR KEEP ON THE FIRST RUN.** With the band on, the list exceeds
+the 18 plotted slots on **1,413 bars (7.0%)**, peaking at 29. On every one of those the whole-array
+sums are the ONLY thing comparing them — without the aggregates this would have been a green
+covering 93% of bars, which is the exact defect being fixed, one size smaller.
+
+⚠ **It stays INERT in the engine regardless.** No consumer passes the band, so every existing
+result still reproduces to the byte. Gating it makes shipping it *possible*; it does not make it
+decided, and the measurement of what it does to the bot has not been run.
 
 ## The golden export (2026-09-09) — this engine's gate runs on every machine
 

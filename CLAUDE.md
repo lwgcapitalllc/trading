@@ -292,7 +292,7 @@ file was taken.**
 
 ⚠ **It prints its COVERAGE FRACTION and names the engines that lack an export**, because a bare
 green tick on this step would read as *the engine gates pass* when it means *the one engine with a
-committed export passes*. Coverage: **11 of 11** gateable engines, from eleven fresh exports taken 2026-09-09.
+committed export passes*. Coverage: **11 of 11** gateable engines, from **twelve** committed exports — the gap engine carries two (2026-09-10) because the fib entry-band exemption is a separate branch with its own harness.
 
 🔴 **A GATE'S OWN WARNINGS NOW SURVIVE ITS GREEN, and they did not until 2026-09-10.** Each gate's
 stdout was captured and DISCARDED on success, so a caveat the gate printed on every run reached
@@ -333,6 +333,32 @@ runnable on every machine forever, and it is worth stating so nobody re-litigate
 with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass. Both paths watched
 RED by mutation: reverting the engine's rule turns the gate red through this runner, and raising the
 minimum makes the self-test fire and exit 1.
+
+### `engines/gate_common.py` — the export-format rules every parity gate needs
+
+🔴 **It exists because the live-bar rule was written three times before it was written once.**
+`compare_bos.py` had it, `compare_candles.py` copied it with a comment saying so, and a third copy
+was about to land in `compare_fvg.py`. Eleven copies of a three-line rule is the disease this repo
+pays for in Pine *because Pine has no import* — Python has one, so not using it is a choice.
+
+🔴 **The rule: the final row of a TradingView export is the LIVE bar, and every gate was feeding it
+as a closed one.** Most Pine blocks gate detection on `barstate.isconfirmed`, so they do not run on
+that bar, while the CSV carries its current OHLC. It fired on the gap gate on 2026-09-10 — one bar
+in 20,188 — and **all twelve golden exports end on a row carrying values, so every gate carried the
+exposure** and was green only because its last bar happened not to matter.
+
+⚠ **NOT decided from the clock.** *Is this bar still open?* is a question about when the export was
+TAKEN, not when the gate is RUN, so a committed golden file would answer it wrong for ever. The
+final row is treated as suspect unconditionally: one bar in twenty thousand, and it cannot rot.
+
+⚠ **Deliberately NARROW and it must not grow into a parity-gate framework.** Each engine's
+comparison is genuinely its own; a shared base class would be the over-engineering this repo counts
+as a corner cut in its own right. What lives here is a fact about the EXPORT FORMAT — the one thing
+all eleven demonstrably share.
+
+⚠ **Its message says `note:`, not `⚠`, on purpose.** `check_engine_gates.py` echoes 🔴/⚠ lines under
+a passing tick because those are caveats about that RUN; this one is a constant of the format and
+would print identically twelve times, which is how a reader learns to skip the marker that matters.
 
 ### `scripts/build_fvg_zone_harness.py` — a Pine harness that is a BUILD ARTIFACT
 
