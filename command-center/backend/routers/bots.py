@@ -32,10 +32,12 @@ import re
 import subprocess
 import threading
 import time as _time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from dataclasses import fields as dataclass_fields
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import config as cfg
 from fastapi import APIRouter, HTTPException
@@ -51,8 +53,10 @@ from models import (
     BotAccountRegistrationWrite,
     BotDeployedVersion,
     BotParamsView,
+    BotPromoteJob,
     BotPromoteRequest,
     BotPromoteResult,
+    BotPromoteStage,
     BotRuntimeUpdate,
     BotSettingImportChange,
     BotSettingImportPlan,
@@ -3224,8 +3228,17 @@ def _parse_versions(out: str) -> tuple[int | None, int | None]:
     return None, None
 
 
+def _no_stage(_key: str) -> None:
+    """The stage callback the one-shot endpoints pass — nobody is watching them step by step."""
+
+
 def _run_promote(
-    bot_key: str, *, dry_run: bool, pull: bool, allow_dirty: bool
+    bot_key: str,
+    *,
+    dry_run: bool,
+    pull: bool,
+    allow_dirty: bool,
+    stage: Callable[[str], None] = _no_stage,
 ) -> tuple[bool | None, str, tuple[int | None, int | None]]:
     """Run promote.py on the VPS. Returns `(ok, output, versions)`; `ok` is **None** when the
     run did not report one, which is a third answer and never rounded to False silently.
@@ -3236,19 +3249,29 @@ def _run_promote(
     tree), and it was being thrown away in favour of a substring: rewording one `print`
     silently flips the verdict, and a FAILURE whose message happens to contain the word
     reads as a success. On the one action in this router that changes what a bot trades.
+
+    ⚠ **The pull is its OWN ssh call (2026-09-10)**, so a job can report it as a step before the
+    build starts. It was chained into one command line with `&`, which never stopped on a failed
+    pull either — so splitting it changes no outcome, only what can be watched. It also gives
+    each half its own 30s timeout rather than sharing one. `promote.py` resolves the repo from its
+    own path, so it never depended on the `cd` the chain happened to run first.
     """
-    steps = []
+    pulled = ""
     if pull:
-        steps.append(f"cd {_VPS_REPO} & git pull origin main")
+        stage("pull")
+        pulled = _ssh(f"cd {_VPS_REPO} & git pull origin main")
+    stage("build")
     flags = " --dry-run" if dry_run else ""
     flags += " --allow-dirty" if allow_dirty else ""
-    steps.append(f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key}{flags}")
+    steps = [f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key}{flags}"]
     # `if errorlevel 1`, never `echo %errorlevel%`: cmd expands `%VAR%` at PARSE time, so on
     # a single command line that prints the code from BEFORE promote.py ran — which is the
     # trap that makes an exit-code check look like it works and always answer 0.
     steps.append(f"if errorlevel 1 (echo {_PROMOTE_FAIL}) else (echo {_PROMOTE_OK})")
 
     out = _ssh(" & ".join(steps))
+    if pulled:
+        out = f"{pulled}\n{out}"
     if _PROMOTE_FAIL in out:
         ok: bool | None = False
     elif _PROMOTE_OK in out:
@@ -3300,7 +3323,21 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return _finish_promote(bot_key, req, reported, out, versions)
 
+
+def _finish_promote(
+    bot_key: str,
+    req: BotPromoteRequest,
+    reported: bool | None,
+    out: str,
+    versions: tuple[int | None, int | None],
+    stage: Callable[[str], None] = _no_stage,
+) -> BotPromoteResult:
+    """Everything a promote does AFTER promote.py has answered: the alert, the thread root, the
+    stop and the start. Shared by the one-shot endpoint and the job, so the two cannot come to
+    disagree about what a deploy does — this is the one action here that changes what a live
+    account trades."""
     # An unreported result is NOT a success, and it is not a plain failure either — the
     # promote may have deployed. It must not restart the bot on a maybe, and it must not
     # send the "promoted" alert either, so it takes the false branch with the doubt spelled
@@ -3342,11 +3379,286 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
         # Kill it and let SYS_MONITOR bring it back — that path is exercised every time the
         # watchdog fires, so it is the one most likely to work. The suppress key is NOT
         # written: this stop is meant to be undone, immediately.
+        stage("stop")
         _kill_bot(bot_key)
         _time.sleep(2)
+        stage("start")
         _launch_bot(bot_key)
         restarted = True
     return BotPromoteResult(ok=ok, output=out, restarted=restarted)
+
+
+# ── A promote as a JOB, so the page can show which step it is on (2026-09-10) ──
+#
+# Aaron: *"When I am promoting I want to see a progress bar… a static disabled button doesn't
+# catch my focus"* and *"I want us to stick to one indicator."* The one-shot endpoint above is a
+# single request that takes as long as the pull, the build, a graceful stop (up to
+# `_GRACEFUL_STOP_SECONDS`) and a start — so all a page could draw over it was a greyed button.
+#
+# 🔴 **The steps are REPORTED by the code doing them, never timed on the page.** A bar that
+# advanced on a clock would move at a speed unrelated to the deploy, which this app has already
+# learned is worse than no bar. A step is `active` from the moment the code enters it.
+#
+# ⚠ **The one-shot endpoint stays**, unchanged in what it does: the trading-box MCP tool calls it
+# and a person running it from a terminal wants one answer. Both go through `_run_promote` and
+# `_finish_promote`, so there is one implementation of what a deploy DOES.
+#
+# ⚠ **In memory, and that is enough.** A job lives as long as the backend; a restart mid-deploy
+# loses the progress readout, never the deploy — the work is on the VPS, and the version endpoint
+# reports what landed.
+
+_PROMOTE_STAGE_KEYS = ("pull", "build", "stop", "start", "confirm")
+# How long the job waits for the restarted bot to report the new code, and how often it asks.
+# A WAIT LIMIT, not a claim about how long a start takes: past it the step reads `unconfirmed`
+# and the version panel's own *restart pending* warning, which re-reads every 15s, carries on.
+_CONFIRM_POLL_SECONDS = 5
+_CONFIRM_ATTEMPTS = 48  # four minutes
+_PROMOTE_JOBS: dict[str, dict] = {}
+_PROMOTE_JOBS_LOCK = threading.Lock()
+# Enough to cover every bot several times over; a job is only ever read while it runs and for
+# the minutes after. The OLDEST finished jobs go first — a running one is never evicted.
+_PROMOTE_JOBS_CAP = 20
+
+
+def _spawn(fn: Callable[[], None]) -> None:
+    """Run a job off the request thread. A seam so a test can run it inline instead."""
+    threading.Thread(target=fn, daemon=True).start()
+
+
+def _job_view(job: dict) -> BotPromoteJob:
+    now = _time.time()
+    stages = []
+    for key in _PROMOTE_STAGE_KEYS:
+        s = job["stages"][key]
+        secs = None
+        if s["started"] is not None:
+            secs = round((s["ended"] if s["ended"] is not None else now) - s["started"], 1)
+        stages.append(BotPromoteStage(key=key, state=s["state"], seconds=secs))
+    return BotPromoteJob(
+        job_id=job["job_id"],
+        bot=job["bot"],
+        status=job["status"],
+        stages=stages,
+        result=job["result"],
+        error=job["error"],
+        seconds=round((job["ended"] or now) - job["started"], 1),
+    )
+
+
+def _job_enter(job: dict, key: str) -> None:
+    """Close whichever step was running and open `key`."""
+    now = _time.time()
+    with _PROMOTE_JOBS_LOCK:
+        for s in job["stages"].values():
+            if s["state"] == "active":
+                s["state"], s["ended"] = "done", now
+        s = job["stages"][key]
+        s["state"], s["started"] = "active", now
+
+
+def _job_close(job: dict, *, status: str, result=None, error=None) -> None:
+    """Settle the job. The step that was running is `done` on success and `failed` otherwise;
+    every step that never ran is `skipped` — a restart nobody asked for, or one a failed build
+    never reached — so nothing that did not happen reads as having happened."""
+    now = _time.time()
+    with _PROMOTE_JOBS_LOCK:
+        for s in job["stages"].values():
+            if s["state"] == "active":
+                s["state"], s["ended"] = ("done" if status == "done" else "failed"), now
+            elif s["state"] == "pending":
+                s["state"] = "skipped"
+        job["status"], job["result"], job["error"], job["ended"] = status, result, error, now
+
+
+def _describe_job_failure(stage: str | None, exc: Exception) -> str:
+    """What a raised exception MEANS for the bot, which depends on the step it hit.
+
+    ⚠ A timeout during the BUILD is the uncertain one: promote.py may have finished on the box
+    after this end stopped listening, so it is reported as *may have deployed*, never as
+    *untouched*."""
+    what = (
+        "timed out"
+        if isinstance(exc, subprocess.TimeoutExpired)
+        else f"could not reach the trading box ({exc})"
+    )
+    if stage == "pull":
+        return f"The code pull {what}. Nothing was deployed and the bot is untouched."
+    if stage == "build":
+        return (
+            f"The build {what} before it reported a result. It may or may not have deployed "
+            "— check the version before assuming either way. The bot was not restarted."
+        )
+    if stage == "stop":
+        return (
+            f"Stopping the bot {what}. The new code IS deployed; the bot may still be running "
+            "the old version or may be stopped — the watchdog restarts a stopped bot within "
+            "about a minute. Check the bot."
+        )
+    if stage == "start":
+        return (
+            f"Starting the bot {what}. The new code IS deployed and the bot was stopped — the "
+            "watchdog normally restarts it within about a minute. Check the bot."
+        )
+    if stage == "confirm":
+        return (
+            f"Checking the restarted bot {what}. The new code IS deployed and the bot was "
+            "restarted; whether it came back is not confirmed. Check the bot."
+        )
+    return f"The deploy {what}."
+
+
+def _read_run_state(bot_key: str) -> dict | None:
+    """This bot's own entry in its `bot_state.json` — what the PROCESS reports about itself.
+    `None` = could not be read, which is never the same as *an old process*."""
+    path = _bot_state_path(bot_key)
+    if not path:
+        return None
+    try:
+        raw = _ssh(f"type {path} 2>nul")
+        entry = (json.loads(raw) if raw.strip() else {}).get(bot_key)
+    except Exception:
+        return None
+    return entry if isinstance(entry, dict) else None
+
+
+def _is_new_process_on(state: dict, before: dict | None, deployed_hash: str) -> bool:
+    """Is a NEW process running the DEPLOYED code?
+
+    🔴 **The hash alone cannot answer it on a re-deploy of unchanged code** — the old process
+    already reports that hash, so it would read as confirmed while the bot is still stopped. So
+    it also needs a new start stamp (written by the coordinator on launch) and a heartbeat
+    written since the stop, compared against what the OLD process had written. Both are values
+    the box wrote, compared with values the box wrote — no two clocks are subtracted.
+
+    ⚠ With no `before` (the old state could not be read) the hash is the only evidence left,
+    which is still proof whenever the code changed."""
+    running = state.get("source_hash") or ""
+    if not running or not deployed_hash or not deployed_hash.startswith(running):
+        return False
+    if not before:
+        return True
+    return state.get("started") != before.get("started") and state.get(
+        "last_updated"
+    ) != before.get("last_updated")
+
+
+def _await_new_version(bot_key: str, before: dict | None) -> bool:
+    """Poll until the restarted bot reports the deployed code, or give up. A read that fails
+    mid-wait is a blip, not a verdict — it just uses up one attempt."""
+    deployed_hash = ""
+    for attempt in range(_CONFIRM_ATTEMPTS):
+        if not deployed_hash:  # re-asked until it answers: without it nothing can confirm
+            try:
+                deployed_hash = str(_deployed_json(bot_key).get("hash") or "")
+            except Exception:
+                deployed_hash = ""
+        state = _read_run_state(bot_key)
+        if state and _is_new_process_on(state, before, deployed_hash):
+            return True
+        if attempt < _CONFIRM_ATTEMPTS - 1:
+            _time.sleep(_CONFIRM_POLL_SECONDS)
+    return False
+
+
+def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
+    before: dict = {}
+
+    def stage(key: str) -> None:
+        if key == "stop":
+            # What the OLD process wrote, read before it is asked to go — the confirm step
+            # compares against it. Unreadable leaves it empty; see `_is_new_process_on`.
+            before.update(_read_run_state(bot_key) or {})
+        _job_enter(job, key)
+
+    def current() -> str | None:
+        with _PROMOTE_JOBS_LOCK:
+            return next((k for k, s in job["stages"].items() if s["state"] == "active"), None)
+
+    try:
+        reported, out, versions = _run_promote(
+            bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty, stage=stage
+        )
+        result = _finish_promote(bot_key, req, reported, out, versions, stage=stage)
+        if result.ok and result.restarted:
+            stage("confirm")
+            if not _await_new_version(bot_key, before or None):
+                # The deploy itself worked; the bot has not SHOWN it yet. A warning, not a
+                # failure — and never `done`, which would claim a measurement nobody took.
+                with _PROMOTE_JOBS_LOCK:
+                    s = job["stages"]["confirm"]
+                    s["state"], s["ended"] = "unconfirmed", _time.time()
+    except Exception as e:  # everything — a job that dies silently leaves the page waiting
+        _job_close(job, status="failed", error=_describe_job_failure(current(), e))
+        return
+    # A refused build leaves the bot untouched and the page may say so. A build that reported
+    # NOTHING may have deployed — that is stated here as a structured error, so the page never has
+    # to read it out of promote.py's prose to avoid calling the bot untouched.
+    error = (
+        "The build did not report a result, so it may or may not have deployed — check the "
+        "version before assuming either way. The bot was not restarted."
+        if reported is None
+        else None
+    )
+    _job_close(job, status="done" if result.ok else "failed", result=result, error=error)
+
+
+def _evict_promote_jobs() -> None:
+    """Drop the oldest FINISHED jobs past the cap. Caller holds the lock."""
+    finished = sorted(
+        (j for j in _PROMOTE_JOBS.values() if j["status"] != "running"),
+        key=lambda j: j["started"],
+    )
+    while len(_PROMOTE_JOBS) > _PROMOTE_JOBS_CAP and finished:
+        _PROMOTE_JOBS.pop(finished.pop(0)["job_id"], None)
+
+
+@router.post("/{bot_name}/promote/job", response_model=BotPromoteJob, status_code=202)
+def start_promote_job(bot_name: str, req: BotPromoteRequest):
+    """Start a promote in the background and return at once; poll
+    `GET /bots/{bot}/promote/job` for which step it is on.
+
+    ⚠ **A second promote of the same bot while one is running is REFUSED (409).** Two runs of
+    promote.py over one instance directory, and two stop/start pairs on one process, is not a
+    state anybody meant — and the page can be reopened mid-deploy."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _PROMOTE_JOBS_LOCK:
+        if any(j["bot"] == bot_key and j["status"] == "running" for j in _PROMOTE_JOBS.values()):
+            raise HTTPException(
+                status_code=409,
+                detail=f"A deploy of {bot_key} is already running — wait for it to finish.",
+            )
+        job = {
+            "job_id": f"pj_{int(_time.time() * 1000)}_{bot_key}",
+            "bot": bot_key,
+            "status": "running",
+            "stages": {
+                k: {"state": "pending", "started": None, "ended": None} for k in _PROMOTE_STAGE_KEYS
+            },
+            "result": None,
+            "error": None,
+            "started": _time.time(),
+            "ended": None,
+        }
+        _PROMOTE_JOBS[job["job_id"]] = job
+        _evict_promote_jobs()
+    _spawn(lambda: _run_promote_job(job, bot_key, req))
+    with _PROMOTE_JOBS_LOCK:  # the thread is already writing to it
+        return _job_view(job)
+
+
+@router.get("/{bot_name}/promote/job", response_model=Optional[BotPromoteJob])
+def get_promote_job(bot_name: str):
+    """This bot's most recent promote job, or `null` when this backend has run none.
+
+    Addressed by the BOT rather than a job id, so a page reopened mid-deploy finds the run that
+    is already going instead of offering a second Deploy button over it."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _PROMOTE_JOBS_LOCK:
+        mine = [j for j in _PROMOTE_JOBS.values() if j["bot"] == bot_key]
+        if not mine:
+            return None
+        job = max(mine, key=lambda j: j["started"])
+        return _job_view(job)
 
 
 # ── Reading and changing a bot's settings ─────────────────────────────────────

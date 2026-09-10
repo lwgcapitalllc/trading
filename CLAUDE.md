@@ -529,7 +529,8 @@ cannot be talked out of it.
 
 🔴 **browser — the page can be clicked, and the live buttons cannot.** The backend talks to the
 trading box, so a click is a real action. `.claude/mcp/browser_guard.js` is injected ahead of
-the app's own scripts and rejects bot start/stop/restart, promote, strategy deploy and delete,
+the app's own scripts and rejects bot start/stop/restart, promote (and, since 2026-09-10, the
+same deploy started as a background job — `POST …/promote/job`), strategy deploy and delete,
 account writes and agent starts INSIDE the browser; they never reach the backend. Promote
 PREVIEW and every lab write stay allowed — those cost compute, never money, and a guard that
 blocks the useful half gets switched off. ✅ **A missing guard file makes the server refuse to

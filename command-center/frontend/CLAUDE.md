@@ -2817,6 +2817,39 @@ only says *something is wrong* has moved the question rather than answered it.
 
 `VersionBanner` in `pages/Bots/ConfigureTab.tsx`, first and full width on the detail panel.
 
+### ONE button, ONE progress readout (2026-09-10) — read this before the history below
+
+Aaron: *"a static disabled button doesn't catch my focus"* and *"I am only acting on one CTA and
+there is only 1 progress indicator."* 🔴 **The preview → confirm two-step is GONE; the paragraphs
+below that describe it (the second button, `awaitingConfirm`, `result.kind`) are history.** One
+click on `Deploy & restart vX → vY` starts `POST /bots/{bot}/promote/job`, and
+`components/StepProgress.tsx` draws the steps directly under the heading: Pull code → Build &
+check → Stop bot → Start bot → Running vY.
+
+- ⚠ **Dropping the preview is not dropping a check.** What the reader decides on (settings that
+  would change, code changes) is on the banner BEFORE the click; the checks the dry run ran are the
+  ones `promote.py` runs before it swaps anything, refusing with the bot untouched — they are now the
+  first two steps.
+- ⚠ **A bot on a LIVE account takes a second click on the SAME button** — it re-labels itself and
+  disarms after 6s. One place to act; one extra deliberate press where the money is real.
+- 🔴 **Steps come from the backend job, never a timer.** A step's bar is full or empty; the active
+  one carries a travelling band (`animate-step-sweep`, in `index.css` so it hot-reloads). The last
+  step is a MEASUREMENT (the restarted bot reporting the deployed code); `unconfirmed` renders
+  amber, never green.
+- ⚠ **The job is read BY BOT (`usePromoteJob`)**, so a drawer reopened mid-deploy shows the running
+  deploy instead of a Deploy button over it. The render-time adopt line is what does it — a
+  `running ||` beside it was unreachable (a mutation deleting it survived) and was removed.
+- ⚠ **The button names the version a promote can REACH** (`deployable`), never the backtester's.
+- ⚠ **A failure's caption is `job.error` verbatim when present** — it says what state the step it
+  hit left the bot in. Without one the build REFUSED, which touches nothing. Never read promote.py's
+  prose to decide.
+- `usePreviewPromote` / `usePromoteBot` were deleted with no consumer left. The endpoints stay: the
+  trading-box MCP calls them.
+- ✅ `tests/bots-version.spec.ts` → 22 checks; the deploy ones run a scripted job that advances one
+  step per poll, behind `refuseLiveWrites`. **6 mutations run, 6 killed.** ⚠ The first full run had
+  4 failures that did not reproduce in 55 later runs — concurrent backend reloads suspected, not
+  confirmed.
+
 🔴 **The version row on `DeployCard` read `v0`, and it always would have** —
 `strategy_version` defaulted to 0 in `algos/live/live_config.py` and nothing wrote it. (Fixed at
 the source 2026-08-14: `promote.py` stamps a real count, and the field is `number | null` here
@@ -2887,6 +2920,9 @@ is **untouched and still on v100**, because a promote that fails leaves the runn
 it was; claiming otherwise sends somebody to debug a bot that is fine.
 
 ### The accordion that would not close, and the deploy that landed short (2026-08-14)
+
+⚠ **History: the two-button flow this describes was replaced on 2026-09-10** — see *ONE button,
+ONE progress readout* above. The unpushed-commits rule below is still live.
 
 🔴 **A SUCCESSFUL deploy left the panel in its PRE-DEPLOY shape under a green success line** — the
 promote's `<pre>` held the block open at full height and the "N settings would change" section still

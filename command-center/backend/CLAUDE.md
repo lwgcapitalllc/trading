@@ -1995,6 +1995,31 @@ elapsed work that only holds while commits are human-paced, and anything using `
 measuring the robot's schedule.** It DEGRADES daily rather than failing once — the kind of red
 that gets rerun, shrugged at, and eventually excluded.
 
+## A promote as a JOB — the steps the deploy panel draws (2026-09-10)
+
+`POST /bots/{bot}/promote/job` (202, returns the job) + `GET /bots/{bot}/promote/job` (that bot's
+latest job, or `null`). Built so the page can show ONE progress readout over a deploy that is a
+30–60s request with nothing to watch (Aaron: *"a static disabled button doesn't catch my focus"*).
+
+- 🔴 **One implementation of what a deploy DOES.** The job and the one-shot `/promote` (kept — the
+  trading-box MCP calls it) both go through `_run_promote` + `_finish_promote`.
+- 🔴 **A step is entered by the code as it enters it** (a `stage` callback), never timed: pull →
+  build → stop → start → confirm. The pull is now its OWN ssh call — it was chained with `&`, which
+  never stopped on a failed pull either, so no outcome changed; each half gets its own 30s timeout.
+- ⚠ **`skipped` is not `done`** — a step not asked for, or one a failure never reached.
+- 🔴 **`confirm` is a measurement, and the hash alone cannot make it.** On a re-deploy of unchanged
+  code the OLD process already reports the deployed hash. It needs a new `started` stamp and a new
+  heartbeat compared with what the old process wrote (read just before the stop) — box values
+  against box values, no two clocks subtracted. Past the wait limit (48 × 5s, a LIMIT rather than a
+  claim about start time) it ends `unconfirmed`, never `done`.
+- ⚠ **A raised failure's `error` depends on the step it hit** (`_describe_job_failure`): *untouched*
+  only for the pull, *may or may not have deployed* for a build that timed out or reported nothing
+  (a structured `error`, so the page never reads promote.py's prose), *IS deployed* past the build.
+- ⚠ **A second job for the same bot while one runs is a 409**, and eviction never drops a running
+  job. **In memory**: a backend restart loses the readout, never the deploy.
+- ⚠ **The browser guard refuses the POST** — it is the same action as `/promote`.
+- ✅ `tests/test_bot_promote_job.py` (22). **12 mutations run, 12 killed.**
+
 ## Stopping a bot ASKS it to stop (2026-08-07)
 
 🔴 **Every deliberate stop this app issued was a hard `wmic ... call terminate`, so the bot never

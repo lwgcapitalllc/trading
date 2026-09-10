@@ -734,6 +734,40 @@ class BotPromoteResult(BaseModel):
     restarted: bool = False
 
 
+class BotPromoteStage(BaseModel):
+    """One step of a promote run as a job, in the order it happens.
+
+    `state` is `pending` (not reached yet), `active`, `done`, `failed`, or `skipped` — a step the
+    request did not ask for or never reached. `skipped` is not `done`: a restart that was never
+    asked for must not read as one that happened. The `confirm` step alone can also end
+    `unconfirmed` — the deploy worked and the restarted bot had not yet reported the new code when
+    the job stopped waiting. A warning, never `done`.
+
+    `seconds` is measured server-side at read time, so the page never subtracts two clocks.
+    `None` = the step has not started."""
+
+    key: str  # pull | build | stop | start | confirm
+    state: str
+    seconds: Optional[float] = None
+
+
+class BotPromoteJob(BaseModel):
+    """A promote running in the background, polled by the page.
+
+    `status` is `running`, `done` or `failed`. `result` is set once it finishes, and carries the
+    same shape the one-shot endpoint returns. `error` is set only when the run RAISED — the box
+    could not be reached, a call timed out — and says which step it was on, because what state
+    the bot is in depends on that."""
+
+    job_id: str
+    bot: str  # the bot KEY
+    status: str
+    stages: list[BotPromoteStage]
+    result: Optional[BotPromoteResult] = None
+    error: Optional[str] = None
+    seconds: float  # since the job started
+
+
 class BotRuntimeUpdate(BaseModel):
     """A change to the levers that may move on a running bot.
 

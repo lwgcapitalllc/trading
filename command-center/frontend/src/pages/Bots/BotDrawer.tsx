@@ -345,7 +345,11 @@ export function BotDrawer({
               Deploying copies the code on the trading box and restarts the bot on it. Until you do,
               it keeps running the version it started with.
             </p>
-            <VersionBanner botKey={bot.key} botLabel={bot.name} />
+            <VersionBanner
+              botKey={bot.key}
+              botLabel={bot.name}
+              live={bot.account_type === 'live'}
+            />
           </div>
 
           {/* ── account ───────────────────────────────────────────────── */}

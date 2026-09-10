@@ -806,6 +806,27 @@ export interface BotPromoteResult {
   restarted: boolean
 }
 
+/** One step of a deploy run as a background job, reported by the backend as it enters it.
+ *  `skipped` is a step the request did not ask for or never reached — never read it as done.
+ *  `unconfirmed` (the `confirm` step only): deployed and restarted, but the bot had not yet
+ *  reported the new code when the job stopped waiting — a warning, never done. */
+export interface BotPromoteStage {
+  key: 'pull' | 'build' | 'stop' | 'start' | 'confirm'
+  state: 'pending' | 'active' | 'done' | 'failed' | 'skipped' | 'unconfirmed'
+  seconds: number | null // measured server-side; null = not started
+}
+
+export interface BotPromoteJob {
+  job_id: string
+  bot: string
+  status: 'running' | 'done' | 'failed'
+  stages: BotPromoteStage[]
+  result: BotPromoteResult | null
+  /** Set only when the run RAISED; says which step and what that means for the bot. */
+  error: string | null
+  seconds: number
+}
+
 /** One setting a stress-test import would move, with BOTH ends of the move.
  *
  *  `current` is carried even when null — a setting the bot does not state yet is a different
