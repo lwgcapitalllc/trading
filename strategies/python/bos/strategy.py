@@ -70,16 +70,17 @@ class BosStrategy(SosFadeStrategy):
         defaults — and three of the five differ from the SOS Fade bot's, which is the whole reason
         this override exists rather than inheriting:
 
-        `fvg_max_count` **8** (SOS Fade pins 7) — this fork's Pine keeps the same cap
-          `mpc_jarvis.pine` draws with, so a gap still on the chart is a gap the strategy
-          still holds. A smaller cap evicts the oldest gap one bar sooner and drops an entry
-          edge the Pine still has.
+        `fvg_max_count` **8** (SOS Fade pins 7) — this fork's Pine took the cap `mpc_jarvis.pine`
+          drew with at the time. ⚠ The indicator has since moved to 7; the pin follows
+          `bos_strategy.pine`, not the indicator. A smaller cap evicts the oldest gap one bar
+          sooner and drops an entry edge the Pine still has.
         `fvg_threshold_pct` **0.04** (SOS Fade pins 0.1) — the 15m floor. This Pine's tooltip states
           the disagreement explicitly: on gold at $4,155 the SOS Fade 0.1% demands a $4.16 gap and
           throws away most real 15m ones, and this fork chose the indicator's 0.04% instead.
+          ⚠ The indicator has since moved its own 15m floor to 0.1; this pin follows this Pine.
         `fvg_require_close` **False** (SOS Fade pins True) — `sos_fade_strategy.pine` HARDCODES the
-          middle-bar close-cleared check; this fork exposes it as an input defaulting OFF, which
-          is the classic FVG the chart draws.
+          middle-bar close-cleared check; this fork exposes it as an input defaulting OFF — the
+          classic FVG. ⚠ The indicator itself now runs the check from 15m up.
         `show_internal` False and `eq_exempt_fvg` False match this Pine's own defaults.
 
         ⚠ Every one of the three differences makes this fork hold MORE gaps than the SOS Fade bot, so

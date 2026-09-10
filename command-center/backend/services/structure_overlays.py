@@ -48,6 +48,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 log = logging.getLogger("STRUCTURE_OVERLAYS")
 
@@ -165,19 +166,26 @@ def _cap_by_group(overlays: list[dict]) -> list[dict]:
     return kept
 
 
-def build_market_structure_overlays(candles: list[dict], major_length: int = 15) -> list[dict]:
+def build_market_structure_overlays(
+    candles: list[dict], major_length: Optional[int] = None
+) -> list[dict]:
     """Replay `candles` through the canonical StructureEngine and emit structure overlays.
 
     `candles` are the spec's candles: dicts with time/open/high/low/close, sorted by time.
-    Returns a list of ChartOverlay dicts (hline / label), grouped for the four Layers toggles.
-    Best-effort: any failure returns [] so the rest of the chart still renders.
+    `major_length` None is the engine's own default — mpc_jarvis.pine's, read from the engine at
+    draw time rather than typed here (it was, until 2026-09-10). Returns a list of ChartOverlay
+    dicts (hline / label), grouped for the four Layers toggles. Best-effort: any failure returns []
+    so the rest of the chart still renders.
     """
-    if len(candles) < major_length + 5:
-        return []
     try:
         from market_structure import Bar, StructureEngine
+        from market_structure import engine as _ms
     except Exception as exc:  # noqa: BLE001 — engine import is best-effort
         log.warning("structure overlays: engine import failed: %s", exc)
+        return []
+    if major_length is None:
+        major_length = _ms.DEFAULT_MAJOR_LENGTH
+    if len(candles) < major_length + 5:
         return []
 
     times = [c["time"] for c in candles]

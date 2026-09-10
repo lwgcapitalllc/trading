@@ -29,8 +29,8 @@ _ENGINES = Path(__file__).resolve().parent.parent.parent.parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
+from regime import MIN_ROWS_LONG, MIN_ROWS_SHORT, classify_regime
 from regime import classifier as classifier_module
-from regime import classify_regime
 
 from services.metrics import (
     apply_canonical_sharpe,
@@ -231,7 +231,9 @@ def run_was_cancelled(run_id: str) -> bool:
 # ── Regime classification helper ──────────────────────────────────────────────
 
 _WARMUP_DAYS = 50  # fetch this many extra days before backtest start for classifier warmup
-_WINDOW_SIZE = 34  # classifier needs 34 bars to produce a non-UNKNOWN label
+# The classifier's own row minimum, read rather than typed (34 until 2026-09-10, and still 34). A
+# window one row short of a RAISED minimum would tag every trade UNKNOWN with nothing failing.
+_WINDOW_SIZE = max(MIN_ROWS_SHORT, MIN_ROWS_LONG)
 
 
 def _fetch_regime_dfs(

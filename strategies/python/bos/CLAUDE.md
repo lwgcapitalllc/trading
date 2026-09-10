@@ -364,3 +364,11 @@ EXPERIMENT from every number in this file, and has to say so.
 bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
+
+## Its gap pins no longer match the indicator, and that is correct (2026-09-10)
+
+`engine_config()` said this fork's cap of 8, 0.04 floor and close test off were what
+`mpc_jarvis.pine` draws. They were when this Pine was written; the indicator has since moved to a
+cap of 7, a 0.1 floor from 15m up and the close test from 15m up. **The pins follow
+`bos_strategy.pine`, not the indicator, so none of them moved** — only the docstring, which now says
+so. Comment-only.

@@ -26,7 +26,12 @@ import csv
 from pathlib import Path
 
 import pytest
-from services.fvg_overlays import GROUP_FVG, build_fvg_overlays, mpc_threshold_pct
+from services.fvg_overlays import (
+    GROUP_FVG,
+    build_fvg_overlays,
+    mpc_require_close,
+    mpc_threshold_pct,
+)
 
 BAR_MS = 5 * 60 * 1000
 
@@ -148,22 +153,58 @@ def test_a_gap_still_open_at_the_end_runs_to_the_last_candle():
 # ── The settings are mpc_jarvis.pine's ─────────────────────────────────────
 
 
-def test_gap_floor_follows_mpcs_timeframe_split():
-    """`fvgThreshPct = timeframe.in_seconds() < 900 ? 0.0 : 0.04` (mpc_jarvis.pine:410-412). Get
-    this wrong and the chart draws a different gap SET from the indicator it is meant to mirror,
-    with nothing on screen to say so."""
-    assert mpc_threshold_pct("M1") == 0.0
-    assert mpc_threshold_pct("M5") == 0.0
-    assert mpc_threshold_pct("M15") == 0.04
-    assert mpc_threshold_pct("H1") == 0.04
-    assert mpc_threshold_pct("D1") == 0.04
+def test_the_gap_row_follows_mpcs_timeframe_split():
+    """`fvgIsLTF = timeframe.in_seconds() < 900` picks the row for BOTH split settings. Get this wrong
+    and the chart draws a different gap SET from the indicator it is meant to mirror, with nothing
+    on screen to say so. The VALUES are held to the Pine by
+    engines/tests/test_defaults_mirror_the_indicator.py; this pins which row each timeframe gets."""
+    from fair_value_gaps import engine as g
+
+    # Premise: the rows differ on both settings, or the cases below cannot tell them apart.
+    assert g.DEFAULT_THRESHOLD_PCT != g.FROM_15M_THRESHOLD_PCT
+    assert g.DEFAULT_REQUIRE_CLOSE != g.FROM_15M_REQUIRE_CLOSE
+    for tf in ("M1", "M5"):
+        assert mpc_threshold_pct(tf) == g.DEFAULT_THRESHOLD_PCT
+        assert mpc_require_close(tf) is g.DEFAULT_REQUIRE_CLOSE
+    for tf in ("M15", "H1", "D1"):
+        assert mpc_threshold_pct(tf) == g.FROM_15M_THRESHOLD_PCT
+        assert mpc_require_close(tf) is g.FROM_15M_REQUIRE_CLOSE
 
 
-def test_an_unknown_timeframe_takes_the_stricter_floor():
-    """Over-filtering drops a marginal gap; under-filtering INVENTS gaps the indicator never drew.
-    Only one of those two errors puts something on the chart that is not there."""
-    assert mpc_threshold_pct("") == 0.04
-    assert mpc_threshold_pct("W1") == 0.04
+def test_an_unknown_timeframe_takes_the_stricter_row():
+    """Both 15m-and-up settings only ever REMOVE gaps. Over-filtering drops a marginal gap;
+    under-filtering INVENTS gaps the indicator never drew, and only that error puts something on the
+    chart that is not there."""
+    from fair_value_gaps import engine as g
+
+    for tf in ("", "W1"):
+        assert mpc_threshold_pct(tf) == g.FROM_15M_THRESHOLD_PCT
+        assert mpc_require_close(tf) is g.FROM_15M_REQUIRE_CLOSE
+
+
+# A lone bullish void whose MIDDLE bar never closed past it — only the close test can remove it.
+#   bar 2 high 100.5; bar 3 (the middle) closes 100.3, under it; bar 4 low 101.0 → void 100.5…101.0,
+#   ~0.5% of price, so it clears BOTH floors. The flat tail forms nothing and never closes past it.
+_NO_CLEAR = _candles(
+    [
+        (100.0, 100.5, 99.5, 100.0),  # 0
+        (100.0, 100.5, 99.5, 100.0),  # 1
+        (100.0, 100.5, 99.5, 100.0),  # 2
+        (100.0, 103.0, 99.8, 100.3),  # 3  middle bar does NOT clear bar 2's high
+        (100.3, 103.5, 101.0, 103.0),  # 4  → the void
+    ]
+    + [(101.5, 102.0, 101.2, 101.5)] * 10
+)
+
+
+def test_from_15m_a_gap_whose_middle_bar_never_cleared_is_not_drawn():
+    """🔴 This layer drew such gaps on every frame until 2026-09-10, while the indicator has run the
+    close test from 15m up — so on 15m and above the chart showed gaps TradingView does not.
+
+    Mutation: pin the close test off, or give every frame the below-15m row, and the M15 case fails.
+    """
+    assert set(_spans(build_fvg_overlays(_NO_CLEAR, [6 * BAR_MS], "M5"))) == {(101.0, 100.5)}
+    assert build_fvg_overlays(_NO_CLEAR, [6 * BAR_MS], "M15") == []
 
 
 def test_the_floor_actually_reaches_the_engine():
@@ -172,21 +213,26 @@ def test_the_floor_actually_reaches_the_engine():
     assert build_fvg_overlays(_FIXTURE, [7 * BAR_MS], "M5", threshold_pct=0.6) == []
 
 
-def test_defaults_match_the_locked_mpc_constants():
+def test_the_cap_is_read_from_the_engine_at_draw_time(monkeypatch):
+    """Mutation: type a cap back into this layer. With the engine's cap patched to 1, gap A is
+    evicted on the bar B forms, so the cluster bar draws B alone.
+
+    This layer typed its own cap, floor and close test until 2026-09-10 and all three had fallen
+    behind the indicator; the equal-level settings had done the same until 2026-09-09. They are
+    now read from the engine, which engines/tests/ holds to the Pine.
+    """
+    from fair_value_gaps import engine as g
+
+    monkeypatch.setattr(g, "DEFAULT_MAX_COUNT", 1)
+    assert set(_spans(build_fvg_overlays(_FIXTURE, [7 * BAR_MS], "M5", eq_exempt=False))) == {_B}
+
+
+def test_the_exemption_switch_is_the_indicators():
+    """The one setting this layer still types — the engine takes the levels, not a switch."""
+    from pine_constants import pine_value
     from services import fvg_overlays as f
 
-    assert (f.MPC_MAX_COUNT, f.MPC_REQUIRE_CLOSE) == (8, False)
-    assert (f.MPC_THRESH_LTF, f.MPC_THRESH_HTF, f.MPC_TF_SPLIT_SECONDS) == (0.0, 0.04, 900)
-    # 2 / 0.25 / 14 are mpc_jarvis.pine's own eqPivotLen / eqAtrMult / eqMax. They were
-    # 2 / 0.1 / 6 here until 2026-09-09, i.e. this chart drew a different equality band and
-    # a different level cap from the indicator it mirrors. This assert is the pin that keeps
-    # the two together - if it goes red, find out which side moved before editing it.
-    assert (f.MPC_EQ_PIVOT_LEN, f.MPC_EQ_ATR_MULT, f.MPC_EQ_MAX, f.MPC_EQ_EXEMPT) == (
-        2,
-        0.25,
-        14,
-        True,
-    )
+    assert f.MPC_EQ_EXEMPT == pine_value("eqExemptFvg")
 
 
 # ── Pine parity: the boxes ARE the gaps the Pine had open ─────────────────────

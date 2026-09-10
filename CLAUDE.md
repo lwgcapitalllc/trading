@@ -366,8 +366,9 @@ would print identically twelve times, which is how a reader learns to skip the m
 places; an eighth copy turned up a day later.** Now each engine declares its defaults ONCE
 (`DEFAULT_*` in its `engine.py`), every Python consumer imports them — the gates, the lab's
 `backtest/replay/stack.py` — and `engines/tests/test_defaults_mirror_the_indicator.py` READS each
-paired value out of the Pine and goes red when the engine disagrees. 27 pairs across seven engines,
-plus the profile's row count; watched RED from both sides and on the reader's three shapes.
+paired value out of the Pine and goes red when the engine disagrees. 28 pairs across seven engines,
+plus the profile's row count and the gap engine's 15m row — the one the Command Center's gap layer
+draws with; watched RED from both sides and on the reader's three shapes.
 
 ⚠ **The table in that test is the one place the PAIRING is written** — which Python default mirrors
 which Pine name. A default with no Pine counterpart (the trading-day rollover, regime, news) is not in

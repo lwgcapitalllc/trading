@@ -21,6 +21,25 @@ the other one did.
 
 ## Latest
 
+### The gap cap moved to the indicator's 7, and the chart stopped drawing gaps TradingView does not (2026-09-10)
+
+The one real mismatch the defaults inventory found. The gap engine's default cap was 8 while the
+indicator ran 7, and the Command Center's gap layer — which exists to draw what the TradingView
+chart draws — typed its own copy of the indicator's settings: cap 8, a 0.04 floor from 15m up, and
+no middle-bar close test on any frame. The indicator had moved to 7, 0.1 and the close test from
+15m up, so **on every 15m-and-up chart the layer drew gaps the indicator does not.** Nothing
+flagged it: a display consumer that disagrees with the chart it copies looks exactly like one that
+agrees until someone lays the two side by side.
+
+**What moved.** The engine's cap is 7 and it now carries the indicator's 15m row as well, which it
+never reads; the layer reads both rows from it at draw time, by frame, and the link test holds all
+of it to the Pine. The lab's regime window and the chart's structure layer read their numbers from
+the engines too. **No trade moved**: every bot that reads gaps pins its own cap from its own Pine,
+and the extreme leg runs no gap engine. Its overlap entry was re-measured anyway, because the
+settings check records the engine config — and every figure reproduced to the digit (244 and 113
+trades, +248.59R and +58.53R, 1,049 shared bars, none same-side, correlation −0.038), with the
+recorded cap the only line that moved.
+
 ### Every engine default got one home, and a test that reads the Pine (2026-09-10)
 
 The 2026-09-09 equal-level move (0.1 / 6 → 0.25 / 14) had to land in seven Python places and an

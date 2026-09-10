@@ -101,7 +101,7 @@ Two things end a gap:
   was consumed. Emitted as `mitigated`. **Skipped on the gap's own creation bar** (`bar_index >
   born`), so a fresh gap can't self-mitigate. (Pine also gates this on `barstate.isconfirmed`; the
   engine only ever sees closed bars, so that is always true here.)
-- **Eviction** — the total list already holds `max_count` (default 8) gaps, so the OLDEST **not
+- **Eviction** — the total list already holds `max_count` (default 7, the indicator's; 8 until 2026-09-10) gaps, so the OLDEST **not
   exempt by the EQ coupling** is dropped when a newer one forms (Pine scans for the oldest non-EQ gap).
   With no `eq_levels` passed the first gap is never exempt → a plain drop-oldest, unchanged. **Not** a
   trading signal — emitted separately as `evicted`. An FVG behind an active EQH/EQL (`eqExemptFvg`,
@@ -241,9 +241,9 @@ check must exit 0 on a fresh export before the engine is committed as validated.
     as confluence, via `backtest/replay/stack.py`. Pins `max_count=7`, `require_close=True`,
     `threshold_pct=0.1` to match `sos_fade_strategy.pine`.
   - `command-center/backend/services/fvg_overlays.py` — draws the gaps that were live at each trade /
-    blocked / missed setup on the lab's price chart. Uses `mpc_jarvis.pine`'s settings (cap 8,
-    `require_close=False`, the 0.0/0.04 timeframe split, EQ-exempt cap) because it mirrors the
-    INDICATOR. See `command-center/backend/CLAUDE.md` → *Fair value gaps*.
+    blocked / missed setup on the lab's price chart. Uses `mpc_jarvis.pine`'s settings, READ from
+    this engine at draw time (both timeframe rows, the cap and the EQ-exempt cap) because it mirrors
+    the INDICATOR. See `command-center/backend/CLAUDE.md` → *Fair value gaps*.
 - Sibling in shape (also events-not-visuals off the same indicator): `engines/order_blocks/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.
 
@@ -438,4 +438,4 @@ brokers disagree on the bar count for the same window while both look perfectly 
 
 Each default is declared ONCE in `engine.py` (the `DEFAULT_*` constants) and every Python consumer that means *the engine's default* — this engine's gate, the lab's `backtest/replay/stack.py` — imports it rather than retyping it. **`engines/tests/test_defaults_mirror_the_indicator.py` reads the value out of the Pine and goes red when the two differ**, so the next number the indicator moves turns a test red instead of leaving the chart and the engine quietly disagreeing (the 2026-09-09 equal-level move had to land in seven places, and an eighth copy turned up a day later). Watched RED by mutation from both sides — the engine's number and the Pine's. ⚠ A strategy's OWN pin is deliberately NOT routed through these: it mirrors its own Pine file, not the indicator.
 
-🔴 **The cap is the one default not yet synced: 8 here, 7 in the indicator** — moved in the next commit, which also moves the Command Center's gap layer. The two timeframe-split settings (the size floor and the middle-bar close test) are held to the BELOW-15m branch, because the engine takes one value per run. ✅ **The gate now REFUSES an export that turns the equal-level exemption on without recording its settings**, where it used to fall back to 2 / 0.1 / 6 — the pre-2026-09-09 numbers, an eighth copy nobody had moved. No harness here ever wrote that shape, so the fallback could only run on a file it would guess wrong about. `tests/test_compare_fvg.py`, 5 cases on the golden export with columns removed, watched RED.
+✅ **The cap moved 8 → 7 to match the indicator (2026-09-10).** Nothing that trades took the default — SOS Fade and B-LEG pin 7, BOS pins its own Pine's 8, the extreme leg runs no gap engine — so it moved only the Command Center's gap layer. The two timeframe-split settings (the size floor and the middle-bar close test) are held to the BELOW-15m branch, because the engine takes one value per run. ⚠ **The indicator's 15m-and-up row lives here too** (`FROM_15M_THRESHOLD_PCT`, `FROM_15M_REQUIRE_CLOSE`, `SPLIT_SECONDS`): the engine never reads it, the gap layer does, and the same test holds it to the Pine. ✅ **The gate now REFUSES an export that turns the equal-level exemption on without recording its settings**, where it used to fall back to 2 / 0.1 / 6 — the pre-2026-09-09 numbers, an eighth copy nobody had moved. No harness here ever wrote that shape, so the fallback could only run on a file it would guess wrong about. `tests/test_compare_fvg.py`, 5 cases on the golden export with columns removed, watched RED.

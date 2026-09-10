@@ -125,3 +125,34 @@ def test_the_unit_is_stated_not_assumed(monkeypatch, unit):
     monkeypatch.setattr(chart_spec.ohlc_fetcher, "get_ohlc", lambda *a, **k: df)
     rows = chart_spec._build_candles("XAUUSD", "2026-08-05", "2026-08-05", "M5", "python")
     assert [r["time"] for r in rows] == [1785888000000, 1785888900000]
+
+
+def test_the_structure_layer_runs_the_engines_own_swing_length(monkeypatch):
+    """Mutation: type 15 back into the layer's signature. It did until 2026-09-10 — one more copy of
+    the indicator's swing length to move by hand. The engine's default is patched to 11 so a typed
+    15 and a read value cannot agree by coincidence."""
+    import market_structure
+    from market_structure import engine as ms
+    from services.structure_overlays import build_market_structure_overlays
+
+    seen = []
+
+    class Spy(market_structure.StructureEngine):
+        def __init__(self, major_length):
+            seen.append(major_length)
+            super().__init__(major_length)
+
+    monkeypatch.setattr(market_structure, "StructureEngine", Spy)
+    monkeypatch.setattr(ms, "DEFAULT_MAJOR_LENGTH", 11)
+    candles = [
+        {
+            "time": i * 900_000,
+            "open": 100.0 + i % 7,
+            "high": 101.0 + i % 7,
+            "low": 99.0 + i % 7,
+            "close": 100.5 + i % 7,
+        }
+        for i in range(60)
+    ]
+    build_market_structure_overlays(candles)
+    assert seen == [11]

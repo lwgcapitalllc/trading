@@ -48,10 +48,17 @@ from .types import FairValueGap, FvgEvents
 # retyping them, and engines/tests/test_defaults_mirror_the_indicator.py holds them to the Pine.
 # ⚠ The Pine splits two of them by timeframe (a 0.1% floor and the middle-bar close test from 15m
 # up). The engine takes ONE value per run, so its default is the sub-15m row; a 15m consumer pins
-# the other row itself, as sos_fade does.
-DEFAULT_MAX_COUNT = 8  # ⚠ Pine fvgMaxCount is 7 — the one default not yet synced (next commit)
+# the other row itself — a strategy from its own Pine, as sos_fade does.
+DEFAULT_MAX_COUNT = 7  # Pine fvgMaxCount (8 here until 2026-09-10, 6 before that)
 DEFAULT_THRESHOLD_PCT = 0.0  # Pine fvgThreshLTF
 DEFAULT_REQUIRE_CLOSE = False  # Pine fvgRequireClose below 15m
+
+# ── ...and the indicator's 15m-and-up row. The engine never reads these; they are here so a consumer
+#    that must draw what the CHART draws (the Command Center's gap layer) picks the row by timeframe
+#    rather than typing its own copy. Held to the Pine by the same test. ──
+SPLIT_SECONDS = 900  # Pine fvgIsLTF = timeframe.in_seconds() < 900
+FROM_15M_THRESHOLD_PCT = 0.1  # Pine fvgThreshHTF
+FROM_15M_REQUIRE_CLOSE = True  # Pine fvgRequireClose from 15m
 
 
 class FairValueGapEngine:

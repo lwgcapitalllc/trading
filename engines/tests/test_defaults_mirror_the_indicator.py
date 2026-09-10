@@ -7,17 +7,19 @@ Python consumer imports them. This file is the other half: it holds each engine 
 it claims to mirror, so the next number the indicator moves turns THIS red, instead of the chart and
 the engine quietly disagreeing.
 
-⚠ The table is the one place the PAIRING is written down — which Python default mirrors which Pine
-name. A default with no Pine counterpart (regime, news, the trading-day rollover) is not listed.
+⚠ The two tables are the one place the PAIRING is written down — which Python value mirrors which
+Pine name. A default with no Pine counterpart (regime, news, the trading-day rollover) is not listed.
 ⚠ A Pine value split by timeframe is read one branch at a time: an engine takes one value per run,
-so its default is the sub-15m row and a 15m consumer pins the other row itself.
-⚠ It reads the engine's SIGNATURE default, never a constant by name — so it checks the value the
-engine actually uses, whether or not somebody routes it through a constant.
+so its default is the sub-15m row. The gap engine also carries the indicator's 15m row as module
+constants, for the one consumer that draws what the chart draws; those are in the second table.
+⚠ For a parameter it reads the engine's SIGNATURE default, never a constant by name — so it checks
+the value the engine actually uses, whether or not somebody routes it through a constant.
 """
 
 from __future__ import annotations
 
 import inspect
+import re
 import sys
 from pathlib import Path
 
@@ -30,21 +32,25 @@ if str(_ENGINES) not in sys.path:
 from candlesticks.engine import CandlestickEngine  # noqa: E402
 from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
 from fair_value_gaps import FairValueGapEngine  # noqa: E402
+from fair_value_gaps import engine as fvg_module  # noqa: E402
 from market_structure import StructureEngine  # noqa: E402
 from order_blocks import OrderBlockEngine  # noqa: E402
 from pine_constants import MPC, REPO, pine_value  # noqa: E402
 from rsi_divergence import RsiDivergenceEngine  # noqa: E402
+from session_volume_profile import engine as svp_module  # noqa: E402
 from session_volume_profile.engine import SvpEngine  # noqa: E402
 
 RSI_EXPORT = REPO / "indicators" / "engines" / "rsi_div_export.pine"
 CANDLES = REPO / "indicators" / "engines" / "candle_sticks.pine"
 BELOW_15M = 0  # the first branch of a `timeframe < 15m ? a : b` split
+FROM_15M = 1  # the second
 
 # (engine, parameter, Pine name, Pine file, branch of a split or None)
 PAIRS = [
     (EqualHighsLowsEngine, "pivot_len", "eqPivotLen", MPC, None),
     (EqualHighsLowsEngine, "atr_mult", "eqAtrMult", MPC, None),
     (EqualHighsLowsEngine, "max_levels", "eqMax", MPC, None),
+    (FairValueGapEngine, "max_count", "fvgMaxCount", MPC, None),
     (FairValueGapEngine, "threshold_pct", "fvgThreshLTF", MPC, None),
     (FairValueGapEngine, "require_close", "fvgRequireClose", MPC, BELOW_15M),
     (RsiDivergenceEngine, "rsi_len", "divRsiLen", MPC, None),
@@ -71,6 +77,24 @@ PAIRS = [
     (CandlestickEngine, "doji_size", "dojiSize", CANDLES, None),
 ]
 
+# Module constants rather than parameters: the profile takes no row count, and the gap engine never
+# reads its 15m row — the Command Center's gap layer does, to draw what the chart draws.
+# (module, constant, Pine name, Pine file, branch of a split or None)
+MODULE_PAIRS = [
+    (svp_module, "_SVP_ROWS", "svpRows", MPC, None),
+    (fvg_module, "FROM_15M_THRESHOLD_PCT", "fvgThreshHTF", MPC, None),
+    (fvg_module, "FROM_15M_REQUIRE_CLOSE", "fvgRequireClose", MPC, FROM_15M),
+]
+
+
+def _want(pine_name, source, branch):
+    want = pine_value(pine_name, source)
+    if branch is None:
+        assert not isinstance(want, tuple), f"{pine_name} became a timeframe split - pick a branch"
+        return want
+    assert isinstance(want, tuple), f"{pine_name} is no longer split - re-read this pair"
+    return want[branch]
+
 
 def _default(cls, param):
     p = inspect.signature(cls.__init__).parameters[param]
@@ -85,23 +109,41 @@ def _default(cls, param):
 )
 def test_the_engine_default_equals_the_pine_value_it_mirrors(cls, param, pine_name, source, branch):
     """Watched RED by moving one engine default, and by moving the Pine value it mirrors."""
-    want = pine_value(pine_name, source)
-    if branch is None:
-        assert not isinstance(want, tuple), f"{pine_name} became a timeframe split - pick a branch"
-    else:
-        assert isinstance(want, tuple), f"{pine_name} is no longer split - re-read this pair"
-        want = want[branch]
+    want = _want(pine_name, source, branch)
     got = _default(cls, param)
     assert got == want, (
         f"{cls.__name__}({param}={got!r}) but {source.name} says {pine_name} = {want!r}"
     )
 
 
-def test_the_profile_row_count_equals_the_pine():
-    """A module constant rather than a parameter — the engine takes no row count."""
-    from session_volume_profile import engine as svp
+@pytest.mark.parametrize(
+    "module,name,pine_name,source,branch",
+    MODULE_PAIRS,
+    ids=[f"{m.__name__}.{n}~{p}" for m, n, p, _s, _b in MODULE_PAIRS],
+)
+def test_the_engine_constant_equals_the_pine_value_it_mirrors(
+    module, name, pine_name, source, branch
+):
+    """Watched RED by moving the constant, and by moving the Pine value it mirrors."""
+    want = _want(pine_name, source, branch)
+    got = getattr(module, name)
+    assert got == want, (
+        f"{module.__name__}.{name} = {got!r} but {source.name} says {pine_name} = {want!r}"
+    )
 
-    assert svp._SVP_ROWS == pine_value("svpRows")
+
+def test_the_gap_timeframe_split_is_the_pines():
+    """The one value no reader shape covers — a comparison, not a declaration.
+
+    Watched RED by moving the split to 1800 on either side.
+    """
+    m = re.search(
+        r"^\s*bool\s+fvgIsLTF\s*=\s*timeframe\.in_seconds\(\)\s*<\s*(\d+)\s*$",
+        MPC.read_text(encoding="utf-8"),
+        re.M,
+    )
+    assert m, "fvgIsLTF is no longer a timeframe.in_seconds() comparison - re-read this pair"
+    assert fvg_module.SPLIT_SECONDS == int(m.group(1))
 
 
 def test_the_reader_refuses_a_name_it_cannot_find_exactly_once(tmp_path):

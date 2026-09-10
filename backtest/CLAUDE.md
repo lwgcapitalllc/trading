@@ -70,7 +70,10 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `engines/tests/test_defaults_mirror_the_indicator.py` holds those to the Pine. So the dataclass can
   no longer disagree with the engine, and the engine cannot disagree with the indicator without a red.
   ⚠ It changes nothing a strategy pins: a bot replaying its own Pine still overrides these.
-  ⚠ **The gap cap is the exception until the next commit: the engine carries 8, the indicator 7.**
+  ⚠ **The gap cap moved 8 → 7 with the engine the same day** and reached no trade: every bot that
+  reads gaps pins its own cap, and the extreme leg runs no gap engine. Its overlap entry was
+  re-measured anyway, because step 17 records the engine config and a moved default is a moved
+  setting whether or not anything reads it.
   **`fvg_exempt_zone` (2026-09-10, default OFF, OFF in every strategy)** is mpc's fib ENTRY-BAND
   exemption on the gap cap. It exists in `mpc_jarvis.pine` and in no strategy Pine, so it is a
   MEASUREMENT switch for a proposed change, not a mirror of one. 🔴 **The stack builds a one-bar LAG

@@ -3411,3 +3411,11 @@ a replay that CANNOT move, reported as a measured shift — which reads as *inse
 setting* rather than *never consulted*. The parity gate reads both from an export's settings
 columns and still cannot catch it at 14 / 5. The fix is to map them in `engine_config()`'s caller —
 value-neutral at the defaults.
+
+## Its gap pins follow ITS Pine, and the engine default now happens to agree (2026-09-10)
+
+The gap engine's default cap moved 8 → 7 to match the indicator, so this bot's pin of 7 now equals
+the default — and the indicator's own 15m floor and close test now equal this bot's pins too. **The
+pins stay.** They mirror `sos_fade_strategy.pine`, and two Pines agreeing today is a coincidence
+the next indicator edit can undo in silence. `engine_config()`'s docstring said the engine default
+was 6 and the indicator's 15m floor 0.04; both corrected. Comment-only; no value moved here.

@@ -95,15 +95,15 @@ backend/
 │   │                      for mpc's eqExemptFvg cap coupling) over a run's candles → the "Fair Value Gaps"
 │   │                      overlay group. Emits a box ONLY for a gap that was LIVE on a trade-entry / blocked /
 │   │                      missed bar (all of them when several overlap); everything else is dropped. Settings
-│   │                      are mpc_jarvis.pine's LOCKED constants incl. the timeframe-SPLIT gap floor —
-│   │                      NOT the strategy's, which differ. See "Fair value gaps" below
+│   │                      are mpc_jarvis.pine's, READ from the engine by timeframe row (the floor and the
+│   │                      close test split at 15m) — NOT a strategy's. See "Fair value gaps" below
 │   ├── ob_overlays.py     the same shape for ORDER BLOCKS — replay the CANONICAL engines/order_blocks/
 │   │                      engine over a run's candles → the "Order Blocks" overlay group, one box per
 │   │                      block that was LIVE at a trade-entry / blocked / missed bar. Read
 │   │                      fvg_overlays.py first; the differences are the BOX GEOMETRY (a fixed 30-bar
 │   │                      stub from the anchor candle, not a box tracking the live bar) and that here
 │   │                      there is NO settings fork to warn about. See "Order blocks" below
-│   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
+│   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF, at the engine's own swing length (read from it, not typed — since 2026-09-10). Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
 │   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
 │   │                      (declares NO dates itself). `limits_for()` → the MEASURED earliest backtestable
@@ -2540,7 +2540,7 @@ if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 from regime import classify_regime  # returns one of 5 labels + UNKNOWN
 ```
-Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long` (`classify_regime(df_daily, df_daily)`). Warmup: fetch 50 extra days before `start_date` so day 1 gets a real label. Window: 34 bars. The OHLC cache is in `instrument_daily_ohlc` — use `services/ohlc_fetcher.get_ohlc()`, never fetch directly in service code.
+Lab uses daily OHLC, so pass the same DataFrame for both `df_short` and `df_long` (`classify_regime(df_daily, df_daily)`). Warmup: fetch 50 extra days before `start_date` so day 1 gets a real label. Window: the classifier's own row minimum, read from `engines/regime/` (34 today — typed until 2026-09-10; a window short of a raised minimum would tag every trade UNKNOWN with nothing failing). The OHLC cache is in `instrument_daily_ohlc` — use `services/ohlc_fetcher.get_ohlc()`, never fetch directly in service code.
 
 **Regime filter in optimizer (M4):** When `regime_filter` is set on an optimization, `_pick_best_run` builds a `date → regime` map once from OHLC, then scores each child run using only trades from matching-regime days. NT8 still runs the full backtest period — filtering happens at scoring time only. All three scoring paths (initial run, retry-one, retry-all) go through `_pick_best_run`.
 
@@ -3631,20 +3631,22 @@ The anchors arrive as bare timestamps (`trades[].entryTime` + `blocks[].time` + 
 the module knows nothing about what a trade or a block IS; hand it different anchors and it draws
 gaps at those. No anchors ⇒ `[]` ⇒ the toggle never appears, which is the honest answer for NT8/MT5.
 
-**⚠ These are `mpc_jarvis.pine`'s gaps, and that is NOT the set the bot traded on.** The indicator
-runs `fvgMaxCount 8`, `fvgRequireClose false`, and the timeframe-**split** floor
-(`timeframe.in_seconds() < 900 ? 0.0 : 0.04`), with `eqExemptFvg` on — all locked constants, mirrored
-here as named `MPC_*` values. `strategies/python/sos_fade` pins `fvg_max_count=7`,
-`fvg_require_close=True`, `fvg_threshold_pct=0.1`, because `sos_fade_strategy.pine` hardcodes the
-middle-bar close check and carries its own count. So the bot's entry rule counted strictly FEWER gaps
-than this layer draws (`require_close` only ever removes gaps, and its floor is higher). The chart was
-asked to match what TradingView draws, so it does — do not resolve the fork by repointing the emitter
-at the strategy's config, and do not read a drawn gap as one a "no FVG" block ignored. Background:
-`engines/fair_value_gaps/CLAUDE.md` → the `require_close` callout.
+**⚠ These are `mpc_jarvis.pine`'s gaps, and that is not always the set a bot traded on.** The
+indicator runs a cap of 7, `eqExemptFvg` on, and two settings SPLIT by timeframe — below 15m a 0.0
+floor and no middle-bar close test, from 15m up a 0.1% floor and the close test.
+🔴 **They are READ from `engines/fair_value_gaps/` at draw time since 2026-09-10**, which carries both
+rows once and is held to the Pine by `engines/tests/test_defaults_mirror_the_indicator.py`. This layer
+typed its own `MPC_*` copy until then — cap 8, a 0.04 floor from 15m up, no close test on any frame —
+which the indicator had left behind, **so on 15m and above it drew gaps TradingView does not.** A
+display consumer, so nothing traded differently. ⚠ On 15m this is now the SOS Fade bot's own gap set
+too (it pins 7 / 0.1 / close test / exemption on) — two Pines agreeing today, not a design. A
+strategy's Pine can still differ (`bos` keeps a cap of 8 and the 0.04 floor), so do not resolve that
+fork by repointing the emitter at a strategy's config, and do not read a drawn gap as one a "no FVG"
+block ignored. Background: `engines/fair_value_gaps/CLAUDE.md`.
 
 **Two details that would silently draw the wrong thing if they broke**, both pinned by tests:
-- **The floor is timeframe-split**, so the same run charted at M5 and M15 legitimately has different
-  gaps. An unrecognised timeframe takes the STRICTER (15m+) branch on purpose: over-filtering drops a
+- **The floor and the close test are timeframe-split**, so the same run charted at M5 and M15
+  legitimately has different gaps. An unrecognised timeframe takes the STRICTER (15m+) row on purpose: over-filtering drops a
   marginal gap, under-filtering invents one the indicator never drew, and only the second puts
   something on the chart that is not there.
 - **Box span mirrors the Pine box.** Pine creates it at `bar_index - 1`, pushes `box.set_right` every
@@ -3656,8 +3658,9 @@ is anchored to the BASE leg's trades, so on a merged chart it would draw gaps at
 entries and nothing at the others' — which reads as "these setups had gaps and those didn't". A leg's
 own page still carries it. Existing runs need **Reload charts** (`chart_spec.json` is cached).
 
-**Tested two ways** (`tests/test_fvg_overlays.py`, 16 tests). Hand-built candles pin the layer's own
-rules (which gaps, the cluster case, the box span, the timeframe split, the mpc constants). Then a
+**Tested two ways** (`tests/test_fvg_overlays.py`, 18 tests). Hand-built candles pin the layer's own
+rules (which gaps, the cluster case, the box span, which timeframe row each frame gets, that a 15m gap
+whose middle bar never cleared is NOT drawn, that the cap is read from the engine at draw time). Then a
 real TradingView export is replayed and every box is diffed against **the Pine's own live gap arrays**
 (`px_fvg_top_k` / `px_fvg_bot_k` / `px_fvg_count`): on each sampled anchor bar the boxes covering it
 must be exactly the gaps mpc had open, price for price. The unit tests could all pass on an emitter

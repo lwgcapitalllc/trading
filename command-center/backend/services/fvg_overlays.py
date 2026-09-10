@@ -24,22 +24,22 @@ gaps at those instead.
 
 THE GAPS ARE mpc_jarvis.pine's, NOT THE STRATEGY'S
 ----------------------------------------------------
-The settings below mirror `indicators/engines/mpc_jarvis.pine` — the indicator the charts are read
-against — locked constants, not panel inputs (`mpc_jarvis.pine:407-414`, `:420-423`):
+The settings are those of `indicators/engines/mpc_jarvis.pine` — the indicator the charts are read
+against — and two of them are SPLIT BY TIMEFRAME there: below 15m the gap floor is 0.0 and the
+middle-bar close test is off; from 15m up the floor is 0.1% and the close test is on. The cap and
+the equal-level settings do not split.
 
-    fvgMaxCount      = 8
-    fvgRequireClose  = false
-    fvgThreshPct     = timeframe.in_seconds() < 900 ? 0.0 : 0.04     ← timeframe-SPLIT
-    eqExemptFvg      = true   (eqPivotLen 2, eqAtrMult 0.1, eqMax 6)
+🔴 **They are READ from the engine, never typed here (2026-09-10).** `engines/fair_value_gaps/`
+carries both rows once and `engines/tests/test_defaults_mirror_the_indicator.py` holds them to the
+Pine. This module used to keep its own copy — cap 8, a 0.04 floor from 15m up, no close test on any
+frame — which the indicator had left behind, so on 15m and above it drew gaps the chart does not.
+They are read lazily, like the engine itself, so a failed engine import still leaves the rest of
+the chart standing.
 
-⚠ **`sos_fade_strategy.pine` — and therefore the Python bots — run a DIFFERENT set.**
-`strategies/python/sos_fade/strategy.py` pins `fvg_max_count=7, fvg_require_close=True,
-fvg_threshold_pct=0.1`, because the strategy file hardcodes the middle-bar close check and carries
-its own count. So a gap drawn here is a gap **the indicator shows**, which is not always a gap the
-bot's entry rule counted (the bot sees strictly fewer: `require_close` only ever removes gaps, and
-its floor is higher). That fork is real and predates this layer — see
-`engines/fair_value_gaps/CLAUDE.md` → the `require_close` callout. Do not "fix" it by pointing this
-module at the strategy's config: the request was to match what the chart in TradingView draws.
+⚠ **A strategy's Pine can run a DIFFERENT set** — `bos` keeps a cap of 8 and the 0.04 floor, for
+one — so a gap drawn here is a gap **the indicator shows**, which is not always a gap a bot's entry
+rule counted. Do not "fix" that by pointing this module at a strategy's config: the request was to
+match what the chart in TradingView draws.
 
 BOX GEOMETRY MIRRORS THE PINE BOX
 ---------------------------------
@@ -68,16 +68,9 @@ if str(_ENGINES) not in sys.path:
 # toggle into the Analysis dropdown and defaults it OFF).
 GROUP_FVG = "Fair Value Gaps"
 
-# ── mpc_jarvis.pine's locked FVG + EQ constants (mpc_jarvis.pine:407-414, :420-423) ──
-MPC_MAX_COUNT = 8  # fvgMaxCount
-MPC_REQUIRE_CLOSE = False  # fvgRequireClose
-MPC_THRESH_LTF = 0.0  # fvgThreshLTF — below 15m
-MPC_THRESH_HTF = 0.04  # fvgThreshHTF — 15m and above
-MPC_TF_SPLIT_SECONDS = 900  # timeframe.in_seconds() < 900
-MPC_EQ_PIVOT_LEN = 2  # eqPivotLen
-MPC_EQ_ATR_MULT = 0.25  # eqAtrMult
-MPC_EQ_MAX = 14  # eqMax
-MPC_EQ_EXEMPT = True  # eqExemptFvg — a gap behind an EQH/EQL survives the FIFO cap
+# mpc's eqExemptFvg — a gap behind an EQH/EQL survives the FIFO cap. The one setting with no engine
+# default to read (the engine takes the levels, not a switch); the test holds it to the Pine.
+MPC_EQ_EXEMPT = True
 
 # Colours. mpc paints BOTH directions the SAME grey (`color.new(color.gray, 80)`) and explicitly no
 # border (`border_color = color(na)`), so that is what is emitted: one flat tint, `lineWidth: 0` (the
@@ -98,19 +91,34 @@ _MAX_BOXES = 20_000
 _TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
 
 
-def mpc_threshold_pct(timeframe: str) -> float:
-    """The minimum-gap floor mpc_jarvis would run on this timeframe.
+def _below_split(timeframe: str) -> bool:
+    """Does mpc run its below-15m gap row on this timeframe (`fvgIsLTF`)?
 
-    `fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF` — 0.0 below 15m,
-    0.04 at 15m and above. An unrecognised timeframe falls to the HTF branch: over-filtering drops a
-    marginal gap, under-filtering INVENTS gaps the indicator never drew, and only one of those two
-    errors puts something on the chart that isn't there.
+    An unrecognised timeframe takes the 15m-and-up row: both of its settings only ever REMOVE gaps,
+    so the error is a marginal gap not drawn rather than a gap INVENTED that the indicator never
+    drew — and only the second puts something on the chart that isn't there.
     """
+    from fair_value_gaps import engine as g
+
     minutes = _TF_MINUTES.get((timeframe or "").upper())
     if minutes is None:
-        log.warning("fvg overlays: unknown timeframe %r — using the 15m+ gap floor", timeframe)
-        return MPC_THRESH_HTF
-    return MPC_THRESH_LTF if minutes * 60 < MPC_TF_SPLIT_SECONDS else MPC_THRESH_HTF
+        log.warning("fvg overlays: unknown timeframe %r — using the 15m+ gap row", timeframe)
+        return False
+    return minutes * 60 < g.SPLIT_SECONDS
+
+
+def mpc_threshold_pct(timeframe: str) -> float:
+    """The minimum-gap floor mpc_jarvis runs on this timeframe (`fvgThreshPct`)."""
+    from fair_value_gaps import engine as g
+
+    return g.DEFAULT_THRESHOLD_PCT if _below_split(timeframe) else g.FROM_15M_THRESHOLD_PCT
+
+
+def mpc_require_close(timeframe: str) -> bool:
+    """Whether mpc_jarvis runs the middle-bar close test on this timeframe (`fvgRequireClose`)."""
+    from fair_value_gaps import engine as g
+
+    return g.DEFAULT_REQUIRE_CLOSE if _below_split(timeframe) else g.FROM_15M_REQUIRE_CLOSE
 
 
 def _anchor_bars(times: list[int], anchors_ms: Iterable[int]) -> set[int]:
@@ -137,19 +145,20 @@ def build_fvg_overlays(
     anchors_ms: Iterable[int],
     timeframe: str,
     *,
-    max_count: int = MPC_MAX_COUNT,
+    max_count: Optional[int] = None,
     threshold_pct: Optional[float] = None,
-    require_close: bool = MPC_REQUIRE_CLOSE,
+    require_close: Optional[bool] = None,
     eq_exempt: bool = MPC_EQ_EXEMPT,
 ) -> list[dict]:
     """Replay `candles` through the canonical FVG engine and emit a box per gap that was LIVE at one
     of the `anchors_ms` bars.
 
     `candles` are the spec's candles (time/open/high/low/close, sorted by time). `anchors_ms` are the
-    trade-entry / blocked / missed timestamps. `timeframe` picks mpc's timeframe-split gap floor.
+    trade-entry / blocked / missed timestamps. `timeframe` picks mpc's timeframe-split gap row.
 
     The keyword arguments exist so a parity test can replay an export whose Pine build ran different
-    settings; production callers pass none of them and get mpc_jarvis's. Returns a list of
+    settings; production callers pass none of them and get mpc_jarvis's, read from the engine. A
+    None is "the indicator's for this timeframe". Returns a list of
     ChartOverlay `box` dicts, all in one group. Best-effort: any failure returns [] so the rest of
     the chart still renders.
     """
@@ -161,21 +170,22 @@ def build_fvg_overlays(
 
     try:
         from fair_value_gaps import FairValueGapEngine
+        from fair_value_gaps import engine as g
 
         eq_engine = None
         if eq_exempt:
             from equal_highs_lows import EqualHighsLowsEngine
 
-            eq_engine = EqualHighsLowsEngine(
-                pivot_len=MPC_EQ_PIVOT_LEN,
-                atr_mult=MPC_EQ_ATR_MULT,
-                max_levels=MPC_EQ_MAX,
-            )
+            # The engine's defaults ARE mpc's eqPivotLen / eqAtrMult / eqMax.
+            eq_engine = EqualHighsLowsEngine()
+
+        cap = g.DEFAULT_MAX_COUNT if max_count is None else max_count
+        thresh = mpc_threshold_pct(timeframe) if threshold_pct is None else threshold_pct
+        close_test = mpc_require_close(timeframe) if require_close is None else require_close
     except Exception as exc:  # noqa: BLE001 — engine import is best-effort
         log.warning("fvg overlays: engine import failed: %s", exc)
         return []
 
-    thresh = mpc_threshold_pct(timeframe) if threshold_pct is None else threshold_pct
     times = [c["time"] for c in candles]
     n = len(candles)
 
@@ -184,9 +194,7 @@ def build_fvg_overlays(
     lives: dict[int, dict] = {}
 
     try:
-        fvg = FairValueGapEngine(
-            max_count=max_count, threshold_pct=thresh, require_close=require_close
-        )
+        fvg = FairValueGapEngine(max_count=cap, threshold_pct=thresh, require_close=close_test)
         for i, c in enumerate(candles):
             o, h, l, cl = c["open"], c["high"], c["low"], c["close"]
             # EQ runs BEFORE FVG (the mpc order) and its levels feed the cap: a gap behind an

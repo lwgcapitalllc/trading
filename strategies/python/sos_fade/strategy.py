@@ -119,25 +119,28 @@ class SosFadeStrategy:
         """The engine-construction params `sos_fade_strategy.pine` runs its engines with.
         These are NOT exported in the decision stream, so the bot must pin them to the
         strategy's own input defaults — not the shared engine defaults. Two differ:
-        `fvgMaxCount` — sos_fade_strategy.pine sets it to 7 (the FVG engine's own default is 6),
-        and a smaller cap evicts the oldest gap one bar sooner, dropping an entry edge Pine
-        still holds. `show_internal` — the Pine strategy's "Show Internal Structure" input
-        defaults OFF, and Pine gates the whole internal block behind it (`internalActive =
-        showInternal`), so `i_confirmed_*` is never set and the Structure fib never adopts a
+        `fvgMaxCount` — sos_fade_strategy.pine sets it to 7. The FVG engine's default is also 7
+        since 2026-09-10 (it follows the indicator, and was 6 and then 8), but this pin follows
+        THIS Pine, so it stays: a smaller cap evicts the oldest gap one bar sooner, dropping an
+        entry edge Pine still holds.
+        `show_internal` — the Pine strategy's "Show Internal Structure" input defaults OFF, and
+        Pine gates the whole internal block behind it (`internalActive = showInternal`), so
+        `i_confirmed_*` is never set and the Structure fib never adopts a
         more-extreme internal swing as its anchor. The market_structure engine always
         computes internal structure, so we must switch that adoption off to match the Pine.
         `fvgRequireClose` — `sos_fade_strategy.pine` HARDCODES the middle-bar close-cleared check
         (`close[1] > high[2]` / `close[1] < low[2]`, lines 1686/1688), i.e. it is permanently ON
-        there, while the FVG engine defaults it OFF (mirroring `mpc_jarvis.pine`, which
-        exposes it as an input defaulting off). Left unpinned, the engine creates gaps the Pine
-        never did — caught 2026-07-26 as the single parity mismatch on a fresh export: a
-        weekend-gap bar whose middle candle never closed past the void produced a Python-only
-        entry edge. Do not "simplify" this back to the engine default.
+        there, while the FVG engine defaults it OFF (the indicator's below-15m row; the indicator
+        itself runs it ON from 15m up since it split the setting). Left unpinned, the engine
+        creates gaps the Pine never did — caught 2026-07-26 as the single parity mismatch on a
+        fresh export: a weekend-gap bar whose middle candle never closed past the void produced a
+        Python-only entry edge. Do not "simplify" this back to the engine default.
         `fvgThreshPct` — the minimum-gap floor. `sos_fade_strategy.pine` splits it by timeframe
         (`fvgThreshLTF` 0.0 below 15m / `fvgThreshHTF` **0.1** at 15m and above, lines 116-118)
-        and this bot trades 15m, so 0.1 is the value that must reach the engine. Note the
-        indicator uses **0.04** at 15m and the engine default mirrors the indicator, so the two
-        Pines genuinely disagree here and neither default can be right for both.
+        and this bot trades 15m, so 0.1 is the value that must reach the engine. The engine
+        default is the indicator's BELOW-15m floor (0.0), so it can never be right for a 15m bot.
+        The indicator's own 15m floor was 0.04 when this was written and is 0.1 now — the two
+        Pines agree today, which is a coincidence the pin must not rely on.
         **This pin was MISSING until 2026-07-31** — the bot happened to work only because
         `EngineConfig` carried 0.1 as its own default, which was never a decision. Proven
         load-bearing by removing it: `compare_strategy.py` failed on the first compared bar

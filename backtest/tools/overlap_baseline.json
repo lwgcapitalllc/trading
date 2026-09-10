@@ -402,7 +402,7 @@
           "engine.fib": false,
           "engine.fvg": false,
           "engine.fvg_exempt_zone": false,
-          "engine.fvg_max_count": 8,
+          "engine.fvg_max_count": 7,
           "engine.fvg_require_close": false,
           "engine.fvg_threshold_pct": 0.0,
           "engine.htf_rollover_hours": 18,
