@@ -182,6 +182,24 @@ pins it, so both inherit the stack default of off — checked, not assumed.
 
 ---
 
+## The golden export (2026-09-09) — this engine's gate runs on every machine
+
+`exports/golden/VANTAGE_XAUUSD_M15_20148bars.csv` is COMMITTED, and `scripts/check_engine_gates.py`
+(step 15 of `scripts/run_all_tests.sh`) runs `compare_eq.py` against it on every clone. It is taken
+at the shipped defaults, so the gate runs with NO flags.
+
+🔴 **This engine is the FIRST of eleven to have one, and the other ten are still un-regressed.**
+Before it, whether any gate could run depended on which scratch CSVs sat on one laptop — nine of
+fourteen could not answer at all on the day this was written, which made rule 22 a blocker rather
+than a gate.
+
+⚠ **Golden is REGRESSION, not ACCEPTANCE.** It proves the Python still does what it did when the
+file was taken. It cannot see a Pine edit made afterwards — that still needs a fresh export. Do not
+let a green step 15 stand in for one.
+
+⚠ **The rest of `exports/` stays git-ignored**, deliberately: ad-hoc exports are large scratch and
+committing them all would put megabytes of duplicate history in the repo for no extra proof.
+
 ## Validation (Pine ↔ Python parity)
 
 **Unit tests — GREEN:** `python3 -m pytest equal_highs_lows/tests/ -q` (11 tests) — the ATR warm-up

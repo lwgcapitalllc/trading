@@ -265,6 +265,34 @@ Watched RED by mutation, and the mutant exits 1 rather than passing quietly.
 ⚠ **It cannot tell you the INDICATOR is right** — only that the copies match it. That is rule 14
 arriving in a new place.
 
+### `scripts/check_engine_gates.py` — golden exports, so a gate can always run
+
+**Step 15 of `scripts/run_all_tests.sh`.** Runs each engine's `compare_*.py` against a COMMITTED
+export under `engines/<name>/exports/golden/`.
+
+🔴 **Rule 22 was unsatisfiable for most of this repo, and that is what this fixes.** *"No engine
+change without a green gate"* is right, but exports were git-ignored scratch — so whether a gate
+could run depended on which CSVs sat on one laptop. Measured 2026-09-09: **nine of fourteen gates
+could not answer**, and those that could were red against two-month-old exports from a Pine that no
+longer existed. **A rule that cannot be satisfied stops being a rule** — it blocked work instead of
+gating it, and both stalling and routing around it happened that day.
+
+⚠ **Two different jobs, and you need both.** A golden export is REGRESSION — it catches the PYTHON
+drifting from a known-good answer, on every clone, in seconds, with no human. A fresh export is
+ACCEPTANCE — it catches the Pine and the Python disagreeing after a Pine edit, and still needs a
+person with TradingView open. **A green golden run says nothing about a Pine change made after the
+file was taken.**
+
+⚠ **It prints its COVERAGE FRACTION and names the engines that lack an export**, because a bare
+green tick on this step would read as *the engine gates pass* when it means *the one engine with a
+committed export passes*. Coverage at landing: **1 of 11** gateable engines. Each of the other ten
+needs one fresh export, once, to join permanently.
+
+⚠ **Engines are DISCOVERED, never listed** — drop a CSV in the golden folder and it is wired in
+with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass. Both paths watched
+RED by mutation: reverting the engine's rule turns the gate red through this runner, and raising the
+minimum makes the self-test fire and exit 1.
+
 ### tools/
 Standalone utilities that belong to no subsystem and are run by hand. One today: `tools/skool-transcript/` — rips course video transcripts and indexes them into `education/`. It has its own CLAUDE.md. ⚠ **Nothing imports it and nothing schedules it**, which is the point — it is a dev-machine tool, not part of any deployable, so it is out of scope for the commit hook's money-path rule and for every parity gate.
 

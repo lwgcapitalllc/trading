@@ -1,4 +1,18 @@
-# Drop folder for TradingView Pine chart-data exports used by
-# ../tools/compare_rsi_div.py. These CSVs are large, local-only test data —
-# never commit them. This file keeps the folder present in the repo.
+# Drop folder for TradingView Pine chart-data exports used by ../tools/compare_eq.py.
+# Ad-hoc exports are large, local-only scratch — never commit them.
 *.csv
+
+# 🔴 EXCEPT golden/ — ONE committed export per engine, so the parity gate can run on EVERY
+# clone, on every machine, in CI, forever. Before this existed, whether a gate could run at
+# all depended on which CSVs happened to be sitting on one laptop: on 2026-09-09 NINE of the
+# fourteen gates could not answer, so rule 22 ("no engine change without a green gate") was
+# unsatisfiable and therefore blocked work instead of gating it.
+#
+# ⚠ The golden export does a DIFFERENT job from a fresh one, and you need both:
+#     golden  → REGRESSION. Catches the PYTHON drifting. Always available, runs in seconds.
+#     fresh   → ACCEPTANCE. Catches the PINE and the Python disagreeing after a Pine change.
+#   A golden export can only ever prove the engine still does what it did when the file was
+#   taken. It says NOTHING about a Pine edit made afterwards. Do not let a green golden run
+#   stand in for a fresh export when the indicator has moved.
+!golden/
+!golden/*.csv
