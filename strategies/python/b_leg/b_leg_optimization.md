@@ -67,8 +67,15 @@ today's rate.
 
 ### The control, and what to assert against it
 
-**116 trades / +20.76R / PF 1.54 / maxDD −6.42R / 30.2% win / IS +9.93R / OOS +10.83R.**
-Pass it as `--expect-trades 116 --expect-r 20.76` to every future sweep on this basis.
+**116 trades / +21.18R / PF 1.55 / maxDD −6.42R / 30.2% win / IS +10.36R / OOS +10.81R** (2026-09-10).
+Pass it as `--expect-trades 116 --expect-r 21.18` to every future sweep on this basis.
+
+🔴 **RUNS 1–3 WERE MEASURED AT +20.76R, WITH ADDING TO WINNERS INHERITED ON** — a mode this fork's
+Pine cannot express, pinned OFF on 2026-09-10. Re-measured on the same basis in one run: with it on,
+the old control reproduces exactly (116 / +20.76R / IS +9.93R / OOS +10.83R); off, it is the line
+above. ⚠ **The grid was NOT re-run.** The adds moved the control 0.42R over 116 trades, far inside
+the ±0.113R-a-trade error every conclusion below already allows for, so no ranking rests on them —
+but every row's absolute R is the old basis. Re-run a row before quoting its total.
 
 ⚠ **IT IS NOT AN EDGE AND THE SWEEP DOES NOT MAKE IT ONE.** Average **+0.179R a trade against a
 standard error of ±0.113R** — the threshold this tool prints is twice the error, and it is not

@@ -64,6 +64,20 @@ def test_the_pins_that_would_move_trades_if_inherited():
     assert parent.exec_runner_trail != cfg.exec_runner_trail
 
 
+def test_the_fork_does_not_add_to_winners_its_pine_cannot():
+    """The parent adds to winners by default since 2026-09-06; `bos_strategy.pine` cannot.
+
+    Inherited, it went unnoticed for four days and put the golden gate RED on its first trade: an
+    add stopped at the TP1 floor turned the chart's +0.77R into +0.68R. ⚠ The Pine assertion is
+    what makes this test expire honestly: it goes red the day the Pine gains the input, which is
+    exactly when the pin has to come out. Watched red against the pin removed."""
+    assert SosFadeConfig().exec_scale_in is True, (
+        "the parent's default moved again — re-answer whether this fork's pin is load-bearing")
+    assert BosConfig().exec_scale_in is False
+    pine = (_ROOT / "strategies" / "tradingview" / "bos_strategy.pine").read_text(encoding="utf-8")
+    assert "execScaleIn" not in pine
+
+
 def test_the_subclass_still_runs_the_parents_own_validation():
     """A subclass that defines `__post_init__` REPLACES the parent's, so omitting the `super()`
     call would silently retire the two checks this fork still inherits the fields for."""

@@ -69,13 +69,15 @@ def test_sos_fade_names_its_parity_gate_and_would_be_refused_without_it():
     assert run._gate_for(comp, {}) is None
 
 
-def test_both_strategy_goldens_are_discovered_at_their_measured_warmups():
+def test_every_strategy_golden_is_discovered_at_its_measured_warmup():
     found = {
         (c.name, csv.name): (gate.name if gate else None, warmup)
         for c, gate, csv, warmup, _x in _runner()._discover()
     }
-    assert found[("sos_fade", "VANTAGE_XAUUSD_M15_20218bars.csv")] == ("compare_strategy.py", 468)
+    assert found[("sos_fade", "VANTAGE_XAUUSD_M15_20220bars.csv")] == ("compare_strategy.py", 468)
     assert found[("extreme_leg", "VANTAGE_XAUUSD_M5_20288bars.csv")] == (
         "compare_extreme_leg.py",
         0,
     )
+    assert found[("b_leg", "VANTAGE_XAUUSD_M15_20220bars.csv")] == ("compare_bleg.py", 468)
+    assert found[("bos", "VANTAGE_XAUUSD_M15_20220bars.csv")] == ("compare_bos.py", 0)

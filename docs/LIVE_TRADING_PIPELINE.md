@@ -682,13 +682,13 @@ the live allocator above and the caveats on B-LEG in G15.
 
 `backtest/tools/overlap_audit.py`, replayed over **157,004 M15 bars (2020-01-01 → 2026-08-23)** of
 PU Prime `XAUUSD.p`. SOS Fade reproduces **244 trades / +248.59R** (156 primary + 88 re-entries) and
-B-LEG **101 / +20.07R**, which is the cross-check that the tool drives the two strategies correctly
+B-LEG **101 / +20.20R**, which is the cross-check that the tool drives the two strategies correctly
 rather than a third thing. Current figures and caveats: root `CLAUDE.md` → *The overlap audit*.
 
 🔴 **THIS SECTION READ 200 / +164.27R UNTIL 2026-09-10 — THE THIRD TIME THE RE-RUN WAS MISSED.** Two
 SOS Fade defaults moved on 2026-09-06 (scale-ins on, both re-entry triggers) inside a Command Center
 commit, and the live bot followed. Put back, the same replay gives exactly 200 / +164.27R. B-LEG's
-−0.13R is the same change inherited (+20.20R with scale-ins off, as its instance has it). **Every
+−0.13R was the same change inherited, until it was pinned off on 2026-09-10 (its Pine cannot add). **Every
 clash figure below held.**
 
 🔴 **THIS SECTION READ *156 trades / +131.77R* UNTIL TODAY — THE PRIMARY HALF OF A BOT NOBODY RUNS.**
@@ -717,7 +717,7 @@ those bars were same-side**; all 46 were opposite, i.e. partially hedged. Five S
 
 **They barely fire on the same structure break either**, which was the specific worry: across 6.6
 years **exactly ONE** SOS Fade trade has a same-direction B-LEG entry within four hours (2023-07-27, one
-bar apart; SOS Fade −1.99R, B-LEG −1.00R). Monthly R correlation is **+0.063** across all 78 traded months
+bar apart; SOS Fade −1.99R, B-LEG −1.00R). Monthly R correlation is **+0.059** across all 78 traded months
 (both traded in 53). ⚠ **Read that as a FLOOR on how together they move rather than as a figure** —
 a month only one bot traded contributes a zero for the other and pulls it toward 0.
 

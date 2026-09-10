@@ -1,0 +1,10 @@
+# TradingView exports of this strategy's export twin. Ad-hoc ones are large, local scratch.
+*.csv
+
+# 🔴 EXCEPT golden/ — the committed export scripts/check_engine_gates.py runs this strategy's
+# parity gate on, so the gate runs on every clone rather than only where a CSV happens to sit.
+# ⚠ golden is REGRESSION (the Python drifting), fresh is ACCEPTANCE (a Pine edit). A green golden
+# run says NOTHING about a Pine edit made after the file was taken. Rules: root CLAUDE.md, step 15.
+!golden/
+!golden/*.csv
+!golden/*.json

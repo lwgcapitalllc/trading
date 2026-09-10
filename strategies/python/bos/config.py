@@ -78,6 +78,14 @@ class BosConfig(SosFadeConfig):
     #   PINNED — the parent defaulted the 36h time stop ON on 2026-08-06 and this fork's Pine has
     #   no `execTimeStopMode` input. The plateau behind that default was measured on SOS Fade trades;
     #   a continuation trade is a different hold, so inheriting it would apply an unmeasured cut.
+    exec_scale_in: bool = False
+    #   🔴 PINNED OFF, and it MOVES TRADES if inherited. The parent defaulted adding to a winner
+    #   False → True on 2026-09-06 (Aaron's call, named for SOS Fade), and `bos_strategy.pine` has
+    #   no scale-in input, code or export column — so an inherited True adds lots the Pine can
+    #   never place, and no gate can check them. It was inherited, unnoticed, for four days.
+    #   MEASURED 2026-09-10 on the committed golden export: inherited, the gate went RED on the
+    #   first trade (+0.68R against the chart's +0.77R — an add stopped at the TP1 floor); pinned,
+    #   every bar agrees. Un-pin only in the commit that ports scale-in into the Pine and export.
     exec_sl_level: str = "1.0"
     #   Unused here — the stop comes from `bos_sl_model`. Declared so the parent's `_sl_anchor`
     #   cannot be reached with a value this fork never chose.

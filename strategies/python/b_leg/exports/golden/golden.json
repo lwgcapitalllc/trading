@@ -1,0 +1,15 @@
+{
+  "csv": ["VANTAGE_XAUUSD_M15_20220bars.csv"],
+  "gate": "tools/compare_bleg.py",
+  "warmup": 468,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M15",
+  "bars": 20220,
+  "harness": "strategies/tradingview/b_leg_strategy_export.pine",
+  "taken": "2026-09-10",
+  "_why_gate": "Named although tools/ holds one compare script, so a second one added later cannot leave the runner refusing or guessing.",
+  "_why_warmup": "MEASURED on this file: all 98 mismatches before bar 468 are the short-side SOS Fade arm stage this fork inherits - state the chart carries in from before the export began, which a cold Python cannot have - and all 19,668 bars after it match, with the export's final calendar day left out by the gate's own default. SOS Fade measured the same 468 on the same window for the same reason.",
+  "_what_it_ran": "Every setting the export carries matches BLegConfig's shipped defaults. Adding to winners is absent from this Pine, so the gate decodes it OFF - which is also the shipped default since 2026-09-10, when it stopped being inherited from SOS Fade.",
+  "_exercise_check": "10 B-leg trades close inside the compared window on the chart, +3.13R."
+}

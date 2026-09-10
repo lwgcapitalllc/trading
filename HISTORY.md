@@ -21,6 +21,31 @@ the other one did.
 
 ## Latest
 
+### Every strategy's gate now runs on every clone, and BOS's was red on arrival (2026-09-10)
+
+Aaron exported the other three twins the same afternoon: SOS Fade again with adding to winners
+switched ON (the live setting, which the morning's file had off), B-LEG and BOS. SOS Fade and B-LEG
+went green from a measured 468, both on the short-side arm stage the chart carries in from before
+the export began. SOS Fade's file holds 13 adds across 5 of its 8 trades, and forcing adds off in
+the Python turns it red at the first one, so the golden really checks them; it replaced the
+morning's adds-off file, whose path the two forks' goldens still cover.
+
+**BOS went red on its first trade, and the Python was wrong.** `BosConfig` subclasses SOS Fade's
+config, and on 2026-09-06 SOS Fade's adding-to-winners default moved off → on. BOS's Pine has no
+such feature, so for four days the lab's BOS added lots its Pine could never place, and nothing ran
+BOS's gate to notice. One add stopped at the first-target floor turned the chart's +0.77R into
++0.68R; pinned off, all 20,219 bars agree from bar 0. B-LEG had the same inheritance, written down
+as an open question — and its gate decodes a missing column as OFF, so it was green about a
+configuration the lab did not run. Pinned off too: its Pine cannot add, and the adds bought nothing
+(+20.07R on, +20.20R off). Step 17 named the moved setting on the overlap audit and the re-record held
+every clash figure; B-LEG's sweep control moved +20.76R → +21.18R on the same 116 trades.
+**A fork inherits its parent's defaults, not only its code — and only a fork with a golden finds out
+on the next run rather than the next export.**
+
+One smaller trap on the way: BOS's gate skipped its first 100 bars by default, a number nobody had
+measured, and the golden runner passes no flag for a measured 0 — so the manifest would have claimed
+bars the run never compared. Its default is 0 now, like its two siblings.
+
 ### The live bots' parity gates now run on every clone (2026-09-10)
 
 Aaron exported SOS Fade's twin on 15m and the extreme leg's on 5m, and both gates went green:

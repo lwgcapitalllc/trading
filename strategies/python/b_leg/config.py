@@ -97,6 +97,15 @@ class BLegConfig(SosFadeConfig):
     #   been swept here, and a B leg waits for a LATE retrace by construction, so the parent's
     #   volatility band is not evidence about this setup.
 
+    exec_scale_in: bool = False       # "Add to the runner (scale in)" — pinned OFF, and NOT inert
+    #   The parent defaulted this False → True on 2026-09-06 (Aaron's call, named for SOS Fade), and
+    #   this fork inherited it for four days. `b_leg_strategy.pine` has no scale-in input, code or
+    #   `cfg_scale_in` column, so an inherited True adds lots the Pine can never place and the gate
+    #   decodes every export OFF — the shipped default was a mode nothing could check. MEASURED on
+    #   PU Prime `XAUUSD.p`, 2020 → 2026-08-23: same 101 trades either way, +20.07R on against
+    #   +20.20R off, so the adds bought nothing. `b_leg_demo` already pinned it off (`ca39c72b`).
+    #   Un-pin only in the commit that ports scale-in into the B-LEG Pine and its export.
+
     #   `exec_runner_trail` was PINNED to "Structure (swing)" here from 2026-07-28 until later the
     #   same day, because the parent had moved to "Structure + % ratchet" while this fork's Pine
     #   still shipped the two-option dropdown — inheriting would have moved every B-LEG runner exit

@@ -468,7 +468,10 @@ def _report_coverage(coverage: Counter, compared: int, cfg: BosConfig) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("csv", type=Path)
-    ap.add_argument("--warmup", type=int, default=100,
+    # 0, like its two siblings. A default that skips bars is a warm-up nobody measured, and the
+    # golden runner passes no flag for a measured 0 - at 100 the committed golden started at bar
+    # 100 while its golden.json said 0 (2026-09-10, where every bar from 0 agrees).
+    ap.add_argument("--warmup", type=int, default=0,
                     help="bars to skip before comparing — the engines are streaming state "
                          "machines and a cold one legitimately disagrees with a Pine that "
                          "loaded more history. Raise it until the run is green from a stable "

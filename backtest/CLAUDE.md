@@ -671,7 +671,8 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **Settings, not code** — a rule changed inside a strategy still needs a re-run by hand.
   ⚠ **Clearing it means measuring**; a hand-edited record is decoration. ⚠ **No recorded pair
   FAILS.** ⚠ `--record` refuses without `--server`, because the record is the basis a re-run
-  reproduces.
+  reproduces. ✅ **First caught one the same day**: B-LEG's adding-to-winners pin moved one setting
+  on `sos_fade|b_leg`, step 17 named it, and the re-record read +20.07R → +20.20R, clashes unchanged.
 
   Its results are facts about the BOTS, so they live in root `CLAUDE.md`; story and full numbers in
   `HISTORY.md`.

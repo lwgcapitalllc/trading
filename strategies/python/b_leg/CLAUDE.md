@@ -9,11 +9,12 @@ resting limit at the 0.5 edge waits for the late return.
 NOTHING BEAT THE SHIPPED SETTINGS** — 8 settings one at a time, charged, on **PU Prime demo ECN**
 (Aaron's call: the attached terminal and the account these bots trade), so **no figure there may be
 compared against the Vantage numbers below.** Read its *basis* and its CONTROL — **116 trades /
-+20.76R / PF 1.54 / maxDD −6.42R**, which every later sweep asserts — before quoting any of it.
++21.18R / PF 1.55 / maxDD −6.42R** (+20.76R until adding to winners was pinned off, 2026-09-10), which
+every later sweep asserts — before quoting any of it.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
-**Status:** Built + unit-tested (19 tests green) + **Pine-parity GREEN (exit 0), re-validated 2026-07-31**
+**Status:** Built + unit-tested + **Pine-parity GREEN on a COMMITTED golden (2026-09-10, `exports/golden/`, step 15)**; earlier re-validated 2026-07-31
 on a fresh 6,329-bar `VANTAGE_XAUUSD, 15m` export off the session-window build — bar-for-bar
 identical decision stream. The harness is `tools/compare_bleg.py` +
 `strategies/tradingview/b_leg_strategy_export.pine`, registered in `verify_parity.py`.
@@ -767,24 +768,27 @@ mutation reports coverage that is not there.
 test** with an unrelated control staying green. The first two are a PAIR — *it is ignored* alone
 would pass just as happily if the diff had stopped reading that column.
 
-## 🔴 This fork's parity gate CANNOT cover its own shipped default (2026-09-07)
+## ✅ This fork's shipped default is back inside its gate (2026-09-07 → 2026-09-10)
 
 `BLegConfig` extends `SosFadeConfig`, so it inherited `exec_scale_in` when that default moved
 off → on for SOS Fade on 2026-09-06. **The B-LEG Pine has no scale-in at all** — no input, no code,
-and no `cfg_scale_in` column in `b_leg_strategy_export.pine` — so the tool decodes it OFF on every
-B-LEG export, correctly, and a fixture replaying with it ON compares a scaled book against an
-unscaled one. That is what turned `test_roundtrip_parity_under_nondefault_toggles` red.
+no `cfg_scale_in` column — so the gate decodes it OFF on every export, correctly, while the SHIPPED
+default was ON: a mode nothing could check. ✅ **Pinned OFF in `config.py` on 2026-09-10.** Aaron's
+2026-09-06 call named SOS Fade, `b_leg_demo` had already pinned it off (`ca39c72b`), and the adds
+bought nothing — MEASURED on PU Prime `XAUUSD.p`, 2020 → 2026-08-23: same 101 trades, **+20.07R on,
++20.20R off**. The overlap audit was re-recorded the same day. BOS had the same inheritance and it
+put that bot's gate red (`strategies/python/bos/CLAUDE.md`).
+`test_the_fork_does_not_add_to_winners_its_pine_cannot` goes red if the pin goes or the Pine gains
+the input — the day the pin has to come out. Watched red both ways.
 
-✅ `_write` pins it off, so no future case can forget it, and
-`test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one` states the hole as a
-test rather than as a comment — it goes red the day the Pine gains the feature and the export gains
-a column, which is exactly when the pin has to come out. Watched RED by mutation.
+✅ `_write` still pins it off for a case that asks for it ON, and
+`test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one` states what is left of
+the hole — a config switched on by hand — as a test rather than a comment.
 
-🔴 **Say the uncovered half plainly: the SHIPPED B-LEG default is scale-in ON, its Pine cannot
-express it, and nothing in this gate reaches it.** Whether this fork should inherit it is open —
-Aaron's 2026-09-06 call named *sos_fade* defaults. `b_leg_demo` pins it OFF (`ca39c72b`). MEASURED
-2026-09-10 (PU Prime `XAUUSD.p`, 2020 → 2026-08-23): no trade's timing moves — same 101 trades, 9
-R values differ, **+20.07R on, +20.20R off**.
+✅ **The golden export, 2026-09-10: `exports/golden/`, run by step 15 on every clone.** 20,220
+Vantage M15 bars; every one of 19,668 matches from a MEASURED warm-up of 468 (the short-side SOS Fade
+arm stage this fork inherits — SOS Fade measured the same 468 on the same window). 10 B-leg trades
+close in the window, +3.13R on the chart.
 
 ### Two more columns the encoder was missing
 

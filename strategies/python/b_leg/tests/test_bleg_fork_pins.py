@@ -78,3 +78,20 @@ def test_the_fork_pins_the_secondary_OFF():
         "the parent's default moved again — re-answer this test's question in the same commit, "
         "and say whether this fork's pin is load-bearing or redundant")
     assert BLegConfig().exec_secondary is False
+
+
+def test_the_fork_does_not_add_to_winners_its_pine_cannot():
+    """The parent adds to winners by default since 2026-09-06; `b_leg_strategy.pine` cannot.
+
+    Inherited, the SHIPPED B-LEG default was a mode no export can express, so its gate decoded
+    every file OFF and a green run said nothing about the bot the lab replayed. ⚠ The Pine
+    assertion is what makes this test expire honestly: it goes red the day the Pine gains the
+    input, which is exactly when the pin has to come out. Watched red against the pin removed."""
+    from strategies.python.b_leg.config import BLegConfig
+    from strategies.python.sos_fade.config import SosFadeConfig
+
+    assert SosFadeConfig().exec_scale_in is True, (
+        "the parent's default moved again — re-answer whether this fork's pin is load-bearing")
+    assert BLegConfig().exec_scale_in is False
+    pine = (_ROOT / "strategies" / "tradingview" / "b_leg_strategy.pine").read_text(encoding="utf-8")
+    assert "execScaleIn" not in pine

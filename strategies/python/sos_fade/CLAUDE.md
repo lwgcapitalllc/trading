@@ -3422,14 +3422,16 @@ was 6 and the indicator's 15m floor 0.04; both corrected. Comment-only; no value
 
 ## The gate ran on a fresh export, and that export is now COMMITTED (2026-09-10)
 
-`compare_strategy.py` exits 0 on a fresh export of `sos_fade_strategy_export.pine` — 20,218 M15
-bars, 2025-11-02 → 2026-09-10 — on **every one of 19,668 bars from a MEASURED warm-up of 468**
-(red at 467; every first mismatch a warm-up sweep found before it was the short-side arm stage,
-state the chart carries in from before the export began). 8 trades enter and close in the window,
-+10.63R on the chart. ✅ It is the first real twin the missing-column refusal met, and it carried
-every compared column. ✅ **Committed at `exports/golden/` — step 15 runs this gate on every clone**,
-and its manifest NAMES the gate, because `tools/` holds two compare scripts.
-⚠ **Read what it RAN before quoting it.** The chart had scale-in OFF, the B leg OFF, divergence
-arming OFF and require-FVG ON, so it says NOTHING about adding to winners (which the live bot ships
-ON), the B leg, divergence arming or the no-gap fallback — and nothing about the re-entries, which
-are Python-only. Its dead-market floor was 0.3 against the bot's 0.08.
+`compare_strategy.py` exits 0 on a fresh export of `sos_fade_strategy_export.pine` with **adding to
+winners ON at the shipped sub-settings** — 20,220 M15 bars, 2025-11-02 → 2026-09-10 — on **every
+one of 19,668 bars from a MEASURED warm-up of 468** (all 98 mismatches before it are the short-side
+arm stage, state the chart carries in from before the export began). 8 trades close in the window,
++12.62R on the chart; **5 of them added, 13 adds in all, and the gate SEES them**: with adds forced
+off in the Python it goes RED at the first trade that added (+2.40R against the chart's +2.59R).
+✅ **Committed at `exports/golden/` — step 15 runs it on every clone**, and its manifest NAMES the
+gate, because `tools/` holds two compare scripts. It REPLACED the same day's adds-OFF export
+(8 trades, +10.63R): the live bot adds, and the OFF path stays covered by the B-LEG and BOS
+goldens, which run this execution code with it off.
+⚠ **Read what it RAN before quoting it.** The B leg, divergence arming and the no-gap fallback
+were OFF, so it says NOTHING about them — nor about the re-entries, which are Python-only. Its
+dead-market floor was 0.3 against the bot's 0.08.

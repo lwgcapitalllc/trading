@@ -8,17 +8,34 @@ whose branch no gate reaches moves the Python away from a Pine nobody has checke
 backtest infrastructure (`backtest/`), the lab that runs it (`command-center/`), or the SOS Fade bot
 it subclasses (`strategies/python/sos_fade/` — read that one's `## The exit ladder` before
 touching an exit).
-**Status:** 🟢 **PARITY GREEN 2026-08-07 — and read the coverage caveat below before quoting
-anything.** Built 2026-08-07 from `strategies/tradingview/bos_strategy_export.pine`, and
-`tools/compare_bos.py` now exits 0 on a real export: **6,300 bars compared, no divergence**,
-at warmups 900 / 1000 / 2000 / 3000. ⚠ **It is green about the SHIPPED defaults only** — the
-run had `bos_use_fvg` OFF, so the entire gap-entry ladder is still unverified, and 6 trades
-closed inside the window. See *The parity run* below.
-**Last reviewed:** 2026-08-16 (latest) — 38 of the 40 `desc` fields moved again when every input tooltip in all 29 Pine files was cut to one or two plain sentences (rule: `strategies/tradingview/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*). ⚠ **This bot had ALREADY had the pass described below on 2026-08-10 and still moved 38 fields, which is the point worth keeping: a one-off tidy of one file drifts again the moment the standard is set repo-wide.** The rule now lives in one place and the Pine is its source. Strings only — no name, type, default or order changed. Earlier: 2026-08-10 — 🟢 **THE STRATEGY DETAIL PAGE COPY IS SHORT AND PLAIN NOW.** All 40 `desc` fields in `bos.meta.json`, plus `edge` and `steps`, rewritten to *what it does, what each choice means, and the one fact that changes the decision*; the measurement dumps are gone from the UI and stay in this file and `docs/BOS_OPTIMIZATION.md`. **The warnings that change a decision are KEPT in plain words** — the ATR stop is the default because a level-based one shrinks with the move and lands inside the spread, a deep entry must not be paired with a tighter stop, and nothing here is parity-checked yet. ⚠ **A desc is byte-identical to its Pine tooltip, so `bos_strategy.pine` and its export changed in the same commit — strings only; every input's name, type, title, default and order is unchanged against HEAD.** Earlier: 2026-08-10 — 🔴 **THIS FORK WOULD HAVE DIED ON ITS FIRST BAR, AND ITS OWN PARITY TEST IS WHAT CAUGHT IT.** The parent's `_entry_edges` gained a required `seq` parameter on 2026-08-10 (for `exec_nogap_arm`, which gates the SOS Fade no-FVG fallback). `BosExecution` OVERRIDES `_entry_edges`, and the parent calls it BY NAME from `step()` — so the 2-arg override raised `TypeError: _entry_edges() takes 2 positional arguments but 3 were given` on the first bar of every run. The signature is matched now and **`seq` is deliberately UNREAD here**: this fork's setup has no SOS arm at all, so honouring that lever would gate a BOS entry on a confluence its own Pine never looks for. ⚠ **The parameter is kept rather than dropped** — dropping it is the failure that just happened. ⚠ **The transferable half is about how it surfaced: nothing in the SOS Fade change mentioned this package, and no amount of reading the diff would have named it. `test_compare_bos.py` failed the moment the suite ran.** A fork that subclasses a bot under active development inherits its SIGNATURES as well as its defaults, and only a test that actually drives a bar can see the difference. Earlier: 2026-08-07 — the rebuild, the volume fix, and the first real gate run.
+**Status:** 🟢 **PARITY GREEN ON A COMMITTED GOLDEN, 2026-09-10 — read the coverage caveat below
+before quoting anything.** `exports/golden/` runs in step 15 on every clone: **20,219 bars, every one
+agreeing from the first, 12 trades.** ⚠ **It is green about the SHIPPED defaults only** —
+`bos_use_fvg` is OFF, so the entire gap-entry ladder is still unverified. 🔴 **It was RED on arrival
+and the Python was wrong** — see *The parity run*.
+**Last reviewed:** 2026-09-10 (latest) — golden export committed; adding to winners pinned OFF after
+it went red; the gate's default warm-up 100 → 0. Earlier: 2026-08-16 — 38 of the 40 `desc` fields moved again when every input tooltip in all 29 Pine files was cut to one or two plain sentences (rule: `strategies/tradingview/CLAUDE.md` → *TOOLTIPS ARE PLAIN ENGLISH*). ⚠ **This bot had ALREADY had the pass described below on 2026-08-10 and still moved 38 fields, which is the point worth keeping: a one-off tidy of one file drifts again the moment the standard is set repo-wide.** The rule now lives in one place and the Pine is its source. Strings only — no name, type, default or order changed. Earlier: 2026-08-10 — 🟢 **THE STRATEGY DETAIL PAGE COPY IS SHORT AND PLAIN NOW.** All 40 `desc` fields in `bos.meta.json`, plus `edge` and `steps`, rewritten to *what it does, what each choice means, and the one fact that changes the decision*; the measurement dumps are gone from the UI and stay in this file and `docs/BOS_OPTIMIZATION.md`. **The warnings that change a decision are KEPT in plain words** — the ATR stop is the default because a level-based one shrinks with the move and lands inside the spread, a deep entry must not be paired with a tighter stop, and nothing here is parity-checked yet. ⚠ **A desc is byte-identical to its Pine tooltip, so `bos_strategy.pine` and its export changed in the same commit — strings only; every input's name, type, title, default and order is unchanged against HEAD.** Earlier: 2026-08-10 — 🔴 **THIS FORK WOULD HAVE DIED ON ITS FIRST BAR, AND ITS OWN PARITY TEST IS WHAT CAUGHT IT.** The parent's `_entry_edges` gained a required `seq` parameter on 2026-08-10 (for `exec_nogap_arm`, which gates the SOS Fade no-FVG fallback). `BosExecution` OVERRIDES `_entry_edges`, and the parent calls it BY NAME from `step()` — so the 2-arg override raised `TypeError: _entry_edges() takes 2 positional arguments but 3 were given` on the first bar of every run. The signature is matched now and **`seq` is deliberately UNREAD here**: this fork's setup has no SOS arm at all, so honouring that lever would gate a BOS entry on a confluence its own Pine never looks for. ⚠ **The parameter is kept rather than dropped** — dropping it is the failure that just happened. ⚠ **The transferable half is about how it surfaced: nothing in the SOS Fade change mentioned this package, and no amount of reading the diff would have named it. `test_compare_bos.py` failed the moment the suite ran.** A fork that subclasses a bot under active development inherits its SIGNATURES as well as its defaults, and only a test that actually drives a bar can see the difference. Earlier: 2026-08-07 — the rebuild, the volume fix, and the first real gate run.
 
 ---
 
 ## The parity run — what is proven and what is not
+
+✅ **THE COMMITTED GOLDEN, 2026-09-10.** 20,220 Vantage M15 bars, 2025-11-02 → 2026-09-10, off
+`bos_strategy_export.pine` at the shipped defaults. **Every closed bar agrees from bar 0 — a
+MEASURED warm-up of 0** — across 12 trades (+1.03R on the chart). The VWAP filter (code 7) and the
+final-hour rule (code 2) refused setups; the minimum-stop floor refused nothing, and the gate says so.
+
+🔴 **IT WAS RED ON ITS FIRST TRADE, AND THE PYTHON WAS WRONG.** `BosConfig` inherited
+`exec_scale_in` when SOS Fade's default moved off → on (2026-09-06), and `bos_strategy.pine` has no
+scale-in at all — so for four days this bot added to winners its Pine cannot, and nothing had run
+its gate to notice. One add stopped at the TP1 floor turned the chart's +0.77R into +0.68R.
+✅ Pinned OFF in `config.py`; `test_the_fork_does_not_add_to_winners_its_pine_cannot` watched red
+both ways (pin removed, Pine given the input). ⚠ **A BOS lab run from 2026-09-06 to 2026-09-10
+includes those adds** — re-run before quoting one. ⚠ **The gate's default warm-up is 0 since the same
+day**: it was 100, never measured, and the golden runner passes no flag for a 0 — so the golden was
+silently skipping 100 bars its manifest claimed.
+
+The run below is the FIRST real export. Its 900 was that file's cold start, not a rule.
 
 ```
 python strategies/python/bos/tools/compare_bos.py 'engines/VANTAGE_XAUUSD, 15_ee770.csv' --warmup 900
@@ -118,7 +135,8 @@ that, and the gate is the whole difference.
 ### Running the gate
 
 ```bash
-python strategies/python/bos/tools/compare_bos.py '<export>.csv' --warmup 900
+python strategies/python/bos/tools/compare_bos.py '<export>.csv'            # from bar 0
+python strategies/python/bos/tools/compare_bos.py '<export>.csv' --warmup N  # past a measured cold start
 ```
 
 ⚠ **Read the COVERAGE table before believing the exit code.** The tool prints how many bars each

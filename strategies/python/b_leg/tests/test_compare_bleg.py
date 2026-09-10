@@ -127,9 +127,9 @@ def _write(tmp_path, cfg=None):
     # fixture replaying with it ON would compare a scaled book against an unscaled one and report
     # the harness's own configuration as a logic bug. It did exactly that on 2026-09-07.
     # ⚠ It is pinned HERE rather than in each test so no future case can forget it.
-    # ⚠ The uncovered half is stated out loud by
-    #    `test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one` below:
-    #    the SHIPPED B-LEG default is scale-in ON, and nothing in this gate reaches it.
+    # ⚠ Since 2026-09-10 `BLegConfig` pins it off too, so this only bites a case that asks for it
+    #    ON — which `test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one`
+    #    below does, on purpose.
     cfg = dataclasses.replace(cfg, exec_scale_in=False)
     # 30 days, not 10: on 10 the synthetic bars never ARM a leg (l_on = 0 on every bar), so
     # the bl_* columns would all be "no live leg" and the tracker diff would prove nothing.
@@ -180,10 +180,10 @@ def test_roundtrip_parity_under_nondefault_toggles(tmp_path):
 def test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one(tmp_path):
     """The B-LEG Pine has no scale-in, so no export can say whether it was on.
 
-    🔴 **This pins a HOLE, deliberately.** `BLegConfig` inherits `exec_scale_in` from the SOS Fade
-    config, and that default is ON since 2026-09-06 — so the B-LEG's own shipped default is a mode
-    its Pine cannot express and this gate can never reach. `_write` pins it off for that reason,
-    and without this test that pin is an invisible decision in a helper.
+    🔴 **This pins a HOLE, deliberately.** `BLegConfig` inherited `exec_scale_in` ON from the SOS
+    Fade config from 2026-09-06 until 2026-09-10, when it was pinned OFF — so the shipped default
+    now matches what this gate can check, and only a config that asks for it ON reaches the hole.
+    `_write` pins it off for that reason, and without this test that pin is an invisible decision.
 
     ⚠ **It goes RED the day the Pine gains scale-in and the export gains a column** — which is
     exactly when the pin in `_write` has to come out and the encoder has to grow the five columns
