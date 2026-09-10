@@ -5,7 +5,7 @@
 // a different way from one that refuses nothing, and only checking the refusals would
 // pass either. Same reasoning as .claude/hooks/check_guard.py.
 //
-// WATCHED RED by mutation: emptying the rule list reddens exactly the 21 "must refuse"
+// WATCHED RED by mutation: emptying the rule list reddens exactly the 22 "must refuse"
 // cases and no others; widening the promote rule to /promote/ reddens exactly the
 // promote-preview case.
 //
@@ -40,6 +40,9 @@ const CASES = [
   [REFUSE, 'PUT', '/api/bots/accounts/registry/700152905', 'edit a broker account'],
   [REFUSE, 'DELETE', '/api/bots/accounts/registry/700152905', 'remove a broker account'],
   [REFUSE, 'PUT', '/api/bots/accounts/registry/700152905/password', 'change a password'],
+  // Sync REWRITES the account list and pushes it to the box. It sits under /registry/ so the
+  // existing account-write rule covers it; this pins that it stays there.
+  [REFUSE, 'POST', '/api/bots/accounts/registry/sync', 'sync the account list with the VPS'],
   [REFUSE, 'POST', '/api/bots/users', 'add a Telegram user'],
   [REFUSE, 'DELETE', '/api/bots/users/123456', 'remove a Telegram user'],
   [REFUSE, 'POST', '/api/system/mt5-agent/start', 'start an agent on a trading box'],
@@ -53,6 +56,9 @@ const CASES = [
 
   // --- must stay ALLOWED: the read-only twin of a refused action ---
   [ALLOW, 'POST', '/api/bots/sos_fade_demo/promote/preview', 'promote PREVIEW changes nothing'],
+  // The sync's preview: what Sync WOULD change, read off the box. Refusing it would leave the
+  // browser tool able to open the drawer and see nothing, while the write beside it stays refused.
+  [ALLOW, 'GET', '/api/bots/accounts/scan', 'the sync PREVIEW changes nothing'],
 
   // --- must stay ALLOWED: lab writes cost compute, never money ---
   [ALLOW, 'POST', '/api/backtests', 'run a backtest'],
