@@ -6181,3 +6181,49 @@ function's source is reading its explanation as readily as its code** — the sa
 the real fetch answered the way the box answers, then parsed. A section fetched under one name and
 looked for under another is always absent, which is indistinguishable from a box that could not be
 reached: the exact state this whole read exists to move away from.
+
+## The stack sensitivity pool runs EIGHT at once, and the six was a tail-biased reading (2026-09-10)
+
+`_STACK_SENS_WORKERS` was physical cores (6 on this box) and is now **2/3 of the logical cores (8)**.
+
+🔴 **THE MEASUREMENT THAT CHOSE SIX WAS CONFOUNDED BY THE JOB COUNT, NOT BY THE BOX.** It submitted
+TWELVE jobs, so six workers got two clean waves while eight got 8 + 4 and ten got 10 + 2 — and the
+idle tail, not hyperthreading, is what made the extra workers look worthless. **RE-MEASURED on 24
+jobs, a whole number of waves at every count tested, on the live two-leg stack over one year: four
+workers 2.55x, six 3.37x, EIGHT 4.30x, twelve 4.07x.** A clean knee at eight, worth **1.28x of the
+phase's wall clock** over six.
+
+⚠ **A job count that is not a multiple of the worker count measures the TAIL, and the tail is
+biggest exactly where you are trying to read a difference.** Pick a common multiple before
+comparing worker counts, or the answer is about the arithmetic of the harness.
+
+⚠ **The memory objection the old comment raised was CHECKED rather than repeated.** Each worker
+holds its own copy of the bars. MEASURED: one worker peaks at **560 MB** on a full-history replay of
+this stack (26 MB before the bars load), so eight want ~4.5 GB on a 16 GB box. **Memory is not why
+twelve is slower than eight** — that is CPU contention, and it is the honest reason to stop at eight.
+
+⚠ **`2/3 of logical` is a RATIO from one box, not a law.** Nothing has run this on another machine;
+read the formula as *the shape that reproduces the measurement here* and re-measure elsewhere.
+
+⚠ **`_STACK_SENS_PARALLEL_EFFICIENCY` moved 0.6 → 0.54, and the number to read is the PRODUCT.**
+8 x 0.54 = 4.3 is what was actually observed; the constant alone means nothing.
+
+### The phase is ~42 minutes, was ~82, and the budget was NOT spent on coverage
+
+**One full-history sensitivity-shaped replay of the live stack is 182.6s** — it was 277.5s until the
+engine gating landed the same day (`backtest/CLAUDE.md` → *An engine a strategy never READS is never
+RUN*). With the pool at 4.30x, the 60-replay budget is **60 x 182.6 / 4.30 ≈ 42 minutes**, against
+~82 on 2026-09-09's code.
+
+🔴 **THE COMMENT ABOVE `_STACK_SENS_MAX_REPLAYS` STILL SAID THE SHIFTS RUN *ONE AT A TIME* AND
+*SERIAL*, AND BOTH STOPPED BEING TRUE THE DAY BEFORE.** The stale half was the whole reasoning the
+number rested on — *60 replays is about an hour* followed from *serial* — so it read as a
+justification for a limit that no longer followed from it. **A number is only as current as the
+sentence under it, and a comment that argues for a constant goes stale WITH the thing it argues
+about.**
+
+⚠ **KEPT AT 60 rather than raised, and that is a REQUIREMENT decision rather than a correctness
+one.** Raising it to ~85 would put the phase back at the hour it was designed around and take the
+settings actually probed from **15 of 38 to about 21**. Both are honest — what the budget cannot
+reach is named in the coverage record and in the start-up estimate — so which one the speed-up buys
+is Aaron's call and it has not been made unilaterally here.

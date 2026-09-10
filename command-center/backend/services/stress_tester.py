@@ -760,15 +760,22 @@ def sensitivity_plan(
 
 # ── Sensitivity over a STACK — the pure half ──────────────────────────────────
 
-# 🔴 EVERY SHIFT IS A WHOLE-STACK REPLAY, AND THEY RUN ONE AT A TIME, so the budget is the
-# difference between a phase and an afternoon. A single strategy's shifts fan across every core
-# through `run_sweep`; a stack cannot use that path — it replays several legs on one merged clock
-# in THIS process — so the cost is one full replay per shift, serial.
+# 🔴 EVERY SHIFT IS A WHOLE-STACK REPLAY, so the budget is the difference between a phase and an
+# afternoon.
 #
-# ⚠ MEASURED on the single-strategy path this number is taken from: 69s per 6.6-year M15 replay,
-# and a stack's replay is longer because it steps every leg's bars. 60 replays is therefore about
-# an hour, which is exactly the wait the single-run phase shipped with before it was parallelised
-# — deliberately the same order, not a guess dressed as a limit.
+# ⚠ **THIS COMMENT SAID *THEY RUN ONE AT A TIME* AND *SERIAL* UNTIL 2026-09-10, AND BOTH STOPPED
+# BEING TRUE THE DAY THE POOL LANDED (2026-09-09).** The stale half is exactly the reasoning the
+# number rests on, so it read as a justification for a limit that no longer follows from it.
+#
+# ⚠ **RE-MEASURED 2026-09-10 on the live two-leg stack, and 60 replays is now about FORTY minutes,
+# not an hour.** One full-history sensitivity-shaped replay is **182.6s** (it was 277.5s before the
+# engine gating landed), and the pool returns **4.30x** at eight workers: 60 x 182.6 / 4.30 =
+# **~42 min**, against ~82 min on 2026-09-09's code.
+#
+# ⚠ **KEPT AT 60 rather than spent on coverage, and that is a REQUIREMENT decision rather than a
+# correctness one.** Raising it to ~85 would put the phase back at the hour it was designed around
+# and take the settings actually probed from 15 of 38 to about 21. Both are honest; which one the
+# speed-up buys is Aaron's call, and nothing here is being reported as measured that was not.
 #
 # ⚠ It is a CAP, not a target. What it drops is recorded in the coverage record and reported, for
 # the same reason the optimizer logs what its caps dropped: a page reading "12 settings tested"
@@ -785,14 +792,28 @@ _STACK_SENS_MAX_REPLAYS = 60
 # stack: six at once finished 3.61x faster than six in a row, and every one produced an
 # IDENTICAL trade list. A four-hour phase becomes about an hour.
 #
-# ⚠ **PHYSICAL cores, not logical.** This work is CPU-bound Python, so the hyperthreads buy
-# almost nothing and cost memory — each worker holds its own copy of the bars. MEASURED on a
-# 12-logical / 6-physical box: four workers 3.08x, six workers 3.61x.
+# 🔴 **IT WAS PHYSICAL CORES UNTIL 2026-09-10 AND THE MEASUREMENT BEHIND THAT WAS TAIL-BIASED.**
+# The original run submitted TWELVE jobs, so six workers got two clean waves while eight got
+# 8 + 4 and ten got 10 + 2 — the idle tail, not the box, is what made the hyperthreads look
+# worthless. **RE-MEASURED on 24 jobs (a whole number of waves at 4, 6, 8 and 12) of the live
+# two-leg stack over one year, on the same 12-logical / 6-physical box: four workers 2.55x, six
+# 3.37x, EIGHT 4.30x, twelve 4.07x.** A clean knee at eight, and it is worth **1.28x of wall clock
+# over six** on the phase.
+#
+# ⚠ **`2/3 of the LOGICAL cores`, and it is a RATIO from one box rather than a law.** Eight of
+# twelve is what was measured here; nothing has run this on another machine, so read the formula as
+# *the shape that reproduces the measurement*, and re-measure before trusting it elsewhere.
+#
+# ⚠ **The memory objection was CHECKED rather than repeated.** Each worker holds its own copy of
+# the bars, and the old comment cited that as a reason to stay at physical cores. MEASURED: one
+# worker peaks at **560 MB** on a full-history replay of this stack (26 MB before the bars load),
+# so eight want ~4.5 GB on a 16 GB box. **Memory is not why twelve is slower than eight** — that is
+# CPU contention, and the honest reason to stop at eight.
 #
 # ⚠ **The pool is REUSED across the whole plan rather than made per shift.** macOS spawns rather
 # than forks, so a worker pays a fresh interpreter and import on startup; created per shift that
 # cost lands 60 times.
-_STACK_SENS_WORKERS = max(1, (os.cpu_count() or 2) // 2)
+_STACK_SENS_WORKERS = max(1, ((os.cpu_count() or 2) * 2) // 3)
 
 
 def _stack_shift_replay(job: tuple) -> tuple:
@@ -992,7 +1013,11 @@ def stack_sensitivity_preview(stack_id: str) -> dict:
 #
 # ⚠ **An estimate that assumed a full Nx speed-up would quote a third of the real wait**, which is
 # the shape this app has already shipped once: a modal promising ~12 minutes for a ~69 minute job.
-_STACK_SENS_PARALLEL_EFFICIENCY = 0.6
+# ⚠ **RE-MEASURED 2026-09-10 at eight workers: 4.30x of a possible 8, i.e. 0.54.** It was 0.6,
+# fitted to the six-worker reading, and the two agree within the noise — what moved is the worker
+# count it multiplies, not this. **Read the PRODUCT, never this number alone**: 8 x 0.54 = 4.3 is
+# the figure that was actually observed, and it is the only thing the estimate uses.
+_STACK_SENS_PARALLEL_EFFICIENCY = 0.54
 
 
 def _effective_parallelism() -> float:
