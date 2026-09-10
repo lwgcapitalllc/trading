@@ -320,9 +320,12 @@ Not built yet — there is no bot consuming this engine. Wire it up together wit
 
 ## The golden export (2026-09-09) — gated on three fibs, with the fourth excluded ON PURPOSE
 
-`exports/golden/VANTAGE_XAUUSD_M5_13304bars.csv` is COMMITTED and `scripts/check_engine_gates.py`
-(step 15 of `scripts/run_all_tests.sh`) runs `compare_fib.py --warmup 149 --skip-macro` against it on
-every clone. `golden.json` carries the warm-up, the flag and the reason for both.
+TWO committed exports of the same harness, and `scripts/check_engine_gates.py` (step 15 of
+`scripts/run_all_tests.sh`) runs `compare_fib.py --skip-macro` on both, every clone:
+`VANTAGE_XAUUSD_M5_13304bars.csv` at warm-up 149 (two months) and, since 2026-09-10,
+`VANTAGE_XAUUSD_M15_20153bars.csv` at warm-up 53 (ten months, on the frame SOS Fade and B-LEG run).
+⚠ **Each warm-up is measured on its own file** and `golden.json` keys them per file — one shared
+number would be a guess for one of them.
 
 🔴 **`--skip-macro` is the fork above turned into a gate decision, not a way to quieten a red.**
 The macro half diverges on **11,356 of 13,304 bars** while Structure and Sniper converge in 96 and
@@ -339,8 +342,9 @@ line on every run, so a green cannot be misread as covering the macro.
 is an architectural decision (a second stream into the stack, or pin the cycle to the chart
 timeframe and accept the gap), not a line edit.
 
-⚠ **Warm-up 149 is MEASURED** — last mismatching bar 148, whole tail clean. It includes the
-one-bar first-activation difference documented above, which must not be "fixed" away.
+⚠ **Warm-up 149 is MEASURED** — last mismatching bar 148, whole tail clean; the 15-minute file's 53
+the same way (last mismatch bar 52). Both include the one-bar first-activation difference documented
+above, which must not be "fixed" away.
 
 ## References
 

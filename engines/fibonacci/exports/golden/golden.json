@@ -1,13 +1,26 @@
 {
-  "csv": "VANTAGE_XAUUSD_M5_13304bars.csv",
-  "warmup": 149,
+  "csv": ["VANTAGE_XAUUSD_M5_13304bars.csv", "VANTAGE_XAUUSD_M15_20153bars.csv"],
+  "warmup": {
+    "VANTAGE_XAUUSD_M5_13304bars.csv": 149,
+    "VANTAGE_XAUUSD_M15_20153bars.csv": 53
+  },
   "extra_args": ["--skip-macro"],
   "broker": "Vantage",
   "symbol": "XAUUSD",
-  "timeframe": "M5",
-  "bars": 13304,
+  "timeframe": {
+    "VANTAGE_XAUUSD_M5_13304bars.csv": "M5",
+    "VANTAGE_XAUUSD_M15_20153bars.csv": "M15"
+  },
+  "bars": {
+    "VANTAGE_XAUUSD_M5_13304bars.csv": 13304,
+    "VANTAGE_XAUUSD_M15_20153bars.csv": 20153
+  },
   "harness": "indicators/engines/fib_export.pine",
-  "taken": "2026-09-09",
+  "taken": {
+    "VANTAGE_XAUUSD_M5_13304bars.csv": "2026-09-09",
+    "VANTAGE_XAUUSD_M15_20153bars.csv": "2026-09-09"
+  },
+  "_why_two_files": "ONE HARNESS, TWO FRAMES, and the second is the one the bots run. The 5-minute file covers 2026-07-03 -> 2026-09-09 (two months); the 15-minute file covers 2025-11-03 -> 2026-09-09 (ten months) on the frame SOS Fade and B-LEG replay the fib on. Same code either way, five times the calendar. Both came off the harness as it has stood since 2026-09-03, a minute apart. Each warm-up is measured on its OWN file - one number for both would be a guess for one of them.",
   "_why_skip_macro": "The MACRO (cycle) fib is a deliberate fork and cannot pass. mpc_jarvis.pine reworked its anchor on 2026-07-31; this engine still matches sos_fade_strategy.pine, which is the file the bot actually replays (Aaron's call). Porting the rework would MANUFACTURE drift in the bot rather than remove it. Nothing trades on it either way - sos_fade computes the macro zone and reports it, execution never reads it. The indicator's own toggle is labelled OFF while being refined and ticking it does nothing. A gate that can NEVER pass is worse than no gate, because people learn to scroll past it - so the macro half is excluded and the other three fibs are gated for real. Revisit ONLY when the rework reaches the strategy file, at which point the 1-minute source becomes an architectural decision, not a port.",
-  "_why_warmup": "149 is MEASURED - last mismatching bar 148, whole remaining tail clean. It includes the known one-bar first-activation difference documented in this engine's CLAUDE.md: Pine compares a new origin index against an unset previous value and reports no change on its own first activation, while this port reports one. Harmless, happens once per run, and must NOT be 'fixed' by teaching the port to swallow its first activation."
+  "_why_warmup": "149 is MEASURED - last mismatching bar 148, whole remaining tail clean. It includes the known one-bar first-activation difference documented in this engine's CLAUDE.md: Pine compares a new origin index against an unset previous value and reports no change on its own first activation, while this port reports one. Harmless, happens once per run, and must NOT be 'fixed' by teaching the port to swallow its first activation. M15: 53 is MEASURED the same way - last mismatching bar 52, the same one-bar first-activation difference, and all 20,099 bars after it clean."
 }

@@ -292,7 +292,7 @@ file was taken.**
 
 ⚠ **It prints its COVERAGE FRACTION and names the engines that lack an export**, because a bare
 green tick on this step would read as *the engine gates pass* when it means *the one engine with a
-committed export passes*. Coverage: **11 of 11** gateable engines, from **twelve** committed exports — the gap engine carries two (2026-09-10) because the fib entry-band exemption is a separate branch with its own harness.
+committed export passes*. Coverage: **11 of 11** gateable engines, from **thirteen** committed exports — the gap engine carries two (2026-09-10) because the fib entry-band exemption is a separate branch with its own harness, and the fib engine two frames (5m and 15m), each at its own measured warm-up: `golden.json` may key the warm-up per file.
 
 🔴 **A GATE'S OWN WARNINGS NOW SURVIVE ITS GREEN, and they did not until 2026-09-10.** Each gate's
 stdout was captured and DISCARDED on success, so a caveat the gate printed on every run reached

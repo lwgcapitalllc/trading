@@ -57,7 +57,7 @@ REPO = Path(__file__).resolve().parents[1]
 ENGINES = REPO / "engines"
 
 # Raise this as golden exports are added, so losing one is a failure rather than a quieter run.
-MIN_GOLDEN_EXPORTS = 12
+MIN_GOLDEN_EXPORTS = 13
 
 
 def _gateable_engines():
@@ -85,21 +85,30 @@ def _discover():
         # golden.json carries the MEASURED warm-up and the provenance. A missing manifest means
         # warm-up 0 rather than a skip: silently not running a gate is the failure this whole file
         # exists to stop.
-        warmup, extra = 0, []
+        warmup, extra = {}, []
         manifest = golden_dir / "golden.json"
         if manifest.exists():
             try:
                 data = json.loads(manifest.read_text())
-                warmup = int(data.get("warmup", 0))
+                # One number for every file, or one PER FILE keyed by its name. ⚠ Per file exists
+                # because a warm-up is MEASURED on a file: fib carries a 5-minute and a 15-minute
+                # export whose floors are 149 and 53 bars, and one shared number would be a guess
+                # for one of them. A file the table does not name runs at 0 and goes red, loudly.
+                raw = data.get("warmup", 0)
+                warmup = (
+                    {k: int(v) for k, v in raw.items()}
+                    if isinstance(raw, dict)
+                    else {c.name: int(raw) for c in csvs}
+                )
                 # ⚠ extra_args is a GENERIC seam, not a fib special case: any gate may need a
                 # per-engine flag, and the alternative is this runner growing an if-statement per
                 # engine. Whatever it carries MUST be justified in the manifest itself - the fib
                 # entry explains why its macro half is excluded and when to revisit.
                 extra = [str(a) for a in data.get("extra_args", [])]
-            except (ValueError, OSError) as exc:
+            except (ValueError, OSError, AttributeError, TypeError) as exc:
                 print(f"🔴 {engine.name}: unreadable golden.json ({exc}) - running at warm-up 0.")
         for csv in csvs:
-            found.append((engine, gates[0], csv, warmup, extra))
+            found.append((engine, gates[0], csv, warmup.get(csv.name, 0), extra))
     return found
 
 

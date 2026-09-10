@@ -60,6 +60,16 @@ on the case written for it: the refusal disabled, each gate's call removed, the 
 names dropped, the compared list grown or shrunk, four reader shapes, the fixture exemption, and a
 fixture column added in each gate.
 
+**The raw exports under `engines/`.** Fourteen git-ignored exports sat in the folder root. Eleven
+were byte-identical to golden exports on origin and one was an old-layout gap export nothing cited:
+all twelve deleted. `15_e98ec` went once the docs stopped citing it. `15_850fe` is a 15-minute
+export of the fib harness that passes the fib gate over 20,152 bars, so it became a SECOND fib
+golden instead: ten months against the committed 5-minute file's two, on the frame SOS Fade and
+B-LEG run the fib on. Its warm-up was measured on its own file — 53, not the 5-minute file's 149 —
+so `golden.json` may now key the warm-up per file and `scripts/check_engine_gates.py` reads the
+table. 13 golden exports, all green; three runner mutations red (every file at warm-up 0, the table
+read as one number, the new file removed).
+
 ### The overlap audit outlived its inputs a third time (2026-09-10)
 
 Aaron: *"ok you can run the overlap check."* It had been flagged earlier the same day: the fib
