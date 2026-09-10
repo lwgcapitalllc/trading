@@ -2,3 +2,10 @@
 # ../tools/compare_fib.py. These CSVs are large, local-only test data —
 # never commit them. This file keeps the folder present in the repo.
 *.csv
+
+# 🔴 EXCEPT golden/ — ONE committed export, so this gate runs on every clone forever.
+# ⚠ golden is REGRESSION (catches the PYTHON drifting), fresh is ACCEPTANCE (catches Pine and
+#   Python disagreeing after a Pine edit). A green golden run says NOTHING about a later Pine edit.
+!golden/
+!golden/*.csv
+!golden/*.json

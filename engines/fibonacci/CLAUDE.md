@@ -318,6 +318,30 @@ differs from the chart. Two rules and one check keep the live bot honest:
 Not built yet — there is no bot consuming this engine. Wire it up together with the eventual
 `algos/shared/` fib shim.
 
+## The golden export (2026-09-09) — gated on three fibs, with the fourth excluded ON PURPOSE
+
+`exports/golden/VANTAGE_XAUUSD_M5_13304bars.csv` is COMMITTED and `scripts/check_engine_gates.py`
+(step 15 of `scripts/run_all_tests.sh`) runs `compare_fib.py --warmup 149 --skip-macro` against it on
+every clone. `golden.json` carries the warm-up, the flag and the reason for both.
+
+🔴 **`--skip-macro` is the fork above turned into a gate decision, not a way to quieten a red.**
+The macro half diverges on **11,356 of 13,304 bars** while Structure and Sniper converge in 96 and
+149 — because this engine deliberately matches `sos_fade_strategy.pine`, the file the bot replays,
+rather than the assistant's 2026-07-31 rework. **No export can make it pass, and porting the rework
+would manufacture drift in the BOT.**
+
+⚠ **A gate that can NEVER pass is worse than no gate** — people learn to scroll past it, which is
+how the dead Deploy button survived eight days here. Excluding the one half that is deliberately
+divergent lets the other three be gated for real. The exclusion is printed in the tool's own scope
+line on every run, so a green cannot be misread as covering the macro.
+
+⚠ **Revisit ONLY when the rework reaches the strategy file** — at which point the 1-minute source
+is an architectural decision (a second stream into the stack, or pin the cycle to the chart
+timeframe and accept the gap), not a line edit.
+
+⚠ **Warm-up 149 is MEASURED** — last mismatching bar 148, whole tail clean. It includes the
+one-bar first-activation difference documented above, which must not be "fixed" away.
+
 ## References
 
 - Pine source of truth: `indicators/engines/mpc_jarvis.pine` (fib blocks `GRP_FIBO` Structure fib

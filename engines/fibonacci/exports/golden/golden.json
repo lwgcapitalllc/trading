@@ -1,0 +1,13 @@
+{
+  "csv": "VANTAGE_XAUUSD_M5_13304bars.csv",
+  "warmup": 149,
+  "extra_args": ["--skip-macro"],
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M5",
+  "bars": 13304,
+  "harness": "indicators/engines/fib_export.pine",
+  "taken": "2026-09-09",
+  "_why_skip_macro": "The MACRO (cycle) fib is a deliberate fork and cannot pass. mpc_jarvis.pine reworked its anchor on 2026-07-31; this engine still matches sos_fade_strategy.pine, which is the file the bot actually replays (Aaron's call). Porting the rework would MANUFACTURE drift in the bot rather than remove it. Nothing trades on it either way - sos_fade computes the macro zone and reports it, execution never reads it. The indicator's own toggle is labelled OFF while being refined and ticking it does nothing. A gate that can NEVER pass is worse than no gate, because people learn to scroll past it - so the macro half is excluded and the other three fibs are gated for real. Revisit ONLY when the rework reaches the strategy file, at which point the 1-minute source becomes an architectural decision, not a port.",
+  "_why_warmup": "149 is MEASURED - last mismatching bar 148, whole remaining tail clean. It includes the known one-bar first-activation difference documented in this engine's CLAUDE.md: Pine compares a new origin index against an unset previous value and reports no change on its own first activation, while this port reports one. Harmless, happens once per run, and must NOT be 'fixed' by teaching the port to swallow its first activation."
+}

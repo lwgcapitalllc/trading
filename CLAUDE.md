@@ -285,10 +285,18 @@ file was taken.**
 
 ⚠ **It prints its COVERAGE FRACTION and names the engines that lack an export**, because a bare
 green tick on this step would read as *the engine gates pass* when it means *the one engine with a
-committed export passes*. Coverage: **10 of 11** gateable engines, from ten fresh exports taken 2026-09-09. Only the
-fibonacci gate is still uncovered, and NOT for want of an export — its macro component is the
-already-recorded re-port (11,356 of 13,304 bars diverge, while the structure fib and sniper converge
-in 96 and 149). **Say that plainly rather than letting the gap read as a missing file.**
+committed export passes*. Coverage: **11 of 11** gateable engines, from eleven fresh exports taken 2026-09-09.
+
+🔴 **The fibonacci gate excludes its MACRO half deliberately, and that is a decision rather than
+a gap.** The macro fib diverges on 11,356 of 13,304 bars because the engine matches the STRATEGY
+file the bot replays, not the assistant's 2026-07-31 rework — porting that would manufacture drift
+in the bot. Nothing trades on it: the strategy computes the zone and reports it, execution never
+reads it. **A gate that can never pass is worse than none**, so the other three fibs are gated for
+real and the exclusion prints in the tool's scope line on every run.
+
+⚠ **`golden.json` carries an `extra_args` list** — a generic seam so any gate can take a per-engine
+flag without this runner growing an if-statement per engine. Anything it carries must justify itself
+in the manifest, as fib's does.
 
 ⚠ **Each golden folder carries a `golden.json`** holding the MEASURED warm-up and the provenance
 (broker, symbol, timeframe, bar count, harness). Provenance is recorded because a cross-cutting run

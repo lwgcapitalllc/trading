@@ -250,6 +250,18 @@ def main(argv=None):
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engines)")
+    ap.add_argument(
+        "--skip-macro",
+        action="store_true",
+        help=(
+            "exclude the Macro (cycle) fib from the comparison. USE ONLY for the standing "
+            "2026-07-31 decision: the assistant indicator reworked the macro anchor and this "
+            "engine deliberately still matches the STRATEGY file, which is what the bot replays. "
+            "Porting the rework would manufacture drift in the bot rather than remove it, so the "
+            "macro half cannot pass and is not meant to. Nothing trades on it - the strategy "
+            "computes the zone and reports it, execution never reads it."
+        ),
+    )
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -270,9 +282,15 @@ def main(argv=None):
     macro_exercised = have_macro and macro_col is not None and any(_num(r.get(macro_col)) == 1.0 for r in rows)
 
     # Only compare fields the CSV carries; drop Macro fields on an export that never exercised it.
+    # 🔴 --skip-macro is a DELIBERATE, NARROW exclusion, never a way to quieten a red.
+    # A gate that can never pass is worse than no gate: people learn to scroll past it, which is
+    # how the dead Deploy button survived eight days here. Excluding the one half that is
+    # deliberately divergent lets the other three fibs be gated for real.
+    skip_macro = getattr(args, "skip_macro", False)
     compare_fields = [
         fld for fld in ALL_FIELDS
-        if cols.get(fld) is not None and not (fld in MACRO_FIELDS and not macro_exercised)
+        if cols.get(fld) is not None
+        and not (fld in MACRO_FIELDS and (skip_macro or not macro_exercised))
     ]
 
     engine = StructureEngine(major_length=args.major_length)
@@ -327,11 +345,18 @@ def main(argv=None):
         parts.append("Macro")
     if have_ifib:
         parts.append("Internal")
+    if skip_macro:
+        parts = [x for x in parts if x != "Macro"]
     scope = " + ".join(parts)
     notes = []
     if not have_sniper:
         notes.append("Sniper columns absent")
-    if have_macro and not macro_exercised:
+    if skip_macro:
+        notes.append(
+            "MACRO EXCLUDED by --skip-macro — the engine matches the STRATEGY file's older anchor "
+            "on purpose (2026-07-31); a green here says NOTHING about the macro fib"
+        )
+    elif have_macro and not macro_exercised:
         notes.append("Macro present but never active — export on <=5m to check it")
     elif not have_macro:
         notes.append("Macro columns absent")
