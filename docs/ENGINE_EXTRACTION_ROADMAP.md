@@ -144,6 +144,39 @@ lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
 
+## Audit findings — 2026-09-10 (`/audit-engines`, clean tree, one commit since: `4c807f0`) 🟢 NO ENGINE AFFECTED
+
+**`4c807f0` is table and 1m-drawing logic only.** The sub-5m fib switch had been lifting the gate the
+1m ENTRY row hangs off; the alignment test now has its own switch-free flag (`fibo1mAligned`) that
+the table and its two 1m confluence latches read, while the drawing keeps the switched one. The 1m
+SOS time is now recorded on every 1m chart rather than only with the switch off. **At the switch's
+default nothing moves at all.** No engine block, neither structure mirror, no harness —
+**sync chain NOT triggered** (it records a time off `st.bull_sos`/`st.bear_sos`; it changes nothing
+about when a swing confirms or a break fires). `check_pine_blocks.py` green.
+
+### The 2026-09-09 findings, closed since
+- ✅ `equal_highs_lows/` — moved close → wick on 2026-09-09, with the strategy Pines, gated green.
+- ✅ `fair_value_gaps/` entry-band exemption — modelled 2026-09-10 (`fvg_exempt_zone`, its own
+  harness and golden export). A MEASUREMENT switch, off in every strategy.
+- ✅ "No gate can answer on this machine" — every gateable engine has a committed golden export.
+- 🔴 **Correction: that audit said only the gap engine's example text showed 8 and no consumer
+  relied on the default. The engine's DEFAULT was 8, and the Command Center's gap layer typed its
+  own 8 — plus a 0.04 floor and no close test — so it drew gaps the indicator does not on 15m and
+  up.** Both fixed 2026-09-10, with every engine default now held to the Pine by
+  `engines/tests/test_defaults_mirror_the_indicator.py`.
+
+### ✘ The Shift / Expansion / Continuation classifier — DECIDED: no engine
+A four-line counter over break events `market_structure` already emits (SOS → 1, first BOS after
+it → 2, later BOSes → 3). Its only readers are this indicator's MTF table and its 1m fib/ENTRY
+gate; **no strategy Pine reads the code** (`realign` and `smc_session_sweep` carry `MTFStruct` for
+direction and breaks, not the counter) **and no bot does.** An engine for it would be a stub with
+no consumer and no gate — the over-engineering this repo counts as a corner cut. **If a bot ever
+needs it, it is one field on `market_structure`'s output, added with that bot and a gate column in
+the same change.**
+
+**Nothing was changed by this audit.** Any engine fix must re-run its own `compare_*.py` to exit 0
+on a FRESH TradingView export before it may be committed.
+
 ## Audit findings — 2026-09-09 (`/audit-engines`, clean tree, one commit since: `54d0a30`) 🟡 THE PUSH IS CLEAN, THE ENGINES ARE NOT
 
 **The commit that prompted this audit is not the finding.** `54d0a30` (2026-09-08) touches
