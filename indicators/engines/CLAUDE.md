@@ -89,6 +89,26 @@ no signal moves. The fib maths already ran on every timeframe regardless of whet
 
 ---
 
+## 🔴 `eq_export.pine` claimed its defaults matched mpc and they never did (fixed 2026-09-09)
+
+The equal-highs/lows parity harness carried a comment saying *defaults == mpc_jarvis.pine* while its
+tolerance sat at **0.1 against mpc's 0.25** and its level cap at **6 against mpc's 14**. Its
+mitigation was also still a CLOSE where mpc moved to a WICK on 2026-08-04. Both are fixed and the
+gate is green on two fresh exports.
+
+⚠ **A harness that misdescribes its own settings sends the next reader at the ENGINE.** That is
+what makes this worse than an ordinary stale comment: the harness is one half of the gate, so when
+it disagrees with the engine the output looks like an engine bug, and the engine is where people go
+looking.
+
+⚠ **The six plot slots per side are a HARNESS limit, not the cap.** They are the FIRST six of an
+up-to-14 array, so `compare_eq.py` must run at `--max-levels 14`; at 6 every slot mismatches on
+about half the bars — a six-cap engine keeps the NEWEST six while the export shows the OLDEST six.
+**That red is the tool being misconfigured and it is indistinguishable from a broken engine.**
+
+⚠ **Engine and harness move in the SAME commit, always** — fixing one alone turns the gate red and
+blames the other.
+
 ## 🔴 The one real defect: `f_rev15` had three ways to die and the chart-side SOS Fade engine has four
 
 The missing one is the one that fires on a WIN — `fibo7Touched`, price back at the leg origin. So on the 15m chart the REV row read `Pass` the moment TP3 printed, while the **1m chart kept the same leg alive at stage 4 saying TAKE PROFIT** until an opposite SOS or a continuation BOS happened along, which can be hours. Two charts, two answers, one setup. Worse than a stale row: the RE-ENTRY round trip clears the TP latches when price returns to 0.618, so a finished trade could hand the 1m a fresh AWAIT and ask for a 1m SOS on a leg the 15m had closed the book on. Fixed with `or L_tp0` / `or S_tp0` on the two death conditions — `L_tp0` **is** TP3, since `p0` is `L_high`, the leg origin, the same 0.0 the drawn fib labels TP3. ⚠ **It kills one bar LATE**: the death block runs before the fib block that sets the latch, where the 15m side kills on the bar itself. Left as is — every other value this engine ships crosses the security boundary a bar late in the same way. ⚠ **It retires the whole 1m stack together, not just the row** — `rStage` falling below 3 drops `_m15Retraced`, which is what `fiboShowAligned`, the 1m External Fib, the 1m Sniper Zone and the 1m ENTRY row all hang off. ⚠ **Nothing on the 15m moves**: every consumer of `rStage`/`rTp50`/`rDeepCode`/`rZoneLo` sits behind `_fibOneMin`, `_sn1m`, `revOn1m` or the non-15m branch of the table, checked one by one; `f_rev15` exists only in `mpc_jarvis.pine` and `m15_playbook.pine`, so **no bot and no parity gate can see this.**

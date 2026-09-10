@@ -177,10 +177,14 @@ def test_defaults_match_the_locked_mpc_constants():
 
     assert (f.MPC_MAX_COUNT, f.MPC_REQUIRE_CLOSE) == (8, False)
     assert (f.MPC_THRESH_LTF, f.MPC_THRESH_HTF, f.MPC_TF_SPLIT_SECONDS) == (0.0, 0.04, 900)
+    # 2 / 0.25 / 14 are mpc_jarvis.pine's own eqPivotLen / eqAtrMult / eqMax. They were
+    # 2 / 0.1 / 6 here until 2026-09-09, i.e. this chart drew a different equality band and
+    # a different level cap from the indicator it mirrors. This assert is the pin that keeps
+    # the two together - if it goes red, find out which side moved before editing it.
     assert (f.MPC_EQ_PIVOT_LEN, f.MPC_EQ_ATR_MULT, f.MPC_EQ_MAX, f.MPC_EQ_EXEMPT) == (
         2,
-        0.1,
-        6,
+        0.25,
+        14,
         True,
     )
 

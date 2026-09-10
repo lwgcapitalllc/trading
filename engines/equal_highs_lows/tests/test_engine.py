@@ -4,7 +4,7 @@ Tests for the Equal Highs/Lows (EQH/EQL) state machine.
 These pin the ported Pine behaviour (mpc_jarvis.pine "EQUAL HIGHS / LOWS"): ATR(50) Wilder
 tolerance, strict price pivots (ta.pivothigh/ta.pivotlow) confirmed pivot_len bars late, a level
 formed when two consecutive same-side pivots land within tolerance (price = outer of the pair),
-FIFO eviction past the per-side cap, and close-through mitigation.
+FIFO eviction past the per-side cap, and wick-through mitigation.
 
 Two layers:
   * Structural hand-checks — the ATR warm-up tolerance (0 until the 50-bar seed), pivot confirmation
@@ -131,18 +131,20 @@ def ref_run(highs, lows, closes, pivot_len=2, atr_mult=0.1, max_levels=6, atr_le
                 while len(eql) > max_levels:
                     eql.pop(0)
             prev_pl = pl
-        # Mitigation
+        # Mitigation — WICK, not close (2026-09-09). This reference is a SECOND COPY of the
+        # rule and it caught the change honestly: left on `closes` it disagreed with the fixed
+        # engine on the random walk, which is the failure you want a reference model to produce.
         mit = 0
         keep_h = []
         for p in eqh:
-            if closes[i] > p:
+            if highs[i] > p:
                 mit += 1
             else:
                 keep_h.append(p)
         eqh = keep_h
         keep_l = []
         for p in eql:
-            if closes[i] < p:
+            if lows[i] < p:
                 mit += 1
             else:
                 keep_l.append(p)
@@ -156,11 +158,28 @@ def ref_run(highs, lows, closes, pivot_len=2, atr_mult=0.1, max_levels=6, atr_le
 # Hand-checks
 # ─────────────────────────────────────────────────────────────────────────────
 
+def test_shipped_defaults_are_the_indicators():
+    """The defaults ARE the contract: mpc_jarvis.pine runs eqPivotLen 2 / eqAtrMult 0.25 / eqMax 14.
+
+    Pinned because they were 0.1 / 6 here until 2026-09-09 while the indicator ran 0.25 / 14, so
+    the live bot and the chart disagreed about which pivots count as equal and how many levels
+    survive. Six files carried these numbers; this is the one that fails if they drift again.
+    """
+    eng = EqualHighsLowsEngine()
+    assert (eng._pivot_len, eng._atr_mult, eng._max_levels) == (2, 0.25, 14)
+
+
 def test_atr_tolerance_warmup():
-    """eqTol is 0 until ATR(50) seeds (bar index 49); then ATR×0.1. With constant TR=2, tol=0.2."""
+    """eqTol is 0 until ATR(50) seeds (bar index 49); then ATR×mult.
+
+    The multiplier is passed EXPLICITLY rather than inherited from the default. This test asserted
+    a hard 0.2 while taking the default silently, so moving the default on 2026-09-09 turned it red
+    for a reason that had nothing to do with warm-up. A test that tracks a default is a test whose
+    meaning changes without anyone editing it - state what you are exercising.
+    """
     # Flat price with high=close+1, low=close-1 → TR=2 every bar after bar 0 (also 2 on bar 0).
     bars = [(101.0, 99.0, 100.0)] * 60
-    evs = run(bars)
+    evs = run(bars, atr_mult=0.1)
     for i in range(49):
         assert evs[i].tolerance == 0.0, f"bar {i} tol should be 0 during ATR warm-up"
     assert abs(evs[49].tolerance - 0.2) < 1e-9   # ATR seeds at bar 49 → 2.0 × 0.1
@@ -208,12 +227,12 @@ def test_eqh_forms_on_equal_second_pivot():
     assert evs[8].active_eql == []
 
 
-def test_eqh_mitigation_on_close_above():
-    """An active EQH is taken when a later bar CLOSES above it."""
+def test_eqh_mitigation_on_wick_above():
+    """An active EQH is taken when a later bar trades above it."""
     bars = [
         (1.0, 0.0, 0.5), (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),
         (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),   # EQH @5 at bar 8
-        (6.0, 4.0, 6.0),                                                        # bar 9: close 6 > 5 → taken
+        (6.0, 4.0, 6.0),                                                        # bar 9: high 6 > 5 → taken
     ]
     evs = run(bars)
     assert evs[8].active_eqh == [5.0]
@@ -222,8 +241,8 @@ def test_eqh_mitigation_on_close_above():
     assert evs[9].active_eqh == []
 
 
-def test_eql_forms_and_mitigates_on_close_below():
-    """Mirror side: two equal strict pivot lows form an EQL at min; a close below takes it."""
+def test_eql_forms_and_mitigates_on_wick_below():
+    """Mirror side: two equal strict pivot lows form an EQL at min; trading below takes it."""
     bars = [
         (10.0, 9.0, 9.5),
         (9.5, 8.0, 8.5),
@@ -234,7 +253,7 @@ def test_eql_forms_and_mitigates_on_close_below():
         (9.0, 5.0, 6.0),   # bar 6: equal pivot low @5 → EQL forms at bar 8
         (9.5, 8.0, 8.5),
         (10.0, 9.0, 9.5),
-        (6.0, 4.0, 4.0),   # bar 9: close 4 < 5 → taken
+        (6.0, 4.0, 4.0),   # bar 9: low 4 < 5 → taken
     ]
     evs = run(bars)
     assert len(evs[8].formed) == 1
@@ -293,9 +312,14 @@ def test_reference_cross_check():
     for h, l, c in tail:
         highs.append(h); lows.append(l); closes.append(c)
 
+    # Both sides take the SAME explicit settings. Left implicit, the engine followed its default
+    # and the reference followed ITS OWN copy of that default, so the 2026-09-09 default change
+    # made them disagree about the configuration rather than about the logic - a red that says
+    # nothing about either implementation.
+    cfg = dict(pivot_len=2, atr_mult=0.1, max_levels=6)
     bars = list(zip(highs, lows, closes))
-    evs = run(bars)
-    ref = ref_run(highs, lows, closes)
+    evs = run(bars, **cfg)
+    ref = ref_run(highs, lows, closes, **cfg)
 
     n_formed = n_mit = 0
     formed_in_atr_regime_with_tol = False
@@ -315,3 +339,59 @@ def test_reference_cross_check():
     assert any(not l.is_high for e in evs for l in e.formed), "no EQL formed"
     assert n_mit >= 1, "series should mitigate at least one level"
     assert formed_in_atr_regime_with_tol, "no formation exercised the nonzero-tolerance path"
+
+
+# ── The two tests below are the ONLY ones here that can tell a wick rule from a close rule. ──
+# Every other mitigation case uses a bar where the high AND the close clear the level, so it
+# passes under either implementation and proves nothing about which one is running. Both of
+# these were watched RED against the pre-2026-09-09 close-rule engine.
+
+
+def test_eqh_taken_by_wick_that_closes_back_below():
+    """High clears the EQH, close does not — the level is STILL taken.
+
+    RED against the close rule: it left the level active and `mitigated` empty.
+    """
+    bars = [
+        (1.0, 0.0, 0.5), (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),
+        (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),   # EQH @5 at bar 8
+        (5.5, 2.0, 3.0),                          # bar 9: high 5.5 > 5, close 3.0 < 5
+    ]
+    evs = run(bars)
+    assert evs[8].active_eqh == [5.0]
+    assert len(evs[9].mitigated) == 1
+    assert evs[9].mitigated[0].price == 5.0
+    assert evs[9].active_eqh == []
+
+
+def test_eql_taken_by_wick_that_closes_back_above():
+    """Low clears the EQL, close does not — the level is STILL taken (mirror of the above)."""
+    bars = [
+        (10.0, 9.0, 9.5),
+        (9.5, 8.0, 8.5),
+        (9.0, 5.0, 6.0),   # bar 2: pivot low @5
+        (9.5, 8.0, 8.5),
+        (10.0, 9.0, 9.5),
+        (9.5, 8.0, 8.5),
+        (9.0, 5.0, 6.0),   # bar 6: equal pivot low @5 → EQL forms at bar 8
+        (9.5, 8.0, 8.5),
+        (10.0, 9.0, 9.5),
+        (9.0, 4.5, 8.0),   # bar 9: low 4.5 < 5, close 8.0 > 5
+    ]
+    evs = run(bars)
+    assert evs[8].active_eql == [5.0]
+    assert len(evs[9].mitigated) == 1
+    assert evs[9].mitigated[0].price == 5.0
+    assert evs[9].active_eql == []
+
+
+def test_level_survives_a_bar_that_only_approaches_it():
+    """Neither rule takes this one — guards against a mitigation that fires on any touch."""
+    bars = [
+        (1.0, 0.0, 0.5), (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),
+        (2.0, 0.5, 1.0), (5.0, 1.0, 2.0), (2.0, 0.5, 1.0), (1.0, 0.0, 0.5),   # EQH @5 at bar 8
+        (4.9, 2.0, 3.0),                          # bar 9: high 4.9 < 5 — untouched
+    ]
+    evs = run(bars)
+    assert evs[9].mitigated == []
+    assert evs[9].active_eqh == [5.0]

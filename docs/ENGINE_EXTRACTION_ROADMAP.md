@@ -51,7 +51,7 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 - **`engines/vwap/`** — the session VWAP: a volume-weighted running mean of `hlc3` (`ta.vwap(hlc3)`), re-anchored each trading day, plus a derived close-vs-line cross. First engine to need a **volume** column in the feed (XAUUSD tick volume — what the Pine `ta.vwap` already reads). Time-driven; reconstructs the trading-day anchor directly (the **same** 18:00-NY boundary the liquidity daily level uses), so it does not compose the sessions engine. Ported line-by-line from `mpc_jarvis.pine` line 852, 13 unit tests, **100% Pine parity** on a real `VANTAGE_XAUUSD, 5m` export (6,973 bars; both fields — VWAP value + trading-day anchor pulse — match, `--htf-rollover 18 --warmup 90`, exit 0; harness: `indicators/engines/vwap_export.pine` + `engines/vwap/tools/compare_vwap.py`). Uses a **relative** tolerance (1e-6) because the value is a cumulative sum that drifts at float-rounding level — unlike the copied-value level engines' exact match.
 - **`engines/session_volume_profile/`** — the Session Volume Profile: on each **Asia** session close, a 50-row volume profile over the session range whose highest-volume row gives the **POC** (the "MV" line), plus the MV confirmation (price straddling the POC). Composes `engines/sessions/` for the Asia window/edges (like liquidity) and needs the **volume** feed (like VWAP). Two Pine quirks ported exactly: the session-close bar is folded into the profile, and the bull/bear two-array newest-first summation is kept (float addition is not associative — collapsing it could flip a near-tie POC row). Ported from `mpc_jarvis.pine` (SVP block 2554, MV slot 2772), 12 unit tests, **100% Pine parity**. The row count was re-synced **100 → 50** on 2026-07-09 (mpc line 317) and re-validated on a fresh `VANTAGE_XAUUSD, 5m` export (13,147 bars; all 3 fields — POC price + form pulse + sweep state — match, `--warmup 251`, exit 0; harness: `indicators/engines/svp_export.pine` + `engines/session_volume_profile/tools/compare_svp.py`). The POC uses an **exact** (1e-6) tolerance — it is a deterministic formula on the copied session H/L + integer volume, so it is bit-identical, unlike VWAP's cumulative value.
 - **`engines/rsi_divergence/`** — Wilder-RSI regular-divergence detector (standalone; sibling of FVG). Ported line-by-line, 9 tests, **100% Pine parity** (`compare_rsi_div.py --warmup 1630`, exit 0). Feeds the SOS Fade setup "+ DIV" tag.
-- **`engines/equal_highs_lows/`** — EQH/EQL liquidity-level detector (standalone; sibling of FVG + RSI-divergence). Two consecutive same-side strict price pivots within an ATR(50)×mult band → a level (EQH `max` / EQL `min`), FIFO cap per side, close-through mitigation. Ported line-by-line from the mpc EQ block, **7 unit tests green (built 2026-07-18)**. **Pine-parity VALIDATED 2026-07-19 (exit 0)** on a 16,639-bar `VANTAGE_XAUUSD, 5m` grand export — the run caught + fixed a real pivot-tie bug (Pine allows a LEFT tie / strict RIGHT; the last bar of an equal run is the pivot). The Pine's `eqExemptFvg` FVG↔EQ coupling is MODELLED (FVG `update()` takes `eq_levels`/`eq_tol`; consumer runs EQ→FVG) — see the 2026-07-18/07-19 notes.
+- **`engines/equal_highs_lows/`** — EQH/EQL liquidity-level detector (standalone; sibling of FVG + RSI-divergence). Two consecutive same-side strict price pivots within an ATR(50)×mult band → a level (EQH `max` / EQL `min`), FIFO cap per side, close-through mitigation. 🔴 **THE INDICATOR MOVED TO A WICK ON 2026-08-04 AND THIS ENGINE DID NOT — see *Audit findings — 2026-09-09*.** Ported line-by-line from the mpc EQ block, **7 unit tests green (built 2026-07-18)**. **Pine-parity VALIDATED 2026-07-19 (exit 0)** on a 16,639-bar `VANTAGE_XAUUSD, 5m` grand export — the run caught + fixed a real pivot-tie bug (Pine allows a LEFT tie / strict RIGHT; the last bar of an equal run is the pivot). The Pine's `eqExemptFvg` FVG↔EQ coupling is MODELLED (FVG `update()` takes `eq_levels`/`eq_tol`; consumer runs EQ→FVG) — see the 2026-07-18/07-19 notes.
 
 ---
 
@@ -143,6 +143,51 @@ an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
 
 ---
+
+## Audit findings — 2026-09-09 (`/audit-engines`, clean tree, one commit since: `54d0a30`) 🟡 THE PUSH IS CLEAN, THE ENGINES ARE NOT
+
+**The commit that prompted this audit is not the finding.** `54d0a30` (2026-09-08) touches
+`mpc_jarvis.pine` and its own CLAUDE.md and nothing else — no engine, neither structure mirror,
+no parity file. Break-tag sizing, the internal first-swing tags hidden at DRAW time (transparent
+text, string untouched), and a new *Show Fib Below 5m* switch that **defaults to the previous
+hardcoded behaviour**. **Sync chain NOT triggered** — label size and text colour only, no change
+to when a swing confirms or a break fires. ⚠ The switch is real logic when ON: it lifts the 1m
+aligned-leg gate AND the Sniper Zone twin together, so the 1m entry row will call an entry the 15m
+does not support. No live bot can reach it — the three bots run M15 and M5.
+
+### 🔴 `engines/equal_highs_lows/` — STALE, and it has been since 2026-08-04
+The indicator kills an EQH when `high > lvl` and an EQL when `low < lvl`; the engine still requires
+a CLOSE through. The Pine's own comment at the block records the split deliberately and names the
+engine and `sos_fade_strategy.pine` as the two copies left behind — **it was written down and never
+carried across, which is how a knowing divergence becomes an unknown one.** Cascade: EQ levels feed
+the FVG cap exemption, so this moves which gaps survive too. ⚠ The engine side was verified
+directly; that the strategy Pine is also still on `close` is the indicator's claim, not a check.
+
+### 🔴 `engines/fair_value_gaps/` — models ONE of the indicator's TWO cap exemptions
+`f_fvgZoneKeep` exempts a gap sitting in the live fib entry band on the trade's own side, published
+back from the fib block. The engine has no parameter for it; only the EQ exemption is modelled. This
+decides which gaps are EVICTED, so a parity run goes RED on it rather than merely not covering it.
+⚠ The gap-count ceiling is NOT part of this: the Pine pins 7, the live strategy passes 7, and only
+the engine's own example text still shows 8 — no consumer relies on that default.
+
+### ✘ Never mapped: the Shift / Expansion / Continuation classifier
+`f_mtfStruct` turns the structure stream into a 1/2/3 event code off a breaks-since-shift counter.
+`market_structure` emits BOS/SOS and has no such counter. It is now load-bearing beyond the table —
+the whole 1m fib / Sniper / ENTRY stack gates on it. Also unmapped: HTF directional bias (already on
+*Still to build*), the 1m gap feed, the 1m aligned-fib gate and its retirement rule.
+
+### 🔴 NO GATE CAN ANSWER ON THIS MACHINE — every export is from early July
+`compare_tradingview.py` exits 1 on both structure exports and `compare_fib.py` exits 1 on the fib
+export. **That is the FIXTURE, not the engine, and it was proven rather than assumed:** the same
+exports were replayed against the engine as it stood BEFORE the August fixes (`700f7f65~1`) and the
+mismatch counts are near-identical — `px_i_sw` 1062 both ways. Mismatches run bar 0 to the last bar
+with no warm-up decay, i.e. the July export does not describe either engine version. ⚠ **A red gate
+on a stale export and a red gate on a broken engine are the same output**; the only thing that
+separates them is re-running against an older engine, and it costs two minutes. ⚠ Rule 22 is
+therefore unsatisfiable here until a fresh export exists — it blocks the fix rather than gating it.
+
+**Nothing was changed by this audit.** Any engine fix must re-run its own `compare_*.py` to exit 0
+on a FRESH TradingView export before it may be committed.
 
 ## Audit findings — 2026-08-23 (`/audit-engines`, clean tree, one commit since: `f4b0410`) 🟢 ALL THREE GATES GREEN
 
@@ -282,6 +327,8 @@ canonical engine (structure, order blocks, FVG, EQH/EQL, RSI divergence, session
 range, VWAP, liquidity, fibs, SVP). The SOS Fade and B-LEG sequences are strategy-tier as before;
 Continuation is still disabled; Internal Fib is still deleted from the Pine. **No new un-extracted
 block.** `engines/market_structure/tests` 17 green.
+
+🔴 **THAT CLAIM EXPIRED. Re-scanned 2026-09-09 over 7,185 lines and it no longer holds — see *Audit findings — 2026-09-09* below.** A coverage claim is pinned to a LINE COUNT and nothing re-checks it; this one read as current for a fortnight after it stopped being true.
 
 ---
 

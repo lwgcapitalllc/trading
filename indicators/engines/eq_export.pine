@@ -5,6 +5,11 @@
 // ============================================================================
 // Instrumented copy of the "EQUAL HIGHS / LOWS (EQH / EQL)" block from
 // mpc_jarvis.pine, with ALL drawing removed (no dotted lines, no labels, no
+// 🔴 MITIGATION IS A WICK, NOT A CLOSE (2026-09-09) — `high > lvl` takes an EQH and
+// `low < lvl` takes an EQL, matching mpc_jarvis.pine since its 2026-08-04 change. This
+// harness is the file compare_eq.py diffs the Python engine against, so it is HALF of the
+// gate: fixing the engine and leaving this on `close` would turn the gate red and read as
+// the engine being wrong. Engine and harness move in the SAME commit, always.
 // line arrays — those are visuals) and the price-level STATE kept (the eqhPx /
 // eqlPx float arrays). It adds px_eq* plot columns so a TradingView CSV export
 // can be diffed bar-by-bar against the Python EqualHighsLowsEngine by
@@ -15,7 +20,12 @@
 //
 // The FVG-persistence exemption (f_fvgNearEq / eqExemptFvg) lives on the FVG
 // side and is intentionally NOT reproduced here — this harness validates the EQ
-// state machine only. eqMax default is 6, so six active-level slots per side.
+// state machine only.
+// 🔴 THESE DEFAULTS CLAIMED TO MATCH mpc_jarvis.pine AND DID NOT, FOR AS LONG AS THIS FILE
+// EXISTED (fixed 2026-09-09): the comment said so while the tolerance sat at 0.1 against mpc's
+// 0.25 and the cap at 6 against mpc's 14. A harness that misdescribes its own settings sends the
+// next reader to the engine. ⚠ The six plot slots below are a HARNESS limit, not the cap — they
+// are the FIRST six of an up-to-14 array, so compare at --max-levels 14, never 6.
 // ============================================================================
 // overlay=false: its own pane, so the transparent parity plots (mixing prices and
 // small counts) don't drag the price chart's scale. All drawing is removed anyway.
@@ -24,8 +34,8 @@ indicator("Equal Highs/Lows Export", overlay = false, max_bars_back = 2000)
 // ── GRP_EQ inputs (defaults == mpc_jarvis.pine) ──
 bool  showEq     = input.bool(true, "Show Equal Highs/Lows")
 int   eqPivotLen = input.int(2,   "EQ Pivot Length",       minval = 1, maxval = 20)
-float eqAtrMult  = input.float(0.1, "EQ Tolerance (x ATR)", minval = 0.0, maxval = 2.0, step = 0.05)
-int   eqMax      = input.int(6,   "Max Active EQ (per side)", minval = 1, maxval = 20)
+float eqAtrMult  = input.float(0.25, "EQ Tolerance (x ATR)", minval = 0.0, maxval = 2.0, step = 0.05)
+int   eqMax      = input.int(14,  "Max Active EQ (per side)", minval = 1, maxval = 20)
 
 // ── ATR tolerance + pivots (byte-identical to mpc) ──
 float eqAtr = ta.atr(50)
@@ -64,11 +74,11 @@ if showEq and not na(eqPl)
 // Mitigation each bar: EQH taken on a close ABOVE it, EQL on a close BELOW it.
 if array.size(eqhPx) > 0
     for i = array.size(eqhPx) - 1 to 0
-        if close > array.get(eqhPx, i)
+        if high > array.get(eqhPx, i)
             array.remove(eqhPx, i)
 if array.size(eqlPx) > 0
     for i = array.size(eqlPx) - 1 to 0
-        if close < array.get(eqlPx, i)
+        if low < array.get(eqlPx, i)
             array.remove(eqlPx, i)
 
 // ── Parity columns ──

@@ -104,8 +104,8 @@ class EngineConfig:
     # hardcoded in the Pine rather than exposed, so the indicator and the strategy cannot draw
     # different levels. Only read when `eq_exempt_fvg` is on.
     eq_pivot_len: int = 2
-    eq_atr_mult: float = 0.1
-    eq_max_levels: int = 6
+    eq_atr_mult: float = 0.25
+    eq_max_levels: int = 14
     # order_blocks — OPT-IN, and off by default for the same reason the EQ engine is: no strategy
     # in this repo reads an order block today (`sos_fade`, `b_leg` and `bos` all ignore
     # them), and an unused engine still costs a per-bar ATR, two pivot scans and a live-zone walk on

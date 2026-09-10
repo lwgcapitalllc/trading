@@ -3477,6 +3477,15 @@ now points at `indicators/engines/structure_engine.pine` and `fvg_overlays.py` a
 `indicators/engines/mpc_jarvis.pine`. Comments only; no overlay geometry moved and no stored run
 re-renders. A path here from before that date is stale.
 
+🔴 **The equal-level constants here were 2 / 0.1 / 6 until 2026-09-09 and the indicator runs
+2 / 0.25 / 14**, so this chart drew a different equality band and a different level cap from the
+TradingView chart it mirrors — and those levels feed the gap cap exemption, so the GAPS drawn moved
+too, not just the levels. Synced, with `tests/test_fvg_overlays.py` pinning them. ⚠ **This is a
+DISPLAY consumer — no strategy reads it, so nothing traded differently** — but a chart that quietly
+disagrees with the chart it is a copy of is how somebody concludes the engine is wrong. ⚠ **Six
+files carried these three numbers; a default duplicated six ways is a default that drifts.** Full
+record and the measurement: `engines/equal_highs_lows/CLAUDE.md`.
+
 `services/fvg_overlays.py`. Replays the canonical `engines/fair_value_gaps/` engine over the candles
 the chart is about to show and emits one `box` overlay per gap, in the group `Fair Value Gaps`, which
 the panel lists in its **Analysis** dropdown (default OFF). Never a second FVG engine — bare-name

@@ -54,6 +54,17 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   right. Pinned by `tests/test_replay_order_blocks.py` (8 tests, all 8 watched RED against HEAD),
   whose load-bearing case asserts that enabling it leaves all ten other `BarState` fields
   byte-identical — every measured figure in this repo was produced by a stack with no OB engine in it.
+  🔴 **The equal-highs/lows knobs on `EngineConfig` moved to the INDICATOR's values on
+  2026-09-09: `eq_atr_mult` 0.1 → 0.25 and `eq_max_levels` 6 → 14.** They had never matched
+  `mpc_jarvis.pine`, so every replay through this stack — and the LIVE SOS Fade bot, which turns
+  `eq_exempt_fvg` ON — used a narrower equality band and a shallower level cap than the chart the
+  setups are read off. ⚠ **MEASURED before the switch, 157,004 M15 bars: the trade list is
+  IDENTICAL either way (244 rows) and four SETUP rows move.** The four are what make the run
+  believable — a change that moved nothing would equally mean the config never reached the engine.
+  ⚠ **These are defaults on a dataclass, so nothing fails when they disagree with Pine** — the
+  parity gate cannot see them either, which is this file's own *an engine input the decision stream
+  does not export is a silent parity trap*, arriving from the config end instead. Full record:
+  `engines/equal_highs_lows/CLAUDE.md`.
   `EngineConfig` carries the engine-construction knobs; note `show_internal` (default True): the
   `market_structure` engine always computes internal structure, but a consumer whose Pine has
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields

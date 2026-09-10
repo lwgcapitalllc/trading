@@ -75,8 +75,8 @@ MPC_THRESH_LTF = 0.0  # fvgThreshLTF — below 15m
 MPC_THRESH_HTF = 0.04  # fvgThreshHTF — 15m and above
 MPC_TF_SPLIT_SECONDS = 900  # timeframe.in_seconds() < 900
 MPC_EQ_PIVOT_LEN = 2  # eqPivotLen
-MPC_EQ_ATR_MULT = 0.1  # eqAtrMult
-MPC_EQ_MAX = 6  # eqMax
+MPC_EQ_ATR_MULT = 0.25  # eqAtrMult
+MPC_EQ_MAX = 14  # eqMax
 MPC_EQ_EXEMPT = True  # eqExemptFvg — a gap behind an EQH/EQL survives the FIFO cap
 
 # Colours. mpc paints BOTH directions the SAME grey (`color.new(color.gray, 80)`) and explicitly no

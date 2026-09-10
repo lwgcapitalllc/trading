@@ -22,9 +22,12 @@ Data lineup
 Export ONE CSV from TradingView with indicators/engines/eq_export.pine on the chart (chart menu → Export chart
 data), with showEq ON. Each row carries the candle (fed to Python) and the Pine EQ engine's state.
 Both sides come from the same file, so there is no data-source mismatch. Set --pivot-len / --atr-mult /
---max-levels to match the Pine inputs (defaults 2 / 0.1 / 6 = the mpc defaults). Six slots per side
-assume the default eqMax=6; raise --max-levels only if the Pine input was raised (extra slots won't
-export past six).
+--max-levels to match the Pine inputs (defaults 2 / 0.25 / 14 = the mpc defaults, synced 2026-09-09).
+🔴 The harness plots SIX slots per side whatever eqMax is, and they are the FIRST six of the array —
+so running this at a cap BELOW the Pine's makes every slot mismatch on about half the bars, because a
+six-cap engine keeps the NEWEST six while the export shows the OLDEST six. That reads exactly like a
+broken engine and is not one; it cost a red gate on 2026-09-09. Match the cap, never lower it; levels
+past the sixth simply are not exported, so they are not compared.
 
 Warmup
 ------
@@ -165,8 +168,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with eq_export.pine on the chart")
     ap.add_argument("--pivot-len", type=int, default=2, help="must match the Pine eqPivotLen (default 2)")
-    ap.add_argument("--atr-mult", type=float, default=0.1, help="must match the Pine eqAtrMult (default 0.1)")
-    ap.add_argument("--max-levels", type=int, default=6, help="must match the Pine eqMax (default 6, per side)")
+    ap.add_argument("--atr-mult", type=float, default=0.25, help="must match the Pine eqAtrMult (default 0.25)")
+    ap.add_argument("--max-levels", type=int, default=14, help="must match the Pine eqMax (default 14, per side)")
     ap.add_argument("--tolerance", type=float, default=1e-2, help="abs tolerance for price/tolerance fields (default 1e-2, covers CSV rounding)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")

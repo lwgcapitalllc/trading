@@ -4,7 +4,7 @@ equal_highs_lows/engine.py — the Equal Highs/Lows (EQH/EQL) state machine.
 One stateful streaming engine, fed one closed bar at a time (index + high/low/close). It maintains
 ATR(50) (for the equality tolerance), detects strict price pivots, forms an EQH/EQL when two
 consecutive same-side pivots land within tolerance of each other, and mitigates a level when price
-CLOSES through it.
+WICKS through it (the high reaches an EQH, the low reaches an EQL).
 
 Ported line-by-line from indicators/engines/mpc_jarvis.pine's "EQUAL HIGHS / LOWS (EQH / EQL)" block
 (+ the `GRP_EQ` inputs). The Pine runs, each bar:
@@ -18,8 +18,25 @@ Ported line-by-line from indicators/engines/mpc_jarvis.pine's "EQUAL HIGHS / LOW
     EQH at max(eqPh, eqPrevPh), anchored at the previous pivot's bar; FIFO-evict past eqMax. Then latch
     this pivot as the new "previous" (whether or not it formed). (EQL mirrors from the pivot-low side.)
 
-  mitigation each bar: an EQH is removed when close > level; an EQL when close < level. Survivors just
+  mitigation each bar: an EQH is removed when high > level; an EQL when low < level. Survivors just
     extend right (a drawing concern this engine drops).
+
+🔴 THE WICK RULE REPLACED A CLOSE RULE ON 2026-09-09, AND THE INDICATOR HAD BEEN AHEAD OF THIS
+ENGINE SINCE 2026-08-04. The Pine comment at that block recorded the split as deliberate and named
+this engine as one of the copies left behind - it was written down and then nobody carried it, which
+is how a KNOWN divergence becomes an unknown one. The Pine's own reason for the wick: a bar's high
+only ever grows within the bar, so once it clears the level it stays cleared, whereas a close test
+can delete a level intrabar and restore it on the next tick.
+⚠ MEASURED before it was applied, because this engine feeds the live SOS Fade bot's entry filter
+(its levels exempt gaps from the FVG cap): 157,004 M15 bars of PU Prime XAUUSD.p, 2020-01-01 to
+2026-08-23, replayed both ways off ONE cache. Levels FORMED are identical (3,552) - formation never
+moved. Levels mitigated 3,400 -> 3,470, and total level lifetime falls ~10% (698,476 -> 628,956
+level-bars). SOS Fade's trade list is BYTE-IDENTICAL across the change (245 rows); exactly one setup
+row moves, in its recorded edge price alone (2021-01-21, 1871.8 -> 1869.27).
+⚠ Read that as THIS window and THIS strategy, not as a general safety claim - the rule kills 70
+more levels, so a consumer that reads level lifetime rather than the gap cap will move.
+⚠ The other two bots are unaffected BY CONSTRUCTION, checked rather than assumed: b_leg pins the
+coupling off, and extreme_leg never pins it so it inherits the stack default of off.
 
 Three Pine details kept exactly, because dropping any would diverge from the chart:
 
@@ -117,11 +134,11 @@ class EqualHighsLowsEngine:
     up to 6 active levels per side (oldest evicted first).
     """
 
-    def __init__(self, pivot_len: int = 2, atr_mult: float = 0.1, max_levels: int = 6,
+    def __init__(self, pivot_len: int = 2, atr_mult: float = 0.25, max_levels: int = 14,
                  atr_len: int = 50) -> None:
         self._pivot_len = pivot_len        # Pine eqPivotLen (default 2)
-        self._atr_mult = atr_mult          # Pine eqAtrMult (default 0.1)
-        self._max_levels = max_levels      # Pine eqMax (default 6, per side)
+        self._atr_mult = atr_mult          # Pine eqAtrMult (default 0.25)
+        self._max_levels = max_levels      # Pine eqMax (default 14, per side)
         self._atr = _Atr(atr_len)          # Pine ta.atr(50)
 
         # Rolling window of the last (2·pivot_len + 1) bars — enough to test the centred candidate.
@@ -182,10 +199,11 @@ class EqualHighsLowsEngine:
             self._prev_pl = pl
             self._prev_pl_bar = pl_bar
 
-        # ── Mitigation: EQH taken on a close ABOVE it, EQL on a close BELOW it ──
+        # ── Mitigation: EQH taken when the HIGH reaches it, EQL when the LOW does ──
+        # Wick, not close - see the module docstring. `close` is still needed above (ATR).
         survivors_h: List[EqLevel] = []
         for lvl in self._eqh:
-            if close > lvl.price:
+            if high > lvl.price:
                 events.mitigated.append(lvl)
             else:
                 survivors_h.append(lvl)
@@ -193,7 +211,7 @@ class EqualHighsLowsEngine:
 
         survivors_l: List[EqLevel] = []
         for lvl in self._eql:
-            if close < lvl.price:
+            if low < lvl.price:
                 events.mitigated.append(lvl)
             else:
                 survivors_l.append(lvl)
