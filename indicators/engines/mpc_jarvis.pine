@@ -4779,9 +4779,11 @@ f_fibLevel(bool show, line lineId, label labelId, int x1, float y, int x2, color
 // ⚠ It is read by TWO consumers, deliberately — the aligned-leg gate below AND the 1m
 // retirement rule (`fibo7Touched or rTp50`). Lifting one without the other would draw
 // the fib on every leg and still retire it early, which is neither behaviour.
-// ⚠ The Sniper Zone and the 1m ENTRY row follow it, because both read `fiboShowAligned`
-// and the zone reads its own twin flag below. That is stated rather than discovered: with
-// the switch on, the 1m ENTRY row will call an entry on a leg the 15m does not support.
+// ⚠ The Sniper Zone follows it, because it reads `fiboShowAligned` and its own twin flag
+// below. The TABLE deliberately does NOT — see the note at `fibo1mAligned`. The 1m entry
+// row followed this switch for two days and that was the bug: the switch is about what is
+// DRAWN under 5 minutes, and it was silently changing which legs the table calls an entry
+// on. A display option may not move a signal.
 bool _fibOneMin = timeframe.in_seconds() == 60 and hideFibsSub5m
 // GATE (1m only): the External Fib shows ONLY on the aligned-SOS leg — the 1m's current
 // leg must have been opened by an SOS (a Shift) whose direction matches the 15m, while the
@@ -4801,11 +4803,23 @@ bool _m15Retraced = rStage >= 3 and rDir == m15Dir
 // fib never anchors to the impulse 1m SOS that mirrors (is the SAME move as) the 15m SOS.
 // oneMinSosT = time of the latest 1m SOS on the chart; m15SosCloseT = close time of the
 // latest 15m SOS from the security engine. Only a retrace SOS clears m15SosCloseT.
+// ⚠ Recorded on EVERY 1m chart, not only when the sub-5m switch is off. It used to be
+// gated on `_fibOneMin`, so switching the sub-5m option ON stopped this being written at
+// all — and `fibo1mAligned` below, which the table reads, could then never be true. The
+// gate belongs on the CONSUMER, never on the recording of a fact about the chart.
 var int oneMinSosT = na
-if _fibOneMin and (st.bull_sos or st.bear_sos)
+if timeframe.in_seconds() == 60 and (st.bull_sos or st.bear_sos)
     oneMinSosT := time
 bool _1mAfter15 = not na(oneMinSosT) and not na(m15SosCloseT) and oneMinSosT > m15SosCloseT
-bool fiboShowAligned = not _fibOneMin or (stMtfEv == 1 and fibo_dir == m15Dir and _m15Retraced and _1mAfter15)
+// ── THE TABLE KEEPS THE ALIGNED-LEG RULE WHATEVER THE SUB-5m SWITCH SAYS (Aaron, 2026-09-09) ──
+// The switch is a DRAWING option — it says "put the fib on charts under 5 minutes" — and it
+// was also lifting the gate the 1m ENTRY row hangs off, so turning it on added a row to the
+// table on any 1m leg at all, including legs the 15m reversal setup does not support. A row
+// that calls an entry on a leg the thesis never sanctioned is worse than no row.
+// So the alignment test now has its own flag. The DRAWING keeps reading the switched
+// version below; the TABLE reads this one, which is the test with no switch in it.
+bool fibo1mAligned = stMtfEv == 1 and fibo_dir == m15Dir and _m15Retraced and _1mAfter15
+bool fiboShowAligned = not _fibOneMin or fibo1mAligned
 
 if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fiboRange      = fibo_ash - fibo_asl
@@ -6145,7 +6159,9 @@ f_fvgInZone(bool wantBull, float zLo, float zHi) =>
     hit
 
 var bool rev1mEntryFvg = false, var bool rev1mEntrySz = false
-bool _rev1mA = timeframe.in_seconds() == 60 and fiboShowAligned and fibo_dir != 0
+// fibo1mAligned, not fiboShowAligned — these two latches feed the 1m ENTRY row and the
+// REV row's own confluence tags, so they follow the 15m setup rather than the drawing switch.
+bool _rev1mA = timeframe.in_seconds() == 60 and fibo1mAligned and fibo_dir != 0
 // EARLY entry band = 0.382–0.886 (fiboP1..fiboP6): a direction-matched 1m FVG anywhere
 // from the 0.382 line down to 0.886, tapped, counts as an entry. The shallow edge is
 // nudged 25% PAST 0.382 toward 0.0 (fiboP7) so a gap sitting ON the 0.382 line — its
@@ -7069,7 +7085,9 @@ if showConfTable and barstate.islast
         //   rev1mConfirmed = price returned to the 1m 0.0/TP3 AFTER a real (FVG) entry —
         //   the 1m trade played out to its target. This is the moment the 1m fib retires.
         bool rev1mConfirmed = revOn1m and fibo7Touched and rev1mEntryFvg
-        if revOn1m and fibo_dir != 0 and fiboShowAligned and not rTp50 and (not fiboResetActive or rev1mConfirmed)
+        // fibo1mAligned — the row prints ONLY on a leg the 15m reversal setup supports. The
+        // sub-5m drawing switch must not reach the table; see the note at fibo1mAligned.
+        if revOn1m and fibo_dir != 0 and fibo1mAligned and not rTp50 and (not fiboResetActive or rev1mConfirmed)
             bool   e1Long  = fibo_dir == 1
             color  e1Col   = e1Long ? JARVIS_SSL : JARVIS_BSL
             string e1Side  = e1Long ? "LONG" : "SHORT"
