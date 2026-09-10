@@ -707,6 +707,47 @@ the cost profile against `backtest.fills.PROFILES`, refuses an account with no s
 pushes and pulls it. A hand edit is still fine and its `_`-prefixed prose keys survive a write from
 the page.
 
+### `tools/scan_terminals.py` — what the box is ACTUALLY logged into (2026-09-10)
+
+**The account list above is hand-typed and nothing checked it against this machine.** On the day
+this landed it claimed a terminal for 700107749 that is not logged into it, and `C:\MT5_Scalper`
+had been logged into a **live** account (34957946, PUPrime-Live) for a day with no part of the
+system able to see it. This tool reads every terminal and reports who it is logged into, so the
+list can be compared against the box instead of believed.
+
+🔴 **It must never attach to a terminal a bot trades through, and that safety rests entirely on it
+reading the instance configs.** So **a missing instance directory REFUSES THE WHOLE SCAN** rather
+than answering "nobody owns anything" — the same value, the opposite fact, and the empty answer is
+the one that makes every terminal on the box eligible including the live one. Caught by running the
+script from outside the repo, which is how the next person will test it.
+
+🔴 **`mt5.login()` is not called here and must never be added.** It CHANGES what a terminal is
+logged into, so one stray call re-points a terminal under a running bot. A bot may move its own
+terminal; a scanner may not. There is a test that greps this file for the call.
+
+⚠ **`mt5.initialize(path=...)` LAUNCHES a terminal that is not running**, so only terminals already
+seen in the process list are probed. A stopped install reports **"could not be asked"**, never "no
+account" — `account: null` here is never a statement that a terminal is empty.
+
+⚠ **Demo-or-live comes from the broker's own account flag, never from the server name.** An
+unrecognised flag reports UNKNOWN rather than the safe-sounding word: guessing demo for an account
+that is real is how a bot gets pointed at somebody's money.
+
+⚠ **The symbol suffix is the one COMMON TO EVERY probe instrument, and an ambiguous broker gets
+`null`.** The first rule asked each instrument to resolve to exactly one variant and **could never
+have answered on a real broker** — PU Prime quotes `XAUUSD.crp`, `XAUUSD.p` and `XAUUSD247`, and
+`EURUSD` beside `EURUSD.p`. It refused safely and it refused ALWAYS, which is decoration that ships
+looking careful. **A check that cannot pass is not a check.**
+
+⚠ **Each terminal is probed in its OWN SUBPROCESS**, because the MT5 binding ties a process to one
+terminal and a hang must cost one answer rather than the scan.
+
+⚠ **Rows carry a normalised join key separate from the path a human reads.** The first real scan
+spelled one terminal three ways in one report, and the consumer is the command centre matching
+these against paths typed by hand.
+
+Story, and the two defects only a real terminal could show: `algos/docs/ALGOS_BUILD_NOTES.md`.
+
 ## Fast Index
 
 ### The Bots
