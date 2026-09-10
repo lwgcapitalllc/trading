@@ -1527,29 +1527,6 @@ def _scan_terminals() -> dict:
         )
 
 
-def _observed_accounts() -> dict:
-    """What each bot says its terminal is ACTUALLY logged into, keyed by bot.
-
-    🔴 **The OBSERVED account, never the configured one.** A bot's configured account is written
-    in the same repo as the account list, so checking one against the other proves nothing. This
-    is the number the bot read off `account_info()` and would halt on — the only outside evidence
-    about the one terminal this tool refuses to attach to.
-
-    ⚠ **Missing and unreadable both come back as `None`, and that is correct**: a bot running a
-    build from before the field existed and a bot whose link is down can equally not say. Neither
-    is a claim about the terminal.
-
-    ⚠ **An unreachable box degrades to an empty map rather than failing the scan.** The scan has
-    already succeeded by this point; losing the bots' half means fewer rows can be checked, not
-    that the ones that could be checked should be thrown away.
-    """
-    try:
-        states = _parse_bot_states(_fetch_vps_snapshot())
-    except Exception:  # noqa: BLE001 - see the docstring; this half is best-effort
-        return {}
-    return {k: v.get("observed_account") for k, v in states.items() if isinstance(v, dict)}
-
-
 @router.get("/accounts/scan", response_model=TerminalScan)
 def scan_box_terminals():
     """What the VPS is ACTUALLY logged into, checked against the account list.
@@ -1583,7 +1560,11 @@ def scan_box_terminals():
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
-        found = terminal_scan.reconcile(payload, entries, _observed_accounts())
+        # ONE trip to the box: the scan already carries what each bot reports. This used to fetch
+        # the whole fleet snapshot over a second SSH call to read one number per bot — double the
+        # load on a box whose agents already answer late when it is busy, and two readings taken
+        # seconds apart that a bot restart could make disagree.
+        found = terminal_scan.reconcile(payload, entries)
     except terminal_scan.ScanUnavailable as e:
         raise HTTPException(status_code=502, detail=str(e))
 

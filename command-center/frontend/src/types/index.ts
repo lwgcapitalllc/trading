@@ -1428,6 +1428,13 @@ export interface SystemHealth {
   vps_reachable: boolean // the VPS answers SSH at all — tells a dead tunnel from a dead network
   nt8_agent: boolean // NT8 agent (port 8765)
   mt5_agent: boolean // MT5 agent (port 8766)
+  /** `ok` | `slow` | `down`. `slow` = timed out but answered ok recently, which a healthy agent on
+   *  a busy box also does — so it is NOT down and must not draw the clickable red dot (that click
+   *  restarts the tunnel and cuts everything in flight). `null` = not computed. */
+  nt8_agent_state: string | null
+  nt8_agent_last_ok_s: number | null
+  mt5_agent_state: string | null
+  mt5_agent_last_ok_s: number | null
   // MT5 TERMINAL state. null = the agent could not be asked — NOT "disconnected".
   mt5_connected: boolean | null
   mt5_server: string | null

@@ -4,7 +4,9 @@ System router — /system/health, /lab/progress, /lab/stop, /nt8/* log proxies.
 
 from __future__ import annotations
 
+import socket
 import time
+import urllib.error
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -54,6 +56,73 @@ def _check_vps() -> bool:
     return _vps_ok
 
 
+# ── Agent reachability: a SLOW answer is not a DEAD agent ──────────────────────
+#
+# 🔴 **An agent that answers late was reported DOWN, and DOWN is a button.** Each agent is asked
+# `/health` with a 5s limit, and until 2026-09-10 anything short of an answer inside it — refused,
+# errored, or merely slow — set the dot red. MEASURED that day, polling every second: 22/22 answers
+# with nothing else running, but misses while the box was busy with a VPS scan AND while the Bots
+# page ran its own 60s fleet refresh. The agent's terminal link never dropped once. It is the
+# repo's rule 2 exactly: a timeout is a result a HEALTHY-BUT-BUSY agent also produces, so it may not
+# be read as a dead one on its own.
+#
+# ⚠ **The harm was not the colour.** A red agent dot is clickable ("click to start"), and the click
+# restarts the SSH tunnel — which cuts every request in flight through it, a running backtest's bar
+# fetch included. A false "down" was an invitation to break working things.
+#
+# **The rule now**: a REFUSED or errored call is down at once (only a dead or broken agent refuses);
+# a TIMEOUT is "slow" while the agent answered within the grace window, and down after it — so a
+# genuinely hung agent still goes red, just not on its first late reply. ⚠ **Grace, not a longer
+# timeout**: raising the limit would make every health check wait longer for a dead agent too, and
+# a hung agent would still be indistinguishable from a busy one.
+_AGENT_GRACE_S = 90  # three 30s polls of the sidebar
+_agent_last_ok: dict = {}  # agent name -> epoch seconds of its last answer that said "ok"
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    """Whether `exc` is, somewhere down its chain, a TIMEOUT rather than a refusal or an error.
+
+    Both agent clients wrap every failure in a `RuntimeError(...) from exc`, so the cause has to be
+    walked. ⚠ On Python 3.9 `socket.timeout` is NOT a `TimeoutError` (it became one in 3.10), so
+    both are named; and a timeout during CONNECT arrives as a `URLError` whose `reason` is the
+    timeout, so that shape is unwrapped too.
+    """
+    seen = set()
+    e: Optional[BaseException] = exc
+    while e is not None and id(e) not in seen:
+        seen.add(id(e))
+        if isinstance(e, (socket.timeout, TimeoutError)):
+            return True
+        if isinstance(e, urllib.error.URLError) and isinstance(
+            getattr(e, "reason", None), (socket.timeout, TimeoutError)
+        ):
+            return True
+        e = e.__cause__ or e.__context__
+    return False
+
+
+def _agent_state(name: str, probe, now: Optional[float] = None) -> tuple:
+    """`("ok" | "slow" | "down", seconds since its last ok answer or None)` for one agent.
+
+    `None` for the age means it has not answered ok since this backend started, so a timeout then
+    is DOWN — there is no recent answer to extend the benefit of the doubt from.
+    """
+    now = time.time() if now is None else now
+    last = _agent_last_ok.get(name)
+    age = None if last is None else max(0.0, now - last)
+    try:
+        answered_ok = probe().get("status") == "ok"
+    except Exception as exc:
+        if _is_timeout(exc) and age is not None and age <= _AGENT_GRACE_S:
+            return "slow", age
+        return "down", age
+    if answered_ok:
+        _agent_last_ok[name] = now
+        return "ok", 0.0
+    # It ANSWERED and said it is not ok. That is a measurement, not a gap — no grace.
+    return "down", age
+
+
 # ── Health aggregation ─────────────────────────────────────────────────────────
 
 
@@ -78,17 +147,11 @@ def _build_health() -> dict:
     last_compile_at = None
     last_compile_errors: list[str] = []
 
-    try:
-        h = runner_dispatch.health()
-        vps_ok = h.get("status") == "ok"
-    except Exception:
-        pass
-
-    try:
-        h5 = mt5_agent_client.health()
-        mt5_ok = h5.get("status") == "ok"
-    except Exception:
-        pass
+    # The attribute is read HERE, at call time, so a test's monkeypatch of either client lands.
+    nt8_state, nt8_age = _agent_state("nt8", lambda: runner_dispatch.health())
+    vps_ok = nt8_state == "ok"
+    mt5_state, mt5_age = _agent_state("mt5", lambda: mt5_agent_client.health())
+    mt5_ok = mt5_state == "ok"
 
     if mt5_ok:
         # An agent that answers /health is not the same as a terminal that can
@@ -129,6 +192,12 @@ def _build_health() -> dict:
         "vps_reachable": vps_ok_host,
         "nt8_agent": vps_ok,
         "mt5_agent": mt5_ok,
+        # The judgement the dots are drawn from. The booleans above keep meaning "answered ok on
+        # THIS check"; these add the third state that a boolean cannot carry.
+        "nt8_agent_state": nt8_state,
+        "nt8_agent_last_ok_s": None if nt8_age is None else round(nt8_age, 1),
+        "mt5_agent_state": mt5_state,
+        "mt5_agent_last_ok_s": None if mt5_age is None else round(mt5_age, 1),
         "mt5_connected": mt5_connected,
         "mt5_server": mt5_server,
         "mt5_account": mt5_account,

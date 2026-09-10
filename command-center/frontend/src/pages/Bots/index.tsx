@@ -58,7 +58,6 @@ import type {
   BotAccountBot,
   BotAccountGroup,
   BotAccountRegistration,
-  BotAccountRegistrationWrite,
   BotEarnings,
   AccountEarnings,
 } from '@/types'
@@ -66,7 +65,7 @@ import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
 import { AccountForm, emptyGroup, nameOf } from './AccountsTab'
-import { TerminalScanPanel } from './TerminalScanPanel'
+import { VpsScanDrawer } from './VpsScanDrawer'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -489,9 +488,6 @@ export function Bots() {
   const [logBot, setLogBot] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [scanning, setScanning] = useState(false)
-  // Fields MEASURED off a terminal on the box, carried into the add form. Cleared on close, so a
-  // later hand-typed account cannot inherit a discovered one's server by accident.
-  const [prefill, setPrefill] = useState<BotAccountRegistrationWrite | null>(null)
   const [pending, setPending] = useState<string | null>(null)
 
   const startOne = useBotStartOne()
@@ -726,16 +722,18 @@ export function Bots() {
           >
             Add account
           </button>
-          {/* ⚠ **Separate from Add account, not folded into it.** Checking the box is a READ and
-           *  adding an account is a WRITE; one control doing both would make a scan feel like a
-           *  commit, which is the one thing this must never be. */}
+          {/* ⚠ **Separate from Add account, not folded into it.** Scanning is a READ and adding an
+           *  account is a WRITE; one control doing both would make a scan feel like a commit.
+           *  ⚠ **"Scan", not "Sync" (Aaron asked for "Re-sync", 2026-09-10).** Sync promises the
+           *  button changes your list, and it deliberately never does — it shows what is logged in
+           *  and leaves adopting it to one explicit click. The label may not promise a write. */}
           <button
-            data-testid="check-vps"
-            onClick={() => setScanning((v) => !v)}
-            title="Ask the VPS which account each MT5 terminal is logged into"
+            data-testid="scan-vps"
+            onClick={() => setScanning(true)}
+            title="See which account each MT5 terminal on the VPS is logged into"
             className="text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
           >
-            Check the VPS
+            Scan VPS
           </button>
           <button
             onClick={() => set('view', 'users')}
@@ -759,30 +757,14 @@ export function Bots() {
 
       {adding && (
         <div className="mb-4">
-          <AccountForm
-            prefill={prefill ?? undefined}
-            onClose={() => {
-              setAdding(false)
-              setPrefill(null)
-            }}
-          />
+          <AccountForm onClose={() => setAdding(false)} />
         </div>
       )}
 
-      {scanning && (
-        <div className="mb-4 h-[520px]">
-          <TerminalScanPanel
-            onAdd={(suggested) => {
-              // Adopting is one deliberate step into the SAME form a typed account goes through,
-              // so a discovered account is validated identically and nothing is written until
-              // somebody saves it.
-              setPrefill(suggested)
-              setScanning(false)
-              setAdding(true)
-            }}
-          />
-        </div>
-      )}
+      {/* A DRAWER, not an inline panel (Aaron, 2026-09-10: "I don't know what I'm looking at").
+       *  Inline, it pushed the fleet down and read as part of whichever demo/live filter was on,
+       *  when it has nothing to do with either. Adding a found account happens inside it. */}
+      <VpsScanDrawer open={scanning} onClose={() => setScanning(false)} />
 
       {/* "Reading the box…" went (2026-09-10): the values waiting on the box now shimmer where
        *  they will land, which says the same thing without a line of text above the page. */}

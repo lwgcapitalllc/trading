@@ -156,48 +156,57 @@ reaches the real backend and the live box), and a test rewritten against a UI it
 executed against is the vacuous-test trap this repo has recorded eight times. **Re-point them with
 the app up, watching each one fail first.**
 
-## "Check the VPS" — what the box is logged into, beside what the list claims (2026-09-10)
+## "Scan VPS" — what the box is logged into, beside what the list claims (2026-09-10)
 
-A button in the Bots header opens `TerminalScanPanel`, which calls `GET /bots/accounts/scan` and
+**Scan VPS** in the Bots header opens `VpsScanDrawer`, which calls `GET /bots/accounts/scan` and
 shows every MT5 terminal on the box with the account it is logged into, joined against the account
 list. It exists because that list is hand-typed and nothing ever checked it — a terminal had been
 sitting on a LIVE account for a day with this page unable to see it.
 
-🔴 **Checking is a READ and adding is a WRITE, and they are two controls.** One button doing both
-would make a scan feel like a commit. "Add to list" carries the measured fields into the SAME form
-a typed account goes through, so a discovered account is validated identically and **nothing is
-written until somebody saves it**.
+🔴 **A DRAWER, not an inline panel, and the answer comes before the data** (Aaron: *"I don't know
+what I'm looking at"*). Inline, it pushed the fleet down and read as part of whichever demo/live
+filter was on. The first layout listed new accounts, every terminal and every list row at equal
+weight, so the reader had to work out the finding. Now: **one sentence that IS the finding → only
+what needs a decision (not in your list; your list is wrong) → the terminal table → a quiet
+footnote** for what could not be checked. Keep that order when adding to it.
 
-🔴 **Three failure shapes, rendered as three different things**, because they have three different
-repairs: the query THREW (the box could not be asked — the network), the payload says
-`asked: false` (the box refused — the script), and a terminal says `not_running` / `owned_by_bot`
-(it could not be asked — nothing is wrong). Collapsing any pair turns "cannot ask" into "nothing
-there".
+🔴 **"Scan", never "Sync" — Aaron asked for "Re-sync" and was told why not.** Sync promises the
+button changes your list, and it deliberately never does. The label may not promise a write.
 
-⚠ **`account: null` never renders alone.** The reason travels with it, or an unasked terminal reads
-as an empty one.
+🔴 **Scanning is a READ and adding is a WRITE.** "Add to list" opens the SAME `AccountForm` a typed
+account goes through, INSIDE the drawer, pre-filled with only what the box measured; nothing is
+written until somebody saves. Saving invalidates the scan's query, so the account moves out of
+"not in your list" by itself.
 
-⚠ **`unverified` is deliberately QUIET, not tinted like a problem.** It is not a finding against a
-row. Tinting it would flag every account on the bots' own terminal on every single scan, which is
-what teaches somebody to scroll past the real one.
+🔴 **Three failure shapes, three looks**: the query threw (the box could not be asked), the payload
+says `asked: false` (the box refused), a terminal says `not_running` / `owned_by_bot` (it could not
+be asked — nothing is wrong). A re-scan that FAILS keeps the last good answer on screen, labelled
+as the previous one. The first read shimmers per *Loading states* below; a re-scan never does.
 
-⚠ **A LIVE account is called out in words, not just coloured.** It says plainly that adding it moves
-no bot and that it needs a password before anything could connect.
+⚠ **Where an account number came from is on screen.** It can come from the scan asking the terminal
+or from the bot trading through it ("account reported by the bot") — different strengths of
+evidence, so the row says which.
 
-⚠ **The scan is NOT on the 60s poll and `retry` is off.** It can take minutes when several installed
-terminals are stopped, so polling would stack slow requests against the box; retrying would blur
-"could not ask" into "still loading".
+⚠ **Demo/live has TWO unknowns and they look different.** A bot reports only the account NUMBER, so
+a bot-sourced row says "demo/live not reported" in grey — the first build painted it a yellow "mode
+unknown", a false alarm on the terminal that matters most. A terminal the scan asked that answered
+with an unrecognised flag IS an anomaly and keeps the warning.
+
+⚠ **No bot COUNT on a terminal.** Ownership comes from which configs name it, and a benched bot
+still does — the first wording said "3 bots trade here" with one trading nothing.
+
+⚠ **`unverified` is deliberately QUIET.** It is not a finding against a row.
+
+⚠ **`components/Drawer.tsx` is the shared slide-out shell** (and closes on Escape).
+`AccountDrawer` and `BotDrawer` still build the same shell inline — adopting it is a mechanical swap
+left undone because another session was mid-edit on both. A drawer's look lives in three places
+until then.
 
 🔴 **`AccountsTab` IS NOT RENDERED BY ANYTHING and has not been since the 2026-09-05 rebuild above.**
 `index.tsx` and `AccountDrawer` import only its helpers (`AccountForm`, `AddBotRow`, `emptyGroup`,
-`nameOf`). This panel was first wired into its rail and its detail pane, typechecked, linted and
-passed every gate — and **could not have appeared on screen**, which only opening the page showed.
-⚠ **Anything added there is dead on arrival**; put it in `index.tsx`. That the file still reads like
-a live page is the trap, and it is rule 9 in the frontend: a feature nobody has RUN is not a feature.
-
-⚠ **A terminal's account can come from the bot trading through it rather than from the scan, and
-the row says so** ("reported by the bot"). The two are different strengths of evidence, so the
-source is on screen rather than implied.
+`nameOf`). This view was first wired into its rail, typechecked, linted and passed every gate — and
+**could not have appeared on screen**, which only opening the page showed. ⚠ **Anything added there
+is dead on arrival.** It is rule 9 in the frontend: a feature nobody has RUN is not a feature.
 
 Story: `command-center/docs/FRONTEND_BUILD_NOTES.md`.
 
@@ -1342,6 +1351,16 @@ about code somewhere else.**
 could not be asked — not that the terminal is disconnected. The checks are written `=== false`, never
 falsy, so an unanswered question renders as *"terminal state unknown"* rather than as a failure the
 UI invented. Same rule as `DrawdownMeter`'s refusal to draw an unmeasured tail as an absent one.
+
+### A slow agent draws YELLOW "slow", never the clickable red (2026-09-10)
+
+🔴 **Red is the only clickable colour, and its click restarts the SSH tunnel.** An agent that
+answered late used to draw red "click to start" — an invitation to cut every request in flight
+over a busy-but-healthy agent. The dot now reads the server's `{nt8,mt5}_agent_state`: `down` is
+red and clickable as before, `slow` is yellow with the word **slow** and a tooltip saying when it
+last answered. ⚠ **The grace window is decided on the server and not restated here**, so there is
+one answer to "how long before slow becomes down". ⚠ A backend without the field falls back to the
+old boolean — `false` is down, exactly as before, never a guess either way.
 
 ## The Calendar page was audited 2026-08-05
 

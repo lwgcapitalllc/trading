@@ -1775,6 +1775,15 @@ class SystemHealth(BaseModel):
     )
     nt8_agent: bool = False  # NT8 agent (port 8765)
     mt5_agent: bool = False  # MT5 agent (port 8766)
+    # 🔴 THREE states the booleans above cannot carry: "ok" | "slow" | "down". "slow" = it timed out
+    # but answered ok within the grace window, which a healthy agent on a busy box also does — so it
+    # is NOT down and must not draw the clickable red "click to start" (that click restarts the
+    # tunnel and cuts every request in flight). `None` = not computed. ⚠ Declared here or the
+    # response model DROPS them without a word, which is how a field went missing once already.
+    nt8_agent_state: Optional[str] = None
+    nt8_agent_last_ok_s: Optional[float] = None  # seconds since it last answered ok; None = never
+    mt5_agent_state: Optional[str] = None
+    mt5_agent_last_ok_s: Optional[float] = None
     # MT5 TERMINAL state, not the agent's. None = the agent could not be asked,
     # which is not the same as a disconnected terminal and must not render as one.
     mt5_connected: Optional[bool] = None

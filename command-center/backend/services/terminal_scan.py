@@ -165,20 +165,19 @@ def _compare(reading: TerminalReading, row: Any) -> list:
     out = []
     server = str(getattr(row, "server", "") or "")
     if server and reading.server and server != reading.server:
-        out.append(f"the list says server {server}, the terminal reports {reading.server}")
+        out.append(f"Your list says server {server}; the VPS says {reading.server}")
 
     kind = str(getattr(row, "kind", "") or "")
     if kind and reading.kind and kind != reading.kind:
         # Worth its own sentence: this is the one that decides whether real money is involved.
         out.append(
-            f"the list calls this a {kind} account and the broker reports it as "
-            f"{reading.kind.upper()}"
+            f"Your list says it's a {kind} account; the broker says it's {reading.kind.upper()}"
         )
 
     suffix = _norm_suffix(getattr(row, "symbol_suffix", None))
     if suffix is not None and reading.symbol_suffix is not None and suffix != reading.symbol_suffix:
         out.append(
-            f"the list says instruments end {suffix or '(nothing)'}, the terminal quotes "
+            f"Your list says instruments end {suffix or '(nothing)'}; the VPS quotes "
             f"{reading.symbol_suffix or '(nothing)'}"
         )
     return out
@@ -225,7 +224,14 @@ def reconcile(payload: Any, registered: Any, observed_by_bot: Any = None) -> Rec
     by_account = {int(r.account): r for r in rows}
 
     seen_accounts = {}
-    by_bot = dict(observed_by_bot or {})
+    # What each bot says, from the SAME answer as the terminals: the box script reads every bot's own
+    # heartbeat and attaches it to the terminal it owns, so one scan is one trip taken at one moment.
+    # An explicit `observed_by_bot` still wins, which is how the tests drive the judgement directly.
+    by_bot: dict = {}
+    for raw_t in payload.get("terminals") or []:
+        for bot, seen in (raw_t.get("reported_by_bots") or {}).items():
+            by_bot[bot] = seen
+    by_bot.update(observed_by_bot or {})
     for raw in payload.get("terminals") or []:
         reading = _reading(raw)
         if reading.account is not None:
@@ -235,8 +241,7 @@ def reconcile(payload: Any, registered: Any, observed_by_bot: Any = None) -> Rec
             if found is not None:
                 reading.account, reading.account_source = found, source
                 reading.reason = (
-                    f"{reading.reason or 'not attached to'} - "
-                    f"account {found} reported by the bot trading through it"
+                    f"Your bots use this terminal; they report it is on account {found}"
                 )
         if reading.account is None:
             # Not probed, or probed and unreadable. Either way there is no account to judge, and
@@ -292,7 +297,7 @@ def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
 
     claimed = str(getattr(row, "mt5_path", "") or "")
     if not claimed:
-        detail = "this row names no terminal, so there is nothing to check it against"
+        detail = "No terminal is recorded for it, so there's nothing to check it against."
         if conflicts:
             return RegistryCheck(
                 account,
@@ -308,38 +313,33 @@ def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
     terminal = by_key.get(key)
 
     if terminal is None:
-        detail = f"the box has no terminal installed at {claimed}"
+        detail = f"The VPS has no terminal installed at {_short(claimed)}."
     elif terminal.account is None and terminal.state == "owned_by_bot":
         detail = (
-            f"{claimed} is the terminal a bot trades through, so it was deliberately not "
-            f"attached to, and no bot on it could say which account it is on"
+            f"{_short(claimed)} is your bots' terminal, and no bot on it has reported which "
+            f"account it is on yet."
         )
     elif terminal.account is None:
-        detail = f"{claimed} is not running, so it could not be asked"
+        detail = f"{_short(claimed)} is not running, so it couldn't be checked."
     elif terminal.account == account:
         # The claimed terminal was ASKED — by this tool, or by the bot trading through it — and
         # it is on this account. That is the row confirmed, whatever else the account is open in.
-        also = sorted(t.install for t in by_key.values() if t.account == account and t.key != key)
-        how = (
-            " (reported by the bot trading through it)" if terminal.account_source == "bot" else ""
+        also = sorted(
+            _short(t.install) for t in by_key.values() if t.account == account and t.key != key
         )
-        detail = f"logged in at {terminal.install}{how}"
+        how = " (reported by the bot there)" if terminal.account_source == "bot" else ""
+        detail = f"Logged in on {_short(terminal.install)}{how}."
         if also:
-            detail += f" (also open in {', '.join(also)})"
+            detail += f" Also open on {', '.join(also)}."
         verdict = "contradicted" if conflicts else "confirmed"
         return RegistryCheck(account, label, verdict, detail, conflicts, terminal.install)
     else:
         # Asked, and on something else. A measurement, not a gap.
-        via = "the bot trading through it reports" if terminal.account_source == "bot" else "it is"
-        conflicts = conflicts + [f"this row claims {claimed}; {via} account {terminal.account}"]
-        return RegistryCheck(
-            account,
-            label,
-            "contradicted",
-            f"{claimed} is on account {terminal.account}, not {account}",
-            conflicts,
-            terminal.install,
-        )
+        name = _short(claimed)
+        via = " (reported by the bot there)" if terminal.account_source == "bot" else ""
+        said = f"Your list says it's on {name}, but {name} is logged into #{terminal.account}{via}."
+        conflicts = conflicts + [said]
+        return RegistryCheck(account, label, "contradicted", said, conflicts, terminal.install)
 
     # The claimed terminal could not be asked. Broker-fact conflicts still stand on their own.
     if conflicts:
@@ -347,6 +347,20 @@ def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
             account, label, "contradicted", detail, conflicts, reading.install if reading else None
         )
     return RegistryCheck(account, label, "unverified", detail)
+
+
+def _short(path: str) -> str:
+    r"""`C:\MT5_FFT\terminal64.exe` or `C:\MT5_FFT` → `MT5_FFT`, in the box's own casing.
+
+    ⚠ **Every sentence here is read by a person, not parsed by a program** (2026-09-10: *"I don't
+    know what I'm looking at"*). A full Windows path in a sentence is noise; the folder name is
+    the name the terminal goes by on the box. Parsing is split on backslash by hand, as in
+    `_install_key`, because this runs on a Mac and the paths are always the box's.
+    """
+    p = str(path or "").strip().rstrip("\\/")
+    if p.lower().endswith("terminal64.exe"):
+        p = p[: -len("terminal64.exe")].rstrip("\\/")
+    return p.replace("/", "\\").rsplit("\\", 1)[-1] or str(path or "")
 
 
 def _install_key(path: str) -> str:

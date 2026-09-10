@@ -901,6 +901,30 @@ are about what the supervisor REFUSES to do — the dangerous failure of a super
 repair, it is a repair at the wrong moment. The six added with the wedged-agent path are that shape
 too: three are about what the kill must NOT reach.
 
+### A SLOW agent is not a DEAD agent — `_agent_state` (2026-09-10)
+
+🔴 **An agent that answered late was reported DOWN, and down is a BUTTON.** Each agent's `/health`
+gets 5s; anything short of an answer inside it — refused, errored or merely slow — set the dot red,
+and a red agent dot says "click to start", which restarts the SSH tunnel and cuts every request in
+flight through it, a running backtest's bar fetch included. MEASURED that day, polling each second:
+**22/22 answers with nothing else running**, misses while the box was busy with a VPS scan AND
+during the Bots page's own 60s fleet refresh — and the agent's terminal link never dropped once.
+A timeout is what a busy healthy agent returns too, which is rule 2 exactly.
+
+**The rule**: a REFUSED or errored call is `down` at once — only a dead or broken agent refuses. A
+TIMEOUT is `slow` while the agent answered ok within `_AGENT_GRACE_S` (90s, three sidebar polls),
+and `down` after it, so a genuinely HUNG agent still goes red, just not on its first late reply. An
+agent that ANSWERS "not ok" is down with no grace — that is a measurement, not a gap. Served as
+`{nt8,mt5}_agent_state` beside the booleans, which keep meaning "answered ok on this check".
+
+⚠ **Grace, never a longer timeout** — a longer limit makes every check wait longer for a dead agent
+too, and still cannot tell a hung agent from a busy one. ⚠ **`socket.timeout` is not a
+`TimeoutError` on Python 3.9**, so `_is_timeout` names both and walks the `from exc` chain the two
+agent clients wrap every failure in. ⚠ **The detection is proven against a REAL silent socket and a
+REAL closed port** through the client's genuine `_get`, loaded as a private copy because
+`_no_live_vps` rightly swaps the shared one out — a hand-built exception would prove only a guess
+about the shape. Never point that copy at the VPS.
+
 ## The calendar's polarity list was written for the wrong provider
 
 🔴 **Fixed 2026-08-05.** `calendar_service._LOWER_IS_BETTER` decides which way a released `actual`
@@ -1633,7 +1657,7 @@ timeout is wrong here for the same reason and this call has its own.
 The scan never attaches there, so until then every such row came back UNVERIFIED — exactly where
 700107749's stale claim sat. The live runner now writes the account its terminal is ACTUALLY on
 (`observed_account`, off the same `account_info()` call it halts on) beside the configured one, and
-`_observed_accounts` reads it off the snapshot. ⚠ **The OBSERVED number, never the configured one**
+the box-side scan attaches each bot's own reading to the terminal it owns (`reported_by_bots`). ⚠ **The OBSERVED number, never the configured one**
 — the configured account lives in the same repo as the list, so checking one against the other
 proves nothing. ⚠ **A bot that could not ask contributes nothing, and bots that disagree resolve to
 unknown**, since one terminal holds one login. ⚠ **`account_source` says which evidence it was**
@@ -1641,6 +1665,20 @@ unknown**, since one terminal holds one login. ⚠ **`account_source` says which
 dataclass field the model does not declare is DROPPED without a word, and this one was.
 ⚠ **It lights up only once a bot restarts onto the new runner** — until then the bots report
 nothing and the row stays unverified, which is the honest answer.
+
+⚠ **Every `detail` and conflict string is a sentence a PERSON reads** in the Scan VPS drawer, so
+it names a terminal by its folder (`_short`: `C:\\MT5_FFT\\terminal64.exe` → `MT5_FFT`) and never
+carries a path. A test fails on `terminal64.exe` in any of them.
+
+⚠ **A scan briefly slows the lab's MT5 agent, and the sidebar reads slow as DOWN — MEASURED, and
+mostly not this feature's doing.** Polled every second: 22/22 answers with nothing running, 3
+missed during a scan, and **the page's own 60s fleet refresh alone misses one too**. The agent's
+terminal link never dropped; its `/status` answered past the health check's timeout while the box
+was busy. So the "MT5 Agent down" flicker predates this and is the health light reading a slow
+answer as a dead one (rule 2) — fixed in `_agent_state`, see *A SLOW agent is not a DEAD agent*.
+✅ **The scan asks the box ONCE (2026-09-10).** It used to fetch the whole fleet snapshot over a
+second SSH call just to read each bot's observed account; the box script now reads those itself and
+sends them inside the scan, taken at the same moment as the terminals.
 
 Story and the false alarm: `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
