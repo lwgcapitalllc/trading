@@ -99,6 +99,19 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
     if (u.pathname === '/api/bots/accounts') {
       return route.fulfill({ json: groups })
     }
+    // Adding an account starts from the Scan VPS drawer, which scans the moment it opens — and the
+    // real scan SSHes to the trading box and attaches to its terminals. Routed to an empty answer.
+    if (u.pathname === '/api/bots/accounts/scan') {
+      return route.fulfill({
+        json: {
+          asked: true,
+          scanned_at: new Date().toISOString(),
+          reason: null,
+          terminals: [],
+          registry: [],
+        },
+      })
+    }
     // Every bot's version, keyed by bot in the path. The Monitor and Accounts tables both
     // render a VersionPill off this, and without the mock they would fall through to the live
     // backend, which SSHes to the VPS.
@@ -208,6 +221,16 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
  * button's markup — a layout change would otherwise redden a dozen checks that are not about
  * layout, which is most of how this file came to be red in the first place.
  */
+/**
+ * Open the by-hand account form, which lives inside the Scan VPS drawer since 2026-09-10 — the
+ * header's own "Add account" button went, so adding starts from what the box reports.
+ */
+async function openManualAdd(page: Page) {
+  await page.goto('/bots')
+  await page.getByTestId('scan-vps').click()
+  await page.getByTestId('add-account').click()
+}
+
 async function openAccount(page: Page, account: number = ACCOUNT) {
   await page.goto(`/bots?account=${account}`)
   await expect(page.getByRole('complementary', { name: 'Account settings' })).toBeVisible()
@@ -751,8 +774,7 @@ test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move
     return route.fulfill({ json: reg({ account: 700152905 }) })
   })
 
-  await page.goto('/bots')
-  await page.getByTestId('add-account').click()
+  await openManualAdd(page)
   await page.getByTestId('f-account').fill('700152905')
   await page.getByTestId('f-server').fill('PUPrime-Demo')
   await page.getByTestId('f-suffix').fill('.p')
@@ -763,6 +785,31 @@ test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move
   expect(body!.account).toBe(700152905)
   expect(body!.server).toBe('PUPrime-Demo')
   expect(body!.symbol_suffix).toBe('.p')
+})
+
+test('adding by hand is still reachable when the scan FAILS, and is the only add control', async ({
+  page,
+}) => {
+  // MUTATION: render the by-hand link only once the scan has answered → red, because the
+  // failed-scan banner is showing and the link is gone.
+  // MUTATION: put the header "Add account" button back → red on the count of one.
+  //
+  // A stopped terminal can never show up in a scan, and neither can anything while the box is
+  // unreachable — so the by-hand form is the ONLY way that account gets onto the list. Hiding it
+  // behind a successful scan would leave it with no way in at all.
+  await mock(page, [], [])
+  await page.route('**/api/bots/accounts/scan', (route) =>
+    route.fulfill({ status: 502, json: { detail: 'ssh to forexvps failed' } })
+  )
+  await page.goto('/bots')
+  await expect(page.getByTestId('add-account')).toHaveCount(0)
+  await page.getByTestId('scan-vps').click()
+  // Positive control first: the failure is what is on screen, so the link is being checked in
+  // the state it exists for — not in a drawer that simply has not answered yet.
+  await expect(page.getByText('The VPS couldn’t be asked')).toBeVisible()
+  await expect(page.getByTestId('add-account')).toHaveCount(1)
+  await page.getByTestId('add-account').click()
+  await expect(page.getByTestId('f-account')).toBeVisible()
 })
 
 test('an unticked suffix box sends NULL, not an empty string', async ({ page }) => {
@@ -780,8 +827,7 @@ test('an unticked suffix box sends NULL, not an empty string', async ({ page }) 
     return route.fulfill({ json: reg() })
   })
 
-  await page.goto('/bots')
-  await page.getByTestId('add-account').click()
+  await openManualAdd(page)
   await page.getByTestId('f-account').fill('700152905')
   await page.getByTestId('f-server').fill('PUPrime-Demo')
   await page.getByTestId('f-has-suffix').uncheck()

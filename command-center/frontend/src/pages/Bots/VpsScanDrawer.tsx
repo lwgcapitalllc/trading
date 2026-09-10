@@ -27,20 +27,30 @@ import { AccountForm } from './AccountsTab'
 export function VpsScanDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const scan = useTerminalScan()
   // Adding happens INSIDE the drawer, so the reader never loses the list they were deciding from.
-  const [adding, setAdding] = useState<BotAccountRegistrationWrite | null>(null)
+  // 'manual' is the by-hand form — the only way in for an account the scan cannot see.
+  const [adding, setAdding] = useState<BotAccountRegistrationWrite | 'manual' | null>(null)
   const close = () => {
     setAdding(null)
     onClose()
   }
+  const manual = adding === 'manual'
 
   return (
     <Drawer
       open={open}
       onClose={close}
       label="What is logged in on the VPS"
-      title={adding ? `Add account #${adding.account}` : 'What’s logged in on the VPS'}
+      title={
+        manual
+          ? 'Add an account by hand'
+          : adding
+            ? `Add account #${adding.account}`
+            : 'What’s logged in on the VPS'
+      }
       subtitle={
-        adding ? (
+        manual ? (
+          'For an account the scan can’t see — nothing is written until you save'
+        ) : adding ? (
           'Filled in from the VPS — name it and pick its cost profile'
         ) : (
           <Checked scan={scan} />
@@ -60,12 +70,44 @@ export function VpsScanDrawer({ open, onClose }: { open: boolean; onClose: () =>
         <div className="pt-4">
           {/* Saving invalidates the scan's query, so the account moves out of "not in your list"
               by itself — the drawer confirms the add rather than asking you to trust it. */}
-          <AccountForm prefill={adding} onClose={() => setAdding(null)} />
+          <AccountForm
+            key={manual ? 'manual' : adding.account}
+            prefill={manual ? undefined : adding}
+            onClose={() => setAdding(null)}
+          />
         </div>
       ) : (
-        <ScanContent scan={scan} onAdd={setAdding} />
+        <>
+          <ScanContent scan={scan} onAdd={setAdding} />
+          <ManualAdd onClick={() => setAdding('manual')} />
+        </>
       )}
     </Drawer>
+  )
+}
+
+/**
+ * The by-hand way in, deliberately quiet and deliberately ALWAYS there.
+ *
+ * ⚠ **Rendered under every state — first scan still running, scan failed, box refused.** A
+ * stopped terminal can never appear in the scan, and a scan can take minutes; hiding this until
+ * the scan answers would leave that account with no way onto the list at all.
+ * ⚠ **Quiet on purpose.** Typing an account in is how the list went wrong before; the found
+ * accounts above are the path to take, this is the fallback.
+ */
+function ManualAdd({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="mt-6 pt-4 border-t border-border-subtle text-small text-text-tertiary">
+      Not listed?{' '}
+      <button
+        data-testid="add-account"
+        onClick={onClick}
+        className="text-text-secondary underline underline-offset-2 hover:text-text-primary"
+      >
+        Add it by hand
+      </button>{' '}
+      — for a terminal that isn’t running, which the scan can’t read.
+    </div>
   )
 }
 

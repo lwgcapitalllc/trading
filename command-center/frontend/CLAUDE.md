@@ -178,6 +178,14 @@ account goes through, INSIDE the drawer, pre-filled with only what the box measu
 written until somebody saves. Saving invalidates the scan's query, so the account moves out of
 "not in your list" by itself.
 
+🔴 **This drawer is the ONLY way to add an account (2026-09-10, Aaron's call).** The header's own
+"Add account" button went — it opened the same form blank, and typing accounts in is how the list
+went wrong. The by-hand form is a quiet "Add it by hand" link at the drawer's foot
+(`data-testid="add-account"`, kept so the specs still find it), for the one case the scan cannot
+see: a terminal that is not running. ⚠ **Rendered under EVERY state** — scanning, failed, refused —
+or that account has no way onto the list. Pinned by a spec that fails the scan; two mutations run,
+two killed.
+
 🔴 **Three failure shapes, three looks**: the query threw (the box could not be asked), the payload
 says `asked: false` (the box refused), a terminal says `not_running` / `owned_by_bot` (it could not
 be asked — nothing is wrong). A re-scan that FAILS keeps the last good answer on screen, labelled

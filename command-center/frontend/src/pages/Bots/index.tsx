@@ -64,7 +64,7 @@ import type {
 import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
-import { AccountForm, emptyGroup, nameOf } from './AccountsTab'
+import { emptyGroup, nameOf } from './AccountsTab'
 import { VpsScanDrawer } from './VpsScanDrawer'
 
 function formatUptime(seconds: number): string {
@@ -486,7 +486,6 @@ export function Bots() {
   const [params, setParams] = useSearchParams()
 
   const [logBot, setLogBot] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
 
@@ -715,15 +714,11 @@ export function Bots() {
               {k}
             </button>
           ))}
-          <button
-            data-testid="add-account"
-            onClick={() => setAdding(true)}
-            className="text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            Add account
-          </button>
-          {/* ⚠ **Separate from Add account, not folded into it.** Scanning is a READ and adding an
-           *  account is a WRITE; one control doing both would make a scan feel like a commit.
+          {/* 🔴 **THE ONE WAY TO ADD AN ACCOUNT (2026-09-10).** A header "Add account" button sat
+           *  beside this and opened the same form blank. Typing an account in is how the list went
+           *  wrong before, so adding starts from what the box reports; the by-hand form lives inside
+           *  the drawer, for the one case the scan cannot see (a terminal that is not running).
+           *  ⚠ Opening the drawer still writes nothing — scanning is a READ, adding is a WRITE.
            *  ⚠ **"Scan", not "Sync" (Aaron asked for "Re-sync", 2026-09-10).** Sync promises the
            *  button changes your list, and it deliberately never does — it shows what is logged in
            *  and leaves adopting it to one explicit click. The label may not promise a write. */}
@@ -754,12 +749,6 @@ export function Bots() {
           </button>
         </div>
       </div>
-
-      {adding && (
-        <div className="mb-4">
-          <AccountForm onClose={() => setAdding(false)} />
-        </div>
-      )}
 
       {/* A DRAWER, not an inline panel (Aaron, 2026-09-10: "I don't know what I'm looking at").
        *  Inline, it pushed the fleet down and read as part of whichever demo/live filter was on,
