@@ -14,6 +14,7 @@ import type {
   BotAccountGroup,
   BotAccountRegistration,
   BotAccountRegistrationWrite,
+  TerminalScan,
   BotDeployedVersion,
   BotPromoteResult,
   BotSnapshot,
@@ -294,6 +295,33 @@ export function useRegisteredAccounts() {
     queryKey: ['bots', 'accounts', 'registry'],
     queryFn: () => api.get<BotAccountRegistration[]>('/bots/accounts/registry'),
     staleTime: 60_000,
+  })
+}
+
+/**
+ * What the VPS is ACTUALLY logged into, checked against the account list.
+ *
+ * 🔴 **NOT polled, and that is deliberate.** The scan attaches to each unowned terminal in its own
+ * subprocess and waits on each, so it can take minutes when several installed terminals are
+ * stopped. Putting it on the 60s interval every other query here uses would stack slow requests
+ * against the box. It runs once when the tab opens and then only when somebody asks.
+ *
+ * ⚠ **`retry: false`.** A failure here is a statement — unreachable, refused, unreadable — and the
+ * page shows it. Retrying would spend minutes re-asking a box that already answered, and would
+ * blur "could not ask" into "still loading".
+ *
+ * ⚠ **A thrown error and `asked: false` are DIFFERENT.** The endpoint 502s when the scan could not
+ * RUN; it returns `asked: false` when the box deliberately refused. Both must be shown, and they
+ * must not be shown as the same thing — one sends you at the network, the other at the script.
+ */
+export function useTerminalScan() {
+  return useQuery({
+    queryKey: ['bots', 'accounts', 'scan'],
+    queryFn: () => api.get<TerminalScan>('/bots/accounts/scan'),
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60_000,
+    retry: false,
   })
 }
 

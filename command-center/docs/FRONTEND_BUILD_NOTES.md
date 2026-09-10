@@ -6,6 +6,39 @@ Implementation-level detail for specific pages/components, relocated out of `com
 
 ---
 
+## Checking the box from the Bots page, and the panel that could not have appeared (2026-09-10)
+
+Aaron logged a VPS terminal into a live account and the Command Center never noticed. The backend
+half of the answer landed the same day; this is the surface for it.
+
+**What it shows.** One button, `Check the VPS`, opens a panel listing every MT5 terminal on the box
+with the account it is logged into — and, separately, every row of the account list with whether the
+box backs it up. On the first real run it found **34957946 on PUPrime-Live** on `C:\MT5_Scalper`,
+pre-filled with server, broker, currency, leverage and a measured `.p` suffix, and said in words
+that it is real money and that adding it moves no bot.
+
+🔴 **It was first wired into `AccountsTab`, which nothing renders.** The 2026-09-05 rebuild replaced
+the tabbed Bots page with one list and a drawer, and `AccountsTab` survived only as a module other
+files import helpers out of — `AccountForm`, `AddBotRow`, `emptyGroup`, `nameOf`. So the rail button
+and the scan mode were added to a component that cannot appear, and **the change typechecked, linted
+clean, passed all four frontend gates and the theme-token check.** Every automated signal available
+said it was done. Opening the page is what showed the button was not there.
+
+⚠ **The file still reads like a live page** — a rail, a detail pane, an empty state, comments about
+what a reader sees on screen — which is precisely why it caught somebody out. The dead wiring was
+backed out rather than left behind, because a second dead surface reads to the next person exactly
+like a live one.
+
+**The transferable half.** This is rule 9 arriving in the frontend: *a feature nobody has RUN is not
+a feature*. Nothing in a typechecker, a linter, a token scanner or a logic gate can tell you a
+component is never mounted — they all check the code, and the question was about the tree. The only
+instrument that answers it is the running page.
+
+**Proof.** Driven in a real browser against the live backend and the live box: the button renders,
+the scan returns, the live account appears as new with its warning, the bots' own terminal reports
+"not asked" with its reason, and the console carries zero errors.
+
+
 ## BacktestDetail.tsx
 
 Full run detail — full-bleed page (`-m-[22px]` cancels main's padding) laid out as a column: (1) a FULL-WIDTH header row (back link, title, chips, action buttons Rerun/Tune/Optimize/Stress Test) spanning the entire width; (2) below it a flex row that shares the remaining space between the collapsible left ParamsSidePanel (full-height bg-surface column flush against the nav sidebar, border-r divider; inner block sticky top-0 so params stay visible while scrolling; strategy-logic params + collapsible foundational; marks params changed vs baseline with strikethrough old→new for tune iterations; collapse persists in localStorage `bt_params_panel`; collapses to a thin vertical rail) and the detail content (flex-1, re-adds px/pb-[22px], reflows when the panel toggles): banners; an Evaluation + Performance block (`PerformancePanel`: a `VerdictRibbon` carrying the verdict, its rule chips and the trade-count anchor, over the three Made/Risked/Trusted cards; clicking through firms swaps the selected firm's sized numbers/charts in via `effRun` — an **optimizer combo** (`isOptCombo`: has `optimization_id`, no equity curve, complete) swaps in an `UnscoredRibbon` with a **Run Full Backtest** CTA instead of a verdict, and a run with no evaluations gets a ribbon carrying only the trade count. Every path renders the same three cards, so there is no longer a separate full-width layout. Running a full backtest on a combo with no inheritable ruleset opens `FullBacktestEvalModal` (market-aware ruleset picker — forex for MT5, futures for NT8) — driven by the backend's `status: "needs_ruleset"` reply; the choice re-fires via `useRetryBacktest({ runId, evaluateRulesets })`); tabbed charts (Equity/Price/Breakdown — Breakdown holds Drawdown + Daily P&L + Long-Short together; each panel fullscreen-expandable via ChartModal) + permanent Performance by Regime; logs. The account-balance slider now lives in the ParamsSidePanel footer.

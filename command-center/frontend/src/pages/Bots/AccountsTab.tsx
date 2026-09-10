@@ -30,7 +30,12 @@ import { useStrategies } from '@/hooks/useLab'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { VersionPill } from '@/components/VersionPill'
 import { BotStatusPill } from './BotStatusPill'
-import type { BotAccountGroup, BotAccountRegistration, BotDeployedVersion } from '@/types'
+import type {
+  BotAccountGroup,
+  BotAccountRegistration,
+  BotAccountRegistrationWrite,
+  BotDeployedVersion,
+} from '@/types'
 import type { UseQueryResult } from '@tanstack/react-query'
 
 /**
@@ -1448,27 +1453,42 @@ export function AddBotRow({
  */
 export function AccountForm({
   existing,
+  prefill,
   onClose,
 }: {
   existing?: BotAccountRegistration
+  /**
+   * Fields MEASURED off a terminal on the box, for an account nobody has registered yet.
+   *
+   * ⚠ **It fills only what the box could measure.** Label, tier, cost profile and note stay empty
+   * on purpose — a guessed cost profile prices every backtest on that account, and this repo
+   * refuses an unmeasured cost rather than borrowing a sibling's number. It also carries no
+   * password and cannot: the terminal encrypts it at rest.
+   *
+   * ⚠ **It is a STARTING POINT, not a commit.** Nothing has been written when this form opens;
+   * the account exists once somebody saves it, exactly as if it had been typed.
+   */
+  prefill?: BotAccountRegistrationWrite
   onClose: () => void
 }) {
   const save = useRegisterAccount()
   const setPassword = useSetAccountPassword()
 
-  const [account, setAccount] = useState(existing ? String(existing.account) : '')
-  const [label, setLabel] = useState(existing?.label ?? '')
-  const [broker, setBroker] = useState(existing?.broker ?? '')
-  const [tier, setTier] = useState(existing?.tier ?? '')
-  const [kind, setKind] = useState(existing?.kind ?? 'demo')
-  const [server, setServer] = useState(existing?.server ?? '')
-  const [mt5Path, setMt5Path] = useState(existing?.mt5_path ?? '')
+  const seed = existing ?? prefill
+  const [account, setAccount] = useState(seed?.account ? String(seed.account) : '')
+  const [label, setLabel] = useState(seed?.label ?? '')
+  const [broker, setBroker] = useState(seed?.broker ?? '')
+  const [tier, setTier] = useState(seed?.tier ?? '')
+  const [kind, setKind] = useState(seed?.kind ?? 'demo')
+  const [server, setServer] = useState(seed?.server ?? '')
+  const [mt5Path, setMt5Path] = useState(seed?.mt5_path ?? '')
   // `null` is a real, distinct value here — "nobody recorded it" — so the control is a checkbox
   // plus a text field rather than an empty string, which would mean "this broker quotes bare
-  // symbols" and silently strip the suffix off a live instrument.
-  const [hasSuffix, setHasSuffix] = useState(existing ? existing.symbol_suffix !== null : true)
-  const [suffix, setSuffix] = useState(existing?.symbol_suffix ?? '')
-  const [profile, setProfile] = useState(existing?.account_profile ?? '')
+  // symbols" and silently strip the suffix off a live instrument. A discovered account whose
+  // suffix could NOT be measured arrives with the box unticked, which is the same claim.
+  const [hasSuffix, setHasSuffix] = useState(seed ? seed.symbol_suffix !== null : true)
+  const [suffix, setSuffix] = useState(seed?.symbol_suffix ?? '')
+  const [profile, setProfile] = useState(seed?.account_profile ?? '')
   const [password, setPwd] = useState('')
 
   const num = Number(account)

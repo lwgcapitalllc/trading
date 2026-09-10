@@ -575,6 +575,74 @@ export interface BotAccountRegistrationWrite {
   deploy?: boolean
 }
 
+/** One MT5 terminal on the VPS, and how it lines up with the account list.
+ *
+ * 🔴 **`account: null` NEVER means "this terminal has no account".** It means nobody asked, and
+ * `state` says why — stopped, or a bot trades through it and it was deliberately not attached to.
+ * Rendering a null here as an empty terminal converts "cannot ask" into a measurement.
+ *
+ * ⚠ **`kind` is three-state.** demo/live/contest come from the broker's own flag; `null` means the
+ * flag was unrecognised, which is UNKNOWN rather than the safe-sounding word. Never infer it from
+ * the server name.
+ */
+export interface ScannedTerminal {
+  /** Normalised install dir — what the join is done on. */
+  key: string
+  /** As the box spells it, for a person to read. */
+  install: string
+  /** `probed` | `not_running` | `owned_by_bot` */
+  state: string
+  running: boolean
+  owned_by_bots: string[]
+  account: number | null
+  server: string | null
+  kind: string | null
+  company: string | null
+  currency: string | null
+  leverage: number | null
+  /** Three-state, same as the registry's: a string, `""` for bare symbols, `null` = unmeasured. */
+  symbol_suffix: string | null
+  symbol_suffix_how: string | null
+  /** Why it was not probed. */
+  reason: string | null
+  /** Why a probe failed. */
+  error: string | null
+  /** `new` | `known` | `conflict` | `unasked` */
+  verdict: string
+  conflicts: string[]
+  /** Pre-filled registration, present only for a `new` account. Carries NO password — the
+   *  terminal encrypts it at rest, so a discovered account is unusable until one is stored. */
+  suggested: BotAccountRegistrationWrite | null
+}
+
+/** One row of the account list, and whether the box backs it up.
+ *
+ * 🔴 **`unverified` is NOT a finding against the row.** A stopped terminal, or one a bot trades
+ * through, produces no reading — rendering that as a problem fills the page with false alarms and
+ * teaches everyone to scroll past the real one. */
+export interface RegistryCheck {
+  account: number
+  label: string
+  /** `confirmed` | `contradicted` | `unverified` */
+  verdict: string
+  detail: string
+  conflicts: string[]
+  seen_on: string | null
+}
+
+/** What the VPS is actually logged into, checked against the account list.
+ *
+ * 🔴 **`asked: false` is NOT an empty box.** It means the scan could not run and `reason` says
+ * which. A scan that could not run comes back as an ERROR from the endpoint; this shape is for a
+ * scan the box deliberately REFUSED, which is an answer rather than a failure. */
+export interface TerminalScan {
+  asked: boolean
+  scanned_at: string | null
+  reason: string | null
+  terminals: ScannedTerminal[]
+  registry: RegistryCheck[]
+}
+
 export interface BotAccountCapResult {
   status: string
   changed: boolean

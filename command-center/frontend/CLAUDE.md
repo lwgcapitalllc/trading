@@ -156,6 +156,47 @@ reaches the real backend and the live box), and a test rewritten against a UI it
 executed against is the vacuous-test trap this repo has recorded eight times. **Re-point them with
 the app up, watching each one fail first.**
 
+## "Check the VPS" — what the box is logged into, beside what the list claims (2026-09-10)
+
+A button in the Bots header opens `TerminalScanPanel`, which calls `GET /bots/accounts/scan` and
+shows every MT5 terminal on the box with the account it is logged into, joined against the account
+list. It exists because that list is hand-typed and nothing ever checked it — a terminal had been
+sitting on a LIVE account for a day with this page unable to see it.
+
+🔴 **Checking is a READ and adding is a WRITE, and they are two controls.** One button doing both
+would make a scan feel like a commit. "Add to list" carries the measured fields into the SAME form
+a typed account goes through, so a discovered account is validated identically and **nothing is
+written until somebody saves it**.
+
+🔴 **Three failure shapes, rendered as three different things**, because they have three different
+repairs: the query THREW (the box could not be asked — the network), the payload says
+`asked: false` (the box refused — the script), and a terminal says `not_running` / `owned_by_bot`
+(it could not be asked — nothing is wrong). Collapsing any pair turns "cannot ask" into "nothing
+there".
+
+⚠ **`account: null` never renders alone.** The reason travels with it, or an unasked terminal reads
+as an empty one.
+
+⚠ **`unverified` is deliberately QUIET, not tinted like a problem.** It is not a finding against a
+row. Tinting it would flag every account on the bots' own terminal on every single scan, which is
+what teaches somebody to scroll past the real one.
+
+⚠ **A LIVE account is called out in words, not just coloured.** It says plainly that adding it moves
+no bot and that it needs a password before anything could connect.
+
+⚠ **The scan is NOT on the 60s poll and `retry` is off.** It can take minutes when several installed
+terminals are stopped, so polling would stack slow requests against the box; retrying would blur
+"could not ask" into "still loading".
+
+🔴 **`AccountsTab` IS NOT RENDERED BY ANYTHING and has not been since the 2026-09-05 rebuild above.**
+`index.tsx` and `AccountDrawer` import only its helpers (`AccountForm`, `AddBotRow`, `emptyGroup`,
+`nameOf`). This panel was first wired into its rail and its detail pane, typechecked, linted and
+passed every gate — and **could not have appeared on screen**, which only opening the page showed.
+⚠ **Anything added there is dead on arrival**; put it in `index.tsx`. That the file still reads like
+a live page is the trap, and it is rule 9 in the frontend: a feature nobody has RUN is not a feature.
+
+Story: `command-center/docs/FRONTEND_BUILD_NOTES.md`.
+
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
 
 **The Bots header added every bot's balance.** Each bot on a stack reports the SAME account
