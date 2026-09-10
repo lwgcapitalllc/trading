@@ -1,6 +1,15 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle, Square, Upload } from 'lucide-react'
+import {
+  Trash2,
+  ArrowLeft,
+  RefreshCw,
+  Check,
+  AlertTriangle,
+  Square,
+  Upload,
+  Minus,
+} from 'lucide-react'
 import { useStressTest, useDeleteStressTest, useCancelStressTest } from '@/hooks/useStressTests'
 import { useRulesets, useBacktestRun, useStack } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
@@ -244,6 +253,9 @@ export default function StressTestDetail() {
     timer: string | null
     done: boolean
     active: boolean
+    /** Ruled out on evidence rather than run. Its own look, because a tick would say it ran and an
+     *  empty circle would say it is still to come — and it is neither. */
+    skipped?: boolean
   }
   const pipelineSteps: PipelineStep[] = [
     {
@@ -280,7 +292,22 @@ export default function StressTestDetail() {
             active: st.status === 'running_sens',
           },
         ]
-      : []),
+      : st.sensitivity_skipped
+        ? [
+            // A STACK whose bots cannot compete for risk. Dropping the step would draw this test
+            // exactly like one where nobody asked for the nudges — the server ruled them out, and
+            // the page says so rather than letting the phase silently vanish.
+            {
+              key: 'sens',
+              label: 'Sensitivity',
+              sub: 'Not needed',
+              timer: null,
+              done: false,
+              active: false,
+              skipped: true,
+            },
+          ]
+        : []),
     {
       key: 'grade',
       label: 'Grade',
@@ -781,8 +808,12 @@ export default function StressTestDetail() {
   // none", "the windows closed too few trades each. Re-run with fewer walk-forward windows". The
   // last one names the fix, which makes it the most useful text the whole feature produces.
   const phaseFailures = Object.entries(st.phase_failures ?? {})
+  // A graded test already carries the skip in its own reasons (the grader writes it), so it is
+  // added here only when there are none — a test graded against no ruleset would otherwise say
+  // nothing at all about a phase that was ruled out, and a duplicate line would say it twice.
+  const skipLine = st.sensitivity_skipped && !st.grade_reasons?.length
   const reasonsCard =
-    st.grade_reasons?.length || phaseFailures.length || st.results_error ? (
+    st.grade_reasons?.length || phaseFailures.length || st.results_error || skipLine ? (
       <div className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-3 space-y-2">
         <SectionHeader
           label={st.grade ? `Why ${st.grade}` : 'Why this test is not graded'}
@@ -801,6 +832,15 @@ export default function StressTestDetail() {
           <div className="flex gap-2 items-start text-[12px] text-warn-text">
             <AlertTriangle size={12} className="mt-[3px] flex-shrink-0" />
             <span>{st.results_error}</span>
+          </div>
+        )}
+        {skipLine && (
+          <div
+            data-testid="sens-skipped-reason"
+            className="flex gap-2 items-start text-[12px] text-text-secondary"
+          >
+            <Minus size={12} className="mt-[3px] flex-shrink-0 text-text-tertiary" />
+            <span>Setting nudges not run on this stack: {st.sensitivity_skipped}</span>
           </div>
         )}
         <ul className="space-y-1">
@@ -859,6 +899,8 @@ export default function StressTestDetail() {
               >
                 {step.done ? (
                   <Check size={11} className="text-pos-text" />
+                ) : step.skipped ? (
+                  <Minus size={11} className="text-text-tertiary" />
                 ) : step.active ? (
                   <span className="w-[7px] h-[7px] rounded-full bg-accent animate-pulse" />
                 ) : (
@@ -887,6 +929,11 @@ export default function StressTestDetail() {
           </Fragment>
         ))}
       </div>
+      {st.sensitivity_skipped && (
+        <p data-testid="sens-skipped" className="text-[11px] text-text-secondary leading-snug">
+          Setting nudges skipped: {st.sensitivity_skipped}
+        </p>
+      )}
     </div>
   ) : null
 

@@ -6274,3 +6274,54 @@ estimate lands at ~45** (182.6s x (1 + 60 / 4.32)).
 the reader and the estimate were covered, but nothing proved the phase WROTE the figure — so
 deleting the write left every stack quoting the fallback for ever while looking wired. A test now
 drives the real phase and asserts the round trip.
+
+## A stack's setting nudges run ONLY when its bots can compete for risk (2026-09-10)
+
+**Aaron's call.** When a stack's bots cannot get in each other's way, a nudge to one bot moves only
+that bot's trades — which that bot's OWN stress test measures, at a fraction of the cost. So the
+full ~42-minute phase is kept for the case only a whole-stack test can see, and a stack otherwise
+gets Monte Carlo + walk-forward on the combined book. **On the live pairing that is ~4.5 minutes.**
+
+`stress_tester.stack_nudges_needed` decides; the endpoint asks it ONCE, before the estimate, the
+platform check, the recorded phases and the task, so all four read one answer. **Full test when ANY
+of these holds:**
+
+- a leg trades off another's results — a recorded parent, OR a strategy that needs one and has none
+  recorded (the same two-sided test `gradable.rebuild_legs` makes);
+- the shares add up past the cap, via **`bot_accounts.share_overflow`, the check the Bots page and
+  the copy-to-demo button use** — never a private sum (it carries a tolerance a raw sum lacks);
+- the stack's own run BLOCKED an entry, or trimmed one by more than `_STACK_TRIM_IMMATERIAL` (1%);
+- anything is unreadable — cap, a share, the cap-record, or a record that disagrees with its own
+  summary's count. **`portfolio_runner.read_contention` keeps `[]` (never bound) apart from `None`
+  (no record)**, and only the first may skip.
+
+🔴 **THE 1% IS A DECISION, AND THE LIVE PAIRING SHOWS WHY ZERO WOULD BE WRONG.** 5% + 5% under 10%
+fits exactly, yet its 6.6-year run trimmed ONE trade by $8.61 of $16,979 (0.05%): a bot's open risk
+is fixed dollars, so a balance that falls while it holds makes that a bigger share and the other
+bot's room comes up a hair short. That is sharing, not taking turns. Anything cutting a real slice
+still goes to the full test.
+
+⚠ **The request still says `include_sensitivity: true` and the server narrows it** — the evidence
+lives here. ⚠ **It also skips the stack's own account settings** (cap, balance, smallest position),
+which the full test nudges first: nudging the cap down on shares that fit it exactly manufactures
+the competition the check just ruled out.
+
+⚠ **The reason is stored** (`stress_tests.sensitivity_skipped`, written at creation beside
+`phases_requested`, declared on the model or Pydantic drops it). **The grade reads it off the row**,
+so the live grade and the restamp both see it: it counts as NOT RUN (no credit, no penalty, no cap
+on A) and says why instead of *"may improve with full analysis"* — the full analysis would add
+nothing. A stale reason is ignored when a sensitivity result exists.
+
+🔴 **THE WALK-FORWARD ESTIMATE WAS WRONG THE SAME WAY, AND IT BECAME THE WHOLE WAIT.** A stack used
+the single-run constant (ten 12-second child jobs → **2 min**); MEASURED on the live pairing, its ten
+whole-stack window replays take **251.7s (4.2 min)**, serial, in-process.
+`stack_walk_forward_minutes` reads this stack's last walk-forward off timestamps every test already
+writes (`lab_db.last_stack_wf_seconds`, only a walk-forward that stamped its end), else one replay x
+**1.38** (251.7 / 182.6, measured once). **Live: quotes ~7 the first time** (its run row predates the
+gating), **~5 after.**
+
+**TESTED:** `tests/test_stack_nudges_needed.py`, 22 tests, **26 mutations run, 26 killed.** 🔴 **One
+survived first, and the lesson is about NUMBERS:** the shared-check case used 3.3 + 3.3 + 3.4, which
+sums to EXACTLY 10.0, so a private sum agreed with the shared check. It uses 0.1 + 0.2 under 0.3 now,
+with the float premise asserted. **Inputs that cannot tell two behaviours apart do not test which
+one runs.**

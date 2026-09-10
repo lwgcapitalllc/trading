@@ -604,6 +604,12 @@ def init_db() -> None:
             # not-run — so a walk-forward that died could still be handed an A.
             "ALTER TABLE stress_tests ADD COLUMN phases_requested TEXT",
             "ALTER TABLE stress_tests ADD COLUMN phase_failures TEXT",
+            # Why a STACK's setting nudges were not run, in words — NULL when they ran, or were
+            # never asked for. Without it a skipped phase and an unrequested one are the same
+            # absent step on the page, and the grade says "not run — may improve with full
+            # analysis" about a phase that was ruled out on evidence. See
+            # stress_tester.stack_nudges_needed.
+            "ALTER TABLE stress_tests ADD COLUMN sensitivity_skipped TEXT",
             # Which build of the scoring engine produced the stored grade. NULL = a row written
             # before this column, i.e. before the 2026-07-30 accuracy pass, whose grade and
             # degradation numbers the current code would not produce. See _restamp_stress_tests.
@@ -4352,8 +4358,8 @@ def insert_stress_test(data: dict) -> None:
             INSERT INTO stress_tests
                 (stress_test_id, run_id, stack_id, ruleset_id, status, created_at,
                  num_simulations, num_bootstrap, walk_forward_windows, phases_requested,
-                 runner, target_label)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 runner, target_label, sensitivity_skipped)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 data["stress_test_id"],
@@ -4380,6 +4386,9 @@ def insert_stress_test(data: dict) -> None:
                 # treating an absence as a value.
                 data.get("runner"),
                 data.get("target_label"),
+                # At CREATION, beside `phases_requested`, for the same reason: the page shows a
+                # live test, and a skip decided at the start has to be visible from the start.
+                data.get("sensitivity_skipped"),
             ),
         )
 
@@ -4669,6 +4678,31 @@ def last_stack_replay_seconds(stack_id: str) -> Optional[float]:
         if isinstance(secs, (int, float)) and not isinstance(secs, bool) and secs > 0:
             return float(secs)
     return None
+
+
+def last_stack_wf_seconds(stack_id: str) -> Optional[float]:
+    """How long this stack's walk-forward actually took, last time one finished.
+
+    Read off timestamps every stress test already writes: the walk-forward starts the moment the
+    Monte Carlo is stamped and ends when its own result is. Since 2026-09-10 most stack tests skip
+    the setting nudges, so this — not the nudge baseline — is the timing that stays current.
+
+    ⚠ **`None` means nobody has measured it, never zero** — zero would quote a wait of nothing.
+    ⚠ **Only a walk-forward that WROTE its result counts.** A failed or cancelled one never stamps
+    its end, so it cannot pass for a finished one that was quick.
+    ⚠ **The window count is not matched.** The windows tile the whole history either way, so the
+    count moves only the per-window warm-up; a measurement off five windows is a far better guide
+    to a three-window run than any constant.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT wf_completed_at - mc_completed_at AS secs FROM stress_tests "
+            "WHERE stack_id = ? AND wf_completed_at IS NOT NULL AND mc_completed_at IS NOT NULL "
+            "AND wf_completed_at > mc_completed_at "
+            "ORDER BY created_at DESC LIMIT 1",
+            (stack_id,),
+        ).fetchone()
+    return float(row["secs"]) if row else None
 
 
 def update_stress_test_phases(

@@ -117,13 +117,23 @@ def compute_grade(
     sens_not_assessable = (sensitivity is not None and sens_degradation is None) or sens_failed
     sens_not_run = sensitivity is None or sens_not_assessable
 
+    # A STACK whose setting nudges were ruled out on evidence (its bots cannot compete for risk, so
+    # a nudge to one moves only that bot's trades). Read off the ROW, so the live grade and the
+    # restamp in `lab_db` both see it without either caller passing it. It is NOT RUN for grading —
+    # no credit, no penalty, no cap on A, exactly as a phase nobody asked for — but it says WHY
+    # instead of "may improve with full analysis": the full analysis would add nothing, and saying
+    # otherwise sends the reader to spend 40 minutes finding that out.
+    sens_skipped = st.get("sensitivity_skipped") if sensitivity is None else None
+
     # "Not run" must mean NOT RUN. A phase that was requested and failed, or ran and could not be
     # assessed, already has its own reason above — appending "not run — grade may improve with full
     # analysis" beside it puts two contradictory explanations in one list.
     genuinely_not_run = (walk_forward is None and not wf_failed) or (
-        sensitivity is None and not sens_failed
+        sensitivity is None and not sens_failed and not sens_skipped
     )
 
+    if sens_skipped:
+        reasons.append(f"Setting nudges not run on this stack: {sens_skipped}")
     if sens_failed:
         reasons.append(
             "Parameter sensitivity was requested and FAILED — it is not evidence "
