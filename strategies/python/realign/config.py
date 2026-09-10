@@ -187,6 +187,16 @@ class RealignConfig(SosFadeConfig):
     makes, for the same reason.
     """
 
+    exec_scale_in: bool = False
+    """PINNED OFF — adding to a winner. The parent defaulted it True on 2026-09-06 (Aaron's
+    call, named for SOS Fade), and `realign_strategy.pine` has no scale-in input or code.
+
+    MEASURED 2026-09-10 (Vantage 5m, 2020-01-02 → 2026-08-06, same 162 trades either way): the
+    inherited adds lifted this book +35.81R → +49.29R charged. That is a CANDIDATE, not a
+    result — nobody chose it for this setup and no chart can confirm it. Turn it on only in a
+    run that says so, and only after this bot has a parity gate.
+    """
+
     def __post_init__(self) -> None:  # type: ignore[override]
         parent = getattr(super(), "__post_init__", None)
         if parent is not None:

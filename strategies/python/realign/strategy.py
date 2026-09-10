@@ -41,7 +41,7 @@ from sos_fade.strategy import SosFadeStrategy  # noqa: E402
 
 from .config import RealignConfig  # noqa: E402
 from .execution import RealignExecution  # noqa: E402
-from .htf import HtfStructure  # noqa: E402
+from .htf import MAJOR_LENGTH, HtfStructure  # noqa: E402
 from .tracker import RealignTracker  # noqa: E402
 
 
@@ -67,13 +67,19 @@ class RealignStrategy(SosFadeStrategy):
 
     @staticmethod
     def engine_config():
-        """The parent's pins, with internal structure switched back ON.
+        """The parent's pins, with internal structure switched back ON and the Pine's swing length.
 
         The short side triggers on the engine's `InternalEvents`; the parent pins
         `show_internal=False` because its own Pine hides the internal block. Inheriting
         that would blank the short trigger and the bot would simply never short.
+
+        🔴 `major_length` is `realign_strategy.pine`'s majorLength, which it runs "on both
+        frames". The parent never pins it, so this frame ran the engines' default 15 until
+        2026-09-10 while the 15m half ran 10. ⚠ It only places the engine's FIRST swing, so the
+        change moved no trade over 2020-2026 (measured) — it keeps the two sides equal.
         """
-        return dataclasses.replace(SosFadeStrategy.engine_config(), show_internal=True)
+        return dataclasses.replace(SosFadeStrategy.engine_config(), show_internal=True,
+                                   major_length=MAJOR_LENGTH)
 
     def _step_core(self, state, bar_time_ms: int) -> Decision:
         b = state.bar

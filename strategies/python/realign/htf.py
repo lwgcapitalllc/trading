@@ -37,6 +37,11 @@ from market_structure import Bar, StructureEngine  # noqa: E402
 
 _MS_PER_MIN = 60_000
 
+# `realign_strategy.pine` majorLength — "Swing detection lookback, on both frames". ONE number for
+# both, and `strategy.engine_config()` reads this rather than restating it: the chart frame took
+# the engines' default 15 for a month because only the 15m half named a value.
+MAJOR_LENGTH = 10
+
 
 class HtfStructure:
     """Aggregate the chart frame up to `minutes` and run a StructureEngine on the result.
@@ -46,7 +51,7 @@ class HtfStructure:
     None as "no HTF information this bar", never as "no break".
     """
 
-    def __init__(self, minutes: int = 15, major_length: int = 10) -> None:
+    def __init__(self, minutes: int = 15, major_length: int = MAJOR_LENGTH) -> None:
         self._ms = minutes * _MS_PER_MIN
         self._engine = StructureEngine(major_length=major_length)
         self._bucket: Optional[int] = None

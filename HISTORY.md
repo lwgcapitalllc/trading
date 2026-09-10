@@ -21,6 +21,23 @@ the other one did.
 
 ## Latest
 
+### Realign's swing length was fixed, and the fix moved nothing (2026-09-10)
+
+Realign's chart finds swings with a 10-bar lookback "on both frames"; the Python used 10 on the
+15-minute frame and the engines' default 15 on the 5-minute one, and its own doc said pinning 10
+"moves every realign figure". Pinned, re-measured: **not one trade moved.** The structure engine
+reads that lookback only to place its first swing and let it float before the first break — after
+that, swings confirm by pullback. Measured on the engine itself: 10 against 15 over 467,352 bars
+differs on 3 bars, all in the first 37. The engine's own summary said every new swing waited on the
+window; its longer doc had it right. **A prediction written as a fact sends the next reader the
+wrong way — this one would have had somebody re-measuring a book to find a change that was never
+there.**
+
+Realign had also inherited adding to winners, which its chart cannot do. That one did move: the
+charged book read +49.29R with it against +35.81R without. Pinned off like the other forks, and
+recorded as a candidate rather than a result, since nobody chose it and no chart can confirm it.
+With both pins, today's code reproduces realign's recorded book exactly.
+
 ### Every strategy's gate now runs on every clone, and BOS's was red on arrival (2026-09-10)
 
 Aaron exported the other three twins the same afternoon: SOS Fade again with adding to winners

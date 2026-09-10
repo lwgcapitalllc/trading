@@ -119,6 +119,34 @@ def test_internal_structure_is_switched_back_on():
     assert RealignStrategy.engine_config().show_internal is True
 
 
+_PINE = _ROOT / "strategies" / "tradingview" / "realign_strategy.pine"
+
+
+def test_both_frames_run_the_charts_swing_length():
+    """`realign_strategy.pine` runs majorLength "on both frames". The 5m frame took the engines'
+    default 15 until 2026-09-10 because only the 15m half named a value.
+    ⚠ It only places the engine's FIRST swing (measured: 3 differing bars in 467,352, all in the
+    first 37), so no figure moved — this holds the two sides equal, it did not fix a result.
+    Read OUT of the Pine, so moving either side goes red. Watched red both ways."""
+    from engines.pine_constants import pine_value
+
+    pine = pine_value("majorLength", _PINE)
+    assert RealignStrategy.engine_config().major_length == pine
+    assert HtfStructure()._engine.major_length == pine
+
+
+def test_the_fork_does_not_add_to_winners_its_pine_cannot():
+    """The parent adds to winners by default since 2026-09-06; `realign_strategy.pine` cannot, and
+    this bot has no parity gate to notice. Inherited, it lifted the charged book +13.48R with no
+    one having chosen it. Goes red if the pin goes or the Pine gains the input."""
+    from sos_fade.config import SosFadeConfig
+
+    assert SosFadeConfig().exec_scale_in is True, (
+        "the parent's default moved again — re-answer whether this fork's pin is load-bearing")
+    assert RealignConfig().exec_scale_in is False
+    assert "execScaleIn" not in _PINE.read_text(encoding="utf-8")
+
+
 def test_run_dual_is_refused_because_this_strategy_is_single_frame():
     with pytest.raises(NotImplementedError, match="single-frame"):
         RealignStrategy(RealignConfig()).run_dual(None, None)

@@ -86,9 +86,12 @@ tracking is inherently sequential.
 
 ## Pivot lag caveat (brief — full explanation in MARKET_STRUCTURE_ENGINE.md)
 
-New external swing *candidates* are only confirmed `major_length` (15, by default) bars after the
-fact — this mirrors Pine's `ta.pivothigh`/`ta.pivotlow` window and is preserved deliberately, not
-a bug. **BOS/CHoCH break events themselves are same-bar/real-time** — the lag only affects how
+The `major_length` (15, by default) pivot window is consulted ONLY to seed the first swing and to
+let it float wider before the first break — after that, swings confirm by pullback and never read
+it. MEASURED 2026-09-10: 10 against 15 over 467,352 Vantage 5m bars differs on 3 bars, all in the
+first 37; internal structure never differs. So it is a COLD-START setting, and a consumer that
+moves it moves its first swing, not its book. The lag itself mirrors Pine's
+`ta.pivothigh`/`ta.pivotlow` window and is preserved deliberately, not a bug. **BOS/CHoCH break events themselves are same-bar/real-time** — the lag only affects how
 quickly a brand-new swing candidate gets identified, not how fast a break against an
 already-known level fires. Internal structure has no pivot lag at all. See
 `MARKET_STRUCTURE_ENGINE.md` for the full explanation.

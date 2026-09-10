@@ -334,9 +334,9 @@ with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass
 
 ✅ **STRATEGIES JOINED ON 2026-09-10 — all four**, from `strategies/python/*/exports/golden/`, so
 every strategy's parity gate, both LIVE bots' included, runs on every clone. 🔴 **BOS's was RED on
-arrival**: both forks had inherited SOS Fade's 2026-09-06 adding-to-winners default, which neither
+arrival**: every fork had inherited SOS Fade's 2026-09-06 adding-to-winners default, which no
 fork's Pine can do, and nothing had run BOS's gate since. **A fork inherits its parent's DEFAULTS as
-well as its code** — pinned off in both (`strategies/python/bos/CLAUDE.md`). ⚠ **A folder with two
+well as its code** — pinned off in all three (`strategies/python/bos/CLAUDE.md`). ⚠ **A folder with two
 compare scripts must NAME its gate in `golden.json`** — SOS Fade has two, and the runner took the
 first alphabetically, right by luck; unnamed ambiguity is now refused. ⚠ **A Pine twin that gains
 a compared column makes its golden REFUSED rather than stale** — the step goes red and the answer

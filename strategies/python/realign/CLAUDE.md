@@ -16,7 +16,8 @@ Tester**. 🔴 **NOT PARITY-VALIDATED — there is no export twin, no real CSV a
 `tools/compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are all outstanding.**
 Every number below is a LAB finding. Read `docs/REALIGN_SPEC.md` for the setup and the full
 measurement record.
-**Last reviewed:** 2026-08-13 — first commit.
+**Last reviewed:** 2026-09-10 — swing length and adding to winners pinned to the Pine; the book re-measured
+and reproduced exactly. Earlier: 2026-08-13 — first commit.
 
 ---
 
@@ -75,8 +76,10 @@ result, and the reason `realign_short_source` was originally defaulted there.
 
 | shorts, 2020-01-02 → 2026-08-06 | trades | total R | avg R | maxDD |
 |---|---|---|---|---|
-| `realign_short_source = "swing"` | 87 | **+20.22R** | +0.232R | 6.39R |
-| `realign_short_source = "internal"` | 60 | **−13.26R** | −0.221R | 14.61R |
+| `realign_short_source = "swing"` | 85 | **+20.60R** | +0.242R | 6.11R |
+| `realign_short_source = "internal"` | 59 | **−12.26R** | −0.208R | 14.35R |
+
+Free, re-measured 2026-09-10. The first build read 87 / +20.22R and 60 / −13.26R — same verdict.
 
 The scan is not broken. It scores every setup **independently, at a FIXED target, with no exit
 ladder, no staged stop and no position slot** — and that short edge lived entirely in the tail
@@ -177,12 +180,19 @@ broke a new fork.
 - **`show_internal` switched back ON.** The parent pins it **False**. Inheriting that blanks the
   internal stream, and with `realign_*_source = "internal"` the bot would simply never trigger on
   that side — **a wrong RESULT with no error anywhere.** Tested.
-- 🔴 **The chart-frame swing length is inherited too, and it is NOT the Pine's (found 2026-09-10,
-  NOT fixed).** `realign_strategy.pine` runs its structure pivot length at **10 "on both frames"**.
-  The port uses 10 on the 15m frame (`htf.py`) but the engine default **15** on the 5m frame — the
-  parent's `engine_config()` never pins it — and the default `"swing"` trigger reads exactly that
-  5m stream. No gate exists to catch it. Pinning 10 moves every realign figure, so it is a
-  re-measure, not a tidy.
+- ✅ **The chart-frame swing length is the Pine's 10 since 2026-09-10** (`htf.MAJOR_LENGTH`, read
+  by both frames); the 5m frame had taken the engine default 15, which the parent never pins.
+  🔴 **This line predicted the fix would move every figure, and it moved NONE**: the pivot window
+  only places the engine's first swing (`engines/market_structure/CLAUDE.md`), so the 2020-2026
+  book is identical at 10 and 15. A prediction written as a fact is rule 4 — measure first.
+  `test_both_frames_run_the_charts_swing_length` reads the value out of the Pine.
+- 🔴 **Adding to winners is PINNED OFF (2026-09-10).** Inherited from SOS Fade's 2026-09-06
+  default, and `realign_strategy.pine` has no scale-in. With it the book read **162 / +61.27R free,
+  +49.29R charged** — a candidate, not a result: nobody chose it for this setup and no chart can
+  confirm it. Turn it on only in a run that says so, after this bot has a gate.
+- ⚠ **The breakeven buffer is a KNOWN chart/Python difference, left alone**: the Pine moves the
+  stop to breakeven at 0 ticks, the Python at the parent's 30. The ladder is inherited on purpose
+  (below); the parity gate is what settles which is right.
 - **The entry-side SOS Fade fields are left alone deliberately** (`exec_fib_nearest`, `exec_deep_fib`,
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
@@ -249,8 +259,7 @@ them exercises either field. Both are untested beyond construction-time validati
 
 Stop staging, the runner trail, TP rungs and the time stop all come from `sos_fade` and move
 with it. That is the point of inheriting — but it also means **a change to the SOS Fade ladder moves this
-bot's numbers**, and the numbers below were taken before `32b633f` (the breakeven-buffer-vs-spread
-finding). Re-measure before quoting them against a charged book.
+bot's numbers**. ✅ Re-measured 2026-09-10 on today's ladder: the book below reproduces exactly.
 
 ---
 
@@ -263,6 +272,11 @@ frame resampled from M1** (see *How to re-run this* below — reading the M5 cac
 |---|---|---|---|---|---|---|
 | free | 162 (77L/85S) | +45.14R | +0.279 | 44.4% | 1.658 | 12.15R |
 | charged (`puprime_standard`) | 162 | +35.81R | +0.221 | 33.3% | 1.496 | 15.52R |
+
+✅ **RE-MEASURED 2026-09-10 after both pins, and it reproduces EXACTLY** — free and charged, all 162
+trades, the pattern table and the half split too. Vantage 5m through the lab's own replay (the M5
+cache now equals the 1m resample bar for bar, 467,352 bars). ⚠ Its win rate counts a trade inside
+±0.25R as a scratch, so it reads 27.8% where this table's older count reads 44.4%.
 
 Cross-checked against the TradingView Strategy Tester on the same instrument and window:
 
@@ -300,11 +314,19 @@ not a measurement, and **the parity gate is what settles it.**
 .venv/bin/python -m pytest strategies/python/realign/tests/ -q     # 15 tests
 ```
 
-For the replay: build the 5m frame by resampling `backtest/cache/XAUUSD__M1.csv`, never by loading
-the M5 cache. 🔴 **`backtest/cache/XAUUSD__M5.csv` holds 26,887 bars where a complete 2020→2026
-history is ~467,000.** A streaming structure engine fed across holes that size builds structure over
-candles that never traded, and returns a frame and a number that look perfectly clean. Every figure
-in this file is from the M1 resample; a run off the cache is not comparable to any of them.
+The book, asserted — both exit 0 on 2026-09-10:
+
+```
+python backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
+    --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
+    --expect-trades 162 --expect-r 45.14                              # free
+    ... --profile puprime_standard --expect-trades 162 --expect-r 35.81  # charged
+```
+
+⚠ **Charged it is +0.221R a trade against a standard error of ±0.168R — 1.3 errors, NOT an
+established edge.** The halves split +8.35R / +27.46R at 2023-05, which is the direction flip above.
+✅ The 26,887-bar 5m file this section used to warn about is gone: `VantageMarkets_Demo`'s 5m cache
+now equals the 1m resample bar for bar over this window (467,352 bars, measured 2026-09-10).
 
 **Neither is a reason to trust one side over the other yet. They are the two things the parity gate
 exists to settle, and the parity gate does not exist.**
