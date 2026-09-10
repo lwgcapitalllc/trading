@@ -51,6 +51,18 @@
       "symbol_suffix": ".p",
       "account_profile": "puprime_prime",
       "note": "The same probe on the Prime tier, and the one that settled the decision: byte for byte identical to ECN except commission ($3.50/side/lot against $1.00). NO TERMINAL SERVES IT, for the reason above."
+    },
+    {
+      "account": 34957946,
+      "label": "Aaron Live (Smaller)",
+      "broker": "PU Prime Ltd",
+      "tier": "ECN",
+      "kind": "live",
+      "server": "PUPrime-Live",
+      "mt5_path": "C:\\MT5_Scalper\\terminal64.exe",
+      "symbol_suffix": ".p",
+      "account_profile": "puprime_ecn",
+      "note": ""
     }
   ]
 }
