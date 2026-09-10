@@ -5942,3 +5942,95 @@ mean.
 the resolved name and the typed name are the same string, so the fixed and the broken code produce
 identical output and the case proves nothing — the same shape as a scaling test written against a
 scale of exactly 1.
+
+## Stack sensitivity runs its shifts in a POOL, and the estimate stopped double-counting (2026-09-09)
+
+Two defects in one phase. Both made a stack's sensitivity look far more expensive than it is, and
+one of them had never been true.
+
+### 🔴 "A stack cannot use that path" was a fact about ONE replay, read as a fact about TWO
+
+`_run_stack_sensitivity` replayed its shifts one at a time since it was written, and the reason
+recorded beside it was that a stack "replays several legs on one merged clock IN THIS PROCESS".
+**That is true, and it is a statement about where a single replay runs — not about whether two
+replays depend on each other.** They do not: every shift is an independent replay of the same bars,
+and `replay_window` writes nothing. **MEASURED on the live pairing's stack before changing
+anything: six replays at once finished 3.61x faster than six in a row and every one returned an
+IDENTICAL trade list** (four workers: 3.08x). ✅ **Driven end to end afterwards through the real
+fan-out: 2.82x on a four-shift plan, same order, same profit factors.**
+
+⚠ **PHYSICAL cores, not logical** (`_STACK_SENS_WORKERS`). CPU-bound Python gains almost nothing
+from the hyperthreads and each worker holds its own copy of the bars.
+
+🔴 **AT MOST `workers` IN FLIGHT, TOPPED UP AS EACH LANDS — never the whole plan queued.** Queuing
+all sixty makes a cancel arrive after everything has started, so *stop the remaining replays* stops
+nothing (`cancel_futures` can only drop what has not begun). It also stops the parent holding sixty
+account books at once, which the serial loop never had to think about.
+
+🔴 **THE CANCELLATION CHECK RUNS BEFORE THE RESULT IS CLASSIFIED, AND THE FIRST VERSION HAD IT
+INSIDE THE SUCCESS BRANCH.** A cancelled phase whose shifts were all FAILING never saw the
+cancellation and ground through the whole plan — the "cancel did not cancel" defect this app has
+now fixed three times, restored by an `elif`. **Found by its own test, not by reading.**
+
+⚠ **RESULTS ARE ASSEMBLED IN PLAN ORDER, never completion order.** The plan is a priority — the
+account's own settings first, then the legs taking turns — so a record shuffled by whichever worker
+finished first misreports what the budget was spent on.
+
+⚠ **The books are written in the PARENT.** Workers return the book; one writer keeps
+`write_shift_book`'s contract (a slug is recorded only when the write landed) unchanged.
+
+⚠ **A worker RETURNS its failure rather than raising**, so a dead shift is recorded as a hole in
+the coverage instead of surfacing as a pool error naming no shift.
+
+⚠ **The cancel bound genuinely CHANGED and is stated rather than implied**: whatever is already
+running finishes, so a cancel costs at most one batch. What still holds is that nothing NEW starts.
+
+### 🔴 The estimate added two rows that describe ONE run
+
+`_stack_replay_minutes` summed each leg's duration. **On a shared stack the legs run TOGETHER on one
+merged clock, so every leg row carries the same start and end** — MEASURED on the live pairing: two
+rows of 498s each, quoted as 16.6 minutes for a replay that took 8.3, and a three-leg stack would
+have been out by three. It takes the elapsed SPAN now.
+
+⚠ **The smaller of the span and the sum, because there is a third case.** A SCREEN may reuse a
+finished standalone run whose row is stamped from days ago, and the raw span then measures the gap
+since that afternoon rather than any work. Read off the TIMESTAMPS, so neither shape has to be
+declared to the function.
+
+🔴 **IT SAID *FLOOR* AND IS A CEILING.** The row it reads describes a stack RUN — the shared book
+plus one solo control per leg, then persisted — while a shift replays the shared book alone and
+writes nothing. MEASURED: the stack row spans **498s** and a sensitivity-shaped replay of the same
+stack over the same window takes **234s**. ⚠ **Left over-stating rather than scaled by a fitted
+factor**: the gap is the solo controls, and a divisor tuned on one two-leg stack is a guessed number
+wearing a measurement's clothes (rule 4). Quoting a wait that turns out shorter is the safe
+direction.
+
+⚠ **The estimate divides by the MEASURED speed-up, not by the worker count** —
+`_STACK_SENS_PARALLEL_EFFICIENCY` is 0.6, and assuming a full Nx would quote a third of the real
+wait. **Net effect on the live stack: 1013 minutes quoted → 147.** ⚠ **The trigger note said "one
+at a time" and now names the batch size** — a note describing the old shape reads as a measurement
+of the new one.
+
+### The pool is a SEAM, and the inline stand-in is deliberately less capable
+
+🔴 **`_shift_pool` exists so the ORCHESTRATION can be driven without spawning six interpreters** —
+ordering, failure recording, cancellation and book writing are all decided in the parent. ⚠ **An
+inline stand-in shares this process's memory, so it accepts a job that cannot be PICKLED and a
+worker that reads a monkeypatched module — the two things that fail only across a real boundary.
+Rule 13 from its other end: a double SIMPLER than production hides a defect just as well, and is
+harder to notice because nothing about it looks like a claim.**
+`test_the_shifts_really_do_survive_a_PROCESS_boundary` drives the real pool for that reason.
+
+✅ **PROVEN IN PRODUCTION, not only in tests.** A sensitivity run was launched through the live
+backend and a worker was confirmed at **98% CPU with the uvicorn server as its parent process** —
+`ProcessPoolExecutor` spawns correctly from inside the served app on macOS. Cancelling it dropped
+the workers to idle and released both platform locks.
+
+**Tests:** 7 new in `tests/test_gradable_resolver.py` (62). ⚠ **Non-vacuity by MUTATION: 7 written,
+7 RUN, 7 killed.** 🔴 **Two of them could not have failed as first written and were rewritten:** the
+ordering test drove the inline pool, where completion order IS submission order, so *walk the plan*
+and *take them as they land* produce the same list; and the cancel-bound test was named for a bound
+it never measured, asserting only that a cancelled phase reports cancelled. **Check that a test's
+inputs can distinguish the behaviours it names** — this file has now recorded that four times.
+⚠ **The existing cancel test is pinned to ONE worker**, where the *stops on the very next shift*
+guarantee is exact; asserting it against six would simply be wrong.

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from concurrent.futures import Future
 from pathlib import Path
 
 import pytest
@@ -819,7 +820,7 @@ def sens(lab, monkeypatch):
     every run of this file would leave folders in the real `reports/lab` — the orphaned-directory
     backlog this app has already had to clear once, created by its own test suite.
     """
-    from services import backtest_runner
+    from services import backtest_runner, stress_tester
 
     monkeypatch.setattr(backtest_runner, "LAB_RESULTS_DIR", lab / "reports")
     _stack(lab, monkeypatch)
@@ -838,7 +839,39 @@ def sens(lab, monkeypatch):
         return _book_pf(pf=2.0)
 
     monkeypatch.setattr(portfolio_runner, "replay_window", fake_replay)
+    monkeypatch.setattr(stress_tester, "_shift_pool", lambda workers: _InlinePool())
     return calls
+
+
+class _InlinePool:
+    """Runs each shift in THIS process, so the ORCHESTRATION can be driven without spawning six
+    interpreters — the ordering, the failure recording, the cancellation and the book writing are
+    all decided in the parent.
+
+    🔴 **DELIBERATELY LESS CAPABLE THAN THE REAL POOL, WHICH IS WHY IT IS NOT THE ONLY COVER.**
+    It shares this process's memory, so it accepts a job that could not be pickled and a worker
+    that reads a monkeypatched module — the two things that fail ONLY across a real process
+    boundary. Rule 13 from its other end: a double SIMPLER than production hides a defect just as
+    well as one more capable, and is harder to notice because nothing about it looks like a claim.
+    `test_the_shifts_really_do_survive_a_PROCESS_boundary` drives the real one.
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def submit(self, fn, job):
+        fut: Future = Future()
+        try:
+            fut.set_result(fn(job))
+        except BaseException as exc:  # noqa: BLE001 — a worker returns its failure, never raises
+            fut.set_exception(exc)
+        return fut
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        return None
 
 
 def test_every_NUDGE_replays_the_WHOLE_stack(sens):
@@ -916,7 +949,9 @@ def test_a_shift_that_RAISES_is_recorded_as_UNMEASURED_never_a_zero(lab, monkeyp
         return _book_pf(pf=2.0)
 
     monkeypatch.setattr(portfolio_runner, "replay_window", flaky)
-    assert stress_tester is not None
+    # ⚠ The shifts run in a POOL, so a stub set here cannot reach a worker in another process.
+    # This drives the orchestration inline; the real boundary is covered by its own test.
+    monkeypatch.setattr(stress_tester, "_shift_pool", lambda workers: _InlinePool())
     ok, err = _run_sens()
     assert ok is True, "one bad shift must not kill the phase"
     st = lab_db.get_stress_test("st_sens")
@@ -970,7 +1005,18 @@ def test_CANCELLING_stops_the_remaining_replays(lab, monkeypatch):
     that and then overwrote its own cancelled status when the work finished.
 
     ⚠ Watched RED by dropping the cancellation check between shifts.
+
+    🔴 **PINNED TO ONE WORKER, AND THAT IS WHAT MAKES `== 2` AN HONEST NUMBER.** Since the shifts
+    run in a pool, up to `workers` replays are in flight when a cancel lands and every one of them
+    finishes — so on the shipped six-worker setting the true answer is *at most one batch more*,
+    not *exactly one more*. At one worker the guarantee is exact and the assertion means what it
+    says. **The bound under real parallelism is a different claim and gets its own test**
+    (`test_a_CANCEL_starts_no_FURTHER_replays_beyond_the_batch_in_flight`); asserting `== 2`
+    against six workers would just be wrong.
     """
+    from services import stress_tester
+
+    monkeypatch.setattr(stress_tester, "_STACK_SENS_WORKERS", 1)
     _stack(lab, monkeypatch)
     calls = {"n": 0}
 
@@ -985,6 +1031,8 @@ def test_CANCELLING_stops_the_remaining_replays(lab, monkeypatch):
         return _book_pf(pf=2.0)
 
     monkeypatch.setattr(portfolio_runner, "replay_window", cancelling)
+    # ⚠ Inline, for the reason above: a stub in this process cannot reach a pool worker.
+    monkeypatch.setattr(stress_tester, "_shift_pool", lambda workers: _InlinePool())
     ok, err = _run_sens()
     assert (ok, err) == (False, "cancelled")
     assert calls["n"] == 2, "it stops rather than finishing the plan"
@@ -1324,3 +1372,237 @@ def test_an_unknown_STRESS_TEST_is_a_404_before_the_disk_is_touched(book_client)
     r = book_client.get("/stress-tests/st_nope/shift-book/__baseline__")
     assert r.status_code == 404
     assert r.json()["detail"] == "Stress test not found"
+
+
+# ── the shifts run in a POOL, and the estimate stopped double-counting (2026-09-09) ───────────
+#
+# 🔴 The phase was serial because a note said a stack "cannot use that path" — which is a fact
+# about where ONE replay runs, not about whether two replays depend on each other. They do not.
+# MEASURED on the live pairing before this landed: six at once ran 3.61x faster than six in a row
+# and every one returned an identical trade list.
+
+
+def _rows(*spans):
+    """Leg rows carrying only the two timestamps the estimate reads."""
+    return [{"started_at": s, "completed_at": e} for s, e in spans]
+
+
+def test_the_estimate_reads_the_SPAN_when_the_legs_ran_TOGETHER():
+    """🔴 THE DEFECT THIS FIXES, AND IT SCALED WITH LEG COUNT. On a shared stack the legs run on
+    one merged clock, so every leg row carries the SAME start and end — and the old code ADDED
+    them. MEASURED on the live pairing: two rows of 498s each, quoted as 16.6 minutes for a replay
+    that took 8.3.
+
+    MUTATION: sum the durations instead and this goes red.
+    """
+    from services import stress_tester
+
+    together = _rows((1000, 1600), (1000, 1600))
+    assert stress_tester._stack_replay_minutes(together) == pytest.approx(10.0)
+
+
+def test_the_estimate_still_ADDS_when_the_legs_ran_ONE_AT_A_TIME():
+    """The other shape, and the reason this is read off the TIMESTAMPS rather than off a mode
+    flag: a screen really does run its legs sequentially, and there the total IS the sum. Neither
+    shape has to be declared to the function.
+    """
+    from services import stress_tester
+
+    sequential = _rows((1000, 1600), (1600, 2200))
+    assert stress_tester._stack_replay_minutes(sequential) == pytest.approx(20.0)
+
+
+def test_a_REUSED_leg_stamped_days_ago_cannot_inflate_the_estimate():
+    """🔴 THE CASE THAT MADE THE FIRST FIX WRONG. A screen may reuse a finished standalone run,
+    whose row is stamped from whenever it originally ran — so the raw span measures the gap since
+    that afternoon rather than any work. Here the span is 25 hours and the real work is 20 minutes.
+
+    MUTATION: return the span alone and this goes red.
+    """
+    from services import stress_tester
+
+    stale = _rows((0, 600), (89_400, 90_000))
+    assert stress_tester._stack_replay_minutes(stale) == pytest.approx(20.0)
+
+
+def test_the_estimate_ACCOUNTS_for_the_pool_rather_than_quoting_the_serial_wait():
+    """A modal quoting the serial figure over a parallel phase is this app's own ~12-for-69
+    defect pointing the other way — it would now over-state by the worker count.
+
+    ⚠ It is NOT divided by the worker count: MEASURED at about 0.6 of it, because this is
+    CPU-bound Python on half as many physical cores as logical ones and macOS spawns rather than
+    forks. Asserting a full Nx speed-up here would pin a number the machine cannot produce.
+
+    MUTATION: drop the divisor and this goes red.
+    """
+    from services import stress_tester
+
+    assert stress_tester._effective_parallelism() > 1.0
+    assert stress_tester._effective_parallelism() < stress_tester._STACK_SENS_WORKERS
+
+
+def test_the_results_are_assembled_in_PLAN_order_not_COMPLETION_order(lab, monkeypatch):
+    """🔴 THE PLAN IS A PRIORITY — the account's own budget first, then the legs taking turns — so
+    a coverage record shuffled by whichever worker happened to finish first would misreport what
+    the replay budget was spent on.
+
+    🔴 **THE FIRST VERSION OF THIS COULD NOT HAVE CAUGHT IT.** It drove the phase through the
+    inline pool, where completion order IS submission order, so *walk the plan* and *take them as
+    they land* produce the identical list and the mutation survived. **A test whose inputs cannot
+    distinguish the behaviours it names is describing a system where the thing under test does
+    nothing** — the trap this file already records twice. It now hands results back DELIBERATELY
+    REVERSED, which is the only arrangement where the two answers differ.
+
+    MUTATION: return `list(done.values())` instead of walking the plan and this goes red.
+    """
+    from services import stress_tester
+
+    _stack(lab, monkeypatch)
+    lab_db.insert_stress_test(
+        {"stress_test_id": "st_sens", "stack_id": "stk_1", "status": "running", "created_at": 1}
+    )
+    monkeypatch.setattr(portfolio_runner, "replay_window", lambda *a, **k: _book_pf(pf=2.0))
+    monkeypatch.setattr(stress_tester, "_shift_pool", lambda w: _ReversedPool())
+
+    settings = lab_db.get_stack_settings("stk_1")
+    legs = gradable.rebuild_legs("stk_1")
+    plan, _skipped, _oob = stress_tester.stack_sensitivity_plan(
+        settings,
+        legs,
+        {leg["strategy_id"]: {} for leg in legs},
+        stress_tester.sensitivity_shifts("python"),
+        20,
+    )
+    assert len(plan) > 2, "one shift cannot be out of order"
+    monkeypatch.setattr(stress_tester, "_STACK_SENS_WORKERS", len(plan))
+
+    results = stress_tester._replay_shifts(plan, legs, settings, "st_sens")
+
+    assert results is not None
+    got = [(r["entry"]["key"], r["entry"]["label"]) for r in results]
+    want = [(e["key"], e["label"]) for e in plan]
+    assert got == want, "the record must follow the PLAN, not the order the replays landed in"
+
+
+class _ReversedPool(_InlinePool):
+    """An inline pool that hands its finished futures back in REVERSE submission order.
+
+    ⚠ **It exists to make one test able to fail.** A real pool completes in whatever order the
+    workers finish, which is not submission order; an inline stand-in that resolves as it submits
+    cannot express that, so it silently agrees with a bug that takes results as they land.
+    """
+
+    def __init__(self):
+        self._order: list = []
+
+    def submit(self, fn, job):
+        fut = super().submit(fn, job)
+        self._order.insert(0, fut)
+        return fut
+
+
+def test_the_shifts_really_do_survive_a_PROCESS_boundary(lab, monkeypatch):
+    """🔴 THE ONE THING THE INLINE POOL CANNOT CHECK, AND THE REASON IT IS NOT THE ONLY COVER.
+
+    Every other sensitivity test here swaps the pool for an inline stand-in so the orchestration
+    can be driven without spawning six interpreters. That stand-in shares this process's memory,
+    so it would happily accept a job that cannot be PICKLED and a worker that reads a
+    monkeypatched module — **the exact two things that fail only across a real boundary.** Rule 13
+    from its other end: a double SIMPLER than production hides a defect just as well as one more
+    capable, and is harder to notice because nothing about it looks like a claim.
+
+    So this one drives the REAL pool. It does not need a real replay to be meaningful: the legs
+    resolve to a strategy class that does not exist in a worker, so each shift comes back as a
+    RECORDED FAILURE — which is only possible if the job pickled in, the worker ran, and the
+    result pickled out. A boundary that could not carry them would raise instead.
+
+    ⚠ It asserts the failures are RECORDED rather than dropped, which is the contract a hole in
+    the coverage depends on.
+    """
+    from services import stress_tester
+
+    _stack(lab, monkeypatch)
+    settings = lab_db.get_stack_settings("stk_1")
+    legs = gradable.rebuild_legs("stk_1")
+    plan, _skipped, _oob = stress_tester.stack_sensitivity_plan(
+        settings,
+        legs,
+        {leg["strategy_id"]: {} for leg in legs},
+        # ⚠ At least one whole SETTING's worth. The budget is spent a setting at a time and
+        # STOPS rather than part-funding one, so a cap below the shift count plans NOTHING.
+        stress_tester.sensitivity_shifts("python"),
+        8,
+    )
+    assert plan, "no plan means this test asserts nothing"
+
+    monkeypatch.setattr(stress_tester, "_STACK_SENS_WORKERS", 2)
+    results = stress_tester._replay_shifts(plan, legs, settings, "st_sens")
+
+    assert results is not None, "the phase must not report itself cancelled"
+    assert len(results) == len(plan), "every shift must come back, failed or not"
+    assert all(r["ok"] is False for r in results), (
+        "these legs cannot resolve in a worker, so every shift must be RECORDED as failed — "
+        "an ok result here means the job never crossed a boundary at all"
+    )
+
+
+def test_a_CANCEL_starts_no_FURTHER_replays_beyond_the_batch_in_flight(lab, monkeypatch):
+    """🔴 THE BOUND PARALLELISM CHANGED, MEASURED RATHER THAN LEFT IMPLIED.
+
+    The serial loop stopped on the very next shift. A pool cannot: whatever is already running
+    runs to completion, so a cancel costs at most one batch. **What must still hold is that
+    nothing NEW is started** — which is why at most `workers` replays are in flight at once and
+    why the queue is topped up only AFTER the cancellation check. Queuing the whole plan up front
+    would make *stop the remaining replays* stop nothing, because `cancel_futures` can only drop
+    what has not begun.
+
+    ⚠ **The first version of this test was named for that bound and never measured it** — it
+    asserted only that an already-cancelled phase reports cancelled, which a dozen mutations
+    survive. It counts the replays now.
+
+    MUTATION: submit the whole plan up front, or top up before the cancellation check, and the
+    count reaches the plan length instead of one batch.
+    """
+    from services import stress_tester
+
+    _stack(lab, monkeypatch)
+    lab_db.insert_stress_test(
+        {"stress_test_id": "st_sens", "stack_id": "stk_1", "status": "running", "created_at": 1}
+    )
+
+    workers = 2
+    monkeypatch.setattr(stress_tester, "_STACK_SENS_WORKERS", workers)
+    monkeypatch.setattr(stress_tester, "_shift_pool", lambda w: _InlinePool())
+
+    calls = {"n": 0}
+
+    def cancelling(legs, settings, start_date, end_date, should_cancel=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            with sqlite3.connect(lab_db.DB_PATH) as c:
+                c.execute(
+                    "UPDATE stress_tests SET status='failed_cancelled' "
+                    "WHERE stress_test_id='st_sens'"
+                )
+        return _book_pf(pf=2.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", cancelling)
+
+    settings = lab_db.get_stack_settings("stk_1")
+    legs = gradable.rebuild_legs("stk_1")
+    plan, _skipped, _oob = stress_tester.stack_sensitivity_plan(
+        settings,
+        legs,
+        {leg["strategy_id"]: {} for leg in legs},
+        stress_tester.sensitivity_shifts("python"),
+        20,
+    )
+    assert len(plan) > workers + 2, "the plan must outrun one batch or the bound is untestable"
+
+    results = stress_tester._replay_shifts(plan, legs, settings, "st_sens")
+
+    assert results is None, "a cancelled phase must report cancelled"
+    assert calls["n"] <= workers, (
+        f"a cancel must start nothing new: {calls['n']} replays ran against a batch of "
+        f"{workers} and a plan of {len(plan)}"
+    )

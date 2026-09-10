@@ -9,9 +9,11 @@ import asyncio
 import json
 import logging
 import math
+import os
 import re
 import time
 import uuid
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from datetime import date, timedelta
 from itertools import zip_longest
 from pathlib import Path
@@ -773,6 +775,59 @@ def sensitivity_plan(
 # over a phase that never reached the other 30 is describing coverage that did not happen.
 _STACK_SENS_MAX_REPLAYS = 60
 
+# How many stack replays run AT ONCE.
+#
+# 🔴 **UNTIL 2026-09-09 THIS PHASE WAS SERIAL, AND THE STATED REASON WAS WRONG.** The comment
+# above `_run_stack_sensitivity` said a stack "cannot use that path" because it replays several
+# legs on one merged clock IN THIS PROCESS — which is a fact about where one replay runs, not
+# about whether two replays depend on each other. **They do not: every shift is an independent
+# replay of the same bars, and `replay_window` writes nothing.** MEASURED on the two live bots'
+# stack: six at once finished 3.61x faster than six in a row, and every one produced an
+# IDENTICAL trade list. A four-hour phase becomes about an hour.
+#
+# ⚠ **PHYSICAL cores, not logical.** This work is CPU-bound Python, so the hyperthreads buy
+# almost nothing and cost memory — each worker holds its own copy of the bars. MEASURED on a
+# 12-logical / 6-physical box: four workers 3.08x, six workers 3.61x.
+#
+# ⚠ **The pool is REUSED across the whole plan rather than made per shift.** macOS spawns rather
+# than forks, so a worker pays a fresh interpreter and import on startup; created per shift that
+# cost lands 60 times.
+_STACK_SENS_WORKERS = max(1, (os.cpu_count() or 2) // 2)
+
+
+def _stack_shift_replay(job: tuple) -> tuple:
+    """ONE shifted replay, in a worker process. Returns `(index, book, error)`.
+
+    🔴 **MODULE-LEVEL AND PLAIN-DICT IN, PLAIN-DICT OUT, BECAUSE IT CROSSES A PROCESS BOUNDARY.**
+    A closure cannot be sent to a worker, which is why the cancel check is rebuilt here from the
+    id rather than passed in — see below.
+
+    🔴 **IT STILL CHECKS FOR CANCELLATION, AND THAT IS NOT A DETAIL.** The serial version passed
+    a closure so a replay could be abandoned part-way; dropped, a cancel would wait for every
+    in-flight replay to finish, which on this stack is four minutes each. The check is a small
+    read of the same record the serial path read, and several processes reading it is fine.
+
+    ⚠ **It RETURNS its failure rather than raising.** A shift that dies must be RECORDED as a
+    hole in the coverage — reporting a max degradation over whatever survived, with nothing
+    saying how much did not, is the failure this module is written against. A raise inside a
+    worker would surface as a pool error naming no shift.
+    """
+    idx, shift_legs, shift_settings, start_date, end_date, stress_test_id = job
+    try:
+        from services import portfolio_runner
+
+        book = portfolio_runner.replay_window(
+            shift_legs,
+            shift_settings,
+            start_date,
+            end_date,
+            should_cancel=lambda: is_cancelled(stress_test_id),
+        )
+        return (idx, book, None)
+    except Exception as exc:  # noqa: BLE001 — every failure here is the same answer
+        return (idx, None, f"{type(exc).__name__}: {exc}")
+
+
 # The stack's OWN settings, in Aaron's priority order: the account risk budget, the starting
 # balance, then the smallest position it will still take.
 #
@@ -914,13 +969,35 @@ def stack_sensitivity_preview(stack_id: str) -> dict:
     )
     # +1 for the BASELINE, which is replayed through the same path rather than read off the
     # stored book. It is real work and it is on the clock, so it is in the estimate.
+    #
+    # ⚠ **The BASELINE is serial and the SHIFTS are not**, so they are estimated separately. The
+    # baseline runs before the pool opens — every shift is a ratio against it — so it is one whole
+    # replay whatever the worker count is.
     per_replay = _stack_replay_minutes(rows)
+    wall = per_replay * (1 + len(plan) / _effective_parallelism())
     return {
         "replays": len(plan),
         "out_of_budget": out_of_budget,
-        "minutes": max(1, int(math.ceil((len(plan) + 1) * per_replay))),
+        "minutes": max(1, int(math.ceil(wall))),
         "legs": len(legs),
     }
+
+
+# How much faster N workers actually finish N replays, as a fraction of N.
+#
+# ⚠ **MEASURED, not assumed, and it is NOWHERE NEAR the worker count.** This is CPU-bound Python
+# on 6 physical cores behind 12 logical ones, and each worker also pays a fresh interpreter and
+# import on macOS (which spawns rather than forks). On the live pairing's stack: four workers gave
+# 3.08x and six gave 3.61x — about 0.6 of the worker count either way.
+#
+# ⚠ **An estimate that assumed a full Nx speed-up would quote a third of the real wait**, which is
+# the shape this app has already shipped once: a modal promising ~12 minutes for a ~69 minute job.
+_STACK_SENS_PARALLEL_EFFICIENCY = 0.6
+
+
+def _effective_parallelism() -> float:
+    """How many replays' worth of wall clock the pool actually removes per replay submitted."""
+    return max(1.0, _STACK_SENS_WORKERS * _STACK_SENS_PARALLEL_EFFICIENCY)
 
 
 def _stack_replay_minutes(leg_rows: list[dict]) -> float:
@@ -928,23 +1005,186 @@ def _stack_replay_minutes(leg_rows: list[dict]) -> float:
 
     ⚠ **MEASURED where it can be.** A per-job constant is wrong by construction here — the cost
     scales with the window and with how many legs' bars the merged clock has to step — and this
-    app has already quoted ~12 minutes for a job that took ~69 by doing exactly that. Each leg's
-    own run is the same replay over the same bars, so their durations ADDED is the closest
-    figure on the record.
+    app has already quoted ~12 minutes for a job that took ~69 by doing exactly that.
 
-    ⚠ **It is a FLOOR, not a figure**, and the estimate is labelled as one: the shared replay
-    also carries the risk budget, the contention log and a merged clock the solo runs never had.
+    🔴 **IT IS A CEILING, AND IT SAID *FLOOR* UNTIL 2026-09-09 WHILE BEING BOTH WRONG AND HIGH.**
+    Two separate errors pointed the same way. It ADDED the legs' durations, which triple-counts a
+    three-leg shared stack (see the span note below); and the row it reads describes a stack RUN,
+    which replays the shared book **plus one solo control per leg** and then persists all of it,
+    while a sensitivity shift replays the shared book alone and writes nothing. MEASURED on the
+    live pairing: the stack row spans **498s** and a sensitivity-shaped replay of the same stack
+    over the same window takes **234s**. So this still reads about twice a shift's real cost.
+
+    ⚠ **Left over-stating rather than scaled down by a fitted factor.** The gap is the solo
+    controls, and how much they cost depends on how many legs there are and how much of the work
+    is shared — a divisor tuned on one two-leg stack would be a guessed number wearing a
+    measurement's clothes, which is rule 4. Quoting a wait that turns out shorter is the safe
+    direction; the opposite is what the ~12-for-69 modal did.
 
     ⚠ `is not None`, never truthiness — a timestamp of 0 is a value, not an absence.
     """
-    total = 0.0
-    for row in leg_rows:
-        started, completed = row.get("started_at"), row.get("completed_at")
-        if started is not None and completed is not None and completed > started:
-            total += (completed - started) / 60.0
-    if total > 0:
-        return total
-    return _mins_per_job("python") * max(1, len(leg_rows))
+    spans = [
+        (row["started_at"], row["completed_at"])
+        for row in leg_rows
+        if row.get("started_at") is not None
+        and row.get("completed_at") is not None
+        and row["completed_at"] > row["started_at"]
+    ]
+    if not spans:
+        return _mins_per_job("python") * max(1, len(leg_rows))
+    # 🔴 **THE ELAPSED SPAN, NOT THE SUM — and summing was wrong by a whole leg count.** On a
+    # SHARED stack the legs do not run one after another; they run TOGETHER on one merged clock,
+    # so every leg row is stamped with the SAME start and end. MEASURED on the live pairing: two
+    # rows, 498 seconds each, identical timestamps — added up as 16.6 minutes for a replay that
+    # took 8.3. A three-leg stack would have been out by three.
+    #
+    # ⚠ **Read off the TIMESTAMPS rather than off a mode flag**, so neither shape has to be
+    # declared to this function.
+    #
+    # ⚠ **The SMALLER of the span and the sum, and the third case is why.** Overlapping legs (a
+    # shared stack) make the span right and the sum N times too big. Sequential legs (a screen)
+    # make the two agree. **But a screen may REUSE a finished standalone run**, whose row is
+    # stamped from whenever it was originally run — days ago — and the span then measures the gap
+    # since that afternoon rather than any work. The sum is bounded by real durations, so the
+    # smaller of the two is right in all three and cannot be inflated by a stale row.
+    span = (max(e for _, e in spans) - min(s for s, _ in spans)) / 60.0
+    total = sum(e - s for s, e in spans) / 60.0
+    return min(span, total)
+
+
+def _shift_pool(workers: int):
+    """The pool the shift replays run in.
+
+    ⚠ **A SEAM, and it exists so the ORCHESTRATION can be driven without spawning processes** —
+    the ordering, the failure recording, the cancellation and the book writing are all decided
+    here rather than in a worker, and a test that had to spawn six interpreters to check them
+    would be slow enough that nobody runs it.
+
+    🔴 **AN INLINE STAND-IN IS LESS CAPABLE THAN THIS, NOT MORE, so it cannot be the only cover.**
+    It shares the parent's memory, so it would accept a job that cannot be pickled and a worker
+    that reads a monkeypatched module — both of which fail only across a real process boundary.
+    Rule 13 from its other end: a double SIMPLER than production hides the defect just as well.
+    `test_the_shifts_really_do_survive_a_PROCESS_boundary` drives the real pool for that reason.
+    """
+    return ProcessPoolExecutor(max_workers=workers)
+
+
+def _replay_shifts(plan, legs, settings, stress_test_id):
+    """Every shift in the plan, replayed ACROSS PROCESSES. `None` means cancelled.
+
+    🔴 **THE PHASE WAS SERIAL AND THE REASON GIVEN FOR IT WAS ABOUT ONE REPLAY, NOT ABOUT TWO.**
+    The note above `_run_stack_sensitivity` said a stack "cannot use that path" because it replays
+    several legs on one merged clock in this process — true, and it is a statement about where a
+    single replay runs. **Two shifts are independent: same bars, one setting different, and
+    `replay_window` writes nothing.** MEASURED on the live pairing: six at once ran 3.61x faster
+    than six in a row and every one returned an IDENTICAL trade list.
+
+    ⚠ **RESULTS ARE ASSEMBLED IN PLAN ORDER, never in completion order.** The plan is a priority —
+    the account's own settings first, then the legs taking turns — and a coverage record shuffled
+    by whichever worker happened to finish first would misreport what the budget was spent on.
+
+    ⚠ **THE BOOKS ARE WRITTEN IN THIS PROCESS.** Workers return the book and the parent stores it,
+    so there is one writer to the stress test's directory and `write_shift_book`'s contract (a slug
+    is recorded only when the write landed) is unchanged.
+
+    ⚠ **A worker that died returns its failure and it is RECORDED as a hole in the coverage.** A
+    shift missing from the record would let the phase report a max degradation over whatever
+    survived with nothing saying how much did not — the failure this module is written against.
+
+    ⚠ **Cancellation is checked as each result lands AND inside each worker**, so a Stop does not
+    wait out the whole in-flight batch. `cancel_futures` drops everything not yet started.
+    """
+    jobs = []
+    for idx, entry in enumerate(plan):
+        shift_legs, shift_settings = stack_shift_applied(legs, settings, entry)
+        jobs.append(
+            (
+                idx,
+                shift_legs,
+                shift_settings,
+                settings["start_date"],
+                settings["end_date"],
+                stress_test_id,
+            )
+        )
+
+    done: dict[int, dict] = {}
+    workers = max(1, min(_STACK_SENS_WORKERS, len(jobs)))
+    queue = iter(range(len(jobs)))
+    in_flight: dict = {}
+
+    def _submit_next(pool) -> bool:
+        for i in queue:
+            in_flight[pool.submit(_stack_shift_replay, jobs[i])] = i
+            return True
+        return False
+
+    with _shift_pool(workers) as pool:
+        try:
+            # 🔴 **AT MOST `workers` IN FLIGHT, TOPPED UP AS EACH LANDS — never all 60 queued.**
+            # Queuing the whole plan makes a cancel arrive after everything has already started, so
+            # *stop the remaining replays* stops nothing; `cancel_futures` can only drop what has
+            # not begun. Bounded, a cancel costs at most one batch. **It also stops the parent
+            # holding sixty account books at once**, which is the memory the old serial loop never
+            # had to think about.
+            while _submit_next(pool) and len(in_flight) < workers:
+                pass
+            while in_flight:
+                landed, _ = wait(list(in_flight), return_when=FIRST_COMPLETED)
+                for fut in landed:
+                    idx = in_flight.pop(fut)
+                    _, book, err = fut.result()
+                    entry = plan[idx]
+                    # 🔴 **CHECKED BEFORE THE RESULT IS CLASSIFIED, NOT INSIDE THE SUCCESS
+                    # BRANCH.** The first version of this asked only after a shift came back
+                    # clean, so a cancelled phase whose shifts were all FAILING never saw the
+                    # cancellation and ground through the whole plan — the "cancel did not
+                    # cancel" defect this app has now fixed three times, restored by an `elif`.
+                    # Found by the test below, not by reading.
+                    if (book or {}).get("cancelled") or is_cancelled(stress_test_id):
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        return None
+                    if err is not None:
+                        log.warning(
+                            "Stack sensitivity %s: %s %s failed — %s",
+                            stress_test_id,
+                            entry["key"],
+                            entry["label"],
+                            err,
+                        )
+                        done[idx] = {
+                            "entry": entry,
+                            "run_id": None,
+                            "ok": False,
+                            "pf": None,
+                            "pnl": 0.0,
+                        }
+                    else:
+                        slug = stack_shift_slug(entry["key"], entry["label"])
+                        done[idx] = {
+                            # ⚠ `param` is the KEY (`<strategy>.<setting>` for a leg), because that
+                            # is what the scorer files the result under and what the page labels
+                            # the row with.
+                            "entry": {**entry, "param": entry["key"]},
+                            "run_id": None,
+                            # ⚠ **Recorded ONLY when the write landed.** A slug on a record whose
+                            # book is not on disk is a link that opens nothing, and *cannot open*
+                            # would then be indistinguishable from *was never stored*.
+                            "book": (
+                                slug if write_shift_book(stress_test_id, slug, book) else None
+                            ),
+                            "ok": True,
+                            "pf": book["kpis"].get("profit_factor"),
+                            "pnl": book["kpis"].get("net_pnl") or 0.0,
+                        }
+                    # ⚠ Topped up only AFTER the cancellation check above, so a cancelled phase
+                    # never starts another replay.
+                    _submit_next(pool)
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+
+    return [done[i] for i in range(len(plan)) if i in done]
 
 
 def stack_shift_applied(legs: list[dict], settings: dict, entry: dict) -> tuple[list[dict], dict]:
@@ -1952,47 +2192,8 @@ async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, O
     # book, which was measured on a different code path.
     write_shift_book(stress_test_id, _BASELINE_SLUG, base_book)
 
-    results: list[dict] = []
-    for entry in plan:
-        if is_cancelled(stress_test_id):
-            return (False, "cancelled")
-        shift_legs, shift_settings = stack_shift_applied(legs, settings, entry)
-        try:
-            book = await asyncio.to_thread(_replay, shift_legs, shift_settings)
-        except Exception as exc:  # noqa: BLE001 — a bad shift must not kill the phase
-            # RECORDED, not dropped. A shift that never produced a result is a hole in the
-            # coverage, and the scorer counts it — reporting a max degradation over whatever
-            # survived, with nothing saying how much did not, is the failure this whole module
-            # is written against.
-            log.warning(
-                "Stack sensitivity %s: %s %s failed — %s",
-                stress_test_id,
-                entry["key"],
-                entry["label"],
-                exc,
-            )
-            results.append({"entry": entry, "run_id": None, "ok": False, "pf": None, "pnl": 0.0})
-            continue
-        if book.get("cancelled"):
-            return (False, "cancelled")
-        slug = stack_shift_slug(entry["key"], entry["label"])
-        results.append(
-            {
-                # ⚠ `param` is the KEY (`<strategy>.<setting>` for a leg), because that is what
-                # the scorer files the result under and what the page labels the row with.
-                "entry": {**entry, "param": entry["key"]},
-                "run_id": None,
-                # ⚠ **Recorded ONLY when the write landed.** A slug on a record whose book is not
-                # on disk is a link that opens nothing, and *cannot open* would then be
-                # indistinguishable from *was never stored*.
-                "book": slug if write_shift_book(stress_test_id, slug, book) else None,
-                "ok": True,
-                "pf": book["kpis"].get("profit_factor"),
-                "pnl": book["kpis"].get("net_pnl") or 0.0,
-            }
-        )
-
-    if is_cancelled(stress_test_id):
+    results = await asyncio.to_thread(_replay_shifts, plan, legs, settings, stress_test_id)
+    if results is None or is_cancelled(stress_test_id):
         return (False, "cancelled")
 
     return _finish_sensitivity(

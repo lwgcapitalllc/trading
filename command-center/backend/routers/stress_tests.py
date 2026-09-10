@@ -286,9 +286,12 @@ async def trigger_stress_test(body: StressTestCreate):
         # different experiment from the one about to run.
         preview = stack_sensitivity_preview(target.target_id)
         est_min += preview["minutes"]
+        # ⚠ **"one at a time" until 2026-09-09, and it stopped being true when the phase gained a
+        # pool.** A note describing the old shape reads as a measurement of the new one.
         notes.append(
-            f"Sensitivity: at least ~{preview['minutes']} min "
-            f"({preview['replays']} whole-stack replays plus the baseline, one at a time)"
+            f"Sensitivity: ~{preview['minutes']} min "
+            f"({preview['replays']} whole-stack replays plus the baseline, "
+            f"{stress_tester._STACK_SENS_WORKERS} at a time)"
         )
         # What the budget could not reach travels WITH the estimate, not only into the record
         # afterwards. A reader who can see it now can drop a leg and re-run; a reader who finds
