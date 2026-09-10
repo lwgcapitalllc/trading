@@ -12,15 +12,15 @@ for a day with no part of the Command Center able to see it.
   * the REPO stays the authority on intent — which account a bot should trade, what it is called,
     which measured cost profile prices it, and any note a human left
 
-🔴 **They are shown side by side and NEVER merged automatically.** Adopting the box's answer into
-the registry would turn an accidental login into configuration, and the account-mismatch halt in
-`algos/live/runner.py` exists precisely because a terminal's login is free to change under a
-running bot. A feature that quietly wrote the new account into the registry would be resolving that
+🔴 **This module never merges them.** `services/account_sync.py` applies its findings BY RULE when
+a person presses Sync (2026-09-10) — and never to an account a bot trades, because the
+account-mismatch halt in `algos/live/runner.py` exists precisely because a terminal's login is free
+to change under a running bot. A write that agreed with the terminal there would be resolving that
 alarm by agreeing with it.
 
-⚠ **Nothing here writes.** Reconciling produces findings; a person applies one through the registry
-router, which validates it the same way a typed-in account is validated. That is deliberate: the
-one write seam stays the one write seam.
+⚠ **Nothing here writes.** Reconciling produces findings; the sync applies them through the
+registry writer, which validates them the same way a typed-in account is validated. The one write
+seam stays the one write seam.
 
 🔴 **Three states at the top, and they must not collapse into two.** `asked=False` means the scan
 could not run — the box was unreachable, the script refused, or it printed something unreadable —

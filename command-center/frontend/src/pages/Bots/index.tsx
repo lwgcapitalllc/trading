@@ -65,7 +65,7 @@ import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
 import { emptyGroup, nameOf } from './AccountsTab'
-import { VpsScanDrawer } from './VpsScanDrawer'
+import { VpsSyncDrawer } from './VpsSyncDrawer'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -486,7 +486,7 @@ export function Bots() {
   const [params, setParams] = useSearchParams()
 
   const [logBot, setLogBot] = useState<string | null>(null)
-  const [scanning, setScanning] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
 
   const startOne = useBotStartOne()
@@ -714,21 +714,18 @@ export function Bots() {
               {k}
             </button>
           ))}
-          {/* 🔴 **THE ONE WAY TO ADD AN ACCOUNT (2026-09-10).** A header "Add account" button sat
-           *  beside this and opened the same form blank. Typing an account in is how the list went
-           *  wrong before, so adding starts from what the box reports; the by-hand form lives inside
-           *  the drawer, for the one case the scan cannot see (a terminal that is not running).
-           *  ⚠ Opening the drawer still writes nothing — scanning is a READ, adding is a WRITE.
-           *  ⚠ **"Scan", not "Sync" (Aaron asked for "Re-sync", 2026-09-10).** Sync promises the
-           *  button changes your list, and it deliberately never does — it shows what is logged in
-           *  and leaves adopting it to one explicit click. The label may not promise a write. */}
+          {/* 🔴 **IT OPENS THE DRAWER AND NOTHING ELSE (Aaron, 2026-09-10: "it doesn't show me
+           *  what it is going to do before I do it").** The drawer scans — a read — and lists
+           *  every change; the Sync button there is the only thing that writes. It is also the
+           *  one way to add an account: the by-hand form lives inside the drawer, for a terminal
+           *  that is not running. */}
           <button
-            data-testid="scan-vps"
-            onClick={() => setScanning(true)}
-            title="See which account each MT5 terminal on the VPS is logged into"
+            data-testid="sync-vps"
+            onClick={() => setSyncOpen(true)}
+            title="See what's out of sync between your account list and the VPS — nothing changes until you press Sync"
             className="text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
           >
-            Scan VPS
+            Sync VPS
           </button>
           <button
             onClick={() => set('view', 'users')}
@@ -752,8 +749,8 @@ export function Bots() {
 
       {/* A DRAWER, not an inline panel (Aaron, 2026-09-10: "I don't know what I'm looking at").
        *  Inline, it pushed the fleet down and read as part of whichever demo/live filter was on,
-       *  when it has nothing to do with either. Adding a found account happens inside it. */}
-      <VpsScanDrawer open={scanning} onClose={() => setScanning(false)} />
+       *  when it has nothing to do with either. */}
+      <VpsSyncDrawer open={syncOpen} onClose={() => setSyncOpen(false)} />
 
       {/* "Reading the box…" went (2026-09-10): the values waiting on the box now shimmer where
        *  they will land, which says the same thing without a line of text above the page. */}

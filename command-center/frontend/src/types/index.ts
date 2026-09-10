@@ -646,6 +646,68 @@ export interface TerminalScan {
   registry: RegistryCheck[]
 }
 
+/** One field of one account: what the list says, what it will say, and the evidence.
+ *
+ * ⚠ **`before: null` means the account is NOT IN YOUR LIST YET** (an add) — a different fact from
+ * "in your list, blank", which arrives as a word ("none", "not recorded"). Every string here is
+ * for a person: `what` is "Terminal", never a field name. */
+export interface AccountSyncDiff {
+  what: string
+  before: string | null
+  after: string
+  why: string
+}
+
+/** One write a sync WOULD make (in a preview) or MADE (in a result). `diffs` is the change field
+ *  by field; `said` is what follows from it. */
+export interface AccountSyncChange {
+  account: number
+  /** `add` | `update` */
+  action: string
+  label: string
+  diffs: AccountSyncDiff[]
+  said: string[]
+  /** This change made the account (or added it as) real money. */
+  live: boolean
+}
+
+/** Something a sync found and deliberately did NOT change — an account a bot trades, a broker that
+ *  did not say demo or live — with why. `account` is null only for a finding about a terminal. */
+export interface AccountSyncAttention {
+  account: number | null
+  label: string
+  said: string[]
+}
+
+/** `GET /bots/accounts/scan` — the scan plus exactly what Sync WOULD write. Writes nothing.
+ *
+ * 🔴 **`changes` here is a PROPOSAL**, listed so a person reads it before pressing Sync; `plan_id`
+ * is what that press sends back, and the server refuses a press whose plan has since moved.
+ * ⚠ **`blocked` set means Sync would write nothing** — the page must not offer the button then. */
+export interface AccountSyncPreview extends TerminalScan {
+  changes: AccountSyncChange[]
+  attention: AccountSyncAttention[]
+  blocked: string | null
+  plan_id: string
+}
+
+/** What one Sync press did.
+ *
+ * 🔴 **`plan_changed` true means NOTHING was written** — the VPS no longer matched the preview the
+ * person approved, and `now` is the new preview to read instead.
+ * ⚠ `changes` is what was WRITTEN; a change that could not be saved is in `failed`, never both.
+ * `now` is the list re-judged AFTER the writes, so anything still in `now.changes` is something
+ * this press did not fix. `deploy_error` set means the writes are on this machine and never reached
+ * the VPS — the bots cannot see them. */
+export interface AccountSync {
+  now: AccountSyncPreview
+  changes: AccountSyncChange[]
+  failed: { account: number; reason: string }[]
+  plan_changed: boolean
+  deployed: boolean
+  deploy_error: string | null
+}
+
 export interface BotAccountCapResult {
   status: string
   changed: boolean

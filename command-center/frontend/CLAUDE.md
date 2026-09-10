@@ -156,40 +156,51 @@ reaches the real backend and the live box), and a test rewritten against a UI it
 executed against is the vacuous-test trap this repo has recorded eight times. **Re-point them with
 the app up, watching each one fail first.**
 
-## "Scan VPS" — what the box is logged into, beside what the list claims (2026-09-10)
+## "Sync VPS" — scan first, then a Sync button (2026-09-10)
 
-**Scan VPS** in the Bots header opens `VpsScanDrawer`, which calls `GET /bots/accounts/scan` and
-shows every MT5 terminal on the box with the account it is logged into, joined against the account
-list. It exists because that list is hand-typed and nothing ever checked it — a terminal had been
-sitting on a LIVE account for a day with this page unable to see it.
+**Sync VPS** in the Bots header opens `VpsSyncDrawer` and does nothing else. The drawer SCANS
+(`GET /bots/accounts/scan`, a read) and lists exactly what Sync would change; **Sync N changes** in
+its pinned footer applies that list (`POST /bots/accounts/registry/sync`, sending the plan's id).
+It exists because the account list is hand-typed and nothing checked it — a terminal sat on a LIVE
+account for a day with this page unable to see it.
 
-🔴 **A DRAWER, not an inline panel, and the answer comes before the data** (Aaron: *"I don't know
-what I'm looking at"*). Inline, it pushed the fleet down and read as part of whichever demo/live
-filter was on. The first layout listed new accounts, every terminal and every list row at equal
-weight, so the reader had to work out the finding. Now: **one sentence that IS the finding → only
-what needs a decision (not in your list; your list is wrong) → the terminal table → a quiet
-footnote** for what could not be checked. Keep that order when adding to it.
+🔴 **Reversed twice in one day, and the second is the shape to keep.** "Scan VPS" only reported;
+*"not a scan, a sync"* made the press write at once; then *"it doesn't show me what it is going to
+do before I do it… scan first… then a sync button."* **The drawer decides nothing** — never an
+account a bot trades, never a terminal set, nothing removed are SERVER rules
+(`../backend/CLAUDE.md`); a copy here would be two answers about live accounts.
 
-🔴 **"Scan", never "Sync" — Aaron asked for "Re-sync" and was told why not.** Sync promises the
-button changes your list, and it deliberately never does. The label may not promise a write.
+🔴 **The scan is a query that exists only while the drawer is open; the write is a mutation only
+the Sync button fires** (*"100% manually triggered by me only"*). `useSyncPreview` is mounted inside
+the open drawer with `gcTime: 0`, so every open is a fresh scan and never a plan read an hour ago;
+`staleTime: Infinity` stops it re-asking by itself. ⚠ **Its key is OUTSIDE `['bots','accounts']`** —
+a sync that wrote invalidates that prefix, and a preview under it would re-scan the box straight
+after the sync returned `now`. ⚠ **The sync lives on the always-mounted shell**, so one still
+running when the drawer closes is still reported when it reopens.
 
-🔴 **Scanning is a READ and adding is a WRITE.** "Add to list" opens the SAME `AccountForm` a typed
-account goes through, INSIDE the drawer, pre-filled with only what the box measured; nothing is
-written until somebody saves. Saving invalidates the scan's query, so the account moves out of
-"not in your list" by itself.
+🔴 **The press sends the plan it approves, and a plan that moved writes NOTHING.** The server
+re-scans; if the plan changed it returns the new one in `now`, which replaces the old one on screen
+under a banner, and the next press approves THAT plan. ⚠ **A refused press is not a receipt** — the
+drawer goes back to review, never "saved".
 
-🔴 **This drawer is the ONLY way to add an account (2026-09-10, Aaron's call).** The header's own
-"Add account" button went — it opened the same form blank, and typing accounts in is how the list
-went wrong. The by-hand form is a quiet "Add it by hand" link at the drawer's foot
-(`data-testid="add-account"`, kept so the specs still find it), for the one case the scan cannot
-see: a terminal that is not running. ⚠ **Rendered under EVERY state** — scanning, failed, refused —
-or that account has no way onto the list. Pinned by a spec that fails the scan; two mutations run,
-two killed.
+🔴 **Order: Scan → Review → Sync steps → one hero card that IS the outcome → the plan, field by field
+(struck-out old value → new value, the evidence under it) → what needs you → the terminals → a quiet
+footnote.** ⚠ **An ADD draws no old value** — *not in your list yet* is not a blank field. ⚠ **Real
+money is said in words.** ⚠ **Nothing to change = no Sync button** (Done instead); **a blocked plan
+= a disabled one with the reason.** ⚠ **After a sync the same cards read "Saved"**, a push that never
+reached the VPS gets its own banner, and the list shown is `now` — no second scan.
 
-🔴 **Three failure shapes, three looks**: the query threw (the box could not be asked), the payload
-says `asked: false` (the box refused), a terminal says `not_running` / `owned_by_bot` (it could not
-be asked — nothing is wrong). A re-scan that FAILS keeps the last good answer on screen, labelled
-as the previous one. The first read shimmers per *Loading states* below; a re-scan never does.
+🔴 **This drawer is the ONLY way to add an account (Aaron's call)** — a quiet "Add it by hand" link
+at its foot (`data-testid="add-account"`), for a terminal that is not running. ⚠ **Rendered under
+EVERY state**, or that account has no way onto the list.
+
+🔴 **Each failure looks different**: the scan could not run (nothing changed; Scan again leads), the
+box refused, the plan moved, a terminal could not be asked (`not_running` / `owned_by_bot` —
+nothing is wrong). ⚠ **A failed SYNC keeps the plan on screen and reads "didn't finish", never
+"nothing saved"** — a 409 or 502 writes nothing, but an unexpected failure mid-save can have. The
+first scan shimmers only the terminal list; the plan is never guessed at. Tests:
+`tests/bots-accounts.spec.ts` (10 sync checks, each COUNTING scans and syncs); **20 mutations run,
+20 killed**, each confirmed served by the dev server before its check ran.
 
 ⚠ **Where an account number came from is on screen.** It can come from the scan asking the terminal
 or from the bot trading through it ("account reported by the bot") — different strengths of
@@ -205,7 +216,9 @@ still does — the first wording said "3 bots trade here" with one trading nothi
 
 ⚠ **`unverified` is deliberately QUIET.** It is not a finding against a row.
 
-⚠ **`components/Drawer.tsx` is the shared slide-out shell** (and closes on Escape).
+⚠ **`components/Drawer.tsx` is the shared slide-out shell** (and closes on Escape), with a pinned
+`footer` slot since 2026-09-10 for the one action a panel builds up to — the Sync button would
+otherwise be the first thing a long plan scrolls out of reach.
 `AccountDrawer` and `BotDrawer` still build the same shell inline — adopting it is a mechanical swap
 left undone because another session was mid-edit on both. A drawer's look lives in three places
 until then.

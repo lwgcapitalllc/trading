@@ -55,6 +55,124 @@ function group(over: Record<string, unknown> = {}) {
   }
 }
 
+/** One terminal on the box, so the drawer has a list to draw. */
+const TERMINAL = {
+  key: 'c:\\mt5_scalper',
+  install: 'C:\\MT5_Scalper',
+  state: 'probed',
+  running: true,
+  owned_by_bots: [],
+  account: 34957946,
+  server: 'PUPrime-Live',
+  kind: 'live',
+  company: 'PU Prime Ltd',
+  currency: 'USD',
+  leverage: 500,
+  symbol_suffix: '.p',
+  symbol_suffix_how: null,
+  reason: null,
+  error: null,
+  account_source: 'terminal',
+  verdict: 'known',
+  conflicts: [],
+  suggested: null,
+}
+
+/**
+ * What the scan says Sync WOULD change — the drawer's first answer, and a read. Defaults to "the
+ * list already matches". `plan_id` is what a press sends back; a check about it states its own.
+ */
+function preview(over: Record<string, unknown> = {}) {
+  return {
+    asked: true,
+    scanned_at: new Date().toISOString(),
+    reason: null,
+    terminals: [TERMINAL],
+    registry: [],
+    changes: [],
+    attention: [],
+    blocked: null,
+    plan_id: 'plan-a',
+    ...over,
+  }
+}
+
+/** What one Sync press did. `now` is the list re-judged after it — a preview in its own right. */
+function syncResult(over: Record<string, unknown> = {}) {
+  return {
+    now: preview(),
+    changes: [],
+    failed: [],
+    plan_changed: false,
+    deployed: false,
+    deploy_error: null,
+    ...over,
+  }
+}
+
+/** A live account the box is logged into and the list does not have. An ADD has no "was". */
+const ADD_LIVE = {
+  account: 34957946,
+  action: 'add',
+  label: '',
+  diffs: [
+    { what: 'Server', before: null, after: 'PUPrime-Live', why: 'Read off MT5_Scalper.' },
+    { what: 'Demo or live', before: null, after: 'live', why: 'The broker says so.' },
+  ],
+  said: [
+    'Logged in on MT5_Scalper and not in your list. It arrives with no terminal or password, so no bot can use it until you add both.',
+  ],
+  live: true,
+}
+
+/** A row claiming a terminal that is logged into something else — the case that started this. */
+const CLEAR_TERMINAL = {
+  account: 700107749,
+  action: 'update',
+  label: 'retired',
+  diffs: [
+    {
+      what: 'Terminal',
+      before: 'MT5_FFT',
+      after: 'none',
+      why: 'MT5_FFT is logged into #700152905, not this account.',
+    },
+  ],
+  said: ['No bot can be put on this account until you give it a terminal again.'],
+  live: false,
+}
+
+/**
+ * Route the scan (a GET) and the sync (a POST) from a script, and COUNT both. The count is the
+ * point: *"sync is 100% manually triggered by me only"*, so a check about who writes has to see
+ * every request, not just the last answer.
+ *
+ * ⚠ Registered AFTER `mock()`, so it wins — Playwright matches the most recent handler first.
+ */
+async function routeSync(
+  page: Page,
+  opts: {
+    scan?: (n: number) => Record<string, unknown> | 'fail'
+    sync?: (body: Record<string, unknown>, n: number) => Record<string, unknown> | 'fail'
+  } = {}
+) {
+  const seen = { scans: 0, syncs: 0, bodies: [] as Record<string, unknown>[] }
+  const fail = { status: 502, json: { detail: 'ssh to forexvps failed' } }
+  await page.route('**/api/bots/accounts/scan', (route) => {
+    seen.scans += 1
+    const r = opts.scan ? opts.scan(seen.scans) : preview()
+    return route.fulfill(r === 'fail' ? fail : { json: r })
+  })
+  await page.route('**/api/bots/accounts/registry/sync', (route) => {
+    seen.syncs += 1
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    seen.bodies.push(body)
+    const r = opts.sync ? opts.sync(body, seen.syncs) : syncResult()
+    return route.fulfill(r === 'fail' ? fail : { json: r })
+  })
+  return seen
+}
+
 /**
  * A registry row's defaults, so a check states only the field it is about.
  *
@@ -99,18 +217,14 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
     if (u.pathname === '/api/bots/accounts') {
       return route.fulfill({ json: groups })
     }
-    // Adding an account starts from the Scan VPS drawer, which scans the moment it opens — and the
-    // real scan SSHes to the trading box and attaches to its terminals. Routed to an empty answer.
+    // Adding an account starts from the Sync VPS drawer, which SCANS on opening — and the real
+    // scan SSHes to the trading box and attaches to its terminals, while the real sync COMMITS.
+    // Both routed to "nothing to change"; a check about either routes its own answer over these.
+    if (u.pathname === '/api/bots/accounts/registry/sync') {
+      return route.fulfill({ json: syncResult() })
+    }
     if (u.pathname === '/api/bots/accounts/scan') {
-      return route.fulfill({
-        json: {
-          asked: true,
-          scanned_at: new Date().toISOString(),
-          reason: null,
-          terminals: [],
-          registry: [],
-        },
-      })
+      return route.fulfill({ json: preview() })
     }
     // Every bot's version, keyed by bot in the path. The Monitor and Accounts tables both
     // render a VersionPill off this, and without the mock they would fall through to the live
@@ -222,12 +336,12 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
  * layout, which is most of how this file came to be red in the first place.
  */
 /**
- * Open the by-hand account form, which lives inside the Scan VPS drawer since 2026-09-10 — the
+ * Open the by-hand account form, which lives inside the Sync VPS drawer since 2026-09-10 — the
  * header's own "Add account" button went, so adding starts from what the box reports.
  */
 async function openManualAdd(page: Page) {
   await page.goto('/bots')
-  await page.getByTestId('scan-vps').click()
+  await page.getByTestId('sync-vps').click()
   await page.getByTestId('add-account').click()
 }
 
@@ -787,29 +901,296 @@ test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move
   expect(body!.symbol_suffix).toBe('.p')
 })
 
-test('adding by hand is still reachable when the scan FAILS, and is the only add control', async ({
+// ── Sync VPS: scan first, then a Sync button ──────────────────────────────────────────────────
+//
+// 🔴 **Opening the drawer READS; only the Sync button under the plan WRITES** (Aaron, 2026-09-10:
+// "it doesn't show me what it is going to do before I do it"). Every check here counts requests
+// through `routeSync`, because "who wrote" is a question about requests, not about what is drawn.
+//
+// ⚠ A fail-watch against HEAD is vacuous for most of these (the preview did not exist), so each
+// names the mutation that turns it red, and every one was RUN.
+
+test('adding by hand is still reachable when the SCAN fails, and is the only add control', async ({
   page,
 }) => {
   // MUTATION: render the by-hand link only once the scan has answered → red, because the
-  // failed-scan banner is showing and the link is gone.
-  // MUTATION: put the header "Add account" button back → red on the count of one.
+  // failed-scan card is showing and the link is gone.
+  // MUTATION: offer Sync over a failed scan → red on the count of zero.
   //
   // A stopped terminal can never show up in a scan, and neither can anything while the box is
   // unreachable — so the by-hand form is the ONLY way that account gets onto the list. Hiding it
   // behind a successful scan would leave it with no way in at all.
   await mock(page, [], [])
-  await page.route('**/api/bots/accounts/scan', (route) =>
-    route.fulfill({ status: 502, json: { detail: 'ssh to forexvps failed' } })
-  )
+  await routeSync(page, { scan: () => 'fail' })
   await page.goto('/bots')
   await expect(page.getByTestId('add-account')).toHaveCount(0)
-  await page.getByTestId('scan-vps').click()
+  await page.getByTestId('sync-vps').click()
   // Positive control first: the failure is what is on screen, so the link is being checked in
   // the state it exists for — not in a drawer that simply has not answered yet.
-  await expect(page.getByText('The VPS couldn’t be asked')).toBeVisible()
+  await expect(page.getByTestId('sync-hero')).toContainText('Couldn’t reach the VPS')
+  await expect(page.getByTestId('sync-hero')).toContainText('ssh to forexvps failed')
+  await expect(page.getByTestId('sync-hero')).toContainText('Nothing was changed')
+  await expect(page.getByTestId('sync-apply')).toHaveCount(0)
+  await expect(page.getByTestId('scan-again')).toBeEnabled()
   await expect(page.getByTestId('add-account')).toHaveCount(1)
   await page.getByTestId('add-account').click()
   await expect(page.getByTestId('f-account')).toBeVisible()
+})
+
+test('opening Sync VPS SCANS and writes nothing — only the Sync button writes', async ({
+  page,
+}) => {
+  // MUTATION: sync from an effect once the plan arrives → red on "opening wrote nothing" (RUN).
+  // MUTATION: keep the scan cached across opens (drop `gcTime: 0`) → red on the second scan.
+  // MUTATION: post without `expect_plan` → red on the body.
+  // MUTATION: scan from the page on load → red on the first count of zero.
+  await mock(page, [group()], [reg()])
+  const seen = await routeSync(page, {
+    scan: () => preview({ changes: [CLEAR_TERMINAL], plan_id: 'plan-a' }),
+  })
+  await page.goto('/bots')
+  // Positive control: the page has loaded far enough that anything it does on load has done it.
+  await expect(page.getByText(String(ACCOUNT)).first()).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(seen.scans).toBe(0)
+  expect(seen.syncs).toBe(0)
+
+  await page.getByTestId('sync-vps').click()
+  await expect(page.getByTestId('sync-change')).toHaveCount(1)
+  expect(seen.scans).toBe(1)
+  await page.waitForTimeout(400)
+  expect(seen.syncs).toBe(0)
+
+  // Close and reopen: a FRESH scan, never the plan from last time — and still nothing written.
+  await page.keyboard.press('Escape')
+  await page.getByTestId('sync-vps').click()
+  await expect.poll(() => seen.scans).toBe(2)
+  await expect(page.getByTestId('sync-change')).toHaveCount(1)
+  expect(seen.syncs).toBe(0)
+
+  // The press carries the plan it approves, so the server can refuse one that moved.
+  await page.getByTestId('sync-apply').click()
+  await expect.poll(() => seen.syncs).toBe(1)
+  expect(seen.bodies[0].expect_plan).toBe('plan-a')
+})
+
+test('the plan is listed field by field — what it is now, what it will be, and how we know', async ({
+  page,
+}) => {
+  // MUTATION: drop the struck-out old value → red on the update's "before".
+  // MUTATION: draw an old value for an ADD (`before ?? 'none'`) → red: "not in your list yet" is
+  // not a blank field, and drawing one says the list had this account empty.
+  // MUTATION: drop the Real money tag → red. MUTATION: drop the "needs you" section → red.
+  await mock(page, [group()], [reg()])
+  const seen = await routeSync(page, {
+    scan: () =>
+      preview({
+        changes: [ADD_LIVE, CLEAR_TERMINAL],
+        attention: [
+          {
+            account: ACCOUNT,
+            label: 'PU Prime ECN demo',
+            said: ['SOS Fade trades this account, so sync left it alone.'],
+          },
+        ],
+      }),
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+
+  await expect(page.getByTestId('sync-hero')).toContainText('2 changes to make')
+  await expect(page.locator('[data-step="Review"]')).toHaveAttribute('data-state', 'active')
+  const cards = page.getByTestId('sync-change')
+  await expect(cards).toHaveCount(2)
+
+  const upd = cards.filter({ hasText: '#700107749' })
+  await expect(upd).toContainText('Update')
+  await expect(upd.getByTestId('diff-before')).toHaveText('MT5_FFT')
+  await expect(upd.getByTestId('diff-after')).toHaveText('none')
+  await expect(upd).toContainText('is logged into #700152905')
+
+  const add = cards.filter({ hasText: '#34957946' })
+  await expect(add).toContainText('New')
+  await expect(add.getByTestId('diff-after').first()).toHaveText('PUPrime-Live')
+  await expect(add.getByTestId('diff-before')).toHaveCount(0)
+  await expect(add).toContainText('Real money')
+
+  await expect(page.getByTestId('sync-attention')).toContainText('left it alone')
+  await expect(page.getByTestId('sync-apply')).toHaveText(/Sync 2 changes/)
+  await expect(page.getByText('Nothing is saved until you press Sync.')).toBeVisible()
+  expect(seen.syncs).toBe(0)
+})
+
+test('a press whose plan MOVED saves nothing and puts the NEW plan on screen', async ({ page }) => {
+  // 🔴 A terminal can switch account between the scan and the press. The server re-scans, writes
+  // nothing and hands back the new plan; this pins that the page SAYS so, shows that plan in place
+  // of the old one, and that the next press approves the new plan rather than the stale one.
+  // MUTATION: read a refused press as a receipt → red on the phase: the banner alone does not
+  // catch it, because it is driven separately and still shows — the hero would claim a save.
+  // MUTATION: keep the old plan on screen (no `setQueryData(now)`) → red on the card and the body.
+  await mock(page, [group()], [reg()])
+  const seen = await routeSync(page, {
+    scan: () => preview({ changes: [CLEAR_TERMINAL], plan_id: 'plan-a' }),
+    sync: (body) =>
+      body.expect_plan === 'plan-b'
+        ? syncResult({ changes: [ADD_LIVE], deployed: true })
+        : syncResult({
+            now: preview({ changes: [ADD_LIVE], plan_id: 'plan-b' }),
+            plan_changed: true,
+          }),
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await page.getByTestId('sync-apply').click()
+
+  await expect(page.getByTestId('sync-plan-changed')).toBeVisible()
+  await expect(page.getByTestId('sync-hero')).toHaveAttribute('data-phase', 'review')
+  await expect(page.getByTestId('sync-saved')).toHaveCount(0)
+  const cards = page.getByTestId('sync-change')
+  await expect(cards).toHaveCount(1)
+  await expect(cards).toContainText('#34957946')
+
+  await page.getByTestId('sync-apply').click()
+  await expect.poll(() => seen.syncs).toBe(2)
+  expect(seen.bodies[1].expect_plan).toBe('plan-b')
+  await expect(page.getByTestId('sync-saved')).toHaveCount(1)
+  await expect(page.getByTestId('sync-plan-changed')).toHaveCount(0)
+})
+
+test('after a sync: what was saved, and the list as it now is — without asking the box again', async ({
+  page,
+}) => {
+  // MUTATION: put the preview under the accounts prefix, so the post-sync refresh re-asks it →
+  // red on the scan count. `now` arrives WITH the sync; a second scan is minutes of SSH for an
+  // answer already on screen.
+  // MUTATION: drop the receipt → red. MUTATION: offer Sync over a finished, matching list → red.
+  await mock(page, [group()], [reg()])
+  const seen = await routeSync(page, {
+    scan: () => preview({ changes: [CLEAR_TERMINAL] }),
+    sync: () =>
+      syncResult({
+        changes: [CLEAR_TERMINAL],
+        deployed: true,
+        now: preview({
+          registry: [
+            {
+              account: 700107749,
+              label: 'retired',
+              verdict: 'confirmed',
+              detail: '',
+              conflicts: [],
+              seen_on: null,
+            },
+          ],
+        }),
+      }),
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await page.getByTestId('sync-apply').click()
+
+  await expect(page.getByTestId('sync-hero')).toContainText('Synced — 1 change saved')
+  await expect(page.getByTestId('sync-hero')).toContainText('Saved and sent to the VPS.')
+  await expect(page.locator('[data-step="Sync"]')).toHaveAttribute('data-state', 'done')
+  const saved = page.getByTestId('sync-saved')
+  await expect(saved).toHaveCount(1)
+  await expect(saved.getByTestId('diff-before')).toHaveText('MT5_FFT')
+  await expect(page.getByTestId('sync-change')).toHaveCount(0)
+  await expect(page.getByText(/Your list now: 1 matches the VPS/)).toBeVisible()
+  await expect(page.getByTestId('sync-done')).toBeVisible()
+  await expect(page.getByTestId('sync-apply')).toHaveCount(0)
+  await page.waitForTimeout(500)
+  expect(seen.scans).toBe(1)
+
+  // Scan again is a new question: the receipt goes and the box is asked afresh.
+  await page.getByTestId('scan-again').click()
+  await expect.poll(() => seen.scans).toBe(2)
+  await expect(page.getByTestId('sync-saved')).toHaveCount(0)
+})
+
+test('a sync whose push never reached the VPS says the bots cannot see it', async ({ page }) => {
+  // MUTATION: drop the deploy-error banner → red. Without it "saved" describes a change the
+  // bots, which read the VPS's copy, will never see.
+  await mock(page, [group()], [reg()])
+  await routeSync(page, {
+    scan: () => preview({ changes: [CLEAR_TERMINAL] }),
+    sync: () =>
+      syncResult({ changes: [CLEAR_TERMINAL], deploy_error: 'git push failed: rejected' }),
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await page.getByTestId('sync-apply').click()
+  const banner = page.getByTestId('sync-deploy-error')
+  await expect(banner).toContainText('Saved here, but not sent to the VPS')
+  await expect(banner).toContainText('rejected')
+  await expect(page.getByTestId('sync-hero')).toContainText('not sent to the VPS')
+})
+
+test('a list that already matches says so and offers nothing to sync', async ({ page }) => {
+  // MUTATION: offer the Sync button over an empty plan → red on the count of zero. A button
+  // whose press can change nothing reads as broken the moment it is pressed.
+  await mock(page, [group()], [reg()])
+  await routeSync(page)
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await expect(page.getByTestId('sync-hero')).toContainText('Your list matches the VPS')
+  await expect(page.locator('[data-step="Sync"]')).toHaveAttribute('data-state', 'skipped')
+  await expect(page.getByTestId('sync-apply')).toHaveCount(0)
+  await page.getByTestId('sync-done').click()
+  await expect(page.getByTestId('sync-hero')).toHaveCount(0)
+})
+
+test('a blocked plan says sync can’t run and why, and the button is off', async ({ page }) => {
+  // MUTATION: ignore `blocked` → red: "Your list matches the VPS" would be claimed about a scan
+  // that could not tell which accounts the bots trade.
+  await mock(page, [group()], [reg()])
+  await routeSync(page, {
+    scan: () => preview({ blocked: "A bot's settings file couldn't be read." }),
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await expect(page.getByTestId('sync-hero')).toContainText('Sync can’t run right now')
+  await expect(page.getByTestId('sync-hero')).toContainText("settings file couldn't be read")
+  await expect(page.getByTestId('sync-apply')).toBeDisabled()
+  await expect(page.getByText('Your list matches the VPS')).toHaveCount(0)
+})
+
+test('a sync that FAILS keeps the plan on screen and says so', async ({ page }) => {
+  // MUTATION: drop the failure banner → red. MUTATION: hide the plan once a sync has failed →
+  // red: the reader would lose the list they were about to approve because a press went
+  // unanswered, and could not press again without scanning.
+  await mock(page, [group()], [reg()])
+  const seen = await routeSync(page, {
+    scan: () => preview({ changes: [CLEAR_TERMINAL] }),
+    sync: () => 'fail',
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await page.getByTestId('sync-apply').click()
+  await expect(page.getByTestId('sync-error')).toContainText('The sync didn’t finish')
+  await expect(page.getByTestId('sync-error')).toContainText('ssh to forexvps failed')
+  await expect(page.getByTestId('sync-change')).toHaveCount(1)
+  await expect(page.getByTestId('sync-apply')).toBeEnabled()
+  expect(seen.syncs).toBe(1)
+})
+
+test('a scan the box REFUSED is an answer, not a failure, and offers no sync', async ({ page }) => {
+  // MUTATION: render a refusal as the failed-scan card → red. Sending somebody to check the
+  // network when the box refused on purpose is the wrong repair.
+  await mock(page, [group()], [reg()])
+  await routeSync(page, {
+    scan: () =>
+      preview({
+        asked: false,
+        reason: 'no instance directory - refusing to scan rather than attaching',
+        terminals: [],
+      }),
+  })
+  await page.goto('/bots')
+  await page.getByTestId('sync-vps').click()
+  await expect(page.getByTestId('sync-hero')).toContainText('The VPS refused the scan')
+  await expect(page.getByTestId('sync-hero')).toContainText('refusing to scan')
+  await expect(page.getByTestId('sync-apply')).toHaveCount(0)
 })
 
 test('an unticked suffix box sends NULL, not an empty string', async ({ page }) => {

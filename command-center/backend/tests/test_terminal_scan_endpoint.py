@@ -236,8 +236,21 @@ def test_no_password_appears_anywhere_in_the_response(client, registry, monkeypa
     read as "this account has no password", which is a different claim."""
     _stub(monkeypatch, _payload(_LIVE))
 
-    body = json.dumps(client.get("/bots/accounts/scan").json()).lower()
-    assert "password" not in body
+    def keys(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                yield k
+                yield from keys(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from keys(v)
+
+    body = client.get("/bots/accounts/scan").json()
+    # ⚠ FIELD NAMES, not a substring of the whole body. Since 2026-09-10 the scan also carries the
+    # sync preview, whose sentence for an added account says it "arrives with no terminal or
+    # password" — which is the true state stated in words, not a password field. A substring
+    # check would forbid saying so.
+    assert not [k for k in keys(body) if "password" in k.lower()]
 
 
 def test_the_stale_row_on_the_bots_terminal_is_contradicted_end_to_end(

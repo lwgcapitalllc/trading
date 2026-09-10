@@ -1614,11 +1614,45 @@ ever compared the account list with the machine**, and a terminal had been sitti
 account (34957946, PUPrime-Live) for a day with this app unable to see it.
 
 🔴 **The box is authoritative about what is LOGGED IN; the repo stays authoritative about INTENT.**
-The two are shown side by side and **never merged automatically**. Adopting the box's answer would
-turn an accidental login into configuration — and `runner._check_account_identity` halts a bot
-precisely because a terminal's login can change under it, so auto-writing would be resolving that
-alarm by agreeing with it. Adoption is a separate, explicit write through the registry endpoint,
-which validates a discovered account exactly as it validates a typed one.
+The scan writes nothing. **`POST /bots/accounts/registry/sync` (`services/account_sync.py`,
+2026-09-10) applies its findings BY RULE, and only when a person presses Sync** (Aaron: *"not a
+scan, a sync"*, *"100% manually triggered by me only"* — so no timer, no page-load call).
+
+🔴 **SCAN FIRST, THEN SYNC — and the press names the plan it approves** (Aaron, same day: *"it
+doesn't show me what it is going to do before I do it"*). `GET /bots/accounts/scan` returns the
+PLAN (`AccountSyncPreview`: every change field by field — what the list says, what it will say,
+and how the scan knows — plus `plan_id`). The POST **requires** `expect_plan`, re-scans, re-plans,
+and when the fingerprint moved **writes nothing** and returns `plan_changed` with the new plan in
+`now`. ⚠ **Re-planned at the write, never a cached plan replayed** — the never-change-a-bot's-account
+rule is only true when it is checked at the moment of the write. ⚠ **The fingerprint covers only
+what would be WRITTEN** (account, add/update, each field's was → value): the note is out because it
+carries a date and a midnight rollover would refuse a valid press; attention is out because nothing
+is written from it. ⚠ **A diff is words**, never a field name or a path: `before` is `None` on an
+add (*not in your list yet* is not *blank*), and the instrument ending reads `not recorded` /
+`none` / the ending — three states, never two.
+
+The rules, each because the alternative fails silently:
+
+- 🔴 **An account a bot's config names is NEVER changed** — `runner._check_account_identity` halts
+  a bot because a terminal's login can move under it, and writing the box's answer there would
+  resolve that alarm by agreeing with it. It comes back as ATTENTION instead, and a bots' terminal
+  on the wrong account is ONE alarm, not also a wrong row.
+- 🔴 **A terminal is only ever CLEARED, never SET, and an empty one is never filled.** Clearing a
+  contradicted claim makes the account unassignable (the safe direction); setting one is intent.
+  The tier probes were logged into the lab's terminal and deliberately left with none — a sync
+  that filled it would point a bot at the terminal the backtests run on. An ADDED account arrives
+  with no terminal and no password.
+- ⚠ **Nothing is removed**; unverified is not gone. ⚠ **Only server, demo-or-live and the symbol
+  ending are written**, and demo-or-live only as `demo`/`live` — `contest` or nothing is attention.
+  ⚠ **Two terminals disagreeing about one account resolve to nothing**, never a pick.
+- ⚠ **One unreadable bot config BLOCKS the whole sync** (rule 1 — no way to show an account is
+  untraded). ⚠ **Writes land on the row as it is on disk NOW** (field deltas, adds skipped if
+  somebody added it meanwhile) — the scan takes minutes. ⚠ **One lock, one commit**; a push that
+  fails keeps the local write and reports `deploy_error` rather than a 500 that hides it.
+- ⚠ **Under `/registry/` on purpose**: the browser guard's account-write rule already refuses it.
+
+Tests: `tests/test_account_sync.py`; **29 mutations run, 29 killed** (12 of them on the
+scan-first half, incl. a malformed one re-written because a TypeError is not the rule going red).
 
 🔴 **AN ACCOUNT CAN BE LOGGED IN ON MORE THAN ONE TERMINAL, and the first version assumed it could
 not.** On this box the demo account is open in the bots' terminal AND the lab's at the same time,
@@ -1706,6 +1740,21 @@ here that does not refuse on an unanswered question. Writing gives a bot that re
 names the field; skipping gives a bot that starts and trades an account with another broker's costs
 recorded against it. **A note says it was unchecked.** ⚠ **This fails LOUDLY; the symbol-suffix trap
 in the same function does not** — a wrong suffix gives a bot that runs and receives no bars.
+
+## 🔴 The app's commit swept up whatever ELSE was staged (2026-09-10)
+
+🔴 **`_git_commit_push` staged its own files and then ran a bare `git commit -m`, which commits the
+WHOLE INDEX.** Two sessions share this clone, so anything another session had staged went out
+inside the app's commit under the app's message. It happened: a Sync VPS press committed a staged
+rename from a different session as `05dbd703 accounts: synced with the VPS`, leaving a page that
+imported a file the commit had moved. **Nothing failed** — the hook passed, the push ran.
+
+✅ **It commits `-- <its own paths>` now**, so other staged work stays staged and untouched.
+Proven both ways through the REAL pre-commit and commit-msg hooks in a throwaway worktree (bare: 2
+files committed; with the paths: 1, the other still staged) and pinned by
+`test_the_commit_carries_ONLY_its_own_paths_never_another_sessions_staged_work` (mutation: drop the
+paths → red). ⚠ **Every endpoint that commits goes through this one helper**, so the fix covers
+account moves, caps, risk and the registry alike.
 
 ## 🔴 A REJECTED push was reported as a deployment (2026-09-04)
 

@@ -44,6 +44,13 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from models import (
     AccountEarnings,
+    AccountSync,
+    AccountSyncAttention,
+    AccountSyncChange,
+    AccountSyncDiff,
+    AccountSyncFailure,
+    AccountSyncPreview,
+    AccountSyncRequest,
     BotAccountAssign,
     BotAccountBot,
     BotAccountCapUpdate,
@@ -78,6 +85,7 @@ from models import (
     TerminalScan,
 )
 from services import (
+    account_sync,
     bot_account_registry,
     bot_accounts,
     bot_earnings,
@@ -334,6 +342,14 @@ def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: s
     **This is the third time a rule fired on a robot's commit and silently stopped the job** —
     `algos/tools/ledger_sync.py` twice on 2026-08-05. A hook has no human to read its message when
     the committer is a program: it does not nag, it stops the work and reports something else.
+
+    🔴 **The commit names its paths, and until 2026-09-10 it did not.** A bare `git commit -m`
+    commits the WHOLE INDEX, so anything another session had staged in this shared clone went out
+    under this app's message — measured when the first real Sync VPS press committed an unrelated
+    staged file rename alongside the account list (`05dbd703`), and that one file carrying code is
+    also what then made the push run the repo-wide lint sweep and fail. `git commit -- <paths>`
+    commits exactly those paths and leaves every other staged change staged, untouched — the
+    in-code form of the root CLAUDE.md's "stage by PATH when two sessions share a clone".
     """
     if not docs_reason or len(docs_reason.strip()) < 10:
         # Guarded here rather than left to the hook: the hook's refusal arrives as a
@@ -358,7 +374,10 @@ def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: s
     if not status.stdout.strip():
         return "nothing to commit"
     subprocess.run(
-        ["git", "-C", root, "commit", "-m", message], check=True, capture_output=True, timeout=15
+        ["git", "-C", root, "commit", "-m", message, "--", *rels],
+        check=True,
+        capture_output=True,
+        timeout=15,
     )
     return _push_with_one_rebase(root)
 
@@ -1527,47 +1546,57 @@ def _scan_terminals() -> dict:
         )
 
 
-@router.get("/accounts/scan", response_model=TerminalScan)
+@router.get("/accounts/scan", response_model=AccountSyncPreview)
 def scan_box_terminals():
-    """What the VPS is ACTUALLY logged into, checked against the account list.
+    """What the VPS is ACTUALLY logged into, checked against the account list — and exactly what
+    Sync would change because of it. Writes nothing.
 
     🔴 **The account list is a stored claim and nothing checked it against the machine until this
     existed.** It named a terminal for 700107749 that is not logged into it, and a third terminal
     sat on a LIVE account for a day invisible to this app.
 
-    ⚠ **It reads and writes nothing.** Adopting a discovered account is a separate, explicit
-    action through the registry write endpoint, which validates it exactly as it validates one
-    typed by hand. Auto-adopting would turn an accidental login into configuration, and the
-    account-mismatch halt on the bot side exists precisely because a terminal's login can change
-    under a running bot — a feature that wrote the new account into the registry would be
-    resolving that alarm by agreeing with it.
+    🔴 **This is the PREVIEW, and it is the first half of every sync** (Aaron, 2026-09-10: *"it
+    doesn't show me what it is going to do before I do it"*). It plans with the same function the
+    write uses, so the list on the page is the list a press would apply, and `plan_id` is what the
+    press sends back. Writing is `POST /accounts/registry/sync`.
 
     ⚠ **It is NOT on the 60-second poll, deliberately.** A scan can take minutes when several
     installed terminals are stopped, so polling it would stack slow requests against the box. It
-    is an explicit refresh.
+    runs when the reader opens the Sync drawer or asks for a fresh scan, and at no other time.
 
     ⚠ **A failure is a 502 carrying WHY, never an empty result.** `asked=false` and "no terminals
     found" must never be the same response.
     """
+    _, found, plan = _plan_against_box(_scan_payload())
+    return _preview_model(found, plan)
+
+
+def _scan_payload() -> dict:
     try:
-        payload = _scan_terminals()
+        return _scan_terminals()
     except terminal_scan.ScanUnavailable as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+
+def _registered_accounts() -> list:
     try:
-        entries = bot_account_registry.load_accounts(_registry_path())
+        return bot_account_registry.load_accounts(_registry_path())
     except bot_account_registry.RegistryError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def _reconciled(payload: dict, entries: list):
     try:
         # ONE trip to the box: the scan already carries what each bot reports. This used to fetch
         # the whole fleet snapshot over a second SSH call to read one number per bot — double the
         # load on a box whose agents already answer late when it is busy, and two readings taken
         # seconds apart that a bot restart could make disagree.
-        found = terminal_scan.reconcile(payload, entries)
+        return terminal_scan.reconcile(payload, entries)
     except terminal_scan.ScanUnavailable as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+
+def _scan_model(found) -> TerminalScan:
     terminals = []
     for t in found.terminals:
         row = {k: v for k, v in vars(t).items()}
@@ -1580,6 +1609,129 @@ def scan_box_terminals():
         terminals=terminals,
         registry=[vars(r) for r in found.registry],
     )
+
+
+def _plan_against_box(payload: dict):
+    """Judge one scan reading against the list AS IT IS NOW, and plan the sync.
+
+    ⚠ **The ONE planning path, used by the preview and by the write.** Two paths that each work
+    out what sync would do are two answers, and the person approves one while the other is
+    applied. The list is read AFTER the scan returns, never before — the scan takes minutes.
+    """
+    entries = _registered_accounts()
+    found = _reconciled(payload, entries)
+    plan = account_sync.plan_sync(
+        found,
+        entries,
+        _bot_accounts_for_sync(),
+        dict(_KEY_DISPLAY),
+        datetime.now(timezone.utc).date().isoformat(),
+    )
+    return entries, found, plan
+
+
+def _change_model(change) -> AccountSyncChange:
+    return AccountSyncChange(
+        account=change.account,
+        action=change.action,
+        label=change.label,
+        diffs=[AccountSyncDiff(**d) for d in account_sync.shown_diffs(change)],
+        said=change.said,
+        live=change.live,
+    )
+
+
+def _preview_model(found, plan) -> AccountSyncPreview:
+    return AccountSyncPreview(
+        **_scan_model(found).model_dump(),
+        changes=[_change_model(c) for c in plan.changes],
+        attention=[
+            AccountSyncAttention(account=a.account, label=a.label, said=a.said)
+            for a in plan.attention
+        ],
+        blocked=plan.blocked,
+        plan_id=account_sync.plan_id(plan),
+    )
+
+
+# One sync at a time. The scan takes minutes and ends in a commit; two overlapping would each plan
+# against the list as it was before the other wrote, and two commits race for one push.
+_SYNC_LOCK = threading.Lock()
+
+
+def _bot_accounts_for_sync() -> Optional[dict]:
+    """Every registered bot → the account its config names (`None` = benched).
+
+    ⚠ **`None` for the WHOLE map when any config cannot be read.** That bot could be on any
+    account, so no account can be shown to be one no bot trades — and that is the one fact sync
+    needs before it may write. Rule 1: *could not ask* never buys the permissive answer.
+    """
+    out: dict = {}
+    for g in _account_groups():
+        if g.kind == "unknown":
+            return None
+        for b in g.bots:
+            out[b.key] = g.account if g.kind == "account" else None
+    return out
+
+
+@router.post("/accounts/registry/sync", response_model=AccountSync)
+def sync_accounts_with_box(body: AccountSyncRequest):
+    """Apply the sync the person was SHOWN. Manual only.
+
+    Aaron, 2026-09-10: *"not a scan, a sync"*, *"sync is 100% manually triggered by me only"* —
+    and then *"it doesn't show me what it is going to do before I do it."* So the drawer runs
+    `GET /accounts/scan` first and lists the plan; this is the Sync button under that list, and
+    nothing else calls it. The rules are `services/account_sync.py`'s, and the one that matters:
+    **an account a bot trades is never changed** — the live runner halts when a terminal's login
+    moves under it, and a sync agreeing with the terminal would silence that.
+
+    🔴 **It re-scans and REFUSES when the plan moved** (`expect_plan` ≠ the fresh `plan_id`). A
+    terminal can switch account between the preview and the press; writing then applies a list
+    nobody read. Nothing is written, `plan_changed` is set, and `now` is the new preview. A cached
+    plan was rejected for the same reason in the other direction: it was judged against bot
+    configs that may have moved, and the never-change-a-bot's-account rule is only true when it is
+    checked at the moment of the write.
+
+    ⚠ **Under `/accounts/registry/` on purpose**: the browser guard already refuses every write
+    there, so this cannot be pressed by the browser tool with no rule of its own to forget.
+
+    ⚠ **`now` is re-judged after the writes, from the SAME reading** — a second scan would take
+    minutes and could see a different box.
+
+    ⚠ **A push that fails does not lose the result.** The writes are already on this machine; the
+    page is told they did not reach the VPS, rather than getting a 500 that hides what changed.
+    """
+    if not _SYNC_LOCK.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409, detail="A sync is already running — wait for it to finish."
+        )
+    try:
+        payload = _scan_payload()
+        _, found, plan = _plan_against_box(payload)
+        if account_sync.plan_id(plan) != body.expect_plan:
+            return AccountSync(now=_preview_model(found, plan), plan_changed=True)
+
+        applied, failed = account_sync.apply_sync(_registry_path(), plan, _known_profiles())
+
+        deployed, deploy_error = False, None
+        if applied and body.deploy:
+            try:
+                _deploy_registry(account_sync.commit_message(applied))
+                deployed = True
+            except HTTPException as e:
+                deploy_error = str(e.detail)
+
+        _, found_after, plan_after = _plan_against_box(payload)
+        return AccountSync(
+            now=_preview_model(found_after, plan_after),
+            changes=[_change_model(c) for c in applied],
+            failed=[AccountSyncFailure(account=c.account, reason=why) for c, why in failed],
+            deployed=deployed,
+            deploy_error=deploy_error,
+        )
+    finally:
+        _SYNC_LOCK.release()
 
 
 @router.put("/accounts/registry/{account}", response_model=BotAccountRegistration)

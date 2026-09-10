@@ -197,6 +197,58 @@ def test_a_missing_reason_is_refused_here_rather_than_at_the_hook():
         bots._git_commit_push(Path("/tmp/x"), "bots: probe [command center]", "too short")
 
 
+def test_the_commit_carries_ONLY_its_own_paths_never_another_sessions_staged_work(
+    tmp_path, monkeypatch
+):
+    """🔴 Two sessions share this clone, and a bare `git commit -m` commits the WHOLE index. The
+    first real Sync VPS press committed an unrelated staged file rename under the account-list
+    message (`05dbd703`) — and that file, being code, is what then made the push fail its lint
+    sweep. The commit names its paths now, and whatever else was staged must still be staged.
+
+    Driven on a scratch repo with no hooks, so it tests git's behaviour and nothing else. The same
+    two shapes were also run through the repo's REAL pre-commit and commit-msg hooks in a
+    throwaway worktree (2026-09-10): the pathspec commit carried one file and left the other
+    staged; the bare one carried both. Watched RED by dropping the pathspec from the call.
+    """
+    import config as cfg
+    import routers.bots as bots
+
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    def git(*argv):
+        return subprocess.run(
+            ["git", "-C", str(root), *argv], check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q")
+    git("config", "user.email", "probe@example.invalid")
+    git("config", "user.name", "probe")
+    git("config", "commit.gpgsign", "false")
+    (root / "accounts.json").write_text('{"accounts": []}\n', encoding="utf-8")
+    (root / "other.tsx").write_text("export {}\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "seed")
+
+    monkeypatch.setattr(cfg, "MONOREPO_ROOT", root)
+    monkeypatch.setattr(bots, "_push_with_one_rebase", lambda _root: "pushed")
+
+    # Another session's work, staged and waiting for its own commit.
+    (root / "other.tsx").write_text("export const x = 1\n", encoding="utf-8")
+    git("add", "other.tsx")
+    # This app's write.
+    (root / "accounts.json").write_text('{"accounts": [1]}\n', encoding="utf-8")
+
+    bots._git_commit_push(
+        root / "accounts.json",
+        "accounts: probe [command center]",
+        "the registry was written by a test probe",
+    )
+
+    assert git("show", "--name-only", "--format=", "HEAD").stdout.split() == ["accounts.json"]
+    assert git("diff", "--cached", "--name-only").stdout.split() == ["other.tsx"]
+
+
 def test_every_call_site_passes_a_reason():
     """A SOURCE test, for `test_bot_kill_scope.py`'s reason: a behavioural test only covers the
     routes somebody remembered to write one for, and a new deploy path added next month is exactly

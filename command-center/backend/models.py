@@ -1030,9 +1030,8 @@ class TerminalScan(BaseModel):
     terminals found" is the mistake this whole feature exists to stop somebody making about
     accounts.
 
-    ⚠ **Nothing here has been written anywhere.** These are findings; adopting one is a separate,
-    explicit action through the registry write endpoint, which validates it exactly as it
-    validates an account typed in by hand.
+    ⚠ **Nothing here has been written anywhere.** These are findings. `POST
+    /bots/accounts/registry/sync` is what applies them, by rule — see `services/account_sync.py`.
     """
 
     asked: bool
@@ -1040,6 +1039,92 @@ class TerminalScan(BaseModel):
     reason: Optional[str] = None  # set only when asked is False
     terminals: list[ScannedTerminal] = []
     registry: list[RegistryCheck] = []
+
+
+class AccountSyncRequest(BaseModel):
+    """Press Sync. `expect_plan` is REQUIRED: it is the `plan_id` of the preview the person read.
+
+    ⚠ **There is no "sync whatever you find" form of this request.** The write re-scans and refuses
+    when the plan moved, so a sync can only ever apply a list somebody was shown. A caller that
+    skips the preview has nothing to send here, which is the point.
+    """
+
+    deploy: bool = True
+    expect_plan: str
+
+
+class AccountSyncDiff(BaseModel):
+    """One field of one account: what the list says, what it will say, and the evidence.
+
+    Words a person reads — `what` is "Terminal", never `mt5_path`. `before` is `None` on an ADD:
+    *not in your list yet* is a different fact from *in your list, blank*.
+    """
+
+    what: str
+    before: Optional[str] = None
+    after: str
+    why: str = ""
+
+
+class AccountSyncChange(BaseModel):
+    """One write the sync would make (in a preview) or MADE (in a result).
+
+    `diffs` is the change field by field; `said` is what follows from it. Neither holds a field
+    name or a path.
+    """
+
+    account: int
+    action: str  # "add" | "update"
+    label: str = ""
+    diffs: list[AccountSyncDiff] = []
+    said: list[str] = []
+    live: bool = False  # this change made it real money — the page says so in words
+
+
+class AccountSyncAttention(BaseModel):
+    """Something the sync found and deliberately did NOT change, with why."""
+
+    account: Optional[int] = None
+    label: str = ""
+    said: list[str] = []
+
+
+class AccountSyncFailure(BaseModel):
+    account: int
+    reason: str
+
+
+class AccountSyncPreview(TerminalScan):
+    """`GET /bots/accounts/scan`: the scan, plus exactly what Sync would write. Writes nothing.
+
+    🔴 **`changes` here is a PROPOSAL.** Nothing on this model has been written anywhere; the page
+    lists it so a person can read it before pressing Sync, and `plan_id` is what that press sends
+    back. ⚠ **`blocked` set means Sync would write nothing**, and says why — the page must not
+    offer the button then.
+    """
+
+    changes: list[AccountSyncChange] = []
+    attention: list[AccountSyncAttention] = []
+    blocked: Optional[str] = None
+    plan_id: str = ""
+
+
+class AccountSync(BaseModel):
+    """What one Sync press did to the account list.
+
+    ⚠ **`plan_changed` true means NOTHING was written**: the VPS no longer agrees with the preview
+    the person approved, and `now` is the new preview for them to read instead. ⚠ **`changes` is
+    what was WRITTEN**; a change that could not be saved is in `failed`, never in both.
+    ⚠ **`now` is the list re-judged AFTER the writes, from the same reading** — so the page shows
+    the list as it is now, and anything still listed there is something this press did not fix.
+    """
+
+    now: AccountSyncPreview
+    changes: list[AccountSyncChange] = []
+    failed: list[AccountSyncFailure] = []
+    plan_changed: bool = False
+    deployed: bool = False
+    deploy_error: Optional[str] = None
 
 
 # The roles `algos/notifications/telegram_bot.py` keys `ROLE_COMMANDS` on. A value outside

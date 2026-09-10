@@ -9,12 +9,13 @@ import { toast } from 'sonner'
 import { api } from '@/api/client'
 import { isRestartPending } from '@/lib/botVersion'
 import type {
+  AccountSync,
+  AccountSyncPreview,
   BotAccountAssignResult,
   BotAccountCapResult,
   BotAccountGroup,
   BotAccountRegistration,
   BotAccountRegistrationWrite,
-  TerminalScan,
   BotDeployedVersion,
   BotPromoteJob,
   BotSnapshot,
@@ -321,29 +322,61 @@ export function useRegisteredAccounts() {
 }
 
 /**
- * What the VPS is ACTUALLY logged into, checked against the account list.
- *
- * 🔴 **NOT polled, and that is deliberate.** The scan attaches to each unowned terminal in its own
- * subprocess and waits on each, so it can take minutes when several installed terminals are
- * stopped. Putting it on the 60s interval every other query here uses would stack slow requests
- * against the box. It runs once when the tab opens and then only when somebody asks.
- *
- * ⚠ **`retry: false`.** A failure here is a statement — unreachable, refused, unreadable — and the
- * page shows it. Retrying would spend minutes re-asking a box that already answered, and would
- * blur "could not ask" into "still loading".
- *
- * ⚠ **A thrown error and `asked: false` are DIFFERENT.** The endpoint 502s when the scan could not
- * RUN; it returns `asked: false` when the box deliberately refused. Both must be shown, and they
- * must not be shown as the same thing — one sends you at the network, the other at the script.
+ * ⚠ **Deliberately OUTSIDE the `['bots','accounts']` prefix.** A sync that wrote invalidates that
+ * prefix to refresh the page, and a preview under it would be re-asked by the same call — a
+ * surprise second scan of the box straight after the one the sync already returned.
  */
-export function useTerminalScan() {
+export const SYNC_PREVIEW_KEY = ['vps-sync', 'preview'] as const
+
+/**
+ * What Sync WOULD change, read off the VPS. Writes nothing (Aaron, 2026-09-10: *"it doesn't show me
+ * what it is going to do before I do it"*).
+ *
+ * 🔴 **Mount it ONLY while the drawer is open.** With `gcTime: 0` the answer is dropped the moment
+ * the drawer closes, so every press of Sync VPS is a fresh scan and never a plan read an hour ago.
+ * `staleTime: Infinity` then stops it re-asking on its own — no poll, no refetch on focus — because
+ * the scan SSHes to the box and attaches to its terminals.
+ *
+ * ⚠ **`silent`, no retry** — the drawer renders the failure; a toast would say it twice.
+ */
+export function useSyncPreview(enabled: boolean) {
   return useQuery({
-    queryKey: ['bots', 'accounts', 'scan'],
-    queryFn: () => api.get<TerminalScan>('/bots/accounts/scan'),
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    staleTime: 5 * 60_000,
+    queryKey: SYNC_PREVIEW_KEY,
+    queryFn: () => api.get<AccountSyncPreview>('/bots/accounts/scan', { silent: true }),
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
     retry: false,
+    refetchOnWindowFocus: false,
+  })
+}
+
+/**
+ * Apply the plan the person was SHOWN. The rules are the server's (`services/account_sync.py`):
+ * an account a bot trades is never changed, a terminal is only ever cleared, nothing is removed.
+ *
+ * 🔴 **It sends the preview's `plan_id`, and the server re-scans and refuses if it moved** — a
+ * terminal can switch account between the preview and the press. The refusal comes back as
+ * `plan_changed` with the new plan in `now`, which replaces the preview on screen.
+ *
+ * 🔴 **A MUTATION, fired only by the Sync button under the plan** (*"sync is 100% manually triggered
+ * by me only"*). Nothing else calls `mutate`.
+ *
+ * ⚠ **No retry.** A sync ends in a commit; a failure is a statement and the drawer shows it.
+ */
+export function useSyncAccounts() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (plan: string) =>
+      api.post<AccountSync>('/bots/accounts/registry/sync', { deploy: true, expect_plan: plan }),
+    onSuccess: (r) => {
+      // `now` IS the fresh preview (re-judged after the writes, or the new plan when refused), so
+      // it replaces the one on screen without asking the box a second time.
+      qc.setQueryData(SYNC_PREVIEW_KEY, r.now)
+      // Only a write moves anything. Re-reading the accounts area after a sync that changed
+      // nothing would flash every drawer and heading for no reason.
+      if (r.changes.length > 0) qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
+    },
   })
 }
 
