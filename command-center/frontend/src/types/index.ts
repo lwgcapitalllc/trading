@@ -407,6 +407,13 @@ export interface BotEarnings {
   losses: number | null
   records_from: string | null
   records_to: string | null
+  /** 🔴 How far the ARCHIVE'S record actually reaches, as an instant. `records_to` above is a DAY
+   *  taken from a filename, so today's file always read as "recorded through today" while the
+   *  newest line inside it could be an hour old. `null` = could not be told, never "now". */
+  records_through: string | null
+  /** "live" = read off the box in the same breath as the balance, so this figure and that balance
+   *  share a clock. "archive" = it does not. */
+  record_source: string | null
   /** This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
    *  is comparable between two bots sharing one balance. */
   pct_of_opening: number | null
@@ -428,6 +435,15 @@ export interface AccountEarnings {
   net_pct: number | null
   attributed_usd: number | null
   unattributed_usd: number | null
+  /** 🔴 Whether the bots' figures and the balance they are subtracted from were read at the same
+   *  moment. `false` does NOT mean anything is wrong — it means the split is PROVISIONAL. Until
+   *  2026-09-09 the page could not say so, and a trade closed since the last sync read exactly
+   *  like money nobody's bot made. */
+  records_live: boolean
+  /** The worst lag among the bots not read live, in seconds. `null` = could not be measured. */
+  attribution_lag_seconds: number | null
+  /** A plain sentence, present exactly when `records_live` is false. */
+  attribution_note: string | null
   bots_without_record: string[]
   bots: BotEarnings[]
 }

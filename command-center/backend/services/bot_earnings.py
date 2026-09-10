@@ -28,15 +28,39 @@ to read* are different answers and only one of them is a measurement — the rep
 whole reason a fresh bot's row may not print a confident `0.0%` under the same styling as a bot
 that genuinely broke even.
 
-⚠ **It reads the ARCHIVE on this machine, not the box.** `algos/tools/ledger_sync.py` commits and
-pushes the record hourly, so this needs no SSH, works with the VPS down, and is the same bytes both
-machines hold. The cost is LAG: the archive is up to an hour behind, and `records_to` says how far
-it actually reaches so a reader can see that for themselves rather than assuming today.
+⚠ **It reads the ARCHIVE on this machine as its BASE.** `algos/tools/ledger_sync.py` commits and
+pushes the record hourly from the box, so the base needs no SSH, works with the VPS down, and is
+the same bytes both machines hold.
+
+🔴 **THE ARCHIVE ALONE WAS THE DEFECT, AND THE COST WAS THAT A STALE READ LOOKED IDENTICAL TO A
+REAL ATTRIBUTION GAP (2026-09-09).** The balance this sum is subtracted from is read live over SSH
+and is seconds old. The archive is behind by however long ago the box last COMMITTED *and* this
+machine last PULLED — **MEASURED at 66 minutes on 2026-09-09**, with no upper bound at all, because
+nothing on this machine pulls on a schedule. A trade closed inside that window is already in the
+balance and in no bot's row, so the bot under-reports by exactly its profit and the remainder line
+over-reports by the same amount. It happened for real: the extreme leg's **$1,305.58** target
+rendered as *"a manual fill, a deposit, or a trade older than the record"* — three real causes, none
+of them true. **Two halves of one subtraction may not be read off two different clocks.**
+
+✅ **Fixed by reading the box's OWN ledger in the same SSH the balances come from** (see
+`routers/bots.py` → `_parse_live_trades`) and merging it over the archive, deduped by ticket. The
+box answers with a couple of KB — trade rows only, and MEASURED at **6 rows / 3.1 KB for the whole
+of both bots' history** — so freshness costs no round trip and no meaningful payload.
+
+⚠ **The archive stays the base rather than being replaced, and the box is a TOP-UP.** The live
+window is bounded by month, so it cannot reach an older trade; the archive cannot reach a newer one.
+Each holds what the other cannot, which is why the union is taken rather than the fresher source
+preferred.
+
+⚠ **When the box cannot answer, the page SAYS the split is provisional** rather than printing a
+confident one — `records_live`, the measured lag, and a sentence. That is the half that survives a
+dead VPS, and it is the half that makes the four causes of a remainder distinguishable.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from config import MONOREPO_ROOT
@@ -50,18 +74,56 @@ class BotLedgerSummary(dict):
     """A plain dict — the router builds the response model. Kept as a type name for readers."""
 
 
-def _closed_trades(path: Path) -> list[dict]:
-    """Every closed-trade row in one ledger file.
+def _newest_ts(lines: list[str]) -> str | None:
+    """When the newest record in this file was written — `None` when it cannot be told.
+
+    🔴 **This is the file's REACH, and it is the half that was missing.** The summary below
+    reported `records_to` as a DAY, taken from the filename — so today's file always read as
+    *"recorded through today"* while the newest line inside it could be an hour old. That is this
+    repo's rule 3 in a new place: **the day is what was REQUESTED of the archive, the timestamp is
+    what actually arrived**, and printing the first as though it were the second is what let a
+    stale read look exactly like a real attribution gap.
+
+    ⚠ **It walks BACKWARDS from the end and stops at the first line that parses**, bounded to the
+    last 20. A live bot is appending to this file while it is read, so the final line is routinely
+    torn; walking the whole file to find the newest timestamp would cost the whole read this
+    module exists to keep cheap.
+
+    ⚠ **`None` when no line in that tail parses — never a fabricated instant.** *We cannot tell
+    how fresh this is* and *this is fresh* must not be the same value: the caller reports the
+    first as an unknown lag, which is the thing a reader needs to see.
+    """
+    for line in reversed(lines[-20:]):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        ts = row.get("ts")
+        if isinstance(ts, str) and ts:
+            return ts
+    return None
+
+
+def _closed_trades(path: Path) -> tuple[list[dict], str | None]:
+    """Every closed-trade row in one ledger file, and when its newest record was written.
 
     ⚠ A malformed line is SKIPPED, never fatal. This file is appended to by a live bot and read
     while it is being written; one torn line at the end must not blank a month of history.
+
+    ⚠ **The reach comes back even when there are no trades in the file**, which is the normal
+    case — a day of bar rows still tells you how far the record has got, and that is exactly the
+    day a reader is asking about.
     """
     out: list[dict] = []
     try:
         text = path.read_text(errors="replace")
     except OSError:
-        return out
-    for line in text.splitlines():
+        return out, None
+    lines = text.splitlines()
+    for line in lines:
         line = line.strip()
         # Cheap reject before the parse — a ledger is ~99% bar rows and only a handful of
         # trades, so parsing every line would be the whole cost of this endpoint.
@@ -87,7 +149,7 @@ def _closed_trades(path: Path) -> list[dict]:
             continue
         if row.get("kind") == "trade" and row.get("event") == "closed":
             out.append(row)
-    return out
+    return out, _newest_ts(lines)
 
 
 # Keyed on a FINGERPRINT of the record rather than on time: how many files there are, and the
@@ -107,20 +169,77 @@ def _fingerprint(files: list[Path]) -> tuple:
     return (len(files), newest.name, st.st_size, st.st_mtime)
 
 
-def read_bot_ledger(bot_key: str) -> dict:
-    """Sum one bot's realised results out of its own archived decision record.
+def _dedup_key(row: dict):
+    """What makes two closed-trade rows the SAME trade.
 
-    Returns `traded: False` with everything else `None` when there is no record — see the module
-    docstring on why that may not collapse to zero.
+    ⚠ **A ticket closes once**, so `(ticket, ts)` identifies a row across the two copies of it
+    this module can now hold — the archived one and the one still only on the box. A row with no
+    ticket falls back to its whole content, because guessing that two ticketless rows are the same
+    trade is how a real second trade gets silently swallowed.
+    """
+    ticket = row.get("ticket")
+    if ticket is not None:
+        return ("t", ticket, row.get("ts"))
+    return ("raw", json.dumps(row, sort_keys=True, default=str))
+
+
+def _archive_scan(bot_key: str):
+    """Everything this machine's archive holds for one bot, or `None` when it holds nothing.
+
+    Returns `(closed rows, reach, first day, last day)`. `reach` is the newest record's timestamp
+    — see `_newest_ts` — and is `None` when it could not be read.
     """
     folder = ARCHIVE / bot_key / "ledger"
     files = sorted(folder.glob("decisions-*.jsonl")) if folder.is_dir() else []
-    if files:
-        fp = _fingerprint(files)
-        hit = _ledger_cache.get(bot_key)
-        if hit and hit[0] == fp:
-            return dict(hit[1])
     if not files:
+        return None
+
+    fp = _fingerprint(files)
+    hit = _ledger_cache.get(bot_key)
+    if hit and hit[0] == fp:
+        rows, reach, first, last = hit[1]
+        return [dict(r) for r in rows], reach, first, last
+
+    rows: list[dict] = []
+    reach: str | None = None
+    for f in files:
+        found, ts = _closed_trades(f)
+        rows.extend(found)
+        # The files are sorted by name and named by day, so the LAST one that could answer is
+        # the newest. Taking the max would be wrong the moment a bot's clock or a filename
+        # disagreed, and taking the last non-None keeps a torn final file from erasing the reach.
+        if ts:
+            reach = ts
+    first = files[0].name[len("decisions-") : -len(".jsonl")]
+    last = files[-1].name[len("decisions-") : -len(".jsonl")]
+    _ledger_cache[bot_key] = (fp, ([dict(r) for r in rows], reach, first, last))
+    return rows, reach, first, last
+
+
+def read_bot_ledger(bot_key: str, live_trades: list[dict] | None = None) -> dict:
+    """Sum one bot's realised results out of its own decision record.
+
+    `live_trades` is what the BOX just said, read off the bot's own live ledger in the same SSH
+    the balances came from. 🔴 **`None` means the box was not asked or did not answer; `[]` means
+    it answered and there were no trades in the window.** Those are different facts and only one
+    of them says the figure below is as fresh as the balance it will be subtracted from — this
+    repo's rule 1, and the whole reason this argument is not a plain list.
+
+    🔴 **The two halves of the account subtraction used to be read off two different clocks.** The
+    balance is seconds old (SSH, live); the archive is behind by however long ago the box last
+    committed AND this machine last pulled — MEASURED at 66 minutes on 2026-09-09 with no upper
+    bound, since nothing here pulls. So a trade that closed inside that window was already in the
+    account's balance and in no bot's row, which under-reports that bot by exactly its profit and
+    over-reports *"not from these bots"* by the same amount. It happened for real: the extreme
+    leg's **$1,305.58** target on 2026-09-09 read as money nobody's bot made.
+
+    Returns `traded: False` with everything else `None` when there is no record at all — see the
+    module docstring on why that may not collapse to zero.
+    """
+    scan = _archive_scan(bot_key)
+    live = list(live_trades) if live_trades is not None else []
+
+    if scan is None and live_trades is None:
         return {
             "bot_key": bot_key,
             "traded": False,
@@ -132,11 +251,29 @@ def read_bot_ledger(bot_key: str) -> dict:
             "losses": None,
             "records_from": None,
             "records_to": None,
+            "records_through": None,
+            "record_source": "archive",
         }
 
-    rows: list[dict] = []
-    for f in files:
-        rows.extend(_closed_trades(f))
+    if scan is None:
+        # The box answered and this machine has never archived anything for this bot. That is a
+        # real record — a bot registered after the last sync — and refusing it would report a
+        # trading bot as untraded while its own ledger is right there in the response.
+        rows, reach, first, last = [], None, None, None
+    else:
+        rows, reach, first, last = scan
+
+    # ⚠ The live rows are merged rather than preferred, and the archive is not trusted to be a
+    # subset either: a window bounded by month (see the router) cannot reach a trade older than
+    # it, and the archive cannot reach one newer than its last sync. Each holds what the other
+    # cannot, so the union is the only complete answer and the dedup is what makes it safe.
+    if live:
+        seen = {_dedup_key(r) for r in rows}
+        for r in live:
+            k = _dedup_key(r)
+            if k not in seen:
+                seen.add(k)
+                rows.append(r)
 
     usd = 0.0
     r = 0.0
@@ -159,7 +296,7 @@ def read_bot_ledger(bot_key: str) -> dict:
 
     # The SPAN OF THE RECORD, not of the trades — "nothing closed" and "nothing recorded" have
     # to look different, and the first date is what makes a bot's tenure on an account readable.
-    result = {
+    return {
         "bot_key": bot_key,
         "traded": True,
         "reason": None,
@@ -168,11 +305,17 @@ def read_bot_ledger(bot_key: str) -> dict:
         "realised_r": round(r, 4),
         "wins": wins,
         "losses": losses,
-        "records_from": files[0].name[len("decisions-") : -len(".jsonl")],
-        "records_to": files[-1].name[len("decisions-") : -len(".jsonl")],
+        "records_from": first,
+        "records_to": last,
+        # How far this bot's record actually REACHES. `None` = could not be told, never "now".
+        # When the box answered, its own ledger was read a moment ago, so the reach is the read
+        # itself and the caller stamps it — this is the archive's reach and nothing else.
+        "records_through": reach,
+        # "live" = the box's own ledger was read in the same breath as the balance, so this
+        # figure and that balance share a clock. "archive" = it does not, and the caller has to
+        # say so rather than printing a confident split.
+        "record_source": "live" if live_trades is not None else "archive",
     }
-    _ledger_cache[bot_key] = (fp, dict(result))
-    return result
 
 
 # ── The account half ────────────────────────────────────────────────────────────────────────
@@ -214,11 +357,86 @@ def _pick_opening(rows: list[dict]) -> tuple[float | None, str | None, str | Non
     return round(float(oldest["starting_balance"]), 2), oldest["bot_key"], None
 
 
-def account_earnings(bots: list[dict]) -> list[dict]:
+def _lag_seconds(reach: str | None, as_of: datetime | None) -> float | None:
+    """How far behind `as_of` a record that reaches `reach` is. `None` = cannot be told."""
+    if not reach or as_of is None:
+        return None
+    try:
+        stamp = datetime.fromisoformat(reach)
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=timezone.utc)
+    # Clamped at zero rather than reported negative: a record stamped slightly ahead of the read
+    # is two clocks disagreeing, not a record from the future, and a negative lag on a page reads
+    # as a bug in the page.
+    return max(0.0, (as_of - stamp).total_seconds())
+
+
+def _freshness(merged: list[dict], as_of: datetime | None) -> tuple[bool, float | None, str | None]:
+    """Whether the split below shares a clock with the balance, and what to say when it does not.
+
+    🔴 **This exists because a STALE READ and a REAL ATTRIBUTION GAP were the same pixel.** The
+    remainder line says the money came from a manual fill, a deposit or a trade older than the
+    record — three real causes — and it said exactly that for a trade that had simply not been
+    synced yet. Aaron saw it on 2026-09-09 and the two are indistinguishable to a reader, which
+    makes the honest answer a fourth sentence rather than a better number.
+    """
+    traded = [r for r in merged if r.get("traded")]
+    if not traded:
+        return True, None, None
+
+    stale = [r for r in traded if r.get("record_source") != "live"]
+    if not stale:
+        return True, 0.0, None
+
+    lags = [_lag_seconds(r.get("records_through"), as_of) for r in stale]
+    known = [x for x in lags if x is not None]
+    # The WORST lag, not the average: the question is whether ANY trade could be missing, and one
+    # bot an hour behind makes the whole split provisional however fresh its neighbour is.
+    worst = max(known) if known else None
+
+    if worst is None:
+        how = "how far behind it is could not be read"
+    elif worst < 120:
+        # Under two minutes is the sync landing between the two reads. Say the number anyway —
+        # a threshold that silently reclassifies a lag as "fine" is the guard this repo keeps
+        # having to un-learn.
+        how = f"{int(worst)} seconds behind it"
+    elif worst < 7200:
+        how = f"{int(round(worst / 60))} minutes behind it"
+    else:
+        how = f"{worst / 3600:.1f} hours behind it"
+
+    if len(stale) == 1:
+        who = "One of these bots' records was"
+        lag = "and it is " if worst is not None else "and "
+    else:
+        who = f"{len(stale)} of these bots' records were"
+        lag = "and the furthest is " if worst is not None else "and "
+    return (
+        False,
+        worst,
+        (
+            f"{who} read from this machine's archive rather than from the box, {lag}{how}. A trade "
+            f"closed since then is already in the balance and in no bot's row, so each bot's figure "
+            f"is a floor and the remainder is a ceiling until it syncs."
+        ),
+    )
+
+
+def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[dict]:
     """Group bots by account and answer both halves: what the account did, and what each bot did.
 
     `bots` is one dict per bot carrying `bot_key`, `name`, `account`, `balance` and
     `starting_balance` — read off the snapshot that has already been fetched, so this adds no SSH.
+    A bot dict may also carry `live_trades`: the closed-trade rows the BOX just reported, or
+    `None`/absent when it was not asked. See `read_bot_ledger` on why that is not a plain list.
+
+    `as_of` is when the BALANCE was read. It is what the record's reach is measured against, so
+    the page can say whether the two halves of its own subtraction share a clock.
     """
     by_account: dict[int, list[dict]] = {}
     for b in bots:
@@ -229,7 +447,7 @@ def account_earnings(bots: list[dict]) -> list[dict]:
 
     out: list[dict] = []
     for account, rows in sorted(by_account.items()):
-        merged = [{**r, **read_bot_ledger(r["bot_key"])} for r in rows]
+        merged = [{**r, **read_bot_ledger(r["bot_key"], r.get("live_trades"))} for r in rows]
 
         # One pot of money, not one each — the same rule the page's own header learned on
         # 2026-09-04 after a two-bot stack reported an account's balance twice.
@@ -249,9 +467,17 @@ def account_earnings(bots: list[dict]) -> list[dict]:
         if net_usd is not None and attributed is not None:
             unattributed = round(net_usd - attributed, 2)
 
+        records_live, lag, note = _freshness(merged, as_of)
+
         out.append(
             {
                 "account": account,
+                # Whether the bots' figures and the balance above them were read at the same
+                # moment. False does NOT mean anything is wrong — it means the split is
+                # provisional, and the page has to be able to tell a reader that.
+                "records_live": records_live,
+                "attribution_lag_seconds": lag,
+                "attribution_note": note,
                 "balance": balance,
                 "opening_balance": opening,
                 "opening_from": opening_from,
@@ -277,6 +503,8 @@ def account_earnings(bots: list[dict]) -> list[dict]:
                         "losses": r.get("losses"),
                         "records_from": r.get("records_from"),
                         "records_to": r.get("records_to"),
+                        "records_through": r.get("records_through"),
+                        "record_source": r.get("record_source"),
                         # The number Aaron asked for: what this bot made, as a share of what the
                         # ACCOUNT opened at — so two bots on one balance are directly comparable
                         # and neither is credited with the other's growth.

@@ -240,3 +240,170 @@ def test_one_pot_of_money_is_read_once_even_when_a_neighbour_reports_nothing(arc
         ]
     )[0]
     assert quiet["balance"] == 14538.88
+
+
+# ── the two clocks ──────────────────────────────────────────────────────────────────────────
+#
+# 🔴 **The balance is read live over SSH and the archive is behind by however long ago the box
+# committed AND this machine pulled — MEASURED at 66 minutes on 2026-09-09, with no upper bound.**
+# A trade closed inside that gap sits in the balance and in no bot's row, so the bot under-reports
+# by exactly its profit and the remainder line over-reports by the same amount. It happened: the
+# extreme leg's $1,305.58 target rendered as money nobody's bot made.
+
+
+def _now(iso="2026-09-09T03:21:00+00:00"):
+    return be.datetime.fromisoformat(iso)
+
+
+def test_the_reach_is_the_newest_RECORD_not_the_day_in_the_filename(archive):
+    """MUTATION: return `records_through` as `records_to` (the filename day). RUN — red.
+
+    The whole defect is that today's file always read as *recorded through today* while the
+    newest line inside it could be an hour old — what was REQUESTED of the archive reported as
+    what arrived."""
+    archive(
+        "b",
+        "2026-09-09",
+        [_close(100.0, ts="2026-09-09T01:00:00+00:00"), _bar("2026-09-09T02:15:05+00:00")],
+    )
+    out = be.read_bot_ledger("b")
+    assert out["records_to"] == "2026-09-09"
+    assert out["records_through"] == "2026-09-09T02:15:05+00:00"
+
+
+def test_a_TORN_last_line_does_not_blank_the_reach(archive):
+    """MUTATION: read only the final line and give up when it does not parse. RUN — red.
+
+    A live bot is appending while this is read, so the last line is routinely half-written —
+    and a reach of `None` there reports the lag as unmeasurable on the most ordinary file in
+    the archive."""
+    d = be.ARCHIVE / "b" / "ledger"
+    d.mkdir(parents=True)
+    (d / "decisions-2026-09-09.jsonl").write_text(
+        json.dumps(_bar("2026-09-09T02:15:05+00:00")) + '\n{"ts": "2026-09-09T02:30',
+        encoding="utf-8",
+    )
+    assert be.read_bot_ledger("b")["records_through"] == "2026-09-09T02:15:05+00:00"
+
+
+def test_a_reach_that_cannot_be_READ_is_None_and_never_a_fabricated_instant(archive):
+    """MUTATION: fall back to the filename day, or to `datetime.now()`. RUN — red on both.
+
+    *We cannot tell how fresh this is* and *this is fresh* must not be the same value — the
+    caller reports the first as an unknown lag, which is the thing a reader needs to see."""
+    d = be.ARCHIVE / "b" / "ledger"
+    d.mkdir(parents=True)
+    (d / "decisions-2026-09-09.jsonl").write_text("not json\nalso not json\n", encoding="utf-8")
+    out = be.read_bot_ledger("b")
+    assert out["records_through"] is None
+    assert out["records_to"] == "2026-09-09"
+
+
+def test_a_trade_the_ARCHIVE_has_not_caught_up_to_is_still_counted(archive):
+    """MUTATION: ignore `live_trades` and sum the archive alone. RUN — red at $0.00 against
+    $1,305.58 — which is the live case exactly: the extreme leg's 2026-09-09 target was in the
+    balance and in no bot's row, and rendered as a manual fill or a deposit."""
+    archive("b", "2026-09-09", [_bar("2026-09-09T02:15:05+00:00")])
+    fresh = _close(1305.58, r=2.1, ts="2026-09-09T07:15:02+00:00")
+    fresh["ticket"] = 367577331
+    out = be.read_bot_ledger("b", [fresh])
+    assert out["closed_trades"] == 1
+    assert out["realised_usd"] == 1305.58
+    assert out["record_source"] == "live"
+
+
+def test_a_trade_in_BOTH_the_archive_and_the_box_is_counted_ONCE(archive):
+    """MUTATION: append the live rows without deduping. RUN — red at double.
+
+    The archive is a COPY of the box's file, so the overlap is the ordinary case rather than an
+    edge one — every synced trade is in both, and a page reporting each of them twice is worse
+    than one reporting them an hour late."""
+    row = _close(1305.58, r=2.1, ts="2026-09-09T07:15:02+00:00")
+    row["ticket"] = 367577331
+    archive("b", "2026-09-09", [row])
+    out = be.read_bot_ledger("b", [dict(row)])
+    assert out["closed_trades"] == 1
+    assert out["realised_usd"] == 1305.58
+
+
+def test_the_box_answering_with_NOTHING_is_not_the_box_failing_to_answer(archive):
+    """MUTATION: treat `live_trades=None` as `[]`. RUN — red on `record_source`.
+
+    `None` = the box could not be asked, so this figure is as stale as the last sync. `[]` = it
+    answered and this bot has closed nothing in the window, which is the ordinary state of a bot
+    that has not traded this month. Only one of them makes the split provisional."""
+    archive("b", "2026-09-09", [_bar("2026-09-09T02:15:05+00:00")])
+    assert be.read_bot_ledger("b", [])["record_source"] == "live"
+    assert be.read_bot_ledger("b", None)["record_source"] == "archive"
+
+
+def test_a_bot_with_NO_archive_but_a_live_record_is_not_reported_as_untraded(archive):
+    """MUTATION: return the no-record answer whenever the archive folder is missing. RUN — red.
+
+    A bot registered since the last sync has a real record sitting in the response — reporting
+    it as untraded while its own trades are right there is the reverse of this module's rule
+    about zero, and just as wrong."""
+    row = _close(400.0, ts="2026-09-09T07:15:02+00:00")
+    row["ticket"] = 42
+    out = be.read_bot_ledger("brand_new", [row])
+    assert out["traded"] is True
+    assert out["realised_usd"] == 400.0
+    assert out["records_from"] is None
+
+
+def test_the_page_SAYS_the_split_is_provisional_when_a_record_was_not_read_live(archive):
+    """MUTATION: always report `records_live: True`, or drop the note. RUN — red on both.
+
+    This is the fix itself. Without it a stale read and a real attribution gap are the same
+    pixel: the remainder line names a manual fill, a deposit or an old trade — three real
+    causes — and said exactly that for a trade that had simply not synced yet."""
+    archive("b", "2026-09-09", [_bar("2026-09-09T02:15:05+00:00")])
+    acct = be.account_earnings(
+        [_bot("b", "B", anchor=9996.99)], as_of=_now("2026-09-09T03:21:00+00:00")
+    )[0]
+    assert acct["records_live"] is False
+    assert acct["attribution_lag_seconds"] == pytest.approx(66 * 60, abs=60)
+    assert "66 minutes behind" in acct["attribution_note"]
+
+
+def test_a_record_read_LIVE_carries_no_caveat_at_all(archive):
+    """MUTATION: emit the note unconditionally. RUN — red.
+
+    A caveat printed on every split is one nobody reads by the second day, and it would be
+    stating a lag that is not there — the two halves genuinely were read at the same moment."""
+    archive("b", "2026-09-09", [_bar("2026-09-09T02:15:05+00:00")])
+    acct = be.account_earnings(
+        [{**_bot("b", "B", anchor=9996.99), "live_trades": []}], as_of=_now()
+    )[0]
+    assert acct["records_live"] is True
+    assert acct["attribution_lag_seconds"] == 0.0
+    assert acct["attribution_note"] is None
+
+
+def test_the_WORST_lag_is_reported_never_the_average_or_the_first(archive):
+    """MUTATION: take the mean, or the first stale bot's lag. RUN — red on both.
+
+    The question is whether ANY trade could be missing, so one bot an hour behind makes the
+    whole split provisional however fresh its neighbour is. An average buries exactly the bot
+    the reader needs to know about."""
+    archive("fresh", "2026-09-09", [_bar("2026-09-09T03:20:00+00:00")])
+    archive("stale", "2026-09-09", [_bar("2026-09-09T00:21:00+00:00")])
+    acct = be.account_earnings(
+        [_bot("fresh", "F", anchor=9996.99), _bot("stale", "S", anchor=9996.99)],
+        as_of=_now("2026-09-09T03:21:00+00:00"),
+    )[0]
+    assert acct["attribution_lag_seconds"] == pytest.approx(3 * 60 * 60, abs=60)
+
+
+def test_a_lag_that_cannot_be_MEASURED_says_so_rather_than_reading_as_fresh(archive):
+    """MUTATION: fall back to `0.0` when the reach is unreadable. RUN — red.
+
+    A zero lag is the most reassuring answer available and here it is the one that cannot be
+    supported — the same rule as the reach itself, one level up."""
+    d = be.ARCHIVE / "b" / "ledger"
+    d.mkdir(parents=True)
+    (d / "decisions-2026-09-09.jsonl").write_text("not json\n", encoding="utf-8")
+    acct = be.account_earnings([_bot("b", "B", anchor=9996.99)], as_of=_now())[0]
+    assert acct["records_live"] is False
+    assert acct["attribution_lag_seconds"] is None
+    assert "could not be read" in acct["attribution_note"]

@@ -576,6 +576,32 @@ def _fetch_vps_snapshot() -> dict[str, str]:
         f"echo. & echo ==={_review_section(b.key).upper()}=== & type {b.review_file} 2>nul"
         for b in _BOTS
     ]
+    # The bot's OWN closed trades, straight off the box's live ledger, on the SAME connection the
+    # balances come from. 🔴 **That is the whole point: the account's balance and the bots' realised
+    # results are subtracted from each other, and until 2026-09-09 they were read off two different
+    # clocks** — the balance seconds old, the archive up to an hour behind the box's last commit
+    # and unboundedly behind this machine's last pull (MEASURED at 66 minutes). A trade closed
+    # inside that gap sat in the balance and in no bot's row.
+    #
+    # ⚠ **`findstr /c:pnl_usd`, an unquoted token, because only a CLOSED trade carries that field**
+    # (checked against the whole archive: 3 rows, all of them `trade`/`closed`) — and a pattern
+    # with no spaces or quotes survives the trip through the local shell and cmd unmangled, which
+    # the obvious `"kind": "trade"` does not. It is a cheap PREFILTER; `_parse_live_trades` still
+    # reads the parsed fields before believing a row, so a future row type carrying the field
+    # costs a parse and nothing else.
+    #
+    # ⚠ **One wildcard per month rather than one over the whole folder** — see `_LIVE_LEDGER_MONTHS`.
+    # A month that has no files prints to stderr, which `2>nul` swallows; that is the normal case
+    # for a bot registered this month.
+    _months = _ledger_months(datetime.now(timezone.utc))
+    for b in _BOTS:
+        cmd = f"echo. & echo ==={_ledger_section(b.key).upper()}==="
+        for month in _months:
+            cmd += (
+                f" & findstr /c:pnl_usd"
+                rf" {_VPS_INSTANCES}\{b.instance_dir}\ledger\decisions-{month}-*.jsonl 2>nul"
+            )
+        parts.append(cmd)
     parts.append(
         "echo. & echo ===TELEGRAM_START=== & type C:\\trading\\algos\\telegram_start.json 2>nul"
     )
@@ -601,6 +627,85 @@ def _review_section(bot_key: str) -> str:
     fetch and the parse must agree, and the way they drift is a flag that is fetched and then
     looked for under a different name, i.e. silently always absent."""
     return f"review_{bot_key}"
+
+
+def _ledger_section(bot_key: str) -> str:
+    """The snapshot section name for one bot's LIVE trade rows. Derived, same rule as above."""
+    return f"ledger_{bot_key}"
+
+
+# How far back the live read reaches, in whole months INCLUDING the current one. The archive on
+# this machine is the base and this is only a top-up, so the window has to cover the gap between
+# them — which is however long ago the box last committed AND this machine last pulled.
+#
+# ⚠ **Two months is measured against the thing that creates the gap, not picked.** The box commits
+# hourly, so the box-side half is under an hour; the unbounded half is this machine's pull, and a
+# clone that has not pulled in two months has a great deal more wrong with it than a P&L figure.
+#
+# ⚠ **It is bounded on purpose rather than reading the whole ledger with one wildcard.** The whole
+# of both bots' trade history is 6 rows / 3.1 KB today, so a full read would be free — and it grows
+# with every trade for ever, on an endpoint the Bots page POLLS. A window bounded by month stays
+# the same size whatever the history reaches.
+_LIVE_LEDGER_MONTHS = 2
+
+
+def _ledger_months(now: datetime) -> list[str]:
+    """The `YYYY-MM` prefixes the live read covers, newest first."""
+    out: list[str] = []
+    y, m = now.year, now.month
+    for _ in range(_LIVE_LEDGER_MONTHS):
+        out.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    return out
+
+
+def _parse_live_trades(snap: dict[str, str]) -> dict[str, list[dict] | None]:
+    """{bot key: the closed trades the BOX just reported} — `None` when it did not answer.
+
+    🔴 **`None` and `[]` are different facts and the caller depends on it.** `None` means the box
+    was not reachable, so that bot's figures come off this machine's archive alone and are as stale
+    as the last sync; `[]` means the box answered and there were no trades in the window, which is
+    the ordinary case for a bot that has not traded this month. Reading the first as the second
+    prints a confident split off a record that may be an hour behind the balance beside it — which
+    is exactly the defect this whole read exists to close.
+
+    ⚠ **A section that is absent is `None`; a section that is present and holds no parseable row is
+    `[]`.** `findstr` prints nothing when it matches nothing, so an empty section really is *the
+    box answered and found none* — the marker is what distinguishes it, and the marker is echoed
+    unconditionally.
+
+    ⚠ **The string filter does the cheap half and the PARSED fields decide**, the same rule the
+    archive reader follows: a row is kept only when it says it is a closed trade. So the box-side
+    filter can be as loose as it likes without a non-trade row ever reaching the sum.
+    """
+    out: dict[str, list[dict] | None] = {}
+    for b in _BOTS:
+        section = snap.get(_ledger_section(b.key))
+        if section is None:
+            out[b.key] = None
+            continue
+        rows: list[dict] = []
+        for line in section.splitlines():
+            # `findstr` over a wildcard prefixes each hit with its file path, and a Windows path
+            # carries a colon — so the JSON is found by its opening brace rather than by splitting
+            # on a separator. A filename cannot contain one.
+            brace = line.find("{")
+            if brace < 0:
+                continue
+            try:
+                row = json.loads(line[brace:])
+            except Exception:
+                continue
+            if (
+                isinstance(row, dict)
+                and row.get("kind") == "trade"
+                and row.get("event") == "closed"
+            ):
+                rows.append(row)
+        out[b.key] = rows
+    return out
 
 
 def _parse_reviews(snap: dict[str, str]) -> dict[str, dict]:
@@ -1088,6 +1193,7 @@ def get_snapshot():
     # ⚠ It must never take the snapshot down: this is telemetry beside a page that also has to
     # report a halted bridge, and a page that fails to load says nothing at all.
     try:
+        live_trades = _parse_live_trades(snap)
         earnings = [
             AccountEarnings(**e)
             for e in bot_earnings.account_earnings(
@@ -1098,9 +1204,16 @@ def get_snapshot():
                         "account": b.account,
                         "balance": b.balance,
                         "starting_balance": b.starting_balance,
+                        # What the box just said, or None when it could not be asked. See
+                        # `_parse_live_trades` on why those may not be one value.
+                        "live_trades": live_trades.get(b.key),
                     }
                     for b in bots
-                ]
+                ],
+                # The balance above was read at this instant, so it is what the record's own reach
+                # is measured against — the page can then say whether its own subtraction is made
+                # of two numbers from the same moment.
+                as_of=now,
             )
         ]
     except Exception:

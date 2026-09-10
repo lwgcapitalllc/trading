@@ -361,6 +361,14 @@ class BotEarnings(BaseModel):
     losses: Optional[int] = None
     records_from: Optional[str] = None
     records_to: Optional[str] = None
+    # 🔴 How far the ARCHIVE'S record actually reaches, as an instant. `records_to` above is a DAY,
+    # taken from a filename, so today's file always read as *recorded through today* while the
+    # newest line inside it could be an hour old — what was REQUESTED of the archive reported as
+    # what arrived. `None` means it could not be told, never "now".
+    records_through: Optional[str] = None
+    # "live" = this bot's own ledger was read off the box in the same breath as the balance, so the
+    # figure above shares a clock with it. "archive" = it does not.
+    record_source: Optional[str] = None
     # This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
     # is comparable between two bots sharing one balance.
     pct_of_opening: Optional[float] = None
@@ -386,6 +394,15 @@ class AccountEarnings(BaseModel):
     net_pct: Optional[float] = None
     attributed_usd: Optional[float] = None
     unattributed_usd: Optional[float] = None
+    # 🔴 Whether the bots' figures and the balance they are subtracted from were read at the same
+    # moment. False does NOT mean anything is wrong — it means the split is PROVISIONAL, and until
+    # 2026-09-09 the page had no way to say so: a trade closed since the last sync sits in the
+    # balance and in no bot's row, which is indistinguishable from money nobody's bot made.
+    records_live: bool = True
+    # The worst lag among the bots not read live, in seconds. `None` = could not be measured.
+    attribution_lag_seconds: Optional[float] = None
+    # A plain sentence, present exactly when `records_live` is False.
+    attribution_note: Optional[str] = None
     # Bots here whose record has not arrived. While this is non-empty the split is a FLOOR.
     bots_without_record: list[str] = []
     bots: list[BotEarnings] = []

@@ -3913,6 +3913,20 @@ page they mean up and down.
 ⚠ **Colour is reserved for P&L.** Everything else stays neutral, so a green figure always means
 the same thing rather than meaning *this row rendered*.
 
+🔴 **AND THE REMAINDER LINE NAMED THREE CAUSES WHILE A FOURTH WAS PRODUCING IT (2026-09-09).**
+*"a manual fill, a deposit, or a trade older than the record"* are all real — and it said exactly
+that for a trade that had simply **not synced yet**. The bots' figures were read off this machine's
+committed archive and the balance over SSH, so anything closed since the last sync sat in the
+balance and in no bot's row: the bot under-reported by its profit and this line over-reported by the
+same amount. MEASURED: the extreme leg's **$1,305.58** target, and a **66-minute** lag with no upper
+bound. **A stale read and a real attribution gap were the same pixel.** The backend reads the box's
+own ledger on the snapshot's connection now and, when it cannot, says the split is provisional —
+rules in `../backend/CLAUDE.md`. ⚠ **`records_live === false`, never falsy**: an older payload
+carries no such field, and reading a missing one as *the record is behind* puts a caveat on every
+split that never needed one. ⚠ **The sentence is SERVED, not composed here** — it carries a measured
+lag, and rebuilding it in the browser is the same rule written twice in two languages that this very
+page has already been bitten by.
+
 🔴 **A row is a `<div>` whose NAME is the button — never a `<button>` holding buttons.** That is
 invalid markup, React said so at runtime, and the unassigned rows had been saying it since the
 rewrite. The row now carries four controls and a row-wide click behind them makes every miss open

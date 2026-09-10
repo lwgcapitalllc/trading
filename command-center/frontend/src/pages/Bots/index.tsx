@@ -347,17 +347,25 @@ function AccountNet({ e }: { e: AccountEarnings | undefined }) {
 function Unattributed({ e }: { e: AccountEarnings }) {
   if (e.unattributed_usd == null || Math.abs(e.unattributed_usd) < 0.01) return null
   const missing = e.bots_without_record.length
+  // 🔴 `=== false`, never falsy. An older payload carries no such field, and reading a missing
+  // one as "the record is behind" would put a caveat on every split that never needed it.
+  const provisional = e.records_live === false
   return (
-    <div className="flex items-center gap-[10px] px-4 py-[9px] border-t border-border-subtle bg-bg-sunken/40">
-      <span className="text-[11px] text-text-tertiary">Not from these bots</span>
-      <span className={`text-[12px] font-mono tabular-nums ${pnlCls(e.unattributed_usd)}`}>
-        {money(e.unattributed_usd)}
-      </span>
-      <span className="text-[10.5px] text-text-tertiary">
-        {missing > 0
-          ? `— a manual fill, a deposit, or ${missing === 1 ? 'a bot whose record has' : `${missing} bots whose records have`} not arrived`
-          : '— a manual fill, a deposit, or a trade older than the record'}
-      </span>
+    <div className="flex flex-col gap-[3px] px-4 py-[9px] border-t border-border-subtle bg-bg-sunken/40">
+      <div className="flex items-center gap-[10px]">
+        <span className="text-[11px] text-text-tertiary">Not from these bots</span>
+        <span className={`text-[12px] font-mono tabular-nums ${pnlCls(e.unattributed_usd)}`}>
+          {money(e.unattributed_usd)}
+        </span>
+        <span className="text-[10.5px] text-text-tertiary">
+          {missing > 0
+            ? `— a manual fill, a deposit, or ${missing === 1 ? 'a bot whose record has' : `${missing} bots whose records have`} not arrived`
+            : '— a manual fill, a deposit, or a trade older than the record'}
+        </span>
+      </div>
+      {provisional && e.attribution_note && (
+        <span className="text-[10.5px] text-gold-text">{e.attribution_note}</span>
+      )}
     </div>
   )
 }

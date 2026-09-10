@@ -6043,3 +6043,87 @@ it never measured, asserting only that a cancelled phase reports cancelled. **Ch
 inputs can distinguish the behaviours it names** — this file has now recorded that four times.
 ⚠ **The existing cancel test is pinned to ONE worker**, where the *stops on the very next shift*
 guarantee is exact; asserting it against six would simply be wrong.
+
+---
+
+## 🔴 Two halves of one subtraction, read off two different CLOCKS (2026-09-09)
+
+The Bots page reports what each bot MADE and, under it, the account's growth that no bot
+recorded. That remainder is a subtraction — **and its two sides were read at different moments.**
+The balance comes off `bot_state.json` over SSH and is seconds old. The bots' realised results came
+off the committed archive on THIS machine, which is behind by however long ago the box last
+COMMITTED *and* this machine last PULLED — **MEASURED at 66 minutes on 2026-09-09, with no upper
+bound at all, because nothing here pulls on a schedule.**
+
+🔴 **So a trade closed inside that gap sat in the balance and in NO bot's row**: that bot
+under-reported by exactly its profit and the remainder over-reported by the same amount. It
+happened — the extreme leg's **$1,305.58** target rendered under *"a manual fill, a deposit, or a
+trade older than the record"*, three real causes, none of them true. **A stale read and a real
+attribution gap were the same pixel**, and nothing on screen could separate them.
+
+### Two fixes, and neither is sufficient alone
+
+**(1) The box's OWN ledger rides on the snapshot's existing connection.** `_fetch_vps_snapshot`
+adds one `findstr` per bot per month; `_parse_live_trades` reads it back; `read_bot_ledger` merges
+it OVER the archive, deduped by `(ticket, ts)`. The two halves then share a clock. ✅ **DRIVEN
+against the live box, not only tested**: both bots read `live`, the $1,305.58 landed on the extreme
+leg, and `attributed + unattributed` reconciles to `net` to the cent — with the remainder unchanged
+at the **$3,344.80** measured on 2026-09-05, which is the real gap and not this trade.
+
+**(2) When the box cannot answer, the page SAYS the split is provisional.** `records_live`, a
+measured `attribution_lag_seconds`, and a sentence. ✅ **Driven on the real archive with the live
+read withheld: 80 minutes, stated.** That is the half that survives a dead VPS, and it is what makes
+the four causes of a remainder distinguishable at all.
+
+⚠ **The archive stays the BASE and the box is a TOP-UP.** The live window is bounded by month, so
+it cannot reach an older trade; the archive cannot reach a newer one. Each holds what the other
+cannot, which is why the UNION is taken rather than the fresher source preferred.
+
+⚠ **`live_trades=None` and `live_trades=[]` are different facts** — *the box was not asked* against
+*it answered and there were none*, which is the ordinary state of a bot that has not traded this
+month. Rule 1, and the reason the argument is not a plain list: collapsing them prints a confident
+split off a record that may be an hour behind.
+
+⚠ **`records_through` is an INSTANT and `records_to` is a DAY.** The day comes from the filename,
+so today's file always read as *recorded through today* while the newest line inside it could be an
+hour old — **what was REQUESTED of the archive reported as what arrived** (rule 3). `_newest_ts`
+walks BACKWARDS from the end, bounded to 20 lines (a live bot is appending, so the final line is
+routinely torn), and answers `None` rather than fabricating an instant.
+
+⚠ **`findstr /c:pnl_usd`, an unquoted token, and only a CLOSED trade carries that field** — checked
+against the whole archive rather than assumed. A pattern with no spaces or quotes survives the trip
+through the local shell and cmd unmangled, which the obvious `"kind": "trade"` does not. It is a
+PREFILTER; the parsed fields still decide, the same rule the archive reader follows.
+
+⚠ **A `findstr` hit is prefixed with its file path, and a Windows path carries a drive colon** — so
+the JSON is found by its opening BRACE, never by splitting on a separator. A filename cannot contain
+one.
+
+⚠ **Bounded by MONTH rather than one wildcard over the folder.** Both bots' whole trade history is
+**6 rows / 3.1 KB** today, so a full read would be free — and it grows with every trade for ever, on
+an endpoint the page POLLS. A month window stays the same size whatever the history reaches.
+`_LIVE_LEDGER_MONTHS` is 2, measured against the thing that creates the gap: the box-side half is
+under an hour, and a clone that has not pulled in two months has more wrong with it than a P&L.
+
+⚠ **The account reports the WORST lag, never the average.** The question is whether ANY trade could
+be missing, so one bot an hour behind makes the whole split provisional however fresh its neighbour
+is — and an average buries exactly the bot the reader needs to know about.
+
+⚠ **A lag that cannot be measured is `None`, never `0.0`.** Zero is the most reassuring answer
+available and here it is the one that cannot be supported.
+
+**Tests:** 11 in `tests/test_bot_earnings.py` (24) + 6 in `tests/test_bots_snapshot_parse.py` (13).
+⚠ **Non-vacuity by MUTATION: 18 written, 18 RUN, 18 killed**, and re-run after `ruff format` because
+a reformat invalidates a patch string and a BADPATCH reads exactly like a survivor.
+
+🔴 **ONE SURVIVED FIRST, AND IT WAS THE TEST READING THE PROSE RATHER THAN THE CODE.** Two checks
+grepped `inspect.getsource(_fetch_vps_snapshot)` for `findstr /c:pnl_usd` — **and that string is
+also in the COMMENT above the line**, so replacing the entire filter with `type` left them GREEN.
+They drive the real fetch with `_ssh` stubbed and assert on the COMMAND now. **A test that greps a
+function's source is reading its explanation as readily as its code** — the same trap
+`test_deploy_commit_gate.py`'s `--no-verify` guard hit on its own docstring.
+
+⚠ **The fetch/parse pairing is the one that fails in SILENCE**, so it is checked by ROUND TRIP —
+the real fetch answered the way the box answers, then parsed. A section fetched under one name and
+looked for under another is always absent, which is indistinguishable from a box that could not be
+reached: the exact state this whole read exists to move away from.
