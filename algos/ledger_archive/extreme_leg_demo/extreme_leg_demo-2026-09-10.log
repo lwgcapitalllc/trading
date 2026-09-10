@@ -11,3 +11,17 @@
 2026-09-10 13:55:39,500 [INFO] Warmed 15000 bars (2026-06-25 23:25:00+00:00 → 2026-09-10 13:50:00+00:00) in 7.5s
 2026-09-10 13:55:39,500 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
 2026-09-10 13:55:40,844 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-10 15:53:02,648 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-10 15:53:02,648 [INFO] Stop requested — shutting down.
+2026-09-10 15:53:02,648 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-10 15:53:03,378 [INFO] MT5 disconnected.
+2026-09-10 15:53:14,883 [INFO] Extreme Leg | ExtremeLegStrategy v218 | hash 3110a112b947 | commit 74e5ba7a | frozen | LIVE
+2026-09-10 15:53:15,505 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-10 15:53:15,505 [INFO] MT5 connection lock released
+2026-09-10 15:53:15,818 [INFO] Sizing against account balance $15,844.46
+2026-09-10 15:53:15,818 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-10 15:53:15,833 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-10 15:53:22,247 [INFO] Warmed 15000 bars (2026-06-26 01:20:00+00:00 → 2026-09-10 15:45:00+00:00) in 6.1s
+2026-09-10 15:53:22,247 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-10 15:53:23,090 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-10 15:56:03,980 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json.5328.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json'
