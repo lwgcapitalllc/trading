@@ -77,8 +77,10 @@ import sys
 
 # The mutation runs point this at a deliberately-broken copy. Nothing else sets it, and the
 # default is the real hook -- so a normal run tests the real thing.
+# ⚠ The hook BESIDE this file, never one machine's path - a clone elsewhere tests its own hook.
 HOOK = os.environ.get(
-    "LWG_HOOK_UNDER_TEST", "/Users/alwg/trading/.claude/hooks/block_hook_bypass.py"
+    "LWG_HOOK_UNDER_TEST",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "block_hook_bypass.py"),
 )
 
 BLOCKED = 2

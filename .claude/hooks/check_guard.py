@@ -70,10 +70,14 @@ import subprocess
 import sys
 import tempfile
 
-HOOK = "/Users/alwg/trading/.claude/hooks/guard_sensitive_paths.py"
-BIG = "/Users/alwg/trading/command-center/backend/CLAUDE.md"
-SMALL = "/Users/alwg/trading/engines/vwap/CLAUDE.md"
-LIVE = "/Users/alwg/trading/algos/live/runner.py"
+# The repo this file sits in, never one machine's path - a clone elsewhere must read ITS files.
+# ⚠ The guard maps a path into the repo by the "/trading/" in it (`relative()`), so the case
+# paths below assume the clone's folder is named `trading`, which a default clone of this repo is.
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+HOOK = f"{REPO}/.claude/hooks/guard_sensitive_paths.py"
+BIG = f"{REPO}/command-center/backend/CLAUDE.md"
+SMALL = f"{REPO}/engines/vwap/CLAUDE.md"
+LIVE = f"{REPO}/algos/live/runner.py"
 
 CEILING = 40_000  # what guard_sensitive_paths.py calls oversized
 
@@ -151,7 +155,7 @@ CASES = [
     (
         "a Write that CREATES an oversized CLAUDE.md",
         {
-            "file_path": "/Users/alwg/trading/engines/vwap/nosuchdir/CLAUDE.md",
+            "file_path": f"{REPO}/engines/vwap/nosuchdir/CLAUDE.md",
             "content": "q" * 50_000,
         },
         lambda s: "CREATES" in s and "already over" in s,
@@ -164,7 +168,7 @@ CASES = [
     (
         "deployed snapshot still escalates",
         {
-            "file_path": "/Users/alwg/trading/algos/markets/fx/instances/x/deployed/config.py",
+            "file_path": f"{REPO}/algos/markets/fx/instances/x/deployed/config.py",
             "old_string": "a",
             "new_string": "b",
         },
@@ -190,7 +194,7 @@ CASES = [
     (
         "Pine ENGINE source is not a canonical Python engine",
         {
-            "file_path": "/Users/alwg/trading/indicators/engines/fib_export.pine",
+            "file_path": f"{REPO}/indicators/engines/fib_export.pine",
             "old_string": "a",
             "new_string": "b",
         },
@@ -199,7 +203,7 @@ CASES = [
     (
         "Pine STRATEGY source under strategies/ gets BOTH reminders",
         {
-            "file_path": "/Users/alwg/trading/strategies/tradingview/sos_fade_strategy.pine",
+            "file_path": f"{REPO}/strategies/tradingview/sos_fade_strategy.pine",
             "old_string": "a",
             "new_string": "b",
         },
@@ -208,7 +212,7 @@ CASES = [
     (
         "a real canonical engine still gets its reminder",
         {
-            "file_path": "/Users/alwg/trading/engines/vwap/engine.py",
+            "file_path": f"{REPO}/engines/vwap/engine.py",
             "old_string": "a",
             "new_string": "b",
         },
@@ -217,7 +221,7 @@ CASES = [
     (
         "a real deployed strategy still gets its reminder",
         {
-            "file_path": "/Users/alwg/trading/strategies/python/sos_fade/config.py",
+            "file_path": f"{REPO}/strategies/python/sos_fade/config.py",
             "old_string": "a",
             "new_string": "b",
         },

@@ -383,6 +383,13 @@ the committed CSV was taken from the old one.
 ⚠ **It does not prove the harness is RIGHT**, only that it matches its sources — rule 14 again. What
 proves it right is `compare_fvg.py` going green on a real export.
 
+🔴 **It — and steps 6 and 13 — read `/Users/alwg/trading` from ANY clone until 2026-09-10.** A
+typed repo path: on another machine all three fail to start, and in a second clone on this one
+they certify the WRONG checkout. **Proven in a worktree elsewhere — each passed with its own subject
+broken**, and goes red once it reads its own clone. All three derive the repo from their own file
+now. ⚠ **Never type a repo path into a check.** ⚠ The guard itself still finds its place in the
+repo by the `/trading/` in a path, so a clone must keep that folder name — a default clone does.
+
 ### Step 18 — the Pine export twins are build artifacts too (2026-09-10)
 
 `strategies/tradingview/tools/build_export_twins.py --check`: each `_export.pine` twin must be its

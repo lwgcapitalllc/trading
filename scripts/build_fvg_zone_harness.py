@@ -32,7 +32,9 @@ Standard library only. Step of scripts/run_all_tests.sh.
 
 from pathlib import Path
 
-REPO = Path("/Users/alwg/trading")
+# This clone's root, never one machine's path: until 2026-09-10 this read /Users/alwg/trading from
+# ANY clone, so a copy elsewhere failed step 16 - or, on this Mac, checked a different checkout.
+REPO = Path(__file__).resolve().parents[1]
 FIB = (REPO / "indicators/engines/fib_export.pine").read_text().splitlines()
 FVG = (REPO / "indicators/engines/fvg_export.pine").read_text().splitlines()
 

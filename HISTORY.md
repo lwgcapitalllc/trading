@@ -21,6 +21,19 @@ the other one did.
 
 ## Latest
 
+### Three suite steps were checking this Mac's checkout from any clone (2026-09-10)
+
+Found while modelling the twin builder on step 16's generator, which opened with
+`REPO = Path("/Users/alwg/trading")`. Steps 6 (the doc-size guard's check) and 13 (the bypass hook's
+check) typed the same path. On any other machine all three fail to start; in a second clone on
+this one they read — and certify — this checkout instead of their own.
+
+**Proven rather than argued.** In a worktree at a different path, the doc-size guard was replaced by
+a script that does nothing, the bypass hook by one that allows everything, and the zone harness was
+drifted by a line — and all three checks, as committed, PASSED. Fixed, each reads its own clone and
+goes red on exactly that. ⚠ The guard itself still maps a path into the repo by the `/trading/` in
+it, so a clone has to keep that folder name, which a default clone does.
+
 ### The export twins stopped being copies (2026-09-10)
 
 Each Pine export twin is its parent strategy — 1,100 to 4,300 lines — with " Export" on the title
