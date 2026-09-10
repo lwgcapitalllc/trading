@@ -85,6 +85,17 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
           result. Each phase replays the whole set together, never one strategy at a time.
         </p>
 
+        {/* The request still asks for sensitivity; the SERVER decides whether it runs, because the
+            evidence (each bot's risk share, the cap, and whether the stack's own run ever hit it)
+            lives there. A second copy of that rule here is how the page and the run come to
+            describe different tests. */}
+        <p data-testid="stack-nudge-rule" className="text-xs text-text-secondary leading-relaxed">
+          Setting nudges run only when these bots can compete for risk — their shares add up past
+          the cap, one trades off another&rsquo;s results, or the stack&rsquo;s own run lost a trade
+          to the cap or cut one by more than 1%. Otherwise each bot&rsquo;s own stress test already
+          covers its settings, and the server skips them and says why.
+        </p>
+
         {options.length ? (
           <div className="space-y-1.5">
             <p className="text-xs text-text-secondary">

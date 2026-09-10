@@ -93,6 +93,20 @@ def read_shared_summary(stack_id: str) -> Optional[dict]:
         return None
 
 
+def read_contention(stack_id: str) -> Optional[list]:
+    """Every entry the shared run's cap trimmed or refused, or None when that record is not there.
+
+    ⚠ **`[]` and `None` are different answers and this is the function that keeps them apart.**
+    `[]` is a MEASUREMENT — the cap never bound — and the stress tester skips a whole phase on it.
+    `None` is absent, unreadable or not a list, and must never be read as *never bound*.
+    """
+    try:
+        v = json.loads((stack_dir(stack_id) / "contention.json").read_text())
+    except Exception:  # noqa: BLE001 — absent or unreadable, same answer here
+        return None
+    return v if isinstance(v, list) else None
+
+
 def launch(stack_id: str, legs: list[dict], settings: dict) -> None:
     """Fire the shared replay as a background task, holding a strong reference to it."""
     task = asyncio.create_task(run_shared_stack(stack_id, legs, settings))

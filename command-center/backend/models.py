@@ -2442,6 +2442,11 @@ class StressTest(BaseModel):
     # grading read both as not-run, so a failed phase cost the test nothing and left no mark.
     phases_requested: Optional[list[str]] = None
     phase_failures: Optional[dict[str, str]] = None
+    # Why a STACK's setting nudges were NOT run, in words — its bots cannot compete for risk, so a
+    # nudge to one moves only that bot's trades. Null when they ran or were never asked for. It
+    # must be declared here or Pydantic drops it on the way to the page, which would show a
+    # skipped phase exactly like an unrequested one.
+    sensitivity_skipped: Optional[str] = None
     grade: Optional[str] = None
     grade_reasons: Optional[list[str]] = None
     equity_paths_path: Optional[str] = None

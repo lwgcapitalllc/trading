@@ -17,6 +17,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from datetime import date, timedelta
 from itertools import zip_longest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
 
 import numpy as np
@@ -1009,6 +1010,172 @@ def stack_sensitivity_preview(stack_id: str) -> dict:
         "minutes": max(1, int(math.ceil(wall))),
         "legs": len(legs),
     }
+
+
+# A stack walk-forward costs this many full-history replays.
+#
+# ⚠ **MEASURED ONCE, on the live pairing, 2026-09-10.** Its ten window replays (five windows, in
+# and out of sample) took **251.7s** against **182.6s** for one full-history replay. The windows
+# tile the history exactly once, so the excess is each window warming its engines from cold — the
+# first window alone paid ~27s of it. Used only until this stack's own walk-forward has been timed.
+_STACK_WF_REPLAYS = 1.38
+
+
+def stack_walk_forward_minutes(stack_id: str) -> int:
+    """What a stack's walk-forward will take, in minutes.
+
+    🔴 **It replaced the single-run constant, which quoted 2 minutes for a 4.2-minute job.** That
+    constant prices a python run as ten small child jobs; a stack walk-forward is ten whole-stack
+    replays, one after another, in this process.
+
+    ⚠ **Measured if this stack has ever been walked forward**, off the phase's own timestamps.
+    Otherwise one replay's cost (measured if a nudge phase ever timed one, derived from the run
+    rows if not) times `_STACK_WF_REPLAYS`. Same order as the nudge estimate: a measurement cannot
+    drift the way arithmetic off an old run row does.
+    """
+    measured = lab_db.last_stack_wf_seconds(stack_id)
+    if measured:
+        return max(1, int(math.ceil(measured / 60.0)))
+    replay = lab_db.last_stack_replay_seconds(stack_id)
+    if replay:
+        per_replay = replay / 60.0
+    else:
+        rows = lab_db.list_stack_runs(stack_id)
+        legs = [{"source": r.get("stack_source")} for r in rows]
+        per_replay = _stack_replay_minutes(rows, legs)
+    return max(1, int(math.ceil(per_replay * _STACK_WF_REPLAYS)))
+
+
+# ── Does a stack need setting nudges of its OWN? ──────────────────────────────
+
+# The largest trim, as a fraction of the trade it trimmed, that still counts as the bots NOT
+# competing.
+#
+# ⚠ **A DECISION, not a measurement, and stated so it can be moved on purpose.** When the shares
+# fit the cap exactly (5% + 5% under 10%), a trim can still happen: one bot's open risk is a fixed
+# dollar amount, so if the balance falls while it is holding, that amount becomes a bigger share
+# of the balance and the other bot's room comes up a little short. MEASURED on the live pairing
+# (6.6 years, 361 trades): ONE trim, $8.61 of a $16,979 trade — 0.05%. That is two bots sharing a
+# budget, not taking turns. 1% leaves room for that effect and still sends anything that cuts a
+# real slice off a trade to the full test.
+_STACK_TRIM_IMMATERIAL = 0.01
+
+
+def stack_nudges_needed(stack_id: str) -> tuple[bool, str]:
+    """Would nudging each bot's settings INSIDE this stack tell us anything its own test cannot?
+
+    Returns `(needed, reason)`. The reason is written for the page either way.
+
+    🔴 **THE SAVING RESTS ON ONE FACT, AND THIS CHECKS THE FACT RATHER THAN ASSUMING IT.** A
+    stack's setting nudges are its slowest part, ~42 minutes on the live pairing. When the bots
+    cannot get in each other's way, a nudge to one bot moves only that bot's trades — which is
+    exactly what that bot's own stress test already measures, at a fraction of the cost. So the
+    nudges are skipped when, and only when, all of these hold (Aaron's call, 2026-09-10):
+
+    - no leg arms off another leg's trades — a dependent leg moves when its parent's settings do,
+      and no single-bot test can see that;
+    - every bot's risk share is readable and together they fit under the cap, through the SAME
+      check the Bots page and the copy-to-demo button use (`bot_accounts.share_overflow`) — over
+      the cap the bots take turns, and which trades happen depends on all of them;
+    - the stack's own run lost no trade to the cap, and trimmed none by more than
+      `_STACK_TRIM_IMMATERIAL` — the arithmetic says they CAN fit, and the run says they DID.
+
+    ⚠ **Anything that cannot be read answers NEEDED** (rule 1). An unreadable share is not a share
+    of zero, and a missing record of the cap binding is not a record of it never binding — skipping
+    on either would put the fast answer on exactly the stack nobody checked.
+
+    ⚠ **It also skips the stack's own ACCOUNT settings** (the cap, the starting balance, the
+    smallest position), which the full test nudges first. Nudging the cap down on a stack whose
+    shares fit it exactly manufactures the competition this function just ruled out, so the answer
+    describes an account nobody is running.
+    """
+    from services import portfolio_runner
+    from services.bot_accounts import risk_pct_of, share_overflow
+
+    settings = lab_db.get_stack_settings(stack_id) or {}
+    rows = lab_db.list_stack_runs(stack_id)
+    if not rows:
+        return True, "this stack has no legs to read, so the setting nudges run in full"
+
+    # A recorded parent, OR a strategy that needs one and has none recorded — the same two-sided
+    # test `gradable.rebuild_legs` makes, since a NULL source alone cannot tell an independent leg
+    # from a dependency stored before the column existed.
+    dependent = [
+        r.get("strategy_id") or "?"
+        for r in rows
+        if r.get("stack_source")
+        or (lab_db.get_strategy(r.get("strategy_id") or "") or {}).get("requires_source")
+    ]
+    if dependent:
+        return True, (
+            f"{', '.join(dependent)} trades off another leg's results, so nudging that leg moves "
+            f"both — only a whole-stack test can see it"
+        )
+
+    cap = settings.get("risk_cap_pct")
+    if isinstance(cap, bool) or not isinstance(cap, (int, float)):
+        return True, "this stack records no readable risk cap, so the setting nudges run in full"
+
+    bots = [
+        SimpleNamespace(
+            key=r.get("strategy_id") or "?",
+            display=r.get("strategy_id") or "?",
+            risk_pct=risk_pct_of({"strategy_params": r.get("params") or {}}),
+            unreadable=False,
+        )
+        for r in rows
+    ]
+    unreadable = sorted(b.key for b in bots if b.risk_pct is None)
+    if unreadable:
+        return True, (
+            f"the risk per trade of {', '.join(unreadable)} cannot be read, so it cannot be "
+            f"ruled out that the bots compete for risk"
+        )
+    shares = " + ".join(f"{b.risk_pct:g}%" for b in bots)
+    if share_overflow(bots, float(cap)) is not None:
+        return True, (
+            f"the bots' risk shares ({shares}) add up to more than the {float(cap):g}% cap, so "
+            f"they take turns and which trades happen depends on all of them"
+        )
+
+    summary = portfolio_runner.read_shared_summary(stack_id)
+    events = portfolio_runner.read_contention(stack_id)
+    if summary is None or events is None or summary.get("contention_events") != len(events):
+        return True, (
+            "the stack's own run left no readable record of whether the cap ever bound, so the "
+            "setting nudges run in full"
+        )
+    blocked = [e for e in events if e.get("blocked")]
+    if blocked:
+        return True, (
+            f"the stack's own run lost {len(blocked)} trade{'s' if len(blocked) != 1 else ''} "
+            f"to the cap, so the bots do compete for risk"
+        )
+    trims = [
+        (float(e["desired_risk"]) - float(e["granted_risk"])) / float(e["desired_risk"])
+        for e in events
+        if isinstance(e.get("desired_risk"), (int, float))
+        and isinstance(e.get("granted_risk"), (int, float))
+        and e["desired_risk"] > 0
+    ]
+    if len(trims) != len(events):
+        return True, (
+            "a record of the cap binding in the stack's own run cannot be read, so the setting "
+            "nudges run in full"
+        )
+    worst = max(trims, default=0.0)
+    if worst > _STACK_TRIM_IMMATERIAL:
+        return True, (
+            f"the stack's own run cut a trade by {worst:.1%} to fit the cap, so the bots do "
+            f"compete for risk"
+        )
+
+    trimmed = f" and trimmed {len(trims)} by at most {worst:.2%}" if trims else " and trimmed none"
+    return False, (
+        f"the bots' risk shares ({shares}) fit the {float(cap):g}% cap, and the stack's own run "
+        f"lost no trade to it{trimmed} — so nudging one bot's settings moves only that bot's "
+        f"trades. Test those on each bot's own stress test"
+    )
 
 
 # How much faster N workers actually finish N replays, as a fraction of N.

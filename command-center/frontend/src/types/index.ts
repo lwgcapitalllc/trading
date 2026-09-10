@@ -1570,6 +1570,10 @@ export interface StressTest {
    *  was not requested" from "walk-forward ran and crashed" — a null summary means both. */
   phases_requested: string[] | null
   phase_failures: Record<string, string> | null
+  /** Why a STACK's setting nudges were NOT run, in words — its bots cannot compete for risk, so a
+   *  nudge to one moves only that bot's trades. Null when they ran, or were never asked for. It is
+   *  what separates "skipped on evidence" from "not requested", which render the same without it. */
+  sensitivity_skipped: string | null
   grade: 'A' | 'B' | 'C' | 'D' | 'F' | null
   grade_reasons: string[] | null
   equity_paths_path: string | null

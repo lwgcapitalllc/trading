@@ -4631,3 +4631,22 @@ outlive its reason.
 ⚠ **It was checked in BOTH directions**, and that is the half that matters: disabled with the real
 reason on a stack with no combined book, **enabled with no reason on one that has it**. An
 always-disabled button passes the first check on its own and looks identical.
+
+### A stack's setting nudges can be SKIPPED, and the page says so (2026-09-10)
+
+The server skips a stack's setting nudges when its bots cannot compete for risk (rule and evidence:
+`../backend/CLAUDE.md` → *A stack's setting nudges run ONLY when its bots can compete for risk*).
+
+⚠ **`RunStackStressTestModal` still SENDS `include_sensitivity: true`** and states the rule in
+words; it carries no copy of the check. The evidence lives on the server, and a second copy here is
+how the page and the run come to describe different tests.
+
+🔴 **A skipped phase is never simply absent.** Dropped from the pipeline, it would draw exactly like
+a test where nobody asked — so `StressTestDetail` shows a Sensitivity step marked *Not needed* (its
+own icon: a tick says it ran, an empty circle says it is still to come) with the server's sentence
+under it (`sens-skipped`). ⚠ **A graded test already carries that sentence in its grade reasons**,
+so the reasons card adds it (`sens-skipped-reason`) only when there are none — a test graded against
+no ruleset would otherwise say nothing, and a second line would say it twice.
+
+⚠ **No Playwright check** — out of the gate by design. Typecheck, lint and the theme check are
+green; the backend half is pinned by 22 tests and 26 killed mutations.

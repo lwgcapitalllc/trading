@@ -165,6 +165,23 @@ async def trigger_stress_test(body: StressTestCreate):
     except gradable.NotGradable as exc:
         raise HTTPException(exc.status, exc.reason) from exc
 
+    # 🔴 A STACK'S SETTING NUDGES RUN ONLY WHEN ITS BOTS CAN COMPETE FOR RISK (Aaron's call,
+    # 2026-09-10). Otherwise a nudge to one bot moves only that bot's trades, which its own stress
+    # test already measures — and on the live pairing that phase was ~42 of the test's minutes.
+    # Decided HERE, once, so the estimate, the platform check, the recorded phases and the task all
+    # read the same answer; the reason is stored on the row so the page and the grade can say why.
+    #
+    # ⚠ **The request still says `include_sensitivity: true` and the server narrows it.** The
+    # evidence (shares, cap, the stack's own cap record) lives here, not in the browser, and a
+    # second copy of the rule in the page is the drift this app keeps paying for.
+    include_sensitivity = body.include_sensitivity
+    sensitivity_skipped: Optional[str] = None
+    if target.is_stack and include_sensitivity:
+        needed, why = stress_tester.stack_nudges_needed(target.target_id)
+        if not needed:
+            include_sensitivity = False
+            sensitivity_skipped = why
+
     # ✅ BOTH deep phases are built for a stack now — walk-forward on 2026-09-06, sensitivity on
     # 2026-09-07. Each replays the WHOLE stack on one account rather than picking a leg out of it.
     #
@@ -173,7 +190,7 @@ async def trigger_stress_test(body: StressTestCreate):
     # and replaying without it would drop that leg in silence and grade the account one strategy
     # short. Asked here so the answer is a 400 naming the reason rather than a phase that fails
     # ten minutes in.
-    if target.is_stack and (body.include_walk_forward or body.include_sensitivity):
+    if target.is_stack and (body.include_walk_forward or include_sensitivity):
         try:
             gradable.rebuild_legs(target.target_id)
         except gradable.NotGradable as exc:
@@ -222,7 +239,7 @@ async def trigger_stress_test(body: StressTestCreate):
     if locks[market]:
         raise HTTPException(409, f"A {market} stress test is already running")
 
-    if (body.include_walk_forward or body.include_sensitivity) and lab_db.has_running_job(runner):
+    if (body.include_walk_forward or include_sensitivity) and lab_db.has_running_job(runner):
         raise HTTPException(
             409,
             f"An {'MT5' if runner == 'mt5' else 'NT8'} job is already running — walk-forward and sensitivity require the platform to be idle",
@@ -250,14 +267,13 @@ async def trigger_stress_test(body: StressTestCreate):
             "num_simulations": body.num_simulations,
             "num_bootstrap": body.num_bootstrap,
             "walk_forward_windows": body.walk_forward_windows,
-            "phases_requested": phases_requested(
-                body.include_walk_forward, body.include_sensitivity
-            ),
+            "phases_requested": phases_requested(body.include_walk_forward, include_sensitivity),
+            "sensitivity_skipped": sensitivity_skipped,
         }
     )
 
     task = asyncio.create_task(
-        run_stress_test_task(st_id, body.include_walk_forward, body.include_sensitivity)
+        run_stress_test_task(st_id, body.include_walk_forward, include_sensitivity)
     )
     # Hold a strong reference. `asyncio.create_task` alone does NOT keep one — the loop only holds
     # the task while a callback of its is scheduled, so a long-awaiting background task is
@@ -269,17 +285,28 @@ async def trigger_stress_test(body: StressTestCreate):
     est_min = 0
     notes = []
     warnings: list[str] = []
-    if body.include_walk_forward:
+    if body.include_walk_forward and target.is_stack:
+        # ⚠ A stack's windows are whole-stack replays run one after another in this process, not
+        # small child jobs — the constant below quoted 2 minutes for a measured 4.2 on the live
+        # pairing. Measured off this stack's last walk-forward when there is one.
+        wf_min = stress_tester.stack_walk_forward_minutes(target.target_id)
+        est_min += wf_min
+        notes.append(
+            f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} whole-stack replays, "
+            f"one after another)"
+        )
+    elif body.include_walk_forward:
         wf_min = _estimate_wf_duration_min(body.walk_forward_windows, runner)
         est_min += wf_min
         notes.append(f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} backtests)")
+    if body.include_walk_forward:
         # A walk-forward whose windows cannot each hold enough trades is arithmetic, not luck —
         # it is knowable BEFORE 10 backtests run, and it caps the grade at B when it lands. Saying
         # so up front is the difference between an unassessable result and a wasted hour.
         feasible, why = walk_forward_feasibility(trade_count, body.walk_forward_windows)
         if not feasible:
             warnings.append(why)
-    if body.include_sensitivity and target.is_stack:
+    if include_sensitivity and target.is_stack:
         # ⚠ A stack's estimate is built by RUNNING THE PLANNER, not by multiplying a param count
         # by a shift count. The plan is already decided — which settings, in which order, and
         # where the replay budget runs out — so quoting anything else here would describe a
@@ -303,7 +330,7 @@ async def trigger_stress_test(body: StressTestCreate):
                 f"{', '.join(preview['out_of_budget'][:6])}"
                 + ("…" if len(preview["out_of_budget"]) > 6 else "")
             )
-    elif body.include_sensitivity:
+    elif include_sensitivity:
         # Count only the params sensitivity actually perturbs (numeric, non-foundational, and
         # REACHABLE — not behind a switch this run has off) and use the runner's real shift count
         # (MT5 = 2, NT8/python = 4) — both via the shared helpers, so the estimate can't drift
@@ -322,6 +349,8 @@ async def trigger_stress_test(body: StressTestCreate):
             f"Sensitivity: at most ~{sens_min} min ({n_backtests} backtests before "
             f"no-op shifts are skipped)"
         )
+    if sensitivity_skipped:
+        notes.append(f"Setting nudges skipped: {sensitivity_skipped}")
 
     return {
         "stress_test_id": st_id,
