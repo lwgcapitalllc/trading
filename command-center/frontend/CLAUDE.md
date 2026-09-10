@@ -2854,7 +2854,8 @@ check → Stop bot → Start bot → Running vY.
 - 🔴 **Steps come from the backend job, never a timer.** A step's bar is full or empty; the active
   one carries a travelling band (`animate-step-sweep`, in `index.css` so it hot-reloads). The last
   step is a MEASUREMENT (the restarted bot reporting the deployed code); `unconfirmed` renders
-  amber, never green.
+  amber, never green. ⚠ **ONE spinner, on the heading** — the active step's icon is a still dot,
+  because its band already moves (Aaron: *"I don't need a spinner and a progress bar"*).
 - ⚠ **The job is read BY BOT (`usePromoteJob`)**, so a drawer reopened mid-deploy shows the running
   deploy instead of a Deploy button over it. The render-time adopt line is what does it — a
   `running ||` beside it was unreachable (a mutation deleting it survived) and was removed.
@@ -2864,10 +2865,13 @@ check → Stop bot → Start bot → Running vY.
   prose to decide.
 - `usePreviewPromote` / `usePromoteBot` were deleted with no consumer left. The endpoints stay: the
   trading-box MCP calls them.
-- ✅ `tests/bots-version.spec.ts` → 22 checks; the deploy ones run a scripted job that advances one
-  step per poll, behind `refuseLiveWrites`. **6 mutations run, 6 killed.** ⚠ The first full run had
+- ✅ `tests/bots-version.spec.ts` → 23 checks; the deploy ones run a scripted job that advances one
+  step per poll, behind `refuseLiveWrites`. **7 mutations run, 7 killed.** ⚠ The first full run had
   4 failures that did not reproduce in 55 later runs — concurrent backend reloads suspected, not
-  confirmed.
+  confirmed. 🔴 **A check about the panel MID-deploy must HOLD the job on a step (`holdAt`)** — the
+  spinner check first raced a job advancing every second and went red on the wrong line under its
+  mutation: the deploy had finished, so neither spinner was on screen and the real assertion passed
+  for free.
 
 🔴 **The version row on `DeployCard` read `v0`, and it always would have** —
 `strategy_version` defaulted to 0 in `algos/live/live_config.py` and nothing wrote it. (Fixed at

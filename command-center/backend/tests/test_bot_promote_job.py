@@ -7,7 +7,9 @@ are entered in the order the work actually happens, a step that never ran never 
 and a failure says what state it left the bot in, which depends on the step it hit.
 """
 
+import ast
 import subprocess
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -27,6 +29,24 @@ NEW = {
     "started": 2000.0,
     "last_updated": "2026-09-10T10:01:30+00:00",
 }
+
+
+def _deployed_record(hash_: str) -> dict:
+    """A `deployed.json` in the shape `algos/tools/promote.py::write_pin` writes it — every field,
+    under its real name. 🔴 The first fixture here returned `{"hash": ...}`, a key promote.py
+    never writes, and so did the code under test: the two agreed, every test was green, and the
+    confirm step could not confirm a single real deploy (2026-09-10). A fake record must be shaped
+    like the real one or it certifies code against a file that does not exist."""
+    return {
+        "strategy_source_hash": hash_,
+        "promoted_commit": "74e5ba7a",
+        "promoted_at": "2026-09-10",
+        "strategy_package": "sos_fade",
+        "strategy_class": "SosFadeStrategy",
+        "strategy_version": 218,
+        "strategy_params": {},
+        "files": 161,
+    }
 
 
 @pytest.fixture
@@ -78,7 +98,7 @@ def box(monkeypatch):
     monkeypatch.setattr(bots, "_launch_bot", launch)
     monkeypatch.setattr(bots, "_job_enter", enter)
     monkeypatch.setattr(bots, "_read_run_state", read_state)
-    monkeypatch.setattr(bots, "_deployed_json", lambda k: {"hash": state["deployed_hash"]})
+    monkeypatch.setattr(bots, "_deployed_json", lambda k: _deployed_record(state["deployed_hash"]))
     monkeypatch.setattr(bots, "_notify_telegram", lambda *_a, **_k: None)
     monkeypatch.setattr(bots, "_set_alert_thread", lambda *_a, **_k: True)
     monkeypatch.setattr(bots._time, "sleep", lambda *_a: None)
@@ -358,7 +378,7 @@ def test_a_failed_read_mid_wait_is_a_blip_not_a_verdict(box):
 def test_an_unreadable_deployed_hash_is_asked_again_rather_than_giving_up(box, monkeypatch):
     """Without the deployed hash nothing can confirm, so one failed read must not doom the
     whole wait to `unconfirmed`. MUTATION: read it once before the loop → red."""
-    answers = [RuntimeError("blip"), {"hash": DEPLOYED}]
+    answers = [RuntimeError("blip"), _deployed_record(DEPLOYED)]
 
     def deployed(_k):
         a = answers.pop(0) if len(answers) > 1 else answers[0]
@@ -368,6 +388,47 @@ def test_an_unreadable_deployed_hash_is_asked_again_rather_than_giving_up(box, m
 
     monkeypatch.setattr(bots, "_deployed_json", deployed)
     box["run_states"] = [OLD, NEW]
+    bots.start_promote_job(BOT, FULL)
+    assert _states(bots.get_promote_job(BOT))["confirm"] == "done"
+
+
+def _hash_key_promote_writes() -> str:
+    """The `deployed.json` key `promote.py::write_pin` stores its HASH argument under, read out of
+    that file's own source. Parsed, not imported — `algos/` is another subsystem with its own
+    runtime, and the question is only which string it writes."""
+    src = Path(__file__).resolve().parents[3] / "algos" / "tools" / "promote.py"
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(src.read_text(encoding="utf-8")))
+        if isinstance(n, ast.FunctionDef) and n.name == "write_pin"
+    )
+    hash_arg = fn.args.args[1].arg  # write_pin(cfg, hash_, ...)
+    record = next(n for n in ast.walk(fn) if isinstance(n, ast.Dict))
+    keys = [
+        k.value
+        for k, v in zip(record.keys, record.values)
+        if isinstance(k, ast.Constant) and isinstance(v, ast.Name) and v.id == hash_arg
+    ]
+    assert len(keys) == 1, f"premise: write_pin stores `{hash_arg}` under exactly one key: {keys}"
+    return keys[0]
+
+
+def test_the_confirm_reads_the_hash_under_the_key_PROMOTE_ACTUALLY_WRITES():
+    """🔴 The confirm step read `deployed.json["hash"]` and promote.py writes the hash under a
+    different key, so on the box it got `""` and no real deploy was ever confirmed — while every
+    test here passed, because the fake record used the same invented key as the code. This test
+    asks the WRITER which key it uses, so the reader cannot drift from it again.
+    MUTATION: read `rec.get("hash")` in `_deployed_hash` → red."""
+    key = _hash_key_promote_writes()
+    assert bots._deployed_hash({key: DEPLOYED}) == DEPLOYED
+    assert bots._deployed_hash({}) == "", "a missing record must read as no hash, never a value"
+
+
+def test_a_real_shaped_record_lets_the_WHOLE_job_confirm(box, monkeypatch):
+    """End to end on a record in the writer's own shape — the path that broke on the box.
+    MUTATION: `_await_new_version` reads the record's `hash` key again → red."""
+    key = _hash_key_promote_writes()
+    monkeypatch.setattr(bots, "_deployed_json", lambda _k: {key: DEPLOYED})
     bots.start_promote_job(BOT, FULL)
     assert _states(bots.get_promote_job(BOT))["confirm"] == "done"
 

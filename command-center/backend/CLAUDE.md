@@ -2050,13 +2050,18 @@ latest job, or `null`). Built so the page can show ONE progress readout over a d
   heartbeat compared with what the old process wrote (read just before the stop) — box values
   against box values, no two clocks subtracted. Past the wait limit (48 × 5s, a LIMIT rather than a
   claim about start time) it ends `unconfirmed`, never `done`.
+- 🔴 **It could not confirm ANY real deploy for its first day** — it read the deployed hash under a
+  key `promote.py` never writes, got `""`, and every deploy waited out its four minutes while the
+  bot was already on the new code. The fixture used the same invented key, so the tests agreed with
+  the bug (rule 13). `_deployed_hash` is now the ONE reader, shared with the version card, and a
+  test takes the key from `promote.py::write_pin`'s own source.
 - ⚠ **A raised failure's `error` depends on the step it hit** (`_describe_job_failure`): *untouched*
   only for the pull, *may or may not have deployed* for a build that timed out or reported nothing
   (a structured `error`, so the page never reads promote.py's prose), *IS deployed* past the build.
 - ⚠ **A second job for the same bot while one runs is a 409**, and eviction never drops a running
   job. **In memory**: a backend restart loses the readout, never the deploy.
 - ⚠ **The browser guard refuses the POST** — it is the same action as `/promote`.
-- ✅ `tests/test_bot_promote_job.py` (22). **12 mutations run, 12 killed.**
+- ✅ `tests/test_bot_promote_job.py` (24). **15 mutations run, 15 killed.**
 
 ## Stopping a bot ASKS it to stop (2026-08-07)
 

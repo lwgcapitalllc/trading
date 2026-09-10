@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Loader2, Minus, X } from 'lucide-react'
+import { AlertTriangle, Check, Minus, X } from 'lucide-react'
 
 /**
  * ONE progress readout for a job made of named steps — a bar per step, in order, with the step
@@ -12,6 +12,11 @@ import { AlertTriangle, Check, Loader2, Minus, X } from 'lucide-react'
  *
  * ⚠ **Equal-width segments claim ORDER, not duration.** The seconds under each finished step are
  * what says how long it took.
+ *
+ * ⚠ **The active step's icon is a STILL dot, never a spinner** (Aaron, 2026-09-10: *"I don't
+ * need a spinner and a progress bar"*). The travelling band on its bar already says it is running,
+ * and a caller that wants a spinner puts ONE on its own heading — a second spinner per step is two
+ * motions saying the same thing.
  *
  * ⚠ **`skipped` is drawn differently from `done`**: a step nobody asked for, or one a failure
  * never reached, must not read as having happened. `warn` is a step that finished without the
@@ -37,7 +42,7 @@ function StepIcon({ state }: { state: StepState }) {
     case 'warn':
       return <AlertTriangle size={11} className="text-amber-400 shrink-0" />
     case 'active':
-      return <Loader2 size={11} className="text-accent shrink-0 animate-spin" />
+      return <span className="w-[6px] h-[6px] mx-[2.5px] rounded-full bg-accent shrink-0" />
     case 'skipped':
       return <Minus size={11} className="text-text-tertiary shrink-0" />
     default:

@@ -94,6 +94,10 @@ type JobPlan = {
   outcome?: 'done' | 'refused' | 'raised'
   restarted?: boolean
   confirm?: 'done' | 'unconfirmed'
+  /** Stop advancing with this step ACTIVE, for ever. A check about what the panel looks like
+   *  MID-deploy must read it while one is running — racing a job that advances every second can
+   *  pass because the deploy already finished, which is a check the defect cannot fail. */
+  holdAt?: (typeof STEP_KEYS)[number]
 }
 
 const STEP_KEYS = ['pull', 'build', 'stop', 'start', 'confirm'] as const
@@ -117,6 +121,7 @@ function jobFrames(plan: JobPlan): BotPromoteJob[] {
     })),
   })
   const frames = Array.from({ length: reach + 1 }, (_, i) => frame(i))
+  if (plan.holdAt) return frames.slice(0, STEP_KEYS.indexOf(plan.holdAt) + 1)
   const last = frames[frames.length - 1]
   const settled: BotPromoteJob = {
     ...last,
@@ -386,6 +391,24 @@ test('the readout moves step by step, with the step it is on MOVING', async ({ p
   // The earlier steps are finished by then, the later ones not started.
   await expect(step(page, 'build')).toHaveAttribute('data-state', 'done')
   await expect(step(page, 'start')).toHaveAttribute('data-state', 'pending')
+})
+
+test('mid-deploy there is ONE spinner, on the heading — none on the steps', async ({ page }) => {
+  // Aaron, 2026-09-10: *"I don't need a spinner and a progress bar … I don't need the secondary
+  // spinner on each progress section."* The running step moves through its bar's travelling band;
+  // a spinner beside its label as well is two motions saying the same thing.
+  // MUTATION: give the active step's icon `animate-spin` again → the progress count reads 1.
+  // ⚠ The job is HELD on a running step. The first version of this check raced a job advancing
+  // every second, and went red on the WRONG line under its mutation — the deploy had already
+  // finished, so neither spinner was on screen and the step count passed for free.
+  await mockBot(page, compare(), { holdAt: 'stop' })
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(step(page, 'stop')).toHaveAttribute('data-state', 'active', { timeout: 15_000 })
+  await expect(banner(page).getByTestId('version-heading').locator('.animate-spin')).toHaveCount(1)
+  await expect(step(page, 'stop').locator('.animate-step-sweep')).toHaveCount(1)
+  await expect(progress(page).locator('.animate-spin')).toHaveCount(0)
 })
 
 test('a finished deploy says DEPLOYED, is confirmed by the bot, and withdraws the button', async ({

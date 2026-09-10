@@ -2438,6 +2438,18 @@ def _deployed_json(bot_key: str) -> dict:
         return {}
 
 
+def _deployed_hash(rec: dict) -> str:
+    """The content hash `promote.py` pinned a deployment to, read off its `deployed.json`.
+
+    🔴 **ONE reader, for the version card and the deploy job's confirm step alike.** The confirm
+    step read `rec["hash"]` — a key `promote.py` never writes — so it got `""` on every deploy and
+    could never confirm one: every real deploy waited out its whole four minutes and ended
+    `unconfirmed` while the bot was running the new code (2026-09-10). Its tests stubbed
+    `_deployed_json` with that same invented key, so they agreed with the bug. `""` = no record.
+    """
+    return str(rec.get("strategy_source_hash") or "")
+
+
 def _stress_test_was_graded(st: dict) -> bool:
     """Did grading RUN on this test — regardless of whether it produced a letter.
 
@@ -3147,7 +3159,7 @@ def get_bot_version(bot_name: str):
 
     return BotDeployedVersion(
         frozen=bool(rec),
-        hash=rec.get("strategy_source_hash", ""),
+        hash=_deployed_hash(rec),
         commit=rec.get("promoted_commit", ""),
         promoted_at=rec.get("promoted_at", ""),
         strategy_package=rec.get("strategy_package", ""),
@@ -3530,7 +3542,7 @@ def _await_new_version(bot_key: str, before: dict | None) -> bool:
     for attempt in range(_CONFIRM_ATTEMPTS):
         if not deployed_hash:  # re-asked until it answers: without it nothing can confirm
             try:
-                deployed_hash = str(_deployed_json(bot_key).get("hash") or "")
+                deployed_hash = _deployed_hash(_deployed_json(bot_key))
             except Exception:
                 deployed_hash = ""
         state = _read_run_state(bot_key)
