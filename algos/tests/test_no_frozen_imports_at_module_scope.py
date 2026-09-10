@@ -43,6 +43,39 @@ _LIVE = _ROOT / "algos" / "live"
 #: effect.
 _FROZEN_TOP_LEVEL = ("backtest", "engines", "strategies")
 
+
+def _shadowable_bare_names() -> tuple[str, ...]:
+    """Every BARE module name a promoted snapshot would also provide.
+
+    🔴 **THIS CLOSED A HOLE THE GUARD HAD FOR ITS WHOLE LIFE, AND IT WAS FOUND BY WALKING THROUGH
+    IT (2026-09-09).** `LiveConfig.import_paths` puts `<snapshot>/strategies/python` on `sys.path`
+    as a ROOT, so everything directly inside it imports as a BARE name — `live_contract`,
+    `sos_fade`, `extreme_leg` — never as `strategies.something`. Matching on the three top-level
+    names above therefore cannot see any of them.
+
+    **MEASURED:** a module-scope `import live_contract` in `runner.py` put the repo copy in
+    `sys.modules`; `_bind_code` did not refuse it, THIS FILE did not catch it, and a later import
+    from a bound snapshot returned the repo object. `extreme_leg` inherits two base classes from
+    that module, so a promoted bot would have run repo classes inside a frozen strategy with its
+    banner still reading *frozen* — the exact failure this file was written for, through the one
+    door it could not see.
+
+    ⚠ **DERIVED from the directory, never typed.** A list of names goes stale the first time
+    somebody adds a shared module beside the strategies, and the symptom is this guard quietly
+    covering less than it says.
+    """
+    root = _ROOT / "strategies" / "python"
+    names = set(_FROZEN_TOP_LEVEL)
+    for child in root.iterdir():
+        if child.name.startswith((".", "_")) or child.name == "tests":
+            continue
+        if child.is_dir():
+            names.add(child.name)
+        elif child.suffix == ".py":
+            names.add(child.stem)
+    return tuple(sorted(names))
+
+
 #: What the runner itself imports at module scope. `runner` pulls in `bridge`, `feed` and
 #: `ledger`, and `bridge` pulls in `alerts` — which is the chain that broke.
 _ENTRY_MODULES = ("runner", "bridge", "feed", "ledger", "alerts", "live_config", "version")
@@ -74,7 +107,7 @@ def test_importing_it_does_not_pull_in_a_frozen_tree(module):
         live=str(_LIVE),
         shared=str(_ROOT / "algos" / "shared"),
         root=str(_ROOT),
-        frozen=_FROZEN_TOP_LEVEL,
+        frozen=_shadowable_bare_names(),
     )
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(_ROOT), timeout=120
@@ -103,10 +136,47 @@ def test_the_probe_can_actually_detect_a_leak():
         live=str(_LIVE),
         shared=str(_ROOT / "algos" / "shared"),
         root=str(_ROOT),
-        frozen=_FROZEN_TOP_LEVEL,
+        frozen=_shadowable_bare_names(),
     )
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(_ROOT), timeout=120
     )
     line = [ln for ln in out.stdout.splitlines() if ln.startswith("LEAKED:")][0]
     assert "backtest" in line, f"the probe cannot see a leak it was handed: {line}"
+
+
+def test_the_probe_detects_a_BARE_NAME_from_the_strategies_tree():
+    """The hole this file had for its whole life, pinned so it cannot come back.
+
+    🔴 **`LiveConfig.import_paths` puts `<snapshot>/strategies/python` on `sys.path` as a ROOT**,
+    so `live_contract`, `sos_fade` and `extreme_leg` all import as BARE names — never as
+    `strategies.something`. Matching on the three top-level tree names could not see any of them,
+    and neither can `runner._bind_code`, which refuses by the same three names.
+
+    **MEASURED 2026-09-09:** a module-scope `import live_contract` in `runner.py` put the repo copy
+    in `sys.modules`, `_bind_code` did not refuse it, this file did not catch it, and a later
+    import from a bound snapshot returned the repo object — the freeze silently half-applied, on a
+    module `extreme_leg` inherits two base classes from.
+
+    ⚠ **Without this case the widened matcher is a branch nothing can kill**, which reads to the
+    next person as a covered branch. Its own mutation — reverting to the three top-level names —
+    reddens exactly this test and nothing else."""
+    assert "live_contract" in _shadowable_bare_names(), (
+        "the shadowable set must include bare names from strategies/python"
+    )
+    code = _PROBE.format(
+        module="live_contract",
+        live=str(_LIVE),
+        shared=str(_ROOT / "algos" / "shared"),
+        root=str(_ROOT / "strategies" / "python"),
+        frozen=_shadowable_bare_names(),
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(_ROOT), timeout=120
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
+    line = [ln for ln in out.stdout.splitlines() if ln.startswith("LEAKED:")][0]
+    leaked = [m for m in line[len("LEAKED:") :].split(",") if m]
+    assert "live_contract" in leaked, (
+        f"the probe cannot see a bare name from strategies/python — it reported {leaked}"
+    )

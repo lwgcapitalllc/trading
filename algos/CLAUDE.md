@@ -4061,8 +4061,9 @@ by `git pull`; a strategy arrives only by `promote.py`. **A box pulled before it
 this bridge against a frozen strategy that has never heard of the seam** — so the state is
 reachable, not theoretical. A defensive read would make *never implemented* and *this order has no
 target* one value (rule 1), whose first meaning is a bot quietly closing at market for its whole
-life. ⚠ **It still halts at the moment of USE rather than at startup, because `verify_live_ready`
-is called by nothing in this package.** That remains open and is its own change.
+life. ✅ **IT NOW ALSO REFUSES AT STARTUP — see *The startup contract check is WIRED* below.** The
+mid-bar halt STAYS as the backstop: the startup check reports PRESENCE only, so a strategy can
+satisfy every name and still answer nonsense, and the halt is what catches that.
 
 ### The venue's opinion of a target DROPS the target — the stop's REFUSES the order
 
@@ -4124,3 +4125,80 @@ closure. **That gap is read per bot before promoting, never assumed from the ver
 killed). Gates re-run and green: `compare_strategy.py` exit 0 at warmups 500/1000 with a
 byte-identical HEAD control, `compare_extreme_leg.py` exit 0 on 18,248 bars. **Rule 9 still stands:
 no order carrying a target placed at send time has reached a broker.**
+
+### ✅ The startup contract check is WIRED, and it was described as the gate for weeks (2026-09-09)
+
+**`verify_live_ready` is called by `runner._assert_live_ready`, on every strategy build.** Four
+docstrings in this package called it the startup gate that refuses a non-conforming strategy by
+name; **nothing in `algos/live/` called it** — grepped, not assumed, and its only caller anywhere
+was one strategy's own test. **A comment promising a safety net that is not there is worse than no
+comment, because the next reader stops looking** — this file has now recorded that shape four
+times, and this is the fourth.
+
+⚠ **MEASURED BEFORE WIRING IT, because a check that refuses a bot which starts today is a bot
+down.** Both live bots were run through it — the REPO's contract against the DEPLOYED snapshot each
+one is actually running, on the box, at a moment when it had pulled and not yet promoted: **both
+conformant.** So this refuses nothing today.
+
+⚠ **It REFUSES rather than warning.** A bot missing a seam runs normally until the first setup and
+then throws or halts **with a live position open**, which is the worst moment available. The
+failure lands in `run()`'s startup handler — logged, written to the ledger, announced as **WILL NOT
+START** with the reason.
+
+⚠ **PRESENCE, never correctness** — the contract's own stated limit. It turns *crashes somewhere in
+the bar loop* into *refused at startup, by name*; it is not a proof that the strategy is right, and
+every mid-bar halt stays.
+
+⚠ **Re-run on every REBUILD, not cached from the first start** (rule 16). A re-warm and a reconnect
+both reconstruct the strategy, and an edit inside a live `deployed/` snapshot changes what the next
+rebuild loads with no promote and no restart.
+
+⚠ **The refusal names `promote.py` and prints the bot key**, because that is the fix: `algos/`
+arrives by `git pull` and a strategy only by `promote.py`, so the overwhelmingly likely cause is a
+box pulled ahead of its promote.
+
+### 🔴 …and wiring it walked straight through a hole in BOTH freeze guards
+
+**The obvious implementation — `from live_contract import verify_live_ready` at module scope — is
+the one that had to be used** (the REPO's contract is the one that binds, because the seam list is
+derived from what `algos/live/` reads and the bridge is what the bot runs). **It silently
+half-applies the freeze.**
+
+🔴 **`strategies/python` is on `sys.path` as a ROOT, so that module imports as the BARE name
+`live_contract` — never as `strategies.something`.** `_bind_code` refuses a leak of the strategy
+package, `engines` or `backtest` **by name**; `test_no_frozen_imports_at_module_scope.py` matched
+the same three top-level names. **A bare name from that tree is invisible to both.**
+
+**MEASURED, all four parts:** the import resolves to the repo copy; `_bind_code` does not refuse;
+the suite guard does not catch it; and a later import from a bound snapshot returns **the repo
+object**. `extreme_leg` inherits `LiveDecision` and `LivePositionMixin` from that module at module
+scope, so a promoted bot would have run repo classes inside a frozen strategy **while its banner
+said *frozen*** — the exact failure `_bind_code`'s own docstring calls the worst outcome available.
+
+✅ **`runner._repo_live_contract` loads the repo's copy BY PATH under a private name**, so
+`live_contract` stays free for the snapshot's own copy and the freeze is whole. ⚠ **Not cached
+across rebuilds by accident** — it is registered under that private name so the file is read once.
+
+✅ **The suite guard's shadowable set is DERIVED from `strategies/python/` rather than typed**, so a
+shared module added beside the strategies is covered without anybody remembering. ⚠ **It needed its
+own non-vacuity case**: with nothing in `algos/live/` importing a bare name any more, reverting the
+widening left every test green — **a branch nothing can kill reads as a covered branch**, which
+this repo has now recorded three times. A case drives the probe with `live_contract` directly.
+
+🔴 **`_bind_code`'s OWN predicate still has the hole and that is a STATED GAP.** Nothing in
+`algos/live/` imports a bare name from that tree today, and the suite guard now fails in CI the
+moment one appears — but no hook runs the tests, so CI here means *somebody ran it*. Closing it
+means matching on a module's FILE rather than its name, on the live startup path, and it is worth
+doing on its own rather than inside a change that also moves a live check.
+
+**Tests: 9 in `test_live_runner_startup.py`, 1 in `test_no_frozen_imports_at_module_scope.py`;
+9 mutations RUN and every one RED, re-run after `ruff format` because a reformat invalidates a
+patch string and a BADPATCH reads exactly like a survivor.**
+
+🔴 **ONE MUTATION SURVIVED FIRST AND IT WAS THE DEFECT BEING FIXED, ONE LEVEL UP: deleting the CALL
+from `_build_strategy` left every test green**, because all of them drove `_assert_live_ready`
+directly. **A guard is only as real as its call site, and a test that drives the guard rather than
+the thing that should invoke it proves the guard works and nothing about whether it runs** — rule
+7, reproduced inside the change written to fix rule 7. Two tests now drive `_build_strategy` itself,
+one for the refusal and one for the pass, because a wiring test that only ever asserts a refusal
+passes against a build path that refuses everything.

@@ -189,3 +189,266 @@ def test_being_on_the_bench_is_an_ORDINARY_ending_not_a_fault(tmp_path, monkeypa
         row.get("event") == "shutdown" and row.get("reason") == "not assigned to an account"
         for row in rows
     )
+
+
+# ── the startup contract check ───────────────────────────────────────────────────────────────
+#
+# 🔴 **`verify_live_ready` was described as the startup gate in FOUR docstrings across this
+# package and nothing called it** (grepped, 2026-09-09). A seam the bridge reads but the strategy
+# does not provide was therefore an exception mid-bar on a live position, or a `getattr` default
+# making *never implemented* and *nothing to do* the same answer. These pin the wiring.
+
+
+class _Ex:
+    """A conformant execution — every attribute the contract names, and nothing else."""
+
+    entry_style = "resting"
+    _POSITION_FIELDS = ("dir", "qty")
+
+    def __init__(self):
+        import live_contract as lc
+
+        for name in lc.EXECUTION_ATTRS:
+            if not hasattr(self, name):
+                setattr(self, name, lambda *a, **k: None)
+
+
+class _Strategy:
+    def __init__(self):
+        import live_contract as lc
+
+        self.execution = _Ex()
+        for name in lc.STRATEGY_ATTRS:
+            if not hasattr(self, name):
+                setattr(self, name, lambda *a, **k: None)
+
+
+def test_a_conformant_strategy_is_allowed_through(tmp_path, monkeypatch):
+    """MUTATION: make the check raise unconditionally. RUN — red.
+
+    The half that keeps the refusal from being a wall: a strategy that provides every seam must
+    start, and today BOTH live bots do (measured on the box, 2026-09-09)."""
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
+    r._assert_live_ready(_Strategy())  # must not raise
+
+
+def test_a_strategy_MISSING_a_seam_is_refused_at_STARTUP_not_mid_bar(tmp_path, monkeypatch):
+    """MUTATION: log a warning and return instead of raising. RUN — red.
+
+    🔴 This is the whole fix. Without it the bot starts, runs normally until the first setup, and
+    then throws inside the bar loop **with a live position open** — the worst moment available.
+    A refusal lands in `run()`'s startup handler and is announced as WILL NOT START."""
+    import live_contract as lc
+
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
+    strat = _Strategy()
+    seam = lc.EXECUTION_ATTRS[0]
+    delattr(strat.execution, seam)
+
+    with pytest.raises(RuntimeError) as e:
+        r._assert_live_ready(strat)
+    assert seam in str(e.value)
+
+
+def test_the_refusal_names_PROMOTE_because_that_is_the_fix(tmp_path, monkeypatch):
+    """MUTATION: drop the remedy from the message. RUN — red.
+
+    `algos/` arrives by `git pull` and a strategy only by `promote.py`, so the overwhelmingly
+    likely cause is a box pulled ahead of its promote. A refusal that does not say so sends the
+    reader to read the strategy — which is correct, and is not the fix."""
+    import live_contract as lc
+
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
+    strat = _Strategy()
+    delattr(strat.execution, lc.EXECUTION_ATTRS[0])
+
+    with pytest.raises(RuntimeError) as e:
+        r._assert_live_ready(strat)
+    msg = str(e.value)
+    assert "promote.py" in msg
+    assert "smoke" in msg  # the bot key, so the command can be run as printed
+
+
+def test_the_contract_that_BINDS_is_the_REPOS_own_file(tmp_path, monkeypatch):
+    """MUTATION: load it from the bot's snapshot instead. RUN — red.
+
+    🔴 **The repo's contract is the one that has to bind.** Its required-seam list is derived from
+    what `algos/live/` actually reads, so it describes the REPO's bridge — and the bridge is what
+    the bot runs, since `algos/` arrives by `git pull` while a strategy arrives only by
+    `promote.py`. A box pulled ahead of its promote is exactly the gap the check exists for, and
+    the frozen contract is structurally blind to it."""
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
+    mod = r._repo_live_contract()
+    assert Path(mod.__file__) == _REPO / "strategies" / "python" / "live_contract.py"
+    assert callable(mod.verify_live_ready)
+
+
+def test_loading_it_LEAVES_THE_NAME_FREE_so_the_freeze_stays_whole(tmp_path, monkeypatch):
+    """MUTATION: register it as `live_contract`, or import it plainly at module scope. RUN — red.
+
+    🔴 **THIS IS THE DEFECT THIS DESIGN EXISTS TO AVOID, AND IT WAS WALKED INTO BEFORE IT WAS
+    CAUGHT.** `strategies/python` is on `sys.path` as a ROOT, so that module imports as the BARE
+    name `live_contract`. `_bind_code` refuses a leak of the strategy package, `engines` or
+    `backtest` **by name** and cannot see a bare name from that tree — MEASURED: with it in
+    `sys.modules`, `_bind_code` did not refuse, the module-scope guard did not catch it, and a
+    later import from a bound snapshot returned the REPO object.
+
+    **`extreme_leg` inherits two base classes from that module**, so a promoted bot would have run
+    repo classes inside a frozen strategy while its banner said *frozen* — the freeze silently
+    half-applied, which `_bind_code`'s own docstring calls the worst outcome available."""
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
+    monkeypatch.delitem(sys.modules, "live_contract", raising=False)
+    monkeypatch.delitem(sys.modules, "_lwg_repo_live_contract", raising=False)
+
+    r._repo_live_contract()
+    assert "live_contract" not in sys.modules, (
+        "the snapshot's own copy must still be able to claim this name"
+    )
+
+
+def test_no_module_in_algos_live_imports_the_contract_by_its_BARE_NAME():
+    """MUTATION: put `from live_contract import verify_live_ready` at the top of `runner.py`.
+    RUN — red here AND in the module-scope guard.
+
+    ⚠ Pinned in TWO places on purpose: that guard answers *did anything from a frozen tree reach
+    `sys.modules`*, and this answers *does this package name it at all* — which is the thing a
+    reader greps for and the thing a well-meaning tidy-up would restore."""
+    import ast
+
+    live = _REPO / "algos" / "live"
+    for path in sorted(live.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "live_contract":
+                raise AssertionError(f"{path.name} imports live_contract by its bare name")
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    assert a.name != "live_contract", f"{path.name} imports live_contract"
+
+
+def test_importing_the_contract_early_cannot_trip_the_snapshot_LEAK_GUARD():
+    """MUTATION: give `live_contract` an `engines` import. RUN — red.
+
+    🔴 `_bind_code` REFUSES to start any frozen bot if a strategy, `engines` or `backtest` module
+    reached `sys.modules` before the snapshot was bound. The contract is imported at module scope,
+    i.e. before that — so the day it grows one of those imports, **every promoted bot on the box
+    stops starting.** That is a whole fleet, from an import that looks harmless."""
+    import ast
+
+    src = (_REPO / "strategies" / "python" / "live_contract.py").read_text(encoding="utf-8")
+    banned = {"engines", "backtest"}
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            assert node.module.split(".")[0] not in banned, node.module
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                assert a.name.split(".")[0] not in banned, a.name
+
+
+def test_every_bot_with_an_instance_config_SATISFIES_the_contract_today():
+    """MEASURED, and it is the guard that stops this refusal becoming a wall.
+
+    A seam added to `algos/live/` grows `EXECUTION_ATTRS` automatically (it is measured off that
+    package), so this goes RED the moment the bridge starts reading something a live strategy
+    does not provide — **before** a promote takes it to the box, rather than as a bot that will
+    not start. ⚠ Scoped to bots that have an instance config: a lab-only strategy is not required
+    to be live-ready, and demanding it would be a claim nobody made."""
+    import importlib
+
+    sys.path.insert(0, str(_REPO / "strategies" / "python"))
+    sys.path.insert(0, str(_REPO / "engines"))
+    import live_contract as lc
+
+    instances = _REPO / "algos" / "markets" / "fx" / "instances"
+    checked = 0
+    for d in sorted(p for p in instances.iterdir() if p.is_dir()):
+        cfgf = d / "config.json"
+        if not cfgf.is_file():
+            continue
+        cfg = json.loads(cfgf.read_text(encoding="utf-8"))
+        pkg_name = cfg.get("strategy_package")
+        if not pkg_name:
+            continue
+        lab = importlib.import_module(pkg_name).LAB_STRATEGY
+        params = dict(cfg.get("strategy_params") or {})
+        params.setdefault("symbol", cfg.get("symbol"))
+        strat = lab["strategy"](lab["config"](**params), initial_capital=10_000.0)
+        assert lc.verify_live_ready(strat) == [], f"{d.name} would be refused at startup"
+        checked += 1
+    assert checked >= 2, "this test stopped covering anything"
+
+
+def _fake_package(monkeypatch, strategy):
+    """A minimal strategy package the runner can import, wrapping `strategy`."""
+    import types
+    from dataclasses import dataclass
+
+    @dataclass
+    class _Cfg:
+        symbol: str = "XAUUSD"
+
+    mod = types.ModuleType("fake_pkg")
+    mod.LAB_STRATEGY = {
+        "strategy": lambda cfg, initial_capital: strategy,
+        "config": _Cfg,
+    }
+    mod.LAB_STRATEGY["strategy"].__name__ = "FakeStrategy"
+    monkeypatch.setitem(sys.modules, "fake_pkg", mod)
+    # Different guards, not the subject here — each has its own tests.
+    monkeypatch.setattr(runner, "assert_supported", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "assert_hedging_for_scale_in", lambda *a, **k: None)
+    return mod
+
+
+def test_BUILDING_a_strategy_runs_the_contract_check(tmp_path, monkeypatch):
+    """MUTATION: delete the `_assert_live_ready` call from `_build_strategy`. RUN — red.
+
+    🔴 **THIS TEST EXISTS BECAUSE THAT MUTATION SURVIVED THE FIRST SIX.** Every other case here
+    calls `_assert_live_ready` directly, so all of them stayed green with the check WIRED TO
+    NOTHING — which is precisely the defect being fixed, reproduced one level up while I was
+    fixing it. **A guard is only as real as its call site**, and a test that drives the guard
+    rather than the thing that should invoke it proves the guard works and nothing about whether
+    it runs. Rule 7, in a test file written for rule 7.
+
+    So this drives `_build_strategy` itself and asserts the refusal comes out of it."""
+    import live_contract as lc
+
+    r = runner.LiveRunner(
+        _cfg(
+            tmp_path,
+            monkeypatch,
+            strategy_package="fake_pkg",
+            strategy_class="FakeStrategy",
+            initial_capital=10_000.0,
+        )
+    )
+    strat = _Strategy()
+    delattr(strat.execution, lc.EXECUTION_ATTRS[0])
+    _fake_package(monkeypatch, strat)
+
+    with pytest.raises(RuntimeError) as e:
+        r._build_strategy()
+    assert lc.EXECUTION_ATTRS[0] in str(e.value)
+
+
+def test_BUILDING_a_conformant_strategy_still_returns_it(tmp_path, monkeypatch):
+    """MUTATION: make `_build_strategy` raise whatever the check says. RUN — red.
+
+    The other half, and it is not decoration: a wiring test that only ever asserts a refusal
+    passes beautifully against a build path that refuses EVERYTHING — the shape
+    `.claude/mcp/check_tradingbox.py` records, where a tool with no working happy path satisfied
+    every sad-path case."""
+    r = runner.LiveRunner(
+        _cfg(
+            tmp_path,
+            monkeypatch,
+            strategy_package="fake_pkg",
+            strategy_class="FakeStrategy",
+            initial_capital=10_000.0,
+        )
+    )
+    strat = _Strategy()
+    _fake_package(monkeypatch, strat)
+
+    built, _ = r._build_strategy()
+    assert built is strat

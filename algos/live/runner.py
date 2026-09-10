@@ -475,7 +475,101 @@ class LiveRunner:
                     "0 — the strategy would size every trade off nothing."
                 )
         self.log.info(f"Sizing against account balance ${capital:,.2f}")
-        return cls(scfg, initial_capital=capital), scfg
+        strategy = cls(scfg, initial_capital=capital)
+        self._assert_live_ready(strategy)
+        return strategy, scfg
+
+    @staticmethod
+    def _repo_live_contract():
+        """The REPO's live contract, loaded BY PATH under a private name.
+
+        🔴 **A PLAIN `import live_contract` HERE WOULD SILENTLY HALF-APPLY THE FREEZE, AND BOTH
+        GUARDS THAT EXIST TO STOP THAT HAVE A HOLE IT FITS THROUGH.** That module lives under
+        `strategies/python/`, which is on `sys.path` as a ROOT — so it imports as the bare name
+        `live_contract`, not as `strategies.something`. `_bind_code` refuses a leak of the strategy
+        package, `engines` or `backtest` **by name**, and the suite's own module-scope guard matches
+        the same three top-level names; a bare name from that tree is invisible to both.
+
+        **MEASURED, not reasoned (2026-09-09):** importing it at module scope put the repo copy in
+        `sys.modules`, `_bind_code` did not refuse, the suite guard did not catch it — and a later
+        import from a bound snapshot returned **the repo object**. `extreme_leg` imports two base
+        classes and two pass-through helpers from this module at module scope, so a promoted bot
+        would have run repo classes inside a frozen strategy while its banner said *frozen*. That is
+        the exact failure `_bind_code` was written for, arriving through the one door it cannot see.
+
+        ⚠ **Loaded by path and NEVER registered under `live_contract`**, so the name stays free for
+        the snapshot's own copy and the freeze is whole. It is registered under a private name so
+        the module is not re-read on every rebuild.
+
+        🔴 **The REPO's copy is the one that binds, and that is the point of going to this trouble.**
+        `EXECUTION_ATTRS` is derived from what `algos/live/` actually reads, so it describes the
+        REPO's bridge — and the bridge is what the bot runs, since `algos/` arrives by `git pull`
+        while a strategy arrives only by `promote.py`. The frozen contract describes the bridge as
+        it stood at promote time and is structurally blind to a box pulled ahead of its promote,
+        which is the gap this check exists for.
+
+        ⚠ **Safe to load early, CHECKED rather than assumed**: that module imports nothing but the
+        standard library, so it cannot drag a strategy or engine module in behind it.
+        """
+        import importlib.util
+
+        name = "_lwg_repo_live_contract"
+        cached = sys.modules.get(name)
+        if cached is not None:
+            return cached
+        path = _REPO / "strategies" / "python" / "live_contract.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    def _assert_live_ready(self, strategy) -> None:
+        """Refuse a strategy that does not provide every seam `algos/live/` reads.
+
+        🔴 **`verify_live_ready` was described as the startup gate in four docstrings across this
+        package and NOTHING CALLED IT** (grepped, not assumed, 2026-09-09) — its only caller was
+        one strategy's own test. So the refusal those comments promised did not happen, and the
+        state they were written about was reachable: a seam the bridge reads but the strategy does
+        not provide is an **exception mid-bar, on a live position**, or — worse — a `getattr`
+        default that makes *never implemented* and *nothing to do* the same answer. **A comment
+        promising a safety net that is not there is worse than no comment, because the next reader
+        stops looking.**
+
+        ⚠ **It REFUSES rather than warning, and refusing is the honest answer.** A bot missing one
+        of these does not merely lose a feature — it runs normally until the first setup and then
+        throws or halts with a live position on, which is the worst moment available. The failure
+        lands in `run()`'s startup handler: logged, written to the ledger, and announced as **WILL
+        NOT START** with the reason, so it cannot be mistaken for a bot that is quietly fine.
+
+        ⚠ **It checks PRESENCE, never correctness**, which is the contract's own stated limit. This
+        turns *crashes somewhere in the bar loop* into *refused at startup, by name*. It is not a
+        proof that the strategy is right.
+
+        ⚠ **Re-run on every REBUILD, not cached from the first start.** A re-warm and a reconnect
+        both reconstruct the strategy, and an edit inside a live `deployed/` snapshot changes what
+        the next rebuild loads with no promote and no restart — the one thing the editor guard
+        exists to warn about. Rule 16: a startup check establishes a fact that is then free to
+        change.
+
+        ⚠ **The message names `promote.py`, because that is the fix.** The overwhelmingly likely
+        cause is a box that pulled `algos/` and has not promoted its strategy yet, and a refusal
+        that does not say so sends the reader to read the strategy.
+
+        ⚠ **Generic at the seam: it asks the CONTRACT, never this bot.** Every registered bot,
+        present and future, is covered with no per-strategy wiring — which is the property that
+        makes it worth putting here rather than in any one strategy.
+        """
+        missing = self._repo_live_contract().verify_live_ready(strategy)
+        if not missing:
+            return
+        raise RuntimeError(
+            f"{self.cfg.strategy_package} does not provide "
+            f"{len(missing)} thing(s) that algos/live/ reads: {', '.join(missing)}. "
+            f"The bot would run until the first setup and then fail mid-bar with a position "
+            f"open. If this box was pulled but not promoted, run algos/tools/promote.py --bot "
+            f"{self.cfg.bot_key} to bring the snapshot up to the code that is now checking it."
+        )
 
     # ── the re-entry's second bar stream ─────────────────────────────────────
     #
