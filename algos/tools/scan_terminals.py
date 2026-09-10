@@ -75,6 +75,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -88,6 +89,12 @@ INSTANCES = REPO / "algos" / "markets" / "fx" / "instances"
 # A terminal mid-reconnect can block `initialize` indefinitely, and a scan that hangs forever is
 # a scan whose caller times out with NO answer for any terminal rather than one.
 PROBE_TIMEOUT_S = 45
+
+# How recent a bot's heartbeat must be for the account it reports to count as CURRENT. It must equal
+# `notifications/deadman.py::HEARTBEAT_STALE_SECS` — the floor both watchdogs use for "stalled" —
+# and `test_scan_terminals.py` fails if the two ever differ, because a third opinion on how old is
+# too old is how two monitors come to disagree about the same bot.
+HEARTBEAT_FRESH_S = 5 * 60
 
 # The bases used to measure the suffix. They must agree. Gold is first because it is what this
 # repo trades; the majors are there so a metals-only naming quirk cannot decide it alone.
@@ -246,6 +253,53 @@ def bot_terminals() -> dict[str, list[str]]:
             continue
         owned.setdefault(_install_dir(path), []).append(cfg.parent.name)
     return owned
+
+
+def bot_reports(now: float | None = None) -> dict[str, int | None]:
+    """The account each bot's OWN heartbeat says its terminal is on, keyed by bot — or `None`.
+
+    🔴 **This is what lets the Command Center ask the box ONCE.** It used to fetch the whole fleet
+    snapshot over a second SSH call — process list, scheduled tasks, every state, review and ledger
+    file — to read this one number per bot. Read here, on the box, it arrives in the same answer as
+    the terminals, taken at the same moment, so a bot restarting between two trips cannot make the
+    two halves of one scan describe different states.
+
+    ⚠ **Only a FRESH heartbeat counts, and that is a rule the two-call version never had.** A
+    stopped bot's state file still holds the last account it saw — yesterday's fact, readable today,
+    looking exactly like a current one. So the reading is used only when the heartbeat written with
+    it is younger than `HEARTBEAT_FRESH_S`; otherwise the bot "could not say".
+
+    ⚠ **The HEARTBEAT, never `max(heartbeat, started)`**, which is the right rule for "has it
+    stalled" and the wrong one here: a bot that has just restarted has a fresh `started` and a file
+    still holding the PREVIOUS run's account until its first heartbeat overwrites it.
+
+    ⚠ `None` for every failure — unreadable file, no entry, no field, stale — because each of them
+    means the same thing to the reader: this bot did not say. It is never a zero and never the
+    configured account (the list lives in the same repo, so that would check the list against
+    itself). The file is replaced whole, never emptied and refilled (`shared/bot_state.py`), so a
+    read cannot catch it half-written.
+    """
+    now = time.time() if now is None else now
+    reports: dict[str, int | None] = {}
+    if not INSTANCES.is_dir():
+        return reports
+    for cfg in sorted(INSTANCES.glob("*/config.json")):
+        bot = cfg.parent.name
+        reports[bot] = None
+        try:
+            state = json.loads((cfg.parent / "bot_state.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        entry = state.get(bot) if isinstance(state, dict) else None
+        if not isinstance(entry, dict):
+            continue
+        beat = entry.get("heartbeat")
+        seen = entry.get("observed_account")
+        if not isinstance(beat, (int, float)) or now - beat > HEARTBEAT_FRESH_S:
+            continue
+        if isinstance(seen, int) and not isinstance(seen, bool) and seen > 0:
+            reports[bot] = seen
+    return reports
 
 
 def _install_dir(exe_or_dir: str) -> str:
@@ -432,6 +486,7 @@ def scan(skip_owned: bool = True) -> dict:
         # three states: a caller must never read a refusal as an empty box.
         return {"asked": False, "scanned_at": _now(), "reason": str(e), "terminals": []}
     running = {_install_dir(t["exe"]): t for t in running_terminals()}
+    reports = bot_reports()
     installed = {_install_dir(p): p for p in installed_terminals()}
 
     terminals = []
@@ -470,6 +525,9 @@ def scan(skip_owned: bool = True) -> dict:
                 {
                     **base,
                     "state": "owned_by_bot",
+                    # Raw per-bot readings, `None` = that bot could not say. The JUDGEMENT — do they
+                    # agree, is one enough — stays in the Command Center, next to its tests.
+                    "reported_by_bots": {b: reports.get(b) for b in bots},
                     "probed": False,
                     "account": None,
                     "reason": (

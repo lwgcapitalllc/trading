@@ -224,7 +224,14 @@ def reconcile(payload: Any, registered: Any, observed_by_bot: Any = None) -> Rec
     by_account = {int(r.account): r for r in rows}
 
     seen_accounts = {}
-    by_bot = dict(observed_by_bot or {})
+    # What each bot says, from the SAME answer as the terminals: the box script reads every bot's own
+    # heartbeat and attaches it to the terminal it owns, so one scan is one trip taken at one moment.
+    # An explicit `observed_by_bot` still wins, which is how the tests drive the judgement directly.
+    by_bot: dict = {}
+    for raw_t in payload.get("terminals") or []:
+        for bot, seen in (raw_t.get("reported_by_bots") or {}).items():
+            by_bot[bot] = seen
+    by_bot.update(observed_by_bot or {})
     for raw in payload.get("terminals") or []:
         reading = _reading(raw)
         if reading.account is not None:

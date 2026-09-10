@@ -469,3 +469,108 @@ def test_a_trailing_null_terminator_is_stripped():
     """
     st = _load()
     assert st._decode_origin("C:\\MT5_FFT\x00".encode("utf-16")) == r"C:\MT5_FFT"
+
+
+# ------------------------------------------------------------------------------------------
+# What each bot says its terminal is on — read on the box, in the same answer
+# ------------------------------------------------------------------------------------------
+
+
+def _bot(tmp_path, name, *, state=None, raw=None):
+    d = tmp_path / name
+    d.mkdir()
+    (d / "config.json").write_text(json.dumps({"mt5_path": r"C:\MT5_FFT\terminal64.exe"}))
+    if raw is not None:
+        (d / "bot_state.json").write_text(raw)
+    elif state is not None:
+        (d / "bot_state.json").write_text(json.dumps({name: state}))
+
+
+def test_a_bot_with_a_fresh_heartbeat_reports_its_observed_account(tmp_path):
+    st = _load()
+    st.INSTANCES = tmp_path
+    now = 1_000_000.0
+    _bot(tmp_path, "sos_fade_demo", state={"heartbeat": now - 30, "observed_account": 700152905})
+    assert st.bot_reports(now=now) == {"sos_fade_demo": 700152905}
+
+
+def test_a_STALE_heartbeat_reports_nothing_because_the_account_is_yesterdays(tmp_path):
+    """🔴 The rule the two-call version never had: a stopped bot's file still holds the last account
+    it saw, readable today and looking exactly like a current fact.
+
+    Watched red by dropping the freshness check: this then returns yesterday's account.
+    """
+    st = _load()
+    st.INSTANCES = tmp_path
+    now = 1_000_000.0
+    _bot(
+        tmp_path,
+        "b_leg_demo",
+        state={"heartbeat": now - st.HEARTBEAT_FRESH_S - 1, "observed_account": 700107749},
+    )
+    assert st.bot_reports(now=now) == {"b_leg_demo": None}
+
+
+def test_freshness_is_judged_on_the_HEARTBEAT_not_on_the_start(tmp_path):
+    """A bot that has just restarted has a fresh `started` and a file still holding the PREVIOUS
+    run's account until its first heartbeat. `max(heartbeat, started)` would pass it."""
+    st = _load()
+    st.INSTANCES = tmp_path
+    now = 1_000_000.0
+    _bot(
+        tmp_path,
+        "sos_fade_demo",
+        state={
+            "heartbeat": now - 3600,
+            "started": now - 5,
+            "observed_account": 700107749,
+        },
+    )
+    assert st.bot_reports(now=now) == {"sos_fade_demo": None}
+
+
+@pytest.mark.parametrize(
+    "state,raw",
+    [
+        (None, "{not json"),  # unreadable
+        ({"heartbeat": 999_990.0}, None),  # a runner from before the field existed
+        ({"heartbeat": 999_990.0, "observed_account": None}, None),  # link was down
+        ({"heartbeat": 999_990.0, "observed_account": 0}, None),  # never a real login
+        ({"heartbeat": 999_990.0, "observed_account": True}, None),  # bool is an int in python
+        ({"observed_account": 700152905}, None),  # no heartbeat at all
+    ],
+)
+def test_every_way_of_not_knowing_is_None_never_a_number(tmp_path, state, raw):
+    st = _load()
+    st.INSTANCES = tmp_path
+    _bot(tmp_path, "bot", state=state, raw=raw)
+    assert st.bot_reports(now=1_000_000.0) == {"bot": None}
+
+
+def test_a_bot_with_no_state_file_at_all_is_None(tmp_path):
+    st = _load()
+    st.INSTANCES = tmp_path
+    _bot(tmp_path, "b_leg_demo")
+    assert st.bot_reports(now=1_000_000.0) == {"b_leg_demo": None}
+
+
+def test_the_scan_carries_each_owning_bots_report_with_its_terminal(monkeypatch):
+    """ONE answer: the terminal and what its bots say, taken at the same moment on the same box."""
+    st = _load()
+    st.running_terminals = lambda: [{"exe": r"C:\MT5_FFT\terminal64.exe", "pid": 1}]
+    st.installed_terminals = lambda: []
+    st.bot_terminals = lambda: {r"c:\mt5_fft": ["b_leg_demo", "sos_fade_demo"]}
+    st.bot_reports = lambda: {"sos_fade_demo": 700152905, "b_leg_demo": None, "other": 42}
+    (t,) = st.scan()["terminals"]
+    assert t["state"] == "owned_by_bot"
+    assert t["reported_by_bots"] == {"b_leg_demo": None, "sos_fade_demo": 700152905}
+
+
+def test_the_freshness_floor_is_the_watchdogs_own():
+    """Two watchdogs already agree that 5 minutes without a heartbeat is stalled; a third opinion
+    here is how monitors come to disagree about the same bot. Fails the moment either one moves."""
+    sys.path.insert(0, str(_REPO / "algos" / "notifications"))
+    sys.path.insert(0, str(_REPO / "algos" / "shared"))
+    import deadman  # noqa: E402
+
+    assert _load().HEARTBEAT_FRESH_S == deadman.HEARTBEAT_STALE_SECS

@@ -1352,6 +1352,16 @@ could not be asked — not that the terminal is disconnected. The checks are wri
 falsy, so an unanswered question renders as *"terminal state unknown"* rather than as a failure the
 UI invented. Same rule as `DrawdownMeter`'s refusal to draw an unmeasured tail as an absent one.
 
+### A slow agent draws YELLOW "slow", never the clickable red (2026-09-10)
+
+🔴 **Red is the only clickable colour, and its click restarts the SSH tunnel.** An agent that
+answered late used to draw red "click to start" — an invitation to cut every request in flight
+over a busy-but-healthy agent. The dot now reads the server's `{nt8,mt5}_agent_state`: `down` is
+red and clickable as before, `slow` is yellow with the word **slow** and a tooltip saying when it
+last answered. ⚠ **The grace window is decided on the server and not restated here**, so there is
+one answer to "how long before slow becomes down". ⚠ A backend without the field falls back to the
+old boolean — `false` is down, exactly as before, never a guess either way.
+
 ## The Calendar page was audited 2026-08-05
 
 **Read before touching `pages/Calendar.tsx`, `lib/calendar.ts` or the Overview's preview.** Nine

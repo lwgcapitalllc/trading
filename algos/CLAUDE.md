@@ -746,6 +746,15 @@ terminal and a hang must cost one answer rather than the scan.
 spelled one terminal three ways in one report, and the consumer is the command centre matching
 these against paths typed by hand.
 
+🔴 **It carries what each bot says its terminal is on (`bot_reports`), so the Command Center asks the
+box ONCE (2026-09-10).** Each owned terminal gets `reported_by_bots`, read from every bot's own
+`bot_state.json`; the judgement (do they agree) stays in the Command Center. 🔴 **Only a FRESH
+heartbeat counts** — a stopped bot's file still holds the last account it saw, yesterday's fact
+looking exactly like today's. Fresh means younger than `HEARTBEAT_FRESH_S`, which must equal
+`deadman.HEARTBEAT_STALE_SECS` and a test fails if they differ. ⚠ **Judged on the heartbeat, never
+`max(heartbeat, started)`**: a bot that just restarted has a fresh start and the PREVIOUS run's
+account until its first heartbeat overwrites it.
+
 Story, and the two defects only a real terminal could show: `algos/docs/ALGOS_BUILD_NOTES.md`.
 
 🔴 **The heartbeat reports the account the terminal is ACTUALLY on (`observed_account`), beside the

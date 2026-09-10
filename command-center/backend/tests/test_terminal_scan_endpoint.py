@@ -91,17 +91,18 @@ _OWNED = {
 
 
 def _stub(monkeypatch, payload, observed=None):
-    """Stub BOTH box calls the route makes.
+    """Stub the ONE box call the route makes, with the bots' reports inside it as the box sends them.
 
-    ⚠ **The second one was missed at first and the harness caught it.** The route also reads each
-    bot's observed account off the VPS snapshot, and `conftest` guarantees no test reaches the live
-    box — so every endpoint test here errored at teardown the moment that call was added. That is
-    the interlock working, and the fix is to stub it rather than to loosen it.
+    ⚠ The route used to make a second call for those reports; it now reads them off the scan, so a
+    test that faked the second call would be testing a system that no longer exists.
     """
     from routers import bots as bots_router
 
+    if observed:
+        for t in payload.get("terminals") or []:
+            if t.get("state") == "owned_by_bot":
+                t["reported_by_bots"] = {b: observed.get(b) for b in t.get("owned_by_bots") or []}
     monkeypatch.setattr(bots_router, "_scan_terminals", lambda: payload)
-    monkeypatch.setattr(bots_router, "_observed_accounts", lambda: dict(observed or {}))
 
 
 def test_a_live_account_nobody_registered_comes_back_as_new_and_prefilled(
@@ -184,7 +185,6 @@ def test_an_unreachable_box_is_a_502_carrying_why_not_an_empty_scan(client, regi
         raise terminal_scan.ScanUnavailable("ssh to forexvps failed and said nothing")
 
     monkeypatch.setattr(bots_router, "_scan_terminals", _boom)
-    monkeypatch.setattr(bots_router, "_observed_accounts", lambda: {})
 
     r = client.get("/bots/accounts/scan")
     assert r.status_code == 502
@@ -266,3 +266,17 @@ def test_the_bots_terminal_carries_where_its_account_came_from(client, registry,
     (t,) = client.get("/bots/accounts/scan").json()["terminals"]
     assert t["account"] == 700152905
     assert t["account_source"] == "bot"
+
+
+def test_the_scan_asks_the_box_ONCE(client, registry, monkeypatch):
+    """The fleet snapshot is no longer fetched to read what the bots report — it arrives in the scan.
+
+    Watched red by restoring the second trip: the snapshot fetch is called.
+    """
+    from routers import bots as bots_router
+
+    fetched = []
+    monkeypatch.setattr(bots_router, "_fetch_vps_snapshot", lambda: fetched.append(1) or {})
+    _stub(monkeypatch, _payload(_OWNED), observed={"sos_fade_demo": 700152905})
+    assert client.get("/bots/accounts/scan").status_code == 200
+    assert fetched == []

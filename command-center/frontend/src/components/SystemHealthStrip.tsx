@@ -11,6 +11,30 @@ interface DotDef {
   label: string
   state: DotState
   tip: string
+  /** The word beside the dot when the colour's default ("warn") would say less than it knows. */
+  word?: string
+}
+
+/**
+ * The agent's own state, from the SERVER's judgement.
+ *
+ * 🔴 **`slow` is not `down`, and only `down` is red — the one clickable colour.** An agent that
+ * answered late used to draw red "click to start", and that click restarts the SSH tunnel, cutting
+ * every request in flight through it. MEASURED 2026-09-10: the agent missed replies whenever the box
+ * was busy while its terminal never disconnected. The grace window is decided on the server and not
+ * restated here, so there is one answer to "how long before slow becomes down".
+ *
+ * ⚠ Falls back to the boolean for a backend that predates the field — `false` then means down,
+ * exactly as before, never a guess in either direction.
+ */
+function agentState(state: string | null | undefined, answered: boolean): 'ok' | 'slow' | 'down' {
+  if (state === 'ok' || state === 'slow' || state === 'down') return state
+  return answered ? 'ok' : 'down'
+}
+
+function slowTip(name: string, lastOk: number | null | undefined): string {
+  const when = lastOk == null ? '' : ` It last answered ${Math.round(lastOk)}s ago.`
+  return `${name}: slow to answer, not down — usually the VPS is busy.${when} It turns red if it stays silent.`
 }
 
 function buildDots(h: SystemHealth | undefined): DotDef[] {
@@ -33,23 +57,30 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
   // the agent was wedged, NT8 was open on the VPS, and the health payload said
   // `nt8_running: false`. The agent-down branch answers first anyway, so this is
   // about the TOOLTIP telling the truth rather than the dot's colour.
-  const nt8State: DotState = !h.nt8_agent
-    ? 'red'
-    : h.nt8_running === false
-      ? 'yellow'
-      : h.nt8_sa_visible === false
+  const nt8Agent = agentState(h.nt8_agent_state, h.nt8_agent)
+  const nt8State: DotState =
+    nt8Agent === 'down'
+      ? 'red'
+      : nt8Agent === 'slow'
         ? 'yellow'
-        : 'green'
+        : h.nt8_running === false
+          ? 'yellow'
+          : h.nt8_sa_visible === false
+            ? 'yellow'
+            : 'green'
 
-  const nt8Tip = !h.nt8_agent
-    ? h.ssh_tunnel
-      ? 'NT8: agent not running — click to start (NinjaTrader’s own state is unknown until it answers)'
-      : 'NT8: agent not running — SSH must be up first'
-    : h.nt8_running === false
-      ? 'NT8: agent OK — NinjaTrader not running on VPS (open NT8 via RDP)'
-      : h.nt8_sa_visible === false
-        ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
-        : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
+  const nt8Tip =
+    nt8Agent === 'slow'
+      ? slowTip('NT8 agent', h.nt8_agent_last_ok_s)
+      : nt8Agent === 'down'
+        ? h.ssh_tunnel
+          ? 'NT8: agent not running — click to start (NinjaTrader’s own state is unknown until it answers)'
+          : 'NT8: agent not running — SSH must be up first'
+        : h.nt8_running === false
+          ? 'NT8: agent OK — NinjaTrader not running on VPS (open NT8 via RDP)'
+          : h.nt8_sa_visible === false
+            ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
+            : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
 
   // SSH: three-state, because "the tunnel is down" and "the VPS is unreachable"
   // are different problems with different fixes and this dot used to conflate
@@ -69,17 +100,28 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
   // through MT5_Lab, so an agent up with the terminal disconnected is a run
   // that will fail at fetch time. `null` = we could not ask, which is reported
   // as such rather than guessed either way.
-  const mt5State: DotState = !h.mt5_agent ? 'red' : h.mt5_connected === false ? 'yellow' : 'green'
+  const mt5Agent = agentState(h.mt5_agent_state, h.mt5_agent)
+  const mt5State: DotState =
+    mt5Agent === 'down'
+      ? 'red'
+      : mt5Agent === 'slow'
+        ? 'yellow'
+        : h.mt5_connected === false
+          ? 'yellow'
+          : 'green'
 
-  const mt5Tip = !h.mt5_agent
-    ? h.ssh_tunnel
-      ? 'MT5 agent: down — click to start'
-      : 'MT5 agent: down — the tunnel must be up first'
-    : h.mt5_connected === false
-      ? 'MT5 agent OK — the MT5_Lab terminal is NOT connected to the broker (open it via RDP). Bar fetches will fail.'
-      : h.mt5_connected === null
-        ? 'MT5 agent: responding — terminal state unknown'
-        : `MT5 agent OK, terminal connected${h.mt5_server ? ` · ${h.mt5_server}` : ''}${h.mt5_account ? ` · ${h.mt5_account}` : ''}`
+  const mt5Tip =
+    mt5Agent === 'slow'
+      ? slowTip('MT5 agent', h.mt5_agent_last_ok_s)
+      : mt5Agent === 'down'
+        ? h.ssh_tunnel
+          ? 'MT5 agent: down — click to start'
+          : 'MT5 agent: down — the tunnel must be up first'
+        : h.mt5_connected === false
+          ? 'MT5 agent OK — the MT5_Lab terminal is NOT connected to the broker (open it via RDP). Bar fetches will fail.'
+          : h.mt5_connected === null
+            ? 'MT5 agent: responding — terminal state unknown'
+            : `MT5 agent OK, terminal connected${h.mt5_server ? ` · ${h.mt5_server}` : ''}${h.mt5_account ? ` · ${h.mt5_account}` : ''}`
 
   return [
     {
@@ -101,12 +143,14 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
       label: 'NT8',
       state: nt8State,
       tip: nt8Tip,
+      word: nt8Agent === 'slow' ? 'slow' : undefined,
     },
     {
       key: 'mt5',
       label: 'MT5 Agent',
       state: mt5State,
       tip: mt5Tip,
+      word: mt5Agent === 'slow' ? 'slow' : undefined,
     },
   ]
 }
@@ -161,7 +205,7 @@ function DotRow({
       />
       <span className="text-[11px] text-text-secondary flex-1 leading-none">{def.label}</span>
       <span className={`text-[10px] font-mono leading-none ${STATUS_TEXT_CLS[def.state]}`}>
-        {loading ? '…' : STATUS_TEXT[def.state]}
+        {loading ? '…' : (def.word ?? STATUS_TEXT[def.state])}
       </span>
     </div>
   )
@@ -193,7 +237,7 @@ export function SystemHealthStrip({ collapsed }: { collapsed?: boolean }) {
         {dots.map((def) => (
           <span
             key={def.key}
-            title={`${def.label}: ${STATUS_TEXT[def.state]}`}
+            title={`${def.label}: ${def.word ?? STATUS_TEXT[def.state]}`}
             className={`w-[7px] h-[7px] rounded-full transition-colors duration-300 ${DOT_CLS[def.state]} ${def.state === 'red' ? 'cursor-pointer' : ''}`}
             style={DOT_GLOW[def.state] ? { boxShadow: DOT_GLOW[def.state] } : undefined}
             onClick={def.state === 'red' ? () => handleRedClick(def.key) : undefined}
