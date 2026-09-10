@@ -1629,10 +1629,18 @@ password", which is a different claim.
 installed terminals are stopped, so polling would stack slow requests against the box. `_ssh`'s 30s
 timeout is wrong here for the same reason and this call has its own.
 
-⚠ **KNOWN LIMIT: a row pointing at a bot's terminal cannot be verified at all.** That is where
-700107749's stale claim lives, so the scan reports it UNVERIFIED rather than wrong. Closing it
-needs the bot to report its OBSERVED account rather than its configured one — `runner` measures it
-and currently throws it away. Do not read "unverified" as "fine".
+✅ **A row pointing at a BOT'S terminal is checked through the bots on it (closed 2026-09-10).**
+The scan never attaches there, so until then every such row came back UNVERIFIED — exactly where
+700107749's stale claim sat. The live runner now writes the account its terminal is ACTUALLY on
+(`observed_account`, off the same `account_info()` call it halts on) beside the configured one, and
+`_observed_accounts` reads it off the snapshot. ⚠ **The OBSERVED number, never the configured one**
+— the configured account lives in the same repo as the list, so checking one against the other
+proves nothing. ⚠ **A bot that could not ask contributes nothing, and bots that disagree resolve to
+unknown**, since one terminal holds one login. ⚠ **`account_source` says which evidence it was**
+(`terminal` = the scan asked, `bot` = a bot reported) and it must stay in the response model: a
+dataclass field the model does not declare is DROPPED without a word, and this one was.
+⚠ **It lights up only once a bot restarts onto the new runner** — until then the bots report
+nothing and the row stays unverified, which is the honest answer.
 
 Story and the false alarm: `command-center/docs/BACKEND_BUILD_NOTES.md`.
 
@@ -6227,3 +6235,42 @@ one.** Raising it to ~85 would put the phase back at the hour it was designed ar
 settings actually probed from **15 of 38 to about 21**. Both are honest — what the budget cannot
 reach is named in the coverage record and in the start-up estimate — so which one the speed-up buys
 is Aaron's call and it has not been made unilaterally here.
+
+### The start screen's wait is MEASURED once a stack has been stressed (2026-09-10)
+
+**The form quoted ~124 minutes for a ~42-minute sensitivity phase on the live pairing.** Two
+independent causes, and they both pointed high.
+
+🔴 **ONE: THE ESTIMATE READ THE STACK'S RUN ROW, AND A RUN MAKES TWO PASSES OVER THE BARS.** A
+launched stack replays the shared book over every leg's bars, then one solo control per leg over
+that leg's own — the solos sum to the same total whatever the leg count. A shift does the first
+pass alone. **So the row is twice a shift's cost, and that 2 is ARITHMETIC, not a fitted divisor.**
+The old docstring refused a divisor *"tuned on one two-leg stack"* and was right about that and
+wrong about this: this one is read off what the runner does. The measured 498s-row against a 234s
+shift (2.13x) is a CHECK on the reasoning, not its source. ⚠ **A SOURCED leg keeps the full span**
+— its control runs a private copy of its parent, so that stack does more than two passes and
+halving would under-state, the unsafe direction for a wait.
+
+🔴 **TWO: THE ROW IS STAMPED WITH WHAT A REPLAY COST ON THE DAY IT RAN.** The live stack's row
+predates the engine gating, so it carried a cost the code no longer pays — and arithmetic cannot
+fix that, only a measurement can.
+
+✅ **The fix is to MEASURE, and the measurement was already being taken.** The phase's baseline is
+exactly one shift-shaped replay — same legs, window and path — so it is now TIMED and stored in the
+coverage record. `lab_db.last_stack_replay_seconds` reads the newest one back, and the estimate
+prefers it; the halved run row is only the fallback for a stack that has never been stressed.
+
+⚠ **`None` means never measured and must never become zero** — zero reads as an instant replay and
+quotes a wait of nothing. ⚠ **Newest wins**, because the point is to track a replay getting faster.
+⚠ **Another stack's reading is never borrowed** — replay cost is a fact about this stack's legs,
+bars and window.
+
+**On the live pairing now: 124 → 62 minutes from the halving alone**, still over because its row
+predates the gating. **The first sensitivity run on it records the real figure and the next
+estimate lands at ~45** (182.6s x (1 + 60 / 4.32)).
+
+**TESTED:** 12 new tests across `test_gradable_resolver.py` and `test_stack_stress_visibility.py`,
+**8 mutations run and 8 killed.** 🔴 **One survived on the first pass and it is the rule-7 shape:**
+the reader and the estimate were covered, but nothing proved the phase WROTE the figure — so
+deleting the write left every stack quoting the fallback for ever while looking wired. A test now
+drives the real phase and asserts the round trip.

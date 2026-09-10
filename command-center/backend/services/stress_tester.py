@@ -994,7 +994,14 @@ def stack_sensitivity_preview(stack_id: str) -> dict:
     # ⚠ **The BASELINE is serial and the SHIFTS are not**, so they are estimated separately. The
     # baseline runs before the pool opens — every shift is a ratio against it — so it is one whole
     # replay whatever the worker count is.
-    per_replay = _stack_replay_minutes(rows)
+    # 🔴 **MEASURED IF THIS STACK HAS EVER BEEN STRESSED, DERIVED ONLY IF IT HAS NOT.** The
+    # run-row arithmetic below reads high for two independent reasons and both were live at once
+    # on the live pairing: a launched stack makes TWO passes over every bar (the shared book plus
+    # one solo control per leg) where a shift makes one, and the row carries whatever a replay
+    # cost on the day it ran — which on that stack predates the engine gating. The modal quoted
+    # ~124 minutes for a ~42 minute job. A measurement cannot drift that way.
+    measured = lab_db.last_stack_replay_seconds(stack_id)
+    per_replay = (measured / 60.0) if measured else _stack_replay_minutes(rows, legs)
     wall = per_replay * (1 + len(plan) / _effective_parallelism())
     return {
         "replays": len(plan),
@@ -1025,8 +1032,11 @@ def _effective_parallelism() -> float:
     return max(1.0, _STACK_SENS_WORKERS * _STACK_SENS_PARALLEL_EFFICIENCY)
 
 
-def _stack_replay_minutes(leg_rows: list[dict]) -> float:
+def _stack_replay_minutes(leg_rows: list[dict], legs: Optional[list[dict]] = None) -> float:
     """Minutes for ONE whole-stack replay, taken from the legs' OWN measured durations.
+
+    ⚠ **THE FALLBACK, not the answer.** `lab_db.last_stack_replay_seconds` is the measurement and
+    it wins wherever it exists; this is what a stack that has never been stressed gets.
 
     ⚠ **MEASURED where it can be.** A per-job constant is wrong by construction here — the cost
     scales with the window and with how many legs' bars the merged clock has to step — and this
@@ -1074,7 +1084,26 @@ def _stack_replay_minutes(leg_rows: list[dict]) -> float:
     # smaller of the two is right in all three and cannot be inflated by a stale row.
     span = (max(e for _, e in spans) - min(s for s, _ in spans)) / 60.0
     total = sum(e - s for s, e in spans) / 60.0
-    return min(span, total)
+    est = min(span, total)
+
+    # 🔴 **A LAUNCHED STACK MAKES TWO PASSES OVER THE BARS AND A SHIFT MAKES ONE, so the row is
+    # about twice a shift's cost — and that 2 is ARITHMETIC, not a fitted divisor.** `run_stack`
+    # replays the shared book over every leg's bars, then one solo control per leg over that leg's
+    # own bars; the solos sum to the same total, whatever the leg count. `replay_window` passes
+    # `solo_control=False` and does the first pass alone.
+    #
+    # ⚠ **This is why the docstring above USED to refuse a divisor, and the refusal was right about
+    # the wrong thing.** It objected to a number "tuned on one two-leg stack"; this one is read off
+    # what the runner does and holds for any leg count. MEASURED on the live pairing, which is a
+    # check on the reasoning rather than its source: the stack row spans 498s and a
+    # sensitivity-shaped replay of the same window took 234s — 2.13x.
+    #
+    # ⚠ **A SOURCED leg breaks the arithmetic and is left alone.** Its control runs a private copy
+    # of its parent beside it, so such a stack does MORE than two passes and halving would
+    # under-state. Over-stating is the safe direction, so those keep the full span.
+    if legs is not None and not any(leg.get("source") for leg in legs):
+        est /= 2.0
+    return est
 
 
 def _shift_pool(workers: int):
@@ -2197,12 +2226,26 @@ async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, O
             should_cancel=lambda: is_cancelled(stress_test_id),
         )
 
+    # 🔴 **THE BASELINE IS TIMED, BECAUSE IT IS ALREADY EXACTLY ONE SHIFT-SHAPED REPLAY.** Same
+    # legs, same window, same `solo_control=False` path, same machine — so its duration IS the
+    # per-replay figure the next estimate needs, and taking it costs nothing. Until this existed
+    # the estimate was derived from the stack's stored RUN row, which makes two passes over the
+    # bars and is stamped with whatever a replay cost on the day it ran: on the live pairing the
+    # modal quoted ~124 minutes for a ~42 minute job.
+    #
+    # ⚠ **Wall clock, and it therefore includes the bar LOAD.** That is right rather than sloppy:
+    # a shift pays it too, in a worker that has just spawned with a cold cache.
+    #
+    # ⚠ **Recorded only on the path that COMPLETED it** — a cancelled baseline returns above, so
+    # no partial duration can be stored as a whole one.
+    _t0 = time.perf_counter()
     try:
         base_book = await asyncio.to_thread(_replay, legs, settings)
     except Exception as exc:  # noqa: BLE001 — every failure here is the same answer
         return (False, f"the stack's own baseline replay failed ({type(exc).__name__}: {exc})")
     if base_book.get("cancelled"):
         return (False, "cancelled")
+    measured_replay_seconds = time.perf_counter() - _t0
     baseline_pf = base_book["kpis"].get("profit_factor")
     baseline_pnl = base_book["kpis"].get("net_pnl") or 0.0
     if not (baseline_pf is not None and np.isfinite(baseline_pf) and baseline_pf > 0):
@@ -2229,6 +2272,9 @@ async def _run_stack_sensitivity(stress_test_id: str, st: dict) -> tuple[bool, O
         skipped=skipped,
         unreachable=unreachable,
         extra_coverage={
+            # What ONE whole-stack replay cost on this machine, for the next estimate. See the
+            # note at the baseline above; `lab_db.last_stack_replay_seconds` reads it back.
+            "measured_replay_seconds": measured_replay_seconds,
             "replay_budget": _STACK_SENS_MAX_REPLAYS,
             "settings_out_of_budget": out_of_budget,
         },

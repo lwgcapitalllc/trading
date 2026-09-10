@@ -4637,6 +4637,40 @@ def update_stress_test_sensitivity(
         )
 
 
+def last_stack_replay_seconds(stack_id: str) -> Optional[float]:
+    """How long ONE sensitivity-shaped whole-stack replay actually took, last time one ran.
+
+    🔴 **The estimate used to be derived from the stack's own RUN row, and that reads high for two
+    independent reasons.** A launched stack replays the shared book PLUS one solo control per leg
+    — two passes over every bar where a shift makes one — and the row is stamped whenever that run
+    happened, so it also carries whatever the replay cost on the code of that day. On the live
+    pairing both were live at once and the modal quoted ~124 minutes for a ~42 minute job.
+
+    ⚠ **This is the MEASUREMENT, and the run-row arithmetic stays as the fallback for a stack that
+    has never been stressed.** `None` means nobody has measured this stack yet — never zero, which
+    would read as an instant replay and quote a wait of nothing.
+
+    ⚠ **Newest first, and only from a phase that COMPLETED.** A cancelled or failed sensitivity
+    stops part-way, so its timing describes however far it got.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT sensitivity_coverage FROM stress_tests "
+            "WHERE stack_id = ? AND sensitivity_coverage IS NOT NULL "
+            "ORDER BY created_at DESC",
+            (stack_id,),
+        ).fetchall()
+    for row in rows:
+        try:
+            cov = json.loads(row["sensitivity_coverage"])
+        except (TypeError, ValueError):
+            continue
+        secs = (cov or {}).get("measured_replay_seconds")
+        if isinstance(secs, (int, float)) and not isinstance(secs, bool) and secs > 0:
+            return float(secs)
+    return None
+
+
 def update_stress_test_phases(
     stress_test_id: str, requested: list[str], failures: dict[str, str]
 ) -> None:

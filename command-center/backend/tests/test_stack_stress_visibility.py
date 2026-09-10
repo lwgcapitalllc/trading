@@ -271,3 +271,62 @@ def test_CANCEL_dispatches_to_the_platform_the_ROW_names(client):
 
     assert resp.status_code == 200, resp.text
     assert seen == ["python"], "the row said python; the strategy row says ninjatrader"
+
+
+# ── What ONE whole-stack replay cost, so the next estimate is measured ────────────────
+
+
+def _sens_test(stress_test_id: str, stack_id: str, created_at: int, coverage) -> None:
+    lab_db.insert_stress_test(
+        {
+            "stress_test_id": stress_test_id,
+            "stack_id": stack_id,
+            "status": "complete",
+            "created_at": created_at,
+            "runner": "python",
+            "target_label": "stack",
+        }
+    )
+    lab_db.update_stress_test_sensitivity(stress_test_id, {}, 0.1, coverage)
+
+
+def test_a_stack_NOBODY_has_stressed_answers_NONE_not_zero(lab):
+    """🔴 Rule 1. A zero here reads as an instant replay and quotes a wait of nothing at all,
+    which is the most reassuring answer available about a stack nothing has measured."""
+    assert lab_db.last_stack_replay_seconds("st_never") is None
+
+
+def test_the_MEASURED_replay_seconds_come_back(lab):
+    _sens_test("st_a", "st_stack", 100, {"measured_replay_seconds": 182.6})
+    assert lab_db.last_stack_replay_seconds("st_stack") == pytest.approx(182.6)
+
+
+def test_the_NEWEST_measurement_wins(lab):
+    """The whole point is that it tracks a replay getting faster. An older reading winning would
+    pin the estimate to whatever the code cost the first time anybody ran it."""
+    _sens_test("st_old", "st_stack", 100, {"measured_replay_seconds": 400.0})
+    _sens_test("st_new", "st_stack", 200, {"measured_replay_seconds": 182.6})
+    assert lab_db.last_stack_replay_seconds("st_stack") == pytest.approx(182.6)
+
+
+def test_a_coverage_record_carrying_NO_timing_is_SKIPPED_not_read_as_zero(lab):
+    """Every sensitivity run before this existed wrote a coverage record without the figure, and
+    a phase that failed early writes one too. Falling through to the older reading is right;
+    reading the absence as a duration is the defect."""
+    _sens_test("st_old", "st_stack", 100, {"measured_replay_seconds": 182.6})
+    _sens_test("st_new", "st_stack", 200, {"replay_budget": 60})
+    assert lab_db.last_stack_replay_seconds("st_stack") == pytest.approx(182.6)
+
+
+def test_a_NONPOSITIVE_timing_is_refused(lab):
+    """A zero or a negative is not a replay that took no time — it is a broken record, and
+    quoting it would put the estimate at nothing."""
+    _sens_test("st_bad", "st_stack", 200, {"measured_replay_seconds": 0.0})
+    assert lab_db.last_stack_replay_seconds("st_stack") is None
+
+
+def test_ANOTHER_stacks_measurement_is_not_borrowed(lab):
+    """Replay cost is a fact about THIS stack's legs, bars and window. Borrowing another's is the
+    basis trap this repo has already met four times."""
+    _sens_test("st_a", "st_other", 100, {"measured_replay_seconds": 182.6})
+    assert lab_db.last_stack_replay_seconds("st_stack") is None

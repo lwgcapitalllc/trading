@@ -983,6 +983,40 @@ def test_what_the_BUDGET_could_not_reach_is_recorded_with_what_it_did(lab, monke
     assert cov["settings_out_of_budget"] == ["account_size", "entry_floor_pct"]
 
 
+def test_the_phase_RECORDS_what_one_whole_stack_replay_cost(lab, monkeypatch):
+    """🔴 The estimate READS this figure, so something has to prove it is WRITTEN — a reader
+    consuming a field nothing sets is the label-without-a-consumer shape from the other end, and
+    it would leave every stack quoting the fallback for ever while looking wired.
+
+    It is the BASELINE that is timed, because the baseline is already exactly one shift-shaped
+    replay: same legs, same window, same path. The stub sleeps so the reading is a real duration
+    rather than a near-zero that an `is not None` would pass.
+
+    ⚠ Watched RED by deleting the field from the coverage record.
+    """
+    import time as _time
+
+    from services import stress_tester
+
+    _stack(lab, monkeypatch)
+    monkeypatch.setattr(stress_tester, "_shift_pool", lambda workers: _InlinePool())
+
+    def slow(*a, **k):
+        _time.sleep(0.05)
+        return _book_pf(pf=2.0)
+
+    monkeypatch.setattr(portfolio_runner, "replay_window", slow)
+    ok, _err = _run_sens()
+    assert ok is True
+    cov = lab_db.get_stress_test("st_sens")["sensitivity_coverage"]
+    assert cov["measured_replay_seconds"] >= 0.05
+    # And the thing that reads it gets it back — the round trip, not two halves proven apart.
+    stack_id = lab_db.get_stress_test("st_sens")["stack_id"]
+    assert lab_db.last_stack_replay_seconds(stack_id) == pytest.approx(
+        cov["measured_replay_seconds"]
+    )
+
+
 def test_an_unusable_baseline_profit_factor_books_NONE_for_every_shift(lab, monkeypatch):
     """A baseline of zero gives nothing to measure a change against. That is NOT ASSESSABLE, and
     a 0.0 there is the most reassuring answer available on a phase where nothing was measured.
@@ -1423,6 +1457,86 @@ def test_a_REUSED_leg_stamped_days_ago_cannot_inflate_the_estimate():
 
     stale = _rows((0, 600), (89_400, 90_000))
     assert stress_tester._stack_replay_minutes(stale) == pytest.approx(20.0)
+
+
+def test_the_fallback_HALVES_the_run_row_because_a_launched_stack_makes_TWO_passes():
+    """🔴 THE RUN ROW IS ABOUT TWICE A SHIFT'S COST, AND THE 2 IS ARITHMETIC. `run_stack` replays
+    the shared book over every leg's bars and then one solo control per leg over that leg's own
+    bars — the solos sum to the same total, whatever the leg count — while a shift passes
+    `solo_control=False` and does the first pass alone.
+
+    MUTATION: drop the halving and this goes red.
+    """
+    from services import stress_tester
+
+    together = _rows((1000, 1600), (1000, 1600))
+    legs = [{"strategy_id": "a"}, {"strategy_id": "b"}]
+    assert stress_tester._stack_replay_minutes(together, legs) == pytest.approx(5.0)
+
+
+def test_a_SOURCED_leg_keeps_the_FULL_span_because_its_control_runs_TWO_strategies():
+    """The case the halving does not cover, left over-stating on purpose. A dependent leg's solo
+    control runs a private copy of its PARENT beside it, so that stack does more than two passes
+    and halving would UNDER-state — the unsafe direction for a wait.
+
+    MUTATION: halve regardless of the source and this goes red.
+    """
+    from services import stress_tester
+
+    together = _rows((1000, 1600), (1000, 1600))
+    legs = [{"strategy_id": "a"}, {"strategy_id": "b", "source": "a"}]
+    assert stress_tester._stack_replay_minutes(together, legs) == pytest.approx(10.0)
+
+
+def test_a_caller_that_names_no_legs_gets_the_UNHALVED_span():
+    """`None` is *I have not told you the leg shapes*, which cannot be answered with a halving.
+    It is a different fact from *there are no sourced legs*, and they may not share a value."""
+    from services import stress_tester
+
+    assert stress_tester._stack_replay_minutes(_rows((1000, 1600), (1000, 1600))) == pytest.approx(
+        10.0
+    )
+
+
+def test_the_estimate_PREFERS_a_real_measurement_over_the_run_row(lab, monkeypatch):
+    """🔴 THE DEFECT: the run row is stamped with whatever a replay cost ON THE DAY IT RAN, so a
+    replay that later got faster leaves the modal quoting the old cost for ever. On the live
+    pairing it quoted ~124 minutes for a ~42 minute job. A measurement cannot drift that way.
+
+    MUTATION: read the run row unconditionally and this goes red.
+    """
+    from services import lab_db, stress_tester
+
+    monkeypatch.setattr(lab_db, "last_stack_replay_seconds", lambda _sid: 60.0)
+    monkeypatch.setattr(stress_tester.lab_db, "get_stack_settings", lambda _s: {})
+    monkeypatch.setattr(stress_tester.lab_db, "list_stack_runs", lambda _s: _rows((0, 6000)))
+    monkeypatch.setattr(stress_tester.lab_db, "get_strategy", lambda _s: {})
+    import services.gradable as gradable
+
+    monkeypatch.setattr(gradable, "rebuild_legs", lambda _s: [])
+    got = stress_tester.stack_sensitivity_preview("st_x")
+    # No plan, so the wall clock is the ONE baseline replay: 60s measured, not the row's 100 min.
+    assert got["minutes"] == 1
+
+
+def test_a_stack_NOBODY_has_stressed_falls_back_rather_than_quoting_nothing(lab, monkeypatch):
+    """`None` from the reader means *never measured*, and it must not become a zero — a zero reads
+    as an instant replay and quotes a wait of nothing at all. Rule 1.
+
+    The answer is the run row halved (100 minutes of row, two passes), which is the fallback doing
+    its job — the point here is that it ANSWERS rather than collapsing to nothing.
+    """
+    from services import lab_db, stress_tester
+
+    monkeypatch.setattr(lab_db, "last_stack_replay_seconds", lambda _sid: None)
+    monkeypatch.setattr(stress_tester.lab_db, "get_stack_settings", lambda _s: {})
+    monkeypatch.setattr(stress_tester.lab_db, "list_stack_runs", lambda _s: _rows((0, 6000)))
+    monkeypatch.setattr(stress_tester.lab_db, "get_strategy", lambda _s: {})
+    import services.gradable as gradable
+
+    monkeypatch.setattr(gradable, "rebuild_legs", lambda _s: [{"strategy_id": "a"}])
+    got = stress_tester.stack_sensitivity_preview("st_x")
+    assert got["minutes"] == 50
 
 
 def test_the_estimate_ACCOUNTS_for_the_pool_rather_than_quoting_the_serial_wait():
