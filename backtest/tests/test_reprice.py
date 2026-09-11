@@ -347,9 +347,13 @@ def _window_df():
     return df.set_index("time").tz_localize("UTC")
 
 
-@lru_cache(maxsize=None)
-def _replay(cost_kwargs: tuple = ()):
-    """One replay of the reference strategy over that window. `()` is the FREE run."""
+def _one_replay(cost_kwargs: tuple = ()):
+    """One replay of the reference strategy over that window. `()` is the FREE run.
+
+    Module-level so a spawned process can import it: `_all_replays` runs four of these at once.
+    """
+    from types import SimpleNamespace
+
     from backtest.replay import build_strategy
     from strategies.python.sos_fade import LAB_STRATEGY
 
@@ -359,7 +363,42 @@ def _replay(cost_kwargs: tuple = ()):
         LAB_STRATEGY["strategy"], cfg, initial_capital=10_000.0, cost_profile=profile
     )
     s.run(_window_df(), warmup=200)
-    return s.execution
+    # Only the trades cross the process boundary - both tests read `.trades` and nothing else,
+    # and the execution itself holds the whole strategy and its engines.
+    return SimpleNamespace(trades=list(s.execution.trades))
+
+
+# The four replays this file needs: the free run plus one per charged layer. Keyed exactly as the
+# parametrize block below states its kwargs, so a case asks for its replay by the same tuple.
+_REPLAY_KEYS = (
+    (),
+    (("spread", 0.22),),
+    (("commission", 3.0),),
+    (("swap", PROFILES["vantage_demo"].swap),),
+)
+
+
+@lru_cache(maxsize=None)
+def _all_replays():
+    """All four replays, run AT ONCE in four processes, the first time any case asks (2026-09-10).
+
+    MEASURED: 62s for this file one replay after another on an idle machine (~15s a replay), and
+    it was the whole root suite's critical path - every scheduling variant tried left one worker
+    holding all four. Four processes make the chain ~one replay long. Nothing about what is
+    replayed or asserted changes: the same strategy, window, profiles and warm-up, and each
+    replay still runs start to finish in a process of its own.
+    """
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import get_context
+
+    with ProcessPoolExecutor(
+        max_workers=len(_REPLAY_KEYS), mp_context=get_context("spawn")
+    ) as pool:
+        return dict(zip(_REPLAY_KEYS, pool.map(_one_replay, _REPLAY_KEYS)))
+
+
+def _replay(cost_kwargs: tuple = ()):
+    return _all_replays()[cost_kwargs]
 
 
 @pytest.mark.skipif(not _CACHE.exists(), reason="bar cache absent (git-ignored)")
