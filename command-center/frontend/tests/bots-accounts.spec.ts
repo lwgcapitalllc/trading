@@ -1,5 +1,7 @@
-import { test, expect, Page } from '@playwright/test'
-import { refuseLiveWrites } from './fixtures'
+import { expect, Page } from '@playwright/test'
+import { offlineTest } from './offline'
+
+const { test } = offlineTest('bots-page', { clockFactor: 10 })
 
 /**
  * The Bots page's Accounts tab — which bots share a balance, and the ceiling over it.
@@ -208,7 +210,6 @@ export function reg(over: Record<string, unknown> = {}) {
 async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
   // FIRST, so it sits UNDER this spec's own handlers and only ever sees what they fell through
   // on. `route.fallback()` below is allow-by-default, and this backend writes to the live box.
-  await refuseLiveWrites(page)
   await page.route('**/*', async (route) => {
     const u = new URL(route.request().url())
     if (u.pathname === '/api/bots/accounts/registry') {
@@ -855,7 +856,8 @@ test('a registered account with NO bots can still be OPENED and added to', async
   await mock(page, [], [reg()])
   await openAccount(page)
 
-  await expect(page.getByTestId('no-bots')).toContainText('trades nothing')
+  // The wording moved in 44e1d69c ("an account its bots left is still an account").
+  await expect(page.getByTestId('no-bots')).toContainText('No bot is on this account now')
   await expect(page.getByTestId('add-bot')).toBeEnabled()
 })
 

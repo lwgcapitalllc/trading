@@ -16,6 +16,14 @@
  */
 import { test, expect, type Page } from '@playwright/test'
 import type { BotSnapshot } from '../src/types'
+import { refuseLiveWrites } from './fixtures'
+
+// 🔴 The Overview carries the FLEET CONTROLS since 2026-09-05 (stop / kill switch), and this suite
+// reads the REAL backend — so an unrouted click here would write to the live box. Registered before
+// every check's own routes, so it only ever sees a write none of them answered (2026-09-10).
+test.beforeEach(async ({ page }) => {
+  await refuseLiveWrites(page)
+})
 
 const API = 'http://localhost:8000'
 

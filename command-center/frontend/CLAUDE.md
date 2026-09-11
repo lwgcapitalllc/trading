@@ -150,12 +150,8 @@ implementation on the money path.
 ⚠ **Fleet controls and scheduled jobs moved to Overview** (`components/FleetControls.tsx`, one
 component, not a copy). This page manages bots one at a time; those act on all of them.
 
-🔴 **The 65 Playwright tests in `bots-accounts.spec.ts` and `bots-version.spec.ts` describe the
-REMOVED structure and have not been re-pointed.** They were deliberately not blind-rewritten: they
-cannot be run from the dev machine safely (`bots-version` does not intercept the snapshot, so it
-reaches the real backend and the live box), and a test rewritten against a UI it has never been
-executed against is the vacuous-test trap this repo has recorded eight times. **Re-point them with
-the app up, watching each one fail first.**
+✅ **`bots-accounts.spec.ts` and `bots-version.spec.ts` were re-pointed and now run OFFLINE
+(2026-09-10)** — no read reaches the backend or the box. See *Offline specs* under *Browser tests*.
 
 ## A bot row names what it is DOING — Stopping / Starting / Restarting (2026-09-10)
 
@@ -1906,9 +1902,37 @@ talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand
 can start things on the trading box. Starting it stays a person's decision — the same reasoning
 `test_integration.py` is deselected under.
 
-⚠ **`workers: 1`, `retries: 0`.** The tests intercept API routes and one installs a **fake clock**;
-parallel workers would be several browsers disagreeing about what time it is. And a retry that
-turns a real flake green is how a broken page ships.
+⚠ **`retries: 0`** — a retry that turns a real flake green is how a broken page ships. **Workers
+are per PROJECT since 2026-09-10**: specs that read the real backend stay on ONE worker (they
+share its state); OFFLINE specs run fully parallel. See *Offline specs* below.
+
+### Offline specs — `tests/offline.ts`, recorded answers, a quick clock (2026-09-10)
+
+`bots-version.spec.ts` (4.1 min → **32 s**) and `bots-accounts.spec.ts` (2.0 min → **1.0 min**)
+run OFFLINE: `offlineTest('bots-page')` answers every `/api` read the spec does not route from
+`tests/recordings/bots-page.json`, and ABORTS anything else — then fails the check naming it. 🔴
+**Before this, both read the real snapshot and health dots, which reach the live trading box on
+every check** (an SSH round trip each), and inherited its STATE: on 2026-09-10 both bots moved to a
+live account, which would have turned every demo-assuming check red on a day the page was fine.
+
+- ⚠ **A spec STATES the state it needs** by mutating a copy from `recorded()` (e.g. `pinSnapshot`
+  puts `sos_fade_demo` on a demo account) — never trusts what the box said the day it was recorded.
+- ⚠ **Re-record by hand** with the app up: `node scripts/record-api.mjs tests/recordings/<f>.json
+  [--add /path]`. GETs only; Telegram users are scrubbed. It is the ONE step that touches the box.
+- ⚠ **The recording's SHAPE is checked on every backend run** —
+  `backend/tests/test_api_recordings.py` validates each answer against its route's response model,
+  so a renamed field goes red there, not as a confusing browser failure. Re-record when it does.
+- ⚠ **`playwright.config.ts` DISCOVERS offline specs** (a file calling `offlineTest(`) and gives
+  them their own `fullyParallel` project; every other spec keeps `workers: 1`. Never list them.
+- ⚠ **`clockFactor: 10` runs the page's clock ten times faster** — every poll still fires, in
+  order, just sooner. Route handlers run in Node on the REAL clock, so a mock that times something
+  keeps real milliseconds. 🔴 **It exposed a latent race**: a mid-deploy check passed only because
+  a one-second poll was slower than its assertions; it now holds the job (`holdAt`).
+- ⚠ **The remaining cost is the dev server** serving a fresh module graph to every page (more
+  workers did not help — MEASURED 6 vs 9). A built bundle is the next lever; not built.
+- ⚠ The old write backstop (`refuseLiveWrites`) is DROPPED from offline specs: it aborted an
+  unrouted write before the harness could flag it. Specs on the real backend keep it —
+  `overview.spec.ts` gained it 2026-09-10 (the page carries the fleet controls).
 
 ⚠ **Mocks MUTATE THE REAL SNAPSHOT rather than hand-writing a fixture** (`mockSnapshot`). A
 hand-written fixture drifts from the backend's model and then pins a shape the server never sends

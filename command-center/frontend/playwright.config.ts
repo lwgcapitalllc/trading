@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs'
 import { defineConfig, devices } from '@playwright/test'
 
 /**
@@ -8,13 +9,28 @@ import { defineConfig, devices } from '@playwright/test'
  * and a live MT5 terminal, and a test runner that boots it on demand is a test runner that can
  * start things on the trading box. Starting it is a person's decision.
  *
- * ⚠ `workers: 1` and `retries: 0` on purpose. The tests intercept API routes and one of them
- * installs a FAKE CLOCK, so parallel workers would be several browsers disagreeing about what
- * time it is; and a retry that turns a real flake green is how a broken page ships.
+ * ⚠ `retries: 0` on purpose — a retry that turns a real flake green is how a broken page ships.
+ *
+ * TWO PROJECTS (2026-09-10), split by what a spec can reach:
+ *
+ * - **offline** — specs built on `tests/offline.ts`: every backend call is answered by the spec or
+ *   a recording, and anything else is aborted and fails the check. Nothing is shared between two
+ *   of them (each page has its own routes and its own clock), so they run FULLY PARALLEL.
+ * - **chromium** — every other spec. These read the REAL backend and some write to the lab, so
+ *   two at once would share one backend's state: **one worker, as before.**
+ *
+ * ⚠ **A spec is offline because it USES the harness, and that is discovered, never listed** — a
+ * typed list is how a spec that reads the real backend ends up running beside itself.
  */
+const TESTS = new URL('./tests/', import.meta.url)
+const OFFLINE = readdirSync(TESTS)
+  .filter((f) => f.endsWith('.spec.ts'))
+  .filter((f) => readFileSync(new URL(f, TESTS), 'utf8').includes('offlineTest('))
+  .map((f) => `**/${f}`)
+
 export default defineConfig({
   testDir: './tests',
-  workers: 1,
+  workers: 6,
   retries: 0,
   timeout: 60_000,
   reporter: [['list']],
@@ -23,5 +39,18 @@ export default defineConfig({
     viewport: { width: 1670, height: 940 },
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'offline',
+      testMatch: OFFLINE,
+      fullyParallel: true,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'chromium',
+      testIgnore: OFFLINE,
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 })

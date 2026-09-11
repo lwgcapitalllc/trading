@@ -13,11 +13,37 @@
  *
  * ⚠ Like `calendar.spec.ts` the bot endpoints it acts through are intercepted whole. That matters
  * more here than anywhere: the real `/version` route SSHes to the live trading box, and
- * `/promote/job` deploys code onto it — which is why `refuseLiveWrites` backstops every write.
+ * `/promote/job` deploys code onto it — which is why the whole page runs OFFLINE (offline.ts).
  */
-import { test, expect, type Page } from '@playwright/test'
-import type { BotDeployedVersion, BotPromoteJob, BotVersionCompare } from '../src/types'
-import { refuseLiveWrites } from './fixtures'
+import { expect, type Page } from '@playwright/test'
+import type {
+  BotDeployedVersion,
+  BotPromoteJob,
+  BotSnapshot,
+  BotVersionCompare,
+} from '../src/types'
+import { offlineTest } from './offline'
+
+// OFFLINE (2026-09-10): every read this page makes beyond the two routed below is answered from
+// `recordings/bots-page.json`, and anything else is aborted and fails the check — see offline.ts.
+// Before this the snapshot and the health dots were read off the REAL backend, which reached the
+// live trading box on every check and cost ~4s of SSH each.
+const { test, recorded } = offlineTest('bots-page', { clockFactor: 10 })
+
+/**
+ * The bot snapshot, with `sos_fade_demo` on the account type THIS check needs.
+ *
+ * ⚠ Stated, never inherited: the recording holds whatever the box said the day it was taken — on
+ * 2026-09-10 that was a LIVE account — and every check here except the live one is about a demo.
+ */
+async function pinSnapshot(page: Page, live = false) {
+  await page.route('**/api/bots/snapshot', (r) => {
+    const snap = recorded<BotSnapshot>('/bots/snapshot')
+    for (const b of snap.bots)
+      if (b.key === 'sos_fade_demo') b.account_type = live ? 'live' : 'demo'
+    return r.fulfill({ json: snap })
+  })
+}
 
 // ── fixture ─────────────────────────────────────────────────────────────────────
 
@@ -163,9 +189,9 @@ function jobFrames(plan: JobPlan): BotPromoteJob[] {
 /**
  * Intercept every bot endpoint the deploy panel touches. Nothing reaches the live box.
  *
- * 🔴 **`refuseLiveWrites` is registered FIRST and it is not optional here.** The deploy is a POST
- * that, unrouted, would reach the real backend and deploy code onto the live trading box. Routes
- * match newest-first, so the backstop only ever sees what these routes did not answer.
+ * 🔴 **The deploy is a POST that, unrouted, would deploy code onto the live trading box.** The
+ * offline backend (`offlineTest`, registered before any of these) aborts anything not answered
+ * here and fails the check naming it, so a write this spec forgot to route cannot leave the page.
  *
  * ⚠ **`/version` ANSWERS DIFFERENTLY AFTER A SUCCESSFUL DEPLOY, and a fixed payload would make
  * several of these checks vacuous.** The job's finish invalidates that query, so the real banner
@@ -186,14 +212,14 @@ async function mockBot(
      *  first step until `release()`: the page watches deploys from load, so a job that advanced
      *  through the snapshot's few seconds could finish before the drawer ever opened. */
     runningOnOpen?: boolean
-    /** Put the bot on a LIVE account (the real snapshot, mutated — never a hand-written one). */
+    /** Put the bot on a LIVE account (the RECORDED snapshot, mutated — never a hand-written one). */
     live?: boolean
     /** Hold the version re-read a deploy's finish triggers — the window where every readout
      *  would otherwise still describe the state before the deploy. */
     reReadDelayMs?: number
   } = {}
 ) {
-  await refuseLiveWrites(page)
+  await pinSnapshot(page, !!opts.live)
   let promoted = false
   let frames: BotPromoteJob[] | null = opts.runningOnOpen ? jobFrames(opts) : null
   let idx = 0
@@ -233,14 +259,6 @@ async function mockBot(
     if (f.status === 'done') promoted = true
     return r.fulfill({ json: f })
   })
-  if (opts.live) {
-    await page.route('**/api/bots/snapshot', async (r) => {
-      const res = await r.fetch()
-      const snap = await res.json()
-      for (const b of snap.bots ?? []) if (b.key === 'sos_fade_demo') b.account_type = 'live'
-      return r.fulfill({ response: res, json: snap })
-    })
-  }
   return { posts, release: () => (held = false) }
 }
 
@@ -425,7 +443,10 @@ test('ONE click deploys — no preview, no second button to scroll to', async ({
 
 test('the readout moves step by step, with the step it is on MOVING', async ({ page }) => {
   // MUTATION: map every job step to `done` in `jobSteps` — the stop step is never seen `active`.
-  await mockBot(page, compare())
+  // ⚠ HELD on the stop step (2026-09-10): these four assertions read one moment of a moving job,
+  // and passed only because a real one-second poll was slower than they were. The fast clock
+  // finished the deploy between the first and the second — the race `holdAt` exists for.
+  await mockBot(page, compare(), { holdAt: 'stop' })
   await openConfigure(page)
   await banner(page).getByTestId('deploy-button').click()
 
@@ -790,6 +811,7 @@ async function mockRestartSettling(
   })
   // No deploy job — these checks are about the version read, and the page asks for one on open.
   await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await pinSnapshot(page)
 }
 
 test('a restart-pending warning clears ITSELF once the bot comes back — no reload', async ({

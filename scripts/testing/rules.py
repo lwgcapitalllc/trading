@@ -211,6 +211,22 @@ TABLE = (
     ),
     (f"{_FE}/tests/*.spec.ts", _BROWSER),
     (f"{_FE}/tests/fixtures.ts", _BROWSER),
+    (f"{_FE}/tests/offline.ts", _BROWSER),
+    # A recording a browser spec replays is ALSO read by the backend check that holds it to its
+    # route's response model - the one reader a string search cannot find (it globs the folder).
+    (
+        f"{_FE}/tests/recordings/*",
+        Action(
+            note=_BROWSER.note,
+            readers=False,
+            package=False,
+            tests=("command-center/backend/tests/test_api_recordings.py",),
+        ),
+    ),
+    (
+        f"{_FE}/scripts/record-api.mjs",
+        Action(note="the recorder a person runs", readers=False, package=False),
+    ),
     (f"{_FE}/playwright.config.ts", _BROWSER),
     ("pytest.ini", Action(suites=("root",))),
     ("command-center/backend/pytest.ini", Action(suites=("backend",))),

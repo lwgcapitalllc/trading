@@ -57,6 +57,24 @@ The suite had doubled since 2026-08-27's 2:00 (root 1,760 → 3,140 tests, backe
 - **`python3 -m scripts.testing.mutate`** plants a bug in memory and runs only the covering tests —
   no file edited, so nothing leaks into the other session sharing the clone.
 
+### The second pass — measured 2026-09-10/11
+
+| piece | before | after | how |
+|---|---|---|---|
+| full run, root suite (3,202 tests) | 4:21 in Aug | **118s** | parallel gates, reprice replays at once, per-test-count workers |
+| full run, backend suite (1,839 tests) | 2:17 in Aug | **23s** | template DB, readiness stub, per-file git memo |
+| b_leg gate-tool tests | 52.5s | **20s** | one replay per distinct input; a per-column re-read removed |
+| extreme-leg + zone-band gate tests | 60s | **35s** | the same memo, keyed on the DECODED settings |
+| deploy-version tests (3 files) | 29s | **8s** at 5 workers | per-file git memo + worker count by tests, not files |
+| `bots-version.spec.ts` | 4.1 min | **32s** | offline recording + 6 parallel workers + a 10x page clock |
+| `bots-accounts.spec.ts` | 2.0 min | **1.0 min** | the same, and short of the 20s aim — the dev server is the floor |
+
+⚠ **Both browser specs now reach NOTHING behind the page** — before, every check read the live
+box through the real snapshot. ⚠ **Every speed-up was re-proven by planted bugs**, and the pass
+found two coverage holes (an extreme-leg gate that could ignore every on/off setting, stayed green
+on the committed file too; nothing read the version comparison off the endpoint) and one tool
+defect (the bug planter reported a false survivor for any test file — it now refuses).
+
 ### Why a static graph and not coverage tracing
 
 A coverage-traced selector (pytest-testmon) is not installed, pays a full traced run up front, and

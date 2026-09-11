@@ -38,7 +38,24 @@ from .vps_guard import HOOKS
 REPO = rules.REPO
 
 
+def _pytest_loads_it_itself(target: Path) -> bool:
+    """pytest imports test modules and conftest files through its own assertion rewriter, which
+    reads the file from DISK - so a bug planted in memory never reaches the run."""
+    name = target.name
+    return name == "conftest.py" or (
+        name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+    )
+
+
 def plant(target: Path, old: str, new: str) -> str:
+    # 🔴 REFUSED, never run: planted here it reported SURVIVED for two bugs that a real plant
+    # (in a throwaway worktree) showed the tests DID catch - a false survivor, 2026-09-10.
+    if _pytest_loads_it_itself(target):
+        raise ValueError(
+            f"{target.name} is a test module or conftest - pytest reads it from disk, so a bug "
+            "planted in memory never runs. Plant it in the code under test, or edit a copy in a "
+            "throwaway worktree (git worktree add)"
+        )
     src = target.read_text(encoding="utf-8")
     n = src.count(old)
     if n != 1:

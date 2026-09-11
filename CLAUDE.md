@@ -923,6 +923,8 @@ Why (236 full runs in 60 sessions, ~11 hours waited, 17 only to re-read output):
 - **Prove a test can fail (rule 12) with `python3 -m scripts.testing.mutate FILE 'old' 'new'`** — the
   bug is planted IN MEMORY and only the covering tests run. 🔴 **Never plant a bug by editing a
   file**: two sessions share this clone, and the other one's run or commit picks it up. Python only.
+  ⚠ **It REFUSES a test module or conftest** — pytest reads those from disk, so a plant there never
+  runs and used to report a false SURVIVED; plant those in a throwaway `git worktree` copy instead.
 - ⚠ **The fast tier cannot see git-ignored data** (the bar cache the re-pricing replays read, the
   news calendar) **or git history** (the deploy-version tests). After changing either, `--force`.
 - ⚠ **The selector is wrong in exactly one dangerous direction** — a test it never picks goes red on

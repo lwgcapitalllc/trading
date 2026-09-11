@@ -60,6 +60,18 @@ def test_a_mutation_that_cannot_be_planted_runs_nothing(tmp_path):
     assert mutate.run(proj / "calc.py", "not in the file", "x", ["unused"]) == 2
 
 
+def test_a_bug_planted_in_a_TEST_file_is_refused_never_reported_as_survived(tmp_path, monkeypatch):
+    """pytest reads test modules and conftest from disk, so the in-memory plant never reaches them.
+    Before the refusal this returned 1 - SURVIVED - for a bug that would have turned the test red:
+    the false survivor that sent two real kills on 2026-09-10 looking for coverage that was there."""
+    proj = _tiny_project(tmp_path)
+    (proj / "conftest.py").write_text("X = 1\n")
+    monkeypatch.chdir(proj)
+    args = ["-p", "no:cacheprovider", str(proj / "test_calc.py"), "--rootdir", str(proj)]
+    assert mutate.run(proj / "test_calc.py", "== 5", "== 6", args) == 2
+    assert mutate.run(proj / "conftest.py", "X = 1", "X = 2", args) == 2
+
+
 def test_the_planted_bug_never_touches_the_file_on_disk(tmp_path, monkeypatch):
     proj = _tiny_project(tmp_path)
     before = (proj / "calc.py").read_text()

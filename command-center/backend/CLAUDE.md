@@ -6606,3 +6606,13 @@ survived first, and the lesson is about NUMBERS:** the shared-check case used 3.
 sums to EXACTLY 10.0, so a private sum agreed with the shared check. It uses 0.1 + 0.2 under 0.3 now,
 with the float premise asserted. **Inputs that cannot tell two behaviours apart do not test which
 one runs.**
+
+## Recorded answers a browser spec replays are held to their route's model (2026-09-10)
+
+`tests/test_api_recordings.py` validates every answer under `frontend/tests/recordings/` against the
+`response_model` of the GET route that would serve it, matched in FastAPI's own order. The Bots page's
+browser checks replay those recordings OFFLINE (`frontend/CLAUDE.md` -> *Offline specs*), so a
+recording is a claim about this backend's SHAPE that goes stale in silence. ⚠ **A red here means
+re-record, not relax.** ⚠ A required field ADDED to a model fails it; an optional one does not.
+⚠ **Finding no recordings is a FAILURE.** 3 planted, 3 killed — two of them in a throwaway worktree,
+because the in-memory bug planter cannot reach a test file (root `CLAUDE.md`).
