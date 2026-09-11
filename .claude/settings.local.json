@@ -267,7 +267,13 @@
       "Bash(python3 /private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/fmutate.py src/pages/Bots/index.tsx '    trading.push\\({ account: e.account, group, rows: [] }\\)' '    void group' 'LEFT is still an account')",
       "Bash(ln -s /Users/alwg/trading/backtest/cache/VantageMarkets_Demo backtest/cache/VantageMarkets_Demo)",
       "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python -m pytest -q -p no:cacheprovider strategies/python/extreme_leg/tests/test_compare_extreme_leg.py backtest/tests/test_stack_zone_band.py --durations=4)",
-      "Bash(GIT_INDEX_FILE=/private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/idx2 git commit -q -F /private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/msg2.txt)"
+      "Bash(GIT_INDEX_FILE=/private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/idx2 git commit -q -F /private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/msg2.txt)",
+      "Bash(./.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_bot_process_match.py)",
+      "Bash(python3 -m scripts.testing.mutate command-center/backend/routers/bots.py 'status = \"RUNNING\" if _bot_runner_running\\(snap, bot_key\\) else \"STOPPED\"' 'status = \"RUNNING\" if _is_python_running\\(snap, bot_key\\) else \"STOPPED\"' --in command-center/backend -- tests/test_bot_process_match.py -q -p no:cacheprovider)",
+      "Bash(rsync -a --exclude node_modules --exclude dist --exclude test-results --exclude playwright-report --exclude .vite /Users/alwg/trading/command-center/frontend/ /private/tmp/claude-501/-Users-alwg-trading/09357fd4-46ad-4884-b2a9-781c73f17272/scratchpad/mutfe/)",
+      "Bash(ln -s /Users/alwg/trading/command-center/frontend/node_modules /private/tmp/claude-501/-Users-alwg-trading/09357fd4-46ad-4884-b2a9-781c73f17272/scratchpad/mutfe/node_modules)",
+      "Bash(PYTHONPATH=/private/tmp/claude-501/-Users-alwg-trading/09357fd4-46ad-4884-b2a9-781c73f17272/scratchpad .venv/bin/python -m pytest -q -n auto --dist load -p unasked_db_probe -x --no-header -rfE)",
+      "Bash(PYTHONPATH=/private/tmp/claude-501/-Users-alwg-trading/09357fd4-46ad-4884-b2a9-781c73f17272/scratchpad .venv/bin/python -m pytest -q -n auto --dist load -p unasked_db_probe --no-header -rfE)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
