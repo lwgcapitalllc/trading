@@ -108,7 +108,7 @@ result can show you which code produced it.
 | Module | Status | What it does |
 |---|---|---|
 | App shell | ✅ Live | Sidebar, topbar, routing across all pages |
-| Overview | ✅ Live | Stat row plus Bots and Research summary cards, and the calendar preview. The two Smart Money stat cards and its module card are behind `FEATURES.smartMoney` and hidden; **both grids drop a column with them**, because two cards left in a four-column row reads as data that failed to load. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#overview) |
+| Overview | ✅ Live | The Bots card (the fleet's balance is its total line), fleet controls, Research, and the calendar preview. Smart Money's stat row and card are behind `FEATURES.smartMoney` and hidden. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#overview) |
 | Smart Money | 🟡 Built, flagged OFF | Full pipeline UI: scan, terminal, rankings, profiles, config, cache — all of it still works. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#smart-money) |
 | Bots | ✅ Live | Monitor / **Accounts** / Configure / Users. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#bots) |
 | News Calendar | ✅ Live | tab (`/calendar`) — live Forex-Factory-style economic calendar off the free TradingView feed (`engines/news/` `TradingViewSource`, read-only, not the shared cache). Separate path from the backtest news/holiday filter. [Detail](docs/COMMAND_CENTER_BUILD_NOTES.md#news-calendar) |

@@ -12,6 +12,8 @@ React + Vite + TypeScript app on `:5173`. All API calls go to the FastAPI backen
 
 **Lab design principle:** Run Backtest modal starts with no firms pre-selected. User must actively choose which firm challenges to evaluate against — never auto-select all.
 
+**Say it once (Aaron, 2026-09-11).** Every fact appears ONCE on a page. A stat card over the list it counts, a header link to the row right under it, a chip and a sentence repeating a button's own label — each is a second copy, and Aaron reads every copy. Explanations go behind a hover or a fold (ⓘ, `title`, `<details>`), never as body text beside the control; wording that guards a live-money action stays on screen. When removing a copy, keep the one the reader acts on.
+
 ---
 
 
@@ -343,8 +345,10 @@ one flag is read in three places:
   a real browser, the Overview now issues **0** `/smart-money` requests.
 - **A grid's column count must follow what is actually rendered.** Two cards left in a
   `grid-cols-4` row is half a row of blank space, which reads as data that failed to
-  load — so both Overview grids pick their columns off the flag (4→2 stats, 3→2 module
-  cards).
+  load. ⚠ Since 2026-09-11 the stat row holds ONLY the two Smart Money cards and renders
+  with the flag (the bot count and balance were copies of the Bots list — *Say it once*), and
+  the module cards are two fixed columns: Bots left; fleet controls, Smart Money and Research
+  stacked right.
 - **`FEATURES` is typed `Record<…, boolean>`, deliberately NOT `as const`.** With
   literal types every `FEATURES.x && <Card/>` narrows to `false` and TypeScript starts
   reporting the switched-off branch as dead code to delete, which is the one thing a
@@ -1615,9 +1619,10 @@ a scheduled task not executing at this instant is healthy; only `DISABLED` is th
 🔴 **A bot that was RUNNING and BLIND read as a healthy fleet.** The page never looked at
 `mt5_link`, so the 2026-08-04 incident (MetaTrader auto-updated under the live bot and it sat
 blind for 50 minutes) would have shown `1 / 1 · all bots live` in green here, while the Bots page
-one click away drew its `No MT5 link` chip. The chip is on both pages now. ⚠ **The stat card's
-blind branch is tested BEFORE every healthy branch**, because a blind bot *is* running and any
-other ordering lets the cheerful string win the tie.
+one click away drew its `No MT5 link` chip. The chip is on both pages now. ⚠ **The *Bots
+Running* stat card that also summarised it was removed 2026-09-11** as a copy of the bot list
+under it, so the row's chip is the page's only statement — never add a fleet-health summary
+back without testing its blind branch BEFORE every healthy one (a blind bot *is* running).
 
 🔴 **`balance ?? 0` folded "this bot could not tell me" into the fleet total as a real zero.** Same
 *no data ≠ cannot ask* rule as the chip above, one card to the right. It sums only what was

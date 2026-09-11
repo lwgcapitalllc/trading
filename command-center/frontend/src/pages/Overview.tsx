@@ -166,30 +166,6 @@ function JobPill({ job }: { job: { name: string; status: string; schedule?: stri
   )
 }
 
-function BacktestStatusPill({ status }: { status: string }) {
-  const isFailed = status.startsWith('failed')
-  const label = isFailed
-    ? 'Failed'
-    : status === 'complete'
-      ? 'Complete'
-      : status === 'running'
-        ? 'Running'
-        : status
-  const cls =
-    status === 'complete'
-      ? 'bg-pos-muted text-pos-text'
-      : status === 'running'
-        ? 'bg-accent-muted text-accent'
-        : 'bg-neg-muted text-neg-text'
-  return (
-    <span
-      className={`inline-flex px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${cls}`}
-    >
-      {label}
-    </span>
-  )
-}
-
 // A clickable metric row that navigates to its own destination. Used in the
 // Research card so Strategies / Runs / Optimizations / Stress Tests each go to
 // their real page or tab instead of all landing on /backtests.
@@ -291,31 +267,29 @@ export function Overview() {
 
   // Standalone runs only (exclude optimization children). Memoized because the page re-renders
   // once a second to keep the calendar countdown honest, and these walk every run in the lab.
-  const { totalStandaloneRuns, latestBacktest, bestRun, tier1Count, runningBacktests } =
-    useMemo(() => {
-      const standalone = backtestRuns?.filter((r) => !r.optimization_id) ?? []
-      // Ranked on profit factor, but only among runs with a real sample behind them — see
-      // MIN_TRADES_FOR_BEST. `!Number.isFinite` keeps a no-losing-trade run (PF ∞) eligible.
-      const ranked = standalone
-        .filter(
-          (r) =>
-            r.status === 'complete' &&
-            r.profit_factor != null &&
-            (r.trade_count ?? 0) >= MIN_TRADES_FOR_BEST
-        )
-        .sort((a, b) => {
-          const pf = (r: BacktestSummary) =>
-            Number.isFinite(r.profit_factor!) ? r.profit_factor! : Infinity
-          return pf(b) - pf(a)
-        })
-      return {
-        totalStandaloneRuns: standalone.length,
-        latestBacktest: standalone[0] ?? null,
-        bestRun: ranked[0] ?? null,
-        tier1Count: standalone.filter((r) => r.worthiness?.tier === 'TIER_1_STRESS_TEST').length,
-        runningBacktests: standalone.filter((r) => r.status === 'running').length,
-      }
-    }, [backtestRuns])
+  const { totalStandaloneRuns, bestRun, tier1Count, runningBacktests } = useMemo(() => {
+    const standalone = backtestRuns?.filter((r) => !r.optimization_id) ?? []
+    // Ranked on profit factor, but only among runs with a real sample behind them — see
+    // MIN_TRADES_FOR_BEST. `!Number.isFinite` keeps a no-losing-trade run (PF ∞) eligible.
+    const ranked = standalone
+      .filter(
+        (r) =>
+          r.status === 'complete' &&
+          r.profit_factor != null &&
+          (r.trade_count ?? 0) >= MIN_TRADES_FOR_BEST
+      )
+      .sort((a, b) => {
+        const pf = (r: BacktestSummary) =>
+          Number.isFinite(r.profit_factor!) ? r.profit_factor! : Infinity
+        return pf(b) - pf(a)
+      })
+    return {
+      totalStandaloneRuns: standalone.length,
+      bestRun: ranked[0] ?? null,
+      tier1Count: standalone.filter((r) => r.worthiness?.tier === 'TIER_1_STRESS_TEST').length,
+      runningBacktests: standalone.filter((r) => r.status === 'running').length,
+    }
+  }, [backtestRuns])
 
   const totalOptimizations = optimizations?.length ?? 0
   const runningOpt = optimizations?.find((o) => o.status === 'running') ?? null
@@ -337,11 +311,7 @@ export function Overview() {
   }, [stressTests])
 
   const bots = snapshot?.bots ?? []
-  const runningBots = bots.filter((b) => b.status === 'RUNNING').length
   const totalBots = bots.length
-  // A bot whose process is alive but whose terminal is not answering. It is RUNNING and it is
-  // trading nothing, so a stat card calling the fleet healthy is wrong — see `NoLinkChip`.
-  const blindBots = bots.filter((b) => b.mt5_link === false).length
   // ⚠ Sum only what was actually REPORTED, and say how many were not. `?? 0` folds "this bot
   // could not tell me" into the total as a real zero, which understates the fleet with nothing
   // on screen to show for it — the same "no data ≠ cannot ask" rule the link chip exists for.
@@ -429,93 +399,30 @@ export function Overview() {
       )}
 
       {/* ── Stat Row ──────────────────────────────────────────────────────────── */}
-      {/* Column count follows what is actually rendered — two cards in a 4-column
-          grid leaves half the row blank, which reads as data that failed to load. */}
-      <div className={`grid ${smartMoney ? 'grid-cols-4' : 'grid-cols-2'} gap-[10px] mb-5`}>
-        <StatCard
-          label="Bots Running"
-          value={botsLoading ? '—' : `${runningBots} / ${totalBots}`}
-          sub={
-            botsLoading
-              ? 'connecting…'
-              : snapshotStale
-                ? `VPS unreachable — as of ${fmtTime(new Date(snapshot!.fetched_at).getTime())}`
-                : botsError
-                  ? 'VPS unreachable'
-                  : !snapshot
-                    ? 'no data'
-                    : // ⚠ Order matters. A blind bot is RUNNING, so any healthy-sounding line below would
-                      // win the tie and the fleet would read green while it traded nothing.
-                      blindBots > 0
-                      ? `${blindBots} running with no MT5 link`
-                      : totalBots === 0
-                        ? 'none registered' // `runningBots === totalBots` is TRUE at 0/0
-                        : runningBots === totalBots
-                          ? 'all bots live'
-                          : runningBots === 0
-                            ? 'all stopped'
-                            : `${totalBots - runningBots} stopped`
-          }
-          subVariant={
-            botsLoading || botsError || !snapshot
-              ? 'neutral'
-              : blindBots > 0
-                ? 'warn'
-                : totalBots === 0
-                  ? 'neutral'
-                  : runningBots === totalBots
-                    ? 'pos'
-                    : runningBots === 0
-                      ? 'neg'
-                      : 'neutral'
-          }
-          onClick={() => navigate('/bots')}
-        />
+      {/* Smart Money's two cards only. The bots' count and balance are NOT stat cards: a
+          "4 / 5 running" card sat directly above the list of those five bots and their pills —
+          the same fact twice (Aaron, 2026-09-11). The balance is the list's own total line. */}
+      {smartMoney && (
+        <div className="grid grid-cols-2 gap-[10px] mb-5">
+          <StatCard
+            label="Last Scan"
+            value={latestRun ? relativeTime(latestRun.generated_at, calNow) : '—'}
+            sub={latestRun ? `run ${latestRun.run_id.slice(0, 8)}…` : 'no runs yet'}
+            onClick={() => navigate('/smart-money')}
+          />
 
-        <StatCard
-          label="Balance"
-          value={botsLoading ? '—' : reportedBal.length > 0 ? fmt$(totalBalance) : '—'}
-          sub={
-            botsLoading
-              ? ''
-              : botsError
-                ? 'unavailable'
-                : totalBots === 0
-                  ? 'no bots registered'
-                  : // A missing balance is not a zero balance. Name the gap rather than quietly summing
-                    // the bots that answered and presenting it as the fleet total.
-                    unreported > 0
-                    ? `${unreported} of ${totalBots} not reporting`
-                    : accountLabel
-          }
-          subVariant={
-            !botsLoading && !botsError && unreported > 0 && totalBots > 0 ? 'warn' : 'neutral'
-          }
-          onClick={() => navigate('/bots')}
-        />
-
-        {smartMoney && (
-          <>
-            <StatCard
-              label="Last Scan"
-              value={latestRun ? relativeTime(latestRun.generated_at, calNow) : '—'}
-              sub={latestRun ? `run ${latestRun.run_id.slice(0, 8)}…` : 'no runs yet'}
-              onClick={() => navigate('/smart-money')}
-            />
-
-            <StatCard
-              label="Candidates"
-              value={latestRun ? String(latestRun.total_qualified) : '—'}
-              sub={pipelineRunning ? 'scan in progress' : latestRun ? 'from last run' : 'no data'}
-              subVariant={latestRun && latestRun.total_qualified > 0 ? 'pos' : 'neutral'}
-              onClick={() => navigate('/smart-money')}
-            />
-          </>
-        )}
-      </div>
+          <StatCard
+            label="Candidates"
+            value={latestRun ? String(latestRun.total_qualified) : '—'}
+            sub={pipelineRunning ? 'scan in progress' : latestRun ? 'from last run' : 'no data'}
+            subVariant={latestRun && latestRun.total_qualified > 0 ? 'pos' : 'neutral'}
+            onClick={() => navigate('/smart-money')}
+          />
+        </div>
+      )}
 
       {/* ── Module Cards ──────────────────────────────────────────────────────── */}
-      <div className={`grid ${smartMoney ? 'grid-cols-3' : 'grid-cols-2'} gap-[14px]`}>
+      <div className="grid grid-cols-2 gap-[14px] items-start">
         {/* ── Bots ──────────────────────────────────────────────── */}
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           {/* Card header — navigates to Bots page */}
@@ -567,6 +474,27 @@ export function Overview() {
                   <p className="text-[12px] text-text-tertiary py-2">No bots registered.</p>
                 )}
 
+                {/* The fleet's total. ⚠ A missing balance is not a zero balance: it sums only
+                    what was reported and names the gap in warn, never folds it in as $0. */}
+                {totalBots > 0 && (
+                  <div
+                    data-testid="fleet-balance"
+                    className="flex items-baseline gap-[10px] pt-[9px]"
+                  >
+                    <span className="text-[12px] text-text-tertiary flex-1">Balance</span>
+                    <span
+                      className={`text-[11px] ${unreported > 0 ? 'text-warn-text' : 'text-text-tertiary'}`}
+                    >
+                      {unreported > 0
+                        ? `${unreported} of ${totalBots} not reporting`
+                        : accountLabel}
+                    </span>
+                    <span className="text-[13px] font-mono tabular-nums text-text-primary">
+                      {reportedBal.length > 0 ? fmt$(totalBalance) : '—'}
+                    </span>
+                  </div>
+                )}
+
                 <div className="mt-[10px] pt-[9px] border-t border-border-subtle/40">
                   <p className="text-[11px] text-text-tertiary leading-none mb-[5px] uppercase tracking-[0.5px]">
                     Scheduled
@@ -583,253 +511,241 @@ export function Overview() {
           </div>
         </div>
 
-        {/* ── Fleet controls ────────────────────────────────────────
-            Moved off the Bots page on 2026-09-05 (Aaron's call). That page manages bots one at
-            a time; this acts on all of them, and sitting the two together is what made every
-            row's own buttons read like these. */}
-        <FleetControls />
+        {/* ── Right column: fleet controls, then Research ───────────
+            Fleet controls moved off the Bots page on 2026-09-05 (Aaron's call). That page manages
+            bots one at a time; this acts on all of them. Stacked here rather than given a grid
+            cell of its own, which stretched three buttons to the bot list's height. */}
+        <div className="flex flex-col gap-[14px] min-w-0">
+          <FleetControls />
 
-        {/* ── Smart Money ───────────────────────────────────────── */}
-        {smartMoney && (
-          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-            {/* Card header — navigates to Smart Money page */}
-            <button
-              onClick={() => navigate('/smart-money')}
-              className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
-            >
-              <div className="flex items-center gap-[8px]">
-                <Radar size={14} className="text-accent" style={{ opacity: 0.85 }} />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
-                  Smart Money
-                </span>
-              </div>
-              <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
-                <span>View scanner</span>
-                <ChevronRight size={12} />
-              </div>
-            </button>
-
-            <div className="px-[15px] py-[12px]">
-              {/* Pipeline running banner */}
-              {pipelineRunning && (
-                <div className="flex items-center gap-[8px] mb-[12px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent-text">
-                  <span className="relative flex h-[8px] w-[8px] flex-shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
-                    <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
-                  </span>
-                  <span>
-                    Scan running — {progress!.pct}% · {progress!.stage_name}
-                    {progress!.qualified_so_far > 0 && ` · ${progress!.qualified_so_far} found`}
+          {/* ── Smart Money ───────────────────────────────────────── */}
+          {smartMoney && (
+            <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+              {/* Card header — navigates to Smart Money page */}
+              <button
+                onClick={() => navigate('/smart-money')}
+                className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
+              >
+                <div className="flex items-center gap-[8px]">
+                  <Radar size={14} className="text-accent" style={{ opacity: 0.85 }} />
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+                    Smart Money
                   </span>
                 </div>
-              )}
+                <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
+                  <span>View scanner</span>
+                  <ChevronRight size={12} />
+                </div>
+              </button>
 
-              {latestRun ? (
-                <div className="space-y-[10px]">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[12px] text-text-tertiary">Last run</span>
-                    <span className="text-[13px] text-text-primary">
-                      {relativeTime(latestRun.generated_at, calNow)}
+              <div className="px-[15px] py-[12px]">
+                {/* Pipeline running banner */}
+                {pipelineRunning && (
+                  <div className="flex items-center gap-[8px] mb-[12px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent-text">
+                    <span className="relative flex h-[8px] w-[8px] flex-shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+                      <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
+                    </span>
+                    <span>
+                      Scan running — {progress!.pct}% · {progress!.stage_name}
+                      {progress!.qualified_so_far > 0 && ` · ${progress!.qualified_so_far} found`}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] text-text-tertiary">Candidates found</span>
-                    <span className="text-[26px] font-semibold tracking-tight leading-none text-pos-text">
-                      {latestRun.total_qualified}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[12px] text-text-tertiary">Run ID</span>
-                    <span className="text-[11px] font-mono text-text-tertiary">
-                      {latestRun.run_id.slice(0, 18)}…
-                    </span>
-                  </div>
+                )}
 
-                  {runs && runs.length > 1 && (
-                    <div className="pt-[8px] border-t border-border-subtle/40">
-                      <span className="text-[11px] text-text-tertiary">
-                        {runs.length} historical runs available
+                {latestRun ? (
+                  <div className="space-y-[10px]">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[12px] text-text-tertiary">Last run</span>
+                      <span className="text-[13px] text-text-primary">
+                        {relativeTime(latestRun.generated_at, calNow)}
                       </span>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="py-4 text-center">
-                  <p className="text-[13px] text-text-tertiary">No runs yet</p>
-                  <p className="text-[11px] text-text-tertiary/60 mt-[4px]">
-                    Go to Smart Money to run a scan
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-text-tertiary">Candidates found</span>
+                      <span className="text-[26px] font-semibold tracking-tight leading-none text-pos-text">
+                        {latestRun.total_qualified}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[12px] text-text-tertiary">Run ID</span>
+                      <span className="text-[11px] font-mono text-text-tertiary">
+                        {latestRun.run_id.slice(0, 18)}…
+                      </span>
+                    </div>
 
-        {/* ── Research ──────────────────────────────────────── */}
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <button
-            onClick={() => navigate('/backtests?tab=runs')}
-            className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
-          >
-            <div className="flex items-center gap-[8px]">
+                    {runs && runs.length > 1 && (
+                      <div className="pt-[8px] border-t border-border-subtle/40">
+                        <span className="text-[11px] text-text-tertiary">
+                          {runs.length} historical runs available
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-4 text-center">
+                    <p className="text-[13px] text-text-tertiary">No runs yet</p>
+                    <p className="text-[11px] text-text-tertiary/60 mt-[4px]">
+                      Go to Smart Money to run a scan
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Research ──────────────────────────────────────── */}
+          <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+            {/* A plain heading, not a link: every row below is its own link, and an "Open runs"
+              header was a second way to the Runs row directly under it. */}
+            <div className="flex items-center gap-[8px] px-[15px] py-[10px] border-b border-border-subtle">
               <FlaskConical size={14} className="text-accent" style={{ opacity: 0.85 }} />
               <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
                 Research
               </span>
             </div>
-            <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
-              <span>Open runs</span>
-              <ChevronRight size={12} />
-            </div>
-          </button>
 
-          <div className="px-[15px] py-[10px]">
-            {/* Running backtest banner. Optimizations and stress tests each had one; a plain
+            <div className="px-[15px] py-[10px]">
+              {/* Running backtest banner. Optimizations and stress tests each had one; a plain
                 backtest — the most common job on the box — announced itself nowhere, because
                 its status pill only rendered in the branch where no best run exists. */}
-            {runningBacktests > 0 && (
-              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[8px]">
-                <Loader2 size={12} className="animate-spin flex-shrink-0" />
-                <span>
-                  {runningBacktests === 1
-                    ? 'Backtest running…'
-                    : `${runningBacktests} backtests running…`}
-                </span>
-              </div>
-            )}
-
-            {/* Running stress test banner */}
-            {runningStressTest && (
-              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-warn-muted border border-warn-text/20 text-[12px] text-warn-text mb-[8px]">
-                <Loader2 size={12} className="animate-spin flex-shrink-0" />
-                <span>Stress test running…</span>
-              </div>
-            )}
-
-            {/* Running optimization banner */}
-            {runningOpt && (
-              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[8px]">
-                <Loader2 size={12} className="animate-spin flex-shrink-0" />
-                <span>
-                  Optimization running — {runningOpt.completed_runs}/{runningOpt.estimated_runs}{' '}
-                  runs
-                </span>
-              </div>
-            )}
-
-            <NavStatRow
-              icon={<BookOpen size={13} />}
-              label="Strategies"
-              onClick={() => navigate('/strategies')}
-            >
-              <span className="text-[13px] font-mono text-text-primary">
-                {totalStrategies > 0 ? totalStrategies : '—'}
-              </span>
-            </NavStatRow>
-
-            <NavStatRow
-              icon={<ClipboardList size={13} />}
-              label="Rulesets"
-              onClick={() => navigate('/rulesets')}
-            >
-              {rulesets && rulesets.length > 0 ? (
-                <span className="text-[11px] font-mono text-text-tertiary">
-                  {propRulesets} prop · {personalRulesets} personal
-                </span>
-              ) : (
-                <span className="text-[13px] font-mono text-text-primary">—</span>
-              )}
-            </NavStatRow>
-
-            <NavStatRow
-              icon={<BarChart2 size={13} />}
-              label="Runs"
-              onClick={() => navigate('/backtests?tab=runs')}
-            >
               {runningBacktests > 0 && (
-                <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
+                <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[8px]">
+                  <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                  <span>
+                    {runningBacktests === 1
+                      ? 'Backtest running…'
+                      : `${runningBacktests} backtests running…`}
+                  </span>
+                </div>
               )}
-              {bestRun ? (
-                <span className="text-[11px] font-mono text-text-tertiary">
-                  {totalStandaloneRuns} · best PF {fmtPf(bestRun.profit_factor)}
+
+              {/* Running stress test banner */}
+              {runningStressTest && (
+                <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-warn-muted border border-warn-text/20 text-[12px] text-warn-text mb-[8px]">
+                  <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                  <span>Stress test running…</span>
+                </div>
+              )}
+
+              {/* Running optimization banner */}
+              {runningOpt && (
+                <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[8px]">
+                  <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                  <span>
+                    Optimization running — {runningOpt.completed_runs}/{runningOpt.estimated_runs}{' '}
+                    runs
+                  </span>
+                </div>
+              )}
+
+              <NavStatRow
+                icon={<BookOpen size={13} />}
+                label="Strategies"
+                onClick={() => navigate('/strategies')}
+              >
+                <span className="text-[13px] font-mono text-text-primary">
+                  {totalStrategies > 0 ? totalStrategies : '—'}
                 </span>
-              ) : latestBacktest ? (
-                <BacktestStatusPill status={latestBacktest.status} />
-              ) : (
+              </NavStatRow>
+
+              <NavStatRow
+                icon={<ClipboardList size={13} />}
+                label="Rulesets"
+                onClick={() => navigate('/rulesets')}
+              >
+                {rulesets && rulesets.length > 0 ? (
+                  <span className="text-[11px] font-mono text-text-tertiary">
+                    {propRulesets} prop · {personalRulesets} personal
+                  </span>
+                ) : (
+                  <span className="text-[13px] font-mono text-text-primary">—</span>
+                )}
+              </NavStatRow>
+
+              <NavStatRow
+                icon={<BarChart2 size={13} />}
+                label="Runs"
+                onClick={() => navigate('/backtests?tab=runs')}
+              >
+                {runningBacktests > 0 && (
+                  <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
+                )}
+                {/* The count only — the best run's profit factor is the "Best result" row below. */}
                 <span className="text-[13px] font-mono text-text-primary">
                   {totalStandaloneRuns > 0 ? totalStandaloneRuns : '—'}
                 </span>
-              )}
-            </NavStatRow>
+              </NavStatRow>
 
-            <NavStatRow
-              icon={<Sliders size={13} />}
-              label="Optimizations"
-              onClick={() => navigate('/optimizations')}
-            >
-              {runningOpt && (
-                <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
-              )}
-              <span className="text-[13px] font-mono text-text-primary">
-                {totalOptimizations > 0 ? totalOptimizations : '—'}
-              </span>
-            </NavStatRow>
-
-            <NavStatRow
-              icon={<Activity size={13} />}
-              label="Stress Tests"
-              onClick={() => navigate('/stress-tests')}
-            >
-              {runningStressTest && (
-                <span className="w-[6px] h-[6px] rounded-full bg-warn-text animate-pulse" />
-              )}
-              {robustCount > 0 && (
-                <span className="text-[11px] text-pos-text font-mono">{robustCount} robust</span>
-              )}
-              {bestGrade ? (
-                <RobustnessGradeBadge grade={bestGrade} size="sm" />
-              ) : (
-                <span className="text-[13px] font-mono text-text-primary">—</span>
-              )}
-            </NavStatRow>
-
-            {(tier1Count > 0 || bestRun) && (
-              <div className="mt-[8px] pt-[8px] border-t border-border-subtle/40 space-y-[8px]">
-                {tier1Count > 0 && (
-                  <div className="flex items-center justify-between px-[1px]">
-                    <span className="text-[12px] text-text-tertiary">Tier 1 passes</span>
-                    <span className="text-[13px] font-mono font-semibold text-pos-text">
-                      {tier1Count}
-                    </span>
-                  </div>
+              <NavStatRow
+                icon={<Sliders size={13} />}
+                label="Optimizations"
+                onClick={() => navigate('/optimizations')}
+              >
+                {runningOpt && (
+                  <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
                 )}
-                {bestRun && (
-                  <button
-                    onClick={() => navigate(`/backtests/runs/${bestRun.run_id}`)}
-                    className="w-full flex items-center justify-between py-[6px] px-[8px] -mx-[8px] rounded-md hover:bg-bg-hover transition-colors group"
-                  >
-                    <span className="text-[12px] text-text-tertiary group-hover:text-text-primary transition-colors">
-                      Best result
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {/* The sample is stated beside the ratio, because profit factor on its own
-                          says nothing about how much history is behind it. */}
-                      <span className="text-[11px] font-mono text-text-tertiary">
-                        {bestRun.trade_count} trades
+                <span className="text-[13px] font-mono text-text-primary">
+                  {totalOptimizations > 0 ? totalOptimizations : '—'}
+                </span>
+              </NavStatRow>
+
+              <NavStatRow
+                icon={<Activity size={13} />}
+                label="Stress Tests"
+                onClick={() => navigate('/stress-tests')}
+              >
+                {runningStressTest && (
+                  <span className="w-[6px] h-[6px] rounded-full bg-warn-text animate-pulse" />
+                )}
+                {robustCount > 0 && (
+                  <span className="text-[11px] text-pos-text font-mono">{robustCount} robust</span>
+                )}
+                {bestGrade ? (
+                  <RobustnessGradeBadge grade={bestGrade} size="sm" />
+                ) : (
+                  <span className="text-[13px] font-mono text-text-primary">—</span>
+                )}
+              </NavStatRow>
+
+              {(tier1Count > 0 || bestRun) && (
+                <div className="mt-[8px] pt-[8px] border-t border-border-subtle/40 space-y-[8px]">
+                  {tier1Count > 0 && (
+                    <div className="flex items-center justify-between px-[1px]">
+                      <span className="text-[12px] text-text-tertiary">Tier 1 passes</span>
+                      <span className="text-[13px] font-mono font-semibold text-pos-text">
+                        {tier1Count}
                       </span>
-                      <span className="text-[12px] font-mono font-semibold text-text-primary">
-                        PF {fmtPf(bestRun.profit_factor)}
-                      </span>
-                      <WorthinessBadge worthiness={bestRun.worthiness} size="sm" />
-                      <ChevronRight
-                        size={12}
-                        className="text-text-tertiary/60 group-hover:text-text-secondary transition-colors"
-                      />
                     </div>
-                  </button>
-                )}
-              </div>
-            )}
+                  )}
+                  {bestRun && (
+                    <button
+                      onClick={() => navigate(`/backtests/runs/${bestRun.run_id}`)}
+                      className="w-full flex items-center justify-between py-[6px] px-[8px] -mx-[8px] rounded-md hover:bg-bg-hover transition-colors group"
+                    >
+                      <span className="text-[12px] text-text-tertiary group-hover:text-text-primary transition-colors">
+                        Best result
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {/* The sample is stated beside the ratio, because profit factor on its own
+                          says nothing about how much history is behind it. */}
+                        <span className="text-[11px] font-mono text-text-tertiary">
+                          {bestRun.trade_count} trades
+                        </span>
+                        <span className="text-[12px] font-mono font-semibold text-text-primary">
+                          PF {fmtPf(bestRun.profit_factor)}
+                        </span>
+                        <WorthinessBadge worthiness={bestRun.worthiness} size="sm" />
+                        <ChevronRight
+                          size={12}
+                          className="text-text-tertiary/60 group-hover:text-text-secondary transition-colors"
+                        />
+                      </div>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -932,7 +848,7 @@ function CalendarUpcoming({
           onClick={() => onPick(e.timestamp_ms)}
           className="flex items-center gap-[8px] py-[5px] px-[6px] min-w-0 rounded-md hover:bg-bg-hover transition-colors text-left group"
         >
-          <span className="text-[11px] font-mono tabular-nums text-text-tertiary w-[42px] flex-shrink-0">
+          <span className="text-[11px] font-mono tabular-nums text-text-tertiary w-[64px] whitespace-nowrap flex-shrink-0">
             {fmtTime(e.timestamp_ms)}
           </span>
           <span className="text-sm leading-none flex-shrink-0" title={e.currency}>

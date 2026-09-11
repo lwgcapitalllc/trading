@@ -104,7 +104,8 @@ function nextDstWeek(): { weeks: number; hours: number; when: Date } {
   )
 }
 
-const statCard = (page: Page, label: string) => page.locator(`button:has-text("${label}")`).first()
+/** The Bots card's total line. It was a "Balance" stat card until 2026-09-11. */
+const fleetBalance = (page: Page) => page.getByTestId('fleet-balance')
 /** The calendar rows, by their leading HH:MM — the stat row is also `grid-cols-2`. */
 const eventRows = (page: Page) => page.getByRole('button').filter({ hasText: /^\d{1,2}:\d{2}/ })
 
@@ -187,13 +188,8 @@ test.describe('Overview — states the live box cannot produce', () => {
     // those are different facts. Collapsing them loses whichever half the reader came for.
     await expect(page.getByText('No link')).toBeVisible()
     await expect(page.getByText('Running').first()).toBeVisible()
-
-    const sub = await statCard(page, 'Bots Running').textContent()
-    expect(sub).not.toMatch(/all bots live/)
-    expect(sub).toMatch(/no MT5 link/)
-    // warn, not neg — it is not a failure, and not pos — it is not fine.
-    const cls = await statCard(page, 'Bots Running').locator('div').last().getAttribute('class')
-    expect(cls).toContain('text-warn-text')
+    // The "Bots Running" stat card that also said so was removed on 2026-09-11 as a copy of the
+    // list; the chip on the row is now the page's only statement of it, so it is the one asserted.
   })
 
   // ⚠ BOTH of the next two SET the fleet rather than adding to it, and the reason is the one this
@@ -214,7 +210,7 @@ test.describe('Overview — states the live box cannot produce', () => {
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    const sub = await statCard(page, 'Balance').textContent()
+    const sub = await fleetBalance(page).textContent()
     expect(sub).toMatch(/1 of 1 not reporting/)
     expect(sub).not.toMatch(/\$0\.00/)
   })
@@ -236,22 +232,18 @@ test.describe('Overview — states the live box cannot produce', () => {
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    expect(await statCard(page, 'Balance').textContent()).toMatch(/1 of 2 not reporting/)
+    expect(await fleetBalance(page).textContent()).toMatch(/1 of 2 not reporting/)
   })
 
-  test('an empty fleet does not read "all bots live"', async ({ page }) => {
+  test('an empty fleet says so, and draws no $0 balance', async ({ page }) => {
     await mockSnapshot(page, (s) => {
       s.bots = []
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    // `runningBots === totalBots` is TRUE at 0 / 0 — the branch order is the fix.
-    const sub = await statCard(page, 'Bots Running').textContent()
-    expect(sub).not.toMatch(/all bots live/)
-    expect(sub).toMatch(/none registered/)
-    // The trailing stop scopes this to the card's own line — the stat card's sub-line reads
-    // "no bots registered" too, and an unanchored match is ambiguous across the two.
     await expect(page.getByText('No bots registered.')).toBeVisible()
+    // No bots means no total — a "$0.00" line would read as a measured empty account.
+    await expect(fleetBalance(page)).toHaveCount(0)
   })
 
   /**
@@ -273,7 +265,9 @@ test.describe('Overview — states the live box cannot produce', () => {
     await mockSnapshot(page, (s) => s, { failAfterFirst: true })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await expect(page.getByText('SOS Fade')).toBeVisible() // a good snapshot first
+    // `.first()`: two bot rows carry the name "SOS Fade" (live and demo), so a bare lookup is a
+    // strict-mode failure rather than a test of the snapshot.
+    await expect(page.getByText('SOS Fade').first()).toBeVisible() // a good snapshot first
 
     // TanStack keeps the last good `data` through a failed refetch, so the error and real bot
     // rows render together — and those rows still say RUNNING. Dating them is the whole fix.

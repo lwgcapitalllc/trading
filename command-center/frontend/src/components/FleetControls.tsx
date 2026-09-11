@@ -116,18 +116,14 @@ export function FleetControls() {
 
   return (
     <div className="bg-bg-surface border border-neg/30 rounded-lg p-4">
-      <div className="flex items-center mb-[4px]">
-        <span className="text-[13px] font-semibold">Fleet controls</span>
-        <span className="ml-[8px] inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text">
-          all {total} {total === 1 ? 'bot' : 'bots'}
-        </span>
+      {/* The title names the scope and each button carries its count. An "all 5 bots" chip and
+          a sentence saying the same thing were a third and fourth copy (2026-09-11). */}
+      <div className="flex items-center mb-[12px]">
+        <span className="text-[13px] font-semibold">All bots</span>
         {anyBusy && (
           <span className="ml-auto text-[11px] text-accent animate-pulse">Executing…</span>
         )}
       </div>
-      <p className="text-[11px] text-text-tertiary mb-[14px] leading-[1.5]">
-        These act on every registered bot at once. To control one bot, open it on the Bots page.
-      </p>
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setConfirm('start')}
