@@ -68,3 +68,7 @@
 2026-09-10 23:05:32,388 [INFO] Warmed 15000 bars (2026-06-26 07:35:00+00:00 → 2026-09-10 23:00:00+00:00) in 3.0s
 2026-09-10 23:05:32,388 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
 2026-09-10 23:05:33,059 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-10 23:57:09,174 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-10 23:57:09,174 [INFO] Stop requested — shutting down.
+2026-09-10 23:57:09,174 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-10 23:57:10,034 [INFO] MT5 disconnected.

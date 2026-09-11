@@ -1,0 +1,37 @@
+2026-09-11 00:01:02,713 [INFO] SOS Fade | SosFadeStrategy v219 | hash be7556a7948a | commit a6acc3ad | frozen | LIVE
+2026-09-11 00:01:03,245 [INFO] Connected | #34957946 | $451.97 | PUPrime-Live
+2026-09-11 00:01:03,245 [INFO] MT5 connection lock released
+2026-09-11 00:01:03,700 [ERROR] REFUSING to size: the broker balance is 451.97 and the stated adjustment of -4,518.23 leaves nothing to trade on. Nothing is clamped - fix the adjustment or fund the account.
+2026-09-11 00:01:03,700 [ERROR] Startup failed: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1544, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 473, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+
+2026-09-11 00:02:44,096 [INFO] SOS Fade | SosFadeStrategy v219 | hash be7556a7948a | commit a6acc3ad | frozen | LIVE
+2026-09-11 00:02:44,635 [INFO] Connected | #34957946 | $451.97 | PUPrime-Live
+2026-09-11 00:02:44,635 [INFO] MT5 connection lock released
+2026-09-11 00:02:44,840 [ERROR] REFUSING to size: the broker balance is 451.97 and the stated adjustment of -4,518.23 leaves nothing to trade on. Nothing is clamped - fix the adjustment or fund the account.
+2026-09-11 00:02:44,856 [ERROR] Startup failed: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1544, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 473, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+
+2026-09-11 00:13:59,457 [INFO] SOS Fade | SosFadeStrategy v219 | hash be7556a7948a | commit 569ae98f | frozen | LIVE
+2026-09-11 00:13:59,997 [INFO] Connected | #34957946 | $451.97 | PUPrime-Live
+2026-09-11 00:13:59,997 [INFO] MT5 connection lock released
+2026-09-11 00:14:00,411 [INFO] Sizing against account balance $451.97
+2026-09-11 00:14:00,445 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-11 00:14:00,445 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-11 00:14:00,458 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-11 00:14:03,145 [INFO] Warmed 5000 bars (2026-06-26 08:30:00+00:00 → 2026-09-10 23:45:00+00:00) in 2.6s
+2026-09-11 00:14:06,444 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-26 08:40:00+00:00 → 2026-09-11 00:05:00+00:00).
+2026-09-11 00:14:06,460 [INFO] Equity re-anchored to the account after warm-up: 525.44 → 451.97
+2026-09-11 00:14:07,069 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
