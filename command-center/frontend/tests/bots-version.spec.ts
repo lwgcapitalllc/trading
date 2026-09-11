@@ -857,6 +857,50 @@ test('it says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {
   await expect(banner(page).getByText(/not frozen/i)).toHaveCount(0)
 })
 
+test('a version the box would not give is UNREAD on the row and the panel — and nothing toasts', async ({
+  page,
+}) => {
+  // 🔴 2026-09-11: a crowded box refused a third of SSH connections, and every Bots-page load put a
+  // toast per bot on screen (a 500 each, twice with the retry). The failure is RENDERED now, in its
+  // own words — "No version" is an answer (never deployed), this is the box not answering.
+  // ⚠ Toasts are COUNTED as they appear, never read at the end: at this spec's quick clock a toast
+  // lives ~0.4s, so a count taken after the assertions could miss one that came and went.
+  // MUTATION: drop `silent: true` from the version read — the toast count goes red (killed 2026-09-11).
+  // MUTATION: drop the pill's unread branch — the row reads "No version" and goes red (killed 2026-09-11).
+  // MUTATION: drop the banner's unread branch — it reads "Version unknown" and goes red (killed 2026-09-11).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __toasts: number }
+    w.__toasts = 0
+    new MutationObserver((muts) => {
+      for (const m of muts)
+        for (const n of m.addedNodes)
+          if (n instanceof Element)
+            // A first toast can arrive INSIDE a newly added list, so look below the node too.
+            w.__toasts +=
+              (n.matches('[data-sonner-toast]') ? 1 : 0) +
+              n.querySelectorAll('[data-sonner-toast]').length
+    }).observe(document, { childList: true, subtree: true })
+  })
+  await pinSnapshot(page)
+  const refused =
+    'Cannot reach the VPS — kex_exchange_identification: read: Connection reset by peer'
+  let reads = 0
+  await page.route('**/api/bots/*/version', (r) => {
+    reads++
+    return r.fulfill({ status: 502, json: { detail: refused } })
+  })
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await page.goto('/bots?tab=setup&bot=sos_fade_demo')
+
+  await expect(banner(page)).toHaveAttribute('data-state', 'unread', { timeout: 20_000 })
+  await expect(banner(page)).toContainText('kex_exchange_identification')
+  await expect(banner(page).getByRole('button', { name: 'Try again' })).toBeVisible()
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'unread')
+  await expect(rowPill(page)).toContainText('Unread')
+  expect(reads, 'the version reads really failed').toBeGreaterThan(0)
+  expect(await page.evaluate(() => (window as unknown as { __toasts: number }).__toasts)).toBe(0)
+})
+
 // 🔴 **DELETED 2026-09-06 rather than re-pointed: *a non-zero count is a button that goes to the
 // bot it is counting*.** It was about a FLEET summary — a count naming a condition and a number,
 // where answering *which bot?* meant clicking every row of a rail — and that summary is gone with

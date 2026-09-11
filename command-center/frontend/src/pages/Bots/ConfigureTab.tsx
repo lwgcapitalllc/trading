@@ -15,6 +15,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Upload,
+  WifiOff,
 } from 'lucide-react'
 import {
   useBotParams,
@@ -23,7 +24,12 @@ import {
   usePromoteJobs,
   useStartPromoteJob,
 } from '@/hooks/useBots'
-import { deployableVersion, deployWouldAdvance, isRestartPending } from '@/lib/botVersion'
+import {
+  deployableVersion,
+  deployWouldAdvance,
+  isRestartPending,
+  versionReadFailure,
+} from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
 import { StepProgress, type Step } from '@/components/StepProgress'
 import type {
@@ -454,7 +460,7 @@ export function VersionBanner({
   /** The bot trades a LIVE account — its deploy takes a second, deliberate click. */
   live?: boolean
 }) {
-  const { data: v, isLoading } = useBotVersion(botKey)
+  const { data: v, isLoading, error, refetch, isFetching } = useBotVersion(botKey)
   const start = useStartPromoteJob()
   // The job this panel is showing. A deploy that is RUNNING is always shown; a finished one only
   // if this panel started it or watched it run — a result from hours ago is not news.
@@ -493,6 +499,36 @@ export function VersionBanner({
   // line of text, so the drawer does not jump when the answer lands. `components/Shimmer.tsx`.
   if (isLoading) {
     return <Shimmer shape="block" className="block w-full h-[58px]" />
+  }
+
+  // 🔴 The box could not be ASKED — said as that, never as "Version unknown", which is an answer
+  // (2026-09-11). The read no longer toasts, so this is the one place its failure is told. No
+  // deploy button: a deploy would reach the same box that just did not answer.
+  const unread = versionReadFailure(error)
+  if (!v && unread) {
+    return (
+      <div
+        data-testid="version-banner"
+        data-state="unread"
+        className="flex items-start gap-[8px] text-[11px] leading-[1.5] text-text-secondary
+                      bg-bg-surface-2 border border-border-subtle rounded-lg px-[14px] py-[12px]"
+      >
+        <WifiOff size={13} className="shrink-0 mt-[1px] text-text-tertiary" />
+        <span className="min-w-0 flex-1">
+          <strong className="text-text-primary">Could not read the version.</strong> The trading box
+          did not answer — {unread}
+        </span>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="shrink-0 text-[11px] font-medium text-accent-text hover:underline
+                     disabled:opacity-50 disabled:no-underline"
+        >
+          {isFetching ? 'Asking…' : 'Try again'}
+        </button>
+      </div>
+    )
   }
 
   // Every state that makes this unanswerable has its own fix and none of them is "deploy", so

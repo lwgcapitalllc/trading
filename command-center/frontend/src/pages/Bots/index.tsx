@@ -1387,6 +1387,7 @@ export function Bots() {
                   version={versionByKey.get(cfg.key)?.data}
                   loading={versionByKey.get(cfg.key)?.isPending}
                   deploying={jobByKey.get(cfg.key)?.status === 'running'}
+                  error={versionByKey.get(cfg.key)?.error}
                 />
 
                 <span

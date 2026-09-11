@@ -102,6 +102,7 @@ from services import (
     stack_settings_import,
     strategy_import,
     terminal_scan,
+    vps_ssh,
 )
 from services.alert_format import alert, joined
 from services.notify import send_telegram_id
@@ -532,7 +533,9 @@ class VpsUnreachable(RuntimeError):
 
 
 def _ssh(cmd: str) -> str:
-    result = subprocess.run(
+    # Through `vps_ssh.run`, which asks again while the box refuses before login — a crowd of
+    # half-open connections from the internet made that a third of all calls (2026-09-11).
+    result = vps_ssh.run(
         ["ssh", VPS_HOST, cmd],
         capture_output=True,
         timeout=30,
@@ -1606,7 +1609,7 @@ def _write_account_password(account: int, password: str) -> None:
         "p.write_text(json.dumps(d,indent=2),encoding='utf-8');"
         f"print({_CREDS_WRITTEN!r})"
     )
-    result = subprocess.run(
+    result = vps_ssh.run(
         ["ssh", VPS_HOST, f'python -c "{script}"'],
         input=password.encode("utf-8"),
         capture_output=True,
@@ -1682,7 +1685,7 @@ def _scan_terminals() -> dict:
     same defect the tool exists to find in the account list.
     """
     try:
-        result = subprocess.run(
+        result = vps_ssh.run(
             ["ssh", VPS_HOST, f"{_PYTHON_EXE} {_SCAN_SCRIPT}"],
             capture_output=True,
             timeout=_SCAN_TIMEOUT_S,
@@ -2504,7 +2507,7 @@ def _set_alert_thread(bot_key: str, message_id) -> bool:
     # one-liner-plus-stdin shape `_write_account_password` uses, minus the marker: this write is
     # a convenience and a caller must never learn about its failure by having the promote fail.
     try:
-        out = subprocess.run(
+        out = vps_ssh.run(
             [
                 "ssh",
                 VPS_HOST,

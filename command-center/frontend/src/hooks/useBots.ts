@@ -166,12 +166,26 @@ function versionPoll(v: BotDeployedVersion | undefined): number | false {
   return isRestartPending(v) ? 15_000 : false
 }
 
+/**
+ * 🔴 **A version read that fails is RENDERED, never toasted (2026-09-11).** The page reads one per
+ * bot on every load, each an SSH round trip to the trading box, so a crowded box (which refused a
+ * third of connections that day) or a dead one put a toast per bot on the screen, twice with the
+ * retry. The pill and the banner show the failure instead (`VersionPill` → Unread). ⚠ No retry
+ * here: the backend already asks again for the one failure worth asking again (`services/vps_ssh`).
+ */
+function readVersion(name: string) {
+  return api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(name)}/version`, {
+    silent: true,
+  })
+}
+
 export function useBotVersion(botName: string | null) {
   return useQuery({
     queryKey: ['bots', 'version', botName],
-    queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(botName!)}/version`),
+    queryFn: () => readVersion(botName!),
     enabled: !!botName,
     staleTime: 30_000,
+    retry: false,
     refetchInterval: (q) => versionPoll(q.state.data),
   })
 }
@@ -193,8 +207,9 @@ export function useBotVersions(botNames: string[]) {
   return useQueries({
     queries: botNames.map((name) => ({
       queryKey: ['bots', 'version', name],
-      queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(name)}/version`),
+      queryFn: () => readVersion(name),
       staleTime: 30_000,
+      retry: false,
       // ⚠ The SAME poll rule as `useBotVersion`, through the same function. These share a cache
       // entry per bot, so two different intervals would not merely disagree — whichever query
       // mounted last would decide, and the strip and the card would settle at different times

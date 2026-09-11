@@ -926,6 +926,40 @@ REAL closed port** through the client's genuine `_get`, loaded as a private copy
 `_no_live_vps` rightly swaps the shared one out — a hand-built exception would prove only a guess
 about the shape. Never point that copy at the VPS.
 
+## The box refuses SSH when it is crowded — `services/vps_ssh.py` (2026-09-11)
+
+🔴 **A third of new SSH connections to the trading box were turned away before login.** MEASURED:
+3 of 8 single, one-at-a-time connections refused within a second with
+`kex_exchange_identification: read: Connection reset by peer`. The box's SSH server runs on its
+defaults (`MaxStartups 10:30:100`: past 10 connections still logging in, it drops 30% of new ones,
+rising to all at 100). One internet address (106.13.170.216) was holding 19 open, which works out
+to ≈37%. Every Bots-page load reads one version per bot, so each load lost a bot or two to a 500
+and a toast. **More bots means more reads per load, which is why it surfaced the day two demo
+copies were registered.** The bots themselves were never touched.
+
+- **Every ssh call goes through `vps_ssh.run`**: `_ssh`, the credentials write, the terminal scan
+  and the alert-thread write here, and the supervisor's three calls. Only the tunnel's `Popen` is
+  exempt, because the supervisor rebuilds it every pass. `test_NO_call_to_the_box_bypasses_the_retry`
+  holds that. ⚠ It reads SOURCE, so an in-memory mutation cannot reach it (MEASURED: survived); a
+  positive control beside it is what proves it can see a bypass.
+- ⚠ **Only the refusal BEFORE LOGIN is retried, because it alone proves nothing ran** — the
+  identification exchange is the protocol's first step, before any login and any command. That is
+  what makes a retry safe for a WRITE. `Connection closed by <host> port 22` on its own (seen the same
+  day) can come later in the handshake and is NOT retried. A timeout is never retried.
+- ⚠ Waits of 0.5 / 1 / 2 / 3 s, 6.5s at worst; four refusals in a row at 37% is 1.9%.
+- 🔴 **A box that could not be asked is a 502 (or 504 for a timeout) from EVERY endpoint** —
+  `main.py` handles `VpsUnreachable` and `TimeoutExpired` once. `/bots/{bot}/version` sent a 500
+  and a traceback, which says this backend is broken when the box did not answer. An endpoint that
+  catches either itself keeps its own answer.
+- ⚠ **This is a patch, not a fix. The box's SSH is on its defaults: password logins ON, a
+  2-minute login grace, and `MaxStartups 10:30:100`, while an internet address guesses at it.**
+  Hardening it (keys only, a short grace, a higher start limit, or a firewall to known addresses)
+  needs admin rights and an SSH restart on the live box, and a bad config locks SSH out. So it is
+  Aaron's call, and RDP must be confirmed working first.
+
+Tests: `tests/test_vps_ssh.py` (16). 12 mutations were run: 11 were killed in memory, and the 12th
+(the source scan) is covered by the positive control.
+
 ## The calendar's polarity list was written for the wrong provider
 
 🔴 **Fixed 2026-08-05.** `calendar_service._LOWER_IS_BETTER` decides which way a released `actual`

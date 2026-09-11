@@ -66,6 +66,8 @@ from typing import Callable, Optional
 
 import config as cfg
 
+from services import vps_ssh
+
 log = logging.getLogger(__name__)
 
 # Local ends of the two LocalForwards start.sh opens.
@@ -139,7 +141,7 @@ def schtasks_run(task_name: str) -> dict:
     Callers must verify the effect (the supervisor re-probes /health).
     """
     try:
-        result = subprocess.run(
+        result = vps_ssh.run(
             [
                 "ssh",
                 "-o",
@@ -185,7 +187,7 @@ def kill_agent_process(script_name: str) -> bool:
         f"'%{script_name}%'\" call terminate"
     )
     try:
-        result = subprocess.run(
+        result = vps_ssh.run(
             ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", cfg.SSH_ALIAS, query],
             capture_output=True,
             text=True,
@@ -225,9 +227,13 @@ def vps_reachable() -> bool:
 
     This is what distinguishes "the VPS is down / the network is out" (nothing
     the supervisor can fix) from "the tunnel died on this laptop" (which it can).
+
+    ⚠ Through `vps_ssh.run`, which asks again when the box refuses before login —
+    a crowded SSH server did that to a third of connections on 2026-09-11, and
+    each one would otherwise read as "the VPS is down".
     """
     try:
-        result = subprocess.run(
+        result = vps_ssh.run(
             ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", cfg.SSH_ALIAS, "echo ok"],
             capture_output=True,
             text=True,

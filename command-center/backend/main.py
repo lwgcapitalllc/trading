@@ -1,9 +1,11 @@
 import os
+import subprocess
 import threading
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from routers import (
     backtests,
     bots,
@@ -53,6 +55,24 @@ app.include_router(rulesets.router)
 app.include_router(system.router)
 app.include_router(strategy_files.router)
 app.include_router(calendar.router)
+
+
+# 🔴 A box that could not be ASKED is a 502 or a 504, never a 500 (2026-09-11). `_ssh` raises
+# `VpsUnreachable` and a slow box raises `TimeoutExpired`; an endpoint that did not catch them sent
+# a 500 and a full traceback, which says "this backend is broken" when it was the box that did not
+# answer. Handled once here, so an endpoint that forgets is still right. An endpoint that catches
+# either itself keeps its own answer — these only see what escaped.
+@app.exception_handler(bots.VpsUnreachable)
+async def _vps_unreachable(_request: Request, exc: bots.VpsUnreachable) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": f"Cannot reach the VPS — {exc}"})
+
+
+@app.exception_handler(subprocess.TimeoutExpired)
+async def _subprocess_timeout(_request: Request, exc: subprocess.TimeoutExpired) -> JSONResponse:
+    prog = exc.cmd[0] if isinstance(exc.cmd, (list, tuple)) and exc.cmd else str(exc.cmd)
+    return JSONResponse(
+        status_code=504, content={"detail": f"{prog} did not answer within {exc.timeout:g}s"}
+    )
 
 
 def _supervise():

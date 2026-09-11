@@ -1,6 +1,20 @@
 import type { BotDeployedVersion, BotVersionCompare } from '@/types'
 
 /**
+ * Why a version READ failed, in the server's words — `null` when it did not fail.
+ *
+ * ⚠ ONE reading of the failure for the pill and the banner, so the two cannot name different
+ * causes for one missing version. The server's `detail` when it sent one (`ApiError`), else the
+ * error's own message.
+ */
+export function versionReadFailure(error: unknown): string | null {
+  if (!error) return null
+  const detail = (error as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail) return detail
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
  * The highest version a deploy could land NOW: the backtester's, less every commit touching this
  * bot that is not pushed. A deploy pulls on the trading box, which cannot fetch a commit that only
  * exists on this machine. `null` when the backtester's version is unknown.

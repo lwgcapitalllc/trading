@@ -1,7 +1,7 @@
-import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Upload, WifiOff } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
 import { Shimmer } from '@/components/Shimmer'
-import { deployableVersion, deployWouldAdvance } from '@/lib/botVersion'
+import { deployableVersion, deployWouldAdvance, versionReadFailure } from '@/lib/botVersion'
 
 /**
  * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed.
@@ -49,6 +49,7 @@ export function VersionPill({
   version,
   loading,
   deploying,
+  error,
 }: {
   version: BotDeployedVersion | null | undefined
   /** The query has not answered yet. Distinct from "answered, cannot say" — one is a wait and
@@ -56,6 +57,8 @@ export function VersionPill({
   loading?: boolean
   /** A deploy of this bot is running. Wins over every other state, `loading` included. */
   deploying?: boolean
+  /** The read FAILED — the box could not be asked. The query's own error. */
+  error?: unknown
 }) {
   const c = version?.compare ?? null
 
@@ -80,6 +83,26 @@ export function VersionPill({
   // the row does not move when the version answers. See `components/Shimmer.tsx`.
   if (loading) {
     return <Shimmer shape="pill" className="h-[24px] w-[92px] justify-self-start" />
+  }
+
+  // 🔴 COULD NOT ASK is not "No version" (2026-09-11). A failed read is shown here instead of a
+  // toast, and it may not borrow the unknown state's words: "No version" is an ANSWER (never
+  // deployed, the commit not fetched here), this is the box not answering. Only while there is no
+  // earlier reading — a failed REFETCH keeps the last good one on screen, which is still true.
+  const failed = versionReadFailure(error)
+  if (!version && failed) {
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="unread"
+        title={`Could not reach the trading box to read this bot's version — ${failed}. It asks again on the next refresh.`}
+        className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                   rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary
+                   border border-border-strong cursor-default whitespace-nowrap justify-self-start"
+      >
+        <WifiOff size={9} /> Unread
+      </span>
+    )
   }
 
   if (!c || !c.comparable || c.deployed_version === null) {

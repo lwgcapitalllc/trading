@@ -3067,6 +3067,27 @@ it to pick this up* rather than claiming the new version is live. And a FAILED d
 is **untouched and still on v100**, because a promote that fails leaves the running bot exactly as
 it was; claiming otherwise sends somebody to debug a bot that is fine.
 
+### A version the box would not give reads UNREAD — never a toast (2026-09-11)
+
+🔴 **Every Bots-page load toasted a 500 per bot, twice with the retry.** Each version read is one
+SSH round trip per bot, and a crowded box refused a third of connections (backend CLAUDE.md →
+*The box refuses SSH*). The backend now retries that refusal and answers 502 when it cannot. On
+this side the reads are `silent` with `retry: false`, and the failure has a state of its own.
+
+- The pill reads **Unread** (`data-state="unread"`, reason on its title). The banner reads
+  **Could not read the version** with the server's reason and **Try again**, and offers no deploy,
+  because a deploy would go to the same box that just did not answer.
+- ⚠ **Never "No version" / "Version unknown".** Those are ANSWERS (never deployed, the commit not
+  fetched here); this is *could not ask*. That is rule 1.
+- ⚠ **Only while there is no earlier reading.** A failed REFETCH keeps the last good version on
+  screen, which is still true.
+- ⚠ `versionReadFailure` (`lib/botVersion.ts`) is the ONE reading of the failure, for the pill and
+  the banner alike.
+- ⚠ **The spec COUNTS toasts as they appear** (a MutationObserver). At the offline clock a toast
+  lives ~0.4s, so a count taken at the end could miss one that came and went.
+
+Tests: 1 check in `bots-version.spec.ts`; 3 mutations run in a throwaway worktree, 3 killed.
+
 ### The accordion that would not close, and the deploy that landed short (2026-08-14)
 
 ⚠ **History: the two-button flow this describes was replaced on 2026-09-10** — see *ONE button,
