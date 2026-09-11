@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Settings as SettingsIcon } from 'lucide-react'
 import { api } from '@/api/client'
+import { FEATURES } from '@/lib/features'
 import type { AppSettings } from '@/types'
 
 function Field({
@@ -66,10 +67,9 @@ export function Settings() {
   return (
     <div>
       <div className="flex items-end gap-3 mb-[18px]">
+        {/* "Machine paths" is said once, by the card's heading — a subtitle here and a footer
+            note under the card said it twice more (2026-09-11). */}
         <h1 className="text-h1 font-semibold">Settings</h1>
-        <span className="text-[12px] text-text-tertiary pb-[2px]">
-          machine-specific paths · backend config
-        </span>
         <div className="ml-auto">
           <button
             onClick={() => save(form)}
@@ -94,22 +94,28 @@ export function Settings() {
           Machine Paths
         </div>
         <Field label="Monorepo root" value={form.monorepo_root} onChange={set('monorepo_root')} />
-        <Field
-          label="Smart money root"
-          value={form.smart_money_root}
-          onChange={set('smart_money_root')}
-        />
-        <Field
-          label="Smart money config path"
-          description="The pipeline's config.json"
-          value={form.smart_money_config_path}
-          onChange={set('smart_money_config_path')}
-        />
-        <Field
-          label="Smart money reports dir"
-          value={form.smart_money_reports_dir}
-          onChange={set('smart_money_reports_dir')}
-        />
+        {/* Smart Money's paths only while that feature is on. Hidden, they are still in `form`,
+            so Save sends their current values back unchanged. */}
+        {FEATURES.smartMoney && (
+          <>
+            <Field
+              label="Smart money root"
+              value={form.smart_money_root}
+              onChange={set('smart_money_root')}
+            />
+            <Field
+              label="Smart money config path"
+              description="The pipeline's config.json"
+              value={form.smart_money_config_path}
+              onChange={set('smart_money_config_path')}
+            />
+            <Field
+              label="Smart money reports dir"
+              value={form.smart_money_reports_dir}
+              onChange={set('smart_money_reports_dir')}
+            />
+          </>
+        )}
         <Field
           label="Bot instances dir"
           value={form.instances_dir}
@@ -133,10 +139,6 @@ export function Settings() {
           value={form.mt5_agent_tunnel}
           onChange={set('mt5_agent_tunnel')}
         />
-      </div>
-
-      <div className="mt-4 text-micro text-text-tertiary bg-bg-sunken border border-border-subtle rounded-md px-3 py-[10px]">
-        Edit this one file to update all machine-specific paths. Nothing else hardcodes paths.
       </div>
     </div>
   )
