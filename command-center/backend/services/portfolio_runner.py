@@ -300,6 +300,19 @@ def _build_and_run(
             return None
         return _frame(int(run_feeds.extra_feed_minutes(run_feeds.SECONDARY_FLAG, config)))
 
+    # 🔴 EVERY LEG'S STRATEGY IS RESOLVED BEFORE ANY BAR IS LOADED (2026-09-10). A missing class
+    # used to surface only after the bars arrived — which, for a stack naming no broker, meant
+    # asking the trading box's terminal who it was and reading an 11 MB cache, all to fail a lookup
+    # that needs neither. It was found because a backend TEST did exactly that from its worker
+    # processes, where the suite's live-VPS guard cannot follow: every shift asked the live box
+    # before failing. A lookup that can fail must run before the work it would waste.
+    resolved = {}
+    for leg in legs:
+        found = _resolve(leg["class_name"])
+        if found is None:
+            raise ValueError(f"no Python strategy class named {leg['class_name']!r}")
+        resolved[leg["class_name"]] = found
+
     df = _frame(tf)
 
     balance = float(settings["account_size"])
@@ -308,10 +321,7 @@ def _build_and_run(
     specs = []
     by_id: dict = {}
     for leg in legs:
-        found = _resolve(leg["class_name"])
-        if found is None:
-            raise ValueError(f"no Python strategy class named {leg['class_name']!r}")
-        _, entry = found
+        _, entry = resolved[leg["class_name"]]
         config = _build_config(entry["config"], leg.get("params") or {}, symbol)
         by_id[leg["strategy_id"]] = config
         specs.append(

@@ -8,6 +8,8 @@ the file because it reads as *up to date*.
 
 from __future__ import annotations
 
+import copy
+import functools
 import re
 import subprocess
 from pathlib import Path
@@ -61,6 +63,20 @@ def _before_the_last(n: int = 8, package: str = "sos_fade") -> str:
 
 # Resolved once: it shells out, and every case below wants the same window.
 OLDER = _before_the_last()
+
+
+@functools.lru_cache(maxsize=None)
+def _compared_once(commit: str) -> dict:
+    return bv.compare("sos_fade", commit, {})
+
+
+def _compared(commit: str) -> dict:
+    """`bv.compare("sos_fade", commit, {})`, computed ONCE per commit for the whole file.
+
+    Five tests read the same two comparisons from different angles, ~0.9s of git each on real
+    history (MEASURED 2026-09-10). A copy is handed out so no test can edit what the next reads.
+    Tests that patch `_git` call `bv.compare` directly and never go through here."""
+    return copy.deepcopy(_compared_once(commit))
 
 
 # ── the agreement with promote.py ───────────────────────────────────────────────
@@ -249,7 +265,7 @@ def test_an_unfetched_deployed_commit_is_not_comparable_and_names_the_fix():
 
 
 def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():
-    r = bv.compare("sos_fade", "HEAD", {})
+    r = _compared("HEAD")
     assert r["comparable"] is True
     assert r["versions_behind"] == 0
     assert r["changes"] == []
@@ -258,16 +274,16 @@ def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():
 def test_behind_never_goes_negative():
     """A deployment AHEAD of this clone (somebody else promoted from a machine that had pulled)
     must read 0, not a negative count — the banner's copy has no sensible form for -3."""
-    r = bv.compare("sos_fade", OLDER, {})
+    r = _compared(OLDER)
     assert r["versions_behind"] is not None and r["versions_behind"] > 0
-    r2 = bv.compare("sos_fade", "HEAD", {})
+    r2 = _compared("HEAD")
     assert r2["versions_behind"] == 0
 
 
 def test_the_change_list_matches_the_version_gap():
     """The number in the headline and the list under it are two renderings of one fact; if they
     disagree the banner argues with itself."""
-    r = bv.compare("sos_fade", OLDER, {})
+    r = _compared(OLDER)
     assert r["comparable"] is True
     assert len(r["changes"]) == r["versions_behind"]
 
@@ -290,7 +306,7 @@ def test_every_change_names_the_tree_it_touched():
       top-level FILE of that name, a missing `tree + "/"` test) shows up here and nowhere else.
     """
     trees = bv.trees_for("sos_fade")
-    r = bv.compare("sos_fade", OLDER, {})
+    r = _compared(OLDER)
     assert r["changes"], "no changes to check — widen the range"
     assert any(not c.get("merge") for c in r["changes"]), "only merges in range — widen it"
     for c in r["changes"]:
@@ -545,5 +561,5 @@ def test_compare_carries_the_unpushed_list_so_the_banner_can_explain_a_short_dep
     never been promoted is exactly where 'push first' is worth saying before the first deploy."""
     r = bv.compare("sos_fade", "", {})
     assert "unpushed_commits" in r
-    r2 = bv.compare("sos_fade", "HEAD", {})
+    r2 = _compared("HEAD")
     assert "unpushed_commits" in r2

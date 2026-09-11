@@ -20,6 +20,7 @@ import json
 
 import pytest
 from routers import bots
+from services import bot_versions
 
 DEPLOYED = {
     "strategy_source_hash": "e42a95c96bb27b2868eee7b1e4f78e4c",
@@ -33,9 +34,30 @@ DEPLOYED = {
 }
 
 
+# Every call below also compares the deployment against THIS repo (`bot_versions.compare`), and
+# every test asks git the same questions about the same commit. The answers are remembered for
+# the file: the first test in each worker computes them for real, the rest read them back.
+# MEASURED 2026-09-10: ~1.2s of git per call, 14s of this file's 15s on one core. The comparison
+# still runs against real history — `test_the_card_carries_a_REAL_comparison` below reads it,
+# and `test_bot_versions.py` checks the comparison itself without any remembering.
+_GIT_ANSWERS: dict = {}
+_TREES: dict = {}
+
+
+def _remembering(real, answers):
+    def _call(*args):
+        if args not in answers:
+            answers[args] = real(*args)
+        return answers[args]
+
+    return _call
+
+
 @pytest.fixture
 def vps(monkeypatch):
     """Script the VPS: the deployment record, the git facts, and the live process's report."""
+    monkeypatch.setattr(bot_versions, "_git", _remembering(bot_versions._git, _GIT_ANSWERS))
+    monkeypatch.setattr(bot_versions, "trees_for", _remembering(bot_versions.trees_for, _TREES))
     state = {
         "deployed": dict(DEPLOYED),
         "head": "677e7ce",
@@ -72,6 +94,20 @@ def vps(monkeypatch):
         bots, "_read_instance_config", lambda k: {"strategy_params": state["config_params"]}
     )
     return state
+
+
+def test_the_card_carries_a_REAL_comparison_against_this_repo(vps):
+    """The endpoint turns `bot_versions.compare` into the model the banner reads, inside a
+    try/except that renders ANY failure as no comparison at all. So a key renamed on one side
+    drops the whole "you are N behind" banner in silence — and until 2026-09-10 no test read the
+    comparison off the endpoint, so nothing would have said so.
+    MUTATION: rename `versions_behind` in compare's result and this reddens (killed 2026-09-10)."""
+    c = bots.get_bot_version("SOS Fade").compare
+    assert c is not None, "the comparison raised and was swallowed"
+    assert c.comparable is True, c.reason
+    assert c.deployed_version is not None and c.local_version is not None
+    assert c.versions_behind == max(0, c.local_version - c.deployed_version)
+    assert len(c.changes) == c.versions_behind
 
 
 def test_it_reports_the_deployed_version_not_the_config_file(vps):

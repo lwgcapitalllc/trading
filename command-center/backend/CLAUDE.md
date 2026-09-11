@@ -1056,6 +1056,24 @@ guard that was never installed look identical from a green suite.** `tests/test_
 still wins, and that `LiveVpsCall` is **not** an `Exception` — pinned on its own so a future
 tidy-up fails there instead of quietly disarming the whole suite.
 
+🔴 **IT COULD NOT FOLLOW A TEST INTO A PROCESS THE TEST STARTED, AND ONE DID (2026-09-10).** A
+fixture lives in one process; the stack-sensitivity pool starts real workers, and each asked the
+box's terminal which broker was attached before failing — through `backtest/data/mt5_agent.py`,
+a third HTTP door this fixture never covered. So: `_arm_child_guard` loads the repo's
+`scripts/testing/vps_guard.py` into every process a test starts (same two doors, same
+`BaseException`, registered under one module name so a worker's refusal survives the pickle
+back), and `_no_live_vps` stubs that client — `status()` gives the tunnel-down `{}`, a fetch
+refuses. **21 tests had passed only because the tunnel happened to be up.** Both pinned in
+`test_vps_interlock.py`, the child case from a real child. And `portfolio_runner._build_and_run`
+now resolves every leg's strategy BEFORE loading bars, so a bad name fails without reaching out.
+
+⚠ **Three more conftest rules from the same pass**: the schema is built ONCE per worker and COPIED
+per test (`_template_db`, sqlite `backup()`, never a file copy — the build leaves write-ahead
+files); `lab_progress.json` is per test (`_private_progress_file` — a test was writing the file
+the running app reads, which is where the 2026-08-06 audit's stale `"j2"` came from); and the
+test client stubs the readiness REPORT, which re-read the 5.5 MB news cache on every client start
+(~51 of 332 test-seconds). `GET /system/readiness` calls `check()`, so its own tests still read it.
+
 **Same pass, the stale roster:** `EXPECTED_CLASS_NAMES` in `tests/test_strategies.py` still
 listed `BosStrategy`, three tests deep, after `1946f8b` deleted the unfinished port. That
 commit's message says "and its roster line with it" and means `backtest/tools/run_report.py`,
@@ -2090,6 +2108,13 @@ fan-out rather than the speed.
 ⚠ **The standing rule: a cost can hide in correct code run N times, and no result will show it.**
 When a helper loops over a list calling something that launches a process, ask what sets the
 length of that list.
+
+✅ **Merges and renames are pinned on a SCRIPTED repo (`tests/test_bot_versions_history.py`,
+2026-09-10)**, because real history cannot promise either: a merge was checked only when one sat
+in the window, and `_path_before_renames` had no test at all. 5 mutations run, 5 killed. ⚠ **The
+endpoint tests remember git's answers per file** (`test_bot_version.py`, 15s → 3s) — they are about
+the VPS record, not the comparison — and ONE of them now reads the comparison off the endpoint,
+which nothing did: its try/except turns any shape mismatch into no banner at all, in silence.
 
 ### The settings that change without anyone asking
 

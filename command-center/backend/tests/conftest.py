@@ -29,21 +29,96 @@ import pytest
 os.environ["CC_DISABLE_SUPERVISOR"] = "1"
 
 
+def _arm_child_guard() -> None:
+    """Every process a test STARTS refuses the live box too (2026-09-10).
+
+    🔴 `_no_live_vps` below lives in THIS process, and a test that spawns a worker pool leaves it
+    behind: `test_the_shifts_really_do_survive_a_PROCESS_boundary` did exactly that, and each
+    worker asked the trading box's terminal which broker was attached. The root repo's
+    `scripts/testing/vps_guard.py` is loaded into every child at start-up instead. Loaded BY PATH,
+    derived from this file, never from a typed repo path.
+
+    ⚠ Only the CHILDREN are armed here, not this process: `_no_live_vps` already covers it and
+    exempts `integration` tests, which a process-wide guard could not. ⚠ The one cost: a child
+    started by an integration test is refused too. None starts one today.
+    """
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[3] / "scripts" / "testing" / "vps_guard.py"
+    spec = importlib.util.spec_from_file_location("_lwg_vps_guard", path)
+    # Registered under the name the children use, so a refusal a worker raises can be UNPICKLED
+    # here and read as the sentence it is rather than as a pickling error.
+    guard = sys.modules.setdefault("_lwg_vps_guard", importlib.util.module_from_spec(spec))
+    if not hasattr(guard, "arm_children"):
+        spec.loader.exec_module(guard)
+    guard.arm_children()
+
+
+_arm_child_guard()
+
+
 # ── DB isolation ──────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def fresh_db(tmp_path, monkeypatch):
-    """
-    Patches lab_db.DB_PATH to a temp file and calls init_db().
-    All fixtures that depend on this share the same temp DB within one test.
+@pytest.fixture(scope="session")
+def _template_db(tmp_path_factory):
+    """ONE freshly built database per test worker, copied into every test that asks for one.
+
+    MEASURED 2026-09-10: a build is 33 ms and a copy 0.33 ms, and 325 tests ask. A fresh build
+    depends only on the code and the clock (it seeds rulesets and instrument metadata and reads no
+    config path), so the copy is byte-for-byte what `init_db()` would have produced - two builds a
+    second apart differ only in ruleset timestamps, which no test reads.
+
+    ⚠ Tests that exercise the BUILD itself (a downgraded table, a migration) still call `init_db()`
+    themselves and are unaffected. ⚠ Copied through SQLite's backup call, never a file copy: the
+    build leaves write-ahead files beside the database, and a file copy can miss what is in them.
     """
     from services import lab_db
 
+    path = tmp_path_factory.mktemp("lab_template") / "lab.db"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(lab_db, "DB_PATH", path)
+        lab_db.init_db()
+    return path
+
+
+@pytest.fixture
+def fresh_db(tmp_path, monkeypatch, _template_db):
+    """
+    Patches lab_db.DB_PATH to a temp file holding a freshly built database.
+    All fixtures that depend on this share the same temp DB within one test.
+    """
+    import sqlite3
+
+    from services import lab_db
+
     db = tmp_path / "lab.db"
+    src, dst = sqlite3.connect(_template_db), sqlite3.connect(db)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
     monkeypatch.setattr(lab_db, "DB_PATH", db)
-    lab_db.init_db()
     return db
+
+
+@pytest.fixture(autouse=True)
+def _private_progress_file(tmp_path, monkeypatch):
+    """Every test gets its OWN `lab_progress.json` (2026-09-10).
+
+    🔴 `backtest_runner._write_progress` writes a FIXED path - the live app's `data/` - and a test
+    driving `_handle_complete` wrote its fake run into it. That is the stale `"j2"` entry the
+    2026-08-06 Stop audit found in the live file and took for the app's own leftovers. Under
+    `-n auto` it is also the worst shape a suite has: one worker's write read by another's
+    start-up, which may clear it. Root CLAUDE.md: a test that writes a fixed path breaks OTHER
+    tests non-deterministically.
+    """
+    from services import backtest_runner
+
+    monkeypatch.setattr(backtest_runner, "_LAB_PROGRESS_PATH", tmp_path / "lab_progress.json")
 
 
 # ── VPS isolation, enforced ───────────────────────────────────────────────────
@@ -152,11 +227,31 @@ def _no_live_vps(request):
 
         return wrapper
 
+    # 🔴 The BACKTEST package's own terminal client was the third HTTP door, and it was open until
+    # 2026-09-10: a stack replay with no broker asks it which terminal is attached, and nothing here
+    # refused it. `_fetch` is its one funnel (checked: the only urlopen in backtest/data/mt5_agent).
+    # The repo root must be importable first - python_runner adds it the same way on import.
+    import sys
+    from pathlib import Path
+
+    import config as cfg
+
+    if str(Path(cfg.MONOREPO_ROOT)) not in sys.path:
+        sys.path.insert(0, str(Path(cfg.MONOREPO_ROOT)))
+
     with (
         patch("services.runner_dispatch._get", side_effect=refuse_http),
         patch("services.runner_dispatch._post", side_effect=refuse_http),
         patch("services.mt5_agent_client._get", side_effect=refuse_http),
         patch("services.mt5_agent_client._post", side_effect=refuse_http),
+        # MEASURED 2026-09-10: 21 tests (every backtest or stack LAUNCH, and every regime
+        # timeline) asked the box's terminal which broker it was on - the history-floor check and
+        # the bar cache's broker partition both open with it - and passed only because the tunnel
+        # happened to be up. `status()` is a probe whose unreachable answer is `{}` BY DESIGN
+        # (identity unknown), so answering that here is what production does with the tunnel
+        # down, not a capability the test borrowed. Every other call on that client refuses.
+        patch("backtest.data.mt5_agent.Mt5Agent.status", return_value={}),
+        patch("backtest.data.mt5_agent.Mt5Agent._fetch", side_effect=refuse_http),
         patch("subprocess.run", new=guard(real_run, "run")),
         patch("subprocess.Popen", new=guard(real_popen, "Popen")),
     ):
@@ -233,6 +328,11 @@ def client(fresh_db):
         patch("services.mt5_agent_client.list_strategy_files", return_value=[]),
         patch("routers.backtests.run_backtest_job", new_callable=AsyncMock),
         patch("routers.backtests.read_progress", return_value={"status": "idle", "pct": 0}),
+        # The start-up readiness REPORT only logs, and it parsed the real 5.5 MB news calendar on
+        # every client start - MEASURED 215 ms of a 268 ms start-up, ~51 of the suite's 332
+        # test-seconds, and a dependency on a git-ignored file this machine happens to hold.
+        # `GET /system/readiness` calls `check()`, not this, so its own tests still read it.
+        patch("services.readiness.report", return_value=[]),
     ):
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c

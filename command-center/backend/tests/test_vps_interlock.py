@@ -117,6 +117,45 @@ def test_the_guard_is_not_an_exception():
     assert not issubclass(LiveVpsCall, Exception)
 
 
+def test_the_backtest_packages_own_terminal_client_is_refused():
+    """🔴 The THIRD HTTP door, open until 2026-09-10: 21 tests launched a backtest or built a
+    regime timeline, and both ask this client which terminal is attached.
+
+    Its identity probe answers `{}` - the unreachable answer it already gives by design - and a
+    DATA call (bars, ticks) refuses outright, since there is no honest stand-in for bars.
+
+    MUTATION: drop the `Mt5Agent._fetch` patch and the bar call reaches the tunnel; drop the
+    `status` patch and the probe reaches it (through `_fetch`, which then refuses instead)."""
+    from backtest.data.mt5_agent import Mt5Agent
+
+    assert Mt5Agent().status() == {}  # "identity unknown", the tunnel-down answer
+    with pytest.raises(LiveVpsCall):
+        Mt5Agent().bars("XAUUSD", "M15", "2024-01-01", "2024-01-02")
+
+
+def test_a_process_a_test_STARTS_refuses_the_box_too():
+    """🔴 `_no_live_vps` lives in this process, and a test that spawned a worker pool left it
+    behind: every worker asked the box's terminal which broker was attached (2026-09-10). The
+    children load `scripts/testing/vps_guard.py` at start-up instead.
+
+    ⚠ Pointed at a SPARE local port through the guard's add-only override, so a broken guard fails
+    this on a refused connection rather than by reaching the box.
+
+    MUTATION: drop `_arm_child_guard()` from conftest and the child raises ConnectionRefusedError."""
+    import os
+    import socket
+    import sys
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    code = f"import socket; socket.socket().connect(('127.0.0.1', {port}))"
+    env = dict(os.environ, LWG_TEST_GUARD_PORTS=str(port))
+    proc = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+    assert proc.returncode != 0 and "LiveVpsCall" in proc.stderr, proc.stderr[-400:]
+
+
 # ── Named stubs still win ─────────────────────────────────────────────────────
 
 
