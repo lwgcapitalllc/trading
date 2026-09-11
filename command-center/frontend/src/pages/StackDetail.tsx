@@ -684,10 +684,9 @@ function StackVerdictCard({
         cls="text-accent"
         tip="Every trade the switched-on strategies took, and the sample every number beside this card rests on. Toggle a strategy in the rows below and this — and Made, Risked and Trusted — recompute over whatever is left on."
       />
-      <div className="text-[11px] text-text-tertiary leading-[1.35] mt-2 truncate">
-        {legs.length}-strategy portfolio
-      </div>
-      {cadence && <div className="font-mono text-[10.5px] text-text-tertiary">{cadence}</div>}
+      {/* No "N-strategy portfolio" line: the header chip says "N-strategy Stack" and this card's
+          own corner says "N of N on" (2026-09-11). */}
+      {cadence && <div className="font-mono text-[10.5px] text-text-tertiary mt-2">{cadence}</div>}
       {rows.length > 0 && <PanelRows rows={rows} />}
     </div>
   )
@@ -1754,11 +1753,17 @@ export function StackDetail() {
                 tabs={CHART_TABS}
                 active={chartTab}
                 onActive={setChartTab}
-                sub={CHART_SUBS[chartTab]}
                 height={520}
                 onExpand={() => setFullscreen(chartTab)}
                 render={(k, h) => renderChart(k, h)}
-                right={chartControls(chartTab)}
+                // The tab's explainer is an ⓘ beside the controls, not a line of body text over
+                // the chart (2026-09-11). None of these carries a warning, unlike BacktestDetail's.
+                right={
+                  <>
+                    {chartControls(chartTab)}
+                    <InfoTip text={CHART_SUBS[chartTab]} />
+                  </>
+                }
               />
               {fullscreen && fullscreen !== 'price' && (
                 <ChartModal
