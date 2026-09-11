@@ -204,5 +204,10 @@ node_modules/.cache/
 # Playwright MCP browser session scratch (console logs, page snapshots, screenshots)
 .playwright-mcp/
 
+# A stack replay's BEFORE picture (book + summary with its sha256), taken to prove a change moved
+# no trade (execution/CLAUDE.md -> stage 2's evidence). Scratch by nature: take it at HEAD right
+# before the change it guards - a committed one goes stale the day any strategy default moves.
+.baseline/
+
 # generated intermediate — strategies/tradingview/tools/derive_htf_structure.py rebuilds it
 strategies/tradingview/tools/_derived_structure_15.pine

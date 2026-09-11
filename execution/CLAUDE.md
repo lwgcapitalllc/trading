@@ -123,7 +123,9 @@ rule the next person does not read.
 ## The evidence stage 2 actually stands on
 
   * **The book did not move.** Stack `st_631986bbd9` replayed: 272 trades, 223.3339464065 R,
-    sha256 identical to `.baseline/`.
+    sha256 identical to `.baseline/`. ⚠ **That folder is git-ignored local scratch** — no other
+    clone has it. Stage 3's proof takes a FRESH one at HEAD right before its change; an old picture
+    goes stale the day any strategy default moves.
   * **The decision stream did not move.** `compare_strategy.py` output is **byte-identical to
     HEAD** on all four full-config exports — including each one's cold-start divergence, which
     is the part that would have shifted had anything real changed.
