@@ -1753,17 +1753,11 @@ export function StackDetail() {
                 tabs={CHART_TABS}
                 active={chartTab}
                 onActive={setChartTab}
+                sub={CHART_SUBS[chartTab]}
                 height={520}
                 onExpand={() => setFullscreen(chartTab)}
                 render={(k, h) => renderChart(k, h)}
-                // The tab's explainer is an ⓘ beside the controls, not a line of body text over
-                // the chart (2026-09-11). None of these carries a warning, unlike BacktestDetail's.
-                right={
-                  <>
-                    {chartControls(chartTab)}
-                    <InfoTip text={CHART_SUBS[chartTab]} />
-                  </>
-                }
+                right={chartControls(chartTab)}
               />
               {fullscreen && fullscreen !== 'price' && (
                 <ChartModal

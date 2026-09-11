@@ -4094,11 +4094,10 @@ function PerformanceByRegimeTable({ run }: { run: Run }) {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-border-subtle">
+        {/* No subtitle: "how the strategy performs in each market condition" restated this
+            heading (2026-09-11). */}
         <div className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.6px]">
           Performance by Regime
-        </div>
-        <div className="text-[10px] text-text-tertiary mt-[2px]">
-          How the strategy performs in each market condition.
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -7248,17 +7247,18 @@ export function BacktestDetail() {
                 // engine_trades → the engine produced a day-by-day timeline). Inert for every unit-size run.
                 const hasSized = run.sized && effRun!.sized_timeline.length > 0
                 const firmName = selectedEval?.ruleset_name || 'the selected firm'
-                const endsAtBreach = breachInfo ? ' Ends where the account breached.' : ''
+                // No "Ends where the account breached." suffix any more: `breachNote`, the red banner
+                // inside the sized and breakdown tabs, says it — the suffix was its second copy.
                 const SUBS: Record<string, string> = {
                   equity: hasSized
                     ? 'The bare strategy at a flat 1 unit — no sizing. This is the raw edge: is there one at all?'
                     : 'Steadily rising = good. Big peak then long decline = giving back gains.',
                   sized: hasSized
-                    ? `${firmName}'s real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.${endsAtBreach}`
+                    ? `${firmName}'s real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.`
                     : 'The real sized account: end-of-day balance vs the trailing risk floor. Gap = buffer; crossing = breach.',
                   price: 'Candlesticks with trade context.',
                   breakdown: hasSized
-                    ? `Sized to ${firmName} — drawdown, daily P&L, and long vs short.${endsAtBreach}`
+                    ? `Sized to ${firmName} — drawdown, daily P&L, and long vs short.`
                     : 'Drawdown, daily P&L, and long vs short — the supporting detail.',
                 }
                 const TITLES: Record<string, string> = {

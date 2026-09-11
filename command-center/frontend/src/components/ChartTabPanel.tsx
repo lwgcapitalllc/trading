@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Maximize2, Minimize2, Camera, Check } from 'lucide-react'
 import { copyChartAsPng } from '@/lib/chartImage'
+import InfoTip from '@/components/InfoTip'
 
 // ── Tabbed chart panel + fullscreen modal ────────────────────────────────────
 // Shared by BacktestDetail and StressTestDetail: a segmented tab control, optional
@@ -63,6 +64,10 @@ export function ChartTabPanel({
         </div>
         <div className="flex items-center gap-2">
           {right}
+          {/* The tab's explainer, on hover. It was a line of body text between the tabs and the
+              chart on every tab of three pages (2026-09-11). Nothing that must be read goes in
+              `sub`: the backtest page's breach warning is its own banner inside the chart. */}
+          {sub && <InfoTip text={sub} />}
           <button
             onClick={onExpand}
             title="Expand to full screen"
@@ -72,7 +77,7 @@ export function ChartTabPanel({
           </button>
         </div>
       </div>
-      {sub && <div className="text-[10px] text-text-tertiary mt-4 mb-4 px-0.5">{sub}</div>}
+      <div className="h-4" />
       {aboveChart}
       <div className="relative">
         {keepMounted?.map((key) => (

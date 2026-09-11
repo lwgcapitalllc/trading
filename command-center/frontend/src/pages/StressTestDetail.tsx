@@ -1119,20 +1119,13 @@ export default function StressTestDetail() {
 
         {/* ══ Analysis workspace — one tabbed panel; each tab = its KPIs above its chart ══ */}
         {chartTabs.length > 0 && (
-          // Each tab's explainer is an ⓘ beside its right-hand label, not a line of body text
-          // between the tabs and the numbers (2026-09-11). Only here: BacktestDetail's `sub` can
-          // carry a breach warning, which must stay on screen.
           <ChartTabPanel
             tabs={chartTabs}
             active={activeChart}
             onActive={setChartTab}
             height={activeChart === 'mc' ? 640 : 440}
-            right={
-              <span className="flex items-center gap-1.5">
-                {chartRightByKey[activeChart]}
-                {chartSubByKey[activeChart] && <InfoTip text={chartSubByKey[activeChart]} />}
-              </span>
-            }
+            sub={chartSubByKey[activeChart]}
+            right={chartRightByKey[activeChart]}
             aboveChart={kpiBlock(activeChart)}
             onExpand={() => setFullscreen(true)}
             render={renderChart}
