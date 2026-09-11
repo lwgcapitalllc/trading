@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Pencil, Check, X, ArrowRight, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Play, Pencil, Check, X, ChevronRight } from 'lucide-react'
 import {
   useStrategy,
   useBacktestRuns,
@@ -11,7 +11,10 @@ import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
 import { RunnerBadge } from '@/components/RunnerBadge'
 import { runnerScope, runnerMarket, RUNNER_FULL_LABEL } from '@/lib/runner'
-import type { ParamSchemaEntry, StrategyStep } from '@/types'
+import type { ParamCondValue, ParamSchemaEntry, StrategyStep } from '@/types'
+
+/** Stacks shown before "+N more" — two rows of chips. */
+const STACKS_SHOWN = 4
 
 const CORRELATED_PAIRS: [string, string][] = [
   ['MES', 'MNQ'],
@@ -27,20 +30,6 @@ const CATEGORY_LABEL: Record<string, string> = {
   mean_reversion: 'Mean reversion',
   breakout: 'Breakout',
   momentum: 'Momentum',
-}
-
-// ── Formatters ────────────────────────────────────────────────────────────────
-
-function fmtMoney(n: number | null): string {
-  if (n == null) return '—'
-  const abs = Math.abs(n)
-  const prefix = n < 0 ? '-' : '+'
-  if (abs >= 1_000) return `${prefix}$${(abs / 1_000).toFixed(1)}k`
-  return `${prefix}$${abs.toFixed(0)}`
-}
-
-function slug(s: string): string {
-  return 'grp-' + s.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
 }
 
 // ── Param helpers (all driven by the meta.json overlay) ───────────────────────
@@ -70,19 +59,47 @@ function defaultValue(p: ParamSchemaEntry): string {
   return String(p.default ?? '—')
 }
 
+/** One condition value in words: a list reads "A or B", and `{ gt: n }` reads "above n".
+ *  🔴 It printed `String(val)` for all three shapes until 2026-09-11, so the comparison shape
+ *  reached the screen as "[object Object]". The shapes are `paramConditions.ts`'s own. */
+function wantText(ref: ParamSchemaEntry | undefined, val: ParamCondValue): string {
+  if (Array.isArray(val)) return val.map((v) => wantText(ref, v)).join(' or ')
+  if (val !== null && typeof val === 'object') return 'gt' in val ? `above ${val.gt}` : '?'
+  if (ref && isBoolLike(ref)) {
+    const s = boolStates(ref)
+    return val === true || val === 'true' ? s.on : s.off
+  }
+  return String(val)
+}
+
 /** "only when X = Y" text for a param's show_if condition. */
 function conditionText(p: ParamSchemaEntry, byName: Map<string, ParamSchemaEntry>): string | null {
   if (!p.show_if) return null
   const parts = Object.entries(p.show_if).map(([name, val]) => {
     const ref = byName.get(name)
     const lbl = ref ? paramLabel(ref) : name
-    if (ref && isBoolLike(ref)) {
-      const s = boolStates(ref)
-      return `${lbl} = ${val === true || val === 'true' ? s.on : s.off}`
-    }
-    return `${lbl} = ${String(val)}`
+    const isGt = val !== null && typeof val === 'object' && !Array.isArray(val)
+    return isGt ? `${lbl} is ${wantText(ref, val)}` : `${lbl} = ${wantText(ref, val)}`
   })
   return `only when ${parts.join(' · ')}`
+}
+
+/** A long description, clamped to three lines with a toggle. Several run to a paragraph of
+ *  measured results, which pushed every row under them off the screen. */
+function ClampedText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  if (text.length <= 260) return <>{text}</>
+  return (
+    <>
+      <div className={open ? '' : 'line-clamp-3'}>{text}</div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="mt-0.5 text-[11px] text-accent-text hover:underline"
+      >
+        {open ? 'Less' : 'More'}
+      </button>
+    </>
+  )
 }
 
 // ── Grouping ──────────────────────────────────────────────────────────────────
@@ -125,7 +142,9 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
   return (
     <tr className="border-t border-border-subtle first:border-t-0 hover:bg-bg-hover transition-colors">
       <td className="px-4 py-3 align-top w-[24%]">
-        <div className="text-[13px] font-semibold flex items-center gap-1.5">
+        {/* The code name is on hover rather than printed under every label — it is for someone
+            reading the source, and on screen it gave every row a second heading. */}
+        <div className="text-[13px] font-semibold flex items-center gap-1.5" title={p.name}>
           {paramLabel(p)}
           {p.core && (
             <span className="text-accent text-[11px]" title="Essential — changes behaviour most">
@@ -133,7 +152,6 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
             </span>
           )}
         </div>
-        <div className="text-[10px] text-text-tertiary font-mono mt-0.5">{p.name}</div>
         {cond && (
           <div className="inline-block text-[9.5px] text-gold-text bg-gold-muted border border-gold-text/25 rounded px-1.5 py-px mt-1">
             {cond}
@@ -141,7 +159,7 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
         )}
       </td>
       <td className="px-4 py-3 align-top text-[12px] text-text-secondary leading-[1.5] max-w-[400px]">
-        {desc ?? '—'}
+        {desc ? <ClampedText text={desc} /> : '—'}
       </td>
       <td className="px-4 py-3 align-top whitespace-nowrap">
         <span className="text-[13px] font-semibold text-accent-text">
@@ -194,10 +212,7 @@ function GroupTable({
   const rows = essOnly ? group.params.filter((p) => p.core) : group.params
   const isOpen = essOnly ? true : open
   return (
-    <div
-      id={slug(group.name)}
-      className="border border-border-subtle rounded-xl bg-bg-surface overflow-hidden mb-2.5 scroll-mt-16"
-    >
+    <div className="border border-border-subtle rounded-xl bg-bg-surface overflow-hidden mb-2.5">
       <button
         onClick={onToggle}
         className={`w-full flex items-center gap-3 px-4 py-3 bg-bg-sunken hover:bg-bg-surface-2 text-left transition-colors ${isOpen ? 'border-b border-border-default' : ''}`}
@@ -247,24 +262,6 @@ function GroupTable({
   )
 }
 
-// ── Aside cards ───────────────────────────────────────────────────────────────
-
-function AsideCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
-      <h3 className="text-[10.5px] font-bold text-text-secondary uppercase tracking-[0.7px] px-3.5 py-2.5 bg-bg-sunken border-b border-border-subtle">
-        {title}
-      </h3>
-      <div className="px-3.5 py-1.5">{children}</div>
-    </div>
-  )
-}
-
-function ColHead({ children }: { children: React.ReactNode }) {
-  // Fixed height so the side panel and the param column start on exactly the same line.
-  return <div className="h-[30px] flex items-center justify-between mb-3">{children}</div>
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function Skeleton() {
@@ -285,6 +282,7 @@ export function StrategyDetail() {
   const [descDraft, setDescDraft] = useState('')
   const [essOnly, setEssOnly] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const [showAllStacks, setShowAllStacks] = useState(false)
   const descInputRef = useRef<HTMLTextAreaElement>(null)
   const updateDesc = useUpdateStrategyDescription()
 
@@ -355,7 +353,6 @@ export function StrategyDetail() {
     (p) => p.category !== 'foundational' && p.hidden
   )
   const essentialCount = visibleParams.filter((p) => p.core).length
-  const essentials = visibleParams.filter((p) => p.core)
   const categoryLabel = strategy.category
     ? (CATEGORY_LABEL[strategy.category] ?? strategy.category.replace(/_/g, ' '))
     : null
@@ -368,19 +365,14 @@ export function StrategyDetail() {
     ([a, b]) => completedInstruments.includes(a) && completedInstruments.includes(b)
   )
 
-  const total = runs?.length ?? 0
-  const completed = runs?.filter((r) => r.status === 'complete' && r.net_pnl != null) ?? []
-  const bestPnl = completed.length ? Math.max(...completed.map((r) => r.net_pnl as number)) : null
-  const instrumentCount = new Set((runs ?? []).map((r) => r.instrument)).size
-
   const saveDesc = () => {
     updateDesc.mutate({ strategyId: strategy.id, description: descDraft })
     setEditingDesc(false)
   }
   const setAll = (v: boolean) => setOpenGroups(Object.fromEntries(groups.map((g) => [g.name, v])))
-  const jumpTo = (name: string) => {
-    setOpenGroups((prev) => ({ ...prev, [name]: true }))
-    document.getElementById(slug(name))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const startEditDesc = () => {
+    setDescDraft(strategy.description ?? '')
+    setEditingDesc(true)
   }
 
   return (
@@ -443,14 +435,12 @@ export function StrategyDetail() {
           </span>
           <span className="font-semibold capitalize">{market}</span>
         </span>
+        {/* The same count as the Runs column on the Strategies list, so the two pages agree. */}
         <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
           <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">
-            Parameters
+            Backtests
           </span>
-          <span className="font-semibold">
-            {visibleParams.length}
-            {essentialCount ? ` · ${essentialCount} essential` : ''}
-          </span>
+          <span className="font-semibold">{strategy.run_count}</span>
         </span>
       </div>
 
@@ -465,8 +455,8 @@ export function StrategyDetail() {
           <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary mb-2">
             In {stacksWithThis.length} portfolio stack{stacksWithThis.length === 1 ? '' : 's'}
           </p>
-          <div className="flex flex-wrap gap-2">
-            {stacksWithThis.map((st) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {(showAllStacks ? stacksWithThis : stacksWithThis.slice(0, STACKS_SHOWN)).map((st) => (
               <button
                 key={st.stack_id}
                 onClick={() => navigate(`/backtests/stacks/${st.stack_id}`)}
@@ -491,6 +481,14 @@ export function StrategyDetail() {
                 <ChevronRight size={12} className="text-text-tertiary" />
               </button>
             ))}
+            {stacksWithThis.length > STACKS_SHOWN && (
+              <button
+                onClick={() => setShowAllStacks((v) => !v)}
+                className="text-[12px] text-text-tertiary hover:text-text-secondary px-1"
+              >
+                {showAllStacks ? 'Show fewer' : `+${stacksWithThis.length - STACKS_SHOWN} more`}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -498,9 +496,19 @@ export function StrategyDetail() {
       {/* Overview */}
       <div className="border border-border-subtle rounded-2xl bg-gradient-to-b from-bg-surface to-bg-sunken mb-7 overflow-hidden">
         <div className="px-[22px] py-5">
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary mb-2">
-            What it does
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary">
+              What it does
+            </p>
+            {!editingDesc && !strategy.description && (
+              <button
+                onClick={startEditDesc}
+                className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors"
+              >
+                <Pencil size={11} /> Add a description
+              </button>
+            )}
+          </div>
           {editingDesc ? (
             <div>
               <textarea
@@ -532,27 +540,29 @@ export function StrategyDetail() {
               </div>
             </div>
           ) : (
-            <button
-              onClick={() => {
-                setDescDraft(strategy.description ?? '')
-                setEditingDesc(true)
-              }}
-              className="group flex items-start gap-2 text-left"
-            >
-              {strategy.description ? (
+            strategy.description && (
+              <button
+                onClick={startEditDesc}
+                className="group flex items-start gap-2 text-left mb-2"
+              >
                 <span className="text-[14px] text-text-secondary leading-[1.65] max-w-[820px]">
                   {strategy.description}
                 </span>
-              ) : (
-                <span className="text-[14px] text-text-tertiary italic">
-                  Add a description of what this strategy does…
-                </span>
-              )}
-              <Pencil
-                size={12}
-                className="opacity-0 group-hover:opacity-50 transition-opacity flex-shrink-0 mt-1.5"
-              />
-            </button>
+                <Pencil
+                  size={12}
+                  className="opacity-0 group-hover:opacity-50 transition-opacity flex-shrink-0 mt-1.5"
+                />
+              </button>
+            )
+          )}
+
+          {/* The edge is the lead paragraph, not a box of its own under the steps. As a separate
+              "The edge" section it retold the four steps in prose (2026-09-11); the meta files'
+              edges were cut to what the steps do not already say. */}
+          {strategy.edge && (
+            <p className="text-[14px] text-text-secondary leading-[1.65] max-w-[820px]">
+              {strategy.edge}
+            </p>
           )}
 
           {steps.length > 0 && (
@@ -580,104 +590,21 @@ export function StrategyDetail() {
             </div>
           )}
         </div>
-
-        {strategy.edge && (
-          <div className="border-t border-border-subtle bg-gradient-to-b from-accent/[0.05] to-transparent px-[22px] py-4">
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-accent-text mb-1.5">
-              The edge
-            </p>
-            <p className="text-[13px] text-text-secondary leading-[1.6] max-w-[820px]">
-              {strategy.edge}
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* Two-column: side panel + grouped params */}
-      <div className="grid lg:grid-cols-[288px_1fr] gap-6 items-start">
-        {/* Left side panel */}
-        <aside className="lg:sticky lg:top-2">
-          <ColHead>
-            <span className="hidden lg:block text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
-              Quick reference
-            </span>
-          </ColHead>
-
-          <div className="flex flex-col gap-3.5">
-            <AsideCard title="Jump to group">
-              {groups.map((g) => (
-                <button
-                  key={g.name}
-                  onClick={() => jumpTo(g.name)}
-                  className="w-full flex justify-between items-center text-[12.5px] text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded-md px-2 py-1.5 -mx-1.5 transition-colors"
-                >
-                  <span>{g.name}</span>
-                  <span className="text-[10.5px] text-text-tertiary flex items-center gap-1.5">
-                    {g.coreCount > 0 && <span className="text-accent-text">★{g.coreCount}</span>}
-                    {g.params.length}
-                  </span>
-                </button>
-              ))}
-            </AsideCard>
-
-            {essentials.length > 0 && (
-              <AsideCard title="★ Essentials at a glance">
-                {essentials.map((p) => (
-                  <div
-                    key={p.name}
-                    className="flex justify-between items-baseline gap-2.5 text-[12px] py-1.5 border-t border-border-subtle first:border-t-0"
-                  >
-                    <span className="text-text-secondary">{paramLabel(p)}</span>
-                    <span className="font-semibold text-accent-text text-[11.5px] whitespace-nowrap">
-                      {defaultValue(p)}
-                      {!isBoolLike(p) && p.unit ? ` ${p.unit}` : ''}
-                    </span>
-                  </div>
-                ))}
-              </AsideCard>
-            )}
-
-            <AsideCard title="Backtest runs">
-              {total === 0 ? (
-                <p className="text-[12.5px] text-text-tertiary py-1">
-                  No runs yet. Click <span className="text-text-secondary">Run Backtest</span> to
-                  start.
-                </p>
-              ) : (
-                <>
-                  <div className="flex justify-between text-[12.5px] py-1.5 border-t border-border-subtle first:border-t-0">
-                    <span>Total runs</span>
-                    <span className="font-semibold">{total}</span>
-                  </div>
-                  <div className="flex justify-between text-[12.5px] py-1.5 border-t border-border-subtle">
-                    <span>Best net P&L</span>
-                    <span
-                      className={`font-semibold ${bestPnl != null && bestPnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
-                    >
-                      {fmtMoney(bestPnl)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[12.5px] py-1.5 border-t border-border-subtle">
-                    <span>Instruments</span>
-                    <span className="font-semibold">{instrumentCount}</span>
-                  </div>
-                </>
-              )}
-              <button
-                onClick={() => navigate(`/backtests?tab=runs&market=${market}`)}
-                className="flex items-center justify-center gap-1.5 w-full mt-2.5 mb-1 px-3 py-2 rounded-md text-[12px] text-text-secondary border border-border-default hover:border-accent hover:text-accent transition-colors"
-              >
-                View all {market} runs <ArrowRight size={13} />
-              </button>
-            </AsideCard>
-          </div>
-        </aside>
-
-        {/* Right: grouped param tables */}
+      {/* Parameters, full width. A side panel beside them said everything twice (2026-09-11): a
+          jump list naming every group (the collapsed group headers already are that list), an
+          "essentials at a glance" card restating the ★ rows (the ★ Essentials only button shows
+          exactly those), and a runs card whose "best net P&L" compared runs taken on different
+          windows and sizes. The run count moved to the header chips. */}
+      <div>
         <div>
-          <ColHead>
+          <div className="h-[30px] flex items-center justify-between mb-3">
             <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
-              Parameters · <span className="text-accent">★ essentials</span>
+              {visibleParams.length} parameters
+              {essentialCount > 0 && (
+                <span className="text-accent"> · ★ {essentialCount} essential</span>
+              )}
             </span>
             <div className="flex gap-1.5">
               <button
@@ -701,7 +628,7 @@ export function StrategyDetail() {
                 Collapse all
               </button>
             </div>
-          </ColHead>
+          </div>
 
           {visibleParams.length > 0 ? (
             groups.map((g) => (
@@ -730,9 +657,8 @@ export function StrategyDetail() {
                 data-testid="settled-params"
                 className="cursor-pointer text-[12px] text-text-secondary"
               >
-                {settledParams.length} settled setting{settledParams.length > 1 ? 's' : ''} — still
-                in the strategy, still applied at{' '}
-                {settledParams.length > 1 ? 'their defaults' : 'its default'}, kept off this table
+                {settledParams.length} settled setting{settledParams.length > 1 ? 's' : ''}, fixed
+                at {settledParams.length > 1 ? 'their defaults' : 'its default'}
               </summary>
               <ul className="mt-2 space-y-1">
                 {settledParams.map((p) => (

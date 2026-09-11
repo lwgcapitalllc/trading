@@ -114,13 +114,15 @@ function AgentGapBanners({
         <AgentDownBanner className="mb-4" what={what} detail={nt8Down ? nt8Error : mt5Error} />
       )}
       {!backendFailed && nt8Off && (
+        // One line; the server's reason — including how to turn it back on — is on hover. The
+        // sidebar's NT8 dot already says "off", so this only adds what it means for these rows.
         <p
           data-testid="nt8-off-note"
-          className="mb-4 flex items-start gap-2 text-[12px] text-text-tertiary leading-[1.45]"
+          title={health?.nt8_off_reason ?? 'NinjaTrader is switched off on the VPS on purpose.'}
+          className="mb-4 flex items-center gap-2 text-[12px] text-text-tertiary cursor-default"
         >
-          <WifiOff size={13} className="shrink-0 mt-[2px]" />
-          {health?.nt8_off_reason ?? 'NinjaTrader is switched off on the VPS on purpose.'} Until
-          then, whether each NT8 strategy file is on the VPS is not checked.
+          <WifiOff size={13} className="shrink-0" />
+          NinjaTrader is off on the VPS, so NT8 files are not checked.
         </p>
       )}
     </>
@@ -379,9 +381,12 @@ function StrategiesTab() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-[13px] text-text-secondary">
-            {strategies ? `${visible.length} of ${strategies.length}` : ''}
-          </span>
+          {/* Only when a filter narrows the list — unfiltered, "8 of 8" repeats the tab's own 8. */}
+          {strategies && visible.length !== strategies.length && (
+            <span className="text-[13px] text-text-secondary">
+              {visible.length} of {strategies.length}
+            </span>
+          )}
           <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
         </div>
         <div className="flex items-center gap-2">
