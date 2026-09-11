@@ -41,3 +41,11 @@ RuntimeError: Could not read the account balance, and initial_capital is 0 — t
 2026-09-11 06:00:01,492 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4320.4): retcode=10017 'Trade disabled' last_error=(1, 'Success')
 2026-09-11 06:15:06,268 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
 2026-09-11 06:15:06,348 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 06:30:00,198 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
+2026-09-11 06:30:00,276 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 06:45:03,916 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
+2026-09-11 06:45:03,993 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 07:00:07,231 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
+2026-09-11 07:00:07,307 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 07:15:00,908 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
+2026-09-11 07:15:00,986 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
