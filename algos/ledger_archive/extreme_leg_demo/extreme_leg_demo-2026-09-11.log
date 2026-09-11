@@ -26,3 +26,4 @@ AttributeError: 'Blocked' object has no attribute 'time_ms'
 2026-09-11 05:45:19,932 [INFO] Sizing against account balance $451.97
 2026-09-11 05:45:25,994 [INFO] Warmed 15000 bars (2026-06-26 14:15:00+00:00 → 2026-09-11 05:40:00+00:00) in 5.6s
 2026-09-11 05:45:25,994 [INFO] Equity re-anchored to the account after warm-up: 470.72 → 451.97
+2026-09-11 16:20:22,551 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json.15048.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json'

@@ -108,3 +108,7 @@ RuntimeError: Could not read the account balance, and initial_capital is 0 — t
 2026-09-11 15:45:06,005 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-11 16:00:00,568 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-11 16:15:05,439 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 16:30:10,055 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 16:45:05,346 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 17:00:09,489 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 17:15:03,911 [ERROR] Bridge halted — the loop will keep observing but place nothing.
