@@ -728,6 +728,31 @@ def test_the_assign_body_tells_an_ABSENT_cap_from_a_null_one(client, monkeypatch
     assert seen == [(False, None), (True, None), (True, 10.0)]
 
 
+@pytest.mark.parametrize("deploy", [False, True])
+def test_the_move_serves_its_bookkeeping_APART_from_its_warnings(client, monkeypatch, deploy):
+    """🔴 2026-09-11: a setting the receiving strategy does not have reached the Bots page as a
+    yellow WARNING naming a config field, on every move of that strategy — the route served
+    `notes + info` as one list, and the page raises every note it is handed. Both returns are
+    driven, because the page moves with `deploy: true` and a fix on one branch leaves the other.
+    MUTATION: serve them joined again (either return) → red."""
+    bots_router = _stub_assign_route(monkeypatch, [])
+    monkeypatch.setattr(bots_router, "_read_instance_config", lambda key: {"account": 700152905})
+    monkeypatch.setattr(bots_router, "_write_instance_config", lambda k, d: None)
+    monkeypatch.setattr(bots_router, "_git_commit_push", lambda *a, **kw: None)
+    monkeypatch.setattr(bots_router, "_ssh", lambda cmd: "Already up to date.")
+    monkeypatch.setattr(bots_router, "_notify_telegram", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        bots_router.bot_accounts,
+        "assign_plan",
+        lambda *a, **kw: ba.AssignPlan(
+            fields={"account": None}, notes=["a hazard"], info=["bookkeeping"]
+        ),
+    )
+    r = client.patch("/bots/b_leg_demo/account", json={"account": None, "deploy": deploy})
+    assert r.status_code == 200, r.text
+    assert (r.json()["notes"], r.json()["info"]) == (["a hazard"], ["bookkeeping"])
+
+
 def test_a_first_cap_below_the_bots_own_risk_is_refused_before_the_write(client, monkeypatch):
     """The share check reads the cap the PLAN writes, so a chosen ceiling under the bot's own
     per-trade risk is refused like any other over-subscribed account."""
@@ -863,7 +888,8 @@ def test_the_skipped_param_is_NAMED_rather_than_dropped_in_silence():
 
     ⚠ It is said in `info`, not `notes`, since 2026-09-10: a setting the strategy does not have
     cannot change how it trades, so it is bookkeeping rather than a hazard. The single-bot move
-    still serves both lists; only the demo → live screen keeps `info` off its warnings.
+    serves both lists APART since 2026-09-11, and the page raises `notes` only — see
+    `test_the_move_serves_its_bookkeeping_APART_from_its_warnings`.
     MUTATION: route it back into `notes` and this goes red."""
     plan = _assign({"symbol"})
     assert any("account_profile" in n for n in plan.info)

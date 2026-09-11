@@ -685,6 +685,88 @@ def _account_readings(readings: dict[str, dict[int, dict]], account: int) -> dic
     return {"first": first, "last": last}
 
 
+# ── One strategy, one record per account ─────────────────────────────────────────────────────
+#
+# 🔴 **A STRATEGY'S RECORD ON AN ACCOUNT CARRIES ON WHEN A NEW BOT TAKES OVER (2026-09-11).** The
+# day the demo set went live, two demo copies of the same strategies were put on the demo account —
+# and the page drew four rows: the copies at $0, and the two bots that left, holding the account's
+# whole demo record under "moved to live". Aaron: *"if I add back bots on the demo they should just
+# pick up where they left off."* A departed bot's trades here now fold into the ONE bot running the
+# same strategy on this account now, and the row says whose trades it carries.
+#
+# ⚠ **Only a strategy exactly one current bot runs.** Two copies of one strategy on one account
+# gives no single heir, and handing the history to either would credit it to a guess.
+# ⚠ **Display only.** The account's opening, its attributed total and its remainder are computed
+# from the rows BEFORE the fold, so no account figure moves; only which row shows the trades.
+
+
+def _total(parts: list[dict], key: str, digits: int | None = None):
+    """The sum of `key` over the records that have one — `None` when none does, never zero."""
+    vals = [
+        p[key]
+        for p in parts
+        if isinstance(p.get(key), (int, float)) and not isinstance(p.get(key), bool)
+    ]
+    if not vals:
+        return None
+    s = sum(vals)
+    return round(s, digits) if digits is not None else s
+
+
+def _fold(heir: dict, gone: list[dict]) -> dict:
+    """`heir`'s record with every departed bot's record here added in."""
+    read = [p for p in [heir, *gone] if p.get("traded")]
+    froms = [p["records_from"] for p in read if p.get("records_from")]
+    tos = [p["records_to"] for p in read if p.get("records_to")]
+    return {
+        **heir,
+        # ⚠ The heir's own record may not have been read yet — a bot that just started. Its row then
+        # shows the history it carries, and the account still names it among the bots without a
+        # record (counted before the fold), so the split is still said to be a floor.
+        "traded": bool(read),
+        "reason": None if read else heir.get("reason"),
+        "closed_trades": _total(read, "closed_trades"),
+        "realised_usd": _total(read, "realised_usd", 2),
+        "realised_r": _total(read, "realised_r", 4),
+        "wins": _total(read, "wins"),
+        "losses": _total(read, "losses"),
+        "unplaced_trades": _total(read, "unplaced_trades"),
+        "records_from": min(froms) if froms else None,
+        "records_to": max(tos) if tos else None,
+        "carried_from": [
+            {
+                "bot_key": g["bot_key"],
+                "name": g.get("name") or g["bot_key"],
+                "moved_to": g.get("moved_to"),
+                "closed_trades": g.get("closed_trades"),
+            }
+            for g in gone
+        ],
+    }
+
+
+def _carry_on(current: list[dict], departed: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(current rows with any history carried in, departed rows still standing on their own)."""
+    by_strategy: dict[str, list[dict]] = {}
+    for r in current:
+        if r.get("strategy"):
+            by_strategy.setdefault(r["strategy"], []).append(r)
+    heirs = {s: rows[0]["bot_key"] for s, rows in by_strategy.items() if len(rows) == 1}
+
+    carried: dict[str, list[dict]] = {}
+    standing: list[dict] = []
+    for d in departed:
+        heir = heirs.get(d.get("strategy") or "")
+        if heir is None:
+            standing.append(d)
+        else:
+            carried.setdefault(heir, []).append(d)
+    return (
+        [_fold(r, carried[r["bot_key"]]) if r["bot_key"] in carried else r for r in current],
+        standing,
+    )
+
+
 def accounts_traded(
     bot_key: str,
     live_trades: list[dict] | None = None,
@@ -706,6 +788,8 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
     `starting_balance` — read off the snapshot that has already been fetched, so this adds no SSH.
     A bot dict may also carry `live_trades`: the closed-trade rows the BOX just reported, or
     `None`/absent when it was not asked. See `read_bot_ledger` on why that is not a plain list.
+    And `strategy`, the package it runs — how a departed bot's record here finds the bot that
+    carries it on (`_carry_on`). Absent means that bot's history stays on its own row.
 
     `as_of` is when the BALANCE was read. It is what the record's reach is measured against, so
     the page can say whether the two halves of its own subtraction share a clock.
@@ -750,9 +834,13 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
         # 2026-09-04 after a two-bot stack reported an account's balance twice.
         balance = next((r["balance"] for r in merged if r.get("balance") is not None), None)
         balance_read_at = None
-        if not merged and seen:
-            # Nothing reads this account now. The last balance a bot read before it left is the
-            # latest measurement there is, and it goes out WITH its time — see `_readings`.
+        if balance is None and seen:
+            # Nothing here reports a balance: no bot is on the account, or the ones on it have not
+            # reported since they started. The last balance a bot read is the latest measurement
+            # there is, and it goes out WITH its time — see `_readings`.
+            # 🔴 It asked only "is a bot on it" until 2026-09-11, so adding the first bot to the
+            # demo account blanked a balance that had been on screen a minute earlier, until the
+            # new bot's first report.
             balance = round(seen["last"]["balance"], 2)
             balance_read_at = seen["last"]["at"].isoformat()
 
@@ -793,24 +881,24 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
 
         unattributed = None
         if net_usd is not None and attributed is not None:
-            if own_opening:
-                # ⚠ A balance READ before a trade closed does not contain that trade, so the
-                # remainder would be off by exactly its result. A live balance is read now.
-                last_trade = max(
-                    (r["last_trade_at"] for r in counted if r.get("last_trade_at")), default=None
-                )
-                if (
-                    balance_read_at is None
-                    or last_trade is None
-                    or seen["last"]["at"] >= last_trade
-                ):
-                    unattributed = round(net_usd - attributed, 2)
-            elif not left_traded:
-                # ⚠ Refused when a departed bot traded here and the opening is a current bot's
-                # anchor: whether its trades fall inside that window cannot be told.
+            # ⚠ A balance READ before a trade closed does not contain that trade, so the remainder
+            # would be off by exactly its result. A live balance is read now. Asked on BOTH
+            # openings: a past reading can now stand in for bots that have not reported yet, so
+            # it can reach the anchor branch too, where it never could before.
+            last_trade = max(
+                (r["last_trade_at"] for r in counted if r.get("last_trade_at")), default=None
+            )
+            covers = (
+                balance_read_at is None or last_trade is None or seen["last"]["at"] >= last_trade
+            )
+            # ⚠ Refused when a departed bot traded here and the opening is a current bot's anchor:
+            # whether its trades fall inside that window cannot be told.
+            if covers and (own_opening or not left_traded):
                 unattributed = round(net_usd - attributed, 2)
 
         records_live, lag, note = _freshness(merged, as_of)
+        # LAST, after every account figure above is settled — see `_carry_on`.
+        shown, standing = _carry_on(merged, left)
 
         out.append(
             {
@@ -856,19 +944,23 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                         "records_to": r.get("records_to"),
                         "records_through": r.get("records_through"),
                         "record_source": r.get("record_source"),
+                        # The bots whose trades here this row carries on from — see `_carry_on`.
+                        "carried_from": r.get("carried_from") or [],
                         # The number Aaron asked for: what this bot made, as a share of what the
                         # ACCOUNT opened at — so two bots on one balance are directly comparable
                         # and neither is credited with the other's growth.
-                        # A bot that has LEFT gets one only on the account's OWN opening. On a
-                        # current bot's anchor, dividing a departed bot's dollars by it mixes two
-                        # different starts.
+                        # A departed bot's dollars — on its own row or carried into an heir's —
+                        # count only on the account's OWN opening. On a current bot's anchor,
+                        # dividing them by it mixes two different starts.
                         "pct_of_opening": (
                             round((r["realised_usd"] or 0.0) / opening * 100, 2)
-                            if opening and r.get("traded") and (own_opening or not r.get("former"))
+                            if opening
+                            and r.get("traded")
+                            and (own_opening or not (r.get("former") or r.get("carried_from")))
                             else None
                         ),
                     }
-                    for r in [*merged, *left]
+                    for r in [*shown, *standing]
                 ],
             }
         )

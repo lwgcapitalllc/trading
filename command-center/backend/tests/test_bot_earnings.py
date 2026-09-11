@@ -135,13 +135,15 @@ def test_the_cache_turns_over_when_the_record_GROWS(archive):
 # ── the account half ────────────────────────────────────────────────────────────────────────
 
 
-def _bot(key, name, account=700152905, balance=14538.88, anchor=None):
+def _bot(key, name, account=700152905, balance=14538.88, anchor=None, strategy=None):
     return {
         "bot_key": key,
         "name": name,
         "account": account,
         "balance": balance,
         "starting_balance": anchor,
+        # The package it runs. `None` = not known, which carries no history — see `_carry_on`.
+        "strategy": strategy,
     }
 
 
@@ -742,3 +744,208 @@ def test_the_read_time_survives_the_response_model():
         account=_DEMO, balance=14538.88, balance_read_at="2026-09-10T22:00:00+00:00"
     )
     assert out.model_dump()["balance_read_at"] == "2026-09-10T22:00:00+00:00"
+
+
+# ── a bot on the account that has not REPORTED yet (2026-09-11) ─────────────────────────────
+#
+# 🔴 Adding the first bot to the demo account blanked a balance that had been on screen a minute
+# earlier: the last reading was served only for an account NO bot is on, so a bot that had just
+# started — on it, and not yet reporting — made the balance unread until its first report.
+
+
+def _gone_from_demo(archive):
+    rows, health = _demo_then_live("gone")
+    archive("gone", "2026-08-26", rows)
+    archive("gone", "2026-09-10", health, kind="health")
+
+
+def test_a_bot_that_has_not_REPORTED_yet_shows_the_last_reading_WITH_its_time(archive):
+    """MUTATION: fall back only when no bot is on the account (the old `not merged`) → red."""
+    _gone_from_demo(archive)
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", account=_LIVE, balance=451.97, anchor=451.97),
+                _bot("new", "New", account=_DEMO, balance=None),
+            ]
+        )
+    }[_DEMO]
+    assert (demo["balance"], demo["balance_read_at"]) == (14538.88, "2026-09-10T22:00:00+00:00")
+    assert demo["net_usd"] == round(14538.88 - 9996.99, 2)
+
+
+def _stay_on_demo(archive, read_at):
+    """One bot that has always been here, traded $50 on 2026-08-25, and last read the balance at
+    `read_at` — then restarted and has not reported since."""
+    archive(
+        "stay",
+        "2026-08-25",
+        [_start(_DEMO, "2026-08-20T00:00:00+00:00"), _close(50.0, ts="2026-08-25T00:00:00+00:00")],
+    )
+    archive("stay", read_at[:10], [_pulse(_DEMO, 10020.0, read_at)], kind="health")
+    return {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("stay", "Stay", account=_DEMO, balance=None, anchor=10000.0)]
+        )
+    }[_DEMO]
+
+
+def test_a_past_reading_takes_no_remainder_off_a_CURRENT_bots_anchor_past_a_later_trade(archive):
+    """A past reading can now reach the anchor branch, where it never could before — and a trade
+    that closed after it is not in it, so the remainder would be off by exactly that trade.
+    MUTATION: ask the covered-window check on the account's own opening only → red."""
+    demo = _stay_on_demo(archive, "2026-08-24T00:00:00+00:00")
+    assert (demo["balance"], demo["net_usd"]) == (10020.0, 20.0)
+    assert demo["unattributed_usd"] is None
+
+
+def test_a_past_reading_AFTER_the_last_trade_does_take_the_remainder(archive):
+    """The control for the case above: a reading that contains every trade is a fair one to take a
+    remainder off. MUTATION: refuse any past reading in the anchor branch → red."""
+    demo = _stay_on_demo(archive, "2026-08-26T00:00:00+00:00")
+    assert demo["unattributed_usd"] == round(20.0 - 50.0, 2)
+
+
+# ── a new bot on an account CARRIES ON the record of the one that left (2026-09-11) ─────────
+#
+# 🔴 The demo copies put on the demo account after the set went live drew at $0, beside two rows
+# holding the account's whole demo record under "moved to live". Aaron: *"if I add back bots on the
+# demo they should just pick up where they left off."*
+
+
+def _carry(archive, new_strategy="sos_fade", gone_strategy="sos_fade"):
+    _gone_from_demo(archive)
+    archive("new", "2026-09-12", [_start(_DEMO, "2026-09-12T00:00:00+00:00")])
+    return {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "SOS Fade", _LIVE, 451.97, anchor=451.97, strategy=gone_strategy),
+                _bot(
+                    "new", "SOS Fade (demo)", _DEMO, 14600.0, anchor=14538.88, strategy=new_strategy
+                ),
+            ]
+        )
+    }[_DEMO]
+
+
+def test_a_new_bot_CARRIES_ON_the_record_of_the_bot_that_left_the_same_strategy_here(archive):
+    """MUTATION: return the current rows unfolded → red (the new bot reads $0 beside a history
+    row). MUTATION: drop `carried_from` → red on whose trades the row shows."""
+    demo = _carry(archive)
+    assert [b["bot_key"] for b in demo["bots"]] == ["new"]
+    new = demo["bots"][0]
+    assert (new["closed_trades"], new["realised_usd"], new["wins"], new["former"]) == (
+        1,
+        1197.09,
+        1,
+        False,
+    )
+    assert new["carried_from"] == [
+        {"bot_key": "gone", "name": "SOS Fade", "moved_to": _LIVE, "closed_trades": 1}
+    ]
+    # The strategy's tenure here starts with the bot that left, not the one that arrived.
+    assert new["records_from"] == "2026-08-12"
+    # On the account's OWN opening, so the carried dollars are inside the window it measures.
+    assert new["pct_of_opening"] == round(1197.09 / 9996.99 * 100, 2)
+
+
+def test_carrying_the_record_moves_NO_account_figure(archive):
+    """The fold is WHICH ROW shows the trades, never what the account made. MUTATION: count the
+    folded rows AND the departed rows toward the attributed total → red on the remainder."""
+    demo = _carry(archive)
+    assert (demo["opening_balance"], demo["opening_from"]) == (9996.99, "gone")
+    assert demo["net_usd"] == round(14600.0 - 9996.99, 2)
+    assert demo["attributed_usd"] == 1197.09
+    assert demo["unattributed_usd"] == round(14600.0 - 9996.99 - 1197.09, 2)
+
+
+def test_a_departed_bot_of_ANOTHER_strategy_keeps_its_own_row(archive):
+    """MUTATION: fold regardless of strategy → red."""
+    demo = _carry(archive, new_strategy="extreme_leg")
+    by_key = {b["bot_key"]: b for b in demo["bots"]}
+    assert by_key["gone"]["former"] is True
+    assert (by_key["new"]["carried_from"], by_key["new"]["closed_trades"]) == ([], 0)
+
+
+def test_an_UNKNOWN_strategy_never_matches_another_unknown_one(archive):
+    """Two bots whose strategy could not be read are not the same strategy. MUTATION: group a
+    missing strategy under "" → red (the unread history folds into an unread bot)."""
+    demo = _carry(archive, new_strategy=None, gone_strategy=None)
+    assert {b["bot_key"]: b["former"] for b in demo["bots"]} == {"new": False, "gone": True}
+
+
+def test_TWO_bots_of_one_strategy_get_no_carried_history(archive):
+    """No single heir: handing the history to either credits it to a guess.
+    MUTATION: take the first bot as the heir → red."""
+    _gone_from_demo(archive)
+    for k in ("a", "b"):
+        archive(k, "2026-09-12", [_start(_DEMO, "2026-09-12T00:00:00+00:00")])
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", _LIVE, 451.97, anchor=451.97, strategy="sos_fade"),
+                _bot("a", "A", _DEMO, 14600.0, anchor=14538.88, strategy="sos_fade"),
+                _bot("b", "B", _DEMO, 14600.0, anchor=14538.88, strategy="sos_fade"),
+            ]
+        )
+    }[_DEMO]
+    assert next(b for b in demo["bots"] if b["bot_key"] == "gone")["former"] is True
+    assert all(b["carried_from"] == [] for b in demo["bots"])
+
+
+def test_an_heir_whose_own_record_is_UNREAD_shows_the_history_and_stays_NAMED(archive):
+    """A bot that has just started may have no record on this machine yet. Its row shows what it
+    carries on, and the account still names it, so the split still reads as a floor.
+    MUTATION: take the no-record list after the fold → red on the name."""
+    _gone_from_demo(archive)
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", _LIVE, 451.97, anchor=451.97, strategy="sos_fade"),
+                _bot("new", "New", _DEMO, None, strategy="sos_fade"),
+            ]
+        )
+    }[_DEMO]
+    new = demo["bots"][0]
+    assert (new["traded"], new["closed_trades"], new["realised_usd"]) == (True, 1, 1197.09)
+    assert demo["bots_without_record"] == ["new"]
+
+
+def test_CARRIED_dollars_get_no_share_of_a_current_bots_anchor(archive):
+    """With no reading of the account's own opening, the opening is the heir's anchor — what the
+    account held when IT arrived — and the carried trades closed before that. Dividing them by it
+    mixes two starts, the rule a departed bot's own row already follows.
+    MUTATION: guard `pct_of_opening` on `former` alone → red."""
+    rows, _ = _demo_then_live("gone")
+    archive("gone", "2026-08-26", rows)
+    archive("new", "2026-09-12", [_start(_DEMO, "2026-09-12T00:00:00+00:00")])
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", _LIVE, 451.97, anchor=451.97, strategy="sos_fade"),
+                _bot("new", "New", _DEMO, 14600.0, anchor=14538.88, strategy="sos_fade"),
+            ]
+        )
+    }[_DEMO]
+    new = demo["bots"][0]
+    assert (new["realised_usd"], new["pct_of_opening"]) == (1197.09, None)
+
+
+def test_carried_from_survives_the_response_model():
+    """Pydantic drops a field the model does not declare, and the page then cannot say whose trades
+    a new bot's row is showing. MUTATION: remove the field from `BotEarnings` → red."""
+    from models import BotEarnings
+
+    out = BotEarnings(
+        bot_key="new",
+        name="New",
+        traded=True,
+        carried_from=[{"bot_key": "gone", "name": "Gone", "moved_to": _LIVE, "closed_trades": 1}],
+    )
+    assert out.model_dump()["carried_from"][0]["moved_to"] == _LIVE

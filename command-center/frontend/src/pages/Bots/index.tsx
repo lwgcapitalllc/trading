@@ -646,12 +646,28 @@ function Contribution({ e, asking }: { e: BotEarnings | undefined; asking: boole
   return (
     <span
       data-testid="bot-pnl"
-      title={`What this bot's own closed trades came to · recorded ${e.records_from} → ${e.records_to}`}
+      title={`What this bot's own closed trades came to · recorded ${e.records_from} → ${e.records_to}${carriedNote(e)}`}
       className={`text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(e.realised_usd)}`}
     >
       {money(e.realised_usd)}
     </span>
   )
+}
+
+/** Whose trades on this account a row CARRIES ON from — the bots that left it running the same
+ *  strategy (2026-09-11, Aaron: *"if I add back bots on the demo they should just pick up where they
+ *  left off"*). The server folds them in; this only names them, so a row never shows a trade count
+ *  its own bot did not make without saying whose they are. */
+function carriedNote(e: BotEarnings): string {
+  const from = e.carried_from ?? []
+  if (!from.length) return ''
+  return ` · includes ${from
+    .map((c) => {
+      const n = c.closed_trades ?? 0
+      const where = c.moved_to != null ? ` to account ${c.moved_to}` : ''
+      return `${n} trade${n === 1 ? '' : 's'} ${c.name} closed here before it moved${where}`
+    })
+    .join(', and ')}`
 }
 
 /** The account's own move, and what it is measured FROM.
@@ -683,10 +699,10 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
       </span>
     )
   const up = e.net_usd >= 0
-  // ⚠ A PAST reading says so — "Now" over a balance a bot read before it left is a claim about
-  // this moment that nothing measured.
+  // ⚠ A PAST reading says so — "Now" over a balance nothing has read since is a claim about this
+  // moment that nothing measured. Worded to be true whether its bots left or have not reported yet.
   const then = e.balance_read_at
-    ? `Last read at ${money(e.balance, false)} on ${readTime(e.balance_read_at)}, before its bots left.`
+    ? `Last read at ${money(e.balance, false)} on ${readTime(e.balance_read_at)} — nothing on it has reported one since.`
     : `Now ${money(e.balance, false)}.`
   return (
     <span
@@ -1047,9 +1063,6 @@ export function Bots() {
   )
 
   const running = bots.filter((b) => b.status === 'RUNNING').length
-  // ⚠ Only accounts a bot is ON can have an unread balance — one with no bot has nothing to read
-  // it, and counting it would raise a warning about a healthy fleet.
-  const unread = trading.filter((a) => a.rows.length && balanceOf(a.rows) == null).length
 
   // 🔴 Computed SERVER-SIDE and only rendered here. What an account made and what its bots made
   // are two different measurements, and whether they agree is the finding — deriving either in
@@ -1071,15 +1084,37 @@ export function Bots() {
   const accountOfBot = (key: string) =>
     trading.find((a) => a.rows.some((r) => r.cfg.key === key))?.account ?? null
 
-  // The open account panel's balance: the bots on it now, or — with none — the last reading a bot
-  // took before it left, WITH its time, exactly as the card shows it.
+  /**
+   * An account's balance, and — when it is a PAST reading — when it was read.
+   *
+   * 🔴 **One answer for the card, the panel and the header count (2026-09-11).** The bots on it
+   * report the balance live; when none of them has — no bot is on it, or the ones on it have not
+   * reported since they started — it is the last one a bot read here, served WITH its time. It fell
+   * back only for an account NO bot is on, so adding the first bot to the demo account blanked a
+   * balance that had been on screen a minute earlier, until the new bot's first report.
+   */
+  const balanceAt = (account: number, live: number | null) => {
+    if (live != null) return { balance: live, readAt: null as string | null }
+    const e = earnByAccount.get(account)
+    return { balance: e?.balance ?? null, readAt: e?.balance_read_at ?? null }
+  }
+  // ⚠ Only accounts a bot is ON can have an unread balance — one with no bot has nothing to read
+  // it, and counting it would raise a warning about a healthy fleet.
+  const unread = trading.filter(
+    (a) => a.rows.length && balanceAt(a.account, balanceOf(a.rows)).balance == null
+  ).length
+
+  // The open account panel's balance, exactly as its card shows it.
   const selNum = selAccount ? Number(selAccount) : null
   const selOnIt = selNum != null ? (groupByAccount.get(selNum)?.bots ?? []) : []
   const selEarn = selNum != null ? earnByAccount.get(selNum) : undefined
-  const selBalance = selOnIt.length
-    ? balanceOf(selOnIt.map((b) => ({ live: botByKey.get(b.key) })))
-    : (selEarn?.balance ?? null)
-  const selReadAt = selOnIt.length ? null : (selEarn?.balance_read_at ?? null)
+  const { balance: selBalance, readAt: selReadAt } =
+    selNum != null
+      ? balanceAt(
+          selNum,
+          selOnIt.length ? balanceOf(selOnIt.map((b) => ({ live: botByKey.get(b.key) }))) : null
+        )
+      : { balance: null, readAt: null }
 
   // ── live against demo ─────────────────────────────────────────────────────
   /** Which side an account sits on. ⚠ While neither the box nor the registry has answered, its
@@ -1167,11 +1202,10 @@ export function Bots() {
     const cap = group.cap_agrees ? group.risk_cap_pct : null
     const reg = regByAccount.get(account)
     const earn = earnByAccount.get(account)
-    // No bot is on it now. Its balance is then the LAST one a bot read before it left, served with
-    // the time it was read — never a live figure, and the card says so beside it.
+    // With nothing on it reporting, the balance is the LAST one a bot read here, with its time —
+    // never a live figure, and the card says so beside it. See `balanceAt`.
     const idle = rows.length === 0
-    const balance = idle ? (earn?.balance ?? null) : balanceOf(rows)
-    const readAt = idle ? (earn?.balance_read_at ?? null) : null
+    const { balance, readAt } = balanceAt(account, idle ? null : balanceOf(rows))
     // The bots that TRADED here and left, as rows under the ones on it now.
     const past = (earn?.bots ?? []).filter((b) => b.former)
     // 🔴 NO COLOURED EDGE, AND NO LIVE/DEMO CHIP (2026-09-10, Aaron: *"we don't need to be
@@ -1279,7 +1313,11 @@ export function Bots() {
                 <span className="text-[12px] text-warn-text">balance unread</span>
               ) : readAt ? (
                 <span
-                  title={`The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`}
+                  title={
+                    idle
+                      ? `The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`
+                      : `The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`
+                  }
                   className="inline-flex items-baseline gap-[7px] cursor-default"
                 >
                   {money(balance, false)}

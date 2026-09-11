@@ -343,6 +343,15 @@ class BotStatus(BaseModel):
     last_updated: Optional[str] = None
 
 
+class CarriedRecord(BaseModel):
+    """A departed bot whose record on an account another bot's row now carries."""
+
+    bot_key: str
+    name: str
+    moved_to: Optional[int] = None
+    closed_trades: Optional[int] = None
+
+
 class BotEarnings(BaseModel):
     """What ONE bot's own closed trades came to, read off its own decision record.
 
@@ -380,6 +389,11 @@ class BotEarnings(BaseModel):
     # Trades whose account could not be told (no run startup before them) — counted, never
     # credited to a guess. `None` when the record was not read.
     unplaced_trades: Optional[int] = None
+    # 🔴 The bots whose trades on this account this row CARRIES ON FROM (2026-09-11): a bot that
+    # left, running the same strategy this bot runs here now. Its trades are in the figures above
+    # and its own row is gone. Declared, or Pydantic drops it and the page cannot say whose trades
+    # a new bot's row is showing. Empty on a row that carries nothing.
+    carried_from: list[CarriedRecord] = []
 
 
 class AccountEarnings(BaseModel):
@@ -394,8 +408,9 @@ class AccountEarnings(BaseModel):
     account: int
     balance: Optional[float] = None
     # When `balance` was READ — present exactly when it is a past reading (the last pulse a bot
-    # took before it left an account nothing is on now), never on a live balance. ⚠ Declared, or
-    # Pydantic drops it and a day-old reading renders as the account's balance now.
+    # took there, because nothing on the account reports one now: no bot is on it, or the ones on
+    # it have not reported since they started), never on a live balance. ⚠ Declared, or Pydantic
+    # drops it and a day-old reading renders as the account's balance now.
     balance_read_at: Optional[str] = None
     opening_balance: Optional[float] = None
     # WHICH bot's anchor was taken as the account's opening — printed, so the pick is checkable

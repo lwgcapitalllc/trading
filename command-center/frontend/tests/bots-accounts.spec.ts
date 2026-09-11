@@ -2247,3 +2247,232 @@ test('a bot the box DID answer for still offers the control its state allows', a
   await expect(row.getByTitle('Stop', { exact: true })).toHaveCount(1)
   await expect(row).not.toContainText('unknown')
 })
+
+// ── 2026-09-11: the demo account, after its bots went live and two copies were added back ────
+//
+// Aaron's screenshots, in one pass: the Risk cap box read "Capped" UNTICKED with Save live on a
+// capped account; a yellow toast named a config field; a red 502 arrived with the add's own green
+// toast; the balance went blank until the new bot reported; and the copies drew at $0 beside two
+// rows holding the account's whole demo record — *"they should just pick up where they left off."*
+
+/** Every toast, kept as it APPEARS. At this spec's quick clock one lives ~0.4s, so a count taken
+ *  at the end could miss one that came and went — the version spec's counter, for the same reason.
+ *  ⚠ The ELEMENTS are kept, and read at the end: a detached node keeps its text, while a toast's
+ *  text may not be filled in yet at the mutation that inserts it. */
+async function watchToasts(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __toasts: Element[] }
+    w.__toasts = []
+    new MutationObserver((muts) => {
+      for (const m of muts)
+        for (const n of m.addedNodes)
+          if (n instanceof Element) {
+            if (n.matches('[data-sonner-toast]')) w.__toasts.push(n)
+            w.__toasts.push(...n.querySelectorAll('[data-sonner-toast]'))
+          }
+    }).observe(document, { childList: true, subtree: true })
+  })
+  return () =>
+    page.evaluate(() =>
+      (window as unknown as { __toasts: Element[] }).__toasts.map((t) => t.textContent ?? '')
+    )
+}
+
+test('the Risk cap box FOLLOWS the account — a bot added under an open panel shows its cap', async ({
+  page,
+}) => {
+  // 🔴 The panel copied the cap ONCE, when it opened. Opened on an empty account and then given a
+  // bot at a 10% cap, it went on showing "Capped" unticked with Save live — and Save would have sent
+  // "no cap" to every bot on the account. MUTATION: seed the box from the cap once (useState) → red.
+  await mock(page, [BENCHED], [reg()])
+  let added = false
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/b_leg/account') {
+      added = true
+      return route.fulfill({
+        json: {
+          status: 'ok',
+          changed: true,
+          deployed: true,
+          bot: 'b_leg',
+          account: ACCOUNT,
+          restart_required: true,
+          detail: 'moved',
+        },
+      })
+    }
+    // The account re-read after the add: the bot on it, at the cap it was added with.
+    if (u.pathname === '/api/bots/accounts' && added) {
+      return route.fulfill({
+        json: [group({ bots: [bot('b_leg', 'B-LEG', 770116, 10)], risk_cap_pct: 10 })],
+      })
+    }
+    return route.fallback()
+  })
+  await openAccount(page)
+  await expect(page.getByTestId('cap-empty')).toBeVisible()
+  await page.getByTestId('add-bot').click()
+  await page.getByTestId('add-b_leg').click()
+
+  await expect(page.getByTestId('cap-enabled')).toBeChecked()
+  await expect(page.getByTestId('cap-input')).toHaveValue('10')
+  await expect(page.getByTestId('cap-save')).toBeDisabled()
+})
+
+test("a move's bookkeeping is never raised — only what it could not carry is", async ({ page }) => {
+  // 🔴 A yellow toast named a config field on every add of a strategy without that setting —
+  // bookkeeping that cannot change how it trades. The server serves it apart as `info` now.
+  // MUTATION: raise `info` as warnings too → red on the bookkeeping text.
+  // MUTATION: stop raising `notes` → red on the hazard (the positive control).
+  const toasts = await watchToasts(page)
+  const bookkeeping = 'account_profile was not written: this strategy does not have that setting'
+  const hazard = `account ${ACCOUNT} records no symbol suffix`
+  await mock(page, [
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    BENCHED,
+  ])
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/b_leg/account') {
+      return route.fulfill({
+        json: {
+          status: 'ok',
+          changed: true,
+          deployed: true,
+          bot: 'b_leg',
+          account: ACCOUNT,
+          restart_required: true,
+          detail: 'moved',
+          notes: [hazard],
+          info: [bookkeeping],
+        },
+      })
+    }
+    return route.fallback()
+  })
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  await page.getByTestId('add-b_leg').click()
+  await expect.poll(async () => (await toasts()).join(' | ')).toContain(hazard)
+  expect((await toasts()).join(' | ')).not.toContain(bookkeeping)
+})
+
+test('a fleet read the box turned away is SAID on the page, never raised as a pop-up', async ({
+  page,
+}) => {
+  // 🔴 The add's green toast arrived with a red "502 Cannot reach the VPS" beside it: adding a bot
+  // re-reads the fleet, and that read was the one on the page that still toasted — while the page
+  // already says it in its own line. MUTATION: drop `silent` from the fleet read → red on the count.
+  const toasts = await watchToasts(page)
+  await mock(page, STACKED)
+  let reads = 0
+  await page.route('**/api/bots/snapshot', (r) => {
+    reads++
+    return r.fulfill({
+      status: 502,
+      json: { detail: 'Cannot reach the VPS — Connection closed by 45.82.164.112 port 22' },
+    })
+  })
+  await page.goto('/bots')
+  await expect(page.getByText(/Could not reach the trading box/)).toBeVisible({ timeout: 20_000 })
+  expect(reads, 'the fleet read really failed').toBeGreaterThan(0)
+  expect(await toasts()).toEqual([])
+})
+
+/** The fleet after the set went live, with ONE bot back on the demo account and `demo` as that
+ *  account's earnings — the server's answer, stated rather than derived. */
+async function routeDemoBack(
+  page: Page,
+  demoBot: { key: string; name: string; balance: number | null },
+  demo: Record<string, unknown>
+) {
+  await page.route('**/api/bots/snapshot', (route) =>
+    route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [
+          { key: 'sos_fade', name: 'SOS Fade', status: 'RUNNING', account_type: 'live' },
+          { key: 'ext_leg', name: 'Extreme Leg', status: 'RUNNING', account_type: 'live' },
+          { ...demoBot, status: 'RUNNING', account_type: 'demo' },
+        ],
+        scheduled_jobs: [],
+        telegram: { name: 'Telegram', status: 'RUNNING' },
+        earnings: [
+          {
+            ...acctEarn(LIVE, [earn('sos_fade'), earn('ext_leg')]),
+            net_usd: 0,
+            attributed_usd: 0,
+          },
+          demo,
+        ],
+      },
+    })
+  )
+}
+
+test('a bot on the account that has not REPORTED yet leaves the last balance up, with its time', async ({
+  page,
+}) => {
+  // 🔴 Adding the first bot blanked the demo account's balance — "balance unread · net unknown" —
+  // until the new bot's first report: the last reading was used only with NO bot on the account.
+  // The card, the header count and the panel each read it, so each is asserted.
+  // MUTATION: the card takes the last reading only with no bot → red on the balance.
+  // MUTATION: the header counts off the bots' own reports alone → red on the count.
+  // MUTATION: the panel takes the last reading only with no bot → red on its read time.
+  await mockAfterGoLive(page, [bot('b_leg', 'B-LEG', 770116, 10, 5)])
+  await routeDemoBack(
+    page,
+    { key: 'b_leg', name: 'B-LEG', balance: null },
+    { ...departedDemo([earn('b_leg')]), balance_read_at: READ_AT }
+  )
+  await page.goto('/bots')
+  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  await expect(card).toContainText('$15,844.46')
+  await expect(card.getByTestId('balance-read-at')).toBeVisible()
+  await expect(card).not.toContainText('balance unread')
+  await expect(page.getByText(/\d+ balances? unread/)).toHaveCount(0)
+
+  await page.goto(`/bots?account=${ACCOUNT}`)
+  const panel = page.getByRole('complementary', { name: 'Account settings' })
+  await expect(panel.getByTestId('drawer-balance-read-at')).toContainText(
+    'no bot here has reported one since it started'
+  )
+})
+
+test("a bot that CARRIES ON a strategy's record here says whose trades its row includes", async ({
+  page,
+}) => {
+  // 🔴 *"if I add back bots on the demo they should just pick up where they left off."* The server
+  // folds a departed bot's trades here into the one bot running the same strategy now (backend
+  // CLAUDE.md), so the row carries them — and names whose they are, never a count its own bot did
+  // not make without saying so. MUTATION: drop the carried note from the P&L tooltip → red.
+  await mockAfterGoLive(page, [bot('sos_fade_2', 'SOS Fade (demo)', 770215, 10, 5)])
+  await routeDemoBack(
+    page,
+    { key: 'sos_fade_2', name: 'SOS Fade (demo)', balance: 15844.46 },
+    {
+      ...departedDemo(),
+      balance_read_at: null,
+      bots: [
+        earn('sos_fade_2', {
+          ...SCORED.sos_fade,
+          name: 'SOS Fade (demo)',
+          carried_from: [
+            { bot_key: 'sos_fade', name: 'SOS Fade', moved_to: LIVE, closed_trades: 2 },
+          ],
+        }),
+      ],
+    }
+  )
+  await page.goto('/bots')
+  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  const row = card.getByTestId('bot-row')
+  await expect(row).toHaveCount(1)
+  await expect(row).toContainText('$1,500.00')
+  await expect(card.getByTestId('past-row')).toHaveCount(0)
+  await expect(row.getByTestId('bot-pnl')).toHaveAttribute(
+    'title',
+    /includes 2 trades SOS Fade closed here before it moved to account 34957946/
+  )
+})

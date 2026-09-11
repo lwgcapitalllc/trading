@@ -5183,6 +5183,27 @@ is skipped — a link down is not a reading of zero. ⚠ `balance_read_at` is de
 read 2026-09-10 23:51 UTC, opening $9,996.99, net +$5,847.47 (58.49%), remainder $3,344.80. 7 new
 tests, 10 mutations run, 10 killed.
 
+🔴 **A STRATEGY'S RECORD ON AN ACCOUNT CARRIES ON WHEN A NEW BOT TAKES OVER (2026-09-11).** Two demo
+copies put back on the demo account after its bots went live drew at $0, beside two rows holding the
+account's whole demo record under "moved to live". Aaron: *"if I add back bots on the demo they
+should just pick up where they left off."* `_carry_on` folds a departed bot's trades on an account
+into the ONE current bot running the same strategy there (`strategy_package`, off the configs in the
+repo — the snapshot passes it as `strategy`), and the row names whose they are (`carried_from`,
+declared on `BotEarnings` or Pydantic drops it). ⚠ **Display only**: the opening, the attributed
+total, the remainder and the no-record list are all taken BEFORE the fold, so no account figure
+moves. ⚠ **No heir, no fold**: two copies of one strategy on an account, or a strategy that could
+not be read, leave the departed row standing. ⚠ Carried dollars get a Return % only on the account's
+own opening, the same rule a departed row follows. ⚠ Go-live's demo record is still per BOT — this
+is the page's view, not the promotion's evidence.
+
+🔴 **A bot that has not REPORTED yet no longer blanks the balance (2026-09-11).** The last reading
+was served only for an account NO bot is on, so adding the first bot to the demo account read
+"balance unread · net unknown" until the new bot reported. It is served whenever nothing on the
+account reports one, with `balance_read_at`. ⚠ That lets a past reading reach the anchor branch for
+the first time, so the remainder's covered-window check (a trade closed after the reading is not in
+it) is asked there too. Tests: 14 new across this file and `test_bot_accounts.py`; 14 mutations run
+in memory, 14 killed.
+
 
 `services/bot_earnings.py`, served on `GET /bots/snapshot` as `earnings`. Aaron: *"how much
 percent each bot made on the account thus far … that 45% increase was only from the SOS Fade.
@@ -5870,7 +5891,9 @@ screen read as a wall — every bot's record restated, a bookkeeping line per sk
 bot KEYS in every sentence. So: a traded bot's record travels on its MOVE and is not repeated; *no
 record* and *could not be read* stay; every sentence uses the display name. ⚠ **`AssignPlan` now
 splits `notes` (a hazard) from `info` (bookkeeping — a setting the strategy does not declare)**, and
-`info` is deliberately NOT carried onto a move; the single-bot move endpoint still returns both.
+`info` is deliberately NOT carried onto a move. 🔴 **The single-bot move serves both APART since
+2026-09-11** (`notes` and `info` on `PATCH /bots/{bot}/account`): joined, the bookkeeping reached the
+Bots page as a yellow warning naming a config field on every add. The page raises `notes` only.
 ⚠ **When nothing is unusual the list is EMPTY** — pinned by
 `test_a_CLEAN_promotion_carries_NO_warnings`, because a warning on every promotion is one nobody reads.
 

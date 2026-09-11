@@ -276,6 +276,31 @@ available bots that is it … why is XAUUSD.p showing … the account doesn't ca
   offline specs build the checkout from disk, and a bug planted in the shared clone is one the other
   session's run can pick up.
 
+## The demo account after its bots went live — five things it got wrong (2026-09-11)
+
+Off Aaron's screenshots of adding two demo copies back to the demo account.
+
+- 🔴 **The Risk cap box FOLLOWS the account (`AccountDrawer`).** It was `useState(stated)`, copied
+  once when the panel opened, so a panel opened on an empty account and then given bots at 10% read
+  "Capped" UNTICKED with Save live — and Save would have sent "no cap". Only the reader's EDIT is
+  state now, bound to the cap it was made against (`from`); when the account's cap changes the edit
+  is dropped rather than saved over a change nobody saw.
+- 🔴 **The fleet read is `silent` (`useBotSnapshot`).** Adding a bot re-reads the fleet, so the add's
+  green toast arrived with a red 502 over a page that already says it in its error line. ⚠ **It keeps
+  the default retry**, unlike other polls: the failure is a connection the box turned away, which a
+  second ask usually gets through, and silent means a retry no longer doubles a toast.
+- **A move's `info` is never raised.** Only `notes` are warnings; the server serves them apart
+  (backend CLAUDE.md). It was a yellow toast naming a config field on every add.
+- 🔴 **`balanceAt` is the ONE balance for the card, the panel and the header count.** It fell back to
+  the last reading only with NO bot on the account, so the first bot added blanked the balance until
+  its first report. ⚠ The wording says which case it is: *before it left* with no bot on it, *no bot
+  here has reported one since it started* with one.
+- 🔴 **A bot carrying on a strategy's record says whose trades its row includes** (the P&L tooltip,
+  `carriedNote`). The server folds a departed bot's trades here into the one bot running the same
+  strategy now (*"they should just pick up where they left off"*); the page only names them.
+
+Tests: 5 new checks in `bots-accounts.spec.ts`; 8 bugs planted in a throwaway worktree, 8 caught.
+
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
 
 **The Bots header added every bot's balance.** Each bot on a stack reports the SAME account
@@ -4243,8 +4268,9 @@ Trading** — Aaron: *"what if I wanted to test out more bots on a demo account 
 also trade … it shouldnt matter."* It shows the balance its bots last read, with the time
 (`balance_read_at`), its net and Return %, no cap chip while it is empty, a "No bot is on this
 account now" row whose **Add a bot** opens the panel on the picker (`add=1`), and a past row per
-departed bot ("Moved to live account N", its own P&L and Return %). A new bot joining keeps those
-rows, and the side score counts departed bots' records on EVERY account — the demo record is what
+departed bot ("Moved to live account N", its own P&L and Return %). A new bot of ANOTHER strategy
+joining keeps those rows; one of the SAME strategy carries them on in its own row (next section),
+and the side score counts departed bots' records on EVERY account — the demo record is what
 live-against-demo compares with. ⚠ **One place per account**: on Trading means never also on
 Unassigned. ⚠ The bot panel reads the record of the account its CONFIG names, the same source the
 rows are laid out by. Pinned by three tests in `bots-accounts.spec.ts`, 11 mutations run, 11 killed.

@@ -42,8 +42,9 @@ export function AccountDrawer({
   registry: BotAccountRegistration[]
   /** Read off the bots, because the accounts endpoint deliberately never touches the VPS. */
   balance: number | null
-  /** When `balance` was read, when it is the LAST reading a bot took before it left an account
-   *  nothing is on now — `null` for a live balance. The panel says so beside the figure. */
+  /** When `balance` was read, when it is the LAST reading a bot took here because nothing on the
+   *  account reports one now — no bot is on it, or the ones on it have not reported since they
+   *  started. `null` for a live balance. The panel says so beside the figure. */
   balanceReadAt?: string | null
   /** Open with the bot picker already out — the account card's "Add a bot". */
   startAdding?: boolean
@@ -78,8 +79,24 @@ export function AccountDrawer({
   // ⚠ A disagreement is NOT a cap. Quoting one bot's number when they differ would put a figure
   // on screen that no bot is running and hide the one condition that stops them all starting.
   const stated = group.cap_agrees ? group.risk_cap_pct : null
-  const [capped, setCapped] = useState(stated !== null)
-  const [draft, setDraft] = useState(stated === null ? '10' : String(stated))
+  /**
+   * 🔴 **Only the reader's EDIT is state; the box and the number FOLLOW the account's real cap
+   * (2026-09-11).** They were `useState(stated !== null)` — copied ONCE, when the panel opened.
+   * Opened on an empty account (no cap yet) and then given bots with a 10% cap, the panel went on
+   * showing "Capped" unticked with Save live, and Save would have sent "no cap" to every bot on it.
+   *
+   * ⚠ **An edit is bound to the cap it was made AGAINST (`from`)**, so when the account's cap
+   * changes — a save landing, or anything else — the edit is dropped and the panel shows the new
+   * cap. Kept past that, it would be saving over a change the reader never saw.
+   */
+  const [edit, setEdit] = useState<{ capped: boolean; draft: string; from: number | null } | null>(
+    null
+  )
+  const live = edit && edit.from === stated ? edit : null
+  const capped = live ? live.capped : stated !== null
+  const draft = live ? live.draft : stated === null ? '10' : String(stated)
+  const setCapped = (v: boolean) => setEdit({ capped: v, draft, from: stated })
+  const setDraft = (v: string) => setEdit({ capped, draft: v, from: stated })
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState(startAdding)
   const [goingLive, setGoingLive] = useState(false)
@@ -251,7 +268,9 @@ export function AccountDrawer({
                     hour: '2-digit',
                     minute: '2-digit',
                   })}{' '}
-                  by a bot before it left — no bot is on this account now.
+                  {group.bots.length
+                    ? '— no bot here has reported one since it started.'
+                    : 'by a bot before it left — no bot is on this account now.'}
                 </p>
               )}
               {/* What it OPENED at, and which bot recorded that — a net with no denominator on

@@ -22,10 +22,23 @@ import type {
   BotSnapshot,
 } from '@/types'
 
+/**
+ * The fleet as the trading box reports it, re-read every minute and after every bot action.
+ *
+ * 🔴 **`silent` since 2026-09-11: it was the one read on the Bots page that still toasted.** A
+ * crowded box refuses a connection now and then (backend CLAUDE.md → *The box refuses SSH*), and
+ * this read also runs straight after a bot is added — so the add's green toast arrived with a red
+ * *502 Cannot reach the VPS* beside it, over a page that already shows the failure in its own
+ * error line (with the last good snapshot kept on screen and dated). Reads don't toast.
+ *
+ * ⚠ **The default retry stays**, unlike the house rule for polls: the failure is a connection the
+ * box turned away, which a second ask usually gets through, and with `silent` a retry no longer
+ * doubles a toast. `silent` hides the toast, never the error — `error` still reaches the page.
+ */
 export function useBotSnapshot() {
   return useQuery({
     queryKey: ['bots', 'snapshot'],
-    queryFn: () => api.get<BotSnapshot>('/bots/snapshot'),
+    queryFn: () => api.get<BotSnapshot>('/bots/snapshot', { silent: true }),
     refetchInterval: 60_000,
   })
 }
@@ -566,6 +579,8 @@ export function useAssignBotAccount() {
       // recorded symbol suffix. It is raised as a WARNING rather than folded into the success
       // line, because the failure it describes is silent on the box: a bot pointed at a symbol
       // its terminal does not quote connects, warms up and receives no bars.
+      // ⚠ `data.info` is deliberately NOT raised (2026-09-11): it is a setting the strategy does not
+      // have, which cannot change how it trades, and as a yellow toast it read as a fault.
       for (const note of data.notes ?? []) toast.warning(note)
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })

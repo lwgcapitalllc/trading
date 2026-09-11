@@ -423,6 +423,18 @@ export interface BotEarnings {
   moved_to: number | null
   /** Trades whose account could not be told — counted, never credited. */
   unplaced_trades: number | null
+  /** 🔴 The bots whose trades on this account this row CARRIES ON from (2026-09-11) — a bot that
+   *  left, running the same strategy this bot runs here now. Its trades are in the figures above and
+   *  its own row is gone. Optional: a recording taken before the field existed carries none. */
+  carried_from?: CarriedRecord[]
+}
+
+/** A departed bot whose record on an account another bot's row now carries. */
+export interface CarriedRecord {
+  bot_key: string
+  name: string
+  moved_to: number | null
+  closed_trades: number | null
 }
 
 /** One broker account: what it made, and how much of that the bots here can account for.
@@ -780,6 +792,12 @@ export interface BotAccountAssignResult {
    * connects, warms up and receives no bars, which reads exactly like a quiet market.
    */
   notes?: string[]
+  /**
+   * Bookkeeping, served APART from `notes` since 2026-09-11 — a setting the receiving strategy
+   * does not have, which cannot change how it trades. Deliberately NOT raised on the page: folded
+   * into `notes` it arrived as a yellow warning naming a config field on every move.
+   */
+  info?: string[]
 }
 
 // `BotConfigSections` / `BotConfigUpdate` deleted 2026-08-04 with the endpoints they typed —

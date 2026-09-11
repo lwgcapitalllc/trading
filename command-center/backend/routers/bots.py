@@ -1314,6 +1314,13 @@ def get_snapshot():
     try:
         live_trades = _parse_live_trades(snap)
         live_starts = _parse_live_starts(snap)
+        # Which strategy each bot runs, off the configs in this repo (no SSH) — how a departed
+        # bot's record on an account finds the bot now running the same strategy there.
+        packages = {
+            k: str(c.get("strategy_package") or "") or None
+            for k, c in _all_instance_configs().items()
+            if c
+        }
         earnings = [
             AccountEarnings(**e)
             for e in bot_earnings.account_earnings(
@@ -1322,6 +1329,7 @@ def get_snapshot():
                         "bot_key": b.key,
                         "name": b.name,
                         "account": b.account,
+                        "strategy": packages.get(b.key),
                         "balance": b.balance,
                         "starting_balance": b.starting_balance,
                         # What the box just said, or None when it could not be asked. See
@@ -2316,9 +2324,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             "account": update.account,
             "restart_required": True,
             "detail": changed,
-            # `info` rides along here, unchanged from before the split — this move has always
-            # said what it skipped, and only the demo → live screen keeps bookkeeping off its list.
-            "notes": plan.notes + plan.info,
+            # Beside `notes`, never inside it — see the deployed return below.
+            "notes": plan.notes,
+            "info": plan.info,
         }
 
     path = _BOT_INSTANCE_MAP[bot_key]["path"]
@@ -2358,6 +2366,10 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     # that is not registered at all. It is served rather than swallowed because the failure it
     # describes is silent on the box: a bot pointed at a symbol its terminal does not quote
     # connects, warms up and receives no bars, which reads exactly like a quiet market.
+    # 🔴 `info` is served BESIDE it, never inside it (2026-09-11). It is bookkeeping — a setting
+    # the receiving strategy does not have, which cannot change how it trades — and folded into
+    # `notes` it reached the Bots page as a yellow WARNING naming a config field on every move of
+    # that strategy. The page raises `notes` only; `info` stays here for anyone who asks.
     return {
         "status": "ok",
         "changed": True,
@@ -2366,7 +2378,8 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         "account": update.account,
         "restart_required": True,
         "detail": changed,
-        "notes": plan.notes + plan.info,
+        "notes": plan.notes,
+        "info": plan.info,
         "output": out,
     }
 
