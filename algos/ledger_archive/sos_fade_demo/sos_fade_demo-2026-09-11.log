@@ -116,3 +116,8 @@ RuntimeError: Could not read the account balance, and initial_capital is 0 — t
 2026-09-11 17:45:02,392 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-11 18:00:06,250 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-11 18:15:09,853 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 18:30:04,318 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 18:30:04,318 [INFO] Equity re-anchored to the account flat between trades: 393.94 → 451.97
+2026-09-11 18:45:07,625 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 19:00:00,739 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 19:15:04,292 [ERROR] Bridge halted — the loop will keep observing but place nothing.
