@@ -1532,6 +1532,19 @@ in the record. **A distinction living one layer below the assertions is a distin
 assertions cannot make** — the same shape as a scaling test written against a scale of exactly 1.
 It is now pinned on `_bar_field` itself.
 
+🔴 **THE REFUSAL RECORD HAD THE SAME SHAPE BUG, AND THAT ONE COST THE BAR (fixed 2026-09-11).**
+`Ledger.blocked()` read SOS Fade's field names directly; the extreme leg's refusal calls its
+timestamp `ts_ms`, its price `entry_price`, and carries one `code` and one `reason`. **Every
+extreme-leg refusal raised — and refusals are written BEFORE `bridge.sync`, so the raise aborted
+the whole bar before its broker check and re-warmed the bot.** MEASURED on the live account:
+`bar_error` at 2026-09-11 05:45:09 UTC, `rewarm` ten seconds later, and no `blocked` row for the
+refusal. ✅ Both record methods now read each field under both names (plural wins whenever it is
+carried, even empty — SOS Fade's `code` property answers 0 on an empty list), and a record they
+cannot read is WRITTEN with the error rather than raised: `_write`'s *a log must never crash the
+loop it observes* covered the file and not the fields. SOS Fade's rows do not move by a byte.
+Nine tests on the two strategies' REAL classes, `tests/test_ledger_refusal_fields.py`; 8 mutations
+RUN and killed. ⚠ **Reaches a bot by `git pull` plus a restart** — `algos/live/`, no promote.
+
 ⚠ **Routing is ONE dict (`ledger._DECISION_EVENTS`) and it is TEST-ENFORCED.**
 `tests/test_ledger_streams.py` greps every `ledger.event("...")` call in `algos/live/` and fails if
 the name is not classified, in **both** directions — an unrouted event would fall into health and

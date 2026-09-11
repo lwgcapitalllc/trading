@@ -234,6 +234,33 @@ def _bar_or_none(sig, *names):
     return None if value is _MISSING else value
 
 
+# ── reading a REFUSAL whose shape this module must not know ──────────────────
+def _first(obj, *names):
+    """The first of `names` that `obj` carries, or `_MISSING`. `_bar_field`'s rule for a flat
+    record: *not carried* and *carried as None* stay two answers until the caller flattens."""
+    for name in names:
+        value = getattr(obj, name, _MISSING)
+        if value is not _MISSING:
+            return value
+    return _MISSING
+
+
+def _first_or_none(obj, *names):
+    value = _first(obj, *names)
+    return None if value is _MISSING else value
+
+
+def _one_or_list(obj, plural: str, singular: str):
+    """A list field that one strategy carries as a list and another as a single value.
+    ⚠ **The plural wins whenever it is CARRIED, even empty** — SOS Fade's `codes` can be `[]`,
+    and its `code` property then answers 0, which is not a rule anybody refused on."""
+    many = _first(obj, plural)
+    if many is not _MISSING:
+        return None if many is None else list(many)
+    one = _first(obj, singular)
+    return None if one is _MISSING or one is None else [one]
+
+
 class Ledger:
     def __init__(self, directory: Path, bot_key: str) -> None:
         self.dir = Path(directory)
@@ -294,37 +321,49 @@ class Ledger:
 
     def blocked(self, block) -> None:
         """A setup the strategy had READY and one of its own rules refused. The lab surfaces
-        these on the price chart; live they are the answer to "why didn't it take that"."""
-        self._write(
-            DECISIONS,
-            "blocked",
-            {
-                "dir": block.dir,
-                "bar_time": block.time_ms,
-                "edge": block.edge,
-                "sos_bar": block.sos_bar,
-                "codes": list(block.codes),
-                "labels": block.labels,
-                "reasons": block.reasons,
-            },
-        )
+        these on the price chart; live they are the answer to "why didn't it take that".
+
+        🔴 **TWO REFUSAL SHAPES REACH THIS, AND IT READ ONLY ONE (fixed 2026-09-11).** SOS Fade's
+        carries `time_ms`, `edge`, `codes`, `labels`, `reasons`; the extreme leg's carries `ts_ms`,
+        `entry_price`, one `code` and one `reason`. Reading SOS Fade's names directly raised on
+        every extreme-leg refusal — and the raise **aborted the whole bar before the broker was
+        reconciled**, then re-warmed the bot (live account, 2026-09-11 05:45 UTC). Each field is
+        now read under both names; SOS Fade's rows do not move by a byte.
+
+        ⚠ **A record this cannot read is still WRITTEN, carrying the error.** A refusal must never
+        vanish from the only file that records it, and a record must never cost a bar its broker
+        check — `_write`'s own rule, which covered the file and not the fields."""
+        try:
+            payload = {
+                "dir": _first_or_none(block, "dir"),
+                "bar_time": _first_or_none(block, "time_ms", "ts_ms"),
+                "edge": _first_or_none(block, "edge", "entry_price"),
+                "sos_bar": _first_or_none(block, "sos_bar"),
+                "codes": _one_or_list(block, "codes", "code"),
+                "labels": _first_or_none(block, "labels"),
+                "reasons": _one_or_list(block, "reasons", "reason"),
+            }
+        except Exception as e:
+            payload = {"unreadable": f"{type(e).__name__}: {e}"}
+        self._write(DECISIONS, "blocked", payload)
 
     def missed(self, miss) -> None:
-        """A setup that died partway — met some confluences and never became a trade."""
-        self._write(
-            DECISIONS,
-            "missed",
-            {
-                "dir": miss.dir,
-                "bar_time": miss.time_ms,
+        """A setup that died partway — met some confluences and never became a trade.
+        Read like `blocked` — both timestamp names, and never raising — for the same reasons."""
+        try:
+            payload = {
+                "dir": _first_or_none(miss, "dir"),
+                "bar_time": _first_or_none(miss, "time_ms", "ts_ms"),
                 "edge": getattr(miss, "edge", None),
                 "met": getattr(miss, "met", None),
                 "of": getattr(miss, "of", None),
                 "near": getattr(miss, "near", None),
                 "labels": getattr(miss, "labels", None),
                 "reasons": getattr(miss, "reasons", None),
-            },
-        )
+            }
+        except Exception as e:
+            payload = {"unreadable": f"{type(e).__name__}: {e}"}
+        self._write(DECISIONS, "missed", payload)
 
     # ── trades ───────────────────────────────────────────────────────────────
     def trade_opened(
