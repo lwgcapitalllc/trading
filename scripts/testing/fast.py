@@ -31,6 +31,8 @@ REPO = rules.REPO
 LOG = manifest.LOG_DIR / "fast.log"
 CPU = os.cpu_count() or 4
 _TALLY = re.compile(r"\b\d+ (?:passed|failed|errors?|skipped|deselected)\b.* in [\d.]+s\b")
+# Playwright's closing line, e.g. "  98 passed (50.1s)".
+_PW_TALLY = re.compile(r"^\s*\d+ passed \(")
 
 
 def _read(path: str):
@@ -132,7 +134,8 @@ def _summary(job):
                 out.append(ln)
                 pending = None
         return "", out[:40]
-    return "", ([] if job.ok else lines[-15:])
+    tally = [ln.strip() for ln in lines if _PW_TALLY.match(ln)]
+    return (tally[-1] if job.ok and tally else ""), ([] if job.ok else lines[-15:])
 
 
 def _xdist_missing(python) -> bool:
@@ -208,7 +211,7 @@ def main(argv=None) -> int:
     # Heavy pieces run ONE AFTER ANOTHER, each with every core; the short checks run beside them.
     # MEASURED 2026-09-10: splitting the cores three ways put the root suite on 4 workers and the
     # everything-run took 219s against ~172s for the same pieces in sequence at full width.
-    light = [_step_job(s, python) for s in rules.STEPS if s.id in sel.steps]
+    light = [_step_job(s, python) for s in rules.STEPS if s.id in sel.steps and not s.heavy]
     heavy = []
     for suite in rules.SUITES:
         files = sel.tests.get(suite.name, {})
@@ -216,6 +219,8 @@ def main(argv=None) -> int:
             heavy.append(_pytest_job(suite, files, python, CPU))
     if sel.gates:
         heavy.append(_gates_job(sel.gates, python, CPU))
+    # A heavy step goes LAST, so the short checks beside the lane have finished before it starts.
+    heavy += [_step_job(s, python) for s in rules.STEPS if s.id in sel.steps and s.heavy]
     jobs = light + heavy
 
     if any(j.kind == "pytest" and "-n" in j.cmd for j in jobs) and _xdist_missing(python):

@@ -67,7 +67,20 @@ The suite had doubled since 2026-08-27's 2:00 (root 1,760 → 3,140 tests, backe
 | extreme-leg + zone-band gate tests | 60s | **35s** | the same memo, keyed on the DECODED settings |
 | deploy-version tests (3 files) | 29s | **8s** at 5 workers | per-file git memo + worker count by tests, not files |
 | `bots-version.spec.ts` | 4.1 min | **32s** | offline recording + 6 parallel workers + a 10x page clock |
-| `bots-accounts.spec.ts` | 2.0 min | **1.0 min** | the same, and short of the 20s aim — the dev server is the floor |
+| `bots-accounts.spec.ts` | 2.0 min | **1.0 min** | the same |
+| both Bots specs, 93 checks (2026-09-11) | 90s | **32s + an 11s build** | the app as a development build read off disk; no trace on a green run |
+
+🔴 **"The dev server is the floor" was WRONG, and it sat here for a day.** A lone page load is
+0.68s from the dev server and 0.47s from a build. The real cost was CROWDING: six workers pulling
+hundreds of modules each from ONE dev server, so a check took 1.3s on one worker and 5.1s on six.
+A build every worker reads from disk removes the shared server (90s → 48s), and dropping the trace
+nobody reads on a green run takes another third (→ 32s). The 10x clock turned out to cost nothing
+(24s vs 23s). More workers still do not help — 10 was slower than 6 — because the box is
+CPU-bound. ⚠ Measured back to back in one quiet window. Three alternating pairs under a load
+average of 200–540 from another session read 91–134s → 52–65s with the build, and the only run
+with failures (3 checks timing out) was a dev-server one. ✅ **Needing nothing running is what let
+both tiers carry them**: step 19 of the full run, and the fast tier when a change reaches the Bots
+page.
 
 ⚠ **Both browser specs now reach NOTHING behind the page** — before, every check read the live
 box through the real snapshot. ⚠ **Every speed-up was re-proven by planted bugs**, and the pass

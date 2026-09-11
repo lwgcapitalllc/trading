@@ -1968,6 +1968,8 @@ live account, which would have turned every demo-assuming check red on a day the
 - ⚠ **https, not http** — clipboard exists only on a secure origin, and the Bots page copies logs.
 - ⚠ **No trace on offline checks** — recording one cost a third of every green run's CPU. They
   replay recordings, so a failure repeats: `npx playwright test <spec> -g '<name>' --trace on`.
+- ✅ **Both test tiers run them (2026-09-11)** — step 19 of `scripts/run_all_tests.sh`, and
+  `scripts/test.sh` whenever a change can reach the Bots page. Selection: root `CLAUDE.md`.
 - ⚠ The old write backstop (`refuseLiveWrites`) is DROPPED from offline specs: it aborted an
   unrouted write before the harness could flag it. Specs on the real backend keep it —
   `overview.spec.ts` gained it 2026-09-10 (the page carries the fleet controls).

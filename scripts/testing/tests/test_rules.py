@@ -98,6 +98,41 @@ def test_a_pine_change_runs_the_pine_steps_and_no_pytest_suite_wholesale(real):
 def test_a_frontend_source_change_runs_the_typecheck_and_the_node_checks_only(real):
     sel = _sel(real, "command-center/frontend/src/App.tsx")
     assert {3, 8, 9, 10, 11, 12} <= sel.steps
-    # This file names App.tsx by path, so it is the one Python test that can see the change.
-    assert set(sel.tests["root"]) <= {"scripts/testing/tests/test_rules.py"}
+    # rules.py reads App.tsx (it walks the app from it for step 19), so the fast tier's own tests
+    # can see the change; nothing else in either python suite can.
+    assert all(t.startswith("scripts/testing/tests/") for t in sel.tests["root"])
     assert not sel.tests["backend"] and not sel.gates
+
+
+# Step 19's selection. Mutation map (2026-09-11, `python -m scripts.testing.mutate`, 5 planted, 5
+# killed): following App.tsx's routes to every page; dropping the specs as roots; not resolving
+# `@/`; the step no longer heavy; a marker the config does not use.
+BROWSER = 19
+
+
+def test_a_change_the_bots_page_can_run_reaches_the_offline_browser_specs(real):
+    fe = "command-center/frontend"
+    for path in (
+        f"{fe}/src/pages/Bots/index.tsx",  # the page itself
+        f"{fe}/src/hooks/useBots.ts",  # what it reads through
+        f"{fe}/src/App.tsx",  # the shell it renders inside
+        f"{fe}/tests/bots-accounts.spec.ts",  # a spec
+        f"{fe}/tests/offlineApp.ts",  # the harness, reached through the specs' own imports
+    ):
+        assert BROWSER in _sel(real, path).steps, path
+
+
+def test_a_change_to_another_page_does_not_run_them(real):
+    # App.tsx imports every page, and following that edge would run the Bots specs for any edit.
+    sel = _sel(real, "command-center/frontend/src/pages/BacktestDetail.tsx")
+    assert BROWSER not in sel.steps
+    assert {3, 12} <= sel.steps  # the page is still typechecked and colour-checked
+
+
+def test_the_runner_finds_the_same_offline_specs_the_playwright_config_does():
+    config = (rules.REPO / "command-center/frontend/playwright.config.ts").read_text()
+    assert f".includes('{rules.OFFLINE_MARKER}')" in config
+    names = {p.rsplit("/", 1)[1] for p in rules.offline_specs()}
+    assert {"bots-accounts.spec.ts", "bots-version.spec.ts"} <= names
+    step = next(s for s in rules.STEPS if s.id == BROWSER)
+    assert step.heavy and "--project=offline" in step.cmd

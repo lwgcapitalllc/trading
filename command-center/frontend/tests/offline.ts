@@ -18,9 +18,12 @@
  * renamed field goes red there instead of as a confusing browser failure here.
  * ⚠ **A spec states the state it needs** (demo or live, running or stopped) by mutating a copy from
  * `recorded()` — never by trusting whatever the box happened to say on the day it was recorded.
+ * ✅ **The APP comes off disk too** — a development build of this checkout at `APP_ORIGIN`
+ * (`offlineApp.ts`) — so an offline spec needs nothing running at all.
  */
 import { readFileSync } from 'node:fs'
 import { test as base, expect, type Page } from '@playwright/test'
+import { APP_ORIGIN, serveApp } from './offlineApp'
 
 type Recording = { answers: Record<string, unknown> }
 
@@ -41,7 +44,13 @@ export async function offlineBackend(page: Page, recording: Recording): Promise<
   await page.route('**/*', (route) => {
     const req = route.request()
     const url = new URL(req.url())
-    if (!url.pathname.startsWith('/api/')) return route.fallback()
+    if (!url.pathname.startsWith('/api/')) {
+      if (url.origin !== APP_ORIGIN) return route.fallback()
+      const served = serveApp(route, url)
+      if (served) return served
+      off.unrouted.push(`the build has no ${url.pathname}`)
+      return route.abort('blockedbyclient')
+    }
     const key = url.pathname.slice(4) + url.search
     if (req.method() === 'GET' && key in recording.answers) {
       return route.fulfill({ json: recording.answers[key] })

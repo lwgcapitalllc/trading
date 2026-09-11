@@ -18,6 +18,7 @@ from __future__ import annotations
 import fnmatch
 import importlib.util
 import posixpath
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,10 +94,74 @@ class Step:
     cwd: str = ""
     script: str = ""  # a Python entry point: it runs when anything it imports changes
     globs: tuple = ()  # files (or whole trees) it reads that no import line names
+    heavy: bool = False  # takes every core itself, so it runs in turn with the suites, not beside
 
 
 def _node(id_, name, script):
     return Step(id_, name, ("node", f"scripts/{script}"), cwd=_FE, globs=FRONTEND_ANY)
+
+
+# The OFFLINE browser specs - playwright.config.ts discovers them by this same text, and
+# tests/test_rules.py holds the two to one marker.
+OFFLINE_MARKER = "offlineTest("
+_IMPORT = re.compile(
+    r"""(?:\b(?:import|export)\b[^'"]*?\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)['"]([^'"]+)['"]""",
+    re.M,
+)
+_TS_EXT = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", "/index.ts", "/index.tsx")
+_APP = f"{_FE}/src/App.tsx"
+_BOTS_PAGE = f"{_FE}/src/pages/Bots/"
+
+
+def offline_specs() -> tuple:
+    folder = REPO / _FE / "tests"
+    return tuple(
+        sorted(
+            f"{_FE}/tests/{p.name}"
+            for p in folder.glob("*.spec.ts")
+            if OFFLINE_MARKER in p.read_text(encoding="utf-8", errors="replace")
+        )
+    )
+
+
+def _resolve_ts(spec: str, importer: str):
+    if spec.startswith("@/"):
+        base = f"{_FE}/src/{spec[2:]}"
+    elif spec.startswith("."):
+        base = posixpath.normpath(posixpath.join(posixpath.dirname(importer), spec))
+    else:
+        return None  # a package
+    for ext in _TS_EXT:
+        if (REPO / (base + ext)).is_file():
+            return base + ext
+    return None
+
+
+def offline_browser_sources() -> tuple:
+    """Every source file the offline specs can run: the specs and what they import, and the app from
+    main.tsx down - except App.tsx's routes to OTHER pages, which load on /bots but never render.
+
+    ⚠ That exception is the one place this can be wrong: a page that crashes as it LOADS breaks
+    /bots too, and is not followed. The full run carries these specs as its own step, so such a
+    miss is named there (BLIND SPOT) rather than lost."""
+    todo, seen = [f"{_FE}/src/main.tsx", *offline_specs()], set()
+    while todo:
+        path = todo.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        try:
+            text = (REPO / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for spec in _IMPORT.findall(text):
+            dep = _resolve_ts(spec, path)
+            other_page = (
+                dep and dep.startswith(f"{_FE}/src/pages/") and not dep.startswith(_BOTS_PAGE)
+            )
+            if dep and not (path == _APP and other_page):
+                todo.append(dep)
+    return tuple(sorted(seen))
 
 
 STEPS = (
@@ -175,6 +240,30 @@ STEPS = (
         script="strategies/tradingview/tools/build_export_twins.py",
         globs=("strategies/tradingview/*",),
     ),
+    # Needs nothing running and reaches nothing live (tests/offline.ts). It builds the app, so the
+    # build's own inputs count as well as the source the Bots page imports.
+    Step(
+        19,
+        "offline browser specs",
+        ("npx", "--no-install", "playwright", "test", "--project=offline", "--reporter=line"),
+        cwd=_FE,
+        globs=offline_browser_sources()
+        + (
+            f"{_FE}/tests/offline*.ts",
+            f"{_FE}/tests/recordings/*",
+            f"{_FE}/playwright.config.ts",
+            f"{_FE}/index.html",
+            f"{_FE}/vite.config.ts",
+            f"{_FE}/tailwind.config.js",
+            f"{_FE}/postcss.config.js",
+            f"{_FE}/tsconfig*.json",
+            f"{_FE}/package.json",
+            f"{_FE}/package-lock.json",
+            f"{_FE}/src/themes/*",
+            f"{_FE}/public/*",
+        ),
+        heavy=True,
+    ),
 )
 GATE_STEP = 15
 GATE_RUNNER = "scripts/check_engine_gates.py"  # a change reaching the runner runs every gate
@@ -196,7 +285,8 @@ class Action:
 
 
 _BROWSER = Action(
-    note="a browser check - this command does not run the browser suite; run the spec yourself",
+    note="a browser check - the OFFLINE specs run here (step 19); one on the real backend is yours "
+    "to run with the app up",
     readers=False,
     package=False,
 )
@@ -211,7 +301,8 @@ TABLE = (
     ),
     (f"{_FE}/tests/*.spec.ts", _BROWSER),
     (f"{_FE}/tests/fixtures.ts", _BROWSER),
-    (f"{_FE}/tests/offline.ts", _BROWSER),
+    # The offline harness: offline.ts, the build it serves (offlineApp.ts) and its setup/teardown.
+    (f"{_FE}/tests/offline*.ts", _BROWSER),
     # A recording a browser spec replays is ALSO read by the backend check that holds it to its
     # route's response model - the one reader a string search cannot find (it globs the folder).
     (
