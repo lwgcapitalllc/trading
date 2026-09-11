@@ -1699,17 +1699,30 @@ test('a filter shows one side — and that side keeps its score and its lead', a
   await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 
-test('after a move to live, the demo trades stay on DEMO and the live rows start at zero', async ({
-  page,
-}) => {
-  // 🔴 2026-09-11, the day the demo set went live: the live account showed the bots' DEMO trades as
-  // its own (+264% on a $451.97 account that had not traded), and the demo account vanished. A
-  // trade belongs to the account it was made on; the demo record stays under Demo as history.
-  // ⚠ The earnings list is in the SERVER's order — live before demo — so a map keyed by bot alone
-  // (last entry wins) hands the live rows the demo figures, which is exactly the defect.
-  // MUTATION: key the earnings by bot alone → red on the live row's dollars.
-  // MUTATION: drop the history card → red on its count.
-  // MUTATION: leave departed bots out of the demo score → red on the demo score line.
+/** The demo account a set went live from, after the move: no bot on it, the two that left carried
+ *  as `former` rows, and the balance the last of them READ before leaving — with its time. */
+const READ_AT = '2026-09-10T23:51:13+00:00'
+function departedDemo(bots: ReturnType<typeof earn>[] = []) {
+  const moved = { former: true, moved_to: LIVE }
+  return {
+    ...acctEarn(ACCOUNT, [
+      ...bots,
+      earn('sos_fade', { ...SCORED.sos_fade, ...moved }),
+      earn('ext_leg', { ...SCORED.ext_leg, ...moved }),
+    ]),
+    balance: 15844.46,
+    balance_read_at: bots.length ? null : READ_AT,
+    opening_balance: 9996.99,
+    opening_from: 'sos_fade',
+    net_usd: 5847.47,
+    net_pct: 58.49,
+    attributed_usd: 2805.58,
+    unattributed_usd: 3041.89,
+  }
+}
+
+/** Both bots on LIVE; `demoBots` puts a NEW set on the demo account they left. */
+async function mockAfterGoLive(page: Page, demoBots: ReturnType<typeof bot>[] = []) {
   const liveGroup = group({
     account: LIVE,
     server: 'PUPrime-Live',
@@ -1719,12 +1732,13 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
     ],
     risk_cap_pct: 10,
   })
-  await mock(
-    page,
-    [liveGroup],
-    [reg(), reg({ account: LIVE, kind: 'live', label: 'Aaron Live', server: 'PUPrime-Live' })]
-  )
-  const moved = { former: true, moved_to: LIVE, pct_of_opening: null }
+  const groups = demoBots.length
+    ? [liveGroup, group({ bots: demoBots, risk_cap_pct: 10 })]
+    : [liveGroup]
+  await mock(page, groups, [
+    reg(),
+    reg({ account: LIVE, kind: 'live', label: 'Aaron Live', server: 'PUPrime-Live' }),
+  ])
   await page.route('**/api/bots/snapshot', (route) =>
     route.fulfill({
       json: {
@@ -1732,26 +1746,35 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
         bots: [
           { key: 'sos_fade', name: 'SOS Fade', status: 'RUNNING', account_type: 'live' },
           { key: 'ext_leg', name: 'Extreme Leg', status: 'RUNNING', account_type: 'live' },
+          ...demoBots.map((b) => ({
+            key: b.key,
+            name: b.display,
+            status: 'RUNNING',
+            account_type: 'demo',
+            balance: 15844.46,
+          })),
         ],
         scheduled_jobs: [],
         telegram: { name: 'Telegram', status: 'RUNNING' },
         earnings: [
           { ...acctEarn(LIVE, [earn('sos_fade'), earn('ext_leg')]), net_usd: 0, attributed_usd: 0 },
-          {
-            ...acctEarn(ACCOUNT, [
-              earn('sos_fade', { ...SCORED.sos_fade, ...moved }),
-              earn('ext_leg', { ...SCORED.ext_leg, ...moved }),
-            ]),
-            balance: null,
-            opening_balance: null,
-            net_usd: null,
-            net_pct: null,
-            unattributed_usd: null,
-          },
+          departedDemo(demoBots.map((b) => earn(b.key))),
         ],
       },
     })
   )
+}
+
+test('after a move to live, the demo trades stay on DEMO and the live rows start at zero', async ({
+  page,
+}) => {
+  // 🔴 2026-09-11, the day the demo set went live: the live account showed the bots' DEMO trades as
+  // its own (+264% on a $451.97 account that had not traded). A trade belongs to the account it was
+  // made on. ⚠ The earnings list is in the SERVER's order — live before demo — so a map keyed by
+  // bot alone (last entry wins) hands the live rows the demo figures, which is exactly the defect.
+  // MUTATION: key the earnings by bot alone → red on the live row's dollars.
+  // MUTATION: leave departed bots out of the demo score → red on the demo score line.
+  await mockAfterGoLive(page)
   await page.goto('/bots')
 
   const liveRow = page
@@ -1760,12 +1783,73 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
     .filter({ hasText: 'SOS Fade' })
   await expect(liveRow).toContainText('$0.00')
   await expect(liveRow).not.toContainText('$1,500.00')
+  await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
+})
 
-  const history = page.getByTestId('section-demo').getByTestId('history-card')
-  await expect(history).toHaveCount(1)
-  await expect(history).toContainText(String(ACCOUNT))
-  await expect(history).toContainText('$1,500.00')
-  await expect(history).toContainText(`Moved to live account ${LIVE}`)
+test('the demo account the bots LEFT is still an account — its balance, its record, and a way to put the next bot on it', async ({
+  page,
+}) => {
+  // 🔴 Aaron, 2026-09-11: *"moving bots to live doesn't mean we don't trade on the demo still…
+  // what if I wanted to test out more bots on a demo account while the live bot is also trading…
+  // it shouldn't matter."* It was a separate "history" card — no balance, no cap, headed *no bots on
+  // it now* — which read as a closed account.
+  // MUTATION: drop departed-only accounts from the Trading list → red on the card count.
+  // MUTATION: drop the read time beside a past balance → red on `balance-read-at`.
+  // MUTATION: draw the cap chip with no bot on the account → red on its count.
+  // MUTATION: drop the Add-a-bot row → red.
+  // MUTATION: open the panel without the picker out → red on `add-bot-row`.
+  // MUTATION: keep the account on Unassigned too → red on the empty-account count.
+  await mockAfterGoLive(page)
+  await page.goto('/bots')
+
+  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  await expect(card).toHaveCount(1)
+  await expect(card).toContainText(String(ACCOUNT))
+  // The balance is the last one a bot read — shown, and said to be a reading.
+  await expect(card).toContainText('$15,844.46')
+  await expect(card.getByTestId('balance-read-at')).toBeVisible()
+  await expect(card).toContainText('+58.5%')
+  // No bot on it, so no cap to state — "no cap" in warn would be an alarm about nothing.
+  await expect(card.getByTestId('cap-chip')).toHaveCount(0)
+  // Its record: the two bots that left, each saying where it went, with their own figures.
+  const past = card.getByTestId('past-row')
+  await expect(past).toHaveCount(2)
+  await expect(past.first()).toContainText(`Moved to live account ${LIVE}`)
+  await expect(card).toContainText('$1,500.00')
+  await expect(card).toContainText('+16.7%')
+
+  // One place per account: it is not ALSO under Unassigned.
+  await page.getByTestId('tab-unassigned').click()
+  await expect(page.getByTestId('empty-account').filter({ hasText: String(ACCOUNT) })).toHaveCount(
+    0
+  )
+  await page.getByTestId('tab-trading').click()
+
+  // The way to put the next bot there is on the card, and it opens straight into the picker.
+  await card.getByTestId('no-bot-row').getByTestId('add-bot-here').click()
+  const panel = page.getByRole('complementary', { name: 'Account settings' })
+  await expect(panel.getByTestId('add-bot-row')).toBeVisible()
+  await expect(panel.getByTestId('drawer-balance-read-at')).toBeVisible()
+})
+
+test('a NEW bot on the demo account keeps the departed bots on its card and in the score', async ({
+  page,
+}) => {
+  // 🔴 It shouldn't matter: putting the next bot on demo used to DROP the departed bots' record —
+  // the page read it only off an account with no bot on it — taking the demo score with it.
+  // MUTATION: show the departed rows only on an account with no bot → red on the past-row count.
+  // MUTATION: read the departed record into the score only with no bot on it → red on the score.
+  await mockAfterGoLive(page, [bot('b_leg', 'B-LEG', 770116, 10, 5)])
+  await page.goto('/bots')
+
+  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  await expect(card).toHaveCount(1)
+  await expect(card.getByTestId('bot-row')).toHaveCount(1)
+  await expect(card.getByTestId('bot-row')).toContainText('B-LEG')
+  await expect(card.getByTestId('past-row')).toHaveCount(2)
+  await expect(card.getByTestId('no-bot-row')).toHaveCount(0)
+  // A bot is on it now, so the balance is its live one — no read time.
+  await expect(card.getByTestId('balance-read-at')).toHaveCount(0)
   await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 

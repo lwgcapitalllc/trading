@@ -27,6 +27,15 @@
  * have bots on them"*). An account with no bots still earns a line there — you cannot move a bot
  * onto an account you cannot see — but not a place in the first look.
  *
+ * 🔴 **An account bots have TRADED on stays on Trading when they leave, as the SAME card
+ * (2026-09-11).** Aaron, after a set went live from demo: *"moving bots to live doesn't mean we
+ * don't trade on the demo still… what if I wanted to test out more bots on a demo account while the
+ * live bot is also trading… it shouldn't matter."* It was a separate "history" card — no balance,
+ * no cap, headed *no bots on it now* — which read as a closed account, and it VANISHED the moment a
+ * new bot joined, taking the departed bots' record and the demo score with it. Now it is one card
+ * whatever happens: its balance (the last one a bot read, with the time), the bots on it now, an
+ * Add-a-bot row when there are none, and the bots that left as rows saying where they went.
+ *
  * 🔴 **On Trading, live and demo are two sections, and the side ahead reads "Leading"** (*"I want
  * live and demo split… easily identify the winner"*). The winner is judged in R per trade — see
  * `PerTrade` for why dollars, share of the account and total R all crown demo.
@@ -51,6 +60,7 @@ import {
   SlidersHorizontal,
   TrendingUp,
   Trophy,
+  Plus,
 } from 'lucide-react'
 import {
   useBotSnapshot,
@@ -225,6 +235,18 @@ function IconBtn({
 /** Dollars, signed, with the sign leading the currency the way money is written.
  *  ⚠ `null` renders as a dash, never `$0.00` — this page's whole discipline is that a figure
  *  nobody measured and a measured zero may not look alike. */
+/** When a past balance reading was taken, in the reader's own clock — "10 Sep, 23:51". */
+function readTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function money(v: number | null | undefined, sign = true): string {
   if (v == null) return '—'
   const s = Math.abs(v).toLocaleString('en-US', {
@@ -660,9 +682,14 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
       </span>
     )
   const up = e.net_usd >= 0
+  // ⚠ A PAST reading says so — "Now" over a balance a bot read before it left is a claim about
+  // this moment that nothing measured.
+  const then = e.balance_read_at
+    ? `Last read at ${money(e.balance, false)} on ${readTime(e.balance_read_at)}, before its bots left.`
+    : `Now ${money(e.balance, false)}.`
   return (
     <span
-      title={`Opened at ${money(e.opening_balance, false)}, recorded by ${e.opening_from}. Now ${money(e.balance, false)}.`}
+      title={`Opened at ${money(e.opening_balance, false)}, recorded by ${e.opening_from}. ${then}`}
       className={`inline-flex items-baseline gap-[6px] px-[8px] py-[3px] rounded-pill cursor-default ${
         up ? 'bg-pos-muted' : 'bg-neg-muted'
       }`}
@@ -729,11 +756,10 @@ function Unattributed({ e }: { e: AccountEarnings }) {
 }
 
 /** The labels over a card's bot rows — ONE component for the real card and its placeholder, on
- *  the same column template, so neither can end up with a heading over the wrong column. */
-/** `past` — a history card: its bots have left, so the five columns that describe a bot running
- *  here (version, risk, uptime, actions) are one, saying where each went. Same GRID, so the money
- *  columns line up with the live card above it. */
-function ColumnHeadings({ past = false }: { past?: boolean }) {
+ *  the same column template, so neither can end up with a heading over the wrong column.
+ *  ⚠ One set of headings for every card, whether its bots are on it or have left: an account
+ *  whose card changed shape when its bots moved is the defect this page was fixed for. */
+function ColumnHeadings() {
   return (
     <div
       className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
@@ -749,17 +775,11 @@ function ColumnHeadings({ past = false }: { past?: boolean }) {
       <span title="R per trade — what each closed trade made on average, in units of the risk it took. The top bot is picked on this, never on dollars.">
         Per trade
       </span>
-      {past ? (
-        <span className="col-span-5">Now</span>
-      ) : (
-        <>
-          <span>Version</span>
-          <span title="Risk per trade">Risk</span>
-          <span>Uptime</span>
-          <span />
-          <span className="text-right">Actions</span>
-        </>
-      )}
+      <span>Version</span>
+      <span title="Risk per trade">Risk</span>
+      <span>Uptime</span>
+      <span />
+      <span className="text-right">Actions</span>
     </div>
   )
 }
@@ -896,6 +916,16 @@ export function Bots() {
     // Only one drawer at a time — opening a bot closes an account and the reverse.
     if (k === 'bot' && v !== null) next.delete('account')
     if (k === 'account' && v !== null) next.delete('bot')
+    // "Add a bot" opens the account's panel with its picker already out; closing the panel ends it.
+    if (k === 'account') next.delete('add')
+    setParams(next, { replace: true })
+  }
+  /** Open an account's panel straight into its bot picker — the card's "Add a bot". */
+  const openToAdd = (account: number) => {
+    const next = new URLSearchParams(params)
+    next.set('account', String(account))
+    next.set('add', '1')
+    next.delete('bot')
     setParams(next, { replace: true })
   }
 
@@ -926,20 +956,42 @@ export function Bots() {
    * stopped. Every reader below has to branch on it rather than on `status === 'RUNNING'`, or a
    * dead link renders as a quiet fleet, which is this repo's oldest rule.
    */
-  const withBots: {
+  const trading: {
     account: number
     group: BotAccountGroup
     rows: { cfg: BotAccountBot; live: BotStatus | undefined }[]
   }[] = []
   for (const [account, group] of groupByAccount) {
     if (!group.bots.length) continue
-    withBots.push({
+    trading.push({
       account,
       group,
       rows: group.bots.map((b) => ({ cfg: b, live: botByKey.get(b.key) })),
     })
   }
-  const assigned = new Set(withBots.flatMap((a) => a.rows.map((r) => r.cfg.key)))
+  /**
+   * An account bots TRADED on and then left — the demo account a set went live from. It is an
+   * account on the Trading tab like any other, with no bot on it yet (2026-09-11).
+   *
+   * 🔴 **Not a separate "history" card, and not an entry under Unassigned.** Aaron: *"moving bots
+   * to live doesn't mean we don't trade on the demo still… it shouldn't matter."* Its record is the
+   * evidence the promotion was made on and the demo score reads it, and it is still an account you
+   * can put the next bot on. ⚠ It has no group in the config grouping (no bot names it), so the
+   * registry row stands in for one — the same group the drawer builds for an empty account.
+   */
+  for (const e of snapshot?.earnings ?? []) {
+    if (groupByAccount.get(e.account)?.bots.length) continue
+    if (!e.bots.some((b) => b.former && b.closed_trades)) continue
+    const reg = regByAccount.get(e.account)
+    // ⚠ An account nobody registered still carries its record — `emptyGroup` reads only the
+    // number and the server off what it is handed, so the bare pair is enough.
+    const group =
+      groupByAccount.get(e.account) ??
+      emptyGroup(reg ?? ({ account: e.account, server: '' } as BotAccountRegistration))
+    trading.push({ account: e.account, group, rows: [] })
+  }
+  const assigned = new Set(trading.flatMap((a) => a.rows.map((r) => r.cfg.key)))
+  const onTrading = new Set(trading.map((a) => a.account))
   /**
    * Bots whose instance config could NOT BE READ — a fault, not a resting state.
    *
@@ -956,7 +1008,8 @@ export function Bots() {
   )
   const unassigned = bots.filter((b) => !assigned.has(b.key) && !unreadable.has(b.key))
   const broken = bots.filter((b) => unreadable.has(b.key))
-  const emptyAccounts = (registry ?? []).filter((a) => !groupByAccount.get(a.account)?.bots.length)
+  // ⚠ Not an account on the Trading tab — one place per account, never both.
+  const emptyAccounts = (registry ?? []).filter((a) => !onTrading.has(a.account))
 
   // ⚠ Filtered LAST, on the assembled lists, so the derivations above stay the whole truth —
   // `assigned` in particular decides which bots count as unassigned, and computing that against
@@ -967,28 +1020,14 @@ export function Bots() {
    *  answers ⇒ `undefined`, which the filter reads as unknown rather than as demo. */
   const typeOf = (account: number, rows: { live: BotStatus | undefined }[]) =>
     rows.find((r) => r.live?.account_type)?.live?.account_type ?? regByAccount.get(account)?.kind
-  const shownAccounts = withBots.filter((a) => keep(typeOf(a.account, a.rows)))
+  const shownAccounts = trading.filter((a) => keep(typeOf(a.account, a.rows)))
   const shownEmpty = emptyAccounts.filter((a) => keep(a.kind))
   const shownUnassigned = unassigned.filter((b) => keep(b.account_type))
   const shownBroken = broken.filter((b) => keep(b.account_type))
-  /**
-   * An account only bots that have LEFT traded on — the demo account a set went live from.
-   *
-   * 🔴 **Its record stays on the Trading tab, under its side (2026-09-11).** Aaron, the day the set
-   * went live: *"I was expecting to see demo and live account."* The demo record is the evidence
-   * the promotion was made on, and the live-against-demo score reads it; filed under Unassigned as
-   * an empty account it would vanish at exactly the moment it is worth comparing against.
-   * ⚠ It carries the TRADES only — nothing reads its balance any more, so there is none to show.
-   */
-  const history = (snapshot?.earnings ?? []).filter(
-    (e) =>
-      !groupByAccount.get(e.account)?.bots.length && e.bots.some((b) => b.former && b.closed_trades)
-  )
-  const shownHistory = history.filter((e) => keep(regByAccount.get(e.account)?.kind))
   // Per TAB, so the note under each one counts only what that tab would have shown.
   const hiddenByFilter =
     show === 'trading'
-      ? withBots.length - shownAccounts.length + (history.length - shownHistory.length)
+      ? trading.length - shownAccounts.length
       : emptyAccounts.length - shownEmpty.length + (unassigned.length - shownUnassigned.length)
   // ⚠ A switched-off side that empties the page must SAY it did. A blank list and a fleet that
   // really is empty look identical, and only one of them is a finding. One note, both tabs.
@@ -1005,7 +1044,9 @@ export function Bots() {
   )
 
   const running = bots.filter((b) => b.status === 'RUNNING').length
-  const unread = withBots.filter((a) => balanceOf(a.rows) == null).length
+  // ⚠ Only accounts a bot is ON can have an unread balance — one with no bot has nothing to read
+  // it, and counting it would raise a warning about a healthy fleet.
+  const unread = trading.filter((a) => a.rows.length && balanceOf(a.rows) == null).length
 
   // 🔴 Computed SERVER-SIDE and only rendered here. What an account made and what its bots made
   // are two different measurements, and whether they agree is the finding — deriving either in
@@ -1025,7 +1066,17 @@ export function Bots() {
   /** The account a bot's CONFIG names — what the rows are laid out by, so the bot's panel reads
    *  the record of the account its row sits under. The box's report is the fallback. */
   const accountOfBot = (key: string) =>
-    withBots.find((a) => a.rows.some((r) => r.cfg.key === key))?.account ?? null
+    trading.find((a) => a.rows.some((r) => r.cfg.key === key))?.account ?? null
+
+  // The open account panel's balance: the bots on it now, or — with none — the last reading a bot
+  // took before it left, WITH its time, exactly as the card shows it.
+  const selNum = selAccount ? Number(selAccount) : null
+  const selOnIt = selNum != null ? (groupByAccount.get(selNum)?.bots ?? []) : []
+  const selEarn = selNum != null ? earnByAccount.get(selNum) : undefined
+  const selBalance = selOnIt.length
+    ? balanceOf(selOnIt.map((b) => ({ live: botByKey.get(b.key) })))
+    : (selEarn?.balance ?? null)
+  const selReadAt = selOnIt.length ? null : (selEarn?.balance_read_at ?? null)
 
   // ── live against demo ─────────────────────────────────────────────────────
   /** Which side an account sits on. ⚠ While neither the box nor the registry has answered, its
@@ -1065,15 +1116,14 @@ export function Bots() {
         s.scored += 1
       }
     }
-    for (const a of withBots) {
+    for (const a of trading) {
       if (sideOf(typeOf(a.account, a.rows)) !== key) continue
       for (const { cfg } of a.rows) add(earnOf(a.account, cfg.key))
-    }
-    // The record of bots that have LEFT an account still belongs to its side — the demo trades a
-    // set was promoted on are what its live trades are compared against.
-    for (const e of history) {
-      if (sideOf(regByAccount.get(e.account)?.kind) !== key) continue
-      for (const b of e.bots) if (b.former) add(b)
+      // 🔴 The record of bots that have LEFT an account still belongs to its side — the demo trades
+      // a set was promoted on are what its live trades are compared against. ⚠ On EVERY account,
+      // including one a new bot has joined: it used to be read only off an account with no bot on
+      // it, so putting the next bot on demo dropped the whole departed record from the score.
+      for (const b of earnByAccount.get(a.account)?.bots ?? []) if (b.former) add(b)
     }
     return s
   }
@@ -1110,11 +1160,17 @@ export function Bots() {
 
   /** One account's card: its heading, then one row per bot. A function rather than inline JSX
    *  because the live and demo sections both draw it — one card, never a copy per section. */
-  const renderAccount = ({ account, group, rows }: (typeof withBots)[number]) => {
-    const balance = balanceOf(rows)
+  const renderAccount = ({ account, group, rows }: (typeof trading)[number]) => {
     const cap = group.cap_agrees ? group.risk_cap_pct : null
     const reg = regByAccount.get(account)
     const earn = earnByAccount.get(account)
+    // No bot is on it now. Its balance is then the LAST one a bot read before it left, served with
+    // the time it was read — never a live figure, and the card says so beside it.
+    const idle = rows.length === 0
+    const balance = idle ? (earn?.balance ?? null) : balanceOf(rows)
+    const readAt = idle ? (earn?.balance_read_at ?? null) : null
+    // The bots that TRADED here and left, as rows under the ones on it now.
+    const past = (earn?.bots ?? []).filter((b) => b.former)
     // 🔴 NO COLOURED EDGE, AND NO LIVE/DEMO CHIP (2026-09-10, Aaron: *"we don't need to be
     // redundant on data anywhere on this page"*). The edge was green when the account was up and
     // red when down — the sign the net pill beside the balance already carries in the same colours.
@@ -1169,8 +1225,12 @@ export function Bots() {
            *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
            *  forced to null above, because printing one bot's number would name a
            *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
-           *  fix beside it; this is the half a reader sees without opening anything. */}
-          {!group.cap_agrees ? (
+           *  fix beside it; this is the half a reader sees without opening anything.
+           *
+           *  ⚠ **No chip at all while no bot is on the account.** The ceiling is stored on each
+           *  bot, so with none there is no cap to state — and "no cap" in warn over an account
+           *  nothing is trading is an alarm about nothing. It returns with the first bot. */}
+          {idle ? null : !group.cap_agrees ? (
             <span
               data-testid="cap-chip"
               title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
@@ -1203,8 +1263,30 @@ export function Bots() {
                *  answered without one — while it is still being asked it shimmers. */}
               {balance == null && asking ? (
                 <Shimmer>$00,000.00</Shimmer>
+              ) : balance == null && idle ? (
+                // Not a fault: nothing is on the account to read it, and no bot that left it
+                // took a reading. Grey, never the warning a silent bot earns.
+                <span
+                  title="No bot is on this account, and none that traded here left a reading of its balance."
+                  className="text-[12px] text-text-tertiary"
+                >
+                  balance not read
+                </span>
               ) : balance == null ? (
                 <span className="text-[12px] text-warn-text">balance unread</span>
+              ) : readAt ? (
+                <span
+                  title={`The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`}
+                  className="inline-flex items-baseline gap-[7px] cursor-default"
+                >
+                  {money(balance, false)}
+                  <span
+                    data-testid="balance-read-at"
+                    className="text-[10.5px] font-sans font-normal text-text-tertiary"
+                  >
+                    read {readTime(readAt)}
+                  </span>
+                </span>
               ) : (
                 money(balance, false)
               )}
@@ -1410,69 +1492,75 @@ export function Bots() {
               </div>
             )
           })}
+
+          {/* No bot on it now — and that is an invitation, not a tombstone. The demo account a
+           *  set went live from is where the next bot gets tried, so the way to put one there is
+           *  on the card rather than a drawer away. ⚠ Disabled with the reason, never hidden, when
+           *  the account cannot take a bot (no terminal logged into it). */}
+          {idle && (
+            <div
+              data-testid="no-bot-row"
+              className={`grid ${GRID} items-center gap-3 pr-4 py-[10px]`}
+            >
+              <span className="col-span-9 flex items-center gap-[9px] pl-4 text-[12.5px] text-text-tertiary">
+                <span className="inline-block w-[7px] h-[7px] rounded-full shrink-0 border border-text-tertiary/60" />
+                No bot is on this account now
+              </span>
+              <span className="flex justify-end">
+                {reg && (
+                  <button
+                    data-testid="add-bot-here"
+                    disabled={!reg.assignable}
+                    onClick={() => openToAdd(account)}
+                    title={
+                      reg.assignable
+                        ? 'Put a bot on this account'
+                        : `Cannot add a bot here — ${reg.unassignable_reason || 'this account is not assignable'}.`
+                    }
+                    className="flex items-center gap-[5px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Plus size={11} />
+                    Add a bot
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* The bots that TRADED here and left. Their record is the account's own — it is what
+           *  the live-against-demo score reads — so it stays under the bots on it now, whether
+           *  that is none or a new set. ⚠ No controls: the bot is run from its new account's
+           *  card, and a Stop here would read as stopping it on THIS account. */}
+          {past.map((b) => {
+            const where = b.moved_to != null ? regByAccount.get(b.moved_to)?.kind : undefined
+            return (
+              <div
+                key={`past-${b.bot_key}`}
+                data-testid="past-row"
+                data-bot={b.bot_key}
+                className={`grid ${GRID} items-center gap-3 pr-4 py-[10px] border-t border-border-subtle`}
+              >
+                <span className="flex items-center gap-[9px] font-medium text-[13px] min-w-0 pl-4 text-text-secondary">
+                  {/* A spacer the width of a status dot, so the name lines up with the rows
+                   *  above — a bot that is not here has no state here to show. */}
+                  <span className="inline-block w-[7px] h-[7px] shrink-0" />
+                  <span className="truncate">{b.name}</span>
+                </span>
+                <Contribution e={b} asking={false} />
+                <ReturnPct e={b} asking={false} />
+                <TradeCount e={b} asking={false} />
+                <PerTrade e={b} asking={false} top={false} />
+                <span className="col-span-5 text-[12px] text-text-tertiary">
+                  {b.moved_to != null
+                    ? `Moved to ${where ? `${where} account` : 'account'} ${b.moved_to}`
+                    : 'Moved off this account'}
+                </span>
+              </div>
+            )
+          })}
         </div>
 
         {earn && <Unattributed e={earn} />}
-      </div>
-    )
-  }
-
-  /** An account only departed bots traded on: what they did HERE, and nothing that needs a bot on
-   *  the account — no balance (nothing reads it), no controls. ⚠ The heading still opens the
-   *  account, so a bot can be put back on it from there. */
-  const renderHistory = (e: AccountEarnings) => {
-    const reg = regByAccount.get(e.account)
-    return (
-      <div
-        key={`history-${e.account}`}
-        data-testid="history-card"
-        data-account={e.account}
-        className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
-      >
-        <button
-          onClick={() => set('account', String(e.account))}
-          title="Open this account — put a bot on it from here"
-          className="w-full flex items-center gap-3 px-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
-        >
-          <span className="text-[14px] font-mono font-semibold tabular-nums">{e.account}</span>
-          <span className="text-[13px] text-text-secondary">
-            {reg?.label || reg?.broker || `Account ${e.account}`}
-          </span>
-          <span className="ml-auto text-[12px] text-text-tertiary">
-            No bots on it now — what they did here
-          </span>
-        </button>
-        <div className="border-t border-border-subtle">
-          <ColumnHeadings past />
-          {e.bots
-            .filter((b) => b.former)
-            .map((b, i) => {
-              const where = b.moved_to != null ? regByAccount.get(b.moved_to)?.kind : undefined
-              return (
-                <div
-                  key={b.bot_key}
-                  data-testid="history-row"
-                  data-bot={b.bot_key}
-                  className={`grid ${GRID} items-center gap-3 pr-4 py-[10px] ${
-                    i > 0 ? 'border-t border-border-subtle' : ''
-                  }`}
-                >
-                  <span className="font-medium text-[13px] min-w-0 pl-4 truncate text-text-secondary">
-                    {b.name}
-                  </span>
-                  <Contribution e={b} asking={false} />
-                  <ReturnPct e={b} asking={false} />
-                  <TradeCount e={b} asking={false} />
-                  <PerTrade e={b} asking={false} top={false} />
-                  <span className="col-span-5 text-[12px] text-text-tertiary">
-                    {b.moved_to != null
-                      ? `Moved to ${where ? `${where} account` : 'account'} ${b.moved_to}`
-                      : 'Moved off this account'}
-                  </span>
-                </div>
-              )
-            })}
-        </div>
       </div>
     )
   }
@@ -1599,8 +1687,11 @@ export function Bots() {
               {
                 id: 'trading',
                 label: 'Trading',
-                count: accountGroups ? shownAccounts.length : null,
-                title: 'Accounts with a bot on them',
+                // ⚠ Once the box's first read is in: an account whose bots LEFT is known only from
+                // the trade record it carries, and a count that grows as the box replies reads as
+                // an account appearing.
+                count: accountGroups && !asking ? shownAccounts.length : null,
+                title: 'Accounts with a bot on them, or a record of bots that traded there',
               },
               {
                 id: 'unassigned',
@@ -1673,10 +1764,7 @@ export function Bots() {
         <div className="flex flex-col gap-[22px]">
           {SECTIONS.map(({ key, label }) => {
             const accounts = shownAccounts.filter((a) => sideOf(typeOf(a.account, a.rows)) === key)
-            const past = shownHistory.filter(
-              (e) => sideOf(regByAccount.get(e.account)?.kind) === key
-            )
-            if (!accounts.length && !past.length) return null
+            if (!accounts.length) return null
             return (
               <SideSection
                 key={key}
@@ -1693,14 +1781,13 @@ export function Bots() {
                 }
               >
                 {accounts.map(renderAccount)}
-                {past.map(renderHistory)}
               </SideSection>
             )
           })}
 
           {/* An empty Trading tab says where everything went, rather than reading as a page with
            *  nothing on it. A FILTER that emptied it is said by the note below instead. */}
-          {accountGroups && withBots.length === 0 && (
+          {accountGroups && !asking && trading.length === 0 && (
             <p
               data-testid="trading-empty"
               className="text-[12.5px] text-text-tertiary py-6 text-center"
@@ -1876,12 +1963,10 @@ export function Bots() {
             }
             reg={regByAccount.get(Number(selAccount))}
             registry={registry ?? []}
-            earnings={earnByAccount.get(Number(selAccount))}
-            balance={balanceOf(
-              (groupByAccount.get(Number(selAccount))?.bots ?? []).map((b) => ({
-                live: botByKey.get(b.key),
-              }))
-            )}
+            earnings={selEarn}
+            balance={selBalance}
+            balanceReadAt={selReadAt}
+            startAdding={params.get('add') === '1'}
             asking={asking}
             statusByKey={statusByKey}
             onClose={() => set('account', null)}

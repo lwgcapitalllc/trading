@@ -26,7 +26,9 @@ export function AccountDrawer({
   reg,
   registry,
   balance,
+  balanceReadAt = null,
   earnings,
+  startAdding = false,
   asking = false,
   statusByKey,
   onClose,
@@ -38,6 +40,11 @@ export function AccountDrawer({
   registry: BotAccountRegistration[]
   /** Read off the bots, because the accounts endpoint deliberately never touches the VPS. */
   balance: number | null
+  /** When `balance` was read, when it is the LAST reading a bot took before it left an account
+   *  nothing is on now — `null` for a live balance. The panel says so beside the figure. */
+  balanceReadAt?: string | null
+  /** Open with the bot picker already out — the account card's "Add a bot". */
+  startAdding?: boolean
   /** What this account has MADE and where it came from — computed server-side.
    *  ⚠ The split between the bots and the remainder is never derived here: the page rendering
    *  its own version of that arithmetic is how one surface starts crediting a bot with money
@@ -72,7 +79,7 @@ export function AccountDrawer({
   const [capped, setCapped] = useState(stated !== null)
   const [draft, setDraft] = useState(stated === null ? '10' : String(stated))
   const [editing, setEditing] = useState(false)
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState(startAdding)
   const [goingLive, setGoingLive] = useState(false)
 
   /**
@@ -228,6 +235,23 @@ export function AccountDrawer({
                   })
                 )}
               </p>
+              {/* ⚠ A PAST reading says so. With no bot on the account nothing reads its balance
+               *  live, and a day-old figure in this slot with nothing beside it would read as now. */}
+              {balance != null && balanceReadAt && (
+                <p
+                  data-testid="drawer-balance-read-at"
+                  className="text-[11px] text-text-tertiary mt-[5px]"
+                >
+                  Last read{' '}
+                  {new Date(balanceReadAt).toLocaleString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  by a bot before it left — no bot is on this account now.
+                </p>
+              )}
               {/* What it OPENED at, and which bot recorded that — a net with no denominator on
                *  screen is a number nobody can check, and here two bots legitimately state
                *  different anchors because each recorded what was there when it arrived. */}
@@ -405,7 +429,7 @@ export function AccountDrawer({
               )}
               {group.bots.length === 0 ? (
                 <p data-testid="no-bots" className="text-[11px] text-text-tertiary">
-                  Nothing here yet — this account trades nothing.
+                  No bot is on this account now.
                 </p>
               ) : (
                 <div className="flex flex-col gap-[5px]">

@@ -4146,12 +4146,16 @@ broker — the backend binds the suffix, per *the broker's own symbol* above.
 
 🔴 **Earnings are keyed by ACCOUNT AND BOT, never by bot alone (2026-09-11).** A bot that moved has a
 row on each account it traded, and a bot-keyed map handed every row whichever entry came last — the
-demo trades under the live heading. ⚠ **An account only departed bots traded on stays on Trading,
-under its side, as a history card** (their trades, "Moved to live account N", no balance, no
-controls) — Aaron: *"I was expecting to see demo and live account."* The demo record is what the
-live-against-demo score compares with, so the side score counts it. ⚠ The bot panel reads the record
-of the account its CONFIG names, the same source the rows are laid out by. Pinned by *after a move
-to live* in `bots-accounts.spec.ts`, 3 mutations run, 3 killed.
+demo trades under the live heading. ⚠ **An account its bots LEFT is an ordinary account card on
+Trading** — Aaron: *"what if I wanted to test out more bots on a demo account while the live bot is
+also trade … it shouldnt matter."* It shows the balance its bots last read, with the time
+(`balance_read_at`), its net and Return %, no cap chip while it is empty, a "No bot is on this
+account now" row whose **Add a bot** opens the panel on the picker (`add=1`), and a past row per
+departed bot ("Moved to live account N", its own P&L and Return %). A new bot joining keeps those
+rows, and the side score counts departed bots' records on EVERY account — the demo record is what
+live-against-demo compares with. ⚠ **One place per account**: on Trading means never also on
+Unassigned. ⚠ The bot panel reads the record of the account its CONFIG names, the same source the
+rows are laid out by. Pinned by three tests in `bots-accounts.spec.ts`, 11 mutations run, 11 killed.
 
 
 Aaron: *"the page bots looks very boring now … how much percent each bot made on the account thus

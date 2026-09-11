@@ -434,6 +434,10 @@ export interface BotEarnings {
 export interface AccountEarnings {
   account: number
   balance: number | null
+  /** When `balance` was READ — present exactly when it is a past reading (the last one a bot took
+   *  before it left an account nothing is on now), never on a live balance. ⚠ Optional because an
+   *  older payload lacks it; absent and `null` both mean the balance is live. */
+  balance_read_at?: string | null
   opening_balance: number | null
   opening_from: string | null
   opening_note: string | null

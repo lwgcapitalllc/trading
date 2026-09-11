@@ -5035,12 +5035,25 @@ a $451.97 account with no trades). A trade row names no account, but each run's 
 (`health-*.jsonl` since 2026-08-05, `decisions-*.jsonl` before), so `bot_earnings` places a trade on
 the account of the latest startup at or before it — the box's live read now fetches those startups
 too, or a run begun since the last sync lands on the account before it. ⚠ **An account a bot LEFT
-keeps its trades** as `former` rows with `moved_to`; it has no balance, net or remainder (nothing
-reads it), a departed bot gets no share of an opening, and a departed bot's trades on an account
-bots still trade REFUSE the remainder rather than guess its window. ⚠ **A trade no startup precedes
-is counted (`unplaced_trades`), never credited.** ⚠ `former`/`moved_to`/`unplaced_trades` are
-declared on `BotEarnings` — undeclared, Pydantic dropped them and a departed bot read as current.
-Go-live's demo record is scoped to the account being left. Tests: 8 mutations run, 8 killed.
+keeps its trades** as `former` rows with `moved_to`, and a departed bot is never given a share of a
+CURRENT bot's anchor. ⚠ **A trade no startup precedes is counted (`unplaced_trades`), never
+credited.** ⚠ `former`/`moved_to`/`unplaced_trades` are declared on `BotEarnings` — undeclared,
+Pydantic dropped them and a departed bot read as current. Go-live's demo record is scoped to the
+account being left. Tests: 8 mutations run, 8 killed.
+
+🔴 **AN ACCOUNT ITS BOTS LEFT IS STILL AN ACCOUNT (2026-09-11).** Aaron: *"moving bots to a live bot
+doesnt mean we dont trade on the demo still."* It had no balance, net or Return % because nothing
+read its balance once no bot was on it — but every bot's 15-minute `pulse` in `health-*.jsonl`
+carries `account` and `balance`, so `balance_readings` recovers it. The account's LAST reading is
+its balance, served with `balance_read_at`; its FIRST is its opening, **valid only if taken before
+the first trade there** (a later one already holds a trade's money, so it refuses). The remainder
+comes off that opening only when the balance is live or the last reading is at or after the last
+trade; departed bots' Return % counts on it too. With no such reading a current bot's anchor is
+used and the remainder is REFUSED rather than guessing its window. ⚠ A pulse with no numeric balance
+is skipped — a link down is not a reading of zero. ⚠ `balance_read_at` is declared on
+`AccountEarnings`, same Pydantic reason. MEASURED on 700152905 with both bots on live: $15,844.46
+read 2026-09-10 23:51 UTC, opening $9,996.99, net +$5,847.47 (58.49%), remainder $3,344.80. 7 new
+tests, 10 mutations run, 10 killed.
 
 
 `services/bot_earnings.py`, served on `GET /bots/snapshot` as `earnings`. Aaron: *"how much

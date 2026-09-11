@@ -351,6 +351,8 @@ def read_bot_ledger(
             "records_through": None,
             "record_source": "archive",
             "unplaced_trades": None,
+            "first_trade_at": None,
+            "last_trade_at": None,
         }
 
     if scan is None:
@@ -390,6 +392,9 @@ def read_bot_ledger(
     r = 0.0
     wins = 0
     losses = 0
+    # The span the TRADES cover, as instants — what an account's balance readings are checked
+    # against before a remainder is taken off them (see `account_earnings`).
+    closed_at = sorted(t for t in (_instant(row.get("ts")) for row in rows) if t)
     for row in rows:
         p = row.get("pnl_usd")
         if isinstance(p, (int, float)):
@@ -429,6 +434,10 @@ def read_bot_ledger(
         # Trades no startup precedes, so the account they were made on cannot be told. Counted,
         # never credited to a guess; only meaningful when an `account` was asked about.
         "unplaced_trades": unplaced,
+        # When the first and last of these trades closed. `None` with no trade, or none whose
+        # time could be read — never a fabricated instant.
+        "first_trade_at": closed_at[0] if closed_at else None,
+        "last_trade_at": closed_at[-1] if closed_at else None,
     }
 
 
@@ -469,6 +478,34 @@ def _pick_opening(rows: list[dict]) -> tuple[float | None, str | None, str | Non
         )
     oldest = min(dated, key=lambda r: r["records_from"])
     return round(float(oldest["starting_balance"]), 2), oldest["bot_key"], None
+
+
+def _opening_from_readings(
+    seen: dict | None, trades: list[dict]
+) -> tuple[float | None, str | None, str | None]:
+    """The account's own opening — its FIRST balance reading — when that reading can be one.
+
+    (opening balance, the bot that read it, why it could not be stated). ⚠ It can be one only if
+    it was taken before the first trade here closed: a later reading already holds a bot's result,
+    and dividing by it would under-state every return on the account.
+    """
+    if seen is None:
+        return (
+            None,
+            None,
+            "No bot left a reading of this account's balance, so what it opened at cannot be told.",
+        )
+    first_trade = min(
+        (r["first_trade_at"] for r in trades if r.get("first_trade_at")), default=None
+    )
+    if first_trade is None or seen["first"]["at"] > first_trade:
+        return (
+            None,
+            None,
+            "The first balance on record here was read after a trade had already closed, so what "
+            "the account opened at cannot be told.",
+        )
+    return round(seen["first"]["balance"], 2), seen["first"]["bot"], None
 
 
 def _lag_seconds(reach: str | None, as_of: datetime | None) -> float | None:
@@ -541,6 +578,113 @@ def _freshness(merged: list[dict], as_of: datetime | None) -> tuple[bool, float 
     )
 
 
+# ── What an account's balance WAS, off the bots' own pulses ──────────────────────────────────
+#
+# 🔴 **An account no bot is on has no balance anybody reads — but the bots that LEFT it read one
+# every fifteen minutes while they were there.** Each running bot writes a `pulse` to its health
+# record carrying the account it is connected to and that account's balance. So the first pulse
+# on an account is what it held when the first bot arrived — the same definition as a bot's own
+# anchor — and the last is what it held when the last one left. Without these the demo account a
+# set went live from had no balance, no net and no Return %, and read as a closed account
+# (Aaron, 2026-09-11: *"moving bots to live doesn't mean we don't trade on the demo still"*).
+#
+# ⚠ **A reading is a MEASUREMENT with a time, never a live balance.** The page is told when it was
+# read (`balance_read_at`) and says so; a figure from yesterday in the live balance's place with
+# nothing beside it would be rule 3 — what was last seen reported as what is there now.
+
+
+def _readings(path: Path) -> list[tuple[str, int, float]]:
+    """Every balance a run READ off its terminal in one health file: `(ts, account, balance)`.
+
+    ⚠ A pulse whose balance is not a number is SKIPPED — a bot whose terminal link is down writes
+    one with no balance, and that is *could not ask*, never a reading of zero.
+    """
+    out: list[tuple[str, int, float]] = []
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        if '"pulse"' not in line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("kind") != "pulse":
+            continue
+        ts, account, balance = row.get("ts"), row.get("account"), row.get("balance")
+        if not isinstance(ts, str) or not ts:
+            continue
+        if not isinstance(account, int) or isinstance(account, bool):
+            continue
+        if not isinstance(balance, (int, float)) or isinstance(balance, bool):
+            continue
+        out.append((ts, account, float(balance)))
+    return out
+
+
+# Same fingerprint rule as the ledger cache above: keyed on what the files ARE, so it turns over
+# the moment the archive grows. MEASURED 2026-09-11: 3,486 pulses in 1.2 MB for the bot with the
+# longest record.
+_readings_cache: dict[str, tuple[tuple, dict]] = {}
+
+
+def balance_readings(bot_key: str) -> dict[int, dict]:
+    """The FIRST and LAST balance each account showed this bot, off its own pulses.
+
+    `{account: {"first_at", "first_balance", "last_at", "last_balance"}}`, the instants as
+    datetimes. Empty when the bot has no health record here.
+    """
+    folder = ARCHIVE / bot_key / "ledger"
+    health = sorted(folder.glob("health-*.jsonl")) if folder.is_dir() else []
+    fp = _fingerprint(health)
+    hit = _readings_cache.get(bot_key)
+    if hit and hit[0] == fp:
+        return {a: dict(v) for a, v in hit[1].items()}
+
+    seen: dict[int, dict] = {}
+    for f in health:
+        for ts, account, balance in _readings(f):
+            at = _instant(ts)
+            if at is None:
+                continue
+            cur = seen.get(account)
+            if cur is None:
+                seen[account] = {
+                    "first_at": at,
+                    "first_balance": balance,
+                    "last_at": at,
+                    "last_balance": balance,
+                }
+                continue
+            if at < cur["first_at"]:
+                cur["first_at"], cur["first_balance"] = at, balance
+            if at >= cur["last_at"]:
+                cur["last_at"], cur["last_balance"] = at, balance
+    _readings_cache[bot_key] = (fp, {a: dict(v) for a, v in seen.items()})
+    return seen
+
+
+def _account_readings(readings: dict[str, dict[int, dict]], account: int) -> dict | None:
+    """The first and last balance ANY bot read on this account, and which bot read the first.
+
+    `None` when no bot left a reading of it.
+    """
+    first = last = None
+    for bot_key, by_account in readings.items():
+        r = by_account.get(account)
+        if not r:
+            continue
+        if first is None or r["first_at"] < first["at"]:
+            first = {"at": r["first_at"], "balance": r["first_balance"], "bot": bot_key}
+        if last is None or r["last_at"] > last["at"]:
+            last = {"at": r["last_at"], "balance": r["last_balance"]}
+    if first is None or last is None:
+        return None
+    return {"first": first, "last": last}
+
+
 def accounts_traded(
     bot_key: str,
     live_trades: list[dict] | None = None,
@@ -588,20 +732,53 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
             r["bot_key"], r.get("live_trades"), account=account, live_starts=r.get("live_starts")
         )
 
+    # What every bot READ of every account's balance — the one source an account a bot has left
+    # still has. Read once per bot, never once per account.
+    readings = {b["bot_key"]: balance_readings(b["bot_key"]) for b in bots}
+
     out: list[dict] = []
     for account in sorted(set(by_account) | set(former)):
         rows = by_account.get(account, [])
         merged = [{**r, **_ledger(r, account)} for r in rows]
         left = [{**r, **_ledger(r, account), "former": True} for r in former.get(account, [])]
+        traded = [r for r in merged if r.get("traded")]
+        left_traded = [r for r in left if r.get("closed_trades")]
+        silent = [r["bot_key"] for r in merged if not r.get("traded")]
+        seen = _account_readings(readings, account)
 
         # One pot of money, not one each — the same rule the page's own header learned on
         # 2026-09-04 after a two-bot stack reported an account's balance twice.
         balance = next((r["balance"] for r in merged if r.get("balance") is not None), None)
-        opening, opening_from, opening_note = _pick_opening(merged)
-        if not merged:
+        balance_read_at = None
+        if not merged and seen:
+            # Nothing reads this account now. The last balance a bot read before it left is the
+            # latest measurement there is, and it goes out WITH its time — see `_readings`.
+            balance = round(seen["last"]["balance"], 2)
+            balance_read_at = seen["last"]["at"].isoformat()
+
+        # 🔴 WHERE A BOT HAS LEFT, THE OPENING IS THE ACCOUNT'S OWN FIRST READING. The bots still
+        # here can only say what the account held when THEY arrived, and the departed bots traded
+        # before that — so their anchor would re-base the account on whoever joined last, and
+        # putting a new bot on the demo account a set went live from would wipe that account's
+        # history off its card. ⚠ Only a reading taken BEFORE the first trade here can be an
+        # opening; a later one already contains a bot's result.
+        own_opening = False
+        if left_traded:
+            opening, opening_from, opening_note = _opening_from_readings(
+                seen, [*traded, *left_traded]
+            )
+            own_opening = opening is not None
+            if not own_opening and merged:
+                # No usable reading, but the bots still here can say what they arrived to. The
+                # remainder stays refused below: whether the departed bots' trades fall inside
+                # that window cannot be told.
+                opening, opening_from, opening_note = _pick_opening(merged)
+        else:
+            opening, opening_from, opening_note = _pick_opening(merged)
+        if not merged and balance is None:
             opening_note = (
-                "No bot is on this account now, so nothing reads its balance — this is the record "
-                "of the bots that traded here."
+                "No bot is on this account now, and none of the bots that traded here left a "
+                "reading of its balance — this is the record of their trades."
             )
 
         net_usd = net_pct = None
@@ -609,16 +786,29 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
             net_usd = round(balance - opening, 2)
             net_pct = round((balance - opening) / opening * 100, 2)
 
-        traded = [r for r in merged if r.get("traded")]
-        silent = [r["bot_key"] for r in merged if not r.get("traded")]
-        attributed = round(sum(r["realised_usd"] or 0.0 for r in traded), 2) if traded else None
+        # What the bots here recorded making. On the account's own opening the departed bots
+        # traded inside the window too, so they count; on a current bot's anchor they may not.
+        counted = [*traded, *([r for r in left if r.get("traded")] if own_opening else [])]
+        attributed = round(sum(r["realised_usd"] or 0.0 for r in counted), 2) if counted else None
 
         unattributed = None
-        # ⚠ Refused when a bot that has LEFT traded here too: whether its trades fall inside the
-        # window the opening was taken at cannot be told, so either answer would be a guess.
-        left_traded = any(r.get("closed_trades") for r in left)
-        if net_usd is not None and attributed is not None and not left_traded:
-            unattributed = round(net_usd - attributed, 2)
+        if net_usd is not None and attributed is not None:
+            if own_opening:
+                # ⚠ A balance READ before a trade closed does not contain that trade, so the
+                # remainder would be off by exactly its result. A live balance is read now.
+                last_trade = max(
+                    (r["last_trade_at"] for r in counted if r.get("last_trade_at")), default=None
+                )
+                if (
+                    balance_read_at is None
+                    or last_trade is None
+                    or seen["last"]["at"] >= last_trade
+                ):
+                    unattributed = round(net_usd - attributed, 2)
+            elif not left_traded:
+                # ⚠ Refused when a departed bot traded here and the opening is a current bot's
+                # anchor: whether its trades fall inside that window cannot be told.
+                unattributed = round(net_usd - attributed, 2)
 
         records_live, lag, note = _freshness(merged, as_of)
 
@@ -632,6 +822,9 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                 "attribution_lag_seconds": lag,
                 "attribution_note": note,
                 "balance": balance,
+                # When `balance` was READ, present exactly when it is a past reading rather than
+                # the live balance of a bot on the account now — the page has to say which.
+                "balance_read_at": balance_read_at,
                 "opening_balance": opening,
                 "opening_from": opening_from,
                 "opening_note": opening_note,
@@ -666,11 +859,12 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                         # The number Aaron asked for: what this bot made, as a share of what the
                         # ACCOUNT opened at — so two bots on one balance are directly comparable
                         # and neither is credited with the other's growth.
-                        # Never for a bot that has LEFT: the opening is the current bots' anchor,
-                        # and dividing a departed bot's dollars by it mixes two accounts' starts.
+                        # A bot that has LEFT gets one only on the account's OWN opening. On a
+                        # current bot's anchor, dividing a departed bot's dollars by it mixes two
+                        # different starts.
                         "pct_of_opening": (
                             round((r["realised_usd"] or 0.0) / opening * 100, 2)
-                            if opening and r.get("traded") and not r.get("former")
+                            if opening and r.get("traded") and (own_opening or not r.get("former"))
                             else None
                         ),
                     }

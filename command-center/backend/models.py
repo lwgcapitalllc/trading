@@ -393,6 +393,10 @@ class AccountEarnings(BaseModel):
 
     account: int
     balance: Optional[float] = None
+    # When `balance` was READ — present exactly when it is a past reading (the last pulse a bot
+    # took before it left an account nothing is on now), never on a live balance. ⚠ Declared, or
+    # Pydantic drops it and a day-old reading renders as the account's balance now.
+    balance_read_at: Optional[str] = None
     opening_balance: Optional[float] = None
     # WHICH bot's anchor was taken as the account's opening — printed, so the pick is checkable
     # rather than a number the reader has to trust.

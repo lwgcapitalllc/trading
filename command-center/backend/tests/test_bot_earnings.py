@@ -45,6 +45,7 @@ def archive(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(be, "ARCHIVE", tmp_path)
     be._ledger_cache.clear()
+    be._readings_cache.clear()
 
     def write(bot_key, day, rows, kind="decisions"):
         d = tmp_path / bot_key / "ledger"
@@ -504,8 +505,9 @@ def test_an_account_only_DEPARTED_bots_traded_on_carries_no_balance_net_or_remai
 
 
 def test_a_departed_bots_trades_REFUSE_the_remainder_where_bots_still_trade(archive):
-    """Whether its trades fall inside the window the opening was taken at cannot be told, so the
-    remainder is withheld rather than guessed. MUTATION: drop the refusal → red."""
+    """With NO balance reading to take the account's own opening from, the opening falls back to
+    the current bot's anchor — and whether the departed bot's trades fall inside that window cannot
+    be told, so the remainder is withheld rather than guessed. MUTATION: drop the refusal → red."""
     archive(
         "gone",
         "2026-08-26",
@@ -529,9 +531,10 @@ def test_a_departed_bots_trades_REFUSE_the_remainder_where_bots_still_trade(arch
     assert rows[_DEMO]["unattributed_usd"] is None
 
 
-def test_a_departed_bot_is_never_given_a_share_of_the_opening(archive):
-    """The opening is the current bots' anchor; dividing a departed bot's dollars by it mixes two
-    accounts' starts. MUTATION: drop the `former` guard on `pct_of_opening` → red."""
+def test_a_departed_bot_is_never_given_a_share_of_a_CURRENT_bots_anchor(archive):
+    """With no reading of its own opening, the account's opening is the current bot's anchor, and
+    dividing a departed bot's dollars by it mixes two starts. MUTATION: drop the `former` guard on
+    `pct_of_opening` → red."""
     archive(
         "gone",
         "2026-08-26",
@@ -553,3 +556,189 @@ def test_a_departed_bot_is_never_given_a_share_of_the_opening(archive):
     }
     gone = next(b for b in rows[_DEMO]["bots"] if b["bot_key"] == "gone")
     assert gone["former"] is True and gone["pct_of_opening"] is None
+
+
+# ── an account bots LEFT keeps a balance: the last one they read on it ──────────────────────
+#
+# 🔴 2026-09-11: once the demo set went live, the demo account had no balance, no net and no
+# Return %, and read as a closed account (Aaron: *"moving bots to live doesn't mean we don't trade
+# on the demo still"*). Every running bot writes a `pulse` carrying its account and that account's
+# balance, so the bots that left it had read one every fifteen minutes.
+
+
+def _pulse(account=_DEMO, balance=9996.99, ts="2026-08-12T16:15:00+00:00"):
+    return {"ts": ts, "kind": "pulse", "link": True, "balance": balance, "account": account}
+
+
+def _demo_then_live(bot="sos", last=14538.88, last_at="2026-09-10T22:00:00+00:00"):
+    """A bot that opened the demo account, traded on it, and went live — the real sequence."""
+    archive_rows = [
+        _start(_DEMO, "2026-08-12T16:00:00+00:00"),
+        _close(1197.09, r=0.91, ts="2026-08-26T02:15:00+00:00"),
+        _start(_LIVE, "2026-09-11T00:13:59+00:00"),
+    ]
+    health_rows = [
+        _pulse(_DEMO, 9996.99, "2026-08-12T16:15:00+00:00"),
+        _pulse(_DEMO, last, last_at),
+    ]
+    return archive_rows, health_rows
+
+
+def test_an_account_bots_LEFT_reports_the_last_balance_they_read_on_it_WITH_its_time(archive):
+    """The demo card had no balance at all. MEASURED on the real record: the first pulse on the
+    demo account read $9,996.99 — the opening this module had recorded — and the last one $15,844.46.
+
+    MUTATION: drop the last-reading balance → red on the balance. MUTATION: drop `balance_read_at`
+    → red on the time.
+    """
+    rows, health = _demo_then_live()
+    archive("sos", "2026-08-26", rows)
+    archive("sos", "2026-09-10", health, kind="health")
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("sos", "SOS Fade", account=_LIVE, balance=451.97, anchor=451.97)]
+        )
+    }[_DEMO]
+    assert demo["balance"] == 14538.88
+    assert demo["balance_read_at"] == "2026-09-10T22:00:00+00:00"
+    assert (demo["opening_balance"], demo["opening_from"]) == (9996.99, "sos")
+    assert demo["net_usd"] == round(14538.88 - 9996.99, 2)
+    # The remainder the demo account always carried — the duplicate positions closed by hand.
+    assert demo["unattributed_usd"] == round(14538.88 - 9996.99 - 1197.09, 2)
+    sos = demo["bots"][0]
+    assert sos["former"] is True
+    assert sos["pct_of_opening"] == round(1197.09 / 9996.99 * 100, 2)
+
+
+def test_a_LIVE_balance_carries_no_read_time(archive):
+    """`balance_read_at` means *this is a past reading*; on a live balance it must be absent, or
+    every account on the page reads as stale. MUTATION: stamp it whenever a reading exists → red.
+
+    ⚠ The live account needs READINGS of its own here. The first version had none, so a stamp
+    taken off the readings was absent either way and the mutation SURVIVED — inputs that cannot
+    tell the two behaviours apart do not test which one runs."""
+    rows, health = _demo_then_live()
+    archive("sos", "2026-08-26", rows)
+    archive(
+        "sos",
+        "2026-09-10",
+        [*health, _pulse(_LIVE, 451.97, "2026-09-11T00:30:00+00:00")],
+        kind="health",
+    )
+    live = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("sos", "SOS Fade", account=_LIVE, balance=451.97, anchor=451.97)]
+        )
+    }[_LIVE]
+    assert (live["balance"], live["balance_read_at"]) == (451.97, None)
+
+
+def test_a_reading_taken_AFTER_a_trade_closed_is_never_the_opening(archive):
+    """A later reading already holds a bot's result, so dividing by it under-states every return.
+    MUTATION: drop the before-the-first-trade check → red."""
+    archive(
+        "sos",
+        "2026-08-26",
+        [
+            _start(_DEMO, "2026-08-12T16:00:00+00:00"),
+            _close(1197.09, ts="2026-08-26T02:15:00+00:00"),
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+        ],
+    )
+    archive(
+        "sos", "2026-08-27", [_pulse(_DEMO, 11194.08, "2026-08-27T00:00:00+00:00")], kind="health"
+    )
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("sos", "SOS Fade", account=_LIVE, balance=451.97, anchor=451.97)]
+        )
+    }[_DEMO]
+    assert demo["balance"] == 11194.08
+    assert (demo["opening_balance"], demo["net_usd"]) == (None, None)
+    assert "after a trade had already closed" in demo["opening_note"]
+
+
+def test_a_balance_read_BEFORE_the_last_trade_closed_takes_no_remainder_off_it(archive):
+    """That balance does not contain the trade, so the remainder would be off by exactly its result.
+    The net still stands — it is a true difference between two readings.
+    MUTATION: drop the covered-window check → red."""
+    rows, _ = _demo_then_live()
+    archive("sos", "2026-08-26", rows)
+    archive(
+        "sos",
+        "2026-08-20",
+        [
+            _pulse(_DEMO, 9996.99, "2026-08-12T16:15:00+00:00"),
+            _pulse(_DEMO, 10100.0, "2026-08-20T00:00:00+00:00"),
+        ],
+        kind="health",
+    )
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("sos", "SOS Fade", account=_LIVE, balance=451.97, anchor=451.97)]
+        )
+    }[_DEMO]
+    assert demo["net_usd"] == round(10100.0 - 9996.99, 2)
+    assert demo["unattributed_usd"] is None
+
+
+def test_putting_a_NEW_bot_on_an_account_keeps_its_opening_and_its_record(archive):
+    """🔴 Aaron: *"what if I wanted to test out more bots on a demo account while the live bot is
+    also trading... it shouldn't matter."* A new bot's anchor is what the account held when IT
+    arrived; taking that as the opening would re-base the account on whoever joined last and wipe
+    the departed bots' history off its card.
+
+    MUTATION: take the current bot's anchor even where a reading covers the account → red.
+    """
+    rows, health = _demo_then_live("gone")
+    archive("gone", "2026-08-26", rows)
+    archive("gone", "2026-09-10", health, kind="health")
+    archive("new", "2026-09-12", [_start(_DEMO, "2026-09-12T00:00:00+00:00")])
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", account=_LIVE, balance=451.97, anchor=451.97),
+                _bot("new", "New", account=_DEMO, balance=14600.0, anchor=14538.88),
+            ]
+        )
+    }[_DEMO]
+    assert (demo["opening_balance"], demo["opening_from"]) == (9996.99, "gone")
+    # A bot on the account now: the balance is its live one, not a reading.
+    assert (demo["balance"], demo["balance_read_at"]) == (14600.0, None)
+    assert demo["net_usd"] == round(14600.0 - 9996.99, 2)
+    assert demo["unattributed_usd"] == round(14600.0 - 9996.99 - 1197.09, 2)
+    gone = next(b for b in demo["bots"] if b["bot_key"] == "gone")
+    assert gone["former"] is True
+    assert gone["pct_of_opening"] == round(1197.09 / 9996.99 * 100, 2)
+
+
+def test_a_pulse_with_no_balance_is_not_a_reading_of_zero(archive):
+    """A bot whose terminal link is down writes a pulse with no balance — *could not ask*, never
+    $0. MUTATION: read a missing balance as 0 → red (the last reading becomes zero)."""
+    rows, health = _demo_then_live()
+    archive("sos", "2026-08-26", rows)
+    blind = {**_pulse(_DEMO, 0, "2026-09-10T23:00:00+00:00"), "balance": None, "link": False}
+    archive("sos", "2026-09-10", [*health, blind], kind="health")
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("sos", "SOS Fade", account=_LIVE, balance=451.97, anchor=451.97)]
+        )
+    }[_DEMO]
+    assert (demo["balance"], demo["balance_read_at"]) == (14538.88, "2026-09-10T22:00:00+00:00")
+
+
+def test_the_read_time_survives_the_response_model():
+    """Pydantic drops a field the model does not declare, and then a day-old reading renders as the
+    account's balance NOW. MUTATION: remove the field from `AccountEarnings` → red."""
+    from models import AccountEarnings
+
+    out = AccountEarnings(
+        account=_DEMO, balance=14538.88, balance_read_at="2026-09-10T22:00:00+00:00"
+    )
+    assert out.model_dump()["balance_read_at"] == "2026-09-10T22:00:00+00:00"
