@@ -12,3 +12,4 @@
 2026-09-11 14:35:23,447 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-11 18:30:07,565 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
 2026-09-11 18:30:07,627 [INFO] Equity re-anchored to the account flat between trades: 13,830.53 → 15,844.46
+2026-09-11 22:55:01,853 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_2\\bot_state.json.11724.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_2\\bot_state.json'
