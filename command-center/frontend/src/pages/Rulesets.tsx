@@ -1,8 +1,7 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Pencil, X, Lock, ExternalLink, ClipboardList } from 'lucide-react'
 import { useFirms, usePatchPersonalRuleset } from '@/hooks/useLab'
 import { EmptyState } from '@/components/EmptyState'
-import { RulesetTypeBadge } from '@/components/RulesetTypeBadge'
 import StickyHeader from '@/components/StickyHeader'
 import { toast } from 'sonner'
 import type { Ruleset } from '@/types'
@@ -390,7 +389,6 @@ function RulesetsView() {
               <thead>
                 <tr className="border-b border-border-subtle">
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Name</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Type</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">
                     Account Size
                   </th>
@@ -408,13 +406,14 @@ function RulesetsView() {
                 </tr>
               </thead>
               <tbody>
+                {/* The key goes on the Fragment: on the header row it left each group unkeyed
+                    and React logged an error on every load. */}
                 {visible.map((brand, bi) => (
-                  <>
+                  <Fragment key={brand}>
                     <tr
-                      key={`hdr-${brand}`}
                       className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}
                     >
-                      <td colSpan={8} className="px-4 py-2">
+                      <td colSpan={7} className="px-4 py-2">
                         <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">
                           {brand}
                         </span>
@@ -425,7 +424,7 @@ function RulesetsView() {
                       .map((r) => (
                         <RulesetRow key={r.id} ruleset={r} />
                       ))}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -445,7 +444,6 @@ function RulesetsView() {
               <thead>
                 <tr className="border-b border-border-subtle">
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Name</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Type</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">
                     Account Size
                   </th>
@@ -486,7 +484,10 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
       <tr className="hover:bg-bg-hover transition-colors">
         <td className="px-4 py-3">
           <div className="flex items-center gap-1.5">
-            <span className="font-medium">{ruleset.name}</span>
+            {/* The id is on hover rather than a second line under every name (2026-09-11). */}
+            <span className="font-medium" title={ruleset.id}>
+              {ruleset.name}
+            </span>
             {ruleset.market === 'forex' && (
               <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-blue-500/12 text-blue-400 border border-blue-500/20">
                 FX
@@ -524,11 +525,9 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
               </span>
             )}
           </div>
-          <div className="text-[11px] text-text-tertiary font-mono">{ruleset.id}</div>
         </td>
-        <td className="px-4 py-3">
-          <RulesetTypeBadge ruleset_type={ruleset.ruleset_type} size="sm" />
-        </td>
+        {/* No Type column: in the prop table the name already says Evaluation or Funded, and
+            every row of the personal table read PERSONAL under a heading that says so. */}
         <td className="px-4 py-3 font-mono tabular-nums">
           ${ruleset.account_size.toLocaleString()}
         </td>
