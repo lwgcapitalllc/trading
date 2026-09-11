@@ -2155,6 +2155,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             # What this strategy can actually hold. A param it does not declare stops the bot at
             # startup — see `bot_accounts._only_declared` and the 2026-09-04 incident behind it.
             declared_params=_declared_strategy_params(str(data.get("strategy_package") or "")),
+            # A balance adjustment describes the account being LEFT — see `assign_plan`.
+            current_account=data.get("account"),
+            current_adjustment=data.get("sizing_basis_adjustment"),
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))

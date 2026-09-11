@@ -263,6 +263,10 @@ def plan_go_live(
                 registered=destination,
                 current_symbol=str(config.get("symbol") or ""),
                 declared_params=bot.declared,
+                # So a balance adjustment measured on the demo account is cleared rather than
+                # carried onto real money — the 2026-09-11 incident; see `assign_plan`.
+                current_account=config.get("account"),
+                current_adjustment=config.get("sizing_basis_adjustment"),
             )
         except ValueError as exc:
             return _blocked(f"{_name(bot)}: {exc}")

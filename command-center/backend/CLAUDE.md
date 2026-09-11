@@ -1581,6 +1581,15 @@ recorded suffix leaves the symbol alone and the endpoint returns the sentence sa
 rewrite `XAUUSD.s` → `XAUUSD`; `null` means nobody recorded it. Collapsing them is what silently
 strips a suffix off a live instrument.
 
+🔴 **A SEVENTH FIELD, AND IT TOOK A LIVE BOT OUT ON THE FIRST MOVE TO REAL MONEY (2026-09-11).**
+`sizing_basis_adjustment` shrinks the balance a bot sizes from by an amount MEASURED on one
+account. The go-live move carried SOS Fade's -4518.23 (the demo account's duplicate-fill windfall)
+onto a $451.97 live account, where it left nothing to size on and the bot refused to start. A move
+to a DIFFERENT account now clears a non-zero one to 0 and says so; the same account keeps it; the
+bench leaves it; a bot with none gets no write. `assign_plan` takes `current_account` and
+`current_adjustment` from both callers. Tests in `test_bot_accounts.py` / `test_go_live.py`, 4/4
+mutations killed.
+
 ### The refusals, and which of them is a "definite no"
 
 - **An account with no terminal (`mt5_path: ""`) is UNASSIGNABLE.** A bot connects by attaching to

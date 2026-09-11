@@ -34,6 +34,7 @@ def _bot(
     unreadable: bool = False,
     display: str | None = None,
     declared: set | None = None,
+    adjustment=None,
 ) -> BotTarget:
     config = (
         None
@@ -45,6 +46,7 @@ def _bot(
             "symbol": symbol,
             "magic": 0,
             "strategy_params": {"exec_risk_pct": risk},
+            **({"sizing_basis_adjustment": adjustment} if adjustment is not None else {}),
         }
     )
     return BotTarget(
@@ -957,3 +959,23 @@ def test_the_SINGLE_BOT_settings_import_refuses_a_promoted_bot(client, monkeypat
     r = client.get("/bots/sos_fade_demo/settings-from-stress-test/st_live")
     assert r.status_code == 200
     assert "live" in (r.json()["blocked"] or "")
+
+
+def test_a_demo_balance_adjustment_is_CLEARED_on_the_way_to_live_never_carried():
+    """🔴 The move that took SOS Fade live on 2026-09-11 carried `sizing_basis_adjustment` -4518.23
+    — measured on the DEMO account's duplicate fills — onto a $451.97 live account, where it left
+    nothing to size on and the bot refused to start. It describes the account being left, so the
+    move clears it and the reader is told; a bot that never had one gets no write for it.
+
+    ⚠ Watched RED by not passing the bot's adjustment through to the move planner.
+    """
+    bots = [
+        _bot("sos_fade_demo", pkg="sos_fade", adjustment=-4518.23),
+        _bot("extreme_leg_demo", pkg="extreme_leg"),
+    ]
+    plan = _plan(bots=bots)
+    assert plan.blocked is None
+    moves = {m.bot_key: m for m in plan.moves}
+    assert moves["sos_fade_demo"].fields["sizing_basis_adjustment"] == 0.0
+    assert "sizing_basis_adjustment" not in moves["extreme_leg_demo"].fields
+    assert any("-4,518.23" in w and str(_DEMO) in w for w in plan.warnings)

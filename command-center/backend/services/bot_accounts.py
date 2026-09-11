@@ -437,8 +437,19 @@ def assign_plan(
     registered: Any = None,
     current_symbol: str = "",
     declared_params: Optional[set] = None,
+    current_account: Optional[int] = None,
+    current_adjustment: Any = None,
 ) -> AssignPlan:
     """The fields to write on `bot_key`'s config to put it on `account` (or on the bench).
+
+    🔴 **A SEVENTH, and it put a live bot out of action on the first move to real money
+    (2026-09-11).** `sizing_basis_adjustment` shrinks the balance a bot sizes from by an amount
+    MEASURED on one account — SOS Fade carried -4518.23, the demo account's duplicate-fill
+    windfall, onto a $451.97 live account, and refused to start there ("leaves nothing to trade
+    on"). It is a claim about the account being LEFT, so a move to a different account clears a
+    non-zero one to 0 and says so; a move back to the same account keeps it. ⚠ It is cleared only
+    when it is set, so a move writes nothing for a bot that never had one. ⚠ Benching leaves it,
+    like every other field — the bench is a resting state, and a move off it clears it then.
 
     **Moving a bot is SIX fields, not one, and getting that wrong produces a bot that cannot
     start — or, worse, one that starts and trades nothing.** An account number on its own is not
@@ -569,6 +580,22 @@ def assign_plan(
             f"account {account} is not in the account registry, so its symbol suffix and cost "
             f"profile could not be carried — the bot keeps the ones it had. Register the account "
             f"to make a move complete."
+        )
+
+    # The balance adjustment describes the account being LEFT — see the docstring. Anything set and
+    # not a numeric zero is cleared, a malformed value included: it cannot describe the new account.
+    if account != current_account and current_adjustment not in (None, 0, 0.0):
+        fields["sizing_basis_adjustment"] = 0.0
+        amount = (
+            f"{float(current_adjustment):,.2f}"
+            if isinstance(current_adjustment, (int, float))
+            and not isinstance(current_adjustment, bool)
+            else repr(current_adjustment)
+        )
+        notes.append(
+            f"the balance it sizes from was adjusted by {amount}, an amount measured on account "
+            f"{current_account}. That is cleared, because on account {account} it would shrink or "
+            f"refuse every trade."
         )
 
     # LAST, so every param write above is covered — including any added later. See `_only_declared`.

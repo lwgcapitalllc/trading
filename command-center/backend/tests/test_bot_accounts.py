@@ -306,6 +306,52 @@ def test_joining_an_account_ADOPTS_its_cap_server_and_terminal_source():
     assert plan.adopt_terminal_from == "a"
 
 
+def test_a_move_to_ANOTHER_account_clears_a_balance_adjustment_and_says_so():
+    """🔴 2026-09-11: SOS Fade carried -4518.23, measured on the demo account it was leaving, onto
+    a $451.97 live account and refused to start there. The adjustment is a claim about the account
+    being LEFT, so a move clears it and says so.
+
+    ⚠ Watched RED by dropping the clear.
+    """
+    target = ba.group_by_account({"a": _cfg("a")})[0]
+    plan = ba.assign_plan(
+        "newbot", 700107749, target=target, current_account=700152905, current_adjustment=-4518.23
+    )
+    assert plan.fields["sizing_basis_adjustment"] == 0.0
+    assert any("-4,518.23" in n and "700152905" in n for n in plan.notes)
+
+
+def test_a_bot_with_NO_adjustment_gets_no_write_for_it():
+    """The field is written only to clear one, or every move would list a setting nobody set.
+
+    ⚠ Watched RED by writing the field unconditionally.
+    """
+    target = ba.group_by_account({"a": _cfg("a")})[0]
+    for adj in (None, 0, 0.0):
+        plan = ba.assign_plan(
+            "newbot", 700107749, target=target, current_account=700152905, current_adjustment=adj
+        )
+        assert "sizing_basis_adjustment" not in plan.fields
+
+
+def test_a_move_back_to_the_SAME_account_keeps_the_adjustment():
+    """It still describes that account, so clearing it would resize a bot for no reason.
+
+    ⚠ Watched RED by clearing on every move regardless of the account.
+    """
+    target = ba.group_by_account({"a": _cfg("a")})[0]
+    plan = ba.assign_plan(
+        "newbot", 700107749, target=target, current_account=700107749, current_adjustment=-50.0
+    )
+    assert "sizing_basis_adjustment" not in plan.fields
+
+
+def test_benching_leaves_the_adjustment_alone():
+    """The bench writes only `account: None`; a later move off it clears the adjustment then."""
+    plan = ba.assign_plan("a", None, current_account=700107749, current_adjustment=-50.0)
+    assert plan.fields == {"account": None}
+
+
 def test_joining_an_UNCAPPED_account_adopts_the_absence_of_a_cap():
     """`None` is a value here, not a field to omit — one capped bot beside one uncapped one is
     the worst shape, and it is what omitting this would produce."""
