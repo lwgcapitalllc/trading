@@ -263,6 +263,19 @@ def mt5_agent_ok() -> bool:
     return _agent_ok(mt5_agent_client)
 
 
+def nt8_switched_off() -> Optional[bool]:
+    """Is NinjaTrader off ON PURPOSE — its `NT8Agent` task disabled on the box? See `nt8_switch`.
+
+    This loop is where that is asked of the box (one SSH call every couple of minutes); every other
+    reader takes the remembered answer. `None` = never answered, and the loop then behaves exactly
+    as it did before the switch existed.
+    """
+    from services import nt8_switch
+
+    nt8_switch.refresh()
+    return nt8_switch.switched_off()
+
+
 def mt5_terminal_status() -> Optional[dict]:
     """`{mt5_connected, account, server, error}` — or None when the agent is unreachable.
 
@@ -316,10 +329,17 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
     nt8 = nt8_agent_ok()
     mt5 = mt5_agent_ok()
     busy = busy_scopes()
+    # NinjaTrader switched off on purpose: nothing to start, nothing to kill. Only `True` counts —
+    # `None` (the box not asked yet) keeps the old behaviour rather than guessing either way.
+    nt8_off = nt8_switched_off() is True
 
     # A tunnel holding its ports while BOTH agents are silent is the stale case
     # backend/CLAUDE.md documents: the old `ssh -N -L` survives and forwards
     # into a dead agent, so restarting the agents alone never recovers.
+    # ⚠ With NT8 switched off its agent is silent by design, so it is no witness: an MT5 outage
+    # then reads as stale and rebuilds the tunnel first. That is the documented recovery and is
+    # still skipped under a running job — it just can no longer tell a stale tunnel from a dead
+    # MT5 agent, because the second opinion is gone.
     stale = tunnel and not nt8 and not mt5
 
     # ⚠ THE BUSY GUARD APPLIES TO THE STALE CASE ONLY, AND THE ASYMMETRY IS THE
@@ -356,6 +376,11 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
         ("mt5", mt5, MT5_TASK, MT5_SCRIPT, {"mt5", "python"}),
     ):
         if ok:
+            continue
+        if name == "nt8" and nt8_off:
+            # Switched off on purpose. Firing a disabled task only fails, and killing "the corpse"
+            # would kill an agent somebody left running deliberately. Silent on purpose too: a
+            # line every minute saying so is how a log gets scrolled past.
             continue
         if busy & scopes:
             # ⚠ ORPHAN. The agent is silent AND its scope holds a running job,
@@ -433,7 +458,7 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
         else:
             mt5 = came_up
 
-    return {"tunnel": tunnel_up(), "nt8": nt8, "mt5": mt5, "actions": actions}
+    return {"tunnel": tunnel_up(), "nt8": nt8, "mt5": mt5, "nt8_off": nt8_off, "actions": actions}
 
 
 # ── The loop ──────────────────────────────────────────────────────────────────

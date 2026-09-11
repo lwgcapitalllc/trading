@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from models import LabProgress, SystemHealth
-from services import agent_supervisor, mt5_agent_client, runner_dispatch
+from services import agent_supervisor, mt5_agent_client, nt8_switch, runner_dispatch
 from services.backtest_runner import clear_progress, read_progress
 
 router = APIRouter(tags=["system"])
@@ -186,10 +186,17 @@ def _build_health() -> dict:
         except Exception:
             pass
 
+    # Off ON PURPOSE (its task disabled on the box) — read from memory, never over SSH here; the
+    # supervisor's loop is what asks the box. `None` = not asked yet, and the page then draws the
+    # dot exactly as it did before this existed.
+    nt8_off = nt8_switch.switched_off()
+
     return {
         "backend": True,
         "ssh_tunnel": tunnel_ok,
         "vps_reachable": vps_ok_host,
+        "nt8_switched_off": nt8_off,
+        "nt8_off_reason": nt8_switch.off_reason() if nt8_off else None,
         "nt8_agent": vps_ok,
         "mt5_agent": mt5_ok,
         # The judgement the dots are drawn from. The booleans above keep meaning "answered ok on
@@ -284,7 +291,14 @@ def _start_agent(task_name: str) -> dict:
 
 @router.post("/system/nt8-agent/start")
 def start_nt8_agent():
-    """Restart SSH tunnel (ports 8765 + 8766) and fire the NT8 agent scheduled task."""
+    """Restart SSH tunnel (ports 8765 + 8766) and fire the NT8 agent scheduled task.
+
+    ⚠ Refused while NinjaTrader is switched off on purpose: the task is disabled so the fire can
+    only fail — and `_start_agent` rebuilds the tunnel FIRST, which would cut every MT5 request in
+    flight to achieve nothing.
+    """
+    if nt8_switch.switched_off() is True:
+        raise HTTPException(409, nt8_switch.off_reason())
     return _start_agent(agent_supervisor.NT8_TASK)
 
 

@@ -33,6 +33,9 @@ def rig(monkeypatch):
         "wedged": set(),
         # Agents that come up on the SECOND fire, i.e. once the corpse is gone.
         "recovers_after_kill": {"nt8", "mt5"},
+        # NinjaTrader switched off on purpose (its task disabled on the box). None = the box has
+        # not been asked, which must behave exactly as the supervisor did before the switch.
+        "nt8_off": None,
     }
 
     def restart_tunnel():
@@ -80,6 +83,8 @@ def rig(monkeypatch):
     # missing and says nothing about behaviour. With it, the reds are the
     # assertions themselves: no kill attempted, one fire instead of two.
     monkeypatch.setattr(sup, "kill_agent_process", kill_agent_process, raising=False)
+    # Never the real one — it asks the box over SSH.
+    monkeypatch.setattr(sup, "nt8_switched_off", lambda: state["nt8_off"])
     return state
 
 
@@ -362,6 +367,45 @@ def test_an_unreachable_vps_is_not_something_the_supervisor_can_fix(rig):
     result = run(rig)
     assert rig["tunnel_restarts"] == 0
     assert "tunnel-skipped (VPS unreachable)" in result["actions"]
+
+
+# ── NinjaTrader switched off ON PURPOSE (its task disabled on the box) ────────
+
+
+def test_a_switched_off_NT8_is_left_alone_and_says_nothing(rig):
+    """Shut down to save memory (2026-09-11): firing a disabled task only fails, and 'killing the
+    corpse' would kill an agent somebody left running on purpose. And no action line — one every
+    minute is how a log gets scrolled past.
+    MUTATION: drop the switched-off `continue` — it fires NT8Agent and kills (reddens)."""
+    rig["nt8"] = False
+    rig["nt8_off"] = True
+    rig["wedged"] = {"nt8_agent.py"}  # a corpse to kill, if it forgot NT8 was off on purpose
+    result = run(rig)
+    assert rig["fired"] == []
+    assert rig["killed"] == []
+    assert result["actions"] == []
+    assert result["nt8_off"] is True
+
+
+def test_a_switched_off_NT8_does_not_stop_MT5_being_repaired(rig):
+    """The skip is NT8's alone. With NT8 silent by design there is no second witness, so an MT5
+    outage reads as a stale tunnel: rebuild it, then fire MT5's task — the documented recovery."""
+    rig["nt8"] = rig["mt5"] = False
+    rig["nt8_off"] = True
+    result = run(rig)
+    assert rig["tunnel_restarts"] == 1
+    assert rig["fired"] == [sup.MT5_TASK]
+    assert "mt5-started" in result["actions"]
+
+
+def test_an_UNASKED_box_keeps_the_old_behaviour(rig):
+    """`None` = the box has not answered yet. Guessing 'off' there would leave a genuinely dead
+    agent unrepaired. MUTATION: treat None as off (`is not False`) — nothing fires (reddens)."""
+    rig["nt8"] = False
+    rig["nt8_off"] = None
+    result = run(rig)
+    assert rig["fired"] == [sup.NT8_TASK]
+    assert "nt8-started" in result["actions"]
 
 
 # ── The MT5 terminal question is separate from the MT5 agent question ─────────

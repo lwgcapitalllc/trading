@@ -24,9 +24,23 @@ from typing import Optional
 
 import config as cfg
 
-from services import lab_db, mt5_agent_client, python_runner
+from services import lab_db, mt5_agent_client, nt8_switch, python_runner
 
 _TIMEOUT = 10  # seconds for all agent calls
+
+
+def _agent_error(what: str, exc: BaseException) -> RuntimeError:
+    """The error a failed NT8 agent call raises — leading with WHY when NT8 is off on purpose.
+
+    Every NT8 call in this app funnels through `_get`/`_post`, so this is the one place a failure
+    can say "NinjaTrader is switched off on the VPS" instead of "Remote end closed connection" —
+    the Strategies page, a compile, a log proxy and an NT8 backtest all inherit it. The transport
+    error is kept in brackets, because the reason is a belief about the box and the bracket is
+    what actually happened.
+    """
+    detail = f"{what}: {exc}"
+    reason = nt8_switch.off_reason()
+    return RuntimeError(f"{reason} ({detail})" if reason else detail)
 
 
 def _get(path: str, timeout: int = _TIMEOUT) -> dict:
@@ -35,7 +49,7 @@ def _get(path: str, timeout: int = _TIMEOUT) -> dict:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return json.loads(r.read())
     except Exception as exc:
-        raise RuntimeError(f"VPS agent {path}: {exc}") from exc
+        raise _agent_error(f"VPS agent {path}", exc) from exc
 
 
 def _post(path: str, body: Optional[dict] = None, timeout: int = _TIMEOUT) -> dict:
@@ -46,7 +60,7 @@ def _post(path: str, body: Optional[dict] = None, timeout: int = _TIMEOUT) -> di
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except Exception as exc:
-        raise RuntimeError(f"VPS agent POST {path}: {exc}") from exc
+        raise _agent_error(f"VPS agent POST {path}", exc) from exc
 
 
 # ── Observability ─────────────────────────────────────────────────────────────

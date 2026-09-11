@@ -1920,6 +1920,12 @@ class SystemHealth(BaseModel):
     vps_reachable: bool = (
         False  # the VPS answers SSH at all — separates a dead tunnel from a dead network
     )
+    # NinjaTrader switched off ON PURPOSE — its NT8Agent task disabled (or absent) on the box.
+    # True / False / None, and None = the box has not been asked yet, never "on". The reason is
+    # the sentence a reader sees for why NT8 cannot be reached; None whenever it is not off.
+    # ⚠ Declared here or the response model drops them without a word.
+    nt8_switched_off: Optional[bool] = None
+    nt8_off_reason: Optional[str] = None
     nt8_agent: bool = False  # NT8 agent (port 8765)
     mt5_agent: bool = False  # MT5 agent (port 8766)
     # 🔴 THREE states the booleans above cannot carry: "ok" | "slow" | "down". "slow" = it timed out

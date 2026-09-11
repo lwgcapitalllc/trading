@@ -1430,6 +1430,13 @@ last answered. ⚠ **The grace window is decided on the server and not restated 
 one answer to "how long before slow becomes down". ⚠ A backend without the field falls back to the
 old boolean — `false` is down, exactly as before, never a guess either way.
 
+**NinjaTrader switched off on purpose draws GREY "off" (2026-09-11)** — never red, never yellow,
+never clickable, the server's `nt8_off_reason` on the tooltip; `=== true` only, so an unasked box
+keeps the old colours. ⚠ **Only while NT8 is not working** — if somebody brings it back up the dot
+goes green before the box's task state catches up. The Strategies page swaps its yellow "can't
+reach the NT8 agent" banner for a quiet note (`AgentGapBanners`, `nt8-off-note`). Backend rules:
+`../backend/CLAUDE.md` → *NinjaTrader switched off on purpose*.
+
 ## The Calendar page was audited 2026-08-05
 
 **Read before touching `pages/Calendar.tsx`, `lib/calendar.ts` or the Overview's preview.** Nine

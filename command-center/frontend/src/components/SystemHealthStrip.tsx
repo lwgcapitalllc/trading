@@ -58,8 +58,15 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
   // `nt8_running: false`. The agent-down branch answers first anyway, so this is
   // about the TOOLTIP telling the truth rather than the dot's colour.
   const nt8Agent = agentState(h.nt8_agent_state, h.nt8_agent)
-  const nt8State: DotState =
-    nt8Agent === 'down'
+  const nt8Ready = nt8Agent === 'ok' && h.nt8_running !== false && h.nt8_sa_visible !== false
+  // 🔴 SWITCHED OFF ON PURPOSE is its own state — grey "off", never red or yellow, and never
+  // clickable (the click restarts the tunnel and fires a task that is disabled). Only while NT8
+  // is not actually working: if somebody brings it back up, the dot says so before the box's
+  // task state catches up. `=== true`: an unasked box (`null`) keeps the old colours.
+  const nt8Off = h.nt8_switched_off === true && !nt8Ready
+  const nt8State: DotState = nt8Off
+    ? 'grey'
+    : nt8Agent === 'down'
       ? 'red'
       : nt8Agent === 'slow'
         ? 'yellow'
@@ -69,8 +76,9 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
             ? 'yellow'
             : 'green'
 
-  const nt8Tip =
-    nt8Agent === 'slow'
+  const nt8Tip = nt8Off
+    ? `NT8: ${h.nt8_off_reason ?? 'switched off on the VPS on purpose.'}`
+    : nt8Agent === 'slow'
       ? slowTip('NT8 agent', h.nt8_agent_last_ok_s)
       : nt8Agent === 'down'
         ? h.ssh_tunnel
@@ -143,7 +151,7 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
       label: 'NT8',
       state: nt8State,
       tip: nt8Tip,
-      word: nt8Agent === 'slow' ? 'slow' : undefined,
+      word: nt8Off ? 'off' : nt8Agent === 'slow' ? 'slow' : undefined,
     },
     {
       key: 'mt5',

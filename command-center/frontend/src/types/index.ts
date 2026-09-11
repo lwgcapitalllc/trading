@@ -1530,6 +1530,11 @@ export interface SystemHealth {
   backend: boolean
   ssh_tunnel: boolean // both LocalForwards are bound — the TUNNEL, not a fresh ssh connection
   vps_reachable: boolean // the VPS answers SSH at all — tells a dead tunnel from a dead network
+  /** NinjaTrader switched off ON PURPOSE — its NT8Agent task disabled on the box. Read `=== true`:
+   *  `null` = the box has not been asked yet, which is not "on" and not "off". */
+  nt8_switched_off: boolean | null
+  /** Why NT8 cannot be reached, in words — `null` whenever it is not switched off. */
+  nt8_off_reason: string | null
   nt8_agent: boolean // NT8 agent (port 8765)
   mt5_agent: boolean // MT5 agent (port 8766)
   /** `ok` | `slow` | `down`. `slow` = timed out but answered ok recently, which a healthy agent on

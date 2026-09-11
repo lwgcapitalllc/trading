@@ -179,3 +179,45 @@ def test_unknown_runner_is_treated_as_nt8(fresh_db):
     still take a lock — an unlocked job is worse than one locked to the wrong platform."""
     _run("r1", "ninjatrader")
     assert lab_db.has_running_job("some_future_runner") is True
+
+
+# ── NinjaTrader switched off ON PURPOSE refuses NT8 jobs up front ─────────────
+
+
+@pytest.mark.parametrize("runner", ["ninjatrader", None, "some_future_runner"])
+def test_an_NT8_job_is_refused_with_the_reason_while_NT8_is_switched_off(
+    fresh_db, monkeypatch, runner
+):
+    """Before this, an NT8 backtest was accepted, a run row inserted, and the job died at dispatch
+    on 'Remote end closed connection' — the app not knowing why. Refused at the one gate every
+    trigger passes, naming the reason. Same NT8 fallback as `has_running_job`.
+    MUTATION: drop the switched-off check — no HTTPException (reddens)."""
+    from fastapi import HTTPException
+    from routers._locks import ensure_platform_idle
+    from services import nt8_switch
+
+    monkeypatch.setattr(nt8_switch, "_state", nt8_switch.DISABLED)
+    with pytest.raises(HTTPException) as exc:
+        ensure_platform_idle(runner)
+    assert exc.value.status_code == 503
+    assert "switched off" in exc.value.detail
+
+
+@pytest.mark.parametrize("runner", ["mt5", "python"])
+def test_MT5_and_python_jobs_are_untouched_by_NT8_being_off(fresh_db, monkeypatch, runner):
+    """MUTATION: refuse every runner while NT8 is off — reddens both."""
+    from routers._locks import ensure_platform_idle
+    from services import nt8_switch
+
+    monkeypatch.setattr(nt8_switch, "_state", nt8_switch.DISABLED)
+    ensure_platform_idle(runner)  # must not raise
+
+
+def test_an_UNASKED_box_does_not_refuse_an_NT8_job(fresh_db, monkeypatch):
+    """`None` = the box has not answered yet — the job tries, exactly as before the switch.
+    MUTATION: refuse on `is not False` — reddens this."""
+    from routers._locks import ensure_platform_idle
+    from services import nt8_switch
+
+    monkeypatch.setattr(nt8_switch, "_state", None)
+    ensure_platform_idle("ninjatrader")  # must not raise

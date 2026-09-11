@@ -394,3 +394,78 @@ def test_through_health_an_nt8_answer_buys_the_mt5_agent_NO_grace(monkeypatch):
     h = system._build_health()
     assert h["nt8_agent_state"] == "ok"
     assert h["mt5_agent_state"] == "down"
+
+
+# ── NinjaTrader switched off ON PURPOSE ───────────────────────────────────────
+
+
+def test_a_switched_off_NT8_is_served_with_its_reason(monkeypatch):
+    """Through the RESPONSE MODEL, because an undeclared field is dropped without a word.
+    MUTATION: drop the two keys from `_build_health` — reddens this."""
+    from services import nt8_switch
+
+    _stub(monkeypatch, tunnel=True, vps=True, nt8=False, mt5=True)
+    monkeypatch.setattr(nt8_switch, "_state", nt8_switch.DISABLED)
+    body = system.system_health().model_dump()
+    assert body["nt8_switched_off"] is True
+    assert "switched off" in body["nt8_off_reason"]
+
+
+def test_an_UNASKED_box_is_served_as_None_not_as_on(monkeypatch):
+    """`None` = not asked yet; the page keeps its old colours. `False` would be a claim."""
+    from services import nt8_switch
+
+    _stub(monkeypatch, tunnel=True, vps=True, nt8=False, mt5=True)
+    monkeypatch.setattr(nt8_switch, "_state", None)
+    h = system._build_health()
+    assert h["nt8_switched_off"] is None
+    assert h["nt8_off_reason"] is None
+
+
+def test_health_never_asks_the_box_itself(monkeypatch):
+    """A request handler must not make an SSH call that can take seconds — the supervisor's loop
+    asks the box, health reads the remembered answer. MUTATION: call `nt8_switch.refresh()` in
+    `_build_health` — reddens this."""
+    from services import nt8_switch
+
+    _stub(monkeypatch, tunnel=True, vps=True, nt8=False, mt5=True)
+
+    def asked(*_a, **_k):
+        raise AssertionError("health asked the box over SSH")
+
+    monkeypatch.setattr(nt8_switch, "refresh", asked)
+    system._build_health()
+
+
+def test_the_start_button_is_refused_while_NT8_is_switched_off(monkeypatch):
+    """The start path rebuilds the tunnel FIRST — cutting every MT5 request in flight — to fire a
+    task that is disabled. Refused before any of that. MUTATION: drop the guard — reddens this."""
+    from fastapi import HTTPException
+    from services import nt8_switch
+
+    monkeypatch.setattr(nt8_switch, "_state", nt8_switch.DISABLED)
+    touched = []
+    monkeypatch.setattr(system, "_restart_tunnel", lambda: touched.append("tunnel"))
+    monkeypatch.setattr(system, "_schtasks_run", lambda task: touched.append(task))
+    with pytest.raises(HTTPException) as exc:
+        system.start_nt8_agent()
+    assert exc.value.status_code == 409
+    assert "switched off" in exc.value.detail
+    assert touched == []
+
+
+def test_a_failed_NT8_call_leads_with_WHY_when_it_is_switched_off(monkeypatch):
+    """Every NT8 call funnels through one error builder, so the Strategies page, a compile and a
+    backtest all say why. The transport error is kept — the reason is a belief, it is the fact.
+    MUTATION: build the message without the reason — reddens the first half."""
+    from services import nt8_switch, runner_dispatch
+
+    boom = ConnectionResetError("Remote end closed connection without response")
+    monkeypatch.setattr(nt8_switch, "_state", nt8_switch.DISABLED)
+    off = str(runner_dispatch._agent_error("VPS agent /files/strategies", boom))
+    assert off.startswith("NinjaTrader is switched off")
+    assert "Remote end closed connection" in off
+
+    monkeypatch.setattr(nt8_switch, "_state", nt8_switch.ENABLED)
+    on = str(runner_dispatch._agent_error("VPS agent /files/strategies", boom))
+    assert on == "VPS agent /files/strategies: Remote end closed connection without response"

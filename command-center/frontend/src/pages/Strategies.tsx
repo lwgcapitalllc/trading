@@ -28,6 +28,7 @@ import {
   useCompileStatusMt5,
   useDeployStrategy,
   useRunningVpsJob,
+  useSystemHealth,
 } from '@/hooks/useLab'
 import { ConfirmDeleteModal } from '@/pages/Backtests'
 import { EmptyState } from '@/components/EmptyState'
@@ -75,6 +76,54 @@ function AgentDownBanner({
         </p>
       </div>
     </div>
+  )
+}
+
+/**
+ * Which dependency failed, named — and NinjaTrader switched off on purpose kept OUT of the warning.
+ *
+ * 🔴 An NT8 agent that does not answer because NinjaTrader was shut down deliberately is not a
+ * fault, so it gets a quiet note carrying the reason instead of the yellow "can't reach" banner.
+ * The reason is the SERVER's (`nt8_off_reason` off the health payload), never worded here. Rows are
+ * unchanged either way: NT8's VPS state really is unknown, and they already say so.
+ */
+function AgentGapBanners({
+  backendFailed,
+  nt8Error,
+  mt5Error,
+}: {
+  backendFailed: boolean
+  nt8Error?: string | null
+  mt5Error?: string | null
+}) {
+  const { data: health } = useSystemHealth()
+  const nt8Off = !!nt8Error && health?.nt8_switched_off === true
+  const nt8Down = !!nt8Error && !nt8Off
+  const what = backendFailed
+    ? 'backend'
+    : nt8Down && mt5Error
+      ? 'NT8 or MT5 agent'
+      : nt8Down
+        ? 'NT8 agent'
+        : mt5Error
+          ? 'MT5 agent'
+          : null
+  return (
+    <>
+      {what && (
+        <AgentDownBanner className="mb-4" what={what} detail={nt8Down ? nt8Error : mt5Error} />
+      )}
+      {!backendFailed && nt8Off && (
+        <p
+          data-testid="nt8-off-note"
+          className="mb-4 flex items-start gap-2 text-[12px] text-text-tertiary leading-[1.45]"
+        >
+          <WifiOff size={13} className="shrink-0 mt-[2px]" />
+          {health?.nt8_off_reason ?? 'NinjaTrader is switched off on the VPS on purpose.'} Until
+          then, whether each NT8 strategy file is on the VPS is not checked.
+        </p>
+      )}
+    </>
   )
 }
 
@@ -399,21 +448,11 @@ function StrategiesTab() {
       {/* Whichever agent could not be reached, named. `syncFailed` is the whole
           request dying (backend down); `nt8_error`/`mt5_error` are one platform
           failing while the rows still arrive. */}
-      {(syncFailed || sync?.nt8_error || sync?.mt5_error) && (
-        <AgentDownBanner
-          className="mb-4"
-          what={
-            syncFailed
-              ? 'backend'
-              : sync?.nt8_error && sync?.mt5_error
-                ? 'NT8 or MT5 agent'
-                : sync?.nt8_error
-                  ? 'NT8 agent'
-                  : 'MT5 agent'
-          }
-          detail={sync?.nt8_error ?? sync?.mt5_error}
-        />
-      )}
+      <AgentGapBanners
+        backendFailed={syncFailed}
+        nt8Error={sync?.nt8_error}
+        mt5Error={sync?.mt5_error}
+      />
 
       {isLoading ? (
         <StrategiesSkeleton />
@@ -1295,21 +1334,11 @@ function FilesTab() {
           above to deploy it", so a dead NT8 agent read as a VPS with nothing on
           it. The envelope names which platform failed and the banner says so
           before the list is drawn. */}
-      {(isError || listing?.nt8_error || listing?.mt5_error) && (
-        <AgentDownBanner
-          className="mb-4"
-          what={
-            isError
-              ? 'backend'
-              : listing?.nt8_error && listing?.mt5_error
-                ? 'NT8 or MT5 agent'
-                : listing?.nt8_error
-                  ? 'NT8 agent'
-                  : 'MT5 agent'
-          }
-          detail={listing?.nt8_error ?? listing?.mt5_error}
-        />
-      )}
+      <AgentGapBanners
+        backendFailed={isError}
+        nt8Error={listing?.nt8_error}
+        mt5Error={listing?.mt5_error}
+      />
 
       {isLoading ? (
         <div className="text-text-tertiary text-[13px]">Loading files…</div>

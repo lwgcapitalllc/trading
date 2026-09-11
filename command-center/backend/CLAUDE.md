@@ -926,6 +926,32 @@ REAL closed port** through the client's genuine `_get`, loaded as a private copy
 `_no_live_vps` rightly swaps the shared one out — a hand-built exception would prove only a guess
 about the shape. Never point that copy at the VPS.
 
+### NinjaTrader switched off on purpose — `services/nt8_switch.py` (2026-09-11)
+
+🔴 **NinjaTrader shut down deliberately and NinjaTrader crashed looked identical**, so the app
+complained about the first as though it were the second (Aaron shut it down to save memory). The
+intent now lives ON THE BOX: the `NT8Agent` task disabled (or absent) = off. ⚠ **Never a setting
+here** — one laptop's opinion about the VPS would disagree with the other clone, and disabling the
+task is also what actually stops Windows and the supervisor starting the agent.
+
+- **Asked only by the supervisor's loop** (`nt8_switched_off`, one SSH call per ~2 min); health,
+  the NT8 client and the job lock read the remembered answer — no SSH in a request handler.
+- ⚠ **Three states and only `True` acts.** `None` (not asked yet) behaves exactly as before;
+  any value but `Disabled` is ON, so an unfamiliar word cannot silence a real outage. **A failed
+  read KEEPS the last answer** — a crowded box must not flip an off NT8 back to red.
+- 🔴 **It reads `Scheduled Task State`, never `Status` — MEASURED on the box:** disabling the task
+  with its agent alive left `Status: Running`. Match that label exactly — `Idle Time: Disabled` and
+  `Delete Task If Not Rescheduled: Disabled` sit in the same output.
+- **Off:** the supervisor neither fires nor kills NT8 and logs nothing; `SystemHealth` carries
+  `nt8_switched_off` + `nt8_off_reason`; `POST /system/nt8-agent/start` is 409 (it would rebuild
+  the tunnel for nothing); `_locks.ensure_platform_idle` refuses NT8 jobs with a 503 before a run
+  row exists; `runner_dispatch._agent_error` leads every failed NT8 call with the reason.
+- ⚠ **With NT8 off the supervisor has ONE witness**, so an MT5 outage reads as a stale tunnel and
+  rebuilds it first — still skipped under a running job.
+
+Tests: `tests/test_nt8_switch.py` (19) + 14 across the supervisor, health and lock files; 15
+mutations run on the final code, 15 killed.
+
 ## The box refuses SSH when it is crowded — `services/vps_ssh.py` (2026-09-11)
 
 🔴 **A third of new SSH connections to the trading box were turned away before login.** MEASURED:
