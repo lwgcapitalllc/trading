@@ -113,7 +113,7 @@ function NoLinkChip() {
   )
 }
 
-function BotRow({ bot }: { bot: BotStatus }) {
+function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
   const pnl = bot.total_pnl_pct
   const pnlStr = pnl != null ? (pnl >= 0 ? `+${pnl.toFixed(2)}%` : `${pnl.toFixed(2)}%`) : null
   const pnlColor =
@@ -121,7 +121,22 @@ function BotRow({ bot }: { bot: BotStatus }) {
 
   return (
     <div className="flex items-center gap-[10px] py-[7px] border-b border-border-subtle/40 last:border-0">
-      <span className="text-[13px] text-text-primary flex-1 min-w-0 truncate">{bot.name}</span>
+      <span className="text-[13px] text-text-primary min-w-0 truncate">{bot.name}</span>
+      {/* Live and demo copies share a display name, so the row names its kind — only when the
+          fleet mixes both (otherwise the balance line says it once). A bot with no account is
+          benched and its kind is a fallback rather than a fact, so it gets no tag. */}
+      {showKind && bot.account && (
+        <span
+          className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-pill uppercase tracking-[0.4px] ${
+            bot.account_type === 'live'
+              ? 'bg-warn-muted text-warn-text'
+              : 'bg-bg-sunken text-text-tertiary'
+          }`}
+        >
+          {bot.account_type}
+        </span>
+      )}
+      <span className="flex-1" />
       {pnlStr && <span className={`text-[11px] font-mono tabular-nums ${pnlColor}`}>{pnlStr}</span>}
       {bot.day_locked && (
         <span className="text-[9px] font-semibold px-[5px] py-[1px] rounded-pill bg-warn-muted text-warn-text uppercase tracking-[0.4px]">
@@ -319,6 +334,7 @@ export function Overview() {
   const totalBalance = reportedBal.reduce((s, b) => s + (b.balance ?? 0), 0)
   const unreported = totalBots - reportedBal.length
   const liveBots = bots.filter((b) => b.account_type === 'live').length
+  const mixedFleet = liveBots > 0 && liveBots < totalBots
   const accountLabel =
     totalBots === 0
       ? ''
@@ -467,7 +483,7 @@ export function Overview() {
                 {/* Keyed by `key`, never `name`: a name is a label chosen for a human and two
                     bots may share one. */}
                 {snapshot.bots.map((bot) => (
-                  <BotRow key={bot.key} bot={bot} />
+                  <BotRow key={bot.key} bot={bot} showKind={mixedFleet} />
                 ))}
 
                 {snapshot.bots.length === 0 && (
