@@ -226,12 +226,19 @@ test.describe('Tuning workbench — the leaderboard', () => {
   })
 
   test('a run is named by what it CHANGED wherever it is named alone', async ({ page }) => {
-    await mockLeaderboard(page)
+    const fx = await mockLeaderboard(page)
     await page.goto(`/backtests/runs/${BASELINE_ID}/tune`)
     await expect(page.getByText('Iterations (5)')).toBeVisible()
     // The chart legend and the regime table — `Tweak aaa111` there tells the reader nothing about
-    // which line is which.
-    await expect(page.getByText('exec_tp1_pct=40', { exact: false }).first()).toBeVisible()
+    // which line is which. Named by the setting's LABEL, the words the Changes column uses; the
+    // label is read from the strategy's own schema, never typed, so a relabel cannot break this.
+    const strat = await getJson<{ param_schema: { name: string; label?: string }[] }>(
+      `/strategies/${fx.base.strategy_id}`
+    )
+    const label = strat.param_schema.find((p) => p.name === 'exec_tp1_pct')?.label ?? 'exec_tp1_pct'
+    await expect(page.getByText(`${label} → 40`, { exact: false }).first()).toBeVisible()
+    // The code-name form was a second naming scheme on one page (until 2026-09-11).
+    await expect(page.getByText('exec_tp1_pct=40', { exact: false })).toHaveCount(0)
   })
 
   test('the regime bands get a key, and the iterations skip the 96 KB calendar', async ({

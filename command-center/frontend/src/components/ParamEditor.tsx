@@ -590,11 +590,11 @@ export function ParamEditor(props: Props) {
       {settledCount > 0 && (
         <p
           data-testid="param-settled-count"
+          title="Still in the strategy and still sent. Move one off its default and it reappears here."
           className="text-[11px] text-text-tertiary italic px-1 pt-3 leading-snug"
         >
-          {settledCount} settled setting{settledCount > 1 ? 's' : ''} hidden — still in the
-          strategy, still sent at {settledCount > 1 ? 'their defaults' : 'its default'}. Any one
-          moved off its default reappears here.
+          {settledCount} settled setting{settledCount > 1 ? 's' : ''} hidden, sent at{' '}
+          {settledCount > 1 ? 'their defaults' : 'its default'}
         </p>
       )}
     </>
@@ -641,11 +641,11 @@ export function ParamEditor(props: Props) {
         {settledCount > 0 && (
           <p
             data-testid="param-settled-count"
+            title="Still in the strategy and still sent. Move one off its default and it reappears here."
             className="text-[10.5px] text-text-tertiary italic pt-2 leading-snug"
           >
-            {settledCount} settled setting{settledCount > 1 ? 's' : ''} hidden — still in the
-            strategy, still sent at {settledCount > 1 ? 'their defaults' : 'its default'}. Any one
-            moved off its default reappears here.
+            {settledCount} settled setting{settledCount > 1 ? 's' : ''} hidden, sent at{' '}
+            {settledCount > 1 ? 'their defaults' : 'its default'}
           </p>
         )}
       </div>

@@ -196,22 +196,37 @@ function Delta({
   good,
   digits = 2,
   suffix = '',
+  money = false,
 }: {
   value: number | null
   good: boolean | null
   digits?: number
   suffix?: string
+  /** A dollar change, compacted. It printed `value.toFixed(0)` — "-1430768559" jammed onto the
+   *  P&L beside it — until 2026-09-11. */
+  money?: boolean
 }) {
   if (value == null) return null
   const cls = good == null ? 'text-text-tertiary' : good ? 'text-pos-text' : 'text-neg-text'
   const sign = value > 0 ? '+' : ''
   return (
     <span className={`text-[10px] font-mono ${cls}`}>
-      {sign}
-      {value.toFixed(digits)}
-      {suffix}
+      {money ? fmtMoneyDelta(value) : `${sign}${value.toFixed(digits)}${suffix}`}
     </span>
   )
+}
+
+function fmtMoneyDelta(v: number): string {
+  const abs = Math.abs(v)
+  const body =
+    abs >= 1e9
+      ? `${(abs / 1e9).toFixed(2)}B`
+      : abs >= 1e6
+        ? `${(abs / 1e6).toFixed(1)}M`
+        : abs >= 1e3
+          ? `${(abs / 1e3).toFixed(1)}k`
+          : abs.toFixed(0)
+  return `${v < 0 ? '-' : '+'}$${body}`
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -468,7 +483,10 @@ export function TuningWorkbench() {
   )
   // Descriptive form, for everywhere a run is named with nothing else beside it: the chart legend,
   // the tooltip, the regime table's headers, the running banner. `Tweak 15f0122a` tells a reader
-  // nothing about which line is which; `exec_tp1_pct=30` is the whole point of the comparison.
+  // nothing about which line is which; the setting it moved is the whole point of the comparison.
+  // ⚠ Named by the setting's LABEL ("TP1 size % → 30"), the same words the Changes column uses —
+  // it printed the code name (`exec_tp1_pct=30`) until 2026-09-11, a second naming scheme on one
+  // page. Falls back to the code name for a setting with no label.
   const labelFor = useCallback(
     (id: string) => {
       if (id === baseline?.run_id) return 'Baseline'
@@ -476,11 +494,11 @@ export function TuningWorkbench() {
       if (!ch?.length) return `Tweak ${id.slice(0, 6)}`
       const head = ch
         .slice(0, 2)
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${schemaByName.get(k)?.label ?? k} → ${v}`)
         .join(' · ')
       return ch.length > 2 ? `${head} +${ch.length - 2}` : head
     },
-    [baseline, changesById]
+    [baseline, changesById, schemaByName]
   )
 
   // Overlay dataset — ACCOUNT BALANCE per run, so this chart reads exactly like the equity
@@ -1222,7 +1240,7 @@ export function TuningWorkbench() {
                           </span>
                           {pnlDelta != null && (
                             <span className="ml-1.5">
-                              <Delta value={pnlDelta} good={pnlDelta >= 0} digits={0} />
+                              <Delta value={pnlDelta} good={pnlDelta >= 0} money />
                             </span>
                           )}
                         </td>
