@@ -117,7 +117,73 @@ def _pack_bar(dec, bleg) -> dict:
     }
 
 
+# ── Each replay runs ONCE per distinct input (2026-09-10) ──────────────────────────────────────
+# Every case replayed the bot twice over the same 30 synthetic days — once to BUILD the export,
+# once inside the gate — and most then change only a Pine-side column (a planted bit, a band price,
+# a dropped column) that neither replay reads. MEASURED: 52s for this file on one core. So each side
+# remembers its own replays, keyed on exactly what each is computed from:
+#
+#   * the export: every field of the config it is built with (the bars are always the same days);
+#   * the gate: every field of the settings AND engine settings it DECODED off the file, plus the
+#     bars exactly as it loaded them. A looser key would let a decoding bug pass: a gate that stopped
+#     reading `cfg_*` would decode the default config off the non-default export, replay the default
+#     book, and go red on the diff — exactly as it does without the memo, because the key moves with
+#     the decoded config rather than with the file.
+#
+# 🔴 THE TWO MEMOS ARE SEPARATE. The gate's only ever holds a book a real gate replay of identical
+# inputs produced — seeding it from the export's own replay would compare the fixture with itself.
+# 🔴 `test_roundtrip_is_parity` runs the gate on the REAL class, sharing nothing with either memo.
+# ⚠ Shared, so READ-ONLY: the gate reads `decisions` and `bleg_states` and nothing else. A gate that
+# starts reading anything else off the strategy gets an AttributeError from the stand-in.
+#
+# Mutation map, RUN 2026-09-10 through scripts/testing/mutate.py (7 planted, 7 killed), each by
+# the case named: band prices never diffed -> planted_tracker_mismatch; decision bits never diffed
+# -> planted_decision_mismatch; chart-origin offset ignored -> partial_chart_export; settings never
+# decoded off the file -> nondefault_toggles; tail never subtracted -> inside_the_unconfirmed_tail;
+# tail=0 not honoured -> SAME_mismatch_IS_reported; lookahead floor not handed over -> FLOOR.
+_EXPORTS: dict = {}
+_GATE_REPLAYS: dict = {}
+
+
+def _settings_key(cfg) -> str:
+    assert dataclasses.is_dataclass(cfg), type(cfg)
+    return f"{type(cfg).__qualname__}{sorted(dataclasses.asdict(cfg).items())!r}"
+
+
+def _frame_key(df: pd.DataFrame) -> tuple:
+    """The bars byte for byte. A datetime index only — anything else would key on object ids."""
+    assert isinstance(df.index, pd.DatetimeIndex), type(df.index)
+    return (tuple(df.columns), df.index.asi8.tobytes(), df.to_numpy(dtype="float64").tobytes())
+
+
+class _GateReplaysOnce:
+    """Stands in for `BLegStrategy` inside the gate: each distinct input is replayed once, for real."""
+
+    engine_config = staticmethod(BLegStrategy.engine_config)
+
+    def __init__(self, config, *args, **kwargs):
+        self._inputs = (config, args, kwargs)
+
+    def run(self, df, engine_config=None, warmup: int = 0):
+        config, cargs, ckwargs = self._inputs
+        key = (_settings_key(config), repr((cargs, sorted(ckwargs.items()))),
+               None if engine_config is None else _settings_key(engine_config), warmup,
+               _frame_key(df))
+        if key not in _GATE_REPLAYS:
+            real = BLegStrategy(config, *cargs, **ckwargs).run(
+                df, engine_config=engine_config, warmup=warmup)
+            _GATE_REPLAYS[key] = (real.decisions, real.bleg_states)
+        self.decisions, self.bleg_states = _GATE_REPLAYS[key]
+        return self
+
+
+@pytest.fixture(autouse=True)
+def _gate_replays_once(monkeypatch):
+    monkeypatch.setattr(cb, "BLegStrategy", _GateReplaysOnce)
+
+
 def _write(tmp_path, cfg=None):
+    """The synthetic export for `cfg`, written to `tmp_path`. Built once per config (see above)."""
     cfg = cfg or BLegConfig()
     # 🔴 SCALE-IN IS PINNED OFF, AND IT IS NOT A TIDY-UP — THIS FORK'S PINE HAS NO SUCH INPUT.
     # `BLegConfig` inherits the field from `SosFadeConfig`, whose default moved off → on for the
@@ -131,6 +197,16 @@ def _write(tmp_path, cfg=None):
     #    ON — which `test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one`
     #    below does, on purpose.
     cfg = dataclasses.replace(cfg, exec_scale_in=False)
+    key = _settings_key(cfg)
+    if key not in _EXPORTS:
+        _EXPORTS[key] = _build_export(cfg)
+    frame, strat = _EXPORTS[key]
+    p = tmp_path / "bleg_export.csv"
+    frame.to_csv(p, index=False)
+    return p, strat
+
+
+def _build_export(cfg: BLegConfig):
     # 30 days, not 10: on 10 the synthetic bars never ARM a leg (l_on = 0 on every bar), so
     # the bl_* columns would all be "no live leg" and the tracker diff would prove nothing.
     # 30 gives 56 armed bars and one completed trade, i.e. the harness is exercised on the
@@ -146,12 +222,12 @@ def _write(tmp_path, cfg=None):
         row.update(_pack_bar(strat.decisions[i], strat.bleg_states[i]))
         row.update(cfg_cols)
         rows.append(row)
-    p = tmp_path / "bleg_export.csv"
-    pd.DataFrame(rows).to_csv(p, index=False)
-    return p, strat
+    return pd.DataFrame(rows), strat
 
 
-def test_roundtrip_is_parity(tmp_path):
+def test_roundtrip_is_parity(tmp_path, monkeypatch):
+    """The control, on the REAL strategy class — the one gate run here that shares nothing."""
+    monkeypatch.setattr(cb, "BLegStrategy", BLegStrategy)
     p, _ = _write(tmp_path)
     msgs = cb.run_parity(p, warmup=100)
     assert msgs == [], msgs[:3]
@@ -576,7 +652,9 @@ def test_an_export_MISSING_one_decision_column_is_REFUSED_and_names_what_the_dif
     """Watched RED against HEAD: every case returned `[]`, i.e. parity over the columns left."""
     p = tmp_path / "bleg_export.csv"
     _clean_export.drop(columns=[column]).to_csv(p, index=False)
-    lost = [c for c in cb._COMPARED if c not in cb._expand(cb.load_export(p)).columns]
+    # Read and unpacked ONCE — this comprehension used to re-read the file per compared column.
+    unpacked = cb._expand(cb.load_export(p)).columns
+    lost = [c for c in cb._COMPARED if c not in unpacked]
     assert lost, f"dropping {column} took nothing the diff reads, so this case proves nothing"
     with pytest.raises(cb.NothingToCompare) as exc:
         cb.run_parity(p, warmup=100)

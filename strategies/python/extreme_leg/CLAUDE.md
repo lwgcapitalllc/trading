@@ -265,6 +265,15 @@ it back, so it only checks the gate's plumbing — column names, the two bit sch
 decoding, row alignment — and that a disagreement is DETECTED AND NAMED. Each case moves one column
 or flips one bit and asserts the gate fails and says which.
 
+⚠ **Each distinct gate replay runs ONCE per file (2026-09-10), keyed on the settings the gate
+DECODED plus the bars byte for byte** — most cases change only a Pine-side column the replay never
+reads. The undisturbed export still runs as a separate process, the command a person runs. 🔴 **The
+key is the decoded config, never the file's**: a gate that stopped reading a setting would decode
+the defaults and replay the default book, and go red exactly as it would with nothing remembered.
+🔴 **One hole was found on the way and SURVIVED the committed file too**: no case moved an on/off
+setting, so a gate ignoring every switch stayed green. `test_gate_reads_the_ON_OFF_settings_off_the_
+export_too` closes it; mutation map in the file.
+
 ⚠ **The twenty column checks are ONE process, not twenty, and that is a stronger test rather than a
 cheaper one.** Each case re-runs the strategy in a subprocess; twenty of those cost more wall clock
 than everything else here put together, on a suite whose speed is a standing rule. Moving every

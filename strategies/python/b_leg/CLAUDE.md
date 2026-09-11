@@ -809,3 +809,12 @@ through `missing_columns_refusal` — the SOS Fade gate's function, shared rathe
 story in `strategies/python/sos_fade/CLAUDE.md`. The loop's skips are deleted, and a test holds every
 compared column to this fork's own twin (every one is plotted today, so no real export is refused).
 
+
+## Its gate tests replay once per distinct input (2026-09-10)
+
+`tests/test_compare_bleg.py` builds each synthetic export once per config and remembers the gate's
+replay keyed on the settings and engine settings it DECODED plus the bars byte for byte — 52s → 20s
+on one core. The two memos are separate (seeding the gate's from the export's own replay would
+compare the fixture with itself), and the round-trip control runs the REAL class. 🔴 **7 bugs planted
+in the gate, 7 caught by the case each names**, including a gate that never decodes the settings —
+the one case a looser key would have hidden. Map in the file.

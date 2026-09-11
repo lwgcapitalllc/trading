@@ -19,6 +19,9 @@ gate that always failed would both fail this file.
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
+import io
 import subprocess
 import sys
 from pathlib import Path
@@ -113,7 +116,12 @@ def _synthetic_export(cfg: ExtremeLegConfig, df: pd.DataFrame, states) -> pd.Dat
 def export() -> pd.DataFrame:
     if not BARS.exists():
         pytest.skip(f"no cached bars at {BARS}")
-    df = pd.read_csv(BARS, parse_dates=["time"]).set_index("time").iloc[SLICE[0]:SLICE[1]]
+    # `nrows` reads only the rows the slice needs rather than all ~562,000. The slice is positional,
+    # so the two reads give the same frame — CHECKED rather than assumed, 2026-09-10: this slice and
+    # the same slice of a full read passed `pd.testing.assert_frame_equal(..., check_exact=True)` —
+    # same index, dtypes and every value (full read 1.72s, this one 0.07s, on a loaded machine).
+    df = pd.read_csv(BARS, parse_dates=["time"], nrows=SLICE[1]).set_index("time")
+    df = df.iloc[SLICE[0]:SLICE[1]]
     df = df[["open", "high", "low", "close"]]
     # 🔴 BOTH PINE-LESS CUTS OFF, EXPLICITLY, WHATEVER SHIPS. This fixture stands in for a
     # TradingView export, and the chart cannot make either cut — an export taken with one on
@@ -138,21 +146,107 @@ def export() -> pd.DataFrame:
     return out
 
 
+# ── ONE replay per input, and ONE separate-process control (2026-09-10) ──────────────────────
+# Every gate run replays the 8,000 export bars through the port — ~4s as its own process — and all
+# but one case here change only the PINE side of the export (a column, a bit, a missing column),
+# which that replay never reads. So in this process the gate's replay is remembered, keyed on
+# exactly what it is computed from:
+#
+#   * the settings AS DECODED FROM THE EXPORT FILE — the config the gate hands the strategy after
+#     `config_from_export`, never this file's own. A looser key would let a decoding bug pass: the
+#     settings case moves `cfg_min_r`, so a gate that stopped reading that column would decode the
+#     undisturbed export's config, replay the undisturbed book, and go green — exactly the red it
+#     went without the memo. The settings case misses the memo because its decoded config differs.
+#   * the bars exactly as the gate loaded them — index and every OHLC value, byte for byte;
+#   * every other argument the gate passed.
+#
+# 🔴 The memo only ever holds a book a REAL gate replay of identical inputs produced. It is never
+# seeded from the fixture's own replay — that would compare the fixture with itself.
+# 🔴 The undisturbed export still runs as a SEPARATE PROCESS (`_control_run`), because that is what
+# a person runs; it is the one gate run here that shares nothing.
+# ⚠ Shared, so READ-ONLY: the gate only reads `states`. A gate that starts reading anything else
+# off the strategy gets an AttributeError from the stand-in rather than a stale answer.
+#
+# Mutation map, RUN 2026-09-10 through scripts/testing/mutate.py (4 planted, 4 killed): numeric
+# settings never decoded -> reads_the_settings; one compared column skipped -> names_every_column;
+# decision bits never diffed -> one_decision_bit_flips; switches never decoded ->
+# reads_the_ON_OFF_settings. 🔴 The last SURVIVED the committed file too, before that case existed.
+_GATE_REPLAYS: dict = {}
+
+
+def _frame_key(df: pd.DataFrame) -> tuple:
+    """The bars byte for byte. A datetime index only — anything else would key on object ids."""
+    assert isinstance(df.index, pd.DatetimeIndex), type(df.index)
+    return (tuple(df.columns), df.index.asi8.tobytes(), df.to_numpy(dtype="float64").tobytes())
+
+
+def _settings_key(cfg) -> tuple:
+    """Every field of the config the gate decoded (it is a plain, unhashable dataclass)."""
+    return (type(cfg).__qualname__,) + tuple(
+        (f.name, getattr(cfg, f.name)) for f in dataclasses.fields(cfg))
+
+
+def _replay_once(real):
+    """The gate's strategy class `real`, replaced by one that replays each distinct input once."""
+
+    class ReplayOnce:
+        def __init__(self, config, *args, **kwargs):
+            self._inputs = (config, args, kwargs)
+            self._minutes = None
+
+        def set_timeframe_minutes(self, minutes):
+            self._minutes = minutes
+
+        def run(self, df, *args, **kwargs):
+            config, cargs, ckwargs = self._inputs
+            key = (_settings_key(config), repr((cargs, sorted(ckwargs.items()))), self._minutes,
+                   repr((args, sorted(kwargs.items()))), _frame_key(df))
+            if key not in _GATE_REPLAYS:
+                strat = real(config, *cargs, **ckwargs)
+                if self._minutes is not None:
+                    strat.set_timeframe_minutes(self._minutes)
+                strat.run(df, *args, **kwargs)
+                _GATE_REPLAYS[key] = strat.states
+            self.states = _GATE_REPLAYS[key]
+            return self
+
+    return ReplayOnce
+
+
 def _load_tool():
     """Import the gate as a module so a case can drive `main()` in this process.
 
-    ⚠ Only for the cases that must patch something the subprocess cannot see. Everything else
-    stays on the subprocess path, which is what actually gets run by a person.
+    Its strategy class is swapped for `_replay_once`'s stand-in, so identical replays are computed
+    once — see the block above. Every case but the control and the two wrong-file refusals runs
+    the gate this way; those three stay on the separate-process path a person actually runs.
     """
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("compare_extreme_leg_inproc", TOOL)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    mod.ExtremeLegStrategy = _replay_once(mod.ExtremeLegStrategy)
     return mod
 
 
 def _run(df: pd.DataFrame, tmp_path: Path, extra=()) -> subprocess.CompletedProcess:
+    """The gate on `df`, in THIS process, with its replay remembered (see `_GATE_REPLAYS`).
+
+    Same arguments and the same `main()` as the separate process: the exit code is what `main()`
+    returns and stdout is everything it printed. ⚠ An exception is NOT turned into exit code 1
+    here, so a gate that crashes fails the case outright instead of reading as a red gate —
+    stricter than the separate process, never looser.
+    """
+    p = tmp_path / "export.csv"
+    df.to_csv(p, index=False)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = _load_tool().main([str(p), "--warmup", str(WARMUP), *extra])
+    return subprocess.CompletedProcess([str(TOOL), str(p)], code, out.getvalue(), "")
+
+
+def _run_in_a_separate_process(df: pd.DataFrame, tmp_path: Path,
+                               extra=()) -> subprocess.CompletedProcess:
     p = tmp_path / "export.csv"
     df.to_csv(p, index=False)
     return subprocess.run(
@@ -161,9 +255,19 @@ def _run(df: pd.DataFrame, tmp_path: Path, extra=()) -> subprocess.CompletedProc
     )
 
 
-def test_gate_is_green_on_an_undisturbed_export(export, tmp_path):
+@pytest.fixture(scope="module")
+def _control_run(export, tmp_path_factory) -> subprocess.CompletedProcess:
+    """The undisturbed export through the gate as its OWN PROCESS — the command a person runs.
+
+    Once per module: the control and the caveats case both ran this identical command. Never
+    memoized — a fresh interpreter, a real replay.
+    """
+    return _run_in_a_separate_process(export, tmp_path_factory.mktemp("xleg_control"))
+
+
+def test_gate_is_green_on_an_undisturbed_export(_control_run):
     """The control. Without it, every red below could be the gate failing on everything."""
-    r = _run(export, tmp_path)
+    r = _control_run
     assert r.returncode == 0, r.stdout + r.stderr
     assert "PARITY" in r.stdout
 
@@ -232,8 +336,8 @@ ALL_COLUMNS = ["px_swing_hi", "px_swing_lo", "px_extreme_lo", "px_extreme_hi", "
 def test_gate_names_every_column_it_compares(export, tmp_path):
     """Move ALL of them at once and the gate must name ALL of them.
 
-    ⚠ One process rather than twenty. Each case here re-runs the strategy in a subprocess, and
-    twenty of those cost more wall clock than the rest of this package's tests put together — on a
+    ⚠ One run rather than twenty. Each case here used to re-run the strategy in its own process,
+    and twenty of those cost more wall clock than the rest of this package's tests put together — on a
     suite whose speed is a standing rule, that is a real cost for a weaker assertion than this one.
     Moving every column together is STRICTER: it proves the gate's reporting is not capped or
     first-only, which a per-column loop cannot show at all. The three cases below keep the
@@ -290,6 +394,24 @@ def test_gate_reads_the_settings_off_the_export_not_its_own_defaults(export, tmp
     assert "px_blk" in r.stdout or "raw_long" in r.stdout or "took_long" in r.stdout
 
 
+def test_gate_reads_the_ON_OFF_settings_off_the_export_too(export, tmp_path):
+    """The switch half of the test above, which it cannot cover: `cfg_min_r` is a NUMBER, and the
+    switches arrive packed in one integer through a different branch of the decoder.
+
+    🔴 MUTATION: skip the switch decode in `config_from_export`. It SURVIVED this whole file until
+    2026-09-10 — on the committed version too, not only on the one remembering its replays —
+    because every switch in the fixture sits at its default, so ignoring them changed nothing.
+    Both directions off here: the fixture opened trades, so a gate that reads the switches
+    refuses every one of them and goes red, and a gate that ignores them stays green.
+    """
+    bad = export.copy()
+    flags = int(bad["cfg_flags"].dropna().iloc[0])
+    bad["cfg_flags"] = flags & ~(CFG_BITS["exec_longs"] | CFG_BITS["exec_shorts"])
+    r = _run(bad, tmp_path)
+    assert r.returncode == 1, r.stdout
+    assert "took_long" in r.stdout or "took_short" in r.stdout, r.stdout
+
+
 def test_gate_says_so_when_the_export_carries_no_settings(export, tmp_path):
     """A narrower gate has to announce itself. Silently defaulting is how a run gets believed."""
     bad = export.drop(columns=["cfg_flags", "cfg_min_r"])
@@ -332,14 +454,16 @@ def test_gate_QUALIFIES_its_verdict_when_a_pine_less_cut_ships_on(export, tmp_pa
         assert "NOT a check of the shipped strategy" in out, out
 
 
-def test_the_caveats_survive_a_runner_that_keeps_only_warning_lines(export, tmp_path):
+def test_the_caveats_survive_a_runner_that_keeps_only_warning_lines(_control_run):
     """Mutation: drop the ⚠ from either caveat line, or delete the never-reached summary.
 
     scripts/check_engine_gates.py prints a passing gate's 🔴/⚠ lines and nothing else — the verdict
     and the coverage table go. So what a green run cannot vouch for has to arrive as ⚠ lines that
     read alone, or a golden run of this gate shows a bare tick over a strategy it did not check.
+
+    ⚠ Reads the control's own separate-process run — the identical command, run once.
     """
-    r = _run(export, tmp_path)
+    r = _control_run
     assert r.returncode == 0, r.stdout + r.stderr
     kept = [ln.strip() for ln in r.stdout.splitlines() if ln.strip().startswith(("🔴", "⚠"))]
     zero = [ln.split()[2] for ln in r.stdout.splitlines()
