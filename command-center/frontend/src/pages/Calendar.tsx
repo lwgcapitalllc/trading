@@ -311,9 +311,8 @@ export function Calendar() {
             </button>
           )}
         </div>
-        <span className="text-sm text-text-tertiary">
-          Live macro releases · actual vs forecast vs previous
-        </span>
+        {/* No subtitle: "actual vs forecast vs previous" restated the table's own column
+            headings (2026-09-11). */}
       </div>
 
       {/* ── Day summary strip ── */}
@@ -345,8 +344,8 @@ export function Calendar() {
                   {date.getDate()}
                 </span>
               </div>
-              <div className="mt-1 flex items-center justify-between text-[11px]">
-                <span className="text-text-tertiary">Economic</span>
+              {/* "40 events", not a separate "Economic" label repeated on all seven cards. */}
+              <div className="mt-1 flex items-center justify-end gap-1 text-[11px]">
                 {/* An em-dash while the week loads, never `0`. The counts are computed against the
                     NEW week's `fromMs`, so with the previous week's events still held they were
                     all genuinely zero — a strip confidently reporting an empty week. */}
@@ -356,6 +355,7 @@ export function Calendar() {
                 >
                   {loadingWeek ? '—' : dayCounts[i]}
                 </span>
+                <span className="text-text-tertiary">events</span>
               </div>
             </button>
           )
