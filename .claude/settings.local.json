@@ -261,7 +261,13 @@
       "Bash(mkdir -p strategies/python/sos_fade/exports/golden strategies/python/extreme_leg/exports/golden)",
       "Bash(shasum -a 256 strategies/python/sos_fade/exports/golden/*.csv strategies/python/extreme_leg/exports/golden/*.csv)",
       "Bash(git -C /Users/alwg/trading worktree remove /private/tmp/claude-501/-Users-alwg-trading/2c038110-9646-449c-9824-3a4e61a7df2b/scratchpad/wt_push)",
-      "Bash(git -C /Users/alwg/trading log --oneline -3)"
+      "Bash(git -C /Users/alwg/trading log --oneline -3)",
+      "Bash(curl -s -o /dev/null -w \"vite %{http_code}\\\\n\" \"http://[::1]:5173/\")",
+      "Bash(curl -s -o /dev/null -w \"api %{http_code}\\\\n\" http://127.0.0.1:8000/health)",
+      "Bash(python3 /private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/fmutate.py src/pages/Bots/index.tsx '    trading.push\\({ account: e.account, group, rows: [] }\\)' '    void group' 'LEFT is still an account')",
+      "Bash(ln -s /Users/alwg/trading/backtest/cache/VantageMarkets_Demo backtest/cache/VantageMarkets_Demo)",
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python -m pytest -q -p no:cacheprovider strategies/python/extreme_leg/tests/test_compare_extreme_leg.py backtest/tests/test_stack_zone_band.py --durations=4)",
+      "Bash(GIT_INDEX_FILE=/private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/idx2 git commit -q -F /private/tmp/claude-501/-Users-alwg-trading/22e635a1-9d7a-44f6-9abc-2f7a46fad29b/scratchpad/msg2.txt)"
     ],
     "additionalDirectories": ["/private/tmp", "/tmp"]
   }
