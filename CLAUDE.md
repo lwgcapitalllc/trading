@@ -785,6 +785,13 @@ On 2026-09-11 a `reset --keep` after a rebuilt push dropped three fresh commits 
 session and rolled its files back; restored two minutes later. Message the other session before
 moving the branch.
 
+⚠ **By PATH is not enough for a file BOTH sessions are editing.** `git commit -- <path>` takes the
+whole working-tree file, the other session's unsaved lines included — 6ccb56e0 (2026-09-11) carried
+two of them in `command-center/frontend/CLAUDE.md`. Commit only your own hunks: in a scratch index
+(`GIT_INDEX_FILE=<tmp> git read-tree HEAD`, then `git apply --cached` a patch of just them, then
+`GIT_INDEX_FILE=<tmp> git commit`), then `git reset -- <path>` in the real index. ⚠ **Never a plain
+`git commit` from the shared index** — it takes whatever the other session has staged.
+
 ⚠ **The direction of the damage is the part to remember: a doc that arrives EARLY reads exactly
 like a doc that is right.** The next person greps for the step, finds the paragraph, runs the
 script, and sees seven — and the honest conclusion available to them is that the script is broken.
