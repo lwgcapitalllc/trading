@@ -224,7 +224,23 @@ def test_every_endpoint_that_STARTS_a_job_from_a_strategy_id_refuses_a_dependent
 # with "a stack needs at least 2 strategies". Nothing was broken; the feature just could not be
 # reached, which is the failure shape rule 9 is about.
 def test_one_strategy_plus_a_recovery_leg_is_enough():
-    _validate_stack_strategies(["sos_fade"], extra_legs=1)
+    """⚠ It seeds the strategy it names. Until 2026-09-11 it read the machine's REAL lab and
+    passed only because that lab held a python `sos_fade` row - red on a fresh clone."""
+    from services import lab_db
+
+    lab_db.upsert_strategy(
+        {
+            "id": "sos_fade",
+            "name": "SOS Fade",
+            "class_name": "SosFadeStrategy",
+            "source_path": "strategies/python/sos_fade",
+            "runner": "python",
+            "scanned_at": 1,
+            "source_hash": "h",
+        }
+    )
+    legs = _validate_stack_strategies(["sos_fade"], extra_legs=1)
+    assert [s["id"] for s in legs] == ["sos_fade"]
 
 
 def test_one_strategy_on_its_own_is_still_refused():

@@ -1134,6 +1134,14 @@ the running app reads, which is where the 2026-08-06 audit's stale `"j2"` came f
 test client stubs the readiness REPORT, which re-read the 5.5 MB news cache on every client start
 (~51 of 332 test-seconds). `GET /system/readiness` calls `check()`, so its own tests still read it.
 
+🔴 **The private database is AUTOUSE since 2026-09-11 (`_private_lab_db`)** — before, only a test
+that asked for `fresh_db` got one, and one that forgot wrote the live app's `data/lab.db` (a stack
+test left two runs and a stack there). MEASURED by pointing every test at a path nobody had made:
+ONE test touched it, reading a `sos_fade` row only this machine's lab held — red on a fresh clone.
+⚠ **Its file is `private_lab.db`, never `lab.db`**, so a test building a fresh clone's schema at
+`tmp_path / "lab.db"` still starts from nothing. ⚠ This process only; a started worker still sees
+the real path, and none touches the database today. Proof: `tests/test_private_lab_db.py`.
+
 **Same pass, the stale roster:** `EXPECTED_CLASS_NAMES` in `tests/test_strategies.py` still
 listed `BosStrategy`, three tests deep, after `1946f8b` deleted the unfinished port. That
 commit's message says "and its roster line with it" and means `backtest/tools/run_report.py`,

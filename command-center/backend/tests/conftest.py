@@ -2,7 +2,8 @@
 Shared fixtures for the lab test suite.
 
 DB isolation: every test gets a fresh SQLite DB via monkeypatching lab_db.DB_PATH
-to a temp path before any lab_db function runs.
+to a temp path before any lab_db function runs - automatically, since 2026-09-11
+(`_private_lab_db`). Until then this line was true only for tests that asked.
 
 VPS isolation: the client fixture stubs the runner_dispatch calls a test is meant
 to exercise, and `_no_live_vps` (autouse, below) makes any call it MISSED fail
@@ -84,23 +85,55 @@ def _template_db(tmp_path_factory):
     return path
 
 
-@pytest.fixture
-def fresh_db(tmp_path, monkeypatch, _template_db):
-    """
-    Patches lab_db.DB_PATH to a temp file holding a freshly built database.
-    All fixtures that depend on this share the same temp DB within one test.
-    """
+def _copy_template(template, db) -> None:
     import sqlite3
 
-    from services import lab_db
-
-    db = tmp_path / "lab.db"
-    src, dst = sqlite3.connect(_template_db), sqlite3.connect(db)
+    src, dst = sqlite3.connect(template), sqlite3.connect(db)
     try:
         src.backup(dst)
     finally:
         dst.close()
         src.close()
+
+
+@pytest.fixture(autouse=True)
+def _private_lab_db(tmp_path, monkeypatch, _template_db):
+    """Every test gets its OWN lab database, whether it asked for one or not (2026-09-11).
+
+    🔴 This file's header has said "every test gets a fresh SQLite DB" since it was written, and
+    only the tests that asked for `fresh_db` did. A test that forgot wrote straight into the live
+    app's `data/lab.db` - a stack test (its temp folder names it) left two runs and a stack there,
+    with `created_at = 1` and curves pointing into a pytest temp folder. And one test READ it:
+    `test_one_strategy_plus_a_recovery_leg_is_enough` passed only because this machine's lab holds
+    a strategy called sos_fade, so it was red on a fresh clone. MEASURED 2026-09-11 by pointing
+    every test at a path nobody had created: that test was the only one in the suite to touch it.
+
+    ⚠ A DIFFERENT FILE NAME from the one `fresh_db` and the hand-built fixtures use
+    (`tmp_path / "lab.db"`), on purpose. Some tests build a database at that path from nothing to
+    prove what a FRESH CLONE gets; a finished schema copied there first would quietly turn them
+    into tests of the migration path, and they would still pass.
+    ⚠ Only THIS process. A worker process a test starts imports `lab_db` with its real path. None
+    touches the database today (a stack replay writes nothing); `_arm_child_guard` is where a
+    child-side refusal would go if one ever does.
+    """
+    from services import lab_db
+
+    db = tmp_path / "private_lab.db"
+    _copy_template(_template_db, db)
+    monkeypatch.setattr(lab_db, "DB_PATH", db)
+
+
+@pytest.fixture
+def fresh_db(tmp_path, monkeypatch, _template_db):
+    """
+    Patches lab_db.DB_PATH to a temp file holding a freshly built database, and returns its path.
+    All fixtures that depend on this share the same temp DB within one test. Every test already
+    has a private database (`_private_lab_db`); ask for this one when the test needs the PATH.
+    """
+    from services import lab_db
+
+    db = tmp_path / "lab.db"
+    _copy_template(_template_db, db)
     monkeypatch.setattr(lab_db, "DB_PATH", db)
     return db
 
