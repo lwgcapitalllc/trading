@@ -32,6 +32,15 @@ export function StressTests() {
     else setSelectedIds(new Set(tests.map((t) => t.stress_test_id)))
   }
   const allChecked = tests != null && tests.length > 0 && selectedIds.size === tests.length
+  // "Prob Pass" only when it says something "Prob Breach" does not. With no profit target on the
+  // ruleset the backend sets it to exactly 1 − breach (`stress_tester.py`), so the column restated
+  // its neighbour on every row (2026-09-11).
+  const showPass =
+    tests?.some(
+      (t) =>
+        t.prob_pass_eval != null &&
+        (t.prob_breach == null || Math.abs(t.prob_pass_eval - (1 - t.prob_breach)) > 0.0005)
+    ) ?? false
 
   const handleBulkDelete = async () => {
     setBulkDeleting(true)
@@ -123,7 +132,9 @@ export function StressTests() {
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Status</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Worst 1% DD</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Breach</th>
-                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Pass</th>
+                {showPass && (
+                  <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Pass</th>
+                )}
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Created</th>
               </tr>
             </thead>
@@ -228,18 +239,20 @@ export function StressTests() {
                       </span>
                     )}
                   </td>
-                  <td className="py-2 pr-4 font-mono text-text-secondary">
-                    {t.prob_pass_eval != null ? (
-                      `${(t.prob_pass_eval * 100).toFixed(1)}%`
-                    ) : (
-                      <span
-                        className="text-text-tertiary"
-                        title="No drawdown limit or no profit target on this ruleset — there is nothing to pass"
-                      >
-                        n/a
-                      </span>
-                    )}
-                  </td>
+                  {showPass && (
+                    <td className="py-2 pr-4 font-mono text-text-secondary">
+                      {t.prob_pass_eval != null ? (
+                        `${(t.prob_pass_eval * 100).toFixed(1)}%`
+                      ) : (
+                        <span
+                          className="text-text-tertiary"
+                          title="No drawdown limit or no profit target on this ruleset — there is nothing to pass"
+                        >
+                          n/a
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td className="py-2 pr-4 text-text-tertiary text-xs">
                     {new Date(t.created_at * 1000).toLocaleDateString()}
                   </td>

@@ -516,7 +516,7 @@ export default function StressTestDetail() {
   const kpiBlock = (key: string): React.ReactNode => {
     if (key === 'mc') {
       return (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-[10px] mb-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-[10px] mb-4">
           {mcStats && (
             <>
               <MetricCard
@@ -551,7 +551,9 @@ export default function StressTestDetail() {
               drawdown limit on the ruleset, or no profit target — and `?? 0` rendered that as
               "0%", i.e. "this strategy never passes" about a measurement never taken. The backend
               made both fields nullable for exactly this reason. */}
-          {st.prob_breach != null && (
+          {/* Not while the header's Monte Carlo tile shows it — that tile IS this number
+              (`mcVerdict` reads `prob_breach`), so the card was a second copy (2026-09-11). */}
+          {st.prob_breach != null && !mcVerdict && (
             <ProbCard
               label="Prob. Breach"
               prob={st.prob_breach}
@@ -559,18 +561,23 @@ export default function StressTestDetail() {
               tooltip={`Across every simulation, how often the strategy breaches the drawdown limit. Lower = safer. ${basisNote}`}
             />
           )}
-          {st.prob_pass_eval != null && (
-            <ProbCard
-              label={isPersonal ? 'Prob. Stay Safe' : 'Prob. Pass'}
-              prob={st.prob_pass_eval}
-              variant="pass"
-              tooltip={
-                isPersonal
-                  ? 'How often the strategy stays under the drawdown limit across every simulation.'
-                  : 'How often the strategy passes the eval (hits target without breaching) across every simulation.'
-              }
-            />
-          )}
+          {/* Only when it says something breach does not: with no profit target the backend sets
+              it to exactly 1 − breach, and "Stay Safe 99%" beside "Breach 1%" is one fact twice.
+              Same rule as the Stress Tests list. */}
+          {st.prob_pass_eval != null &&
+            (st.prob_breach == null ||
+              Math.abs(st.prob_pass_eval - (1 - st.prob_breach)) > 0.0005) && (
+              <ProbCard
+                label={isPersonal ? 'Prob. Stay Safe' : 'Prob. Pass'}
+                prob={st.prob_pass_eval}
+                variant="pass"
+                tooltip={
+                  isPersonal
+                    ? 'How often the strategy stays under the drawdown limit across every simulation.'
+                    : 'How often the strategy passes the eval (hits target without breaching) across every simulation.'
+                }
+              />
+            )}
           {mcStats && st.prob_breach == null && (
             <MetricCard
               label="Prob. Breach"
@@ -746,7 +753,9 @@ export default function StressTestDetail() {
         )}
         <div className="flex-1 min-w-0 px-4 py-3 flex flex-col gap-2">
           <h1 className="text-h1 font-semibold leading-tight">
-            {st.strategy_name || 'Stress Test'}
+            {st.strategy_name ||
+              stack?.strategies.map((l) => l.strategy_name).join(' + ') ||
+              'Stress Test'}
           </h1>
           <div className="flex flex-wrap gap-1.5 items-center">
             {ruleset && (
@@ -1001,9 +1010,9 @@ export default function StressTestDetail() {
           <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary">
             Source Stack
           </div>
-          <div className="text-[17px] font-semibold text-text-primary truncate">
-            {st?.strategy_name || 'Shared account'}
-          </div>
+          {/* The account type, not the strategy names — the page heading names those. A
+              "one shared account" chip under this said it a second time (2026-09-11). */}
+          <div className="text-[17px] font-semibold text-text-primary truncate">Shared account</div>
           <div className="flex flex-wrap gap-1.5">
             {stack?.instrument && (
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
@@ -1015,9 +1024,6 @@ export default function StressTestDetail() {
                 {fmtDate(stack.start_date)} → {fmtDate(stack.end_date)}
               </span>
             )}
-            <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary">
-              one shared account
-            </span>
           </div>
         </div>
         <div className="border-l border-border-subtle pl-6 flex flex-col justify-between items-end flex-shrink-0">
@@ -1060,7 +1066,9 @@ export default function StressTestDetail() {
                   <>
                     <span className="text-text-tertiary flex-shrink-0">·</span>
                     <h1 className="text-[14px] font-semibold truncate">
-                      {st.strategy_name || 'Stress Test'}
+                      {st.strategy_name ||
+                        stack?.strategies.map((l) => l.strategy_name).join(' + ') ||
+                        'Stress Test'}
                     </h1>
                     {st.instrument && (
                       <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
@@ -1111,13 +1119,20 @@ export default function StressTestDetail() {
 
         {/* ══ Analysis workspace — one tabbed panel; each tab = its KPIs above its chart ══ */}
         {chartTabs.length > 0 && (
+          // Each tab's explainer is an ⓘ beside its right-hand label, not a line of body text
+          // between the tabs and the numbers (2026-09-11). Only here: BacktestDetail's `sub` can
+          // carry a breach warning, which must stay on screen.
           <ChartTabPanel
             tabs={chartTabs}
             active={activeChart}
             onActive={setChartTab}
             height={activeChart === 'mc' ? 640 : 440}
-            sub={chartSubByKey[activeChart]}
-            right={chartRightByKey[activeChart]}
+            right={
+              <span className="flex items-center gap-1.5">
+                {chartRightByKey[activeChart]}
+                {chartSubByKey[activeChart] && <InfoTip text={chartSubByKey[activeChart]} />}
+              </span>
+            }
             aboveChart={kpiBlock(activeChart)}
             onExpand={() => setFullscreen(true)}
             render={renderChart}
