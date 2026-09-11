@@ -13,11 +13,13 @@
  * new forms — the registry is what makes a first bot on a new account movable at all.
  */
 import { useState } from 'react'
-import { Play, Pencil, Rocket, Trash2, X } from 'lucide-react'
+import { Play, Pencil, Plus, Rocket, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useSetAccountRiskCap, useUnregisterAccount, useAssignBotAccount } from '@/hooks/useBots'
 import type { AccountEarnings, BotAccountGroup, BotAccountRegistration } from '@/types'
-import { AccountForm, AddBotRow, nameOf } from './AccountsTab'
+import { openingRecorder } from '@/lib/accountEarnings'
+import { AccountForm, nameOf } from './AccountsTab'
+import { AddBotPanel } from './AddBotPanel'
 import { GoLivePanel } from './GoLivePanel'
 import { Shimmer } from '@/components/Shimmer'
 
@@ -271,7 +273,7 @@ export function AccountDrawer({
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
-                  {earnings.opening_from ? `, recorded by ${earnings.opening_from}` : ''}.
+                  {openingRecorder(earnings) ? `, recorded by ${openingRecorder(earnings)}` : ''}.
                 </p>
               ) : (
                 earnings?.opening_note && (
@@ -283,7 +285,24 @@ export function AccountDrawer({
             </div>
 
             {/* ── the ceiling ───────────────────────────────────────────────── */}
-            {account !== null && (
+            {/* 🔴 An account with NO bot has no cap and nothing to store one in — the cap lives in
+             *  each bot's config, and saving here answered 404. So the empty case SAYS where the cap
+             *  is set instead of offering a control whose only outcome was an error: the first bot
+             *  added carries it (`AddBotPanel`). */}
+            {account !== null && group.bots.length === 0 && (
+              <div className="py-[16px] border-b border-border-subtle">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[6px]">
+                  Risk cap
+                </p>
+                <p
+                  data-testid="cap-empty"
+                  className="text-[11.5px] text-text-secondary leading-[1.5]"
+                >
+                  None yet — no bot is on this account. The first bot you add sets it.
+                </p>
+              </div>
+            )}
+            {account !== null && group.bots.length > 0 && (
               <div className="py-[16px] border-b border-border-subtle">
                 <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
                   Risk cap
@@ -400,16 +419,16 @@ export function AccountDrawer({
                    *  control that vanishes reads as a feature that does not exist. */
                   <button
                     data-testid="add-bot"
-                    disabled={reg ? !reg.assignable : false}
+                    disabled={(reg ? !reg.assignable : false) || adding}
                     title={
                       reg && !reg.assignable
                         ? `Cannot add a bot here — ${reg.unassignable_reason || 'this account is not assignable'}.`
                         : 'Put a bot on this account'
                     }
                     onClick={() => setAdding(true)}
-                    className="ml-auto text-[11px] text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="ml-auto inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    + Add bot
+                    <Plus size={12} /> Add bot
                   </button>
                 )}
               </div>
@@ -468,16 +487,18 @@ export function AccountDrawer({
                   })}
                 </div>
               )}
+              {/* ⚠ Stays OPEN after an add, so a second bot is one more click — the added bot
+               *  leaves the list when the accounts re-read, and joins the rows above. */}
               {adding && account !== null && (
-                <div className="mt-3 -mx-5">
-                  <AddBotRow
+                <div className="mt-3">
+                  <AddBotPanel
                     account={account}
-                    here={new Set(group.bots.map((b) => b.key))}
+                    accountEmpty={group.bots.length === 0}
+                    pendingKey={assign.isPending ? (assign.variables?.botKey ?? null) : null}
                     busy={assign.isPending}
-                    onPick={(key) => {
-                      assign.mutate({ botKey: key, account })
-                      setAdding(false)
-                    }}
+                    onPick={(key, display, riskCapPct) =>
+                      assign.mutate({ botKey: key, account, riskCapPct, display })
+                    }
                     onClose={() => setAdding(false)}
                     statusByKey={statusByKey}
                   />

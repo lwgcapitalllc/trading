@@ -30,6 +30,7 @@ import { useStrategies } from '@/hooks/useLab'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { VersionPill } from '@/components/VersionPill'
 import { BotStatusPill } from './BotStatusPill'
+import { AddBotPanel } from './AddBotPanel'
 import type {
   BotAccountGroup,
   BotAccountRegistration,
@@ -1112,13 +1113,14 @@ function AccountDetail({
         )}
 
         {adding && group.account !== null && (
-          <AddBotRow
+          <AddBotPanel
             account={group.account}
-            here={new Set(group.bots.map((b) => b.key))}
+            accountEmpty={group.bots.length === 0}
+            pendingKey={assign.isPending ? (assign.variables?.botKey ?? null) : null}
             busy={assign.isPending}
-            onPick={(key) => {
+            onPick={(key, display, riskCapPct) => {
               assign.mutate(
-                { botKey: key, account: group.account },
+                { botKey: key, account: group.account, riskCapPct, display },
                 {
                   onSuccess: () => setAdding(false),
                 }
@@ -1338,99 +1340,6 @@ function MoveMenu({
       ))}
       {from !== null && <option value="none">Take off any account</option>}
     </select>
-  )
-}
-
-/**
- * Pick a bot to put on this account.
- *
- * ⚠ **The candidates are every registered bot NOT already here**, benched or on another account,
- * because moving a bot between accounts is the same write as adding one from the bench. A running
- * bot is listed and DISABLED rather than hidden: *it is not here* and *it cannot be moved right
- * now* are different answers, and hiding it makes a bot that exists look like one that does not.
- *
- * ⚠ **Nothing to add is a real answer and says what to do about it.** With one bot registered
- * this list is empty, and an empty dropdown with no explanation reads as a broken control — the
- * shape this repo keeps recording as a feature nobody has driven end to end.
- */
-export function AddBotRow({
-  account,
-  here,
-  busy,
-  onPick,
-  onClose,
-  statusByKey,
-}: {
-  account: number
-  here: Set<string>
-  busy: boolean
-  onPick: (key: string) => void
-  onClose: () => void
-  statusByKey: Map<string, string>
-}) {
-  const { data: groups } = useBotAccounts()
-
-  const candidates = (groups ?? [])
-    .flatMap((g) => g.bots.map((b) => ({ ...b, from: g })))
-    .filter((b) => !here.has(b.key) && !b.unreadable)
-
-  return (
-    <div
-      data-testid="add-bot-row"
-      className="px-4 py-3 border-t border-border-subtle bg-bg-surface-2 flex flex-col gap-2"
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-micro text-text-secondary">Add a bot to account {account}</span>
-        <button onClick={onClose} className="ml-auto text-text-tertiary hover:text-text-primary">
-          <X size={12} />
-        </button>
-      </div>
-
-      {candidates.length === 0 ? (
-        <div data-testid="no-candidates" className="text-micro text-text-tertiary">
-          Every registered bot is already on this account. A new one needs its instance created in
-          the repo first — that is a code change, not something this page can do.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1">
-          {candidates.map((b) => {
-            const running = statusByKey.get(b.key) === 'RUNNING'
-            return (
-              <button
-                key={b.key}
-                data-testid={`add-${b.key}`}
-                disabled={busy || running}
-                title={
-                  running
-                    ? 'This bot is running. Stop it before moving it — it read its account at ' +
-                      'startup, so the move could not reach the live process.'
-                    : undefined
-                }
-                onClick={() => onPick(b.key)}
-                className="flex items-center gap-2 px-2 py-[6px] rounded text-small text-left
-                           text-text-secondary hover:bg-bg-hover hover:text-text-primary
-                           transition-colors disabled:opacity-40 disabled:cursor-not-allowed
-                           disabled:hover:bg-transparent"
-              >
-                <span className="text-text-primary">{b.display}</span>
-                <span className="text-micro text-text-tertiary">{b.symbol}</span>
-                <span className="ml-auto text-micro text-text-tertiary">
-                  {b.from.kind === 'bench'
-                    ? 'not on an account'
-                    : `moves off account ${b.from.account}`}
-                </span>
-                {running && <BotStatusPill status="RUNNING" />}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      <div className="text-micro text-text-tertiary">
-        Adding a bot writes this account's login, server, terminal, symbol and risk cap into its
-        config, so the account stays coherent. It applies at that bot's next start.
-      </div>
-    </div>
   )
 }
 

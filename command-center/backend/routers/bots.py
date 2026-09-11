@@ -935,7 +935,44 @@ def _parse_tasks(snap: dict[str, str]) -> dict[str, str]:
 
 
 def _is_python_running(snap: dict[str, str], script_fragment: str) -> bool:
+    """A fragment anywhere in the process list — right for the Telegram bot, WRONG for a trading
+    bot: see `_bot_runner_running`."""
     return script_fragment.lower() in snap.get("procs", "").lower()
+
+
+# The trading bot's own program — every live bot IS `runner.py`, so the key is what tells two apart.
+_RUNNER_PY = re.compile(r'(?:^|[\\/\s"=])runner\.py(?=[\s"]|$)', re.IGNORECASE)
+
+
+def _is_bot_runner(commandline: str, bot_key: str) -> bool:
+    """Is this ONE process line the given bot's runner — `runner.py` with `--bot <key>` exactly?
+
+    🔴 **A key anywhere in the line said RUNNING for a bot that was not (2026-09-11).** Every tool
+    that acts on a bot takes the same flag — `promote.py --bot X`, the hourly
+    `watch_reentry.py --bot X`, `close_orphans.py --bot X`, the coordinator starting it — so a
+    STOPPED bot read RUNNING for as long as one of them ran. MEASURED: the demo SOS Fade copy read
+    RUNNING straight after its first deploy, with no process of its own and no account.
+
+    ⚠ **The key must END at a space, a quote or the line end**, or `sos_fade_2` matches
+    `sos_fade_20`. ⚠ `--bot=X` is argparse's other spelling and counts too.
+    """
+    if not _RUNNER_PY.search(commandline):
+        return False
+    return (
+        re.search(r'(?:^|[\s"])--bot(?:\s+|=)' + re.escape(bot_key) + r'(?=[\s"]|$)', commandline)
+        is not None
+    )
+
+
+def _runner_keys_in(process_list: str, keys) -> set:
+    """Which of `keys` have a runner process in a `wmic ... get commandline` answer (table or
+    `/format:list` — one process per line either way)."""
+    lines = process_list.splitlines()
+    return {k for k in keys if any(_is_bot_runner(line, k) for line in lines)}
+
+
+def _bot_runner_running(snap: dict[str, str], bot_key: str) -> bool:
+    return bool(_runner_keys_in(snap.get("procs", ""), [bot_key]))
 
 
 def _uptime_seconds(state: dict) -> int | None:
@@ -1170,7 +1207,7 @@ def get_snapshot():
         #
         # `task_status` is still parsed and still shown for the SYS_* jobs below, where it
         # IS the question being asked.
-        status = "RUNNING" if _is_python_running(snap, bot_key) else "STOPPED"
+        status = "RUNNING" if _bot_runner_running(snap, bot_key) else "STOPPED"
 
         total_pnl = _as_float(state.get("total_pnl_pct"))
 
@@ -2212,6 +2249,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             # A balance adjustment describes the account being LEFT — see `assign_plan`.
             current_account=data.get("account"),
             current_adjustment=data.get("sizing_basis_adjustment"),
+            # Chosen only if SENT — `null` in the body is "uncapped", absence is "not chosen".
+            first_cap_chosen="risk_cap_pct" in update.model_fields_set,
+            first_cap=update.risk_cap_pct,
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -2498,13 +2538,22 @@ def _bot_is_running(bot_key: str) -> bool:
     process that was already gone" is harmless and "report a live trading bot as stopped" is not.
     """
     try:
-        out = _ssh(
-            f"wmic process where \"name='python.exe' and commandline like "
-            f"'%--bot {bot_key}%'\" get processid 2>nul"
-        )
+        out = _ssh(f'wmic process where "{_runner_wql(bot_key)}" get processid 2>nul')
     except Exception:
         return True
     return any(ch.isdigit() for ch in out)
+
+
+def _runner_wql(bot_key: str) -> str:
+    """The WMI filter for this bot's RUNNER process — the probe and the kill both use it.
+
+    ⚠ **`runner.py` is in it (2026-09-11)**, the rule `_is_bot_runner` states in Python: without
+    it the kill also terminated whatever else carried `--bot <key>` at that moment — the bot's own
+    deploy, the hourly re-entry check — and the probe waited on them as if they were the bot.
+    ⚠ Verified on the box with a read-only query before this shipped. ⚠ WQL's `_` matches any one
+    character and the match is a prefix, so no key may be the start of another's (root doc).
+    """
+    return f"name='python.exe' and commandline like '%runner.py%--bot {bot_key}%'"
 
 
 def _kill_bot(bot_key: str) -> str:
@@ -2551,12 +2600,7 @@ def _kill_bot(bot_key: str) -> str:
             return "\n".join(s for s in steps if s).strip()
 
     steps.append(f"{bot_key} did not stop within {_GRACEFUL_STOP_SECONDS}s — terminating")
-    steps.append(
-        _ssh(
-            f"wmic process where \"name='python.exe' and commandline like '%--bot {bot_key}%'\" "
-            f"call terminate 2>nul"
-        )
-    )
+    steps.append(_ssh(f'wmic process where "{_runner_wql(bot_key)}" call terminate 2>nul'))
     steps.append(_ssh(f"del {_instance_dir(bot_key)}\\stop.request 2>nul"))
     return "\n".join(s for s in steps if s).strip()
 
@@ -2940,7 +2984,7 @@ def _running_bot_keys() -> set:
         out = _ssh("wmic process where \"name='python.exe'\" get commandline 2>nul")
     except Exception:  # noqa: BLE001 — see the docstring: cannot ask means treat all as running
         return keys
-    return {k for k in keys if f"--bot {k}" in out}
+    return _runner_keys_in(out, keys)
 
 
 def _bot_targets(running: set) -> list:

@@ -520,18 +520,32 @@ export function useSetAccountRiskCap() {
 export function useAssignBotAccount() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ botKey, account }: { botKey: string; account: number | null }) =>
+    mutationFn: ({
+      botKey,
+      account,
+      riskCapPct,
+    }: {
+      botKey: string
+      account: number | null
+      /** The cap for an account with NO bot yet — `undefined` sends nothing (not chosen), `null`
+       *  sends "uncapped" (chosen). The server refuses it on an account that already has bots. */
+      riskCapPct?: number | null
+      /** What the toast calls the bot. The server answers with its KEY, which is not a name. */
+      display?: string
+    }) =>
       api.patch<BotAccountAssignResult>(`/bots/${encodeURIComponent(botKey)}/account`, {
         account,
+        ...(riskCapPct !== undefined ? { risk_cap_pct: riskCapPct } : {}),
         deploy: true,
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, vars) => {
       // Never "moved and running" — a bot reads its account at startup, so the honest report is
       // what was written plus what still has to happen. Same rule as the risk cap above.
+      const who = vars.display ?? 'The bot'
       toast.success(
         data.account === null
-          ? `${data.bot} taken off the account — it will not start until it is on one again`
-          : `${data.bot} added to account ${data.account} — start it to trade`
+          ? `${who} taken off the account — it will not start until it is on one again`
+          : `${who} added to account ${data.account} — start it to trade`
       )
       // ⚠ A note is what the move could NOT carry — an unregistered account, or one with no
       // recorded symbol suffix. It is raised as a WARNING rather than folded into the success

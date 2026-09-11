@@ -889,20 +889,23 @@ class BotAccountCapUpdate(BaseModel):
     @field_validator("risk_cap_pct")
     @classmethod
     def _sane_cap(cls, v):
-        if v is None:
-            return v
-        if v <= 0:
-            # 0 refuses every order on the account. If that is what somebody wants, they want the
-            # fleet halt, which stops orders WITHOUT making every bot log a risk refusal.
-            raise ValueError(
-                "risk_cap_pct must be greater than 0 — use null to run uncapped, "
-                "or the fleet halt to stop trading"
-            )
-        if v > 100:
-            raise ValueError(
-                "risk_cap_pct is a percentage of the live balance and cannot exceed 100"
-            )
+        return _sane_cap_pct(v)
+
+
+def _sane_cap_pct(v):
+    """One rule for an account cap, wherever one is written."""
+    if v is None:
         return v
+    if v <= 0:
+        # 0 refuses every order on the account. If that is what somebody wants, they want the
+        # fleet halt, which stops orders WITHOUT making every bot log a risk refusal.
+        raise ValueError(
+            "risk_cap_pct must be greater than 0 — use null to run uncapped, "
+            "or the fleet halt to stop trading"
+        )
+    if v > 100:
+        raise ValueError("risk_cap_pct is a percentage of the live balance and cannot exceed 100")
+    return v
 
 
 class BotAccountAssign(BaseModel):
@@ -920,7 +923,19 @@ class BotAccountAssign(BaseModel):
     """
 
     account: Optional[int] = None
+    # 🔴 **The cap for an account that has NO bot yet (2026-09-11).** Nothing else states one
+    # then — the cap is stored per bot — so the first bot started UNCAPPED, the watchdog started it
+    # within a minute, and a cap set afterwards could not reach the running process. The page now
+    # asks when it adds the first bot. ⚠ Read through `model_fields_set`, never its value: absent
+    # means *not chosen* and `null` means *chose uncapped* — rule 1. Refused when the account
+    # already has bots stating a different cap: that is changed on the account, not by adding a bot.
+    risk_cap_pct: Optional[float] = None
     deploy: bool = True  # commit + push + VPS pull; False writes locally only
+
+    @field_validator("risk_cap_pct")
+    @classmethod
+    def _sane_cap(cls, v):
+        return _sane_cap_pct(v)
 
 
 class BotAccountRegistration(BaseModel):

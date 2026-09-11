@@ -76,6 +76,7 @@ import {
 } from '@/hooks/useBots'
 import { VersionPill } from '@/components/VersionPill'
 import { Shimmer } from '@/components/Shimmer'
+import { openingRecorder } from '@/lib/accountEarnings'
 import type {
   BotStatus,
   BotReview,
@@ -689,7 +690,9 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
     : `Now ${money(e.balance, false)}.`
   return (
     <span
-      title={`Opened at ${money(e.opening_balance, false)}, recorded by ${e.opening_from}. ${then}`}
+      title={`Opened at ${money(e.opening_balance, false)}${
+        openingRecorder(e) ? `, recorded by ${openingRecorder(e)}` : ''
+      }. ${then}`}
       className={`inline-flex items-baseline gap-[6px] px-[8px] py-[3px] rounded-pill cursor-default ${
         up ? 'bg-pos-muted' : 'bg-neg-muted'
       }`}

@@ -245,12 +245,36 @@ left undone because another session was mid-edit on both. A drawer's look lives 
 until then.
 
 🔴 **`AccountsTab` IS NOT RENDERED BY ANYTHING and has not been since the 2026-09-05 rebuild above.**
-`index.tsx` and `AccountDrawer` import only its helpers (`AccountForm`, `AddBotRow`, `emptyGroup`,
-`nameOf`). This view was first wired into its rail, typechecked, linted and passed every gate — and
+`index.tsx` and `AccountDrawer` import only its helpers (`AccountForm`, `emptyGroup`, `nameOf`).
+This view was first wired into its rail, typechecked, linted and passed every gate — and
 **could not have appeared on screen**, which only opening the page showed. ⚠ **Anything added there
 is dead on arrival.** It is rule 9 in the frontend: a feature nobody has RUN is not a feature.
 
 Story: `command-center/docs/FRONTEND_BUILD_NOTES.md`.
+
+## "Add a bot" lists FREE bots only, and an empty account asks for its cap there (2026-09-11)
+
+`pages/Bots/AddBotPanel.tsx` (moved out of the dead `AccountsTab`). Aaron: *"it should just show
+available bots that is it … why is XAUUSD.p showing … the account doesn't care."*
+
+- 🔴 **Only bots on NO account are offered.** It listed every bot not already here, so the demo
+  account offered both LIVE bots — greyed while running, one click from real money once stopped.
+  Moving a bot between accounts is the bot panel's own account selector.
+- ⚠ **A row is the bot's name and its risk per trade** — the one number the account's cap budgets.
+  No symbol, no "not on an account" label.
+- 🔴 **An EMPTY account asks for its cap in the panel** (default 10%, typed digits; unticked sends
+  `null` = uncapped CHOSEN). The cap lives in each bot's config, so the first bot used to start
+  uncapped and the watchdog started it within a minute; a cap saved after could not reach it. An
+  account WITH bots sends no cap — the joining bot adopts theirs on the server. ⚠ **The drawer's
+  Risk cap section on an empty account is a sentence, not an editor** — saving there answered 404.
+- ⚠ **The panel stays open after an add**, so a second bot is one more click; the added bot leaves
+  the list when the accounts re-read. Its row reads *Adding…* while the write runs.
+- 🔴 **A bot is NAMED, never keyed**: the move's toast takes the name from the caller (the server
+  answers with the key), and "recorded by" reads the name off the account's earnings
+  (`lib/accountEarnings.ts`). It printed `sos_fade_demo` on screen.
+- Tests: `bots-accounts.spec.ts` (4 new, 3 re-pointed); 9 mutations run, 9 killed, in a THROWAWAY WORKTREE —
+  offline specs build the checkout from disk, and a bug planted in the shared clone is one the other
+  session's run can pick up.
 
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
 
@@ -1896,8 +1920,9 @@ them — `{ exact: true }` now scopes it to the badge. **A test that asserts on 
 be in the database is a test that will fail on a day nothing is wrong**, and the failure is
 indistinguishable from a regression until somebody reads it. Mock the state; never name the data.
 
-⚠ **It runs against the RUNNING app** (`./start.sh` first — backend on `:8000`, dev server on
-`:5173`), and `playwright.config.ts` deliberately has **no `webServer` block**. The backend here
+⚠ **Every spec but the OFFLINE ones runs against the RUNNING app** (`./start.sh` first — backend
+on `:8000`, dev server on `:5173`; the offline ones need nothing running, see *Offline specs*), and
+`playwright.config.ts` deliberately has **no `webServer` block**. The backend here
 talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand is a runner that
 can start things on the trading box. Starting it stays a person's decision — the same reasoning
 `test_integration.py` is deselected under.
@@ -1908,7 +1933,7 @@ share its state); OFFLINE specs run fully parallel. See *Offline specs* below.
 
 ### Offline specs — `tests/offline.ts`, recorded answers, a quick clock (2026-09-10)
 
-`bots-version.spec.ts` (4.1 min → **32 s**) and `bots-accounts.spec.ts` (2.0 min → **1.0 min**)
+`bots-version.spec.ts` and `bots-accounts.spec.ts` (6.1 min together → **~45 s** with the build)
 run OFFLINE: `offlineTest('bots-page')` answers every `/api` read the spec does not route from
 `tests/recordings/bots-page.json`, and ABORTS anything else — then fails the check naming it. 🔴
 **Before this, both read the real snapshot and health dots, which reach the live trading box on
@@ -1928,8 +1953,21 @@ live account, which would have turned every demo-assuming check red on a day the
   order, just sooner. Route handlers run in Node on the REAL clock, so a mock that times something
   keeps real milliseconds. 🔴 **It exposed a latent race**: a mid-deploy check passed only because
   a one-second poll was slower than its assertions; it now holds the job (`holdAt`).
-- ⚠ **The remaining cost is the dev server** serving a fresh module graph to every page (more
-  workers did not help — MEASURED 6 vs 9). A built bundle is the next lever; not built.
+- 🔴 **The APP is a development BUILD read off disk, not the dev server (2026-09-11).** Six workers
+  pulling hundreds of modules each from ONE dev server made it the bottleneck: a check took 1.3s on
+  one worker and 5.1s on six (a lone page load differs by only 0.2s — the cost was crowding). The
+  `offline-app` step builds this checkout once per run (~11s) into a folder only that run reads,
+  and pages load it at `https://app.test`, which nothing on the network answers. MEASURED back to
+  back, 93 checks: dev server 90s → build 48s → build without traces 32s (+ the build). Three
+  alternating pairs under a load average of 200–540 from another session: 91–134s → 52–65s with
+  the build, and only a dev-server run timed out (3 checks). `tests/offlineApp.ts`.
+- ⚠ **Development, never production, and the build REFUSES otherwise** — production React drops
+  StrictMode's double-run, and the app only ever runs in development. It also refuses a stylesheet
+  without the app's classes: Tailwind reads its config from the WORKING folder, and from anywhere
+  else it emitted 13 KB instead of 70 KB with only a warning. Both refusals watched red.
+- ⚠ **https, not http** — clipboard exists only on a secure origin, and the Bots page copies logs.
+- ⚠ **No trace on offline checks** — recording one cost a third of every green run's CPU. They
+  replay recordings, so a failure repeats: `npx playwright test <spec> -g '<name>' --trace on`.
 - ⚠ The old write backstop (`refuseLiveWrites`) is DROPPED from offline specs: it aborted an
   unrouted write before the harness could flag it. Specs on the real backend keep it —
   `overview.spec.ts` gained it 2026-09-10 (the page carries the fleet controls).

@@ -351,6 +351,7 @@ export function BotDrawer({
                   assign.mutate({
                     botKey: bot.key,
                     account: e.target.value === '' ? null : Number(e.target.value),
+                    display: bot.name,
                   })
                 }
                 className="text-[12px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"

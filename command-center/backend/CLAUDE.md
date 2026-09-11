@@ -1579,6 +1579,17 @@ copy on a registry row would be a second answer able to drift from the bots actu
 which is the one shape this whole subsystem exists to avoid. **The registry says what an account
 IS; the bots say what they are doing on it.**
 
+🔴 **So an account with NO bot has no cap, and the FIRST bot is where one is chosen (2026-09-11).** It
+used to start UNCAPPED with a note — then the watchdog started it within a minute, and a cap saved
+after could not reach the running process (and saving a cap on an empty account answered 404: no
+config to write it into). `BotAccountAssign.risk_cap_pct` now carries the page's choice into
+`assign_plan(first_cap_chosen=, first_cap=)`. ⚠ **Read through `model_fields_set`, never the value**:
+absent = not chosen (the old uncapped-and-say-so path), `null` = chose uncapped, no note. ⚠ **On an
+account that already has bots a chosen cap must MATCH theirs or it is refused (409)** — the page
+offers it only for an empty account, so a mismatch means the account gained a bot since. ⚠ The share
+check reads the cap the plan writes, so a first cap under the bot's own risk is refused like any
+overflow. Tests: 7 in `tests/test_bot_accounts.py`; 5 mutations run, 5 killed.
+
 ### The field the ECN move forgot
 
 🔴 **`assign_plan` wrote FOUR fields and the symbol was not one of them.** PU Prime quotes gold as
@@ -2268,6 +2279,25 @@ command names both `python.exe` and `--bot <key>` — and after this change a he
 reaches that command, so those tests would have passed against a `_kill_bot` that issued no kill at
 all. `stubborn_ssh` drives a bot that ignores its stop request. **A safety test whose scenario stops
 occurring passes for ever and protects nothing.**
+
+### Which process IS a bot — its runner, with exactly its key (2026-09-11)
+
+🔴 **A STOPPED bot read RUNNING whenever any tool carrying its key was running.** Every tool that acts
+on a bot takes the same flag — `promote.py --bot X`, the hourly `watch_reentry.py --bot X`, the
+coordinator starting it — and all four checks here matched the key anywhere. MEASURED: the demo SOS
+Fade copy read RUNNING straight after its first deploy, with no process and no account. Now:
+
+- `_is_bot_runner` is the rule in Python — a line running `runner.py` whose `--bot` value is exactly
+  the key (ends at a space, quote or line end, so `sos_fade_2` is not `sos_fade_20`). The snapshot's
+  status and `_running_bot_keys` both go through it.
+- `_runner_wql` is the same rule in WMI, for the probe and the forced stop: `runner.py` is in the
+  filter, so a forced stop never kills the bot's own deploy or re-entry check. ✅ **Verified on the box
+  with a read-only query before it shipped** (the two live bots by their PIDs, nothing for a stopped
+  one). ⚠ WQL's `_` matches any character and the match is a prefix — no key may start another's.
+- ⚠ **The Telegram bot keeps the loose match, and so do the watchdog and the dead-man switch** — on
+  the box a tool flash only delays a restart by one pass. The coordinator and the runner already
+  require `runner.py`. Tests: `tests/test_bot_process_match.py`; 6 mutations run, 6 killed — the
+  status one first SURVIVED the helper-only tests and needed a check through `get_snapshot`.
 
 ## `_BOTS` is ONE of FIVE registries, and its comment about the other four was wrong (2026-09-04)
 

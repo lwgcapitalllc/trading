@@ -429,6 +429,10 @@ def _only_declared(
     ]
 
 
+def _cap_words(cap: Optional[float]) -> str:
+    return "none (uncapped)" if cap is None else f"{float(cap):g}%"
+
+
 def assign_plan(
     bot_key: str,
     account: Optional[int],
@@ -439,6 +443,8 @@ def assign_plan(
     declared_params: Optional[set] = None,
     current_account: Optional[int] = None,
     current_adjustment: Any = None,
+    first_cap_chosen: bool = False,
+    first_cap: Optional[float] = None,
 ) -> AssignPlan:
     """The fields to write on `bot_key`'s config to put it on `account` (or on the bench).
 
@@ -537,9 +543,22 @@ def assign_plan(
                 f"different risk caps: there is no account cap for it to adopt, and every bot "
                 f"here will refuse to start until they agree. Set the cap on this account first."
             )
+        if first_cap_chosen and first_cap != target.risk_cap_pct:
+            # The page offers a cap only for an EMPTY account; one arriving here means the account
+            # gained a bot since it was drawn. Adopting silently would override what was chosen,
+            # and writing it would disagree with the bots already there — both are refused.
+            raise ValueError(
+                f"account {account} already has a bot on it, and its cap is "
+                f"{_cap_words(target.risk_cap_pct)} — a bot joining adopts that. Change the cap "
+                f"on the account, not while adding a bot."
+            )
         fields["account_risk_cap_pct"] = target.risk_cap_pct
         peers = [b for b in target.bots if b.key != bot_key]
         adopt_from = peers[0].key if peers else ""
+    elif first_cap_chosen:
+        # First bot on this account, and the person adding it chose the ceiling — `None` included,
+        # which is choosing to run uncapped rather than not having chosen.
+        fields["account_risk_cap_pct"] = first_cap
     else:
         # First bot on this account. UNCAPPED is the honest state — nobody has chosen a ceiling
         # here — and the bot's existing value describes the account it is leaving, so carrying it

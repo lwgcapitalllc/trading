@@ -643,21 +643,28 @@ test('a benched bot IS told to be given an account', async ({ page }) => {
   await expect(benched).toContainText('B-LEG')
 })
 
-test('a benched bot is offered as something to add, and says where it comes from', async ({
-  page,
-}) => {
-  // MUTATION: build the candidate list from the account's own bots → the list is empty and the
-  // "nothing to add" message renders instead.
+test('only a FREE bot is offered, named with its risk and never its symbol', async ({ page }) => {
+  // 🔴 2026-09-11: the list offered every bot not already here, so the demo account listed both
+  // LIVE bots — greyed while running, one click from real money once stopped. Aaron: *"it should
+  // just show available bots that is it"* — and the symbol went: *"the account doesn't care."*
+  // MUTATION: list every bot not on this account again → `add-extreme` renders and goes red.
   await mock(page, [
     group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    group({
+      account: 700152905,
+      bots: [bot('extreme', 'Extreme Leg', 770117, 10, 5)],
+      risk_cap_pct: 10,
+    }),
     BENCHED,
   ])
-  // ⚠ Re-pointed 2026-09-06: the control moved from a card in a rail into the ACCOUNT drawer,
-  // and the candidate list itself (`AddBotRow`) is the same component it always was.
   await openAccount(page)
   await page.getByTestId('add-bot').click()
-  await expect(page.getByTestId('add-b_leg')).toBeVisible()
-  await expect(page.getByTestId('add-b_leg')).toContainText('not on an account')
+  const free = page.getByTestId('add-b_leg')
+  await expect(free).toBeVisible()
+  await expect(free).toContainText('Risks 10% a trade')
+  await expect(free).not.toContainText('XAUUSD')
+  await expect(page.getByTestId('add-bot-row')).not.toContainText('not on an account')
+  await expect(page.getByTestId('add-extreme')).toHaveCount(0)
 })
 
 test('adding a bot sends its key and the account it is joining', async ({ page }) => {
@@ -746,7 +753,83 @@ test('an account with nothing left to add says so instead of an empty list', asy
   await mock(page, STACKED)
   await openAccount(page)
   await page.getByTestId('add-bot').click()
-  await expect(page.getByTestId('no-candidates')).toContainText('already on this account')
+  await expect(page.getByTestId('no-candidates')).toContainText('No bot is free')
+})
+
+test('the FIRST bot on an empty account carries the cap chosen with it', async ({ page }) => {
+  // 🔴 2026-09-11: the cap is stored per bot, so an empty account has none — the first bot
+  // started uncapped, the watchdog started it within a minute, and a cap saved after could not
+  // reach the running process. The add now carries it; unticked is `null` (uncapped CHOSEN).
+  // MUTATION: drop `riskCapPct` from the pick → the body has no cap and both asserts go red.
+  await mock(page, [BENCHED], [reg()])
+  const sent: Record<string, unknown>[] = []
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/b_leg/account') {
+      sent.push(route.request().postDataJSON())
+      return route.fulfill({
+        json: {
+          status: 'ok',
+          changed: true,
+          deployed: true,
+          bot: 'b_leg',
+          account: ACCOUNT,
+          restart_required: true,
+          detail: 'moved',
+        },
+      })
+    }
+    return route.fallback()
+  })
+
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  await expect(page.getByTestId('first-cap-input')).toHaveValue('10')
+  await page.getByTestId('add-b_leg').click()
+  await expect.poll(() => sent[0]).toEqual({ account: ACCOUNT, risk_cap_pct: 10, deploy: true })
+  // The toast names the bot, never its key.
+  await expect(page.getByText('B-LEG added to account')).toBeVisible()
+
+  await page.getByTestId('first-cap-on').uncheck()
+  await page.getByTestId('add-b_leg').click()
+  await expect.poll(() => sent[1]).toEqual({ account: ACCOUNT, risk_cap_pct: null, deploy: true })
+})
+
+test('an account with bots sends NO cap when one is added', async ({ page }) => {
+  // The joining bot adopts the account's cap on the server; a cap sent here would be a second
+  // answer, and the server refuses one that differs. MUTATION: send the cap whatever the account
+  // holds → the body gains `risk_cap_pct` and this goes red.
+  await mock(page, [
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    BENCHED,
+  ])
+  let sent: Record<string, unknown> | null = null
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/b_leg/account') {
+      sent = route.request().postDataJSON()
+      return route.fulfill({
+        json: { status: 'ok', changed: true, bot: 'b_leg', account: ACCOUNT, detail: 'moved' },
+      })
+    }
+    return route.fallback()
+  })
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  await expect(page.getByTestId('first-cap')).toHaveCount(0)
+  await page.getByTestId('add-b_leg').click()
+  await expect.poll(() => sent).toEqual({ account: ACCOUNT, deploy: true })
+})
+
+test('an empty account says where its cap is set instead of offering a save that cannot work', async ({
+  page,
+}) => {
+  // Saving a cap on an account with no bot answered 404 — there is no config to write it into.
+  // MUTATION: render the cap editor on an empty account again → `cap-input` appears.
+  await mock(page, [BENCHED], [reg()])
+  await openAccount(page)
+  await expect(page.getByTestId('cap-empty')).toContainText('The first bot you add sets it')
+  await expect(page.getByTestId('cap-input')).toHaveCount(0)
 })
 
 test('the magic clash is named only when there is one', async ({ page }) => {
@@ -1709,7 +1792,8 @@ function departedDemo(bots: ReturnType<typeof earn>[] = []) {
   return {
     ...acctEarn(ACCOUNT, [
       ...bots,
-      earn('sos_fade', { ...SCORED.sos_fade, ...moved }),
+      // A NAME unlike its key, so a page printing the key cannot pass (`recorded by …`).
+      earn('sos_fade', { ...SCORED.sos_fade, ...moved, name: 'SOS Fade' }),
       earn('ext_leg', { ...SCORED.ext_leg, ...moved }),
     ]),
     balance: 15844.46,
@@ -1832,6 +1916,10 @@ test('the demo account the bots LEFT is still an account — its balance, its re
   const panel = page.getByRole('complementary', { name: 'Account settings' })
   await expect(panel.getByTestId('add-bot-row')).toBeVisible()
   await expect(panel.getByTestId('drawer-balance-read-at')).toBeVisible()
+  // Who recorded the opening is named, never keyed (2026-09-11: it printed `sos_fade_demo`).
+  // MUTATION: print `opening_from` raw again → red.
+  await expect(panel).toContainText('recorded by SOS Fade')
+  await expect(panel).not.toContainText('recorded by sos_fade')
 })
 
 test('a NEW bot on the demo account keeps the departed bots on its card and in the score', async ({

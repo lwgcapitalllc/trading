@@ -397,6 +397,51 @@ def test_a_bench_group_cannot_be_an_assignment_TARGET():
         ba.assign_plan("newbot", 700107749, target=bench)
 
 
+# ── the FIRST bot on an account carries the cap the person chose (2026-09-11) ──
+#
+# 🔴 The cap is stored per bot, so an account with no bot has none — and the first bot added
+# started UNCAPPED, the watchdog started it within a minute, and a cap set afterwards could not
+# reach the running process. The page now asks for the cap while adding that first bot.
+
+
+def test_the_FIRST_bot_on_an_account_takes_the_cap_the_person_chose():
+    """MUTATION: ignore `first_cap_chosen` → the bot is written uncapped with the old note."""
+    plan = ba.assign_plan(
+        "newbot", 700152905, registered=_Reg(), first_cap_chosen=True, first_cap=10.0
+    )
+    assert plan.fields["account_risk_cap_pct"] == 10.0
+    assert not any("UNCAPPED" in n for n in plan.notes), plan.notes
+
+
+def test_choosing_UNCAPPED_for_a_first_bot_is_a_choice_not_an_absence():
+    """`None` sent is a decision; the warning exists for the case where nobody decided.
+    MUTATION: read the chosen cap through its VALUE (`first_cap is not None`) → the note returns."""
+    plan = ba.assign_plan(
+        "newbot", 700152905, registered=_Reg(), first_cap_chosen=True, first_cap=None
+    )
+    assert plan.fields["account_risk_cap_pct"] is None
+    assert not any("UNCAPPED" in n for n in plan.notes), plan.notes
+
+
+def test_a_first_bot_with_NO_choice_still_starts_uncapped_and_SAYS_so():
+    """The old path is unchanged for a caller that sends nothing — the positive control for the
+    two above. MUTATION: default `first_cap_chosen` to True → no note."""
+    plan = ba.assign_plan("newbot", 700152905, registered=_Reg())
+    assert plan.fields["account_risk_cap_pct"] is None
+    assert any("UNCAPPED" in n for n in plan.notes), plan.notes
+
+
+def test_a_chosen_cap_on_an_account_that_already_has_bots_must_match_theirs():
+    """The page offers the choice only for an EMPTY account; one arriving here means the account
+    gained a bot since it was drawn. Silently adopting would override the choice, writing it would
+    disagree with the bots there. MUTATION: drop the check → the joining bot adopts 10 quietly."""
+    target = ba.group_by_account({"a": _cfg("a", account=700152905, cap=10.0)})[0]
+    with pytest.raises(ValueError, match="already has a bot"):
+        ba.assign_plan("newbot", 700152905, target=target, first_cap_chosen=True, first_cap=5.0)
+    same = ba.assign_plan("newbot", 700152905, target=target, first_cap_chosen=True, first_cap=10.0)
+    assert same.fields["account_risk_cap_pct"] == 10.0
+
+
 # ── the assign endpoint ───────────────────────────────────────────────────────
 def test_moving_a_bot_to_an_account_nobody_trades_is_a_404(client, monkeypatch):
     """Its server, terminal and cap are read off the bots already there, so a first bot has
@@ -650,6 +695,62 @@ def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeyp
     r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})
     assert r.status_code == 409
     assert "add up to" in r.json()["detail"]
+
+
+def _stub_assign_route(monkeypatch, groups):
+    """Everything the assign route asks before it plans, answered without the box."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
+    monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
+    monkeypatch.setattr(bots_router, "_account_groups", lambda: groups)
+    return bots_router
+
+
+def test_the_assign_body_tells_an_ABSENT_cap_from_a_null_one(client, monkeypatch):
+    """Absent = nobody chose; `null` = chose uncapped. Collapsing them is rule 1, and it would put
+    the UNCAPPED warning on a choice or drop it from an absence. The plan is stopped before any
+    write. MUTATION: pass `first_cap_chosen=update.risk_cap_pct is not None` → the null case red."""
+    bots_router = _stub_assign_route(monkeypatch, [])
+    seen = []
+
+    def spy(*_a, **kw):
+        seen.append((kw["first_cap_chosen"], kw["first_cap"]))
+        raise ValueError("stopped before the write")
+
+    monkeypatch.setattr(bots_router.bot_accounts, "assign_plan", spy)
+    for body in (
+        {"account": 700152905, "deploy": False},
+        {"account": 700152905, "risk_cap_pct": None, "deploy": False},
+        {"account": 700152905, "risk_cap_pct": 10.0, "deploy": False},
+    ):
+        assert client.patch("/bots/b_leg_demo/account", json=body).status_code == 409
+    assert seen == [(False, None), (True, None), (True, 10.0)]
+
+
+def test_a_first_cap_below_the_bots_own_risk_is_refused_before_the_write(client, monkeypatch):
+    """The share check reads the cap the PLAN writes, so a chosen ceiling under the bot's own
+    per-trade risk is refused like any other over-subscribed account."""
+    bots_router = _stub_assign_route(monkeypatch, [])
+    monkeypatch.setattr(
+        bots_router,
+        "_read_instance_config",
+        lambda key: _cfg(key, account=None, cap=10.0, risk=5.0),
+    )
+    written = []
+    monkeypatch.setattr(bots_router, "_write_instance_config", lambda k, d: written.append(k))
+    r = client.patch(
+        "/bots/b_leg_demo/account",
+        json={"account": 700152905, "risk_cap_pct": 3.0, "deploy": False},
+    )
+    assert r.status_code == 409 and "add up to" in r.json()["detail"]
+    assert written == []
+
+
+def test_a_zero_first_cap_is_refused_like_any_cap(client):
+    """0 refuses every order — the same validator as the account's own cap write."""
+    r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "risk_cap_pct": 0})
+    assert r.status_code == 422
 
 
 def test_RAISING_a_bots_own_risk_past_the_room_left_is_refused(client, monkeypatch):
