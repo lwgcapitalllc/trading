@@ -41,6 +41,21 @@
       path: /^\/bots\/[^/]+\/promote(\/job)?$/,
     },
     {
+      // 🔴 Added 2026-09-10 — this route landed on 2026-09-07 with no rule here, so for three days
+      // the ONE write in the app that puts bots on real money was one stray click from the browser
+      // tool. /bots/go-live/preview only plans and stays allowed.
+      what: 'move bots from a demo account onto a live one',
+      methods: ['POST'],
+      path: /^\/bots\/go-live$/,
+    },
+    {
+      // A single-bot move writes the same account fields and can put a bot on a live account too
+      // — the second door to the same room.
+      what: 'move a bot onto a different broker account',
+      methods: ['PATCH', 'PUT', 'POST'],
+      path: /^\/bots\/[^/]+\/account$/,
+    },
+    {
       what: 'deploy a strategy to the VPS',
       methods: ['POST'],
       path: /^\/strategies\/[^/]+\/deploy$/,

@@ -33,6 +33,9 @@ const CASES = [
   // --- promote and deploy ---
   [REFUSE, 'POST', '/api/bots/sos_fade_demo/promote', 'promote'],
   [REFUSE, 'POST', '/api/bots/sos_fade_demo/promote/job', 'promote as a background job'],
+  [REFUSE, 'POST', '/api/bots/go-live', 'move a demo set onto a live account'],
+  [REFUSE, 'POST', 'http://localhost:8000/bots/go-live', 'go live, absolute URL'],
+  [REFUSE, 'PATCH', '/api/bots/sos_fade_demo/account', 'move one bot to another account'],
   [REFUSE, 'POST', '/api/strategies/17/deploy', 'deploy to the VPS'],
   [REFUSE, 'DELETE', '/api/strategies/17', 'delete a strategy file'],
 
@@ -56,6 +59,8 @@ const CASES = [
 
   // --- must stay ALLOWED: the read-only twin of a refused action ---
   [ALLOW, 'POST', '/api/bots/sos_fade_demo/promote/preview', 'promote PREVIEW changes nothing'],
+  [ALLOW, 'POST', '/api/bots/go-live/preview', 'the go-live PREVIEW only plans'],
+  [ALLOW, 'GET', '/api/bots/sos_fade_demo/account', 'a GET is not a move'],
   // The sync's preview: what Sync WOULD change, read off the box. Refusing it would leave the
   // browser tool able to open the drawer and see nothing, while the write beside it stays refused.
   [ALLOW, 'GET', '/api/bots/accounts/scan', 'the sync PREVIEW changes nothing'],
