@@ -819,6 +819,33 @@ test('every bot row carries the same version pill, under a labelled column', asy
 // grouping is DERIVED from instance configs, which is right, and it could therefore only ever see
 // accounts a bot was already on — so the first bot onto a new account had nothing to be moved to.
 
+test('Take live is offered on a DEMO account with bots on it', async ({ page }) => {
+  // The positive control for the check below: without it, "not drawn on a live account" would
+  // pass against a page that never draws the button anywhere.
+  await mock(page, STACKED, [reg()])
+  await openAccount(page)
+  await expect(page.getByTestId('go-live')).toBeVisible()
+})
+
+test('Take live is NOT DRAWN on a live account', async ({ page }) => {
+  // 🔴 2026-09-11, the day the first set went live: the live account's panel still carried it,
+  // disabled as "already live". Aaron: *"this should only be present for demo accounts."*
+  // ⚠ The account's own controls are asserted FIRST — an absent button is also what a panel
+  // still waiting on the registry draws, and that would pass for the wrong reason.
+  // MUTATION: drop the demo-only condition → the button is drawn (disabled) and this goes red.
+  const LIVE_ACCOUNT = 34957946
+  await mock(
+    page,
+    STACKED.map((g) => ({ ...g, account: LIVE_ACCOUNT, server: 'PUPrime-Live' })),
+    [reg({ account: LIVE_ACCOUNT, kind: 'live', server: 'PUPrime-Live' })]
+  )
+  await openAccount(page, LIVE_ACCOUNT)
+  const drawer = page.getByRole('complementary', { name: 'Account settings' })
+  await expect(drawer.getByTestId('backtest-account-bots')).toBeVisible()
+  await expect(drawer.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(drawer.getByTestId('go-live')).toHaveCount(0)
+})
+
 test('a registered account with NO bots can still be OPENED and added to', async ({ page }) => {
   // 🔴 WATCHED RED on 2026-09-06, and it is the registry's whole purpose re-broken. The drawer
   // rendered only for an account in the GROUPING — which is derived from the instance configs and

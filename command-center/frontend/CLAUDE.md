@@ -4600,8 +4600,13 @@ says to start each bot, never to restart one.
 account heading is a single `<button>` and a control there would be a button inside a button — the
 invalid markup this page has already been bitten by.
 
-⚠ **Every refusal is stated ON the control, before the click** — already live, a running bot, no live
-destination — and `goLiveBlock` is a REASON rather than a boolean, because a control that only knows
+🔴 **The button exists ONLY on a demo account (2026-09-11).** It was drawn, disabled, on the live
+account the day the first set went live — Aaron: *"this should only be present for demo accounts."*
+An account whose kind is not known yet gets none. Pinned by two checks in `bots-accounts.spec.ts`,
+the live one killed by mutation.
+
+⚠ **On a demo account every refusal is stated ON the control, before the click** — a running bot,
+no live destination — and `goLiveBlock` is a REASON rather than a boolean, because a control that only knows
 "no" cannot say which rule said no. ⚠ **A bot the box has not answered for is NOT counted as
 stopped**: `statusByKey` holds only what the snapshot reported, and reading that silence as
 *not running* is how a live-money write gets offered on a bot that is trading.

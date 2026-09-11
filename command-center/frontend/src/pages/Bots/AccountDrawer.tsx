@@ -87,14 +87,12 @@ export function AccountDrawer({
    */
   const anyRunning = group.bots.some((b) => statusByKey.get(b.key) !== 'STOPPED')
   const liveTargets = registry.filter((a) => a.kind === 'live' && a.assignable)
-  const goLiveBlock: string | null =
-    reg?.kind === 'live'
-      ? 'This account is already live'
-      : anyRunning
-        ? 'Stop every bot on this account first — a bot reads its account when it starts, so a move cannot reach a running one'
-        : liveTargets.length === 0
-          ? 'No live account with a terminal on the box to move them to'
-          : null
+  // Only ever asked of a DEMO account — the button is not drawn on any other (see its note).
+  const goLiveBlock: string | null = anyRunning
+    ? 'Stop every bot on this account first — a bot reads its account when it starts, so a move cannot reach a running one'
+    : liveTargets.length === 0
+      ? 'No live account with a terminal on the box to move them to'
+      : null
 
   const next = capped ? parseFloat(draft) : null
   const valid = !capped || (Number.isFinite(next as number) && (next as number) > 0)
@@ -486,9 +484,15 @@ export function AccountDrawer({
                 </button>
                 {/* ── the last hop: demo → live ───────────────────────────────────
                  *
-                 * 🔴 **Offered on a DEMO account with bots on it, and DISABLED with the reason on
-                 * it otherwise — never hidden.** A control that vanishes reads as a feature that
-                 * does not exist, and this is the one people come to this page looking for.
+                 * 🔴 **PRESENT ONLY ON A DEMO ACCOUNT (2026-09-11).** It was drawn on every
+                 * account with bots and disabled on a live one ("already live") — Aaron, on the
+                 * live account the day he went live: *"this should only be present for demo
+                 * accounts."* A move to live from a live account is not a refused action, it is
+                 * not an action at all. ⚠ An account whose kind is not known yet (the registry
+                 * still loading, or never marked) gets no button: a live-money control appearing a
+                 * moment late costs nothing, appearing where it cannot apply reads as an offer.
+                 * ⚠ **On a demo account a refusal is still stated ON the control**, never hidden
+                 * — this is the one people come to this page looking for.
                  *
                  * ⚠ **Every refusal here is the SERVER's own rule, stated before the click rather
                  * than delivered as a 400 after it.** A running bot reads its account at startup,
@@ -497,7 +501,7 @@ export function AccountDrawer({
                  *
                  * ⚠ **`goLiveBlock` is a REASON, never a boolean** — a control that only knows
                  * "no" cannot say which rule said no. */}
-                {group.bots.length > 0 && (
+                {group.bots.length > 0 && reg?.kind === 'demo' && (
                   <button
                     data-testid="go-live"
                     disabled={!!goLiveBlock}
