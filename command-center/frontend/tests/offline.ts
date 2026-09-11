@@ -116,5 +116,14 @@ export function offlineTest(recordingName: string, opts: { clockFactor?: number 
       throw new Error(`${recordingName} holds no answer for ${path}`)
     return structuredClone(recording.answers[path]) as T
   }
-  return { test, recorded }
+  /** Every path the recording answers — for a spec that serves a family of requests itself. */
+  const paths = Object.keys(recording.answers)
+  /** The ONE backtest run this recording holds. Read off the recording, so re-recording it against
+   *  another run re-points every spec that replays it, with no id typed into a spec. */
+  const recordedRun = (): string => {
+    const ids = paths.map((p) => /^\/backtests\/runs\/([^/?]+)$/.exec(p)?.[1]).filter(Boolean)
+    if (ids.length !== 1) throw new Error(`${recordingName} holds ${ids.length} runs, not one`)
+    return ids[0] as string
+  }
+  return { test, recorded, paths, recordedRun }
 }

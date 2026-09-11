@@ -6680,3 +6680,7 @@ recording is a claim about this backend's SHAPE that goes stale in silence. ⚠ 
 re-record, not relax.** ⚠ A required field ADDED to a model fails it; an optional one does not.
 ⚠ **Finding no recordings is a FAILURE.** 3 planted, 3 killed — two of them in a throwaway worktree,
 because the in-memory bug planter cannot reach a test file (root `CLAUDE.md`).
+⚠ **The chart spec is exempt BY NAME (`_UNMODELLED`), with its reason, since 2026-09-11**: it is
+streamed as bytes with no model, and its contract is append-only because every run's spec is cached
+for ever. A test fails the day that route gains a model. `GET /stress-tests/running-lock` gained
+`StressLock` rather than an exemption — a missing model is a gap, not a reason.

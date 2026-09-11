@@ -14,21 +14,14 @@
  * ⚠ The mouse is parked off the plot before every measurement. The crosshair paints into the same
  * canvases, so a signature taken with the pointer over the chart differs for a reason that has
  * nothing to do with the view.
+ *
+ * ✅ OFFLINE since 2026-09-11 — the run is `recordings/chart-sos-fade.json`. Any run works here.
  */
-import { expect, test, type Page } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { expect, type Page } from '@playwright/test'
+import { offlineTest } from './offline'
 
-// The longest python run in the lab — any run works here, this one is already the suite's fixture.
-const RUN = '997c14cc53bc'
-
-// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
-// that never rendered and sending the reader at the feature. See `fixtures.ts`.
-test.beforeAll(async () => {
-  await requireRun(
-    RUN,
-    'a long M15 python run whose applied window is a slice of a much larger spec'
-  )
-})
+const { test, recordedRun } = offlineTest('chart-sos-fade')
+const RUN = recordedRun()
 
 type Box = { x: number; y: number; width: number; height: number }
 

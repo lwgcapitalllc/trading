@@ -19,101 +19,41 @@
  * ✅ Both were watched RED by MUTATION (2026-08-06): `all.slice(from)` in place of
  * `all.slice(from, from + APPLIED_BARS)` fails the first on time and the second on span.
  *
- * ⚠ It drives the REAL backend rather than intercepting the candles route. The thing under test is
- * a full-history spec being sliced, so a mocked feed would be testing the mock.
+ * ✅ OFFLINE since 2026-09-11: the run is `recordings/chart-sos-fade.json`, a year of M15 (23,714
+ * bars). It replaced a fixture RESOLVED from the lab at start-up (the longest python run there),
+ * which it did because a NAMED run had left the lab and taken both checks with it on 2026-08-16. A
+ * recording cannot leave. ⚠ **What the shorter fixture costs, stated rather than hidden**: on
+ * 23,714 bars the unbounded mutation (`all.slice(from)`) applies ~22,000 candles in a few seconds,
+ * so it no longer fails the FIRST check on time — it fails the SECOND, which asserts the rule
+ * itself: the applied window does not reach the newest bar. Mutation map re-run on this fixture.
  */
-import { test, expect } from '@playwright/test'
-import type { BacktestDetail, BacktestSummary } from '../src/types'
+import { expect } from '@playwright/test'
+import { offlineTest } from './offline'
 
-// 🔴 THE RUN IS RESOLVED, NOT NAMED, AND THAT IS A REPAIR (2026-08-16). This file carried
-// `const RUN = '211384ddbea4'`, and the day that run left the lab BOTH checks failed: the endpoint
-// 404s, so the price chart never renders, `Go to date` never appears and the click times out —
-// pointing squarely at the paging code, which was fine. **A test that asserts on which rows happen
-// to be in the database is a test that will fail on a day nothing is wrong**, and the failure is
-// indistinguishable from a regression until somebody reads it. Third instance in this folder:
-// `tuning.spec.ts` lost eight checks the same way and `backtests.spec.ts`'s millions check before
-// it. The TARGET is derived from the resolved run for the same reason — pinning a date would move
-// the expiry from the run id to the calendar rather than removing it.
-const API = 'http://localhost:8000'
+const { test, recorded, recordedRun } = offlineTest('chart-sos-fade')
+const RUN = recordedRun()
+const RUN_START = recorded<{ start_date: string }>(`/backtests/runs/${RUN}`).start_date
+const CANDLES = recorded<{ candles: { time: number }[] }>(
+  `/backtests/runs/${RUN}/chart-spec`
+).candles
+const NEWEST_BAR = CANDLES[CANDLES.length - 1].time
 
 // Generous against the 2.0s measured, and an order of magnitude under the 90.3s this replaced. It
-// is a REGRESSION guard, not a benchmark: anything that reintroduces per-window fetching or a
-// full-history `applyNewData` lands in the tens of seconds and trips it.
+// is a REGRESSION guard, not a benchmark: anything that reintroduces per-window fetching lands in
+// the tens of seconds and trips it — and offline, a per-window fetch is also an unrecorded read,
+// which the harness fails by name.
 const JUMP_BUDGET_MS = 20_000
 
-/**
- * The jump has to be LONG or these checks pin nothing — a target already inside the applied window
- * is a scroll. Three years is well past the ~4 months of bars the panel applies, and every python
- * run in this lab spans six or more, so it selects rather than excludes.
- */
-const MIN_SPAN_YEARS = 3
-
 const dayMs = (iso: string) => new Date(`${iso}T00:00:00`).getTime()
-const spanYears = (r: { start_date: string; end_date: string }) =>
-  (dayMs(r.end_date) - dayMs(r.start_date)) / (365.25 * 86_400_000)
 
-async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(API + path)
-  if (!res.ok) throw new Error(`backend not answering for ${path} (${res.status}) — is it running?`)
-  return res.json() as Promise<T>
-}
-
-/**
- * Does this run have a built ChartSpec? Without one the Price tab renders "No price data" and every
- * locator below times out for a reason that has nothing to do with paging.
- *
- * ⚠ ABORTED AFTER THE HEADERS. The spec is ~33 MB and the backend ignores `Range`, so reading the
- * body to learn a status code would pull it in full — per candidate. `fetch` resolves as soon as
- * the headers land, which is all this asks.
- */
-async function hasChartSpec(runId: string): Promise<boolean> {
-  const ctl = new AbortController()
-  try {
-    const res = await fetch(`${API}/backtests/runs/${runId}/chart-spec`, { signal: ctl.signal })
-    return res.ok
-  } catch {
-    return false
-  } finally {
-    ctl.abort()
-  }
-}
-
-/**
- * The longest-spanning INTRADAY python run the lab currently holds, with the trades and the spec
- * this suite needs. Longest wins because the jump's whole point is reaching for the far end.
- */
-async function resolveFixture(): Promise<{ runId: string; target: string }> {
-  const runs = await getJson<BacktestSummary[]>('/backtests/runs')
-  const candidates = runs
-    .filter((r) => r.status === 'complete' && (r.trade_count ?? 0) > 0)
-    .filter((r) => !!r.start_date && !!r.end_date && spanYears(r) >= MIN_SPAN_YEARS)
-    .sort((a, b) => spanYears(b) - spanYears(a))
-
-  for (const r of candidates) {
-    // `bar_type` is on the DETAIL, not the summary — an M15 run is what pages; a D1 run has no
-    // sub-base bars and the panel disables drill-down entirely.
-    const d = await getJson<BacktestDetail>(`/backtests/runs/${r.run_id}?timeline=false`)
-    if (d.runner !== 'python') continue
-    if (d.bar_type !== 'Minute') continue
-    if (!d.equity_curve?.length) continue
-    if (!(await hasChartSpec(r.run_id))) continue
-    // Six months in from the run's own start: inside the data with room to spare, and years from
-    // the right edge the chart opens on. Derived, so it moves with whatever run is resolved.
-    const t = new Date(`${d.start_date}T00:00:00`)
-    t.setMonth(t.getMonth() + 6)
-    return { runId: r.run_id, target: t.toISOString().slice(0, 10) }
-  }
-  throw new Error(
-    `no completed intraday python run spanning ≥${MIN_SPAN_YEARS}y with trades and a chart spec — this suite needs one`
-  )
-}
-
-let RUN = ''
-let TARGET = ''
-
-test.beforeAll(async () => {
-  ;({ runId: RUN, target: TARGET } = await resolveFixture())
-})
+// A month in from the run's own start: inside the data, and ~6 months before the ~12,000 bars the
+// panel opens on, so the jump is a real one (the vacuity guard below asserts it). Derived from the
+// recorded run, so it moves with it.
+const TARGET = (() => {
+  const t = new Date(`${RUN_START}T00:00:00`)
+  t.setMonth(t.getMonth() + 1)
+  return t.toISOString().slice(0, 10)
+})()
 
 async function openPriceTab(page: import('@playwright/test').Page) {
   await page.goto(`/backtests/runs/${RUN}`)
@@ -149,9 +89,8 @@ test('a long jump lands on the requested date in seconds, not minutes', async ({
 
   const before = await appliedWindow(page)
   // The target must genuinely be outside the applied window, or the jump is a scroll and this test
-  // proves nothing. (Vacuity guard: the shipped window used to be ~17 months and is now ~4 months
-  // of applied bars, so a target six months into a multi-year run is well outside either — but
-  // assert it rather than assume, since the fixture is now resolved rather than named.)
+  // proves nothing. Asserted rather than assumed: it depends on the recording's length and on
+  // `APPLIED_BARS`, and a change to either could quietly turn the jump into a scroll.
   expect(dayMs(TARGET)).toBeLessThan(before.lo)
 
   const t0 = Date.now()
@@ -188,13 +127,13 @@ test('a jump applies a BOUNDED window, not everything from the target to the pre
 
   // 🔴 This is the structural half of the check above, and it is the one that says WHY the jump is
   // fast. The spec holds the whole run in memory, so it is one word's difference between slicing a
-  // window around the target and slicing from the target to the newest bar — and the second hands
-  // klinecharts ~155,000 candles, which is a MEASURED 30.8s of frozen main thread. The time budget
-  // alone would let that through on a fast enough machine; the window's own span cannot.
+  // window around the target and slicing from the target to the newest bar — and on a full-history
+  // run the second hands klinecharts ~155,000 candles, a MEASURED 30.8s of frozen main thread.
   //
-  // ~12,000 M15 bars is ~4 months of calendar. A year is loose enough not to pin `APPLIED_BARS` to
-  // a number, tight enough that target→present (6 years) fails outright.
+  // So assert the rule itself: the window stops short of the newest bar. The target sits ~11
+  // months before it and ~12,000 M15 bars is ~6 months, so a bounded window cannot reach it and
+  // the unbounded one always does — without pinning `APPLIED_BARS` to a number.
   const w = await appliedWindow(page)
-  const spanDays = (w.hi - w.lo) / 86_400_000
-  expect(spanDays).toBeLessThan(365)
+  expect(w.hi).toBeLessThan(NEWEST_BAR)
+  expect((w.hi - w.lo) / 86_400_000).toBeLessThan(365)
 })

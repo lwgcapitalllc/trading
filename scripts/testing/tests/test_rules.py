@@ -104,29 +104,112 @@ def test_a_frontend_source_change_runs_the_typecheck_and_the_node_checks_only(re
     assert not sel.tests["backend"] and not sel.gates
 
 
-# Step 19's selection. Mutation map (2026-09-11, `python -m scripts.testing.mutate`, 5 planted, 5
-# killed): following App.tsx's routes to every page; dropping the specs as roots; not resolving
-# `@/`; the step no longer heavy; a marker the config does not use.
+# Step 19's selection - ONE SPEC AT A TIME since 2026-09-11. Mutation map, RUN through
+# `python -m scripts.testing.mutate` (9 planted, 9 killed): following App.tsx's route to every
+# page; a variable `goto` read as no visit; the query string kept on a visit; a route pattern with
+# no end anchor (so /runs/x/tune matched the run page); the recording left out of a spec's sources;
+# an unknown path beside a known one read as the known one (SURVIVED first - see that test); the
+# shared build input no longer running every spec; the none-means-all guard dropped; and the fast
+# runner handing Playwright every spec's name instead of none.
 BROWSER = 19
+FE = "command-center/frontend"
+BOTS_SPECS = {f"{FE}/tests/bots-accounts.spec.ts", f"{FE}/tests/bots-version.spec.ts"}
+CHART_SPEC = f"{FE}/tests/vwap.spec.ts"
 
 
-def test_a_change_the_bots_page_can_run_reaches_the_offline_browser_specs(real):
-    fe = "command-center/frontend"
+def _specs(sel):
+    """The offline specs a selection runs: every one of them when the step runs whole."""
+    chosen = sel.parts.get(BROWSER)
+    return set(rules.offline_specs()) if chosen is None else chosen
+
+
+def test_a_change_the_bots_page_can_run_reaches_ONLY_the_bots_specs(real):
+    # 🔴 The Bots page is where the everyday loop lives, and it must not pay for the chart specs.
     for path in (
-        f"{fe}/src/pages/Bots/index.tsx",  # the page itself
-        f"{fe}/src/hooks/useBots.ts",  # what it reads through
-        f"{fe}/src/App.tsx",  # the shell it renders inside
-        f"{fe}/tests/bots-accounts.spec.ts",  # a spec
-        f"{fe}/tests/offlineApp.ts",  # the harness, reached through the specs' own imports
+        f"{FE}/src/pages/Bots/index.tsx",  # the page itself
+        f"{FE}/src/hooks/useBots.ts",  # what it reads through
+        f"{FE}/tests/bots-accounts.spec.ts",  # a spec
     ):
-        assert BROWSER in _sel(real, path).steps, path
+        sel = _sel(real, path)
+        assert BROWSER in sel.steps, path
+        assert _specs(sel) <= BOTS_SPECS, (path, _specs(sel) - BOTS_SPECS)
 
 
-def test_a_change_to_another_page_does_not_run_them(real):
-    # App.tsx imports every page, and following that edge would run the Bots specs for any edit.
-    sel = _sel(real, "command-center/frontend/src/pages/BacktestDetail.tsx")
+def test_a_change_the_chart_can_run_reaches_the_chart_specs_and_NOT_the_bots_ones(real):
+    for path in (
+        f"{FE}/src/pages/BacktestDetail.tsx",
+        f"{FE}/src/components/ChartPanel/index.tsx",  # lazily imported, `import(...)`
+        f"{FE}/tests/recordings/chart-sos-fade.json",
+    ):
+        sel = _sel(real, path)
+        assert CHART_SPEC in _specs(sel), path
+        assert not (_specs(sel) & BOTS_SPECS), path
+
+
+def test_the_shell_and_the_harness_reach_EVERY_offline_spec(real):
+    for path in (
+        f"{FE}/src/App.tsx",  # the shell every page renders inside
+        f"{FE}/tests/offlineApp.ts",  # the harness, reached through the specs' own imports
+        f"{FE}/vite.config.ts",  # the build every spec loads
+    ):
+        sel = _sel(real, path)
+        assert BROWSER in sel.steps, path
+        assert _specs(sel) == set(rules.offline_specs()), path
+
+
+def test_a_shared_input_beside_a_page_edit_still_runs_EVERY_spec(real):
+    # Changed files are walked in path order, so both orders are exercised: the shared input first
+    # (index.html sorts before src/), and last (vite.config.ts sorts after it).
+    for shared in (f"{FE}/index.html", f"{FE}/vite.config.ts"):
+        sel = _sel(real, f"{FE}/src/pages/Bots/index.tsx", shared)
+        assert sel.parts.get(BROWSER, "absent") is None, shared  # the whole step, not the Bots two
+
+
+def test_a_recording_reaches_only_the_specs_that_replay_it(real):
+    sel = _sel(real, f"{FE}/tests/recordings/chart-b-leg.json")
+    assert _specs(sel) == {f"{FE}/tests/bleg-fibs.spec.ts"}
+
+
+def test_a_page_no_offline_spec_opens_does_not_run_them(real):
+    # App.tsx imports every page, and following that edge would run every spec for any edit.
+    sel = _sel(real, f"{FE}/src/pages/StressTestDetail.tsx")
     assert BROWSER not in sel.steps
     assert {3, 12} <= sel.steps  # the page is still typechecked and colour-checked
+
+
+def test_every_offline_spec_opens_a_page_the_route_table_names():
+    """None means "I could not read where this spec goes, so run it for every page" - safe, but a
+    spec that ALWAYS falls back has silently given up its selection."""
+    for spec in rules.offline_specs():
+        assert rules.pages_visited(rules._text(spec)), f"{spec}: no page resolved"
+
+
+def test_a_visit_is_matched_to_its_OWN_route():
+    fe = f"{FE}/src/pages"
+    visit = rules.pages_visited
+    assert visit("page.goto(`/backtests/runs/${RUN}`)") == {f"{fe}/BacktestDetail.tsx"}
+    assert visit("page.goto('/bots?tab=monitor')") == {f"{fe}/Bots/index.tsx"}
+    # The tune page sits one segment deeper and is a different page, not a prefix of this one.
+    assert visit("page.goto(`/backtests/runs/${RUN}/tune`)") == {f"{fe}/TuningWorkbench.tsx"}
+
+
+def test_a_visit_that_cannot_be_read_runs_the_spec_for_every_page():
+    assert rules.pages_visited("await page.goto(url)") is None  # held in a variable
+    assert rules.pages_visited("page.goto('/bots'); page.goto(somewhere)") is None  # one unread
+    # No route serves it. ⚠ Beside a KNOWN visit, or the check cannot fail: alone, "no page found"
+    # already comes back as None, so dropping the rule changed nothing (mutation SURVIVED).
+    assert rules.pages_visited("page.goto('/bots'); page.goto('/no-such-page')") is None
+
+
+def test_the_fast_runner_hands_playwright_only_the_chosen_specs():
+    from scripts.testing.fast import _step_job
+
+    step = next(s for s in rules.STEPS if s.id == BROWSER)
+    part = _step_job(step, "python", {CHART_SPEC})
+    assert part.cmd[-1] == "tests/vwap.spec.ts" and part.detail
+    whole = _step_job(step, "python", {t for t, _ in step.parts})
+    assert whole.cmd == list(step.cmd)  # every spec: no file arguments, and none left out
+    assert _step_job(step, "python", None).cmd == list(step.cmd)
 
 
 def test_the_runner_finds_the_same_offline_specs_the_playwright_config_does():

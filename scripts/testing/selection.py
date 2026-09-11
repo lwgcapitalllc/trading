@@ -13,6 +13,9 @@ from dataclasses import dataclass, field
 class Selection:
     tests: dict = field(default_factory=dict)  # suite name -> {test path: node it was reached from}
     steps: set = field(default_factory=set)  # run_all_tests.sh step ids
+    # step id -> the parts of a per-file step that run; None = all of them. A step with no entry
+    # runs whole, which is what `everything` and a step without parts mean.
+    parts: dict = field(default_factory=dict)
     gates: set = field(default_factory=set)  # component dirs whose parity gate runs
     escalated: list = field(default_factory=list)  # (path, reason) - these run EVERYTHING
     notes: list = field(default_factory=list)  # (path, what it means) - nothing to run for it
@@ -55,7 +58,15 @@ def select(graph, rules, changed: dict) -> Selection:
         for step in rules.STEPS:
             if step.globs and rules.matches(path, step.globs):
                 sel.steps.add(step.id)
+                if step.parts:
+                    sel.parts[step.id] = None  # what every part goes through: the whole step
                 matched = True
+            for target, globs in step.parts:
+                if rules.matches(path, globs):
+                    sel.steps.add(step.id)
+                    matched = True
+                    if sel.parts.get(step.id, ()) is not None:
+                        sel.parts.setdefault(step.id, set()).add(target)
         if path.endswith(".py"):
             matched = True
             if status == "deleted":

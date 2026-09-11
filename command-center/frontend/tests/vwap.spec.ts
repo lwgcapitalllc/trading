@@ -14,33 +14,39 @@
  *      reconciled — safe only while nothing carried a non-default, and a silent reset of the
  *      reader's toggle the moment one did.
  *
- * ⚠ It drives the REAL backend for the layer's own existence, because that is a server-side engine
- * replay reaching the chart and a mocked spec would be testing the mock. The absent-`defaultOn`
- * case is the one thing the live lab cannot supply — the only run carrying an ATR pane is a
- * London-breakout one, and this run is not — so that case MUTATES the real response rather than
- * being hand-written, the same discipline the Overview and Stress Tests suites use.
+ * ⚠ It replays a RECORDED spec (`recordings/chart-sos-fade.json`), taken off a real server-side
+ * engine replay — not a hand-written one, which would be testing the mock. The absent-`defaultOn`
+ * case is the one thing the lab cannot supply — the only run carrying an ATR pane is a
+ * London-breakout one, and this run is not — so that case MUTATES the recorded response rather
+ * than being hand-written, the same discipline the Overview and Stress Tests suites use.
  *
  * ⚠ `data-indicators-on` on the panel root is a declared TEST SEAM. An indicator draws into the
  * candle pane's CANVAS, so "is the line on screen" has no DOM answer, and a check that settled for
  * "the menu row is ticked" would pass against a panel drawing nothing.
  */
-import { expect, test, type Page } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { expect, type Page } from '@playwright/test'
+import { offlineTest } from './offline'
 
-// The longest python run in the lab: 2020-01-01 → 2026-08-06 at M15, ~156k candles, so the VWAP
-// series is a real full-history one rather than a handful of points.
-const RUN = '997c14cc53bc'
-
-// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
-// that never rendered and sending the reader at the feature. See `fixtures.ts`.
-test.beforeAll(async () => {
-  await requireRun(
-    RUN,
-    'a full-history M15 python run whose bars carry VOLUME — without it there is no Session VWAP layer to toggle at all'
-  )
-})
+// A year of M15 bars that carry VOLUME — without it there is no Session VWAP layer at all — so the
+// series is a real one of ~23,700 points rather than a handful.
+const { test, recorded, recordedRun } = offlineTest('chart-sos-fade')
+const RUN = recordedRun()
+const SPEC = `/backtests/runs/${RUN}/chart-spec`
 
 const VWAP = 'Session VWAP'
+
+type Spec = { indicators: { name: string; series: unknown[] }[] }
+
+/** The recorded spec with an ATR pane added that states NO `defaultOn` — see the two checks below. */
+function specPlusAtr(): Spec {
+  const spec = recorded<Spec>(SPEC)
+  const vwap = spec.indicators.find((i) => i.name === VWAP)!
+  spec.indicators = [
+    ...spec.indicators,
+    { name: 'ATR', pane: 'sub', series: vwap.series.slice(0, 500) } as Spec['indicators'][number],
+  ]
+  return spec
+}
 
 /** The indicator names klinecharts currently holds, off the panel's own create pass. */
 async function drawn(page: Page) {
@@ -79,17 +85,10 @@ test('ticking it draws the line', async ({ page }) => {
 test('an indicator that omits defaultOn still arrives ON', async ({ page }) => {
   // The rule the ATR sub-pane depends on, and the one a `?? false` default would silently break.
   // No run in this lab carries both an ATR pane and a VWAP, so the second indicator is injected
-  // into the REAL spec rather than the whole response being hand-written.
-  await page.route(`**/backtests/runs/${RUN}/chart-spec*`, async (route) => {
-    const res = await route.fetch()
-    const spec = await res.json()
-    const vwap = spec.indicators.find((i: { name: string }) => i.name === VWAP)
-    spec.indicators = [
-      ...spec.indicators,
-      { name: 'ATR', pane: 'sub', series: vwap.series.slice(0, 500) }, // no defaultOn
-    ]
-    await route.fulfill({ response: res, json: spec })
-  })
+  // into the RECORDED spec rather than the whole response being hand-written.
+  await page.route(`**/backtests/runs/${RUN}/chart-spec*`, (route) =>
+    route.fulfill({ json: specPlusAtr() })
+  )
 
   await openPriceTab(page)
 
@@ -123,20 +122,12 @@ test("the reader's choice survives a chart rebuild rather than being re-seeded",
   await page.keyboard.press('Escape')
 
   // The rebuild comes back carrying one layer the reader has never seen.
-  await page.route('**/chart-spec?*refresh=true*', async (route) => {
-    const res = await route.fetch()
-    const spec = await res.json()
-    const vwap = spec.indicators.find((i: { name: string }) => i.name === VWAP)
-    spec.indicators = [
-      ...spec.indicators,
-      { name: 'ATR', pane: 'sub', series: vwap.series.slice(0, 500) },
-    ]
-    await route.fulfill({ response: res, json: spec })
-  })
+  await page.route('**/chart-spec?*refresh=true*', (route) =>
+    route.fulfill({ json: specPlusAtr() })
+  )
 
   await page.getByRole('button', { name: /rebuild chart/i }).click()
-  // The rebuild really replays the engines server-side, so wait for the new layer to land.
-  await expect.poll(() => drawn(page), { timeout: 180_000 }).toContain('ATR')
+  await expect.poll(() => drawn(page), { timeout: 30_000 }).toContain('ATR')
 
   // The layer the READER turned on is still on; only the genuinely new key took a default.
   expect(await drawn(page)).toContain(VWAP)

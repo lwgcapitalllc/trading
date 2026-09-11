@@ -10,32 +10,82 @@
  *      hedging, because the backend's `available` was `bool(candles)` and could not tell the two
  *      apart even though the fetch knew.
  *
- * ⚠ Three of these drive the REAL backend rather than intercepting the candle route, which is the
- * opposite call from `calendar.spec.ts` and deliberate: what is under test is where the chart LANDS
- * after a real fetch, and a mocked feed would be measuring the mock. The refusal check is mocked,
- * because the only way to produce it for real is to take the MT5 terminal down.
+ * ✅ OFFLINE since 2026-09-11 (`recordings/chart-sos-fade.json`). The fetches are answered from a
+ * RECORDED FEED: two wide windows of the backend's own answer (M5 and M1 around `DATE`), each
+ * request cut to exactly the window it asked for — so what is under test is still where the chart
+ * LANDS after a real answer. ⚠ **A request outside the recorded windows FAILS the check by name**,
+ * never answers empty: an empty answer is what a broker with no history returns, and faking one
+ * would test a different branch. ⚠ The backend replays structure per window over a warm-up, so a
+ * cut window carries the wider window's structure; no check here reads drill-down structure.
+ * The refusal, the data edge and the empty answer stay mocked — none can be produced on demand.
  *
  * ⚠ The applied WINDOW is not the same question as where the view is PARKED — a switch can leave
  * the window untouched and still sit on its right edge, six weeks from the date being read. Hence
  * `data-view-centre`, a declared test seam beside `data-applied-lo`/`-hi`; klinecharts draws its
  * time axis into the canvas, so none of this is otherwise readable from the DOM.
  */
-import { test, expect, type Page } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { expect, type Page } from '@playwright/test'
+import { offlineTest, type Offline } from './offline'
 
-const RUN = '997c14cc53bc'
+const { test, recorded, paths, recordedRun } = offlineTest('chart-sos-fade')
+const RUN = recordedRun()
 
-// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
-// that never rendered and sending the reader at the feature. See `fixtures.ts`.
-test.beforeAll(async () => {
-  await requireRun(
-    RUN,
-    'a long M15 python run with 1m history behind it, so a drill-down has finer bars to fetch'
-  )
-})
-const DATE = '2020-08-05'
+// Ten months before the run's last bar, so a drill-down anchored on the run's tail (the defect the
+// first check pins) lands nowhere near it. ⚠ The recorded M5/M1 windows are centred on it: move the
+// date and re-record them, or every drill-down check fails naming the window it asked for.
+const DATE = '2025-11-05'
 const TARGET = new Date(`${DATE}T00:00:00Z`).getTime()
 const DAY = 86_400_000
+
+type Feed = { candles: { time: number }[]; overlays?: Record<string, unknown>[] }
+const FEEDS = paths
+  .filter((p) => p.startsWith(`/backtests/runs/${RUN}/candles?`))
+  .map((p) => {
+    const q = new URLSearchParams(p.split('?')[1])
+    return { tf: q.get('tf'), from: Number(q.get('from_ms')), to: Number(q.get('to_ms')), path: p }
+  })
+
+/** Every timestamp an overlay carries, whatever its shape names them. */
+const overlayTimes = (ov: Record<string, unknown>) =>
+  ['t', 't0', 't1', 'time'].map((k) => ov[k]).filter((v): v is number => typeof v === 'number')
+
+/**
+ * Answer every drill-down fetch from the recorded feed, cut to the window it asked for.
+ * `gate`, when given, holds each answer until released — a check about the LOADING state has to
+ * see it, and a recorded answer arrives in milliseconds where the live one took ~4.5s.
+ */
+async function serveRecordedFeed(page: Page, off: Offline, gate?: Promise<void>) {
+  await page.route('**/backtests/runs/*/candles*', async (route) => {
+    const u = new URL(route.request().url())
+    const tf = u.searchParams.get('tf')
+    const from = Number(u.searchParams.get('from_ms'))
+    const to = Number(u.searchParams.get('to_ms'))
+    const feed = FEEDS.find((f) => f.tf === tf && f.from <= from && f.to >= to)
+    if (!feed) {
+      off.unrouted.push(
+        `GET ${u.pathname.slice(4)}${u.search} — outside every recorded ${tf} window`
+      )
+      return route.abort('blockedbyclient')
+    }
+    if (gate) await gate
+    const answer = recorded<Feed>(feed.path)
+    const candles = answer.candles.filter((c) => c.time >= from && c.time <= to)
+    const overlays = (answer.overlays ?? []).filter((ov) => {
+      const ts = overlayTimes(ov)
+      return ts.length > 0 && Math.max(...ts) >= from && Math.min(...ts) <= to
+    })
+    // Not the broker's true edge: the recording simply starts where it was asked to.
+    return route.fulfill({
+      json: {
+        ...answer,
+        candles,
+        overlays,
+        hard_edge: false,
+        data_start_ms: candles[0]?.time ?? null,
+      },
+    })
+  })
+}
 
 async function openPriceTab(page: Page) {
   await page.goto(`/backtests/runs/${RUN}`)
@@ -81,23 +131,36 @@ const viewCentre = async (page: Page) =>
   Number(await page.locator('[data-applied-lo]').getAttribute('data-view-centre'))
 
 test.describe('price chart — drill-down', () => {
-  test('a drill-down loads the window being READ, not the newest bars', async ({ page }) => {
-    test.setTimeout(360_000)
+  test('a drill-down loads the window being READ, not the newest bars', async ({
+    page,
+    recordedApi,
+  }) => {
+    test.setTimeout(120_000)
+    await serveRecordedFeed(page, recordedApi)
     await openPriceTab(page)
     await jumpTo(page, DATE)
     await pickTf(page, 'M5')
     await settleDrill(page)
 
     const { lo, hi } = await applied(page)
-    // Before the fix this window was 2025-11-09 .. 2026-08-06 — six years from the date on screen.
+    // Before the fix this window was the run's newest bars — six years from the date on screen, on
+    // the full-history run this was first measured on.
     expect(lo).toBeLessThanOrEqual(TARGET)
     expect(hi).toBeGreaterThanOrEqual(TARGET)
     // And the VIEW is on it, not parked on the window's right edge (which measured 2.5 months out).
     expect(Math.abs((await viewCentre(page)) - TARGET)).toBeLessThan(2 * DAY)
   })
 
-  test('a drill-down says it is loading, on the chart and on the button', async ({ page }) => {
-    test.setTimeout(360_000)
+  test('a drill-down says it is loading, on the chart and on the button', async ({
+    page,
+    recordedApi,
+  }) => {
+    test.setTimeout(120_000)
+    // HELD until the badge has been seen. Against the live backend the fetch took ~4.5s, which is
+    // the only reason this check could see the loading state at all; a recorded answer is instant.
+    let release = () => {}
+    const gate = new Promise<void>((ok) => (release = ok))
+    await serveRecordedFeed(page, recordedApi, gate)
     await openPriceTab(page)
     await jumpTo(page, DATE)
     await pickTf(page, 'M1')
@@ -105,12 +168,13 @@ test.describe('price chart — drill-down', () => {
     // chart keeps showing the coarser bars throughout, so without this the two states are identical.
     await expect(page.getByText(/loading M1 bars/)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(/showing M15 meanwhile/)).toBeVisible()
+    release()
     await settleDrill(page)
     await expect(page.getByText(/loading M1 bars/)).toHaveCount(0)
   })
 
   test('switching display timeframes keeps the reader on their date', async ({ page }) => {
-    test.setTimeout(360_000)
+    test.setTimeout(120_000)
     await openPriceTab(page)
     await jumpTo(page, DATE)
     // M15 -> H1 landed 42 days out before the fix: `applyNewData` parks on the newest loaded bar,
@@ -121,7 +185,7 @@ test.describe('price chart — drill-down', () => {
   })
 
   test('a window the feed refuses says WHY, in the feed’s own words', async ({ page }) => {
-    test.setTimeout(360_000)
+    test.setTimeout(120_000)
     // The only way to get this for real is to take the MT5 terminal down, so the refusal is mocked —
     // with the exact payload the backend produces, measured against the live one:
     //   available:false + feed_error "HistoryFloorError: XAUUSD has no real 1-minute history
@@ -196,7 +260,7 @@ test.describe('price chart — drill-down, the paths that were not driven', () =
    * a rule stated nowhere else — but it must not be read as covering the guard it sits beside.
    */
   test('the broker’s data edge stops the pager instead of asking for ever', async ({ page }) => {
-    test.setTimeout(360_000)
+    test.setTimeout(120_000)
     let start = 0
     await page.route('**/backtests/runs/*/candles*', async (route) => {
       const url = new URL(route.request().url())
@@ -238,14 +302,16 @@ test.describe('price chart — drill-down, the paths that were not driven', () =
   })
 
   test('a drill-down that comes back empty does not freeze every later jump', async ({ page }) => {
-    test.setTimeout(360_000)
+    test.setTimeout(120_000)
     // 🔴 This is the failure mode that made the path worth closing: `drillTo` sets `jumpingRef`
     // before the fetch, and `goToDate` returns immediately while it is set. If an empty answer does
     // not release it, the chart refuses EVERY later jump and every page for the rest of the session
     // — silently, with a perfectly healthy-looking chart.
     let blockAll = true
     await page.route('**/backtests/runs/*/candles*', async (route) => {
-      if (!blockAll) return route.continue()
+      // Past the block no fetch is expected (M15 is display-only), so one falls to the harness,
+      // which fails the check naming it.
+      if (!blockAll) return route.fallback()
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

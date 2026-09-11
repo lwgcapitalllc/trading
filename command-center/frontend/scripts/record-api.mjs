@@ -16,6 +16,10 @@
  * the backend suite rather than as a confusing browser failure. Re-record when it does.
  *
  * ⚠ **Personal data is scrubbed before it is written** — see SCRUB. A recording is committed.
+ *
+ * ⚠ **One answer per LINE, not indented.** A chart spec is ~4 MB, and indenting it doubled the file
+ * in whitespace; one line per answer keeps a re-record's diff to the answers that moved. It is
+ * why `.prettierignore` names this folder — the commit hook would re-indent it.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 
@@ -59,8 +63,11 @@ for (const p of [...paths].sort()) {
   answers[p] = SCRUB[p] ? SCRUB[p](body) : body
   console.log(`  recorded GET ${p}`)
 }
-writeFileSync(
-  file,
-  JSON.stringify({ ...old, recorded_at: new Date().toISOString(), answers }, null, 2) + '\n'
+const head = { ...old, recorded_at: new Date().toISOString() }
+delete head.answers
+const lines = Object.entries(answers).map(
+  ([p, a]) => `    ${JSON.stringify(p)}: ${JSON.stringify(a)}`
 )
+const top = Object.entries(head).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
+writeFileSync(file, `{\n${top.join('\n')}\n  "answers": {\n${lines.join(',\n')}\n  }\n}\n`)
 console.log(`wrote ${Object.keys(answers).length} answers to ${file}`)

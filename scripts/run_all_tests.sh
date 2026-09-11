@@ -439,11 +439,12 @@ else
 fi
 
 # ── 19. The OFFLINE browser specs ───────────────────────────────────────────
-# The Bots page's specs, which replay recorded answers and load a development build of this
-# checkout off disk (command-center/frontend/tests/offline.ts) - so they need NOTHING running and
-# reach nothing live, which is the whole reason step 3 kept Playwright out. ~45s: the build is ~11s.
+# The Bots page's and the price chart's specs, which replay recorded answers and load a development
+# build of this checkout off disk (command-center/frontend/tests/offline.ts) - so they need NOTHING
+# running and reach nothing live, which is the whole reason step 3 kept Playwright out. ~90s: the
+# build is ~11s. The fast tier runs them one spec at a time; this runs them all.
 # ⚠ Every OTHER spec still reads the real backend and stays a person's `./start.sh` + `npm test`.
-echo "  [19/19] offline browser specs (the Bots page, recorded answers) ..."
+echo "  [19/19] offline browser specs (Bots and chart pages, recorded answers) ..."
 if [ -d "command-center/frontend/node_modules" ]; then
   if (cd command-center/frontend && npx --no-install playwright test --project=offline --reporter=line); then
     pass "offline browser specs"

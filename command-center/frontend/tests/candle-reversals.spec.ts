@@ -22,8 +22,9 @@
  *      list is read by scanning names, and a paragraph under every row triples the height of a
  *      panel that has to fit beside a chart.
  *
- * ⚠ It drives the REAL backend, because the marks come from a server-side engine replay over the
- * run's own candles and a mocked spec would be testing the mock.
+ * ⚠ It replays a RECORDED spec (`recordings/chart-sos-fade.json`): the marks come from a
+ * server-side engine replay over the run's own candles, so a hand-written spec would be testing
+ * the mock. Offline since 2026-09-11 — it needs nothing running and cannot lose its fixture.
  *
  * ⚠ A fail-watch against HEAD is vacuous — the layer did not exist, so every check would go red on
  * the element simply being absent, which proves the locator and nothing else. Check 2 is instead
@@ -31,28 +32,20 @@
  * only pass on a real change. Checks 1, 3, 4 and 5 were proven by MUTATION (see each one's
  * comment).
  */
-import { expect, test, type Page } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { expect, type Page } from '@playwright/test'
+import { offlineTest } from './offline'
 
-// The longest python run in the lab: 2020-01-01 → 2026-08-06 at M15. Its anchor set is 159 trades
-// + 35 three-of-three misses = 194, and each anchor is a SPAN, so it draws ~820 marks — the layer
-// is exercised on a real set rather than a handful. (It was 518 anchors / 424 marks until blocked
-// setups were dropped, and 194 / 153 while each anchor drew a single candle; both on 2026-08-08.
-// See `services/chart_spec.reversal_anchors`.)
-const RUN = '997c14cc53bc'
+// A year of SOS Fade at M15 (2025-09-03 → 2026-09-03): 35 trades and 6 three-of-three misses, 163
+// marks — every anchor is a SPAN, so the layer is exercised on a real set rather than a handful.
+// Its misses carry both scores and both reasons the filter checks below read ("No FVG in zone" on
+// 2/3s only, "No retrace" hidden by default).
+const { test, recordedRun } = offlineTest('chart-sos-fade')
+const RUN = recordedRun()
 
-// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
-// that never rendered and sending the reader at the feature. See `fixtures.ts`.
-test.beforeAll(async () => {
-  await requireRun(
-    RUN,
-    'a python run whose spec carries candlestick-reversal marks AND missed setups — note its DATE_WITH_A_MARK constant is tied to that same run and does not travel'
-  )
-})
-
-// A date this run has a mark on — 2026-07-30 05:30, a Bearish Engulfing inside a trade's span.
-// Needed because the newest bars often carry none, and a pixel check on an empty viewport reads
-// exactly like a layer that does not draw.
+// A date this run has marks on — 2026-07-30 05:30-06:15, three in one trade's span, one of them
+// its deepest (so "Only the deepest" thins them without emptying them). Needed because the newest
+// bars often carry none, and a pixel check on an empty viewport reads exactly like a layer that
+// does not draw. ⚠ Tied to the RECORDED run: re-record against another and re-read this.
 const DATE_WITH_A_MARK = '2026-07-30'
 
 const LAYER = 'Candlestick Reversals'

@@ -95,6 +95,9 @@ class Step:
     script: str = ""  # a Python entry point: it runs when anything it imports changes
     globs: tuple = ()  # files (or whole trees) it reads that no import line names
     heavy: bool = False  # takes every core itself, so it runs in turn with the suites, not beside
+    # A step that runs PER FILE: ((file its command is handed, files whose change reaches it), ...).
+    # A change matching `globs` still runs the whole step; one matching a part runs that part.
+    parts: tuple = ()
 
 
 def _node(id_, name, script):
@@ -110,7 +113,21 @@ _IMPORT = re.compile(
 )
 _TS_EXT = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", "/index.ts", "/index.tsx")
 _APP = f"{_FE}/src/App.tsx"
-_BOTS_PAGE = f"{_FE}/src/pages/Bots/"
+_PAGES = f"{_FE}/src/pages/"
+_PAGE_IMPORT = re.compile(
+    r"""import\s+(?:\{\s*(\w+)\s*\}|(\w+))\s+from\s+['"](@/pages/[^'"]+)['"]"""
+)
+_ROUTE = re.compile(r"""<Route\s+path=["']([^"']+)["']\s+element=\{<(\w+)""")
+_GOTO = re.compile(r"""\.goto\(\s*(?:'([^']*)'|"([^"]*)"|`([^`]*)`)""")
+_ANY_GOTO = re.compile(r"\.goto\(")
+_RECORDING = re.compile(r"""offlineTest\(\s*['"]([^'"]+)['"]""")
+
+
+def _text(path: str) -> str:
+    try:
+        return (REPO / path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def offline_specs() -> tuple:
@@ -137,31 +154,74 @@ def _resolve_ts(spec: str, importer: str):
     return None
 
 
-def offline_browser_sources() -> tuple:
-    """Every source file the offline specs can run: the specs and what they import, and the app from
-    main.tsx down - except App.tsx's routes to OTHER pages, which load on /bots but never render.
+def app_routes() -> tuple:
+    """((a URL path pattern, the page file App.tsx renders there), ...), read out of App.tsx's own
+    route table - so a route added there needs no edit here."""
+    text = _text(_APP)
+    pages = {a or b: _resolve_ts(spec, _APP) for a, b, spec in _PAGE_IMPORT.findall(text)}
+    out = []
+    for path, component in _ROUTE.findall(text):
+        page = pages.get(component)
+        if page and path != "*":
+            rx = "/".join("[^/]+" if s.startswith(":") else re.escape(s) for s in path.split("/"))
+            out.append((re.compile(f"^{rx}$"), page))
+    return tuple(out)
 
-    ⚠ That exception is the one place this can be wrong: a page that crashes as it LOADS breaks
-    /bots too, and is not followed. The full run carries these specs as its own step, so such a
-    miss is named there (BLIND SPOT) rather than lost."""
-    todo, seen = [f"{_FE}/src/main.tsx", *offline_specs()], set()
+
+def pages_visited(spec_text: str):
+    """The page files a spec's `page.goto` calls land on - or None, meaning EVERY page, when one of
+    them cannot be read (a URL held in a variable, or a path no route serves). Over-selecting is
+    the safe direction; a spec quietly missing a page it visits is the dangerous one."""
+    literal = _GOTO.findall(spec_text)
+    if len(literal) != len(_ANY_GOTO.findall(spec_text)):
+        return None
+    routes, found = app_routes(), set()
+    for groups in literal:
+        url = next((g for g in groups if g), "")
+        path = re.sub(r"\$\{[^}]*\}", "x", url).split("?")[0].split("#")[0]
+        hits = {page for rx, page in routes if rx.match(path)}
+        if not hits:
+            return None
+        found |= hits
+    return found or None
+
+
+def _app_closure(roots, pages) -> set:
+    """Every file `roots` import, transitively - except App.tsx's routes to pages not in `pages`,
+    which load with the app but never render (`pages` None follows every route)."""
+    todo, seen = list(roots), set()
     while todo:
         path = todo.pop()
         if path in seen:
             continue
         seen.add(path)
-        try:
-            text = (REPO / path).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for spec in _IMPORT.findall(text):
+        for spec in _IMPORT.findall(_text(path)):
             dep = _resolve_ts(spec, path)
-            other_page = (
-                dep and dep.startswith(f"{_FE}/src/pages/") and not dep.startswith(_BOTS_PAGE)
-            )
-            if dep and not (path == _APP and other_page):
-                todo.append(dep)
-    return tuple(sorted(seen))
+            if not dep:
+                continue
+            if path == _APP and dep.startswith(_PAGES) and pages is not None and dep not in pages:
+                continue
+            todo.append(dep)
+    return seen
+
+
+def offline_spec_sources() -> tuple:
+    """((offline spec, every file whose change can move its result), ...): the spec and what it
+    imports, the recording it replays, and the app from main.tsx down to the pages it VISITS.
+
+    🔴 Per spec, so an edit to one page runs only the specs that open that page - the Bots page's
+    specs no longer pay for the chart specs, and the reverse.
+
+    ⚠ Skipping App.tsx's routes to unvisited pages is the one place this can be wrong: a page that
+    crashes as it LOADS breaks every page, and is not followed. The full run carries every offline
+    spec as its own step, so such a miss is named there (BLIND SPOT) rather than lost."""
+    out = []
+    for spec in offline_specs():
+        text = _text(spec)
+        files = _app_closure([f"{_FE}/src/main.tsx", spec], pages_visited(text))
+        recs = {f"{_FE}/tests/recordings/{n}.json" for n in _RECORDING.findall(text)}
+        out.append((spec, tuple(sorted(files | recs))))
+    return tuple(out)
 
 
 STEPS = (
@@ -240,17 +300,16 @@ STEPS = (
         script="strategies/tradingview/tools/build_export_twins.py",
         globs=("strategies/tradingview/*",),
     ),
-    # Needs nothing running and reaches nothing live (tests/offline.ts). It builds the app, so the
-    # build's own inputs count as well as the source the Bots page imports.
+    # Needs nothing running and reaches nothing live (tests/offline.ts). Selected ONE SPEC AT A TIME
+    # (`offline_spec_sources`); what every spec goes through - the build and its inputs, the runner's
+    # config, the setup that builds - runs them all.
     Step(
         19,
         "offline browser specs",
         ("npx", "--no-install", "playwright", "test", "--project=offline", "--reporter=line"),
         cwd=_FE,
-        globs=offline_browser_sources()
-        + (
-            f"{_FE}/tests/offline*.ts",
-            f"{_FE}/tests/recordings/*",
+        globs=(
+            f"{_FE}/tests/offline-app.*.ts",
             f"{_FE}/playwright.config.ts",
             f"{_FE}/index.html",
             f"{_FE}/vite.config.ts",
@@ -263,6 +322,7 @@ STEPS = (
             f"{_FE}/public/*",
         ),
         heavy=True,
+        parts=offline_spec_sources(),
     ),
 )
 GATE_STEP = 15

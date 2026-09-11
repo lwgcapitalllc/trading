@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from models import StressShiftBook, StressTest, StressTestCreate, StressTestDetail
+from models import StressLock, StressShiftBook, StressTest, StressTestCreate, StressTestDetail
 from services import gradable, lab_db, stress_tester
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.stress_tester import (
@@ -38,7 +38,7 @@ def list_stress_tests(
     return lab_db.list_stress_tests(run_id=run_id, grade=grade, stack_id=stack_id)
 
 
-@router.get("/running-lock")
+@router.get("/running-lock", response_model=StressLock)
 def running_stress_lock():
     return lab_db.running_stress_test_markets()
 

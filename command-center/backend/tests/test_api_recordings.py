@@ -33,6 +33,17 @@ from pydantic import TypeAdapter, ValidationError
 
 RECORDINGS = Path(__file__).resolve().parents[2] / "frontend" / "tests" / "recordings"
 
+# Routes whose answer has NO model on purpose, and what stands in for one. Named here, with the
+# reason, so the exemption is a decision somebody can read rather than a check quietly skipped.
+_UNMODELLED = {
+    "/backtests/runs/{run_id}/chart-spec": (
+        "streamed as BYTES off the run's cache - a model would re-serialise ~4 MB on every open. "
+        "Its contract is the frontend's ChartPanel/types.ts, and it is APPEND-ONLY by necessity: "
+        "every run's spec is cached on disk for ever, so the page must read an old shape anyway, "
+        "and a recording is one more cached spec."
+    ),
+}
+
 
 def _route_for(path: str):
     """The GET route FastAPI would serve `path` with — first match in registration order."""
@@ -47,6 +58,8 @@ def _validate(path: str, answer) -> None:
     assert route is not None, (
         f"{path}: no GET route serves it - the recording names a dead endpoint"
     )
+    if route.path in _UNMODELLED:
+        return
     assert route.response_model is not None, f"{path}: its route declares no response model"
     TypeAdapter(route.response_model).validate_python(answer)
 
@@ -66,6 +79,22 @@ def test_there_are_recordings_to_check():
 @pytest.mark.parametrize("name,path,answer", _CASES, ids=[f"{n}:{p}" for n, p, _ in _CASES])
 def test_a_recorded_answer_matches_its_routes_response_model(name, path, answer):
     _validate(path, answer)
+
+
+@pytest.mark.parametrize("path", sorted(_UNMODELLED))
+def test_an_unmodelled_route_is_still_real_and_still_unmodelled(path):
+    """An exemption may not outlive its reason: the route must still exist, and the day it gains a
+    model the exemption is dead weight hiding a check that could now run."""
+    route = next(
+        (
+            r
+            for r in app.routes
+            if isinstance(r, APIRoute) and r.path == path and "GET" in r.methods
+        ),
+        None,
+    )
+    assert route is not None, f"{path}: exempted, and no GET route has that path any more"
+    assert route.response_model is None, f"{path} declares a model now - drop the exemption"
 
 
 def test_the_check_can_fail():

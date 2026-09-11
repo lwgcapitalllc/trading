@@ -69,6 +69,8 @@ The suite had doubled since 2026-08-27's 2:00 (root 1,760 → 3,140 tests, backe
 | `bots-version.spec.ts` | 4.1 min | **32s** | offline recording + 6 parallel workers + a 10x page clock |
 | `bots-accounts.spec.ts` | 2.0 min | **1.0 min** | the same |
 | both Bots specs, 93 checks (2026-09-11) | 90s | **32s + an 11s build** | the app as a development build read off disk; no trace on a green run |
+| the seven chart specs, 26 checks (2026-09-11) | dead — their pinned runs had left the lab | **1.4 min with the build** | recorded one-year runs; drill-down bars from a recorded feed |
+| every offline spec, 124 checks (2026-09-11) | — | **93s** at a load average of 94 | one run; the fast tier now runs only the specs whose page a change reaches |
 
 🔴 **"The dev server is the floor" was WRONG, and it sat here for a day.** A lone page load is
 0.68s from the dev server and 0.47s from a build. The real cost was CROWDING: six workers pulling

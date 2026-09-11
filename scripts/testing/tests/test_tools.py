@@ -8,6 +8,11 @@ Mutation map, RUN 2026-09-10 through mutate.py itself (4 planted, 4 killed):
   a red run read as survived                        -> the_test_can_see_is_killed
   backend failures not rebased onto the repo        -> reads_failures_per_suite
   blind spots never reported                        -> names_a_failure_the_fast_tier_would_have_skipped
+
+And for the per-spec offline step, RUN 2026-09-11 (3 planted, 3 killed):
+  a failing spec's name not read off the log        -> reads_WHICH_offline_spec_failed
+  a progress line read as a failure                 -> reads_WHICH_offline_spec_failed
+  a spec the fast tier left out not reported        -> names_an_offline_spec_the_fast_tier_LEFT_OUT
 """
 
 from __future__ import annotations
@@ -119,3 +124,52 @@ def test_the_blind_spot_report_names_a_failure_the_fast_tier_would_have_skipped(
     stamp._blindspots(log, snap)
     out = capsys.readouterr().out
     assert "BLIND SPOT" in out and "engines/vwap/tests/test_engine.py" in out
+
+
+FE = "command-center/frontend"
+# The offline browser step's output as Playwright prints it: a "[n/N]" progress line for EVERY
+# check, and a numbered header for each FAILURE only (format copied off a real red run).
+_BROWSER_LOG = (
+    "  [19/19] offline browser specs (the Bots page, recorded answers) ...\n"
+    "[2/27] [offline] › tests/bots-version.spec.ts:40:1 › a check that passed\n"
+    "  1) [offline] › tests/chart-paging.spec.ts:111:1 › a jump applies a BOUNDED window \n"
+    "  ✗ offline browser specs (command-center/frontend, --project=offline)\n"
+)
+
+
+def test_the_blind_spot_report_reads_WHICH_offline_spec_failed(tmp_path):
+    log = tmp_path / "full.log"
+    log.write_text(_BROWSER_LOG)
+    # The progress line for the passing check is not a failure; the numbered header is.
+    assert stamp._failures(log)[19] == {f"{FE}/tests/chart-paging.spec.ts"}
+
+
+def test_the_blind_spot_report_names_an_offline_spec_the_fast_tier_LEFT_OUT(
+    tmp_path, monkeypatch, capsys
+):
+    """The fast tier ran step 19 for a Bots-page edit - but only the Bots specs. A chart spec failing
+    in the full run is then a spec it skipped, and reporting "step 19 ran" would hide that."""
+    tree = manifest.current()
+    old = dict(tree)
+    old[f"{FE}/src/pages/Bots/index.tsx"] = "0" * 40
+    monkeypatch.setattr(manifest, "load_green", lambda tier: {"manifest": old, "tier": "fast"})
+    snap = tmp_path / "snap.json"
+    snap.write_text(json.dumps({"manifest": tree, "env": manifest.env_key(sys.executable)}))
+    log = tmp_path / "full.log"
+    log.write_text(_BROWSER_LOG)
+    stamp._blindspots(log, snap)
+    out = capsys.readouterr().out
+    assert "BLIND SPOT" in out and f"{FE}/tests/chart-paging.spec.ts" in out
+
+
+def test_an_offline_spec_the_fast_tier_DID_run_is_not_a_blind_spot(tmp_path, monkeypatch, capsys):
+    tree = manifest.current()
+    old = dict(tree)
+    old[f"{FE}/src/pages/BacktestDetail.tsx"] = "0" * 40  # reaches the chart specs
+    monkeypatch.setattr(manifest, "load_green", lambda tier: {"manifest": old, "tier": "fast"})
+    snap = tmp_path / "snap.json"
+    snap.write_text(json.dumps({"manifest": tree, "env": manifest.env_key(sys.executable)}))
+    log = tmp_path / "full.log"
+    log.write_text(_BROWSER_LOG)
+    stamp._blindspots(log, snap)
+    assert "BLIND SPOT" not in capsys.readouterr().out

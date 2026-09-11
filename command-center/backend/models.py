@@ -2646,6 +2646,16 @@ class StressTestDetail(StressTest):
     results_error: Optional[str] = None
 
 
+class StressLock(BaseModel):
+    """Which market a running stress test holds (`lab_db.running_stress_test_markets`). The
+    booleans are the lock; `run_ids` only points the page at the blocking run — a stack's test
+    sets its market and adds no id, having none."""
+
+    futures: bool
+    forex: bool
+    run_ids: list[str]
+
+
 # ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────
 
 

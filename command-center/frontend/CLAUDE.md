@@ -1737,20 +1737,14 @@ that failure is indistinguishable from a regression until somebody reads it.** T
 fine); the incidents are in `../docs/FRONTEND_BUILD_NOTES.md` → *Fixtures pinned to a row*. Two
 answers, chosen by what the check needs:
 
-- **RESOLVE when the check needs a SHAPE.** `chart-paging` wants "the longest intraday python run
-  with trades and a built spec", `period-filter` wants "any run with ≥20 dated trades". ⚠ **Derive
-  the DATE constants from the resolved run too** — a literal `TARGET` beside a resolved run moves
-  the expiry from the run id to the calendar instead of removing it. ⚠ **Keep the vacuity guard**
-  (here: the target really is outside the applied window); with the fixture no longer fixed, that
-  stops being self-evident.
-- **PIN, and make the pin ANNOUNCE ITSELF, when the check needs particular LAYERS.** Seven specs
-  legitimately name a run — they need a VWAP series, a recorded fib leg, candle-reversal marks, an
-  all-defaults param set. Each calls **`requireRun(RUN, '<what a replacement must carry>')`**
-  (`tests/fixtures.ts`) in a `beforeAll`. ⚠ **A DIAGNOSIS, not a repair**: the suite is still red
-  and still needs re-pointing by hand; what changes is that the failure lands in a second and names
-  the run. ⚠ **The `needs` sentence is the load-bearing half** — a bare "not found" moves the
-  question rather than answering it, and the next reader has to know it was the VOLUME on those bars
-  that mattered. ✅ Proven against a dead id.
+- **RESOLVE when the check needs a SHAPE.** `period-filter` wants "any run with ≥20 dated trades".
+  ⚠ **Derive the DATE constants from the resolved run too** — a literal `TARGET` beside a resolved
+  run moves the expiry from the run id to the calendar instead of removing it. ⚠ **Keep the vacuity
+  guard**; with the fixture no longer fixed, it stops being self-evident.
+- ✅ **RECORD it when the check needs particular LAYERS (2026-09-11).** Seven chart specs named a
+  run for its VWAP series, fib legs or candle-reversal marks and called `requireRun` to fail by name
+  when it left; the runs HAD left. They replay recordings now (*Offline specs*), `requireRun` is
+  deleted, and a recording cannot leave the lab.
 
 ### 🔴 …and a row is only ONE of the five things a spec drifts against (2026-08-16)
 
@@ -1761,7 +1755,7 @@ wearing different clothes, and each has its own fix. Full record: `../docs/FRONT
 
 | Pinned to | How it bit | The fix |
 |---|---|---|
-| a **row** | `chart-paging` (2), 7 specs at risk | resolve, or `requireRun` — above |
+| a **row** | `chart-paging` (2), 7 specs at risk | resolve, or record it — above |
 | the **weekday** | `calendar.spec.ts` (2) — the fixture built Mon–Fri and **the page opens on TODAY**, so both checks were green five days in seven and failed on a Sunday | **the FIXTURE covers all seven days.** The file had already met this trap and written it down beside one `?day=1`; the next two tests walked straight in. **A trap named in a comment is one the next test still hits — fix it where it is GENERATED** |
 | the **calendar** | `overview.spec.ts` (1) — `?week=12 // US fall-back, 2026-11-01`, a fixed date written in an offset from today, so it named a different week every Monday and asserted 169h against a correct 168h | **derive the offset.** `nextDstWeek()` scans `getTimezoneOffset()` forward for the real changeover and expects 169h on a fall-back, 167h on a spring-forward. ⚠ It THROWS on a no-DST timezone — a silent skip and a pass are the same outcome |
 | the **registry's SIZE** | `overview.spec.ts` (2) — `1 of 1` / `1 of 2` not reporting, against a fleet that grew to 3 | **SET the fleet, don't add to it.** Trim the real snapshot to the bots the rule needs. ⚠ And STATE the reporting bot's balance rather than inheriting it — the live one is `null` whenever the terminal is quiet, which would make the check pass for the wrong reason on exactly the days it matters |
@@ -1935,7 +1929,8 @@ share its state); OFFLINE specs run fully parallel. See *Offline specs* below.
 
 `bots-version.spec.ts` and `bots-accounts.spec.ts` (6.1 min together → **~45 s** with the build)
 run OFFLINE: `offlineTest('bots-page')` answers every `/api` read the spec does not route from
-`tests/recordings/bots-page.json`, and ABORTS anything else — then fails the check naming it. 🔴
+`tests/recordings/bots-page.json`, and ABORTS anything else — then fails the check naming it.
+**The seven chart specs joined 2026-09-11** (`chart-sos-fade.json` / `chart-b-leg.json`). 🔴
 **Before this, both read the real snapshot and health dots, which reach the live trading box on
 every check** (an SSH round trip each), and inherited its STATE: on 2026-09-10 both bots moved to a
 live account, which would have turned every demo-assuming check red on a day the page was fine.
@@ -1944,6 +1939,10 @@ live account, which would have turned every demo-assuming check red on a day the
   puts `sos_fade_demo` on a demo account) — never trusts what the box said the day it was recorded.
 - ⚠ **Re-record by hand** with the app up: `node scripts/record-api.mjs tests/recordings/<f>.json
   [--add /path]`. GETs only; Telegram users are scrubbed. It is the ONE step that touches the box.
+  ⚠ One answer per LINE, and `.prettierignore` names the folder — indenting a 4 MB chart spec
+  doubled it. ⚠ **A spec reads its run id off the recording** (`recordedRun()`), never types one.
+- ⚠ **The drill-down's finer bars are a RECORDED FEED** — two wide windows cut to each request;
+  one outside them FAILS naming the window. Move `DATE` in `chart-drilldown.spec.ts`, re-record them.
 - ⚠ **The recording's SHAPE is checked on every backend run** —
   `backend/tests/test_api_recordings.py` validates each answer against its route's response model,
   so a renamed field goes red there, not as a confusing browser failure. Re-record when it does.
@@ -1969,7 +1968,8 @@ live account, which would have turned every demo-assuming check red on a day the
 - ⚠ **No trace on offline checks** — recording one cost a third of every green run's CPU. They
   replay recordings, so a failure repeats: `npx playwright test <spec> -g '<name>' --trace on`.
 - ✅ **Both test tiers run them (2026-09-11)** — step 19 of `scripts/run_all_tests.sh`, and
-  `scripts/test.sh` whenever a change can reach the Bots page. Selection: root `CLAUDE.md`.
+  `scripts/test.sh` ONE SPEC AT A TIME: only the specs whose page an edit can reach, so a Bots
+  edit never pays for the chart specs. Selection: root `CLAUDE.md`.
 - ⚠ The old write backstop (`refuseLiveWrites`) is DROPPED from offline specs: it aborted an
   unrouted write before the harness could flag it. Specs on the real backend keep it —
   `overview.spec.ts` gained it 2026-09-10 (the page carries the fleet controls).

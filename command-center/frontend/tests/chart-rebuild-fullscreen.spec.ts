@@ -16,29 +16,24 @@
  * ⚠ It also asserts there is exactly ONE on the page. The button was MOVED, not copied, and a
  * count of 1 is the only thing that says so — a check that merely found it inside the panel would
  * stay green if the tab strip's copy came back.
+ *
+ * ✅ OFFLINE since 2026-09-11 (`tests/offline.ts`): the run is `recordings/chart-sos-fade.json`, so
+ * it needs nothing running and cannot lose its fixture the day a run leaves the lab.
  */
-import { expect, test } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { expect } from '@playwright/test'
+import { offlineTest } from './offline'
 
-const RUN = '997c14cc53bc'
-
-// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
-// that never rendered and sending the reader at the feature. See `fixtures.ts`.
-test.beforeAll(async () => {
-  await requireRun(
-    RUN,
-    'a python run with a rebuildable ChartSpec (NT8/MT5 runs have no Rebuild button)'
-  )
-})
+const { test, recorded, recordedRun } = offlineTest('chart-sos-fade')
+const RUN = recordedRun()
 
 test('Rebuild chart is on the chart itself, in both views, exactly once', async ({ page }) => {
-  // A real rebuild re-fetches candles and replays every engine (~7.6s cold, measured). Serve the
-  // CACHED spec instead: the click only has to prove it reaches the endpoint, and the panel still
-  // gets a real payload back so nothing downstream is mocked into a shape the server never sends.
+  // A real rebuild re-fetches candles and replays every engine (~7.6s cold, measured). The click
+  // only has to prove it reaches the endpoint, so the refresh is answered with the RECORDED spec —
+  // a real payload, so nothing downstream is mocked into a shape the server never sends.
   let refreshes = 0
-  await page.route(/\/chart-spec\?.*refresh=true/, async (route) => {
+  await page.route(/\/chart-spec\?.*refresh=true/, (route) => {
     refreshes += 1
-    await route.continue({ url: route.request().url().replace(/\?.*$/, '') })
+    return route.fulfill({ json: recorded(`/backtests/runs/${RUN}/chart-spec`) })
   })
 
   await page.goto(`/backtests/runs/${RUN}`)

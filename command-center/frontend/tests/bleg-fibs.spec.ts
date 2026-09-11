@@ -13,29 +13,29 @@
  * convention) and not as the 0.382 the bot's own code calls it (measured from the leg origin).
  * What these two check is the half that only exists in the browser.
  *
- * ⚠ Drives the REAL backend: the ladder is written into the run's equity curve at REPLAY time, so
- * a mocked spec would be testing the mock, and — unlike most layers — no chart rebuild can supply
- * it. A run made before this change needs re-running, not "Reload charts".
+ * ⚠ Replays a RECORDED spec (`recordings/chart-b-leg.json`), taken off a real B-LEG backtest: the
+ * ladder is written into the run's equity curve at REPLAY time, so a hand-written spec would be
+ * testing the mock, and — unlike most layers — no chart rebuild can supply it. A run made before
+ * 2026-08-11 has no ladder and needs re-running, not "Reload charts"; so does a re-recording.
  *
  * ⚠ A fail-watch against HEAD is genuinely meaningful here, unlike a brand-new layer: the Fibs row
  * and its template both already existed and worked on SOS Fade runs, and were absent on this run only
  * because `tradeFibCount` was 0. Check 1 was WATCHED RED against HEAD for that reason. Check 2 is
  * non-vacuous by construction — it measures the same pixels with the layer off and on.
  */
-import { expect, test, type Page } from '@playwright/test'
-import { requireRun } from './fixtures'
+import { expect, type Page } from '@playwright/test'
+import { offlineTest } from './offline'
 
-// A full-history B-LEG run: XAUUSD M15, 2020-01-01 → 2026-08-03, 99 trades. Every one of the 99
-// carries a ladder, because a B leg cannot be priced without one — which is what makes the count
-// assertion below a real number rather than "some".
-const RUN = '45795fcedf8c'
-
-// Fail by NAME if this pinned run has left the lab, instead of timing out on a chart
-// that never rendered and sending the reader at the feature. See `fixtures.ts`.
-test.beforeAll(async () => {
-  await requireRun(RUN, 'an b_leg run whose trades carry a recorded fib leg')
-})
-const EXPECTED_FIBS = 99
+// A year of B-LEG on XAUUSD.p M15 (2025-09-03 → 2026-09-03), 12 trades.
+const { test, recorded, recordedRun } = offlineTest('chart-b-leg')
+const RUN = recordedRun()
+const TRADES = recorded<{ trades: { entryTime: number }[] }>(
+  `/backtests/runs/${RUN}/chart-spec`
+).trades
+// The TRADE count, not the count of trades carrying a ladder: a B leg cannot be priced without
+// one, so the row must show every trade — anything fewer means trades are silently recording
+// nothing, and counting the ladders instead would agree with that.
+const EXPECTED_FIBS = TRADES.length
 
 /** Total pixels drawn in the three factory fib colours the ladder uses — green (0.382/0.5), blue
  *  (0.618/0.702/0.786) and red (0.886). Read from PIXELS because the ladder is canvas output with
@@ -89,12 +89,12 @@ async function goToDate(page: Page, iso: string) {
   await input.press('Enter')
 }
 
-// ⚠ The opening viewport is the newest bars and this bot takes ~2 trades a month, so it usually
+// ⚠ The opening viewport is the newest bars and this bot trades about once a month, so it usually
 // holds no trade at all — and a pixel check on a viewport with nothing in it reads exactly like a
-// layer that does not draw. T99 entered 2026-07-20 11:30 and its leg starts the same day, so this
-// date puts both the ladder and its trade on screen. Same trap the Candlestick Reversals spec
+// layer that does not draw. The newest trade's entry day puts both its ladder and the trade on
+// screen, read off the recording so it moves with it. Same trap the Candlestick Reversals spec
 // records; it cost that suite a check that passed for the wrong reason.
-const DATE_WITH_A_TRADE = '2026-07-20'
+const DATE_WITH_A_TRADE = new Date(TRADES[TRADES.length - 1].entryTime).toISOString().slice(0, 10)
 
 test('a B-LEG run offers Fibs, with a count, switched OFF', async ({ page }) => {
   // WATCHED RED against HEAD: before the bot recorded a ladder, `tradeFibCount` was 0 on this run

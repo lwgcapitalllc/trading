@@ -25,6 +25,10 @@ from .selection import select
 
 _STEP = re.compile(r"\[(\d+)/\d+\]")
 _FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+?\.py)")
+# Playwright's numbered failure header, e.g. "  1) [offline] › tests/chart-paging.spec.ts:86:1 ›".
+# Only a FAILURE is numbered; the progress lines every test prints are "[n/N]" instead.
+_PW_FAILED = re.compile(r"^\d+\) \[[\w-]+\] › (\S+?\.spec\.ts):\d+")
+_STEPS = {s.id: s for s in rules.STEPS}
 
 
 def _snapshot(path: Path) -> int:
@@ -64,10 +68,14 @@ def _failures(log: Path):
             step = int(m.group(1))
             continue
         f = _FAILED.match(line.strip())
+        pw = _PW_FAILED.match(line.strip())
         if f and step in rules.PYTEST_STEPS:
             suite = next(s for s in rules.SUITES if s.name == rules.PYTEST_STEPS[step])
             rel = f.group(1)
             out.setdefault(step, set()).add(f"{suite.root}/{rel}" if suite.root else rel)
+        elif pw and step in _STEPS and _STEPS[step].parts:
+            cwd = _STEPS[step].cwd
+            out.setdefault(step, set()).add(f"{cwd}/{pw.group(1)}" if cwd else pw.group(1))
         elif line.lstrip().startswith("✗") and step not in rules.PYTEST_STEPS:
             out.setdefault(step, set())
     return out
@@ -95,6 +103,9 @@ def _blindspots(log: Path, snap_path: Path) -> int:
             missed.append("step 15 (parity gates)")
         elif step not in rules.PYTEST_STEPS and step != rules.GATE_STEP and step not in sel.steps:
             missed.append(f"step {step}")
+        elif step in sel.steps and sel.parts.get(step) is not None:
+            # A per-file step the fast tier ran only in PART: a failing file it left out is a miss.
+            missed += [f for f in sorted(files) if f not in sel.parts[step]]
     if missed:
         print("\n  ⚠ BLIND SPOT: the fast command would NOT have run these for the changes since")
         print(f"    {manifest.describe(rec)}, and they failed:")

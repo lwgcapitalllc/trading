@@ -94,9 +94,16 @@ def _pytest_job(suite, files, python, workers):
     return Job(f"{suite.name} pytest", cmd, cwd, "pytest", detail)
 
 
-def _step_job(step, python):
+def _step_job(step, python, parts=None):
+    """`parts` = the files of a per-file step to hand its command; None (or all of them) runs it
+    whole, with no file arguments."""
     cmd = [python if c == rules.PY else c for c in step.cmd]
-    return Job(step.name, cmd, REPO / step.cwd if step.cwd else REPO, "step")
+    cwd = REPO / step.cwd if step.cwd else REPO
+    detail = ""
+    if step.parts and parts and set(parts) != {t for t, _ in step.parts}:
+        cmd += sorted(os.path.relpath(REPO / p, cwd) for p in parts)
+        detail = f"{len(parts)} of {len(step.parts)}"
+    return Job(step.name, cmd, cwd, "step", detail)
 
 
 def _gates_job(components, python, jobs):
@@ -200,6 +207,10 @@ def main(argv=None) -> int:
                 print("  " + explain(graph, sel, t))
         steps = ", ".join(f"{s.id} {s.name}" for s in rules.STEPS if s.id in sel.steps) or "none"
         print(f"\nsteps: {steps}")
+        for s in rules.STEPS:
+            chosen = sel.parts.get(s.id)
+            if s.id in sel.steps and chosen and set(chosen) != {t for t, _ in s.parts}:
+                print(f"  step {s.id} runs only: {', '.join(sorted(chosen))}")
         print(f"parity gates: {', '.join(sorted(sel.gates)) or 'none'}")
         return 0
 
@@ -220,7 +231,11 @@ def main(argv=None) -> int:
     if sel.gates:
         heavy.append(_gates_job(sel.gates, python, CPU))
     # A heavy step goes LAST, so the short checks beside the lane have finished before it starts.
-    heavy += [_step_job(s, python) for s in rules.STEPS if s.id in sel.steps and s.heavy]
+    heavy += [
+        _step_job(s, python, sel.parts.get(s.id))
+        for s in rules.STEPS
+        if s.id in sel.steps and s.heavy
+    ]
     jobs = light + heavy
 
     if any(j.kind == "pytest" and "-n" in j.cmd for j in jobs) and _xdist_missing(python):

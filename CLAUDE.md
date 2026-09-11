@@ -911,7 +911,7 @@ Why (236 full runs in 60 sessions, ~11 hours waited, 17 only to re-read output):
 - **After every piece of work: `scripts/test.sh`.** It runs only what the change since the last
   green run can reach — a static import graph plus file tables (`scripts/testing/`): an engine edit
   runs that engine's tests and its parity gate, a frontend edit the typecheck and node checks (and
-  the offline Bots browser specs, ~45s, when the edit can reach that page), a doc edit nothing. An
+  the offline browser specs for the pages it can reach — the Bots ones ~45s), a doc edit nothing. An
   unchanged tree answers in 0.3s. `--explain` prints what would run and why.
 - **The full run (`scripts/run_all_tests.sh`) is REQUIRED** (1) before pushing anything under
   `engines/`, `strategies/`, `backtest/`, `algos/live/`, `algos/shared/`, `algos/tools/promote.py`
@@ -1055,10 +1055,12 @@ same call step 11 made about its unreachable ranking tier.
 that boots it on demand can start things on the trading box. `./start.sh` then `npm test` stays a
 person's decision; `tsc --noEmit` is the half that needs nothing running. ✅ **Since 2026-09-11 the
 offline specs are step 19**: they replay recorded answers and load a build of the app off disk, so
-they need nothing running and reach nothing live. The fast tier picks them by following the app's
-imports from `main.tsx`, skipping App.tsx's routes to other pages (`rules.py` →
-`offline_browser_sources`); a page that crashes as it loads is the one miss, and step 19 in the
-full run names it as a BLIND SPOT. Rules: `command-center/frontend/CLAUDE.md` → *Offline specs*.
+they need nothing running and reach nothing live. The fast tier picks them ONE SPEC AT A TIME: the
+pages a spec opens are read off its `page.goto` calls and App.tsx's route table, and the app's
+imports are followed from `main.tsx` to those pages only (`rules.py` → `offline_spec_sources`), so
+a Bots edit never runs the chart specs. A page that crashes as it loads is the one miss, and the
+full run names the failing SPEC as a BLIND SPOT. Rules: `command-center/frontend/CLAUDE.md` →
+*Offline specs*.
 
 ### 🔴 Both hooks are built around the UNATTENDED committer
 

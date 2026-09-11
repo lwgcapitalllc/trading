@@ -32,6 +32,9 @@ command-center/frontend/dist/
 backtest/cache/
 engines/news/data/
 algos/ledger_archive/
+# Recorded backend answers the offline browser specs replay. Machine-written, one answer per line
+# (scripts/record-api.mjs) - indenting a ~4 MB chart spec doubles it in whitespace.
+command-center/frontend/tests/recordings/
 # Machine-specific and hidden from git by `./go` with --skip-worktree; formatting it would
 # un-hide it on the next status.
 command-center/backend/config.json
