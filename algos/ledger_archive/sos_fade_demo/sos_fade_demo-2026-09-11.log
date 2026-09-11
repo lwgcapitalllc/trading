@@ -95,3 +95,8 @@ RuntimeError: Could not read the account balance, and initial_capital is 0 — t
 2026-09-11 12:45:09,896 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-11 13:00:06,946 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-11 13:15:04,160 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 13:26:08,694 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_demo\\bot_state.json.15492.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_demo\\bot_state.json'
+2026-09-11 13:30:10,082 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 13:45:08,165 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 14:00:04,602 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 14:15:01,708 [ERROR] Bridge halted — the loop will keep observing but place nothing.
