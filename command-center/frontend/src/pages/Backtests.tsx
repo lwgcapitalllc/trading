@@ -87,6 +87,8 @@ function fmtMoney(n: number | null): string {
   if (n == null) return '—'
   const abs = Math.abs(n)
   const prefix = n < 0 ? '-' : '+'
+  // Same reasoning one step up: $1,432,303,600 read `+$1432.3M` until the B step (2026-09-11).
+  if (abs >= 1_000_000_000) return `${prefix}$${(abs / 1_000_000_000).toFixed(2)}B`
   if (abs >= 1_000_000) return `${prefix}$${(abs / 1_000_000).toFixed(1)}M`
   if (abs >= 1_000) return `${prefix}$${(abs / 1_000).toFixed(1)}k`
   return `${prefix}$${abs.toFixed(0)}`
@@ -543,6 +545,10 @@ function RunsTab({
   }, [selectedIds, qc])
 
   const allChecked = runs != null && runs.length > 0 && selectedIds.size === runs.length
+  // The Score column only when some run HAS a score. A column blank on every row is a heading
+  // over nothing, and it read as scores that failed to load (2026-09-11).
+  const showScore = runs?.some((r) => r.worthiness) ?? false
+  const cols = showScore ? 12 : 11
 
   const showControls = isRunning || selectedIds.size > 0
 
@@ -602,7 +608,9 @@ function RunsTab({
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
-                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
+                  {showScore && (
+                    <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
+                  )}
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Max DD</th>
@@ -634,6 +642,7 @@ function RunsTab({
                         isCollapsed={isCollapsed}
                         onToggleCollapse={() => toggleCollapse(run.run_id)}
                         hasRunningStress={stressRunIds.has(run.run_id)}
+                        showScore={showScore}
                         onRerun={() => setRerunRunId(run.run_id)}
                         onDelete={() => setDeleteRunId(run.run_id)}
                       />
@@ -642,7 +651,7 @@ function RunsTab({
                           <TuneNestRow
                             key={t.run_id}
                             run={t}
-                            colSpan={12}
+                            colSpan={cols}
                             onClick={() => navigate(`/backtests/runs/${t.run_id}`)}
                           />
                         ))}
@@ -651,7 +660,7 @@ function RunsTab({
                           <SweepNestRow
                             key={sw.sweep_id}
                             sweep={sw}
-                            colSpan={12}
+                            colSpan={cols}
                             onClick={() => navigate(`/backtests/sweeps/${sw.sweep_id}`)}
                           />
                         ))}
@@ -660,7 +669,7 @@ function RunsTab({
                           <Fragment key={opt.optimization_id}>
                             <OptimizationNestRow
                               opt={opt}
-                              colSpan={12}
+                              colSpan={cols}
                               onClick={() => navigate(`/optimizations/${opt.optimization_id}`)}
                               hasRunningStress={
                                 !!opt.best_run_id && stressRunIds.has(opt.best_run_id)
@@ -672,7 +681,7 @@ function RunsTab({
                             {(fullBtRunsByParent.get(opt.optimization_id) ?? []).map((r) => (
                               <FullBacktestNestRow
                                 key={r.run_id}
-                                colSpan={12}
+                                colSpan={cols}
                                 onClick={() => navigate(`/backtests/runs/${r.run_id}`)}
                               />
                             ))}
@@ -1034,10 +1043,12 @@ function RunRow({
   isCollapsed,
   onToggleCollapse,
   hasRunningStress,
+  showScore,
   onRerun,
   onDelete,
 }: {
   run: BacktestSummary
+  showScore: boolean
   selected: boolean
   onSelect: () => void
   onClick: () => void
@@ -1130,9 +1141,11 @@ function RunRow({
       <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
         {run.start_date && run.end_date ? fmtDateRange(run.start_date, run.end_date) : '—'}
       </td>
-      <td className="px-4 py-3">
-        <WorthinessBadge worthiness={run.worthiness} />
-      </td>
+      {showScore && (
+        <td className="px-4 py-3">
+          <WorthinessBadge worthiness={run.worthiness} />
+        </td>
+      )}
       <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
         {run.trade_count != null ? run.trade_count.toLocaleString() : '—'}
       </td>
@@ -1276,7 +1289,6 @@ function SweepsTab() {
               <tr className="border-b border-border-subtle">
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
@@ -1296,15 +1308,8 @@ function SweepsTab() {
                     <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">
                       {fmtDateRange(sw.start_date, sw.end_date)}
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
-                      {sw.completed_instruments}/{sw.total_instruments}
-                      {sw.failed_instruments > 0 && (
-                        <span className="ml-1 text-neg-text text-[11px]">
-                          ({sw.failed_instruments} failed)
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
+                    {/* Same fold as the Stacks tab: the count only while unfinished. */}
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
                       >
@@ -1312,7 +1317,14 @@ function SweepsTab() {
                           <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />
                         )}
                         {st.label}
+                        {sw.status !== 'complete' &&
+                          ` ${sw.completed_instruments}/${sw.total_instruments}`}
                       </span>
+                      {sw.failed_instruments > 0 && (
+                        <span className="ml-1 text-neg-text text-[11px]">
+                          ({sw.failed_instruments} failed)
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <WorthinessBadge
@@ -1471,15 +1483,13 @@ function StacksTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-[12px] text-text-tertiary max-w-[560px]">
-          Layer multiple Python strategies over one instrument to see combined portfolio P&L, then
-          toggle any strategy off to see its effect.
-        </p>
-        {/* Header button only once stacks exist — the empty state has its own centered CTA. */}
+      <div className="flex items-center justify-end mb-4">
+        {/* Header button only once stacks exist — the empty state has its own centered CTA. What a
+            stack IS is on the button's hover rather than a sentence above every list. */}
         {!!stacks?.length && (
           <button
             onClick={() => setShowCreate(true)}
+            title="Layer Python strategies over one instrument and see their combined P&L"
             className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity flex-shrink-0"
           >
             <Plus size={14} /> New Stack
@@ -1542,7 +1552,6 @@ function StacksTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 <th className="px-3 py-3 w-20" />
               </tr>
@@ -1588,7 +1597,7 @@ function StacksTab() {
                         ⚠ An em-dash means NOTHING HAS FINISHED, not a flat result: `net_pnl` is
                         null until a leg lands, and a rendered 0 would be a measurement nobody
                         took. While a stack is still replaying it is a running total, which is
-                        what the Progress column beside it is for. */}
+                        why the status pill carries the leg count until it finishes. */}
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
                       {st.trade_count ?? '—'}
                     </td>
@@ -1603,15 +1612,9 @@ function StacksTab() {
                     >
                       {st.net_pnl == null ? '—' : fmtMoney(st.net_pnl)}
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
-                      {st.completed_strategies}/{st.total_strategies}
-                      {st.failed_strategies > 0 && (
-                        <span className="ml-1 text-neg-text text-[11px]">
-                          ({st.failed_strategies} failed)
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
+                    {/* The leg count rides in the pill only while a stack is unfinished. As its own
+                        Progress column it read "2/2" beside "COMPLETE" on every finished row. */}
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${s.cls}`}
                       >
@@ -1619,7 +1622,14 @@ function StacksTab() {
                           <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />
                         )}
                         {s.label}
+                        {st.status !== 'complete' &&
+                          ` ${st.completed_strategies}/${st.total_strategies}`}
                       </span>
+                      {st.failed_strategies > 0 && (
+                        <span className="ml-1 text-neg-text text-[11px]">
+                          ({st.failed_strategies} failed)
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 justify-end">
@@ -1768,7 +1778,8 @@ export function Backtests() {
               right={tab === 'runs' ? runsControls : undefined}
             />
 
-            {tab === 'runs' && (allRuns?.length ?? 0) > 0 && (
+            {/* The key only when a score is on screen to explain — see `showScore` in RunsTab. */}
+            {tab === 'runs' && allRuns?.some((r) => r.worthiness) && (
               <div className="mb-4">
                 <WorthinessLegend forceCollapsed={scrolled} />
               </div>
