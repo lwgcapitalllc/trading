@@ -77,6 +77,7 @@ import {
 import { VersionPill } from '@/components/VersionPill'
 import { Shimmer } from '@/components/Shimmer'
 import { openingRecorder } from '@/lib/accountEarnings'
+import { botLabel as labelOf } from '@/lib/botLabel'
 import type {
   BotStatus,
   BotReview,
@@ -2018,7 +2019,12 @@ export function Bots() {
       {logBot && (
         <LogModal
           botName={logBot}
-          botLabel={botByKey.get(logBot)?.name ?? logBot}
+          botLabel={(() => {
+            // Name plus LIVE or demo — two copies of one strategy share a name, and a log
+            // window floats over the page with nothing else saying whose log it is.
+            const b = botByKey.get(logBot)
+            return b ? labelOf(b) : logBot
+          })()}
           onClose={() => setLogBot(null)}
         />
       )}

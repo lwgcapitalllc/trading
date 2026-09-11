@@ -67,7 +67,7 @@ frontend/src/
 │   ├── WorthinessLegend.tsx collapsible "Score key" explaining the worthiness tiers (STRESS TEST / OPTIMIZE / DISCARD; mirrors backend services/worthiness.py); shown above the Backtests Runs table. The Score-column companion to GradeLegend. Uses WorthinessBadge
 │   ├── RegimeOverlayToggle.tsx  regime-band on/off pill (Layers icon + "Regimes"). SHARED by BacktestDetail's equity chart and TuningWorkbench's overlay — the tune page carried a plain checkbox, so one control looked like two different things on two charts meant to read as one system
 │   ├── XModeToggle.tsx      Date / Trade # segmented switch for the equity x-axis. SHARED by BacktestDetail's equity chart and TuningWorkbench's overlay, and both read one stored preference (`lib/chartAxis.ts`), so the two pages can never disagree about the axis
-│   ├── ChartTabPanel.tsx    shared tabbed chart chrome (tab strip + right-side slot + Expand button) and the portalled fullscreen `ChartModal`. **Fullscreen convention, app-wide:** the expanded view carries a **camera** (copy-as-image) button and closes with a **`Minimize2`** icon — never an X, and the inline chart never gets a copy button (expanding is what you do before sending someone the chart). `ChartModal` gives every Recharts chart both for free via `lib/chartImage.ts` (`copyChartAsPng`: clone the SVG → paint the page background in → 2× canvas → `ClipboardItem`, falling back to a download when clipboard image writes are blocked). The klinecharts price panel has its own canvas snapshot path and takes `showCopy` (host passes `isFullscreen`); the tuning workbench's own fullscreen wires the same two buttons. Extracted from BacktestDetail so StressTestDetail reuses it. Optional `aboveChart` slot renders KPI cards between the description and the chart. **Optional `keepMounted` (2026-08-03)** = tab keys that stay MOUNTED while another tab shows, so clicking them costs nothing — only worth it for a tab whose BUILD is slow and whose data is already loaded, which today means exactly one caller (`BacktestDetail`'s Price tab, where klinecharts spends ~1.8s laying 33k candles out). An inactive one is `visibility: hidden` + `position: absolute`: **`display: none` is the wrong tool and will look like it works** — a display-none container measures 0 wide, so klinecharts sizes its canvas to nothing and has to resize on reveal, which is the visible swap the whole thing exists to remove. Unset = every tab renders only while active, as before
+│   ├── ChartTabPanel.tsx    shared tabbed chart chrome (tab strip + right-side slot + the tab's `sub` as an ⓘ + Expand button — `sub` was a line of body text over every chart until 2026-09-11, so nothing that must be READ may go in it) and the portalled fullscreen `ChartModal`. **Fullscreen convention, app-wide:** the expanded view carries a **camera** (copy-as-image) button and closes with a **`Minimize2`** icon — never an X, and the inline chart never gets a copy button (expanding is what you do before sending someone the chart). `ChartModal` gives every Recharts chart both for free via `lib/chartImage.ts` (`copyChartAsPng`: clone the SVG → paint the page background in → 2× canvas → `ClipboardItem`, falling back to a download when clipboard image writes are blocked). The klinecharts price panel has its own canvas snapshot path and takes `showCopy` (host passes `isFullscreen`); the tuning workbench's own fullscreen wires the same two buttons. Extracted from BacktestDetail so StressTestDetail reuses it. Optional `aboveChart` slot renders KPI cards between the tab strip and the chart. **Optional `keepMounted` (2026-08-03)** = tab keys that stay MOUNTED while another tab shows, so clicking them costs nothing — only worth it for a tab whose BUILD is slow and whose data is already loaded, which today means exactly one caller (`BacktestDetail`'s Price tab, where klinecharts spends ~1.8s laying 33k candles out). An inactive one is `visibility: hidden` + `position: absolute`: **`display: none` is the wrong tool and will look like it works** — a display-none container measures 0 wide, so klinecharts sizes its canvas to nothing and has to resize on reveal, which is the visible swap the whole thing exists to remove. Unset = every tab renders only while active, as before
 │   ├── MonteCarloFan.tsx    equity path fan (100 paths, p10–p90) — shared `BANDS` array drives the lines, the percentile-named tooltip, AND the Luckier→Unluckier key below the chart; axes labelled (Cumulative P&L / Trade #). Optional `height` prop
 │   ├── DrawdownDistribution.tsx  drawdown histogram with limit line; axes labelled (# simulations / max drawdown reached). Optional `height` prop
 │   ├── WalkForwardChart.tsx IS vs OOS Sharpe grouped bar chart with zero baseline + "Sharpe" axis label; series named In-Sample (tuned on) / Out-of-Sample (unseen). Optional `height` prop
@@ -301,6 +301,22 @@ Off Aaron's screenshots of adding two demo copies back to the demo account.
   strategy now (*"they should just pick up where they left off"*); the page only names them.
 
 Tests: 5 new checks in `bots-accounts.spec.ts`; 8 bugs planted in a throwaway worktree, 8 caught.
+
+## Two copies share a NAME, so the bot panel says LIVE or demo (2026-09-11)
+
+The demo copies carry the live bots' display names ("SOS Fade", "Extreme Leg") — Aaron: *"it's a
+generic strategy, not a demo specific strategy"*; demo or live belongs to the ACCOUNT
+(`algos/CLAUDE.md` → *One strategy, two bots*). The page groups bots by account, so rows need no
+tag. Where a name appears WITHOUT its account — the bot panel's title, its risk-change
+confirmation, its deploy lines, the log window — `lib/botLabel.ts` writes `SOS Fade · LIVE` /
+`SOS Fade · demo`, the same words every Telegram message uses.
+
+- ⚠ **A bot on NO account keeps the plain name.** Its `account_type` is then the registry's
+  hardcoded fallback, a guess about an account it is not on.
+- ⚠ **The panel's aria-label stays the plain name** — checks find the panel by it.
+- ⚠ The Overview's bot list carries its own tag (the other session's, 2026-09-11).
+
+Tests: 2 in `bots-version.spec.ts`; 3 bugs planted in a throwaway worktree, 3 caught.
 
 ## 🔴 Never sum a number across bots that SHARE it (2026-09-04)
 

@@ -310,6 +310,46 @@ async function recordPillStates(page: Page) {
 const pillStates = (page: Page) =>
   page.evaluate(() => (window as unknown as { __pill: string[] }).__pill)
 
+// ── which copy: the panel says LIVE or demo (2026-09-11) ────────────────────────
+//
+// Two copies of one strategy share a display name since 2026-09-11 (a name is the strategy;
+// demo or live belongs to the account), and this panel is where their risk and their code are
+// changed — so it says which kind of account it is on, in the words Telegram uses.
+
+test('the panel names a bot WITH its account kind, in its title and its deploy line', async ({
+  page,
+}) => {
+  // MUTATION: render `bot.name` (not `labelOf(bot)`) in BotDrawer -> red.
+  await mockBot(page, compare(), { live: true })
+  await openConfigure(page)
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByText('SOS Fade · LIVE', { exact: true })).toBeVisible()
+  await expect(banner(page).getByTestId('version-heading')).toContainText(
+    'SOS Fade · LIVE is 21 versions behind'
+  )
+})
+
+test('a bot on NO account keeps its plain name — never a guessed kind', async ({ page }) => {
+  // MUTATION: drop the no-account guard in `lib/botLabel.ts` -> red: the registry's hardcoded
+  // `account_type` would tag a benched bot "demo" about an account it is not on.
+  await pinSnapshot(page)
+  await page.route('**/api/bots/*/version', (r) => r.fulfill({ json: version(compare()) }))
+  await page.route('**/api/bots/*/promote/job', (r) =>
+    r.request().method() === 'GET' ? r.fulfill({ json: null }) : r.fallback()
+  )
+  const benched = recorded<BotSnapshot>('/bots/snapshot').bots.find((b) => !b.account)
+  expect(benched, 'the recording holds no benched bot - this check has no subject').toBeTruthy()
+  // Its settings list is not recorded; the recorded one of another bot stands in, because this
+  // check is about the TITLE and nothing the list says can move it.
+  await page.route(`**/api/bots/${benched!.key}/params`, (r) =>
+    r.fulfill({ json: recorded('/bots/sos_fade_demo/params') })
+  )
+  await page.goto(`/bots?tab=setup&bot=${benched!.key}`)
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByText(benched!.name, { exact: true })).toBeVisible({ timeout: 20_000 })
+  await expect(panel.getByText(/ · (LIVE|demo)$/)).toHaveCount(0)
+})
+
 // ── the headline ────────────────────────────────────────────────────────────────
 
 test('it says how many versions behind, and names both versions', async ({ page }) => {

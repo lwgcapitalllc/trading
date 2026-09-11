@@ -35,6 +35,7 @@ import type { BotParamRow, BotParamsView, BotPromoteJob, BotStatus, BotEarnings 
 import { VersionBanner, RuntimeEditor, ParamGroup } from './ConfigureTab'
 import { BotActionPill, type BotAction } from './BotStatusPill'
 import { Shimmer } from '@/components/Shimmer'
+import { botLabel as labelOf } from '@/lib/botLabel'
 
 function Fold({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -147,7 +148,9 @@ export function BotDrawer({
         {/* ── who ─────────────────────────────────────────────────────────── */}
         <div className="flex items-start gap-3 px-5 py-[18px] border-b border-border-subtle">
           <div className="min-w-0">
-            <p className="text-[16px] font-semibold leading-tight mb-[3px]">{bot.name}</p>
+            {/* Its name plus LIVE or demo: two copies of one strategy share a name since
+             *  2026-09-11, and this panel is where their risk and their code are changed. */}
+            <p className="text-[16px] font-semibold leading-tight mb-[3px]">{labelOf(bot)}</p>
             <div className="flex items-center gap-[7px] text-[11.5px] text-text-secondary">
               <span
                 className={`inline-block w-[6px] h-[6px] rounded-full shrink-0 ${
@@ -283,7 +286,7 @@ export function BotDrawer({
                     <RuntimeEditor
                       key={r.name}
                       botKey={bot.key}
-                      botLabel={bot.name}
+                      botLabel={labelOf(bot)}
                       row={r}
                       balance={bot.balance}
                       hideNote
@@ -310,7 +313,7 @@ export function BotDrawer({
             </p>
             <VersionBanner
               botKey={bot.key}
-              botLabel={bot.name}
+              botLabel={labelOf(bot)}
               job={job}
               live={bot.account_type === 'live'}
             />
