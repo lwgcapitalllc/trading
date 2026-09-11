@@ -1699,6 +1699,76 @@ test('a filter shows one side — and that side keeps its score and its lead', a
   await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 
+test('after a move to live, the demo trades stay on DEMO and the live rows start at zero', async ({
+  page,
+}) => {
+  // 🔴 2026-09-11, the day the demo set went live: the live account showed the bots' DEMO trades as
+  // its own (+264% on a $451.97 account that had not traded), and the demo account vanished. A
+  // trade belongs to the account it was made on; the demo record stays under Demo as history.
+  // ⚠ The earnings list is in the SERVER's order — live before demo — so a map keyed by bot alone
+  // (last entry wins) hands the live rows the demo figures, which is exactly the defect.
+  // MUTATION: key the earnings by bot alone → red on the live row's dollars.
+  // MUTATION: drop the history card → red on its count.
+  // MUTATION: leave departed bots out of the demo score → red on the demo score line.
+  const liveGroup = group({
+    account: LIVE,
+    server: 'PUPrime-Live',
+    bots: [
+      bot('sos_fade', 'SOS Fade', 770115, 10, 5),
+      bot('ext_leg', 'Extreme Leg', 770117, 10, 5),
+    ],
+    risk_cap_pct: 10,
+  })
+  await mock(
+    page,
+    [liveGroup],
+    [reg(), reg({ account: LIVE, kind: 'live', label: 'Aaron Live', server: 'PUPrime-Live' })]
+  )
+  const moved = { former: true, moved_to: LIVE, pct_of_opening: null }
+  await page.route('**/api/bots/snapshot', (route) =>
+    route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [
+          { key: 'sos_fade', name: 'SOS Fade', status: 'RUNNING', account_type: 'live' },
+          { key: 'ext_leg', name: 'Extreme Leg', status: 'RUNNING', account_type: 'live' },
+        ],
+        scheduled_jobs: [],
+        telegram: { name: 'Telegram', status: 'RUNNING' },
+        earnings: [
+          { ...acctEarn(LIVE, [earn('sos_fade'), earn('ext_leg')]), net_usd: 0, attributed_usd: 0 },
+          {
+            ...acctEarn(ACCOUNT, [
+              earn('sos_fade', { ...SCORED.sos_fade, ...moved }),
+              earn('ext_leg', { ...SCORED.ext_leg, ...moved }),
+            ]),
+            balance: null,
+            opening_balance: null,
+            net_usd: null,
+            net_pct: null,
+            unattributed_usd: null,
+          },
+        ],
+      },
+    })
+  )
+  await page.goto('/bots')
+
+  const liveRow = page
+    .getByTestId('section-live')
+    .getByTestId('bot-row')
+    .filter({ hasText: 'SOS Fade' })
+  await expect(liveRow).toContainText('$0.00')
+  await expect(liveRow).not.toContainText('$1,500.00')
+
+  const history = page.getByTestId('section-demo').getByTestId('history-card')
+  await expect(history).toHaveCount(1)
+  await expect(history).toContainText(String(ACCOUNT))
+  await expect(history).toContainText('$1,500.00')
+  await expect(history).toContainText(`Moved to live account ${LIVE}`)
+  await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
+})
+
 test('the bot panel says only what its row does not — won/lost, and how far the record reaches', async ({
   page,
 }) => {

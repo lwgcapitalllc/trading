@@ -372,6 +372,14 @@ class BotEarnings(BaseModel):
     # This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
     # is comparable between two bots sharing one balance.
     pct_of_opening: Optional[float] = None
+    # 🔴 A bot that has LEFT this account (2026-09-11): its row is the record of what it did HERE,
+    # and `moved_to` is where it went. Declared, or Pydantic drops them and a departed bot's demo
+    # record reads as a bot still trading the account. False on every bot still on it.
+    former: bool = False
+    moved_to: Optional[int] = None
+    # Trades whose account could not be told (no run startup before them) — counted, never
+    # credited to a guess. `None` when the record was not read.
+    unplaced_trades: Optional[int] = None
 
 
 class AccountEarnings(BaseModel):

@@ -28,6 +28,13 @@ def _close(pnl, r=0.5, ts="2026-08-01T02:00:00+00:00"):
     return {"ts": ts, "kind": "trade", "event": "closed", "pnl_usd": pnl, "r": r}
 
 
+def _start(account=700152905, ts="2026-07-31T00:00:00+00:00"):
+    """A run's startup naming its account. Every real run writes one, and a trade is placed on
+    the account of the latest startup before it — so an account-level fixture without one is
+    SIMPLER than production and its trades belong to no account (rule 13 from the other end)."""
+    return {"ts": ts, "kind": "event", "event": "startup", "account": account}
+
+
 @pytest.fixture
 def archive(tmp_path, monkeypatch):
     """Point the reader at a scratch archive, and clear the fingerprint cache between tests.
@@ -39,10 +46,10 @@ def archive(tmp_path, monkeypatch):
     monkeypatch.setattr(be, "ARCHIVE", tmp_path)
     be._ledger_cache.clear()
 
-    def write(bot_key, day, rows):
+    def write(bot_key, day, rows, kind="decisions"):
         d = tmp_path / bot_key / "ledger"
         d.mkdir(parents=True, exist_ok=True)
-        (d / f"decisions-{day}.jsonl").write_text(
+        (d / f"{kind}-{day}.jsonl").write_text(
             "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
         )
 
@@ -142,7 +149,7 @@ def test_two_bots_on_one_balance_are_NOT_each_credited_with_the_account_growth(a
     own realised dollars. RUN — red, and this is the defect the whole module replaced. Aaron,
     2026-09-05: *"that 45% increase was only from the SOS Fade. That should still be showing
     zero percent from the extreme leg."*"""
-    archive("old", "2026-07-31", [_close(1197.09, r=0.91)])
+    archive("old", "2026-07-31", [_start(), _close(1197.09, r=0.91)])
     rows = be.account_earnings(
         [_bot("old", "SOS Fade", anchor=9996.99), _bot("new", "Extreme Leg", anchor=14538.88)]
     )
@@ -163,7 +170,7 @@ def test_the_growth_no_bot_recorded_is_REPORTED_not_divided_up(archive):
     RUN — red. MEASURED on the live account 2026-09-05: $3,344.80 of $4,541.89 was not from a
     recorded bot trade, so a page dividing it up would credit a strategy with 74% more than it
     made."""
-    archive("old", "2026-07-31", [_close(1197.09)])
+    archive("old", "2026-07-31", [_start(), _close(1197.09)])
     acct = be.account_earnings([_bot("old", "SOS Fade", anchor=9996.99)])[0]
     assert acct["net_usd"] == pytest.approx(4541.89, abs=0.01)
     assert acct["attributed_usd"] == pytest.approx(1197.09, abs=0.01)
@@ -407,3 +414,142 @@ def test_a_lag_that_cannot_be_MEASURED_says_so_rather_than_reading_as_fresh(arch
     assert acct["records_live"] is False
     assert acct["attribution_lag_seconds"] is None
     assert "could not be read" in acct["attribution_note"]
+
+
+# ── a trade belongs to the account it was MADE on (2026-09-11) ───────────────────────────────
+
+_DEMO, _LIVE = 700152905, 34957946
+
+
+def test_a_trade_is_credited_to_the_account_it_was_MADE_on_never_the_bots_current_one(archive):
+    """🔴 The day the demo set went live, the live account showed the bots' DEMO trades as its own
+    — +264% on a $451.97 account that had not traded. The trade happened on demo; it stays there,
+    as a history row saying where the bot went.
+
+    MUTATION: credit every trade to the bot's current account (no placing) → red.
+    """
+    archive(
+        "sos",
+        "2026-08-26",
+        [
+            _start(_DEMO, "2026-08-12T16:00:00+00:00"),
+            _close(1197.09, r=0.91, ts="2026-08-26T02:15:00+00:00"),
+            _start(_LIVE, "2026-09-11T00:13:59+00:00"),
+        ],
+    )
+    rows = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [_bot("sos", "SOS Fade", account=_LIVE, balance=451.97, anchor=451.97)]
+        )
+    }
+    live = rows[_LIVE]["bots"][0]
+    assert (live["closed_trades"], live["realised_usd"], live["former"]) == (0, 0.0, False)
+    assert rows[_LIVE]["unattributed_usd"] == 0.0
+    demo = rows[_DEMO]["bots"][0]
+    assert (demo["closed_trades"], demo["realised_usd"]) == (1, 1197.09)
+    assert demo["former"] is True and demo["moved_to"] == _LIVE
+
+
+def test_startups_are_read_from_the_HEALTH_files_too(archive):
+    """They moved there on 2026-08-05; reading the decision files alone left a month of trades on
+    no account at all. MUTATION: skip the health files → the trade is unplaced → red."""
+    archive("b", "2026-08-26", [_start(_DEMO, "2026-08-12T16:00:00+00:00")], kind="health")
+    archive("b", "2026-08-26", [_close(50.0, ts="2026-08-26T02:15:00+00:00")])
+    out = be.read_bot_ledger("b", account=_DEMO)
+    assert (out["closed_trades"], out["unplaced_trades"]) == (1, 0)
+
+
+def test_a_run_begun_since_the_last_sync_is_placed_by_the_BOX_startups(archive):
+    """The archive knows only the demo run; the live run's startup is on the box alone. Without
+    the box's startups its trade would be placed on demo. MUTATION: ignore `live_starts` → red."""
+    archive("b", "2026-09-10", [_start(_DEMO, "2026-09-05T00:00:00+00:00")])
+    trade = {**_close(20.0, ts="2026-09-11T03:00:00+00:00"), "ticket": 7}
+    starts = [("2026-09-11T00:13:59+00:00", _LIVE)]
+    live = be.read_bot_ledger("b", [trade], account=_LIVE, live_starts=starts)
+    demo = be.read_bot_ledger("b", [trade], account=_DEMO, live_starts=starts)
+    assert (live["closed_trades"], demo["closed_trades"]) == (1, 0)
+
+
+def test_a_trade_no_startup_precedes_is_COUNTED_never_credited_to_a_guess(archive):
+    """MUTATION: place an unplaceable trade on the asked account → red."""
+    archive(
+        "b",
+        "2026-08-01",
+        [_close(10.0, ts="2026-08-01T02:00:00+00:00"), _start(_DEMO, "2026-08-02T00:00:00+00:00")],
+    )
+    out = be.read_bot_ledger("b", account=_DEMO)
+    assert (out["closed_trades"], out["unplaced_trades"]) == (0, 1)
+
+
+def test_an_account_only_DEPARTED_bots_traded_on_carries_no_balance_net_or_remainder(archive):
+    """Nothing reads its balance any more, so every figure off the account's growth is withheld
+    and the note says why — the trades alone are the record."""
+    archive(
+        "b",
+        "2026-08-26",
+        [
+            _start(_DEMO, "2026-08-12T16:00:00+00:00"),
+            _close(5.0, ts="2026-08-26T02:00:00+00:00"),
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+        ],
+    )
+    rows = {
+        e["account"]: e
+        for e in be.account_earnings([_bot("b", "B", account=_LIVE, balance=451.97, anchor=451.97)])
+    }
+    demo = rows[_DEMO]
+    assert (demo["balance"], demo["net_usd"], demo["unattributed_usd"]) == (None, None, None)
+    assert "No bot is on this account now" in demo["opening_note"]
+
+
+def test_a_departed_bots_trades_REFUSE_the_remainder_where_bots_still_trade(archive):
+    """Whether its trades fall inside the window the opening was taken at cannot be told, so the
+    remainder is withheld rather than guessed. MUTATION: drop the refusal → red."""
+    archive(
+        "gone",
+        "2026-08-26",
+        [
+            _start(_DEMO, "2026-08-12T00:00:00+00:00"),
+            _close(5.0, ts="2026-08-26T02:00:00+00:00"),
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+        ],
+    )
+    archive("stay", "2026-08-20", [_start(_DEMO, "2026-08-20T00:00:00+00:00")])
+    rows = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", account=_LIVE, balance=451.97, anchor=451.97),
+                _bot("stay", "Stay", account=_DEMO, balance=10100.0, anchor=10000.0),
+            ]
+        )
+    }
+    assert rows[_DEMO]["net_usd"] == 100.0
+    assert rows[_DEMO]["unattributed_usd"] is None
+
+
+def test_a_departed_bot_is_never_given_a_share_of_the_opening(archive):
+    """The opening is the current bots' anchor; dividing a departed bot's dollars by it mixes two
+    accounts' starts. MUTATION: drop the `former` guard on `pct_of_opening` → red."""
+    archive(
+        "gone",
+        "2026-08-26",
+        [
+            _start(_DEMO, "2026-08-12T00:00:00+00:00"),
+            _close(5.0, ts="2026-08-26T02:00:00+00:00"),
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+        ],
+    )
+    archive("stay", "2026-08-20", [_start(_DEMO, "2026-08-20T00:00:00+00:00")])
+    rows = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", account=_LIVE, balance=451.97, anchor=451.97),
+                _bot("stay", "Stay", account=_DEMO, balance=10100.0, anchor=10000.0),
+            ]
+        )
+    }
+    gone = next(b for b in rows[_DEMO]["bots"] if b["bot_key"] == "gone")
+    assert gone["former"] is True and gone["pct_of_opening"] is None

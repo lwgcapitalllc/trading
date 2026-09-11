@@ -654,13 +654,24 @@ def live_env(monkeypatch, tmp_path):
     monkeypatch.setattr(bots, "_account_groups", lambda: [])
     monkeypatch.setattr(bots, "_accounts_with_a_password", lambda: {_LIVE})
     monkeypatch.setattr(bots.bot_account_registry, "account_by_number", lambda p, n: _account(n))
-    monkeypatch.setattr(bots.bot_earnings, "read_bot_ledger", lambda key: _record())
+    asked: list = []
+    monkeypatch.setattr(
+        bots.bot_earnings,
+        "read_bot_ledger",
+        lambda key, *a, **kw: asked.append((key, kw.get("account"))) or _record(),
+    )
     monkeypatch.setattr(
         bots, "_git_commit_push", lambda paths, msg, reason: commits.append((paths, msg)) or "ok"
     )
     monkeypatch.setattr(bots, "_ssh", lambda cmd, **kw: "pulled")
     monkeypatch.setattr(bots, "_notify_telegram", lambda msg: alerts.append(msg))
-    return {"configs": configs, "written": written, "commits": commits, "alerts": alerts}
+    return {
+        "configs": configs,
+        "written": written,
+        "commits": commits,
+        "alerts": alerts,
+        "asked": asked,
+    }
 
 
 def _body(**kw):
@@ -673,6 +684,17 @@ def test_the_preview_writes_nothing(client, live_env):
     assert r.status_code == 200
     assert r.json()["blocked"] is None
     assert live_env["written"] == {} and live_env["commits"] == []
+
+
+def test_the_demo_record_is_read_for_the_account_the_bots_are_LEAVING(client, live_env):
+    """A bot that traded somewhere else first must not bring that account's trades as demo
+    evidence for this promotion — each record is scoped to the bot's current account.
+
+    ⚠ Watched RED by reading the record unscoped.
+    """
+    r = client.post("/bots/go-live/preview", json=_body())
+    assert r.status_code == 200
+    assert sorted(live_env["asked"]) == sorted((k, _DEMO) for k in BOTH)
 
 
 def test_a_missing_confirmation_refuses_and_the_error_names_the_phrase(client, live_env):

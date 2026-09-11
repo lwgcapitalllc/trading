@@ -5029,6 +5029,20 @@ so: it is green, fast, and wrong. Watch repo-root code go red by MUTATING it in 
 
 ## What a BOT made, and why it may not be the account's growth (2026-09-05)
 
+🔴 **A TRADE BELONGS TO THE ACCOUNT IT WAS MADE ON, NEVER THE ONE THE BOT IS ON NOW (2026-09-11).**
+The day the demo set went live, the live account showed the bots' demo trades as its own (+264% on
+a $451.97 account with no trades). A trade row names no account, but each run's `startup` does
+(`health-*.jsonl` since 2026-08-05, `decisions-*.jsonl` before), so `bot_earnings` places a trade on
+the account of the latest startup at or before it — the box's live read now fetches those startups
+too, or a run begun since the last sync lands on the account before it. ⚠ **An account a bot LEFT
+keeps its trades** as `former` rows with `moved_to`; it has no balance, net or remainder (nothing
+reads it), a departed bot gets no share of an opening, and a departed bot's trades on an account
+bots still trade REFUSE the remainder rather than guess its window. ⚠ **A trade no startup precedes
+is counted (`unplaced_trades`), never credited.** ⚠ `former`/`moved_to`/`unplaced_trades` are
+declared on `BotEarnings` — undeclared, Pydantic dropped them and a departed bot read as current.
+Go-live's demo record is scoped to the account being left. Tests: 8 mutations run, 8 killed.
+
+
 `services/bot_earnings.py`, served on `GET /bots/snapshot` as `earnings`. Aaron: *"how much
 percent each bot made on the account thus far … that 45% increase was only from the SOS Fade.
 That should still be showing zero percent from the extreme leg."*

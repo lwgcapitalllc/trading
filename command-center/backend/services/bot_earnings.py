@@ -55,10 +55,21 @@ preferred.
 ⚠ **When the box cannot answer, the page SAYS the split is provisional** rather than printing a
 confident one — `records_live`, the measured lag, and a sentence. That is the half that survives a
 dead VPS, and it is the half that makes the four causes of a remainder distinguishable.
+
+🔴 **A TRADE BELONGS TO THE ACCOUNT IT WAS MADE ON, NEVER TO THE ONE THE BOT IS ON NOW (2026-09-11).**
+The sum above was every closed trade in a bot's record, credited to whatever account the bot named
+today — so the moment a demo set went live, the live account showed the bots' DEMO trades as its
+own (+264% on a $451.97 account that had not traded). A trade row names no account, but every run
+starts with a `startup` record that does (in `health-*.jsonl` since 2026-08-05, `decisions-*.jsonl`
+before), so a trade is placed on the account of the latest startup at or before it. ⚠ **An account a
+bot has LEFT keeps that bot's trades**, as a history entry marked `former` — the demo record a set
+was promoted on is the evidence for the promotion, and the demo-vs-live comparison needs it on
+screen. ⚠ **A trade no startup precedes is COUNTED as unplaced**, never credited to a guess.
 """
 
 from __future__ import annotations
 
+import bisect
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -105,6 +116,36 @@ def _newest_ts(lines: list[str]) -> str | None:
         if isinstance(ts, str) and ts:
             return ts
     return None
+
+
+def _startup(row: dict) -> tuple[str, int] | None:
+    """`(ts, account)` when this row is a run's startup naming its account, else `None`."""
+    if row.get("event") != "startup":
+        return None
+    ts, account = row.get("ts"), row.get("account")
+    if isinstance(ts, str) and ts and isinstance(account, int) and not isinstance(account, bool):
+        return ts, account
+    return None
+
+
+def _startups(path: Path) -> list[tuple[str, int]]:
+    """Every startup in one record file. A malformed line is skipped, same rule as trades."""
+    out: list[tuple[str, int]] = []
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        # The token alone, like the trade filter below: the parsed fields decide.
+        if '"startup"' not in line:
+            continue
+        try:
+            found = _startup(json.loads(line))
+        except ValueError:
+            continue
+        if found:
+            out.append(found)
+    return out
 
 
 def _closed_trades(path: Path) -> tuple[list[dict], str | None]:
@@ -161,6 +202,8 @@ _ledger_cache: dict[str, tuple[tuple, dict]] = {}
 
 
 def _fingerprint(files: list[Path]) -> tuple:
+    if not files:
+        return (0,)
     newest = files[-1]
     try:
         st = newest.stat()
@@ -186,38 +229,92 @@ def _dedup_key(row: dict):
 def _archive_scan(bot_key: str):
     """Everything this machine's archive holds for one bot, or `None` when it holds nothing.
 
-    Returns `(closed rows, reach, first day, last day)`. `reach` is the newest record's timestamp
-    — see `_newest_ts` — and is `None` when it could not be read.
+    Returns `(closed rows, reach, first day, last day, startups)`. `reach` is the newest record's
+    timestamp — see `_newest_ts` — and is `None` when it could not be read. `startups` is every
+    `(ts, account)` a run began on, which is what places each trade on an account.
+
+    ⚠ **Startups are read from BOTH record kinds**: the decision files carried them until
+    2026-08-05 and the health files have since. Reading one kind would leave a month of trades
+    with no account to belong to.
     """
     folder = ARCHIVE / bot_key / "ledger"
     files = sorted(folder.glob("decisions-*.jsonl")) if folder.is_dir() else []
+    health = sorted(folder.glob("health-*.jsonl")) if folder.is_dir() else []
     if not files:
         return None
 
-    fp = _fingerprint(files)
+    # Both kinds, because a startup lands in the health file while no trade touches the other.
+    fp = (_fingerprint(files), _fingerprint(health))
     hit = _ledger_cache.get(bot_key)
     if hit and hit[0] == fp:
-        rows, reach, first, last = hit[1]
-        return [dict(r) for r in rows], reach, first, last
+        rows, reach, first, last, starts = hit[1]
+        return [dict(r) for r in rows], reach, first, last, list(starts)
 
     rows: list[dict] = []
+    starts: list[tuple[str, int]] = []
     reach: str | None = None
     for f in files:
         found, ts = _closed_trades(f)
         rows.extend(found)
+        starts.extend(_startups(f))
         # The files are sorted by name and named by day, so the LAST one that could answer is
         # the newest. Taking the max would be wrong the moment a bot's clock or a filename
         # disagreed, and taking the last non-None keeps a torn final file from erasing the reach.
         if ts:
             reach = ts
+    for f in health:
+        starts.extend(_startups(f))
     first = files[0].name[len("decisions-") : -len(".jsonl")]
     last = files[-1].name[len("decisions-") : -len(".jsonl")]
-    _ledger_cache[bot_key] = (fp, ([dict(r) for r in rows], reach, first, last))
-    return rows, reach, first, last
+    _ledger_cache[bot_key] = (fp, ([dict(r) for r in rows], reach, first, last, list(starts)))
+    return rows, reach, first, last, starts
 
 
-def read_bot_ledger(bot_key: str, live_trades: list[dict] | None = None) -> dict:
+def _instant(ts) -> datetime | None:
+    """A record's timestamp as an instant, or `None` when it cannot be read — never a guess."""
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        out = datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+    return out if out.tzinfo else out.replace(tzinfo=timezone.utc)
+
+
+def _placer(starts: list[tuple[str, int]]):
+    """A function from a trade's timestamp to the ACCOUNT it was made on, or `None`.
+
+    A run connects to one account for its whole life, so a trade belongs to the account of the
+    latest startup at or before it. ⚠ `None` when no startup precedes it or its time cannot be
+    read — the caller COUNTS those rather than crediting them to a guess.
+    """
+    timeline = sorted((t, acct) for t, acct in ((_instant(ts), a) for ts, a in starts) if t)
+    stamps = [t for t, _ in timeline]
+
+    def place(ts) -> int | None:
+        at = _instant(ts)
+        if at is None:
+            return None
+        i = bisect.bisect_right(stamps, at) - 1
+        return timeline[i][1] if i >= 0 else None
+
+    return place
+
+
+def read_bot_ledger(
+    bot_key: str,
+    live_trades: list[dict] | None = None,
+    *,
+    account: int | None = None,
+    live_starts: list[tuple[str, int]] | None = None,
+) -> dict:
     """Sum one bot's realised results out of its own decision record.
+
+    `account` scopes the sum to the trades made ON that account — see the module docstring;
+    `None` sums every trade the bot has, which is what a caller asking about the bot rather than
+    an account wants. `live_starts` is the box's own startups, read beside `live_trades`: a run that
+    began since the last sync is only on the box, and without it that run's trades would be placed
+    on the account before it.
 
     `live_trades` is what the BOX just said, read off the bot's own live ledger in the same SSH
     the balances came from. 🔴 **`None` means the box was not asked or did not answer; `[]` means
@@ -253,15 +350,17 @@ def read_bot_ledger(bot_key: str, live_trades: list[dict] | None = None) -> dict
             "records_to": None,
             "records_through": None,
             "record_source": "archive",
+            "unplaced_trades": None,
         }
 
     if scan is None:
         # The box answered and this machine has never archived anything for this bot. That is a
         # real record — a bot registered after the last sync — and refusing it would report a
         # trading bot as untraded while its own ledger is right there in the response.
-        rows, reach, first, last = [], None, None, None
+        rows, reach, first, last, starts = [], None, None, None, []
     else:
-        rows, reach, first, last = scan
+        rows, reach, first, last, starts = scan
+    starts = list(dict.fromkeys([*starts, *(live_starts or [])]))
 
     # ⚠ The live rows are merged rather than preferred, and the archive is not trusted to be a
     # subset either: a window bounded by month (see the router) cannot reach a trade older than
@@ -274,6 +373,18 @@ def read_bot_ledger(bot_key: str, live_trades: list[dict] | None = None) -> dict
             if k not in seen:
                 seen.add(k)
                 rows.append(r)
+
+    unplaced = 0
+    if account is not None:
+        place = _placer(starts)
+        placed = [(place(row.get("ts")), row) for row in rows]
+        unplaced = sum(1 for acct, _ in placed if acct is None)
+        rows = [row for acct, row in placed if acct == account]
+        # When this bot ARRIVED here, not when its record began: the account's opening is
+        # whichever bot has been here longest, and a bot that traded somewhere else first did not
+        # arrive here on its first day.
+        here = sorted(t for t, a in ((_instant(ts), a) for ts, a in starts) if t and a == account)
+        first = here[0].date().isoformat() if here else first
 
     usd = 0.0
     r = 0.0
@@ -315,6 +426,9 @@ def read_bot_ledger(bot_key: str, live_trades: list[dict] | None = None) -> dict
         # figure and that balance share a clock. "archive" = it does not, and the caller has to
         # say so rather than printing a confident split.
         "record_source": "live" if live_trades is not None else "archive",
+        # Trades no startup precedes, so the account they were made on cannot be told. Counted,
+        # never credited to a guess; only meaningful when an `account` was asked about.
+        "unplaced_trades": unplaced,
     }
 
 
@@ -427,6 +541,20 @@ def _freshness(merged: list[dict], as_of: datetime | None) -> tuple[bool, float 
     )
 
 
+def accounts_traded(
+    bot_key: str,
+    live_trades: list[dict] | None = None,
+    live_starts: list[tuple[str, int]] | None = None,
+) -> set[int]:
+    """Every account this bot has CLOSED a trade on, placed by its startups. Empty when it has
+    none or no record — an account it only started on and never traded is not history."""
+    scan = _archive_scan(bot_key)
+    rows, starts = (scan[0], scan[4]) if scan else ([], [])
+    rows = [*rows, *(live_trades or [])]
+    place = _placer([*starts, *(live_starts or [])])
+    return {a for a in (place(r.get("ts")) for r in rows) if a is not None}
+
+
 def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[dict]:
     """Group bots by account and answer both halves: what the account did, and what each bot did.
 
@@ -445,14 +573,36 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
             continue
         by_account.setdefault(int(acct), []).append(b)
 
+    # 🔴 An account a bot has LEFT keeps that bot's trades there — see the module docstring. It is
+    # history: nothing on it reports a balance, so it carries the trades and nothing derived from
+    # the account's growth.
+    former: dict[int, list[dict]] = {}
+    for b in bots:
+        now = int(b["account"]) if b.get("account") else None
+        for acct in accounts_traded(b["bot_key"], b.get("live_trades"), b.get("live_starts")):
+            if acct != now:
+                former.setdefault(acct, []).append({**b, "moved_to": now})
+
+    def _ledger(r: dict, account: int) -> dict:
+        return read_bot_ledger(
+            r["bot_key"], r.get("live_trades"), account=account, live_starts=r.get("live_starts")
+        )
+
     out: list[dict] = []
-    for account, rows in sorted(by_account.items()):
-        merged = [{**r, **read_bot_ledger(r["bot_key"], r.get("live_trades"))} for r in rows]
+    for account in sorted(set(by_account) | set(former)):
+        rows = by_account.get(account, [])
+        merged = [{**r, **_ledger(r, account)} for r in rows]
+        left = [{**r, **_ledger(r, account), "former": True} for r in former.get(account, [])]
 
         # One pot of money, not one each — the same rule the page's own header learned on
         # 2026-09-04 after a two-bot stack reported an account's balance twice.
         balance = next((r["balance"] for r in merged if r.get("balance") is not None), None)
         opening, opening_from, opening_note = _pick_opening(merged)
+        if not merged:
+            opening_note = (
+                "No bot is on this account now, so nothing reads its balance — this is the record "
+                "of the bots that traded here."
+            )
 
         net_usd = net_pct = None
         if balance is not None and opening:
@@ -464,7 +614,10 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
         attributed = round(sum(r["realised_usd"] or 0.0 for r in traded), 2) if traded else None
 
         unattributed = None
-        if net_usd is not None and attributed is not None:
+        # ⚠ Refused when a bot that has LEFT traded here too: whether its trades fall inside the
+        # window the opening was taken at cannot be told, so either answer would be a guess.
+        left_traded = any(r.get("closed_trades") for r in left)
+        if net_usd is not None and attributed is not None and not left_traded:
             unattributed = round(net_usd - attributed, 2)
 
         records_live, lag, note = _freshness(merged, as_of)
@@ -493,6 +646,11 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                 "bots": [
                     {
                         "bot_key": r["bot_key"],
+                        # A bot that has LEFT this account, and where it went. Its row is the
+                        # record of what it did here — no controls belong to it on this account.
+                        "former": bool(r.get("former")),
+                        "moved_to": r.get("moved_to") if r.get("former") else None,
+                        "unplaced_trades": r.get("unplaced_trades"),
                         "name": r.get("name") or r["bot_key"],
                         "traded": bool(r.get("traded")),
                         "reason": r.get("reason"),
@@ -508,13 +666,15 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                         # The number Aaron asked for: what this bot made, as a share of what the
                         # ACCOUNT opened at — so two bots on one balance are directly comparable
                         # and neither is credited with the other's growth.
+                        # Never for a bot that has LEFT: the opening is the current bots' anchor,
+                        # and dividing a departed bot's dollars by it mixes two accounts' starts.
                         "pct_of_opening": (
                             round((r["realised_usd"] or 0.0) / opening * 100, 2)
-                            if opening and r.get("traded")
+                            if opening and r.get("traded") and not r.get("former")
                             else None
                         ),
                     }
-                    for r in merged
+                    for r in [*merged, *left]
                 ],
             }
         )

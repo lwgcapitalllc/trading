@@ -417,6 +417,12 @@ export interface BotEarnings {
   /** This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
    *  is comparable between two bots sharing one balance. */
   pct_of_opening: number | null
+  /** A bot that has LEFT this account — its row is the record of what it did here, and
+   *  `moved_to` is the account it went to. It carries no controls on this account. */
+  former: boolean
+  moved_to: number | null
+  /** Trades whose account could not be told — counted, never credited. */
+  unplaced_trades: number | null
 }
 
 /** One broker account: what it made, and how much of that the bots here can account for.

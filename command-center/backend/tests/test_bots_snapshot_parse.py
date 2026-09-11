@@ -222,7 +222,14 @@ def test_the_fetch_asks_for_TRADE_rows_only_and_not_the_whole_ledger(monkeypatch
         asks = [p for p in cmd.split(" & ") if f"\\{b.instance_dir}\\ledger\\" in p]
         assert asks, f"{b.key}: nothing reads its ledger"
         for part in asks:
-            assert part.strip().startswith("findstr /c:pnl_usd "), part
+            # Trade rows off the decision record, run startups off the health record (2026-09-11,
+            # which places each trade on its account) — both FILTERED, never the whole file.
+            part = part.strip()
+            assert (
+                part.startswith("findstr /c:pnl_usd ")
+                and "\\decisions-" in part
+                or (part.startswith("findstr /c:startup ") and "\\health-" in part)
+            ), part
 
 
 def test_the_live_window_is_BOUNDED_by_month_rather_than_reading_all_history(monkeypatch):
@@ -232,10 +239,12 @@ def test_the_live_window_is_BOUNDED_by_month_rather_than_reading_all_history(mon
     it grows with every trade for ever, on an endpoint the page polls. A window bounded by month
     stays the same size whatever the history reaches."""
     cmd = _ledger_command(monkeypatch)
-    assert "decisions-*.jsonl" not in cmd
+    assert "decisions-*.jsonl" not in cmd and "health-*.jsonl" not in cmd
     for b in bots._BOTS:
         asks = [p for p in cmd.split(" & ") if f"\\{b.instance_dir}\\ledger\\" in p]
-        assert len(asks) == bots._LIVE_LEDGER_MONTHS
+        # One trade read and one startup read per month — both bounded the same way.
+        assert len([a for a in asks if "\\decisions-" in a]) == bots._LIVE_LEDGER_MONTHS
+        assert len([a for a in asks if "\\health-" in a]) == bots._LIVE_LEDGER_MONTHS
     months = bots._ledger_months(bots.datetime(2026, 1, 15, tzinfo=bots.timezone.utc))
     assert months == ["2026-01", "2025-12"]  # the year rolls back, not just the month
 
@@ -293,3 +302,21 @@ def test_the_string_filter_does_the_cheap_half_and_the_PARSED_fields_decide():
     )  # a torn last line
     out = bots._parse_live_trades({bots._ledger_section(key): section})
     assert [r["pnl_usd"] for r in out[key]] == [10.0]
+
+
+def test_the_boxs_run_startups_are_read_back_off_the_same_section():
+    """A run begun since the last sync has its startup only on the box, and it is what places that
+    run's trades on its account. `findstr` prefixes each hit with its file path, which carries a
+    colon, so the JSON is found by its brace. An absent section is NOT ASKED, never "none".
+
+    MUTATION: return an empty list for every bot → red.
+    """
+    key, other = bots._BOTS[0].key, bots._BOTS[1].key
+    line = (
+        r"C:\trading\algos\markets\fx\instances\x\ledger\health-2026-09-11.jsonl:"
+        '{"ts": "2026-09-11T00:13:59+00:00", "kind": "event", "event": "startup", '
+        '"account": 34957946}'
+    )
+    out = bots._parse_live_starts({bots._ledger_section(key): line + "\n"})
+    assert out[key] == [("2026-09-11T00:13:59+00:00", 34957946)]
+    assert out[other] is None

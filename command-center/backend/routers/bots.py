@@ -621,6 +621,11 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     # ⚠ **One wildcard per month rather than one over the whole folder** — see `_LIVE_LEDGER_MONTHS`.
     # A month that has no files prints to stderr, which `2>nul` swallows; that is the normal case
     # for a bot registered this month.
+    #
+    # ⚠ **And the run STARTUPS from the health files, in the same section (2026-09-11).** A trade
+    # is placed on the account its run connected to (`bot_earnings._placer`), and a run begun since
+    # the last sync has its startup only on the box — without it that run's trades land on the
+    # account before it. `startup` is the same kind of plain token; ~30 lines / ~11 KB a month.
     _months = _ledger_months(datetime.now(timezone.utc))
     for b in _BOTS:
         cmd = f"echo. & echo ==={_ledger_section(b.key).upper()}==="
@@ -628,6 +633,8 @@ def _fetch_vps_snapshot() -> dict[str, str]:
             cmd += (
                 f" & findstr /c:pnl_usd"
                 rf" {_VPS_INSTANCES}\{b.instance_dir}\ledger\decisions-{month}-*.jsonl 2>nul"
+                f" & findstr /c:startup"
+                rf" {_VPS_INSTANCES}\{b.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
             )
         parts.append(cmd)
     parts.append(
@@ -733,6 +740,35 @@ def _parse_live_trades(snap: dict[str, str]) -> dict[str, list[dict] | None]:
             ):
                 rows.append(row)
         out[b.key] = rows
+    return out
+
+
+def _parse_live_starts(snap: dict[str, str]) -> dict[str, list[tuple[str, int]] | None]:
+    """{bot key: the run startups the BOX just reported} — `None` when it did not answer.
+
+    Read off the same section as `_parse_live_trades`, with the same three answers: an absent
+    section is *not asked*, a present one with no startup is *none in the window*. Each row is
+    judged by `bot_earnings._startup`, the one definition of what a startup is.
+    """
+    out: dict[str, list[tuple[str, int]] | None] = {}
+    for b in _BOTS:
+        section = snap.get(_ledger_section(b.key))
+        if section is None:
+            out[b.key] = None
+            continue
+        starts: list[tuple[str, int]] = []
+        for line in section.splitlines():
+            brace = line.find("{")
+            if brace < 0:
+                continue
+            try:
+                row = json.loads(line[brace:])
+            except Exception:
+                continue
+            found = bot_earnings._startup(row) if isinstance(row, dict) else None
+            if found:
+                starts.append(found)
+        out[b.key] = starts
     return out
 
 
@@ -1222,6 +1258,7 @@ def get_snapshot():
     # report a halted bridge, and a page that fails to load says nothing at all.
     try:
         live_trades = _parse_live_trades(snap)
+        live_starts = _parse_live_starts(snap)
         earnings = [
             AccountEarnings(**e)
             for e in bot_earnings.account_earnings(
@@ -1235,6 +1272,8 @@ def get_snapshot():
                         # What the box just said, or None when it could not be asked. See
                         # `_parse_live_trades` on why those may not be one value.
                         "live_trades": live_trades.get(b.key),
+                        # The box's own run startups, which place each trade on its account.
+                        "live_starts": live_starts.get(b.key),
                     }
                     for b in bots
                 ],
@@ -3121,6 +3160,7 @@ def _go_live_plan(bot_keys: list[str], account: int):
     destination_group = next(
         (g for g in groups if g.kind == "account" and g.account == account), None
     )
+    configs = _all_instance_configs()
 
     plan = go_live.plan_go_live(
         bot_keys=list(bot_keys),
@@ -3129,7 +3169,12 @@ def _go_live_plan(bot_keys: list[str], account: int):
         destination_group=destination_group,
         # What each bot DID on demo. Reported, never enforced — there is no minimum here, so the
         # only thing this can do is put the evidence in front of the person deciding.
-        records={k: bot_earnings.read_bot_ledger(k) for k in bot_keys},
+        # ⚠ Scoped to the account the bot is LEAVING, so a bot that traded somewhere else first
+        # is not credited with that account's trades as demo evidence for this one.
+        records={
+            k: bot_earnings.read_bot_ledger(k, account=(configs.get(k) or {}).get("account"))
+            for k in bot_keys
+        },
         # The SAME function a single move from the Accounts page runs through. Six fields move a
         # bot and every one of them has an incident behind it; a second copy would have to
         # re-learn all six.

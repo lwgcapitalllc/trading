@@ -730,7 +730,10 @@ function Unattributed({ e }: { e: AccountEarnings }) {
 
 /** The labels over a card's bot rows — ONE component for the real card and its placeholder, on
  *  the same column template, so neither can end up with a heading over the wrong column. */
-function ColumnHeadings() {
+/** `past` — a history card: its bots have left, so the five columns that describe a bot running
+ *  here (version, risk, uptime, actions) are one, saying where each went. Same GRID, so the money
+ *  columns line up with the live card above it. */
+function ColumnHeadings({ past = false }: { past?: boolean }) {
   return (
     <div
       className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
@@ -746,11 +749,17 @@ function ColumnHeadings() {
       <span title="R per trade — what each closed trade made on average, in units of the risk it took. The top bot is picked on this, never on dollars.">
         Per trade
       </span>
-      <span>Version</span>
-      <span title="Risk per trade">Risk</span>
-      <span>Uptime</span>
-      <span />
-      <span className="text-right">Actions</span>
+      {past ? (
+        <span className="col-span-5">Now</span>
+      ) : (
+        <>
+          <span>Version</span>
+          <span title="Risk per trade">Risk</span>
+          <span>Uptime</span>
+          <span />
+          <span className="text-right">Actions</span>
+        </>
+      )}
     </div>
   )
 }
@@ -962,10 +971,24 @@ export function Bots() {
   const shownEmpty = emptyAccounts.filter((a) => keep(a.kind))
   const shownUnassigned = unassigned.filter((b) => keep(b.account_type))
   const shownBroken = broken.filter((b) => keep(b.account_type))
+  /**
+   * An account only bots that have LEFT traded on — the demo account a set went live from.
+   *
+   * 🔴 **Its record stays on the Trading tab, under its side (2026-09-11).** Aaron, the day the set
+   * went live: *"I was expecting to see demo and live account."* The demo record is the evidence
+   * the promotion was made on, and the live-against-demo score reads it; filed under Unassigned as
+   * an empty account it would vanish at exactly the moment it is worth comparing against.
+   * ⚠ It carries the TRADES only — nothing reads its balance any more, so there is none to show.
+   */
+  const history = (snapshot?.earnings ?? []).filter(
+    (e) =>
+      !groupByAccount.get(e.account)?.bots.length && e.bots.some((b) => b.former && b.closed_trades)
+  )
+  const shownHistory = history.filter((e) => keep(regByAccount.get(e.account)?.kind))
   // Per TAB, so the note under each one counts only what that tab would have shown.
   const hiddenByFilter =
     show === 'trading'
-      ? withBots.length - shownAccounts.length
+      ? withBots.length - shownAccounts.length + (history.length - shownHistory.length)
       : emptyAccounts.length - shownEmpty.length + (unassigned.length - shownUnassigned.length)
   // ⚠ A switched-off side that empties the page must SAY it did. A blank list and a fleet that
   // really is empty look identical, and only one of them is a finding. One note, both tabs.
@@ -989,9 +1012,20 @@ export function Bots() {
   // the browser would be the same rule written twice in two languages, which is how the risk
   // share total already drifted once on this very page.
   const earnByAccount = new Map((snapshot?.earnings ?? []).map((e) => [e.account, e]))
-  const earnByBot = new Map(
-    (snapshot?.earnings ?? []).flatMap((e) => e.bots.map((b) => [b.bot_key, b] as const))
+  // 🔴 KEYED BY ACCOUNT AND BOT, never by bot alone (2026-09-11). A bot that moved has a row on
+  // each account it traded — its demo record on demo, its live one on live — and a bot-keyed map
+  // handed every row whichever entry came last, which put the demo trades under the live heading.
+  const earnAt = new Map(
+    (snapshot?.earnings ?? []).flatMap((e) =>
+      e.bots.map((b) => [`${e.account}:${b.bot_key}`, b] as const)
+    )
   )
+  const earnOf = (account: number | string | null | undefined, key: string) =>
+    account == null || account === '' ? undefined : earnAt.get(`${Number(account)}:${key}`)
+  /** The account a bot's CONFIG names — what the rows are laid out by, so the bot's panel reads
+   *  the record of the account its row sits under. The box's report is the fallback. */
+  const accountOfBot = (key: string) =>
+    withBots.find((a) => a.rows.some((r) => r.cfg.key === key))?.account ?? null
 
   // ── live against demo ─────────────────────────────────────────────────────
   /** Which side an account sits on. ⚠ While neither the box nor the registry has answered, its
@@ -1019,21 +1053,27 @@ export function Bots() {
    *  carries money no bot here made. A bot whose record could not be read makes the side PARTIAL. */
   const scoreOf = (key: 'live' | 'demo'): SideScore => {
     const s: SideScore = { key, r: 0, trades: 0, bots: 0, scored: 0, unread: 0 }
+    const add = (e: BotEarnings | undefined) => {
+      s.bots += 1
+      if (!e?.traded) {
+        s.unread += 1
+        return
+      }
+      if (e.closed_trades && e.realised_r != null) {
+        s.r += e.realised_r
+        s.trades += e.closed_trades
+        s.scored += 1
+      }
+    }
     for (const a of withBots) {
       if (sideOf(typeOf(a.account, a.rows)) !== key) continue
-      for (const { cfg } of a.rows) {
-        s.bots += 1
-        const e = earnByBot.get(cfg.key)
-        if (!e?.traded) {
-          s.unread += 1
-          continue
-        }
-        if (e.closed_trades && e.realised_r != null) {
-          s.r += e.realised_r
-          s.trades += e.closed_trades
-          s.scored += 1
-        }
-      }
+      for (const { cfg } of a.rows) add(earnOf(a.account, cfg.key))
+    }
+    // The record of bots that have LEFT an account still belongs to its side — the demo trades a
+    // set was promoted on are what its live trades are compared against.
+    for (const e of history) {
+      if (sideOf(regByAccount.get(e.account)?.kind) !== key) continue
+      for (const b of e.bots) if (b.former) add(b)
     }
     return s
   }
@@ -1047,12 +1087,12 @@ export function Bots() {
   /** The bot holding the trophy: best R per trade among the bots shown. ⚠ Only when there is a
    *  CONTEST — two bots with a score, a clear gap between the first two, and every shown bot's
    *  record read. One bot alone, a tie, or a missing record all leave the trophy unawarded. */
-  const shownRows = shownAccounts.flatMap((a) => a.rows)
+  const shownRows = shownAccounts.flatMap((a) => a.rows.map((r) => ({ ...r, account: a.account })))
   const ranked = shownRows
-    .map(({ cfg }) => ({ key: cfg.key, r: perTradeOf(earnByBot.get(cfg.key)) }))
+    .map(({ cfg, account }) => ({ key: cfg.key, r: perTradeOf(earnOf(account, cfg.key)) }))
     .filter((x): x is { key: string; r: number } => x.r != null)
     .sort((a, b) => b.r - a.r)
-  const allRead = shownRows.every(({ cfg }) => earnByBot.get(cfg.key)?.traded)
+  const allRead = shownRows.every(({ cfg, account }) => earnOf(account, cfg.key)?.traded)
   const topBot =
     allRead && ranked.length >= 2 && ranked[0].r - ranked[1].r >= TIE_R ? ranked[0].key : null
 
@@ -1186,7 +1226,7 @@ export function Bots() {
            *  placeholder renders the same component for the same reason. */}
           <ColumnHeadings />
           {rows.map(({ cfg, live }, i) => {
-            const be = earnByBot.get(cfg.key)
+            const be = earnOf(account, cfg.key)
             // ⚠ THREE states. `asked` is whether the box answered for this bot at all —
             // an unanswered snapshot is not a stopped bot, and the controls below branch
             // on it rather than on `running`, so nothing offers Start for a bot whose
@@ -1373,6 +1413,66 @@ export function Bots() {
         </div>
 
         {earn && <Unattributed e={earn} />}
+      </div>
+    )
+  }
+
+  /** An account only departed bots traded on: what they did HERE, and nothing that needs a bot on
+   *  the account — no balance (nothing reads it), no controls. ⚠ The heading still opens the
+   *  account, so a bot can be put back on it from there. */
+  const renderHistory = (e: AccountEarnings) => {
+    const reg = regByAccount.get(e.account)
+    return (
+      <div
+        key={`history-${e.account}`}
+        data-testid="history-card"
+        data-account={e.account}
+        className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
+      >
+        <button
+          onClick={() => set('account', String(e.account))}
+          title="Open this account — put a bot on it from here"
+          className="w-full flex items-center gap-3 px-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
+        >
+          <span className="text-[14px] font-mono font-semibold tabular-nums">{e.account}</span>
+          <span className="text-[13px] text-text-secondary">
+            {reg?.label || reg?.broker || `Account ${e.account}`}
+          </span>
+          <span className="ml-auto text-[12px] text-text-tertiary">
+            No bots on it now — what they did here
+          </span>
+        </button>
+        <div className="border-t border-border-subtle">
+          <ColumnHeadings past />
+          {e.bots
+            .filter((b) => b.former)
+            .map((b, i) => {
+              const where = b.moved_to != null ? regByAccount.get(b.moved_to)?.kind : undefined
+              return (
+                <div
+                  key={b.bot_key}
+                  data-testid="history-row"
+                  data-bot={b.bot_key}
+                  className={`grid ${GRID} items-center gap-3 pr-4 py-[10px] ${
+                    i > 0 ? 'border-t border-border-subtle' : ''
+                  }`}
+                >
+                  <span className="font-medium text-[13px] min-w-0 pl-4 truncate text-text-secondary">
+                    {b.name}
+                  </span>
+                  <Contribution e={b} asking={false} />
+                  <ReturnPct e={b} asking={false} />
+                  <TradeCount e={b} asking={false} />
+                  <PerTrade e={b} asking={false} top={false} />
+                  <span className="col-span-5 text-[12px] text-text-tertiary">
+                    {b.moved_to != null
+                      ? `Moved to ${where ? `${where} account` : 'account'} ${b.moved_to}`
+                      : 'Moved off this account'}
+                  </span>
+                </div>
+              )
+            })}
+        </div>
       </div>
     )
   }
@@ -1573,7 +1673,10 @@ export function Bots() {
         <div className="flex flex-col gap-[22px]">
           {SECTIONS.map(({ key, label }) => {
             const accounts = shownAccounts.filter((a) => sideOf(typeOf(a.account, a.rows)) === key)
-            if (!accounts.length) return null
+            const past = shownHistory.filter(
+              (e) => sideOf(regByAccount.get(e.account)?.kind) === key
+            )
+            if (!accounts.length && !past.length) return null
             return (
               <SideSection
                 key={key}
@@ -1590,6 +1693,7 @@ export function Bots() {
                 }
               >
                 {accounts.map(renderAccount)}
+                {past.map(renderHistory)}
               </SideSection>
             )
           })}
@@ -1745,7 +1849,7 @@ export function Bots() {
       {selBot && (
         <BotDrawer
           bot={selBot}
-          earnings={earnByBot.get(selBot.key)}
+          earnings={earnOf(accountOfBot(selBot.key) ?? selBot.account, selBot.key)}
           job={jobByKey.get(selBot.key)}
           busy={busy}
           pendingAction={pending?.key === selBot.key ? pending.action : null}
