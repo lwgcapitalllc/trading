@@ -1,0 +1,12 @@
+2026-09-11 14:35:11,769 [INFO] SOS Fade (demo) | SosFadeStrategy v174 | hash be7556a7948a | commit f740c7ab | frozen | LIVE
+2026-09-11 14:35:12,388 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-11 14:35:12,388 [INFO] MT5 connection lock released
+2026-09-11 14:35:13,000 [INFO] Sizing against account balance $15,844.46
+2026-09-11 14:35:13,107 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-11 14:35:13,107 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-11 14:35:13,138 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-11 14:35:17,008 [INFO] Warmed 5000 bars (2026-06-29 00:00:00+00:00 → 2026-09-11 14:15:00+00:00) in 3.6s
+2026-09-11 14:35:22,228 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-29 00:05:00+00:00 → 2026-09-11 14:30:00+00:00).
+2026-09-11 14:35:22,228 [INFO] Equity re-anchored to the account after warm-up: 15,686.14 → 15,844.46
+2026-09-11 14:35:22,244 [WARNING] Warmup ended with the strategy holding a simulated position — its entry is in the past, so it will NOT be opened live. Waiting for it to close before placing anything.
+2026-09-11 14:35:23,447 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
