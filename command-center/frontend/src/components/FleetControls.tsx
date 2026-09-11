@@ -4,9 +4,10 @@
  * 🔴 **These buttons and the per-bot controls were rendered in the same visual language, and they
  * are not the same kind of thing** — one restarts a bot, the other acts on every python process
  * the VPS runs. With one bot registered the distinction is academic; with four it is the click
- * that takes the book down when you meant one row. So the card is DANGER-TINTED, states its scope
- * in its own title, and every button carries the COUNT it will hit. **A label that is a number
- * cannot say one thing while the list says another.**
+ * that takes the book down when you meant one row. So the card states its scope in its own title,
+ * every button carries the COUNT it will hit, and the danger colour sits on the one button that
+ * stops the fleet — not on the card's whole border, which read as an alarm on every visit
+ * (2026-09-11). **A label that is a number cannot say one thing while the list says another.**
  *
  * ⚠ **It lives on Overview, not on Bots (Aaron's call, 2026-09-05).** The Bots page is where you
  * manage bots one at a time; this is machinery, and mixing the two is what made every row's ▷ ■ ↻
@@ -115,7 +116,7 @@ export function FleetControls() {
   if (!snapshot) return null
 
   return (
-    <div className="bg-bg-surface border border-neg/30 rounded-lg p-4">
+    <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
       {/* The title names the scope and each button carries its count. An "all 5 bots" chip and
           a sentence saying the same thing were a third and fourth copy (2026-09-11). */}
       <div className="flex items-center mb-[12px]">
@@ -144,7 +145,7 @@ export function FleetControls() {
           onClick={() => setConfirm('stop')}
           disabled={anyBusy || noBots}
           title={noBots ? 'No bots registered' : `Stop all ${total} bots`}
-          className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-bg-surface text-neg-text hover:bg-neg-muted hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Square size={13} />
           Stop all {total}

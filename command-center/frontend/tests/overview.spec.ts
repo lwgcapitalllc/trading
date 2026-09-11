@@ -144,14 +144,16 @@ test.describe('Overview — the live box', () => {
     const byName = Object.fromEntries(pills.map((p) => [p.text, p]))
 
     // A task that will never fire must not read as covered. This is the whole defect.
+    // (Since 2026-09-11 a covered job is plain text rather than gold — colour marks the exception —
+    // so the check is that the disabled one is DIMMED and the scheduled one is not.)
     expect(byName[offJob.name], `${offJob.name} should be reported`).toBeDefined()
     expect(byName[offJob.name].title).toMatch(/^Disabled/)
-    expect(byName[offJob.name].cls).not.toContain('text-gold-text')
+    expect(byName[offJob.name].cls).toContain('text-text-tertiary')
 
     // ⚠ STOPPED is NOT the same claim — a scheduled task that is not executing right this second
-    // is healthy, and painting it grey would be the same bug in reverse.
+    // is healthy, and dimming it would be the same bug in reverse.
     expect(byName[onJob.name].title).toMatch(/^Scheduled/)
-    expect(byName[onJob.name].cls).toContain('text-gold-text')
+    expect(byName[onJob.name].cls).not.toContain('text-text-tertiary')
   })
 
   test("a calendar row lands on that event's own day, not the bare week", async ({ page }) => {
@@ -211,7 +213,7 @@ test.describe('Overview — states the live box cannot produce', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     const sub = await fleetBalance(page).textContent()
-    expect(sub).toMatch(/1 of 1 not reporting/)
+    expect(sub).toMatch(/1 of 1 accounts? not reporting/)
     expect(sub).not.toMatch(/\$0\.00/)
   })
 
@@ -223,16 +225,45 @@ test.describe('Overview — states the live box cannot produce', () => {
       // 2-of-2 silent and the check green for the wrong reason on exactly the days it matters.
       const reporting = JSON.parse(JSON.stringify(s.bots[0]))
       reporting.balance = 9_996.99
+      // ⚠ The silent one is on ANOTHER account. The total counts ACCOUNTS since 2026-09-11: two
+      // bots on one account share one balance, so a copy left on the same account would be
+      // covered by its twin's reading and correctly NOT flagged.
       const silent = JSON.parse(JSON.stringify(s.bots[0]))
       silent.key = 'orb_live'
       silent.name = 'ORB'
+      silent.account = '99999999'
       silent.balance = null
       silent.account_type = 'live'
       s.bots = [reporting, silent]
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    expect(await fleetBalance(page).textContent()).toMatch(/1 of 2 not reporting/)
+    expect(await fleetBalance(page).textContent()).toMatch(/1 of 2 accounts not reporting/)
+  })
+
+  test('two bots on ONE account add its balance once, and a benched bot adds nothing', async ({
+    page,
+  }) => {
+    // 🔴 The total added every bot's balance, and every bot on an account reports that account's
+    // balance — so two bots on one account counted it twice (MEASURED 2026-09-11: $32,592.86 on
+    // the screen for $16,296.43 of money), and a benched bot on no account read as "not reporting".
+    await mockSnapshot(page, (s) => {
+      expect(s.bots.length, 'need a registered bot to copy').toBeGreaterThan(0)
+      const a = JSON.parse(JSON.stringify(s.bots[0]))
+      a.key = 'a'
+      a.account = '11111111'
+      a.balance = 1_000
+      const b = { ...a, key: 'b', name: 'Other' }
+      const benched = { ...a, key: 'c', name: 'Benched one', account: '', balance: null }
+      benched.status = 'STOPPED'
+      s.bots = [a, b, benched]
+    })
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    const line = await fleetBalance(page).textContent()
+    expect(line).toMatch(/\$1,000\.00/)
+    expect(line).not.toMatch(/not reporting/)
+    await expect(page.getByText('Benched', { exact: true })).toBeVisible()
   })
 
   test('an empty fleet says so, and draws no $0 balance', async ({ page }) => {

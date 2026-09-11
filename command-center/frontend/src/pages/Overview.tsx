@@ -79,15 +79,25 @@ function fmtPf(pf: number | null | undefined): string {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: string }) {
-  const isRunning = status === 'RUNNING'
-  const isError = status === 'ERROR'
-  const cls = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
-  const label = isRunning ? 'Running' : isError ? 'Error' : 'Stopped'
+/** A bot's state. Colour marks the EXCEPTION: running is what a bot is for, so it is a green dot
+ *  beside a grey word — a green pill on every row said "all fine" loudly five times. A bot that is
+ *  stopped while it holds an account is the thing to notice, so that one is red. A bot on NO account
+ *  is benched on purpose; it is stopped by design, and red there is a false alarm (2026-09-11). */
+function BotState({ bot }: { bot: BotStatus }) {
+  const running = bot.status === 'RUNNING'
+  const benched = !running && !bot.account
+  const label = running
+    ? 'Running'
+    : benched
+      ? 'Benched'
+      : bot.status === 'ERROR'
+        ? 'Error'
+        : 'Stopped'
+  const dot = running ? 'bg-pos' : benched ? 'border border-text-tertiary' : 'bg-neg'
+  const text = running || benched ? 'text-text-tertiary' : 'text-neg-text'
   return (
-    <span
-      className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}
-    >
+    <span className={`inline-flex items-center gap-[5px] text-[11px] ${text}`}>
+      <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${dot}`} />
       {label}
     </span>
   )
@@ -144,7 +154,7 @@ function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
         </span>
       )}
       {bot.mt5_link === false && <NoLinkChip />}
-      <StatusPill status={bot.status} />
+      <BotState bot={bot} />
     </div>
   )
 }
@@ -158,12 +168,11 @@ function JobPill({ job }: { job: { name: string; status: string; schedule?: stri
   // that will never fire says the job is covered when it isn't — and two of the three jobs on the
   // box are disabled today. Mirrors `JobDot` on the Bots page, deliberately word for word.
   const disabled = job.status === 'DISABLED'
-  const dotCls = running
-    ? 'bg-pos shadow-[0_0_5px_#00ff7f]'
-    : disabled
-      ? 'bg-text-tertiary/40'
-      : 'bg-gold shadow-[0_0_5px_#d9a441]'
-  const textCls = running ? 'text-pos-text' : disabled ? 'text-text-tertiary' : 'text-gold-text'
+  // ⚠ Colour marks the EXCEPTION (2026-09-11): a scheduled job waiting for its trigger is the
+  // normal state, so its name is plain text — six gold names on every visit read as six warnings.
+  // Only a job that will never fire is set apart, dimmed, with the reason on its title.
+  const dotCls = running ? 'bg-pos' : disabled ? 'bg-text-tertiary/30' : 'bg-text-secondary/60'
+  const textCls = disabled ? 'text-text-tertiary line-through' : 'text-text-secondary'
   const state = running
     ? 'Running'
     : disabled
@@ -330,19 +339,37 @@ export function Overview() {
   // ⚠ Sum only what was actually REPORTED, and say how many were not. `?? 0` folds "this bot
   // could not tell me" into the total as a real zero, which understates the fleet with nothing
   // on screen to show for it — the same "no data ≠ cannot ask" rule the link chip exists for.
-  const reportedBal = bots.filter((b) => b.balance != null)
-  const totalBalance = reportedBal.reduce((s, b) => s + (b.balance ?? 0), 0)
-  const unreported = totalBots - reportedBal.length
+  // 🔴 Summed per ACCOUNT, never per bot (2026-09-11). Every bot on an account reports THAT
+  // account's balance, so adding bots counted each account once per bot on it — MEASURED: two
+  // accounts with two bots each read $32,592.86 for $16,296.43 of money. The Bots page learned
+  // this on 2026-09-04 ("never sum a number across bots that SHARE it"); this card had not. A bot
+  // on NO account is benched: it has no balance to report, so it is not "not reporting" either.
+  const balanceByAccount = new Map<string, number | null>()
+  const kindByAccount = new Map<string, string>()
+  for (const b of bots) {
+    if (!b.account) continue
+    const known = balanceByAccount.get(b.account)
+    if (known == null) balanceByAccount.set(b.account, b.balance ?? null)
+    kindByAccount.set(b.account, b.account_type)
+  }
+  const accountBalances = [...balanceByAccount.values()]
+  const reportedBal = accountBalances.filter((v): v is number => v != null)
+  const totalBalance = reportedBal.reduce((s, v) => s + v, 0)
+  const totalAccounts = accountBalances.length
+  const unreported = totalAccounts - reportedBal.length
   const liveBots = bots.filter((b) => b.account_type === 'live').length
   const mixedFleet = liveBots > 0 && liveBots < totalBots
+  const liveAccounts = [...kindByAccount.values()].filter((k) => k === 'live').length
+  const demoAccounts = totalAccounts - liveAccounts
+  const plural = (n: number, word: string) => `${n} ${word} account${n === 1 ? '' : 's'}`
   const accountLabel =
-    totalBots === 0
+    totalAccounts === 0
       ? ''
-      : liveBots === 0
-        ? 'demo account'
-        : liveBots === totalBots
-          ? 'live account'
-          : `${liveBots} live · ${totalBots - liveBots} demo`
+      : liveAccounts === 0
+        ? plural(demoAccounts, 'demo')
+        : demoAccounts === 0
+          ? plural(liveAccounts, 'live')
+          : `${liveAccounts} live · ${demoAccounts} demo`
   // TanStack keeps the last good snapshot through a failed refetch, so an error and real rows
   // render together. Say WHEN the rows were true rather than leaving them looking live.
   const snapshotStale = botsError && !!snapshot
@@ -447,7 +474,7 @@ export function Overview() {
             className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
           >
             <div className="flex items-center gap-[8px]">
-              <Bot size={14} className="text-accent" style={{ opacity: 0.85 }} />
+              <Bot size={14} className="text-text-tertiary" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
                 Bots
               </span>
@@ -492,7 +519,7 @@ export function Overview() {
 
                 {/* The fleet's total. ⚠ A missing balance is not a zero balance: it sums only
                     what was reported and names the gap in warn, never folds it in as $0. */}
-                {totalBots > 0 && (
+                {totalAccounts > 0 && (
                   <div
                     data-testid="fleet-balance"
                     className="flex items-baseline gap-[10px] pt-[9px]"
@@ -502,7 +529,7 @@ export function Overview() {
                       className={`text-[11px] ${unreported > 0 ? 'text-warn-text' : 'text-text-tertiary'}`}
                     >
                       {unreported > 0
-                        ? `${unreported} of ${totalBots} not reporting`
+                        ? `${unreported} of ${totalAccounts} account${totalAccounts === 1 ? '' : 's'} not reporting`
                         : accountLabel}
                     </span>
                     <span className="text-[13px] font-mono tabular-nums text-text-primary">
@@ -543,7 +570,7 @@ export function Overview() {
                 className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
               >
                 <div className="flex items-center gap-[8px]">
-                  <Radar size={14} className="text-accent" style={{ opacity: 0.85 }} />
+                  <Radar size={14} className="text-text-tertiary" />
                   <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
                     Smart Money
                   </span>
@@ -615,7 +642,7 @@ export function Overview() {
             {/* A plain heading, not a link: every row below is its own link, and an "Open runs"
               header was a second way to the Runs row directly under it. */}
             <div className="flex items-center gap-[8px] px-[15px] py-[10px] border-b border-border-subtle">
-              <FlaskConical size={14} className="text-accent" style={{ opacity: 0.85 }} />
+              <FlaskConical size={14} className="text-text-tertiary" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
                 Research
               </span>
@@ -773,7 +800,7 @@ export function Overview() {
           className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
         >
           <div className="flex items-center gap-[8px]">
-            <CalendarDays size={14} className="text-accent" style={{ opacity: 0.85 }} />
+            <CalendarDays size={14} className="text-text-tertiary" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
               Economic Calendar
             </span>
