@@ -89,3 +89,9 @@ RuntimeError: Could not read the account balance, and initial_capital is 0 — t
 2026-09-11 12:00:09,800 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
 2026-09-11 12:15:04,053 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
 2026-09-11 12:15:04,128 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 12:30:08,975 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
+2026-09-11 12:30:09,069 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 12:45:07,535 [ERROR] HALTED: The strategy believes it is in a position but MT5 has none. Its resting limit filled in the emulator and not at the broker (or the position was closed outside the bot). Every later decision would be computed against a trade that does not exist.
+2026-09-11 12:45:09,896 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 13:00:06,946 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-11 13:15:04,160 [ERROR] Bridge halted — the loop will keep observing but place nothing.
