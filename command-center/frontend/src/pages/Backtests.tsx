@@ -135,9 +135,10 @@ function firmShortName(firmId: string): string {
   return `${brand}${size} ${tier}`
 }
 
-function challengeCls(firmId: string): string {
-  if (firmId.includes('_eval')) return 'bg-warn-muted text-warn-text'
-  if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text'
+// One neutral chip for every ruleset (2026-09-11). An evaluation was painted amber and a funded
+// account green — colour on the KIND of ruleset, which reads as a warning and a pass on a column
+// that states neither. The per-firm verdict lives on the run page.
+function challengeCls(_firmId: string): string {
   return 'bg-bg-hover text-text-secondary'
 }
 
@@ -794,7 +795,7 @@ function ConfirmRerunModal({
 // ── Nested optimization row ───────────────────────────────────────────────────
 
 export function fmtOptStatus(s: string) {
-  if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+  if (s === 'complete') return { label: 'Complete', cls: 'bg-bg-hover text-text-tertiary' }
   if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
   // Cancelling stores 'failed_cancelled', so the generic failed branch below labelled a
   // deliberate stop as a fault — and the detail page said "Cancelled" for the same row.
@@ -915,7 +916,7 @@ function SweepNestRow({
   onClick: () => void
 }) {
   function fmtSweepSt(s: string) {
-    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-bg-hover text-text-tertiary' }
     if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
     if (s === 'partial') return { label: 'Partial', cls: 'bg-warn-muted text-warn-text' }
     if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
@@ -976,7 +977,7 @@ function TuneNestRow({
     ? { label: 'Running', cls: 'bg-accent/10 text-accent' }
     : isFailed
       ? { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
-      : { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+      : { label: 'Complete', cls: 'bg-bg-hover text-text-tertiary' }
   return (
     <tr
       onClick={onClick}
@@ -997,12 +998,15 @@ function TuneNestRow({
         </div>
       </td>
       <td className="px-4 py-2">
-        <span
-          className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
-        >
-          {isRunning && <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />}
-          {st.label}
-        </span>
+        {/* A finished tune shows its PF beside its name, so a COMPLETE pill said it twice. */}
+        {run.status !== 'complete' && (
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
+          >
+            {isRunning && <span className="w-[4px] h-[4px] rounded-full bg-accent animate-pulse" />}
+            {st.label}
+          </span>
+        )}
       </td>
       <td colSpan={colSpan - 5} className="px-4 py-2 text-right">
         <span className="text-[11px] text-accent">View →</span>
@@ -1013,7 +1017,8 @@ function TuneNestRow({
 
 // ── Run status indicator ──────────────────────────────────────────────────────
 // Replaces the Status column — a small glyph after the strategy name. A complete run is implied by
-// its metrics being populated, so it only needs a quiet dot; running pulses; failed shows a red ✕.
+// its metrics being populated, so it draws NOTHING: a green dot on every finished row was colour on
+// the normal state (2026-09-11). Running pulses; failed shows a red ✕.
 
 function RunStatusIcon({ status }: { status: string }) {
   if (status === 'running')
@@ -1025,10 +1030,6 @@ function RunStatusIcon({ status }: { status: string }) {
     )
   if (status.startsWith('failed'))
     return <X size={12} className="text-neg-text flex-shrink-0" aria-label="Failed" />
-  if (status === 'complete')
-    return (
-      <span title="Complete" className="w-[7px] h-[7px] rounded-full bg-pos-text flex-shrink-0" />
-    )
   return null
 }
 
@@ -1153,8 +1154,10 @@ function RunRow({
       {/* Dollars ALONE were the misleading part (fixed 2026-08-01): $1.7M of drawdown listed
           beside $14M of profit reads as ~12%, where the honest peak-relative figure is 56%. The
           percent leads because it is the comparable number across runs of different sizes; the
-          dollars stay beneath it because that is what a prop-firm limit is written in. */}
-      <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+          dollars stay beneath it because that is what a prop-firm limit is written in.
+          ⚠ Neutral, not red (2026-09-11): a drawdown can only ever be a loss, so red on every row
+          was colour on a definition and ranked nothing. */}
+      <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
         {run.max_drawdown != null ? (
           <>
             <div>
@@ -1252,7 +1255,7 @@ function SweepsTab() {
   const [deleteSweepId, setDeleteSweepId] = useState<string | null>(null)
 
   function fmtSweepStatus(s: string) {
-    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-bg-hover text-text-tertiary' }
     if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
     if (s === 'partial') return { label: 'Partial', cls: 'bg-warn-muted text-warn-text' }
     if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
@@ -1474,7 +1477,7 @@ function StacksTab() {
     )
 
   function fmtStackStatus(s: string) {
-    if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
+    if (s === 'complete') return { label: 'Complete', cls: 'bg-bg-hover text-text-tertiary' }
     if (s === 'running') return { label: 'Running', cls: 'bg-accent/10 text-accent' }
     if (s === 'partial') return { label: 'Partial', cls: 'bg-warn-muted text-warn-text' }
     if (s.startsWith('failed')) return { label: 'Failed', cls: 'bg-neg-muted text-neg-text' }
@@ -1552,7 +1555,11 @@ function StacksTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                {/* Only while something is unfinished — a column reading COMPLETE on every row
+                    says nothing the populated result beside it has not (2026-09-11). */}
+                {stacks.some((x) => x.status !== 'complete') && (
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
+                )}
                 <th className="px-3 py-3 w-20" />
               </tr>
             </thead>
@@ -1575,7 +1582,7 @@ function StacksTab() {
                       {st.mode === 'shared' ? (
                         <span
                           title="One balance and one risk budget the strategies competed for."
-                          className="inline-flex items-center px-2 py-[2px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/30 font-mono"
+                          className="text-[11px] text-text-secondary font-mono"
                         >
                           Shared{st.risk_cap_pct != null && ` ${st.risk_cap_pct.toFixed(0)}%`}
                         </span>
@@ -1614,23 +1621,25 @@ function StacksTab() {
                     </td>
                     {/* The leg count rides in the pill only while a stack is unfinished. As its own
                         Progress column it read "2/2" beside "COMPLETE" on every finished row. */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${s.cls}`}
-                      >
-                        {st.status === 'running' && (
-                          <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />
+                    {stacks.some((x) => x.status !== 'complete') && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {st.status !== 'complete' && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${s.cls}`}
+                          >
+                            {st.status === 'running' && (
+                              <span className="w-[5px] h-[5px] rounded-full bg-accent animate-pulse" />
+                            )}
+                            {s.label} {st.completed_strategies}/{st.total_strategies}
+                          </span>
                         )}
-                        {s.label}
-                        {st.status !== 'complete' &&
-                          ` ${st.completed_strategies}/${st.total_strategies}`}
-                      </span>
-                      {st.failed_strategies > 0 && (
-                        <span className="ml-1 text-neg-text text-[11px]">
-                          ({st.failed_strategies} failed)
-                        </span>
-                      )}
-                    </td>
+                        {st.failed_strategies > 0 && (
+                          <span className="ml-1 text-neg-text text-[11px]">
+                            ({st.failed_strategies} failed)
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <button
