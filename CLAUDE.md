@@ -785,12 +785,17 @@ On 2026-09-11 a `reset --keep` after a rebuilt push dropped three fresh commits 
 session and rolled its files back; restored two minutes later. Message the other session before
 moving the branch.
 
-⚠ **By PATH is not enough for a file BOTH sessions are editing.** `git commit -- <path>` takes the
-whole working-tree file, the other session's unsaved lines included — 6ccb56e0 (2026-09-11) carried
-two of them in `command-center/frontend/CLAUDE.md`. Commit only your own hunks: in a scratch index
-(`GIT_INDEX_FILE=<tmp> git read-tree HEAD`, then `git apply --cached` a patch of just them, then
-`GIT_INDEX_FILE=<tmp> git commit`), then `git reset -- <path>` in the real index. ⚠ **Never a plain
-`git commit` from the shared index** — it takes whatever the other session has staged.
+⚠ **By PATH is not enough for a file BOTH sessions are editing, and two commits at one instant
+SWAP MESSAGES.** `git commit -- <path>` takes the whole working-tree file, the other session's
+unsaved lines included (6ccb56e0, 2026-09-11). And `.git/COMMIT_EDITMSG` is one file per clone: two
+`git commit`s racing that day put one session's message on the other's tree — 233a3686 is a
+root-doc paragraph under a sweeps title. **Simplest: take turns, by message.** Otherwise plumbing: a
+scratch index started from HEAD (`GIT_INDEX_FILE=<tmp> git read-tree HEAD`, `git apply --cached`
+your patch — the hooks compare against HEAD, so any other base stages a revert of what HEAD has),
+both hooks run by hand under it (`commit-tree` runs none), `git commit-tree -F <your own file>`,
+`git update-ref refs/heads/main <new> <old>` (refuses if the branch moved), then `git reset --
+<path>` in the real index. ⚠ **Never a plain `git commit` from the shared index** — it takes
+whatever the other session has staged.
 
 ⚠ **The direction of the damage is the part to remember: a doc that arrives EARLY reads exactly
 like a doc that is right.** The next person greps for the step, finds the paragraph, runs the
