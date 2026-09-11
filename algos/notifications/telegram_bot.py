@@ -232,7 +232,11 @@ def cmd_status() -> str:
     link is up. A bot can be alive and blind — that is exactly what happened on 2026-08-04, when
     the terminal restarted underneath it and every check in the system still said RUNNING.
     """
-    from bot_state import get_uptime_str, read_all
+    # `bot_label`, not the stored `name`: that field is written when a bot's state entry is first
+    # created and never again, so the demo copies' entries on the box still said "(demo)" after
+    # the rename — and two copies of one strategy share a name now, so the account's kind is what
+    # tells them apart (2026-09-11).
+    from bot_state import bot_label, get_uptime_str, read_all
 
     states = read_all()
     bots = {k: v for k, v in states.items() if isinstance(v, dict) and v.get("name")}
@@ -246,7 +250,7 @@ def cmd_status() -> str:
         # "disconnected". Read `is False`, never falsy — the same rule the Bots page follows.
         blind = st.get("mt5_link") is False
         dot = "🔴" if not alive else ("🟠" if blind else "🟢")
-        bits = [st["name"], "stopped" if not alive else get_uptime_str(key)]
+        bits = [bot_label(key), "stopped" if not alive else get_uptime_str(key)]
         if alive and blind:
             bits.append("no MT5 link")
         bal = st.get("balance")
@@ -265,7 +269,10 @@ def cmd_status() -> str:
 
 def cmd_balance() -> str:
     sys.path.insert(0, str(ALGOS_ROOT / "shared"))
-    from bot_state import BOT_NAMES, read_all
+    # `bot_label`, not the bare name: two copies of one strategy share a name since 2026-09-11, and
+    # this list is the one place both copies' balances sit side by side with nothing else to say
+    # which is which. It adds LIVE or demo off each bot's own account.
+    from bot_state import bot_label, read_all
 
     now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
     lines = [f"💰 *Account Balances*  _{now_tx}_", ""]
@@ -279,16 +286,16 @@ def cmd_balance() -> str:
         # live account. A number nobody measured must not be printed as a measurement.
         balance = state.get("balance")
         pct = state.get("total_pnl_pct")
-        name = BOT_NAMES.get(key, key)
+        name = bot_label(key)
         if balance is None:
-            lines.append(f"`{name:<16}` _no MT5 link_")
+            lines.append(f"`{name:<20}` _no MT5 link_")
             continue
         if pct is None:
-            lines.append(f"`{name:<16}` *${balance:,.2f}*")
+            lines.append(f"`{name:<20}` *${balance:,.2f}*")
             continue
         arrow = "↑" if pct > 0 else "↓" if pct < 0 else "—"
         sign = "+" if pct >= 0 else ""
-        lines.append(f"`{name:<16}` *${balance:,.2f}*  {arrow} {sign}{pct:.1f}%")
+        lines.append(f"`{name:<20}` *${balance:,.2f}*  {arrow} {sign}{pct:.1f}%")
     return "\n".join(lines)
 
 

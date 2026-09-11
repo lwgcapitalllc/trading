@@ -24,6 +24,7 @@ and the second is the one that will actually catch a regression:
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -39,16 +40,23 @@ import notify  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _clean_state(monkeypatch):
+def _clean_state(monkeypatch, tmp_path):
     """Both modules cache: `credentials` caches the FILE, `notify` caches which kinds it has
-    already warned about. A test that inherits either reads another test's answer."""
+    already warned about. A test that inherits either reads another test's answer.
+
+    ⚠ The live-rooms file is pointed at a PRIVATE path that does not exist, so every test starts
+    with no live rooms — the committed file names real channels, and a test reading it would
+    pass or fail on whatever Aaron last put there. The tests that want rooms write their own."""
     monkeypatch.setattr(creds_mod, "_cache", None, raising=False)
+    monkeypatch.setattr(notify, "_ROOMS_PATH", tmp_path / "no_rooms_here.json")
     notify._warned_kinds.clear()
+    notify._warned_live.clear()
     for var in ("LWG_TELEGRAM_CHAT_ID", "LWG_TELEGRAM_HEALTH_CHAT", "LWG_TELEGRAM_TOKEN"):
         monkeypatch.delenv(var, raising=False)
     yield
     monkeypatch.setattr(creds_mod, "_cache", None, raising=False)
     notify._warned_kinds.clear()
+    notify._warned_live.clear()
 
 
 def _creds(monkeypatch, **values):
@@ -136,6 +144,121 @@ def test_the_env_var_beats_the_file(monkeypatch):
 
 def test_the_health_key_has_a_registered_env_name():
     assert creds_mod.env_name("telegram_health_chat") == "LWG_TELEGRAM_HEALTH_CHAT"
+
+
+# ── a LIVE account's trades and signals have rooms of their own (2026-09-11) ─────────────────
+
+
+def _rooms(monkeypatch, tmp_path, **live):
+    path = tmp_path / "telegram_rooms.json"
+    path.write_text(json.dumps({"_README": "test", "live": live}), encoding="utf-8")
+    monkeypatch.setattr(notify, "_ROOMS_PATH", path)
+
+
+_SHARED = dict(
+    telegram_chat_id="-100trades",
+    telegram_health_chat="-100health",
+    telegram_signal_chat="-100signals",
+)
+
+
+def test_a_LIVE_trade_goes_to_the_live_trades_room(monkeypatch, tmp_path):
+    """The whole point: a real-money fill is read apart from the demo copies' fills."""
+    _creds(monkeypatch, **_SHARED)
+    _rooms(monkeypatch, tmp_path, trade="-100live_trades", signal="-100live_signals")
+    assert notify.chat_for(notify.TRADE, account_kind="live") == ("-100live_trades", True)
+    assert notify.chat_for(notify.SIGNAL, account_kind="live") == ("-100live_signals", True)
+
+
+def test_a_DEMO_or_UNKNOWN_account_keeps_the_shared_rooms(monkeypatch, tmp_path):
+    """Only `live` moves a message. An account nobody could classify keeps what every message did
+    before this existed, rather than being guessed onto real money's room — or off it."""
+    _creds(monkeypatch, **_SHARED)
+    _rooms(monkeypatch, tmp_path, trade="-100live_trades", signal="-100live_signals")
+    for kind in ("demo", None, "contest", ""):
+        assert notify.chat_for(notify.TRADE, account_kind=kind) == ("-100trades", True)
+        assert notify.chat_for(notify.SIGNAL, account_kind=kind) == ("-100signals", True)
+
+
+def test_LIVE_health_stays_in_the_ONE_health_room(monkeypatch, tmp_path):
+    """Aaron's call: health is shared by both kinds. The file names no health room, and a live
+    health message must still arrive — in the shared room, with no warning, because that is the
+    design rather than a gap."""
+    _creds(monkeypatch, **_SHARED)
+    _rooms(monkeypatch, tmp_path, trade="-100live_trades", signal="-100live_signals")
+    assert notify.chat_for(notify.HEALTH, account_kind="live") == ("-100health", True)
+
+
+def test_no_warning_for_live_health_sharing_its_room(monkeypatch, tmp_path, capsys):
+    _creds(monkeypatch, **_SHARED)
+    _rooms(monkeypatch, tmp_path, trade="-100live_trades")
+    notify.chat_for(notify.HEALTH, account_kind="live")
+    assert "no live room" not in capsys.readouterr().out
+
+
+def test_a_live_trade_with_NO_live_room_still_arrives_and_SAYS_so_once(monkeypatch, capsys):
+    """No rooms file (the fixture's default): the wrong room beats silence, and the log names the
+    file to fix — once, not per fill."""
+    _creds(monkeypatch, **_SHARED)
+    for _ in range(3):
+        assert notify.chat_for(notify.TRADE, account_kind="live") == ("-100trades", True)
+    out = capsys.readouterr().out
+    assert out.count("no live room for trade") == 1
+
+
+def test_a_bots_own_room_still_wins_over_the_live_room(monkeypatch, tmp_path):
+    """A per-bot room is an explicit choice for THAT bot and keeps its old precedence. (It stays
+    with the bot when the bot moves, which is why nothing sets one today.)"""
+    _creds(monkeypatch, **_SHARED)
+    _rooms(monkeypatch, tmp_path, trade="-100live_trades")
+    assert notify.chat_for(notify.TRADE, "-100mine", "live") == ("-100mine", True)
+
+
+def test_an_unreadable_rooms_file_is_no_rooms_never_a_crash(monkeypatch, tmp_path):
+    """A notifier that raises inside a fill alert is worse than one in the shared room."""
+    _creds(monkeypatch, **_SHARED)
+    bad = tmp_path / "telegram_rooms.json"
+    bad.write_text("{ not json", encoding="utf-8")
+    monkeypatch.setattr(notify, "_ROOMS_PATH", bad)
+    assert notify.chat_for(notify.TRADE, account_kind="live") == ("-100trades", True)
+
+
+def test_the_prose_keys_in_the_rooms_file_are_never_a_room(monkeypatch, tmp_path):
+    """The committed file explains each room under an `_`-prefixed key beside it; a kind is never
+    spelled with an underscore, so the explanation can never be posted to."""
+    _creds(monkeypatch, **_SHARED)
+    _rooms(monkeypatch, tmp_path, _trade="the live trades channel", trade="-100live_trades")
+    assert notify.chat_for(notify.TRADE, account_kind="live") == ("-100live_trades", True)
+
+
+def test_the_COMMITTED_rooms_file_names_a_live_trade_and_signal_room_and_no_health_room():
+    """The real file, read the way `live_room` reads it. Both live rooms are Telegram channel ids
+    (`-100` then digits), and health is absent on purpose."""
+    rooms = json.loads((_ALGOS / "shared" / "telegram_rooms.json").read_text(encoding="utf-8"))
+    live = rooms["live"]
+    for kind in (notify.TRADE, notify.SIGNAL):
+        assert re.fullmatch(r"-100\d{6,}", live[kind]), f"{kind}: {live[kind]!r}"
+    assert live[notify.TRADE] != live[notify.SIGNAL]
+    assert notify.HEALTH not in live
+
+
+def test_the_sender_posts_a_live_trade_to_the_live_room(monkeypatch, tmp_path):
+    """The resolver being right is worth nothing if the sender does not hand it the account kind."""
+    _creds(monkeypatch, telegram_token="t", **_SHARED)
+    _rooms(monkeypatch, tmp_path, trade="-100live_trades")
+    seen = {}
+
+    class _Req:
+        @staticmethod
+        def post(url, json=None, timeout=None):
+            seen["chat"] = json["chat_id"]
+            return _FakeResponse()
+
+    monkeypatch.setattr(notify, "_requests", _Req)
+    notify.send_telegram("filled long", notify.TRADE, account_kind="live")
+    assert seen["chat"] == "-100live_trades"
+    notify.send_telegram_id("filled long", notify.TRADE, account_kind="demo")
+    assert seen["chat"] == "-100trades"
 
 
 # ── the send path actually uses the routing ──────────────────────────────────────────────────

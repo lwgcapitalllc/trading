@@ -658,6 +658,19 @@ def test_findings_print_on_a_cp1252_console(tmp_path, monkeypatch, capsys):
     assert "REVIEW" in capsys.readouterr().out
 
 
+def test_a_REVIEW_names_the_bot_with_its_accounts_kind(tmp_path, monkeypatch, capsys):
+    """🔴 (2026-09-11) Two copies of one strategy share a name, and a REVIEW lands in the one
+    health room both account kinds share. MUTATION: take the bare `BOT_NAMES` entry again -> red."""
+    _write(tmp_path, _healthy() + [_event("halted", "2026-08-05T17:00:00+00:00", reason="x")])
+    monkeypatch.setattr(lr._bot_state, "BOT_INSTANCES", {"b": tmp_path})
+    monkeypatch.setattr(lr._bot_state, "BOT_NAMES", {"b": "SOS Fade"})
+    monkeypatch.setattr(lr._bot_state, "bot_label", lambda k: "SOS Fade · LIVE")
+    monkeypatch.setattr(lr._bot_state, "read_bot", lambda k: RUNNING)
+    monkeypatch.setattr(lr, "STATE_FILE", tmp_path / "state.json")
+    assert lr.main(["--dry-run"]) == 0
+    assert "REVIEW · SOS Fade · LIVE" in capsys.readouterr().out
+
+
 # ── a halt that RECOVERED reads as history, not as an open incident ───────────
 def test_a_recovered_halt_is_reported_in_the_past_tense(tmp_path):
     """🔴 Watched red against HEAD.

@@ -97,14 +97,16 @@ BOTS = {
     # The demo copies of the two live bots (2026-09-11). ⚠ `script` is a SUBSTRING match, so no
     # key may be a substring of another's commandline — `sos_fade_2` is not in
     # `--bot sos_fade_demo` and the reverse holds too; a future `sos_fade_20` would break it.
+    # ⚠ Same NAME as the original, on purpose: a name is the strategy, and what tells the two
+    # apart in a message is the account's kind, added by `bot_state.bot_label` when it is sent.
     "sos_fade_2": {
-        "name": "SOS Fade (demo)",
+        "name": "SOS Fade",
         "suppress_key": "sos_fade_2",
         "script": "sos_fade_2",
         "log": str(ALGOS_ROOT / "markets/fx/instances/sos_fade_2/sos_fade_2.log"),
     },
     "extreme_leg_2": {
-        "name": "Extreme Leg (demo)",
+        "name": "Extreme Leg",
         "suppress_key": "extreme_leg_2",
         "script": "extreme_leg_2",
         "log": str(ALGOS_ROOT / "markets/fx/instances/extreme_leg_2/extreme_leg_2.log"),
@@ -336,6 +338,10 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     """Check bot availability and heartbeat. Nothing here alerts on P&L — see the header."""
     cfg = BOTS[bot_key]
     bot_state = state.get(bot_key, {})
+    # What every alert below calls this bot: its name plus LIVE or demo, off the account its own
+    # config names. Two copies of one strategy share a name, and this is what tells them apart in
+    # the one health room both kinds share (2026-09-11).
+    name = _bot_state.labelled(cfg["name"], _bot_state.read_account(bot_key))
 
     running = is_running(cfg["script"])
     # 🔴 CANNOT ASK. Leave every stored fact exactly as it was and take no action: alerting would
@@ -372,15 +378,11 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 suppressed = True
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
-                send_alert(
-                    alert("🔴", "OFFLINE", cfg["name"], "The process is gone. Restarting it now.")
-                )
+                send_alert(alert("🔴", "OFFLINE", name, "The process is gone. Restarting it now."))
             _bot_state.set_status(bot_key, "offline")
         else:
             if not bot_state.get("stop_suppressed"):
-                send_alert(
-                    alert("🟢", "BACK ONLINE", cfg["name"], "It is running again. Nothing to do.")
-                )
+                send_alert(alert("🟢", "BACK ONLINE", name, "It is running again. Nothing to do."))
             bot_state["stop_suppressed"] = False
             bot_state["restart_tries"] = 0
             bot_state["max_retry_alerted"] = False
@@ -425,7 +427,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     alert(
                         "🟢",
                         "RESTARTED",
-                        cfg["name"],
+                        name,
                         "It was offline and has been restarted automatically.",
                         "Worth checking the log for why it stopped.",
                     )
@@ -442,7 +444,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 alert(
                     "🚨",
                     "WILL NOT START",
-                    cfg["name"],
+                    name,
                     f"{MAX_BOT_RESTARTS} restart attempts have failed. It is not trading and will "
                     f"not retry.",
                     "It will stay down until someone looks. Usually a version pin or the MT5 login "
@@ -475,7 +477,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 alert(
                     "⚠️",
                     "STALLED",
-                    cfg["name"],
+                    name,
                     f"The process is alive but has not stamped its heartbeat for "
                     f"{stale_secs / 60:.0f} minutes, so it is not working through bars.",
                     "Restart it from the command center, or check its log.",
@@ -489,7 +491,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 alert(
                     "🟢",
                     "RECOVERED",
-                    cfg["name"],
+                    name,
                     "The heartbeat resumed and it is working through bars again.",
                     "Nothing to do.",
                 )
@@ -509,7 +511,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 alert(
                     "⚠️",
                     "SYMBOL NOT FOUND",
-                    cfg["name"],
+                    name,
                     f"The broker does not list {sym}, so it was skipped this cycle.",
                     "Fix the watchlist in config.json.",
                 )

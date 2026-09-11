@@ -88,14 +88,31 @@ def _save_state(path: Path, state: dict) -> None:
         print(f"  ⚠ could not write {path}: {exc}", file=sys.stderr)
 
 
-def _summarise(rep: audit.Report, when: str) -> str:
-    """One Telegram message for one trade. Plain words — a person reads this on a phone."""
+def _label(bot: str) -> str:
+    """The bot as a person reads it: its name plus LIVE or demo (`bot_state.bot_label`). Never the
+    key in a message (2026-09-11): the key says nothing about the account — `sos_fade_demo` trades
+    the LIVE one — and this message is sent as Markdown, which ate its underscores ("sosfadedemo").
+    The key if the lookup cannot run; a message must never be lost over its label."""
+    try:
+        import bot_state
+
+        return bot_state.bot_label(bot)
+    except Exception:  # noqa: BLE001
+        return bot
+
+
+def _summarise(rep: audit.Report, when: str, label: str = "") -> str:
+    """One Telegram message for one trade. Plain words — a person reads this on a phone.
+
+    `label` names the bot (`_label`), because two copies of one strategy can each have re-entries
+    now and "Trade 123" alone does not say whose. Empty leaves the line as it always read."""
     fails = [f"❌ {rule} — {detail}" for _v, rule, detail in rep.rows if _v == audit.FAIL]
     unknown = [rule for _v, rule, _d in rep.rows if _v == audit.UNKNOWN]
     passed = len(rep.rows) - len(fails) - len(unknown)
 
     head = "🔴 RE-ENTRY — SOMETHING IS WRONG" if fails else "🟢 RE-ENTRY CHECKED"
-    lines = [f"*{head}*", f"Trade {rep.ticket}, {when}.", ""]
+    whose = f"{label} · trade" if label else "Trade"
+    lines = [f"*{head}*", f"{whose} {rep.ticket}, {when}.", ""]
     if fails:
         lines += fails + [""]
     lines.append(
@@ -156,7 +173,7 @@ def run(bot: str, dry_run: bool = False) -> int:
             continue
         events = [r for r in rows if r.get("ticket") == ticket and r.get("kind") != "trade"]
         rep = audit.audit_trade(op, closed, events, params)
-        _send(_summarise(rep, "now closed" if closed else "still open"), dry_run)
+        _send(_summarise(rep, "now closed" if closed else "still open", _label(bot)), dry_run)
         sent += 1
         if not dry_run:
             reported[str(ticket)] = half
@@ -197,7 +214,7 @@ def main(argv=None) -> int:
         try:
             _send(
                 "*⚠️ RE-ENTRY WATCH IS NOT RUNNING*\n"
-                f"The hourly check on {args.bot} failed: {detail}\n\n"
+                f"The hourly check on {_label(args.bot)} failed: {detail}\n\n"
                 "Nothing is watching for the first re-entry until this is fixed. "
                 "Silence from here does NOT mean nothing happened.",
                 args.dry_run,

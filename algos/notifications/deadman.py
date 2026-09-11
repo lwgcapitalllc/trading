@@ -83,8 +83,9 @@ BOTS = {
     # Benched too, and registered for the same reason.
     "extreme_leg_demo": "Extreme Leg",
     # The demo copies of the two live bots (2026-09-11), registered from birth for that reason.
-    "sos_fade_2": "SOS Fade (demo)",
-    "extreme_leg_2": "Extreme Leg (demo)",
+    # Same names as the originals: the account's kind tells them apart (`bot_state.bot_label`).
+    "sos_fade_2": "SOS Fade",
+    "extreme_leg_2": "Extreme Leg",
 }
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor
@@ -137,6 +138,19 @@ def _is_assigned(bot_key: str) -> bool:
         return bs.is_assigned(bot_key)
     except Exception:
         return True
+
+
+def _label(bot_key: str, name: str) -> str:
+    """`name` plus LIVE or demo, off the account this bot's own config names
+    (`bot_state.labelled`). Two copies of one strategy share a name since 2026-09-11, and a failure
+    report that says "SOS Fade: process is not running" would not say which one. The plain name if
+    the lookup cannot run — a report that cannot say which copy is still worth sending."""
+    try:
+        import bot_state as bs
+
+        return bs.labelled(name, bs.read_account(bot_key))
+    except Exception:
+        return name
 
 
 def _bot_state() -> dict:
@@ -199,6 +213,7 @@ def check_health(now: float | None = None) -> list[str]:
         # when the box dies indistinguishable from a configuration choice.
         if not _is_assigned(key):
             continue
+        name = _label(key, name)
         if key not in running:
             problems.append(f"{name}: process is not running")
             continue

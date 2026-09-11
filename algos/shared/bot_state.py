@@ -59,15 +59,25 @@ BOT_INSTANCES = {
     "extreme_leg_2": _INSTANCES / "extreme_leg_2",
 }
 
-# Display names — what Telegram calls the bot, so two copies of one strategy must differ here or
-# a demo fill and a live fill arrive under the same name.
+# Display names — the STRATEGY a bot runs, and nothing about where it runs. Two copies of one
+# strategy share a name on purpose (2026-09-11, Aaron: "it's a generic strategy, not a demo
+# specific strategy"): demo or live is a fact about the ACCOUNT, and a bot can be moved. The names
+# said "(demo)" for the day the copies existed, which would have read "SOS Fade (demo)" on real
+# money the moment one was moved. What tells two copies apart in a message is `labelled` below.
 BOT_NAMES = {
     "sos_fade_demo": "SOS Fade",
     "b_leg_demo": "B-LEG",
     "extreme_leg_demo": "Extreme Leg",
-    "sos_fade_2": "SOS Fade (demo)",
-    "extreme_leg_2": "Extreme Leg (demo)",
+    "sos_fade_2": "SOS Fade",
+    "extreme_leg_2": "Extreme Leg",
 }
+
+# The account registry — the one file that states what an account IS (`kind: live` or `demo`). The
+# command center writes it; nothing on this side read it until 2026-09-11.
+_ACCOUNTS = ALGOS_ROOT / "markets" / "fx" / "accounts.json"
+
+# How a message names the account kind. LIVE shouts on purpose: it is the one that is real money.
+_KIND_TAGS = {"live": "LIVE", "demo": "demo"}
 
 
 # 🔴 `BOT_ACCOUNTS` was DELETED 2026-08-09, and it was a second copy of a fact that can now
@@ -128,6 +138,54 @@ def is_assigned(bot_key: str) -> bool:
     if raw is None:
         return True  # could not ask — keep watching, and be noisy about it
     return raw.get("account") is not None
+
+
+def account_kind(account):
+    """`"live"` or `"demo"` for this login, off its row in the account registry. **`None` when the
+    registry does not say** — no account (benched), a login nobody registered, an unreadable file,
+    or a kind that is neither.
+
+    ⚠ The REGISTRY answers, never the server name or the bot's key: `sos_fade_demo` trades the live
+    account, and a server string is one broker's spelling. It is the same row the command center's
+    demo/live label and its go-live refusal read, so a message and the Bots page cannot disagree.
+
+    ⚠ `None` is never guessed into a kind. A message about an account nobody can classify keeps
+    the plain name and the shared room — which is what every message did before this existed.
+
+    Read per call (the file is five rows) so a corrected row reaches a running bot. NEVER raises:
+    its callers are building a notification, and that may not be able to stop a trading loop.
+    """
+    if account is None:
+        return None
+    try:
+        rows = json.loads(_ACCOUNTS.read_text(encoding="utf-8")).get("accounts") or []
+    except (OSError, ValueError, AttributeError):
+        return None
+    for row in rows:
+        try:
+            if int(row.get("account")) != int(account):
+                continue
+        except (TypeError, ValueError, AttributeError):
+            continue
+        kind = row.get("kind")
+        return kind if kind in _KIND_TAGS else None
+    return None
+
+
+def labelled(name: str, account) -> str:
+    """A bot's name as a PERSON reads it where nothing else says which account: `SOS Fade · LIVE`,
+    `SOS Fade · demo`. The plain name when the kind cannot be read — never a guessed tag.
+
+    This is what tells two copies of one strategy apart now that they share a name, and it cannot
+    go stale: it is worked out from the account at the moment the message is written."""
+    tag = _KIND_TAGS.get(account_kind(account))
+    return f"{name} · {tag}" if tag else name
+
+
+def bot_label(bot_key: str) -> str:
+    """`labelled` for a registered bot, off its own name and the account its config names. For the
+    watchers, which know a bot by its key; the live runner has both facts already."""
+    return labelled(BOT_NAMES.get(bot_key, bot_key), read_account(bot_key))
 
 
 # ⚠ `BOT_THRESHOLDS` and `shared/thresholds.json` were deleted 2026-08-05 with the P&L
@@ -225,13 +283,18 @@ def write_bot(bot_key: str, updates: dict):
 
 
 def set_started(bot_key: str):
-    """Mark bot as started — called by coordinator."""
+    """Mark bot as started — called by coordinator.
+
+    ⚠ The NAME is re-stamped here too (2026-09-11). It was written once, when the entry was first
+    created, so a renamed bot's state file kept its old name for ever — the demo copies' entries
+    on the box went on saying "(demo)" after the names became the strategy's alone."""
     write_bot(
         bot_key,
         {
             "status": "running",
             "started": time.time(),
             "account": read_account(bot_key),
+            "name": BOT_NAMES.get(bot_key, bot_key),
         },
     )
 

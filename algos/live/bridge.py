@@ -41,7 +41,7 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 # `notify` lives in algos/shared. The runner puts it on sys.path before importing this module,
 # but a test that imports the bridge alone must not have to know that — an import path is not a
@@ -538,6 +538,7 @@ class OrderBridge:
         # number the strategy sizes against - see `_account_balance`.
         sizing_basis_adjustment: float = 0.0,
         instance_dir: Optional[Path] = None,
+        name_for_messages: Optional[Callable[[], str]] = None,
     ) -> None:
         self._mt5 = bot_mt5
         # Where `position.json` lives. `None` disables the whole restore path — the bridge then
@@ -565,6 +566,13 @@ class OrderBridge:
         self._risk_cap_pct = None if account_risk_cap_pct is None else float(account_risk_cap_pct)
         self._sizing_basis_adjustment = float(sizing_basis_adjustment or 0.0)
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
+        # 🔴 **What a MESSAGE calls this bot, kept apart from the order-comment label above
+        # (2026-09-11).** Every alert here named the bot by its KEY, so the live SOS Fade's fills
+        # and halts read "sos_fade_demo" — a key that says demo, on real money. The runner passes
+        # its name plus LIVE or demo, worked out per message from the account; the key stays on
+        # the MT5 order comments and on the restart record, which are identifiers, not prose.
+        # ⚠ A caller that passes nothing gets the key, exactly as before.
+        self._message_name_fn = name_for_messages
 
         self.state = BridgeState.LIVE
         self._rest: dict[tuple, Optional[_Rest]] = {s: None for s in SLOTS}
@@ -615,6 +623,19 @@ class OrderBridge:
         # exit then goes out standalone rather than not at all.
         self._pos_alert_id = None
         self.halt_reason: str = ""
+
+    def _message_name(self) -> str:
+        """What a message calls this bot (see `name_for_messages` above). NEVER raises and never
+        returns empty: it is evaluated INSIDE the calls that report a fill and a halt, and a name
+        that could not be worked out must cost the LIVE/demo tag — never the message, and never
+        the position record written just after it."""
+        fn = self._message_name_fn
+        if fn is None:
+            return self._strategy_name
+        try:
+            return str(fn() or "") or self._strategy_name
+        except Exception:
+            return self._strategy_name
 
     @property
     def is_flat(self) -> bool:
@@ -910,7 +931,7 @@ class OrderBridge:
                 alert(
                     "🔄",
                     "TRADE RESUMED",
-                    self._strategy_name,
+                    self._message_name(),
                     joined(
                         [
                             f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
@@ -1227,7 +1248,7 @@ class OrderBridge:
         )
         self._notify(
             alerts.format_exit(
-                strategy=self._strategy_name,
+                strategy=self._message_name(),
                 symbol=self._mt5.symbol,
                 exit_price=price,
                 pnl_usd=pnl,
@@ -1380,7 +1401,7 @@ class OrderBridge:
                 alert(
                     "⛔",
                     "CLOSE FAILED",
-                    self._mt5.bot_label,
+                    self._message_name(),
                     "It was asked to close the open trade and the broker refused.",
                     "The position is STILL OPEN and the bot will halt. Close it by hand.",
                 ),
@@ -1778,7 +1799,7 @@ class OrderBridge:
         )
         self._pos_alert_id = self._notify(
             alerts.format_entry(
-                strategy=self._strategy_name,
+                strategy=self._message_name(),
                 symbol=self._mt5.symbol,
                 direction=side,
                 entry=p.price_open,
@@ -1876,7 +1897,7 @@ class OrderBridge:
                 alert(
                     "⚠️",
                     "ORPHAN ORDERS",
-                    self._mt5.bot_label,
+                    self._message_name(),
                     f"{len(orphans)} resting order(s) were at the broker under this bot's magic "
                     f"with no record of being placed. They have been cancelled.",
                     "Nothing was opened. The usual cause is a broker request whose reply never "
@@ -1931,7 +1952,7 @@ class OrderBridge:
                 alert(
                     "⚠️",
                     "ORDER GONE",
-                    self._mt5.bot_label,
+                    self._message_name(),
                     why,
                     "The strategy still expects it. Check the account's free margin.",
                 ),
@@ -2296,7 +2317,7 @@ class OrderBridge:
                 alert(
                     "⚠️",
                     "NO ACCOUNT RISK LEFT",
-                    self._mt5.bot_label,
+                    self._message_name(),
                     f"This bot cannot open a trade: {why}.",
                     "Setups will be refused until room comes back — which happens as another "
                     "bot's stop moves up or its trade closes. Nothing is wrong with this bot.",
@@ -2309,7 +2330,7 @@ class OrderBridge:
                 alert(
                     "✅",
                     "ACCOUNT RISK AVAILABLE",
-                    self._mt5.bot_label,
+                    self._message_name(),
                     f"${room:,.2f} of account risk budget is free again.",
                     "This bot can take setups again. Nothing to do.",
                 ),
@@ -2553,7 +2574,7 @@ class OrderBridge:
             alert(
                 "⚠️",
                 "ORDER REFUSED",
-                self._mt5.bot_label,
+                self._message_name(),
                 f"A {slot_label(slot)} setup was ready and no order was placed.\n{plan.detail}",
                 "No position was opened. The strategy will keep re-offering it while the setup "
                 "lives, and this will not alert again for the same reason.",
@@ -2731,7 +2752,7 @@ class OrderBridge:
             alert(
                 "⚠️",
                 "PARTIAL NOT BANKED",
-                self._mt5.bot_label,
+                self._message_name(),
                 body,
                 "The position keeps its broker stop and the strategy keeps managing it. This "
                 "will not alert again for the same reason.",
@@ -2824,7 +2845,7 @@ class OrderBridge:
                 alert(
                     "⛔",
                     "SCALE-IN CLOSE FAILED",
-                    self._mt5.bot_label,
+                    self._message_name(),
                     f"It was asked to close scale-in lot T{ticket} and the broker refused.",
                     "That lot is STILL OPEN and the bot will halt. Close it by hand.",
                 ),
@@ -3456,7 +3477,7 @@ class OrderBridge:
             alert(
                 "⛔",
                 "HALTED",
-                self._mt5.bot_label,
+                self._message_name(),
                 reason,
                 "Anything open keeps its broker stop. Check the account, then restart it.",
             ),

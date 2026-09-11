@@ -76,14 +76,14 @@ def _assert_scoped(cmd: str, bot_key: str) -> None:
 
 
 def test_stop_bot_kills_only_this_bots_python_process(stubborn_ssh):
-    bots.stop_bot("SOS Fade")
+    bots.stop_bot("sos_fade_demo")
     kills = _kills(stubborn_ssh)
     assert len(kills) == 1
     _assert_scoped(kills[0], "sos_fade_demo")
 
 
 def test_restart_bot_kills_only_this_bots_python_process(stubborn_ssh):
-    bots.restart_bot("SOS Fade")
+    bots.restart_bot("sos_fade_demo")
     kills = _kills(stubborn_ssh)
     assert len(kills) == 1
     _assert_scoped(kills[0], "sos_fade_demo")
@@ -117,14 +117,14 @@ def test_stop_all_kills_only_registered_bots_python_processes(stubborn_ssh):
 def test_a_bot_that_shuts_itself_down_is_never_killed(ssh):
     """The whole point. A clean stop must leave no terminate command behind at all — otherwise
     the bot is killed a moment after it exited and the record is ambiguous again."""
-    bots.stop_bot("SOS Fade")
+    bots.stop_bot("sos_fade_demo")
     assert _kills(ssh) == []
 
 
 def test_the_stop_request_is_written_before_anything_waits(ssh):
     """Order matters as much as it does for the suppress marker: waiting first would just be a
     30-second pause in front of a kill."""
-    bots.stop_bot("SOS Fade")
+    bots.stop_bot("sos_fade_demo")
     writes = [i for i, c in enumerate(ssh) if "stop.request" in c and "del " not in c]
     assert writes, "no stop request was written"
     probes = [i for i, c in enumerate(ssh) if "get processid" in c]
@@ -135,14 +135,14 @@ def test_the_request_file_is_removed_on_the_clean_path(ssh):
     """⚠ A stop file that outlives its stop would halt the NEXT start seconds after boot, and a
     bot that will not stay up is a far worse failure than the noisy chip this replaces. The bot
     clears it at startup too; this is the belt to that brace."""
-    bots.stop_bot("SOS Fade")
+    bots.stop_bot("sos_fade_demo")
     assert any("del " in c and "stop.request" in c for c in ssh)
 
 
 def test_the_request_file_is_removed_after_an_escalation_too(stubborn_ssh):
     """The path where the bot never noticed. Leaving the file here is the likelier of the two —
     the bot that ignored it is also the bot that will not clear it."""
-    bots.stop_bot("SOS Fade")
+    bots.stop_bot("sos_fade_demo")
     assert any("del " in c and "stop.request" in c for c in stubborn_ssh)
 
 
@@ -153,7 +153,7 @@ def test_the_suppress_write_happens_before_the_kill(stubborn_ssh):
     there would be no kill to order against. The suppression still has to precede it on the one
     path that still terminates something.
     """
-    bots.stop_bot("SOS Fade")
+    bots.stop_bot("sos_fade_demo")
     suppress = next(i for i, c in enumerate(stubborn_ssh) if "stop_suppress.json" in c)
     kill = next(i for i, c in enumerate(stubborn_ssh) if "call terminate" in c)
     assert suppress < kill

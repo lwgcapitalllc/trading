@@ -60,10 +60,16 @@ def wired(monkeypatch, tmp_path):
     `algos/` tree, so without this every test driving `main()` writes one shared path — which
     both litters the repo and makes tests order-dependent under `-n auto`, the worst failure
     shape a suite has.
+
+    ⚠ **`_label` is stubbed to the plain name, for `_is_assigned`'s reason.** It reads the bot's
+    real config and the real account registry, so the LIVE/demo tag on every problem line would
+    move with whichever account a bot happens to be on today. What it adds is tested on its own
+    below, against a private registry.
     """
     monkeypatch.setattr(dm, "_running_keys", lambda: {"sos_fade_demo"})
     monkeypatch.setattr(dm, "_bot_state", _healthy_state)
     monkeypatch.setattr(dm, "_is_assigned", lambda key: key == "sos_fade_demo")
+    monkeypatch.setattr(dm, "_label", lambda key, name: name)
     monkeypatch.setattr(dm, "PENDING_FILE", tmp_path / "deadman_pending.json")
     return monkeypatch
 
@@ -95,6 +101,51 @@ def test_a_bot_WITH_an_account_that_is_not_running_is_still_a_failure(wired):
     wired.setattr(dm, "_running_keys", lambda: set())
     problems = dm.check_health()
     assert any("not running" in p for p in problems)
+
+
+# ── two copies of one strategy share a name, so a report says WHICH (2026-09-11) ──────────────
+
+
+@pytest.fixture
+def two_copies(monkeypatch, tmp_path):
+    """Two bots on the same strategy name — one on a live account, one on a demo — against a
+    PRIVATE registry, so nothing here moves when a real bot does."""
+    import bot_state
+
+    reg = tmp_path / "accounts.json"
+    reg.write_text(
+        json.dumps({"accounts": [{"account": 1, "kind": "live"}, {"account": 2, "kind": "demo"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bot_state, "_ACCOUNTS", reg)
+    monkeypatch.setattr(bot_state, "read_account", lambda key: {"orig": 1, "copy": 2}.get(key))
+    monkeypatch.setattr(dm, "BOTS", {"orig": "SOS Fade", "copy": "SOS Fade"})
+    monkeypatch.setattr(dm, "_is_assigned", lambda key: True)
+    monkeypatch.setattr(dm, "_bot_state", lambda: {})
+    return monkeypatch
+
+
+def test_a_failure_report_says_which_COPY_by_its_accounts_kind(two_copies):
+    """MUTATION: make `_label` return the bare name -> red.
+
+    The dead-man's report is the one message that arrives when the box itself is in trouble, and
+    "SOS Fade: process is not running" would not say whether real money is unattended."""
+    two_copies.setattr(dm, "_running_keys", lambda: set())
+    problems = dm.check_health()
+    assert "SOS Fade · LIVE: process is not running" in problems
+    assert "SOS Fade · demo: process is not running" in problems
+
+
+def test_the_label_can_never_stop_the_report(two_copies):
+    """A lookup that blows up costs the tag, never the report — this switch's value is that it
+    speaks when something is wrong."""
+    import bot_state
+
+    def boom(*a, **k):
+        raise RuntimeError("registry exploded")
+
+    two_copies.setattr(bot_state, "labelled", boom)
+    assert dm._label("orig", "SOS Fade") == "SOS Fade"
 
 
 def test_a_bot_whose_config_CANNOT_BE_READ_is_still_watched(monkeypatch):

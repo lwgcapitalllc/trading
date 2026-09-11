@@ -314,6 +314,36 @@ class LiveRunner:
         log.propagate = False  # the root logger is not this package's to write through
         return log
 
+    @property
+    def _label(self) -> str:
+        """This bot's name as a MESSAGE says it: its strategy's name plus LIVE or demo, worked out
+        from the account it trades each time it is asked (`bot_state.labelled`), so it cannot go
+        stale when the bot is moved. The plain name when the registry cannot say — never a guess.
+
+        ⚠ Two copies of one strategy share a display name on purpose since 2026-09-11 (a name is
+        the strategy, and demo or live belongs to the account); this is what tells them apart in
+        Telegram. The log file keeps the plain name — it holds one bot.
+
+        ⚠ NEVER raises. It is evaluated inside alerts built on failure paths, and a name that
+        could not be worked out must cost the tag, not the alert."""
+        try:
+            import bot_state
+
+            return bot_state.labelled(self.cfg.display_name, self.cfg.account)
+        except Exception:
+            return self.cfg.display_name
+
+    def _account_kind(self):
+        """`"live"`, `"demo"` or `None` for the account this bot trades, off the account registry.
+        It is what sends this bot's trades and signals to the LIVE rooms (`notify.chat_for`).
+        NEVER raises: `None` keeps the shared rooms, which is where every message went before."""
+        try:
+            import bot_state
+
+            return bot_state.account_kind(self.cfg.account)
+        except Exception:
+            return None
+
     def _notify(self, text: str, kind: str, reply_to=None):
         """Every message this bot sends goes to ITS OWN configured destination — the routing is
         per instance, not global, so two bots on two accounts never share one feed unless their
@@ -323,6 +353,10 @@ class LiveRunner:
         bot's three rooms it lands in. Almost everything this class sends is HEALTH; the two
         TRADE messages are the entry and the exit, both sent by the bridge; SIGNAL is the
         pre-trade setup channel (`setup_alerts.py`).
+
+        The account's kind rides along on every send (2026-09-11): on a LIVE account the trades
+        and signals go to the live rooms (`algos/shared/telegram_rooms.json`), and health stays in
+        the one shared room. Worked out per message from the account, never set on the bot.
 
         ⚠ **An unknown kind falls back to the HEALTH room rather than raising**, because this
         method is on the path of the alert reporting a problem. `notify.chat_for` still refuses
@@ -342,6 +376,7 @@ class LiveRunner:
                 chat_id=per_bot.get(kind, self.cfg.telegram_health_chat),
                 token_key=self.cfg.telegram_token_key,
                 reply_to=reply_to,
+                account_kind=self._account_kind(),
                 # 🔴 Everything this bot sends is built by `alerts.py`, which is plain text BY
                 # DESIGN ("Plain text, no Markdown, ever" — a name, a symbol or a traceback is
                 # full of underscores). Asking Telegram to parse it can only corrupt it, and it
@@ -747,7 +782,7 @@ class LiveRunner:
                 alert(
                     "⚠️",
                     "RE-ENTRY FEED GAP",
-                    self.cfg.display_name,
+                    self._label,
                     f"Missed {gap} {self.fast_feed.timeframe} bars on the re-entry's fill clock, "
                     f"so it re-warmed that feed. The 15-minute stream and any open trade are "
                     f"unaffected.",
@@ -1011,7 +1046,7 @@ class LiveRunner:
                 alert(
                     "🔌",
                     "NO MT5 LINK",
-                    self.cfg.display_name,
+                    self._label,
                     "Lost its connection to the terminal — still running, but seeing no market at all.",
                     f"Retrying every {_LINK_RETRY_SECONDS}s. If it does not come back, check "
                     f"MetaTrader on the VPS.",
@@ -1049,7 +1084,7 @@ class LiveRunner:
             alert(
                 "🟢" if not halted else "⛔",
                 "RECONNECTED" if not halted else "RECONNECTED — STILL HALTED",
-                self.cfg.display_name,
+                self._label,
                 f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
                 f"missed.",
                 (
@@ -1131,7 +1166,7 @@ class LiveRunner:
                 log=self.log,
                 categories=cats,
                 digits=getattr(self.cfg, "digits", 2),
-                display=self.cfg.display_name,
+                display=self._label,
                 # The size the BROKER is holding, read off the placed order. Passing the
                 # bridge's own method rather than a number is what makes the alert layer
                 # broker-free: it never learns what a lot is, it is handed one. A bot with no
@@ -1477,7 +1512,7 @@ class LiveRunner:
                 alert(
                     "⛔",
                     "WILL NOT START",
-                    self.cfg.display_name,
+                    self._label,
                     "The code on disk is not the version this bot was promoted to run, so it "
                     "refused to start.",
                     "It is down and will stay down. Promote it again, or restore the snapshot.",
@@ -1556,6 +1591,8 @@ class LiveRunner:
                 # The cap must measure against the SAME number the strategy sizes against.
                 sizing_basis_adjustment=getattr(self.cfg, "sizing_basis_adjustment", 0.0),
                 instance_dir=self.cfg.instance_dir,
+                # The fills and halts say "SOS Fade · LIVE", not the bot key — see `_label`.
+                name_for_messages=lambda: self._label,
             )
             # SAY which state the account-level cap is in, every start. An absent guard is
             # silent by construction, and "no cap" and "a cap that is not working" look
@@ -1582,7 +1619,7 @@ class LiveRunner:
                 alert(
                     "⛔",
                     "WILL NOT START",
-                    self.cfg.display_name,
+                    self._label,
                     f"Startup failed: {e}",
                     "It is down and will stay down until someone looks at it.",
                 )
@@ -1595,7 +1632,7 @@ class LiveRunner:
             alert(
                 "🟢",
                 "ONLINE",
-                self.cfg.display_name,
+                self._label,
                 joined(
                     [
                         "Trading live" if not self.dry_run else "Dry run — it will place no orders",
@@ -1752,7 +1789,7 @@ class LiveRunner:
                                     alert(
                                         "⚠️",
                                         "DROPPED A BAR",
-                                        self.cfg.display_name,
+                                        self._label,
                                         f"Failed to process the {row.name} bar, so it is re-warming "
                                         f"the engines on the history it missed.",
                                         f"Reason: {e}",
@@ -1763,7 +1800,7 @@ class LiveRunner:
                                     alert(
                                         "⛔",
                                         "STOPPING",
-                                        self.cfg.display_name,
+                                        self._label,
                                         "Ten bars in a row failed to process and re-warming is not "
                                         "fixing it, so it is shutting itself down.",
                                         f"Last error: {e}",
@@ -1798,7 +1835,7 @@ class LiveRunner:
                         alert(
                             "⛔",
                             "STOPPING",
-                            self.cfg.display_name,
+                            self._label,
                             "Ten passes of its main loop failed in a row, so it is shutting itself "
                             "down rather than running blind.",
                             f"Last error: {e}",
@@ -1819,7 +1856,7 @@ class LiveRunner:
             alert(
                 "⏹",
                 "STOPPED",
-                self.cfg.display_name,
+                self._label,
                 "Shut down cleanly. It will not come back on its own.",
             ),
             thread=True,
@@ -1943,7 +1980,7 @@ class LiveRunner:
             alert(
                 "🛑" if took else "ℹ️",
                 "CLOSE REQUESTED" if took else "NOTHING TO CLOSE",
-                self.cfg.display_name,
+                self._label,
                 reason,
                 (
                     "It closes on the next bar and the bot keeps looking for setups."
@@ -1991,7 +2028,7 @@ class LiveRunner:
             alert(
                 "⛔",
                 "FLEET HALT",
-                self.cfg.display_name,
+                self._label,
                 reading.reason,
                 "It keeps running and keeps its open positions and their stops. Clear the flag and "
                 "restart the bots to resume — clearing it alone will not.",
@@ -2056,7 +2093,7 @@ class LiveRunner:
             alert(
                 "⛔",
                 "ACCOUNT MISMATCH",
-                self.cfg.display_name,
+                self._label,
                 f"Terminal is on #{seen}; this bot trades #{self.cfg.account}.",
                 "It placed nothing and kept its open positions and their stops. Log the terminal "
                 "back, or move the bot properly in its instance config, then restart it.",
@@ -2290,7 +2327,7 @@ class LiveRunner:
                 alert(
                     "⚠️",
                     "SETTINGS NOT APPLIED",
-                    self.cfg.display_name,
+                    self._label,
                     "Its config changed on disk but the new values were refused, so it is still "
                     "trading the ones it started with.",
                     f"Refused: {detail}",
@@ -2339,7 +2376,7 @@ class LiveRunner:
             alert(
                 "⚙️" if not halted else "⛔",
                 "SETTINGS APPLIED" if not halted else "SETTINGS LOADED — STILL HALTED",
-                self.cfg.display_name,
+                self._label,
                 detail,
                 (
                     "Applied straight away — the bot was flat. Nothing to do."

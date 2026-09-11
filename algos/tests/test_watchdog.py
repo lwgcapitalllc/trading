@@ -156,6 +156,20 @@ def test_an_old_heartbeat_raises_the_stall_alert(watch):
     assert out["stale_alerted"]
 
 
+def test_a_watchdog_alert_says_WHICH_copy_by_its_accounts_kind(watch, monkeypatch, tmp_path):
+    """🔴 (2026-09-11) Two copies of one strategy share a name, and every watchdog alert lands in
+    the one health room both account kinds share — so "STALLED · SOS Fade" would not say whether
+    real money is unattended. MUTATION: alert on `cfg["name"]` again -> red."""
+    import json
+
+    reg = tmp_path / "accounts.json"
+    reg.write_text(json.dumps({"accounts": [{"account": 1, "kind": "live"}]}), encoding="utf-8")
+    monkeypatch.setattr(monitor._bot_state, "_ACCOUNTS", reg)
+    monkeypatch.setattr(monitor._bot_state, "read_account", lambda key: 1)
+    watch.run({"heartbeat": time.time() - 20 * 60})
+    assert watch.sent[0].splitlines()[0] == "⚠️ STALLED · SOS Fade · LIVE"
+
+
 def test_the_stall_alert_is_sent_once_not_every_minute(watch):
     """The task runs every 60s. Re-alerting on each pass would train Aaron to mute it, and a
     muted channel is the same as no watchdog."""

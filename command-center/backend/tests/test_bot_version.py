@@ -102,7 +102,7 @@ def test_the_card_carries_a_REAL_comparison_against_this_repo(vps):
     drops the whole "you are N behind" banner in silence — and until 2026-09-10 no test read the
     comparison off the endpoint, so nothing would have said so.
     MUTATION: rename `versions_behind` in compare's result and this reddens (killed 2026-09-10)."""
-    c = bots.get_bot_version("SOS Fade").compare
+    c = bots.get_bot_version("sos_fade_demo").compare
     assert c is not None, "the comparison raised and was swallowed"
     assert c.comparable is True, c.reason
     assert c.deployed_version is not None and c.local_version is not None
@@ -111,7 +111,7 @@ def test_the_card_carries_a_REAL_comparison_against_this_repo(vps):
 
 
 def test_it_reports_the_deployed_version_not_the_config_file(vps):
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.frozen is True
     assert v.hash == DEPLOYED["strategy_source_hash"]
     assert v.commit == "677e7ce"
@@ -124,7 +124,7 @@ def test_the_params_are_the_ones_that_version_was_deployed_with(vps):
     the runtime panel writes `exec_risk_pct` to it on a running bot — so it cannot answer
     "what settings is this version running" afterwards."""
     vps["config_params"]["exec_risk_pct"] = 2.0
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.params["exec_risk_pct"] == 10.0  # as deployed
     assert v.params_drift == ["exec_risk_pct"]  # and the difference is named
 
@@ -133,7 +133,7 @@ def test_an_unpromoted_bot_is_reported_as_not_frozen(vps):
     """The dangerous state, and it must be loud: the bot is importing from the repo, so a
     pull changes what it trades and can stop it starting."""
     vps["deployed"] = {}
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.frozen is False
     assert v.hash == ""
 
@@ -143,7 +143,7 @@ def test_a_repo_that_has_moved_past_the_deployment_is_visible(vps):
     being able to see it."""
     vps["head"] = "b390214"
     vps["ahead"] = "12"
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.repo_commit == "b390214"
     assert v.commits_ahead == 12
 
@@ -152,14 +152,14 @@ def test_a_snapshot_edited_in_place_is_flagged(vps):
     """Editing the deployed files directly goes around promote, so the record no longer
     describes them. `--show` re-hashes the disk, which is what catches it."""
     vps["show"] = "  on disk  : 11111111 SNAPSHOT MODIFIED"
-    assert bots.get_bot_version("SOS Fade").snapshot_ok is False
+    assert bots.get_bot_version("sos_fade_demo").snapshot_ok is False
 
 
 def test_a_promote_not_yet_restarted_into_is_visible(vps):
     """The most misleading state available: the new code is on disk, the OLD code is still
     trading, and every file on the box says the new version. Only the live process knows."""
     vps["running_hash"] = "aaaabbbbcccc"
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.running_hash == "aaaabbbbcccc"
     assert not v.hash.startswith(v.running_hash)  # what the UI warns on
 
@@ -175,14 +175,14 @@ def test_a_setting_added_since_the_promote_is_drift(vps):
     """The old form defaulted a missing deployed key to the current value, so it compared
     equal: a knob the deployment has never heard of reported no drift at all."""
     vps["config_params"]["exec_tp1_pct"] = 30.0
-    assert bots.get_bot_version("SOS Fade").params_drift == ["exec_tp1_pct"]
+    assert bots.get_bot_version("sos_fade_demo").params_drift == ["exec_tp1_pct"]
 
 
 def test_a_setting_removed_since_the_promote_is_drift(vps):
     """Only `current` was iterated, so a param deleted from config.json was never looked at.
     The bot still runs the deployed value; the file no longer says what it is."""
     del vps["config_params"]["exec_sl_level"]
-    assert bots.get_bot_version("SOS Fade").params_drift == ["exec_sl_level"]
+    assert bots.get_bot_version("sos_fade_demo").params_drift == ["exec_sl_level"]
 
 
 def test_a_null_value_is_not_mistaken_for_an_absent_one(vps):
@@ -191,11 +191,11 @@ def test_a_null_value_is_not_mistaken_for_an_absent_one(vps):
     vps["deployed"]["strategy_params"] = dict(vps["deployed"]["strategy_params"])
     vps["deployed"]["strategy_params"]["exec_min_stop_val"] = None
     vps["config_params"]["exec_min_stop_val"] = None
-    assert bots.get_bot_version("SOS Fade").params_drift == []
+    assert bots.get_bot_version("sos_fade_demo").params_drift == []
 
 
 def test_an_unchanged_bot_reports_no_drift(vps):
-    assert bots.get_bot_version("SOS Fade").params_drift == []
+    assert bots.get_bot_version("sos_fade_demo").params_drift == []
 
 
 # ── Where the running hash comes from ─────────────────────────────────────────
@@ -209,7 +209,7 @@ def test_the_running_hash_costs_no_extra_round_trip(vps):
 
     The fixture makes `_fetch_vps_snapshot` raise, so this is enforced rather than counted.
     """
-    bots.get_bot_version("SOS Fade")
+    bots.get_bot_version("sos_fade_demo")
     assert len(vps["cmds"]) == 2, f"expected deployed.json + one combined read, got {vps['cmds']}"
     assert "bot_state.json" in vps["cmds"][1]
 
@@ -228,14 +228,14 @@ def test_a_bot_with_no_registered_state_file_reports_an_empty_hash_not_a_crash(v
     """Blank is the honest answer when there is nothing to read — and the UI treats a blank
     running hash as "not asked", which is why it must never be filled in with a guess."""
     monkeypatch.setattr(bots, "_bot_state_path", lambda _k: None)
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.running_hash == ""
 
 
 def test_a_matching_running_hash_is_not_a_warning(vps):
     """The process reports a 12-char prefix of the full hash. Comparing them as equals would
     warn on every healthy bot, and a warning that is always on is not a warning."""
-    v = bots.get_bot_version("SOS Fade")
+    v = bots.get_bot_version("sos_fade_demo")
     assert v.hash.startswith(v.running_hash)
 
 
@@ -248,4 +248,4 @@ def test_an_unreadable_record_does_not_crash_the_page(vps, monkeypatch):
             "{not json" if "deployed.json" in cmd else "abc1234\n===AHEAD===\n0\n===SHOW===\n"
         ),
     )
-    assert bots.get_bot_version("SOS Fade").frozen is False
+    assert bots.get_bot_version("sos_fade_demo").frozen is False

@@ -817,7 +817,9 @@ def main(argv=None) -> int:
     total_new = 0
 
     for bot_key, instance_dir in _bot_state.BOT_INSTANCES.items():
-        name = _bot_state.BOT_NAMES.get(bot_key, bot_key)
+        # Its name plus LIVE or demo (`bot_state.bot_label`): two copies of one strategy share a
+        # name since 2026-09-11, and a REVIEW finding in the shared health room must say which.
+        name = _bot_state.bot_label(bot_key)
         try:
             bs = _bot_state.read_bot(bot_key)
         except Exception as e:

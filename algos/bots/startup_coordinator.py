@@ -95,9 +95,10 @@ STARTUP_SEQUENCE = [
     ),
     # The demo copies of the two live bots (2026-09-11). Listed from birth for the reason above,
     # and born BENCHED so the box can deploy their snapshot before anything expects them to run.
+    # Same names as the originals, on purpose — the account's kind tells them apart.
     (
         "sos_fade_2",
-        "SOS Fade (demo)",
+        "SOS Fade",
         str(ALGOS / "live" / "runner.py"),
         ["--bot", "sos_fade_2", "--live"],
         str(ALGOS / "markets/fx/instances/sos_fade_2/sos_fade_2.log"),
@@ -106,7 +107,7 @@ STARTUP_SEQUENCE = [
     ),
     (
         "extreme_leg_2",
-        "Extreme Leg (demo)",
+        "Extreme Leg",
         str(ALGOS / "live" / "runner.py"),
         ["--bot", "extreme_leg_2", "--live"],
         str(ALGOS / "markets/fx/instances/extreme_leg_2/extreme_leg_2.log"),

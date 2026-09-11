@@ -779,6 +779,12 @@ describing a test step that lived only in an uncommitted working file, so **`mai
 undid, and this file already names that one. **Stage by PATH when two sessions share a clone**, and
 before committing, read `git status` for files you did not touch.
 
+🔴 **Never move `main` (reset, rebase, checkout) to catch up after a push without reading
+`git reflog main` first** — the other session may have committed on top of you since you last looked.
+On 2026-09-11 a `reset --keep` after a rebuilt push dropped three fresh commits from the other
+session and rolled its files back; restored two minutes later. Message the other session before
+moving the branch.
+
 ⚠ **The direction of the damage is the part to remember: a doc that arrives EARLY reads exactly
 like a doc that is right.** The next person greps for the step, finds the paragraph, runs the
 script, and sees seven — and the honest conclusion available to them is that the script is broken.

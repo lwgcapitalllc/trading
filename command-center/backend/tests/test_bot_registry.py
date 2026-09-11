@@ -102,13 +102,44 @@ def test_the_sys_job_names_do_not_collide_with_a_bot():
     assert not ({b.task for b in bots._BOTS} & set(bots._SYS_DISPLAY_NAMES))
 
 
-def test_bot_keys_and_display_names_are_unique():
-    """`_resolve_bot` matches on display name, and `_kill_bot` matches on key. A duplicate
-    of either makes one bot's controls act on another."""
+def test_bot_keys_are_unique():
+    """`_kill_bot` and every route match on the key. A duplicate makes one bot's controls act on
+    another. (Display names are NOT unique since 2026-09-11 — see the two tests below.)"""
     keys = [b.key for b in bots._BOTS]
-    names = [b.display.lower() for b in bots._BOTS]
     assert len(set(keys)) == len(keys)
-    assert len(set(names)) == len(names)
+
+
+def test_a_name_two_bots_SHARE_is_refused_never_resolved_to_the_first(monkeypatch):
+    """🔴 Two copies of one strategy share a display name on purpose (a name is the strategy; demo
+    or live belongs to the account). The old first-match sent a by-name Stop to whichever bot
+    registered first — the LIVE one. MUTATION: drop the `len(named) > 1` refusal -> red."""
+    live = bots.BotReg(task="A", key="a_live", display="Same", account_type="live")
+    demo = bots.BotReg(task="B", key="a_demo", display="Same", account_type="demo")
+    monkeypatch.setattr(bots, "_BOTS", [live, demo])
+    monkeypatch.setattr(bots, "_BY_KEY", {x.key: x for x in (live, demo)})
+    with pytest.raises(Exception) as e:
+        bots._resolve_bot("same")
+    assert getattr(e.value, "status_code", None) == 409
+    assert "a_live" in e.value.detail and "a_demo" in e.value.detail
+    # ...and each key still reaches exactly its own bot.
+    assert bots._resolve_bot("a_live") == ("A", "a_live")
+    assert bots._resolve_bot("a_demo") == ("B", "a_demo")
+
+
+def test_the_REAL_registry_has_copies_sharing_a_name_and_each_key_resolves():
+    """The case above is not hypothetical: the demo copies carry their originals' names. Every
+    shared name must refuse, and every key must still reach its own bot."""
+    from collections import Counter
+
+    counts = Counter(b.display.lower() for b in bots._BOTS)
+    shared = [n for n, c in counts.items() if c > 1]
+    assert shared, "no two bots share a name - this test's premise has gone"
+    for name in shared:
+        with pytest.raises(Exception) as e:
+            bots._resolve_bot(name)
+        assert getattr(e.value, "status_code", None) == 409
+    for b in bots._BOTS:
+        assert bots._resolve_bot(b.key) == (b.task, b.key)
 
 
 # ── The two behaviours the missing entries broke ──────────────────────────────
@@ -136,14 +167,16 @@ def test_the_snapshot_reports_each_bots_own_account_type(monkeypatch):
     """
     monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
     snap = bots.get_snapshot()
-    by_name = {b.name: b for b in snap.bots}
+    # By KEY, never by name: two copies of one strategy share a name since 2026-09-11, and a
+    # name-keyed map would collapse them and compare the live copy against the demo one's answer.
+    by_key = {b.key: b for b in snap.bots}
     kinds = {
         a.account: a.kind for a in bots.bot_account_registry.load_accounts(bots._registry_path())
     }
     for reg in bots._BOTS:
         account = (bots._read_instance_config(reg.key) or {}).get("account")
         expected = kinds.get(account, reg.account_type) if account else reg.account_type
-        assert by_name[reg.display].account_type == expected, reg.key
+        assert by_key[reg.key].account_type == expected, reg.key
 
 
 # ── Which name identifies a bot ───────────────────────────────────────────────
@@ -156,10 +189,15 @@ def test_a_bot_resolves_by_its_key(monkeypatch):
         assert bots._resolve_bot(b.key) == (b.task, b.key)
 
 
-def test_a_bot_still_resolves_by_its_display_name(monkeypatch):
-    """Kept working on purpose — the frontend renders off `BotStatus.name` and there is no
-    version of this worth a flag day."""
-    for b in bots._BOTS:
+def test_a_bot_still_resolves_by_a_display_name_ONLY_it_carries(monkeypatch):
+    """Kept working on purpose for a name one bot owns — the frontend passes keys, but scripts and
+    older callers may not. A name two bots share is the refusal pinned above."""
+    from collections import Counter
+
+    counts = Counter(b.display.lower() for b in bots._BOTS)
+    own = [b for b in bots._BOTS if counts[b.display.lower()] == 1]
+    assert own, "every name is shared - nothing left to resolve by name"
+    for b in own:
         assert bots._resolve_bot(b.display) == (b.task, b.key)
         assert bots._resolve_bot(b.display.lower()) == (b.task, b.key)
 

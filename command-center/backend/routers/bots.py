@@ -240,16 +240,20 @@ _BOTS: list[BotReg] = [
     # The DEMO copies of the two live bots (2026-09-11): same strategy, own process, own account,
     # own deploy — so a new version can be trialled on demo while live keeps the proven one.
     # Keyed by a number, not a place: the two keys above say `demo` and trade the LIVE account.
+    # ⚠ The SAME display name as the original, on purpose (Aaron: "it's a generic strategy"): demo
+    # or live belongs to the account, which the page groups by, and a name saying "(demo)" would
+    # have gone on saying it on real money the day the bot moved. Where a name appears WITHOUT its
+    # account — a Telegram message — the kind is added when it is written.
     BotReg(
         task="BOT_SOS_FADE_2",
         key="sos_fade_2",
-        display="SOS Fade (demo)",
+        display="SOS Fade",
         account_type="demo",
     ),
     BotReg(
         task="BOT_EXTREME_LEG_2",
         key="extreme_leg_2",
-        display="Extreme Leg (demo)",
+        display="Extreme Leg",
         account_type="demo",
     ),
 ]
@@ -1489,6 +1493,33 @@ def _registered_kinds() -> dict[int, str]:
         return {}
 
 
+_KIND_TAGS = {"live": "LIVE", "demo": "demo"}
+
+
+def _bot_label(bot_key: str) -> str:
+    """A bot's name as a Telegram message from this app says it: `SOS Fade · LIVE`.
+
+    🔴 **Two copies of one strategy share a display name since 2026-09-11** (a name is the
+    strategy; demo or live belongs to the account), so a message naming only "SOS Fade" would not
+    say whether real money moved. The tag comes from the account the bot's config names, looked up
+    in the account registry — the SAME rule the bots' own messages follow on the box
+    (`algos/shared/bot_state.labelled`), so a message from here and one from the bot agree.
+
+    ⚠ **A benched bot, an unregistered account or an unreadable config keeps the plain name** —
+    never the hardcoded `account_type`, which is a guess about an account the bot may not be on.
+    NEVER raises: every caller is announcing something that already happened.
+    """
+    name = _KEY_DISPLAY.get(bot_key, bot_key)
+    try:
+        account = (_read_instance_config(bot_key) or {}).get("account")
+        if account is None or isinstance(account, bool):
+            return name
+        tag = _KIND_TAGS.get(_registered_kinds().get(int(account)))
+    except Exception:  # noqa: BLE001 — a missing tag must never cost the message
+        return name
+    return f"{name} · {tag}" if tag else name
+
+
 def _account_type_of(bot_key: str, *, reported_account=None, kinds=None) -> str:
     """Whether this bot is on a demo or a live account — DERIVED, never a stored label.
 
@@ -2350,7 +2381,10 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         alert(
             "⚙️",
             "BOT MOVED",
-            bot_key,
+            # Its name plus the kind of the account it is on NOW (the config was written above),
+            # never the key: a key has underscores Telegram's Markdown eats, and says nothing
+            # about whether the move put it on real money.
+            _bot_label(bot_key),
             f"Now on {where}."
             + (
                 ""
@@ -2717,10 +2751,25 @@ def _resolve_bot(ref: str) -> tuple[str, str]:
     ⚠ Key before name, never the other way round. If a future bot's display name happened to
     equal another bot's key, name-first would silently route one bot's Stop to the other —
     and `test_bot_registry.py` cannot rule that out, because the two namespaces are free.
+
+    🔴 **A name two bots SHARE is refused (409), never resolved to the first (2026-09-11).** Two
+    copies of one strategy carry the same display name on purpose — a name is the strategy, and
+    demo or live belongs to the account — so "SOS Fade" is the live bot AND its demo copy. The old
+    first-match would have sent every by-name Stop, Restart or deploy to whichever registered
+    first, which is the LIVE one. The refusal names the keys, which always resolve.
     """
     reg = _BY_KEY.get(ref)
     if reg is None:
-        reg = next((b for b in _BOTS if b.display.lower() == ref.lower()), None)
+        named = [b for b in _BOTS if b.display.lower() == ref.lower()]
+        if len(named) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{len(named)} bots are called '{ref}' — "
+                    f"{', '.join(b.key for b in named)}. Name the bot by its key."
+                ),
+            )
+        reg = named[0] if named else None
     if reg is None:
         raise HTTPException(status_code=404, detail=f"Bot '{ref}' not found")
     return reg.task, reg.key
@@ -3395,7 +3444,10 @@ def apply_go_live(body: GoLiveRequest):
         alert(
             "🔴",
             "GONE LIVE",
-            moved,
+            # The bots' NAMES — the keys (still in the commit message, where they identify files)
+            # say `demo` on bots that just went live, and Telegram's Markdown eats their
+            # underscores. The body already says LIVE, so no per-name tag.
+            ", ".join(_KEY_DISPLAY.get(k, k) for k in sorted(staged)),
             f"Moved from demo {plan.from_account} to LIVE {plan.to_account} "
             f"({registered.broker or 'broker unrecorded'}{cap_note}).",
             "Not trading yet — every bot is stopped and has to be started.",
@@ -3706,7 +3758,7 @@ def _finish_promote(
             alert(
                 "📦",
                 "PROMOTED",
-                _KEY_DISPLAY.get(bot_key, bot_key),
+                _bot_label(bot_key),
                 joined([moved, "deployed"]) or "The new code is deployed.",
                 "Restarting it now." if req.restart else "Restart it to pick the new version up.",
             )
@@ -4121,7 +4173,7 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
 
-    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    display = _bot_label(bot_key)
     # Plain text, no Markdown: bot keys and param names are full of underscores, and
     # Telegram drops the WHOLE message on an unbalanced entity rather than escaping it.
     _notify_telegram(
@@ -4148,7 +4200,7 @@ def start_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    display = _bot_label(bot_key)
     _notify_telegram(alert("▶️", "STARTING", display, "Requested from the command center."))
     return {"status": "ok", "output": out}
 
@@ -4170,7 +4222,7 @@ def stop_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    display = _bot_label(bot_key)
     _notify_telegram(
         alert(
             "⏹",
@@ -4195,6 +4247,6 @@ def restart_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    display = _KEY_DISPLAY.get(bot_key, bot_key)
+    display = _bot_label(bot_key)
     _notify_telegram(alert("🔄", "RESTARTING", display, "Requested from the command center."))
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

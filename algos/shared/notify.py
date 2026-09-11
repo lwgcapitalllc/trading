@@ -3,7 +3,8 @@ notify.py — Telegram notification helper for VPS-side components.
 
 Single source of truth for sending Telegram messages from bots, the live runner, monitor,
 and any other VPS process. Every message declares its KIND (`TRADE`, `HEALTH` or `SIGNAL`) and
-the kind picks the room — see the routing block below.
+the kind picks the room — see the routing block below. A message about a LIVE account can carry
+`account_kind="live"`, which sends its trades and signals to the live rooms instead.
 
 Credentials come from `credentials.py` (env var, else the git-ignored `algos/credentials.json`)
 — never from a literal in this file. The previous token was committed here and in five other
@@ -14,8 +15,10 @@ Usage:
     send_telegram("🟢 *Bot online*", HEALTH)
 """
 
+import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 try:
     import requests as _requests
@@ -62,13 +65,50 @@ CHAT_KEYS = {
 _warned = False
 _warned_keys: set = set()
 _warned_kinds: set = set()
+_warned_live: set = set()
+
+# ── A LIVE account's trades and signals get rooms of their own (2026-09-11) ──────────────────
+#
+# Aaron's call, the day two bots went onto real money while their demo copies kept trading the
+# same strategy: the fills and setups that are real money are read — and notified — apart from
+# the demo ones. The room is chosen by the ACCOUNT the message is about (its row in
+# `markets/fx/accounts.json` says `kind: live`), never by a setting on the bot: a bot moved onto a
+# live account reports there with no edit, which is the same reason no bot's NAME says demo or
+# live any more (`bot_state.labelled`).
+#
+# ⚠ HEALTH has no live room, by decision: most of it is about the one box both kinds share, and
+# every message names its account kind in its subject. A health room added to the file later is
+# honoured with no code change.
+#
+# ⚠ Committed, not in `credentials.json`: a chat id is not a secret (nothing can post without the
+# token, which stays in the credentials file), and a committed room reaches the box with a pull
+# and survives a rebuild — the per-bot rooms in the instance configs are committed the same way.
+LIVE = "live"
+_ROOMS_PATH = Path(__file__).resolve().parent / "telegram_rooms.json"
 
 
-def chat_for(kind: str, override: str = ""):
+def live_room(kind: str) -> str:
+    """The room a message of this `kind` goes to when its account is LIVE, or `""` when the file
+    names none. Read per call so an edit reaches a running bot; NEVER raises — a notifier that
+    can stop a trading loop is worse than a message in the shared room."""
+    try:
+        rooms = json.loads(_ROOMS_PATH.read_text(encoding="utf-8"))
+        return str((rooms.get(LIVE) or {}).get(kind) or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def chat_for(kind: str, override: str = "", account_kind: Optional[str] = None):
     """`(chat_id, is_dedicated)` for a message of this `kind`.
 
     `override` is the bot's own instance-config value and wins outright — that is what lets two
-    bots on two accounts report into two different rooms.
+    bots on two accounts report into two different rooms. ⚠ It is a per-BOT choice, so it stays
+    with the bot when the bot moves; the live rooms below follow the account.
+
+    `account_kind` is `"live"`, `"demo"` or `None` for the account the message is about. Only
+    `"live"` changes anything: it picks the live room for this kind when one is set. A live TRADE
+    or SIGNAL with no live room falls through to the shared room and SAYS so once — the wrong room
+    beats silence, the same call as the health fallback below.
 
     HEALTH and SIGNAL fall back to the TRADE chat when their own key is unset, and SAY SO once.
     That is the opposite call from `deadman_url`, where unset means the check cannot work at
@@ -85,6 +125,16 @@ def chat_for(kind: str, override: str = ""):
         )
     if override:
         return override, True
+    if account_kind == LIVE:
+        live = live_room(kind)
+        if live:
+            return live, True
+        if kind != HEALTH and kind not in _warned_live:
+            _warned_live.add(kind)
+            print(
+                f"notify: {_ROOMS_PATH.name} names no live room for {kind} messages - live "
+                f"{kind} messages are going to the shared room."
+            )
     dest = _cred(CHAT_KEYS[kind])
     if dest:
         return dest, True
@@ -101,11 +151,20 @@ def chat_for(kind: str, override: str = ""):
 
 
 def send_telegram(
-    text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None, markdown=True
+    text: str,
+    kind: str,
+    chat_id: str = "",
+    token_key: str = "",
+    reply_to=None,
+    markdown=True,
+    *,
+    account_kind: Optional[str] = None,
 ) -> bool:
     """Send `text` to the chat this `kind` routes to. Returns True on success.
 
-    `kind` is `TRADE` or `HEALTH` and is required — see the routing block above.
+    `kind` is `TRADE`, `HEALTH` or `SIGNAL` and is required — see the routing block above.
+    `account_kind` is the kind of account the message is about (`"live"` / `"demo"` / `None`) and
+    only ever moves a message to a live room — see `chat_for`.
 
     Use `send_telegram_id` instead when the message id is needed — this wrapper exists so the
     many callers that only care whether it went keep reading cleanly.
@@ -127,11 +186,23 @@ def send_telegram(
     starts before the file is written picks it up on the next message instead of staying mute
     for its whole session.
     """
-    return send_telegram_id(text, kind, chat_id, token_key, reply_to, markdown) is not None
+    return (
+        send_telegram_id(
+            text, kind, chat_id, token_key, reply_to, markdown, account_kind=account_kind
+        )
+        is not None
+    )
 
 
 def send_telegram_id(
-    text: str, kind: str, chat_id: str = "", token_key: str = "", reply_to=None, markdown=True
+    text: str,
+    kind: str,
+    chat_id: str = "",
+    token_key: str = "",
+    reply_to=None,
+    markdown=True,
+    *,
+    account_kind: Optional[str] = None,
 ):
     """Same send, but returns Telegram's `message_id` (or None on failure).
 
@@ -156,7 +227,7 @@ def send_telegram_id(
                 f"Telegram bot. Add it to algos/credentials.json, or clear telegram_token_key "
                 f"in this bot's instance config."
             )
-    dest, _dedicated = chat_for(kind, chat_id)
+    dest, _dedicated = chat_for(kind, chat_id, account_kind)
     if not token or not dest:
         if not _warned:
             _warned = True

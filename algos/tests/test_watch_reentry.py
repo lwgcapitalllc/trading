@@ -131,6 +131,17 @@ def test_an_open_re_entry_is_reported_immediately(box):
     assert "still open" in box.sent[0]
 
 
+def test_the_message_names_the_bot_with_its_accounts_kind_never_its_key(box, monkeypatch):
+    """🔴 (2026-09-11) Two copies of one strategy can each have re-entries now, and "Trade 123"
+    alone does not say whose. The key was no answer either — `sos_fade_demo` trades the LIVE
+    account, and this message is Markdown, which ate the key's underscores. MUTATION: stop passing
+    `_label(bot)` to `_summarise` -> red."""
+    monkeypatch.setattr(watch, "_label", lambda bot: "SOS Fade · LIVE")
+    _write(box, _opened())
+    watch.run("bot")
+    assert "SOS Fade · LIVE · trade" in box.sent[0]
+
+
 def test_the_SAME_open_trade_is_not_reported_again(box):
     """Re-sending every hour for the life of a trade is how a channel gets muted before the day
     it matters.

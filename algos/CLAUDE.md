@@ -823,7 +823,7 @@ all live. `test_bt_switch.py` stays too — it is the VPS debug script `conftest
 | `order_sizing.py` | `shared/` | **The one place a broker lot count is produced.** Pure, no MT5, no I/O: takes the strategy's intent + a `SymbolSpec` and returns a `SizedOrder` or a `SizingRefusal`. Instrument-agnostic — lots come from `(stop_distance / tick_size) x tick_value`, so gold, a JPY pair and an index are one arithmetic. **It refuses rather than rounding up, clamping down, or shrinking to fit.** Built after the 2026-08-07 oversizing incident; read its module docstring before touching sizing anywhere |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
 | `credentials.py` | `shared/` | **The one place secrets are resolved.** Env var → git-ignored `algos/credentials.json` → empty. Never holds a literal. Copy `algos/credentials.template.json` to set a machine up. **Any key resolves, not just the canonical three** — a per-bot secret needs a new entry in that file and nothing else; the env name is always `LWG_<KEY IN CAPS>` (`env_name()`). |
-| `notify.py` | `shared/` | Telegram sender. `send_telegram(text, kind, chat_id="", token_key="")` — **`kind` is `TRADE` or `HEALTH` and is REQUIRED**; it picks the room (see `### Two rooms` below). `chat_id`/`token_key` are optional and empty = the shared destination for that kind and the shared bot, so routing is PER BOT without a second sender. Reads `credentials.py`, never a hardcoded token, and NEVER raises — an unconfigured or unreachable notifier drops the message and prints once, because a notification channel must not be able to stop a trading loop. The four `notifications/` scripts now import their credentials from the same resolver instead of carrying inline copies (the 2026-07-06 refactor note, done 2026-07-30). |
+| `notify.py` | `shared/` | Telegram sender. `send_telegram(text, kind, chat_id="", token_key="")` — **`kind` is `TRADE` or `HEALTH` and is REQUIRED**; it picks the room (see `### Two rooms` below). `chat_id`/`token_key` are optional and empty = the shared destination for that kind and the shared bot, so routing is PER BOT without a second sender. `account_kind="live"` sends a trade or signal to the live rooms (`### The live rooms`). Reads `credentials.py`, never a hardcoded token, and NEVER raises — an unconfigured or unreachable notifier drops the message and prints once, because a notification channel must not be able to stop a trading loop. The four `notifications/` scripts now import their credentials from the same resolver instead of carrying inline copies (the 2026-07-06 refactor note, done 2026-07-30). |
 | `structure_engine.py` | `shared/` | Market structure shim over `market_structure.StructureEngine` (canonical BOS/CHoCH/swing detection, ported from `indicators/engines/structure_engine.pine`) — bot-facing `update(candle: dict)` interface |
 | `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
 | `startup_coordinator.py` | `bots/` | Orchestrates bot startup sequence — **the only launcher**, see below |
@@ -1823,6 +1823,26 @@ tests also assert they MATCHED something — a sweep that finds nothing passes f
 and warns once; TRADE never borrows the health chat. Health in the wrong room is a nuisance you can
 see, a fill buried in re-warm chatter is the thing being prevented.
 
+### The live rooms — a LIVE account's trades and signals go to their own channels (2026-09-11)
+
+Aaron's call, the day two bots went onto real money while their demo copies kept trading the same
+strategy. `shared/telegram_rooms.json` names a live TRADE and a live SIGNAL channel (the bot posts as
+an admin with only *Post Messages*); `notify.chat_for(kind, override, account_kind)` sends a live
+TRADE/SIGNAL there, and the runner passes its account's `kind` off `markets/fx/accounts.json` on
+every send. The existing shared rooms are the demo rooms.
+
+- 🔴 **The room follows the ACCOUNT, never the bot** — a bot moved onto a live account reports
+  there with no edit, the same reason no name says demo or live. ⚠ A per-bot room in an instance
+  config still wins outright and stays WITH the bot on a move; nothing sets one today.
+- ⚠ **HEALTH has no live room, by decision**: most of it is about the one box both kinds share,
+  and every subject says LIVE or demo. A health room added to the file is honoured with no code.
+- ⚠ **Committed, not in `credentials.json`**: a chat id is not a secret (the token stays in the
+  credentials file), so it reaches the box with a pull and survives a rebuild. Read per message.
+- ⚠ A live TRADE/SIGNAL with no live room falls back to the shared room and SAYS so once; an
+  account the registry cannot classify keeps the shared rooms and the plain name.
+- Proof: `tests/test_notification_routing.py`, `test_account_label.py`, `test_live_rooms_runner.py`
+  (the runner through the REAL router), plus the watchers' own tests; 20 bugs planted, 20 caught.
+
 ⚠ **The HALT is HEALTH, and it is the call worth defending** — it is the most consequential message
 here, which is precisely why it must not sit in a room only checked when a fill arrives. It is also
 why `log_review.py` raises it AGAIN as a standing chip on the Bots page: one Telegram line, in any
@@ -2307,8 +2327,16 @@ the other.** Settings were copied from the live bots on 2026-09-11 (the snapshot
 
 - ⚠ **Keyed by a number, not a place.** `sos_fade_demo` trades the LIVE account; a key naming its
   account goes stale the day the bot moves.
-- ⚠ **The display name must differ between copies** — it is the only thing Telegram shows, so two
-  "SOS Fade"s would deliver a demo fill and a live fill under one name.
+- 🔴 **The display name is the STRATEGY, and two copies SHARE it (2026-09-11, Aaron: *"it's a
+  generic strategy, not a demo specific strategy"*).** They were "SOS Fade (demo)" for their first
+  day, which would have gone on saying demo on real money the day one moved. What tells copies
+  apart is the ACCOUNT, worked out per message: `bot_state.labelled` writes `SOS Fade · LIVE` /
+  `· demo` off the registry's `kind` (plain name when it cannot say — never a guess), and a live
+  account's trades and signals get their own channels (*The live rooms*, below). ⚠ The bridge
+  named the bot by its KEY until then, so the live fills read `sos_fade_demo`; the key stays on MT5
+  order comments and the restart record, which are identifiers. ⚠ The Command Center refuses a
+  name two bots share (409) — pass the key. ⚠ Two copies on two accounts of the SAME kind would
+  read alike; none exist, and the account number is the fix when one does.
 - ⚠ **Magic = the original's + 10** (770125, 770127). Sharing would pass the per-account guard,
   but the originals traded the demo account under 770115/770117 until 2026-09-11 and a copy must
   not read those deals back as its own.

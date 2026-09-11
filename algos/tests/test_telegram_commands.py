@@ -162,6 +162,28 @@ def test_status_lists_a_bot_that_is_running(bot, monkeypatch):
     assert "$2,000.00" in out
 
 
+def test_status_names_each_bot_with_its_ACCOUNTS_KIND_not_its_stored_name(bot, monkeypatch):
+    """🔴 (2026-09-11) The stored `name` is written once, when the state entry is created, so the
+    demo copies' entries on the box still said "(demo)" after the rename — and two copies of one
+    strategy share a name now, so only the account's kind tells them apart in this list.
+    MUTATION: print `st["name"]` again -> red."""
+    import bot_state
+
+    states = {
+        "live_copy": {"name": "SOS Fade (demo)", "balance": 451.97, "mt5_link": True},
+        "demo_copy": {"name": "SOS Fade (demo)", "balance": 15844.46, "mt5_link": True},
+    }
+    monkeypatch.setattr(bot_state, "read_all", lambda: states)
+    monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "1h")
+    monkeypatch.setattr(
+        bot_state, "bot_label", lambda k: {"live_copy": "SOS Fade · LIVE"}.get(k, "SOS Fade · demo")
+    )
+    monkeypatch.setattr(bot, "is_running", lambda s: True)
+    out = bot.cmd_status()
+    assert "SOS Fade · LIVE" in out and "SOS Fade · demo" in out
+    assert "(demo)" not in out
+
+
 def test_status_separates_alive_from_blind(bot, monkeypatch):
     """A bot can be running and seeing no market at all — that is exactly what happened on
     2026-08-04, when MetaTrader restarted underneath it and every check in the system still said

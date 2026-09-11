@@ -2388,9 +2388,18 @@ omission costs live in `algos/CLAUDE.md`** → *A bot lives in FIVE registries*;
 here. Adding a `BotReg` without the four algos-side entries fails that test by name.
 
 ⚠ **One strategy can now be TWO bots (2026-09-11)** — `sos_fade_2` and `extreme_leg_2` are the
-demo copies of the two live bots, each its own `BotReg`, process and deploy. Their `display` must
-differ from the original's, because the name is all a Telegram message shows. Born benched; the
+demo copies of the two live bots, each its own `BotReg`, process and deploy. Born benched; the
 order (register → promote → assign) and why lives in `algos/CLAUDE.md` → *One strategy, two bots*.
+
+🔴 **The copies carry the SAME display name as the originals (same day, Aaron: *"it's a generic
+strategy"*)** — a name is the strategy, demo or live belongs to the account, and "(demo)" would have
+gone on saying demo on real money the day a copy moved. So: the page groups by account;
+`_bot_label` adds LIVE or demo to every Telegram message this app sends (off the config's account
+in the registry — a benched or unregistered bot keeps the plain name, never the hardcoded
+`account_type`); and **`_resolve_bot` refuses a name two bots share (409)** — its first-match would
+have sent a by-name Stop to whichever registered first, the LIVE bot. Callers pass the key. ⚠ GONE
+LIVE names the bots, not their keys (the keys say `demo`). Tests: `test_bot_label.py`,
+`test_bot_registry.py`; `test_bot_promote.py` now names its bot by key.
 
 ## The "needs review" flag — the one thing this page could not see
 

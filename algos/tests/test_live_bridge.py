@@ -613,6 +613,7 @@ def _bridge(
     kinds=None,
     account_risk_cap_pct=None,
     instance_dir=None,
+    name_for_messages=None,
 ):
     mt5ops = mt5ops or _FakeMt5Ops()
     ledger = ledger or _FakeLedger()
@@ -640,6 +641,7 @@ def _bridge(
         dry_run=dry_run,
         account_risk_cap_pct=account_risk_cap_pct,
         instance_dir=instance_dir,
+        name_for_messages=name_for_messages,
     )
     b.state = live_bridge.BridgeState.LIVE
     return b, mt5ops, ledger, notes
@@ -1023,6 +1025,67 @@ def test_opening_a_position_reports_the_brokers_real_fill():
     assert opened["price"] == 3289.7  # what the broker gave
     assert opened["intended_price"] == 3290.0  # where the strategy rested its limit
     assert notes and "ENTRY" in notes[0]
+
+
+# ── what a MESSAGE calls the bot, kept apart from the order-comment key (2026-09-11) ─────────
+#
+# 🔴 Every bridge message named the bot by its KEY, so the live SOS Fade's entries and halts read
+# "sos_fade_demo" — a key that says demo, on real money. The runner now hands the bridge its name
+# plus LIVE or demo; the key stays on the MT5 order comments and the restart record.
+
+
+def _filled_entry(name_for_messages):
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    b, ops, ledger, notes = _bridge(ex, name_for_messages=name_for_messages)
+    b.sync(_Dec(), _Sig())  # places the limit
+    ops.positions = [_Pos(901, 0, 3289.7, 0.42, 3280.0)]  # ...and it fills
+    ex._pos_dir, ex._pend_long = 1, None
+    b.sync(_Dec(stop=3280.0), _Sig())
+    return b, [n for n in notes if "ENTRY" in n][0]
+
+
+def test_the_ENTRY_alert_names_the_bot_as_the_RUNNER_says_it_never_by_its_key():
+    """MUTATION: hand `format_entry` the order-comment key again -> red."""
+    _b, entry = _filled_entry(lambda: "SOS Fade · LIVE")
+    assert entry.splitlines()[-1] == "SOS Fade · LIVE"
+    assert "BOT_TEST" not in entry
+
+
+def test_a_HALT_names_the_bot_as_the_runner_says_it():
+    """The most consequential message the bridge sends, in the one health room both kinds share —
+    so it is the one that most needs to say LIVE. MUTATION: name the halt by the key -> red."""
+    b, _ops, _ledger, notes = _bridge(_FakeExecution(), name_for_messages=lambda: "SOS Fade · LIVE")
+    b.halt("the fleet was stopped")
+    assert notes[-1].splitlines()[0] == "⛔ HALTED · SOS Fade · LIVE"
+
+
+def test_with_no_name_given_the_bridge_says_what_it_always_said():
+    """Every caller that predates the seam — and every other test in this file — keeps the key."""
+    b, _ops, _ledger, notes = _bridge(_FakeExecution())
+    b.halt("the fleet was stopped")
+    assert notes[-1].splitlines()[0] == "⛔ HALTED · BOT_TEST"
+
+
+def test_a_name_that_cannot_be_worked_out_costs_the_TAG_never_the_alert():
+    """Evaluated INSIDE the fill and halt reports: a lookup that raises must not lose the message,
+    or the position record written straight after the entry alert. MUTATION: drop the try in
+    `_message_name` -> red."""
+
+    def boom():
+        raise RuntimeError("registry unreadable")
+
+    b, _ops, _ledger, notes = _bridge(_FakeExecution(), name_for_messages=boom)
+    b.halt("the fleet was stopped")
+    assert notes[-1].splitlines()[0] == "⛔ HALTED · BOT_TEST"
+    b2, entry = _filled_entry(boom)
+    assert entry.splitlines()[-1] == "BOT_TEST"
+
+
+def test_the_order_comment_and_restart_record_keep_the_KEY():
+    """The key is an IDENTIFIER — MT5 order comments and the restart record are matched on it —
+    so the message name must never leak into it."""
+    b, _entry = _filled_entry(lambda: "SOS Fade · LIVE")
+    assert b._strategy_name == "BOT_TEST"
 
 
 # ── the trade record has to say WHICH LEG, and what the trade really risked ───

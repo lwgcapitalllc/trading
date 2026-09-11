@@ -1,0 +1,9 @@
+{
+  "_README": "Where a message about a LIVE account goes (its row in algos/markets/fx/accounts.json says kind: live). Aaron's call, 2026-09-11, the day two bots went onto real money while their demo copies kept trading the same strategy: real-money fills and setups get channels of their own, read and notified apart from the demo ones. Keyed by the message's KIND - trade and signal. HEALTH is deliberately absent: one health room serves both kinds, because most health is about the one box they share and every message names LIVE or demo in its subject. Anything not named here - every demo account, and health from every account - keeps the shared rooms in algos/credentials.json. These are Telegram CHANNELS, so the bot posts as an admin with only 'Post Messages'. A chat id is not a secret (nothing can post without the bot token, which stays in credentials.json), so this file is committed - it reaches the box with a pull and survives a rebuild. Read per message by algos/shared/notify.py, so an edit here reaches a running bot without a restart.",
+  "live": {
+    "_trade": "LWG Capital live trades channel - the entry alert and the exit that replies to it, from any bot on a live account.",
+    "trade": "-1004410831757",
+    "_signal": "LWG Capital live signals channel - the pre-trade setup alerts from any bot on a live account.",
+    "signal": "-1003332727688"
+  }
+}

@@ -212,6 +212,25 @@ def test_a_terminal_that_CANNOT_BE_READ_still_raises_the_alarm(monkeypatch):
     assert "terminal not running" in sent[0], "the alarm must name the cause, not just ring"
 
 
+def test_the_messages_name_the_bot_with_its_accounts_kind_never_its_key(monkeypatch):
+    """🔴 (2026-09-11) The key says nothing about the account — `sos_fade_demo` trades the LIVE one
+    — and these messages are Markdown, which ate its underscores ("sosfadedemo"). MUTATION: put
+    the key back in either message -> red."""
+    monkeypatch.setattr(watch, "_label", lambda bot: "SOS Fade · LIVE")
+    v = watch.assess(READING, None, LAB)
+    assert "SOS Fade · LIVE" in watch.summarise(v, "sos_fade_demo", "puprime_ecn")
+    assert "sos_fade_demo" not in watch.summarise(v, "sos_fade_demo", "puprime_ecn")
+
+    sent = []
+    monkeypatch.setattr(watch, "_send", lambda text, dry: sent.append(text))
+    monkeypatch.setattr(watch, "_health", lambda bot, **f: None)
+    monkeypatch.setattr(
+        watch, "read_live", lambda cfg: (_ for _ in ()).throw(RuntimeError("the terminal lied"))
+    )
+    watch.main(["--bot", "sos_fade_demo"])
+    assert "SOS Fade · LIVE" in sent[0] and "sos_fade_demo" not in sent[0]
+
+
 def test_an_ordinary_exception_still_raises_the_alarm(monkeypatch):
     """The control for the case above — widening to SystemExit must not have dropped the plain
     path. Both failures leave the watch not watching, so both have to speak."""

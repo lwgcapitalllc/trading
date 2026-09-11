@@ -211,7 +211,7 @@ def summarise(verdict: dict, bot: str, profile_key: str) -> str:
         ]
         why = "Changed since the last reading — " + "; ".join(parts) + "."
 
-    lines = [f"*{head}*", f"{bot}, {r['symbol']}, per lot per night.", "", why, ""]
+    lines = [f"*{head}*", f"{_label(bot)}, {r['symbol']}, per lot per night.", "", why, ""]
     lines.append(f"Broker now: long {r['long']:+.2f}, short {r['short']:+.2f}")
 
     gaps = []
@@ -251,6 +251,19 @@ def _save_state(path: Path, state: dict) -> None:
     except OSError as exc:
         # Not fatal — the message has gone. Losing this costs one repeat, the harmless direction.
         print(f"  warning: could not write {path}: {exc}", file=sys.stderr)
+
+
+def _label(bot: str) -> str:
+    """The bot as a person reads it: its name plus LIVE or demo (`bot_state.bot_label`). Never the
+    key in a message (2026-09-11): the key says nothing about the account — `sos_fade_demo` trades
+    the LIVE one — and this message is sent as Markdown, which ate its underscores ("sosfadedemo").
+    The key if the lookup cannot run; a message must never be lost over its label."""
+    try:
+        import bot_state
+
+        return bot_state.bot_label(bot)
+    except Exception:  # noqa: BLE001
+        return bot
 
 
 def _send(text: str, dry_run: bool) -> None:
@@ -368,7 +381,7 @@ def main(argv=None) -> int:
         try:
             _send(
                 "*⚠️ OVERNIGHT COST WATCH IS NOT RUNNING*\n"
-                f"The check on {args.bot} failed: {detail}\n\n"
+                f"The check on {_label(args.bot)} failed: {detail}\n\n"
                 "Until this is fixed, a change in the broker's overnight cost will pass "
                 "unnoticed — silence from this watch no longer means the rate held.",
                 args.dry_run,
