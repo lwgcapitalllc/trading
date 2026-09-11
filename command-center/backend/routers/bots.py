@@ -236,6 +236,21 @@ _BOTS: list[BotReg] = [
         display="Extreme Leg",
         account_type="demo",
     ),
+    # The DEMO copies of the two live bots (2026-09-11): same strategy, own process, own account,
+    # own deploy — so a new version can be trialled on demo while live keeps the proven one.
+    # Keyed by a number, not a place: the two keys above say `demo` and trade the LIVE account.
+    BotReg(
+        task="BOT_SOS_FADE_2",
+        key="sos_fade_2",
+        display="SOS Fade (demo)",
+        account_type="demo",
+    ),
+    BotReg(
+        task="BOT_EXTREME_LEG_2",
+        key="extreme_leg_2",
+        display="Extreme Leg (demo)",
+        account_type="demo",
+    ),
 ]
 
 # ── Derived views. Never edit one of these — add a BotReg above. ──────────────

@@ -82,6 +82,9 @@ BOTS = {
     "b_leg_demo": "B-LEG",
     # Benched too, and registered for the same reason.
     "extreme_leg_demo": "Extreme Leg",
+    # The demo copies of the two live bots (2026-09-11), registered from birth for that reason.
+    "sos_fade_2": "SOS Fade (demo)",
+    "extreme_leg_2": "Extreme Leg (demo)",
 }
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor

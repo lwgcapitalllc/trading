@@ -2289,6 +2289,11 @@ and wiring two trees together to compare a list of strings is not worth it. **Th
 omission costs live in `algos/CLAUDE.md`** → *A bot lives in FIVE registries*; do not restate them
 here. Adding a `BotReg` without the four algos-side entries fails that test by name.
 
+⚠ **One strategy can now be TWO bots (2026-09-11)** — `sos_fade_2` and `extreme_leg_2` are the
+demo copies of the two live bots, each its own `BotReg`, process and deploy. Their `display` must
+differ from the original's, because the name is all a Telegram message shows. Born benched; the
+order (register → promote → assign) and why lives in `algos/CLAUDE.md` → *One strategy, two bots*.
+
 ## The "needs review" flag — the one thing this page could not see
 
 `BotStatus.review`, served from `<instance>/review.json` on the VPS, written hourly by

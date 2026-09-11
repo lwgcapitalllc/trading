@@ -94,6 +94,21 @@ BOTS = {
         "script": "extreme_leg_demo",
         "log": str(ALGOS_ROOT / "markets/fx/instances/extreme_leg_demo/extreme_leg_demo.log"),
     },
+    # The demo copies of the two live bots (2026-09-11). ⚠ `script` is a SUBSTRING match, so no
+    # key may be a substring of another's commandline — `sos_fade_2` is not in
+    # `--bot sos_fade_demo` and the reverse holds too; a future `sos_fade_20` would break it.
+    "sos_fade_2": {
+        "name": "SOS Fade (demo)",
+        "suppress_key": "sos_fade_2",
+        "script": "sos_fade_2",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/sos_fade_2/sos_fade_2.log"),
+    },
+    "extreme_leg_2": {
+        "name": "Extreme Leg (demo)",
+        "suppress_key": "extreme_leg_2",
+        "script": "extreme_leg_2",
+        "log": str(ALGOS_ROOT / "markets/fx/instances/extreme_leg_2/extreme_leg_2.log"),
+    },
 }
 
 # How many times a bot is restarted before this gives up and asks for a human. Same shape as the

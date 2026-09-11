@@ -774,7 +774,7 @@ restart after a pull, with no promote. Nothing here changes a trading decision.
 
 ### The Bots
 
-There are currently **no live bots**. All four first-attempt bots — SMC Trend, Scalper, FFT, and Mean Reversion — were deleted 2026-06-22 to rebuild the suite backtest-first.
+🔴 **This line said "there are currently no live bots" until 2026-09-11 — while two were trading real money.** The roster is the five registries in `### Registering a bot` below, and which bot trades which account lives in each bot's instance config and on Bots → Accounts. **Count them with `box_status`, never from this file.** The four first-attempt bots (SMC Trend, Scalper, FFT, Mean Reversion) were deleted 2026-06-22 to rebuild the suite backtest-first.
 
 New bots follow the S.Y.S.T.E.M. process in `docs/BOT_DEVELOPMENT_METHOD.md` (specify → backtest → stress test → live demo). The reusable deployment plumbing left behind by the deleted suite — the MT5 connection layer, per-instance configs, Task Scheduler wiring, and the liveness/notification layer — is documented in `docs/BOT_DEPLOYMENT_INFRA.md` so a validated strategy can be wired to live demo without rebuilding the infrastructure.
 
@@ -2295,6 +2295,30 @@ pass `--live`, so a bot that boots with the VPS can never arm itself. And there 
 `BOT_*` scheduled task** — boot goes SYS_STARTUP → coordinator, and the command center starts a bot
 through that same coordinator over WMI. The command center's maps are keyed by a task name that
 does not exist as a real task, which is harmless: the PROCESS LIST is authoritative there.
+
+### One strategy, two bots — the demo copies (2026-09-11)
+
+**`sos_fade_2` and `extreme_leg_2` are the DEMO copies of the two live bots**: same strategy, own
+process, own instance folder, own deploy. Aaron's call, after weighing one signal sent to both
+accounts: a copy can be moved onto a NEW version to trial it while live keeps the proven one, and
+one signal cannot do that. **So the two are independent by design — a promote of one does not move
+the other.** Settings were copied from the live bots on 2026-09-11 (the snapshot built from
+`3483e40e`); why each setting holds its value stays in the LIVE bot's config, not repeated.
+
+- ⚠ **Keyed by a number, not a place.** `sos_fade_demo` trades the LIVE account; a key naming its
+  account goes stale the day the bot moves.
+- ⚠ **The display name must differ between copies** — it is the only thing Telegram shows, so two
+  "SOS Fade"s would deliver a demo fill and a live fill under one name.
+- ⚠ **Magic = the original's + 10** (770125, 770127). Sharing would pass the per-account guard,
+  but the originals traded the demo account under 770115/770117 until 2026-09-11 and a copy must
+  not read those deals back as its own.
+- 🔴 **Born BENCHED, and the order matters: register → promote on the box → assign.** The watchdog
+  starts an assigned bot it finds down within a minute, and without a deployed snapshot that start
+  fails every minute. Assigning from Bots → Accounts pulls the box, so the copy starts on the next
+  watchdog pass.
+- ⚠ **Compare the pair in R, never dollars** — the two balances are nothing alike (rule 6).
+- ⚠ **No key may be a substring of another's commandline** — the watchdog matches `--bot <key>` by
+  substring, so a future `sos_fade_20` would read as `sos_fade_2` running.
 
 `bot_state.ALGOS_ROOT` is **derived from `__file__`**, not the literal `C:/trading/algos` it used to
 be. The runner is dry-run-capable off the VPS, and a hardcoded Windows path made every state write

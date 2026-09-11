@@ -52,13 +52,21 @@ BOT_INSTANCES = {
     "sos_fade_demo": _INSTANCES / "sos_fade_demo",
     "b_leg_demo": _INSTANCES / "b_leg_demo",
     "extreme_leg_demo": _INSTANCES / "extreme_leg_demo",
+    # The DEMO copies of the two live bots (2026-09-11) — same strategy, own process, own
+    # account, own deploy. Keyed by a number rather than a place: `sos_fade_demo` now trades the
+    # LIVE account, which is what a key naming its account turns into.
+    "sos_fade_2": _INSTANCES / "sos_fade_2",
+    "extreme_leg_2": _INSTANCES / "extreme_leg_2",
 }
 
-# Display names
+# Display names — what Telegram calls the bot, so two copies of one strategy must differ here or
+# a demo fill and a live fill arrive under the same name.
 BOT_NAMES = {
     "sos_fade_demo": "SOS Fade",
     "b_leg_demo": "B-LEG",
     "extreme_leg_demo": "Extreme Leg",
+    "sos_fade_2": "SOS Fade (demo)",
+    "extreme_leg_2": "Extreme Leg (demo)",
 }
 
 

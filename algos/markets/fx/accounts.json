@@ -14,7 +14,7 @@
       "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
-      "note": "The live bot's account since 2026-08-12. Chosen by measurement, not preference: Prime and ECN are the SAME book with two commission rates (same symbol, same $0.12 spread, same swap, same 20-point stops level), so the cheaper toll wins with no trade-off to weigh. Round trip per ounce - Standard $0.31, Prime $0.19, ECN $0.14. Commission is a REAL cost here ($1.00/side/lot) where Standard charged none and buried $0.19 of markup in the spread instead."
+      "note": "The demo account. sos_fade_demo traded here from 2026-08-12 and extreme_leg_demo from 2026-09-04, until both moved to live account 34957946 on 2026-09-11; their history stays here. Which bots trade it NOW is shown on Bots -> Accounts and is deliberately not written here - this note called it 'the live bot's account' after that stopped being true. Chosen by measurement, not preference: Prime and ECN are the SAME book with two commission rates (same symbol, same $0.12 spread, same swap, same 20-point stops level), so the cheaper toll wins with no trade-off to weigh. Round trip per ounce - Standard $0.31, Prime $0.19, ECN $0.14. Commission is a REAL cost here ($1.00/side/lot) where Standard charged none and buried $0.19 of markup in the spread instead."
     },
     {
       "account": 700107749,
