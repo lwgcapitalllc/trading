@@ -168,16 +168,20 @@ function ProgressCard({
             {isRunning && <span className="text-[11px] text-text-tertiary">· auto-refreshing</span>}
           </div>
 
-          <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
-            <div
-              className="h-full bg-accent transition-all duration-700"
-              style={{ width: `${completePct}%` }}
-            />
-            <div
-              className="h-full bg-neg-text/70 transition-all duration-700"
-              style={{ width: `${failedPct}%` }}
-            />
-          </div>
+          {/* No bar and no "100%" once finished — they restated the count beside them
+              (2026-09-11, same as the optimization page). */}
+          {!isComplete && (
+            <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2 flex">
+              <div
+                className="h-full bg-accent transition-all duration-700"
+                style={{ width: `${completePct}%` }}
+              />
+              <div
+                className="h-full bg-neg-text/70 transition-all duration-700"
+                style={{ width: `${failedPct}%` }}
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 text-[12px]">
@@ -192,9 +196,11 @@ function ProgressCard({
                 </span>
               )}
             </div>
-            <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
-              {overallPct}%
-            </span>
+            {!isComplete && (
+              <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
+                {overallPct}%
+              </span>
+            )}
           </div>
         </div>
 
@@ -622,9 +628,8 @@ export function SweepDetail() {
           {completeRuns.length > 0 && (
             <div>
               <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
-                {isRunning
-                  ? `Results so far — ${completeRuns.length} of ${sweep.total_instruments} complete`
-                  : `Results — ${completeRuns.length} of ${sweep.total_instruments} instruments`}
+                {/* The count lives in the progress card above; here it was a second copy. */}
+                {isRunning ? 'Results so far' : 'Results'}
               </h2>
               <ResultsTable runs={completeRuns} navigate={navigate} />
             </div>
