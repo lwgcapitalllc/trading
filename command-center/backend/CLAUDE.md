@@ -122,6 +122,7 @@ backend/
 │   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel). `health()`
 │   │                      is the AGENT; `status()` is the TERMINAL (mt5_connected/account/server) —
 │   │                      two different questions, and only the second says a run can fetch bars
+│   ├── account_stack_basis.py what an account's bots RUN, as the stack builder's starting point — each bot's own settings, chart and risk, the account's cap, instrument and cost profile. See *"Backtest these bots"*
 │   ├── stack_risk_budget.py do a SHARED stack's legs fit under its risk cap? The form's total and the launch's refusal both ask it; the decision is `bot_accounts.share_overflow`. See *A shared stack's legs may not add up past its cap*
 │   ├── python_runner.py     local Python runner — runs strategies/python/ packages in-process via the top-level backtest/ package (backtests + A4 optimizer sweep). No VPS, no agent. Resolves strategies by `strategy_class` (the class `__name__` the scanner stored) — NEVER by package id
 │   └── notify.py            Telegram notifier (urllib, no extra deps). Holds NO token: it reads env vars, else the git-ignored `algos/credentials.json`, by PATH (`cfg.MONOREPO_ROOT / "algos" / "credentials.json"`) — the same file `algos/shared/credentials.py` reads, without importing across the app boundary, which the subsystem-independence rule forbids. `routers/bots.py` delegates here; it must never grow its own sender again. `telegram_configured()` answers whether a send would go anywhere. **Every send states a `kind`** (`HEALTH` for everything this app produces) and the kind picks the chat — see the Telegram row in the feature table
@@ -1650,6 +1651,25 @@ on disk unnoticed until it is committed with something else.
 bots was right, and it left a hole shaped exactly like the first bot on a new account — a case that
 looks like a missing feature and is really the derivation being asked a question it has no input
 for. When a value is derived, ask what it answers before the thing it derives from exists.**
+
+## "Backtest these bots" — `GET /bots/accounts/{account}/stack-basis` (2026-09-10)
+
+What an account's bots RUN, as the stack builder's starting point. Read only; the planner is
+`services/account_stack_basis.py`, pure. 🔴 **The bot's own settings, never the strategy's
+defaults** — MEASURED on 700152905: SOS Fade's lab default risks 10%, the bot 5%, so the old
+Accounts-tab pre-fill asked for 10 + 5 = 15% under a 10% cap and the budget check refused it (the
+bots' own settings fit exactly). ⚠ **Each leg is sent COMPLETE** (stored defaults with the bot's
+pins over them), because a stack's per-leg settings replace the defaults rather than merge.
+⚠ **Imports its rules, never restates them**: `group_by_account` (who shares the balance),
+`_only_declared` (a setting the strategy no longer has is left out and COUNTED), `_bot_tf_minutes`
+(the chart), `risk_pct_of`. ⚠ **Refuses, with a sentence, as a 200**: an unreadable config ANYWHERE
+(it might be on this account, and a backtest without it is one bot short), fewer than two bots,
+disagreeing ceilings, a strategy the lab cannot run or that needs a parent, two bots on one
+strategy, two instruments. **A refusal carries no half-built plan.** ⚠ **It cannot carry the CODE**:
+the lab replays this machine's strategy while a bot runs its deployed snapshot, and the page says so.
+⚠ **Gap, stated**: a bot pinning `exec_recovery` on would be backtested with it pinned off (shared
+stacks run recovery as its own leg) and nothing here says so yet — no bot has it on today.
+Tests: `tests/test_account_stack_basis.py` (19); **10 mutations run, 10 killed**.
 
 ## Checking the account list against the BOX — `services/terminal_scan.py` (2026-09-10)
 
@@ -5680,6 +5700,15 @@ is at risk, and the person who did not press the button is the one who most need
 ⚠ **Nothing is started.** Every bot in the set is stopped (a running one is refused) and stays
 stopped; `restart_required` is always True. It does NOT deploy code either — that stays a separate
 deliberate step.
+
+🔴 **Warnings carry only what needs a decision, and name bots as the page does (2026-09-10).** The
+screen read as a wall — every bot's record restated, a bookkeeping line per skipped setting, and
+bot KEYS in every sentence. So: a traded bot's record travels on its MOVE and is not repeated; *no
+record* and *could not be read* stay; every sentence uses the display name. ⚠ **`AssignPlan` now
+splits `notes` (a hazard) from `info` (bookkeeping — a setting the strategy does not declare)**, and
+`info` is deliberately NOT carried onto a move; the single-bot move endpoint still returns both.
+⚠ **When nothing is unusual the list is EMPTY** — pinned by
+`test_a_CLEAN_promotion_carries_NO_warnings`, because a warning on every promotion is one nobody reads.
 
 ### 🔴 The demo/live label is DERIVED now, or step 8 would have made the fleet lie
 

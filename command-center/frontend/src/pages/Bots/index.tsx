@@ -75,6 +75,7 @@ import type {
   BotEarnings,
   AccountEarnings,
 } from '@/types'
+import { BotActionPill, type BotAction } from './BotStatusPill'
 import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
@@ -830,7 +831,8 @@ export function Bots() {
 
   const [logBot, setLogBot] = useState<string | null>(null)
   const [syncOpen, setSyncOpen] = useState(false)
-  const [pending, setPending] = useState<string | null>(null)
+  // Which bot is mid start/stop/restart, and WHICH of the three — the pill names the action.
+  const [pending, setPending] = useState<{ key: string; action: BotAction } | null>(null)
 
   const startOne = useBotStartOne()
   const stopOne = useBotStopOne()
@@ -1061,8 +1063,8 @@ export function Bots() {
   // wanted again, sum per ACCOUNT and leave an unmeasured one OUT rather than folding it in as
   // zero; that is the part that was hard to get right.
 
-  function act(key: string, fn: () => void) {
-    setPending(key)
+  function act(key: string, action: BotAction, fn: () => void) {
+    setPending({ key, action })
     fn()
   }
 
@@ -1291,8 +1293,8 @@ export function Bots() {
                    *  on a bot that is already trading is the one mistake this row can
                    *  make that costs money. An unanswered box is a reason to ask again,
                    *  never a reason to act. */}
-                  {pending === cfg.key ? (
-                    <span className="text-[11px] text-accent animate-pulse pr-1">…</span>
+                  {pending?.key === cfg.key ? (
+                    <BotActionPill action={pending.action} />
                   ) : !asked && asking ? (
                     // The Start/Stop controls are withheld until the state is known —
                     // their SHAPE stands in, so the row's actions do not jump when they
@@ -1315,13 +1317,13 @@ export function Bots() {
                         title="Stop"
                         tone="neg"
                         disabled={busy}
-                        onClick={() => act(cfg.key, () => stopOne.mutate(cfg.key))}
+                        onClick={() => act(cfg.key, 'stop', () => stopOne.mutate(cfg.key))}
                       />
                       <IconBtn
                         icon={RotateCcw}
                         title="Restart"
                         disabled={busy}
-                        onClick={() => act(cfg.key, () => restartOne.mutate(cfg.key))}
+                        onClick={() => act(cfg.key, 'restart', () => restartOne.mutate(cfg.key))}
                       />
                     </>
                   ) : (
@@ -1330,10 +1332,14 @@ export function Bots() {
                       title="Start"
                       tone="pos"
                       disabled={busy}
-                      onClick={() => act(cfg.key, () => startOne.mutate(cfg.key))}
+                      onClick={() => act(cfg.key, 'start', () => startOne.mutate(cfg.key))}
                     />
                   )}
-                  <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(cfg.key)} />
+                  {/* Hidden while this bot's pill shows — the pill needs the room (see
+                   *  `BotActionPill`). The drawer keeps its own Logs button throughout. */}
+                  {pending?.key !== cfg.key && (
+                    <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(cfg.key)} />
+                  )}
                   {/* 🔴 THE CONTROL AARON COULD NOT FIND, TWICE. First it was only the
                    *  row itself; then it was an ICON among three other icons, and he
                    *  still asked *"where is configure? We used to have a Configure tab.
@@ -1742,11 +1748,12 @@ export function Bots() {
           earnings={earnByBot.get(selBot.key)}
           job={jobByKey.get(selBot.key)}
           busy={busy}
+          pendingAction={pending?.key === selBot.key ? pending.action : null}
           onClose={() => set('bot', null)}
           onLogs={() => setLogBot(selBot.key)}
-          onStart={() => act(selBot.key, () => startOne.mutate(selBot.key))}
-          onStop={() => act(selBot.key, () => stopOne.mutate(selBot.key))}
-          onRestart={() => act(selBot.key, () => restartOne.mutate(selBot.key))}
+          onStart={() => act(selBot.key, 'start', () => startOne.mutate(selBot.key))}
+          onStop={() => act(selBot.key, 'stop', () => stopOne.mutate(selBot.key))}
+          onRestart={() => act(selBot.key, 'restart', () => restartOne.mutate(selBot.key))}
         />
       )}
 

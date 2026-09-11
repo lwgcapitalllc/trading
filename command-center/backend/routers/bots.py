@@ -44,6 +44,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from models import (
     AccountEarnings,
+    AccountStackBasis,
+    AccountStackBasisLeg,
     AccountSync,
     AccountSyncAttention,
     AccountSyncChange,
@@ -85,6 +87,7 @@ from models import (
     TerminalScan,
 )
 from services import (
+    account_stack_basis,
     account_sync,
     bot_account_registry,
     bot_accounts,
@@ -1261,12 +1264,11 @@ def get_snapshot():
 # this endpoint take an SSH round trip it does not need.
 
 
-def _account_groups() -> list:
-    """Read every registered bot's config and group by account.
+def _all_instance_configs() -> "dict[str, dict | None]":
+    """Every registered bot's config, `None` where it could not be read — never dropped.
 
-    An unreadable config is passed through as `None` rather than dropped: a bot missing from
-    its account reads as an account with fewer bots on it, which is the most reassuring wrong
-    answer available on a page about how much risk is on.
+    A bot missing from its account reads as an account with fewer bots on it, which is the most
+    reassuring wrong answer available on a page about how much risk is on.
     """
     configs: dict[str, dict | None] = {}
     for reg in _BOTS:
@@ -1274,7 +1276,12 @@ def _account_groups() -> list:
             configs[reg.key] = _read_instance_config(reg.key)
         except Exception:
             configs[reg.key] = None
-    return bot_accounts.group_by_account(configs, {b.key: b.display for b in _BOTS})
+    return configs
+
+
+def _account_groups() -> list:
+    """Read every registered bot's config and group by account."""
+    return bot_accounts.group_by_account(_all_instance_configs(), {b.key: b.display for b in _BOTS})
 
 
 @router.get("/accounts", response_model=list[BotAccountGroup])
@@ -1301,6 +1308,67 @@ def list_bot_accounts():
         )
         for g in _account_groups()
     ]
+
+
+@router.get("/accounts/{account}/stack-basis", response_model=AccountStackBasis)
+def account_stack_basis_view(account: int):
+    """What this account's bots run, as the stack builder's starting point. READ ONLY.
+
+    The account panel's "Backtest these bots" opens the Stacks tab on this, so the backtest
+    measures the account — each bot's own settings, chart, the account's ceiling and its cost
+    profile — rather than the strategies' defaults. Every decision is the planner's
+    (`services/account_stack_basis.py`); this only reads the files it decides from.
+
+    ⚠ `blocked` is a 200, not an error: "these bots cannot be one backtest" is a real answer to a
+    legitimate question, and an error status puts the reason where nothing renders it.
+    """
+    configs = _all_instance_configs()
+    packages = {
+        str(c.get("strategy_package") or "")
+        for c in configs.values()
+        if c and c.get("account") == account
+    } - {""}
+    strategies: dict[str, account_stack_basis.BasisStrategy | None] = {}
+    for package in packages:
+        row = lab_db.get_strategy(package)
+        strategies[package] = (
+            account_stack_basis.BasisStrategy(
+                id=str(row["id"]),
+                name=str(row.get("name") or row["id"]),
+                runner=str(row.get("runner") or ""),
+                default_params=row.get("default_params") or {},
+                requires_source=bool(row.get("requires_source")),
+            )
+            if row
+            else None
+        )
+    try:
+        registered = bot_account_registry.account_by_number(_registry_path(), account)
+        registry_readable = True
+    except Exception:  # noqa: BLE001 — the planner says the list could not be read
+        registered, registry_readable = None, False
+
+    plan = account_stack_basis.plan_account_stack(
+        account=account,
+        configs=configs,
+        displays={b.key: b.display for b in _BOTS},
+        strategies=strategies,
+        declared={package: _declared_strategy_params(package) for package in packages},
+        account_profile=registered.account_profile if registered else None,
+        registry_readable=registry_readable,
+    )
+    return AccountStackBasis(
+        account=plan.account,
+        blocked=plan.blocked,
+        strategy_ids=plan.strategy_ids,
+        instrument=plan.instrument,
+        broker_profile=plan.broker_profile,
+        risk_cap_pct=plan.risk_cap_pct,
+        params_by_strategy=plan.params_by_strategy,
+        bar_values_by_strategy=plan.bar_values_by_strategy,
+        legs=[AccountStackBasisLeg(**vars(leg)) for leg in plan.legs],
+        notes=plan.notes,
+    )
 
 
 def _registry_path():
@@ -2148,7 +2216,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             "account": update.account,
             "restart_required": True,
             "detail": changed,
-            "notes": plan.notes,
+            # `info` rides along here, unchanged from before the split — this move has always
+            # said what it skipped, and only the demo → live screen keeps bookkeeping off its list.
+            "notes": plan.notes + plan.info,
         }
 
     path = _BOT_INSTANCE_MAP[bot_key]["path"]
@@ -2196,7 +2266,7 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         "account": update.account,
         "restart_required": True,
         "detail": changed,
-        "notes": plan.notes,
+        "notes": plan.notes + plan.info,
         "output": out,
     }
 

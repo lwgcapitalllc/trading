@@ -519,6 +519,38 @@ export interface BotAccountGroup {
   magic_clash: string[]
 }
 
+/** One bot on an account, as the leg of the stack that backtests it. */
+export interface AccountStackBasisLeg {
+  bot: string
+  display: string
+  strategy_id: string
+  strategy_name: string
+  /** Minutes. `null` = the bot's chart could not be read, so the leg keeps its strategy's own. */
+  bar_value: number | null
+  risk_pct: number | null
+  from_bot: number
+  from_defaults: number
+}
+
+/**
+ * What an account's bots run, as the stack builder's starting point — backend
+ * `services/account_stack_basis.py`. `blocked` is a sentence, and a blocked answer carries
+ * nothing else. `params_by_strategy` holds each leg's COMPLETE settings, because a stack's
+ * per-leg settings replace that leg's defaults rather than merging with them.
+ */
+export interface AccountStackBasis {
+  account: number
+  blocked: string | null
+  strategy_ids: string[]
+  instrument: string | null
+  broker_profile: string | null
+  risk_cap_pct: number | null
+  params_by_strategy: Record<string, Record<string, unknown>>
+  bar_values_by_strategy: Record<string, number>
+  legs: AccountStackBasisLeg[]
+  notes: string[]
+}
+
 /**
  * A broker account a bot can be put ON — the registry row.
  *

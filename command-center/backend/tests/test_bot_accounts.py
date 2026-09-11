@@ -712,9 +712,15 @@ def test_a_param_the_strategy_does_NOT_declare_is_not_written():
 
 def test_the_skipped_param_is_NAMED_rather_than_dropped_in_silence():
     """A move that quietly leaves a cost profile describing the account the bot has LEFT is the
-    2026-08-12 defect. Skipping is the right action; skipping without saying so is not."""
+    2026-08-12 defect. Skipping is the right action; skipping without saying so is not.
+
+    ⚠ It is said in `info`, not `notes`, since 2026-09-10: a setting the strategy does not have
+    cannot change how it trades, so it is bookkeeping rather than a hazard. The single-bot move
+    still serves both lists; only the demo → live screen keeps `info` off its warnings.
+    MUTATION: route it back into `notes` and this goes red."""
     plan = _assign({"symbol"})
-    assert any("account_profile" in n for n in plan.notes)
+    assert any("account_profile" in n for n in plan.info)
+    assert not any("account_profile" in n for n in plan.notes)
 
 
 def test_the_filter_covers_EVERY_param_write_not_just_the_cost_profile():
@@ -723,7 +729,7 @@ def test_the_filter_covers_EVERY_param_write_not_just_the_cost_profile():
     and this goes red, because the symbol survives."""
     plan = _assign({"account_profile"})
     assert "symbol" not in plan.param_fields
-    assert any("symbol" in n for n in plan.notes)
+    assert any("symbol" in n for n in plan.info)
 
 
 def test_an_UNREADABLE_strategy_writes_anyway_and_says_it_could_not_check():
@@ -741,4 +747,4 @@ def test_an_UNREADABLE_strategy_writes_anyway_and_says_it_could_not_check():
 def test_nothing_is_said_when_every_param_fits():
     """A note per assignment that always fires is a note nobody reads."""
     plan = _assign({"account_profile", "symbol"})
-    assert not any("account_profile" in n for n in plan.notes)
+    assert not any("account_profile" in n for n in plan.notes + plan.info)

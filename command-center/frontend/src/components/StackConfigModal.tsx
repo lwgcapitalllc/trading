@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Layers, X, Play, Loader2 } from 'lucide-react'
 import {
@@ -93,11 +93,16 @@ export function StackConfigModal({
   title = 'New portfolio stack',
   submitLabel = 'Run stack',
   initial,
+  notice,
   onClose,
 }: {
   title?: string
   submitLabel?: string
   initial?: StackConfigInitial
+  /** Said above everything else — where this form's starting values CAME from, when a caller
+   *  filled it in (an account's bots, say). A form pre-filled with nobody saying from what reads
+   *  as the defaults. */
+  notice?: ReactNode
   onClose: () => void
 }) {
   const navigate = useNavigate()
@@ -376,8 +381,11 @@ export function StackConfigModal({
 
   // The UNION of every selected leg's feed flags, which is exactly the floor a stack needs: the
   // legs share one window, so it is legal only if EVERY leg can be served, and one leg loading a
-  // 1m feed bounds the whole stack. A SHARED stack pins `exec_secondary` off (the backend does the
-  // same before it runs), so it is not bounded by a feed that path never loads.
+  // faster feed bounds the whole stack.
+  // 🔴 **A SHARED stack is bounded by the re-entry's feed too, since 2026-09-08.** This line used
+  // to delete that flag on the grounds that a shared stack pins the re-entry off. The backend
+  // retired that pin and its own floor check now sees the feed (`routers/stacks.py` →
+  // `_leg_param_sets`), so deleting it here offered a start date the launch then refused.
   const feedParams = useMemo(() => {
     const out: Record<string, unknown> = {}
     for (const st of pyStrategies) {
@@ -385,9 +393,8 @@ export function StackConfigModal({
       const p = { ...(st.default_params ?? {}), ...(paramsByStrategy[st.id] ?? {}) }
       for (const [k, v] of Object.entries(p)) if (v === true) out[k] = true
     }
-    if (shared) delete out.exec_secondary
     return out
-  }, [pyStrategies, selected, paramsByStrategy, shared])
+  }, [pyStrategies, selected, paramsByStrategy])
 
   // Stacks are python-only, so the runner is fixed.
   const { data: historyLimit } = useHistoryLimit(
@@ -579,6 +586,7 @@ export function StackConfigModal({
 
         {/* ── Scrollable body ────────────────────────────────────────────────── */}
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {notice}
           <p
             className="text-[12px] text-text-secondary leading-snug"
             data-testid="stack-mode-blurb"

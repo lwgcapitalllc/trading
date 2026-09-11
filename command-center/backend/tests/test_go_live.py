@@ -32,6 +32,8 @@ def _bot(
     cap=10.0,
     symbol: str = "XAUUSD.p",
     unreadable: bool = False,
+    display: str | None = None,
+    declared: set | None = None,
 ) -> BotTarget:
     config = (
         None
@@ -47,11 +49,11 @@ def _bot(
     )
     return BotTarget(
         key=key,
-        display=key,
+        display=key if display is None else display,
         account_type=account_type,
         running=running,
         config=config,
-        declared=set(_DECLARED),
+        declared=set(_DECLARED if declared is None else declared),
     )
 
 
@@ -316,7 +318,43 @@ def test_a_RUNNING_bot_is_refused():
     """
     bots = [_bot("sos_fade_demo", pkg="sos_fade", running=True), TWO_BOTS[1]]
     plan = _plan(bots=bots)
-    assert "is running" in plan.blocked
+    assert "is still running" in plan.blocked
+
+
+def test_two_running_bots_are_named_together_in_plain_grammar():
+    """The screen shows this sentence as it stands, so "A and B is running" is a defect a reader
+    sees. ⚠ Watched RED by hardcoding "is"."""
+    bots = [
+        _bot("sos_fade_demo", pkg="sos_fade", running=True),
+        _bot("extreme_leg_demo", pkg="extreme_leg", running=True),
+    ]
+    plan = _plan(bots=bots)
+    assert "extreme_leg_demo and sos_fade_demo are still running" in plan.blocked
+    assert "Stop them first" in plan.blocked
+
+
+def test_every_sentence_names_a_bot_the_way_the_page_does_never_by_its_key():
+    """Aaron, 2026-09-10: *"no technical code variable names."* A refusal naming `sos_fade_demo`
+    makes the reader translate before they can act. The key stays only where no display name
+    exists (an unregistered key).
+
+    ⚠ Watched RED by naming bots by `b.key` in the running refusal and in the warnings.
+    """
+    bots = [
+        _bot("sos_fade_demo", pkg="sos_fade", running=True, display="SOS Fade"),
+        _bot("extreme_leg_demo", pkg="extreme_leg", display="Extreme Leg"),
+    ]
+    blocked = _plan(bots=bots).blocked
+    assert "SOS Fade" in blocked and "sos_fade_demo" not in blocked
+
+    named = [
+        _bot("sos_fade_demo", pkg="sos_fade", display="SOS Fade"),
+        _bot("extreme_leg_demo", pkg="extreme_leg", display="Extreme Leg"),
+    ]
+    records = {"sos_fade_demo": _record(), "extreme_leg_demo": _record(traded=False)}
+    warnings = _plan(bots=named, records=records).warnings
+    assert any(w.startswith("Extreme Leg:") for w in warnings)
+    assert not any("extreme_leg_demo" in w for w in warnings)
 
 
 # ── The risk budget, which is the trap this module exists for ───────────────────────────
@@ -457,11 +495,19 @@ def test_a_record_that_could_not_be_read_is_NOT_reported_as_no_trades():
     assert "not the same as it having done nothing" in warn
 
 
-def test_a_traded_bots_record_reaches_the_reader_with_its_numbers():
-    """⚠ Watched RED by summarising the record as a bare "has traded"."""
+def test_a_traded_bots_record_travels_WHOLE_on_its_move_and_is_not_restated_as_a_warning():
+    """The record is what the screen shows beside each bot, so it has to arrive with its numbers.
+
+    🔴 **It is NOT a warning (2026-09-10).** A clean promotion used to arrive under an amber box
+    restating every traded bot's record — a warning that asks nothing of the reader, which is how
+    the real ones stop being read. The ABSENT record is still a warning (see the two cases above).
+    ⚠ Watched RED both ways — by stripping the numbers off the move, and by restating it again.
+    """
     plan = _plan()
-    warn = next(w for w in plan.warnings if w.startswith("sos_fade_demo:"))
-    assert "12 closed trades" in warn and "+4.50R" in warn and "2026-08-01" in warn
+    rec = next(m.record for m in plan.moves if m.bot_key == "sos_fade_demo")
+    assert rec["closed_trades"] == 12 and rec["realised_r"] == 4.5
+    assert rec["records_from"] == "2026-08-01"
+    assert not any("closed trades" in w for w in plan.warnings)
 
 
 def test_every_bots_record_travels_on_its_own_move():
@@ -500,14 +546,16 @@ def test_a_stranger_already_on_the_live_account_is_warned_about_not_refused():
     assert any("other_live" in w and "nothing has measured together" in w for w in plan.warnings)
 
 
-def test_the_plan_says_plainly_that_nothing_is_started():
-    """Every bot in the set is stopped and stays stopped. A promotion writes configs; a page that
-    left that ambiguous would have somebody believe money is at risk when it is not, or the
-    reverse.
+def test_a_CLEAN_promotion_carries_NO_warnings():
+    """🔴 The warning list is reserved for things that ask something of the reader (2026-09-10).
 
-    ⚠ Watched RED by dropping the closing warning.
+    Every bot traded on demo, the live account is empty, the budget is carried: there is nothing
+    to warn about, so the list is empty. It used to hold five lines on exactly this case — each
+    record restated, and a closing *nothing is started* — which is the screen Aaron called
+    confusing. *Nothing is started* is a fixed fact about the control and the screen states it.
+    ⚠ Watched RED by restoring the closing line.
     """
-    assert any("nothing is started" in w for w in _plan().warnings)
+    assert _plan().warnings == []
 
 
 def test_assign_plans_own_notes_survive_and_name_their_bot():
@@ -518,6 +566,25 @@ def test_assign_plans_own_notes_survive_and_name_their_bot():
     """
     plan = _plan(destination=_account(suffix=None))
     assert any(w.startswith("sos_fade_demo:") and "no symbol suffix" in w for w in plan.warnings)
+
+
+def test_a_setting_the_strategy_does_not_HAVE_is_not_a_warning():
+    """A strategy with no cost-profile setting cannot trade differently for lacking one — a
+    setting it does not declare is a setting it cannot read. So that skip is bookkeeping, and an
+    amber line saying it asks nothing of the reader. It stays off the warnings and off the move.
+
+    ⚠ Watched RED by carrying `assign_plan`'s `info` into the notes.
+    """
+    bots = [
+        TWO_BOTS[0],
+        _bot("extreme_leg_demo", pkg="extreme_leg", declared={"exec_risk_pct", "symbol"}),
+    ]
+    plan = _plan(bots=bots)
+    assert plan.blocked is None
+    assert plan.warnings == []
+    leg = next(m for m in plan.moves if m.bot_key == "extreme_leg_demo")
+    assert "account_profile" not in leg.param_fields
+    assert leg.notes == []
 
 
 def test_a_leg_level_refusal_from_assign_plan_blocks_the_WHOLE_promotion():

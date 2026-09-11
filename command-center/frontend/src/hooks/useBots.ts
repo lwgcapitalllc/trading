@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { api } from '@/api/client'
 import { isRestartPending } from '@/lib/botVersion'
 import type {
+  AccountStackBasis,
   AccountSync,
   AccountSyncPreview,
   BotAccountAssignResult,
@@ -75,7 +76,11 @@ function useBotAction(action: 'start' | 'stop' | 'restart') {
     onSuccess: (_data, botName) => {
       const label = { start: 'started', stop: 'stopped', restart: 'restarted' }[action]
       toast.success(`${botName} ${label}`)
-      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+      // 🔴 RETURNED, so the action stays PENDING until the snapshot has been re-read (2026-09-10).
+      // Not returned, the row's "Stopping" pill cleared the moment the call came back while the
+      // snapshot on screen still said RUNNING — so for one SSH round trip the row offered Stop
+      // again on a bot that had just stopped. The deploy watcher holds its finish the same way.
+      return qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
     onError: (err, botName) => {
       toast.error(`${botName} ${action} failed: ${err}`)
@@ -311,6 +316,28 @@ export function useBotAccounts() {
     queryKey: ['bots', 'accounts'],
     queryFn: () => api.get<BotAccountGroup[]>('/bots/accounts'),
     refetchInterval: 60_000,
+  })
+}
+
+/**
+ * What an account's bots run, as the stack builder's starting point — each bot's own settings,
+ * chart and risk, the account's ceiling, instrument and cost profile. Read by the Stacks tab when
+ * the account panel's "Backtest these bots" opens it.
+ *
+ * ⚠ **Its key is OUTSIDE `['bots', 'accounts']`**, so an account write's refresh cannot re-read it
+ * under a form that is already open — the builder takes its starting values once, and a new answer
+ * arriving mid-edit would reshape the legs under the reader's cursor.
+ * ⚠ **`gcTime: 0`**: every open is a fresh read. A bot's settings can change between two clicks,
+ * and a pre-fill from an old answer would backtest settings the bot no longer has.
+ */
+export function useAccountStackBasis(account: number | null) {
+  return useQuery({
+    queryKey: ['stack-basis', account],
+    queryFn: () => api.get<AccountStackBasis>(`/bots/accounts/${account}/stack-basis`),
+    enabled: account !== null,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
   })
 }
 
@@ -691,8 +718,10 @@ export function useApplyGoLive() {
       if (!plan.applied) {
         toast.success('These bots are already on that account — nothing to move')
       } else {
+        // "Start", not "restart": every bot in the set had to be STOPPED for the move to go
+        // through, so there is nothing running to restart.
         toast.success(
-          `${plan.moves.length} bot${plan.moves.length === 1 ? '' : 's'} moved onto account ${plan.to_account} — restart them to trade it`
+          `Moved to live account ${plan.to_account} — start ${plan.moves.length === 1 ? 'it' : 'them'} when you're ready`
         )
       }
       qc.invalidateQueries({ queryKey: ['bots'] })

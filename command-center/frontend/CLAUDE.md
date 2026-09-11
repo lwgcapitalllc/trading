@@ -157,6 +157,30 @@ reaches the real backend and the live box), and a test rewritten against a UI it
 executed against is the vacuous-test trap this repo has recorded eight times. **Re-point them with
 the app up, watching each one fail first.**
 
+## A bot row names what it is DOING — Stopping / Starting / Restarting (2026-09-10)
+
+The row used to replace its actions with a pulsing `…` while a start/stop/restart ran. It is now a
+pill naming the action (`BotActionPill`, shared by the row and the bot drawer) — Aaron: *"I should be
+seeing the pill saying stopping not three dots."* ⚠ **Held until the snapshot is RE-READ**: the
+mutation returns the invalidation's promise, because the request returns before the page knows the
+bot's new state, and a row offering Stop again on a stopped bot invites a second press. ⚠ **Logs is
+hidden while the pill shows** — MEASURED at 1280px the actions column is 190px and a pill 72–84px,
+which does not fit beside Logs.
+
+## "Backtest these bots" opens the builder FILLED IN by the server (2026-09-10)
+
+🔴 **The account panel's *Backtest the stack* linked to `/backtests?stack=<n>` and nothing read it**
+— it opened the Runs tab and did nothing else. It now goes to `?tab=stacks&account=<n>`, where the
+Stacks tab reads `useAccountStackBasis` and opens `StackConfigModal` with what those bots RUN — each
+bot's own complete settings, chart and risk, the account's cap, instrument and cost profile — with a
+`notice` saying where the values came from. ⚠ **The page decides nothing**; the plan and every
+refusal are `backend/services/account_stack_basis.py`'s. ⚠ **Not the strategies' defaults, and not
+the Strategies page**: on the live pairing the defaults ask for 15% under a 10% cap, which the
+builder refuses. ⚠ **Its key is outside `['bots','accounts']` with `gcTime: 0`**, so an account
+write cannot reshape an open form and every open is a fresh read. ⚠ **A refusal is a banner with the
+server's sentence and a Dismiss**; the button is disabled, never hidden, under two bots. ✅ Driven in
+a browser with the launch intercepted: 26 + 116 settings, 5% each, 5m/15m, `XAUUSD.p`, ECN, cap 10.
+
 ## "Sync VPS" — scan first, then a Sync button (2026-09-10)
 
 **Sync VPS** in the Bots header opens `VpsSyncDrawer` and does nothing else. The drawer SCANS
@@ -1943,8 +1967,9 @@ cached floor. ⚠ MEASURED before choosing the shape: 60 numeric params, ~1.4 KB
   controls, because it depends on them — ticking the secondary moves the earliest date the
   picker accepts.
 - ⚠ **`StackConfigModal` passes the UNION of the selected legs' truthy flags.** The legs share
-  one window, so it is legal only if EVERY leg can be served. It drops `exec_secondary` in
-  shared mode, because that path pins it off before running.
+  one window, so it is legal only if EVERY leg can be served. 🔴 **It dropped `exec_secondary`
+  in shared mode until 2026-09-10** — the backend stopped pinning it on 2026-09-08 and its floor
+  check sees that feed, so the picker offered a start the launch refused.
 
 🔴 **`RerunModal` MOVES an illegal start to the floor and SAYS SO** (`rerun-moved-to-floor`).
 This is the Retry path for a failed run, so the run in front of the reader may have failed ON
@@ -4285,7 +4310,8 @@ both ends of, deciding not to START and deciding not to FINISH are different mom
 ⚠ **Both drawers went 440px → 620px** — *"make this side panel a little wider so it could fit more
 information in, so there's less up and down scrolling."* Capped, never a fraction of the viewport:
 a panel wide enough to hide the list it was opened from is a page you navigated away from without
-meaning to.
+meaning to. ⚠ **The account drawer is 720px since 2026-09-10**, so Take live can run inside it (see
+*Demo → live*).
 
 🔴 **THE DEPLOY SECTION SAYS "DEPLOY".** He opened with *"you're still not telling me how do I
 promote a bot"* and then found it himself under a heading reading **Version**. The control was
@@ -4496,7 +4522,7 @@ unverified here is the rendering.
 
 Backtest → stress test → demo → live had a control for each hop for a single run, and **the
 endpoints for a stack's version of all three had existed for a day with nothing calling them.**
-`RunStackStressTestModal`, `StackSettingsImportModal` and `Bots/GoLiveModal`. Backend rules and the
+`RunStackStressTestModal`, `StackSettingsImportModal` and `Bots/GoLivePanel`. Backend rules and the
 refusals: `../backend/CLAUDE.md`.
 
 🔴 **NONE OF THE THREE DECIDES ANYTHING.** Every list, every warning, every refusal and the
@@ -4561,6 +4587,15 @@ do the other's job, and keeping them apart is what keeps each refusal readable.
 
 ### Demo → live
 
+🔴 **A STEP INSIDE THE ACCOUNT PANEL, NOT A MODAL (2026-09-10).** Aaron, on the modal: *"look how
+confusing this modal is make it dam simple … no technical code variable names … I rather not go
+from a side draw to a modal."* `GoLivePanel` replaced `GoLiveModal`; the panel's body swaps to it,
+with a Back link. ⚠ **Plain words only**: a setting is named by `WRITE_LABEL` (an unlisted one gets
+a tidied name, never the raw one), a cap reads as a %, a terminal as its folder, a cost profile as
+broker and tier. ⚠ **The bots and the cap are frozen when the panel opens**, so a poll mid-review
+cannot change what is being confirmed. ⚠ **Nothing is started after the move** — the success line
+says to start each bot, never to restart one.
+
 ⚠ **It lives in the ACCOUNT drawer, because the set it promotes is *every bot on this account*.** The
 account heading is a single `<button>` and a control there would be a button inside a button — the
 invalid markup this page has already been bitten by.
@@ -4576,7 +4611,9 @@ account, so it cannot be typed from memory or pasted from a different preview �
 reason it is a phrase and not a checkbox. The server rebuilds the plan on apply and compares against
 that plan's own phrase, so a confirmation typed against a stale preview no longer matches.
 
-⚠ **The literal writes are shown, not a summary of them.** This is the last screen before real money.
+⚠ **The literal writes are one click away, never summarised away** — behind *Exactly what changes
+on each bot*, listed once when every bot shares them and per bot where they differ. This is the
+last screen before real money.
 
 ⚠ **A bot's demo record is REPORTED and refuses nothing** (Aaron's call: no minimum). `traded: false`
 with a reason means no record reached this machine, which is NOT zero trades and is never drawn as
@@ -4617,13 +4654,11 @@ opens, all three bots list, and Apply stays disabled until one is picked. 🔴 *
 UNSEEN and must not be written up as working.** Reaching it needs a stress test actually run on a
 shared stack, which is an hour of compute and needs the platform idle.
 
-⚠ **Take live — THE BUTTON AND ITS REFUSAL ARE VERIFIED; THE MODAL BODY IS NOT.** The control is
-present on the account drawer and correctly disabled, and its reason is the right one of the
-three: *"Stop every bot on this account first — a bot reads its account when it starts, so a move
-cannot reach a running one."* Two bots are live on that account, so that reason outranks the other
-two, which is the order the code states. 🔴 **The destination picker, the preview, the literal
-writes and the typed phrase have NEVER been rendered**, and reaching them means stopping both live
-demo bots. **That is Aaron's call, not a verification step to take unasked.**
+⚠ **Take live — the refusal was verified 2026-09-07; the PANEL BODY on 2026-09-10**, with both bots
+mocked stopped and the preview served in the browser only (the apply was aborted in the page):
+picker, from/to, moving list, details and phrase all render, and *Move to live* enables only on the
+exact phrase. 🔴 **The real move has still never run** (rule 9) — that needs both demo bots stopped,
+which is Aaron's call.
 
 ⚠ **The honest generalisation: opening a page proves the page, not the branch.** Two of these
 three have a second path that only appears when data or state this machine does not have exists,

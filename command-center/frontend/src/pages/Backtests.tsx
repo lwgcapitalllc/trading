@@ -27,6 +27,7 @@ import {
   useDeleteStack,
 } from '@/hooks/useLab'
 import { StackConfigModal } from '@/components/StackConfigModal'
+import { useAccountStackBasis } from '@/hooks/useBots'
 import { useRunningStressLock } from '@/hooks/useStressTests'
 import { EmptyState } from '@/components/EmptyState'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
@@ -34,7 +35,7 @@ import WorthinessLegend from '@/components/WorthinessLegend'
 import StickyHeader from '@/components/StickyHeader'
 import { api } from '@/api/client'
 import { toast } from 'sonner'
-import type { BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
+import type { AccountStackBasis, BacktestSummary, VerdictSummary, WorthinessScore } from '@/types'
 
 // ── Market helpers ────────────────────────────────────────────────────────────
 
@@ -1393,12 +1394,72 @@ function SweepsTab() {
 // A stack layers 2+ Python strategies over one shared instrument/window. The list is the
 // entry to StackDetail, where the combined portfolio P&L is composed with per-strategy toggles.
 
+/**
+ * Where the builder's starting values came from, when the account panel's "Backtest these bots"
+ * opened it. ⚠ Every line is the SERVER's (`services/account_stack_basis.py`) — the legs, their
+ * charts and risk, and each note. The page decides nothing about what an account runs.
+ */
+function AccountBasisNotice({ basis }: { basis: AccountStackBasis }) {
+  return (
+    <div
+      data-testid="stack-from-account"
+      className="rounded-lg border border-accent/25 bg-accent/5 px-4 py-3 text-[12px] text-text-secondary space-y-1.5"
+    >
+      <div className="text-text-primary font-medium">
+        Filled in from what account {basis.account} runs — each bot's own settings, chart and risk.
+      </div>
+      <ul className="space-y-0.5">
+        {basis.legs.map((leg) => (
+          <li key={leg.bot}>
+            <span className="text-text-primary">{leg.display}</span>
+            <span className="text-text-tertiary">
+              {leg.bar_value != null ? ` · ${leg.bar_value}-minute chart` : ''}
+              {leg.risk_pct != null ? ` · ${leg.risk_pct}% a trade` : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {basis.notes.map((note) => (
+        <div key={note} className="text-warn-text">
+          {note}
+        </div>
+      ))}
+      {/* The one thing it cannot carry, said rather than implied: a backtest replays the code on
+          this machine, and a bot runs the snapshot it was last deployed with. */}
+      <div className="text-text-tertiary">
+        It replays the strategy code on this computer. A bot marked behind on the Bots page is still
+        running an older version.
+      </div>
+    </div>
+  )
+}
+
 function StacksTab() {
   const navigate = useNavigate()
   const deleteStack = useDeleteStack()
   const { data: stacks, isLoading } = useStacks()
   const [showCreate, setShowCreate] = useState(false)
   const [deleteStackId, setDeleteStackId] = useState<string | null>(null)
+
+  // 🔴 **The account panel's "Backtest these bots" lands here with `?account=`, and until
+  // 2026-09-10 nothing read it** — the button linked to `/backtests?stack=<n>`, which opened the
+  // Runs tab and did nothing else. Aaron: *"what does that button want me to do?"* It opens the
+  // builder filled in with what those bots run, so the backtest measures the account rather than
+  // the strategies' defaults (which ask for 15% of risk under a 10% cap on the live pairing).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const accountParam = Number(searchParams.get('account'))
+  const fromAccount = Number.isInteger(accountParam) && accountParam > 0 ? accountParam : null
+  const basis = useAccountStackBasis(fromAccount)
+  // MERGES the params, like every other write here — `setSearchParams({tab})` would drop the tab.
+  const leaveAccount = () =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('account')
+        return next
+      },
+      { replace: true }
+    )
 
   function fmtStackStatus(s: string) {
     if (s === 'complete') return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
@@ -1425,6 +1486,34 @@ function StacksTab() {
           </button>
         )}
       </div>
+
+      {fromAccount !== null && basis.isLoading && (
+        <div
+          data-testid="stack-from-account-loading"
+          className="mb-4 text-[12px] text-text-tertiary"
+        >
+          Reading what account {fromAccount}'s bots run…
+        </div>
+      )}
+      {/* A refusal is the server's own sentence, and it names what to fix. `api.get` has already
+          toasted a failed request, so this line is what stays once the toast has gone. */}
+      {fromAccount !== null && (basis.isError || basis.data?.blocked) && (
+        <div
+          data-testid="stack-from-account-blocked"
+          className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-warn/30 bg-warn-muted px-4 py-3 text-[12px] text-warn-text"
+        >
+          <span>
+            {basis.data?.blocked ??
+              `Could not read what account ${fromAccount}'s bots run — try again from its panel.`}
+          </span>
+          <button
+            onClick={leaveAccount}
+            className="text-text-secondary hover:text-text-primary transition-colors flex-shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {isLoading ? (
         <RunsTableSkeleton />
@@ -1561,6 +1650,24 @@ function StacksTab() {
       )}
 
       {showCreate && <StackConfigModal onClose={() => setShowCreate(false)} />}
+
+      {fromAccount !== null && basis.data && !basis.data.blocked && (
+        <StackConfigModal
+          title={`Backtest account ${fromAccount}'s bots`}
+          submitLabel="Run backtest"
+          initial={{
+            strategyIds: basis.data.strategy_ids,
+            instrument: basis.data.instrument ?? undefined,
+            mode: 'shared',
+            riskCapPct: basis.data.risk_cap_pct ?? undefined,
+            paramsByStrategy: basis.data.params_by_strategy,
+            barValuesByStrategy: basis.data.bar_values_by_strategy,
+            brokerProfile: basis.data.broker_profile ?? undefined,
+          }}
+          notice={<AccountBasisNotice basis={basis.data} />}
+          onClose={leaveAccount}
+        />
+      )}
 
       {deleteStackId && (
         <ConfirmDeleteModal

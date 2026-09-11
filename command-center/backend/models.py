@@ -828,6 +828,41 @@ class BotAccountGroup(BaseModel):
     magic_clash: list[str] = []
 
 
+class AccountStackBasisLeg(BaseModel):
+    """One bot on the account, as the leg of the stack that backtests it."""
+
+    bot: str
+    display: str
+    strategy_id: str
+    strategy_name: str
+    bar_value: Optional[int] = None  # None = the bot's chart could not be read
+    risk_pct: Optional[float] = None
+    from_bot: int = 0  # settings the bot states
+    from_defaults: int = 0  # settings it does not state, taken from the strategy's defaults
+
+
+class AccountStackBasis(BaseModel):
+    """What an account's bots run, as the stack builder's starting point — `GET
+    /bots/accounts/{account}/stack-basis`. Rules: `services/account_stack_basis.py`.
+
+    ⚠ `blocked` is a sentence, and a blocked answer carries NOTHING else — a caller reading the
+    legs off a refusal would pre-fill a form the refusal said could not be built.
+    ⚠ `params_by_strategy` holds each leg's COMPLETE settings: a stack request's per-leg settings
+    replace that leg's defaults rather than merging with them.
+    """
+
+    account: int
+    blocked: Optional[str] = None
+    strategy_ids: list[str] = []
+    instrument: Optional[str] = None
+    broker_profile: Optional[str] = None
+    risk_cap_pct: Optional[float] = None
+    params_by_strategy: dict[str, dict[str, Any]] = {}
+    bar_values_by_strategy: dict[str, int] = {}
+    legs: list[AccountStackBasisLeg] = []
+    notes: list[str] = []
+
+
 class BotAccountCapUpdate(BaseModel):
     """Set (or clear) the account-level risk cap across EVERY bot on one account.
 

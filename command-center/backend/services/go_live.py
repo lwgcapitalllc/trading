@@ -138,6 +138,7 @@ def plan_go_live(
     by_key = {b.key: b for b in bots}
     unknown = sorted(k for k in bot_keys if k not in by_key)
     if unknown:
+        # A key with no registered bot has no display name — the key is all there is to say.
         return _blocked(
             f"{_join(unknown)} is not a registered bot, so this cannot read what "
             f"{'it trades' if len(unknown) == 1 else 'they trade'} or where. Register it first."
@@ -147,7 +148,7 @@ def plan_go_live(
     # learned the hard way. An unreadable config states no account, so a stranger sharing the
     # destination would simply not be seen, and the set would be promoted onto an account whose
     # occupants, shares and ceiling are all unknown.
-    unreadable = sorted(b.key for b in bots if b.config is None)
+    unreadable = _names(b for b in bots if b.config is None)
     if unreadable:
         return _blocked(
             f"{_join(unreadable)} could not be read, so this cannot tell what "
@@ -175,16 +176,16 @@ def plan_go_live(
     # ── one demo account, and every bot on it ────────────────────────────────────────────
     moving = [by_key[k] for k in sorted(bot_keys)]
 
-    benched = [b.key for b in moving if b.account is None]
+    benched = _names(b for b in moving if b.account is None)
     if benched:
         return _blocked(
-            f"{_join(sorted(benched))} is not on an account, so this set has no demo record to "
+            f"{_join(benched)} is not on an account, so this set has no demo record to "
             f"promote and was never run together. Assign it first."
         )
 
     accounts = {b.account for b in moving}
     if len(accounts) > 1:
-        listed = ", ".join(f"{b.key} on {b.account}" for b in moving)
+        listed = ", ".join(f"{_name(b)} on {b.account}" for b in moving)
         return _blocked(
             f"these bots are on different accounts ({listed}). A set is promoted because it was "
             f"proven on ONE balance under one risk budget, and bots on two accounts have never "
@@ -198,7 +199,7 @@ def plan_go_live(
         )
 
     not_demo = sorted(
-        f"{b.key} ({b.account_type or 'unknown'})" for b in moving if b.account_type != "demo"
+        f"{_name(b)} ({b.account_type or 'unknown'})" for b in moving if b.account_type != "demo"
     )
     if not_demo:
         return _blocked(
@@ -207,19 +208,24 @@ def plan_go_live(
             f"together on demo."
         )
 
-    running = sorted(b.key for b in moving if b.running)
+    running = _names(b for b in moving if b.running)
     if running:
+        one = len(running) == 1
         return _blocked(
-            f"{_join(running)} is running, so its account cannot be changed — it read its config "
-            f"at startup and would go on trading the demo account while this page showed the live "
-            f"one. Stop every bot in the set, promote, then start them."
+            f"{_join(running)} {'is' if one else 'are'} still running. Stop "
+            f"{'it' if one else 'them'} first — a bot reads which account to trade when it "
+            f"starts, so moving a running one would leave it trading demo while this page said "
+            f"live."
         )
 
     # 🔴 A bot LEFT BEHIND on the demo account is not a warning, it is a different set. The whole
     # claim being promoted is that these strategies were measured competing for one balance, and
     # a leg that stays behind means the thing that ran on demo is not the thing going live.
-    on_source = sorted(b.key for b in bots if b.config is not None and b.account == from_account)
-    left = [k for k in on_source if k not in set(bot_keys)]
+    left = _names(
+        b
+        for b in bots
+        if b.config is not None and b.account == from_account and b.key not in set(bot_keys)
+    )
     if left:
         return _blocked(
             f"{_join(left)} also trades demo account {from_account} and is not in this "
@@ -259,9 +265,12 @@ def plan_go_live(
                 declared_params=bot.declared,
             )
         except ValueError as exc:
-            return _blocked(f"{bot.key}: {exc}")
+            return _blocked(f"{_name(bot)}: {exc}")
 
         fields = dict(moved.fields)
+        # ⚠ `moved.info` is deliberately NOT carried: it names a setting the strategy does not
+        # have, which cannot change how it trades. The fields above already show its absence, and
+        # a warning that asks nothing of the reader is how the real ones stop being read.
         notes = list(moved.notes)
 
         # 🔴 THE OVERRIDE THE MODULE EXISTS FOR. `assign_plan` states `None` for the first bot on
@@ -389,11 +398,21 @@ def _warnings(
     destination_group: Optional[AccountGroup],
     cap_note: str,
 ) -> list[str]:
-    """Everything LOUD that does not refuse — the demo record above all.
+    """Everything LOUD that does not refuse — and ONLY that.
 
-    🔴 **The record is a WARNING and never a refusal, on purpose.** There is no minimum here, so
-    the only thing this can do is put the evidence where it cannot be missed. Saying nothing when
-    a bot has never traded would let a set go live on the strength of a sibling's record.
+    🔴 **A missing demo record is a WARNING and never a refusal, on purpose.** There is no
+    minimum here, so the only thing this can do is put the absence where it cannot be missed.
+    Saying nothing when a bot has never traded would let a set go live on a sibling's record.
+
+    🔴 **This list is reserved for things that ask something of the reader (2026-09-10).** It
+    used to carry each TRADED bot's record restated as a sentence, every per-bot note a second
+    time, and a closing line that nothing is started — so a clean promotion arrived under an amber
+    box of five "warnings", four of which said nothing was wrong. Aaron, off that screen: *"look
+    how confusing this modal is."* The record travels on its own move and is shown there; the
+    notes travel on theirs; *nothing is started* is a fixed fact about the control, stated by the
+    screen. **A warning that asks nothing of the reader is how the real ones stop being read.**
+
+    ⚠ Bots are named by their DISPLAY name — these sentences are read by a person, never parsed.
     """
     out: list[str] = []
 
@@ -401,25 +420,18 @@ def _warnings(
         rec = next((m.record for m in plan.moves if m.bot_key == bot.key), {})
         if not rec:
             out.append(
-                f"{bot.key}: its demo record could not be read, so this says nothing about what "
+                f"{_name(bot)}: its demo record could not be read, so this says nothing about what "
                 f"it did — that is not the same as it having done nothing."
             )
         elif not rec.get("traded"):
             out.append(
-                f"{bot.key}: {rec.get('reason') or 'no decision record has reached this machine'} "
+                f"{_name(bot)}: "
+                f"{rec.get('reason') or 'no decision record has reached this machine'} "
                 f"— so there is NO demo evidence for this bot at all."
-            )
-        else:
-            r = rec.get("realised_r")
-            out.append(
-                f"{bot.key}: {rec.get('closed_trades')} closed trades on demo, "
-                f"{'unknown' if r is None else f'{float(r):+.2f}R'}, "
-                f"{rec.get('wins')} won / {rec.get('losses')} lost, recorded "
-                f"{rec.get('records_from')} → {rec.get('records_to')}."
             )
 
     if destination_group is not None and destination_group.bots:
-        existing = sorted(b.key for b in destination_group.bots)
+        existing = sorted(b.display or b.key for b in destination_group.bots)
         out.append(
             f"account {plan.to_account} is already traded by {_join(existing)}, so the live "
             f"account will hold a strategy set nothing has measured together. Their shares are "
@@ -429,15 +441,21 @@ def _warnings(
     if cap_note:
         out.append(cap_note)
 
+    names = {b.key: _name(b) for b in moving}
     for move in plan.moves:
         for note in move.notes:
-            out.append(f"{move.bot_key}: {note}")
+            out.append(f"{names.get(move.bot_key, move.bot_key)}: {note}")
 
-    out.append(
-        "nothing is started. Every bot in this set is stopped and stays stopped — a promotion "
-        "writes configs, and a bot only trades the live account once somebody starts it."
-    )
     return out
+
+
+def _name(bot: BotTarget) -> str:
+    """What a PERSON calls this bot — the name on the Bots page, never its key."""
+    return bot.display or bot.key
+
+
+def _names(bots) -> list[str]:
+    return sorted(_name(b) for b in bots)
 
 
 def _join(items: list[str]) -> str:

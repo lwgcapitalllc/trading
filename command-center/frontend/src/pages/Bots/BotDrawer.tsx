@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useBots'
 import type { BotParamRow, BotParamsView, BotPromoteJob, BotStatus, BotEarnings } from '@/types'
 import { VersionBanner, RuntimeEditor, ParamGroup } from './ConfigureTab'
+import { BotActionPill, type BotAction } from './BotStatusPill'
 import { Shimmer } from '@/components/Shimmer'
 
 function Fold({ label, children }: { label: string; children: React.ReactNode }) {
@@ -71,6 +72,7 @@ export function BotDrawer({
   onStop,
   onRestart,
   busy,
+  pendingAction = null,
 }: {
   bot: BotStatus
   /** What THIS bot's own closed trades came to — computed server-side off its decision record.
@@ -86,6 +88,9 @@ export function BotDrawer({
   onStop: () => void
   onRestart: () => void
   busy: boolean
+  /** A start/stop/restart of THIS bot still in flight — the same pill the row shows, in place of
+   *  the buttons, so the drawer does not just grey them out and leave the reader guessing. */
+  pendingAction?: BotAction | null
 }) {
   const { data, isLoading, error } = useBotParams(bot.key)
   const { data: groups } = useBotAccounts()
@@ -169,8 +174,10 @@ export function BotDrawer({
 
         <div className="px-5 pb-8">
           {/* ── do ────────────────────────────────────────────────────────── */}
-          <div className="flex gap-2 py-[14px] border-b border-border-subtle">
-            {running ? (
+          <div className="flex items-center gap-2 py-[14px] border-b border-border-subtle">
+            {pendingAction ? (
+              <BotActionPill action={pendingAction} />
+            ) : running ? (
               <>
                 <button
                   onClick={onStop}

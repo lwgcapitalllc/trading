@@ -368,12 +368,18 @@ class AssignPlan:
     to be able to SAY so: a move that silently leaves a symbol or a cost profile describing the
     account the bot has left is exactly the 2026-08-12 defect, and it produces a bot that starts
     cleanly, connects cleanly and sees no bars.
+
+    `info` is the harmless half, split out 2026-09-10: a setting left UNWRITTEN because the
+    receiving strategy has no such setting. It cannot change how that strategy trades — a setting
+    it does not declare is one it cannot read — so it is bookkeeping, never a hazard. It is kept
+    apart so the demo → live screen can show only real warnings; the single-bot move still says it.
     """
 
     fields: dict[str, Any] = field(default_factory=dict)
     param_fields: dict[str, Any] = field(default_factory=dict)
     adopt_terminal_from: str = ""
     notes: list[str] = field(default_factory=list)
+    info: list[str] = field(default_factory=list)
 
 
 def _only_declared(
@@ -567,7 +573,18 @@ def assign_plan(
 
     # LAST, so every param write above is covered — including any added later. See `_only_declared`.
     param_fields, unwritable = _only_declared(param_fields, declared_params)
-    notes.extend(unwritable)
+    # ⚠ WHICH list depends on whether the strategy could be READ. Unread, the params were written
+    # UNCHECKED and the bot may refuse to start — a hazard. Read, the only thing skipped is a
+    # setting the strategy does not have, which cannot change how it trades — bookkeeping.
+    info: list[str] = []
+    if declared_params is None:
+        notes.extend(unwritable)
+    else:
+        info.extend(unwritable)
     return AssignPlan(
-        fields=fields, param_fields=param_fields, adopt_terminal_from=adopt_from, notes=notes
+        fields=fields,
+        param_fields=param_fields,
+        adopt_terminal_from=adopt_from,
+        notes=notes,
+        info=info,
     )
