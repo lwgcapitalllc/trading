@@ -332,6 +332,10 @@ runnable on every machine forever, and it is worth stating so nobody re-litigate
 ⚠ **Engines are DISCOVERED, never listed** — drop a CSV in the golden folder and it is wired in
 with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass.
 
+⚠ **`--jobs auto` (the full run: 75s → 18.6s) and `--only` (the fast tier) change WHICH gates run
+and WHEN, never how** — same command per gate, same pass rule, results in discovery order. The
+self-test still counts every export first, and an unknown `--only` name is refused.
+
 ✅ **STRATEGIES JOINED ON 2026-09-10 — all four**, from `strategies/python/*/exports/golden/`, so
 every strategy's parity gate, both LIVE bots' included, runs on every clone. 🔴 **BOS's was RED on
 arrival**: every fork had inherited SOS Fade's 2026-09-06 adding-to-winners default, which no
@@ -893,46 +897,45 @@ reach `main`, and the first to know is whoever pulls it.** `scripts/run_all_test
 one command — it is now a thing a PERSON runs, and both the hook's output and its header say so. If
 that bites twice, the answer is a FASTER suite rather than a slower hook.
 
-✅ **That answer was taken on 2026-08-15 and the suite is ~2x faster: ~7 minutes → 3:16 end to end
-through `scripts/run_all_tests.sh` (frontend typecheck included), and 2,811 tests still run.** Nothing was deleted or excluded — an audit for dead, vacuous and duplicated
-tests found **none** (7 assertion-free tests, all deliberate "must never raise"; 0 tests for
-deleted code; 0 real duplicates). **The count was never the problem: 67 tests out of 2,811 were
-the entire runtime, and 2,744 of them finished in ~130s all along.** Full record and the
-per-file numbers: `docs/TEST_SUITE_PERFORMANCE.md`.
+✅ **The answer was a faster suite (2026-08-15, 2026-08-27), then a second TIER (2026-09-10).** The
+history and every per-file number are in `docs/TEST_SUITE_PERFORMANCE.md`. 🔴 **The lesson that
+stays here: a slow TEST is sometimes a defect in the code under it** (a git N+1 in
+`services/bot_versions.py` made `/version` slower on every push), **and fixing production code is
+how a suite gets faster without a single scheduling decision.** Nothing in a result shows a cost.
 
-The four things that made it fast, in the order they were worth doing:
+### The everyday command is `scripts/test.sh` — the full run is a deliberate act (2026-09-10)
 
-| | fix | measured |
-|---|---|---|
-| an N+1 **in production code** (`services/bot_versions.py` ran one `git show` per commit) | one `git log --name-only` | 1,080 subprocesses → 14; that file 53.7s → 8.7s |
-| the same 31 MB bar cache re-read and the same engine replayed once per TEST | `lru_cache` on the read, the slice and the replay | 62s → 21s |
-| eight strategy replays where four are needed; one cache collision fired per test | share them | 182s → 80s; 86s → 25s |
-| both suites single-core on a 12-core box | `pytest-xdist`, `-n auto --dist load` | root 202s → 119s, backend 150s → 45s |
+Why (236 full runs in 60 sessions, ~11 hours waited, 17 only to re-read output):
+`docs/TEST_SUITE_PERFORMANCE.md`.
 
-🔴 **The first row is the transferable one: a slow TEST is sometimes a defect in the code under
-it.** That git fan-out scaled with repo history, so it made the `/version` endpoint slower every
-time either of us pushed — and it had been invisible for as long as it existed, because its output
-was byte-identical either way. **Nothing in a result can show you a cost.**
-
-⚠ **`backtest/tests/test_reprice.py` is ~68s of the root suite's 119s, alone**, and it is four
-genuine two-year replays. Everything else runs in ~44s. **Any further speed is a COVERAGE decision,
-not a scheduling one** — say so out loud rather than quietly narrowing a window.
-
-✅ **RE-MEASURED 2026-08-27: `scripts/run_all_tests.sh` is 3:16 → 2:00 end to end, all green, and
-NOT ONE TEST WAS TOUCHED TO GET THERE.** The whole gain came from making the REPLAY faster — the
-regime map, the bar loop, a leg-latch prune that re-sorted 20,000 keys per bar and a pivot detector
-that copied 2,000 to read 31 (`HISTORY.md` → *A full-history backtest went from ten minutes to a
-minute*). ⚠ **The per-file split above is from 2026-08-15 and predates that work, so the 68/119
-figures no longer describe this suite** — the total is measured, the split is not. Re-measure before
-quoting either half. 🔴 **This is the 2026-08-15 lesson arriving from the other end and it is worth
-saying plainly: a slow TEST is sometimes a defect in the code under it, and the reverse also holds —
-fixing production code is how a suite gets faster without a single scheduling decision.**
+- **After every piece of work: `scripts/test.sh`.** It runs only what the change since the last
+  green run can reach — a static import graph plus file tables (`scripts/testing/`): an engine edit
+  runs that engine's tests and its parity gate, a frontend edit the typecheck and node checks, a doc
+  edit nothing. An unchanged tree answers in 0.3s. `--explain` prints what would run and why.
+- **The full run (`scripts/run_all_tests.sh`) is REQUIRED** (1) before pushing anything under
+  `engines/`, `strategies/`, `backtest/`, `algos/live/`, `algos/shared/`, `algos/tools/promote.py`
+  or a `*.pine`; (2) after changing test plumbing — a `conftest.py`, `pytest.ini`,
+  `requirements*.txt`, `scripts/run_all_tests.sh` or `scripts/testing/`; (3) before a promote.
+  **Run it in the background and keep working.** It refuses an unchanged tree and names the log;
+  `--force` overrides.
+- 🔴 **Never re-run anything to see its output.** Both tiers print one line per piece plus the
+  failures and keep everything in `.test-logs/fast.log` / `.test-logs/full.log`. Read the log.
+- **Prove a test can fail (rule 12) with `python3 -m scripts.testing.mutate FILE 'old' 'new'`** — the
+  bug is planted IN MEMORY and only the covering tests run. 🔴 **Never plant a bug by editing a
+  file**: two sessions share this clone, and the other one's run or commit picks it up. Python only.
+- ⚠ **The fast tier cannot see git-ignored data** (the bar cache the re-pricing replays read, the
+  news calendar) **or git history** (the deploy-version tests). After changing either, `--force`.
+- ⚠ **The selector is wrong in exactly one dangerous direction** — a test it never picks goes red on
+  main — **so a red full run names every failure the fast tier would have skipped** (`BLIND SPOT`).
+  Add the missing rule to `scripts/testing/rules.py`; a selector that skipped a red test once will
+  skip it again. `scripts/testing/tests/test_rules.py` goes red when `run_all_tests.sh` gains a step,
+  or step 1 a folder, the fast tier does not know.
 
 ⚠ **The suites are only parallel-safe because the shared state is per-test** (`tmp_path` DBs, the
 `_no_live_vps` interlock, scratch git indexes). A new test that writes a fixed path breaks other
-tests non-deterministically, which is the worst failure shape a suite has. ⚠ **`--dist load`, not
-`loadfile`** — see the reasoning in `scripts/run_all_tests.sh`, and note that the intuitive choice
-measured slower.
+tests non-deterministically, which is the worst failure shape a suite has. ⚠ **Scheduling is not the
+lever** — MEASURED: `--dist load` 117s, work-stealing 121s, longest-first 125s; see the comment in
+`scripts/run_all_tests.sh`.
 
 ### 🔴 If the tests will not START on this machine, it is the xdist dependency — fix it, do not work around it
 

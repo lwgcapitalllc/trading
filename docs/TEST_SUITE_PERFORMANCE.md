@@ -1,3 +1,72 @@
+# The test suite — two tiers (2026-09-10), and the audit before them (2026-08-15)
+
+## 2026-09-10 — everyday testing in seconds
+
+**The ask, in Aaron's words:** *"finishing a piece of work costs 4–5 minutes of testing and a lot of
+tokens, even when the work itself is done. I want everyday testing to take SECONDS."*
+
+### What the waiting was
+
+MEASURED over the previous 60 sessions' transcripts: `scripts/run_all_tests.sh` ran **236 times**,
+about **11 hours** of waiting, 184 of them in the foreground with the session blocked. **24 ran on an
+unchanged tree, 17 of those only to see output the first run had cut off.** Planted-bug loops cost
+about 7 more hours (13 over ten minutes), because each mutation re-ran the whole suite. Output
+tokens were small throughout — **the cost was wall time, not tokens.**
+
+### One full run, timed step by step (2026-09-10, 4:16 end to end)
+
+| Step | Tests | Seconds | Share |
+|---|---|---|---|
+| Root Python suite | 3,140 | 116.6 | 45.6% |
+| Parity gates on the golden exports | 17 gates | 75.1 | 29.3% |
+| Command Center backend suite | 1,790 | 43.2 | 16.9% |
+| Frontend typecheck | 1 | 13.3 | 5.2% |
+| Doc-size guard | 21 cases | 3.5 | 1.4% |
+| Hook-bypass guard | 29 cases | 1.4 | 0.5% |
+| The other 12 small checks | — | 2.6 | 1.0% |
+
+The suite had doubled since 2026-08-27's 2:00 (root 1,760 → 3,140 tests, backend 1,051 → 1,790).
+
+### Root causes
+
+- **The root suite's floor is one file.** `backtest/tests/test_reprice.py` needs four real two-year
+  replays — 62s alone on an idle machine, one replay ~15s — and they share one worker. **Scheduling
+  cannot fix it, and that was measured**: `--dist load` 117s, work-stealing 121s, longest-first
+  one-at-a-time 125s. Spreading the heavy files makes every worker rebuild the same module-level
+  replay and the same 1.25-million-row cache race, which costs more than it saves.
+- **The parity-gate tool tests rebuild the same synthetic run per test** — 24 of the 30 slowest root
+  tests (B-LEG ~13 builds, the extreme leg ~15 gate subprocesses, SOS Fade ~5).
+- **The golden gates ran one at a time**: 75s serial, **18.6s at once, 17 of 17 green** (measured).
+- **The typecheck rebuilt from scratch**: 13.3s; **2.5s warm with its build info kept** (measured).
+- **Backend setup is about half its test time**, the largest piece being a 5.5 MB news-calendar read
+  on every test client start (~51 of 332 test-seconds). No single slow test; the longest is 10.6s.
+- **No test repeats a golden gate run** — nothing to cut as a duplicate.
+
+### What was built
+
+- **`scripts/test.sh`, the everyday command** (`scripts/testing/`): runs only what the change since
+  the last green run can reach — a static import graph over the Python source plus file tables for
+  everything an import cannot express (Pine, golden exports, meta.json, the frontend). 0.3s on an
+  unchanged tree, ~0.5s of selection overhead otherwise. First real run: 17 changed files → root tests
+  plus all 17 gates, green in 24.7s.
+- **The full run skips an unchanged tree** and saves its output to `.test-logs/full.log`; gates run
+  at once (`--jobs auto`); the typecheck is incremental; `execution/` (15 tests that had never run)
+  and `scripts/` joined step 1.
+- **The full run checks the fast tier**: a red full run names every failure the fast command would
+  have skipped for the same changes.
+- **`python3 -m scripts.testing.mutate`** plants a bug in memory and runs only the covering tests —
+  no file edited, so nothing leaks into the other session sharing the clone.
+
+### Why a static graph and not coverage tracing
+
+A coverage-traced selector (pytest-testmon) is not installed, pays a full traced run up front, and
+is blind to exactly the inputs this repo keeps paying for: data files, source read as text,
+subprocesses and git history. A static graph is deterministic, explains every pick, and errs toward
+over-selecting: an engine or replay edit still reaches ~70% of the root test files, which is the
+honest price of the replay stack importing every engine.
+
+---
+
 # The test suite audit — 2026-08-15
 
 **The question, in Aaron's words:** *"I don't understand how we have twenty seven hundred unit
@@ -206,3 +275,45 @@ costs:
    quietly.
 
 That is Aaron's call, not one to take by narrowing a window and saying nothing.
+
+---
+
+## Moved verbatim from root `CLAUDE.md` on 2026-09-10
+
+✅ **That answer was taken on 2026-08-15 and the suite is ~2x faster: ~7 minutes → 3:16 end to end
+through `scripts/run_all_tests.sh` (frontend typecheck included), and 2,811 tests still run.** Nothing was deleted or excluded — an audit for dead, vacuous and duplicated
+tests found **none** (7 assertion-free tests, all deliberate "must never raise"; 0 tests for
+deleted code; 0 real duplicates). **The count was never the problem: 67 tests out of 2,811 were
+the entire runtime, and 2,744 of them finished in ~130s all along.** Full record and the
+per-file numbers: `docs/TEST_SUITE_PERFORMANCE.md`.
+
+The four things that made it fast, in the order they were worth doing:
+
+| | fix | measured |
+|---|---|---|
+| an N+1 **in production code** (`services/bot_versions.py` ran one `git show` per commit) | one `git log --name-only` | 1,080 subprocesses → 14; that file 53.7s → 8.7s |
+| the same 31 MB bar cache re-read and the same engine replayed once per TEST | `lru_cache` on the read, the slice and the replay | 62s → 21s |
+| eight strategy replays where four are needed; one cache collision fired per test | share them | 182s → 80s; 86s → 25s |
+| both suites single-core on a 12-core box | `pytest-xdist`, `-n auto --dist load` | root 202s → 119s, backend 150s → 45s |
+
+🔴 **The first row is the transferable one: a slow TEST is sometimes a defect in the code under
+it.** That git fan-out scaled with repo history, so it made the `/version` endpoint slower every
+time either of us pushed — and it had been invisible for as long as it existed, because its output
+was byte-identical either way. **Nothing in a result can show you a cost.**
+
+⚠ **`backtest/tests/test_reprice.py` is ~68s of the root suite's 119s, alone**, and it is four
+genuine two-year replays. Everything else runs in ~44s. **Any further speed is a COVERAGE decision,
+not a scheduling one** — say so out loud rather than quietly narrowing a window.
+
+✅ **RE-MEASURED 2026-08-27: `scripts/run_all_tests.sh` is 3:16 → 2:00 end to end, all green, and
+NOT ONE TEST WAS TOUCHED TO GET THERE.** The whole gain came from making the REPLAY faster — the
+regime map, the bar loop, a leg-latch prune that re-sorted 20,000 keys per bar and a pivot detector
+that copied 2,000 to read 31 (`HISTORY.md` → *A full-history backtest went from ten minutes to a
+minute*). ⚠ **The per-file split above is from 2026-08-15 and predates that work, so the 68/119
+figures no longer describe this suite** — the total is measured, the split is not. Re-measure before
+quoting either half. 🔴 **This is the 2026-08-15 lesson arriving from the other end and it is worth
+saying plainly: a slow TEST is sometimes a defect in the code under it, and the reverse also holds —
+fixing production code is how a suite gets faster without a single scheduling decision.**
+
+⚠ **`--dist load`, not `loadfile`** — see the reasoning in `scripts/run_all_tests.sh`, and note
+that the intuitive choice measured slower.

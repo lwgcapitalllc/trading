@@ -197,6 +197,10 @@ playwright-report/
 .eslintcache
 node_modules/.cache/
 
+# The test tiers' logs, green records and parse cache (scripts/test.sh, scripts/run_all_tests.sh).
+# Machine-local: a green record describes what THIS clone's tree held when its tests passed.
+.test-logs/
+
 # Playwright MCP browser session scratch (console logs, page snapshots, screenshots)
 .playwright-mcp/
 

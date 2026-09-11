@@ -148,7 +148,8 @@ fi
 
 echo "  pre-push: lint and format clean."
 echo ""
-echo "  ⚠ TESTS ARE NOT RUN BY ANY HOOK. Before you push something that matters:"
-echo "      ./scripts/run_all_tests.sh"
+echo "  ⚠ TESTS ARE NOT RUN BY ANY HOOK."
+echo "      scripts/test.sh              after every change - only what the change reaches"
+echo "      scripts/run_all_tests.sh     before pushing money-path code (root CLAUDE.md says which)"
 echo ""
 exit 0

@@ -47,16 +47,30 @@ SELF-TEST
 prints success is worse than no runner, because the next reader takes the green for coverage.
 
 Usage:
-    python3 scripts/check_engine_gates.py
+    python3 scripts/check_engine_gates.py                   every gate, one at a time
+    python3 scripts/check_engine_gates.py --jobs auto       every gate, all at once
+    python3 scripts/check_engine_gates.py --only engines/vwap,sos_fade
+
+⚠ **`--jobs` changes the SCHEDULING and nothing else** — same discovery, same command line per
+gate, same pass rule (exit 0), and the results print in discovery order whatever order they finish
+in. MEASURED 2026-09-10: 17 of 17 green in 18.6s at once against 75s one at a time.
+
+⚠ **`--only` is the fast tier's** (`scripts/testing/fast.py` runs the gates a change can reach).
+The self-test below still counts EVERY discovered export first, so a filter can never hide a lost
+one; an unknown name is refused rather than silently running nothing; and a filtered green says
+how many of how many it ran.
 
 Standard library only. Step of `scripts/run_all_tests.sh`.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -140,17 +154,39 @@ def _gate_for(component, manifest):
     return None
 
 
-def main() -> int:
+def _run_gate(item):
+    _engine, gate, csv, warmup, extra = item
+    cmd = [sys.executable, str(gate), str(csv)]
+    if warmup:
+        cmd += ["--warmup", str(warmup)]
+    cmd += extra
+    return subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True)
+
+
+def _parse(argv):
+    ap = argparse.ArgumentParser(description="Run every parity gate against its golden export.")
+    ap.add_argument("--jobs", default="1", help="gates run at once: a number, or 'auto'")
+    ap.add_argument(
+        "--only", default="", help="comma-separated components, e.g. engines/vwap,b_leg"
+    )
+    args = ap.parse_args(argv)
+    if args.jobs != "auto" and not (args.jobs.isdigit() and int(args.jobs) > 0):
+        ap.error(f"--jobs takes a positive number or 'auto', not {args.jobs!r}")
+    return args
+
+
+def main(argv=None) -> int:
+    args = _parse(argv)
     for root in ROOTS:
         if not root.is_dir():
             print(f"ERROR: no directory at {root} - the path is wrong, not the repo empty.")
             return 1
 
-    work = _discover()
+    found = _discover()
 
-    if len(work) < MIN_GOLDEN_EXPORTS:
+    if len(found) < MIN_GOLDEN_EXPORTS:
         print(
-            f"🔴 SELF-TEST FAILED: found {len(work)} golden export(s), expected at least "
+            f"🔴 SELF-TEST FAILED: found {len(found)} golden export(s), expected at least "
             f"{MIN_GOLDEN_EXPORTS}."
         )
         print("   A runner that finds nothing and prints success is worse than no runner - the")
@@ -158,18 +194,37 @@ def main() -> int:
         print("   MIN_GOLDEN_EXPORTS only once you have confirmed one was deliberately removed.")
         return 1
 
+    work = found
+    if args.only:
+        wanted = {w.strip().rstrip("/") for w in args.only.split(",") if w.strip()}
+
+        def names(item):
+            return {item[0].name, item[0].relative_to(REPO).as_posix()}
+
+        unknown = wanted - set().union(*(names(w) for w in found))
+        if unknown:
+            print(f"🔴 --only names no golden export: {', '.join(sorted(unknown))}")
+            return 1
+        work = [w for w in found if names(w) & wanted]
+
+    jobs = (os.cpu_count() or 1) if args.jobs == "auto" else int(args.jobs)
+    runnable = [w for w in work if w[1] is not None]
+    # One at a time streams each result as it lands, exactly as this runner always has. At once,
+    # every gate finishes before any prints, and they print in DISCOVERY order either way.
+    results = {}
+    if jobs > 1 and len(runnable) > 1:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            results = dict(zip(map(id, runnable), pool.map(_run_gate, runnable)))
+
     failures = 0
-    for engine, gate, csv, warmup, extra in work:
+    for item in work:
+        engine, gate, csv, warmup, extra = item
         extra_note = f", {' '.join(extra)}" if extra else ""
         label = f"{engine.name} ({csv.name}, warm-up {warmup}{extra_note})"
         if gate is None:
             failures += 1
             continue
-        cmd = [sys.executable, str(gate), str(csv)]
-        if warmup:
-            cmd += ["--warmup", str(warmup)]
-        cmd += extra
-        proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True)
+        proc = results.get(id(item)) or _run_gate(item)
         if proc.returncode == 0:
             print(f"  ✓ {label}")
             # 🔴 A GATE'S OWN WARNINGS MUST SURVIVE ITS GREEN, and this runner swallowed them.
@@ -199,8 +254,11 @@ def main() -> int:
         print("  taken makes its gate REFUSE the export - that is a re-export, not a Python bug.")
         return 1
 
-    covered = {e for e, _g, _c, _w, _x in work}
+    covered = {e for e, _g, _c, _w, _x in found}
     print(f"\n✓ {len(work)} gate(s) green against their golden exports.")
+    if len(work) < len(found):
+        print(f"⚠ FILTERED: ran {len(work)} of {len(found)} golden gates (--only) - this green")
+        print("  covers those alone. The full run (scripts/run_all_tests.sh) runs every one.")
     # 🔴 STATE THE COVERAGE FRACTION OUT LOUD, ALWAYS.
     # A bare green tick on this step reads as "the engine gates pass" when it may mean "the ONE
     # engine with a committed export passes". That is the misleading-green shape this repo keeps

@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 #
-# Every test in this repo, in one command.
+# Every test in this repo, in one command - the FULL run.
 #
-#   ./scripts/run_all_tests.sh
+#   ./scripts/run_all_tests.sh           skips itself if nothing changed since the last full green
+#   ./scripts/run_all_tests.sh --force   runs anyway
 #
-# Run by `.githooks/pre-push`. Exit 0 only if everything passed.
+# 🔴 THIS IS THE DELIBERATE RUN, NOT THE EVERYDAY ONE. After a piece of work, run
+# `scripts/test.sh`, which runs only what the change can reach. This one is required before a push
+# that touches the money paths, after a change to the test plumbing, and before a promote - root
+# CLAUDE.md -> *Formatting, linting and the test gate* has the exact list.
+#
+# ⚠ Everything it prints is saved to .test-logs/full.log. Read that file to see output again -
+# never re-run an unchanged tree; this script refuses to, and says where the log is.
+#
+# Exit 0 only if everything passed. No hook runs it (pre-push used to - see root CLAUDE.md).
 #
 # 🔴 **THIS SCRIPT EXISTS BECAUSE "run all tests" WAS NOT ONE COMMAND.** A bare `pytest` at the
 # repo root collects 2,670 tests and then DIES on a collection error: `command-center/backend`
@@ -21,6 +30,14 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+FORCE=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    *) echo "unknown option: $arg (the only option is --force)"; exit 2 ;;
+  esac
+done
 
 # The python that has this repo's dependencies (pandas, numpy, fastapi). It is the backend's venv
 # on both Macs today — there is no separate root env, and the root suite has always been run with
@@ -59,22 +76,45 @@ if [ -n "$PYTEST_PARALLEL" ] && ! "$PYTHON" -c "import xdist" 2>/dev/null; then
   exit 1
 fi
 
+# ── An unchanged tree is not run again ────────────────────────────────────────
+# A green run is recorded against the CONTENT of every file it saw (scripts/testing/manifest.py),
+# never against a clock, so a touched-but-identical file is not a change. MEASURED 2026-09-10 over
+# the previous 60 sessions: 24 of 236 full runs had nothing changed, 17 of them only to see output
+# the first run had cut off. The output is saved now, so there is never a reason to.
+# ⚠ It cannot see git-ignored data (the bar cache) or git history - after changing either, --force.
+LOGS="$ROOT/.test-logs"
+LOG="$LOGS/full.log"
+SNAP="$LOGS/full.snapshot.json"
+mkdir -p "$LOGS"
+if [ "$FORCE" != 1 ] && "$PYTHON" -m scripts.testing.stamp check; then
+  exit 0
+fi
+# Taken BEFORE any test runs: a file edited mid-run then reads as changed next time, which is the
+# only safe direction - this run cannot vouch for content it may never have seen.
+"$PYTHON" -m scripts.testing.stamp snapshot "$SNAP"
+
+run_suite() {
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Test suite"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# ── 1. Engines, backtest, algos, strategies, smart-money ──────────────────────
-# ~2:00 across 12 cores, 1,760 tests. `conftest.py` at the root puts `engines/` on sys.path so
-# the canonical engines import by bare name.
+# ── 1. Engines, backtest, algos, strategies, smart-money, execution, scripts ──
+# MEASURED 2026-09-10: 117s across 12 threads (6 real cores), 3,140 tests. `conftest.py` at the
+# root puts `engines/` on sys.path so the canonical engines import by bare name.
 #
-# ⚠ **`backtest/tests/test_reprice.py` is ~68s of that 2:00 on its own** — four full replays of
-# `sos_fade` over two years of M15 bars, which is the thing it exists to check. Everything
-# else in this suite finishes in ~44s. If this needs to get faster, that file is the whole
-# conversation, and the lever is coverage rather than scheduling.
-echo "  [1/18] engines / backtest / algos / strategies / smart-money ..."
-if "$PYTHON" -m pytest engines backtest algos strategies smart-money -q $PYTEST_PARALLEL; then
+# ⚠ **`execution` and `scripts` joined on 2026-09-10.** `execution/tests` (15 tests) had never run
+# at all - this line named five folders and it was the sixth - and `scripts` holds the fast
+# tier's own tests. `scripts/testing/tests/test_rules.py` goes red if this list and the fast
+# tier's root suite ever disagree again.
+#
+# ⚠ **Scheduling is not the lever here, and that was MEASURED, not argued**: `load` 117s,
+# `worksteal` 121s, longest-first one-at-a-time 125s. The floor is one worker holding
+# `backtest/tests/test_reprice.py`'s four real two-year replays (62s alone on an idle machine), and
+# spreading heavy files makes every worker rebuild the same module-level replay or cache race.
+echo "  [1/18] engines / backtest / algos / strategies / smart-money / execution / scripts ..."
+if "$PYTHON" -m pytest engines backtest algos strategies smart-money execution scripts -q $PYTEST_PARALLEL; then
   pass "root suite"
 else
   fail "root suite (engines / backtest / algos / strategies / smart-money)"
@@ -101,9 +141,13 @@ echo ""
 # gate takes the half that needs nothing running — `tsc`, which is the check that would actually
 # have caught a broken build — and the browser tests stay a deliberate `./start.sh` then
 # `npm test` in `command-center/frontend`.
+#
+# ⚠ **Incremental since 2026-09-10**: the build info lives in node_modules/.cache (git-ignored,
+# machine-local), so a warm run re-checks only what moved. MEASURED: 14.2s cold, 2.5s warm. The
+# same command is step 3 of the fast tier (`scripts/testing/rules.py`), so the two share one cache.
 echo "  [3/18] frontend typecheck ..."
 if [ -d "command-center/frontend/node_modules" ]; then
-  if (cd command-center/frontend && npx --no-install tsc --noEmit); then
+  if (cd command-center/frontend && npx --no-install tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc-noemit.tsbuildinfo); then
     pass "frontend typecheck (tsc --noEmit)"
   else
     fail "frontend typecheck (tsc --noEmit)"
@@ -333,8 +377,10 @@ fi
 #   A green run here says nothing about a Pine change made after the golden file was taken.
 # ⚠ Engines and strategies are DISCOVERED (*/exports/golden/*.csv), never listed, and finding zero
 #   is a FAILURE - a runner that quietly finds nothing reads as coverage.
+# ⚠ **All at once since 2026-09-10** (`--jobs auto`): same gates, same exports, same pass rule,
+#   results printed in discovery order. MEASURED: 17 of 17 green in 18.6s against 75s one by one.
 echo "  [15/18] engine + strategy parity gates (golden exports) ..."
-if "$PYTHON" scripts/check_engine_gates.py; then
+if "$PYTHON" scripts/check_engine_gates.py --jobs auto; then
   pass "engine + strategy parity gates vs golden exports (PARTIAL coverage - the step prints the fraction)"
 else
   fail "engine + strategy parity gates vs committed golden exports"
@@ -399,7 +445,7 @@ if [ -n "$FAILED" ]; then
   echo "  ⚠ Playwright browser tests are NOT in this run - they need the app up."
   echo "    ./start.sh, then: cd command-center/frontend && npm test"
   echo ""
-  exit 1
+  return 1
 fi
 
 echo "  All green."
@@ -407,3 +453,20 @@ echo ""
 echo "  ⚠ Playwright browser tests are NOT in this run - they need the app up."
 echo "    ./start.sh, then: cd command-center/frontend && npm test"
 echo ""
+return 0
+}
+
+# Everything above goes to the terminal AND to .test-logs/full.log. A pipeline, not an `exec`
+# redirect, so the log is complete when this script exits rather than when `tee` gets round to it.
+run_suite 2>&1 | tee "$LOG"
+STATUS=${PIPESTATUS[0]}
+if [ "$STATUS" = 0 ]; then
+  "$PYTHON" -m scripts.testing.stamp record "$SNAP"
+else
+  # 🔴 The one thing only the full run can see: a failure the fast tier would have skipped for the
+  # same changes. A static selector is wrong in exactly that direction, and nothing about a green
+  # fast run can show it - so the full run says so, by name.
+  "$PYTHON" -m scripts.testing.stamp blindspots "$LOG" "$SNAP" | tee -a "$LOG"
+fi
+echo "  Full output: .test-logs/full.log"
+exit "$STATUS"

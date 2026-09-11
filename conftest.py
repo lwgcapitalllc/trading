@@ -7,11 +7,32 @@ Putting ``engines/`` on sys.path here makes every engine importable from any
 test in the suite, including the ones that don't bootstrap their own path.
 """
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent
+
+
+# 🔴 NO TEST MAY REACH THE LIVE TRADING BOX, in this process or in any process it starts
+# (2026-09-10). Until this, the root suite had no guard at all and the backend's could not follow a
+# test into a worker process - where one did reach the box. Loaded BY PATH so this file needs no
+# package import to arm it, and armed at import so xdist workers inherit it from their first line.
+# Rules and the two doors it shuts: scripts/testing/vps_guard.py.
+def _arm_vps_guard() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "_lwg_vps_guard", _ROOT / "scripts" / "testing" / "vps_guard.py"
+    )
+    guard = importlib.util.module_from_spec(spec)
+    guard = sys.modules.setdefault("_lwg_vps_guard", guard)  # one name everywhere: see the hook
+    if not hasattr(guard, "install"):
+        spec.loader.exec_module(guard)
+    guard.install()
+    guard.arm_children()
+
+
+_arm_vps_guard()
 
 
 # Git hook tripwire. `core.hooksPath` is per-clone LOCAL config that `git clone`
