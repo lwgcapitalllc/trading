@@ -725,15 +725,117 @@ test('removing a bot sends null, which is the bench rather than a delete', async
     return route.fallback()
   })
 
-  // ⚠ Re-pointed 2026-09-06. The account card's own Remove button went with the tab collapse;
-  // taking a bot OFF an account is the same write from the other side, and it is now the last
-  // option in the bot's own account selector. **The RULE is untouched and is the whole check:
-  // `null` is the only spelling of "on no account" — `0` is not an account, and omitting the
-  // field reads to the backend as no change at all.**
+  // ⚠ Re-pointed twice. The account card's own Remove button went with the tab collapse
+  // (2026-09-06) and removal became the last option in the bot's account selector, which nobody
+  // found — Aaron: *"we can stop but we can't remove"*. It is its own button again (2026-09-11).
+  // **The RULE is untouched and is the whole check: `null` is the only spelling of "on no
+  // account" — `0` is not an account, and omitting the field reads to the backend as no change.**
   await openBot(page, 'b_leg')
-  await page.getByTestId('move-b_leg').selectOption('')
+  const remove = page.getByTestId('remove-b_leg')
+  await remove.click()
+  await remove.click()
   await expect.poll(() => sent).toEqual({ account: null, deploy: true })
   await expect(page.getByText(/will not start until it is on one again/i)).toBeVisible()
+})
+
+/** Answers a removal of `b_leg` and records every body sent, so a check can COUNT the writes. */
+async function recordRemovals(page: Page) {
+  const sent: unknown[] = []
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/b_leg/account') {
+      sent.push(route.request().postDataJSON())
+      return route.fulfill({
+        json: {
+          status: 'ok',
+          changed: true,
+          deployed: true,
+          bot: 'b_leg',
+          account: null,
+          restart_required: true,
+          detail: 'benched',
+        },
+      })
+    }
+    return route.fallback()
+  })
+  return sent
+}
+
+test('Remove takes a SECOND click — the first only arms it', async ({ page }) => {
+  // It is one press from taking a bot off the account it trades, so it works like the live
+  // deploy: the first click re-labels the button, only the second sends.
+  // MUTATION: drop the arming branch → the first click sends and this goes red.
+  await mock(page, STACKED)
+  const sent = await recordRemovals(page)
+  await openBot(page, 'b_leg')
+  const remove = page.getByTestId('remove-b_leg')
+  await expect(remove).toHaveText(/Remove from account/)
+  await remove.click()
+  await expect(remove).toHaveText(/Click again to remove/)
+  expect(sent).toHaveLength(0)
+})
+
+test('an armed Remove disarms itself, so a stray click later is not the second one', async ({
+  page,
+}) => {
+  // MUTATION: drop the 6s disarm → the button stays armed and this goes red. (The page's clock
+  // runs ten times fast here, so the six seconds pass in under one.)
+  await mock(page, STACKED)
+  const sent = await recordRemovals(page)
+  await openBot(page, 'b_leg')
+  const remove = page.getByTestId('remove-b_leg')
+  await remove.click()
+  await expect(remove).toHaveText(/Click again to remove/)
+  await expect(remove).toHaveText(/Remove from account/, { timeout: 5_000 })
+  expect(sent).toHaveLength(0)
+})
+
+test('a RUNNING bot cannot be removed from its account', async ({ page }) => {
+  // It read its account at startup, so taking it off cannot reach the running process — the page
+  // would list it as unassigned while it went on trading. The server refuses it; so does this.
+  // MUTATION: drop `running` from the button's `disabled` → it enables and this goes red. The
+  // stopped-bot checks above are the positive control.
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
+  await openBot(page, 'sos_fade') // the snapshot mock has sos_fade RUNNING
+  await expect(page.getByTestId('remove-sos_fade')).toBeDisabled()
+})
+
+test('a bot the CONFIG has on no account offers no Remove, whatever it last reported', async ({
+  page,
+}) => {
+  // 🔴 The panel's bot record carries the account the bot last REPORTED, which stays on the old
+  // account until its next start — so a bot just taken off an account still "reports" it. A
+  // removal is decided off the CONFIG, or the panel offers Remove on a bot already removed.
+  // MUTATION: gate Remove on the bot's own report → it is offered here and this goes red.
+  await mock(page, [BENCHED], [reg()])
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/snapshot') {
+      return route.fulfill({
+        json: {
+          fetched_at: new Date().toISOString(),
+          bots: [
+            {
+              key: 'b_leg',
+              name: 'B-LEG',
+              status: 'STOPPED',
+              account_type: 'demo',
+              account: String(ACCOUNT),
+            },
+          ],
+          scheduled_jobs: [],
+          telegram: { name: 'Telegram', status: 'RUNNING' },
+        },
+      })
+    }
+    return route.fallback()
+  })
+  await openBot(page, 'b_leg')
+  // The configs have landed once the selector leaves the bot's own report — the positive control
+  // that the absence below is an answer, not a panel still waiting on the configs.
+  await expect(page.getByTestId('move-b_leg')).toHaveValue('')
+  await expect(page.getByTestId('remove-b_leg')).toHaveCount(0)
 })
 
 test('a STOPPED bot may be moved — the positive control for the running guard', async ({
@@ -925,9 +1027,33 @@ test('Take live is NOT DRAWN on a live account', async ({ page }) => {
   )
   await openAccount(page, LIVE_ACCOUNT)
   const drawer = page.getByRole('complementary', { name: 'Account settings' })
-  await expect(drawer.getByTestId('backtest-account-bots')).toBeVisible()
   await expect(drawer.getByRole('button', { name: 'Edit' })).toBeVisible()
   await expect(drawer.getByTestId('go-live')).toHaveCount(0)
+})
+
+test('Backtest these bots is offered on a DEMO account', async ({ page }) => {
+  // The positive control for the check below, for the same reason as Take live's.
+  await mock(page, STACKED, [reg()])
+  await openAccount(page)
+  await expect(page.getByTestId('backtest-account-bots')).toBeVisible()
+})
+
+test('Backtest these bots is NOT DRAWN on a live account', async ({ page }) => {
+  // 🔴 2026-09-11, Aaron: *"backtest these bots should only be on demo accounts, not live
+  // accounts."* Demo is where a set is tried; the live bots run what was tested there.
+  // ⚠ The account's own Edit control is asserted FIRST, so the absence is an answer rather than
+  // a panel still waiting on the registry.
+  // MUTATION: drop the demo-only condition → the button is drawn and this goes red.
+  const LIVE_ACCOUNT = 34957946
+  await mock(
+    page,
+    STACKED.map((g) => ({ ...g, account: LIVE_ACCOUNT, server: 'PUPrime-Live' })),
+    [reg({ account: LIVE_ACCOUNT, kind: 'live', server: 'PUPrime-Live' })]
+  )
+  await openAccount(page, LIVE_ACCOUNT)
+  const drawer = page.getByRole('complementary', { name: 'Account settings' })
+  await expect(drawer.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(drawer.getByTestId('backtest-account-bots')).toHaveCount(0)
 })
 
 test('a registered account with NO bots can still be OPENED and added to', async ({ page }) => {

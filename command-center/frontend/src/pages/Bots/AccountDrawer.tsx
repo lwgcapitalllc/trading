@@ -532,20 +532,26 @@ export function AccountDrawer({
                   Runs tab and did nothing else. It now opens the Stacks tab with the builder filled
                   in from what these bots run (their own settings, charts and risk, and this
                   account's cap), which the server works out. Disabled, never hidden, with fewer
-                  than two bots: that is not a stack, and the reason is on the button. */}
-                <button
-                  data-testid="backtest-account-bots"
-                  disabled={group.bots.length < 2}
-                  title={
-                    group.bots.length < 2
-                      ? 'A stack needs two or more bots on this account.'
-                      : "Opens the stack builder on the Backtests page, filled in with what these bots run — their own settings, charts and risk, and this account's cap."
-                  }
-                  onClick={() => navigate(`/backtests?tab=stacks&account=${account}`)}
-                  className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Play size={12} /> Backtest these bots
-                </button>
+                  than two bots: that is not a stack, and the reason is on the button.
+                  🔴 **ONLY ON A DEMO ACCOUNT (2026-09-11)** — Aaron: *"backtest these bots should
+                  only be on demo accounts, not live accounts."* Demo is where a set is tried out;
+                  the live bots run what was already tested there. Same rule as Take live below: an
+                  account whose kind is not known yet gets no button. */}
+                {reg?.kind === 'demo' && (
+                  <button
+                    data-testid="backtest-account-bots"
+                    disabled={group.bots.length < 2}
+                    title={
+                      group.bots.length < 2
+                        ? 'A stack needs two or more bots on this account.'
+                        : "Opens the stack builder on the Backtests page, filled in with what these bots run — their own settings, charts and risk, and this account's cap."
+                    }
+                    onClick={() => navigate(`/backtests?tab=stacks&account=${account}`)}
+                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Play size={12} /> Backtest these bots
+                  </button>
+                )}
                 {/* ── the last hop: demo → live ───────────────────────────────────
                  *
                  * 🔴 **PRESENT ONLY ON A DEMO ACCOUNT (2026-09-11).** It was drawn on every

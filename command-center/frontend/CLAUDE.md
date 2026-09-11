@@ -177,6 +177,9 @@ builder refuses. ⚠ **Its key is outside `['bots','accounts']` with `gcTime: 0`
 write cannot reshape an open form and every open is a fresh read. ⚠ **A refusal is a banner with the
 server's sentence and a Dismiss**; the button is disabled, never hidden, under two bots. ✅ Driven in
 a browser with the launch intercepted: 26 + 116 settings, 5% each, 5m/15m, `XAUUSD.p`, ECN, cap 10.
+🔴 **Drawn only on a DEMO account since 2026-09-11** — Aaron: *"backtest these bots should only be
+on demo accounts, not live accounts."* Demo is where a set is tried; live runs what was tested
+there. Take live's rule: an account whose kind is not known yet gets no button.
 
 ## "Sync VPS" — scan first, then a Sync button (2026-09-10)
 
@@ -276,6 +279,24 @@ available bots that is it … why is XAUUSD.p showing … the account doesn't ca
 - Tests: `bots-accounts.spec.ts` (4 new, 3 re-pointed); 9 mutations run, 9 killed, in a THROWAWAY WORKTREE —
   offline specs build the checkout from disk, and a bug planted in the shared clone is one the other
   session's run can pick up.
+
+## "Remove from account" is a button in the bot panel (2026-09-11)
+
+Aaron: *"we can stop but we can't remove."* Removing was the last option in the bot panel's
+account selector, and nobody found it.
+
+- 🔴 **Its own button beside the selector** (`remove-<key>`). It sends the same write with no
+  account, so the bot is BENCHED: still registered, listed under Unassigned, and never started by
+  the watchdog. The selector now only MOVES; "Not on an account" appears only as a benched bot's
+  value — two controls for one write is two places for its guard to drift.
+- ⚠ **Refused while running** (it read its account at startup — the selector's reason), and **a
+  second click on the same button**, disarming after 6s: the live deploy's pattern.
+- 🔴 **Decided off the CONFIG's account (`configAccount`), never `bot.account`.** That field is what
+  the bot last REPORTED and stays on the old account until its next start, so a bot just removed
+  would still offer Remove. `undefined` until the configs are read: Remove waits, the selector shows
+  the report.
+- Tests: `bots-accounts.spec.ts` (6 new — 4 for Remove, 2 for the demo-only backtest button — and
+  1 re-pointed); 8 mutations run, 8 killed, in a throwaway worktree.
 
 ## The demo account after its bots went live — five things it got wrong (2026-09-11)
 

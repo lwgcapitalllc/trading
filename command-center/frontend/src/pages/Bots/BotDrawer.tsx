@@ -24,7 +24,8 @@
  * a fraction of the viewport because the page BEHIND it stays the subject — a panel wide enough
  * to hide the list it was opened from is a page you have navigated away from without meaning to.
  */
-import { Play, Square, RotateCcw, FileText, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Play, Square, RotateCcw, FileText, X, Unlink } from 'lucide-react'
 import {
   useBotParams,
   useAssignBotAccount,
@@ -74,8 +75,14 @@ export function BotDrawer({
   onRestart,
   busy,
   pendingAction = null,
+  configAccount,
 }: {
   bot: BotStatus
+  /** The account this bot's CONFIG names — what a move or a removal changes, and what the page's
+   *  rows are laid out by. `null` = on no account; `undefined` = the configs are not read yet.
+   *  ⚠ Not `bot.account`: that is what the bot last REPORTED, which stays on the old account
+   *  until its next start — a bot just taken off an account would still offer Remove. */
+  configAccount?: number | null
   /** What THIS bot's own closed trades came to — computed server-side off its decision record.
    *  ⚠ Never the account's growth: two bots on one balance share that, and crediting each with
    *  all of it is the defect this whole section replaced. */
@@ -97,9 +104,23 @@ export function BotDrawer({
   const { data: groups } = useBotAccounts()
   const { data: registry } = useRegisteredAccounts()
   const assign = useAssignBotAccount()
+  // Remove takes a second click on the SAME button, the live deploy's pattern. Held per BOT, so
+  // a panel re-used for another bot cannot arrive already armed; disarms itself after 6s so a
+  // stray click minutes later cannot be the second one.
+  const [removeArmedFor, setRemoveArmedFor] = useState<string | null>(null)
+  const removeArmed = removeArmedFor === bot.key
+  useEffect(() => {
+    if (!removeArmed) return
+    const t = setTimeout(() => setRemoveArmedFor(null), 6_000)
+    return () => clearTimeout(t)
+  }, [removeArmed])
 
   const running = bot.status === 'RUNNING'
   const v = data as BotParamsView | undefined
+  // Where the selector sits: the config's account once the configs are read, the bot's own report
+  // until then (display only — Remove waits for the config, below).
+  const selected =
+    configAccount === undefined ? bot.account || '' : configAccount === null ? '' : configAccount
 
   /**
    * Every account this bot can be moved TO.
@@ -342,7 +363,7 @@ export function BotDrawer({
             <div className="flex items-center gap-2 flex-wrap">
               <select
                 data-testid={`move-${bot.key}`}
-                value={bot.account || ''}
+                value={selected}
                 disabled={running || assign.isPending}
                 title={
                   running
@@ -365,15 +386,62 @@ export function BotDrawer({
                     {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
                   </option>
                 ))}
-                <option value="">Not on an account</option>
+                {/* Only what a bot on NO account shows as its value. Taking a bot OFF an account
+                 *  is the Remove button beside this — the one place it happens (2026-09-11). */}
+                {selected === '' && (
+                  <option value="" disabled>
+                    Not on an account
+                  </option>
+                )}
               </select>
+              {/* 🔴 **Remove from account, as its own button (2026-09-11).** It was the last
+               *  option in this dropdown, which nobody found — Aaron: *"we can stop but we can't
+               *  remove"*. It sends the same write with no account, so the bot is BENCHED (it
+               *  stays registered and moves to Unassigned), and the watchdog never starts a bot
+               *  on no account. ⚠ Refused while running, for the dropdown's reason. ⚠ A second
+               *  click on the same button, like the live deploy: it is one press from taking a
+               *  bot off an account it trades. ⚠ Offered only once the CONFIG says the bot is on
+               *  an account — a write decided from the bot's own report could act on a stale one. */}
+              {configAccount != null ? (
+                <button
+                  data-testid={`remove-${bot.key}`}
+                  disabled={running || assign.isPending}
+                  title={
+                    running
+                      ? `Stop ${labelOf(bot)} first — it read its account at startup, so removing ` +
+                        'it cannot reach the running process.'
+                      : removeArmed
+                        ? 'Click again to take it off the account.'
+                        : `Take ${labelOf(bot)} off account ${configAccount}. It stays stopped until ` +
+                          'you add it to an account again.'
+                  }
+                  onClick={() => {
+                    if (!removeArmed) {
+                      setRemoveArmedFor(bot.key)
+                      return
+                    }
+                    setRemoveArmedFor(null)
+                    assign.mutate({ botKey: bot.key, account: null, display: labelOf(bot) })
+                  }}
+                  className={`flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    removeArmed
+                      ? 'border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10'
+                      : 'border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                  }`}
+                >
+                  <Unlink size={12} />
+                  {removeArmed ? 'Click again to remove' : 'Remove from account'}
+                </button>
+              ) : null}
               {assign.isPending && (
-                <span className="text-[11px] text-accent animate-pulse">Moving…</span>
+                <span className="text-[11px] text-accent animate-pulse">
+                  {assign.variables?.account === null ? 'Removing…' : 'Moving…'}
+                </span>
               )}
             </div>
             <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]">
               {running
-                ? `Stop ${bot.name} before moving it — it reads its account when it starts.`
+                ? `Stop ${bot.name} before moving or removing it — it reads its account when it starts.`
                 : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
             </p>
           </div>

@@ -1983,6 +1983,10 @@ export function Bots() {
           job={jobByKey.get(selBot.key)}
           busy={busy}
           pendingAction={pending?.key === selBot.key ? pending.action : null}
+          // The CONFIG's account, or `undefined` until the configs are read — never "on no
+          // account" for a list that has not arrived, or the panel would hide Remove on a bot
+          // that is on one.
+          configAccount={accountGroups === undefined ? undefined : accountOfBot(selBot.key)}
           onClose={() => set('bot', null)}
           onLogs={() => setLogBot(selBot.key)}
           onStart={() => act(selBot.key, 'start', () => startOne.mutate(selBot.key))}
