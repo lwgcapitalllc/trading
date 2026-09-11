@@ -145,7 +145,6 @@ export function Optimizations() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runner</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Mode</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Winner</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Started</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
@@ -183,9 +182,6 @@ export function Optimizations() {
                       {opt.ruleset_id ? firmShortName(opt.ruleset_id) : '—'}
                     </td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
-                      {opt.completed_runs}/{opt.estimated_runs}
-                    </td>
                     <td className="px-4 py-3 text-[12px]">
                       {/* A finished optimization with no winner is a real outcome (every combo
                           was rejected), not a blank cell — say so. */}
@@ -207,11 +203,15 @@ export function Optimizations() {
                     <td className="px-4 py-3 text-text-tertiary text-[12px] whitespace-nowrap">
                       {fmtWhen(opt.created_at)}
                     </td>
-                    <td className="px-4 py-3">
+                    {/* The run count rides in the pill only while unfinished — as its own Progress
+                        column it read "10/10" beside "COMPLETE" (2026-09-11, same as Stacks). */}
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}
                       >
                         {st.label}
+                        {opt.status !== 'complete' &&
+                          ` ${opt.completed_runs}/${opt.estimated_runs}`}
                       </span>
                     </td>
                     <td className="px-3 py-3">

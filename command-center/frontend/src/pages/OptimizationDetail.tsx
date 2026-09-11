@@ -29,6 +29,7 @@ import {
   useOptimizationLog,
   useBacktestRuns,
   useBacktestRun,
+  useStrategy,
 } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
@@ -236,8 +237,9 @@ function ProgressCard({
             {isRunning && <span className="text-[11px] text-text-tertiary">· auto-refreshing</span>}
           </div>
 
-          {/* Progress bar */}
-          {isRunning && overallPct === 0 ? (
+          {/* Progress bar — not once the job has finished, where a full bar and "100%" only
+              restated the count beside them (2026-09-11). */}
+          {isComplete ? null : isRunning && overallPct === 0 ? (
             <div className="w-full bg-bg-sunken rounded-full h-[7px] overflow-hidden mb-2">
               {opt.live_pct && opt.live_pct > 0 ? (
                 <div
@@ -283,13 +285,15 @@ function ProgressCard({
                 </>
               )}
             </div>
-            <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
-              {isRunning && overallPct === 0
-                ? opt.live_pct
-                  ? `${opt.live_pct}%`
-                  : ''
-                : `${overallPct}%`}
-            </span>
+            {!isComplete && (
+              <span className="text-[12px] font-mono font-semibold tabular-nums text-text-secondary">
+                {isRunning && overallPct === 0
+                  ? opt.live_pct
+                    ? `${opt.live_pct}%`
+                    : ''
+                  : `${overallPct}%`}
+              </span>
+            )}
           </div>
 
           {/* Inline failure warning while running */}
@@ -511,6 +515,7 @@ function SortHeader({
 function ResultsTable({
   runs,
   sweptKeys,
+  labels,
   navigate,
   bestRunId,
   minTrades,
@@ -524,6 +529,7 @@ function ResultsTable({
   minTrades: number
   sort: { key: SortKey; asc: boolean }
   setSort: (s: { key: SortKey; asc: boolean }) => void
+  labels: Map<string, string>
 }) {
   // Memoised: a 1,000-row grid was re-sorted on every render, and the page re-renders every
   // 3 seconds while the job runs.
@@ -532,6 +538,8 @@ function ResultsTable({
     const miss = sort.asc ? Infinity : -Infinity // nulls sort last whichever way you're going
     return [...runs].sort((a, b) => ((a[sort.key] ?? miss) - (b[sort.key] ?? miss)) * dir)
   }, [runs, sort])
+  // A column of dashes is a heading over nothing — a python grid records no Sharpe.
+  const hasSharpe = runs.some((r) => r.sharpe != null)
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto">
@@ -539,15 +547,16 @@ function ResultsTable({
         <thead>
           <tr className="border-b border-border-subtle bg-bg-sunken">
             <th className="px-3 py-2 w-6" />
+            {/* The setting's own label; the code name is on hover. */}
             {sweptKeys.map((k) => (
-              <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">
-                {k}
+              <th key={k} title={k} className="text-left px-3 py-2 text-text-tertiary font-medium">
+                {labels.get(k) ?? k}
               </th>
             ))}
             <SortHeader label="P&L" col="net_pnl" sort={sort} setSort={setSort} />
             <SortHeader label="Max DD" col="max_drawdown" sort={sort} setSort={setSort} />
             <SortHeader label="Trades" col="trade_count" sort={sort} setSort={setSort} />
-            <SortHeader label="Sharpe" col="sharpe" sort={sort} setSort={setSort} />
+            {hasSharpe && <SortHeader label="Sharpe" col="sharpe" sort={sort} setSort={setSort} />}
             <SortHeader
               label="Profit factor"
               col="profit_factor"
@@ -599,9 +608,11 @@ function ResultsTable({
                 <td className="px-3 py-[9px] text-left tabular-nums text-text-secondary">
                   {run.trade_count ?? '—'}
                 </td>
-                <td className="px-3 py-[9px] text-left font-mono tabular-nums text-text-secondary">
-                  {run.sharpe?.toFixed(2) ?? '—'}
-                </td>
+                {hasSharpe && (
+                  <td className="px-3 py-[9px] text-left font-mono tabular-nums text-text-secondary">
+                    {run.sharpe?.toFixed(2) ?? '—'}
+                  </td>
+                )}
                 <td
                   className={`px-3 py-[9px] text-left font-mono tabular-nums font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}
                 >
@@ -757,7 +768,9 @@ function RankedBars({
 function RobustnessCard({
   score,
   summary,
+  labels,
 }: {
+  labels: Map<string, string>
   score: number
   summary: Record<
     string,
@@ -794,7 +807,9 @@ function RobustnessCard({
         <div className="mt-3 pt-3 border-t border-border-subtle/60 flex flex-wrap gap-x-5 gap-y-1.5">
           {Object.entries(summary).map(([param, sides]) => (
             <span key={param} className="text-[11px] font-mono text-text-tertiary">
-              <span className="text-text-secondary">{param}</span>
+              <span className="text-text-secondary font-sans" title={param}>
+                {labels.get(param) ?? param}
+              </span>
               {(['down', 'up'] as const).map(
                 (d) =>
                   sides[d] && (
@@ -1066,6 +1081,13 @@ export function OptimizationDetail() {
       }),
     [paramKeys, opt]
   )
+  // The strategy's own label for each setting, so headers read "Risk % per trade" rather than
+  // the code name. Falls back to the name when the strategy has no label for it.
+  const { data: strategy } = useStrategy(opt?.strategy_id ?? null)
+  const paramLabels = useMemo(
+    () => new Map((strategy?.param_schema ?? []).map((p) => [p.name, p.label ?? p.display_name])),
+    [strategy]
+  )
 
   const isRunning = opt?.status === 'running'
   const minTrades = opt?.min_trades ?? 0
@@ -1279,6 +1301,7 @@ export function OptimizationDetail() {
             <RobustnessCard
               score={opt.grid_sensitivity_score}
               summary={opt.grid_sensitivity_summary}
+              labels={paramLabels}
             />
           )}
           {!isRunning && baselineRun && completeRuns.length > 0 && (
@@ -1291,9 +1314,8 @@ export function OptimizationDetail() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
-                    {isRunning
-                      ? `Results so far — ${completeRuns.length} of ${opt.estimated_runs} complete`
-                      : `Results — ${completeRuns.length} of ${opt.estimated_runs} combinations`}
+                    {/* The count lives in the progress card above; here it was a third copy. */}
+                    {isRunning ? 'Results so far' : 'Results'}
                   </h2>
                   {tuneRunning > 0 && (
                     <span
@@ -1365,6 +1387,7 @@ export function OptimizationDetail() {
                 <ResultsTable
                   runs={visibleRuns}
                   sweptKeys={sweptKeys}
+                  labels={paramLabels}
                   navigate={navigate}
                   bestRunId={opt.best_run_id ?? undefined}
                   minTrades={minTrades}
