@@ -35,3 +35,9 @@ RuntimeError: Could not read the account balance, and initial_capital is 0 — t
 2026-09-11 00:14:06,444 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-26 08:40:00+00:00 → 2026-09-11 00:05:00+00:00).
 2026-09-11 00:14:06,460 [INFO] Equity re-anchored to the account after warm-up: 525.44 → 451.97
 2026-09-11 00:14:07,069 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-11 05:45:06,837 [INFO] place bullish primary limit 0.01L @ 4319.49 SL 4305.66054 TP none
+2026-09-11 05:45:06,947 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4319.49): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 06:00:01,385 [INFO] place bullish primary limit 0.01L @ 4320.3993 SL 4306.6911 TP none
+2026-09-11 06:00:01,492 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4320.4): retcode=10017 'Trade disabled' last_error=(1, 'Success')
+2026-09-11 06:15:06,268 [INFO] place bullish primary limit 0.01L @ 4323.82202 SL 4307.7125399999995 TP none
+2026-09-11 06:15:06,348 [ERROR] Pending failed (XAUUSD.p bullish 0.01L @ 4323.82): retcode=10017 'Trade disabled' last_error=(1, 'Success')

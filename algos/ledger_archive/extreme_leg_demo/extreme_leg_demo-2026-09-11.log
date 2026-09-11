@@ -7,3 +7,22 @@
 2026-09-11 00:01:01,917 [INFO] Warmed 15000 bars (2026-06-26 08:30:00+00:00 → 2026-09-10 23:55:00+00:00) in 7.1s
 2026-09-11 00:01:01,917 [INFO] Equity re-anchored to the account after warm-up: 470.72 → 451.97
 2026-09-11 00:01:02,620 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-11 05:45:09,072 [ERROR] Bar 2026-09-11 05:40:00+00:00 raised (1): 'Blocked' object has no attribute 'time_ms'
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1731, in _loop
+    self._on_bar(row)
+  File "C:\trading\algos\live\runner.py", line 2161, in _on_bar
+    self._settle_primary(ps)
+  File "C:\trading\algos\live\runner.py", line 2208, in _settle_primary
+    self._drain_records()
+  File "C:\trading\algos\live\runner.py", line 2227, in _drain_records
+    self.ledger.blocked(b)
+  File "C:\trading\algos\live\ledger.py", line 303, in blocked
+    "bar_time": block.time_ms,
+                ^^^^^^^^^^^^^
+AttributeError: 'Blocked' object has no attribute 'time_ms'
+
+2026-09-11 05:45:19,921 [WARNING] a bar raised while being processed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-11 05:45:19,932 [INFO] Sizing against account balance $451.97
+2026-09-11 05:45:25,994 [INFO] Warmed 15000 bars (2026-06-26 14:15:00+00:00 → 2026-09-11 05:40:00+00:00) in 5.6s
+2026-09-11 05:45:25,994 [INFO] Equity re-anchored to the account after warm-up: 470.72 → 451.97
