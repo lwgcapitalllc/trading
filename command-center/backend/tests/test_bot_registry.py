@@ -125,11 +125,25 @@ def test_stop_all_kills_every_registered_bot(monkeypatch):
 
 
 def test_the_snapshot_reports_each_bots_own_account_type(monkeypatch):
+    """The type is DERIVED from the account the bot's config names, looked up in the account list,
+    with the hardcoded label only as a fallback (`_account_type_of`).
+
+    🔴 **It compared against the hardcoded label until 2026-09-11 and went red the day two bots
+    went LIVE** — their configs name the live account while their registry label still says demo.
+    The page was right and the test's premise had gone stale; a test that can only pass while every
+    bot is on a demo account is not testing the derivation at all. The expected value is built here
+    from the config and the account list directly, never by calling the function under test.
+    """
     monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
     snap = bots.get_snapshot()
     by_name = {b.name: b for b in snap.bots}
+    kinds = {
+        a.account: a.kind for a in bots.bot_account_registry.load_accounts(bots._registry_path())
+    }
     for reg in bots._BOTS:
-        assert by_name[reg.display].account_type == reg.account_type
+        account = (bots._read_instance_config(reg.key) or {}).get("account")
+        expected = kinds.get(account, reg.account_type) if account else reg.account_type
+        assert by_name[reg.display].account_type == expected, reg.key
 
 
 # ── Which name identifies a bot ───────────────────────────────────────────────
