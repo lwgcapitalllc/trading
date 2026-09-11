@@ -4,7 +4,7 @@
   "display_name": "SOS Fade (demo)",
   "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
   "_mt5_path": "The MT5_FFT terminal, which serves the demo account 700152905 in accounts.json. A placeholder while benched: assigning the bot to an account ADOPTS that account's terminal, server and symbol suffix.",
-  "account": null,
+  "account": 700152905,
   "server": "PUPrime-Demo",
   "symbol": "XAUUSD.p",
   "magic": 770125,
