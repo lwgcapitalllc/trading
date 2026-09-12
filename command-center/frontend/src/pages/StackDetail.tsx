@@ -681,10 +681,10 @@ function StackVerdictCard({
       <CardHero
         value={total}
         unit="trades"
-        cls="text-accent"
+        cls="text-text-primary"
         tip="Every trade the switched-on strategies took, and the sample every number beside this card rests on. Toggle a strategy in the rows below and this — and Made, Risked and Trusted — recompute over whatever is left on."
       />
-      {/* No "N-strategy portfolio" line: the header chip says "N-strategy Stack" and this card's
+      {/* No "N-strategy portfolio" line: the page title names every strategy and this card's
           own corner says "N of N on" (2026-09-11). */}
       {cadence && <div className="font-mono text-[10.5px] text-text-tertiary mt-2">{cadence}</div>}
       {rows.length > 0 && <PanelRows rows={rows} />}
@@ -1594,13 +1594,12 @@ export function StackDetail() {
           {/* Header */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Layers size={18} className="text-gold-text" />
+              <Layers size={18} className="text-text-tertiary" />
               <h1 className="text-h1 font-semibold leading-tight">{stackTitle}</h1>
             </div>
+            {/* No "N-strategy Stack" chip (2026-09-11): the title names every strategy and the
+                Verdict card counts them, so a gold chip saying the count again was a third copy. */}
             <div className="flex flex-wrap gap-1.5">
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-gold-muted text-gold-text border border-gold-text/20">
-                {stack.total_strategies}-strategy Stack
-              </span>
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {stack.instrument}
               </span>
@@ -1618,7 +1617,7 @@ export function StackDetail() {
                 <span
                   data-testid="stack-mode-chip"
                   title="One balance and one risk budget the strategies competed for."
-                  className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/30 font-mono"
+                  className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono"
                 >
                   Shared account · {stack.risk_cap_pct?.toFixed(2)}% cap
                 </span>
