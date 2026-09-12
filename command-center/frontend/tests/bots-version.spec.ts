@@ -19,7 +19,9 @@ import { expect, type Page } from '@playwright/test'
 import type {
   BotDeployedVersion,
   BotPromoteJob,
+  BotRunningCode,
   BotSnapshot,
+  BotStatus,
   BotVersionCompare,
 } from '../src/types'
 import { offlineTest } from './offline'
@@ -36,11 +38,11 @@ const { test, recorded } = offlineTest('bots-page', { clockFactor: 10 })
  * ⚠ Stated, never inherited: the recording holds whatever the box said the day it was taken — on
  * 2026-09-10 that was a LIVE account — and every check here except the live one is about a demo.
  */
-async function pinSnapshot(page: Page, live = false) {
+async function pinSnapshot(page: Page, live = false, bot: Partial<BotStatus> = {}) {
   await page.route('**/api/bots/snapshot', (r) => {
     const snap = recorded<BotSnapshot>('/bots/snapshot')
     for (const b of snap.bots)
-      if (b.key === 'sos_fade_demo') b.account_type = live ? 'live' : 'demo'
+      if (b.key === 'sos_fade_demo') Object.assign(b, { account_type: live ? 'live' : 'demo' }, bot)
     return r.fulfill({ json: snap })
   })
 }
@@ -90,8 +92,12 @@ function compare(over: Partial<BotVersionCompare> = {}): BotVersionCompare {
   }
 }
 
-function version(cmp: BotVersionCompare | null): BotDeployedVersion {
+function version(
+  cmp: BotVersionCompare | null,
+  runningCode: BotRunningCode | null = null
+): BotDeployedVersion {
   return {
+    running_code: runningCode,
     frozen: true,
     hash: 'fbf3b94bebf0b96e1d9f238b982dcb9c',
     commit: '4e97565',
@@ -217,9 +223,13 @@ async function mockBot(
     /** Hold the version re-read a deploy's finish triggers — the window where every readout
      *  would otherwise still describe the state before the deploy. */
     reReadDelayMs?: number
+    /** The bot's own report, stated rather than inherited from the recording. */
+    bot?: Partial<BotStatus>
+    /** What the bot's current run started on, against what a restart would load. */
+    runningCode?: BotRunningCode
   } = {}
 ) {
-  await pinSnapshot(page, !!opts.live)
+  await pinSnapshot(page, !!opts.live, opts.bot)
   let promoted = false
   let frames: BotPromoteJob[] | null = opts.runningOnOpen ? jobFrames(opts) : null
   let idx = 0
@@ -240,7 +250,7 @@ async function mockBot(
   await page.route('**/api/bots/*/version', async (r) => {
     if (promoted && opts.reReadDelayMs)
       await new Promise((ok) => setTimeout(ok, opts.reReadDelayMs))
-    return r.fulfill({ json: version(after()) })
+    return r.fulfill({ json: version(after(), opts.runningCode ?? null) })
   })
   await page.route('**/api/bots/*/promote/job', (r) => {
     if (!r.request().url().includes('/bots/sos_fade_demo/')) {
@@ -881,6 +891,98 @@ test('a restart-pending bot is NOT reported as up to date', async ({ page }) => 
   await expect(banner(page).getByText(/is up to date/)).toBeVisible()
   // …and directly under it, the sentence that says the headline is not the whole truth.
   await expect(restartWarn(page)).toContainText(/still trading/)
+})
+
+// ── the code that RUNS the bot, which the version number does not count (2026-09-12) ─────────
+//
+// 🔴 The version counts the strategy only. The code that talks to the broker and writes what this
+// page reads moves only when the bot restarts — so both live bots read "up to date" eight fixes
+// behind. Aaron: "you keep saying redeploy but I am not seeing me behind on any version".
+
+const UP_TO_DATE = compare({
+  deployed_version: 121,
+  versions_behind: 0,
+  changes: [],
+  setting_changes: [],
+})
+
+/** A bot running for `uptimeS`, whose newest start on record was `startedBeforeFetchS` before the
+ *  recorded snapshot was taken. The row measures the process's start off the SNAPSHOT's clock, so
+ *  the fixture has to as well — a fixture on this machine's clock would describe a different run. */
+function olderCode(uptimeS: number, startedBeforeFetchS: number) {
+  const fetched = Date.parse(recorded<BotSnapshot>('/bots/snapshot').fetched_at)
+  return {
+    bot: { status: 'RUNNING', uptime_seconds: uptimeS },
+    runningCode: {
+      commit: '569ae98f',
+      started_at: new Date(fetched - startedBeforeFetchS * 1000).toISOString(),
+      changes_waiting: 8,
+      changes: ['c03f4d0c feat(live): the heartbeat says what the bot holds at the broker'],
+      reason: '',
+    },
+  }
+}
+
+test('a RUNNING bot on older code than the box holds reads RESTART, on the row and the panel', async ({
+  page,
+}) => {
+  // MUTATION: drop `restart` from the row's pill → red on its state.
+  // MUTATION: drop the runner half of `restartReason` → red on the pill AND the banner.
+  // MUTATION: measure the banner off this machine's clock rather than the snapshot's → red on the
+  // banner (the recording is days old, so the running process reads as a newer run).
+  // MUTATION: measure the ROW off this machine's clock → red on the pill, the same way.
+  await mockBot(page, UP_TO_DATE, olderCode(3600, 3600 + 120))
+  await openConfigure(page)
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'restart')
+  await expect(rowPill(page)).toHaveText(/v121 · restart/)
+  await expect(rowPill(page)).toHaveAttribute('title', /8 changes to the code that runs this bot/)
+  await expect(banner(page).getByTestId('version-heading')).toHaveText(/is running older code/)
+  await expect(banner(page).getByTestId('banner-restart')).toContainText('Re-deploy')
+  await expect(banner(page).getByTestId('deploy-button')).toHaveText(/Re-deploy & restart/)
+})
+
+test('a bot that RESTARTED since that start was read is not asked to restart again', async ({
+  page,
+}) => {
+  // The reading names the newest start on record; a process that began well after it is a newer
+  // run, and asking it to restart would be asking for the restart it just had.
+  // MUTATION: drop the same-run check → red on both.
+  await mockBot(page, UP_TO_DATE, olderCode(60, 3600))
+  await openConfigure(page)
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'current')
+  await expect(banner(page).getByTestId('banner-restart')).toHaveCount(0)
+})
+
+test('a STOPPED bot is not asked to restart — it loads the new code when it starts', async ({
+  page,
+}) => {
+  // MUTATION: drop the RUNNING check → red on both.
+  const o = olderCode(3600, 3600 + 120)
+  await mockBot(page, UP_TO_DATE, { ...o, bot: { status: 'STOPPED', uptime_seconds: null } })
+  await openConfigure(page)
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'current')
+  await expect(banner(page).getByTestId('banner-restart')).toHaveCount(0)
+})
+
+test('the panel header says what the row says — a halted bot never reads a green Running', async ({
+  page,
+}) => {
+  // 🔴 2026-09-12: the panel drew its own green "Running" over a halted bot while the row beside it
+  // said Halted. It reads the row's one condition now.
+  // MUTATION: hand the header a reading without the halt → red on its state and its dot.
+  await mockBot(page, UP_TO_DATE, {
+    bot: {
+      status: 'RUNNING',
+      uptime_seconds: 3600,
+      bridge_state: 'halted',
+      halt_reason: 'the strategy believes it is in a position but MT5 holds none',
+    },
+  })
+  await openConfigure(page)
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByTestId('bot-status')).toHaveAttribute('data-state', 'halted')
+  await expect(panel.getByTestId('bot-status')).toHaveAttribute('title', /MT5 holds none/)
+  await expect(panel.getByTestId('status-dot')).toHaveAttribute('data-tone', 'bad')
 })
 
 test('it says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {

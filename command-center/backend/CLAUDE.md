@@ -2106,6 +2106,39 @@ carries a plain-English `reason` instead. A missing commit (never fetched), an u
 bot with no package: `0` would mean *up to date*, the most reassuring answer available and the one
 most likely to be wrong. Same rule as `mt5_link` and `grid_sensitivity_score`.
 
+### The RUNNER is counted too — it moves on a restart, never a version (2026-09-12)
+
+🔴 **Both live bots read "up to date" while running code eight fixes behind.** The version counts
+what a deploy COPIES, the strategy's closure. The runner — `algos/live`, `algos/shared`, and
+`strategies/python/live_contract.py`, which `runner.py` loads by path — is repo code imported at
+process start: a pull moves it on disk, only a RESTART loads it, and nothing counted it.
+`BotDeployedVersion.running_code` is that count (`bot_versions.running_code`).
+
+- **The start rides the SAME round trip as the version.** The command greps the bot's
+  `health-<month>-*.jsonl` for its `startup` rows (`===STARTS===`, this month and last), and
+  `_latest_startup` keeps the NEWEST by timestamp, never the last line — two months' files
+  concatenate in name order. Only `event == "startup"` counts.
+- **The start must be THIS process's.** When the state file states `started`, a start stamped more
+  than `_START_SLACK_S` (60s) after it describes a later run than the one answering, and is refused.
+  The page does the other half on the SNAPSHOT's clock: a process that began more than 10 minutes
+  after the recorded start is a newer run and is not asked to restart again.
+- **The count is `git log <started>..@{upstream}` over `RUNNER_TREES`, through `version_pathspecs`**
+  — the deploy's own rule, so a notes edit beside the runner is not a change. `@{upstream}`, not
+  HEAD: a commit only on this laptop cannot reach the box. The list is capped at 20; the count is not.
+- ⚠ **`None` with its own reason, never 0, for every could-not-tell**: no start in two months, a
+  start newer than the process, a commit this machine has not fetched, a branch tracking nothing,
+  unreadable git. Each names a different fix.
+- ⚠ **`RUNNER_TREES` mirrors what `runner.py` puts on `sys.path`**, held by a test that READS
+  `runner.py` (the `trees_for`/`repo_trees` arrangement above). A path loaded there and not counted
+  here reaches a bot on restart while the page says nothing is waiting.
+- ⚠ **The fix it names is RE-DEPLOY, not Restart.** A plain restart starts whatever the box's
+  checkout holds; the deploy pulls first. Re-deploying the version a bot already runs moves no
+  strategy code — what it buys is the pull and the restart.
+
+Pinned by 6 tests in `tests/test_bot_version.py` and 8 in `tests/test_bot_running_code.py` (a real
+scripted repo, never a mocked `subprocess`); 10 mutations run through `scripts/testing/mutate.py`,
+10 killed. The page's half: `../frontend/CLAUDE.md` → *One status per row*.
+
 ### The ceiling on a promote is the REMOTE, not this laptop's HEAD (2026-08-14)
 
 🔴 **A successful deploy of `sos_fade_demo` landed v164 while the backtester read v165, and

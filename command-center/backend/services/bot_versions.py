@@ -519,3 +519,68 @@ def compare(strategy_package: str, deployed_commit: str, stated_params: dict) ->
         }
     )
     return base
+
+
+# 🔴 **The code a bot's RUNNER loads out of the box's CHECKOUT when it starts — never the frozen
+# snapshot.** `trees_for` counts what decides what a bot TRADES, and the snapshot freezes exactly
+# that; the loop that talks to the broker and writes what this page reads is repo code, loaded at
+# process start, so a change there reaches a running bot only on its next restart. Until
+# 2026-09-12 nothing on the page counted it, so a bot eight fixes behind read "up to date": the
+# version number describes the strategy, and the runner had no number at all.
+#
+# ⚠ **It mirrors what `algos/live/runner.py` puts on `sys.path` and loads from there**: its own
+# package, the shared modules, and the ONE module it reads out of `strategies/python` BY PATH
+# (`live_contract.py` — the strategy packages beside it are shadowed by the snapshot).
+# `tests/test_bot_version.py` reads runner.py and fails when it grows a path this does not name.
+RUNNER_TREES = ("algos/live", "algos/shared", "strategies/python/live_contract.py")
+
+# The tooltip lists the commits; a bot left running for months would otherwise ship its whole
+# backlog on every read. The COUNT is never capped — only the list beside it.
+_RUNNER_CHANGES_SHOWN = 20
+
+
+def running_code(started_commit: str) -> dict:
+    """How far the code a bot's CURRENT RUN started on is behind what a restart would load.
+
+    `started_commit` is what the run's own `startup` record names — the box's checkout at the
+    moment the process started (`runner.current_commit`). A restart from the Command Center pulls
+    first, so what it would load is the branch the box pulls from: this clone's UPSTREAM. The
+    count is the commits between the two that change a file the runner loads.
+
+    ⚠ **`changes_waiting` is `None`, never 0, when it cannot be answered** — no commit recorded, a
+    commit this clone has not fetched, no upstream, no git. 0 is the claim *nothing is waiting*,
+    the reassuring answer, and it may not stand in for *could not tell* (rule 1). Each carries a
+    `reason`, because each has a different fix.
+
+    ⚠ **An upstream this clone has not fetched lately UNDER-counts** — the same limit the strategy
+    comparison has, stated rather than hidden.
+    """
+    base = {"commit": started_commit or "", "changes_waiting": None, "changes": [], "reason": ""}
+    if not started_commit:
+        base["reason"] = "The bot's last start did not record which code it started on."
+        return base
+    if not has_commit(started_commit):
+        base["reason"] = (
+            f"This machine has not fetched the commit the bot started on ({started_commit}). "
+            "Pull, then reload."
+        )
+        return base
+    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    if not upstream or not upstream.strip():
+        base["reason"] = (
+            "This branch tracks nothing, so there is no code a restart would load to compare with."
+        )
+        return base
+    out = _git(
+        "log",
+        "--format=%h %s",
+        f"{started_commit}..{upstream.strip()}",
+        "--",
+        *_specs(list(RUNNER_TREES)),
+    )
+    if out is None:
+        base["reason"] = "Could not read this repo's history."
+        return base
+    changes = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    base.update({"changes_waiting": len(changes), "changes": changes[:_RUNNER_CHANGES_SHOWN]})
+    return base

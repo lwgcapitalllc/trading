@@ -17,6 +17,7 @@ quietly reconciled.
 """
 
 import json
+from datetime import datetime
 
 import pytest
 from routers import bots
@@ -65,6 +66,10 @@ def vps(monkeypatch):
         "show": "  on disk  : e42a95c9 matches",
         "running_hash": "e42a95c96bb2",
         "config_params": dict(DEPLOYED["strategy_params"]),
+        # The running process's own start stamp and the run's `startup` records. Empty by
+        # default: a bot with no start on record in the window, which answers "could not tell".
+        "started": None,
+        "starts": "",
     }
 
     def _ssh(cmd: str) -> str:
@@ -77,8 +82,13 @@ def vps(monkeypatch):
         # state file gets what the real VPS would give it: nothing.
         out = f"{state['head']}\n===AHEAD===\n{state['ahead']}\n===SHOW===\n{state['show']}"
         if "bot_state.json" in cmd:
-            live = json.dumps({"sos_fade_demo": {"source_hash": state["running_hash"]}})
-            out += f"\n===STATE===\n{live}"
+            mine = {"source_hash": state["running_hash"]}
+            if state["started"] is not None:
+                mine["started"] = state["started"]
+            out += f"\n===STATE===\n{json.dumps({'sos_fade_demo': mine})}"
+        # Answered only when the command asked, like the state section above.
+        if "===STARTS===" in cmd:
+            out += f"\n===STARTS===\n{state['starts']}"
         return out
 
     monkeypatch.setattr(bots, "_ssh", _ssh)
@@ -249,3 +259,97 @@ def test_an_unreadable_record_does_not_crash_the_page(vps, monkeypatch):
         ),
     )
     assert bots.get_bot_version("sos_fade_demo").frozen is False
+
+
+# ── The code the running PROCESS started on (2026-09-12) ─────────────────────
+#
+# The version counts the strategy only; the runner is repo code loaded at process start, so both
+# live bots read "up to date" eight fixes behind. These pin the endpoint half — which start it
+# reads, and that it answers "could not tell" rather than a count off the wrong run. The git half
+# is pinned on a scripted repo in `test_bot_running_code.py`.
+
+_EARLY = "2026-09-10T20:00:00+00:00"
+_LATE = "2026-09-11T00:13:59+00:00"
+_HEALTH = r"C:\trading\algos\markets\fx\instances\sos_fade_demo\ledger\health-2026-09-11.jsonl"
+
+
+def _startup(ts: str, commit: str) -> str:
+    """One `findstr` hit, as the box prints it: prefixed with its FILE, whose drive letter carries
+    a colon — so the JSON must be found by its opening brace, never by splitting on a separator."""
+    return f'{_HEALTH}:{{"ts": "{ts}", "event": "startup", "commit": "{commit}"}}'
+
+
+@pytest.fixture
+def waiting(monkeypatch):
+    """`bot_versions.running_code`, stubbed and recorded — the subject here is which START is read."""
+    seen: list[str] = []
+
+    def _fake(commit):
+        seen.append(commit)
+        return {"commit": commit, "changes_waiting": 8, "changes": ["c03f4d0c x"], "reason": ""}
+
+    monkeypatch.setattr(bot_versions, "running_code", _fake)
+    return seen
+
+
+def test_the_runs_starts_ride_the_SAME_round_trip(vps):
+    """MUTATION: drop the STARTS read from the command → red."""
+    bots.get_bot_version("sos_fade_demo")
+    assert len(vps["cmds"]) == 2
+    assert "===STARTS===" in vps["cmds"][1]
+    assert "findstr /c:startup" in vps["cmds"][1]
+
+
+def test_the_NEWEST_start_by_time_is_read_never_the_last_line(vps, waiting):
+    """`findstr` walks a wildcard in folder order, which is not a promise about time.
+    MUTATION: keep the last line read instead of the newest → red."""
+    vps["starts"] = "\n".join([_startup(_LATE, "569ae98f"), _startup(_EARLY, "11111111")])
+    vps["started"] = datetime.fromisoformat(_LATE).timestamp() + 30
+    rc = bots.get_bot_version("sos_fade_demo").running_code
+    assert rc.commit == "569ae98f"
+    assert rc.started_at == _LATE
+    assert rc.changes_waiting == 8
+    assert waiting == ["569ae98f"]
+
+
+def test_a_start_NEWER_than_the_process_answers_could_not_tell(vps, waiting):
+    """The state and the record disagree about which run this is, so no count can be trusted.
+    MUTATION: drop the same-run check → red on `changes_waiting`."""
+    vps["starts"] = _startup(_LATE, "569ae98f")
+    vps["started"] = datetime.fromisoformat(_EARLY).timestamp()
+    rc = bots.get_bot_version("sos_fade_demo").running_code
+    assert rc.changes_waiting is None
+    assert "not the running process's own" in rc.reason
+    assert waiting == []
+
+
+def test_no_start_on_record_answers_could_not_tell_never_zero(vps, waiting):
+    """Zero is the claim *nothing is waiting* — the reassuring answer (rule 1).
+    MUTATION: answer `changes_waiting=0` with no start → red."""
+    rc = bots.get_bot_version("sos_fade_demo").running_code
+    assert rc.changes_waiting is None
+    assert rc.reason
+    assert waiting == []
+
+
+def test_a_start_with_no_process_stamp_is_still_read(vps, waiting):
+    """A state file that does not state `started` SKIPS the check rather than failing it — the
+    record alone is still the best reading there is.
+    MUTATION: treat a missing stamp as a mismatch → red."""
+    vps["starts"] = _startup(_LATE, "569ae98f")
+    assert bots.get_bot_version("sos_fade_demo").running_code.changes_waiting == 8
+
+
+def test_only_a_START_is_read_out_of_the_section():
+    """MUTATION: accept any event, or stop skipping an unreadable line → red."""
+    section = "\n".join(
+        [
+            "a line with no brace at all",
+            f'{_HEALTH}:{{"ts": "2026-09-12T01:00:00+00:00", "event": "pulse"}}',
+            f"{_HEALTH}:{{not json",
+            _startup(_EARLY, "abc1234"),
+        ]
+    )
+    assert bots._latest_startup(section) == (_EARLY, "abc1234")
+    assert bots._latest_startup("") is None
+    assert bots._latest_startup(None) is None

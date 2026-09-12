@@ -44,6 +44,8 @@ import type {
 import { Drawer } from '@/components/Drawer'
 import { Shimmer } from '@/components/Shimmer'
 import { botLabel as labelOf } from '@/lib/botLabel'
+import { botCondition } from '@/lib/botCondition'
+import { StatusDot, StatusText } from '@/components/BotStatus'
 import { ParamGroup, VersionBanner } from './ConfigureTab'
 import { BotActionPill, type BotAction } from './BotStatusPill'
 import { BotRiskEditor } from './BotRiskEditor'
@@ -103,8 +105,12 @@ export function BotDrawer({
   pendingAction = null,
   configAccount,
   onOpenAccount,
+  fetchedAt,
 }: {
   bot: BotStatus
+  /** When the trading box took the reading `bot` came from. The version banner measures whether a
+   *  restart is still owed off it, the way the row does — one clock, one answer. */
+  fetchedAt?: string
   /** The account this bot's CONFIG names — what a move or a removal changes, and what the page's
    *  rows are laid out by. `null` = on no account; `undefined` = the configs are not read yet.
    *  ⚠ Not `bot.account`: that is what the bot last REPORTED, which stays on the old account
@@ -236,6 +242,8 @@ export function BotDrawer({
   }, {})
   const terminal = (v?.identity.mt5_path ?? '').split('\\').filter(Boolean)[0] ?? '—'
   const selectBusy = running || remove.isPending || moving || checkingDest !== null
+  // The row's own status (2026-09-12): the header said "Running" in green over a HALTED bot.
+  const cond = botCondition(bot, { asked: true, onAccount: selected !== '' })
 
   return (
     <Drawer
@@ -250,12 +258,8 @@ export function BotDrawer({
       title={labelOf(bot)}
       subtitle={
         <div className="flex items-center gap-[7px] flex-wrap mt-[2px]">
-          <span
-            className={`inline-block w-[6px] h-[6px] rounded-full shrink-0 ${
-              running ? 'bg-pos shadow-[0_0_6px_#00ff7f]' : 'bg-neg'
-            }`}
-          />
-          {running ? 'Running' : 'Stopped'}
+          <StatusDot cond={cond} size="list" />
+          <StatusText cond={cond} size="list" />
           {typeof configAccount === 'number' ? (
             <>
               <span className="text-text-tertiary">·</span>
@@ -523,6 +527,8 @@ export function BotDrawer({
           botLabel={labelOf(bot)}
           job={job}
           live={bot.account_type === 'live'}
+          liveBot={bot}
+          fetchedAt={fetchedAt}
         />
       </section>
 

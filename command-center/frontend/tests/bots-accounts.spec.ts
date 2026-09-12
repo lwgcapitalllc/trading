@@ -1709,9 +1709,10 @@ test('a bot whose account cannot trade says so on its row, and nothing else does
   page,
 }) => {
   // 🔴 2026-09-11: the broker put the live account on read-only and no screen said so until the
-  // bot halted. The bot now reads whether its account may trade, and the row carries the answer.
-  // MUTATION: drop the chip from the row → red on the count.
-  // MUTATION: draw it on anything but `false` → red on the count (the unasked bot's `null` is
+  // bot halted. The bot now reads whether its account may trade, and the row carries the answer —
+  // since 2026-09-12 as the row's one status, not a tag of its own.
+  // MUTATION: drop the issue from `botCondition` → red on the count.
+  // MUTATION: raise it on anything but `false` → red on the count (the unasked bot's `null` is
   // "could not ask", never "off", and every other bot states nothing at all).
   await mockBothSides(
     page,
@@ -1727,9 +1728,10 @@ test('a bot whose account cannot trade says so on its row, and nothing else does
       ext_leg: { trade_allowed: null },
     }
   )
-  const chip = page.getByTestId('trading-off')
-  await expect(chip).toHaveCount(1)
-  await expect(chip).toHaveAttribute('title', /read-only/)
+  const off = page.locator('[data-testid="bot-status"][data-state="trading-off"]')
+  await expect(off).toHaveCount(1)
+  await expect(off).toHaveText('Trading off')
+  await expect(off).toHaveAttribute('title', /read-only/)
 })
 
 test('a bot in a trade and a HALTED bot each say so on their row, and no other bot does', async ({
@@ -1776,9 +1778,90 @@ test('a bot in a trade and a HALTED bot each say so on their row, and no other b
     'title',
     /\+\$83\.00: \+1\.19R of the \$70\.00 risked at entry/
   )
-  const halted = page.getByTestId('halted')
+  const halted = page.locator('[data-testid="bot-status"][data-state="halted"]')
   await expect(halted).toHaveCount(1)
+  await expect(halted).toHaveAttribute('data-tone', 'bad')
   await expect(halted).toHaveAttribute('title', /MT5 holds none/)
+})
+
+test('a row says ONE thing — its worst problem — and counts the rest in the colour of the worst', async ({
+  page,
+}) => {
+  // 🔴 2026-09-12: up to five tags sat beside a bot's name and the live rows cut it to "SOS …".
+  // Aaron: "my eyes don't know where to go." A row now names its worst problem, counts the rest,
+  // and spells them out on hover.
+  // MUTATION: lead with the mildest problem rather than the worst → red on the state.
+  // MUTATION: give the count no tone of its own (`moreTone` null) → red on its tone.
+  // MUTATION: never let the count say bad → red on the stopped bot's count.
+  // MUTATION: let a STOPPED bot's problem take its word → red on "Stopped" (a red dot beside
+  // "Needs review" alone reads as a running bot).
+  // MUTATION: raise a problem off `null` → red on the healthy bot's state.
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        mt5_link: false,
+        trade_allowed: false,
+        trade_block: 'the account is read-only',
+        bridge_state: 'halted',
+        halt_reason: 'the strategy believes it is in a position but MT5 holds none',
+      },
+      sos_fade: { bridge_state: 'live', trade_allowed: null, mt5_link: null },
+      ext_live: {
+        review: { level: 'alert', findings: [{ title: 'It crashed', detail: 'exit code 1' }] },
+      },
+    }
+  )
+  const worst = page.locator(
+    '[data-testid="bot-row"][data-bot="sos_live"] [data-testid="bot-status"]'
+  )
+  await expect(worst).toHaveAttribute('data-state', 'halted')
+  await expect(worst).toHaveAttribute('data-tone', 'bad')
+  const more = worst.getByTestId('status-more')
+  await expect(more).toHaveText('+2')
+  await expect(more).toHaveAttribute('data-tone', 'warn')
+  await expect(worst).toHaveAttribute('title', /Trading off: The account is read-only\./)
+  await expect(worst).toHaveAttribute('title', /No MT5 link: /)
+
+  const stopped = page.locator(
+    '[data-testid="bot-row"][data-bot="ext_live"] [data-testid="bot-status"]'
+  )
+  await expect(stopped).toHaveAttribute('data-state', 'stopped')
+  await expect(stopped).toContainText('Stopped')
+  await expect(stopped.getByTestId('status-more')).toHaveAttribute('data-tone', 'bad')
+
+  const calm = page.locator('[data-testid="bot-row"][data-bot="sos_fade"]')
+  await expect(calm.getByTestId('bot-status')).toHaveAttribute('data-state', 'running')
+  await expect(calm.getByTestId('status-more')).toHaveCount(0)
+  await expect(calm.getByTestId('status-dot')).toHaveAttribute('data-tone', 'ok')
+})
+
+test('a benched bot with a problem still reads Benched — only a RUNNING bot’s problem takes the word', async ({
+  page,
+}) => {
+  // 🔴 2026-09-12: a benched bot led with its last run's problem, so the Overview — where benched
+  // bots share one list with the rest — drew "Halted" over a bot that runs nothing, and nothing on
+  // the row said it was benched.
+  // MUTATION: let a benched bot's problem take its word → red on its state.
+  await mockBothSides(page, SCORED, [
+    {
+      key: 'b_leg',
+      name: 'B-LEG',
+      status: 'STOPPED',
+      account_type: 'demo',
+      review: { level: 'alert', findings: [{ title: 'It crashed', detail: 'exit code 1' }] },
+    },
+  ])
+  await page.getByTestId('tab-unassigned').click()
+  const status = page.getByTestId('section-no-account').getByTestId('bot-status')
+  await expect(status).toHaveAttribute('data-state', 'benched')
+  await expect(status).toContainText('Benched')
+  await expect(status).toHaveAttribute('title', /It crashed/)
+  await expect(status.getByTestId('status-more')).toHaveAttribute('data-tone', 'bad')
 })
 
 test('a trade whose opening risk is unknown shows no R rather than a guess', async ({ page }) => {

@@ -771,6 +771,24 @@ class GoLiveRequest(BaseModel):
     deploy: bool = True  # commit + push; False writes locally only
 
 
+class BotRunningCode(BaseModel):
+    """The code a bot's CURRENT RUN started on, against what a restart would load (2026-09-12).
+
+    The version number counts the STRATEGY — the frozen snapshot. The runner that talks to the
+    broker and writes what the Bots page reads is repo code loaded at process start, so it moves
+    only on a restart, and the page said "up to date" over a bot eight fixes behind. See
+    `services/bot_versions.running_code`.
+    """
+
+    commit: str = ""  # the box's checkout when this run started, off its own `startup` record
+    started_at: str = ""  # that record's time — lets the page tell a newer process from this one
+    # Commits since `commit` that change a file the runner loads. `None` = could not tell (no
+    # start on record, a commit not fetched here, no upstream) — never 0, which is "none waiting".
+    changes_waiting: Optional[int] = None
+    changes: list[str] = []  # "<hash> <subject>", newest first, at most 20
+    reason: str = ""  # why `changes_waiting` is None
+
+
 class BotDeployedVersion(BaseModel):
     """What a bot is ACTUALLY running, read off the VPS.
 
@@ -803,6 +821,9 @@ class BotDeployedVersion(BaseModel):
     # `compare` is still the one the banner renders: it can answer for a deployment made before
     # the stamp existed, and it is the only side that knows what the BACKTESTER is on.
     compare: Optional[BotVersionCompare] = None
+    # The runner's code, which the version number above does not count. `None` = not read (an
+    # older backend never sent it); a present one with `changes_waiting: None` = could not tell.
+    running_code: Optional[BotRunningCode] = None
 
 
 class BotPromoteRequest(BaseModel):

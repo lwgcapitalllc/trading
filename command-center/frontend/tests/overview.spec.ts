@@ -181,15 +181,26 @@ test.describe('Overview — the live box', () => {
 test.describe('Overview — states the live box cannot produce', () => {
   test('a bot that is RUNNING and BLIND is not a healthy fleet', async ({ page }) => {
     await mockSnapshot(page, (s) => {
-      s.bots[0].mt5_link = false
+      // ⚠ STATED, never inherited: on 2026-09-12 the live bot this copies was HALTED with a review
+      // open, and the halt — the worse problem — rightly took the row's word.
+      Object.assign(s.bots[0], {
+        status: 'RUNNING',
+        mt5_link: false,
+        bridge_state: 'live',
+        review: null,
+        trade_allowed: null,
+        day_locked: false,
+      })
     })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    // ⚠ BESIDE the Running pill, never instead of it: the process is alive AND it is blind, and
-    // those are different facts. Collapsing them loses whichever half the reader came for.
-    await expect(page.getByText('No link')).toBeVisible()
-    await expect(page.getByText('Running').first()).toBeVisible()
+    // ⚠ The process is alive AND it is blind, and those are different facts. Since 2026-09-12 the
+    // row names the problem and its hover still says it runs — collapsing them would lose
+    // whichever half the reader came for.
+    const blind = page.locator('[data-testid="bot-status"]', { hasText: 'No MT5 link' })
+    await expect(blind).toBeVisible()
+    await expect(blind).toHaveAttribute('title', /^Running/)
     // The "Bots Running" stat card that also said so was removed on 2026-09-11 as a copy of the
     // list; the chip on the row is now the page's only statement of it, so it is the one asserted.
   })

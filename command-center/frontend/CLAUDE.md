@@ -135,10 +135,12 @@ objects. Aaron: *"too much information, too much duplication … make it very, v
 
 🔴 **Every number is stated ONCE, on the thing it belongs to.** Balance, cap and account number
 belong to the account and live on its heading; version, risk and uptime belong to the bot and live
-on its row. **Nothing is repeated to make a row look complete** — that habit is what put one
-account's balance on every row of a stack and let the fleet total add it twice.
+on its row (uptime on the status's hover since 2026-09-12). **Nothing is repeated to make a row look
+complete** — that habit is what put one account's balance on every row of a stack and let the fleet
+total add it twice.
 
-⚠ **State is a dot, not a word.** `RUNNING` was written on every row of every tab.
+⚠ **State is a dot, not a shouted word.** `RUNNING` was written on every row of every tab. Since
+2026-09-12 the row carries ONE quiet word beside the dot — see *One status per row*.
 
 🔴 **A control's own prose does not go on the surface.** The risk editor printed `row.note` — the
 `_`-prefixed paragraph from the instance config, ~1,500 words on `exec_risk_pct` — directly beside
@@ -563,7 +565,7 @@ Each now shimmers until its OWN source has answered.
   list — and never gate a whole page on its slowest read. Fixed words (a column heading, a section
   title) are rendered REAL, not shimmered.
 - **Reuse the real component's loading state** in a page-level placeholder rather than drawing a
-  private copy of it — the Bots page skeleton renders the same net pill, P&L cell and version pill
+  private copy of it — the Bots page skeleton renders the same net figure, P&L cell and version pill
   the real card does.
 - **No "Loading…" text or spinner beside a shimmer** — they say the same thing twice.
 - **Start independent reads in parallel.** A read keyed off another read's answer cannot begin
@@ -3042,7 +3044,8 @@ sample floor is about whether a number means anything, not about how far back it
 ## The `Needs review` chip — a notification is a moment, a chip is a state
 
 **Added 2026-08-05.** `ReviewChip` on the Bots page's Monitor row, fed by `BotStatus.review`, which
-`algos/notifications/log_review.py` writes hourly after reading the bot's own health record.
+`algos/notifications/log_review.py` writes hourly after reading the bot's own health record. ⚠ **Since
+2026-09-12 it is no chip: it is the row's one status, "Needs review"** — see *One status per row*.
 
 **It answers the question no other signal on this page can.** Everything else here is about the
 PROCESS — the Running pill, the uptime, the `No MT5 link` chip — and a bot can be alive, stamping its
@@ -4360,29 +4363,56 @@ Rules: `../backend/CLAUDE.md` → *The account's net is measured off what went I
 offline check in `tests/bots-accounts.spec.ts`, watched RED in a throwaway worktree against HEAD's
 page and again with the remainder still naming a deposit.
 
-## A bot whose account cannot trade says so on its row (2026-09-12)
+## One status per row (2026-09-12)
 
-An amber **trading off** chip beside the state dot on the Bots page and on the Overview's bot list,
-with the bot's own reason on its title (read-only account, automated trading barred, AutoTrading
-off, or the symbol restricted). Rules: `algos/CLAUDE.md` → *Whether the account may TRADE*.
-⚠ **`=== false` only** — `null` is could-not-ask and draws nothing (rule 1). ⚠ **The page decides
-nothing**; the sentence is the bot's. Pinned by one offline check in `tests/bots-accounts.spec.ts`.
+🔴 **A row carried up to five tags beside the bot's name** — no link, trading off, halted, review,
+trade open, each its own colour and shape. On the live account two wrapped and cut the name to
+"SOS …"; on the demo every pill was green. Aaron: *"my eyes don't know where to go."*
+`src/lib/botCondition.ts` reads a bot ONCE for every list of bots — the Bots rows, the bot panel's
+header, the Overview — and `src/components/BotStatus.tsx` draws it: a dot, one word, a count.
 
-## A bot's row says when it holds a trade, and when it has HALTED (2026-09-12)
+- **The word is a RUNNING bot's worst problem, else what it is doing** — "Running", or the trade it
+  holds ("Long 0.40 lots · +1.2R", only the R coloured). Worst first: halted, a review alert,
+  trading off, no MT5 link, a review warning, locked for the day. The rest are counted beside the
+  word ("Halted +1") and spelled out on hover with the uptime, whose column went.
+- ⚠ **A stopped, errored or benched bot keeps its own word** and counts its problems: they explain
+  the stop, a red dot beside "Needs review" alone reads as a running bot, and on the Overview
+  "Benched" is the only thing saying a bot is benched.
+- ⚠ **The count carries the colour of the worst thing it hides** (a "+1" hiding a halt is red); the
+  word carries only its own, so "Benched" is never red for a problem it does not name. The dot
+  carries the row's worst.
+- ⚠ **Colour marks the EXCEPTION.** A healthy bot is a green dot beside grey words. P&L keeps its
+  sign colour; Return % and Per trade went neutral; the account's net is text, not a pill.
+- ⚠ **Every flag is read `=== false` / `=== true`** — `null` is could-not-ask and raises nothing
+  (rule 1). ⚠ **The page decides nothing**: every reason on the hover is the bot's own sentence
+  (`algos/CLAUDE.md` → *Whether the account may TRADE*, *The heartbeat says what the bot holds at
+  the broker*). ⚠ **No R when it is `null`** (a trade picked back up from an older record), never
+  one off a stop that has moved.
+- 🔴 **The panel header drew a green "Running" over a halted bot** until it read the same condition.
 
-Two tags from `src/components/BotChips.tsx`, shared by the Bots page and the Overview's bot list so
-the two cannot word one fact two ways: **trade open** ("LONG 0.40 LOTS · +1.2R", neutral, with only
-the R coloured by its sign — colour on these pages is money) and a red **halted** carrying the bot's
-own reason on its title. Rules: `algos/CLAUDE.md` → *The heartbeat says what the bot holds at the
-broker*.
-- ⚠ **`in_trade === true` only, `bridge_state === 'halted'` only** — `false` is flat, `null` is
-  could-not-ask, and `warming` clears itself.
-- ⚠ **No R when it is `null`** (a trade picked back up after a restart from an older record), never
-  one off a stop that has moved; the title says why.
-- ⚠ **Beside the running dot, never instead of it**: alive and halted are both true.
-- Pinned by two offline checks in `tests/bots-accounts.spec.ts`, both watched RED against HEAD's
-  page in a throwaway worktree and each under its own mutation (3 run, 3 killed). ⚠ The Overview
-  has none — its spec reads the live backend.
+**The version pill is calm when current, amber when it needs you.** Up to date is a plain outline —
+green on every row was most of why the demo read "everything is green". 🔴 **RESTART: the bot runs
+older code than the box holds.** The version counts the strategy only and the runner moves only on
+a restart, so both live bots read "up to date" eight fixes behind. `restartReason`
+(`src/lib/botVersion.ts`) turns the backend's count into a sentence: the pill reads `v174 · restart`
+and the deploy panel *"… is running older code"* with a gold **Re-deploy & restart**.
+- ⚠ **RUNNING only** — a stopped bot loads the new code when it starts.
+- ⚠ **The reading must describe THIS process**: one that began more than 10 minutes after the
+  recorded start is a newer run and is not asked again. Measured on the SNAPSHOT's clock
+  (`fetched_at` less uptime) on the row AND the panel — the panel on this machine's clock disagreed
+  with the row.
+- ⚠ **Re-deploy, never Restart**: a plain restart starts whatever the box's checkout holds.
+- ⚠ **Pill order: deploying, loading, unread, unknown, behind, restart, not pushed, current** — a
+  deploy restarts too, and restart is something the bot needs where not pushed is something this
+  machine needs.
+
+Pinned by nine offline checks — five in `tests/bots-accounts.spec.ts` (one word per row, a benched
+bot keeps its word, trading off, in a trade or halted, no R when unknown) and four in
+`tests/bots-version.spec.ts` (RESTART on row and panel, a newer run is not asked again, a stopped
+bot is not asked, the panel header) — plus `tests/overview.spec.ts` on the running app, 22 of 22.
+16 mutations planted in a throwaway worktree, 16 killed.
+
+Backend half: `../backend/CLAUDE.md` → *The RUNNER is counted too*.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
@@ -4491,10 +4521,10 @@ the one number on this card that can refuse a trade, so it takes a border and th
 reserves for a limit. ⚠ **NO CAP is the LOUD state, in warn.** An account with no ceiling is the
 condition worth noticing, and rendering it quieter than a set cap is backwards.
 
-🔴 **`VersionPill` carries a BORDER in all three states and the up-to-date one is GREEN.** It was
-`bg-bg-surface-2 text-text-secondary` — the same grey as the surface behind it — so on a page where
-every other column is grey the version stopped registering as a claim. ⚠ **Green means UP TO DATE,
-never "good bot"**: it answers one question, is the box running the code you tested. ⚠ The unknown
+🔴 **`VersionPill` carries a BORDER in every state.** It was `bg-bg-surface-2 text-text-secondary`
+— the same grey as the surface behind it — so on a page where every other column is grey the
+version stopped registering as a claim. ⚠ **Up to date was GREEN until 2026-09-12 and is a quiet
+outline now** — a green tick on every row was noise (*One status per row*). ⚠ The unknown
 state stays NEUTRAL and still gets a border, or it is the one state that looks like a rendering
 failure rather than a finding. ⚠ **It never wraps and sizes to its text (2026-09-10)** — in a 92px
 column the behind state broke onto two lines; the column is 136px, and the widest state
@@ -4699,7 +4729,7 @@ identify the winner."*
   downstream moved.
 - 🔴 **Nothing on the page says a fact twice** (*"we don't need to be redundant on data anywhere on
   this page"*): no live/demo chip on a card (its heading says it), no up/down edge colour (the net
-  pill carries the sign), no "no bots" tag under *Accounts with no bots*, and the bot panel keeps
+  figure carries the sign), no "no bots" tag under *Accounts with no bots*, and the bot panel keeps
   only won/lost and the record's dates — its dollars, % of the account, trade count and R are all on
   the row. ⚠ **A figure DERIVED from the rows is withheld when it can only restate one of them; an
   independent MEASUREMENT stays even when it agrees** — the account's net and a lone bot's P&L are

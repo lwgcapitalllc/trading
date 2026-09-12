@@ -69,6 +69,7 @@ from models import (
     BotPromoteRequest,
     BotPromoteResult,
     BotPromoteStage,
+    BotRunningCode,
     BotRuntimeUpdate,
     BotSettingImportChange,
     BotSettingImportPlan,
@@ -3814,6 +3815,80 @@ def apply_go_live(body: GoLiveRequest):
     return resp
 
 
+# How late a `startup` record may be stamped after the running process's own start and still be
+# that process's. The record is written BEFORE the connect and the warm-up and `started` after
+# them, so the record is normally the EARLIER of the two; one well after it is a later attempt.
+# ⚠ Both come off the box's one clock, so no offset between two machines enters it.
+_START_SLACK_S = 60
+
+
+def _latest_startup(section: str | None) -> tuple[str, str] | None:
+    """`(ts, commit)` of the newest `startup` record in a `findstr` section — `None` for none.
+
+    ⚠ **Newest by TIME, never by line.** `findstr` walks a wildcard in the order the folder lists
+    it, which is not a promise about time, so the last line read is not the last start.
+    ⚠ The JSON is found by its opening brace — a hit over several files is prefixed with its path,
+    and a Windows path carries a colon (the same reading `_parse_live_trades` does).
+    """
+    best: tuple[str, str] | None = None
+    for line in (section or "").splitlines():
+        brace = line.find("{")
+        if brace < 0:
+            continue
+        try:
+            row = json.loads(line[brace:])
+        except Exception:
+            continue
+        if not isinstance(row, dict) or row.get("event") != "startup":
+            continue
+        ts = row.get("ts")
+        if not isinstance(ts, str) or not ts:
+            continue
+        if best is None or ts > best[0]:
+            best = (ts, str(row.get("commit") or ""))
+    return best
+
+
+def _running_code(section: str | None, started: float | None) -> BotRunningCode:
+    """The code this bot's CURRENT RUN started on, against what a restart would load (2026-09-12).
+
+    🔴 **Read off the run's own `startup` record, which every runner writes** — so a bot on the
+    old runner, the case this exists for, answers on the first read: no restart is needed to find
+    out that a restart is needed.
+
+    ⚠ **The newest start must be the running process's own**, checked against the start that
+    process stamped into its state file, read on the same connection. While a bot runs no second
+    copy can record a start (it refuses before it writes one), so a start stamped well after the
+    process's own is the record and the state disagreeing — and that answers *could not tell*,
+    never a count off the wrong run. An unreadable time is the same answer.
+    """
+    found = _latest_startup(section)
+    if found is None:
+        return BotRunningCode(
+            reason="No start of this bot is on record in the last two months, so the code its "
+            "run started on cannot be read."
+        )
+    ts, commit = found
+    if started is not None:
+        try:
+            at: float | None = datetime.fromisoformat(ts).timestamp()
+        except ValueError:
+            at = None
+        if at is None or at > started + _START_SLACK_S:
+            return BotRunningCode(
+                commit=commit,
+                started_at=ts,
+                reason="The newest start on record is not the running process's own, so the code "
+                "that process loaded cannot be told.",
+            )
+    try:
+        return BotRunningCode(started_at=ts, **bot_versions.running_code(commit))
+    except Exception:
+        return BotRunningCode(
+            commit=commit, started_at=ts, reason="Could not compare it with this repo's history."
+        )
+
+
 @router.get("/{bot_name}/version", response_model=BotDeployedVersion)
 def get_bot_version(bot_name: str):
     """What this bot is actually running, plus how far the repo has moved past it."""
@@ -3839,6 +3914,17 @@ def get_bot_version(bot_name: str):
         # emits no trailing newline, so a marker after it arrives welded to the previous
         # section and `_parse_sections` silently merges the two.
         cmd += f" & echo. & echo ===STATE=== & type {state_path} 2>nul"
+    # The run's own `startup` records ride the SAME connection — they say which checkout the
+    # running process started on (`_running_code`). Same window and same plain token as the
+    # snapshot's read of them, for the same reasons (see `_fetch_vps_snapshot`).
+    reg = next((b for b in _BOTS if b.key == bot_key), None)
+    if reg is not None:
+        cmd += " & echo. & echo ===STARTS==="
+        for month in _ledger_months(datetime.now(timezone.utc)):
+            cmd += (
+                " & findstr /c:startup"
+                rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
+            )
 
     raw = _ssh(cmd)
     parts = _parse_sections(raw, "head")
@@ -3851,9 +3937,17 @@ def get_bot_version(bot_name: str):
     # happened since the bot started and it is still running the OLD code — the single most
     # misleading state this page can be in, so it is surfaced rather than reconciled away.
     running_hash = ""
+    # The process's own start stamp (`bot_state.set_started`, a Unix time), which the newest
+    # `startup` record is checked against. `None` = not stated, and the check is then skipped
+    # rather than failed — the record alone is still the best reading there is.
+    started: float | None = None
     try:
         state = json.loads(parts.get("state", "").strip() or "{}")
-        running_hash = (state.get(bot_key) or {}).get("source_hash", "") or ""
+        mine = state.get(bot_key) or {}
+        running_hash = mine.get("source_hash", "") or ""
+        s = mine.get("started")
+        if isinstance(s, (int, float)) and not isinstance(s, bool):
+            started = float(s)
     except Exception:
         pass
 
@@ -3926,6 +4020,7 @@ def get_bot_version(bot_name: str):
         running_hash=running_hash,
         params_drift=drift,
         compare=comparison,
+        running_code=_running_code(parts.get("starts"), started),
     )
 
 

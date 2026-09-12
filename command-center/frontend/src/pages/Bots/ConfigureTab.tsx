@@ -8,6 +8,7 @@ import {
   ChevronRight,
   HelpCircle,
   Loader2,
+  RotateCcw,
   Upload,
   WifiOff,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ import {
   deployableVersion,
   deployWouldAdvance,
   isRestartPending,
+  restartReason,
   versionReadFailure,
 } from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
@@ -174,6 +176,8 @@ export function VersionBanner({
   botLabel,
   job,
   live = false,
+  liveBot,
+  fetchedAt,
 }: {
   botKey: string
   botLabel: string
@@ -183,6 +187,11 @@ export function VersionBanner({
   job: BotPromoteJob | null | undefined
   /** The bot trades a LIVE account — its deploy takes a second, deliberate click. */
   live?: boolean
+  /** The bot as the trading box last reported it — whether it runs, and for how long — so the
+   *  banner can tell a process running older code than the box holds. */
+  liveBot?: { status: string; uptime_seconds: number | null }
+  /** When that report was taken — the same clock the row reads a restart off. */
+  fetchedAt?: string
 }) {
   const { data: v, isLoading, error, refetch, isFetching } = useBotVersion(botKey)
   const start = useStartPromoteJob()
@@ -291,6 +300,14 @@ export function VersionBanner({
   // 🔴 Behind, but only by unpushed commits: a deploy would reinstall what is running. The big
   // button and the "would change" list are withheld, and the heading says push is the fix.
   const advance = deployWouldAdvance(c)
+  // 🔴 The code that RUNS the bot moved since it started (2026-09-12). The version counts the
+  // strategy only, so this banner said "up to date" over a live bot eight fixes behind. A deploy
+  // that would advance already says it, and a deploy on disk the process has not picked up is the
+  // restart-pending warning below — this is the third case, and a re-deploy is its fix.
+  const restart =
+    running || start.isPending || isRestartPending(v) || (behind > 0 && advance)
+      ? null
+      : restartReason(v, liveBot, fetchedAt)
 
   const confirmState = finished?.stages.find((s) => s.key === 'confirm')?.state
   // The header is the loudest thing on the panel, so while a deploy is going it SAYS so — the
@@ -322,19 +339,25 @@ export function VersionBanner({
                   disabled:opacity-40 ${
                     armed
                       ? 'text-[12px] bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 border border-amber-400/50'
-                      : advance || failed
+                      : advance || failed || restart
                         ? 'text-[12px] bg-gold-text/20 text-gold-text hover:bg-gold-text/30 border border-gold-text/40'
                         : 'text-[10px] text-text-tertiary hover:text-text-secondary'
                   }`}
     >
-      {armed ? <AlertTriangle size={13} /> : <Upload size={advance || failed ? 13 : 10} />}
+      {armed ? (
+        <AlertTriangle size={13} />
+      ) : (
+        <Upload size={advance || failed || restart ? 13 : 10} />
+      )}
       {armed
         ? 'Click again — this bot trades real money'
         : failed
           ? 'Try again'
           : advance
             ? `Deploy & restart v${c.deployed_version} → v${heading}`
-            : 'Re-deploy'}
+            : restart
+              ? 'Re-deploy & restart'
+              : 'Re-deploy'}
     </button>
   )
 
@@ -387,7 +410,7 @@ export function VersionBanner({
           ? 'bg-accent/[0.05] border-accent/40'
           : failed
             ? 'bg-neg-muted/30 border-neg-text/40'
-            : behind > 0
+            : behind > 0 || restart
               ? 'bg-amber-400/[0.07] border-amber-400/30'
               : 'bg-pos-muted/40 border-pos-text/25'
       }`}
@@ -397,11 +420,13 @@ export function VersionBanner({
           <p
             data-testid="version-heading"
             className={`flex items-center gap-[7px] text-[13px] font-semibold ${
-              deploying ? 'text-accent' : behind > 0 ? 'text-amber-300' : 'text-pos-text'
+              deploying ? 'text-accent' : behind > 0 || restart ? 'text-amber-300' : 'text-pos-text'
             }`}
           >
             {deploying ? (
               <Loader2 size={14} className="animate-spin" />
+            ) : restart ? (
+              <RotateCcw size={14} />
             ) : behind > 0 && !advance ? (
               <Upload size={14} />
             ) : behind > 0 ? (
@@ -411,11 +436,13 @@ export function VersionBanner({
             )}
             {deploying
               ? `Deploying ${botLabel}${(target ?? heading) != null ? ` → v${target ?? heading}` : ''}`
-              : behind > 0 && !advance
-                ? `${botLabel} has everything that is pushed`
-                : behind > 0
-                  ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
-                  : `${botLabel} is up to date`}
+              : restart
+                ? `${botLabel} is running older code`
+                : behind > 0 && !advance
+                  ? `${botLabel} has everything that is pushed`
+                  : behind > 0
+                    ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
+                    : `${botLabel} is up to date`}
           </p>
           <div className="flex items-center gap-[22px] mt-[9px] text-[11px]">
             <span className="text-text-tertiary">
@@ -430,6 +457,14 @@ export function VersionBanner({
               <span className="text-text-primary font-mono text-[13px]">v{c.local_version}</span>
             </span>
           </div>
+          {restart && (
+            <p
+              data-testid="banner-restart"
+              className="text-[11px] text-amber-400/90 mt-[8px] leading-[1.5] max-w-[440px]"
+            >
+              {restart}
+            </p>
+          )}
         </div>
         {deployBtn}
       </div>

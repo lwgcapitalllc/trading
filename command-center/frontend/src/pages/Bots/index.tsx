@@ -15,8 +15,9 @@
  * belong to the ACCOUNT and live on its heading. Version, risk and uptime belong to the BOT and
  * live on its row. Nothing is repeated to make a row look complete.
  *
- * ⚠ **State is a dot, not a word.** `RUNNING` was written on every row of every tab; the colour
- * carries it, and the drawer says it in words where there is room to be exact.
+ * ⚠ **State is one dot and one word (2026-09-12)** — the worst problem or what the bot is doing,
+ * anything else counted beside it and spelled out on hover (`lib/botCondition.ts`). It was a bare
+ * dot, and then a dot with up to five tags beside the name.
  *
  * ⚠ **Fleet controls and the scheduled jobs are NOT here** — they moved to Overview on
  * 2026-09-05. This page manages bots one at a time; those act on all of them or on the box, and
@@ -41,7 +42,7 @@
  * `PerTrade` for why dollars, share of the account and total R all crown demo.
  *
  * 🔴 **Nothing on the page says a fact twice (2026-09-10, *"we don't need to be redundant on data
- * anywhere on this page"*).** A section heading names the kind, so no card repeats it; the net pill
+ * anywhere on this page"*).** A section heading names the kind, so no card repeats it; the net figure
  * carries the account's sign, so no edge colour repeats it; a side's pooled score shows only when it
  * pools two or more bots, because a pool of one is that bot's row.
  */
@@ -55,8 +56,6 @@ import {
   RefreshCw,
   Copy,
   Check,
-  Unplug,
-  AlertTriangle,
   SlidersHorizontal,
   TrendingUp,
   Trophy,
@@ -80,7 +79,6 @@ import { openingRecorder } from '@/lib/accountEarnings'
 import { botLabel as labelOf } from '@/lib/botLabel'
 import type {
   BotStatus,
-  BotReview,
   BotAccountBot,
   BotAccountGroup,
   BotAccountRegistration,
@@ -94,15 +92,9 @@ import { AccountDrawer } from './AccountDrawer'
 import { emptyGroup, nameOf } from './AccountForm'
 import { VpsSyncDrawer } from './VpsSyncDrawer'
 import { KIND_NAME, KIND_TINT, KindChip, tintOf } from './kind'
-import { HaltedChip, TradeOpenChip } from '@/components/BotChips'
-
-function formatUptime(seconds: number): string {
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`
-  return `${h}h ${m}m`
-}
+import { botCondition } from '@/lib/botCondition'
+import { restartReason } from '@/lib/botVersion'
+import { StatusDot, StatusText } from '@/components/BotStatus'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -114,54 +106,12 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-/** Running, but not talking to its terminal — both are true and they are different facts.
- *  ⚠ `=== false` and never falsy: `null` means the bot has not stamped a link state, and
- *  rendering an unanswered question as a failure is its own defect. */
-function NoLinkChip() {
-  return (
-    <span
-      title="The bot is running but its MT5 terminal is not answering, so it is receiving no bars. It retries every 30s; if this persists, restart it."
-      className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
-    >
-      <Unplug size={9} /> no link
-    </span>
-  )
-}
-
-/** The broker or the terminal will not let this account trade — every order will be refused.
- *  🔴 Written after 2026-09-11: the live account was read-only for seven hours, every order came
- *  back refused, and nothing on this page said so. ⚠ `=== false` only: `null` means the bot could
- *  not ask, which is not the claim "trading is off". Amber, not red — red means a loss here. */
-function TradingOffChip({ reason }: { reason?: string | null }) {
-  const why = reason
-    ? `${reason[0].toUpperCase()}${reason.slice(1)}`
-    : 'The broker or the terminal will not let this account trade'
-  return (
-    <span
-      data-testid="trading-off"
-      title={`${why}. Every order the bot sends will be refused until it is back on.`}
-      className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
-    >
-      trading off
-    </span>
-  )
-}
-
-/** The hourly record review's standing flag. A Telegram alert is a MOMENT; this is a STATE.
- *  ⚠ Not hidden on a stopped bot — *it crashed*, *it refused to start* are exactly the findings
- *  you can only read once it is no longer running. */
-function ReviewChip({ review }: { review: BotReview }) {
-  return (
-    <span
-      title={review.findings.map((f) => `• ${f.title}\n  ${f.detail}`).join('\n\n')}
-      className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] cursor-default ${
-        review.level === 'alert' ? 'bg-neg-muted text-neg-text' : 'bg-warn-muted text-warn-text'
-      }`}
-    >
-      <AlertTriangle size={9} /> review
-      {review.findings.length > 1 ? ` ${review.findings.length}` : ''}
-    </span>
-  )
+/** A benched bot's PROBLEMS only. "Benched" is what the list it sits in already says, so the row
+ *  names nothing when nothing is wrong — and a crash or a refused start, which can only be read
+ *  once a bot has stopped, still reaches it. */
+function BenchedIssues({ bot }: { bot: BotStatus }) {
+  const cond = botCondition(bot, { asked: true, onAccount: false })
+  return cond.issues.length ? <StatusText cond={cond} /> : null
 }
 
 function LogModal({
@@ -301,19 +251,22 @@ function pnlCls(v: number | null | undefined): string {
  *
  *  🔴 **One value per cell (2026-09-10, Aaron: *"I don't want anything stacked on top of each
  *  other in columns like that"*).** The return % sat under the dollars and the trade count under
- *  the R, so each cell held two different measurements and the reader could not tell whether the
- *  % and the R said the same thing. They are their own columns now: Bot | P&L | Return % | Trades |
- *  Per trade | Version | Risk | Uptime | Actions.
+ *  the R, so each cell held two different measurements.
  *
- *  ⚠ The version column is 136px because a behind pill ("v201 · 7 behind") MEASURES 115px on
- *  one line (2026-09-10); at 92px it wrapped into a two-line blob. ⚠ The rest are sized to their
- *  widest real value so every column still fits a 1280px screen with the name at its 150px floor.
+ *  🔴 **Bot | Status | P&L | Return % | Trades | Per trade | Risk | Version | Actions (2026-09-12).**
+ *  Up to five tags beside the name became ONE status column, and the uptime column went into that
+ *  status's hover. ⚠ The status is CAPPED and the slack goes to a spacer before Actions: as the
+ *  flexible track it took ~400px at 1600 wide and pushed every number to the far side of the row.
  *
- *  🔴 **Every track is FIXED except the name and the spacer — the actions too.** Each row is its
- *  own grid, and an `auto` actions track sizes to ITS row: the word "Actions" in the heading row,
- *  ~185px of buttons in a bot row. On a 1280px screen the bot row ran out of room, squeezed its name
- *  column, and every value sat ~50px left of its heading while the heading row did not move. */
-const GRID = 'grid-cols-[minmax(150px,225px)_100px_64px_52px_80px_136px_48px_64px_1fr_190px]'
+ *  ⚠ Version is sized to its widest state at the pill's 11px, and the rest to their widest real
+ *  value, so the row still fits a 1280px screen with the name and status at their floors.
+ *
+ *  🔴 **Every other track is FIXED — the actions too.** Each row is its own grid, and an `auto`
+ *  actions track sizes to ITS row: the word "Actions" in the heading row, ~185px of buttons in a
+ *  bot row. On a 1280px screen the bot row ran out of room, squeezed its name column, and every
+ *  value sat ~50px left of its heading while the heading row did not move. */
+const GRID =
+  'grid-cols-[minmax(120px,190px)_minmax(140px,260px)_96px_60px_48px_72px_44px_128px_1fr_190px]'
 
 /** R per trade: what a bot's closed trades made on average, in units of the risk each one took.
  *  `null` when there is nothing to average — no record, or no closed trade — never 0. */
@@ -342,6 +295,9 @@ const TIE_R = 0.005
  * ⚠ **The trade count sits BESIDE it, in the Trades column.** On one or two trades a lead is not a
  * verdict; that is said as a caveat next to the number, never by hiding it (root CLAUDE.md →
  * Trading Philosophy).
+ *
+ * ⚠ **Uncoloured since 2026-09-12, like Return %.** P&L carries the sign's colour; three cells a
+ * row repeating it made every healthy row a strip of green.
  */
 function PerTrade({
   e,
@@ -363,7 +319,7 @@ function PerTrade({
       title={`${fmtR(r)} a trade over ${n} closed ${n === 1 ? 'trade' : 'trades'} (${fmtR(e.realised_r ?? 0)} in all)${
         top ? ' — the best of every bot shown, so it holds the trophy' : ''
       }${n < 10 ? '. A handful of trades is a lead, not a verdict.' : ''}`}
-      className={`flex items-center gap-[5px] text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(r)}`}
+      className="flex items-center gap-[5px] text-[13px] font-mono tabular-nums text-text-secondary cursor-default"
     >
       {top && <Trophy size={12} className="text-gold-text shrink-0" />}
       {fmtR(r)}
@@ -388,7 +344,7 @@ function ReturnPct({ e, asking }: { e: BotEarnings | undefined; asking: boolean 
     <span
       data-testid="return-pct"
       title={`${p > 0 ? '+' : ''}${p.toFixed(2)}% — this bot's own closed trades as a share of the account's capital: what went in, deposits less withdrawals (its opening balance where the bots have not read the account's history yet)`}
-      className={`text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(p)}`}
+      className="text-[13px] font-mono tabular-nums text-text-secondary cursor-default"
     >
       {p > 0 ? '+' : p < 0 ? '−' : ''}
       {Math.abs(p).toFixed(1)}%
@@ -477,7 +433,7 @@ function SideScoreLine({
         <span data-testid="side-pooled" className="flex items-baseline gap-[8px]">
           <span
             title="R per trade: what each closed trade made on average, in units of the risk it took — every bot on this side pooled."
-            className={`text-[14px] font-mono tabular-nums font-semibold ${pnlCls(r)}`}
+            className="text-[14px] font-mono tabular-nums font-semibold text-text-primary"
           >
             {fmtR(r)}
           </span>
@@ -655,8 +611,8 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
   // Ghost content in the pill's own layout, so it lands on the same baseline as the real one.
   if (!e && asking)
     return (
-      <Shimmer shape="pill">
-        <span className="inline-flex items-baseline gap-[6px] px-[8px] py-[3px]">
+      <Shimmer>
+        <span className="inline-flex items-baseline gap-[6px]">
           <span className="text-[13px] font-mono tabular-nums font-semibold">+00.0%</span>
           <span className="text-[11px] font-mono tabular-nums">+$0,000.00</span>
         </span>
@@ -686,12 +642,13 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
       : `Opened at ${money(e.opening_balance, false)}${
           openingRecorder(e) ? `, recorded by ${openingRecorder(e)}` : ''
         }.`
+  // ⚠ Text, not a filled pill (2026-09-12): a green block on every account heading was a large
+  // part of what read as "everything is green". The sign's colour stays on the figures.
   return (
     <span
+      data-testid="account-net"
       title={`${from} ${then}`}
-      className={`inline-flex items-baseline gap-[6px] px-[8px] py-[3px] rounded-pill cursor-default ${
-        up ? 'bg-pos-muted' : 'bg-neg-muted'
-      }`}
+      className="inline-flex items-baseline gap-[6px] cursor-default"
     >
       <span
         className={`text-[13px] font-mono tabular-nums font-semibold ${up ? 'text-pos-text' : 'text-neg-text'}`}
@@ -766,6 +723,9 @@ function ColumnHeadings() {
       className={`grid ${GRID} items-center gap-3 pr-4 py-[6px] border-b border-border-subtle bg-bg-sunken/50 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
     >
       <span className="pl-4">Bot</span>
+      <span title="What the bot is doing, or the worst thing wrong with it — hover a row for everything">
+        Status
+      </span>
       <span title="What this bot's own closed trades came to">P&amp;L</span>
       <span title="Return % — this bot's own closed trades as a share of the account's capital: what went in, deposits less withdrawals (its opening balance where the bots have not read the account's history yet)">
         Return %
@@ -776,9 +736,8 @@ function ColumnHeadings() {
       <span title="R per trade — what each closed trade made on average, in units of the risk it took. The top bot is picked on this, never on dollars.">
         Per trade
       </span>
-      <span>Version</span>
       <span title="Risk per trade">Risk</span>
-      <span>Uptime</span>
+      <span>Version</span>
       <span />
       <span className="text-right">Actions</span>
     </div>
@@ -824,13 +783,13 @@ function BotsPageSkeleton() {
               <Shimmer shape="dot" className="h-[7px] w-[7px]" />
               <Shimmer className="h-[13px] w-[96px]" />
             </span>
+            <Shimmer className="h-[12px] w-[90px]" />
             <Contribution e={undefined} asking />
             <ReturnPct e={undefined} asking />
             <TradeCount e={undefined} asking />
             <PerTrade e={undefined} asking top={false} />
-            <VersionPill version={undefined} loading />
             <Shimmer className="h-[12px] w-[26px]" />
-            <Shimmer className="h-[12px] w-[44px]" />
+            <VersionPill version={undefined} loading />
             <span />
             <span className="flex gap-[3px] justify-end">
               <Shimmer className="h-[26px] w-[26px]" />
@@ -1192,7 +1151,7 @@ export function Bots() {
     const past = (earn?.bots ?? []).filter((b) => b.former)
     // 🔴 NO COLOURED EDGE, AND NO LIVE/DEMO CHIP (2026-09-10, Aaron: *"we don't need to be
     // redundant on data anywhere on this page"*). The edge was green when the account was up and
-    // red when down — the sign the net pill beside the balance already carries in the same colours.
+    // red when down — the sign the net figure beside the balance already carries in the same colours.
     // The chip said live or demo under a section heading that says it. Each was a second copy of a
     // fact on screen. ⚠ Unknown-kind accounts lose nothing: they sit under their own heading.
     return (
@@ -1342,6 +1301,7 @@ export function Bots() {
             // has not answered for still has one, and falling back to its key would make
             // an unreachable box look like a page full of unknown bots.
             const name = live?.name ?? cfg.display
+            const cond = botCondition(live, { asked, onAccount: true })
             return (
               <div
                 key={cfg.key}
@@ -1363,39 +1323,27 @@ export function Bots() {
                    *  as meaningless decoration — which it was, on a row that already
                    *  names the bot.
                    *
-                   *  🔴 **THREE states, not two (2026-09-06).** Red meant *stopped* and
-                   *  was also what an UNANSWERED box drew — so a dead link to the VPS
-                   *  rendered as a fleet sitting quietly, which is the failure this repo
-                   *  keeps paying for. Unknown is hollow and says so on hover. */}
-                  {/* A FOURTH look for the first read: shimmering, it is still being
-                   *  asked; hollow, it was asked and nobody answered. */}
+                   *  🔴 **ONE dot, carrying the row's worst state (2026-09-12).** Red needs a
+                   *  person, amber is worth a look, green is a healthy running bot, and
+                   *  hollow is a box that did not answer — unknown, never stopped (a dead
+                   *  link drawn as a quiet fleet is the failure this repo keeps paying for).
+                   *  Shimmering, it is still being asked. The words are in Status. */}
                   {!asked && asking ? (
                     <Shimmer shape="dot" className="h-[7px] w-[7px]" />
                   ) : (
-                    <span
-                      title={
-                        asked
-                          ? running
-                            ? 'Running'
-                            : 'Stopped'
-                          : 'The trading box has not answered for this bot — its state is unknown, not stopped.'
-                      }
-                      className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
-                        !asked
-                          ? 'border border-text-tertiary'
-                          : running
-                            ? 'bg-pos shadow-[0_0_7px_#00ff7f]'
-                            : 'bg-neg'
-                      }`}
-                    />
+                    <StatusDot cond={cond} />
                   )}
                   <span className="truncate group-hover:text-accent transition-colors">{name}</span>
-                  {live?.mt5_link === false && <NoLinkChip />}
-                  {live?.trade_allowed === false && <TradingOffChip reason={live.trade_block} />}
-                  {live?.bridge_state === 'halted' && <HaltedChip reason={live.halt_reason} />}
-                  {live?.review && <ReviewChip review={live.review} />}
-                  {live?.in_trade === true && <TradeOpenChip position={live.position} />}
                 </button>
+
+                {/* 🔴 ONE status per row (2026-09-12). Up to five tags sat beside the name —
+                 *  Aaron: *"my eyes don't know where to go."* Now the worst problem or what the
+                 *  bot is doing, a count of anything else, and the whole story on hover. */}
+                {!asked && asking ? (
+                  <Shimmer className="h-[12px] w-[90px]" />
+                ) : (
+                  <StatusText cond={cond} />
+                )}
 
                 {/* 🔴 The money sits NEXT TO THE NAME, not out at the far edge with the
                  *  machinery. It is the answer to the question this row is read with —
@@ -1406,13 +1354,6 @@ export function Bots() {
                 <TradeCount e={be} asking={asking} />
                 <PerTrade e={be} asking={asking} top={topBot === cfg.key} />
 
-                <VersionPill
-                  version={versionByKey.get(cfg.key)?.data}
-                  loading={versionByKey.get(cfg.key)?.isPending}
-                  deploying={jobByKey.get(cfg.key)?.status === 'running'}
-                  error={versionByKey.get(cfg.key)?.error}
-                />
-
                 <span
                   title="Risk per trade — its share of this account's ceiling"
                   className="text-[12px] font-mono text-text-secondary cursor-default"
@@ -1420,18 +1361,20 @@ export function Bots() {
                   {typeof cfg.risk_pct === 'number' ? `${cfg.risk_pct}%` : '—'}
                 </span>
 
-                <span
-                  title="How long it has been running without a restart"
-                  className="text-[12px] font-mono text-text-tertiary cursor-default"
-                >
-                  {live?.uptime_seconds != null ? (
-                    formatUptime(live.uptime_seconds)
-                  ) : !asked && asking ? (
-                    <Shimmer className="h-[12px] w-[44px]" />
-                  ) : (
-                    '—'
+                {/* ⚠ The uptime column went (2026-09-12) — it is a line of the status's hover.
+                 *  🔴 RESTART: the version counts only the strategy, so a bot running older code
+                 *  than the box holds read "up to date"; `restartReason` says when it is. */}
+                <VersionPill
+                  version={versionByKey.get(cfg.key)?.data}
+                  loading={versionByKey.get(cfg.key)?.isPending}
+                  deploying={jobByKey.get(cfg.key)?.status === 'running'}
+                  error={versionByKey.get(cfg.key)?.error}
+                  restart={restartReason(
+                    versionByKey.get(cfg.key)?.data,
+                    live,
+                    snapshot?.fetched_at
                   )}
-                </span>
+                />
 
                 <span />
 
@@ -1560,6 +1503,10 @@ export function Bots() {
            *  card, and a Stop here would read as stopping it on THIS account. */}
           {past.map((b) => {
             const where = b.moved_to != null ? regByAccount.get(b.moved_to)?.kind : undefined
+            const moved =
+              b.moved_to != null
+                ? `Moved to ${where ? `${where} account` : 'account'} ${b.moved_to}`
+                : 'Moved off this account'
             return (
               <div
                 key={`past-${b.bot_key}`}
@@ -1573,15 +1520,15 @@ export function Bots() {
                   <span className="inline-block w-[7px] h-[7px] shrink-0" />
                   <span className="truncate">{b.name}</span>
                 </span>
+                {/* Where it went IS its status on this account. */}
+                <span title={moved} className="truncate text-[12px] text-text-tertiary">
+                  {moved}
+                </span>
                 <Contribution e={b} asking={false} />
                 <ReturnPct e={b} asking={false} />
                 <TradeCount e={b} asking={false} />
                 <PerTrade e={b} asking={false} top={false} />
-                <span className="col-span-5 text-[12px] text-text-tertiary">
-                  {b.moved_to != null
-                    ? `Moved to ${where ? `${where} account` : 'account'} ${b.moved_to}`
-                    : 'Moved off this account'}
-                </span>
+                <span className="col-span-4" />
               </div>
             )
           })}
@@ -1925,8 +1872,8 @@ export function Bots() {
                     >
                       <span className="inline-block w-[7px] h-[7px] rounded-full shrink-0 bg-text-tertiary/50" />
                       <span className="group-hover:text-accent transition-colors">{bot.name}</span>
-                      {bot.review && <ReviewChip review={bot.review} />}
                     </button>
+                    <BenchedIssues bot={bot} />
                     <span className="ml-auto text-[12px] text-text-tertiary">
                       {versionByKey.get(bot.key)?.data?.frozen ? 'idle' : 'never deployed'}
                     </span>
@@ -1964,6 +1911,7 @@ export function Bots() {
         <BotDrawer
           bot={selBot}
           earnings={earnOf(accountOfBot(selBot.key) ?? selBot.account, selBot.key)}
+          fetchedAt={snapshot?.fetched_at}
           job={jobByKey.get(selBot.key)}
           busy={busy}
           pendingAction={pending?.key === selBot.key ? pending.action : null}

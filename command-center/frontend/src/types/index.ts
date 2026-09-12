@@ -1002,6 +1002,18 @@ export interface BotVersionCompare {
   setting_changes: BotSettingChange[]
 }
 
+/** The code a bot's CURRENT RUN started on, against what a restart would load (2026-09-12). The
+ *  version number counts the strategy only; this is the runner that talks to the broker, which
+ *  moves only on a restart. */
+export interface BotRunningCode {
+  commit: string // the box's checkout when this run started, off its own startup record
+  started_at: string // that record's time
+  /** Changes since `commit` to a file the runner loads. `null` = could not tell — never 0. */
+  changes_waiting: number | null
+  changes: string[] // "<hash> <subject>", newest first, at most 20
+  reason: string // why `changes_waiting` is null
+}
+
 export interface BotDeployedVersion {
   frozen: boolean // false = unpromoted, still importing from the repo tree
   hash: string
@@ -1020,6 +1032,8 @@ export interface BotDeployedVersion {
   running_hash: string // what the live PROCESS reports — may lag after a promote
   params_drift: string[] // settings config.json now states differently
   compare: BotVersionCompare | null
+  /** Optional: a recording taken before the field existed carries none. */
+  running_code?: BotRunningCode | null
 }
 
 export interface BotPromoteResult {

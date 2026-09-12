@@ -12,12 +12,12 @@ import {
   CalendarDays,
   ChevronRight,
   Loader2,
-  Unplug,
   AlertCircle,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
-import { HaltedChip, TradeOpenChip } from '@/components/BotChips'
+import { botCondition } from '@/lib/botCondition'
+import { StatusDot, StatusText } from '@/components/BotStatus'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import {
   useBacktestRuns,
@@ -80,68 +80,13 @@ function fmtPf(pf: number | null | undefined): string {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-/** A bot's state. Colour marks the EXCEPTION: running is what a bot is for, so it is a green dot
- *  beside a grey word — a green pill on every row said "all fine" loudly five times. A bot that is
- *  stopped while it holds an account is the thing to notice, so that one is red. A bot on NO account
- *  is benched on purpose; it is stopped by design, and red there is a false alarm (2026-09-11). */
-function BotState({ bot }: { bot: BotStatus }) {
-  const running = bot.status === 'RUNNING'
-  const benched = !running && !bot.account
-  const label = running
-    ? 'Running'
-    : benched
-      ? 'Benched'
-      : bot.status === 'ERROR'
-        ? 'Error'
-        : 'Stopped'
-  const dot = running ? 'bg-pos' : benched ? 'border border-text-tertiary' : 'bg-neg'
-  const text = running || benched ? 'text-text-tertiary' : 'text-neg-text'
-  return (
-    <span className={`inline-flex items-center gap-[5px] text-[11px] ${text}`}>
-      <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${dot}`} />
-      {label}
-    </span>
-  )
-}
-
-/** Running, but not talking to its terminal — the same chip the Bots page draws, for the same
- *  reason, and it has to be on BOTH pages: the incident it exists for (MetaTrader auto-updated
- *  under the live bot on 2026-08-04 and it sat blind for 50 minutes) presented as a healthy
- *  RUNNING row, and this page is the one a reader checks first.
- *
- *  ⚠ It sits BESIDE the Running pill, never instead of it — the process being ALIVE and being
- *  BLIND are both true and are different facts. ⚠ `=== false`, never falsy: `null` means the
- *  bot has not stamped a link state, which is not the claim "disconnected". */
-function NoLinkChip() {
-  return (
-    <span
-      title="The bot is running but its MT5 terminal is not answering, so it is receiving no bars. It retries every 30s; if this persists, restart the bot."
-      className="inline-flex items-center gap-[3px] text-[9px] font-semibold px-[5px] py-[1px]
-                 rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
-    >
-      <Unplug size={8} /> No link
-    </span>
-  )
-}
-
-/** The broker or the terminal will not let this account trade — the Bots page's chip, sized for
- *  this list. ⚠ `=== false` only: `null` is could-not-ask, never "trading is off". */
-function TradingOffChip({ reason }: { reason?: string | null }) {
-  const why = reason
-    ? `${reason[0].toUpperCase()}${reason.slice(1)}`
-    : 'The broker or the terminal will not let this account trade'
-  return (
-    <span
-      title={`${why}. Every order the bot sends will be refused until it is back on.`}
-      className="inline-flex items-center gap-[3px] text-[9px] font-semibold px-[5px] py-[1px]
-                 rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
-    >
-      Trading off
-    </span>
-  )
-}
-
+/** A bot on the Overview: the Bots page's own status — one dot, one word, a count of anything else
+ *  and the rest on hover (`lib/botCondition.ts`) — so the two pages cannot word one fact two ways.
+ *  It replaced a word plus up to five tags (2026-09-12). ⚠ It has to be on BOTH pages: a blind or
+ *  halted bot presented as a healthy RUNNING row here, and this is the page read first. A bot on NO
+ *  account is benched on purpose, never the red of a stopped one. */
 function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
+  const cond = botCondition(bot, { asked: true, onAccount: !!bot.account })
   const pnl = bot.total_pnl_pct
   const pnlStr = pnl != null ? (pnl >= 0 ? `+${pnl.toFixed(2)}%` : `${pnl.toFixed(2)}%`) : null
   const pnlColor =
@@ -166,16 +111,10 @@ function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
       )}
       <span className="flex-1" />
       {pnlStr && <span className={`text-[11px] font-mono tabular-nums ${pnlColor}`}>{pnlStr}</span>}
-      {bot.day_locked && (
-        <span className="text-[9px] font-semibold px-[5px] py-[1px] rounded-pill bg-warn-muted text-warn-text uppercase tracking-[0.4px]">
-          locked
-        </span>
-      )}
-      {bot.mt5_link === false && <NoLinkChip />}
-      {bot.trade_allowed === false && <TradingOffChip reason={bot.trade_block} />}
-      {bot.bridge_state === 'halted' && <HaltedChip reason={bot.halt_reason} size="list" />}
-      {bot.in_trade === true && <TradeOpenChip position={bot.position} size="list" />}
-      <BotState bot={bot} />
+      <span className="inline-flex items-center gap-[6px] min-w-0">
+        <StatusDot cond={cond} size="list" />
+        <StatusText cond={cond} size="list" />
+      </span>
     </div>
   )
 }

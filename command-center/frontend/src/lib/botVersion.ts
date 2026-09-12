@@ -62,3 +62,55 @@ export function isRestartPending(v: BotDeployedVersion | undefined): boolean {
   if (!v) return false
   return !!(v.running_hash && v.hash && !v.hash.startsWith(v.running_hash))
 }
+
+/** How far a restart may land after the start a version reading describes and still be that
+ *  run — the start record is stamped before the connect and warm-up, uptime after them. */
+const SAME_RUN_MS = 10 * 60_000
+
+/**
+ * Why this RUNNING bot needs a restart to be on the code the box holds — `null` when it does not,
+ * when it is not running (a stopped bot loads the new code when it starts), or when it cannot be
+ * told.
+ *
+ * 🔴 **Two causes, and the version number counts neither (2026-09-12).** A deploy landed on disk
+ * and the process still runs the one before it (`isRestartPending`); or the RUNNER — the repo code
+ * that talks to the broker and writes what this page reads — moved since the process started.
+ * The version counts the strategy only, so the page said "up to date" over a bot eight fixes
+ * behind.
+ *
+ * ⚠ **The reading must describe THIS process.** A version read before a restart still names the
+ * old run's start, and without this check the row would go on asking for a restart it just had
+ * until something re-read the version. The process's start is the snapshot's own — its time less
+ * its uptime — so a process that started well after the reading's start is a newer run.
+ */
+export function restartReason(
+  v: BotDeployedVersion | undefined,
+  live: { status: string; uptime_seconds: number | null } | undefined,
+  fetchedAt?: string
+): string | null {
+  if (!v || live?.status !== 'RUNNING') return null
+  if (isRestartPending(v))
+    return 'A new version is deployed on the box and this bot is still running the one before it. Restart it to switch.'
+  const rc = v.running_code
+  const n = rc?.changes_waiting
+  if (!rc || n == null || n <= 0) return null
+  if (live.uptime_seconds != null && rc.started_at) {
+    const readStart = Date.parse(rc.started_at)
+    const now = fetchedAt ? Date.parse(fetchedAt) : Date.now()
+    const procStart = now - live.uptime_seconds * 1000
+    if (
+      Number.isFinite(readStart) &&
+      Number.isFinite(procStart) &&
+      procStart > readStart + SAME_RUN_MS
+    )
+      return null
+  }
+  // ⚠ RE-DEPLOY, not Restart: a plain restart starts whatever the box's checkout holds, and only a
+  // re-deploy fetches the new code onto the box first.
+  return (
+    `${n} change${n === 1 ? '' : 's'} to the code that runs this bot ${n === 1 ? 'has' : 'have'} ` +
+    'landed since it started. The version number counts only the strategy, so it does not show ' +
+    `${n === 1 ? 'it' : 'them'}. Re-deploy to pick ${n === 1 ? 'it' : 'them'} up: that fetches ` +
+    'the code onto the box and restarts the bot.'
+  )
+}

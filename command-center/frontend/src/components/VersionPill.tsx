@@ -1,55 +1,53 @@
-import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Upload, WifiOff } from 'lucide-react'
+import { AlertTriangle, HelpCircle, Loader2, RotateCcw, Upload, WifiOff } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
 import { Shimmer } from '@/components/Shimmer'
 import { deployableVersion, deployWouldAdvance, versionReadFailure } from '@/lib/botVersion'
 
 /**
- * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed.
+ * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed — so the
+ * rows and the deploy panel cannot give two answers about one deployment.
  *
- * Aaron, 2026-08-09: *"there should be a column even on the monitor page showing the bot version
- * that's running… Same thing on the accounts page. Everything should be aligned. All the versions.
- * Create a pill that looks clean across all."* So this is a component rather than a snippet copied
- * into two tables — the Configure tab already renders the same numbers as a full banner, and three
- * hand-written readings of one deployment claim is three answers that can disagree.
+ * ⚠ **It reports the DEPLOYED version, never the local one.** The backtester's number appears only
+ * inside the "behind" state, where it is the thing being subtracted.
  *
- * ⚠ **It reports the DEPLOYED version, never the local one.** `v121` in the backtester is not
- * running anywhere; the number a row on a fleet page has to answer for is what is on the box. The
- * repo's number appears only inside the "behind" state, where it is the thing being subtracted.
+ * ⚠ **A version nobody could work out is never drawn as a number.** Never promoted, the deployed
+ * commit not fetched here, no git: `v0` would be the reassuring answer to a question nobody could
+ * answer. And a read that FAILED is "Unread", never "No version" — one is the box not answering,
+ * the other is an answer.
  *
- * ⚠ **Three states, and the third may never be rendered as a number.** Up to date, behind by N, or
- * UNKNOWN — never promoted, the deployed commit not fetched on this machine, no git. `v0` would be
- * the reassuring answer to a question nobody could answer, which is the same rule `mt5_link` and
- * `grid_sensitivity_score` follow. A version display that can be quietly wrong is worse than none,
- * because it is what you check before deciding anything.
+ * 🔴 **CALM WHEN CURRENT, AMBER WHEN IT NEEDS YOU (2026-09-12).** Up to date was a green pill with
+ * a tick on every row, which is most of why the demo account read as "everything is green" (Aaron:
+ * *"my eyes don't know where to go"*). Every state keeps the outline Aaron asked for on 2026-09-05
+ * so the version still reads as a claim; only a state that needs a person is coloured.
  *
- * 🔴 **All three states carry a BORDER, and the up-to-date one is green (2026-09-05).** It was
- * `bg-bg-surface-2 text-text-secondary` — the same grey as the surface behind it — so on a page
- * where every other column is also grey the version stopped registering as a claim at all. Aaron:
- * *"the version of the bot, outline that with some kind of colour or something, so it stands out
- * to me."*
+ * 🔴 **RESTART — the bot runs OLDER code than the box holds (2026-09-12).** The version counts the
+ * strategy only, and the code that runs it (the part that talks to the broker and writes what this
+ * page reads) moves only when the bot restarts — so the page said "up to date" over a live bot
+ * eight fixes behind. `restart` is `restartReason`'s sentence; the caller decides, this draws.
  *
- * ⚠ **Green means UP TO DATE, never "good bot".** It is answering one question — is the box
- * running the code you tested — and that is the only thing it may ever be read as. ⚠ **The unknown
- * state stays NEUTRAL and gets a border too**: it must not borrow either verdict's colour, and
- * without a border it is the one state that looks like a rendering failure rather than a finding.
+ * ⚠ **Order: deploying, loading, unread, unknown, behind, restart, not pushed, current.** Behind
+ * wins over restart because a deploy restarts too; restart wins over not pushed because it is
+ * something the bot needs, where not pushed is something this machine needs.
  *
- * ⚠ **It never wraps (2026-09-10).** In the Bots table's version column "v206 · 7 behind" broke
- * onto two lines and turned the pill into a fat two-line blob — the one state that needs reading
- * was the ugliest. `whitespace-nowrap` here, and the column is sized to the behind state.
- * ⚠ **`justify-self-start` too** — as a grid item the pill STRETCHED to the whole column, so a
- * short "✓ v206" drew as wide as the longest state. It sizes to its own text.
- *
- * 🔴 **Two more states (2026-09-10).** DEPLOYING, while a deploy of this bot runs — the row said
- * "behind" through a whole deploy with its drawer closed. And NOT PUSHED, when every version the
- * bot is behind is a commit only on this machine: "behind" there pointed at a deploy that cannot
- * move it, straight after a deploy that had worked. `deployWouldAdvance` decides it, the same
- * function the deploy panel's button reads.
+ * ⚠ **It never wraps and sizes to its text** (`whitespace-nowrap`, `justify-self-start`) — in a
+ * grid it stretched to the column, and at 92px the behind state broke onto two lines.
  */
+
+const BASE =
+  'inline-flex items-center gap-[4px] text-[11px] font-medium px-[7px] py-[2px] rounded-pill border cursor-default whitespace-nowrap justify-self-start'
+const TONE = {
+  quiet: 'text-text-secondary border-border-default',
+  dim: 'text-text-tertiary border-border-default',
+  warn: 'text-warn-text border-warn/50',
+  busy: 'text-accent border-accent/50',
+}
+
 export function VersionPill({
   version,
   loading,
   deploying,
   error,
+  restart,
 }: {
   version: BotDeployedVersion | null | undefined
   /** The query has not answered yet. Distinct from "answered, cannot say" — one is a wait and
@@ -59,6 +57,9 @@ export function VersionPill({
   deploying?: boolean
   /** The read FAILED — the box could not be asked. The query's own error. */
   error?: unknown
+  /** Why this running bot needs a restart to be on the code the box holds (`restartReason`), or
+   *  `null`/absent when it does not. */
+  restart?: string | null
 }) {
   const c = version?.compare ?? null
 
@@ -69,11 +70,9 @@ export function VersionPill({
         data-testid="version-pill"
         data-state="deploying"
         title="A deploy of this bot is running. Open it to watch the steps."
-        className="inline-flex items-center gap-[4px] text-[10px] font-semibold px-2 py-[3px]
-                   rounded-pill uppercase tracking-[0.4px] bg-accent/10 text-accent
-                   border border-accent/50 cursor-default whitespace-nowrap justify-self-start"
+        className={`${BASE} ${TONE.busy}`}
       >
-        <Loader2 size={9} className="animate-spin" />
+        <Loader2 size={10} className="animate-spin" />
         Deploying{to != null ? ` v${to}` : ''}
       </span>
     )
@@ -82,13 +81,10 @@ export function VersionPill({
   // The first read is a SHAPE, not a word — the same height as the pill that will land here, so
   // the row does not move when the version answers. See `components/Shimmer.tsx`.
   if (loading) {
-    return <Shimmer shape="pill" className="h-[24px] w-[92px] justify-self-start" />
+    return <Shimmer shape="pill" className="h-[22px] w-[64px] justify-self-start" />
   }
 
-  // 🔴 COULD NOT ASK is not "No version" (2026-09-11). A failed read is shown here instead of a
-  // toast, and it may not borrow the unknown state's words: "No version" is an ANSWER (never
-  // deployed, the commit not fetched here), this is the box not answering. Only while there is no
-  // earlier reading — a failed REFETCH keeps the last good one on screen, which is still true.
+  // Only while there is no earlier reading — a failed REFETCH keeps the last good one on screen.
   const failed = versionReadFailure(error)
   if (!version && failed) {
     return (
@@ -96,11 +92,9 @@ export function VersionPill({
         data-testid="version-pill"
         data-state="unread"
         title={`Could not reach the trading box to read this bot's version — ${failed}. It asks again on the next refresh.`}
-        className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                   rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary
-                   border border-border-strong cursor-default whitespace-nowrap justify-self-start"
+        className={`${BASE} ${TONE.dim}`}
       >
-        <WifiOff size={9} /> Unread
+        <WifiOff size={10} /> Unread
       </span>
     )
   }
@@ -111,11 +105,9 @@ export function VersionPill({
         data-testid="version-pill"
         data-state="unknown"
         title={c?.reason || 'Could not work out which version this bot is running.'}
-        className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                   rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary
-                   border border-border-strong cursor-default whitespace-nowrap justify-self-start"
+        className={`${BASE} ${TONE.dim}`}
       >
-        <HelpCircle size={9} /> No version
+        <HelpCircle size={10} /> No version
       </span>
     )
   }
@@ -123,23 +115,53 @@ export function VersionPill({
   const behind = c.versions_behind ?? 0
   const label = `v${c.deployed_version}`
 
-  if (behind > 0 && !deployWouldAdvance(c)) {
+  if (behind > 0 && deployWouldAdvance(c)) {
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="behind"
+        title={
+          `Deployed ${label}, backtester on v${c.local_version} — ` +
+          `${behind} change${behind === 1 ? '' : 's'} to this bot's code waiting to go out. ` +
+          `Deploy it from Configure.`
+        }
+        className={`${BASE} ${TONE.warn}`}
+      >
+        <AlertTriangle size={10} />
+        {label} · {behind} behind
+      </span>
+    )
+  }
+
+  if (restart) {
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="restart"
+        title={`Deployed ${label}. ${restart}`}
+        className={`${BASE} ${TONE.warn}`}
+      >
+        <RotateCcw size={10} />
+        {label} · restart
+      </span>
+    )
+  }
+
+  if (behind > 0) {
     const n = c.unpushed_commits?.length ?? 0
     return (
       <span
         data-testid="version-pill"
         data-state="unpushed"
         title={
-          `Deployed v${c.deployed_version} — everything that is pushed. Your backtester is on ` +
+          `Deployed ${label} — everything that is pushed. Your backtester is on ` +
           `v${c.local_version}, and the ${n} newer commit${n === 1 ? '' : 's'} touching this bot ` +
           `${n === 1 ? 'is' : 'are'} only on this machine, so a deploy cannot reach ` +
           `${n === 1 ? 'it' : 'them'}. Push, then deploy.`
         }
-        className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                   rounded-pill uppercase tracking-[0.4px] border cursor-default whitespace-nowrap
-                   justify-self-start bg-warn-muted text-warn-text border-warn/50"
+        className={`${BASE} ${TONE.warn}`}
       >
-        <Upload size={9} />
+        <Upload size={10} />
         {label} · not pushed
       </span>
     )
@@ -148,25 +170,11 @@ export function VersionPill({
   return (
     <span
       data-testid="version-pill"
-      data-state={behind > 0 ? 'behind' : 'current'}
-      title={
-        behind > 0
-          ? `Deployed v${c.deployed_version}, backtester on v${c.local_version} — ` +
-            `${behind} change${behind === 1 ? '' : 's'} to this bot's code waiting to go out. ` +
-            `Deploy it from Configure.`
-          : `Deployed v${c.deployed_version} — the same code the backtester runs.`
-      }
-      className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                  rounded-pill uppercase tracking-[0.4px] border cursor-default whitespace-nowrap
-                  justify-self-start ${
-                    behind > 0
-                      ? 'bg-warn-muted text-warn-text border-warn/50'
-                      : 'bg-pos-muted text-pos-text border-pos/40'
-                  }`}
+      data-state="current"
+      title={`Deployed ${label} — the same code the backtester runs.`}
+      className={`${BASE} ${TONE.quiet}`}
     >
-      {behind > 0 ? <AlertTriangle size={9} /> : <CheckCircle2 size={9} />}
       {label}
-      {behind > 0 ? ` · ${behind} behind` : ''}
     </span>
   )
 }
