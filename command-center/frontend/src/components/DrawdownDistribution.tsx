@@ -9,6 +9,7 @@ import {
   Cell,
 } from 'recharts'
 import { C } from '@/themes/chart'
+import { balTick } from '@/lib/chartAxis'
 
 interface Props {
   distribution: { counts: number[]; edges: number[] }
@@ -37,7 +38,9 @@ export default function DrawdownDistribution({
     count,
     overLimit: maxLoss != null && distribution.edges[i] > maxLoss,
   }))
-  const fmtAxis = (v: number) => (pct ? `${v.toFixed(0)}%` : `$${(v / 1000).toFixed(1)}k`)
+  // Dollars go through the app's one money-axis formatter, which steps k → M → B. The private
+  // `$…k` copy read "$27000k" on a stack whose drawdowns ran to millions (2026-09-11).
+  const fmtAxis = (v: number) => (pct ? `${v.toFixed(0)}%` : balTick(v))
   const fmtFull = (v: number) =>
     pct ? `${v.toFixed(1)}%` : `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 

@@ -173,7 +173,7 @@ export function StressTests() {
                   <td className="py-2 pr-4 text-text-primary">
                     {t.strategy_name ?? t.strategy_id}
                   </td>
-                  <td className="py-2 pr-4 font-mono text-accent">{t.instrument}</td>
+                  <td className="py-2 pr-4 font-mono text-text-secondary">{t.instrument}</td>
                   <td className="py-2 pr-4">
                     {(() => {
                       const s = t.status
@@ -191,7 +191,7 @@ export function StressTests() {
                                   : s
                       const cls =
                         s === 'complete'
-                          ? 'bg-pos-muted text-pos-text'
+                          ? 'bg-bg-hover text-text-tertiary'
                           : s.startsWith('failed')
                             ? 'bg-neg-muted text-neg-text'
                             : 'bg-accent/10 text-accent'

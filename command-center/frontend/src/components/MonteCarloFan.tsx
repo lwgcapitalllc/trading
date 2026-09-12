@@ -8,6 +8,7 @@ import {
   ReferenceLine,
 } from 'recharts'
 import { C } from '@/themes/chart'
+import { balTick } from '@/lib/chartAxis'
 
 interface Props {
   paths: number[][]
@@ -66,7 +67,7 @@ export default function MonteCarloFan({ paths, ruleset, tradeCount, height = 276
             }}
           />
           <YAxis
-            tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+            tickFormatter={balTick}
             tick={{ fill: C.axisTick, fontSize: 11 }}
             tickLine={false}
             axisLine={false}

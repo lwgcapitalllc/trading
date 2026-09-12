@@ -959,7 +959,7 @@ export default function StressTestDetail() {
             {run.strategy_name}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+            <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
               {run.instrument}
             </span>
             <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
@@ -1015,7 +1015,7 @@ export default function StressTestDetail() {
           <div className="text-[17px] font-semibold text-text-primary truncate">Shared account</div>
           <div className="flex flex-wrap gap-1.5">
             {stack?.instrument && (
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                 {stack.instrument}
               </span>
             )}
@@ -1026,15 +1026,8 @@ export default function StressTestDetail() {
             )}
           </div>
         </div>
-        <div className="border-l border-border-subtle pl-6 flex flex-col justify-between items-end flex-shrink-0">
-          <div className="text-right">
-            <div className="text-[18px] font-semibold font-mono text-text-primary">
-              {stack?.total_strategies ?? '—'}
-            </div>
-            <div className="text-[10px] text-text-tertiary uppercase tracking-[0.5px]">
-              Strategies
-            </div>
-          </div>
+        {/* No strategy count here (2026-09-11): the page heading names every strategy. */}
+        <div className="border-l border-border-subtle pl-6 flex flex-col justify-end items-end flex-shrink-0">
           <button
             onClick={() => navigate(`/backtests/stacks/${st?.stack_id}`)}
             className="flex items-center gap-1.5 px-3 py-[6px] rounded text-[12px] font-medium bg-bg-sunken border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default transition-colors"
