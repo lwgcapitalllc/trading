@@ -234,11 +234,16 @@ export function useBacktestRuns(filters?: {
   })
 }
 
-export function useBacktestRun(runId: string | null) {
+/** `silent` is for a caller asking about a run that may legitimately be GONE — an optimization's
+ *  source run, deleted after it was launched. It renders the absence itself, so a toast (twice,
+ *  with the global retry) is noise over a page that already says it. Same cache entry either way. */
+export function useBacktestRun(runId: string | null, opts: { silent?: boolean } = {}) {
   return useQuery({
     queryKey: ['lab', 'run', runId],
-    queryFn: () => api.get<BacktestDetail>(`/backtests/runs/${runId}`),
+    queryFn: () =>
+      api.get<BacktestDetail>(`/backtests/runs/${runId}`, opts.silent ? { silent: true } : {}),
     enabled: !!runId,
+    ...(opts.silent ? { retry: false } : {}),
     refetchInterval: (query) => {
       const status = (query.state.data as BacktestDetail | undefined)?.status
       return status === 'running' ? 1_500 : false

@@ -65,9 +65,9 @@ function firmShortName(firmId: string): string {
   return `${brand}${size} ${tier}`
 }
 
-function firmChipCls(firmId: string): string {
-  if (firmId.includes('_eval')) return 'bg-warn-muted text-warn-text border border-warn-text/20'
-  if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text border border-pos-text/20'
+// One neutral chip for every ruleset (2026-09-11): the kind of ruleset is a label, not a warning
+// (eval was amber) or a pass (funded was green). Same rule as the Runs list's Challenge column.
+function firmChipCls(_firmId: string): string {
   return 'bg-bg-surface border border-border-subtle text-text-tertiary'
 }
 
@@ -196,14 +196,15 @@ function ProgressCard({
       : isCancelled
         ? 'Cancelled'
         : 'Failed'
+  // A clean finish is the NORMAL outcome, so it gets the plain card (2026-09-11) — a cyan-tinted
+  // box announcing "Complete" was colour on the state that needs nothing from the reader. Only a
+  // failure, a cancellation or a partial result is tinted.
   const borderCls =
-    isComplete && !hasFailures
-      ? 'border-accent/20 bg-accent/5'
-      : allFailed || isCancelled
-        ? 'border-neg-text/20 bg-neg-muted'
-        : hasFailures && isComplete
-          ? 'border-warn-text/25 bg-warn-muted/20'
-          : 'border-border-default bg-bg-surface'
+    allFailed || isCancelled
+      ? 'border-neg-text/20 bg-neg-muted'
+      : hasFailures && isComplete
+        ? 'border-warn-text/25 bg-warn-muted/20'
+        : 'border-border-default bg-bg-surface'
 
   return (
     <div className={`rounded-xl border px-6 py-5 ${borderCls}`}>
@@ -213,7 +214,7 @@ function ProgressCard({
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {isRunning && <Loader2 size={14} className="text-accent animate-spin flex-shrink-0" />}
             {isComplete && !hasFailures && (
-              <CheckCircle2 size={14} className="text-accent flex-shrink-0" />
+              <CheckCircle2 size={14} className="text-text-tertiary flex-shrink-0" />
             )}
             {isComplete && hasFailures && (
               <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />
@@ -226,7 +227,7 @@ function ProgressCard({
                 isRunning
                   ? 'text-accent'
                   : isComplete && !hasFailures
-                    ? 'text-accent'
+                    ? 'text-text-primary'
                     : isComplete && hasFailures
                       ? 'text-warn-text'
                       : 'text-neg-text'
@@ -600,7 +601,8 @@ function ResultsTable({
                 <td className={`px-3 py-[9px] text-left font-mono tabular-nums ${pnlCls}`}>
                   {fmtMoney(run.net_pnl)}
                 </td>
-                <td className="px-3 py-[9px] text-left font-mono tabular-nums text-neg-text">
+                {/* Neutral: a drawdown can only be a loss, so red on every row ranked nothing. */}
+                <td className="px-3 py-[9px] text-left font-mono tabular-nums text-text-secondary">
                   {run.max_drawdown != null
                     ? `$${Math.round(run.max_drawdown).toLocaleString('en-US')}`
                     : '—'}
@@ -783,7 +785,9 @@ function RobustnessCard({
       ? { text: 'text-neg-text', bg: 'bg-neg-muted', border: 'border-neg-text/20' }
       : score >= 0.25
         ? { text: 'text-warn-text', bg: 'bg-warn-muted/40', border: 'border-warn-text/20' }
-        : { text: 'text-pos-text', bg: 'bg-pos-muted', border: 'border-pos-text/20' }
+        : // Robust is the answer you want, so only the FIGURE is green — a whole green card read
+          // louder than a fragile one's warning (2026-09-11).
+          { text: 'text-pos-text', bg: 'bg-bg-surface', border: 'border-border-subtle' }
   const verdict =
     score >= 0.5
       ? 'Fragile — one step either side of the winner and the result largely disappears. That is the shape of a number fitted to this history.'
@@ -1052,7 +1056,11 @@ export function OptimizationDetail() {
     [allRunsForTune, bestRunId]
   )
   // The run this optimization was launched from, for the baseline comparison.
-  const { data: baselineRun } = useBacktestRun(opt?.source_run_id ?? null)
+  // Silent: the source run can be deleted after the optimization ran, and that is not a fault —
+  // the page says so in the baseline's place instead of popping a red 404 twice (2026-09-11).
+  const { data: baselineRun, isError: baselineGone } = useBacktestRun(opt?.source_run_id ?? null, {
+    silent: true,
+  })
   const tuneRunning = tuneIterations.filter((r) => r.status === 'running').length
   const hasRunningStress = !!bestRunId && stressRunIds.has(bestRunId)
   const { data: bestRunStressTests } = useStressTests({
@@ -1128,7 +1136,7 @@ export function OptimizationDetail() {
                   <h1 className="text-[14px] font-semibold truncate">
                     {opt.strategy_name || opt.strategy_id}
                   </h1>
-                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary flex-shrink-0">
                     {opt.instrument}
                   </span>
                 </>
@@ -1213,7 +1221,7 @@ export function OptimizationDetail() {
               {opt.strategy_name || opt.strategy_id}
             </h1>
             <div className="flex flex-wrap gap-1.5">
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                 {opt.instrument}
               </span>
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
@@ -1306,6 +1314,12 @@ export function OptimizationDetail() {
           )}
           {!isRunning && baselineRun && completeRuns.length > 0 && (
             <BaselineRow baseline={baselineRun} winner={winnerRun} />
+          )}
+          {!isRunning && baselineGone && (
+            <p className="text-[12px] text-text-tertiary">
+              The run this optimization started from has been deleted, so there is no baseline to
+              compare the winner against.
+            </p>
           )}
 
           {/* Results */}
