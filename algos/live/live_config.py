@@ -45,6 +45,14 @@ _INSTANCES = _REPO_ROOT / "algos" / "markets" / "fx" / "instances"
 # READS this file — see tests/test_bot_params_agreement.py. Change one, change both.
 RUNTIME_RELOADABLE = frozenset({"exec_risk_pct"})
 
+# 🔴 The ACCOUNT-level field a running bot picks up too (2026-09-11) — applied only while FLAT, like
+# the risk above, but handed to the BRIDGE rather than rebuilt into the strategy (see
+# `runner._maybe_reload_runtime`). A separate set because it is a top-level config field, not a
+# strategy param: `RUNTIME_RELOADABLE` is mirrored by the command center's editable-params list, and
+# this one is pinned by `command-center/backend/tests/test_account_risk.py`, which READS this file —
+# the Bots page tells the reader a cap change needs no restart, and that is a claim about HERE.
+RUNTIME_RELOADABLE_ACCOUNT = frozenset({"account_risk_cap_pct"})
+
 
 @dataclass
 class LiveConfig:
@@ -142,9 +150,10 @@ class LiveConfig:
     # it. The runner LOGS which state it is in at startup so "no cap" is a reported fact — the
     # same call `deadman_url` makes, for the same reason: an absent guard must not be silent.
     #
-    # ⚠ It is NOT runtime-reloadable. `RUNTIME_RELOADABLE` covers `exec_risk_pct` alone because
-    # that one is applied only while flat by rebuilding the strategy; the cap is read by the
-    # bridge, which holds live order state, so changing it means a restart.
+    # ✅ It IS runtime-reloadable since 2026-09-11 (`RUNTIME_RELOADABLE_ACCOUNT`): applied only
+    # while FLAT and handed to the bridge, which reads it per placement, rather than rebuilt into
+    # the strategy. Until then a cap-only change was consumed as COSMETIC — the file said one cap and
+    # the bot ran another, with nothing reporting it until the next restart.
     account_risk_cap_pct: Optional[float] = None
 
     # ── the balance the strategy may size against ───────────────────────────

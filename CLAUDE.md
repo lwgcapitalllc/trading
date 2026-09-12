@@ -578,8 +578,9 @@ trading box, so a click is a real action. `.claude/mcp/browser_guard.js` is inje
 the app's own scripts and rejects bot start/stop/restart, promote (and, since 2026-09-10, the
 same deploy started as a background job — `POST …/promote/job`), strategy deploy and delete,
 account writes, moving bots onto another account or demo → live (added 2026-09-10 — the go-live
-write had shipped three days earlier with no rule here) and agent starts INSIDE the browser; they
-never reach the backend. Promote
+write had shipped three days earlier with no rule here), risk writes — a bot's risk per trade and an
+account's cap or budget (added 2026-09-11; the budget PLAN stays allowed) — and agent starts INSIDE
+the browser; they never reach the backend. Promote
 PREVIEW and every lab write stay allowed — those cost compute, never money, and a guard that
 blocks the useful half gets switched off. ✅ **A missing guard file makes the server refuse to
 start**, so there is no unguarded state. ⚠ **Not a security boundary** — it makes an accident

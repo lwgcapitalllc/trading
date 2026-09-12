@@ -448,7 +448,7 @@ def test_moving_a_bot_to_an_account_nobody_trades_is_a_404(client, monkeypatch):
     nothing to adopt and the honest answer is that the account does not exist here."""
     from routers import bots as bots_router
 
-    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
+    monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: False)
     r = client.patch("/bots/b_leg_demo/account", json={"account": 999999})
     assert r.status_code == 404
 
@@ -463,7 +463,7 @@ def test_a_RUNNING_bot_refuses_to_be_moved(client, monkeypatch):
     would show it under one account while it went on trading another."""
     from routers import bots as bots_router
 
-    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: True)
+    monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: True)
     r = client.patch("/bots/b_leg_demo/account", json={"account": 700107749})
     assert r.status_code == 409
     assert "running" in r.json()["detail"]
@@ -683,7 +683,7 @@ def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeyp
     bot happens to ask last."""
     from routers import bots as bots_router
 
-    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
+    monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: False)
     # The password pre-check SSHes to the box and runs BEFORE this one; the VPS interlock
     # refuses it, which is the interlock working rather than anything about this rule.
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
@@ -701,7 +701,7 @@ def _stub_assign_route(monkeypatch, groups):
     """Everything the assign route asks before it plans, answered without the box."""
     from routers import bots as bots_router
 
-    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
+    monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: False)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
     monkeypatch.setattr(bots_router, "_account_groups", lambda: groups)
     return bots_router

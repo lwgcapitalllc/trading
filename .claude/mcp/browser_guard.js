@@ -56,6 +56,14 @@
       path: /^\/bots\/[^/]+\/account$/,
     },
     {
+      // 🔴 Added 2026-09-11 — the risk a live bot trades at: an account's cap, one bot's share, and
+      // the budget save that writes both. Each commits a config and pulls it on the box, and a
+      // running bot picks it up the next time it is flat. /risk-plan only plans and stays allowed.
+      what: "change an account's risk cap or a bot's risk per trade",
+      methods: ['PATCH', 'PUT', 'POST'],
+      path: /^\/bots\/(accounts\/[^/]+\/(risk|risk-cap)|[^/]+\/runtime)$/,
+    },
+    {
       what: 'deploy a strategy to the VPS',
       methods: ['POST'],
       path: /^\/strategies\/[^/]+\/deploy$/,

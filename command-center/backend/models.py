@@ -850,6 +850,9 @@ class BotAccountGroup(BaseModel):
     # served so an over-subscribed account is visible BEFORE somebody types a number. `None` when
     # they fit, when there is no cap, or when the caps disagree.
     share_overflow_reason: Optional[str] = None
+    # The share still free under the cap — negative when over, `None` with no cap or an unreadable
+    # share. Served so the page never subtracts the two numbers above itself.
+    room_pct: Optional[float] = None
     # Bots here sharing an order tag. Empty is healthy, and the page shows the fact only when it
     # is true rather than printing a raw magic number nobody can interpret.
     magic_clash: list[str] = []
@@ -945,12 +948,88 @@ class BotAccountAssign(BaseModel):
     # means *not chosen* and `null` means *chose uncapped* — rule 1. Refused when the account
     # already has bots stating a different cap: that is changed on the account, not by adding a bot.
     risk_cap_pct: Optional[float] = None
+    # 🔴 **The joining bot's own risk per trade, written in the SAME move (2026-09-11).** Adding a
+    # third bot to an account whose cap is full used to take two writes in the right order (lower
+    # the share, then move) or be refused — the page now asks for the share where the bot is added.
+    # ⚠ Read through `model_fields_set`: absent keeps the bot's own share. Validated by the same
+    # bounds the runtime editor uses.
+    risk_pct: Optional[float] = None
+    # 🔴 **A move onto a LIVE account must say so (2026-09-11).** The one-bot move had no guard of
+    # its own while the whole-set move to live needs a typed phrase — the second door to the same
+    # room. A move whose destination the registry marks `live` is refused (409) without this.
+    confirm_live: bool = False
     deploy: bool = True  # commit + push + VPS pull; False writes locally only
 
     @field_validator("risk_cap_pct")
     @classmethod
     def _sane_cap(cls, v):
         return _sane_cap_pct(v)
+
+
+class BotAccountRiskRequest(BaseModel):
+    """One account's risk budget — its cap, any bot's share, or both — for a PLAN or a SAVE.
+
+    `POST /bots/accounts/{account}/risk-plan` answers what the budget WOULD look like and writes
+    nothing; `PATCH /bots/accounts/{account}/risk` writes it in one commit. Both go through
+    `services/bot_accounts.risk_plan`, so what the page shows before a save and what the save does
+    are one function.
+
+    ⚠ `risk_cap_pct` is read through `model_fields_set`: absent leaves the cap alone, `null` means
+    uncapped. ⚠ `joining` is a PLAN-only field — a bot joins an account through its own move, which
+    writes its server, terminal and symbol too; the save refuses it.
+    """
+
+    risk_cap_pct: Optional[float] = None
+    shares: dict[str, float] = {}
+    joining: dict[str, float] = {}
+    deploy: bool = True  # save only: commit + push + VPS pull; False writes locally only
+
+    @field_validator("risk_cap_pct")
+    @classmethod
+    def _sane_cap(cls, v):
+        return _sane_cap_pct(v)
+
+
+class BotAccountRiskShare(BaseModel):
+    """One bot's share of an account's budget, before and after a proposed change."""
+
+    key: str
+    display: str
+    before: Optional[float] = None  # None = not on the account yet, or it states none
+    after: Optional[float] = None
+    joining: bool = False
+
+
+class BotAccountRiskPlan(BaseModel):
+    """An account's risk budget after a proposed change — see `BotAccountRiskRequest`.
+
+    ⚠ `reason` and `refused` are different answers. `reason` says the result does not fit under the
+    cap; `refused` says a SAVE would be refused, which happens only when the change also ADDS risk.
+    Lowering a share on an account that is still over afterwards has a `reason` and no `refused` —
+    it is the right direction, and refusing it made an over-subscribed account unfixable.
+    ⚠ `fit_cap` / `fit_shares` are the two one-click fixes, computed here so the page never does
+    the arithmetic: the smallest cap the shares fit under, and the shares scaled to fit the cap.
+    """
+
+    account: int
+    fits: bool
+    reason: Optional[str] = None
+    refused: Optional[str] = None
+    risk_cap_pct: Optional[float] = None
+    cap_changed: bool = False
+    share_total_pct: Optional[float] = None
+    room_pct: Optional[float] = None
+    bots: list[BotAccountRiskShare] = []
+    changed: bool = False
+    fit_cap: Optional[float] = None
+    fit_shares: Optional[dict[str, float]] = None
+    # When a saved change reaches the running bots — a sentence, because it is the half a reader
+    # most needs and the least visible.
+    applies: str = ""
+    # A save only: the bots whose configs were written, and whether it reached the VPS.
+    written: list[str] = []
+    deployed: Optional[bool] = None
+    detail: str = ""
 
 
 class BotAccountRegistration(BaseModel):

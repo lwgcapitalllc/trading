@@ -47,7 +47,8 @@ plain dataclasses, so the grouping rules can be tested without a VPS.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 # One pure function, and it belongs to the ACCOUNT rather than to the grouping: a suffix is a
@@ -63,6 +64,8 @@ __all__ = [
     "risk_pct_of",
     "share_overflow",
     "assign_plan",
+    "RiskPlan",
+    "risk_plan",
 ]
 
 
@@ -156,6 +159,27 @@ class AccountGroup:
         VISIBLE, rather than being discovered by typing a number and being refused.
         """
         return share_overflow(self.bots, self.risk_cap_pct)
+
+    @property
+    def room_pct(self) -> Optional[float]:
+        """The share still free under the ceiling — the cap minus the shares handed out.
+
+        `None` when there is no agreed cap or the shares cannot be totalled: an uncapped account has
+        no room to run out of, and an unreadable share makes the room unknown, never the cap itself.
+        ⚠ **Negative when the shares already exceed the cap**, and deliberately not floored at zero
+        here — *over by 3%* is a real answer, and a floor would make an over-subscribed account read
+        exactly like a full one.
+
+        ⚠ **SERVED for the same reason as `share_total_pct`**: the page's Add bot offers a share
+        that fits, and subtracting two numbers there is the same rule written twice in two
+        languages.
+        """
+        if self.kind != "account" or not self.cap_agrees or self.risk_cap_pct is None:
+            return None
+        total = self.share_total_pct
+        if total is None:
+            return None
+        return round(float(self.risk_cap_pct) - total, 6)
 
     @property
     def magic_clash(self) -> list[str]:
@@ -348,6 +372,174 @@ def share_overflow(bots: list, cap_pct: Optional[float]) -> Optional[str]:
         f"budget, they take turns: whoever asks first gets its full size and the others are cut "
         f"down or refused, so each one stops being the bot that was backtested. Lower a share, "
         f"or raise the cap."
+    )
+
+
+# The two one-click fixes a plan offers are rounded to this many decimals — a share DOWN and a cap
+# UP, so a suggestion can never land a hair over the ceiling it was computed to fit under.
+_FIT_DECIMALS = 2
+# The smallest share the runtime editor accepts (`bot_params.RUNTIME_BOUNDS`). A scaled share below
+# it would be refused at the save, so a suggestion that needs one is not offered at all.
+_MIN_SHARE = 0.1
+
+
+@dataclass
+class RiskPlan:
+    """An account's risk budget AFTER a proposed write, and whether that write may be made.
+
+    🔴 **ONE planner for every write that can move the budget** (2026-09-11): a bot's share (the
+    runtime editor), the cap, several shares and the cap together (the account panel), and a bot
+    about to JOIN (the Add bot preview). Each write carried its own copy of the check until then,
+    and every copy refused an IMPROVEMENT — lowering a share on an account already over its cap was
+    refused because the RESULT was still over. That made such an account unfixable one step at a
+    time, which is the exact outcome `share_overflow`'s note on this rule promised never to cause.
+
+    **The rule: a write is refused only when the result does not fit AND the write adds risk** — a
+    share rises, a bot joins, or the cap comes down (or appears where there was none). A write that
+    frees room is always allowed, even when the account is still over afterwards, because it moves
+    the account the right way and refusing it leaves the reader with no small step that works.
+    """
+
+    account: Optional[int]
+    risk_cap_pct: Optional[float]  # the cap AFTER the write
+    cap_changed: bool
+    bots: list[AccountBot]  # every bot counted, each with its share AFTER the write
+    before: dict[str, Optional[float]]  # each bot's share BEFORE; a joining bot's is None
+    joining: list[str]  # keys counted in but not on the account yet
+    share_total_pct: Optional[float]  # AFTER; None when any share is unreadable or unstated
+    reason: Optional[str]  # why the result does not fit — the served sentence; None = it fits
+    adds_risk: bool
+    fit_cap: Optional[float]  # the smallest cap these shares fit under, rounded UP
+    fit_shares: Optional[dict[str, float]]  # these shares scaled to fit the cap, rounded DOWN
+
+    @property
+    def fits(self) -> bool:
+        return self.reason is None
+
+    @property
+    def refusal(self) -> Optional[str]:
+        """The sentence a SAVE is refused with — set only when the write makes things worse."""
+        return self.reason if self.reason and self.adds_risk else None
+
+    @property
+    def changed(self) -> bool:
+        """Would a save write anything? Shares that move, or the cap. A joining bot is never
+        written by a budget save — it joins through its own move."""
+        return self.cap_changed or any(
+            self.before.get(b.key) != b.risk_pct for b in self.bots if b.key not in self.joining
+        )
+
+    @property
+    def room_pct(self) -> Optional[float]:
+        """The cap minus the shares, after the write. Same meaning as `AccountGroup.room_pct`."""
+        if self.risk_cap_pct is None or self.share_total_pct is None:
+            return None
+        return round(float(self.risk_cap_pct) - self.share_total_pct, 6)
+
+
+def risk_plan(
+    group: AccountGroup,
+    shares: Optional[dict[str, float]] = None,
+    *,
+    cap_set: bool = False,
+    cap: Optional[float] = None,
+    joining: Optional[list[AccountBot]] = None,
+) -> RiskPlan:
+    """Plan a change to one account's risk budget. Raises `ValueError` with a sentence when the
+    change cannot be planned at all; otherwise the plan says whether it fits and may be saved.
+
+    `cap_set` separates *leave the cap alone* from *set it to `cap`* — `None` is a real cap value
+    (uncapped), so the absent value and the null one have to be told apart by the caller, the same
+    `model_fields_set` rule the move endpoint follows.
+
+    ⚠ **An unreadable bot on the account REFUSES the whole plan**, because its share is unknown and
+    an unknown share is not a share of zero (rule 1) — the same call `share_overflow` makes.
+    ⚠ **Caps that DISAGREE refuse a plan that does not set one**: there is no ceiling to check a
+    share against, and none of those bots will start until they agree. Setting a cap is the fix.
+    """
+    shares = {k: float(v) for k, v in (shares or {}).items()}
+    joining = list(joining or [])
+    if group.kind != "account":
+        raise ValueError("only a real account has a risk budget")
+    on_it = {b.key for b in group.bots}
+    stray = sorted(set(shares) - on_it)
+    if stray:
+        raise ValueError(
+            f"{', '.join(stray)} {'is' if len(stray) == 1 else 'are'} not on account "
+            f"{group.account}, so this account's budget cannot set "
+            f"{'its' if len(stray) == 1 else 'their'} risk."
+        )
+    already = sorted(b.key for b in joining if b.key in on_it)
+    if already:
+        raise ValueError(f"{', '.join(already)} is already on account {group.account}.")
+    unreadable = sorted(b.key for b in group.bots if b.unreadable)
+    if unreadable:
+        raise ValueError(
+            f"{', '.join(unreadable)} cannot be read, so this account's budget cannot be checked or "
+            f"written — an unreadable share is not a share of zero. Fix the config first."
+        )
+
+    if cap_set:
+        new_cap = None if cap is None else float(cap)
+    elif group.cap_agrees:
+        new_cap = group.risk_cap_pct
+    else:
+        raise ValueError(
+            "the bots on this account state different caps, so there is no ceiling to check a "
+            "share against — and none of them will start until they agree. Set one cap for the "
+            "account first."
+        )
+    old_cap = group.risk_cap_pct if group.cap_agrees else None
+    # A cap appearing where there was none — or any cap while the bots disagree — counts as coming
+    # DOWN: both can refuse a trade that was allowed before.
+    cap_lowered = (
+        cap_set
+        and new_cap is not None
+        and (not group.cap_agrees or old_cap is None or new_cap < float(old_cap) - _SHARE_EPS)
+    )
+    cap_changed = cap_set and (not group.cap_agrees or new_cap != old_cap)
+
+    before: dict[str, Optional[float]] = {b.key: b.risk_pct for b in group.bots}
+    after_bots = [replace(b, risk_pct=shares[b.key]) if b.key in shares else b for b in group.bots]
+    # An unstated share becoming a number counts as RAISED — nothing measured says it went down.
+    share_raised = any(
+        before[k] is None or v > float(before[k]) + _SHARE_EPS for k, v in shares.items()
+    )
+    for j in joining:
+        before[j.key] = None
+    everyone = after_bots + joining
+
+    reason = share_overflow(everyone, new_cap)
+    total = (
+        None
+        if any(b.unreadable or b.risk_pct is None for b in everyone)
+        else sum(float(b.risk_pct) for b in everyone)
+    )
+
+    fit_cap: Optional[float] = None
+    fit_shares: Optional[dict[str, float]] = None
+    if reason and total is not None and new_cap is not None and total > 0:
+        step = 10**_FIT_DECIMALS
+        up = math.ceil(total * step - 1e-9) / step
+        fit_cap = up if up <= 100 else None
+        scale = float(new_cap) / total
+        scaled = {
+            b.key: math.floor(float(b.risk_pct) * scale * step + 1e-9) / step for b in everyone
+        }
+        fit_shares = scaled if all(v >= _MIN_SHARE for v in scaled.values()) else None
+
+    return RiskPlan(
+        account=group.account,
+        risk_cap_pct=new_cap,
+        cap_changed=bool(cap_changed),
+        bots=everyone,
+        before=before,
+        joining=[j.key for j in joining],
+        share_total_pct=total,
+        reason=reason,
+        adds_risk=bool(cap_lowered or share_raised or joining),
+        fit_cap=fit_cap,
+        fit_shares=fit_shares,
     )
 
 

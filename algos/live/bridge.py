@@ -2153,6 +2153,16 @@ class OrderBridge:
     # the strategy's units to MT5's lots did not exist anywhere, and there was no one place a
     # reviewer could have looked to notice.
 
+    def set_account_risk_cap(self, pct: Optional[float]) -> None:
+        """Adopt a new ACCOUNT-level cap on a running bot (2026-09-11).
+
+        Called by `runner._maybe_reload_runtime` only while FLAT, so no order of ours is resting or
+        open when the ceiling moves: the next placement is sized against the new room by
+        `refresh_account_room` and checked by `_account_cap_check`, which both read this field and
+        nothing else. ⚠ `None` is UNCAPPED — a value, exactly as at construction.
+        """
+        self._risk_cap_pct = None if pct is None else float(pct)
+
     def refresh_account_room(self) -> None:
         """Tell the emulator how many dollars of ACCOUNT budget are still free, before it sizes.
 

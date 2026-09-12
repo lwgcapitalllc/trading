@@ -5,9 +5,9 @@
 // a different way from one that refuses nothing, and only checking the refusals would
 // pass either. Same reasoning as .claude/hooks/check_guard.py.
 //
-// WATCHED RED by mutation: emptying the rule list reddens exactly the 22 "must refuse"
-// cases and no others; widening the promote rule to /promote/ reddens exactly the
-// promote-preview case.
+// WATCHED RED by mutation: emptying the rule list reddens every "must refuse" case and no
+// others; widening the promote rule to /promote/ reddens exactly the promote-preview case.
+// (This said "the 22" and there were 25 by 2026-09-11 — a count in prose is a count that rots.)
 //
 // Run: node .claude/mcp/check_browser_guard.js
 
@@ -36,6 +36,10 @@ const CASES = [
   [REFUSE, 'POST', '/api/bots/go-live', 'move a demo set onto a live account'],
   [REFUSE, 'POST', 'http://localhost:8000/bots/go-live', 'go live, absolute URL'],
   [REFUSE, 'PATCH', '/api/bots/sos_fade_demo/account', 'move one bot to another account'],
+  // The risk a live bot trades at (2026-09-11): the account budget save, the cap, one bot's share.
+  [REFUSE, 'PATCH', '/api/bots/accounts/700152905/risk', "save an account's risk budget"],
+  [REFUSE, 'PATCH', '/api/bots/accounts/700152905/risk-cap', "change an account's risk cap"],
+  [REFUSE, 'PATCH', '/api/bots/sos_fade_demo/runtime', "change a bot's risk per trade"],
   [REFUSE, 'POST', '/api/strategies/17/deploy', 'deploy to the VPS'],
   [REFUSE, 'DELETE', '/api/strategies/17', 'delete a strategy file'],
 
@@ -61,6 +65,9 @@ const CASES = [
   [ALLOW, 'POST', '/api/bots/sos_fade_demo/promote/preview', 'promote PREVIEW changes nothing'],
   [ALLOW, 'POST', '/api/bots/go-live/preview', 'the go-live PREVIEW only plans'],
   [ALLOW, 'GET', '/api/bots/sos_fade_demo/account', 'a GET is not a move'],
+  // The budget PLAN answers what a save would do and writes nothing — refusing it would leave the
+  // browser tool able to open the panel and read no verdict, while the save beside it stays refused.
+  [ALLOW, 'POST', '/api/bots/accounts/700152905/risk-plan', 'the risk budget PLAN writes nothing'],
   // The sync's preview: what Sync WOULD change, read off the box. Refusing it would leave the
   // browser tool able to open the drawer and see nothing, while the write beside it stays refused.
   [ALLOW, 'GET', '/api/bots/accounts/scan', 'the sync PREVIEW changes nothing'],

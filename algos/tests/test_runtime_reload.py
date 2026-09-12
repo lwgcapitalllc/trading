@@ -43,6 +43,14 @@ class _Bridge:
         # branch. The halt latch is exactly the kind of thing that trap hides.
         self.state = state or BridgeState.LIVE
         self.halt_reason = "" if self.state is not BridgeState.HALTED else "test halt"
+        # The account cap the runner HANDED OVER, and how many times — the real bridge is never
+        # rebuilt on a reload, so an explicit hand-over is the only way a new cap reaches it.
+        self.cap = "untouched"
+        self.cap_sets = 0
+
+    def set_account_risk_cap(self, pct):
+        self.cap = pct
+        self.cap_sets += 1
 
     def begin_live(self):
         self.began += 1
@@ -384,3 +392,110 @@ def test_a_healthy_bot_still_gets_the_plain_applied_message(runner):
     said = " ".join(str(n) for n in runner.notes)
     assert "Nothing to do" in said
     assert "HALTED" not in said
+
+
+# ── the ACCOUNT cap is reloaded too (2026-09-11) ─────────────────────────────────
+# 🔴 A cap-only change was compared NOWHERE, so it fell through to the cosmetic branch and was
+# consumed in silence: the file said one cap and the bot ran another until its next restart. The
+# Bots page now tells the reader a cap change needs no restart, and these are what make that true.
+def _rewrite_cap(runner, cap):
+    """Rewrite the TOP-LEVEL cap — not a strategy param — guaranteeing a changed mtime."""
+    data = json.loads(runner._path.read_text())
+    data["account_risk_cap_pct"] = cap
+    runner._path.write_text(json.dumps(data))
+    _bump(runner)
+
+
+def test_a_cap_change_is_APPLIED_while_flat_and_needs_no_rebuild(runner):
+    """Watched RED against HEAD: consumed as cosmetic — no event, nothing handed over.
+    MUTATION: drop the cap from `_config_delta` → red."""
+    _rewrite_cap(runner, 12.0)
+    runner._maybe_reload_runtime()
+    assert runner.bridge.cap == 12.0
+    assert runner.cfg.account_risk_cap_pct == 12.0
+    assert "config_applied" in runner.ledger.kinds()
+    assert "risk_cap" in runner.ledger.kinds(), "the new state is SAID, as every start says it"
+    assert runner.warmed == 0, "nothing the strategy decides reads the cap, so no rebuild"
+
+
+def test_a_cap_change_WAITS_while_a_position_is_open(runner):
+    """One rule for when a change may land. MUTATION: hand the cap over before the flat check → red."""
+    runner.bridge.is_flat = False
+    _rewrite_cap(runner, 12.0)
+    runner._maybe_reload_runtime()
+    assert runner.bridge.cap == "untouched"
+    assert runner.ledger.kinds() == []
+
+    runner.bridge.is_flat = True
+    runner._maybe_reload_runtime()
+    assert runner.bridge.cap == 12.0
+
+
+def test_a_cap_travelling_with_a_BLOCKED_change_is_refused_with_it(runner):
+    """Half a config is a configuration nobody chose. MUTATION: hand the cap over before the
+    `blocked` return → red."""
+    data = json.loads(runner._path.read_text())
+    data["account_risk_cap_pct"] = 12.0
+    data["strategy_params"]["aplus_window"] = 99
+    runner._path.write_text(json.dumps(data))
+    _bump(runner)
+    runner._maybe_reload_runtime()
+    assert "config_change_refused" in runner.ledger.kinds()
+    assert runner.bridge.cap == "untouched"
+
+
+def test_CLEARING_the_cap_hands_over_None_never_zero(runner):
+    """`None` is UNCAPPED — a value. A zero would refuse every order on the account (rule 1).
+    MUTATION: hand over `fresh.account_risk_cap_pct or 0` → red."""
+    _rewrite_cap(runner, 10.0)
+    runner._maybe_reload_runtime()
+    _rewrite_cap(runner, None)
+    runner._maybe_reload_runtime()
+    assert runner.bridge.cap is None
+    assert runner.bridge.cap_sets == 2
+
+
+def test_a_risk_AND_cap_change_together_rebuild_AND_hand_over(runner):
+    """MUTATION: compute `params_moved` from the cap as well, or skip the rebuild when the cap
+    moved → the risk change never reaches the strategy → red."""
+    data = json.loads(runner._path.read_text())
+    data["account_risk_cap_pct"] = 12.0
+    data["strategy_params"]["exec_risk_pct"] = 5.0
+    runner._path.write_text(json.dumps(data))
+    _bump(runner)
+    runner._maybe_reload_runtime()
+    assert runner.strategy.execution.cfg.exec_risk_pct == 5.0
+    assert runner.warmed == 1
+    assert runner.bridge.cap == 12.0
+
+
+def test_a_RISK_only_change_leaves_the_cap_alone(runner):
+    """The control: the hand-over must not fire on a change that is not about the cap."""
+    _rewrite(runner, exec_risk_pct=5.0)
+    runner._maybe_reload_runtime()
+    assert runner.bridge.cap == "untouched"
+
+
+def test_any_OTHER_top_level_field_is_REFUSED_and_SAID_never_dropped_as_cosmetic(runner):
+    """🔴 The cap's defect, one size wider: a field `_config_delta` did not name fell to the
+    cosmetic branch and was consumed in silence. Watched RED against HEAD (no event, no message).
+    MUTATION: make the catch-all skip every field → nothing is reported → red."""
+    data = json.loads(runner._path.read_text())
+    data["margin_safety_pct"] = 40.0
+    runner._path.write_text(json.dumps(data))
+    _bump(runner)
+    runner._maybe_reload_runtime()
+    assert "config_change_refused" in runner.ledger.kinds()
+    assert runner.cfg.margin_safety_pct == 50.0, "not applied to the running bot"
+    assert any("margin_safety_pct" in str(n) for n in runner.notes), "and SAID, by name"
+
+
+def test_the_REAL_bridge_adopts_the_cap_it_is_handed():
+    """Every test above uses the double. The real bridge reads `_risk_cap_pct` in the room and in
+    the cap check; this pins that the hand-over lands THERE, as a float, and that None stays None."""
+    b = OrderBridge.__new__(OrderBridge)
+    b._risk_cap_pct = 10.0
+    b.set_account_risk_cap(12)
+    assert b._risk_cap_pct == 12.0 and isinstance(b._risk_cap_pct, float)
+    b.set_account_risk_cap(None)
+    assert b._risk_cap_pct is None

@@ -408,7 +408,7 @@ def test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED(
     from routers import bots as bots_router
 
     reg.upsert_account(registry, _acct(), _PROFILES)
-    monkeypatch.setattr(bots_router, "_bot_is_running", lambda key: False)
+    monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: False)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: set())
 
     r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})

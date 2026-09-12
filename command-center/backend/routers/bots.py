@@ -33,7 +33,7 @@ import subprocess
 import threading
 import time as _time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -60,6 +60,9 @@ from models import (
     BotAccountPassword,
     BotAccountRegistration,
     BotAccountRegistrationWrite,
+    BotAccountRiskPlan,
+    BotAccountRiskRequest,
+    BotAccountRiskShare,
     BotDeployedVersion,
     BotParamsView,
     BotPromoteJob,
@@ -1410,6 +1413,7 @@ def list_bot_accounts():
             cap_takes_turns=g.cap_takes_turns,
             share_total_pct=g.share_total_pct,
             share_overflow_reason=g.share_overflow_reason,
+            room_pct=g.room_pct,
             magic_clash=g.magic_clash,
         )
         for g in _account_groups()
@@ -2073,11 +2077,13 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     bot into a half-applied state, which makes a partial write loud rather than silent; this
     endpoint's job is to never produce one.
 
-    ⚠ **It NEVER reports the cap as applied.** `account_risk_cap_pct` is not in
-    `live_config.RUNTIME_RELOADABLE` — the bridge reads it and holds live order state, so it is
-    picked up at startup and nowhere else. The response says `restart_required` and names the
-    bots, because a cap that is written and not running is the one state that reads as protected
-    and is not.
+    ✅ **Since 2026-09-11 a running bot picks the cap up the next time it is FLAT** — no restart
+    (`algos/live/live_config.RUNTIME_RELOADABLE_ACCOUNT`, read by `runner._maybe_reload_runtime`).
+    The response says so in `applies`; `restart_required` is False. ⚠ **A bot started before that
+    date runs the older runner, which DROPPED a cap-only change as cosmetic** — it needs one
+    restart to learn this, and nothing here can see which runner a bot started on.
+    ⚠ `tests/test_account_risk.py` READS `live_config.py` and fails if the cap leaves that set,
+    because this endpoint's no-restart claim is a claim about code in another subsystem (rule 7).
     """
     groups = {g.account: g for g in _account_groups()}
     group = groups.get(account)
@@ -2089,13 +2095,16 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    # Aaron, 2026-09-03: the per-trade shares may not add up to more than the ceiling. Refused
-    # rather than warned, because the page has no place to put a warning somebody must then
-    # remember — and an over-subscribed account is not a broken one, it is one whose bots quietly
-    # stop being the bots that were backtested. See `bot_accounts.share_overflow`.
-    overflow = bot_accounts.share_overflow(group.bots, update.risk_cap_pct)
-    if overflow:
-        raise HTTPException(status_code=409, detail=overflow)
+    # Aaron, 2026-09-03: the per-trade shares may not add up to more than the ceiling — refused
+    # rather than warned. 🔴 Through the ONE planner since 2026-09-11, which refuses only a cap that
+    # COMES DOWN under the shares: raising a cap on an account that is still over afterwards is the
+    # right direction, and refusing it left the account with no small step that worked.
+    try:
+        plan = bot_accounts.risk_plan(group, cap_set=True, cap=update.risk_cap_pct)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if plan.refusal:
+        raise HTTPException(status_code=409, detail=plan.refusal)
 
     bot_keys = [b.key for b in group.bots]
     if not targets:
@@ -2129,7 +2138,8 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
             "changed": True,
             "deployed": False,
             "updated": targets,
-            "restart_required": True,
+            "restart_required": False,
+            "applies": _RISK_APPLIES,
             "bots": bot_keys,
             "detail": changed,
         }
@@ -2156,7 +2166,7 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
             "ACCOUNT RISK CAP",
             f"account {account}",
             f"Cap {cap_s} written to {len(targets)} bot(s).",
-            "Restart them — the cap only applies at startup.",
+            _RISK_APPLIES,
         )
     )
     return {
@@ -2164,11 +2174,217 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
         "changed": True,
         "deployed": True,
         "updated": targets,
-        "restart_required": True,
+        "restart_required": False,
+        "applies": _RISK_APPLIES,
         "bots": bot_keys,
         "detail": changed,
         "output": out,
     }
+
+
+# When a saved risk change reaches the running bots. ⚠ A sentence, never a flag: it is the half a
+# reader most needs and the least visible, and it is a claim about algos code (see the cap note).
+_RISK_APPLIES = "Each bot picks this up the next time it has no open trade — no restart."
+
+
+def _risk_group(account: int):
+    """The account's group — or, for a registered account no bot is on yet, an EMPTY one, so a plan
+    can answer for the first bot. `None` when neither exists."""
+    group = next(
+        (g for g in _account_groups() if g.kind == "account" and g.account == account), None
+    )
+    if group is not None:
+        return group
+    try:
+        registered = bot_account_registry.account_by_number(_registry_path(), account)
+    except bot_account_registry.RegistryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if registered is None:
+        return None
+    return bot_accounts.AccountGroup(account=account, server=registered.server, kind="account")
+
+
+def _joining_bots(joining: dict[str, float]) -> list:
+    """The bots a plan counts in before they are on the account. Built from each bot's own config,
+    with the share the plan was asked about."""
+    bots = []
+    for key, share in joining.items():
+        _, bot_key = _resolve_bot(key)
+        data = _read_instance_config(bot_key)
+        bots.append(
+            bot_accounts.AccountBot(
+                key=bot_key,
+                display=_KEY_DISPLAY.get(bot_key, bot_key),
+                symbol=str(data.get("symbol") or ""),
+                magic=int(data.get("magic") or 0),
+                strategy_package=str(data.get("strategy_package") or ""),
+                risk_pct=share,
+            )
+        )
+    return bots
+
+
+def _validated_shares(shares: dict[str, float]) -> dict[str, float]:
+    """Each share through the runtime editor's own bounds — ONE rule for what a share may be."""
+    out = {}
+    for key, value in shares.items():
+        try:
+            out[key] = bot_params.validate_runtime({"exec_risk_pct": value})["exec_risk_pct"]
+        except bot_params.RuntimeUpdateError as e:
+            raise HTTPException(status_code=400, detail=f"{_KEY_DISPLAY.get(key, key)}: {e}")
+    return out
+
+
+def _pct(v) -> str:
+    return "unstated" if v is None else f"{float(v):g}%"
+
+
+def _risk_plan_view(plan, **extra) -> BotAccountRiskPlan:
+    return BotAccountRiskPlan(
+        account=plan.account,
+        fits=plan.fits,
+        reason=plan.reason,
+        refused=plan.refusal,
+        risk_cap_pct=plan.risk_cap_pct,
+        cap_changed=plan.cap_changed,
+        share_total_pct=plan.share_total_pct,
+        room_pct=plan.room_pct,
+        bots=[
+            BotAccountRiskShare(
+                key=b.key,
+                display=b.display,
+                before=plan.before.get(b.key),
+                after=b.risk_pct,
+                joining=b.key in plan.joining,
+            )
+            for b in plan.bots
+        ],
+        changed=plan.changed,
+        fit_cap=plan.fit_cap,
+        fit_shares=plan.fit_shares,
+        applies=_RISK_APPLIES,
+        **extra,
+    )
+
+
+def _plan_from_request(account: int, body: BotAccountRiskRequest, *, allow_joining: bool):
+    group = _risk_group(account)
+    if group is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Account {account} is not registered and no bot trades it.",
+        )
+    if body.joining and not allow_joining:
+        raise HTTPException(
+            status_code=400,
+            detail="A bot joins an account through its own move, which also writes its server, "
+            "terminal and symbol — a budget save cannot add one.",
+        )
+    shares = _validated_shares(body.shares)
+    joining = _joining_bots(body.joining)
+    try:
+        plan = bot_accounts.risk_plan(
+            group,
+            shares,
+            cap_set="risk_cap_pct" in body.model_fields_set,
+            cap=body.risk_cap_pct,
+            joining=joining,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return group, shares, plan
+
+
+@router.post("/accounts/{account}/risk-plan", response_model=BotAccountRiskPlan)
+def plan_account_risk(account: int, body: BotAccountRiskRequest):
+    """What one account's risk budget WOULD be after a change — and whether it may be saved.
+
+    Writes nothing. The page asks it as the reader types, so the verdict under a risk box and the
+    refusal a save would meet are ONE function (`bot_accounts.risk_plan`). ⚠ `fits: false` is a
+    200: a question with an unwelcome answer is not an error. ⚠ It takes `joining`, so Add bot can
+    say whether a bot fits BEFORE it is moved — the save refuses that field.
+    """
+    _, _, plan = _plan_from_request(account, body, allow_joining=True)
+    return _risk_plan_view(plan)
+
+
+@router.patch("/accounts/{account}/risk", response_model=BotAccountRiskPlan)
+def set_account_risk(account: int, body: BotAccountRiskRequest):
+    """Save one account's risk budget — its cap, any bot's share, or both — in ONE commit.
+
+    🔴 **One write, because the budget is one thing (2026-09-11).** The cap and each share lived
+    behind two endpoints, so fixing an account that did not fit took two saves in the right order
+    and the first was often refused. The reader now edits the whole budget and saves it once; the
+    planner checks the RESULT and refuses only a change that adds risk to an account it leaves over
+    the cap.
+
+    ⚠ **Running bots are fine** — a share and the cap both apply the next time each bot is flat
+    (`_RISK_APPLIES`). ⚠ **An account no bot is on is a 404**: the cap lives in each bot's config,
+    so there is nothing to write it into — the first bot added sets it.
+    """
+    group, shares, plan = _plan_from_request(account, body, allow_joining=False)
+    if not group.bots:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No bot is on account {account}, so there is nothing to write a budget into — "
+            f"the first bot you add sets the cap.",
+        )
+    if plan.refusal:
+        raise HTTPException(status_code=409, detail=plan.refusal)
+    if not plan.changed:
+        return _risk_plan_view(
+            plan, detail="Nothing to change — every bot already states these values."
+        )
+
+    after = {b.key: b.risk_pct for b in plan.bots}
+    old_cap = group.risk_cap_pct if group.cap_agrees else None
+    paths, written, parts = [], [], []
+    for b in group.bots:
+        data = _read_instance_config(b.key)
+        dirty = False
+        if b.key in shares and plan.before.get(b.key) != after[b.key]:
+            section = _BOT_INSTANCE_MAP[b.key]["section"]
+            params = dict(data.get(section) or {})
+            params["exec_risk_pct"] = after[b.key]
+            data[section] = params
+            dirty = True
+            parts.append(f"{b.display} {_pct(plan.before.get(b.key))} → {_pct(after[b.key])}")
+        if plan.cap_changed and data.get("account_risk_cap_pct") != plan.risk_cap_pct:
+            data["account_risk_cap_pct"] = plan.risk_cap_pct
+            dirty = True
+        if dirty:
+            _write_instance_config(b.key, data)
+            paths.append(_BOT_INSTANCE_MAP[b.key]["path"])
+            written.append(b.key)
+    if plan.cap_changed:
+        new_cap = "none" if plan.risk_cap_pct is None else _pct(plan.risk_cap_pct)
+        was_cap = (
+            "mixed" if not group.cap_agrees else ("none" if old_cap is None else _pct(old_cap))
+        )
+        parts.append(f"cap {was_cap} → {new_cap}")
+    summary = f"account {account} — " + "; ".join(parts)
+
+    if not body.deploy:
+        return _risk_plan_view(plan, written=written, deployed=False, detail=summary)
+    try:
+        _git_commit_push(
+            paths,
+            f"risk: {summary} [command center]",
+            "an account's risk budget written to its bots' instance configs from the Bots page; "
+            "an operational deployment, and the numbers are in the message",
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
+    try:
+        _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+    _notify_telegram(
+        alert("⚙️", "RISK CHANGED", f"account {account}", "; ".join(parts), _RISK_APPLIES)
+    )
+    return _risk_plan_view(plan, written=written, deployed=True, detail=summary)
 
 
 def _declared_strategy_params(strategy_package: str) -> "set[str] | None":
@@ -2226,13 +2442,29 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     """
     _, bot_key = _resolve_bot(bot_name)
 
-    if _bot_is_running(bot_key):
+    # 🔴 THREE answers since 2026-09-11. An unreadable process list used to read as RUNNING here —
+    # right for the stop path, which then escalates, and wrong for a move: it told the reader to
+    # stop a bot that was already stopped when the box had simply not answered.
+    running = _bot_running_state(bot_key)
+    if running is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not check whether {_KEY_DISPLAY.get(bot_key, bot_key)} is running — the "
+            f"trading box did not answer. Nothing was changed; try again in a moment.",
+        )
+    if running:
         raise HTTPException(
             status_code=409,
             detail=f"{bot_key} is running, so its account cannot be changed — it read its config "
             f"at startup and would go on trading the old account while this page showed "
             f"the new one. Stop it first, then move it.",
         )
+
+    # The bot's own share, when the move carries one (`BotAccountAssign.risk_pct`) — through the
+    # runtime editor's bounds, the one rule for what a share may be.
+    new_risk = None
+    if "risk_pct" in update.model_fields_set and update.risk_pct is not None:
+        new_risk = _validated_shares({bot_key: update.risk_pct})[bot_key]
 
     groups = _account_groups()
     current = next((g for g in groups if any(b.key == bot_key for b in g.bots)), None)
@@ -2262,6 +2494,20 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             )
         if registered is not None and not registered.assignable:
             raise HTTPException(status_code=409, detail=registered.unassignable_reason)
+        # 🔴 A move onto a LIVE account must say so (2026-09-11) — `BotAccountAssign.confirm_live`.
+        # The registry is the one place that states what an account IS; an account it cannot
+        # classify is not treated as live. A bot already on that account is not moving onto it.
+        if (
+            registered is not None
+            and str(getattr(registered, "kind", "")).lower() == "live"
+            and not update.confirm_live
+            and (current is None or current.account != update.account)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Account {update.account} is a LIVE account — real money. Confirm the move "
+                f"to put {_KEY_DISPLAY.get(bot_key, bot_key)} on it.",
+            )
 
         # ⚠ Refused on a DEFINITE no, never on an unanswered question. A bot on an account with
         # no stored password cannot connect, and finding that out at the next start — after a
@@ -2312,8 +2558,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
                 strategy_package=str(data.get("strategy_package") or ""),
                 # The bot's OWN per-trade risk, read through the SAME function
                 # `group_by_account` reads every other bot's with — a second way of finding this
-                # number is a second answer, and the hypothetical is the one that drifts.
-                risk_pct=bot_accounts.risk_pct_of(data),
+                # number is a second answer, and the hypothetical is the one that drifts. The
+                # share the move carries wins, because that is what it is about to write.
+                risk_pct=new_risk if new_risk is not None else bot_accounts.risk_pct_of(data),
             )
         )
         # The cap it ADOPTS, which is the account's, not whatever this bot states today.
@@ -2341,10 +2588,17 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         params = dict(data.get("strategy_params") or {})
         params.update(plan.param_fields)
         data["strategy_params"] = params
+    if new_risk is not None:
+        section = _BOT_INSTANCE_MAP[bot_key]["section"]
+        params = dict(data.get(section) or {})
+        params["exec_risk_pct"] = new_risk
+        data[section] = params
     _write_instance_config(bot_key, data)
 
     where = "the bench" if update.account is None else f"account {update.account}"
     changed = f"{bot_key} → {where} (was {was if was is not None else 'the bench'})"
+    if new_risk is not None:
+        changed += f", risk {new_risk:g}% a trade"
 
     if not update.deploy:
         return {
@@ -2390,7 +2644,8 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
                 ""
                 if update.account is None
                 else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."
-            ),
+            )
+            + (f" Risks {new_risk:g}% a trade." if new_risk is not None else ""),
             "It is not trading it yet — start the bot to apply."
             if update.account is not None
             else "It will not start until it is on an account again.",
@@ -2580,18 +2835,26 @@ def _set_alert_thread(bot_key: str, message_id) -> bool:
     return True
 
 
+def _bot_running_state(bot_key: str) -> Optional[bool]:
+    """Is this bot's runner process alive on the VPS right now? `None` = the process list could not
+    be read — a third answer, never folded into either of the other two (rule 1)."""
+    try:
+        out = _ssh(f'wmic process where "{_runner_wql(bot_key)}" get processid 2>nul')
+    except Exception:
+        return None
+    return any(ch.isdigit() for ch in out)
+
+
 def _bot_is_running(bot_key: str) -> bool:
-    """Is this bot's runner process alive on the VPS right now?
+    """The STOP path's reading of `_bot_running_state`.
 
     ⚠ An unreadable process list answers **True**, so the caller escalates to a kill rather
     than reporting a stop that may not have happened. Of the two wrong answers here, "kill a
     process that was already gone" is harmless and "report a live trading bot as stopped" is not.
+    ⚠ **A MOVE must not use this** — there, *could not ask* read as *running* told the reader to
+    stop a bot that was already stopped. `set_bot_account` reads the three-state directly.
     """
-    try:
-        out = _ssh(f'wmic process where "{_runner_wql(bot_key)}" get processid 2>nul')
-    except Exception:
-        return True
-    return any(ch.isdigit() for ch in out)
+    return _bot_running_state(bot_key) is not False
 
 
 def _runner_wql(bot_key: str) -> str:
@@ -4133,22 +4396,27 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     # Checked with THIS bot's new number substituted in, and only when the risk actually moved —
     # every other runtime field is none of the account's business.
     if "exec_risk_pct" in values:
-        for g in _account_groups():
-            if g.kind != "account" or not any(b.key == bot_key for b in g.bots):
-                continue
-            # A bot whose bots disagree about the cap has no account cap to check against, and
-            # `live_config._assert_account_cap_agrees` already refuses to start it. Reporting a
-            # share overflow there would name the wrong fault.
-            if not g.cap_agrees:
-                break
-            proposed = [
-                replace(b, risk_pct=float(values["exec_risk_pct"])) if b.key == bot_key else b
-                for b in g.bots
-            ]
-            overflow = bot_accounts.share_overflow(proposed, g.risk_cap_pct)
-            if overflow:
-                raise HTTPException(status_code=409, detail=overflow)
-            break
+        g = next(
+            (
+                g
+                for g in _account_groups()
+                if g.kind == "account" and any(b.key == bot_key for b in g.bots)
+            ),
+            None,
+        )
+        # An account whose bots disagree about the cap has no cap to check against, and
+        # `live_config._assert_account_cap_agrees` already refuses to start it — reporting a share
+        # overflow there would name the wrong fault, so it is skipped rather than refused.
+        if g is not None and g.cap_agrees:
+            # 🔴 Through the ONE planner since 2026-09-11, which refuses only a share that RISES
+            # past the room. Lowering one on an account still over afterwards was refused here,
+            # which left an over-subscribed account unfixable one bot at a time.
+            try:
+                plan = bot_accounts.risk_plan(g, {bot_key: float(values["exec_risk_pct"])})
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+            if plan.refusal:
+                raise HTTPException(status_code=409, detail=plan.refusal)
 
     params.update(values)
     _write_instance_config(bot_key, data)
@@ -4188,12 +4456,30 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     return {"status": "ok", "changed": True, "deployed": True, "detail": changed, "output": out}
 
 
+def _refuse_if_benched(bot_key: str) -> None:
+    """🔴 A bot on NO account is refused a start (2026-09-11). The runner refuses it on the box
+    anyway, but this endpoint answered 200 and sent STARTING to Telegram first — a start that reads
+    as done over a bot that never came up. The config here is what a move writes, so it is the one
+    to ask. ⚠ A config this machine cannot read decides nothing — the box does."""
+    try:
+        data = _read_instance_config(bot_key)
+    except HTTPException:
+        return
+    if data.get("account") is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{_KEY_DISPLAY.get(bot_key, bot_key)} is not on an account, so it would "
+            f"refuse to start. Add it to an account first.",
+        )
+
+
 @router.post("/{bot_name}/start")
 def start_bot(bot_name: str):
     """Launch a single bot via startup_coordinator.py --bot <key> (via WMI).
     Individual BOT_* scheduled tasks are Disabled — schtasks /run does nothing.
     """
     _, bot_key = _resolve_bot(bot_name)
+    _refuse_if_benched(bot_key)
     try:
         out = _launch_bot(bot_key)
     except subprocess.TimeoutExpired:
@@ -4238,6 +4524,7 @@ def stop_bot(bot_name: str):
 def restart_bot(bot_name: str):
     """Kill this bot's process, wait 3 s, then relaunch via startup_coordinator --bot."""
     _, bot_key = _resolve_bot(bot_name)
+    _refuse_if_benched(bot_key)
     try:
         _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert
         stop_out = _kill_bot(bot_key)

@@ -1535,9 +1535,10 @@ over-subscribed account save cleanly — the one outcome the rule exists to prev
 against a ceiling of 10.0 must pass, and so must today's single bot at 5.0 under 10.0. A strict
 comparison reddens both — measured, not reasoned.
 
-⚠ **Benching is never refused, and lowering a share never is either** — leaving an account or
-freeing room cannot over-subscribe anything, and a guard that blocked them would make an
-over-subscribed account unfixable.
+⚠ **Benching is never refused, and neither is lowering a share or raising the cap** — freeing room
+cannot over-subscribe anything, and a guard that blocked it makes an over-subscribed account
+unfixable. 🔴 **This line said so from 2026-09-03 while the code refused a lowering whenever the
+account stayed over afterwards** — fixed 2026-09-11; see *An account's risk budget is ONE planner*.
 
 ⚠ **A bot whose account has DISAGREEING caps is skipped rather than refused.** There is no account
 cap to check against, and `live_config._assert_account_cap_agrees` already refuses to start it;
@@ -1592,6 +1593,46 @@ cases), an unreadable share counted as zero, uncapped read as a cap of zero, and
 endpoint checks deleted in turn. ⚠ **One mutation did NOT APPLY on its first attempt and proved
 nothing** — the pattern did not match, the suite stayed green, and that reads exactly like a
 surviving mutation. Assert the edit landed before believing the result.
+
+## An account's risk budget is ONE planner, and a change that frees room is always allowed (2026-09-11)
+
+Aaron: *"add bots to demo and live accounts … take bots off … increase or lower the percentage risk
+on the bot … increase or lower the max percentage traded on the account … seamlessly."*
+`bot_accounts.risk_plan` is the one planner: the runtime save, the cap save, the budget endpoints
+and the Add bot preview all go through it.
+
+🔴 **Every copy of the check refused an IMPROVEMENT.** Each asked *does the RESULT fit*, so lowering a
+share on an account already over — 5+5+5 under 10%, one bot to 4% — was refused because 14% is still
+over. **Now a write is refused only when the result does not fit AND the write adds risk** (a share
+rises, a bot joins, the cap comes down or appears). Watched RED against HEAD on both endpoints.
+
+- `PATCH /bots/accounts/{account}/risk` saves the cap and any shares in ONE commit
+  (`BotAccountRiskRequest`; `risk_cap_pct` read through `model_fields_set`). ⚠ 404 on an account no
+  bot is on — nothing to write the cap into; the first bot added sets it.
+- `POST /bots/accounts/{account}/risk-plan` — the same plan, written nowhere, and it takes `joining`
+  so Add bot can say whether a bot fits before the move. ⚠ `fits: false` is a 200. ⚠ `reason` (does
+  not fit) and `refused` (a save would be refused) are different answers.
+- ⚠ **The two one-click fixes are computed HERE, never on the page**: `fit_cap` (smallest cap the
+  shares fit, rounded UP) and `fit_shares` (the shares scaled to fit, rounded DOWN; withheld when one
+  falls under the runtime editor's 0.1% floor or the cap would pass 100).
+- `AccountGroup.room_pct` is served on `GET /bots/accounts` — negative when over, `None` with no cap,
+  never floored at zero, or an over-subscribed account reads as a full one.
+- **The move carries the joining bot's share** (`BotAccountAssign.risk_pct`, the runtime bounds) and
+  counts it in the join check. ⚠ **A move onto a registry-`live` account needs `confirm_live`** (409
+  without) — the one-bot move was the unguarded second door to real money.
+- 🔴 **A move asks whether the bot runs in THREE states** (`_bot_running_state`): *could not ask*
+  read as running told the reader to stop a stopped bot; it answers 503 now. ⚠ The STOP path still
+  reads it as running (`_bot_is_running`), which there is the safe wrong answer.
+- 🔴 **Start and restart refuse a bot on no account** (409). They answered 200 and sent STARTING to
+  Telegram over a bot the box then refused.
+- ✅ **A cap change needs no restart** — the bot adopts it the next time it is flat
+  (`algos/CLAUDE.md`); `restart_required` is False and `applies` says so. ⚠ Pinned by a test that
+  READS `algos/live/live_config.py`. ⚠ **A bot started on the older runner drops a cap-only change**
+  until its next restart.
+- ⚠ The browser guard refuses all three risk writes and allows the plan.
+
+**Tests:** `tests/test_account_risk.py` (31). **21 mutations planted in memory, 21 killed** — each
+named in its test's docstring.
 
 ## A shared stack's legs may not add up past its cap (2026-09-10)
 

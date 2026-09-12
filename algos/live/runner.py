@@ -50,6 +50,7 @@ recovery re-warms through the same path a `gap_bars` overrun takes rather than r
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import os
 import signal
@@ -2349,6 +2350,11 @@ class LiveRunner:
 
         self._cfg_mtime = mtime
         detail = ", ".join(f"{k} {a} → {b}" for k, a, b in allowed)
+        # A strategy param moving needs the rebuild below; the account cap does not — nothing the
+        # strategy decides reads it. It lives on the BRIDGE, which is never rebuilt, so it is handed
+        # over explicitly. Both still wait for flat: one rule for when a change may land.
+        params_moved = any(k not in live_config.RUNTIME_RELOADABLE_ACCOUNT for k, _, _ in allowed)
+        cap_moved = any(k == "account_risk_cap_pct" for k, _, _ in allowed)
 
         # REBUILD, do not mutate. `SosFadeConfig` is a frozen dataclass and ONE instance is
         # shared by signals, sequence, execution and the secondary arm — so there is no
@@ -2361,12 +2367,21 @@ class LiveRunner:
         # 5,000 bars, measured on the VPS) and only ever runs while flat, so there is no
         # position to lose and no bar to miss at a 10s poll.
         self.cfg = fresh
-        self.strategy, _ = self._build_strategy()
-        self.bridge._ex = self.strategy.execution
-        self.warm()
-        self.bridge.begin_live()
+        if params_moved:
+            self.strategy, _ = self._build_strategy()
+            self.bridge._ex = self.strategy.execution
+            self.warm()
+            self.bridge.begin_live()
+        if cap_moved:
+            self.bridge.set_account_risk_cap(fresh.account_risk_cap_pct)
+            # SAY the new state, the same record every start writes — "no cap" and "a cap nobody
+            # applied" must not look alike (see `_log_risk_cap`).
+            self._log_risk_cap()
 
-        self.log.info(f"Runtime config applied while flat (strategy rebuilt): {detail}")
+        self.log.info(
+            "Runtime config applied while flat"
+            f"{' (strategy rebuilt)' if params_moved else ''}: {detail}"
+        )
         self.ledger.event("config_applied", changes=detail)
         # ⚠ Same rule as the reconnect all-clear: a settings change does not clear a halt, so
         # the message must not read as one. The new values ARE loaded — they just cannot reach
@@ -2405,7 +2420,16 @@ class LiveRunner:
         for name in set(self.cfg.strategy_params) - set(fresh.strategy_params):
             blocked.append((name, self.cfg.strategy_params[name], None))
 
-        for name in (
+        # 🔴 The ACCOUNT cap is reloadable too since 2026-09-11 (`RUNTIME_RELOADABLE_ACCOUNT`). It
+        # was compared NOWHERE, so a cap-only change fell through to the cosmetic branch in
+        # `_maybe_reload_runtime` and was consumed in silence — the file said one cap, the bot ran
+        # another, and nothing said so until its next restart.
+        for name in sorted(live_config.RUNTIME_RELOADABLE_ACCOUNT):
+            old, new = getattr(self.cfg, name), getattr(fresh, name)
+            if old != new:
+                allowed.append((name, old, new))
+
+        identity = (
             "account",
             "server",
             "symbol",
@@ -2415,10 +2439,24 @@ class LiveRunner:
             "strategy_package",
             "strategy_class",
             "strategy_source_hash",
-        ):
+        )
+        for name in identity:
             old, new = getattr(self.cfg, name), getattr(fresh, name)
             if old != new:
                 blocked.append((name, old, new))
+
+        # 🔴 EVERY OTHER top-level field is BLOCKED, never cosmetic (2026-09-11). The cap's defect had
+        # a wider shape: a field this function did not name fell through to the cosmetic branch and
+        # was consumed in silence, so an edit to the margin safety, the sizing-basis adjustment or
+        # the alert routing read as saved while the bot ran the old value until its next restart.
+        # A field nobody listed is now a restart the bot SAYS it needs.
+        handled = set(identity) | set(live_config.RUNTIME_RELOADABLE_ACCOUNT) | {"strategy_params"}
+        for f in dataclasses.fields(fresh):
+            if f.name in handled:
+                continue
+            old, new = getattr(self.cfg, f.name, None), getattr(fresh, f.name)
+            if old != new:
+                blocked.append((f.name, old, new))
         return allowed, blocked
 
     def _heartbeat(

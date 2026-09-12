@@ -237,8 +237,9 @@ replay. **A stack backtest is a FLOOR on how often a split contends, never an es
 ⚠ **The starting point is also not what a split assumes.** `exec_risk_pct` is **10.0** in both
 `config.json` and `deployed.json` today, so this bot's per-trade risk already equals the entire
 account cap and there is no room to give a second strategy without lowering it first.
-⚠ **`_account_risk_cap_pct` is NOT runtime-reloadable** — changing the cap needs a RESTART, so it
-arrives through the promote / `stop.request` / `SYS_STARTUP` cycle rather than on its own.
+⚠ **`account_risk_cap_pct` IS runtime-reloadable since 2026-09-11** — it lands the next time the
+bot is flat, with no restart (see *Runtime config reload*). Until then a cap-only change was dropped
+as cosmetic, and this line said it needed a restart.
 
 ## The live runner's SECOND bar feed — G18 stage 1 (2026-09-01). Stages 2-4 still open
 
@@ -887,7 +888,8 @@ from the command center: it rewrites the instance config, pushes, the VPS pulls,
 notices its own file changed (`runner._maybe_reload_runtime`). Three rules, each guarding a
 specific failure:
 
-1. **Only `live_config.RUNTIME_RELOADABLE` is applied.** If anything else moved — a strategy param,
+1. **Only `live_config.RUNTIME_RELOADABLE` (a strategy param) and `RUNTIME_RELOADABLE_ACCOUNT` (the
+   account cap, since 2026-09-11) are applied.** If anything else moved — a strategy param,
    the account, the symbol, the version pin — the change is REFUSED, left on disk, logged and
    Telegrammed. That is the case where a `git pull` carrying unrelated strategy edits reaches a
    running bot, and absorbing it silently is exactly what the source-hash pin exists to prevent.
@@ -909,6 +911,25 @@ specific failure:
 sets equal with a test that reads `live_config.py` as text. Drift is silent and one-directional-bad:
 the UI offers an edit, the push and pull both succeed, and the bot ignores the value forever.
 **Change one, change both.**
+
+🔴 **THE CAP WAS COMPARED NOWHERE, SO A CAP-ONLY CHANGE WAS CONSUMED AS COSMETIC (fixed
+2026-09-11).** `_config_delta` compared strategy params and nine identity fields; everything else fell
+through `if not allowed:` and the mtime was consumed — the file said one cap, the bot ran another,
+and nothing said so until a restart. Now `RUNTIME_RELOADABLE_ACCOUNT` is compared, handed to the
+bridge (`set_account_risk_cap` — the room and the cap check read that field and nothing else) while
+flat, and the new state is logged the way every start logs it (`_log_risk_cap`).
+- ⚠ **No rebuild for a cap-only change** — nothing the strategy decides reads it.
+- ⚠ **`None` is handed over as `None`** (uncapped), never 0, which would refuse every order.
+- 🔴 **And every OTHER top-level field is BLOCKED now, never cosmetic** — the same defect one size
+  wider: an edit to the margin safety, the sizing-basis adjustment or the alert routing read as saved
+  while the bot ran the old value. A field `_config_delta` does not name is a restart the bot SAYS it
+  needs (a catch-all over `dataclasses.fields`).
+- ⚠ **The Command Center tells the reader a cap change needs no restart**, and a backend test reads
+  this file to pin `RUNTIME_RELOADABLE_ACCOUNT` — change one, change both.
+- ⚠ **A bot started on the older runner drops a cap-only change until it restarts once.** `algos/live/`
+  reaches a bot on `git pull` + restart, no promote.
+
+Tests: 8 more in `test_runtime_reload.py`, two watched RED against HEAD; 6 mutations, 6 killed.
 
 Tests: `algos/tests/` — **104, all offline against a faked terminal**, so `pytest algos/` runs on
 the Mac with no MT5 and no VPS. 60 cover this package, 16 cover the pending-order layer in
