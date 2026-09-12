@@ -2199,6 +2199,10 @@ class LiveRunner:
         ⚠ **Said once per REASON, and recovery speaks**, so the silence in between is safe. A
         different reason is said again: two causes need two fixes.
 
+        🔴 **Recovery over a HALTED bot says STILL HALTED, never "Nothing to do."** A halt latches
+        (only a restart clears it), and a trade triggering while orders were refused is exactly
+        what halts one — an all-clear there stops somebody looking at a bot that places nothing.
+
         ⚠ **Never raises.** It runs on every pass ahead of the bars, so a raise here would skip
         reading them.
         """
@@ -2229,23 +2233,45 @@ class LiveRunner:
                         "TRADING OFF",
                         self._label,
                         f"{why[0].upper()}{why[1:]}.",
-                        "Every order this bot sends will be refused until it is back on. It keeps "
-                        "watching and will say when it is.",
+                        "Every order it sends will be refused. If a trade triggers meanwhile it "
+                        "halts and needs a restart. It keeps watching and will say when trading "
+                        "is back.",
                     )
                 )
             elif allowed is True and said is not None:
                 self._trading_off_said = None
-                self.log.info("Trading is allowed on this account again.")
                 self.ledger.event("trading_restored", account=self.cfg.account)
-                self._notify_health(
-                    alert(
-                        "✅",
-                        "TRADING BACK ON",
-                        self._label,
-                        "The account can trade again.",
-                        "Nothing to do.",
+                # 🔴 A halt LATCHES — only a restart clears it — and a trade triggering while the
+                # broker refused orders is exactly what halts a bot. An all-clear over that bot
+                # is the message that stops somebody looking, so recovery says which it is.
+                bridge = getattr(self, "bridge", None)
+                if bridge is not None and bridge.state is BridgeState.HALTED:
+                    reason = getattr(bridge, "halt_reason", None)
+                    self.log.warning(
+                        "Trading is allowed on this account again, but this bot is halted"
+                        f"{f' ({reason})' if reason else ''} and places nothing until restarted."
                     )
-                )
+                    self._notify_health(
+                        alert(
+                            "⛔",
+                            "STILL HALTED",
+                            self._label,
+                            "Trading is allowed on the account again, but this bot halted while "
+                            f"it was not{f' ({reason})' if reason else ''}.",
+                            "Restart it to trade again.",
+                        )
+                    )
+                else:
+                    self.log.info("Trading is allowed on this account again.")
+                    self._notify_health(
+                        alert(
+                            "✅",
+                            "TRADING BACK ON",
+                            self._label,
+                            "The account can trade again.",
+                            "Nothing to do.",
+                        )
+                    )
         except Exception as e:
             self.log.warning(f"Trading-allowed check failed: {e}")
 

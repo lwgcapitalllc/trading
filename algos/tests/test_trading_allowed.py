@@ -19,6 +19,7 @@ for _p in (str(_REPO), str(_REPO / "algos" / "live"), str(_REPO / "algos" / "sha
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from bridge import BridgeState  # noqa: E402
 from runner import LiveRunner, trading_block  # noqa: E402
 
 _TERM_ON = SimpleNamespace(trade_allowed=True)
@@ -113,14 +114,16 @@ def _runner(monkeypatch, *, account, terminal=_TERM_ON, symbol=_FULL, observed=1
 
 
 def test_trading_OFF_is_said_ONCE_and_recorded(monkeypatch):
-    """Red under: saying it on every poll (a message every ten seconds is muted by noon); and under
-    not recording it (the record is where an audit finds why no order reached the broker)."""
+    """Red under: saying it on every poll (a message every ten seconds is muted by noon); under
+    not recording it (the record is where an audit finds why no order reached the broker); and
+    under dropping the warning that a trade triggering meanwhile halts the bot."""
     r = _runner(monkeypatch, account=_acct(trade_allowed=False))
     for _ in range(3):
         r._check_trading_allowed()
 
     assert len(r.alerts) == 1
     assert "TRADING OFF" in r.alerts[0] and "read-only" in r.alerts[0]
+    assert "halts" in r.alerts[0] and "restart" in r.alerts[0]
     assert [k for k, _ in r.ledger.events] == ["trading_disabled"]
     assert (r._trade_allowed, "read-only" in r._trade_block) == (False, True)
 
@@ -136,6 +139,47 @@ def test_trading_BACK_ON_is_said_once_too(monkeypatch):
     assert len(r.alerts) == 2
     assert "TRADING BACK ON" in r.alerts[1]
     assert [k for k, _ in r.ledger.events] == ["trading_disabled", "trading_restored"]
+
+
+def _recovered(monkeypatch, bridge):
+    """Trading goes off and comes back, on a runner whose order side is `bridge`."""
+    r = _runner(monkeypatch, account=_acct(trade_allowed=False))
+    r.bridge = bridge
+    r._check_trading_allowed()
+    r._observed_info = _acct()
+    r._check_trading_allowed()
+    return r
+
+
+def test_trading_back_on_over_a_HALTED_bot_says_restart_it_never_nothing_to_do(monkeypatch):
+    """A halt latches (only a restart clears it), and a trade triggering while orders were refused
+    is what halts one — so an all-clear here stops somebody looking at a bot that places nothing.
+    Red under: dropping the halted branch (it says "Nothing to do." over a halted bot)."""
+    halted = SimpleNamespace(state=BridgeState.HALTED, halt_reason="MT5 holds none")
+    r = _recovered(monkeypatch, halted)
+
+    assert len(r.alerts) == 2
+    assert "STILL HALTED" in r.alerts[1] and "Restart it" in r.alerts[1]
+    assert "MT5 holds none" in r.alerts[1]
+    assert "Nothing to do" not in r.alerts[1]
+    assert [k for k, _ in r.ledger.events] == ["trading_disabled", "trading_restored"]
+
+
+def test_trading_back_on_over_a_LIVE_bot_is_the_plain_all_clear(monkeypatch):
+    """The control — an alert that always warns is one nobody reads. Red under: saying STILL
+    HALTED whatever state the order side is in."""
+    r = _recovered(monkeypatch, SimpleNamespace(state=BridgeState.LIVE, halt_reason=None))
+
+    assert "TRADING BACK ON" in r.alerts[1] and "Nothing to do" in r.alerts[1]
+    assert "HALTED" not in r.alerts[1]
+
+
+def test_a_halt_with_no_recorded_reason_never_prints_None(monkeypatch):
+    """Red under: putting the reason in unconditionally — "(None)" in a message a person acts on
+    reads as a reason."""
+    r = _recovered(monkeypatch, SimpleNamespace(state=BridgeState.HALTED, halt_reason=None))
+
+    assert "STILL HALTED" in r.alerts[1] and "None" not in r.alerts[1]
 
 
 def test_a_healthy_account_says_NOTHING(monkeypatch):

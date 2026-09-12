@@ -3570,11 +3570,14 @@ symbol's `trade_mode` (disabled / long only / short only / close only).
 - ⚠ **Said once per REASON, and recovery speaks** (TRADING OFF / TRADING BACK ON, HEALTH), so the
   silence between is safe; a different reason is said again. Ledger: `trading_disabled` (with the
   reason) and `trading_restored`, both HEALTH.
+- 🔴 **Recovery over a HALTED bot says STILL HALTED and "Restart it", never "Nothing to do."** A
+  halt latches, and a trade triggering while orders were refused is what halts one — so an
+  all-clear there stops somebody looking (the RECONNECTED rule, again). The OFF message says so.
 - ⚠ **The heartbeat carries `trade_allowed` / `trade_block`** for the Command Center's chip, `None`
   on a dead link. **Never raises** — it runs ahead of the bars.
 - ⚠ **Reaches a bot by `git pull` plus a restart** (`algos/live/`, no promote).
 
-Tests: `test_trading_allowed.py` (19) + one loop test in `test_mt5_link.py`. **20 mutations RUN, 20
+Tests: `test_trading_allowed.py` (22) + one loop test in `test_mt5_link.py`. **26 mutations RUN, 26
 killed** — the loop's own call first SURVIVED, because every other test drove the check directly.
 
 ## 🔴 A RENAME orphans the account anchor, and the symptom is a confident 0.0% (2026-09-05)
