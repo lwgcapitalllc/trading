@@ -1546,7 +1546,11 @@ export function PerformancePanel({
             chip held at the panel's top-left. */}
         {verdict}
 
-        <div className={cardCls('border-t-2 border-t-pos-text/50')}>
+        {/* The three result cards share ONE neutral top edge (2026-09-11). Each carried a fixed
+            colour — green over MADE even when the run lost money — which is colour on identity,
+            not on the result. The hero number carries the verdict; the Verdict card's edge still
+            follows a real pass / warn / discard. */}
+        <div className={cardCls('border-t-2 border-t-border-strong')}>
           {head('Made', 'What came out of it')}
           {hero(
             <FitMoney n={run.net_pnl} signed />,
@@ -1567,7 +1571,7 @@ export function PerformancePanel({
           {!collapsed && rows(madeRows)}
         </div>
 
-        <div className={cardCls('border-t-2 border-t-neg-text/50')}>
+        <div className={cardCls('border-t-2 border-t-border-strong')}>
           {head(
             'Risked',
             'What it cost to hold',
@@ -1623,7 +1627,7 @@ export function PerformancePanel({
           {!collapsed && rows(riskedRows)}
         </div>
 
-        <div className={cardCls('border-t-2 border-t-accent/45')}>
+        <div className={cardCls('border-t-2 border-t-border-strong')}>
           {/* No trade count here — it is the verdict card's hero, two columns across. Printing
               it twice on one row made the second copy read as a different number. */}
           {head('Trusted', 'Whether to believe it')}
@@ -3046,11 +3050,13 @@ function HeaderRulesetChip({
   const py = compact ? 'py-[1px]' : 'py-[2px]'
   // Tighter left/right padding when chevrons sit inside the pill; symmetric when it's just a name.
   const px = multi ? (compact ? 'pl-1 pr-1.5' : 'pl-1.5 pr-2') : compact ? 'px-1.5' : 'px-2'
+  // Neutral (2026-09-11): a ruleset NAME is identity, not a warning. Amber here painted
+  // "unconstrained" — the ruleset with no limits at all — as the loudest chip in the header.
   const chev =
-    'flex items-center text-warn-text/50 hover:text-warn-text transition-colors flex-shrink-0'
+    'flex items-center text-text-tertiary hover:text-text-primary transition-colors flex-shrink-0'
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded text-[11px] font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text flex-shrink-0 ${py} ${px}`}
+      className={`inline-flex items-center gap-1 rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary flex-shrink-0 ${py} ${px}`}
     >
       {multi && (
         <button
@@ -3259,7 +3265,7 @@ function VerdictCard({
     ? ev!.verdict === 'DISCARD' && (ev!.net_pnl ?? 0) > 0
       ? VERDICT_CHIP.WARN.top
       : cfg.top
-    : 'border-t-accent/45'
+    : 'border-t-border-strong'
   const ungraded = ev?.verdict === 'INFO'
 
   const months = spanDays != null && spanDays > 0 ? spanDays / 30.44 : null
@@ -3319,7 +3325,7 @@ function VerdictCard({
         unit={
           totalTrades != null && totalTrades !== tradeCount ? `of ${totalTrades} trades` : 'trades'
         }
-        cls="text-accent"
+        cls="text-text-primary"
         tip="How many trades this verdict and every number beside it rest on. Sample size is a portfolio property in this repo, not a strategy one — a selective strategy is DESIGNED to trade a couple of times a month, so read the cadence below rather than the count alone (CLAUDE.md → Trading Philosophy)."
       />
       {/* The ruleset name is identity, not measurement, so it sits here where it can truncate
@@ -6957,7 +6963,7 @@ export function BacktestDetail() {
                     </h1>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+                    <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                       {run.instrument}
                     </span>
                     <PeriodFilterChip dates={dates} blocked={newsBlocked} />

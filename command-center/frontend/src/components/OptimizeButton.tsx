@@ -664,7 +664,7 @@ export function OptimizeButton({ run }: Props) {
     return (
       <button
         onClick={() => navigate(`/optimizations/${runningOpt.optimization_id}`)}
-        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 transition-colors"
+        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-accent/10 text-accent border border-accent/30 hover:bg-accent/15 transition-colors"
       >
         <Sliders size={12} className="animate-pulse flex-shrink-0" />
         Optimization in progress
@@ -695,7 +695,7 @@ export function OptimizeButton({ run }: Props) {
             ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy: ${blockingJob?.description}`
             : undefined
         }
-        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-gold-muted text-gold-text border border-gold-text/20 hover:bg-gold-text/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium bg-bg-surface text-text-primary border border-border-default hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <Sliders size={12} />
         Optimize
