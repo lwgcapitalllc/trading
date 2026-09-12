@@ -3547,6 +3547,36 @@ Tests: `test_account_flows.py` (15), `test_watchdog.py` → *Overall P&L* (10),
 `test_mt5_ops_pending.py` (4). **27 mutations RUN, 27 killed**; a no-op control survived, so the
 harness can report a survivor.
 
+## 🔴 Whether the account may TRADE is read every poll, and said once (2026-09-12)
+
+**On 2026-09-11 PU Prime put live account 34957946 on read-only until it held the ECN minimum.
+Every order from 12:45 AM to 7:30 AM CDT came back refused (10017), and nothing on any screen said
+trading was off until the bridge halted at 7:45** — while the terminal could report it all along.
+
+`runner._check_trading_allowed` runs each poll right after the identity check and asks
+`runner.trading_block` four questions: the account's `trade_allowed` (read-only) and `trade_expert`
+(automated trading barred), the terminal's `trade_allowed` (the AutoTrading button), and the
+symbol's `trade_mode` (disabled / long only / short only / close only).
+
+- 🔴 **It REPORTS and changes nothing.** A setup still fires, the broker still refuses, the bridge
+  still halts. Refusing here would be a second place deciding whether an order goes out, on a flag
+  nobody has watched this broker flip — **which of the four read-only moves is unmeasured**, so all
+  four are read and the first poll on an affected account measures it.
+- ⚠ **Three answers** (rule 1): off, on, could-not-ask. A missing or unreadable flag is UNKNOWN,
+  never yes, and a no outranks an unknown. Could-not-ask says nothing and keeps what was said.
+- ⚠ **Only for the account this bot trades**, off the same `account_info()` call as the balance —
+  `probe_link` keeps the whole reading now (`_observed_info`), `None` on a dead link. On another
+  account the identity halt owns it (rule 16).
+- ⚠ **Said once per REASON, and recovery speaks** (TRADING OFF / TRADING BACK ON, HEALTH), so the
+  silence between is safe; a different reason is said again. Ledger: `trading_disabled` (with the
+  reason) and `trading_restored`, both HEALTH.
+- ⚠ **The heartbeat carries `trade_allowed` / `trade_block`** for the Command Center's chip, `None`
+  on a dead link. **Never raises** — it runs ahead of the bars.
+- ⚠ **Reaches a bot by `git pull` plus a restart** (`algos/live/`, no promote).
+
+Tests: `test_trading_allowed.py` (19) + one loop test in `test_mt5_link.py`. **20 mutations RUN, 20
+killed** — the loop's own call first SURVIVED, because every other test drove the check directly.
+
 ## 🔴 A RENAME orphans the account anchor, and the symptom is a confident 0.0% (2026-09-05)
 
 `ensure_starting_balance` re-anchors on the ACCOUNT changing and never on the balance moving —

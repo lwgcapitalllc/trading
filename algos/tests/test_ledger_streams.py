@@ -244,6 +244,11 @@ def test_every_event_written_in_algos_live_is_classified():
         # every earlier record in the run was written against may have belonged to a different
         # account — which is the sort of thing an audit has to be able to find afterwards.
         "account_mismatch",
+        # The broker or the terminal will not let this account trade, and it coming back. HEALTH
+        # by the subject test: it is why no order can reach the broker AT ALL, never why not this
+        # setup — a refused order itself still lands in the decisions stream as `order_refused`.
+        "trading_disabled",
+        "trading_restored",
         # The bot has no account, so it declined to start. HEALTH by the subject test: it is why
         # this bot is not trading AT ALL — the same side of the line as `halted` — where the
         # decision stream answers "why no trade on THAT setup". It also has to be written rather

@@ -442,3 +442,21 @@ def test_a_healthy_loop_reads_bars_and_reports_the_link_up(monkeypatch):
     # The only message is the loop's own stop notice — a healthy pass must raise no link alarm.
     assert not any("connection" in a.lower() for a in r.alerts)
     assert "mt5_link_lost" not in r.ledger.kinds()
+
+
+def test_the_loop_asks_whether_the_account_may_trade(monkeypatch):
+    """A check is only as real as its call site (rule 7), and every other test of the trading-off
+    check drives it directly — so deleting the loop's call left all of them green. Red under: the
+    loop never asking (measured: it SURVIVED every test in `test_trading_allowed.py`)."""
+    r = _runner(
+        monkeypatch,
+        account_info=lambda: SimpleNamespace(
+            balance=2000.0, login=1, trade_allowed=False, trade_expert=True
+        ),
+    )
+    monkeypatch.setattr(r, "_maybe_reload_runtime", lambda: None)
+    state = _StateModule()
+    _run_one_pass(r, monkeypatch, state)
+
+    assert "trading_disabled" in r.ledger.kinds()
+    assert state.written["bot"]["trade_allowed"] is False

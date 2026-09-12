@@ -113,6 +113,53 @@ _PULSE_SECONDS = 15 * 60
 _FLOWS_REFRESH_SECONDS = 15 * 60
 
 
+# MT5's SYMBOL_TRADE_MODE_* — the same map `tools/broker_facts.py` and the lab's agent read.
+_SYMBOL_TRADE_MODES = {0: "disabled", 1: "long only", 2: "short only", 3: "close only", 4: "full"}
+_SYMBOL_TRADE_FULL = 4
+
+
+def trading_block(account, terminal, symbol, symbol_name: str) -> tuple[bool | None, str | None]:
+    """Whether this account may TRADE right now, off what the terminal reported: `(allowed, why)`.
+
+    🔴 **Written after 2026-09-11, when every order the live bots sent from 12:45 AM to 7:30 AM
+    CDT came back refused (10017) and nothing said so beforehand.** PU Prime had put account
+    34957946 on read-only until it held the ECN minimum deposit; the bot kept stepping, its
+    emulator took the 7:45 setup, the broker held nothing, and the bot halted. The terminal can
+    report that an account may not trade, and nothing asked it.
+
+    Four things stop an order and each is a different fix, so the reason names which: the ACCOUNT
+    (`trade_allowed` — read-only, or switched off by the broker), automated trading on it
+    (`trade_expert`), the terminal's AutoTrading button, and the SYMBOL's own mode.
+
+    ⚠ **Three answers, never two** (rule 1): `(True, None)` every flag said yes; `(False, why)` one
+    said no; `(None, None)` a flag could not be read and none that could said no. An unreadable
+    flag never hides one that said no, and is never read as yes.
+    """
+    unknown = False
+
+    def said_no(obj, name) -> bool:
+        nonlocal unknown
+        value = getattr(obj, name, None) if obj is not None else None
+        if value is None:
+            unknown = True
+            return False
+        return not bool(value)
+
+    if said_no(account, "trade_allowed"):
+        return False, "the broker has switched trading off for this account — it is read-only"
+    if said_no(account, "trade_expert"):
+        return False, "the broker does not allow automated trading on this account"
+    if said_no(terminal, "trade_allowed"):
+        return False, "the terminal's AutoTrading button is off"
+    mode = getattr(symbol, "trade_mode", None) if symbol is not None else None
+    if mode is None:
+        unknown = True
+    elif int(mode) != _SYMBOL_TRADE_FULL:
+        label = _SYMBOL_TRADE_MODES.get(int(mode), f"mode {mode}")
+        return False, f"the broker has {symbol_name} on {label}"
+    return (None, None) if unknown else (True, None)
+
+
 def _handle_signal(signum, frame):
     global _stop_requested
     _stop_requested = True
@@ -253,6 +300,13 @@ class LiveRunner:
         # be read is said once per cause rather than on every re-read.
         self._flows_cache = None
         self._flows_reason = None
+        # Whether the account may TRADE, as last read (`_check_trading_allowed`): the account_info
+        # object from the same probe as the balance, the verdict, and the reason last ANNOUNCED —
+        # so trading going off is said once per cause and coming back once.
+        self._observed_info = None
+        self._trade_allowed = None
+        self._trade_block = None
+        self._trading_off_said = None
         # Link-outage bookkeeping. `_link_lost_at` is None whenever the link is believed good,
         # so it doubles as the "have I already alerted" flag — an outage must be announced once,
         # not every ten seconds for an hour.
@@ -996,15 +1050,18 @@ class LiveRunner:
             # An exception here is a dead link too, not a different event. It is logged rather
             # than raised because the caller's answer is the same either way — reconnect.
             self.log.warning(f"Balance read failed: {e}")
-            self._observed_account = None
+            self._observed_account = self._observed_info = None
             return False, None
         if info is None:
-            self._observed_account = None
+            self._observed_account = self._observed_info = None
             return False, None
         # `getattr` because a fake terminal in the tests may not carry it, and a MISSING login is
         # "could not ask", which `_check_account_identity` refuses to read as agreement.
         login = getattr(info, "login", None)
         self._observed_account = int(login) if login is not None else None
+        # Kept whole so `_check_trading_allowed` reads whether the account may TRADE off the SAME
+        # call as the balance and the login — the flags qualify this account, not another poll's.
+        self._observed_info = info
         # The BROKER's balance, unadjusted. This probe answers one question - is the link up -
         # and the sizing adjustment belongs to whoever sizes. Mixing them here made a link probe
         # depend on strategy configuration, which a test building a bare runner caught at once.
@@ -1724,6 +1781,9 @@ class LiveRunner:
                     # A live link says nothing about WHOSE account is behind it. Checked here
                     # rather than inside `probe_link` because the answer is halt, not reconnect.
                     self._check_account_identity()
+                    # Whether the account may TRADE, off the same reading. It reports and changes
+                    # nothing — see `_check_trading_allowed`.
+                    self._check_trading_allowed()
                     gap = self.feed.gap_bars()
                     if gap > 4 or stream_broken:
                         # See the module docstring: a hole in the stream is a different market
@@ -2114,6 +2174,80 @@ class LiveRunner:
                 "back, or move the bot properly in its instance config, then restart it.",
             )
         )
+
+    def _check_trading_allowed(self) -> None:
+        """Say — once — when this bot's account can no longer trade, and again when it can.
+
+        🔴 **Written after 2026-09-11.** PU Prime had put live account 34957946 on read-only until
+        it held the ECN minimum deposit. Every order from 12:45 AM to 7:30 AM CDT came back refused
+        (10017), and nothing on any screen said trading was off until the bridge halted at 7:45 —
+        while the terminal could report it all along and nothing asked.
+
+        ⚠ **It REPORTS and changes nothing.** A setup still fires, the broker still refuses it and
+        the bridge still halts exactly as before. Refusing orders here would be a second place
+        deciding whether an order goes out, on a flag nobody has yet watched this broker flip —
+        which of the four it moves for read-only is unmeasured, so all four are read.
+
+        ⚠ **Three answers, never two** (rule 1): off, on, and could-not-ask. Could-not-ask says
+        nothing and keeps what was said — reading it as on would announce TRADING BACK ON off a
+        terminal that did not answer.
+
+        ⚠ **Only for the account this bot trades**, read off the same `account_info()` call as the
+        balance (`probe_link`). On another account the identity halt owns the problem, and the
+        flags describe somebody else's account (rule 16).
+
+        ⚠ **Said once per REASON, and recovery speaks**, so the silence in between is safe. A
+        different reason is said again: two causes need two fixes.
+
+        ⚠ **Never raises.** It runs on every pass ahead of the bars, so a raise here would skip
+        reading them.
+        """
+        try:
+            if getattr(self, "_observed_account", None) != self.cfg.account:
+                self._trade_allowed = self._trade_block = None
+                return
+            try:
+                import MetaTrader5 as mt5
+
+                terminal = mt5.terminal_info()
+                symbol = mt5.symbol_info(self.cfg.symbol)
+            except Exception as e:
+                self.log.warning(f"Could not read whether this account may trade: {e}")
+                terminal = symbol = None
+            allowed, why = trading_block(
+                getattr(self, "_observed_info", None), terminal, symbol, self.cfg.symbol
+            )
+            self._trade_allowed, self._trade_block = allowed, why
+            said = getattr(self, "_trading_off_said", None)
+            if allowed is False and why != said:
+                self._trading_off_said = why
+                self.log.error(f"TRADING OFF: {why}. Every order this bot sends will be refused.")
+                self.ledger.event("trading_disabled", reason=why, account=self.cfg.account)
+                self._notify_health(
+                    alert(
+                        "⛔",
+                        "TRADING OFF",
+                        self._label,
+                        f"{why[0].upper()}{why[1:]}.",
+                        "Every order this bot sends will be refused until it is back on. It keeps "
+                        "watching and will say when it is.",
+                    )
+                )
+            elif allowed is True and said is not None:
+                self._trading_off_said = None
+                self.log.info("Trading is allowed on this account again.")
+                self.ledger.event("trading_restored", account=self.cfg.account)
+                self._notify_health(
+                    alert(
+                        "✅",
+                        "TRADING BACK ON",
+                        self._label,
+                        "The account can trade again.",
+                        "Nothing to do.",
+                    )
+                )
+        except Exception as e:
+            self.log.warning(f"Trading-allowed check failed: {e}")
 
     def _maybe_pulse(self, *, link_up: bool | None, balance: float | None) -> None:
         """Write a `pulse` to the health stream on a fixed cadence.
@@ -2612,6 +2746,12 @@ class LiveRunner:
                     "capital_in": capital_in,
                     "pnl_usd": pnl_usd,
                     "mt5_link": bool(link_up),
+                    # Whether the account may TRADE (`_check_trading_allowed`), for the Command
+                    # Center's "trading off" chip. Three states: False = off, True = on, None =
+                    # could not ask. `None` on a dead link, where the last reading describes a
+                    # terminal nobody can reach. `getattr` for the heartbeat's own reason, below.
+                    "trade_allowed": getattr(self, "_trade_allowed", None) if link_up else None,
+                    "trade_block": getattr(self, "_trade_block", None) if link_up else None,
                     "account": self.cfg.account,
                     # 🔴 **What the bot was TOLD to trade, and what it is ACTUALLY on.** The line
                     # above is the config's claim; this one is the terminal's own answer, captured
