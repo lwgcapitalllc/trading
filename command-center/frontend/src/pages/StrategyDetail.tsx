@@ -147,7 +147,7 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
         <div className="text-[13px] font-semibold flex items-center gap-1.5" title={p.name}>
           {paramLabel(p)}
           {p.core && (
-            <span className="text-accent text-[11px]" title="Essential — changes behaviour most">
+            <span className="text-gold-text text-[11px]" title="Essential — changes behaviour most">
               ★
             </span>
           )}
@@ -162,7 +162,7 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
         {desc ? <ClampedText text={desc} /> : '—'}
       </td>
       <td className="px-4 py-3 align-top whitespace-nowrap">
-        <span className="text-[13px] font-semibold text-accent-text">
+        <span className="text-[13px] font-semibold text-text-primary">
           {isBoolLike(p) ? (
             defaultValue(p)
           ) : (
@@ -183,8 +183,9 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
           </span>
         ) : p.guide ? (
           <>
-            <span className="text-accent-text block">↓ {p.guide[0]}</span>
-            <span className="text-gold-text block">↑ {p.guide[1]}</span>
+            {/* The arrow says the direction; colour on both halves ranked neither (2026-09-11). */}
+            <span className="text-text-secondary block">↓ {p.guide[0]}</span>
+            <span className="text-text-secondary block">↑ {p.guide[1]}</span>
           </>
         ) : (
           '—'

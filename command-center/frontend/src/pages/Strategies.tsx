@@ -480,7 +480,11 @@ function StrategiesTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Params</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runs</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Best Grade</th>
+                {/* Only when some strategy HAS a grade — a column of dashes is a column that says
+                    nothing (2026-09-11). A stack's grade is the account's, never a leg's. */}
+                {ordered.some(({ s }) => strategyGrades?.[s.id]) && (
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Best Grade</th>
+                )}
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -493,6 +497,7 @@ function StrategiesTab() {
                   sync={syncByStrategy[s.id]}
                   isDeploying={deployingId === s.id}
                   bestGrade={strategyGrades?.[s.id]}
+                  showGrade={ordered.some(({ s: o }) => strategyGrades?.[o.id])}
                   onView={() => navigate(`/strategies/${s.id}`)}
                   onRun={() => setRunStrategy(s)}
                   onDeploy={() => handleDeploy(s.id)}
@@ -563,6 +568,7 @@ function StrategyRow({
   sync,
   isDeploying,
   bestGrade,
+  showGrade,
   onView,
   onRun,
   onDeploy,
@@ -579,6 +585,8 @@ function StrategyRow({
   sync?: StrategyFileSyncStatus
   isDeploying: boolean
   bestGrade?: { grade: string; stress_test_id: string }
+  /** Whether the Best Grade column is drawn at all — hidden while no strategy has a grade. */
+  showGrade: boolean
   onView: () => void
   onRun: () => void
   onDeploy: () => void
@@ -743,29 +751,29 @@ function StrategyRow({
                 ● VPS unknown
               </span>
             ) : (
-              <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">
-                ● In sync
-              </span>
+              <span className="text-[11px] px-1.5 py-[2px] text-text-tertiary">● In sync</span>
             )}
           </div>
         )}
       </td>
-      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-        {bestGrade ? (
-          <button
-            onClick={() => navigate(`/stress-tests/${bestGrade.stress_test_id}`)}
-            title="View best stress test result"
-            className="hover:opacity-80 transition-opacity"
-          >
-            {/* The endpoint types `grade` as a bare string; narrow it rather
-                than `as any` (this folder's no-`any` rule). An unrecognised
-                letter renders nothing instead of an unstyled pill. */}
-            <RobustnessGradeBadge grade={asGrade(bestGrade.grade)} size="sm" />
-          </button>
-        ) : (
-          <span className="text-[11px] text-text-tertiary">—</span>
-        )}
-      </td>
+      {showGrade && (
+        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          {bestGrade ? (
+            <button
+              onClick={() => navigate(`/stress-tests/${bestGrade.stress_test_id}`)}
+              title="View best stress test result"
+              className="hover:opacity-80 transition-opacity"
+            >
+              {/* The endpoint types `grade` as a bare string; narrow it rather
+                  than `as any` (this folder's no-`any` rule). An unrecognised
+                  letter renders nothing instead of an unstyled pill. */}
+              <RobustnessGradeBadge grade={asGrade(bestGrade.grade)} size="sm" />
+            </button>
+          ) : (
+            <span className="text-[11px] text-text-tertiary">—</span>
+          )}
+        </td>
+      )}
       <td className="px-4 py-3">
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {/* ⚠ A DEPLOYING RUNNER WITH NO SYNC ROW MUST NOT OFFER "Run".
@@ -901,9 +909,7 @@ function FileStatusBadge({ sync }: { sync?: StrategyFileSyncStatus }) {
       ● Needs compile
     </span>
   ) : (
-    <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">
-      ● In sync
-    </span>
+    <span className="text-[11px] px-2 py-[2px] text-text-tertiary">● In sync</span>
   )
   return (
     <div className="flex items-center gap-1.5">
