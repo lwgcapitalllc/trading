@@ -817,11 +817,13 @@ class OrderBridge:
         # No entry alert exists in this process, so the exit posts standalone instead of as a
         # reply. One orphaned exit message beats no exit message.
         self._pos_alert_id = None
-        self._pos_risk_usd = (
-            abs(record.broker.entry - record.broker.stop)
-            * record.broker.lots
-            * self._contract_size()
-        )
+        # The risk the trade OPENED with, as recorded at its fill. 🔴 Until 2026-09-12 this was
+        # recomputed off the record's stop — which `_save_position` rewrites on every move — so
+        # after a ratchet every later R was divided by the distance the stop had LOCKED, and at
+        # breakeven by zero, which dropped the R altogether. `0.0` is this field's own "unknown":
+        # a record from before the entry risk was written gives no R, never one off a stop that
+        # has moved. See `position_state.BrokerFacts.risk_usd`.
+        self._pos_risk_usd = record.broker.risk_usd or 0.0
         return True
 
     def stage_rewarm(self) -> None:
@@ -967,7 +969,12 @@ class OrderBridge:
             magic=self._mt5.magic,
             ticket=self._pos_ticket,
             broker=position_state.BrokerFacts(
-                dir=self._pos_dir, lots=self._pos_lots, entry=self._pos_entry, stop=self._pos_stop
+                dir=self._pos_dir,
+                lots=self._pos_lots,
+                entry=self._pos_entry,
+                stop=self._pos_stop,
+                # Carried so a restart keeps the R's denominator: `stop` moves, this does not.
+                risk_usd=self._pos_risk_usd or None,
             ),
             strategy=snap,
         )

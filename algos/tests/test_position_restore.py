@@ -124,6 +124,93 @@ def test_no_file_at_all_reads_as_None(tmp_path):
     assert position_state.read(tmp_path) is None
 
 
+# ── the entry risk (2026-09-12) ──────────────────────────────────────────────
+
+
+def _record_with_risk(tmp_path, risk_usd, *, stop=3280.0):
+    position_state.write(
+        tmp_path,
+        bot="BOT_TEST",
+        symbol="XAUUSD",
+        magic=770115,
+        ticket=901,
+        broker=position_state.BrokerFacts(
+            dir=1, lots=0.42, entry=3290.0, stop=stop, risk_usd=risk_usd
+        ),
+        strategy=_SNAP,
+    )
+
+
+def test_the_entry_risk_survives_the_round_trip(tmp_path):
+    """MUTATION: leave it out of the written record → red."""
+    _record_with_risk(tmp_path, 420.0)
+    assert position_state.read(tmp_path).broker.risk_usd == 420.0
+
+
+def test_a_record_written_before_the_entry_risk_still_reads(tmp_path):
+    """Every open trade's record on the box when this landed has no such field. Reading one as NO
+    record would HALT the bot on its next restart — the old behaviour, over a field the restore
+    does not need.
+
+    MUTATION: require the field → red.
+    """
+    _record(tmp_path)  # written without one
+    got = position_state.read(tmp_path)
+    assert got is not None and got.broker.risk_usd is None
+
+
+def test_an_unusable_entry_risk_reads_as_not_recorded_never_as_a_torn_record(tmp_path):
+    """MUTATION: parse it with a bare `float()` → red (a string or NaN goes through as a figure)."""
+    for bad in ("420", True, 0, -5.0, float("nan")):
+        _record_with_risk(tmp_path, 420.0)
+        raw = json.loads(position_state.path_for(tmp_path).read_text())
+        raw["broker"]["risk_usd"] = bad
+        position_state.path_for(tmp_path).write_text(json.dumps(raw), encoding="utf-8")
+        got = position_state.read(tmp_path)
+        assert got is not None and got.broker.risk_usd is None, bad
+
+
+def test_a_restore_takes_the_RECORDED_risk_not_one_off_the_moved_stop(tmp_path):
+    """🔴 The defect this closes. The record's stop is rewritten on every move, so recomputing the
+    risk off it after a ratchet divides every later R by the distance the stop LOCKED. A long at
+    3290 whose stop has moved up to 3295: the old code read that $5 of locked profit as the risk;
+    the trade opened risking $420.
+
+    MUTATION: recompute off the record's stop → red.
+    """
+    _record_with_risk(tmp_path, 420.0, stop=3295.0)
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3295.0)])
+    assert b.state is not live_bridge.BridgeState.HALTED
+    assert b._pos_risk_usd == 420.0
+
+
+def test_a_restore_from_an_older_record_has_no_R_rather_than_a_wrong_one(tmp_path):
+    """`0.0` is the bridge's own "unknown" for the risk: the exit message then carries no R and the
+    Command Center's tag shows none, instead of a figure off a stop that has usually moved.
+
+    MUTATION: fall back to the stop-based figure → red.
+    """
+    _record(tmp_path, stop=3295.0)
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3295.0)])
+    assert b.state is not live_bridge.BridgeState.HALTED
+    assert b._pos_risk_usd == 0.0
+
+
+def test_the_bridge_writes_the_risk_it_holds_into_the_record(tmp_path):
+    """The write half: a restart can only keep what was written down.
+
+    MUTATION: leave it out of the bridge's record → red.
+    """
+    _record_with_risk(tmp_path, 420.0, stop=3295.0)
+    ex = _FakeExecution()
+    ex.snapshot = dict(_SNAP)
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3295.0)], execution=ex)
+    position_state.clear(tmp_path)
+    b._save_position()
+    got = position_state.read(tmp_path)
+    assert got is not None and got.broker.risk_usd == 420.0
+
+
 def test_clear_removes_it_and_is_safe_to_call_twice(tmp_path):
     _record(tmp_path)
     position_state.clear(tmp_path)

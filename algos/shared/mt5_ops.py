@@ -839,6 +839,29 @@ class BotMT5:
         pos = mt5.positions_get(symbol=symbol or self.symbol)
         return [p for p in (pos or []) if p.magic == self.magic]
 
+    def open_positions_strict(self, symbol: str = None) -> Optional[list]:
+        """This bot's open positions, or **`None` when the terminal could not be asked.**
+
+        The twin of `pending_orders_strict`, for the same reason: `get_open_positions` above reads
+        MT5's `None` (an error) and its empty tuple (genuinely nothing open) as the same `[]`. Its
+        callers ask about a ticket they already hold, where that costs one wasted cycle. A reader
+        that REPORTS "flat" off the answer — the heartbeat, for the Command Center's "trade open"
+        tag — has to know which of the two it got (rule 1).
+        """
+        sym = symbol or self.symbol
+        try:
+            pos = mt5.positions_get(symbol=sym)
+        except Exception as e:
+            self.log.error(f"Could not read the open positions on {sym}: {e}")
+            return None
+        if pos is None:
+            self.log.error(
+                f"positions_get returned None for {sym}: {mt5.last_error()} — the positions "
+                "could not be READ, which is not the same as having none."
+            )
+            return None
+        return [p for p in pos if p.magic == self.magic]
+
     # ── The ONE unfiltered read, and it is the account-level allocator's whole foundation ──
     #
     # Every other read in this file is MAGIC-filtered, and that rule is right: it is what stops

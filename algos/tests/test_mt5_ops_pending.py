@@ -732,6 +732,39 @@ def test_the_strict_read_separates_empty_from_unreadable(mt5ops):
     assert bot.get_pending_orders() == []
 
 
+def test_the_strict_POSITION_read_separates_empty_from_unreadable(mt5ops):
+    """The heartbeat reports "flat" off this read, so it has to know which of the two it got
+    (rule 1): MT5 answers `None` on an error and an empty tuple when nothing is open.
+
+    MUTATION: return `[]` for `None` → red. MUTATION: let a raising read escape → red.
+    """
+    mt5_ops, fake = mt5ops
+    bot = _bot(mt5_ops)
+
+    assert bot.open_positions_strict() == []
+    fake.positions_get = lambda **kw: None
+    assert bot.open_positions_strict() is None
+    assert bot.get_open_positions() == []  # the lenient reader still flattens both
+
+    def _raises(**kw):
+        raise RuntimeError("IPC recv failed")
+
+    fake.positions_get = _raises
+    assert bot.open_positions_strict() is None
+
+
+def test_the_strict_POSITION_read_keeps_only_this_bots_positions(mt5ops):
+    """Two bots share one terminal on one account; the other bot's trade is not this bot's.
+
+    MUTATION: drop the magic filter → red.
+    """
+    mt5_ops, fake = mt5ops
+    ours = types.SimpleNamespace(ticket=1, magic=770115)
+    theirs = types.SimpleNamespace(ticket=2, magic=770117)
+    fake._positions = [ours, theirs]
+    assert _bot(mt5_ops).open_positions_strict() == [ours]
+
+
 # ── the MARKET order's volume guard (added 2026-09-03) ────────────────────────
 #
 # 🔴 `place_pending_limit` normalised its volume and `place_order` did not — an ASYMMETRY rather

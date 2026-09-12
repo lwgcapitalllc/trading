@@ -42,7 +42,7 @@ moment the bot goes flat. Two blocks, and the split is deliberate:
       "bot": "...", "symbol": "...", "magic": 123456,
       "ticket": 320620565,
       "written": "2026-08-09T21:14:03Z",
-      "broker":   { "dir": 1, "lots": 0.25, "entry": 3290.00, "stop": 3280.00 },
+      "broker":   { "dir": 1, "lots": 0.25, "entry": 3290.00, "stop": 3280.00, "risk_usd": 250.0 },
       "strategy": { ... whatever the emulator needs to carry on ... }
     }
 
@@ -50,6 +50,14 @@ moment the bot goes flat. Two blocks, and the split is deliberate:
 `strategy` is opaque here: it comes from `Execution.snapshot_position()` and goes straight back
 to `Execution.restore_position()`. That keeps the emulator free to add state without a change in
 this file, and stops this module from growing opinions about what a stage is.
+
+⚠ **`risk_usd` is the dollars at risk when the trade OPENED, and it is OPTIONAL.** `stop` is
+rewritten on every move, so once the stop has ratcheted the entry risk cannot be worked back out
+of this record — and the restore used to try, so every R after a mid-trade restart was divided by
+the distance the stop had LOCKED (or dropped, at breakeven). MT5 does not know it, so
+`disagreements` does not check it. A record without it (anything written before 2026-09-12) still
+restores; its R is unknown. `VERSION` was NOT bumped for it — a bump reads every open trade's
+record as NO record, and that halts the bot.
 
 ⚠ **`lots` is BROKER lots and the emulator sizes in INSTRUMENT UNITS.** They are not the same
 number — gold's contract is 100 oz — and conflating them is exactly the fault that rested a
@@ -84,12 +92,16 @@ VERSION = 1
 
 @dataclass(frozen=True)
 class BrokerFacts:
-    """The four things the bridge and MT5 both know about one position, independently."""
+    """The four things the bridge and MT5 both know about one position, independently — and the
+    risk it opened with, which only the bridge knows (see the module docstring)."""
 
     dir: int  # +1 long, -1 short
     lots: float  # BROKER lots — never instrument units. See the module docstring.
     entry: float
     stop: float
+    # Dollars at risk when the position OPENED (fill to the stop attached with it). `None` = not
+    # recorded — never recomputed from `stop`, which is rewritten on every move.
+    risk_usd: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +151,10 @@ def write(
         },
         "strategy": strategy,
     }
+    # Written only when it is a real figure, so an unknown reads back as absent — one "not
+    # recorded", never a stored zero that looks like a measurement.
+    if _entry_risk(broker.risk_usd) is not None:
+        record["broker"]["risk_usd"] = float(broker.risk_usd)
     target = path_for(instance_dir)
     tmp = target.with_suffix(".json.tmp")
     try:
@@ -157,13 +173,25 @@ def write(
         return False
 
 
+def _entry_risk(value) -> Optional[float]:
+    """The recorded entry risk, or `None` for NOT RECORDED — absent, a boolean, not a number, zero,
+    negative, NaN or infinite. Optional by design: a record that cannot state its entry risk is
+    still a position the bot can prove is its own, and failing the whole read over a field the
+    restore does not need would halt the bot for nothing."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    v = float(value)
+    return v if 0 < v < float("inf") else None
+
+
 def read(instance_dir) -> Optional[PositionRecord]:
     """The recorded position, or None if there is not one we can fully trust.
 
     None covers every distinguishable failure on purpose — absent, unreadable, torn, wrong
     version, missing field, wrong type. The caller's response to all of them is identical (halt
     and tell a human), and giving them separate return values would invite a caller to treat one
-    of them as recoverable.
+    of them as recoverable. ⚠ `broker.risk_usd` is the one exception: optional, and read as `None`
+    when it cannot be used (`_entry_risk`), never as a failed read.
     """
     target = path_for(instance_dir)
     try:
@@ -179,6 +207,7 @@ def read(instance_dir) -> Optional[PositionRecord]:
             lots=float(b["lots"]),
             entry=float(b["entry"]),
             stop=float(b["stop"]),
+            risk_usd=_entry_risk(b.get("risk_usd")),
         )
         strategy = raw["strategy"]
         if not isinstance(strategy, dict):

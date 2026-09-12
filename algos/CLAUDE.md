@@ -3580,6 +3580,36 @@ symbol's `trade_mode` (disabled / long only / short only / close only).
 Tests: `test_trading_allowed.py` (22) + one loop test in `test_mt5_link.py`. **26 mutations RUN, 26
 killed** — the loop's own call first SURVIVED, because every other test drove the check directly.
 
+## The heartbeat says what the bot holds at the broker, and why it halted (2026-09-12)
+
+For the Command Center's two row tags — **trade open** ("LONG 0.40 lots · +1.2R") and **halted**.
+Until this date the row read RUNNING through every halt (the hourly review chip was the only sign,
+up to an hour late), and nothing said a bot held a trade at all.
+
+- 🔴 **The trade is read off the BROKER every poll** (`runner._position_reading` →
+  `BotMT5.open_positions_strict`), never off the bridge's record, which learns of a stop-out on its
+  next bar. `runner.position_summary` sums every ticket (added lots included), averages the entry,
+  and takes the stop off the bridge's own ticket. Both sides at once reads `mixed`, with no R.
+- ⚠ **Three answers** (rule 1): `in_trade` True / False (flat) / None (could not ask; a dead link is
+  not even asked). `open_positions_strict` is `pending_orders_strict`'s twin: `None`, never `[]`.
+- 🔴 **R = open profit after swap over the risk the trade OPENED with, for the bridge's own ticket
+  only.** That risk is now SAVED in `position.json` (`BrokerFacts.risk_usd`): the restore used to
+  recompute it off the record's stop, which is rewritten on every move — so every R after a
+  mid-trade restart, the exit message's included, was divided by the distance the stop had LOCKED
+  (and dropped at breakeven). ⚠ **Optional, and `VERSION` NOT bumped** — a bump reads every open
+  trade's record as NO record, which halts. A record from before this date restores with the R
+  unknown (`0.0`), never one off the moved stop.
+- ⚠ **`bridge_state` has its own key.** The heartbeat has always written the bridge's state into
+  `status`, but the watchdog and the launcher write running / stalled / stopped / offline into that
+  same key (`bot_state.set_status`). `halt_reason` rides only while halted.
+- ⚠ **The exit message's R counts the trade's own ticket; the tag counts every lot.** With scale-in
+  lots open the two differ, by design — the tag describes the money at the broker.
+- ⚠ **Never raises** — it runs ahead of the heartbeat write, whose failure mode is no stamp.
+- ⚠ **Reaches a bot by `git pull` plus a restart** (`algos/`, no promote).
+
+Tests: `test_heartbeat_position.py` (15), 2 in `test_mt5_ops_pending.py`, 6 in
+`test_position_restore.py`. **19 mutations RUN, 19 killed.**
+
 ## 🔴 A RENAME orphans the account anchor, and the symptom is a confident 0.0% (2026-09-05)
 
 `ensure_starting_balance` re-anchors on the ACCOUNT changing and never on the balance moving —

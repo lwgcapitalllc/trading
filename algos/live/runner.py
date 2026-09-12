@@ -160,6 +160,57 @@ def trading_block(account, terminal, symbol, symbol_name: str) -> tuple[bool | N
     return (None, None) if unknown else (True, None)
 
 
+def position_summary(positions, *, risk_ticket=None, risk_usd=None) -> dict | None:
+    """What this bot holds at the BROKER, in one row's worth of facts, for the Command Center.
+
+    `positions` is the broker's own answer for this bot (one magic): the trade and, on a hedging
+    account, one more position per scale-in lot. An empty list is `None` — flat.
+
+    ⚠ **`r` is the whole position's open profit over the risk the trade OPENED with**, and only
+    when the bridge's own ticket is in the list: that risk belongs to one trade, and dividing any
+    other position's profit by it is a number about neither. `None` when the entry risk was not
+    recorded (a trade picked back up from a record older than 2026-09-12) — never a figure off a
+    stop that has since moved.
+
+    ⚠ **Positions on BOTH sides read as `mixed`, with no R.** The bridge halts on that state, and
+    netting the two would describe a hedge as a smaller trade.
+
+    ⚠ **A missing profit is `None`, never 0** — 0 is the claim "no money made or lost", and a
+    position that does not carry the field has made no such claim.
+    """
+    if not positions:
+        return None
+    sides = {1 if int(p.type) == 0 else -1 for p in positions}  # POSITION_TYPE_BUY is 0
+    mixed = len(sides) > 1
+    lots = sum(float(p.volume) for p in positions)
+    entry = sum(float(p.price_open) * float(p.volume) for p in positions) / lots if lots else None
+    # The bridge's own ticket IS the trade; anything else here is a lot added to it. With no such
+    # ticket the oldest (lowest — MT5 numbers them in order) stands in for the stop.
+    own = [p for p in positions if risk_ticket is not None and int(p.ticket) == int(risk_ticket)]
+    base = own[0] if own else min(positions, key=lambda p: int(p.ticket))
+    # MT5 reports 0.0 for a position with no stop, which is not a price.
+    stop = float(getattr(base, "sl", 0.0) or 0.0) or None
+    profits = [getattr(p, "profit", None) for p in positions]
+    profit = (
+        None
+        if any(v is None for v in profits)
+        else sum(
+            float(v) + float(getattr(p, "swap", 0.0) or 0.0) for v, p in zip(profits, positions)
+        )
+    )
+    risk = float(risk_usd) if own and not mixed and risk_usd and float(risk_usd) > 0 else None
+    return {
+        "side": "mixed" if mixed else ("long" if 1 in sides else "short"),
+        "lots": round(lots, 8),
+        "entry": round(entry, 5) if entry is not None else None,
+        "stop": stop,
+        "profit_usd": round(profit, 2) if profit is not None else None,
+        "risk_usd": round(risk, 2) if risk is not None else None,
+        "r": round(profit / risk, 2) if risk is not None and profit is not None else None,
+        "tickets": len(positions),
+    }
+
+
 def _handle_signal(signum, frame):
     global _stop_requested
     _stop_requested = True
@@ -2697,6 +2748,46 @@ class LiveRunner:
             self.log.warning(f"Account return could not be worked out: {e}")
             return None
 
+    def _position_reading(self, link_up) -> tuple[bool | None, dict | None]:
+        """Whether this bot holds a position AT THE BROKER, and what — for the "trade open" tag.
+
+        Read off the broker every poll rather than off the bridge's record, because the claim on
+        the page is about money at the broker: the bridge learns of a stop-out on its next bar, up
+        to a whole bar later, and a tag saying "in a trade" through that window is wrong.
+
+        ⚠ **Three answers (rule 1):** `(True, summary)`; `(False, None)` flat; `(None, None)` could
+        not ask — a dead link, a failed read, or an MT5 handle without the strict read. A blind bot
+        is not asked at all: the answer would describe a terminal nobody can reach. Positions that
+        were read but cannot be summarised are `(True, None)` — held, detail unknown.
+
+        ⚠ **NEVER RAISES.** It runs ahead of the heartbeat write, and a field that only DISPLAYS
+        something must never cost the stamp the watchdog runs on.
+        """
+        if not link_up:
+            return None, None
+        read = getattr(getattr(self, "mt5", None), "open_positions_strict", None)
+        if read is None:
+            return None, None
+        try:
+            positions = read()
+        except Exception as e:
+            self.log.warning(f"Could not read the open positions for the heartbeat: {e}")
+            return None, None
+        if positions is None:
+            return None, None
+        if not positions:
+            return False, None
+        bridge = getattr(self, "bridge", None)
+        try:
+            return True, position_summary(
+                positions,
+                risk_ticket=getattr(bridge, "_pos_ticket", None),
+                risk_usd=getattr(bridge, "_pos_risk_usd", None),
+            )
+        except Exception as e:
+            self.log.warning(f"Could not summarise the open position for the heartbeat: {e}")
+            return True, None
+
     def _heartbeat(
         self, bot_state, *, link_up: bool | None = None, balance: float | None = None
     ) -> None:
@@ -2756,11 +2847,29 @@ class LiveRunner:
             if flows is not None:
                 total_pct, capital_in, pnl_usd = flows.return_pct, flows.capital_in, flows.pnl_usd
 
+        # Read BEFORE the write and outside its try, like the balance: none of it raises, and the
+        # write's failure mode is NO HEARTBEAT, which is what the watchdog runs on.
+        in_trade, position = self._position_reading(link_up)
+        bridge = getattr(self, "bridge", None)
+        bridge_state = getattr(bridge, "state", None)
         try:
             bot_state.write_bot(
                 self.cfg.bot_key,
                 {
                     "status": self.bridge.state.value,
+                    # The bridge's state again, under a key nothing else writes — for the Command
+                    # Center's "halted" tag. ⚠ `status` above cannot serve: the watchdog and the
+                    # launcher write running / stalled / stopped / offline into that same key
+                    # (`bot_state.set_status`). The reason rides only while halted — beside a live
+                    # bot it would read as a current fault.
+                    "bridge_state": getattr(bridge_state, "value", None),
+                    "halt_reason": (getattr(bridge, "halt_reason", "") or None)
+                    if bridge_state is BridgeState.HALTED
+                    else None,
+                    # What this bot holds AT THE BROKER, for the "trade open" tag. Three states:
+                    # True, False, None = could not ask (`_position_reading`).
+                    "in_trade": in_trade,
+                    "position": position,
                     "heartbeat": time.time(),
                     "balance": balance,
                     # TIME-WEIGHTED: each stretch between one deposit or withdrawal and the next is
