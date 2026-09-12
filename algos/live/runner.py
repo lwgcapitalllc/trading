@@ -73,6 +73,7 @@ for _p in (
         sys.path.insert(0, _p)
 
 import live_config  # noqa: E402  (algos/live/live_config.py)
+from account_flows import account_return  # noqa: E402  (algos/shared/account_flows.py)
 from alert_format import alert, joined, money  # noqa: E402
 from bridge import (  # noqa: E402
     BridgeState,
@@ -102,6 +103,14 @@ _LINK_RETRY_SECONDS = 30
 # session still leaves a regular mark and a stall is visible as a gap of known size rather than
 # as an absence somebody has to interpret.
 _PULSE_SECONDS = 15 * 60
+
+
+# How often the account's deal history is re-read at an UNCHANGED balance. Every deposit,
+# withdrawal and closed trade moves the balance, and that re-reads it at once; this only catches
+# what leaves the balance where it was — a deposit and a loss of the same size between two polls.
+# The history is the whole account, so re-reading it every poll would buy nothing. See
+# `_account_return`.
+_FLOWS_REFRESH_SECONDS = 15 * 60
 
 
 def _handle_signal(signum, frame):
@@ -239,6 +248,11 @@ class LiveRunner:
         # stream silent for the first quarter hour of a run, which is exactly the window a
         # start-up problem shows up in.
         self._last_pulse_at = 0.0
+        # The account's return net of deposits, and the balance it was worked out at — see
+        # `_account_return`. `_flows_reason` is the last refusal LOGGED, so a history that cannot
+        # be read is said once per cause rather than on every re-read.
+        self._flows_cache = None
+        self._flows_reason = None
         # Link-outage bookkeeping. `_link_lost_at` is None whenever the link is believed good,
         # so it doubles as the "have I already alerted" flag — an outage must be announced once,
         # not every ten seconds for an hour.
@@ -2135,9 +2149,25 @@ class LiveRunner:
         if now - self._last_pulse_at < _PULSE_SECONDS:
             return
         self._last_pulse_at = now
+        # The account's figures net of money in and out, as the heartbeat just worked them out at
+        # this same balance (`_account_return`) — so a reader of an account a bot has since LEFT,
+        # whose `bot_state.json` has moved on, can still tell deposits from what trading made.
+        # `None` when they were not worked out at THIS balance on THIS bot's account.
+        cached = getattr(self, "_flows_cache", None)
+        seen = self._observed_account
+        flows = (
+            cached[2]
+            if cached is not None
+            and cached[0] == balance
+            and seen is not None
+            and seen == self.cfg.account
+            else None
+        )
         self.ledger.pulse(
             link=bool(link_up),
             balance=balance,
+            capital_in=flows.capital_in if flows is not None else None,
+            return_pct=flows.return_pct if flows is not None else None,
             account=self._observed_account,
             bridge_state=self.bridge.state.value if self.bridge else None,
             position=bool(getattr(self.bridge, "_pos_ticket", 0)) if self.bridge else None,
@@ -2459,6 +2489,54 @@ class LiveRunner:
                 blocked.append((f.name, old, new))
         return allowed, blocked
 
+    def _account_return(self, balance: float):
+        """What the account made net of deposits and withdrawals — `None` when this bot cannot
+        speak for the account.
+
+        🔴 **The return was `(balance - anchor) / anchor` until 2026-09-12**, and a $9,860.51
+        transfer into live account 34957946 read as +2,181.67%. The broker books a deposit or a
+        withdrawal as a deal of its own, so the arithmetic is `account_flows.account_return` over
+        the account's whole history (`BotMT5.account_deals`); this decides WHOSE history, and how
+        often it is read.
+
+        ⚠ **Only when the terminal reported THIS bot's account**, off the same `account_info()`
+        call as `balance` (`probe_link`). The deals come from whatever the terminal is logged into,
+        and on another account that is `_check_account_identity`'s halt — until it fires, a
+        stranger's return must not be written under this bot's name (rule 16). `None` is no better:
+        the account was not established.
+
+        ⚠ **Re-read when the balance moves, or every `_FLOWS_REFRESH_SECONDS`.** The balance
+        moving is also what heals a race: a trade closing between the balance read and the history
+        read fails the rebuild once, and the next poll reads a new balance and re-reads.
+
+        ⚠ **NEVER RAISES.** It runs ahead of the heartbeat write, and the stamp is what SYS_MONITOR
+        runs on; a figure that only displays something must never be able to suppress it.
+        """
+        try:
+            seen = getattr(self, "_observed_account", None)
+            if seen is None or seen != self.cfg.account:
+                return None
+            now = time.time()
+            cached = getattr(self, "_flows_cache", None)
+            if (
+                cached is not None
+                and cached[0] == balance
+                and now - cached[1] < _FLOWS_REFRESH_SECONDS
+            ):
+                return cached[2]
+            terminal = getattr(self, "mt5", None)
+            deals = terminal.account_deals() if terminal is not None else None
+            result = account_return(deals, balance)
+            self._flows_cache = (balance, now, result)
+            if result.reason != getattr(self, "_flows_reason", None):
+                if result.reason:
+                    self.log.warning(f"Account return not stated: {result.reason}.")
+                self._flows_reason = result.reason
+            return result
+        except Exception as e:
+            self.log.warning(f"Account return could not be worked out: {e}")
+            return None
+
     def _heartbeat(
         self, bot_state, *, link_up: bool | None = None, balance: float | None = None
     ) -> None:
@@ -2498,14 +2576,25 @@ class LiveRunner:
         # ⚠ `None` when the balance is unknown, NEVER 0.0. A blind terminal returns no
         # balance (see `probe_link`), and 0.0 there is the claim "flat" — the same
         # fabricated-vs-measured collapse `mt5_link` exists to prevent, one field over.
-        total_pct = None
+        #
+        # 🔴 **NET OF DEPOSITS AND WITHDRAWALS since 2026-09-12, and it was not before.** This was
+        # `(balance - anchor) / anchor`, the anchor being the balance the bot first saw — so every
+        # dollar arriving afterwards read as profit, and a $9,860.51 transfer into live account
+        # 34957946 showed +2,181.67% on every screen over two bots that had not traded. It comes
+        # off the broker's own deal history now (`_account_return`), where a deposit is a deal of
+        # its own. ⚠ **When the history cannot be read or does not add up it is `None` — never
+        # the anchor formula**, which is the number known to be wrong the day anyone deposits.
+        total_pct = capital_in = pnl_usd = None
         if balance is not None:
-            # The account is passed so the anchor can tell "this bot grew this balance" from
-            # "this bot was moved onto a different account". See `ensure_starting_balance`.
+            # The anchor is still kept, and nothing on this box reads it as a return any more: the
+            # rename guard (`bot_state.suspect_anchors`) compares it across entries, and the Command
+            # Center falls back to it for a bot still on an older runner. The account is passed so
+            # it can tell "this bot grew this balance" from "this bot was moved onto a different
+            # account". See `ensure_starting_balance`.
             bot_state.ensure_starting_balance(self.cfg.bot_key, balance, self.cfg.account)
-            start = bot_state.read_bot(self.cfg.bot_key).get("starting_balance")
-            if start:
-                total_pct = round((balance - float(start)) / float(start) * 100, 2)
+            flows = self._account_return(balance)
+            if flows is not None:
+                total_pct, capital_in, pnl_usd = flows.return_pct, flows.capital_in, flows.pnl_usd
 
         try:
             bot_state.write_bot(
@@ -2514,7 +2603,14 @@ class LiveRunner:
                     "status": self.bridge.state.value,
                     "heartbeat": time.time(),
                     "balance": balance,
+                    # TIME-WEIGHTED: each stretch between one deposit or withdrawal and the next is
+                    # measured on its own and the stretches are chained, so money moving in or out
+                    # neither counts as a return nor dilutes one. See `account_flows`.
                     "total_pnl_pct": total_pct,
+                    # What went in (deposits less withdrawals) and what trading made on it, in
+                    # dollars, for the Command Center's account net. `None` = cannot say.
+                    "capital_in": capital_in,
+                    "pnl_usd": pnl_usd,
                     "mt5_link": bool(link_up),
                     "account": self.cfg.account,
                     # 🔴 **What the bot was TOLD to trade, and what it is ACTUALLY on.** The line

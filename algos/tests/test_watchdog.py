@@ -53,9 +53,10 @@ class _StateModule:
     def write_bot(self, bot_key, updates):
         self.written.setdefault(bot_key, {}).update(updates)
 
-    # The two the heartbeat needs to derive total_pnl_pct. `_heartbeat` deliberately does
-    # NOT hasattr-guard them: a renamed bot_state function must fail here rather than
-    # silently stop reporting P&L on the live box.
+    # The anchor the heartbeat still writes — though since 2026-09-12 the return comes off the
+    # deal history, not off it (see *Overall P&L* below). `_heartbeat` deliberately does NOT
+    # hasattr-guard it: a renamed bot_state function must fail here rather than silently stop
+    # the rename guard on the live box.
     def ensure_starting_balance(self, bot_key, balance, account=None):
         # `account` mirrors production — see the same fake in test_mt5_link.py.
         self.written.setdefault(bot_key, {}).setdefault("starting_balance", balance)
@@ -883,26 +884,223 @@ def test_the_stall_threshold_is_well_clear_of_the_poll_interval():
 # Bots page's "Overall P&L" column and Telegram's /balance BOTH defaulted it to 0.0 — so a
 # live account up 5% reported dead flat in two places, and neither could say the number was
 # never measured. The runner writes it now, because it is the only process that can.
+#
+# 🔴 And since 2026-09-12 it is NET OF DEPOSITS. It was `(balance - anchor) / anchor`, which read a
+# $9,860.51 transfer into the live account as +2,181.67%. The runner reads the account's deal
+# history (`BotMT5.account_deals`) and hands it to `account_flows.account_return`; these pin the
+# runner's half — whose history, how often, and what it writes when it cannot say. The arithmetic
+# itself is `test_account_flows.py`.
+
+
+def _deposit(amount, t):
+    return SimpleNamespace(
+        time_msc=t, ticket=t, type=2, profit=amount, commission=0.0, swap=0.0, fee=0.0
+    )
+
+
+def _trade(pnl, t):
+    return SimpleNamespace(
+        time_msc=t, ticket=t, type=1, profit=pnl, commission=0.0, swap=0.0, fee=0.0
+    )
+
+
+class _Terminal:
+    """`BotMT5.account_deals` and nothing else. It COUNTS reads, because the history is the whole
+    account and must not be re-read on every ten-second poll."""
+
+    def __init__(self, deals):
+        self.deals = deals
+        self.reads = 0
+
+    def account_deals(self):
+        self.reads += 1
+        return self.deals
+
+
+def _on_account(r, deals, *, observed=1):
+    """`observed` is the account the terminal reported off the same call as the balance —
+    `cfg.account` is 1 in `_runner`."""
+    r.mt5 = _Terminal(deals)
+    r._observed_account = observed
+    return r.mt5
 
 
 def test_the_runner_reports_overall_pnl_because_nothing_else_can(monkeypatch):
     r = _runner(monkeypatch)
     st = _StateModule()
+    term = _on_account(r, [_deposit(2000.0, 1)])
 
-    r._heartbeat(st)  # first poll anchors the start
-    assert st.written["bot"]["starting_balance"] == 2000.0
+    r._heartbeat(st, link_up=True, balance=2000.0)
     assert st.written["bot"]["total_pnl_pct"] == 0.0
+    assert st.written["bot"]["capital_in"] == 2000.0
 
-    monkeypatch.setitem(
-        sys.modules,
-        "MetaTrader5",
-        SimpleNamespace(account_info=lambda: SimpleNamespace(balance=2100.0)),
-    )
-    r._heartbeat(st)
+    term.deals = [_deposit(2000.0, 1), _trade(100.0, 2)]
+    r._heartbeat(st, link_up=True, balance=2100.0)
     assert st.written["bot"]["total_pnl_pct"] == 5.0
-    assert st.written["bot"]["starting_balance"] == 2000.0, (
-        "the anchor must be written ONCE — re-anchoring makes every account read flat forever"
-    )
+    assert st.written["bot"]["pnl_usd"] == 100.0
+
+
+def test_a_DEPOSIT_does_not_read_as_a_return(monkeypatch):
+    """🔴 The incident, on its own numbers: anchored at 451.97, then 9,860.51 arrived. The old
+    formula wrote +2,181.67% on exactly this state.
+
+    Red under: the anchor formula restored.
+    """
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    st.written["bot"] = {"starting_balance": 451.97}
+    _on_account(r, [_deposit(451.97, 1), _deposit(9860.51, 2)])
+
+    r._heartbeat(st, link_up=True, balance=10312.48)
+
+    assert st.written["bot"]["total_pnl_pct"] == 0.0
+    assert st.written["bot"]["capital_in"] == 10312.48
+    assert st.written["bot"]["pnl_usd"] == 0.0
+    assert st.written["bot"]["starting_balance"] == 451.97, "the anchor is still kept, and unread"
+
+
+def test_a_history_that_cannot_be_read_reports_NO_return_never_the_anchor(monkeypatch):
+    """Rule 1. The anchor formula is the number known to be wrong the day anyone deposits, so it
+    may not come back as the fallback when the history is unreadable.
+
+    Red under: falling back to the anchor when the history refuses.
+    """
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    st.written["bot"] = {"starting_balance": 451.97}
+    _on_account(r, None)
+
+    r._heartbeat(st, link_up=True, balance=10312.48)
+
+    assert st.written["bot"]["total_pnl_pct"] is None
+    assert st.written["bot"]["capital_in"] is None
+    assert st.written["bot"]["pnl_usd"] is None
+    assert any("could not be read" in w for w in r.warnings)
+
+
+@pytest.mark.parametrize("observed", [999, None])
+def test_another_accounts_history_is_never_reported_as_this_bots(monkeypatch, observed):
+    """The deals come from whatever the terminal is logged into. On another account that is the
+    identity check's halt, and until it fires this must say nothing rather than write a stranger's
+    return under this bot's name (rule 16). `None` — the terminal could not say — is no better.
+
+    Red under: dropping the account check.
+    """
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    term = _on_account(r, [_deposit(2000.0, 1)], observed=observed)
+
+    r._heartbeat(st, link_up=True, balance=2000.0)
+
+    assert st.written["bot"]["total_pnl_pct"] is None
+    assert term.reads == 0
+
+
+def test_the_history_is_read_again_when_the_balance_moves_and_not_before(monkeypatch):
+    """Every deposit, withdrawal and closed trade moves the balance, so an unchanged balance is an
+    unchanged answer.
+
+    Red under: re-reading on every heartbeat; and under never re-reading (the 5% is then missed).
+    """
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    term = _on_account(r, [_deposit(2000.0, 1)])
+
+    r._heartbeat(st, link_up=True, balance=2000.0)
+    r._heartbeat(st, link_up=True, balance=2000.0)
+    assert term.reads == 1
+
+    term.deals = [_deposit(2000.0, 1), _trade(100.0, 2)]
+    r._heartbeat(st, link_up=True, balance=2100.0)
+    assert term.reads == 2
+    assert st.written["bot"]["total_pnl_pct"] == 5.0
+
+
+def test_the_history_is_re_read_on_the_refresh_even_at_an_unchanged_balance(monkeypatch):
+    """A deposit and a loss of the same size between two polls leave the balance where it was.
+
+    Red under: caching for ever at one balance.
+    """
+    import runner
+
+    monkeypatch.setattr(runner, "_FLOWS_REFRESH_SECONDS", 0)
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    term = _on_account(r, [_deposit(2000.0, 1)])
+
+    r._heartbeat(st, link_up=True, balance=2000.0)
+    r._heartbeat(st, link_up=True, balance=2000.0)
+
+    assert term.reads == 2
+
+
+def test_a_refusal_is_logged_once_per_cause_not_every_poll(monkeypatch):
+    """Red under: warning on every read."""
+    import runner
+
+    monkeypatch.setattr(runner, "_FLOWS_REFRESH_SECONDS", 0)
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    _on_account(r, None)
+
+    for _ in range(3):
+        r._heartbeat(st, link_up=True, balance=2000.0)
+
+    assert sum("could not be read" in w for w in r.warnings) == 1
+
+
+def test_a_history_read_that_raises_never_costs_the_heartbeat(monkeypatch):
+    """The stamp is what SYS_MONITOR runs on, and a figure that only DISPLAYS something must never
+    be able to suppress it.
+
+    Red under: letting the return's own failure raise out of the heartbeat.
+    """
+    r = _runner(monkeypatch)
+    st = _StateModule()
+
+    class _Broken:
+        def account_deals(self):
+            raise RuntimeError("IPC recv failed")
+
+    r.mt5 = _Broken()
+    r._observed_account = 1
+    r._heartbeat(st, link_up=True, balance=2000.0)
+
+    assert "heartbeat" in st.written["bot"]
+    assert st.written["bot"]["total_pnl_pct"] is None
+
+
+class _PulseLedger:
+    def __init__(self):
+        self.pulses = []
+
+    def pulse(self, **fields):
+        self.pulses.append(fields)
+
+
+def test_the_pulse_carries_the_return_worked_out_at_ITS_OWN_balance(monkeypatch):
+    """The health stream is what an account a bot has LEFT is read from — its `bot_state.json` has
+    moved on — so it has to be able to tell a deposit from a trade too.
+
+    Red under: the pulse dropping the figures; and under it taking them from a reading made at a
+    DIFFERENT balance, which would pair this balance with another moment's deposits.
+    """
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    _on_account(r, [_deposit(451.97, 1), _deposit(9860.51, 2)])
+    r.ledger = _PulseLedger()
+    r.feed = SimpleNamespace(last_bar_time=None, gap_bars=lambda: 0)
+    r._bar_index, r._started_at, r._last_pulse_at = 0, time.time(), 0.0
+
+    r._heartbeat(st, link_up=True, balance=10312.48)
+    r._maybe_pulse(link_up=True, balance=10312.48)
+    assert r.ledger.pulses[-1]["capital_in"] == 10312.48
+    assert r.ledger.pulses[-1]["return_pct"] == 0.0
+
+    r._last_pulse_at = 0.0
+    r._maybe_pulse(link_up=True, balance=10400.00)  # nothing has worked THIS balance out yet
+    assert r.ledger.pulses[-1]["capital_in"] is None
+    assert r.ledger.pulses[-1]["return_pct"] is None
 
 
 def test_an_unreadable_balance_reports_no_pnl_rather_than_flat(monkeypatch):

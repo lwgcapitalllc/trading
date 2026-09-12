@@ -821,6 +821,7 @@ all live. `test_bt_switch.py` stays too — it is the VPS debug script `conftest
 | `shared_regime.py` | `shared/` | Market regime classifier shim: 5 labels (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY). Each bot owns its own REGIME_RISK_TABLE. |
 | `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot. `symbol_spec()` / `margin_for()` / `free_margin()` are what `order_sizing` reads; each returns `None` rather than a guess, and a `None` is a REFUSAL at the caller |
 | `account_risk.py` | `shared/` | **The one place the WHOLE ACCOUNT's open risk is totalled.** `order_sizing` answers *how big is this order*; this answers *how much is already on*, across every bot and every hand trade. Pure — no MT5, no I/O. Reads the BROKER as truth (via `mt5_ops.account_exposure()`), because every alternative needs the bots to trust each other and a crashed bot leaves a stale reservation. Risk is measured to each position's **CURRENT** stop, so a stop at breakeven frees its room. **A position with no stop REFUSES rather than scoring zero** — its risk is unbounded, not absent. **It refuses; it never shrinks**, and the docstring records why that differs from `backtest/portfolio/`, which does |
+| `account_flows.py` | `shared/` | **What the account made NET OF DEPOSITS AND WITHDRAWALS**, off its whole deal history: money put in, what trading made, and the time-weighted return. Pure — no MT5, no I/O. **Refuses unless the deals rebuild the broker's balance to the cent.** See *A deposit is not a return* |
 | `order_sizing.py` | `shared/` | **The one place a broker lot count is produced.** Pure, no MT5, no I/O: takes the strategy's intent + a `SymbolSpec` and returns a `SizedOrder` or a `SizingRefusal`. Instrument-agnostic — lots come from `(stop_distance / tick_size) x tick_value`, so gold, a JPY pair and an index are one arithmetic. **It refuses rather than rounding up, clamping down, or shrinking to fit.** Built after the 2026-08-07 oversizing incident; read its module docstring before touching sizing anywhere |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
 | `credentials.py` | `shared/` | **The one place secrets are resolved.** Env var → git-ignored `algos/credentials.json` → empty. Never holds a literal. Copy `algos/credentials.template.json` to set a machine up. **Any key resolves, not just the canonical three** — a per-bot secret needs a new entry in that file and nothing else; the env name is always `LWG_<KEY IN CAPS>` (`env_name()`). |
@@ -1485,7 +1486,7 @@ through it. A real cap belongs in `algos/live/runner.py` where it can stop the l
 went out of `bot_state.py`'s defaults — `daily_pnl`, `weekly_pnl`, `total_pnl_pct`, `peak_balance`,
 `trades_today` — rather than being left at `0.0`, because with no writer they would have rendered
 "+0.00% today" under a field nothing measures: **this repo's own rule, that a fabricated zero and a
-measured zero must never be the same value.** `balance` stays, written by `live/runner.py`. 🔴 **And auditing that claim found the defect this pass nearly shipped: `total_pnl_pct` had no writer either.** It was `set_pnl`'s too, and the Bots page's *Overall P&L* column and Telegram's `/balance` BOTH defaulted it to `0.0` — so a live account up 5% reported dead flat, in two places, with nothing on either screen able to say the number was never measured. **`live/runner.py` writes it now, because it is the only process that can**: it already reads the balance every poll, anchors `starting_balance` ONCE, and derives the percentage — `None` when the terminal is blind, never `0.0`. `/balance` reads both without a numeric default and prints `no MT5 link` or the bare balance instead of inventing a flat account. ⚠ **The lesson is about the DELETION, not the field: removing a writer leaves its readers behind, and a reader with a numeric default goes on answering confidently.** Grep for readers of anything a deleted job wrote — the seven fields that had no reader were the easy half. And
+measured zero must never be the same value.** `balance` stays, written by `live/runner.py`. 🔴 **And auditing that claim found the defect this pass nearly shipped: `total_pnl_pct` had no writer either.** It was `set_pnl`'s too, and the Bots page's *Overall P&L* column and Telegram's `/balance` BOTH defaulted it to `0.0` — so a live account up 5% reported dead flat, in two places, with nothing on either screen able to say the number was never measured. **`live/runner.py` writes it now, because it is the only process that can**: it already reads the balance every poll and derives the percentage — off the broker's own deal history, net of deposits, since 2026-09-12 (see *A deposit is not a return*) — `None` when the terminal is blind, never `0.0`. `/balance` reads both without a numeric default and prints `no MT5 link` or the bare balance instead of inventing a flat account. ⚠ **The lesson is about the DELETION, not the field: removing a writer leaves its readers behind, and a reader with a numeric default goes on answering confidently.** Grep for readers of anything a deleted job wrote — the seven fields that had no reader were the easy half. And
 Telegram lost `/report`, `/demo`, `/live`, `/all` and **`/force`** — the last one mattering most,
 because it fired *whatever* action was pending, so with reports gone it was an undocumented second
 route to `/restart`, `/stop` and `/emergency`, and the `readonly` role held it.
@@ -3508,6 +3509,43 @@ no error anywhere. Verify a new broker with `compare_feeds.py`; do not assume th
 - Docs update in the same commit as the code change that required them.
 - Commit message: describe the *why*, not just the what.
 - Never commit credentials, `.env` files, or `users.json`.
+
+## 🔴 A deposit is not a return — the return comes off the broker's deal history (2026-09-12)
+
+**`total_pnl_pct` was `(balance - starting_balance) / starting_balance`, so every dollar arriving
+after the anchor read as profit** — a $9,860.51 transfer into live account 34957946 showed
+**+2,181.67%** on the Bots page, the Overview and `/balance`, over two bots that had not traded. A
+withdrawal read as a loss the same way. Aaron: *"if I deposit money that should not show as the
+account return, same thing if I withdraw."*
+
+✅ **The runner reads the account's whole deal history (`BotMT5.account_deals`) and
+`shared/account_flows.py` splits it.** MT5 books a deposit or a withdrawal as a deal of its own
+(BALANCE), so nothing is inferred. The heartbeat writes `capital_in` (deposits less withdrawals),
+`pnl_usd` (balance less that) and `total_pnl_pct`, now **time-weighted** — each stretch between money
+moving is measured on its own and the stretches chained, so a deposit neither counts as a return nor
+dilutes one. The pulse carries `capital_in` and `return_pct` too, so an account a bot LEFT is still
+read net of deposits.
+
+- ⚠ **Not "return on the balance before any trades"**: that keeps a deposit out of the bottom as
+  well as the top — after this deposit one 5% trade would read +114% of the $451.97 it opened at.
+- 🔴 **The deals must rebuild the broker's balance to the cent, or nothing is written** (all three
+  `None`, one warning per cause) — **and never the anchor formula as a fallback**, the number known
+  to be wrong the day anyone deposits. MEASURED read-only 2026-09-12: live 2 BALANCE deals rebuilt
+  10,312.48 = 10,312.48; demo one +10,000 deposit and 22 trades rebuilt 15,844.46 = 15,844.46.
+- ⚠ **CREDIT is skipped** (kept outside the balance); **a BONUS is money put in**; everything else
+  that moves the balance is trading — so a withdrawal FEE booked as a charge reads as a small
+  trading loss. Unmeasured here; read it off the first real withdrawal.
+- ⚠ **Only for the account the terminal reported off the same call as the balance** (rule 16);
+  re-read when the balance moves or every 15 minutes; **it never raises**, because it runs before
+  the heartbeat write and a display figure must never cost the stamp SYS_MONITOR runs on.
+- ⚠ **Emptying an account and refilling it is fine**; a trade booked while it held nothing refuses.
+- ⚠ **`starting_balance` is still written** — the rename guard reads it and the Command Center falls
+  back to it for a bot on an older runner — but nothing on this box reads it as a return.
+- ⚠ **Reaches a bot by `git pull` plus a restart** (`algos/`, no promote).
+
+Tests: `test_account_flows.py` (15), `test_watchdog.py` → *Overall P&L* (10),
+`test_mt5_ops_pending.py` (4). **27 mutations RUN, 27 killed**; a no-op control survived, so the
+harness can report a survivor.
 
 ## 🔴 A RENAME orphans the account anchor, and the symptom is a confident 0.0% (2026-09-05)
 

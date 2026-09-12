@@ -500,6 +500,68 @@ def test_no_deals_still_reads_as_not_found_rather_than_free(mt5ops):
     assert bd["commission_usd"] == 0.0
 
 
+# ── the whole account's history (2026-09-12) ──────────────────────────────────
+#
+# `account_flows.account_return` separates the money put in from what trading made by reading
+# every deal on the account — a deposit read as profit showed +2,181.67% on the live account.
+# These pin the broker layer's half: the history comes back WHOLE, and a history that could not be
+# read is `None`, never `[]` (rule 1).
+
+
+def test_account_deals_reads_the_whole_history_across_every_position(mt5ops):
+    """A deposit weeks back, and two trades from other positions that just happened in a server
+    clock running ahead of UTC.
+
+    Red under: a seven-day lookback (the deposit drops out), and dropping the forward margin (the
+    two fresh deals drop out).
+    """
+    mt5_ops, fake = mt5ops
+    fake._deals = [
+        _Deal(
+            0, entry=0, profit=10_000.0, when=(datetime.utcnow() - timedelta(days=60)).timestamp()
+        ),
+        _Deal(404, entry=1, profit=5.0, when=_server_stamp()),
+        _Deal(999, entry=1, profit=-2.0, when=_server_stamp()),
+    ]
+
+    got = _bot(mt5_ops).account_deals()
+
+    assert sorted(d.profit for d in got) == [-2.0, 5.0, 10_000.0]
+
+
+def test_an_account_with_no_deals_is_an_empty_list(mt5ops):
+    mt5_ops, fake = mt5ops
+    fake._deals = []
+
+    assert _bot(mt5_ops).account_deals() == []
+
+
+def test_an_unreadable_history_is_None_not_an_empty_account(mt5ops):
+    """MT5 answers `None` on an error and an empty tuple when there is nothing. The caller refuses
+    on both, but only one of them is a terminal problem, and the log has to say which.
+
+    Red under: reading `None` as no deals (`list(deals or [])`).
+    """
+    mt5_ops, fake = mt5ops
+    fake.history_deals_get = lambda *a, **k: None
+    log = _Log()
+
+    assert _bot(mt5_ops, log).account_deals() is None
+    assert log.saw("could not be READ")
+
+
+def test_a_history_read_that_raises_is_None_not_a_crash(mt5ops):
+    """Red under: removing the try around the read (the exception reaches the caller)."""
+    mt5_ops, fake = mt5ops
+
+    def _boom(*a, **k):
+        raise RuntimeError("IPC recv failed")
+
+    fake.history_deals_get = _boom
+
+    assert _bot(mt5_ops).account_deals() is None
+
+
 # ── the timeout that is not a failure (2026-08-25) ───────────────────────────
 #
 # 🔴 On 2026-08-25 four order requests timed out, all four reached the broker, and the bot

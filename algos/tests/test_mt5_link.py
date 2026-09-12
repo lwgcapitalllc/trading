@@ -120,10 +120,11 @@ class _StateModule:
     def set_started(self, bot_key):
         pass
 
-    # The two the heartbeat needs to derive total_pnl_pct. A fake that is MISSING a method
-    # the real module has fails loudly here (AttributeError) rather than quietly, which is
-    # the behaviour to keep: `_heartbeat` deliberately does not hasattr-guard these, or a
-    # renamed bot_state function would silently stop reporting P&L on the live box.
+    # The anchor the heartbeat still writes, though since 2026-09-12 the return no longer comes
+    # off it (see test_watchdog.py → Overall P&L). A fake that is MISSING a method the real
+    # module has fails loudly here (AttributeError) rather than quietly, which is the behaviour
+    # to keep: `_heartbeat` deliberately does not hasattr-guard it, or a renamed bot_state
+    # function would silently stop the rename guard on the live box.
     def ensure_starting_balance(self, bot_key, balance, account=None):
         # `account` mirrors production, which passes it so the anchor can tell a bot that GREW a
         # balance from a bot that was MOVED onto another account. A fake with the old two-argument

@@ -749,6 +749,39 @@ class BotMT5:
             return None
         return int(mode) == 2
 
+    def account_deals(self) -> Optional[list]:
+        """Every deal on the ACCOUNT since it opened, or **`None` when the terminal could not be
+        asked** — never `[]`, which is an account with no deals on it.
+
+        🔴 **It exists so a deposit stops reading as profit (2026-09-12).** What an account made
+        net of the money put in and taken out needs its whole history — MT5 books a deposit or a
+        withdrawal as a deal of its own, apart from every trade — and
+        `account_flows.account_return` does that arithmetic. This is the read and nothing else.
+
+        ⚠ **UNFILTERED by magic and by symbol**, the second read in this file to be so after
+        `account_exposure`, for the same reason: the question is about the account, and a deposit
+        carries neither. It writes nothing.
+
+        ⚠ **The window runs from 2000 to `_HISTORY_FORWARD_MARGIN` past now.** The top is the
+        server-clock rule. The bottom is a floor below any account a broker here can have opened,
+        not a measured depth, and it is safe for the same reason the forward margin is: the caller
+        rebuilds the balance from these deals and refuses unless it meets the broker's to the
+        cent, so a deal missing off the front refuses rather than misleads.
+        """
+        to = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
+        try:
+            deals = mt5.history_deals_get(datetime(2000, 1, 1), to)
+        except Exception as e:
+            self.log.error(f"Could not read the account's deal history: {e}")
+            return None
+        if deals is None:
+            self.log.error(
+                f"history_deals_get returned None: {mt5.last_error()} — the history could not be "
+                f"READ, which is not the same as the account having none."
+            )
+            return None
+        return list(deals)
+
     def normalize_volume(self, lots: float, symbol: str = None) -> float:
         """Round `lots` DOWN to the symbol's volume step and clamp to its max.
 

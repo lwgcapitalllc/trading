@@ -373,8 +373,11 @@ def ensure_starting_balance(bot_key: str, balance: float, account=None) -> None:
     Call this at bot startup after MT5 connects and balance is confirmed.
 
     🔴 **The anchor belongs to the ACCOUNT, not to the bot, and until 2026-08-12 it was stored as
-    though it belonged to the bot.** `total_pnl_pct` is the only thing that reads it, and it is
-    rendered on the Bots page and answered by Telegram's `/balance`. When `sos_fade_demo` was
+    though it belonged to the bot.** `total_pnl_pct` read it until 2026-09-12, rendered on the
+    Bots page and answered by Telegram's `/balance`. ⚠ **Since then the return comes off the
+    broker's deal history, net of deposits** (`account_flows.py`, `runner._account_return`), and
+    this anchor is read only by the rename guard below and by the Command Center's fallback for a
+    bot on an older runner. The story that follows is why it is per ACCOUNT. When `sos_fade_demo` was
     moved from the PU Prime Standard demo (anchored at $2,000, grown to ~$10,000) onto the ECN demo
     (opening balance $10,000), the old anchor stayed put — so the new account would have reported
     **+399% on its first poll, for ever**, off a starting balance belonging to an account this bot
@@ -428,6 +431,10 @@ def _default_state(bot_key: str) -> dict:
         # here is the claim "flat account". `live/runner.py` writes both on every poll.
         "balance": None,
         "total_pnl_pct": None,
+        # Deposits less withdrawals, and what trading made on them — written beside the return
+        # since 2026-09-12, None until a bot has read its account's deal history.
+        "capital_in": None,
+        "pnl_usd": None,
         "day_locked": False,
         "lock_reason": "",
         "lock_alerted": False,
