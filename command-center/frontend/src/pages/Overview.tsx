@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
+import { HaltedChip, TradeOpenChip } from '@/components/BotChips'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import {
   useBacktestRuns,
@@ -172,6 +173,8 @@ function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
       )}
       {bot.mt5_link === false && <NoLinkChip />}
       {bot.trade_allowed === false && <TradingOffChip reason={bot.trade_block} />}
+      {bot.bridge_state === 'halted' && <HaltedChip reason={bot.halt_reason} size="list" />}
+      {bot.in_trade === true && <TradeOpenChip position={bot.position} size="list" />}
       <BotState bot={bot} />
     </div>
   )

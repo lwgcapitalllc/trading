@@ -6826,3 +6826,17 @@ for ever. A test fails the day that route gains a model. `GET /stress-tests/runn
 stopped bot's last reading describes a process that no longer exists. ⚠ `None` = could not ask,
 never off. ⚠ Declared on the model, or Pydantic drops them. Tests: 1 in `test_bot_registry.py`;
 3 mutations run, 3 killed.
+
+## The snapshot carries the bot's open trade and its halt (2026-09-12)
+
+`BotStatus.bridge_state` / `halt_reason` / `in_trade` / `position` (`BotPosition`), from the bot's
+heartbeat (`algos/CLAUDE.md` → *The heartbeat says what the bot holds at the broker*). **All gated
+on RUNNING**: a stopped bot's trade may have closed since its last heartbeat.
+- ⚠ **`_bridge_state` reads `bridge_state`, and `status` only as a fallback for a bot on an older
+  runner — and only for a bridge word** (warming / live / halted). The watchdog writes running /
+  stalled / stopped / offline into that same key.
+- ⚠ **`halt_reason` only while halted; `in_trade` only a real boolean** (Pydantic reads `"yes"` as
+  true); **`position` checked field by field** (`_position_payload`; `_finite` refuses a boolean,
+  NaN and infinity) and DROPPED when unreadable — a 500 here blanks every bot on the page.
+- ⚠ Declared on the model, or Pydantic drops them. Tests: 3 in `test_bot_registry.py`; 7 mutations
+  run, 7 killed.

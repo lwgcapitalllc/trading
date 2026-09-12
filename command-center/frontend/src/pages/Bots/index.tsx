@@ -94,6 +94,7 @@ import { AccountDrawer } from './AccountDrawer'
 import { emptyGroup, nameOf } from './AccountForm'
 import { VpsSyncDrawer } from './VpsSyncDrawer'
 import { KIND_NAME, KIND_TINT, KindChip, tintOf } from './kind'
+import { HaltedChip, TradeOpenChip } from '@/components/BotChips'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -1391,7 +1392,9 @@ export function Bots() {
                   <span className="truncate group-hover:text-accent transition-colors">{name}</span>
                   {live?.mt5_link === false && <NoLinkChip />}
                   {live?.trade_allowed === false && <TradingOffChip reason={live.trade_block} />}
+                  {live?.bridge_state === 'halted' && <HaltedChip reason={live.halt_reason} />}
                   {live?.review && <ReviewChip review={live.review} />}
+                  {live?.in_trade === true && <TradeOpenChip position={live.position} />}
                 </button>
 
                 {/* 🔴 The money sits NEXT TO THE NAME, not out at the far edge with the

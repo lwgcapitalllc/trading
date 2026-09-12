@@ -284,6 +284,25 @@ class BotReview(BaseModel):
     findings: list[BotReviewFinding] = []
 
 
+class BotPosition(BaseModel):
+    """What a bot holds AT THE BROKER, as its own heartbeat last read it (2026-09-12).
+
+    Read off the broker every poll, not off the bot's own record — the bot learns of a stop-out
+    on its next bar, and "in a trade" through that window would be wrong about money.
+    """
+
+    side: str  # "long" | "short" | "mixed" (positions on both sides — the bot halts on that)
+    lots: float  # BROKER lots, every ticket added together (the trade plus any scale-in lots)
+    entry: Optional[float] = None  # the lots' average entry price
+    stop: Optional[float] = None  # `None` = no stop at the broker, never a price of 0
+    profit_usd: Optional[float] = None  # open profit after swap; `None` = not reported, never 0
+    risk_usd: Optional[float] = None  # dollars at risk when the trade OPENED
+    # Open profit over that risk. `None` when the entry risk is unknown (a trade picked back up
+    # from a record older than 2026-09-12) — never a figure off a stop that has since moved.
+    r: Optional[float] = None
+    tickets: int = 1
+
+
 class BotStatus(BaseModel):
     # The bot's STABLE identifier — `sos_fade_demo`, the same string that appears on the
     # VPS process commandline (`runner.py --bot <key>`). Use this for URLs, selection state
@@ -311,6 +330,17 @@ class BotStatus(BaseModel):
     # never "trading is off", and never "trading is on".
     trade_allowed: Optional[bool] = None
     trade_block: Optional[str] = None
+    # The order bridge's state and, only while halted, why (2026-09-12). A HALTED bot runs, stamps
+    # its heartbeat and reads RUNNING in `status` below while placing nothing until restarted.
+    # ⚠ `None` = could not ask (a stopped bot, an older runner that never said). Read through
+    # `routers.bots._bridge_state`, never straight off the state file's `status`, which the
+    # watchdog writes too.
+    bridge_state: Optional[str] = None  # "warming" | "live" | "halted"
+    halt_reason: Optional[str] = None
+    # Whether the bot holds a position AT THE BROKER, as its heartbeat read it, and what.
+    # ⚠ `None` = could not ask — never "flat".
+    in_trade: Optional[bool] = None
+    position: Optional[BotPosition] = None
     # A standing flag raised by `algos/notifications/log_review.py`, which reads the bot's own
     # health record hourly. `None` = nothing to review.
     #

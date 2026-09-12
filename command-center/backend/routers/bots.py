@@ -1174,6 +1174,60 @@ def update_user_role(chat_id: str, body: TelegramUserRoleUpdate):
     return {"status": "ok"}
 
 
+# The words the bridge's state can take (`algos/live/bridge.BridgeState`). Nothing else writes any
+# of them: the watchdog and the launcher write running / stalled / stopped / offline into the SAME
+# `status` key of `bot_state.json` (`bot_state.set_status`), so that key is read only as a
+# fallback, and only for one of these words.
+_BRIDGE_STATES = frozenset({"warming", "live", "halted"})
+
+
+def _bridge_state(state: dict) -> Optional[str]:
+    """The order bridge's state as the bot last wrote it, or `None` when it did not say.
+
+    `bridge_state` is written by the runner since 2026-09-12; a bot on an older runner writes the
+    same value only into `status`. That key is read too, but ONLY for a bridge word — `stalled`
+    there is the watchdog speaking, not the bridge.
+    """
+    for value in (state.get("bridge_state"), state.get("status")):
+        if isinstance(value, str) and value in _BRIDGE_STATES:
+            return value
+    return None
+
+
+def _finite(raw) -> Optional[float]:
+    """A real, finite number the state file states, or `None`. Stricter than `_as_float` on
+    purpose: a boolean is not a size and NaN is not a price, and both would pass `float()`."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    v = float(raw)
+    return v if v == v and v not in (float("inf"), float("-inf")) else None
+
+
+def _position_payload(raw) -> Optional[dict]:
+    """The bot's reading of what it holds at the broker, checked field by field — or `None`.
+
+    The state file is JSON another program wrote, so a reading the page cannot draw is DROPPED
+    rather than served, and can never fail the snapshot (a 500 here blanks every bot on the
+    page). `in_trade` beside it still says the bot holds something; this only withholds detail.
+    """
+    if not isinstance(raw, dict):
+        return None
+    side, lots = raw.get("side"), _finite(raw.get("lots"))
+    if side not in ("long", "short", "mixed") or lots is None or lots <= 0:
+        return None
+    tickets = raw.get("tickets")
+    return {
+        "side": side,
+        "lots": lots,
+        "entry": _finite(raw.get("entry")),
+        "stop": _finite(raw.get("stop")),
+        "profit_usd": _finite(raw.get("profit_usd")),
+        "risk_usd": _finite(raw.get("risk_usd")),
+        "r": _finite(raw.get("r")),
+        "tickets": tickets if type(tickets) is int and tickets > 0 else 1,
+    }
+
+
 @router.get("/snapshot", response_model=BotSnapshot)
 def get_snapshot():
     try:
@@ -1252,6 +1306,30 @@ def get_snapshot():
                 # exists. `None` is could-not-ask, never "off".
                 trade_allowed=state.get("trade_allowed") if status == "RUNNING" else None,
                 trade_block=(state.get("trade_block") or None) if status == "RUNNING" else None,
+                # The bridge's state and, only while halted, why. Gated on RUNNING like the link:
+                # a stopped bot's last reading describes a process that no longer exists.
+                bridge_state=_bridge_state(state) if status == "RUNNING" else None,
+                halt_reason=(
+                    state.get("halt_reason")
+                    if status == "RUNNING"
+                    and _bridge_state(state) == "halted"
+                    and isinstance(state.get("halt_reason"), str)
+                    else None
+                )
+                or None,
+                # What it holds at the broker. Gated on RUNNING too: a stopped bot's trade may have
+                # closed since its last heartbeat. `None` is could-not-ask, never "flat", and a
+                # value that is not a real boolean is not an answer.
+                in_trade=(
+                    state.get("in_trade")
+                    if status == "RUNNING" and isinstance(state.get("in_trade"), bool)
+                    else None
+                ),
+                position=(
+                    _position_payload(state.get("position"))
+                    if status == "RUNNING" and state.get("in_trade") is True
+                    else None
+                ),
                 # ⚠ NOT gated on `status == "RUNNING"`, unlike `mt5_link` above. A review is about
                 # what the RECORD says happened, and the findings that matter most — it crashed, it
                 # was killed, it refused to start — are precisely the ones you can only read once

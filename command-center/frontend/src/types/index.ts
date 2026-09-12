@@ -340,6 +340,27 @@ export interface BotReview {
   findings: BotReviewFinding[]
 }
 
+/** What a bot holds AT THE BROKER, as its own heartbeat last read it (2026-09-12). Read off the
+ *  broker every 10s, not off the bot's record — the bot learns of a stop-out on its next bar. */
+export interface BotPosition {
+  /** `mixed` = positions on both sides, which the bot halts on. */
+  side: 'long' | 'short' | 'mixed'
+  /** Broker lots, every ticket added together (the trade plus any scale-in lots). */
+  lots: number
+  /** The lots' average entry price. */
+  entry: number | null
+  /** `null` = no stop at the broker, never a price of 0. */
+  stop: number | null
+  /** Open profit after swap. `null` = not reported, never 0. */
+  profit_usd: number | null
+  /** Dollars at risk when the trade OPENED. */
+  risk_usd: number | null
+  /** Open profit over that risk. `null` when the opening risk is unknown (a trade picked back up
+   *  after a restart from an older record) — never a figure off a stop that has since moved. */
+  r: number | null
+  tickets: number
+}
+
 export interface BotStatus {
   /** The bot's STABLE identifier (`sos_fade_demo`) — the same string on the VPS process
    *  commandline. Use it for URLs, selection state and API paths. `name` is a label chosen
@@ -368,6 +389,16 @@ export interface BotStatus {
    *  never "off". Optional: a recording taken before the field existed carries neither. */
   trade_allowed?: boolean | null
   trade_block?: string | null
+  /** The order bridge's state (2026-09-12). `halted` = the bot places nothing until it is
+   *  restarted, while the process — and `status` — still read RUNNING. `null` = could not ask.
+   *  Optional: a recording taken before the field existed carries none. */
+  bridge_state?: 'warming' | 'live' | 'halted' | null
+  /** Why it halted, in the bot's own words; set only while halted. */
+  halt_reason?: string | null
+  /** Whether the bot holds a position AT THE BROKER, as its heartbeat read it. `null` = could
+   *  not ask — never "flat". Check `=== true`. */
+  in_trade?: boolean | null
+  position?: BotPosition | null
   /** What the hourly log review found in this bot's own health record, or null for nothing.
    *
    *  ⚠ It answers the question no other field here can: the process can be alive, stamping its

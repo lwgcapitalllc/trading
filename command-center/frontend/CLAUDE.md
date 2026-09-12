@@ -4368,6 +4368,22 @@ off, or the symbol restricted). Rules: `algos/CLAUDE.md` → *Whether the accoun
 ⚠ **`=== false` only** — `null` is could-not-ask and draws nothing (rule 1). ⚠ **The page decides
 nothing**; the sentence is the bot's. Pinned by one offline check in `tests/bots-accounts.spec.ts`.
 
+## A bot's row says when it holds a trade, and when it has HALTED (2026-09-12)
+
+Two tags from `src/components/BotChips.tsx`, shared by the Bots page and the Overview's bot list so
+the two cannot word one fact two ways: **trade open** ("LONG 0.40 LOTS · +1.2R", neutral, with only
+the R coloured by its sign — colour on these pages is money) and a red **halted** carrying the bot's
+own reason on its title. Rules: `algos/CLAUDE.md` → *The heartbeat says what the bot holds at the
+broker*.
+- ⚠ **`in_trade === true` only, `bridge_state === 'halted'` only** — `false` is flat, `null` is
+  could-not-ask, and `warming` clears itself.
+- ⚠ **No R when it is `null`** (a trade picked back up after a restart from an older record), never
+  one off a stop that has moved; the title says why.
+- ⚠ **Beside the running dot, never instead of it**: alive and halted are both true.
+- Pinned by two offline checks in `tests/bots-accounts.spec.ts`, both watched RED against HEAD's
+  page in a throwaway worktree and each under its own mutation (3 run, 3 killed). ⚠ The Overview
+  has none — its spec reads the live backend.
+
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
 🔴 **Earnings are keyed by ACCOUNT AND BOT, never by bot alone (2026-09-11).** A bot that moved has a

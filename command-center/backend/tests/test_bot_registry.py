@@ -200,6 +200,86 @@ def test_the_snapshot_says_whether_the_account_may_trade_and_only_while_running(
     assert (row.trade_allowed, row.trade_block) == (None, None)
 
 
+def _row_for(monkeypatch, state, *, running=True):
+    key = bots._BOTS[0].key
+    monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
+    monkeypatch.setattr(bots, "_parse_bot_states", lambda _snap: {key: state})
+    monkeypatch.setattr(bots, "_bot_runner_running", lambda _snap, _key: running)
+    return next(b for b in bots.get_snapshot().bots if b.key == key)
+
+
+def test_the_snapshot_carries_the_open_trade_and_the_halt_only_while_running(monkeypatch):
+    """The row's "trade open" and "halted" tags can only appear if the endpoint passes the bot's
+    reading on — and only for a running bot: a stopped bot's last reading describes a process that
+    no longer exists, and its trade may have closed since.
+
+    MUTATION: drop `in_trade` from the row → red. MUTATION: drop the RUNNING gate → red.
+    MUTATION: serve the halt reason beside a bridge that is not halted → red.
+    """
+    position = {
+        "side": "long",
+        "lots": 0.4,
+        "entry": 3290.0,
+        "stop": 3280.0,
+        "profit_usd": 83.0,
+        "risk_usd": 70.0,
+        "r": 1.19,
+        "tickets": 1,
+    }
+    state = {
+        "bridge_state": "halted",
+        "halt_reason": "MT5 holds none",
+        "in_trade": True,
+        "position": position,
+    }
+    row = _row_for(monkeypatch, state)
+    assert (row.bridge_state, row.halt_reason, row.in_trade) == ("halted", "MT5 holds none", True)
+    assert row.position is not None
+    assert (row.position.side, row.position.lots, row.position.r) == ("long", 0.4, 1.19)
+    assert (row.position.risk_usd, row.position.tickets) == (70.0, 1)
+
+    state["bridge_state"] = "live"
+    row = _row_for(monkeypatch, state)
+    assert (row.bridge_state, row.halt_reason) == ("live", None)
+
+    row = _row_for(monkeypatch, state, running=False)
+    assert (row.bridge_state, row.halt_reason, row.in_trade, row.position) == (None,) * 4
+
+
+def test_a_bot_on_an_older_runner_still_shows_its_halt_and_a_watchdog_word_is_not_one(monkeypatch):
+    """Until 2026-09-12 the runner wrote the bridge's state only into `status` — a key the watchdog
+    and the launcher also write (running / stalled / stopped / offline). A halt there must still
+    show; one of their words must never read as the bridge's.
+
+    MUTATION: drop the `status` fallback → red on `halted`. MUTATION: take any `status` word → red
+    on `stalled`.
+    """
+    for word, expected in (("halted", "halted"), ("stalled", None), ("running", None)):
+        row = _row_for(monkeypatch, {"status": word})
+        assert row.bridge_state == expected, word
+
+
+def test_a_reading_the_page_cannot_draw_is_withheld_never_served(monkeypatch):
+    """The state file is JSON another program wrote. A position the page cannot draw is dropped —
+    `in_trade` still says the bot holds something — and it must never fail the snapshot, which
+    would blank every bot on the page. A flag that is not a real boolean is not an answer.
+
+    MUTATION: pass the raw reading through → red (a 500, or a side nothing can draw).
+    MUTATION: coerce `in_trade` rather than require a boolean → red on "yes".
+    """
+    for bad in (
+        "long",
+        {"side": "sideways", "lots": 0.4},
+        {"side": "long", "lots": 0},
+        {"side": "long", "lots": "many"},
+    ):
+        row = _row_for(monkeypatch, {"in_trade": True, "position": bad})
+        assert (row.in_trade, row.position) == (True, None), bad
+
+    row = _row_for(monkeypatch, {"in_trade": "yes"})
+    assert row.in_trade is None
+
+
 # ── Which name identifies a bot ───────────────────────────────────────────────
 
 

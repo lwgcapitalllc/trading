@@ -1732,6 +1732,87 @@ test('a bot whose account cannot trade says so on its row, and nothing else does
   await expect(chip).toHaveAttribute('title', /read-only/)
 })
 
+test('a bot in a trade and a HALTED bot each say so on their row, and no other bot does', async ({
+  page,
+}) => {
+  // 🔴 2026-09-12: a halted bot read RUNNING on this row — the hourly review chip was the only
+  // sign, up to an hour late — and nothing anywhere said a bot was holding a trade.
+  // MUTATION: draw the trade tag on anything but `in_trade === true` → red on the count (one bot
+  // is flat, one could not ask).
+  // MUTATION: draw the halted tag on any bridge state → red on the count (the others are live).
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        bridge_state: 'live',
+        in_trade: true,
+        position: {
+          side: 'long',
+          lots: 0.4,
+          entry: 3290,
+          stop: 3280,
+          profit_usd: 83,
+          risk_usd: 70,
+          r: 1.19,
+          tickets: 1,
+        },
+      },
+      sos_fade: { bridge_state: 'live', in_trade: false },
+      ext_leg: {
+        bridge_state: 'halted',
+        halt_reason: 'the strategy believes it is in a position but MT5 holds none',
+        in_trade: null,
+      },
+    }
+  )
+  const trade = page.getByTestId('trade-open')
+  await expect(trade).toHaveCount(1)
+  await expect(trade).toHaveText(/long 0\.40 lots · \+1\.2R/i)
+  await expect(trade).toHaveAttribute(
+    'title',
+    /\+\$83\.00: \+1\.19R of the \$70\.00 risked at entry/
+  )
+  const halted = page.getByTestId('halted')
+  await expect(halted).toHaveCount(1)
+  await expect(halted).toHaveAttribute('title', /MT5 holds none/)
+})
+
+test('a trade whose opening risk is unknown shows no R rather than a guess', async ({ page }) => {
+  // A trade picked back up after a restart, from a record written before the bot saved the risk it
+  // opened with, has no R: the stop has usually moved since, so an R off it would be wrong.
+  // MUTATION: print an R off a null → red on the text.
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        in_trade: true,
+        position: {
+          side: 'short',
+          lots: 0.2,
+          entry: 3300,
+          stop: 3300,
+          profit_usd: -12.5,
+          risk_usd: null,
+          r: null,
+          tickets: 2,
+        },
+      },
+    }
+  )
+  const trade = page.getByTestId('trade-open')
+  await expect(trade).toHaveText(/^short 0\.20 lots$/i)
+  await expect(trade).toHaveAttribute('title', /R unknown/)
+  await expect(trade).toHaveAttribute('title', /the trade plus 1 added lot\./)
+})
+
 test('with no filter, live and demo are split — every account under its own side', async ({
   page,
 }) => {
