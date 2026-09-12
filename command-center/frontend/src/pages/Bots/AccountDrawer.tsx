@@ -505,7 +505,7 @@ export function AccountDrawer({
                 data-testid="password-chip"
                 title={
                   reg.has_password === true
-                    ? 'A password is stored on the trading box. It must be the TRADING (master) password — with the investor one a bot logs in and the broker refuses every order.'
+                    ? 'A password is stored on the trading box. It must be the trading password — with a read-only "investor" one a bot logs in and every order is refused.'
                     : 'The trading box could not be asked whether a password is stored — unknown, not missing.'
                 }
                 className={`${chipCls} cursor-default ${

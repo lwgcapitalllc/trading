@@ -362,9 +362,10 @@ issues."* Each had a way to end in a refusal nobody could act on. Backend half: 
   the account is a STEP of its panel, like demo → live.
 - ⚠ **The move and runtime hooks lost their `onError` toast** — `api.*` already toasts the server's
   reason. `api.post` gained `opts`, so a plan (a question) can be `silent`.
-- ⚠ **The password field says TRADING (master) password.** The live account had its investor
-  password stored: the bot logs in and the broker refuses every order (10017), and nothing on the
-  box can tell the two apart before the first order.
+- ⚠ **The password field asks for the TRADING password, not a read-only "investor" one** — with
+  that a bot logs in and every order is refused (10017). 🔴 **It did NOT cause the live account's
+  10017 on 2026-09-11** (this bullet said it did): right password, right server, and the broker
+  reporting trading not allowed on the account — readable at login, and nothing reads it yet.
 - Tests: `bots-accounts.spec.ts` — 8 new, 2 re-pointed to `/risk`; `mock()` answers a plan "fits"
   by default. 13 bugs planted in a throwaway worktree, 13 caught. ⚠ **The re-pointed save check
   reads the TOAST** — the footer states the same sentence while the edit is on screen, so a

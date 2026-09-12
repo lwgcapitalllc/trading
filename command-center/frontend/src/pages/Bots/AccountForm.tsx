@@ -269,13 +269,13 @@ export function AccountForm({
         </div>
 
         <div className="flex flex-col gap-1 border-t border-border-subtle pt-3">
-          {/* 🔴 THE TRADING PASSWORD, NOT THE INVESTOR ONE (2026-09-11). The live account was
-           *  stored with its investor password: the bot logs in, reads prices and the balance, and
-           *  the broker refuses every order (10017 "trade disabled"). Nothing on the box can tell
-           *  the two apart before the first order, so the form says it where the password is typed. */}
+          {/* THE TRADING PASSWORD (2026-09-11). A read-only "investor" password logs in and reads
+           *  prices, then the broker refuses every order (10017 "trade disabled"). So does an
+           *  account the broker has switched trading off on — what the live account hit that day,
+           *  with the right password stored — and no password fixes that one. */}
           <Field
             label="MT5 password"
-            hint="Use the TRADING (master) password. The investor password logs in read-only: the bot connects and reads prices, then the broker refuses every order. Stored on the VPS in a git-ignored file and never shown again. Leave blank to keep the current one."
+            hint="The password your broker gave you for trading. If they also issued a read-only 'investor' password, not that one: with it the bot connects and reads prices, then every order is refused. Stored on the VPS in a git-ignored file and never shown again. Leave blank to keep the current one."
           >
             <input
               type="password"
