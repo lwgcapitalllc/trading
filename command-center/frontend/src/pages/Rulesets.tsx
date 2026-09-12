@@ -67,7 +67,7 @@ function ladderLines(s: ScalingLadder): string[] {
 function MixPill({ ratio }: { ratio: number }) {
   return (
     <div className="relative group inline-block">
-      <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-accent/10 text-accent border border-accent/20 cursor-default">
+      <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-bg-surface-2 text-text-secondary border border-border-default cursor-default">
         MIX
       </span>
       <div className="absolute right-0 top-full mt-1 z-20 hidden group-hover:block bg-bg-sunken border border-border-default rounded-md px-3 py-2 shadow-xl whitespace-nowrap">
@@ -109,7 +109,7 @@ function ContractsCell({ maxContracts }: { maxContracts: Record<string, unknown>
     <div className="relative group/scale inline-block">
       <span className="flex items-center gap-1.5">
         <span className="font-mono tabular-nums text-text-secondary">{fixedLabel}</span>
-        <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-gold-muted text-gold-text border border-gold-text/20 cursor-default">
+        <span className="text-[10px] font-bold px-1 py-[1px] rounded bg-bg-surface-2 text-text-secondary border border-border-default cursor-default">
           SCALES
         </span>
         {mc.mix_allowed && <MixPill ratio={mc.mix_ratio_micro_per_mini ?? 10} />}
@@ -411,10 +411,10 @@ function RulesetsView() {
                 {visible.map((brand, bi) => (
                   <Fragment key={brand}>
                     <tr
-                      className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-accent/5 border-l-2 border-l-accent`}
+                      className={`${bi > 0 ? 'border-t-2 border-border-default' : ''} bg-bg-surface-2/60 border-l-2 border-l-border-strong`}
                     >
                       <td colSpan={7} className="px-4 py-2">
-                        <span className="text-[12px] font-semibold text-accent uppercase tracking-[0.4px]">
+                        <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-[0.4px]">
                           {brand}
                         </span>
                       </td>
@@ -533,14 +533,14 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
         </td>
         {!personal ? (
           <>
-            <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+            <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
               {ruleset.profit_target > 0 ? (
                 `$${ruleset.profit_target.toLocaleString()}`
               ) : (
                 <span className="text-text-tertiary">—</span>
               )}
             </td>
-            <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+            <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
               ${ruleset.max_loss_eod.toLocaleString()}
             </td>
             <td className="px-4 py-3 text-text-secondary">
@@ -567,21 +567,21 @@ function RulesetRow({ ruleset, personal = false }: { ruleset: Ruleset; personal?
           </>
         ) : (
           <>
-            <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+            <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
               {ruleset.daily_loss_cap != null ? (
                 `$${ruleset.daily_loss_cap.toLocaleString()}`
               ) : (
                 <span className="text-text-tertiary">—</span>
               )}
             </td>
-            <td className="px-4 py-3 font-mono tabular-nums text-pos-text">
+            <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
               {ruleset.daily_profit_target != null ? (
                 `$${ruleset.daily_profit_target.toLocaleString()}`
               ) : (
                 <span className="text-text-tertiary">—</span>
               )}
             </td>
-            <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
+            <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
               {ruleset.max_drawdown_from_peak_pct != null ? (
                 `${ruleset.max_drawdown_from_peak_pct}%`
               ) : (
