@@ -949,3 +949,220 @@ def test_carried_from_survives_the_response_model():
         carried_from=[{"bot_key": "gone", "name": "Gone", "moved_to": _LIVE, "closed_trades": 1}],
     )
     assert out.model_dump()["carried_from"][0]["moved_to"] == _LIVE
+
+
+# ── the net is measured off what went IN, never off an opening a deposit dwarfed ────────────
+#
+# 🔴 2026-09-12: a $9,860.51 transfer into the live account read as +2,181.67% — the net was the
+# balance less the $451.97 the account opened at. A bot on the new runner reads the broker's own
+# deal history and states what went in (`capital_in`) and the time-weighted return beside the
+# balance, off the same poll; the net is the balance less what went in.
+
+
+def _live_bot(key="sos", balance=10312.48, capital_in=10312.48, pct=0.0, anchor=451.97):
+    return {
+        **_bot(key, "SOS Fade", account=_LIVE, balance=balance, anchor=anchor),
+        "capital_in": capital_in,
+        "total_pnl_pct": pct,
+    }
+
+
+def test_a_DEPOSIT_is_not_the_accounts_growth(archive):
+    """The incident on its own numbers: opened at $451.97, topped up by $9,860.51, nothing traded.
+
+    MUTATION: ignore `capital_in` (the net falls back to the opening, +$9,860.51) → red.
+    """
+    archive("sos", "2026-09-11", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    acct = be.account_earnings([_live_bot()])[0]
+
+    assert acct["net_basis"] == "deposits"
+    assert acct["capital_in"] == 10312.48
+    assert (acct["net_usd"], acct["net_pct"]) == (0.0, 0.0)
+    assert acct["unattributed_usd"] == 0.0, "a deposit is not money a bot failed to record"
+
+
+def test_a_bots_share_is_of_what_went_IN_not_of_the_opening_it_arrived_to(archive):
+    """A $516 win on an account topped up to $10,312.48 is 5.00% — not 114% of the $451.97 it
+    opened at, which is the same bug one column over. And the account's % is the bot's own
+    time-weighted figure, never re-derived here (4.2 is deliberately not 516 / 10,312.48).
+
+    MUTATION: divide by `opening` on the deposits basis → red. MUTATION: re-derive the % as the
+    net over what went in → red.
+    """
+    archive(
+        "sos",
+        "2026-09-14",
+        [
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+            _close(516.0, r=1.0, ts="2026-09-14T02:00:00+00:00"),
+        ],
+    )
+    acct = be.account_earnings([_live_bot(balance=10828.48, pct=4.2)])[0]
+
+    assert acct["net_usd"] == 516.0
+    assert acct["net_pct"] == 4.2
+    assert acct["bots"][0]["pct_of_opening"] == round(516.0 / 10312.48 * 100, 2)
+    assert acct["unattributed_usd"] == 0.0
+
+
+def test_a_bot_on_an_OLDER_runner_keeps_the_opening_basis_and_says_so(archive):
+    """A bot that has not read its account's history states no `capital_in`. Reading that absence
+    as nothing put in would make every dollar on the account read as growth, so the net stays on
+    the opening it recorded. MUTATION: take the deposits basis whenever a balance exists → red."""
+    archive("old", "2026-07-31", [_start(), _close(1197.09)])
+    acct = be.account_earnings([_bot("old", "SOS Fade", anchor=9996.99)])[0]
+
+    assert acct["net_basis"] == "opening"
+    assert acct["capital_in"] is None
+    assert acct["net_usd"] == pytest.approx(4541.89, abs=0.01)
+
+
+def test_the_net_and_its_balance_come_off_ONE_reading(archive):
+    """Two bots on one account, the one on the older runner listed FIRST. The balance served is the
+    one read beside what went in, or the net would be one poll's balance less another's deposits.
+
+    MUTATION: keep the first row's balance → red.
+    """
+    archive("old", "2026-09-11", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    archive("sos", "2026-09-11", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    acct = be.account_earnings(
+        [_bot("old", "Older", account=_LIVE, balance=10300.00, anchor=451.97), _live_bot()]
+    )[0]
+
+    assert acct["balance"] == 10312.48
+    assert acct["net_usd"] == 0.0
+
+
+def test_an_account_its_bots_LEFT_is_read_net_of_deposits_off_their_last_pulse(archive):
+    """The pulse carries what went in beside the balance, so an account nobody is on now still
+    reads net of its deposits: opened at $10,000, made $500, topped up by $10,000.
+
+    MUTATION: drop `capital_in` from the pulse reader → red (the net falls back to the opening,
+    +$10,500 with $10,000 of it unattributed).
+    """
+    rows = [
+        _start(_DEMO, "2026-08-12T16:00:00+00:00"),
+        _close(500.0, ts="2026-08-26T02:15:00+00:00"),
+        _start(_LIVE, "2026-09-11T00:13:59+00:00"),
+    ]
+    health = [
+        {**_pulse(_DEMO, 10000.0, "2026-08-12T16:15:00+00:00"), "capital_in": 10000.0},
+        {
+            **_pulse(_DEMO, 20500.0, "2026-09-10T22:00:00+00:00"),
+            "capital_in": 20000.0,
+            "return_pct": 5.0,
+        },
+    ]
+    archive("sos", "2026-08-26", rows)
+    archive("sos", "2026-09-10", health, kind="health")
+    demo = {
+        e["account"]: e for e in be.account_earnings([_live_bot(balance=451.97, capital_in=451.97)])
+    }[_DEMO]
+
+    assert demo["balance_read_at"] == "2026-09-10T22:00:00+00:00"
+    assert demo["net_basis"] == "deposits"
+    assert (demo["capital_in"], demo["net_usd"], demo["net_pct"]) == (20000.0, 500.0, 5.0)
+    assert demo["unattributed_usd"] == 0.0
+    assert demo["bots"][0]["pct_of_opening"] == 2.5
+
+
+@pytest.mark.parametrize("bad", [True, "10312.48", None])
+def test_a_capital_that_is_not_a_NUMBER_is_not_a_reading(archive, bad):
+    """`True` is 1.0 to Python and would read as a dollar put in; a string or a missing value is no
+    reading at all. MUTATION: drop the bool check from `_num` → red on `True`."""
+    archive("sos", "2026-09-11", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    acct = be.account_earnings([_live_bot(capital_in=bad)])[0]
+
+    assert acct["net_basis"] == "opening"
+    assert acct["capital_in"] is None
+
+
+def test_capital_in_and_the_basis_survive_the_response_model():
+    """Pydantic drops a field the model does not declare, and the page then cannot say what the net
+    is measured from. MUTATION: remove either field from `AccountEarnings` → red."""
+    from models import AccountEarnings
+
+    out = AccountEarnings(account=_LIVE, capital_in=10312.48, net_basis="deposits").model_dump()
+    assert (out["capital_in"], out["net_basis"]) == (10312.48, "deposits")
+
+
+def test_an_account_emptied_of_MORE_than_went_in_gives_no_share(archive):
+    """$1,000 in, $500 made, $1,500 out: nothing is left and what went in is −$500. The net is still
+    what trading made, but a share of a capital at or below zero is not a share — it flips the sign.
+
+    MUTATION: drop the `> 0` guard → red (the bot reads −100%).
+    """
+    archive(
+        "sos",
+        "2026-09-14",
+        [
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+            _close(500.0, ts="2026-09-14T02:00:00+00:00"),
+        ],
+    )
+    acct = be.account_earnings([_live_bot(balance=0.0, capital_in=-500.0, pct=50.0)])[0]
+
+    assert acct["net_usd"] == 500.0
+    assert acct["bots"][0]["pct_of_opening"] is None
+
+
+def test_the_SNAPSHOT_hands_each_bots_deposit_figures_on_to_the_account_net(monkeypatch):
+    """The service can only measure off what went in if the fleet endpoint passes it on, and a
+    helper tested alone says nothing about its call site (rule 7) — the bot row and the dict handed
+    to `account_earnings` are two separate places for the field to be dropped in silence.
+
+    MUTATION: drop `capital_in` from the bot row → red. MUTATION: drop it from the dict → red.
+    """
+    from routers import bots as router
+
+    key = router._BOTS[0].key
+    state = {"balance": 10312.48, "capital_in": 10312.48, "total_pnl_pct": 0.0}
+    monkeypatch.setattr(router, "_fetch_vps_snapshot", lambda: {})
+    monkeypatch.setattr(router, "_parse_bot_states", lambda _snap: {key: state})
+    handed: list[dict] = []
+    monkeypatch.setattr(be, "account_earnings", lambda rows, as_of=None: handed.extend(rows) or [])
+
+    snap = router.get_snapshot()
+
+    assert next(b for b in snap.bots if b.key == key).capital_in == 10312.48
+    row = next(r for r in handed if r["bot_key"] == key)
+    assert (row["capital_in"], row["total_pnl_pct"]) == (10312.48, 0.0)
+
+
+def test_on_the_deposits_basis_a_DEPARTED_bot_counts_even_with_no_opening_reading(archive):
+    """A deposits net covers the account's whole life, so a bot that left still counts — even where
+    no reading predates its trade, which on the opening basis refuses the remainder outright.
+
+    ⚠ The departed-account case above cannot tell these apart: its first pulse predates the trade,
+    so the account has its own opening and the departed bot counts either way. Here it has none.
+
+    MUTATION: count departed bots only on the account's own opening → red (the remainder is refused
+    and the departed bot gets no share).
+    """
+    archive(
+        "gone",
+        "2026-08-26",
+        [
+            _start(_DEMO, "2026-08-12T16:00:00+00:00"),
+            _close(500.0, ts="2026-08-26T02:15:00+00:00"),
+            _start(_LIVE, "2026-09-11T00:13:59+00:00"),
+        ],
+    )
+    archive("new", "2026-09-12", [_start(_DEMO, "2026-09-12T00:00:00+00:00")])
+    demo = {
+        e["account"]: e
+        for e in be.account_earnings(
+            [
+                _bot("gone", "Gone", account=_LIVE, balance=451.97, anchor=451.97),
+                {
+                    **_bot("new", "New", account=_DEMO, balance=20500.0, anchor=20500.0),
+                    "capital_in": 20000.0,
+                    "total_pnl_pct": 5.0,
+                },
+            ]
+        )
+    }[_DEMO]
+
+    assert demo["net_basis"] == "deposits"
+    assert demo["unattributed_usd"] == 0.0
+    assert next(b for b in demo["bots"] if b["bot_key"] == "gone")["pct_of_opening"] == 2.5

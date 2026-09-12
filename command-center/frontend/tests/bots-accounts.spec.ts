@@ -1616,7 +1616,9 @@ async function mockBothSides(
   earnings: Record<string, Record<string, unknown>>,
   benched: Record<string, unknown>[] = [],
   // A third demo bot, so one side can pool two scored bots while a third record is unread.
-  thirdDemo = false
+  thirdDemo = false,
+  // Figures stated over an account's own earnings, keyed by account — e.g. which basis its net is.
+  acctOver: Record<number, Record<string, unknown>> = {}
 ) {
   const third = thirdDemo
     ? [{ key: 'realign', name: 'Realign', status: 'RUNNING', account_type: 'demo' }]
@@ -1667,8 +1669,8 @@ async function mockBothSides(
         scheduled_jobs: [],
         telegram: { name: 'Telegram', status: 'RUNNING' },
         earnings: [
-          acctEarn(ACCOUNT, pick(['sos_fade', 'ext_leg', 'realign'])),
-          acctEarn(LIVE, pick(['sos_live', 'ext_live'])),
+          { ...acctEarn(ACCOUNT, pick(['sos_fade', 'ext_leg', 'realign'])), ...acctOver[ACCOUNT] },
+          { ...acctEarn(LIVE, pick(['sos_live', 'ext_live'])), ...acctOver[LIVE] },
         ],
       },
     })
@@ -1676,6 +1678,30 @@ async function mockBothSides(
   await page.goto('/bots')
   await expect(page.getByTestId('section-demo')).toBeVisible()
 }
+
+test('an account measured off what went IN says so, and no longer blames a deposit', async ({
+  page,
+}) => {
+  // 🔴 2026-09-12: a $9,860.51 transfer read as +2,181.67% — the net was the balance less the
+  // opening. On the deposits basis the net's referent is what went IN, and the remainder line stops
+  // offering "a deposit" as a cause, because a deposit is already out of the net.
+  // MUTATION: ignore `net_basis` in the account net → red on the tooltip.
+  // MUTATION: keep "a deposit" in the remainder line → red on the sentence.
+  await mockBothSides(page, SCORED, [], false, {
+    [ACCOUNT]: {
+      net_basis: 'deposits',
+      capital_in: 10312.48,
+      net_usd: 25,
+      net_pct: 0.2,
+      unattributed_usd: 25,
+    },
+  })
+  await expect(page.getByTitle(/put in \(deposits less withdrawals\)/)).toHaveCount(1)
+  await expect(page.getByText('— a manual fill, or a trade older than the record')).toBeVisible()
+  // The account still on the older basis keeps its opening, so the branch is PER ACCOUNT — a page
+  // that switched every account at once would pass the two lines above.
+  await expect(page.getByTitle(/^Opened at /)).toHaveCount(1)
+})
 
 test('with no filter, live and demo are split — every account under its own side', async ({
   page,

@@ -5205,6 +5205,33 @@ Five tests "passed" against HEAD that way and the pass meant nothing — they we
 files. **A fail-watch that runs the new code is not a fail-watch**, and nothing about the run says
 so: it is green, fast, and wrong. Watch repo-root code go red by MUTATING it in place.
 
+## The account's net is measured off what went IN (2026-09-12)
+
+`account_earnings` takes `net_basis = "deposits"` whenever a bot on the account reports
+`capital_in` beside its balance (or, for an account its bots left, when their last pulse carried
+it): **net = balance − capital_in, and `net_pct` is the bot's own time-weighted figure, passed
+through and never re-derived here.** The live account read +2,181.67% because a $9,860.51 transfer
+counted as growth. Rules and evidence: `algos/CLAUDE.md` → *A deposit is not a return*.
+
+- 🔴 **The balance and `capital_in` come from ONE reading** — the bot row carrying `capital_in`
+  supplies the balance too, and a past reading's figures come off one pulse — or a net is one poll's
+  balance less another poll's deposits.
+- ⚠ **The deposits basis covers the account's WHOLE life**, so departed bots' trades count toward
+  `attributed_usd` and get a share, exactly as on the account's own opening (`whole`).
+- ⚠ **A bot's `pct_of_opening` divides by `capital_in` on that basis** — the name predates it; a
+  share of an opening a deposit has dwarfed is the same bug one column over. Nothing once
+  `capital_in` ≤ 0.
+- ⚠ **No `capital_in` keeps the `opening` basis** — an older runner, no link, or a history that did
+  not add up. Never read that absence as nothing put in; `_num` refuses a bool.
+- ⚠ **`capital_in` and `net_basis` are declared on `AccountEarnings`**, or Pydantic drops them.
+- ⚠ **An account switches basis only once its bots restart onto the new runner**, so the page can
+  show one basis for one account and the other for the next; `net_basis` is what tells them apart.
+
+Tests: 10 in `tests/test_bot_earnings.py` (one over three bad values), the fleet endpoint's hand-off
+included. **16 bugs planted in memory, 16 caught** — one survived first: the only departed-bot case
+had an opening reading from before its trade, so it counted either way and could not tell the two
+bases apart. It has a case with no such reading now.
+
 ## What a BOT made, and why it may not be the account's growth (2026-09-05)
 
 🔴 **A TRADE BELONGS TO THE ACCOUNT IT WAS MADE ON, NEVER THE ONE THE BOT IS ON NOW (2026-09-11).**

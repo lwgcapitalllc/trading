@@ -1256,9 +1256,13 @@ def get_snapshot():
                 status=status,
                 uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
                 total_pnl_pct=total_pnl,
+                # Deposits less withdrawals, off the broker's deal history — what the account's
+                # net is measured from, so a deposit is never a return. Not gated on RUNNING, like
+                # the balance beside it: a stopped bot's last reading is still that account's.
+                capital_in=_as_float(state.get("capital_in")),
                 # NOT gated on RUNNING. The anchor is what the account held when this bot
-                # arrived — a fact about the past that a stopped bot does not stop having,
-                # and the one number `total_pnl_pct` is measured against.
+                # arrived — a fact about the past that a stopped bot does not stop having. The
+                # account's net falls back to it for a bot that has not read its deal history.
                 starting_balance=_as_float(state.get("starting_balance")),
                 day_locked=bool(state.get("day_locked", False)),
                 lock_reason=state.get("lock_reason") or None,
@@ -1338,6 +1342,10 @@ def get_snapshot():
                         "account": b.account,
                         "strategy": packages.get(b.key),
                         "balance": b.balance,
+                        # The account's figures net of deposits, as this bot read them off the
+                        # broker's history in the same poll as the balance — see `bot_earnings`.
+                        "capital_in": b.capital_in,
+                        "total_pnl_pct": b.total_pnl_pct,
                         "starting_balance": b.starting_balance,
                         # What the box just said, or None when it could not be asked. See
                         # `_parse_live_trades` on why those may not be one value.

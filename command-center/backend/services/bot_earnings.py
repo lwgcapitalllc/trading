@@ -593,13 +593,29 @@ def _freshness(merged: list[dict], as_of: datetime | None) -> tuple[bool, float 
 # nothing beside it would be rule 3 — what was last seen reported as what is there now.
 
 
-def _readings(path: Path) -> list[tuple[str, int, float]]:
-    """Every balance a run READ off its terminal in one health file: `(ts, account, balance)`.
+def _num(value) -> float | None:
+    """A reading as a float, or `None` when it is not a number.
+
+    ⚠ A bool is not a number here although Python says it is: `True` in a money field is a
+    malformed record, and reading it as 1.0 would put a dollar on screen nobody measured.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _readings(path: Path) -> list[tuple[str, int, float, float | None, float | None]]:
+    """Every balance a run READ off its terminal in one health file:
+    `(ts, account, balance, capital_in, return_pct)`.
 
     ⚠ A pulse whose balance is not a number is SKIPPED — a bot whose terminal link is down writes
     one with no balance, and that is *could not ask*, never a reading of zero.
+
+    ⚠ `capital_in` / `return_pct` are the account's figures NET OF DEPOSITS, as the runner worked
+    them out at that same balance (since 2026-09-12). `None` on every pulse written before that, and
+    on one whose history did not add up — never zero, which would read as nothing put in.
     """
-    out: list[tuple[str, int, float]] = []
+    out: list[tuple[str, int, float, float | None, float | None]] = []
     try:
         text = path.read_text(errors="replace")
     except OSError:
@@ -620,7 +636,9 @@ def _readings(path: Path) -> list[tuple[str, int, float]]:
             continue
         if not isinstance(balance, (int, float)) or isinstance(balance, bool):
             continue
-        out.append((ts, account, float(balance)))
+        out.append(
+            (ts, account, float(balance), _num(row.get("capital_in")), _num(row.get("return_pct")))
+        )
     return out
 
 
@@ -633,8 +651,8 @@ _readings_cache: dict[str, tuple[tuple, dict]] = {}
 def balance_readings(bot_key: str) -> dict[int, dict]:
     """The FIRST and LAST balance each account showed this bot, off its own pulses.
 
-    `{account: {"first_at", "first_balance", "last_at", "last_balance"}}`, the instants as
-    datetimes. Empty when the bot has no health record here.
+    `{account: {"first_at", "first_balance", "last_at", "last_balance", "last_capital_in",
+    "last_return_pct"}}`, the instants as datetimes. Empty when the bot has no health record here.
     """
     folder = ARCHIVE / bot_key / "ledger"
     health = sorted(folder.glob("health-*.jsonl")) if folder.is_dir() else []
@@ -645,7 +663,7 @@ def balance_readings(bot_key: str) -> dict[int, dict]:
 
     seen: dict[int, dict] = {}
     for f in health:
-        for ts, account, balance in _readings(f):
+        for ts, account, balance, capital_in, return_pct in _readings(f):
             at = _instant(ts)
             if at is None:
                 continue
@@ -656,12 +674,17 @@ def balance_readings(bot_key: str) -> dict[int, dict]:
                     "first_balance": balance,
                     "last_at": at,
                     "last_balance": balance,
+                    "last_capital_in": capital_in,
+                    "last_return_pct": return_pct,
                 }
                 continue
             if at < cur["first_at"]:
                 cur["first_at"], cur["first_balance"] = at, balance
             if at >= cur["last_at"]:
+                # ⚠ All three off ONE pulse, so a net is never one reading's balance less another
+                # reading's deposits.
                 cur["last_at"], cur["last_balance"] = at, balance
+                cur["last_capital_in"], cur["last_return_pct"] = capital_in, return_pct
     _readings_cache[bot_key] = (fp, {a: dict(v) for a, v in seen.items()})
     return seen
 
@@ -679,7 +702,12 @@ def _account_readings(readings: dict[str, dict[int, dict]], account: int) -> dic
         if first is None or r["first_at"] < first["at"]:
             first = {"at": r["first_at"], "balance": r["first_balance"], "bot": bot_key}
         if last is None or r["last_at"] > last["at"]:
-            last = {"at": r["last_at"], "balance": r["last_balance"]}
+            last = {
+                "at": r["last_at"],
+                "balance": r["last_balance"],
+                "capital_in": r.get("last_capital_in"),
+                "return_pct": r.get("last_return_pct"),
+            }
     if first is None or last is None:
         return None
     return {"first": first, "last": last}
@@ -786,6 +814,9 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
 
     `bots` is one dict per bot carrying `bot_key`, `name`, `account`, `balance` and
     `starting_balance` — read off the snapshot that has already been fetched, so this adds no SSH.
+    Since 2026-09-12 also `capital_in` and `total_pnl_pct`: what went into the account and its
+    time-weighted return, as the bot read them off the broker's deal history in the same poll as
+    the balance. Absent or `None` keeps that account on the older opening basis.
     A bot dict may also carry `live_trades`: the closed-trade rows the BOX just reported, or
     `None`/absent when it was not asked. See `read_bot_ledger` on why that is not a plain list.
     And `strategy`, the package it runs — how a departed bot's record here finds the bot that
@@ -869,14 +900,52 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                 "reading of its balance — this is the record of their trades."
             )
 
+        # 🔴 NET OF DEPOSITS AND WITHDRAWALS (2026-09-12). A bot on the new runner reads the
+        # account's whole deal history and states what went IN beside the balance, off the same
+        # poll — so the net is the balance less that, never the balance less an opening a deposit
+        # has since dwarfed: the live account's $9,860.51 transfer read as +2,181.67% on the
+        # opening basis. ⚠ The balance and what went in come from ONE reading, so a net is never
+        # one poll's balance less another poll's deposits.
+        capital_in = capital_ret = None
+        src = next(
+            (
+                r
+                for r in merged
+                if _num(r.get("balance")) is not None and _num(r.get("capital_in")) is not None
+            ),
+            None,
+        )
+        if src is not None:
+            balance = src["balance"]
+            capital_in, capital_ret = _num(src["capital_in"]), _num(src.get("total_pnl_pct"))
+        elif balance_read_at is not None and seen:
+            capital_in, capital_ret = seen["last"].get("capital_in"), seen["last"].get("return_pct")
+
+        # "deposits": the balance less what went in, the % time-weighted as the bot measured it.
+        # "opening": the older basis, for an account whose bots have not read their history.
+        basis = "deposits" if balance is not None and capital_in is not None else "opening"
         net_usd = net_pct = None
-        if balance is not None and opening:
+        if basis == "deposits":
+            net_usd = round(balance - capital_in, 2)
+            net_pct = capital_ret
+        elif balance is not None and opening:
             net_usd = round(balance - opening, 2)
             net_pct = round((balance - opening) / opening * 100, 2)
+        # ⚠ A deposits net covers the account's WHOLE life, so every bot that ever traded here is
+        # inside its window — the departed ones too, exactly as on the account's own opening.
+        whole = own_opening or basis == "deposits"
+        # What a bot's dollars are a share OF. On the deposits basis, what went in: a bot's $516 on
+        # an account topped up to $10,312.48 is 5%, never 114% of the $451.97 it opened at.
+        # ⚠ Nothing once everything has been taken out — a share of zero or less is not a share.
+        if basis == "deposits":
+            share_base = capital_in if capital_in > 0 else None
+        else:
+            share_base = opening
 
-        # What the bots here recorded making. On the account's own opening the departed bots
-        # traded inside the window too, so they count; on a current bot's anchor they may not.
-        counted = [*traded, *([r for r in left if r.get("traded")] if own_opening else [])]
+        # What the bots here recorded making. On the account's own opening — or on the deposits
+        # basis — the departed bots traded inside the window too, so they count; on a current
+        # bot's anchor they may not.
+        counted = [*traded, *([r for r in left if r.get("traded")] if whole else [])]
         attributed = round(sum(r["realised_usd"] or 0.0 for r in counted), 2) if counted else None
 
         unattributed = None
@@ -893,7 +962,7 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
             )
             # ⚠ Refused when a departed bot traded here and the opening is a current bot's anchor:
             # whether its trades fall inside that window cannot be told.
-            if covers and (own_opening or not left_traded):
+            if covers and (whole or not left_traded):
                 unattributed = round(net_usd - attributed, 2)
 
         records_live, lag, note = _freshness(merged, as_of)
@@ -918,6 +987,9 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                 "opening_note": opening_note,
                 "net_usd": net_usd,
                 "net_pct": net_pct,
+                # What went in, present exactly on the deposits basis, and which basis the net is.
+                "capital_in": round(capital_in, 2) if basis == "deposits" else None,
+                "net_basis": basis,
                 "attributed_usd": attributed,
                 "unattributed_usd": unattributed,
                 # Named, never silently folded into the unattributed figure: a bot whose record
@@ -946,17 +1018,19 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                         "record_source": r.get("record_source"),
                         # The bots whose trades here this row carries on from — see `_carry_on`.
                         "carried_from": r.get("carried_from") or [],
-                        # The number Aaron asked for: what this bot made, as a share of what the
-                        # ACCOUNT opened at — so two bots on one balance are directly comparable
-                        # and neither is credited with the other's growth.
+                        # The number Aaron asked for: what this bot made, as a share of the
+                        # ACCOUNT's capital — what went in on the deposits basis, what it opened
+                        # at otherwise — so two bots on one balance are directly comparable and
+                        # neither is credited with the other's growth, nor with a deposit.
                         # A departed bot's dollars — on its own row or carried into an heir's —
-                        # count only on the account's OWN opening. On a current bot's anchor,
-                        # dividing them by it mixes two different starts.
+                        # count only over the account's WHOLE window (its own opening, or the
+                        # deposits basis). On a current bot's anchor, dividing them by it mixes
+                        # two different starts.
                         "pct_of_opening": (
-                            round((r["realised_usd"] or 0.0) / opening * 100, 2)
-                            if opening
+                            round((r["realised_usd"] or 0.0) / share_base * 100, 2)
+                            if share_base
                             and r.get("traded")
-                            and (own_opening or not (r.get("former") or r.get("carried_from")))
+                            and (whole or not (r.get("former") or r.get("carried_from")))
                             else None
                         ),
                     }

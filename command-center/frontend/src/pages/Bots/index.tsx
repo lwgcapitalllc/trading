@@ -356,7 +356,8 @@ function Dash() {
   return <span className="text-[12px] text-text-tertiary cursor-default">—</span>
 }
 
-/** What this bot's own closed trades made as a share of the account's OPENING balance.
+/** What this bot's own closed trades made as a share of the account's CAPITAL — what went in
+ *  (deposits less withdrawals) once its bots read the broker's history, its opening balance before.
  *  ⚠ Its own column, never under the dollars: it is a different measurement from R per trade
  *  (the account's size is in it; R is not), and stacked under the P&L the two read as one. */
 function ReturnPct({ e, asking }: { e: BotEarnings | undefined; asking: boolean }) {
@@ -366,7 +367,7 @@ function ReturnPct({ e, asking }: { e: BotEarnings | undefined; asking: boolean 
   return (
     <span
       data-testid="return-pct"
-      title={`${p > 0 ? '+' : ''}${p.toFixed(2)}% — this bot's own closed trades as a share of the account's opening balance`}
+      title={`${p > 0 ? '+' : ''}${p.toFixed(2)}% — this bot's own closed trades as a share of the account's capital: what went in, deposits less withdrawals (its opening balance where the bots have not read the account's history yet)`}
       className={`text-[13px] font-mono tabular-nums font-medium cursor-default ${pnlCls(p)}`}
     >
       {p > 0 ? '+' : p < 0 ? '−' : ''}
@@ -656,11 +657,18 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
   const then = e.balance_read_at
     ? `Last read at ${money(e.balance, false)} on ${readTime(e.balance_read_at)} — nothing on it has reported one since.`
     : `Now ${money(e.balance, false)}.`
+  // 🔴 On the DEPOSITS basis the net is the balance less what went IN and the % is time-weighted,
+  // so a deposit or a withdrawal is never a return (2026-09-12). The referent is the money put in:
+  // an account opened at $451.97 and topped up to $10,312.48 is measured against the $10,312.48.
+  const from =
+    e.net_basis === 'deposits' && e.capital_in != null
+      ? `${money(e.capital_in, false)} put in (deposits less withdrawals). The % is time-weighted, so a deposit or a withdrawal never counts as a return.`
+      : `Opened at ${money(e.opening_balance, false)}${
+          openingRecorder(e) ? `, recorded by ${openingRecorder(e)}` : ''
+        }.`
   return (
     <span
-      title={`Opened at ${money(e.opening_balance, false)}${
-        openingRecorder(e) ? `, recorded by ${openingRecorder(e)}` : ''
-      }. ${then}`}
+      title={`${from} ${then}`}
       className={`inline-flex items-baseline gap-[6px] px-[8px] py-[3px] rounded-pill cursor-default ${
         up ? 'bg-pos-muted' : 'bg-neg-muted'
       }`}
@@ -714,9 +722,11 @@ function Unattributed({ e }: { e: AccountEarnings }) {
           {money(e.unattributed_usd)}
         </span>
         <span className="text-[10.5px] text-text-tertiary">
+          {/* On the deposits basis a deposit or a withdrawal is already out of the net, so it is not
+           *  one of the causes this line may name (2026-09-12). */}
           {missing > 0
-            ? `— a manual fill, a deposit, or ${missing === 1 ? 'a bot whose record has' : `${missing} bots whose records have`} not arrived`
-            : '— a manual fill, a deposit, or a trade older than the record'}
+            ? `— a manual fill, ${e.net_basis === 'deposits' ? '' : 'a deposit, '}or ${missing === 1 ? 'a bot whose record has' : `${missing} bots whose records have`} not arrived`
+            : `— a manual fill, ${e.net_basis === 'deposits' ? '' : 'a deposit, '}or a trade older than the record`}
         </span>
       </div>
       {provisional && e.attribution_note && (
@@ -737,7 +747,7 @@ function ColumnHeadings() {
     >
       <span className="pl-4">Bot</span>
       <span title="What this bot's own closed trades came to">P&amp;L</span>
-      <span title="Return % — this bot's own closed trades as a share of the account's opening balance">
+      <span title="Return % — this bot's own closed trades as a share of the account's capital: what went in, deposits less withdrawals (its opening balance where the bots have not read the account's history yet)">
         Return %
       </span>
       <span title="How many trades this bot has closed — the sample every figure beside it rests on">

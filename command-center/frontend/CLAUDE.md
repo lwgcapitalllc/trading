@@ -4348,6 +4348,18 @@ picker. It now finds the picker's own placeholder and asserts a PREFIX (`/^XAUUS
 the fixture the broker's suffix is not re-applied when the default instrument arrives after the
 broker — the backend binds the suffix, per *the broker's own symbol* above.
 
+## The account net is measured off what went IN, and the page says which (2026-09-12)
+
+`AccountNet`, the account drawer and the *Not from these bots* line read `AccountEarnings.net_basis`.
+On `'deposits'` the net is the balance less `capital_in` (deposits less withdrawals) and the % is
+time-weighted, so the tooltip and the drawer name **what went in** as the referent, never the
+opening, and the remainder line stops offering *a deposit* as a cause — it is already out of the
+net. On `'opening'` (a bot on an older runner) everything reads as before. ⚠ **Both fields are
+optional** — recordings predate them — and **the page decides nothing**: the basis is the server's.
+Rules: `../backend/CLAUDE.md` → *The account's net is measured off what went IN*. Pinned by one
+offline check in `tests/bots-accounts.spec.ts`, watched RED in a throwaway worktree against HEAD's
+page and again with the remainder still naming a deposit.
+
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
 🔴 **Earnings are keyed by ACCOUNT AND BOT, never by bot alone (2026-09-11).** A bot that moved has a

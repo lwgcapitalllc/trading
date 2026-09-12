@@ -595,7 +595,12 @@ export function AccountDrawer({
             )}
             {/* What it OPENED at, and which bot recorded that — a net with no denominator on screen
              *  is a number nobody can check. */}
-            {earnings?.net_usd != null && earnings.opening_balance != null ? (
+            {/* 🔴 On the DEPOSITS basis the referent is what went in, not the opening: a deposit or
+             *  a withdrawal is taken out of the net and the % is time-weighted (2026-09-12). */}
+            {earnings?.net_usd != null &&
+            (earnings.net_basis === 'deposits'
+              ? earnings.capital_in != null
+              : earnings.opening_balance != null) ? (
               <p className="text-[11.5px] text-text-tertiary mt-[8px] leading-[1.55]">
                 <span className={earnings.net_usd >= 0 ? 'text-pos-text' : 'text-neg-text'}>
                   {earnings.net_usd >= 0 ? '+' : '−'}
@@ -603,8 +608,14 @@ export function AccountDrawer({
                   {earnings.net_pct != null &&
                     ` (${earnings.net_pct > 0 ? '+' : ''}${earnings.net_pct.toFixed(1)}%)`}
                 </span>{' '}
-                since it opened at {money(earnings.opening_balance)}
-                {openingRecorder(earnings) ? `, recorded by ${openingRecorder(earnings)}` : ''}.
+                {earnings.net_basis === 'deposits' && earnings.capital_in != null ? (
+                  <>on {money(earnings.capital_in)} put in, deposits less withdrawals.</>
+                ) : earnings.opening_balance != null ? (
+                  <>
+                    since it opened at {money(earnings.opening_balance)}
+                    {openingRecorder(earnings) ? `, recorded by ${openingRecorder(earnings)}` : ''}.
+                  </>
+                ) : null}
               </p>
             ) : (
               earnings?.opening_note && (

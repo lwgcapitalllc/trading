@@ -317,7 +317,16 @@ class BotStatus(BaseModel):
     review: Optional[BotReview] = None
     status: str  # "RUNNING" | "STOPPED" | "ERROR"
     uptime_seconds: Optional[int] = None
+    # The account's return NET OF DEPOSITS AND WITHDRAWALS, time-weighted — each stretch between
+    # money moving in or out measured on its own and the stretches chained — off the broker's own
+    # deal history (`algos/shared/account_flows.py`, since 2026-09-12). It was
+    # `(balance - starting_balance) / starting_balance` before, which read a $9,860.51 transfer as
+    # +2,181.67%. `None` = the bot could not say, never flat.
     total_pnl_pct: Optional[float] = None
+    # What went INTO the account — deposits less withdrawals — off that same history. `None` =
+    # the bot has not read it (an older runner, no link, or a history that did not add up to the
+    # balance), NEVER "nothing was put in".
+    capital_in: Optional[float] = None
     # What the ACCOUNT held when this bot first connected to it — `algos/shared/bot_state.py`
     # anchors it once per account and re-anchors only when the account CHANGES.
     #
@@ -327,8 +336,9 @@ class BotStatus(BaseModel):
     # `services/bot_earnings.py` picks by earliest ledger record rather than by whichever row
     # the snapshot happens to list first.
     #
-    # ⚠ `None` means the bot has never connected, NEVER "the account opened at zero". It is
-    # what `total_pnl_pct` divides by, so a fabricated 0 here is a division by nothing.
+    # ⚠ `None` means the bot has never connected, NEVER "the account opened at zero". The return
+    # was divided by it until 2026-09-12; it is now only the opening `bot_earnings` falls back to
+    # for a bot that has not read its account's deal history.
     starting_balance: Optional[float] = None
     day_locked: bool = False
     # ── Detail fields (populated from bot_state.json) ─────────────────────────
@@ -378,8 +388,10 @@ class BotEarnings(BaseModel):
     # "live" = this bot's own ledger was read off the box in the same breath as the balance, so the
     # figure above shares a clock with it. "archive" = it does not.
     record_source: Optional[str] = None
-    # This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
-    # is comparable between two bots sharing one balance.
+    # This bot's realised dollars as a share of the ACCOUNT's capital — the one figure that is
+    # comparable between two bots sharing one balance. ⚠ The name predates 2026-09-12: on the
+    # deposits basis the denominator is what went IN (deposits less withdrawals), because a share
+    # of an opening a deposit has since dwarfed is the +2,181% bug one column over.
     pct_of_opening: Optional[float] = None
     # 🔴 A bot that has LEFT this account (2026-09-11): its row is the record of what it did HERE,
     # and `moved_to` is where it went. Declared, or Pydantic drops them and a departed bot's demo
@@ -400,9 +412,9 @@ class AccountEarnings(BaseModel):
     """One broker account: what it made, and how much of that any bot here can account for.
 
     🔴 `unattributed_usd` is a REPORTED FIGURE, not an error. The account's growth and the bots'
-    trades are two different measurements, and the difference is a manual fill, a deposit or a
-    trade older than the record. Splitting the account's growth between the bots would credit a
-    strategy with money it did not make.
+    trades are two different measurements, and the difference is a manual fill or a trade older
+    than the record — and, on the older `opening` basis only, a deposit. Splitting the account's
+    growth between the bots would credit a strategy with money it did not make.
     """
 
     account: int
@@ -419,6 +431,13 @@ class AccountEarnings(BaseModel):
     opening_note: Optional[str] = None
     net_usd: Optional[float] = None
     net_pct: Optional[float] = None
+    # 🔴 What the net is measured FROM (2026-09-12). "deposits" = the balance less `capital_in` —
+    # deposits less withdrawals, off the broker's own deal history — with the % time-weighted, so
+    # a deposit or a withdrawal is never a return. "opening" = the balance less `opening_balance`,
+    # the older basis, kept for an account whose bots have not read their history; there a deposit
+    # still reads as growth. ⚠ Declared, or Pydantic drops them and the page cannot say which.
+    capital_in: Optional[float] = None
+    net_basis: str = "opening"
     attributed_usd: Optional[float] = None
     unattributed_usd: Optional[float] = None
     # 🔴 Whether the bots' figures and the balance they are subtracted from were read at the same

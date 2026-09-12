@@ -373,6 +373,11 @@ export interface BotStatus {
   status: 'RUNNING' | 'STOPPED' | 'ERROR'
   uptime_seconds: number | null
   total_pnl_pct: number | null
+  /** What went INTO the account — deposits less withdrawals — off the broker's own deal history
+   *  (2026-09-12). `total_pnl_pct` beside it is time-weighted over that same history, so neither
+   *  counts a deposit as a return. `null` = the bot has not read its account's history, never
+   *  "nothing was put in". Optional: a recording taken before the field existed carries none. */
+  capital_in?: number | null
   /** What the ACCOUNT held when THIS bot first connected to it.
    *
    *  ⚠ Two bots on one balance state DIFFERENT anchors and both are right — each recorded what
@@ -414,8 +419,9 @@ export interface BotEarnings {
   /** "live" = read off the box in the same breath as the balance, so this figure and that balance
    *  share a clock. "archive" = it does not. */
   record_source: string | null
-  /** This bot's realised dollars as a share of what the ACCOUNT opened at — the one figure that
-   *  is comparable between two bots sharing one balance. */
+  /** This bot's realised dollars as a share of the ACCOUNT's capital — the one figure that is
+   *  comparable between two bots sharing one balance. ⚠ The name predates 2026-09-12: on the
+   *  deposits basis the denominator is what went IN, not the opening. */
   pct_of_opening: number | null
   /** A bot that has LEFT this account — its row is the record of what it did here, and
    *  `moved_to` is the account it went to. It carries no controls on this account. */
@@ -440,9 +446,9 @@ export interface CarriedRecord {
 /** One broker account: what it made, and how much of that the bots here can account for.
  *
  *  🔴 `unattributed_usd` is a REPORTED FIGURE, not an error. The account's growth and the bots'
- *  own trades are two different measurements, and the difference is a manual fill, a deposit, or
- *  a trade older than the record. Dividing the account's growth between the bots would credit a
- *  strategy with money it did not make. */
+ *  own trades are two different measurements, and the difference is a manual fill or a trade older
+ *  than the record — and, on the older `opening` basis only, a deposit. Dividing the account's
+ *  growth between the bots would credit a strategy with money it did not make. */
 export interface AccountEarnings {
   account: number
   balance: number | null
@@ -455,6 +461,13 @@ export interface AccountEarnings {
   opening_note: string | null
   net_usd: number | null
   net_pct: number | null
+  /** 🔴 What the net is measured FROM (2026-09-12). 'deposits' = the balance less `capital_in`
+   *  (deposits less withdrawals, off the broker's own history), the % time-weighted, so a deposit
+   *  or a withdrawal is never a return. 'opening' = the balance less `opening_balance`, the older
+   *  basis for an account whose bots have not read their history — there a deposit still reads as
+   *  growth. Optional: an older payload or recording carries neither. */
+  capital_in?: number | null
+  net_basis?: 'deposits' | 'opening'
   attributed_usd: number | null
   unattributed_usd: number | null
   /** 🔴 Whether the bots' figures and the balance they are subtracted from were read at the same
