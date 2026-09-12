@@ -88,8 +88,10 @@ frontend/src/
     │   ├── DisqualifiedLog.tsx
     │   └── Config.tsx
     ├── Bots/
-    │   ├── index.tsx         monitor tab + live snapshot
-    │   ├── ConfigureTab.tsx  risk caps + deploy
+    │   ├── index.tsx         the list: accounts as headings, bots as rows
+    │   ├── AccountDrawer.tsx / BotDrawer.tsx   the two panels
+    │   ├── ConfigureTab.tsx  the bot panel's deploy, risk and settings pieces
+    │   ├── AccountForm.tsx   add / edit a broker account
     │   └── UsersTab.tsx      Telegram users
     ├── Rulesets.tsx          own top-level page (/rulesets) — firm-grouped prop tables + personal group
     ├── Backtests.tsx         lab landing — Runs / Sweeps / Stacks tabs. `StackConfigModal` (Stacks tab) picks 2+ Python strategies over one shared instrument/costs/window, with **its own timeframe and risk per LEG** — each prefilled from the frame that strategy declares it was measured on (see *The stack form: one timeframe PER LEG*); a live `useStackPreview` shows a green **Reuse** or amber **Run** chip per leg (reuse = a completed standalone run already matches these exact settings) + a summary; when every leg reuses, no backtest fires and the button reads **Create stack**
@@ -248,11 +250,12 @@ otherwise be the first thing a long plan scrolls out of reach.
 left undone because another session was mid-edit on both. A drawer's look lives in three places
 until then.
 
-🔴 **`AccountsTab` IS NOT RENDERED BY ANYTHING and has not been since the 2026-09-05 rebuild above.**
-`index.tsx` and `AccountDrawer` import only its helpers (`AccountForm`, `emptyGroup`, `nameOf`).
-This view was first wired into its rail, typechecked, linted and passed every gate — and
-**could not have appeared on screen**, which only opening the page showed. ⚠ **Anything added there
-is dead on arrival.** It is rule 9 in the frontend: a feature nobody has RUN is not a feature.
+🔴 **`AccountsTab` rendered nothing from the 2026-09-05 rebuild until it was DELETED on 2026-09-11**,
+with `ConfigureTab`'s `BotPanel`, `DeployCard` and fleet strip (Aaron's go). The live pieces are
+`pages/Bots/AccountForm.tsx` (`AccountForm`, `emptyGroup`, `nameOf`). It had been wired into its rail,
+typechecked, linted and passed every gate — and **could not have appeared on screen**. ⚠ Sections
+below that describe the rail, the tabs, `DeployCard` or the fleet strip are HISTORY: rule 9 in the
+frontend, a feature nobody has RUN is not a feature.
 
 Story: `command-center/docs/FRONTEND_BUILD_NOTES.md`.
 
@@ -1426,7 +1429,7 @@ half that does not need the app running.
 |---|---|---|
 | Overview | ✅ Live | Stat row + cards for each domain. [Detail](../docs/FRONTEND_BUILD_NOTES.md#overview) |
 | Smart Money | 🟡 Built, flagged OFF | Scan, terminal, rankings, profiles, disqualified, config, cache — all still work. Hidden from the nav, the Overview and the router since 2026-08-04 (`FEATURES.smartMoney`); nothing was deleted |
-| Bots | ✅ Live | Monitor, control, configure, users. **Configure carries `DeployCard`** — the deployed version read off the VPS (hash / commit / date / params as deployed) plus the **Promote** button, which previews before it deploys and warns on the four states that make a version claim false. [Detail](../docs/FRONTEND_BUILD_NOTES.md#bots) |
+| Bots | ✅ Live | One list (accounts as headings, bots as rows), an account panel and a bot panel — see *The Bots page* above. [Detail](../docs/FRONTEND_BUILD_NOTES.md#bots) |
 | Backtests lab | ✅ Live | Runs / Sweeps tabs; run modal; BacktestDetail |
 | Optimizations | ✅ Live | Own top-level page (`/optimizations`); detail at `/optimizations/:id`; "Tune winner" → workbench |
 | Tuning workbench | ✅ Live | `/backtests/runs/:runId/tune` — edit params, run iterations, leaderboard + regime-aware equity overlay + net-P&L-by-regime |

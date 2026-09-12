@@ -27,7 +27,7 @@ import type {
   AccountSyncPreview,
   ScannedTerminal,
 } from '@/types'
-import { AccountForm } from './AccountsTab'
+import { AccountForm } from './AccountForm'
 
 /**
  * Sync the account list with what the VPS is logged into — SCAN FIRST, then a Sync button.

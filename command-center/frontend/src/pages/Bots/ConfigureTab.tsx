@@ -6,24 +6,13 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  GitCommitHorizontal,
   HelpCircle,
   Info,
   Loader2,
-  Lock,
-  Snowflake,
-  RotateCcw,
-  SlidersHorizontal,
   Upload,
   WifiOff,
 } from 'lucide-react'
-import {
-  useBotParams,
-  useSaveBotRuntime,
-  useBotVersion,
-  usePromoteJobs,
-  useStartPromoteJob,
-} from '@/hooks/useBots'
+import { useSaveBotRuntime, useBotVersion, useStartPromoteJob } from '@/hooks/useBots'
 import {
   deployableVersion,
   deployWouldAdvance,
@@ -32,18 +21,13 @@ import {
 } from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
 import { StepProgress, type Step } from '@/components/StepProgress'
-import type {
-  BotDeployedVersion,
-  BotParamRow,
-  BotParamsView,
-  BotPromoteJob,
-  BotPromoteStage,
-  BotStatus,
-} from '@/types'
+import type { BotDeployedVersion, BotParamRow, BotPromoteJob, BotPromoteStage } from '@/types'
 
 /**
- * What each live bot is actually configured with — and the one lever allowed to move
- * while it runs.
+ * The bot panel's money-path pieces: `VersionBanner` (deploy), `RuntimeEditor` (risk per trade)
+ * and `ParamGroup` (the read-only strategy settings). The file is named for the Configure tab it
+ * used to be; that tab, its `BotPanel`, `DeployCard` and fleet strip rendered nothing after the
+ * 2026-09-05 rebuild and were deleted on 2026-09-11.
  *
  * This replaced a risk-cap editor whose own footer said the values were "for monitoring
  * reference only": it wrote daily/weekly caps into config fields `algos/live/` does not
@@ -54,19 +38,9 @@ import type {
  * parameters are shown in full and locked: changing one means the bot is no longer the
  * bot that was backtested, and the `strategy_source_hash` pin exists to keep that true.
  *
- * ── The layout is a MISCLICK guard, not a tidy-up (2026-08-04, closes G11) ─────────────
- *
- * This tab used to map over every registered bot and render a full screen each — risk
- * editor, Account, Deployed version, a 47-row parameter accordion — in a flat stack with
- * no selector. Nothing about it was single-bot by construction (every endpoint is keyed by
- * bot name), and that is exactly what made it dangerous: with three bots registered, the
- * Promote button you want sits between two identical ones you do not, a screen apart, on
- * a page where the wrong click deploys new code onto a live account.
- *
- * So the rail is the feature. **Only the selected bot's controls exist in the DOM** — a
- * Promote button for a bot you did not pick is not there to be hit, which is a property no
- * amount of spacing or confirmation copy can buy. The confirm step names the bot for the
- * same reason.
+ * ⚠ **Only the OPEN bot's controls exist in the DOM** (it was a flat stack of every bot's screen
+ * until 2026-08-04, G11) — a Deploy button for a bot you did not pick is not there to be hit,
+ * which no amount of spacing or confirmation copy can buy. The confirm step names the bot too.
  */
 
 function fmt(v: unknown): string {
@@ -74,28 +48,6 @@ function fmt(v: unknown): string {
   if (typeof v === 'boolean') return v ? 'On' : 'Off'
   if (typeof v === 'number') return String(v)
   return String(v)
-}
-
-function Card({
-  title,
-  children,
-  right,
-}: {
-  title: string
-  children: React.ReactNode
-  right?: React.ReactNode
-}) {
-  return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
-          {title}
-        </p>
-        {right}
-      </div>
-      {children}
-    </div>
-  )
 }
 
 function Row({
@@ -125,10 +77,9 @@ function riskUsd(pct: number, balance: number | null): string {
 
 // ── one reading of a deployment record ──────────────────────────────────────────
 //
-// The fleet strip, the rail's warning marker and the card's own warning blocks all derive
-// from THIS function and nothing else. Three places counting "is this bot's deployment
-// claim false" three ways is three answers that can disagree, and the whole point of the
-// strip is that it agrees with the card it sends you to.
+// The version banner's warnings derive from THIS function and nothing else. Two places counting
+// "is this bot's deployment claim false" two ways is two answers that can disagree — the fleet
+// strip and `DeployCard` did, before both were deleted on 2026-09-11.
 
 type VersionFlags = {
   notFrozen: boolean
@@ -158,227 +109,6 @@ export function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | 
     behind: v.commits_ahead,
     anyWarn: notFrozen || snapshotModified || restartPending || driftCount > 0,
   }
-}
-
-// ── the fleet strip ─────────────────────────────────────────────────────────────
-//
-// G11's third point: "which bots are behind the repo, which have a restart pending" had no
-// single home, even though the per-bot endpoint already returned all of it. It costs no
-// extra fetch — the flat stack was already reading every bot's version to render every
-// DeployCard, and these are the same cache entries.
-
-/**
- * One count on the strip.
- *
- * 🔴 **A non-zero count is a BUTTON that selects the bot it is talking about.** Aaron, 2026-08-28,
- * reading `1 not frozen`: *"idk what that even means"*. The strip named a condition and a number
- * and nothing else — so answering *which bot?* meant clicking every row in the rail in turn, and
- * the sentence explaining the condition lives on the card you get to by doing that. The count now
- * takes you there, and the tooltip names the bots so the common case needs no click at all.
- *
- * ⚠ **Zero stays a plain `<span>`.** A button that navigates nowhere is the control this repo
- * keeps recording as worse than none — a reader presses it, nothing happens, and the honest
- * conclusion available to them is that the page is broken.
- */
-function FleetCount({
-  label,
-  bots,
-  tone,
-  icon: Icon,
-  title,
-  onSelect,
-}: {
-  label: string
-  /** The bots this count is ABOUT — `bots.length` is the number rendered, so a count can never
-   *  disagree with the list behind it or send you to a bot it is not counting. */
-  bots: BotStatus[]
-  tone: 'warn' | 'neutral'
-  icon: typeof AlertTriangle
-  title: string
-  onSelect: (key: string) => void
-}) {
-  const n = bots.length
-  const hot = n > 0
-  const cls = !hot
-    ? 'border-border-subtle/60 text-text-tertiary'
-    : tone === 'warn'
-      ? 'border-warn/30 bg-warn-muted text-warn-text'
-      : 'border-border-default text-text-secondary'
-  const body = (
-    <>
-      <Icon size={10} className="shrink-0" />
-      <span className="font-mono tabular-nums font-semibold">{n}</span>
-      <span className="whitespace-nowrap">{label}</span>
-    </>
-  )
-  const shape = `inline-flex items-center gap-[5px] text-[10px] px-[8px] py-[4px] rounded-md border ${cls}`
-
-  if (!hot) {
-    return (
-      <span title={title} className={`${shape} cursor-default`}>
-        {body}
-      </span>
-    )
-  }
-  const names = bots.map((b) => b.name).join(', ')
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(bots[0].key)}
-      title={`${names} — ${title}`}
-      className={`${shape} cursor-pointer hover:brightness-125`}
-    >
-      {body}
-    </button>
-  )
-}
-
-export function FleetStrip({
-  bots,
-  flags,
-  unreadable,
-  loading,
-  rechecking,
-  onSelect,
-}: {
-  bots: BotStatus[]
-  flags: (VersionFlags | null)[]
-  unreadable: number
-  loading: boolean
-  /** A version is being re-read RIGHT NOW. Distinct from `loading`, which is the first read. */
-  rechecking: boolean
-  onSelect: (key: string) => void
-}) {
-  const running = bots.filter((b) => b.status === 'RUNNING').length
-  const live = bots.filter((b) => b.account_type === 'live').length
-  const known = flags.filter((f): f is VersionFlags => f !== null)
-
-  // Each count is the LIST of bots it is about, not a number counted separately from them —
-  // so the figure on a chip and the bot it sends you to cannot come apart.
-  const withFlag = (p: (f: VersionFlags) => boolean) =>
-    bots.filter((_, i) => {
-      const f = flags[i]
-      return f !== null && p(f)
-    })
-
-  const clean = known.length > 0 && known.every((f) => !f.anyWarn)
-
-  return (
-    /* A declared TEST SEAM, for the reason `version-banner` carries one: the words on these chips
-       ("restart pending", "behind repo") also appear in the DeployCard's own warnings further down
-       the page, so a page-wide locator matches a card that is not this strip and passes against a
-       broken one. */
-    <div
-      data-testid="fleet-strip"
-      className="bg-bg-surface border border-border-subtle rounded-lg px-4 py-[11px] mb-4
-                    flex items-center gap-x-[10px] gap-y-[8px] flex-wrap"
-    >
-      <div className="flex items-baseline gap-[6px] mr-[4px]">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
-          Fleet
-        </span>
-        <span className="text-[11px] text-text-secondary font-mono tabular-nums">
-          {bots.length} {bots.length === 1 ? 'bot' : 'bots'}
-        </span>
-        <span className="text-[11px] text-text-tertiary">·</span>
-        <span className="text-[11px] text-text-tertiary font-mono tabular-nums">
-          {running} running
-        </span>
-        {live > 0 && (
-          <>
-            <span className="text-[11px] text-text-tertiary">·</span>
-            <span className="text-[11px] font-mono tabular-nums text-warn-text">{live} live</span>
-          </>
-        )}
-      </div>
-
-      <div className="flex items-center gap-[6px] flex-wrap ml-auto">
-        <FleetCount
-          label="restart pending"
-          bots={withFlag((f) => f.restartPending)}
-          tone="warn"
-          icon={RotateCcw}
-          onSelect={onSelect}
-          title="the new code is on disk and the OLD code is still trading. This clears itself once the bot comes back — the page re-checks every 15s while it says so."
-        />
-        {/* 🔴 It read `not frozen` until 2026-08-28, and that is a word about the MECHANISM
-            (a promoted bot runs a frozen snapshot) rather than about what is true of the bot.
-            Aaron: *"1 not frozen — idk what that even means"*. What it means to a reader is that
-            this bot has never been deployed, so there is no pinned version and it runs whatever
-            the repo says at the moment it starts. Say that. */}
-        <FleetCount
-          label="never deployed"
-          bots={withFlag((f) => f.notFrozen)}
-          tone="warn"
-          icon={Snowflake}
-          onSelect={onSelect}
-          title="never promoted, so it has no pinned version — it runs whatever is in the repo when it starts, and a git pull changes what it trades. Deploy it."
-        />
-        <FleetCount
-          label="snapshot edited"
-          bots={withFlag((f) => f.snapshotModified)}
-          tone="warn"
-          icon={AlertTriangle}
-          onSelect={onSelect}
-          title="the deployed files no longer match their record — edited in place, bypassing promote."
-        />
-        <FleetCount
-          label="settings changed"
-          bots={withFlag((f) => f.driftCount > 0)}
-          tone="warn"
-          icon={SlidersHorizontal}
-          onSelect={onSelect}
-          title="config.json now states settings the deployment does not carry. They take effect at the next promote (risk % applies live)."
-        />
-        <FleetCount
-          label="behind repo"
-          bots={withFlag((f) => f.behind > 0)}
-          tone="neutral"
-          icon={GitCommitHorizontal}
-          onSelect={onSelect}
-          title="the repo has moved past this deployment. Normal — a bot runs what it was promoted at, not what the repo says today."
-        />
-
-        {/* A version that could not be READ is not a healthy one. Counting an unreadable
-            record as clean is how a strip comes to say "all clear" about a bot it never
-            reached — the same "no data is not the same as cannot ask" rule the MT5 link
-            chip exists for. */}
-        {unreadable > 0 && (
-          <span
-            title="Their deployment record could not be read from the VPS — this is unknown, not clean."
-            className="inline-flex items-center gap-[5px] text-[10px] px-[8px] py-[4px] rounded-md
-                       border border-border-default text-text-tertiary cursor-default"
-          >
-            <span className="font-mono tabular-nums font-semibold">{unreadable}</span> unreadable
-          </span>
-        )}
-        {loading && <span className="text-[10px] text-text-tertiary">reading…</span>}
-        {/* 🔴 A page that re-reads on its own has to SAY it is doing so, or the reader cannot
-            tell a live number from a frozen one — and a strip that had gone stale after a
-            promote is exactly what taught us that. `loading` is the FIRST read (there is
-            nothing on screen yet); this is a re-read over numbers already showing, which is a
-            different sentence for a different state. */}
-        {!loading && rechecking && (
-          <span className="text-[10px] text-text-tertiary">re-checking…</span>
-        )}
-        {!loading && !rechecking && unreadable === 0 && clean && (
-          <span className="text-[10px] text-pos-text ml-[2px]">all deployments clean</span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function Warn({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="flex items-start gap-[6px] text-[10px] leading-[1.5] text-amber-400/90
-                    bg-amber-400/[0.06] border border-amber-400/20 rounded px-[8px] py-[6px] mt-[8px]"
-    >
-      <AlertTriangle size={11} className="shrink-0 mt-[1px]" />
-      <span>{children}</span>
-    </div>
-  )
 }
 
 // ── "am I behind, and by how much" — the headline the page never had ────────────
@@ -958,84 +688,6 @@ export function VersionBanner({
   )
 }
 
-// `botKey` addresses the API and `botLabel` is what a human reads. They are separate props
-// on purpose: a display name is the field somebody eventually renames, and a control that
-// ACTS on a name acts on nothing the day it changes.
-export function DeployCard({ botKey }: { botKey: string }) {
-  const { data: v, isLoading } = useBotVersion(botKey)
-
-  if (isLoading)
-    return (
-      <Card title="Deployed version">
-        <Row label="">loading…</Row>
-      </Card>
-    )
-  if (!v)
-    return (
-      <Card title="Deployed version">
-        <Row label="">unavailable</Row>
-      </Card>
-    )
-
-  const f = versionFlags(v)!
-
-  return (
-    <Card title="Deployed version">
-      <Row label="Strategy">{fmt(v.strategy_package)}</Row>
-      <Row label="Code hash" title={v.hash}>
-        {v.hash ? v.hash.slice(0, 12) : '—'}
-      </Row>
-      <Row label="From commit">{fmt(v.commit)}</Row>
-      <Row label="Deployed on">{fmt(v.promoted_at)}</Row>
-      <Row label="Files">{v.files ? `${v.files} .py` : '—'}</Row>
-      <Row label="Repo now">
-        {fmt(v.repo_commit)}
-        {f.behind > 0 ? ` · ${f.behind} ahead` : ' · same'}
-      </Row>
-
-      {/* "Not frozen" was the MECHANISM's word (a deployed bot runs a frozen snapshot), and it
-          told a reader nothing about this bot. What is true of it is that nobody has ever
-          deployed it, so it has no pinned version — say that, and the rest follows. */}
-      {f.notFrozen && (
-        <Warn>
-          <strong>Never deployed.</strong> This bot has no pinned version — it imports straight from
-          the repo working tree, so a pull changes what it trades and can stop it starting. Deploy
-          it from the banner at the top of this page.
-        </Warn>
-      )}
-      {f.snapshotModified && (
-        <Warn>
-          <strong>Snapshot modified.</strong> The deployed files no longer match their record —
-          someone edited them in place, bypassing promote. Re-promote to re-pin.
-        </Warn>
-      )}
-      {/* It says how it CLEARS, because it clears on its own and the page used not to notice —
-          a badge that stayed put over a bot that had already come back is what sent somebody
-          looking for a restart that had happened. See `useBotVersion`. */}
-      {f.restartPending && (
-        <Warn>
-          <strong>Restart pending.</strong> The running process reports{' '}
-          <span className="font-mono">{v.running_hash}</span>, not the deployed hash. The new
-          version is on disk but the old one is still trading. This clears itself once the bot comes
-          back — the page re-reads it every 15s while it says this.
-        </Warn>
-      )}
-      {f.driftCount > 0 && (
-        <Warn>
-          <strong>{f.driftCount} setting(s) changed since deploy:</strong>{' '}
-          <span className="font-mono">{v.params_drift.join(', ')}</span>. They take effect at the
-          next promote, except risk % which applies live.
-        </Warn>
-      )}
-
-      <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
-        This bot runs a frozen copy of its code. Pulling, backtesting or editing the repo does not
-        touch it — only promoting does. Deploy from the banner at the top of this page.
-      </p>
-    </Card>
-  )
-}
-
 // ── the one editable lever ──────────────────────────────────────────────────────
 
 export function RuntimeEditor({
@@ -1286,101 +938,6 @@ export function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[]
           ))}
         </div>
       )}
-    </div>
-  )
-}
-
-export function BotPanel({ bot }: { bot: BotStatus }) {
-  // Every API path takes the KEY — the routes accept either, new code passes the key.
-  const { data, isLoading, error } = useBotParams(bot.key)
-  // Nothing renders this panel today; if it comes back it must not sit beside the Bots page,
-  // whose own watcher would then be a second 1s poll of the same job.
-  const [jobQ] = usePromoteJobs([bot.key])
-
-  if (isLoading) {
-    return <div className="text-[11px] text-text-tertiary">Loading {bot.name}…</div>
-  }
-  if (error || !data) {
-    return (
-      <div className="text-[11px] text-neg-text">
-        Could not read {bot.name}'s configuration: {String(error)}
-      </div>
-    )
-  }
-
-  const v: BotParamsView = data
-  const groups = v.strategy.reduce<Record<string, BotParamRow[]>>((acc, r) => {
-    ;(acc[r.group] ??= []).push(r)
-    return acc
-  }, {})
-
-  // NOTE: `v.version` (from config.json) is deliberately no longer rendered. It states what
-  // SHOULD be deployed and goes stale the moment the repo moves; DeployCard reads the VPS.
-  const terminal = (v.identity.mt5_path ?? '').split('\\').filter(Boolean)[0] ?? '—'
-
-  return (
-    <div className="grid grid-cols-2 gap-4 items-start">
-      {/* FIRST, full width, and deliberately above the risk editor: "am I behind, and by how
-          much" is the question this tab is opened to answer, and it had no answer on the page
-          at all until 2026-08-07. It also carries the only Deploy control. */}
-      <div className="col-span-2">
-        <VersionBanner botKey={bot.key} botLabel={bot.name} job={jobQ?.data} />
-      </div>
-
-      {/* Risk — the only thing on this page that can be changed */}
-      <div className="col-span-2">
-        <Card title="Risk per trade">
-          {v.runtime.length === 0 ? (
-            <p className="text-[11px] text-text-tertiary">No runtime-editable settings.</p>
-          ) : (
-            v.runtime.map((r) => (
-              <RuntimeEditor
-                key={r.name}
-                botKey={bot.key}
-                botLabel={bot.name}
-                row={r}
-                balance={bot.balance}
-              />
-            ))
-          )}
-        </Card>
-      </div>
-
-      <Card title="Account">
-        <Row label="Account">{fmt(v.identity.account)}</Row>
-        <Row label="Server">{fmt(v.identity.server)}</Row>
-        <Row label="Symbol">{fmt(v.identity.symbol)}</Row>
-        <Row label="Timeframe">{fmt(v.identity.timeframe)}</Row>
-        <Row label="Terminal" title={v.identity.mt5_path ?? ''}>
-          {terminal}
-        </Row>
-        <Row label="Magic">{fmt(v.identity.magic)}</Row>
-      </Card>
-
-      <DeployCard botKey={bot.key} />
-
-      <div className="col-span-2">
-        <Card
-          title={`Strategy parameters · ${v.strategy.length}`}
-          right={
-            <span className="inline-flex items-center gap-[4px] text-[9px] uppercase tracking-[0.4px] text-text-tertiary">
-              <Lock size={9} /> read-only
-            </span>
-          }
-        >
-          <p className="text-[10px] text-text-tertiary mb-2 leading-[1.5]">
-            These decide <strong className="text-text-secondary">which trades</strong> the bot
-            takes, so changing one means it is no longer the bot that was backtested. To change
-            them: edit in the lab, backtest, then promote — that path re-pins the version hash
-            above.
-          </p>
-          <div>
-            {Object.entries(groups).map(([g, rows]) => (
-              <ParamGroup key={g} group={g} rows={rows} />
-            ))}
-          </div>
-        </Card>
-      </div>
     </div>
   )
 }
