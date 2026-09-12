@@ -173,7 +173,7 @@ const DOT_CLS: Record<DotState, string> = {
 }
 
 const DOT_GLOW: Record<DotState, string | undefined> = {
-  green: '0 0 5px #00ff7f',
+  green: undefined,
   yellow: '0 0 5px #ffb300',
   red: undefined,
   grey: undefined,
@@ -186,8 +186,10 @@ const STATUS_TEXT: Record<DotState, string> = {
   grey: '…',
 }
 
+// A healthy dot's word is plain: the green dot already says it, and four green "ok"s were colour on
+// the normal state. The word takes colour only when something needs doing (2026-09-11).
 const STATUS_TEXT_CLS: Record<DotState, string> = {
-  green: 'text-pos-text',
+  green: 'text-text-tertiary',
   yellow: 'text-warn-text',
   red: 'text-neg-text',
   grey: 'text-text-tertiary',

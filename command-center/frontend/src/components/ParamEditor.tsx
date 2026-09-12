@@ -903,13 +903,15 @@ function Control(
               // its half; title keeps a clipped label readable.
               title={label}
               className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-1.5 text-[12px] font-semibold rounded-md transition-colors ${
+                // The chosen side is TINTED, not a solid cyan block (2026-09-11): a solid fill on
+                // every on/off row made the settings the loudest thing on the page.
                 on === state
-                  ? 'bg-accent text-bg-base'
+                  ? 'bg-accent-muted text-accent-text ring-1 ring-inset ring-accent/40'
                   : 'text-text-tertiary hover:text-text-secondary'
               }`}
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${on === state ? 'bg-bg-base' : 'bg-text-tertiary/50'}`}
+                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${on === state ? 'bg-accent' : 'bg-text-tertiary/50'}`}
               />
               <span className="truncate">{label}</span>
             </button>

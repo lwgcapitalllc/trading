@@ -155,7 +155,7 @@ function NavItem({
             <Icon
               size={16}
               className={`transition-all duration-[120ms] ${
-                isActive ? 'text-accent drop-shadow-glow-accent' : 'opacity-85'
+                isActive ? 'text-accent' : 'opacity-85'
               }`}
             />
             {active && <ActivityDot />}

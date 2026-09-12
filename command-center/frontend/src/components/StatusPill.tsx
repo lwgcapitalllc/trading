@@ -3,7 +3,7 @@ export function StatusPill({ status, size = 'sm' }: { status: string; size?: 'sm
   const label = isFailed ? 'failed' : status
   const cls =
     status === 'complete'
-      ? 'bg-pos-muted text-pos-text'
+      ? 'bg-bg-hover text-text-tertiary'
       : status === 'running'
         ? 'bg-accent-muted text-accent'
         : isFailed
