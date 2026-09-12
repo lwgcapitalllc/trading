@@ -11,24 +11,49 @@
  * symbol went (*"the account doesn't care"*) — adding a bot rewrites it onto this account's
  * suffix anyway. Risk stays because the account's cap is the budget every share comes out of.
  *
+ * 🔴 **A bot that does not fit says so on its row and offers the ways to make room (2026-09-11).**
+ * Adding it used to be refused after the click, and the fix took two writes on two panels. Whether
+ * it fits is the SERVER's answer (`useJoinPlans`, one plan per free bot) — never worked out here —
+ * and the three ways out are `JoinChoices`. A bot the server has not answered for yet is offered a
+ * plain Add, and the server is the gate.
+ *
+ * 🔴 **A LIVE account confirms every add on screen first (2026-09-11)** — the server refuses a
+ * move onto a live account without `confirm_live`, and the confirmation is the only place that
+ * reads back what is about to happen to real money.
+ *
  * 🔴 **An empty account asks for its cap HERE (2026-09-11).** The cap is stored per bot, so an
  * account with no bot has none: the first bot started uncapped, the watchdog started it within a
  * minute, and a cap saved afterwards could not reach the running process. The first add now
  * carries the ceiling; every later bot adopts it on the server. ⚠ Unticked sends `null` —
  * "uncapped" chosen — never nothing, which the server reads as not chosen.
  *
- * ⚠ **It writes nothing itself** — `onPick` hands the bot back and the panel fires the same move
- * the bot panel fires. See `AccountDrawer`'s note on the dead picker this replaced.
+ * ⚠ **It writes nothing itself** — `onPick` hands the choice back and the account panel carries
+ * it out through `useJoinAccount`, the same function the bot panel uses.
  */
 import { useState } from 'react'
-import { Bot, Check, Loader2, Plus, X } from 'lucide-react'
-import { useBotAccounts } from '@/hooks/useBots'
+import { Bot, Check, ChevronDown, Loader2, Plus, X } from 'lucide-react'
+import { useBotAccounts, useJoinPlans } from '@/hooks/useBots'
+import type { BotAccountGroup } from '@/types'
 import { DecimalInput } from '@/components/DecimalInput'
 import { Shimmer } from '@/components/Shimmer'
+import { JoinChoices, LiveConfirm } from './JoinChoices'
+import { describeChoice, pct, type JoinChoice } from './joinAccount'
+
+/** One pick out of the list — what the account panel hands to `useJoinAccount`. */
+export interface AddPick {
+  key: string
+  display: string
+  choice: JoinChoice
+  /** The first bot's cap on an EMPTY account — `undefined` on an account that has bots. */
+  riskCapPct?: number | null
+  /** The destination is live and the reader confirmed it on screen. */
+  live: boolean
+}
 
 export function AddBotPanel({
   account,
-  accountEmpty,
+  group,
+  live,
   pendingKey,
   busy,
   onPick,
@@ -36,24 +61,57 @@ export function AddBotPanel({
   statusByKey,
 }: {
   account: number
-  /** No bot is on this account yet, so the first one sets its cap. */
-  accountEmpty: boolean
+  /** The account being added to — its bots, its cap and its served room. */
+  group: BotAccountGroup
+  /** The registry marks this account live, so every add is confirmed first. */
+  live: boolean
   /** The bot being added right now, so its row can say so. */
   pendingKey: string | null
   busy: boolean
-  /** `riskCapPct` is `undefined` unless the account is empty — see the note above. */
-  onPick: (key: string, display: string, riskCapPct?: number | null) => void
+  onPick: (pick: AddPick) => void
   onClose: () => void
   statusByKey: Map<string, string>
 }) {
   const { data: groups, isLoading } = useBotAccounts()
   const [capOn, setCapOn] = useState(true)
   const [cap, setCap] = useState<number | null>(10)
+  // The row whose ways-to-make-room are out, and a choice waiting on the live confirmation.
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const [staged, setStaged] = useState<{
+    key: string
+    display: string
+    risk: number | null
+    choice: JoinChoice
+  } | null>(null)
 
+  const accountEmpty = group.bots.length === 0
   const free = (groups ?? [])
     .filter((g) => g.kind === 'bench')
     .flatMap((g) => g.bots)
     .filter((b) => !b.unreadable)
+
+  // Whether each fits — the server's answer. NOT asked on an empty account: it has no cap until
+  // the first bot sets one, and that cap is chosen right here.
+  const plans = useJoinPlans(
+    accountEmpty ? null : account,
+    free.map((b) => ({ key: b.key, risk: b.risk_pct }))
+  )
+  const planByKey = new Map(free.map((b, i) => [b.key, plans[i]?.data]))
+
+  const agreedCap = group.cap_agrees ? group.risk_cap_pct : null
+  const room = group.room_pct
+  // The served room, said ONCE for the whole list rather than on every row.
+  const budgetLine = accountEmpty
+    ? null
+    : !group.cap_agrees
+      ? null
+      : agreedCap === null
+        ? 'No cap on this account — any bot fits.'
+        : room == null
+          ? null
+          : room >= 0
+            ? `${pct(room)} of its ${pct(agreedCap)} cap is free.`
+            : `Already ${pct(-room)} over its ${pct(agreedCap)} cap.`
 
   // The server applies the same rule; stating it here keeps Add from being a 422 after the click.
   const capProblem =
@@ -65,6 +123,17 @@ export function AddBotPanel({
           : null
       : null
 
+  const firstCap = accountEmpty ? (capOn ? cap : null) : undefined
+
+  const pick = (key: string, display: string, risk: number | null, choice: JoinChoice) => {
+    setOpenKey(null)
+    if (live) {
+      setStaged({ key, display, risk, choice })
+      return
+    }
+    onPick({ key, display, choice, riskCapPct: firstCap, live: false })
+  }
+
   return (
     <div
       data-testid="add-bot-row"
@@ -75,8 +144,8 @@ export function AddBotPanel({
           <p className="text-[13px] font-semibold text-text-primary leading-tight">
             Add a bot to {account}
           </p>
-          <p className="text-[11px] text-text-tertiary mt-[3px]">
-            Free bots — pick one to put here.
+          <p data-testid="add-room" className="text-[11.5px] text-text-tertiary mt-[4px]">
+            {budgetLine ?? 'Free bots — pick one to put here.'}
           </p>
         </div>
         <button
@@ -111,10 +180,10 @@ export function AddBotPanel({
               onChange={setCap}
               suffix="%"
               invalid={!!capProblem}
+              disabled={!capOn}
               aria-label="Risk cap for this account"
               data-testid="first-cap-input"
               className="w-[84px]"
-              inputClassName={capOn ? '' : 'opacity-40 pointer-events-none'}
             />
             <span className="text-[12px] text-text-secondary">of the balance</span>
           </div>
@@ -153,63 +222,120 @@ export function AddBotPanel({
             {free.map((b) => {
               const running = statusByKey.get(b.key) === 'RUNNING'
               const adding = pendingKey === b.key
+              const plan = planByKey.get(b.key)
+              // Only a real answer can say "does not fit" — no answer yet is a plain Add.
+              const needsRoom = !!plan && !plan.fits
               const blocked = busy || running || !!capProblem
+              const isOpen = needsRoom && openKey === b.key
+              const isStaged = staged?.key === b.key
               return (
-                <button
-                  key={b.key}
-                  data-testid={`add-${b.key}`}
-                  disabled={blocked}
-                  title={
-                    running
-                      ? 'This bot is running. Stop it first — it read its account when it started.'
-                      : capProblem
-                        ? capProblem
-                        : `Add ${b.display} to account ${account}`
-                  }
-                  onClick={() =>
-                    onPick(b.key, b.display, accountEmpty ? (capOn ? cap : null) : undefined)
-                  }
-                  className="group flex items-center gap-3 w-full px-2 py-[8px] rounded-md text-left border border-transparent hover:border-accent/40 hover:bg-bg-hover transition-colors disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-transparent"
-                >
-                  <span className="shrink-0 w-[30px] h-[30px] rounded-full grid place-items-center bg-accent-muted text-accent-text border border-accent/30">
-                    <Bot size={15} />
-                  </span>
-                  <span className="min-w-0 flex-1">
+                <div key={b.key} className="flex flex-col">
+                  <button
+                    data-testid={`add-${b.key}`}
+                    data-needs-room={needsRoom || undefined}
+                    disabled={blocked}
+                    title={
+                      running
+                        ? 'This bot is running. Stop it first — it read its account when it started.'
+                        : capProblem
+                          ? capProblem
+                          : needsRoom
+                            ? 'Its risk does not fit the room left on this account — pick a way to make room.'
+                            : `Add ${b.display} to account ${account}`
+                    }
+                    onClick={() =>
+                      needsRoom
+                        ? setOpenKey(isOpen ? null : b.key)
+                        : pick(b.key, b.display, b.risk_pct, { kind: 'as-is' })
+                    }
+                    className="group flex items-center gap-3 w-full px-2 py-[8px] rounded-md text-left border border-transparent hover:border-accent/40 hover:bg-bg-hover transition-colors disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-transparent"
+                  >
+                    <span className="shrink-0 w-[30px] h-[30px] rounded-full grid place-items-center bg-accent-muted text-accent-text border border-accent/30">
+                      <Bot size={15} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className={`block text-[13px] font-medium truncate ${
+                          blocked && !adding ? 'text-text-tertiary' : 'text-text-primary'
+                        }`}
+                      >
+                        {b.display}
+                      </span>
+                      <span
+                        className={`block text-[11px] mt-[1px] ${needsRoom ? 'text-warn-text' : 'text-text-tertiary'}`}
+                      >
+                        {typeof b.risk_pct === 'number'
+                          ? `Risks ${b.risk_pct}% a trade`
+                          : 'Risk per trade not stated'}
+                        {needsRoom && ' — more than this account has room for'}
+                      </span>
+                    </span>
                     <span
-                      className={`block text-[13px] font-medium truncate ${
-                        blocked && !adding ? 'text-text-tertiary' : 'text-text-primary'
+                      className={`shrink-0 inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border transition-colors ${
+                        adding
+                          ? 'border-accent/40 text-accent-text bg-accent-muted'
+                          : blocked
+                            ? 'border-border-default text-text-tertiary'
+                            : needsRoom
+                              ? 'border-warn/50 text-warn-text group-hover:bg-warn/10'
+                              : 'border-accent/40 text-accent-text group-hover:bg-accent/15'
                       }`}
                     >
-                      {b.display}
+                      {adding ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" /> Adding…
+                        </>
+                      ) : running ? (
+                        'Running'
+                      ) : needsRoom ? (
+                        <>
+                          Make room
+                          <ChevronDown
+                            size={12}
+                            className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={12} /> Add
+                        </>
+                      )}
                     </span>
-                    <span className="block text-[11px] text-text-tertiary mt-[1px]">
-                      {typeof b.risk_pct === 'number'
-                        ? `Risks ${b.risk_pct}% a trade`
-                        : 'Risk per trade not stated'}
-                    </span>
-                  </span>
-                  <span
-                    className={`shrink-0 inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border transition-colors ${
-                      adding
-                        ? 'border-accent/40 text-accent-text bg-accent-muted'
-                        : blocked
-                          ? 'border-border-default text-text-tertiary'
-                          : 'border-accent/40 text-accent-text group-hover:bg-accent/15'
-                    }`}
-                  >
-                    {adding ? (
-                      <>
-                        <Loader2 size={12} className="animate-spin" /> Adding…
-                      </>
-                    ) : running ? (
-                      'Running'
-                    ) : (
-                      <>
-                        <Plus size={12} /> Add
-                      </>
-                    )}
-                  </span>
-                </button>
+                  </button>
+                  {isOpen && plan && (
+                    <div className="px-2 pb-2 pt-[2px]">
+                      <JoinChoices
+                        plan={plan}
+                        room={room}
+                        risk={b.risk_pct}
+                        display={b.display}
+                        busy={busy}
+                        onChoose={(c) => pick(b.key, b.display, b.risk_pct, c)}
+                      />
+                    </div>
+                  )}
+                  {isStaged && staged && (
+                    <div className="px-2 pb-2 pt-[2px]">
+                      <LiveConfirm
+                        account={account}
+                        what={describeChoice(staged.choice, staged.display, staged.risk, plan)}
+                        verb="Add to live account"
+                        busy={busy}
+                        onConfirm={() => {
+                          onPick({
+                            key: staged.key,
+                            display: staged.display,
+                            choice: staged.choice,
+                            riskCapPct: firstCap,
+                            live: true,
+                          })
+                          setStaged(null)
+                        }}
+                        onCancel={() => setStaged(null)}
+                      />
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>

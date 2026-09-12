@@ -1,27 +1,159 @@
 /**
- * One trading account: its money, its ceiling, and the bots spending it.
+ * One trading account: its money, the bots spending it, and the budget they share.
  *
  * 🔴 **The balance and the cap belong HERE and nowhere else.** They were on every bot row of
  * every tab, which is both the duplication Aaron reported and the reason the fleet total
  * double-counted a stacked account — two bots reporting one balance, added together.
  *
- * ⚠ **The cap is the one number on this page that can take the account down.** Every bot on a
- * balance must state the same one or none of them will start, so the write goes to all of them at
- * once and the drawer says plainly that it lands at each bot's next start rather than now.
+ * 🔴 **The risk budget is ONE editable thing with ONE Save (2026-09-11).** Each bot's share is a
+ * box on its own row, the cap is a box under them, and the pinned footer says exactly what Save
+ * will write, whether the result fits (the server's plan, asked as the reader types) and when it
+ * takes effect — then writes it all in one commit. Before: a cap box with its own Save beside
+ * read-only shares, a toast telling the reader to restart the bots (no longer true — each bot takes
+ * a new cap the next time it has no open trade), and a share changeable only from the bot's own
+ * panel, where a raise on a full account was refused with no way out on either side.
  *
- * ⚠ **Editing and deleting the account reuse `AccountForm` and the registry hook** rather than
- * new forms — the registry is what makes a first bot on a new account movable at all.
+ * ⚠ **Nothing here adds shares up or decides whether they fit.** The total, the room and the
+ * verdict are served, and the two one-click fixes (`fit_cap`, `fit_shares`) are the server's
+ * numbers. This page's own reduce once printed a total that fitted while the save was refused.
+ *
+ * ⚠ **Adding a bot, taking one off and the ways to make room all go through the one move
+ * endpoint** (`useJoinAccount`), the path the bot panel uses too. A live account confirms on screen
+ * first — the server refuses a move onto one without it.
+ *
+ * ⚠ **Editing the account and demo → live are STEPS of this panel**, the account's own view swapped
+ * out whole — never a modal on top, never a form trailing under the buttons (Aaron, 2026-09-10:
+ * *"continue in the side drawer"*).
  */
-import { useState } from 'react'
-import { Play, Pencil, Plus, Rocket, Trash2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  ArrowUp,
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Rocket,
+  Scale,
+  Square,
+  Trash2,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useSetAccountRiskCap, useUnregisterAccount, useAssignBotAccount } from '@/hooks/useBots'
-import type { AccountEarnings, BotAccountGroup, BotAccountRegistration } from '@/types'
+import {
+  useAccountRiskPlan,
+  useAssignBotAccount,
+  useSaveAccountRisk,
+  useUnregisterAccount,
+} from '@/hooks/useBots'
+import type {
+  AccountEarnings,
+  BotAccountBot,
+  BotAccountGroup,
+  BotAccountRegistration,
+  BotAccountRiskPlan,
+  BotAccountRiskRequest,
+} from '@/types'
 import { openingRecorder } from '@/lib/accountEarnings'
+import { useDebounced } from '@/lib/useDebounced'
+import { Drawer } from '@/components/Drawer'
+import { DecimalInput } from '@/components/DecimalInput'
+import { Shimmer } from '@/components/Shimmer'
 import { AccountForm, nameOf } from './AccountForm'
 import { AddBotPanel } from './AddBotPanel'
 import { GoLivePanel } from './GoLivePanel'
-import { Shimmer } from '@/components/Shimmer'
+import { KindBadge } from './kind'
+import { BotActionPill, type BotAction } from './BotStatusPill'
+import { SectionTitle, StateDot } from './drawerParts'
+import { pct, useJoinAccount } from './joinAccount'
+
+const chipCls =
+  'inline-flex items-center text-[10px] font-semibold px-[7px] py-[2px] rounded-pill uppercase tracking-[0.4px] border'
+const actionCls =
+  'flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+const fixCls =
+  'inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors'
+/** One grid for the table's heading and every row under it — a hand-copied column list is how a
+ *  heading ends up confidently over the wrong number. */
+const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_66px_112px_136px] items-center gap-3 px-3'
+
+const money = (n: number) =>
+  '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** One change the footer's Save will write, read as `B-LEG 10% → 8%`. */
+function Change({ label, from, to }: { label: string; from: string; to: string }) {
+  return (
+    <span className="inline-flex items-center gap-[5px] text-[11.5px] px-[8px] py-[3px] rounded-md bg-bg-surface-2 border border-border-subtle">
+      <span className="text-text-secondary">{label}</span>
+      <span className="font-mono tabular-nums text-text-tertiary">{from}</span>
+      <span className="text-text-tertiary">→</span>
+      <span className="font-mono tabular-nums text-text-primary">{to}</span>
+    </span>
+  )
+}
+
+/** The server's two ways to make the budget fit, as buttons that fill the draft — never a save. */
+function FixButtons({
+  plan,
+  onCap,
+  onShares,
+}: {
+  plan: BotAccountRiskPlan
+  onCap: (cap: number) => void
+  onShares: (shares: Record<string, number>) => void
+}) {
+  if (plan.fit_cap == null && !plan.fit_shares) return null
+  return (
+    <div data-testid="budget-fixes" className="flex flex-wrap gap-2 mt-[8px]">
+      {plan.fit_cap != null && (
+        <button
+          data-testid="fix-cap"
+          onClick={() => onCap(plan.fit_cap as number)}
+          className={fixCls}
+        >
+          <ArrowUp size={11} /> Raise the cap to {pct(plan.fit_cap)}
+        </button>
+      )}
+      {plan.fit_shares && (
+        <button
+          data-testid="fix-shares"
+          onClick={() => onShares(plan.fit_shares as Record<string, number>)}
+          className={fixCls}
+        >
+          <Scale size={11} /> Scale the bots to fit {pct(plan.risk_cap_pct)}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * How full the budget is, as a bar. ⚠ Presentation only: the width is the served total over the
+ * served cap, and "over" is the server's own overflow reason — never a comparison made here.
+ */
+function BudgetMeter({
+  total,
+  cap,
+  over,
+}: {
+  total: number | null
+  cap: number | null
+  over: boolean
+}) {
+  if (total == null || cap == null || cap <= 0) return null
+  return (
+    <div
+      className="mt-[12px] h-[6px] rounded-full bg-bg-sunken overflow-hidden"
+      title={`${pct(total)} of the ${pct(cap)} cap`}
+    >
+      <div
+        data-testid="budget-meter"
+        data-over={over || undefined}
+        className={`h-full rounded-full transition-[width] ${over ? 'bg-neg' : 'bg-accent'}`}
+        style={{ width: `${Math.min(total / cap, 1) * 100}%` }}
+      />
+    </div>
+  )
+}
 
 export function AccountDrawer({
   group,
@@ -34,6 +166,12 @@ export function AccountDrawer({
   asking = false,
   statusByKey,
   onClose,
+  onOpenBot,
+  onStart,
+  onStop,
+  pendingKey = null,
+  pendingAction = null,
+  busy = false,
 }: {
   group: BotAccountGroup
   reg: BotAccountRegistration | undefined
@@ -43,188 +181,376 @@ export function AccountDrawer({
   /** Read off the bots, because the accounts endpoint deliberately never touches the VPS. */
   balance: number | null
   /** When `balance` was read, when it is the LAST reading a bot took here because nothing on the
-   *  account reports one now — no bot is on it, or the ones on it have not reported since they
-   *  started. `null` for a live balance. The panel says so beside the figure. */
+   *  account reports one now. `null` for a live balance. The panel says so beside the figure. */
   balanceReadAt?: string | null
   /** Open with the bot picker already out — the account card's "Add a bot". */
   startAdding?: boolean
-  /** What this account has MADE and where it came from — computed server-side.
-   *  ⚠ The split between the bots and the remainder is never derived here: the page rendering
-   *  its own version of that arithmetic is how one surface starts crediting a bot with money
-   *  another surface says it did not make. */
+  /** What this account has MADE and where it came from — computed server-side. ⚠ The split
+   *  between the bots and the remainder is never derived here. */
   earnings: AccountEarnings | undefined
   /** The trading box's FIRST read is still in flight — the balance shimmers rather than saying
    *  nobody is answering, which is only true once it has been asked and failed. */
   asking?: boolean
   statusByKey: Map<string, string>
   onClose: () => void
+  /** Open one of this account's bots in its own panel. */
+  onOpenBot?: (key: string) => void
+  onStart?: (key: string) => void
+  onStop?: (key: string) => void
+  /** A start/stop still in flight — the same pill the page's row shows. */
+  pendingKey?: string | null
+  pendingAction?: BotAction | null
+  busy?: boolean
 }) {
   const navigate = useNavigate()
-  const setCap = useSetAccountRiskCap()
   const unregister = useUnregisterAccount()
-  /**
-   * 🔴 **THE ADD BOT PICKER WAS DEAD, AND IT LOOKED LIKE IT WORKED (fixed 2026-09-06).**
-   * `AddBotRow` does not write — it hands the chosen bot back through `onPick`, and the card that
-   * used to own it fired the move there. The drawer's `onPick` only closed the panel, so picking
-   * a bot dismissed the list and sent nothing. **The panel closing IS the feedback a reader gets
-   * from a successful pick**, so the control was indistinguishable from a working one.
-   *
-   * ⚠ **It fires the SAME mutation the bot drawer's account selector fires.** Three gestures, one
-   * write: a private write here would be a second place for the six-field move to drift out of
-   * step with what the backend does.
-   */
-  const assign = useAssignBotAccount()
+  const takeOff = useAssignBotAccount()
+  const join = useJoinAccount()
+  const save = useSaveAccountRisk()
 
   const account = group.account
-  // ⚠ A disagreement is NOT a cap. Quoting one bot's number when they differ would put a figure
-  // on screen that no bot is running and hide the one condition that stops them all starting.
-  const stated = group.cap_agrees ? group.risk_cap_pct : null
-  /**
-   * 🔴 **Only the reader's EDIT is state; the box and the number FOLLOW the account's real cap
-   * (2026-09-11).** They were `useState(stated !== null)` — copied ONCE, when the panel opened.
-   * Opened on an empty account (no cap yet) and then given bots with a 10% cap, the panel went on
-   * showing "Capped" unticked with Save live, and Save would have sent "no cap" to every bot on it.
-   *
-   * ⚠ **An edit is bound to the cap it was made AGAINST (`from`)**, so when the account's cap
-   * changes — a save landing, or anything else — the edit is dropped and the panel shows the new
-   * cap. Kept past that, it would be saving over a change the reader never saw.
-   */
-  const [edit, setEdit] = useState<{ capped: boolean; draft: string; from: number | null } | null>(
-    null
-  )
-  const live = edit && edit.from === stated ? edit : null
-  const capped = live ? live.capped : stated !== null
-  const draft = live ? live.draft : stated === null ? '10' : String(stated)
-  const setCapped = (v: boolean) => setEdit({ capped: v, draft, from: stated })
-  const setDraft = (v: string) => setEdit({ capped, draft: v, from: stated })
+  const hasBots = group.bots.length > 0
+  const live = reg?.kind === 'live'
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState(startAdding)
   const [goingLive, setGoingLive] = useState(false)
 
+  // ── the draft budget ─────────────────────────────────────────────────────────
+  //
+  // 🔴 **Only the reader's EDITS are state, each bound to the value it was made AGAINST (`from`).**
+  // The cap box was once `useState(stated)` — copied when the panel opened — so a panel opened on an
+  // empty account and then given bots at 10% read "uncapped" with Save live, and Save would have
+  // written "no cap" to every bot. When the served value moves, the edit is dropped rather than
+  // saved over a change nobody saw.
+  //
+  // ⚠ A disagreement is NOT a cap: quoting one bot's number when they differ would put a figure on
+  // screen no bot is running and hide the one condition that stops them all starting.
+  const stated = group.cap_agrees ? group.risk_cap_pct : null
+  const [capEdit, setCapEdit] = useState<{
+    capped: boolean
+    value: number | null
+    from: number | null
+  } | null>(null)
+  const liveCap = capEdit && capEdit.from === stated ? capEdit : null
+  const capped = liveCap ? liveCap.capped : stated !== null
+  const capValue = liveCap ? liveCap.value : (stated ?? 10)
+  const setCapped = (v: boolean) => setCapEdit({ capped: v, value: capValue, from: stated })
+  const setCapValue = (v: number | null) => setCapEdit({ capped, value: v, from: stated })
+  const capNext = capped ? capValue : null
+  const capValid = !capped || (capValue != null && capValue > 0 && capValue <= 100)
+  // With disagreeing caps any touched value is a change — one figure written to all of them is the
+  // fix, even when that figure is "none".
+  const capDirty = liveCap !== null && (capNext !== stated || !group.cap_agrees)
+
+  const [shareEdits, setShareEdits] = useState<
+    Record<string, { value: number | null; from: number | null }>
+  >({})
+  const shareOf = (b: BotAccountBot) => {
+    const e = shareEdits[b.key]
+    return e && e.from === b.risk_pct ? e.value : b.risk_pct
+  }
+  const setShare = (b: BotAccountBot, v: number | null) =>
+    setShareEdits((s) => ({ ...s, [b.key]: { value: v, from: b.risk_pct } }))
+
+  const changed: Record<string, number> = {}
+  const shareChanges: { key: string; display: string; from: number | null; to: number }[] = []
+  let shareBlank = false
+  for (const b of group.bots) {
+    if (b.unreadable) continue
+    const v = shareOf(b)
+    if (v === b.risk_pct) continue
+    if (v == null || !(v > 0)) {
+      shareBlank = true
+      continue
+    }
+    changed[b.key] = v
+    shareChanges.push({ key: b.key, display: b.display, from: b.risk_pct, to: v })
+  }
+  const sharesDirty = shareChanges.length > 0
+  const hasEdits = capDirty || sharesDirty || shareBlank
+  const editsValid = capValid && !shareBlank
+  const discard = () => {
+    setCapEdit(null)
+    setShareEdits({})
+  }
+
+  // ── the server's plan for it ─────────────────────────────────────────────────
+  //
+  // Asked only while there is something to ask about: an edit, or an account ALREADY over its cap
+  // (that plan carries the one-click fixes). Opening the panel on a healthy account asks nothing.
+  const body: BotAccountRiskRequest | null =
+    account === null || !hasBots
+      ? null
+      : hasEdits
+        ? editsValid
+          ? {
+              ...(capDirty ? { risk_cap_pct: capNext } : {}),
+              ...(sharesDirty ? { shares: changed } : {}),
+            }
+          : null
+        : group.share_overflow_reason
+          ? {}
+          : null
+  const asked = useDebounced(body, 250)
+  const plan = useAccountRiskPlan(account, asked)
+  const sameBody = JSON.stringify(asked) === JSON.stringify(body)
+  // ⚠ A held answer to the PREVIOUS body is not an answer to this one — Save waits for the fresh one.
+  const p = plan.data && !plan.isPlaceholderData && sameBody && body ? plan.data : undefined
+  const planFailed = plan.isError && sameBody && body !== null
+  const checking = body !== null && !p && !planFailed
+
+  const canSave =
+    hasEdits &&
+    editsValid &&
+    !group.cap_unknown &&
+    !save.isPending &&
+    account !== null &&
+    hasBots &&
+    (p ? !p.refused : planFailed)
+
+  const saveAll = () => {
+    if (account === null) return
+    save.mutate(
+      {
+        account,
+        ...(capDirty ? { riskCapPct: capNext } : {}),
+        ...(sharesDirty ? { shares: changed } : {}),
+      },
+      { onSuccess: discard }
+    )
+  }
+  const applyFitCap = (cap: number) => setCapEdit({ capped: true, value: cap, from: stated })
+  const applyFitShares = (shares: Record<string, number>) =>
+    setShareEdits(
+      Object.fromEntries(
+        group.bots
+          .filter((b) => shares[b.key] !== undefined)
+          .map((b) => [b.key, { value: shares[b.key], from: b.risk_pct }])
+      )
+    )
+
+  // Take off takes a SECOND click on the same button — one press from taking a bot off the account
+  // it trades — and disarms itself after 6s, so a stray click later cannot be the second one.
+  const [armedKey, setArmedKey] = useState<string | null>(null)
+  useEffect(() => {
+    if (!armedKey) return
+    const t = setTimeout(() => setArmedKey(null), 6_000)
+    return () => clearTimeout(t)
+  }, [armedKey])
+
   /**
-   * Why this set cannot go live, in words, or `null` when it can.
-   *
-   * ⚠ Ordered worst-first and it names ONE reason: a reader fixing a running bot does not also
-   * need to be told there is no live account until the first thing is done.
-   *
-   * ⚠ **A bot the box has not answered for is NOT counted as stopped.** `statusByKey` holds only
-   * what the snapshot reported, so an absent key means nobody asked — and reading that silence as
-   * *not running* is how a live-money write gets offered on a bot that is trading.
+   * Why a bot cannot be added here, in words — stated ON the control before the click rather than
+   * as a refusal after it. ⚠ A password the VPS could not be ASKED about (`null`) blocks nothing:
+   * only a definite no does, or the reader is sent to re-enter one that is already there.
+   */
+  const addBlock =
+    reg && !reg.assignable
+      ? `Cannot add a bot here — ${reg.unassignable_reason || 'no terminal on the box is logged into it'}.`
+      : reg?.has_password === false
+        ? 'No password is stored for this account, so a bot put here cannot log in. Add the trading password first (Edit).'
+        : null
+
+  /**
+   * Why this set cannot go live, or `null` when it can — worst first, ONE reason. ⚠ A bot the box
+   * has not answered for is NOT counted as stopped: `statusByKey` holds only what the snapshot
+   * reported, and reading silence as *not running* is how a live-money write gets offered on a bot
+   * that is trading.
    */
   const anyRunning = group.bots.some((b) => statusByKey.get(b.key) !== 'STOPPED')
   const liveTargets = registry.filter((a) => a.kind === 'live' && a.assignable)
-  // Only ever asked of a DEMO account — the button is not drawn on any other (see its note).
   const goLiveBlock: string | null = anyRunning
     ? 'Stop every bot on this account first — a bot reads its account when it starts, so a move cannot reach a running one'
     : liveTargets.length === 0
       ? 'No live account with a terminal on the box to move them to'
       : null
 
-  const next = capped ? parseFloat(draft) : null
-  const valid = !capped || (Number.isFinite(next as number) && (next as number) > 0)
-  const dirty = valid && next !== stated
-
-  // 🔴 **SERVED, never summed here.** `BotAccountGroup.share_total_pct` carries this exact
-  // warning in its own type: a local reduce over the bots' shares is how the browser came to
-  // print a total that fitted under the ceiling while the backend refused the save for that
-  // very reason. This file had grown its own reduce back — safer than the original (it returns
-  // null when any share is unreadable rather than counting it as zero) and still a SECOND
-  // answer to a question the server already answers, which is the whole defect shape.
+  // 🔴 SERVED, never summed here — `BotAccountGroup.share_total_pct` carries why in its own type.
   const shareTotal = group.share_total_pct
 
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/55 z-40" onClick={onClose} />
-      <aside
-        aria-label="Account settings"
-        // 720px since 2026-09-10 (Aaron: *"make the drawer wider"*), when demo → live moved in here
-        // from a modal. ⚠ Capped, never a fraction of the screen — a panel wide enough to hide the
-        // list it was opened from is a page you navigated away from without meaning to.
-        className="fixed top-0 right-0 bottom-0 w-[min(720px,100%)] bg-bg-surface border-l border-border-default z-50 overflow-y-auto"
-      >
-        <div className="flex items-start gap-3 px-5 py-[18px] border-b border-border-subtle">
-          <div className="min-w-0">
-            <p className="text-[16px] font-semibold leading-tight mb-[3px]">{nameOf(reg, group)}</p>
-            <div className="text-[11.5px] text-text-secondary font-mono">
-              {account ?? '—'}
-              {reg?.server ? ` · ${reg.server}` : ''}
-              {reg?.kind ? ` · ${reg.kind}` : ''}
-            </div>
-            {/* 🔴 **THE THREE READINESS FACTS, restored 2026-09-06.** They lived on the account
-             *  card of a tab nothing renders any more, and each one answers *why did that move
-             *  fail* BEFORE somebody makes it — which is the only moment the answer is worth
-             *  anything. Without them the write is committed, pushed and pulled and then fails on
-             *  the box, and the error names the wrong thing. */}
-            <div className="flex items-center gap-[6px] flex-wrap mt-[7px]">
-              {/* ⚠ THREE states, and the third is the point: `has_password` is `boolean | null`
-               *  and `null` means the VPS could not be ASKED. Rendering that as *no password*
-               *  sends the reader to re-enter a credential that is already there, and refuses a
-               *  move that would have worked. Same rule as the terminal link and the bot dots. */}
-              {reg && (
-                <span
-                  data-testid="password-chip"
-                  title={
-                    reg.has_password === true
-                      ? 'A password for this login is stored on the trading box.'
-                      : reg.has_password === false
-                        ? 'No password is stored, so a bot moved here cannot log in. Edit the account to add one.'
-                        : 'The trading box could not be asked whether a password is stored — unknown, not missing.'
-                  }
-                  className={`inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] border cursor-default ${
-                    reg.has_password === true
-                      ? 'bg-bg-surface-2 text-text-secondary border-border-subtle'
-                      : reg.has_password === false
-                        ? 'bg-warn-muted text-warn-text border-warn/40'
-                        : 'bg-bg-surface-2 text-text-tertiary border-border-strong'
-                  }`}
-                >
-                  {reg.has_password === true
-                    ? 'password set'
-                    : reg.has_password === false
-                      ? 'no password'
-                      : 'password unknown'}
-                </span>
-              )}
-              {reg && !reg.assignable && (
-                <span
-                  data-testid="no-terminal"
-                  title={
-                    reg.unassignable_reason ||
-                    'This account cannot be assigned a bot from here — see the registry entry.'
-                  }
-                  className="inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
-                >
-                  no terminal
-                </span>
-              )}
-              {/* ⚠ An account a bot NAMES that nobody registered still works — the move reads its
-               *  peers — so this says what this page cannot do with it rather than hiding it.
-               *  Hiding it would be the gap the registry exists to end, in reverse. */}
-              {!reg && account !== null && (
-                <span
-                  data-testid="unregistered"
-                  title="A bot names this account but nobody registered it here, so this page has no broker, tier or symbol suffix for it. Add it to the registry to move bots onto it."
-                  className="inline-flex text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary border border-border-strong cursor-default"
-                >
-                  not registered
-                </span>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="ml-auto shrink-0 w-[28px] h-[28px] grid place-items-center rounded-md border border-border-default text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            <X size={13} />
-          </button>
-        </div>
+  // ── the verdict on the draft, in words ───────────────────────────────────────
+  const verdict = !editsValid ? (
+    <span className="text-neg-text">
+      {shareBlank
+        ? 'Every bot needs a risk per trade — type one, or Discard.'
+        : 'A cap is a percentage of the balance: above 0 and at most 100.'}
+    </span>
+  ) : group.cap_unknown ? (
+    <span className="text-warn-text">
+      A bot&rsquo;s config here cannot be read, so nothing can be saved — writing to the rest would
+      leave the caps disagreeing.
+    </span>
+  ) : checking ? (
+    <span className="inline-flex items-center gap-[6px] text-text-tertiary">
+      <Loader2 size={11} className="animate-spin" /> Checking the budget…
+    </span>
+  ) : planFailed ? (
+    <span className="text-text-tertiary">
+      Could not check the budget — the save is checked again when you press it.
+    </span>
+  ) : p?.refused ? (
+    <span data-testid="plan-refused" className="text-warn-text">
+      {p.refused}
+    </span>
+  ) : p && !p.fits ? (
+    <span className="text-text-secondary">
+      Still over the cap, but this lowers the risk, so it can be saved.
+    </span>
+  ) : p ? (
+    <span className="text-text-secondary">
+      {p.risk_cap_pct == null ? (
+        'No cap — nothing to fit under.'
+      ) : (
+        <>
+          Fits — the bots would risk <b className="text-text-primary">{pct(p.share_total_pct)}</b>{' '}
+          of the {pct(p.risk_cap_pct)} cap.
+        </>
+      )}{' '}
+      <span className="text-text-tertiary">{p.applies}</span>
+    </span>
+  ) : null
 
-        {/* 🔴 Demo → live is a STEP of this drawer, never a modal on top of it (2026-09-10, Aaron:
-         *  *"I'd rather not go from a side drawer to a modal — continue in the side drawer"*). The
-         *  account's own view is swapped out whole while it runs, so the move is the only thing on
-         *  screen and Back returns to exactly where the reader was. */}
-        {goingLive && account !== null ? (
+  // ── the pinned footer: exactly what Save will write, and whether it may ──────
+  const footer =
+    account !== null && hasBots && !editing && !goingLive ? (
+      <div data-testid="budget-footer" className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          {!hasEdits ? (
+            <p
+              className="text-[12px] text-text-tertiary"
+              title="Change a bot's risk or the account's cap above; Save writes all of it in one go."
+            >
+              Risk budget · no changes
+            </p>
+          ) : (
+            <>
+              <div data-testid="budget-changes" className="flex flex-wrap gap-[6px]">
+                {shareChanges.map((c) => (
+                  <Change key={c.key} label={c.display} from={pct(c.from)} to={pct(c.to)} />
+                ))}
+                {capDirty && (
+                  <Change
+                    label="Cap"
+                    from={!group.cap_agrees ? 'mixed' : stated === null ? 'none' : pct(stated)}
+                    to={capNext === null ? 'none' : pct(capNext)}
+                  />
+                )}
+              </div>
+              <div data-testid="budget-verdict" className="text-[11.5px] leading-[1.5] mt-[6px]">
+                {verdict}
+              </div>
+              {p?.reason && <FixButtons plan={p} onCap={applyFitCap} onShares={applyFitShares} />}
+            </>
+          )}
+        </div>
+        {hasEdits && (
+          <button
+            data-testid="budget-discard"
+            onClick={discard}
+            className="shrink-0 px-3 py-[6px] rounded-md text-[12px] border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            Discard
+          </button>
+        )}
+        <button
+          data-testid="cap-save"
+          disabled={!canSave}
+          onClick={saveAll}
+          className="shrink-0 inline-flex items-center gap-[6px] px-4 py-[6px] rounded-md text-[12.5px] font-semibold bg-accent-muted text-accent-text border border-accent/50 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {save.isPending && <Loader2 size={12} className="animate-spin" />}
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    ) : undefined
+
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      label="Account settings"
+      // 720px since 2026-09-10 (Aaron: *"make the drawer wider"*). ⚠ Capped, never a fraction of
+      // the screen — a panel wide enough to hide the list it came from is a page you left.
+      width={720}
+      title={
+        // The login leads: it is what the broker, the terminal, every config and every refusal
+        // names this account by; the label is a nickname somebody typed here.
+        <span className="flex items-baseline gap-[9px] min-w-0">
+          <span className="font-mono tabular-nums">{account ?? '—'}</span>
+          <span className="truncate font-medium text-text-secondary">{nameOf(reg, group)}</span>
+        </span>
+      }
+      subtitle={
+        // 🔴 THE READINESS FACTS. Each answers *why did that move fail* BEFORE somebody makes it —
+        // the only moment the answer is worth anything.
+        <div className="flex items-center gap-[6px] flex-wrap mt-[5px]">
+          <KindBadge kind={reg?.kind} />
+          {reg?.server && (
+            <span className="font-mono text-[11.5px] text-text-tertiary">{reg.server}</span>
+          )}
+          {/* ⚠ THREE states: `has_password` is `boolean | null`, and null means the VPS could not be
+           *  ASKED. Rendering that as *no password* sends the reader to re-enter a credential that
+           *  is already there. A definite no is a BUTTON — it opens the form where it is fixed. */}
+          {reg &&
+            (reg.has_password === false ? (
+              <button
+                data-testid="password-chip"
+                onClick={() => setEditing(true)}
+                title="No password is stored, so a bot put here cannot log in. Click to add the trading password."
+                className={`${chipCls} bg-warn-muted text-warn-text border-warn/40 hover:bg-warn/15 transition-colors`}
+              >
+                no password · add
+              </button>
+            ) : (
+              <span
+                data-testid="password-chip"
+                title={
+                  reg.has_password === true
+                    ? 'A password is stored on the trading box. It must be the TRADING (master) password — with the investor one a bot logs in and the broker refuses every order.'
+                    : 'The trading box could not be asked whether a password is stored — unknown, not missing.'
+                }
+                className={`${chipCls} cursor-default ${
+                  reg.has_password === true
+                    ? 'bg-bg-surface-2 text-text-secondary border-border-subtle'
+                    : 'bg-bg-surface-2 text-text-tertiary border-border-strong'
+                }`}
+              >
+                {reg.has_password === true ? 'password set' : 'password unknown'}
+              </span>
+            ))}
+          {reg && !reg.assignable && (
+            <span
+              data-testid="no-terminal"
+              title={
+                reg.unassignable_reason ||
+                'This account cannot be assigned a bot from here — see the registry entry.'
+              }
+              className={`${chipCls} cursor-default bg-warn-muted text-warn-text border-warn/40`}
+            >
+              no terminal
+            </span>
+          )}
+          {/* ⚠ An account a bot NAMES that nobody registered still works — the move reads its
+           *  peers — so this says what this page cannot do with it rather than hiding it. */}
+          {!reg && account !== null && (
+            <span
+              data-testid="unregistered"
+              title="A bot names this account but nobody registered it here, so this page has no broker, tier or symbol suffix for it. Add it to the registry to move bots onto it."
+              className={`${chipCls} cursor-default bg-bg-surface-2 text-text-tertiary border-border-strong`}
+            >
+              not registered
+            </span>
+          )}
+        </div>
+      }
+      footer={footer}
+    >
+      {editing && reg ? (
+        <div className="h-full pt-4 pb-1">
+          <AccountForm existing={reg} onClose={() => setEditing(false)} />
+        </div>
+      ) : goingLive && account !== null ? (
+        // GoLivePanel carries its own side padding.
+        <div className="-mx-5">
           <GoLivePanel
             group={group}
             fromReg={reg}
@@ -232,393 +558,421 @@ export function AccountDrawer({
             onBack={() => setGoingLive(false)}
             onClose={onClose}
           />
-        ) : (
-          <div className="px-5 pb-8">
-            {/* ── the money, once ───────────────────────────────────────────── */}
-            <div className="py-[16px] border-b border-border-subtle">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[6px]">
-                Balance
-              </p>
-              <p className="text-[22px] font-mono tabular-nums leading-none">
-                {balance == null && asking ? (
-                  <Shimmer className="h-[22px] w-[150px]" />
-                ) : balance == null ? (
-                  <span className="text-[13px] text-text-tertiary">
-                    not reported — no bot here is answering
-                  </span>
-                ) : (
-                  '$' +
-                  balance.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                )}
-              </p>
-              {/* ⚠ A PAST reading says so. With no bot on the account nothing reads its balance
-               *  live, and a day-old figure in this slot with nothing beside it would read as now. */}
-              {balance != null && balanceReadAt && (
-                <p
-                  data-testid="drawer-balance-read-at"
-                  className="text-[11px] text-text-tertiary mt-[5px]"
-                >
-                  Last read{' '}
-                  {new Date(balanceReadAt).toLocaleString('en-GB', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  {group.bots.length
-                    ? '— no bot here has reported one since it started.'
-                    : 'by a bot before it left — no bot is on this account now.'}
-                </p>
-              )}
-              {/* What it OPENED at, and which bot recorded that — a net with no denominator on
-               *  screen is a number nobody can check, and here two bots legitimately state
-               *  different anchors because each recorded what was there when it arrived. */}
-              {earnings?.net_usd != null && earnings.opening_balance != null ? (
-                <p className="text-[11px] text-text-tertiary mt-[7px] leading-[1.55]">
-                  <span className={earnings.net_usd >= 0 ? 'text-pos-text' : 'text-neg-text'}>
-                    {earnings.net_usd >= 0 ? '+' : '−'}$
-                    {Math.abs(earnings.net_usd).toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    {earnings.net_pct != null &&
-                      ` (${earnings.net_pct > 0 ? '+' : ''}${earnings.net_pct.toFixed(1)}%)`}
-                  </span>{' '}
-                  since it opened at $
-                  {earnings.opening_balance.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                  {openingRecorder(earnings) ? `, recorded by ${openingRecorder(earnings)}` : ''}.
-                </p>
+        </div>
+      ) : (
+        <>
+          {/* ── the money, once ─────────────────────────────────────────────── */}
+          <section className="py-[16px] border-b border-border-subtle">
+            <SectionTitle>Balance</SectionTitle>
+            <p className="text-[24px] font-mono tabular-nums leading-none">
+              {balance == null && asking ? (
+                <Shimmer className="h-[24px] w-[160px]" />
+              ) : balance == null ? (
+                <span className="text-[13px] text-text-tertiary">
+                  not reported — no bot here is answering
+                </span>
               ) : (
-                earnings?.opening_note && (
-                  <p className="text-[11px] text-text-tertiary mt-[7px] leading-[1.55]">
-                    {earnings.opening_note}
-                  </p>
-                )
+                money(balance)
               )}
-            </div>
-
-            {/* ── the ceiling ───────────────────────────────────────────────── */}
-            {/* 🔴 An account with NO bot has no cap and nothing to store one in — the cap lives in
-             *  each bot's config, and saving here answered 404. So the empty case SAYS where the cap
-             *  is set instead of offering a control whose only outcome was an error: the first bot
-             *  added carries it (`AddBotPanel`). */}
-            {account !== null && group.bots.length === 0 && (
-              <div className="py-[16px] border-b border-border-subtle">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[6px]">
-                  Risk cap
-                </p>
-                <p
-                  data-testid="cap-empty"
-                  className="text-[11.5px] text-text-secondary leading-[1.5]"
-                >
-                  None yet — no bot is on this account. The first bot you add sets it.
-                </p>
-              </div>
+            </p>
+            {/* ⚠ A PAST reading says so — a day-old figure with nothing beside it reads as now. */}
+            {balance != null && balanceReadAt && (
+              <p
+                data-testid="drawer-balance-read-at"
+                className="text-[11px] text-text-tertiary mt-[6px]"
+              >
+                Last read{' '}
+                {new Date(balanceReadAt).toLocaleString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                {hasBots
+                  ? '— no bot here has reported one since it started.'
+                  : 'by a bot before it left — no bot is on this account now.'}
+              </p>
             )}
-            {account !== null && group.bots.length > 0 && (
-              <div className="py-[16px] border-b border-border-subtle">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text mb-[10px]">
-                  Risk cap
+            {/* What it OPENED at, and which bot recorded that — a net with no denominator on screen
+             *  is a number nobody can check. */}
+            {earnings?.net_usd != null && earnings.opening_balance != null ? (
+              <p className="text-[11.5px] text-text-tertiary mt-[8px] leading-[1.55]">
+                <span className={earnings.net_usd >= 0 ? 'text-pos-text' : 'text-neg-text'}>
+                  {earnings.net_usd >= 0 ? '+' : '−'}
+                  {money(Math.abs(earnings.net_usd))}
+                  {earnings.net_pct != null &&
+                    ` (${earnings.net_pct > 0 ? '+' : ''}${earnings.net_pct.toFixed(1)}%)`}
+                </span>{' '}
+                since it opened at {money(earnings.opening_balance)}
+                {openingRecorder(earnings) ? `, recorded by ${openingRecorder(earnings)}` : ''}.
+              </p>
+            ) : (
+              earnings?.opening_note && (
+                <p className="text-[11.5px] text-text-tertiary mt-[8px] leading-[1.55]">
+                  {earnings.opening_note}
                 </p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="flex items-center gap-[6px] text-[12px] text-text-secondary cursor-pointer">
-                    <input
-                      type="checkbox"
-                      data-testid="cap-enabled"
-                      checked={capped}
-                      onChange={(e) => setCapped(e.target.checked)}
-                    />
-                    Capped
-                  </label>
-                  <input
-                    type="number"
-                    data-testid="cap-input"
-                    value={draft}
-                    disabled={!capped}
-                    onChange={(e) => setDraft(e.target.value)}
-                    className="w-[68px] text-[12px] font-mono bg-bg-sunken border border-border-default rounded-md px-2 py-[5px] text-text-primary disabled:opacity-40"
-                  />
-                  <span className="text-[12px] text-text-secondary">% of balance</span>
-                  <button
-                    data-testid="cap-save"
-                    disabled={!dirty || setCap.isPending}
-                    onClick={() => setCap.mutate({ account, riskCapPct: next })}
-                    className="ml-auto px-3 py-[5px] rounded-md text-[12px] font-medium bg-accent-muted text-text-primary border border-accent/40 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {setCap.isPending ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-                {/* ── what the shares actually add up to ──────────────────────
-                 *
-                 * 🔴 **These four warnings were on screen until the tabs were collapsed into this
-                 * drawer on 2026-09-05, and they went with the tab rather than being moved.** The
-                 * cap EDITOR came across and the things telling you the number is wrong did not,
-                 * so the one screen that can over-allocate an account lost every check on it.
-                 * Found on 2026-09-06 by asking why 44 browser tests were red instead of deleting
-                 * them — the red WAS the finding, exactly as the tests were written to be.
-                 *
-                 * ⚠ **Each says the fact only when it is TRUE.** A healthy account shows one plain
-                 * sentence; a warning that renders on every account is one nobody reads on the day
-                 * it means something. */}
-                <p
-                  data-testid="cap-shares"
-                  className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]"
-                >
-                  The ceiling on open risk across every bot here.
-                  {shareTotal === null ? (
-                    <>
-                      {' '}
-                      Their shares cannot be totalled — at least one bot here does not state what it
-                      risks per trade.
-                    </>
-                  ) : (
-                    <>
-                      {' '}
-                      They risk {shareTotal}% per trade between them
-                      {stated !== null ? `, against ${stated}%` : ''}.
-                    </>
-                  )}{' '}
-                  Applies at each bot's next start — a running bot does not pick it up.
-                </p>
-
-                {/* The save is refused for this reason too, so saying it here is what makes the
-                 *  refusal predictable rather than a surprise at the moment you press Save. */}
-                {group.share_overflow_reason && (
-                  <p
-                    data-testid="cap-overflow"
-                    className="text-[10.5px] text-warn-text bg-warn-muted border border-warn/40 rounded-md px-[9px] py-[6px] mt-[8px] leading-[1.5]"
-                  >
-                    {group.share_overflow_reason}
-                  </p>
-                )}
-
-                {/* 🔴 The condition that stops every bot here STARTING. `stated` is already forced
-                 *  to null above so no figure is quoted — but until now nothing said WHY the field
-                 *  had gone blank, which hid the fault instead of naming it. */}
-                {!group.cap_agrees && (
-                  <p
-                    data-testid="cap-disagreement"
-                    className="text-[10.5px] text-neg-text bg-neg-muted border border-neg/40 rounded-md px-[9px] py-[6px] mt-[8px] leading-[1.5]"
-                  >
-                    The bots on this balance do not state the same ceiling, so none of them will
-                    start. Saving here writes one figure to all of them.
-                  </p>
-                )}
-
-                {/* Not a fault — a consequence worth knowing before you read a quiet week as a
-                 *  broken bot. */}
-                {group.cap_takes_turns && (
-                  <p
-                    data-testid="cap-takes-turns"
-                    className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5]"
-                  >
-                    One full-size trade fills this ceiling, so the bots here take turns — whichever
-                    is in first blocks the other until it is out.
-                  </p>
-                )}
-              </div>
+              )
             )}
+          </section>
 
-            {/* ── who is spending it ────────────────────────────────────────── */}
-            <div className="py-[16px] border-b border-border-subtle">
-              <div className="flex items-center mb-[10px]">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
-                  Bots on this balance · {group.bots.length}
-                </p>
-                {account !== null && (
-                  /* ⚠ **DISABLED with the reason on it, never hidden.** The backend refuses a move
-                   *  onto an account with no terminal on the box; this is that refusal stated
-                   *  BEFORE the click rather than as a 409 after the reader has committed to it. A
-                   *  control that vanishes reads as a feature that does not exist. */
+          {/* ── who is spending it, and each one's share ───────────────────── */}
+          <section className="py-[16px] border-b border-border-subtle">
+            <SectionTitle
+              aside={
+                account !== null && (
+                  /* ⚠ DISABLED with the reason on it, never hidden — a control that vanishes
+                   *  reads as a feature that does not exist. */
                   <button
                     data-testid="add-bot"
-                    disabled={(reg ? !reg.assignable : false) || adding}
-                    title={
-                      reg && !reg.assignable
-                        ? `Cannot add a bot here — ${reg.unassignable_reason || 'this account is not assignable'}.`
-                        : 'Put a bot on this account'
-                    }
+                    disabled={!!addBlock || adding}
+                    title={addBlock ?? 'Put a bot on this account'}
                     onClick={() => setAdding(true)}
-                    className="ml-auto inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-[5px] px-[11px] py-[5px] rounded-md text-[12px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Plus size={12} /> Add bot
                   </button>
-                )}
-              </div>
-              {/* 🔴 Two bots sharing an order tag each read the OTHER's orders as its own —
-               *  cancelling them, moving their stops, booking their fills. It went off screen with
-               *  the tab on 2026-09-05 and is back because it is the only warning here about two
-               *  bots actively corrupting each other's book. Shown only when true. */}
-              {group.magic_clash.length > 0 && (
-                <div
-                  data-testid="magic-clash"
-                  className="text-[10.5px] text-neg-text bg-neg-muted border border-neg/40 rounded-md px-[9px] py-[6px] mb-[10px] leading-[1.5]"
-                >
-                  <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each
-                  would read the other's orders as its own — cancelling them, moving their stops and
-                  booking their fills. They will refuse to start until one is given a different one.
-                </div>
-              )}
-              {group.bots.length === 0 ? (
-                <p data-testid="no-bots" className="text-[11px] text-text-tertiary">
-                  No bot is on this account now.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-[5px]">
-                  {/* 🔴 **THREE states (2026-09-06).** Red meant *stopped* and was also what an
-                   *  UNANSWERED box drew, so a dead link to the VPS rendered as a list of quietly
-                   *  idle bots. The same collapse was on the account card's rows and is fixed the
-                   *  same way — unknown is hollow and says so on hover. */}
-                  {group.bots.map((b) => {
-                    const st = statusByKey.get(b.key)
-                    return (
-                      <div key={b.key} className="flex items-center gap-[8px] text-[12px]">
-                        <span
-                          title={
-                            st === undefined
-                              ? 'The trading box has not answered for this bot — unknown, not stopped.'
-                              : st === 'RUNNING'
-                                ? 'Running'
-                                : 'Stopped'
-                          }
-                          className={`inline-block w-[6px] h-[6px] rounded-full shrink-0 ${
-                            st === undefined
-                              ? 'border border-text-tertiary'
-                              : st === 'RUNNING'
-                                ? 'bg-pos'
-                                : 'bg-neg'
-                          }`}
-                        />
-                        <span className="text-text-primary">{b.display}</span>
-                        {typeof b.risk_pct === 'number' && (
-                          <span className="ml-auto font-mono text-text-tertiary">
-                            {b.risk_pct}%
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {/* ⚠ Stays OPEN after an add, so a second bot is one more click — the added bot
-               *  leaves the list when the accounts re-read, and joins the rows above. */}
-              {adding && account !== null && (
-                <div className="mt-3">
-                  <AddBotPanel
-                    account={account}
-                    accountEmpty={group.bots.length === 0}
-                    pendingKey={assign.isPending ? (assign.variables?.botKey ?? null) : null}
-                    busy={assign.isPending}
-                    onPick={(key, display, riskCapPct) =>
-                      assign.mutate({ botKey: key, account, riskCapPct, display })
-                    }
-                    onClose={() => setAdding(false)}
-                    statusByKey={statusByKey}
-                  />
-                </div>
-              )}
-            </div>
+                )
+              }
+            >
+              Bots on this balance · {group.bots.length}
+            </SectionTitle>
 
-            {/* ── the rare things ───────────────────────────────────────────── */}
-            {account !== null && (
-              <div className="py-[16px] flex gap-2 flex-wrap">
-                {/* 🔴 **It linked to `/backtests?stack=<n>` and nothing read that** — it opened the
-                  Runs tab and did nothing else. It now opens the Stacks tab with the builder filled
-                  in from what these bots run (their own settings, charts and risk, and this
-                  account's cap), which the server works out. Disabled, never hidden, with fewer
-                  than two bots: that is not a stack, and the reason is on the button.
-                  🔴 **ONLY ON A DEMO ACCOUNT (2026-09-11)** — Aaron: *"backtest these bots should
-                  only be on demo accounts, not live accounts."* Demo is where a set is tried out;
-                  the live bots run what was already tested there. Same rule as Take live below: an
-                  account whose kind is not known yet gets no button. */}
-                {reg?.kind === 'demo' && (
-                  <button
-                    data-testid="backtest-account-bots"
-                    disabled={group.bots.length < 2}
-                    title={
-                      group.bots.length < 2
-                        ? 'A stack needs two or more bots on this account.'
-                        : "Opens the stack builder on the Backtests page, filled in with what these bots run — their own settings, charts and risk, and this account's cap."
-                    }
-                    onClick={() => navigate(`/backtests?tab=stacks&account=${account}`)}
-                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Play size={12} /> Backtest these bots
-                  </button>
-                )}
-                {/* ── the last hop: demo → live ───────────────────────────────────
-                 *
-                 * 🔴 **PRESENT ONLY ON A DEMO ACCOUNT (2026-09-11).** It was drawn on every
-                 * account with bots and disabled on a live one ("already live") — Aaron, on the
-                 * live account the day he went live: *"this should only be present for demo
-                 * accounts."* A move to live from a live account is not a refused action, it is
-                 * not an action at all. ⚠ An account whose kind is not known yet (the registry
-                 * still loading, or never marked) gets no button: a live-money control appearing a
-                 * moment late costs nothing, appearing where it cannot apply reads as an offer.
-                 * ⚠ **On a demo account a refusal is still stated ON the control**, never hidden
-                 * — this is the one people come to this page looking for.
-                 *
-                 * ⚠ **Every refusal here is the SERVER's own rule, stated before the click rather
-                 * than delivered as a 400 after it.** A running bot reads its account at startup,
-                 * so a write cannot reach the live process and the page would show it on one
-                 * account while it traded another; the server refuses it, and so does this.
-                 *
-                 * ⚠ **`goLiveBlock` is a REASON, never a boolean** — a control that only knows
-                 * "no" cannot say which rule said no. */}
-                {group.bots.length > 0 && reg?.kind === 'demo' && (
-                  <button
-                    data-testid="go-live"
-                    disabled={!!goLiveBlock}
-                    title={goLiveBlock ?? 'Move every bot on this account onto a live one'}
-                    onClick={() => setGoingLive(true)}
-                    className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Rocket size={12} /> Take live
-                  </button>
-                )}
-                {reg && (
+            {/* 🔴 Two bots sharing an order tag each read the OTHER's orders as their own. The only
+             *  warning here about two bots actively corrupting each other's book; shown when true. */}
+            {group.magic_clash.length > 0 && (
+              <div
+                data-testid="magic-clash"
+                className="text-[11px] text-neg-text bg-neg-muted border border-neg/40 rounded-md px-[10px] py-[7px] mb-[10px] leading-[1.5]"
+              >
+                <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
+                read the other&rsquo;s orders as its own — cancelling them, moving their stops and
+                booking their fills. They will refuse to start until one is given a different one.
+              </div>
+            )}
+
+            {group.bots.length === 0 ? (
+              <p data-testid="no-bots" className="text-[12px] text-text-tertiary">
+                No bot is on this account now.
+              </p>
+            ) : (
+              <div className="rounded-md border border-border-subtle overflow-hidden">
+                <div
+                  className={`${ROW_GRID} py-[6px] bg-bg-surface-2 text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
+                >
+                  <span>Bot</span>
+                  <span>State</span>
+                  <span title="What each bot risks on one trade, as a share of the balance. Change one here and Save below — the account's cap is the budget they all come out of.">
+                    Risk a trade
+                  </span>
+                  <span className="text-right">Actions</span>
+                </div>
+                {group.bots.map((b) => {
+                  const st = statusByKey.get(b.key)
+                  const running = st === 'RUNNING'
+                  const known = st !== undefined
+                  const action = pendingKey === b.key ? pendingAction : null
+                  const armed = armedKey === b.key
+                  const removing = takeOff.isPending && takeOff.variables?.botKey === b.key
+                  const share = shareOf(b)
+                  const edited = share !== b.risk_pct
+                  return (
+                    <div
+                      key={b.key}
+                      data-testid="account-bot"
+                      data-bot={b.key}
+                      className={`${ROW_GRID} py-[8px] border-t border-border-subtle`}
+                    >
+                      <button
+                        onClick={() => onOpenBot?.(b.key)}
+                        disabled={!onOpenBot}
+                        title={`Open ${b.display} — its risk, account, version and settings`}
+                        className="group flex items-center gap-[8px] min-w-0 text-left"
+                      >
+                        <StateDot status={st} />
+                        <span className="truncate text-[13px] font-medium text-text-primary group-hover:text-accent transition-colors">
+                          {b.display}
+                        </span>
+                        {onOpenBot && (
+                          <ChevronRight
+                            size={12}
+                            className="shrink-0 text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity"
+                          />
+                        )}
+                      </button>
+                      <span className="text-[11.5px] text-text-tertiary">
+                        {!known ? 'unknown' : running ? 'Running' : 'Stopped'}
+                      </span>
+                      {b.unreadable ? (
+                        <span className="text-[11px] text-warn-text">config unreadable</span>
+                      ) : (
+                        <DecimalInput
+                          value={share}
+                          onChange={(v) => setShare(b, v)}
+                          suffix="%"
+                          invalid={share == null && edited}
+                          placeholder="unset"
+                          aria-label={`${b.display} risk per trade`}
+                          data-testid={`share-${b.key}`}
+                          className="w-[112px]"
+                          inputClassName={edited ? 'border-accent/60' : ''}
+                        />
+                      )}
+                      <div className="flex items-center justify-end gap-[6px]">
+                        {action ? (
+                          <BotActionPill action={action} />
+                        ) : running ? (
+                          onStop && (
+                            <button
+                              data-testid={`stop-${b.key}`}
+                              onClick={() => onStop(b.key)}
+                              disabled={busy}
+                              title={`Stop ${b.display}`}
+                              aria-label={`Stop ${b.display}`}
+                              className="w-[26px] h-[26px] grid place-items-center rounded-md border border-border-default text-text-secondary hover:text-neg-text hover:border-neg/40 transition-colors disabled:opacity-40"
+                            >
+                              <Square size={10} />
+                            </button>
+                          )
+                        ) : (
+                          known &&
+                          onStart && (
+                            <button
+                              data-testid={`start-${b.key}`}
+                              onClick={() => onStart(b.key)}
+                              disabled={busy}
+                              title={`Start ${b.display}`}
+                              aria-label={`Start ${b.display}`}
+                              className="w-[26px] h-[26px] grid place-items-center rounded-md border border-border-default text-text-secondary hover:text-pos-text hover:border-pos/40 transition-colors disabled:opacity-40"
+                            >
+                              <Play size={10} />
+                            </button>
+                          )
+                        )}
+                        {/* ⚠ Refused while running (it read its account at startup, so the write
+                         *  cannot reach the process) and while the box has not answered — the
+                         *  same guard as the bot panel's Remove, stated on the control. */}
+                        <button
+                          data-testid={`take-off-${b.key}`}
+                          disabled={running || !known || removing}
+                          title={
+                            running
+                              ? `Stop ${b.display} first — it read its account when it started, so taking it off cannot reach the running process.`
+                              : !known
+                                ? 'The trading box has not answered for this bot — wait for its state before taking it off.'
+                                : armed
+                                  ? 'Click again to take it off the account.'
+                                  : `Take ${b.display} off account ${account}. It stays registered and stopped until you add it to an account again.`
+                          }
+                          onClick={() => {
+                            if (!armed) {
+                              setArmedKey(b.key)
+                              return
+                            }
+                            setArmedKey(null)
+                            takeOff.mutate({ botKey: b.key, account: null, display: b.display })
+                          }}
+                          className={`px-[9px] h-[26px] rounded-md text-[11.5px] border whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                            armed
+                              ? 'border-warn/50 bg-warn-muted text-warn-text'
+                              : 'border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover'
+                          }`}
+                        >
+                          {removing ? 'Taking off…' : armed ? 'Click again' : 'Take off'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* ⚠ Stays OPEN after an add, so a second bot is one more click — the added bot leaves
+             *  the list when the accounts re-read, and joins the rows above. */}
+            {adding && account !== null && (
+              <div className="mt-3">
+                <AddBotPanel
+                  account={account}
+                  group={group}
+                  live={live}
+                  pendingKey={join.pendingKey}
+                  busy={join.busy}
+                  onPick={(pick) =>
+                    void join.join({
+                      account,
+                      botKey: pick.key,
+                      display: pick.display,
+                      choice: pick.choice,
+                      riskCapPct: pick.riskCapPct,
+                      live: pick.live,
+                    })
+                  }
+                  onClose={() => setAdding(false)}
+                  statusByKey={statusByKey}
+                />
+              </div>
+            )}
+          </section>
+
+          {/* ── the ceiling ─────────────────────────────────────────────────── */}
+          {/* 🔴 An account with NO bot has no cap and nothing to store one in — the cap lives in
+           *  each bot's config, and saving here answered 404. The first bot added carries it. */}
+          {account !== null && !hasBots && (
+            <section className="py-[16px] border-b border-border-subtle">
+              <SectionTitle>Risk budget</SectionTitle>
+              <p data-testid="cap-empty" className="text-[12px] text-text-secondary leading-[1.5]">
+                None yet — no bot is on this account. The first bot you add sets it.
+              </p>
+            </section>
+          )}
+          {account !== null && hasBots && (
+            <section className="py-[16px] border-b border-border-subtle">
+              <SectionTitle>Risk budget</SectionTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-[7px] text-[12.5px] text-text-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="cap-enabled"
+                    checked={capped}
+                    onChange={(e) => setCapped(e.target.checked)}
+                  />
+                  Cap open risk at
+                </label>
+                <DecimalInput
+                  value={capValue}
+                  onChange={setCapValue}
+                  suffix="%"
+                  invalid={!capValid}
+                  disabled={!capped}
+                  aria-label="Account risk cap"
+                  data-testid="cap-input"
+                  className="w-[92px]"
+                  inputClassName={capDirty ? 'border-accent/60' : ''}
+                />
+                <span className="text-[12.5px] text-text-secondary">
+                  of the balance, across every bot here
+                </span>
+              </div>
+
+              <BudgetMeter total={shareTotal} cap={stated} over={!!group.share_overflow_reason} />
+              {/* ⚠ Each warning says the fact only when it is TRUE — a warning on every account is
+               *  one nobody reads on the day it means something. */}
+              <p
+                data-testid="cap-shares"
+                className="text-[11.5px] text-text-tertiary mt-[8px] leading-[1.5]"
+              >
+                {shareTotal === null ? (
+                  'Their shares cannot be totalled — at least one bot here does not state what it risks per trade.'
+                ) : (
                   <>
-                    <button
-                      onClick={() => setEditing(true)}
-                      className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-                    >
-                      <Pencil size={12} /> Edit
-                    </button>
-                    {/* ⚠ An account a bot still TRADES cannot be unregistered, and the refusal is
-                     *  stated on the control rather than after the click — dropping the registry row
-                     *  would leave a live bot pointed at a login this page can no longer describe. */}
-                    <button
-                      data-testid={`unregister-${account}`}
-                      disabled={group.bots.length > 0 || unregister.isPending}
-                      title={
-                        group.bots.length > 0
-                          ? 'Take its bots off it first'
-                          : 'Remove this account from the list'
-                      }
-                      onClick={() => unregister.mutate(account)}
-                      className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Trash2 size={12} /> Delete
-                    </button>
+                    The bots here risk{' '}
+                    <span className="text-text-secondary font-medium">{shareTotal}% per trade</span>{' '}
+                    between them{stated !== null ? `, against ${stated}%` : ''}.
                   </>
                 )}
-              </div>
-            )}
+              </p>
 
-            {editing && reg && (
-              <div className="pt-[6px]">
-                <AccountForm existing={reg} onClose={() => setEditing(false)} />
-              </div>
-            )}
-          </div>
-        )}
-      </aside>
-    </>
+              {/* The save is refused for this reason too, so saying it here makes the refusal
+               *  predictable rather than a surprise at the moment you press Save. */}
+              {group.share_overflow_reason && (
+                <p
+                  data-testid="cap-overflow"
+                  className="text-[11px] text-warn-text bg-warn-muted border border-warn/40 rounded-md px-[10px] py-[7px] mt-[8px] leading-[1.5]"
+                >
+                  {group.share_overflow_reason}
+                </p>
+              )}
+              {!hasEdits && p?.reason && (
+                <FixButtons plan={p} onCap={applyFitCap} onShares={applyFitShares} />
+              )}
+
+              {/* 🔴 The condition that stops every bot here STARTING — and why the cap is blank. */}
+              {!group.cap_agrees && (
+                <p
+                  data-testid="cap-disagreement"
+                  className="text-[11px] text-neg-text bg-neg-muted border border-neg/40 rounded-md px-[10px] py-[7px] mt-[8px] leading-[1.5]"
+                >
+                  The bots on this balance do not state the same ceiling, so none of them will
+                  start. Saving here writes one figure to all of them.
+                </p>
+              )}
+
+              {/* Not a fault — a consequence worth knowing before a quiet week reads as broken. */}
+              {group.cap_takes_turns && (
+                <p
+                  data-testid="cap-takes-turns"
+                  className="text-[11px] text-text-tertiary mt-[8px] leading-[1.5]"
+                >
+                  One full-size trade fills this ceiling, so the bots here take turns — whichever is
+                  in first blocks the other until it is out.
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* ── the rare things ─────────────────────────────────────────────── */}
+          {account !== null && (
+            <div className="py-[16px] flex gap-2 flex-wrap">
+              {/* 🔴 ONLY ON A DEMO ACCOUNT (2026-09-11, Aaron: *"backtest these bots should only be
+               *  on demo accounts"*). Opens the stack builder filled in with what these bots run.
+               *  Disabled, never hidden, under two bots — that is not a stack. */}
+              {reg?.kind === 'demo' && (
+                <button
+                  data-testid="backtest-account-bots"
+                  disabled={group.bots.length < 2}
+                  title={
+                    group.bots.length < 2
+                      ? 'A stack needs two or more bots on this account.'
+                      : "Opens the stack builder on the Backtests page, filled in with what these bots run — their own settings, charts and risk, and this account's cap."
+                  }
+                  onClick={() => navigate(`/backtests?tab=stacks&account=${account}`)}
+                  className={`${actionCls} border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary`}
+                >
+                  <Play size={12} /> Backtest these bots
+                </button>
+              )}
+              {/* 🔴 PRESENT ONLY ON A DEMO ACCOUNT (2026-09-11) — a move to live from a live account
+               *  is not an action at all. ⚠ On a demo account a refusal is still stated ON the
+               *  control, never hidden: this is the one people come to this page looking for. */}
+              {group.bots.length > 0 && reg?.kind === 'demo' && (
+                <button
+                  data-testid="go-live"
+                  disabled={!!goLiveBlock}
+                  title={goLiveBlock ?? 'Move every bot on this account onto a live one'}
+                  onClick={() => setGoingLive(true)}
+                  className={`${actionCls} border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10`}
+                >
+                  <Rocket size={12} /> Take live
+                </button>
+              )}
+              {reg && (
+                <>
+                  <button
+                    onClick={() => setEditing(true)}
+                    className={`${actionCls} border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary`}
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                  {/* ⚠ An account a bot still TRADES cannot be unregistered, and the refusal is
+                   *  stated on the control rather than after the click. */}
+                  <button
+                    data-testid={`unregister-${account}`}
+                    disabled={group.bots.length > 0 || unregister.isPending}
+                    title={
+                      group.bots.length > 0
+                        ? 'Take its bots off it first'
+                        : 'Remove this account from the list'
+                    }
+                    onClick={() => unregister.mutate(account)}
+                    className={`${actionCls} border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10`}
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </Drawer>
   )
 }

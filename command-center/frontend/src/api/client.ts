@@ -72,8 +72,15 @@ export const api = {
   getText: (path: string) => request<string>(path, undefined, true),
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+  // `opts` for a POST that is really a QUESTION (a plan, a preview) whose failure the caller
+  // renders — the same reason a polling read passes `silent`.
+  post: <T>(path: string, body?: unknown, opts?: RequestOpts) =>
+    request<T>(
+      path,
+      { method: 'POST', body: body ? JSON.stringify(body) : undefined },
+      false,
+      opts
+    ),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

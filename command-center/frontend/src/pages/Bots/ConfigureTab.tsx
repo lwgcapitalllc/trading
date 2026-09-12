@@ -7,12 +7,11 @@ import {
   ChevronDown,
   ChevronRight,
   HelpCircle,
-  Info,
   Loader2,
   Upload,
   WifiOff,
 } from 'lucide-react'
-import { useSaveBotRuntime, useBotVersion, useStartPromoteJob } from '@/hooks/useBots'
+import { useBotVersion, useStartPromoteJob } from '@/hooks/useBots'
 import {
   deployableVersion,
   deployWouldAdvance,
@@ -24,8 +23,9 @@ import { StepProgress, type Step } from '@/components/StepProgress'
 import type { BotDeployedVersion, BotParamRow, BotPromoteJob, BotPromoteStage } from '@/types'
 
 /**
- * The bot panel's money-path pieces: `VersionBanner` (deploy), `RuntimeEditor` (risk per trade)
- * and `ParamGroup` (the read-only strategy settings). The file is named for the Configure tab it
+ * The bot panel's money-path pieces: `VersionBanner` (deploy) and `ParamGroup` (the read-only
+ * strategy settings). Risk per trade moved to `BotRiskEditor.tsx` on 2026-09-11, when it began
+ * saving through the account's budget; the old `RuntimeEditor` and its modal confirm went with it. The file is named for the Configure tab it
  * used to be; that tab, its `BotPanel`, `DeployCard` and fleet strip rendered nothing after the
  * 2026-09-05 rebuild and were deleted on 2026-09-11.
  *
@@ -67,12 +67,6 @@ function Row({
       </span>
     </div>
   )
-}
-
-/** Risk % → dollars on the balance the bot last reported. */
-function riskUsd(pct: number, balance: number | null): string {
-  if (balance == null || !balance) return ''
-  return `$${((balance * pct) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
 
 // ── one reading of a deployment record ──────────────────────────────────────────
@@ -684,229 +678,6 @@ export function VersionBanner({
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// ── the one editable lever ──────────────────────────────────────────────────────
-
-export function RuntimeEditor({
-  botKey,
-  botLabel,
-  row,
-  balance,
-  hideNote = false,
-}: {
-  botKey: string
-  botLabel: string
-  row: BotParamRow
-  balance: number | null
-  /** Suppress the instance config's prose. See the note's own comment below for why. */
-  hideNote?: boolean
-}) {
-  const current = Number(row.value)
-  const [draft, setDraft] = useState<string>(String(current))
-  const [confirming, setConfirming] = useState(false)
-  const save = useSaveBotRuntime()
-
-  const next = parseFloat(draft)
-  const valid =
-    Number.isFinite(next) &&
-    (row.min == null || next >= row.min) &&
-    (row.max == null || next <= row.max)
-  const dirty = valid && next !== current
-
-  function commit() {
-    save.mutate(
-      { botName: botKey, values: { [row.name]: next } },
-      { onSuccess: () => setConfirming(false) }
-    )
-  }
-
-  return (
-    <div>
-      <div className="flex items-end gap-3">
-        <div>
-          <p className="text-[10px] text-text-tertiary mb-[3px]">{row.label}</p>
-          <div className="flex items-baseline gap-1">
-            <span className="text-[22px] font-mono tabular-nums text-text-primary">
-              {fmt(row.value)}
-            </span>
-            <span className="text-[11px] text-text-tertiary">{row.unit ?? '%'}</span>
-          </div>
-          {balance != null && (
-            <p className="text-[10px] text-text-tertiary mt-[2px]">
-              {riskUsd(current, balance)} per trade at ${balance.toLocaleString()}
-            </p>
-          )}
-        </div>
-
-        <div className="ml-auto flex items-end gap-2">
-          <div>
-            <p className="text-[10px] text-text-tertiary mb-[3px]">Change to</p>
-            <input
-              type="number"
-              value={draft}
-              step={0.5}
-              min={row.min ?? undefined}
-              max={row.max ?? undefined}
-              onChange={(e) => setDraft(e.target.value)}
-              className="w-[78px] bg-bg-sunken border border-border-subtle rounded px-[7px] py-[5px] text-[12px] font-mono text-right focus:border-accent/50 outline-none transition-colors"
-            />
-          </div>
-          <button
-            disabled={!dirty || save.isPending}
-            onClick={() => setConfirming(true)}
-            className={`px-3 py-[6px] rounded-md text-small font-medium transition-colors ${
-              dirty && !save.isPending
-                ? 'bg-accent-muted text-accent-text border border-accent/30 hover:bg-accent/10 cursor-pointer'
-                : 'bg-bg-surface-2 text-text-tertiary border border-border-subtle cursor-not-allowed opacity-50'
-            }`}
-          >
-            {save.isPending ? 'Deploying…' : 'Deploy'}
-          </button>
-        </div>
-      </div>
-
-      {!valid && draft !== '' && (
-        <p className="text-[10px] text-neg-text mt-[6px]">
-          Must be between {row.min} and {row.max}.
-        </p>
-      )}
-
-      {/* 🔴 **The note is OFF by default since 2026-09-05.** It is the `_`-prefixed prose from the
-          instance config — a paragraph a developer wrote about why a number is what it is, and on
-          `exec_risk_pct` it runs to some 1,500 words. Printed beside the one control on the page
-          it buried the control. Aaron: *"even the section that says risk per trade, what is all
-          of that information? Why do I care?"*
-
-          ⚠ **It is HIDDEN, never deleted.** That prose is the measured reasoning behind a live
-          risk number and this repo does not throw those away — the drawer shows it under Details,
-          where somebody asking *why is it 5%* will look and nobody else has to read it. */}
-      {row.note && !hideNote && (
-        <p className="text-[10px] text-text-tertiary mt-[10px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
-          <Info size={10} className="inline mr-[4px] -mt-[1px]" />
-          {row.note}
-        </p>
-      )}
-
-      {confirming && (
-        <ConfirmRuntime
-          botLabel={botLabel}
-          label={row.label}
-          from={current}
-          to={next}
-          unit={row.unit ?? '%'}
-          balance={balance}
-          pending={save.isPending}
-          onCancel={() => setConfirming(false)}
-          onConfirm={commit}
-        />
-      )}
-    </div>
-  )
-}
-
-/**
- * The confirmation carries the NUMBERS, not the question.
- *
- * "Are you sure?" trains you to click yes. A dialog that shows `10% → 5%` and
- * `$200 → $100 per trade` is one you actually read, which is the only thing that makes a
- * confirmation worth having.
- *
- * ⚠ It also carries the BOT NAME (2026-08-04). With a selector above it, the bot being
- * changed is a choice the reader made a scroll ago and can no longer see — and this dialog
- * is the last point at which a wrong row is still free to fix.
- */
-function ConfirmRuntime({
-  botLabel,
-  label,
-  from,
-  to,
-  unit,
-  balance,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  botLabel: string
-  label: string
-  from: number
-  to: number
-  unit: string
-  balance: number | null
-  pending: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  const bigger = to > from
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onCancel}
-    >
-      <div
-        className="bg-bg-surface border border-border-default rounded-lg p-5 w-[440px]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p className="text-[13px] font-semibold mb-1">
-          Change {label} on <span className="font-mono">{botLabel}</span>
-        </p>
-        <p className="text-[11px] text-text-tertiary mb-4">
-          This commits the instance config, pushes it, and the VPS pulls it.
-        </p>
-
-        <div className="bg-bg-sunken border border-border-subtle rounded-md p-3 mb-3">
-          <div className="flex items-center justify-center gap-3 font-mono tabular-nums">
-            <span className="text-[20px] text-text-tertiary">
-              {from}
-              {unit}
-            </span>
-            <span className="text-text-tertiary">→</span>
-            <span className={`text-[20px] ${bigger ? 'text-warn-text' : 'text-text-primary'}`}>
-              {to}
-              {unit}
-            </span>
-          </div>
-          {balance != null && !!balance && (
-            <div className="flex items-center justify-center gap-3 mt-[6px] text-[11px] font-mono tabular-nums text-text-tertiary">
-              <span>{riskUsd(from, balance)}</span>
-              <span>→</span>
-              <span className={bigger ? 'text-warn-text' : ''}>{riskUsd(to, balance)}</span>
-              <span>per trade</span>
-            </div>
-          )}
-        </div>
-
-        {bigger && (
-          <p className="text-[11px] text-warn-text mb-3 flex gap-[6px]">
-            <AlertTriangle size={12} className="shrink-0 mt-[1px]" />
-            This increases the risk on every future trade.
-          </p>
-        )}
-
-        <p className="text-[10px] text-text-tertiary mb-4 leading-[1.5]">
-          The bot is <strong className="text-text-secondary">not restarted</strong>. It picks the
-          change up at the next bar it is flat — no position open and nothing resting — so a resize
-          can never land mid-trade.
-        </p>
-
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-3 py-[6px] rounded-md text-small text-text-secondary border border-border-subtle hover:bg-bg-hover cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={pending}
-            className="px-3 py-[6px] rounded-md text-small font-medium bg-accent-muted text-accent-text border border-accent/30 hover:bg-accent/10 cursor-pointer disabled:opacity-50"
-          >
-            {pending ? 'Deploying…' : 'Deploy change'}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }

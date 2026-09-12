@@ -13,8 +13,9 @@ import type {
   AccountSync,
   AccountSyncPreview,
   BotAccountAssignResult,
-  BotAccountCapResult,
   BotAccountGroup,
+  BotAccountRiskPlan,
+  BotAccountRiskRequest,
   BotAccountRegistration,
   BotAccountRegistrationWrite,
   BotDeployedVersion,
@@ -308,24 +309,41 @@ export function useStartPromoteJob() {
   })
 }
 
+/**
+ * Change a runtime setting on ONE bot — used for a bot on NO account. A bot on an account changes
+ * its risk through `useSaveAccountRisk`, because its share is part of the account's budget and the
+ * two must be checked and written together.
+ *
+ * ⚠ No `onError` toast: `api.patch` already toasts the server's own reason, and a second generic
+ * one buried it.
+ */
 export function useSaveBotRuntime() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ botName, values }: { botName: string; values: Record<string, number> }) =>
+    mutationFn: ({
+      botName,
+      values,
+    }: {
+      botName: string
+      values: Record<string, number>
+      /** What the toast calls the bot — the key is not a name. */
+      display?: string
+    }) =>
       api.patch<{ status: string; changed: boolean; detail?: string }>(
         `/bots/${encodeURIComponent(botName)}/runtime`,
         { values, deploy: true }
       ),
-    onSuccess: (data, { botName }) => {
+    onSuccess: (data, { botName, display }) => {
+      const who = display ?? botName
       toast.success(
         data.changed
-          ? `${botName}: ${data.detail} — applies at the next bar the bot is flat`
-          : `${botName} already at those values`
+          ? `${who}: ${data.detail} — applies the next time it has no open trade`
+          : `${who} already at those values`
       )
       qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
-    onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
   })
 }
 
@@ -504,36 +522,126 @@ export function useSetAccountPassword() {
   })
 }
 
+// ── An account's risk budget: its cap and every bot's share, as ONE thing ────────
+//
+// 🔴 **The cap and each share lived behind two writes, and each refused an IMPROVEMENT (fixed
+// 2026-09-11).** Fixing an account that did not fit took two saves in the right order and the first
+// was often refused. The budget is now planned and saved as one: the server refuses only a change
+// that ADDS risk to an account it leaves over the cap, and a cap change needs no restart — each bot
+// adopts it the next time it has no open trade.
+
+const riskPlanKey = (account: number | null, body: BotAccountRiskRequest | null) =>
+  ['bots', 'accounts', 'risk-plan', account, body] as const
+
+const askRiskPlan = (account: number, body: BotAccountRiskRequest) =>
+  api.post<BotAccountRiskPlan>(`/bots/accounts/${account}/risk-plan`, body, { silent: true })
+
 /**
- * Set (or clear) the account-level risk cap across every bot on one account.
+ * What an account's budget WOULD be after a change, and whether a save would be refused. Writes
+ * nothing.
  *
- * `riskCapPct: null` means UNCAPPED, which is a value rather than "leave it alone" — there is
- * deliberately no separate clear action, so the absent value keeps meaning the one thing.
- *
- * The toast always says a restart is needed when something was written: the cap is read by the
- * order bridge at startup and is not runtime-reloadable, so a written-but-not-running cap is
- * the one state that reads as protected and is not.
+ * ⚠ **Under the `['bots','accounts']` prefix on purpose** — a save invalidates that prefix, and a
+ * plan describing the budget before the save is the one answer that must not survive it. The
+ * endpoint reads local configs, so re-asking costs nothing.
+ * ⚠ **`body: null` asks nothing.** Callers pass a body only while there is something to ask about
+ * (an edit, an over-subscribed account), so opening a panel never fires a request by itself.
+ * ⚠ **`silent`, no retry** — the caller renders a failure next to the thing it is about.
+ * ⚠ **`isPlaceholderData` is NOT a fresh answer.** The previous plan is held while the next one is
+ * asked, so the line under a box does not flicker — but a Save gated on it must wait for the answer
+ * to THIS body.
  */
-export function useSetAccountRiskCap() {
+export function useAccountRiskPlan(account: number | null, body: BotAccountRiskRequest | null) {
+  return useQuery({
+    queryKey: riskPlanKey(account, body),
+    queryFn: () => askRiskPlan(account as number, body as BotAccountRiskRequest),
+    enabled: account !== null && body !== null,
+    staleTime: 0,
+    retry: false,
+    placeholderData: (prev) => prev,
+  })
+}
+
+/**
+ * The same plan, asked ONCE when a decision needs it — a bot moved onto an account from its own
+ * panel. Imperative because the answer decides what the click does next: fits → move; does not
+ * fit → offer the ways to make room. `null` when the server could not answer; the move then goes
+ * ahead and the server is the gate.
+ */
+export function useFetchRiskPlan() {
+  const qc = useQueryClient()
+  return async (
+    account: number,
+    body: BotAccountRiskRequest
+  ): Promise<BotAccountRiskPlan | null> => {
+    try {
+      return await qc.fetchQuery({
+        queryKey: riskPlanKey(account, body),
+        queryFn: () => askRiskPlan(account, body),
+        staleTime: 0,
+        retry: false,
+      })
+    } catch {
+      return null
+    }
+  }
+}
+
+/**
+ * Whether each free bot would fit on an account — one plan per bot, each asking about that bot
+ * joining alone. The Add bot list uses it to offer a one-click add or the ways to make room.
+ */
+export function useJoinPlans(account: number | null, bots: { key: string; risk: number | null }[]) {
+  return useQueries({
+    queries: bots.map((b) => {
+      const body: BotAccountRiskRequest | null =
+        b.risk == null ? null : { joining: { [b.key]: b.risk } }
+      return {
+        queryKey: riskPlanKey(account, body),
+        queryFn: () => askRiskPlan(account as number, body as BotAccountRiskRequest),
+        enabled: account !== null && body !== null,
+        staleTime: 0,
+        retry: false,
+      }
+    }),
+  })
+}
+
+/**
+ * Save an account's budget — the cap, any bot's share, or both — in ONE commit.
+ *
+ * ⚠ **Only what changed is sent.** `riskCapPct: undefined` leaves the cap alone; `null` means
+ * uncapped, a value and not an absence. An empty `shares` is not sent at all.
+ * ⚠ `quiet` skips the success toast, for a save that is one step of a bigger gesture (raising the
+ * cap to add a bot) whose own toast says what happened.
+ */
+export function useSaveAccountRisk() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ account, riskCapPct }: { account: number; riskCapPct: number | null }) =>
-      api.patch<BotAccountCapResult>(`/bots/accounts/${account}/risk-cap`, {
-        risk_cap_pct: riskCapPct,
+    mutationFn: ({
+      account,
+      riskCapPct,
+      shares,
+    }: {
+      account: number
+      riskCapPct?: number | null
+      shares?: Record<string, number>
+      quiet?: boolean
+    }) =>
+      api.patch<BotAccountRiskPlan>(`/bots/accounts/${account}/risk`, {
+        ...(riskCapPct !== undefined ? { risk_cap_pct: riskCapPct } : {}),
+        ...(shares && Object.keys(shares).length > 0 ? { shares } : {}),
         deploy: true,
       }),
-    onSuccess: (data) => {
-      if (!data.changed) {
-        toast.info(data.detail || 'Already at that cap')
-      } else {
-        toast.success(
-          `${data.detail} — restart ${data.updated.length === 1 ? 'it' : 'them'} to apply`
-        )
+    onSuccess: (data, { quiet }) => {
+      if (!quiet) {
+        if (!data.changed) toast.info(data.detail || 'Nothing to change')
+        // The server's own words for WHEN it applies — the half a reader most needs.
+        else toast.success(data.detail || 'Saved', { description: data.applies || undefined })
       }
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
-    onError: (err) => toast.error(`Risk cap: ${err}`),
   })
 }
 
@@ -552,28 +660,39 @@ export function useAssignBotAccount() {
       botKey,
       account,
       riskCapPct,
+      riskPct,
+      confirmLive,
     }: {
       botKey: string
       account: number | null
       /** The cap for an account with NO bot yet — `undefined` sends nothing (not chosen), `null`
        *  sends "uncapped" (chosen). The server refuses it on an account that already has bots. */
       riskCapPct?: number | null
+      /** The joining bot's own risk per trade, written in the SAME move — how a bot that does not
+       *  fit joins at the room left. `undefined` keeps the bot's own share. */
+      riskPct?: number
+      /** A move onto a LIVE account must say so, or the server refuses it (409). Sent only after
+       *  the reader has confirmed on screen. */
+      confirmLive?: boolean
       /** What the toast calls the bot. The server answers with its KEY, which is not a name. */
       display?: string
     }) =>
       api.patch<BotAccountAssignResult>(`/bots/${encodeURIComponent(botKey)}/account`, {
         account,
         ...(riskCapPct !== undefined ? { risk_cap_pct: riskCapPct } : {}),
+        ...(riskPct !== undefined ? { risk_pct: riskPct } : {}),
+        ...(confirmLive ? { confirm_live: true } : {}),
         deploy: true,
       }),
     onSuccess: (data, vars) => {
       // Never "moved and running" — a bot reads its account at startup, so the honest report is
-      // what was written plus what still has to happen. Same rule as the risk cap above.
+      // what was written plus what still has to happen.
       const who = vars.display ?? 'The bot'
+      const at = vars.riskPct !== undefined ? ` at ${+vars.riskPct.toFixed(2)}% a trade` : ''
       toast.success(
         data.account === null
           ? `${who} taken off the account — it will not start until it is on one again`
-          : `${who} added to account ${data.account} — start it to trade`
+          : `${who} added to account ${data.account}${at} — start it to trade`
       )
       // ⚠ A note is what the move could NOT carry — an unregistered account, or one with no
       // recorded symbol suffix. It is raised as a WARNING rather than folded into the success
@@ -586,7 +705,8 @@ export function useAssignBotAccount() {
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
     },
-    onError: (err) => toast.error(`Move: ${err}`),
+    // ⚠ No `onError` toast: `api.patch` already toasts the server's reason (a running bot, a live
+    // account not confirmed, a share that does not fit), and a second one on top buried it.
   })
 }
 

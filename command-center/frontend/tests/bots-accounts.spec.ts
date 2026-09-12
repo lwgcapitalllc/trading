@@ -57,6 +57,32 @@ function group(over: Record<string, unknown> = {}) {
   }
 }
 
+/**
+ * The server's answer to "would this budget fit?" — `POST /bots/accounts/{a}/risk-plan`. Defaults to
+ * FITS, so a check about adding or saving states the refusal it is about rather than inheriting one.
+ */
+function plan(over: Record<string, unknown> = {}) {
+  return {
+    account: ACCOUNT,
+    fits: true,
+    reason: null,
+    refused: null,
+    risk_cap_pct: 10,
+    cap_changed: false,
+    share_total_pct: null,
+    room_pct: null,
+    bots: [],
+    changed: true,
+    fit_cap: null,
+    fit_shares: null,
+    applies: 'Each bot picks this up the next time it has no open trade — no restart.',
+    written: [],
+    deployed: null,
+    detail: '',
+    ...over,
+  }
+}
+
 /** One terminal on the box, so the drawer has a list to draw. */
 const TERMINAL = {
   key: 'c:\\mt5_scalper',
@@ -217,6 +243,13 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
     }
     if (u.pathname === '/api/bots/accounts') {
       return route.fulfill({ json: groups })
+    }
+    // The budget PLAN — a question that writes nothing. Answered "fits" by default, so a panel that
+    // asks it (an edit, an Add bot list, a move) is not failed by the offline harness for an
+    // unrouted request; a check about a refusal routes its own answer over this.
+    const rp = u.pathname.match(/^\/api\/bots\/accounts\/(\d+)\/risk-plan$/)
+    if (rp) {
+      return route.fulfill({ json: plan({ account: Number(rp[1]) }) })
     }
     // Adding an account starts from the Sync VPS drawer, which SCANS on opening — and the real
     // scan SSHes to the trading box and attaches to its terminals, while the real sync COMMITS.
@@ -486,26 +519,28 @@ test('an unreadable config blocks the save rather than writing to the rest', asy
   await expect(page.getByTestId('cap-save')).toBeDisabled()
 })
 
-test('saving a cap says a restart is needed, never that it applied', async ({ page }) => {
-  // A written cap is not a running cap — it is read by the order bridge at startup only. This is
-  // the one state that reads as protected and is not.
-  // MUTATION: drop `restart_required` from the toast wording → red.
+test('saving a cap says WHEN it applies, and never asks for a restart', async ({ page }) => {
+  // 🔴 Re-pointed 2026-09-11. This check used to pin "restart them to apply" — true while the bot
+  // read its cap only at startup. A running bot now adopts a new cap the next time it has no open
+  // trade (algos/live, RUNTIME_RELOADABLE_ACCOUNT), so that toast would send the reader to restart
+  // bots for nothing. The rule underneath is unchanged: the toast says when a write takes effect.
+  // MUTATION: drop the server's `applies` sentence from the toast → red on the wording.
+  // MUTATION: send the save to the old `/risk-cap` endpoint → nothing answers, red on the body.
   await mock(page, STACKED)
   let sent: Record<string, unknown> | null = null
   await page.route('**/*', async (route) => {
     const u = new URL(route.request().url())
-    if (u.pathname === `/api/bots/accounts/${ACCOUNT}/risk-cap`) {
+    if (u.pathname === `/api/bots/accounts/${ACCOUNT}/risk`) {
       sent = route.request().postDataJSON()
       return route.fulfill({
-        json: {
-          status: 'ok',
+        json: plan({
           changed: true,
+          cap_changed: true,
+          risk_cap_pct: 20,
+          written: ['sos_fade', 'b_leg'],
           deployed: true,
-          updated: ['sos_fade', 'b_leg'],
-          restart_required: true,
-          bots: ['sos_fade', 'b_leg'],
-          detail: `account ${ACCOUNT} risk cap → 20%`,
-        },
+          detail: `account ${ACCOUNT} — cap 10% → 20%`,
+        }),
       })
     }
     return route.fallback()
@@ -515,7 +550,11 @@ test('saving a cap says a restart is needed, never that it applied', async ({ pa
   await page.getByTestId('cap-input').fill('20')
   await page.getByTestId('cap-save').click()
 
-  await expect(page.getByText(/restart them to apply/i)).toBeVisible()
+  // ⚠ Scoped to the TOAST: the footer states the same sentence while the edit is on screen, so a
+  // page-wide match would pass on the footer and say nothing about what the save reported.
+  const toast = page.locator('[data-sonner-toast]').filter({ hasText: /cap 10% → 20%/ })
+  await expect(toast).toContainText(/next time it has no open trade/i)
+  await expect(page.getByText(/restart them/i)).toHaveCount(0)
   expect(sent).toEqual({ risk_cap_pct: 20, deploy: true })
 })
 
@@ -529,17 +568,10 @@ test('clearing the cap sends null, which means uncapped rather than unchanged', 
   let sent: Record<string, unknown> | null = null
   await page.route('**/*', async (route) => {
     const u = new URL(route.request().url())
-    if (u.pathname === `/api/bots/accounts/${ACCOUNT}/risk-cap`) {
+    if (u.pathname === `/api/bots/accounts/${ACCOUNT}/risk`) {
       sent = route.request().postDataJSON()
       return route.fulfill({
-        json: {
-          status: 'ok',
-          changed: true,
-          updated: ['sos_fade'],
-          restart_required: true,
-          bots: ['sos_fade'],
-          detail: 'uncapped',
-        },
+        json: plan({ changed: true, cap_changed: true, risk_cap_pct: null, detail: 'uncapped' }),
       })
     }
     return route.fallback()
@@ -2601,4 +2633,354 @@ test("a bot that CARRIES ON a strategy's record here says whose trades its row i
     'title',
     /includes 2 trades SOS Fade closed here before it moved to account 34957946/
   )
+})
+
+// ── the risk budget as ONE thing, and adding / moving without dead ends (2026-09-11) ─────────────
+//
+// Aaron: *"I should be able to add bots to demo and live accounts … take bots off … increase or
+// lower the percentage risk on the bot … increase or lower the max percentage traded on the account
+// … seamlessly, with no issues."* Each of those had a way to end in a refusal nobody could act on:
+// a cap and a share on two panels behind two writes, a bot that did not fit refused after the
+// click, and a live account refused outright because nothing on the page could say "yes, real
+// money". These pin the ways out.
+//
+// ⚠ **A fail-watch against HEAD is vacuous for every one of them** (none of these controls existed),
+// so non-vacuity is by MUTATION, named per check.
+
+/** Two bots at 5% each under a 10% cap — full, and exactly fitting. */
+const FULL = group({
+  bots: [bot('sos_fade', 'SOS Fade', 770115, 10, 5), bot('b_leg', 'B-LEG', 770116, 10, 5)],
+  risk_cap_pct: 10,
+  stacked: true,
+  share_total_pct: 10,
+  room_pct: 0,
+})
+
+/** One bot's settings as its panel reads them, with the risk share as its one runtime row. */
+function paramsWithRisk(key: string, risk: number) {
+  return {
+    bot_key: key,
+    display_name: key,
+    identity: {
+      account: ACCOUNT,
+      server: 'PUPrime-Demo',
+      symbol: 'XAUUSD.p',
+      timeframe: 'M15',
+      mt5_path: 'C:\\MT5_FFT\\terminal64.exe',
+      magic: 770116,
+    },
+    version: {
+      strategy_package: key,
+      strategy_class: 'C',
+      strategy_version: 1,
+      strategy_source_hash: 'abc',
+      promoted_commit: 'c0ffee',
+      promoted_at: '2026-08-05',
+    },
+    runtime: [
+      {
+        name: 'exec_risk_pct',
+        value: risk,
+        label: 'Risk per trade',
+        group: 'Risk',
+        desc: null,
+        unit: '%',
+        type: 'float',
+        options: null,
+        choices: null,
+        core: true,
+        editable: true,
+        min: 0.1,
+        max: 100,
+        note: null,
+      },
+    ],
+    strategy: [],
+    notes: {},
+    readme: null,
+  }
+}
+
+/** Answers the move of `b_leg` and records every body, so a check can COUNT the writes. */
+async function recordMoves(page: Page, account: number | null, order?: string[]) {
+  const sent: Record<string, unknown>[] = []
+  await page.route('**/api/bots/b_leg/account', (route) => {
+    order?.push('move')
+    sent.push(route.request().postDataJSON())
+    return route.fulfill({
+      json: {
+        status: 'ok',
+        changed: true,
+        deployed: true,
+        bot: 'b_leg',
+        account,
+        restart_required: true,
+        detail: 'moved',
+      },
+    })
+  })
+  return sent
+}
+
+test('one Save writes a changed share AND the cap together — one body, one commit', async ({
+  page,
+}) => {
+  // 🔴 The cap and each share lived behind two writes on two panels, and the first was often
+  // refused because the second had not happened yet. The panel now edits the budget and saves once.
+  // MUTATION: drop `shares` from `saveAll` → the body is the cap alone and this goes red.
+  await mock(page, [FULL], [reg()])
+  let sent: Record<string, unknown> | null = null
+  await page.route(`**/api/bots/accounts/${ACCOUNT}/risk`, (route) => {
+    sent = route.request().postDataJSON()
+    return route.fulfill({
+      json: plan({ changed: true, detail: `account ${ACCOUNT} — B-LEG 5% → 4%; cap 10% → 12%` }),
+    })
+  })
+
+  await openAccount(page)
+  await page.getByTestId('share-b_leg').fill('4')
+  await page.getByTestId('cap-input').fill('12')
+  // The footer says exactly what Save will write, before it writes it.
+  const changes = page.getByTestId('budget-changes')
+  await expect(changes).toContainText(/B-LEG\s*5%\s*→\s*4%/)
+  await expect(changes).toContainText(/Cap\s*10%\s*→\s*12%/)
+  await page.getByTestId('cap-save').click()
+  await expect.poll(() => sent).toEqual({ risk_cap_pct: 12, shares: { b_leg: 4 }, deploy: true })
+})
+
+test('a save the server would refuse is disabled, and its one-click fix fills the draft', async ({
+  page,
+}) => {
+  // Raising a share on a full account adds risk the cap cannot hold — the save is refused, and the
+  // panel says so BEFORE the click, with the server's own fix one press away.
+  // MUTATION: drop `!p.refused` from `canSave` → Save enables on a refusal and this goes red.
+  // MUTATION: make "Raise the cap" a SAVE rather than a draft edit → the cap box never moves, red.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) => {
+    const body = route.request().postDataJSON() as {
+      shares?: Record<string, number>
+      risk_cap_pct?: number
+    }
+    if (body.shares?.b_leg === 8 && body.risk_cap_pct === undefined)
+      return route.fulfill({
+        json: plan({
+          fits: false,
+          reason:
+            'the risk shares on this account add up to 13%, which is more than its 10% ceiling',
+          refused: `Raising B-LEG to 8% puts account ${ACCOUNT} at 13% — more than its 10% cap.`,
+          share_total_pct: 13,
+          room_pct: -3,
+          fit_cap: 13,
+          fit_shares: { sos_fade: 3.84, b_leg: 6.15 },
+        }),
+      })
+    return route.fulfill({ json: plan({ share_total_pct: 13, risk_cap_pct: 13 }) })
+  })
+
+  await openAccount(page)
+  await page.getByTestId('share-b_leg').fill('8')
+  await expect(page.getByTestId('plan-refused')).toContainText('more than its 10% cap')
+  await expect(page.getByTestId('cap-save')).toBeDisabled()
+
+  await page.getByTestId('fix-cap').click()
+  await expect(page.getByTestId('cap-input')).toHaveValue('13')
+  await expect(page.getByTestId('cap-save')).toBeEnabled()
+})
+
+test('adding a bot to a LIVE account asks first, then tells the server it was confirmed', async ({
+  page,
+}) => {
+  // The server refuses a move onto a live account without `confirm_live` (409), and until this
+  // landed nothing on the page could send it — so a bot could not be added to live at all.
+  // MUTATION: skip the confirmation on a live account → the move goes out on the first click and
+  // the no-write assertion goes red. MUTATION: drop `confirm_live` from the body → red on the body.
+  const LIVE = 34957946
+  await mock(
+    page,
+    [
+      group({
+        account: LIVE,
+        server: 'PUPrime-Live',
+        bots: [bot('sos_fade', 'SOS Fade', 770115, 10, 5)],
+        risk_cap_pct: 10,
+        share_total_pct: 5,
+        room_pct: 5,
+      }),
+      BENCHED,
+    ],
+    [reg({ account: LIVE, kind: 'live', server: 'PUPrime-Live' })]
+  )
+  const sent = await recordMoves(page, LIVE)
+
+  await openAccount(page, LIVE)
+  await page.getByTestId('add-bot').click()
+  await page.getByTestId('add-b_leg').click()
+  const confirm = page.getByTestId('live-confirm')
+  await expect(confirm).toContainText(`Account ${LIVE} is a LIVE account`)
+  expect(sent).toHaveLength(0)
+
+  await confirm.getByTestId('live-confirm-go').click()
+  await expect.poll(() => sent[0]).toEqual({ account: LIVE, confirm_live: true, deploy: true })
+})
+
+/** A plan saying B-LEG at 10% does not fit an account with 2% free — and the server's two fixes. */
+const NO_ROOM = plan({
+  fits: false,
+  reason: 'the risk shares on this account add up to 18%, which is more than its 10% ceiling',
+  refused: `Adding B-LEG at 10% puts account ${ACCOUNT} at 18% — more than its 10% cap.`,
+  share_total_pct: 18,
+  room_pct: -8,
+  fit_cap: 18,
+  fit_shares: { sos_fade: 4.44, b_leg: 5.55 },
+  bots: [
+    { key: 'sos_fade', display: 'SOS Fade', before: 8, after: 8, joining: false },
+    { key: 'b_leg', display: 'B-LEG', before: null, after: 10, joining: true },
+  ],
+})
+
+/** One bot at 8% under a 10% cap — 2% free — and B-LEG on the bench wanting 10%. */
+const TIGHT = [
+  group({
+    bots: [bot('sos_fade', 'SOS Fade', 770115, 10, 8)],
+    risk_cap_pct: 10,
+    share_total_pct: 8,
+    room_pct: 2,
+  }),
+  BENCHED,
+]
+
+test('a bot that does not fit is offered ways to make room — here, joining at the room left', async ({
+  page,
+}) => {
+  // It used to be refused after the click, and the fix took two writes on two panels.
+  // MUTATION: read "does not fit" as a plain Add → the row says Add and this goes red.
+  // MUTATION: send the bot's own share instead of the room → red on `risk_pct`.
+  await mock(page, TIGHT, [reg()])
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) => route.fulfill({ json: NO_ROOM }))
+  const sent = await recordMoves(page, ACCOUNT)
+
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  const row = page.getByTestId('add-b_leg')
+  await expect(row).toContainText('Make room')
+  await row.click()
+  // Opening the choices writes nothing.
+  expect(sent).toHaveLength(0)
+  const choices = page.getByTestId('join-choices')
+  await expect(choices).toContainText('more than its 10% cap')
+  await expect(choices.getByTestId('join-at-room')).toContainText('Add at 2% a trade')
+  await expect(choices.getByTestId('join-raise-cap')).toContainText('18%')
+
+  await choices.getByTestId('join-at-room').click()
+  await expect.poll(() => sent[0]).toEqual({ account: ACCOUNT, risk_pct: 2, deploy: true })
+})
+
+test('raising the cap to add a bot writes the cap FIRST, then the move', async ({ page }) => {
+  // The move checks the budget as it stands, so the cap has to be written before it — the other
+  // order is refused for the very reason the choice exists to remove. `useJoinAccount` awaits the
+  // cap write before it sends the move, so the order below is the order on the wire.
+  // MUTATION: drop the cap write from the raise-cap choice → the order reads move alone, red.
+  await mock(page, TIGHT, [reg()])
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) => route.fulfill({ json: NO_ROOM }))
+  const order: string[] = []
+  let capBody: Record<string, unknown> | null = null
+  await page.route(`**/api/bots/accounts/${ACCOUNT}/risk`, (route) => {
+    order.push('cap')
+    capBody = route.request().postDataJSON()
+    return route.fulfill({ json: plan({ changed: true, cap_changed: true, risk_cap_pct: 18 }) })
+  })
+  const moves = await recordMoves(page, ACCOUNT, order)
+
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  await page.getByTestId('add-b_leg').click()
+  await page.getByTestId('join-raise-cap').click()
+
+  await expect.poll(() => order).toEqual(['cap', 'move'])
+  expect(capBody).toEqual({ risk_cap_pct: 18, deploy: true })
+  expect(moves[0]).toEqual({ account: ACCOUNT, deploy: true })
+})
+
+test("a bot's risk on an account is saved through the account's budget, after a confirm", async ({
+  page,
+}) => {
+  // 🔴 It saved through the bot's own runtime endpoint, which refused a raise on a full account and
+  // offered no way out. On an account the share is part of the budget, so it goes through the
+  // budget save — where the cap can be raised in the same write.
+  // MUTATION: save a bot on an account through `/runtime` → the budget body never arrives, red.
+  // MUTATION: save on the first click → a write before the confirm, red on the null.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/b_leg/params', (route) =>
+    route.fulfill({ json: paramsWithRisk('b_leg', 5) })
+  )
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) =>
+    route.fulfill({ json: plan({ share_total_pct: 9 }) })
+  )
+  let sent: Record<string, unknown> | null = null
+  let runtimeHit = false
+  await page.route(`**/api/bots/accounts/${ACCOUNT}/risk`, (route) => {
+    sent = route.request().postDataJSON()
+    return route.fulfill({
+      json: plan({ changed: true, detail: `account ${ACCOUNT} — B-LEG 5% → 4%` }),
+    })
+  })
+  await page.route('**/api/bots/b_leg/runtime', (route) => {
+    runtimeHit = true
+    return route.fulfill({ json: { status: 'ok', changed: true, detail: 'x' } })
+  })
+
+  await openBot(page, 'b_leg')
+  await page.getByTestId('risk-input').fill('4')
+  await expect(page.getByTestId('risk-plan')).toContainText('Fits')
+  await expect(page.getByTestId('risk-plan')).toContainText('9%')
+  await page.getByTestId('risk-save').click()
+  await expect(page.getByTestId('risk-confirm')).toContainText(/5%\s*→\s*4%/)
+  expect(sent).toBeNull()
+
+  await page.getByTestId('risk-confirm-go').click()
+  await expect.poll(() => sent).toEqual({ shares: { b_leg: 4 }, deploy: true })
+  expect(runtimeHit).toBe(false)
+})
+
+test('moving a bot onto a LIVE account from its own panel asks first', async ({ page }) => {
+  // The one-bot move was the unguarded second door to real money; the server now refuses it
+  // without `confirm_live`. The demo move above (*names the account it is joining*) is the positive
+  // control that a demo destination still moves on the pick.
+  // MUTATION: drop the live branch from `pickDestination` → the move goes out on the pick, red.
+  const LIVE = 34957946
+  await mock(
+    page,
+    [group({ bots: [bot('b_leg', 'B-LEG', 770116, null)] })],
+    [reg(), reg({ account: LIVE, kind: 'live', server: 'PUPrime-Live', label: 'Live' })]
+  )
+  const sent = await recordMoves(page, LIVE)
+
+  await openBot(page, 'b_leg')
+  await page.getByTestId('move-b_leg').selectOption(String(LIVE))
+  const confirm = page.getByTestId('live-confirm')
+  await expect(confirm).toContainText(`Account ${LIVE} is a LIVE account`)
+  expect(sent).toHaveLength(0)
+
+  await confirm.getByTestId('live-confirm-go').click()
+  await expect.poll(() => sent[0]).toEqual({ account: LIVE, confirm_live: true, deploy: true })
+})
+
+test('a bot is taken off from the ACCOUNT panel on a second click, and never while it runs', async ({
+  page,
+}) => {
+  // Taking a bot off was only on the bot's own panel; the account panel lists who is spending its
+  // balance and now takes one off where the reader is looking.
+  // MUTATION: send on the first click → red on the empty list. MUTATION: drop `running` from the
+  // button's disabled → the running bot's button enables, red.
+  await mock(page, STACKED)
+  const sent = await recordRemovals(page)
+
+  await openAccount(page)
+  await expect(page.getByTestId('take-off-sos_fade')).toBeDisabled() // RUNNING in the snapshot
+  const off = page.getByTestId('take-off-b_leg') // STOPPED
+  await off.click()
+  await expect(off).toHaveText('Click again')
+  expect(sent).toHaveLength(0)
+  await off.click()
+  await expect.poll(() => sent[0]).toEqual({ account: null, deploy: true })
 })

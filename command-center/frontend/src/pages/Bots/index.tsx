@@ -1943,6 +1943,7 @@ export function Bots() {
           onStart={() => act(selBot.key, 'start', () => startOne.mutate(selBot.key))}
           onStop={() => act(selBot.key, 'stop', () => stopOne.mutate(selBot.key))}
           onRestart={() => act(selBot.key, 'restart', () => restartOne.mutate(selBot.key))}
+          onOpenAccount={(a) => set('account', String(a))}
         />
       )}
 
@@ -1968,6 +1969,13 @@ export function Bots() {
             asking={asking}
             statusByKey={statusByKey}
             onClose={() => set('account', null)}
+            // A bot's name on the account panel opens that bot's panel (and closes this one).
+            onOpenBot={(k) => set('bot', k)}
+            onStart={(k) => act(k, 'start', () => startOne.mutate(k))}
+            onStop={(k) => act(k, 'stop', () => stopOne.mutate(k))}
+            pendingKey={pending?.key ?? null}
+            pendingAction={pending?.action ?? null}
+            busy={busy}
           />
         )}
 

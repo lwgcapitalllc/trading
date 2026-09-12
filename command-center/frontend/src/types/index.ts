@@ -535,6 +535,10 @@ export interface BotAccountGroup {
   /** Why those shares do NOT fit under the ceiling — the same sentence the save is refused with.
    *  `null` when they fit, when there is no cap, or when the bots' caps disagree. */
   share_overflow_reason: string | null
+  /** The share still free under the cap — NEGATIVE when over, `null` with no cap or an unreadable
+   *  share. Served so the page never subtracts the two numbers above itself. Optional because a
+   *  response cached before the field existed has none, and absent reads as "cannot say". */
+  room_pct?: number | null
   /** Bots here sharing an order tag, which would make each read the other's orders as its own.
    *  Empty is the healthy answer, and the page shows the fact only when it is true — which is
    *  why there is no raw `magic` column any more. */
@@ -762,15 +766,62 @@ export interface AccountSync {
   deploy_error: string | null
 }
 
-export interface BotAccountCapResult {
-  status: string
+/**
+ * One account's risk budget — its cap, any bot's share, or both — asked of
+ * `POST /bots/accounts/{a}/risk-plan` (writes nothing) or saved by `PATCH /bots/accounts/{a}/risk`
+ * (one commit). Both are ONE backend function, so what the page shows before a save and what the
+ * save does cannot disagree.
+ *
+ * ⚠ **`risk_cap_pct` absent leaves the cap alone; `null` means uncapped.** Build the body with the
+ * key present only when the cap was changed. ⚠ `joining` is plan-only — a bot joins through its
+ * own move, which also writes its server, terminal and symbol.
+ */
+export interface BotAccountRiskRequest {
+  risk_cap_pct?: number | null
+  shares?: Record<string, number>
+  joining?: Record<string, number>
+}
+
+/** One bot's share of an account's budget, before and after the proposed change. */
+export interface BotAccountRiskShare {
+  key: string
+  display: string
+  /** `null` = not on the account yet, or it states none. */
+  before: number | null
+  after: number | null
+  joining: boolean
+}
+
+/**
+ * The account's budget after a proposed change.
+ *
+ * ⚠ **`reason` and `refused` are different answers.** `reason` says the result does not fit under
+ * the cap; `refused` says a SAVE would be refused, which happens only when the change also ADDS
+ * risk. Lowering a share on an account still over afterwards has a reason and no refusal — it is
+ * the right direction, and refusing it made an over-subscribed account unfixable.
+ * ⚠ **`fit_cap` / `fit_shares` are the one-click fixes, computed by the server** — the page never
+ * does that arithmetic.
+ */
+export interface BotAccountRiskPlan {
+  account: number
+  fits: boolean
+  reason: string | null
+  refused: string | null
+  risk_cap_pct: number | null
+  cap_changed: boolean
+  share_total_pct: number | null
+  /** The share still free AFTER the change — negative when over. */
+  room_pct: number | null
+  bots: BotAccountRiskShare[]
   changed: boolean
-  deployed?: boolean
-  updated: string[]
-  /** Always true when anything was written — the cap only applies at a bot's startup. */
-  restart_required: boolean
-  bots: string[]
-  detail?: string
+  fit_cap: number | null
+  fit_shares: Record<string, number> | null
+  /** When a saved change reaches the running bots, in words. */
+  applies: string
+  /** A save only. */
+  written: string[]
+  deployed: boolean | null
+  detail: string
 }
 
 /** The result of moving one bot onto an account, or off one.

@@ -146,9 +146,10 @@ the one input on the page, and buried it. It is now behind `hideNote` and shown 
 Details, where somebody asking *why is it 5%* will look. **Hidden, never deleted**: that prose is
 the measured reasoning behind a live risk number.
 
-⚠ **The drawers reuse `VersionBanner` and `RuntimeEditor` unchanged.** Both carry a confirm and one
-of them deploys code to a live account; rewriting either to make a drawer tidier would put a fresh
-implementation on the money path.
+⚠ **The drawers reuse `VersionBanner` unchanged** — it deploys code to a live account with its own
+confirm, and rewriting it to make a drawer tidier would put a fresh implementation on the money path.
+The risk editor WAS rebuilt (2026-09-11, `BotRiskEditor.tsx`) because it had to save through the
+account's budget — see *The two panels: one budget* below.
 
 ⚠ **Fleet controls and scheduled jobs moved to Overview** (`components/FleetControls.tsx`, one
 component, not a copy). This page manages bots one at a time; those act on all of them.
@@ -245,10 +246,8 @@ still does — the first wording said "3 bots trade here" with one trading nothi
 
 ⚠ **`components/Drawer.tsx` is the shared slide-out shell** (and closes on Escape), with a pinned
 `footer` slot since 2026-09-10 for the one action a panel builds up to — the Sync button would
-otherwise be the first thing a long plan scrolls out of reach.
-`AccountDrawer` and `BotDrawer` still build the same shell inline — adopting it is a mechanical swap
-left undone because another session was mid-edit on both. A drawer's look lives in three places
-until then.
+otherwise be the first thing a long plan scrolls out of reach. **`AccountDrawer` and `BotDrawer`
+adopted it on 2026-09-11**, so a drawer's look lives in one place.
 
 🔴 **`AccountsTab` rendered nothing from the 2026-09-05 rebuild until it was DELETED on 2026-09-11**,
 with `ConfigureTab`'s `BotPanel`, `DeployCard` and fleet strip (Aaron's go). The live pieces are
@@ -325,6 +324,51 @@ Off Aaron's screenshots of adding two demo copies back to the demo account.
   strategy now (*"they should just pick up where they left off"*); the page only names them.
 
 Tests: 5 new checks in `bots-accounts.spec.ts`; 8 bugs planted in a throwaway worktree, 8 caught.
+
+## The two panels: one budget, and no dead end on add, move or risk (2026-09-11)
+
+Aaron: *"add bots to demo and live accounts … take bots off … increase or lower the percentage risk
+on the bot … increase or lower the max percentage traded on the account … seamlessly, with no
+issues."* Each had a way to end in a refusal nobody could act on. Backend half: `../backend/CLAUDE.md`
+→ *An account's risk budget is ONE planner*.
+
+- 🔴 **The account panel edits the whole budget and saves it ONCE.** Each bot's share is a box on
+  its row (`share-<key>`), the cap a box under them; the pinned footer lists what Save will write
+  (`budget-changes`), the server's verdict and when it applies, then sends one
+  `PATCH /bots/accounts/{a}/risk`. It was a cap box with its own Save beside read-only shares, and
+  its toast said *restart them to apply* — false since a running bot adopts a cap when it is flat.
+- ⚠ **The verdict and both fixes are the SERVER's** (`useAccountRiskPlan`, debounced 250ms).
+  `fix-cap` / `fix-shares` fill the DRAFT, never save. Save waits for a FRESH plan —
+  `isPlaceholderData` is the previous body's answer — and is disabled on `refused`; a plan that
+  could not be asked does not block (the save is checked again).
+- ⚠ **A plan is asked only when there is something to ask** — an edit, or an account already over
+  its cap (that plan carries the fixes). Opening a panel fires nothing, which keeps
+  `bots-version.spec.ts` free of unrouted requests.
+- 🔴 **A bot that does not fit is offered the ways to make room where it is added**
+  (`JoinChoices.tsx`): join at the room left, raise the cap to `fit_cap`, or scale every bot to
+  `fit_shares`. ONE function carries them out, `useJoinAccount` (`joinAccount.ts`) — the budget write
+  FIRST, then the move — for the Add bot list AND the bot panel's account selector.
+- 🔴 **A LIVE destination is confirmed on screen before anything is sent** (`LiveConfirm`), and only
+  then does the move carry `confirm_live` — the server refuses a live move without it (409). Until
+  this, nothing on the page could add a bot to live.
+- 🔴 **The bot panel's risk goes through the account's budget** (`BotRiskEditor.tsx`): the line
+  under the box says whether the new share fits, a refused raise offers *also raise the account cap*
+  in the same save, and a bot on no account keeps `/runtime`. The confirm is a STEP with the
+  numbers, never a modal; on a live account its button says real money. `RuntimeEditor` is deleted.
+- ⚠ **Taking a bot off is on the account panel too** (`take-off-<key>`, second click, refused while
+  running or unanswered); a bot's name there opens its panel. Add bot is disabled, with the reason,
+  on a definite *no password*, and that chip is a button into the account form.
+- ⚠ **Both panels use `components/Drawer.tsx` and `drawerParts.tsx`**, so they read as one. Editing
+  the account is a STEP of its panel, like demo → live.
+- ⚠ **The move and runtime hooks lost their `onError` toast** — `api.*` already toasts the server's
+  reason. `api.post` gained `opts`, so a plan (a question) can be `silent`.
+- ⚠ **The password field says TRADING (master) password.** The live account had its investor
+  password stored: the bot logs in and the broker refuses every order (10017), and nothing on the
+  box can tell the two apart before the first order.
+- Tests: `bots-accounts.spec.ts` — 8 new, 2 re-pointed to `/risk`; `mock()` answers a plan "fits"
+  by default. 13 bugs planted in a throwaway worktree, 13 caught. ⚠ **The re-pointed save check
+  reads the TOAST** — the footer states the same sentence while the edit is on screen, so a
+  page-wide match passes on the footer whatever the save said.
 
 ## Two copies share a NAME, so the bot panel says LIVE or demo (2026-09-11)
 

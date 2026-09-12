@@ -38,6 +38,7 @@ export function DecimalInput({
   prefix,
   suffix,
   invalid = false,
+  disabled = false,
   className = '',
   inputClassName = '',
   title,
@@ -54,6 +55,9 @@ export function DecimalInput({
   prefix?: string
   suffix?: string
   invalid?: boolean
+  /** Greyed and not editable — the value stays on screen, so a switched-off field still says
+   *  what it would be. */
+  disabled?: boolean
   /** On the wrapper — width and layout. */
   className?: string
   /** On the input itself — padding, a border tint. */
@@ -85,6 +89,7 @@ export function DecimalInput({
         placeholder={placeholder}
         aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
+        disabled={disabled}
         data-testid={testId}
         onFocus={() => {
           // Edited without separators: a comma in the middle of a number being typed is noise.
@@ -100,7 +105,9 @@ export function DecimalInput({
         }}
         className={`${inputCls} font-mono tabular-nums ${prefix ? 'pl-6' : ''} ${
           suffix ? 'pr-7' : ''
-        } ${inputClassName} ${invalid ? 'border-neg-text/60 focus:border-neg-text' : ''}`}
+        } ${inputClassName} ${invalid ? 'border-neg-text/60 focus:border-neg-text' : ''} ${
+          disabled ? 'opacity-40 cursor-not-allowed' : ''
+        }`}
       />
       {suffix && (
         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-text-tertiary pointer-events-none">

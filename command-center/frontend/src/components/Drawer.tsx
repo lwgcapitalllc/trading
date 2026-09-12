@@ -5,11 +5,10 @@ import { X } from 'lucide-react'
  * The slide-out panel from the right edge: a dimmed backdrop, a fixed-width sheet, a header with
  * a title and a close button, and a body that scrolls on its own.
  *
- * ⚠ **It is the SAME shell `AccountDrawer` and `BotDrawer` build inline** — same width, same
- * backdrop, same header rhythm — lifted out so a third drawer did not become a third copy. Those
- * two still carry their own inline shell; adopting this is a mechanical swap, left undone only
- * because another session was mid-edit on both when this landed. Until then, a change to the
- * look of a drawer has to be made in three places, and this comment is the reminder.
+ * ⚠ **Every slide-out on the Bots page is this one shell** — the account panel, the bot panel and
+ * the Sync VPS drawer (the first two adopted it on 2026-09-11, when they were rebuilt). A change to
+ * the look of a drawer is made here, once. `width` is a prop because the account panel runs
+ * demo → live inside itself and needs 720px where the bot panel needs 620.
  *
  * ⚠ **Escape closes it**, which neither inline copy does. A panel that covers the page and can
  * only be dismissed with the mouse is a panel people learn to avoid opening.
@@ -25,6 +24,7 @@ export function Drawer({
   actions,
   label,
   footer,
+  width = 620,
   children,
 }: {
   open: boolean
@@ -37,6 +37,9 @@ export function Drawer({
   label: string
   /** Pinned under the body; never scrolls. */
   footer?: ReactNode
+  /** The sheet's width in px, capped at the screen. ⚠ A CAP, never a fraction of the viewport: a
+   *  panel wide enough to hide the list it was opened from is a page you left without meaning to. */
+  width?: number
   children: ReactNode
 }) {
   useEffect(() => {
@@ -54,7 +57,8 @@ export function Drawer({
       <div className="fixed inset-0 bg-black/55 z-40" onClick={onClose} />
       <aside
         aria-label={label}
-        className="fixed top-0 right-0 bottom-0 w-[min(620px,100%)] bg-bg-surface border-l border-border-default z-50 flex flex-col"
+        style={{ width: `min(${width}px, 100%)` }}
+        className="fixed top-0 right-0 bottom-0 bg-bg-surface border-l border-border-default z-50 flex flex-col"
       >
         <div className="flex items-start gap-3 px-5 py-[18px] border-b border-border-subtle shrink-0">
           <div className="min-w-0">
