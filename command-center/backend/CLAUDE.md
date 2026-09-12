@@ -6818,3 +6818,11 @@ because the in-memory bug planter cannot reach a test file (root `CLAUDE.md`).
 streamed as bytes with no model, and its contract is append-only because every run's spec is cached
 for ever. A test fails the day that route gains a model. `GET /stress-tests/running-lock` gained
 `StressLock` rather than an exemption — a missing model is a gap, not a reason.
+
+## The snapshot says whether a bot's account may TRADE (2026-09-12)
+
+`BotStatus.trade_allowed` / `trade_block`, passed straight through from the bot's heartbeat
+(`algos/CLAUDE.md` → *Whether the account may TRADE*). **Gated on RUNNING, like `mt5_link`**: a
+stopped bot's last reading describes a process that no longer exists. ⚠ `None` = could not ask,
+never off. ⚠ Declared on the model, or Pydantic drops them. Tests: 1 in `test_bot_registry.py`;
+3 mutations run, 3 killed.

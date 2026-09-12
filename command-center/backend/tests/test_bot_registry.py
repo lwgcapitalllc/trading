@@ -179,6 +179,27 @@ def test_the_snapshot_reports_each_bots_own_account_type(monkeypatch):
         assert by_key[reg.key].account_type == expected, reg.key
 
 
+def test_the_snapshot_says_whether_the_account_may_trade_and_only_while_running(monkeypatch):
+    """The page's "trading off" chip can only appear if the endpoint passes the bot's reading on —
+    and only for a running bot, whose reading describes a process that still exists.
+
+    MUTATION: drop `trade_allowed` from the row → red. MUTATION: drop the RUNNING gate → red.
+    """
+    key = bots._BOTS[0].key
+    state = {"trade_allowed": False, "trade_block": "the broker has switched trading off"}
+    running = {"value": True}
+    monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
+    monkeypatch.setattr(bots, "_parse_bot_states", lambda _snap: {key: state})
+    monkeypatch.setattr(bots, "_bot_runner_running", lambda _snap, _key: running["value"])
+
+    row = next(b for b in bots.get_snapshot().bots if b.key == key)
+    assert (row.trade_allowed, row.trade_block) == (False, state["trade_block"])
+
+    running["value"] = False
+    row = next(b for b in bots.get_snapshot().bots if b.key == key)
+    assert (row.trade_allowed, row.trade_block) == (None, None)
+
+
 # ── Which name identifies a bot ───────────────────────────────────────────────
 
 

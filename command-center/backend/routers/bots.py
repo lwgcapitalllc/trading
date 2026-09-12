@@ -1247,6 +1247,11 @@ def get_snapshot():
                 # coercing that to False would paint a healthy bot as disconnected — the same
                 # rule `mt5_connected` follows on the sidebar's MT5 dot.
                 mt5_link=state.get("mt5_link") if status == "RUNNING" else None,
+                # Whether the account may trade, as the bot last read it. Gated on RUNNING like the
+                # link beside it: a stopped bot's last reading describes a process that no longer
+                # exists. `None` is could-not-ask, never "off".
+                trade_allowed=state.get("trade_allowed") if status == "RUNNING" else None,
+                trade_block=(state.get("trade_block") or None) if status == "RUNNING" else None,
                 # ⚠ NOT gated on `status == "RUNNING"`, unlike `mt5_link` above. A review is about
                 # what the RECORD says happened, and the findings that matter most — it crashed, it
                 # was killed, it refused to start — are precisely the ones you can only read once

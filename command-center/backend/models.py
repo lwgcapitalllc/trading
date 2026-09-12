@@ -304,6 +304,13 @@ class BotStatus(BaseModel):
     # as a quiet market, so the loop kept beating and this page kept saying RUNNING. A blank
     # balance must always be attributable to one of the two causes, not to either.
     mt5_link: Optional[bool] = None
+    # Whether the broker and the terminal let this account TRADE — the account's own flag,
+    # automated trading on it, the terminal's AutoTrading button and the symbol's mode, read every
+    # poll by the bot (`runner.trading_block`, 2026-09-12). `False` carries `trade_block`, the
+    # reason in words. ⚠ `None` = could not ask (a stopped bot, a dead link, an older runner) —
+    # never "trading is off", and never "trading is on".
+    trade_allowed: Optional[bool] = None
+    trade_block: Optional[str] = None
     # A standing flag raised by `algos/notifications/log_review.py`, which reads the bot's own
     # health record hourly. `None` = nothing to review.
     #

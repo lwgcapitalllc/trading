@@ -4360,6 +4360,14 @@ Rules: `../backend/CLAUDE.md` → *The account's net is measured off what went I
 offline check in `tests/bots-accounts.spec.ts`, watched RED in a throwaway worktree against HEAD's
 page and again with the remainder still naming a deposit.
 
+## A bot whose account cannot trade says so on its row (2026-09-12)
+
+An amber **trading off** chip beside the state dot on the Bots page and on the Overview's bot list,
+with the bot's own reason on its title (read-only account, automated trading barred, AutoTrading
+off, or the symbol restricted). Rules: `algos/CLAUDE.md` → *Whether the account may TRADE*.
+⚠ **`=== false` only** — `null` is could-not-ask and draws nothing (rule 1). ⚠ **The page decides
+nothing**; the sentence is the bot's. Pinned by one offline check in `tests/bots-accounts.spec.ts`.
+
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
 🔴 **Earnings are keyed by ACCOUNT AND BOT, never by bot alone (2026-09-11).** A bot that moved has a

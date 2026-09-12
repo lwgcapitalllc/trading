@@ -123,6 +123,23 @@ function NoLinkChip() {
   )
 }
 
+/** The broker or the terminal will not let this account trade — the Bots page's chip, sized for
+ *  this list. ⚠ `=== false` only: `null` is could-not-ask, never "trading is off". */
+function TradingOffChip({ reason }: { reason?: string | null }) {
+  const why = reason
+    ? `${reason[0].toUpperCase()}${reason.slice(1)}`
+    : 'The broker or the terminal will not let this account trade'
+  return (
+    <span
+      title={`${why}. Every order the bot sends will be refused until it is back on.`}
+      className="inline-flex items-center gap-[3px] text-[9px] font-semibold px-[5px] py-[1px]
+                 rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
+    >
+      Trading off
+    </span>
+  )
+}
+
 function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
   const pnl = bot.total_pnl_pct
   const pnlStr = pnl != null ? (pnl >= 0 ? `+${pnl.toFixed(2)}%` : `${pnl.toFixed(2)}%`) : null
@@ -154,6 +171,7 @@ function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
         </span>
       )}
       {bot.mt5_link === false && <NoLinkChip />}
+      {bot.trade_allowed === false && <TradingOffChip reason={bot.trade_block} />}
       <BotState bot={bot} />
     </div>
   )

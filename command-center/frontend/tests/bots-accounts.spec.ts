@@ -1618,7 +1618,9 @@ async function mockBothSides(
   // A third demo bot, so one side can pool two scored bots while a third record is unread.
   thirdDemo = false,
   // Figures stated over an account's own earnings, keyed by account — e.g. which basis its net is.
-  acctOver: Record<number, Record<string, unknown>> = {}
+  acctOver: Record<number, Record<string, unknown>> = {},
+  // Fields stated over a bot's own row in the fleet snapshot, keyed by bot — e.g. its trade flag.
+  botOver: Record<string, Record<string, unknown>> = {}
 ) {
   const third = thirdDemo
     ? [{ key: 'realign', name: 'Realign', status: 'RUNNING', account_type: 'demo' }]
@@ -1665,7 +1667,7 @@ async function mockBothSides(
           { key: 'ext_live', name: 'Extreme Leg live', status: 'STOPPED', account_type: 'live' },
           ...third,
           ...benched,
-        ],
+        ].map((b) => ({ ...b, ...botOver[b.key as string] })),
         scheduled_jobs: [],
         telegram: { name: 'Telegram', status: 'RUNNING' },
         earnings: [
@@ -1701,6 +1703,33 @@ test('an account measured off what went IN says so, and no longer blames a depos
   // The account still on the older basis keeps its opening, so the branch is PER ACCOUNT — a page
   // that switched every account at once would pass the two lines above.
   await expect(page.getByTitle(/^Opened at /)).toHaveCount(1)
+})
+
+test('a bot whose account cannot trade says so on its row, and nothing else does', async ({
+  page,
+}) => {
+  // 🔴 2026-09-11: the broker put the live account on read-only and no screen said so until the
+  // bot halted. The bot now reads whether its account may trade, and the row carries the answer.
+  // MUTATION: drop the chip from the row → red on the count.
+  // MUTATION: draw it on anything but `false` → red on the count (the unasked bot's `null` is
+  // "could not ask", never "off", and every other bot states nothing at all).
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        trade_allowed: false,
+        trade_block: 'the broker has switched trading off for this account — it is read-only',
+      },
+      ext_leg: { trade_allowed: null },
+    }
+  )
+  const chip = page.getByTestId('trading-off')
+  await expect(chip).toHaveCount(1)
+  await expect(chip).toHaveAttribute('title', /read-only/)
 })
 
 test('with no filter, live and demo are split — every account under its own side', async ({

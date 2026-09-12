@@ -127,6 +127,25 @@ function NoLinkChip() {
   )
 }
 
+/** The broker or the terminal will not let this account trade — every order will be refused.
+ *  🔴 Written after 2026-09-11: the live account was read-only for seven hours, every order came
+ *  back refused, and nothing on this page said so. ⚠ `=== false` only: `null` means the bot could
+ *  not ask, which is not the claim "trading is off". Amber, not red — red means a loss here. */
+function TradingOffChip({ reason }: { reason?: string | null }) {
+  const why = reason
+    ? `${reason[0].toUpperCase()}${reason.slice(1)}`
+    : 'The broker or the terminal will not let this account trade'
+  return (
+    <span
+      data-testid="trading-off"
+      title={`${why}. Every order the bot sends will be refused until it is back on.`}
+      className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-[6px] py-[2px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
+    >
+      trading off
+    </span>
+  )
+}
+
 /** The hourly record review's standing flag. A Telegram alert is a MOMENT; this is a STATE.
  *  ⚠ Not hidden on a stopped bot — *it crashed*, *it refused to start* are exactly the findings
  *  you can only read once it is no longer running. */
@@ -1371,6 +1390,7 @@ export function Bots() {
                   )}
                   <span className="truncate group-hover:text-accent transition-colors">{name}</span>
                   {live?.mt5_link === false && <NoLinkChip />}
+                  {live?.trade_allowed === false && <TradingOffChip reason={live.trade_block} />}
                   {live?.review && <ReviewChip review={live.review} />}
                 </button>
 

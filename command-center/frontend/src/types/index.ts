@@ -363,6 +363,11 @@ export interface BotStatus {
    *  frame is what a quiet market looks like, so the loop kept beating and the row kept saying
    *  RUNNING. */
   mt5_link: boolean | null
+  /** Whether the broker and the terminal let this account trade, as the bot last read it
+   *  (2026-09-12). `false` carries `trade_block`, the reason in words. `null` = could not ask —
+   *  never "off". Optional: a recording taken before the field existed carries neither. */
+  trade_allowed?: boolean | null
+  trade_block?: string | null
   /** What the hourly log review found in this bot's own health record, or null for nothing.
    *
    *  ⚠ It answers the question no other field here can: the process can be alive, stamping its
