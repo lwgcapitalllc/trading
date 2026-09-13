@@ -2592,6 +2592,18 @@ read once the bot is no longer running, so hiding the flag on a stopped bot woul
 explanation at the moment somebody is looking for it. `mt5_link` is gated because a stopped bot's
 last link stamp describes a process that no longer exists; a review describes the record, which does.
 
+🔴 **A "halted RIGHT NOW" finding gives way to a NEWER heartbeat (2026-09-12).** It is the review's
+one present-tense finding (`halted_now:`), and the bot writes its bridge state beside every
+heartbeat — so once a heartbeat newer than the review exists, the finding is either stale (the
+heartbeat says live) or a second copy of the Halted state the page raises off that same heartbeat.
+MEASURED: live SOS Fade read *Needs review — Bridge is HALTED right now* for 40 minutes after a
+re-deploy cleared its halt, waiting on the next hourly pass. `_review_payload` drops it
+(`_heartbeat_after_review`). ⚠ **Only a RUNNING bot's heartbeat counts** (the gate its bridge state
+carries). ⚠ **A missing, older or unreadable time KEEPS the finding** — the review is then the
+freshest evidence. ⚠ **Every finding about the RECORD stays**, and the level follows what is left.
+⚠ The prefix is a contract with `log_review.py`, pinned by a test that reads that file. Tests: 8 in
+`tests/test_bot_review_flag.py`; 9 mutations planted in memory, 9 killed.
+
 ## 🔴 The log panel read a file the bot abandoned nineteen days ago (2026-08-24)
 
 `BotReg.log_file` defaulted to `<key>.log`, beside a comment stating that was what

@@ -835,17 +835,37 @@ def _parse_reviews(snap: dict[str, str]) -> dict[str, dict]:
 _REVIEW_STALE_SECONDS = 3 * 60 * 60
 
 
-def _review_payload(flag: dict | None, now: datetime) -> dict | None:
+# log_review's one PRESENT-TENSE finding (`halted_now:<occurrence>`, "Bridge is HALTED right now").
+# Every other finding is about the RECORD; this one is about NOW, which the bot's own heartbeat
+# reads every poll. Pinned against log_review.py by `tests/test_bot_review_flag.py`.
+_PRESENT_TENSE_FINDINGS = ("halted_now:",)
+
+
+def _review_payload(
+    flag: dict | None,
+    now: datetime,
+    *,
+    bridge_state: Optional[str] = None,
+    heartbeat: object = None,
+) -> dict | None:
     """The review a bot row carries, or `None` for nothing to show.
 
-    Two jobs, and they are separate on purpose:
+    Three jobs, and they are separate on purpose:
 
-    1. **Findings** — passed through untouched. The chip has always been "the reviewer found
-       something", and that is unchanged.
+    1. **Findings** — passed through untouched, except the one a newer heartbeat has read (3). The
+       chip has always been "the reviewer found something", and that is unchanged.
     2. **Freshness** — a flag whose `checked_at` is older than three hourly runs gets an ALERT
        finding of its own, because from that moment its findings describe a state that is up to
        hours old and it is the page's only warning that the reviewer stopped. The stale finding
        goes FIRST: it is the reason not to trust the ones under it.
+    3. 🔴 **A present-tense finding gives way to a NEWER heartbeat (2026-09-12).** "Bridge is HALTED
+       right now" is the review's reading of the bridge at its hourly pass; the bot writes its
+       bridge state beside every heartbeat. Once a heartbeat newer than the review exists, the
+       finding is either STALE (the heartbeat says live) or a second copy of the Halted state the
+       page raises off that same heartbeat. MEASURED: live SOS Fade read "Needs review" for 40
+       minutes after a re-deploy cleared its halt, waiting on the next hourly pass. ⚠ **Kept when
+       no heartbeat can speak** — a stopped bot (only a running one passes a bridge state), or a
+       heartbeat older than the review or unreadable: the review is then the freshest evidence.
 
     ⚠ **An absent flag stays quiet rather than becoming an alarm.** The reviewer writes one for
     every registered bot on every run, so after one hourly pass an absence really would mean
@@ -862,6 +882,10 @@ def _review_payload(flag: dict | None, now: datetime) -> dict | None:
         return None
 
     findings = [f for f in (flag.get("findings") or []) if isinstance(f, dict)]
+    if _heartbeat_after_review(flag, bridge_state, heartbeat):
+        findings = [
+            f for f in findings if not str(f.get("key") or "").startswith(_PRESENT_TENSE_FINDINGS)
+        ]
     age = _review_age_seconds(flag, now)
     if age is None or age > _REVIEW_STALE_SECONDS:
         stamp = str(flag.get("checked_at") or "never")
@@ -885,15 +909,37 @@ def _review_payload(flag: dict | None, now: datetime) -> dict | None:
     return {"level": level, "checked_at": str(flag.get("checked_at") or ""), "findings": findings}
 
 
-def _review_age_seconds(flag: dict, now: datetime) -> float | None:
-    """Seconds since the flag was written, or `None` if it does not say."""
+def _review_written_at(flag: dict) -> datetime | None:
+    """When the flag was written, or `None` if it does not say. A time with no zone is UTC."""
     try:
         written = datetime.fromisoformat(str(flag.get("checked_at")))
     except (TypeError, ValueError):
         return None
     if written.tzinfo is None:
         written = written.replace(tzinfo=timezone.utc)
-    return (now - written).total_seconds()
+    return written
+
+
+def _review_age_seconds(flag: dict, now: datetime) -> float | None:
+    """Seconds since the flag was written, or `None` if it does not say."""
+    written = _review_written_at(flag)
+    return None if written is None else (now - written).total_seconds()
+
+
+def _heartbeat_after_review(flag: dict, bridge_state: Optional[str], heartbeat: object) -> bool:
+    """Whether the bot's own heartbeat read the bridge AFTER the review did.
+
+    `heartbeat` is the runner's epoch stamp, written in the SAME state write as `bridge_state`, so
+    it dates that reading exactly. ⚠ `False` whenever either side cannot say — no bridge reading, a
+    stamp that is not a real finite number (`_finite` refuses a bool), or a review with no readable
+    time: the review then stays the freshest evidence, the direction that keeps a real halt on
+    screen.
+    """
+    stamp = _finite(heartbeat)
+    written = _review_written_at(flag)
+    if bridge_state is None or stamp is None or written is None:
+        return False
+    return stamp > written.timestamp()
 
 
 def _as_float(raw) -> float | None:
@@ -1336,7 +1382,16 @@ def get_snapshot():
                 # was killed, it refused to start — are precisely the ones you can only read once
                 # the bot is no longer running. Hiding the flag on a stopped bot would suppress the
                 # explanation at the exact moment somebody wants it.
-                review=_review_payload(reviews.get(bot_key), _now_utc),
+                review=_review_payload(
+                    reviews.get(bot_key),
+                    _now_utc,
+                    # The bot's own reading of its bridge, and when it took it: a heartbeat newer
+                    # than the review replaces the review's "halted right now". Only a RUNNING bot
+                    # speaks for now — ONE gate, on the bridge state: with no bridge reading the
+                    # stamp drops nothing, so a second gate on it would be a branch nothing kills.
+                    bridge_state=_bridge_state(state) if status == "RUNNING" else None,
+                    heartbeat=state.get("heartbeat"),
+                ),
                 status=status,
                 uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
                 total_pnl_pct=total_pnl,

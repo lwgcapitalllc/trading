@@ -267,3 +267,124 @@ def test_the_parse_only_keeps_tasks_the_page_knows_about():
     got = bots._parse_tasks({"tasks": csv})
 
     assert got == {"SYS_LOGREVIEW": "Ready"}
+
+
+# ── a "right now" finding gives way to a NEWER heartbeat (2026-09-12) ────────
+def _halted_now(level: str = "alert") -> dict:
+    return {
+        "key": "halted_now:unknown",
+        "level": level,
+        "title": "Bridge is HALTED right now",
+        "detail": "Its latest heartbeat says the order bridge is halted.",
+    }
+
+
+def _after_the_review(minutes: float) -> float:
+    """An epoch heartbeat stamp `minutes` after the flag `_fresh()` writes (20 minutes before NOW)."""
+    return (NOW - timedelta(minutes=20) + timedelta(minutes=minutes)).timestamp()
+
+
+def test_a_HALTED_RIGHT_NOW_finding_goes_once_a_newer_heartbeat_says_the_bridge_is_live():
+    """🔴 MEASURED 2026-09-12: live SOS Fade read "Needs review — Bridge is HALTED right now" for 40
+    minutes after a re-deploy cleared its halt, while its own heartbeat said live. The review runs
+    hourly; the heartbeat is written every poll.
+
+    MUTATION: drop the supersession → red. MUTATION: compare the two times the wrong way → red."""
+    flag = {"checked_at": _fresh(), "findings": [_halted_now()]}
+    got = bots._review_payload(flag, NOW, bridge_state="live", heartbeat=_after_the_review(5))
+    assert got is None
+
+
+def test_it_goes_when_the_heartbeat_says_HALTED_too_because_the_row_raises_that_itself():
+    """The page raises Halted off the heartbeat's own bridge state, with the bot's own reason. The
+    review's copy would put the same fact on the row twice ("Halted +1")."""
+    flag = {"checked_at": _fresh(), "findings": [_halted_now()]}
+    got = bots._review_payload(flag, NOW, bridge_state="halted", heartbeat=_after_the_review(5))
+    assert got is None
+
+
+def test_only_the_present_tense_finding_goes_and_the_level_follows_what_is_left():
+    """A finding about the RECORD stays — only the one about NOW has a fresher reading.
+
+    MUTATION: drop every finding once the heartbeat is newer → red on the titles."""
+    flag = {
+        "checked_at": _fresh(),
+        "findings": [_halted_now(), _finding("warn", "Restarted twice")],
+    }
+    got = bots._review_payload(flag, NOW, bridge_state="live", heartbeat=_after_the_review(5))
+    assert [f["title"] for f in got["findings"]] == ["Restarted twice"]
+    assert got["level"] == "warn"
+
+
+def test_it_is_KEPT_when_no_heartbeat_speaks_for_now():
+    """A stopped bot passes no bridge state — its last reading describes a process that no longer
+    exists — so the review is the freshest evidence there is.
+
+    MUTATION: drop the missing-bridge check → red."""
+    flag = {"checked_at": _fresh(), "findings": [_halted_now()]}
+    got = bots._review_payload(flag, NOW, bridge_state=None, heartbeat=_after_the_review(5))
+    assert [f["key"] for f in got["findings"]] == ["halted_now:unknown"]
+
+
+def test_it_is_KEPT_when_the_heartbeat_is_OLDER_than_the_review():
+    """A heartbeat taken before the review read the bridge before the review did — it cannot
+    contradict it. MUTATION: `stamp < written` → red."""
+    flag = {"checked_at": _fresh(), "findings": [_halted_now()]}
+    got = bots._review_payload(flag, NOW, bridge_state="live", heartbeat=_after_the_review(-5))
+    assert [f["key"] for f in got["findings"]] == ["halted_now:unknown"]
+
+
+def test_it_is_KEPT_when_either_time_cannot_be_read():
+    """Rule 1: a stamp nobody can read, or a review that cannot say when it ran, must not buy the
+    reassuring answer. `True` is here because a bool IS an int in Python.
+
+    MUTATION: read the stamp without `_finite` → red on infinity (True survives that one: it
+    compares as 1). MUTATION: read an unreadable review time as the epoch → red on the last case."""
+    for stamp in (None, "soon", True, float("nan"), float("inf")):
+        flag = {"checked_at": _fresh(), "findings": [_halted_now()]}
+        got = bots._review_payload(flag, NOW, bridge_state="live", heartbeat=stamp)
+        assert got is not None, stamp
+        assert [f["key"] for f in got["findings"]] == ["halted_now:unknown"], stamp
+    flag = {"checked_at": "not a time", "findings": [_halted_now()]}
+    got = bots._review_payload(flag, NOW, bridge_state="live", heartbeat=_after_the_review(5))
+    assert "halted_now:unknown" in [f["key"] for f in got["findings"]]
+
+
+def test_the_key_it_drops_is_the_one_log_review_WRITES():
+    """The prefix is a contract with `algos/notifications/log_review.py`, which this app may read and
+    never import. A rename there would leave the stale finding on the row for ever with nothing
+    failing — so the writer's own source is read.
+
+    MUTATION: change the prefix here → red."""
+    writer = Path(__file__).resolve().parents[3] / "algos" / "notifications" / "log_review.py"
+    src = writer.read_text(encoding="utf-8")
+    for prefix in bots._PRESENT_TENSE_FINDINGS:
+        assert f'f"{prefix}{{' in src, prefix
+
+
+def test_the_snapshot_hands_a_RUNNING_bots_heartbeat_to_the_review(monkeypatch):
+    """The rule only works if the endpoint passes the bot's heartbeat on — and only a running bot's,
+    whose reading describes a process that still exists.
+
+    MUTATION: drop `heartbeat=` from the call → red. MUTATION: drop the RUNNING gate → red on the
+    stopped half."""
+    key = bots._BOTS[0].key
+    now = datetime.now(timezone.utc)
+    flag = {
+        "checked_at": (now - timedelta(minutes=20)).isoformat(timespec="seconds"),
+        "findings": [_halted_now()],
+    }
+    state = {"bridge_state": "live", "heartbeat": (now - timedelta(minutes=5)).timestamp()}
+    running = {"value": True}
+    monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
+    monkeypatch.setattr(bots, "_parse_bot_states", lambda _snap: {key: state})
+    monkeypatch.setattr(bots, "_parse_reviews", lambda _snap: {key: flag})
+    monkeypatch.setattr(bots, "_bot_runner_running", lambda _snap, _key: running["value"])
+
+    def keys() -> list[str]:
+        row = next(b for b in bots.get_snapshot().bots if b.key == key)
+        return [f.key for f in row.review.findings] if row.review else []
+
+    assert "halted_now:unknown" not in keys()
+    running["value"] = False
+    assert "halted_now:unknown" in keys()
