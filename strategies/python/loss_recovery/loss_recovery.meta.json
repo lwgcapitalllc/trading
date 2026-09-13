@@ -23,6 +23,28 @@
       "detail": "Once the trade has travelled far enough to have paid the loss back, the stop moves up to bank it. After that it trails behind structure."
     }
   ],
+  "tldr": [
+    {
+      "text": "Not a strategy on its own: it adds a smaller opposite-way trade after another strategy's losses, and cannot run without it."
+    },
+    {
+      "text": "It waits for that strategy to close a real loss; a loss under {rec_scratch_r}× the trade's risk counts as a scratch and is ignored."
+    },
+    {
+      "text": "When the market then turns the other way from the losing trade, it enters in that new direction at the next bar's open."
+    },
+    {
+      "text": "Its stop sits at the far end of the move that made the turn.",
+      "show_if": { "rec_stop_mode": "structural" }
+    },
+    {
+      "text": "No profit target: once up {rec_lock_at_r}× its own risk, the stop locks in {rec_lock_to_r}× that risk, then trails each new swing.",
+      "show_if": { "rec_trail_swings": true }
+    },
+    {
+      "text": "Each recovery risks {rec_risk_frac}× what that strategy's normal trade risks, one at a time, and is closed after {rec_max_days} days."
+    }
+  ],
   "params": [
     {
       "name": "rec_risk_frac",

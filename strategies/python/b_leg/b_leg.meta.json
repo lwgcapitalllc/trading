@@ -23,6 +23,39 @@
       "detail": "The same machinery as the main bot: the first target moves the stop to breakeven, the second lifts it further, and the trailing stop takes the rest."
     }
   ],
+  "tldr": [
+    {
+      "text": "It looks for an SOS Fade reversal that never got its pullback: price broke structure again the same way before retracing halfway."
+    },
+    {
+      "text": "It rests a limit order at the halfway point of that first break and waits up to {bleg_max_days} trading days for price to come back.",
+      "show_if": { "exec_bleg": true }
+    },
+    {
+      "text": "The stop sits at the start of that break. The first target is its far end; the second is the move's furthest point.",
+      "show_if": { "exec_sl_buf_tk": 0 }
+    },
+    {
+      "text": "Nothing is banked early: the stop moves to breakeven at the first target, then trails behind the swings.",
+      "show_if": {
+        "exec_tp1_pct": 0,
+        "exec_tp2_pct": 0,
+        "exec_runner_trail": ["Structure (swing)", "Structure + % ratchet"]
+      }
+    },
+    {
+      "text": "A trade short of its first target after {exec_time_stop_hrs} hours is closed. A close back past the break's start drops the setup.",
+      "show_if": { "exec_time_stop_mode": "Before TP1 only" }
+    },
+    {
+      "text": "It stands aside where SOS Fade would trade that side itself, skips the last hour before the daily close, and takes each setup once.",
+      "show_if": { "exec_aplus": true, "exec_no_late_day": true }
+    },
+    {
+      "text": "Each trade risks {exec_risk_pct}% of the account, one at a time. Unlike SOS Fade, it never adds to a winner or re-enters.",
+      "show_if": { "exec_scale_in": false, "exec_secondary": false }
+    }
+  ],
   "params": [
     {
       "name": "bleg_max_days",

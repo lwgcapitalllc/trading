@@ -23,6 +23,45 @@
       "detail": "The first target moves the stop to breakeven and the second lifts it further. By default nothing is banked early: the whole position leaves at the last target, or at the stop that has been climbing behind it."
     }
   ],
+  "tldr": [
+    {
+      "text": "Once the trend has turned, each new break in the trend's direction arms a setup for up to {bos_max_days} trading days.",
+      "show_if": { "bos_which": "All" }
+    },
+    {
+      "text": "It rests a limit order {bos_entry_fib} of the way back along the move that broke, with the stop {bos_sl_atr}× the average bar size away.",
+      "show_if": { "bos_use_fvg": false, "bos_fib_anchor": "Break leg", "bos_sl_model": "ATR" }
+    },
+    {
+      "text": "Nothing is banked early: the whole position comes off at the far end of that move, or at its stop.",
+      "show_if": {
+        "exec_tp1_pct": 0,
+        "exec_tp2_pct": 0,
+        "exec_tp3_pct": 100,
+        "bos_tp3_measured": false,
+        "bos_fib_anchor": "Break leg"
+      }
+    },
+    {
+      "text": "As price moves its way the stop steps up to breakeven, then trails behind each new swing.",
+      "show_if": {
+        "exec_tp2_stop_mode": "TP1 price",
+        "exec_runner_trail": "Structure (swing)",
+        "bos_move_stop": "Off"
+      }
+    },
+    {
+      "text": "It places no order while price is on the wrong side of the session's average price, or from 16:00 to 18:00 New York.",
+      "show_if": { "bos_vwap_req": "Trend's side", "exec_no_late_day": true }
+    },
+    {
+      "text": "It skips a setup whose stop would sit closer than {exec_min_stop_val}% of price to the entry.",
+      "show_if": { "exec_min_stop_mode": "% of price" }
+    },
+    {
+      "text": "It risks {exec_risk_pct}% of the account per trade, holds one trade at a time, and trades each break once, up to {bos_max_per_regime} per trend."
+    }
+  ],
   "params": [
     {
       "name": "exec_longs",

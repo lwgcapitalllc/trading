@@ -98,7 +98,7 @@ frontend/src/
     ├── Rulesets.tsx          own top-level page (/rulesets) — firm-grouped prop tables + personal group
     ├── Backtests.tsx         lab landing — Runs / Sweeps / Stacks tabs. `StackConfigModal` (Stacks tab) picks 2+ Python strategies over one shared instrument/costs/window, with **its own timeframe and risk per LEG** — each prefilled from the frame that strategy declares it was measured on (see *The stack form: one timeframe PER LEG*); a live `useStackPreview` shows a green **Reuse** or amber **Run** chip per leg (reuse = a completed standalone run already matches these exact settings) + a summary; when every leg reuses, no backtest fires and the button reads **Create stack**
     ├── BacktestDetail.tsx    **Tune button carries a COUNT badge** of the iterations already run from this run (`source_run_id === runId`, off the unfiltered `useBacktestRuns()` so it shares the Runs list's cache entry) — clicking it opens the workbench where they all live. Without the badge the only way to discover a run had ever been tuned was to go back to the Runs list and spot the nested Tune rows. Full run detail — params side panel, per-firm evaluation + KPIs, tabbed charts, logs, News & Holiday filter (inline `NewsFilterPill`/`ExcludeRule`/`PerformanceHeader`, driven by the page's `useNewsFilter` hook — which feeds the KPI grid AND the Equity chart)
-    ├── StrategyDetail.tsx    strategy "spec sheet" — overview + grouped param reference tables
+    ├── StrategyDetail.tsx    strategy "spec sheet" — TL;DR first, then grouped param reference tables
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
     ├── StackDetail.tsx       portfolio stack (`/backtests/stacks/:stackId`). `composeCombined` unions the enabled legs' trades over one shared account (combined start = Σ each leg's opening balance) into a synthetic backtest-shaped `run` + portfolio equity, tagging each equity point with a `leg_<id>` running-balance field for the overlay lines. **Performance = a single backtest's own panel, all four cards of it (2026-08-10)**: BacktestDetail's exported `PerformancePanel` behind its exported `PerfCollapseToggle` and `usePerfCollapsed`, with `StackVerdictCard` in the **`verdict`** slot — so a stack is Verdict / Made / Risked / Trusted in one row, collapsing off the same stored preference. **The strategy legs are the Verdict card's ROWS, and each row is its own toggle.** Earlier builds put a `StackTradesRibbon` in the `ribbon` slot with the leg chips in a section of their own further down, which meant a stack and a run showing the same numbers looked like two different features, and the control deciding what every KPI counted sat nowhere near the KPIs. See *A stack renders a run's panel* below. Recomputes as strategies toggle. Charts are a `ChartTabPanel` (Equity / Price / Breakdown) with the SAME controls as a run: **Equity** is the real exported `EquityCurveChart` on the combined portfolio (so it inherits every toggle — Trade excursions, Run-ups & drawdowns, Date/Trade `XModeToggle`, Regimes `RegimeOverlayToggle`, expand) with a line per enabled strategy overlaid via the new `overlayLines` prop; Breakdown reuses exported `DrawdownChart`/`DailyPnlChart`/`DirectionBreakdown`; Price is exported `PriceChartView` fed the merged stack spec (structure layers/fib/measurement/expand/minimize, drill-down via `base_run_id`, trades layered + tinted per strategy). Regime bands come from `StackDetail.regime_timeline` (backend computes it on-demand for the shared window — sweep-child legs aren't tagged — and caches it). Everything recomputes on the Verdict card's leg rows (≥1 always on). **Rerun** opens the shared `StackConfigModal` prefilled with the stack's full config. Per-strategy row → that leg's BacktestDetail with `state:{fromStack}` so its Back returns here; reused legs are real standalone runs. Trades handed to the price chart carry `layerColor` + `layerName`, which is what makes the chart print `<strategy> · Won` in each outcome chip and build its own **Strategies** dropdown (see `ChartPanel/CLAUDE.md`). `avg_trade_duration_min` is the legs' own averages **trade-weighted** (you can't average durations flat), and profit factor reports `Infinity` when the enabled legs have no losing trade — the Made card prints ∞ rather than a dash that reads as missing data
     ├── Optimizations.tsx     own top-level page (/optimizations) — optimization list table
@@ -2178,6 +2178,30 @@ identically and the only way out was deleting the run. ⚠ **The move is announc
 a silent clamp runs a window the reader did not ask for, which is the narrowing this repo refuses
 everywhere else. They can type it back; the Rerun button stays disabled until the date is legal,
 so nothing is decided for them.
+
+## The strategy page leads with a TL;DR; its stacks list became a filter (2026-09-13)
+
+Aaron: *"when I click on a strategy … it's very technical … I want something that … tells me in
+six bullets"*, and of the stacks chips: *"Why do I even care about this? … I don't need that whole
+section."*
+
+- **`StrategyDetail` opens on the TL;DR** (`strategy-tldr`) from `Strategy.tldr`. `tldrLines`
+  fills `{param}` tokens and drops a bullet whose `show_if` no longer holds, both against the
+  schema DEFAULTS — the values the Default column shows. Rules: `../backend/CLAUDE.md` → *The TL;DR*.
+- 🔴 **`fillText` (ParamEditor) is THE token rule**, now called by `fillTokens` for option labels
+  too. A second filler would be two answers to what `{exec_sl_level}` says.
+- **With a TL;DR, the edge and the four steps fold behind "How it works, step by step"**
+  (`strategy-flow`); without one they stay open. Say it once — and the steps were what read as too
+  technical.
+- **The "In N portfolio stacks" section is gone.** The Backtests chip links to
+  `/backtests?strategy=<id>` (`strategy-backtests-link`).
+- **Backtests has a strategy filter** (`strategy-filter`, `?strategy=`) on Runs and Stacks.
+  ⚠ **`setTab` carries ONLY `strategy` across a tab change** — `?account=` must still drop, or the
+  stack builder reopens every time Stacks is revisited. ⚠ **A filter that hides every row says
+  so**, with *Show all*; "No stacks yet" would be false. ⚠ **A `?strategy=` the list does not hold
+  is still offered as an option**, or the select reads "All strategies" over a filtered list.
+- ⚠ **No committed browser spec.** Driven by hand in the running app on 2026-09-13; what holds the
+  meta files is `backend/tests/test_strategy_tldr.py`.
 
 ## The Backtests list and the Backtest detail page — audited 2026-08-06
 

@@ -1,0 +1,41 @@
+{
+  "_comment": "UI metadata for realign, read by the command-center scanner. Today it carries only the TL;DR at the top of the strategy page: plain-English bullets whose {param} tokens the page fills with that setting's default, and whose show_if hides a bullet once its setting leaves the default. UI ONLY: it never touches a trade decision or the source hash. Click Scan Strategies after editing. Rules: command-center/backend/CLAUDE.md -> The TL;DR.",
+  "tldr": [
+    {
+      "text": "It waits for the 15-minute trend to flip, betting the flip is a trap; another break the same way cancels the idea."
+    },
+    {
+      "text": "The trigger: within {realign_window_hrs} hours, the 5-minute chart breaks against the trend, then shifts back with it.",
+      "show_if": {
+        "realign_pattern": "any",
+        "realign_long_source": "swing",
+        "realign_short_source": "swing"
+      }
+    },
+    {
+      "text": "It enters at market on that 5-minute bar's close, aiming for the 15-minute swing that stood before the trap."
+    },
+    {
+      "text": "The stop sits {realign_sl_buf_tk} ticks past the pullback's extreme; halfway to the target it moves just past breakeven."
+    },
+    {
+      "text": "Nothing is banked early: at the target the stop lifts, then trails each new swing in {exec_trail_pct}% steps.",
+      "show_if": {
+        "exec_tp1_pct": 0,
+        "exec_tp2_pct": 0,
+        "exec_tp2_stop_mode": "TP1 price",
+        "exec_runner_trail": "Structure + % ratchet"
+      }
+    },
+    {
+      "text": "A trade short of halfway after {exec_time_stop_hrs} hours is closed; a setup whose stop is under {exec_min_stop_val}% of price is skipped.",
+      "show_if": {
+        "exec_time_stop_mode": "Before TP1 only",
+        "exec_min_stop_mode": "% of price"
+      }
+    },
+    {
+      "text": "Each trade risks {exec_risk_pct}% of the account, sized off its stop distance, and it holds one trade at a time."
+    }
+  ]
+}

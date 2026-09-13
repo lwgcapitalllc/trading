@@ -23,6 +23,39 @@
       "detail": "The exit rests part of the way to the swing rather than at it. Only one position is held at a time, so getting out sooner is what makes the next setup possible."
     }
   ],
+  "tldr": [
+    {
+      "text": "Waits for price to run through a well-known high or low: last week's, yesterday's, a session's or the last 4-hour candle's.",
+      "show_if": {
+        "use_h4_level": true,
+        "use_session_level": true,
+        "use_daily_level": true,
+        "use_weekly_level": true
+      }
+    },
+    {
+      "text": "Then the 5-minute chart must turn the other way within {swept_minutes} minutes, against the 15-minute trend.",
+      "show_if": { "req_counter_trend": true }
+    },
+    {
+      "text": "It enters at market as that bar closes. The stop goes just past the extreme of the last {extreme_minutes} minutes."
+    },
+    {
+      "text": "The whole trade comes off halfway to the next 15-minute swing. The stop is never moved before that.",
+      "show_if": { "tp_frac": 0.5, "use_breakeven": false }
+    },
+    {
+      "text": "It skips a setup unless that swing is at least {min_r} times as far away as the stop."
+    },
+    {
+      "text": "It never opens a trade on a Friday, or while the market is stuck between a trend and a range.",
+      "show_if": { "skip_friday": true, "skip_transitioning": true }
+    },
+    {
+      "text": "It risks {exec_risk_pct}% of the account per trade and holds one trade at a time.",
+      "show_if": { "size_mode": "Risk % of equity" }
+    }
+  ],
   "params": [
     {
       "name": "exec_risk_pct",

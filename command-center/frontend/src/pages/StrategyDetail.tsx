@@ -1,20 +1,14 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Pencil, Check, X, ChevronRight } from 'lucide-react'
-import {
-  useStrategy,
-  useBacktestRuns,
-  useUpdateStrategyDescription,
-  useStacks,
-} from '@/hooks/useLab'
+import { useStrategy, useBacktestRuns, useUpdateStrategyDescription } from '@/hooks/useLab'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
 import { RunnerBadge } from '@/components/RunnerBadge'
+import { readerFor, fillText } from '@/components/ParamEditor'
+import { condHolds } from '@/components/paramConditions'
 import { runnerScope, runnerMarket, RUNNER_FULL_LABEL } from '@/lib/runner'
-import type { ParamCondValue, ParamSchemaEntry, StrategyStep } from '@/types'
-
-/** Stacks shown before "+N more" — two rows of chips. */
-const STACKS_SHOWN = 4
+import type { ParamCondValue, ParamSchemaEntry, Strategy, StrategyStep } from '@/types'
 
 const CORRELATED_PAIRS: [string, string][] = [
   ['MES', 'MNQ'],
@@ -263,6 +257,22 @@ function GroupTable({
   )
 }
 
+// ── TL;DR ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The TL;DR as it reads at the DEFAULT settings — the same defaults the Default column below shows.
+ * Tokens go through the editor's own token rule, and a bullet whose `show_if` no longer holds is
+ * dropped, so a default that moves cannot leave a sentence describing the behaviour it replaced.
+ * `backend/tests/test_strategy_tldr.py` fails first, while every bullet still shows.
+ */
+function tldrLines(strategy: Strategy): string[] {
+  const schema = strategy.param_schema
+  const { read } = readerFor(schema, {})
+  return (strategy.tldr ?? [])
+    .filter((b) => !b.show_if || condHolds(b.show_if, read))
+    .map((b) => fillText(b.text, schema, {}))
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function Skeleton() {
@@ -283,21 +293,14 @@ export function StrategyDetail() {
   const [descDraft, setDescDraft] = useState('')
   const [essOnly, setEssOnly] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
-  const [showAllStacks, setShowAllStacks] = useState(false)
   const descInputRef = useRef<HTMLTextAreaElement>(null)
   const updateDesc = useUpdateStrategyDescription()
 
   const { data: strategy, isLoading } = useStrategy(strategyId ?? null)
   const { data: runs } = useBacktestRuns(strategyId ? { strategy_id: strategyId } : undefined)
-  // Shares the Stacks tab's own cache entry — this is a lookup over a list the app already holds,
-  // not a new endpoint, so it costs nothing on a page that is already open elsewhere.
-  const { data: allStacks } = useStacks()
-  const stacksWithThis = useMemo(
-    () => (allStacks ?? []).filter((s) => s.strategy_ids?.includes(strategyId ?? '')),
-    [allStacks, strategyId]
-  )
 
   const groups = useMemo(() => (strategy ? groupParams(strategy.param_schema) : []), [strategy])
+  const tldr = useMemo(() => (strategy ? tldrLines(strategy) : []), [strategy])
   const byName = useMemo(
     () => new Map((strategy?.param_schema ?? []).map((p) => [p.name, p])),
     [strategy]
@@ -358,6 +361,41 @@ export function StrategyDetail() {
     ? (CATEGORY_LABEL[strategy.category] ?? strategy.category.replace(/_/g, ' '))
     : null
   const steps: StrategyStep[] = strategy.steps ?? []
+  // The edge sentence and the four-step flow — the page's lead when there is no TL;DR, and the
+  // "How it works" fold when there is one.
+  const flow = (
+    <>
+      {strategy.edge && (
+        <p className="text-[14px] text-text-secondary leading-[1.65] max-w-[820px]">
+          {strategy.edge}
+        </p>
+      )}
+      {steps.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-4">
+          {steps.map((s, i) => (
+            <div key={i} className="contents">
+              <div className="flex-1 min-w-[150px] bg-bg-base border border-border-subtle rounded-[10px] px-3.5 py-3">
+                {s.label && (
+                  <div className="text-[10px] font-bold text-text-tertiary tracking-[0.5px] uppercase">
+                    {s.label}
+                  </div>
+                )}
+                <div className="text-[12.5px] font-semibold mt-0.5">{s.title}</div>
+                {s.detail && (
+                  <div className="text-[11.5px] text-text-tertiary leading-[1.45] mt-0.5">
+                    {s.detail}
+                  </div>
+                )}
+              </div>
+              {i < steps.length - 1 && (
+                <div className="flex items-center text-text-tertiary text-base">→</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
 
   const completedInstruments = [
     ...new Set((runs?.filter((r) => r.status === 'complete') ?? []).map((r) => r.instrument)),
@@ -436,66 +474,30 @@ export function StrategyDetail() {
           </span>
           <span className="font-semibold capitalize">{market}</span>
         </span>
-        {/* The same count as the Runs column on the Strategies list, so the two pages agree. */}
-        <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
+        {/* The same count as the Runs column on the Strategies list, so the two pages agree. It
+            opens the Backtests page filtered to this strategy — Runs, with Stacks one tab over.
+            That is where "what has this been run in" is answered; a list of stacks on this page
+            was removed 2026-09-13 (Aaron: "I don't need that whole section"). */}
+        <button
+          onClick={() => navigate(`/backtests?strategy=${encodeURIComponent(strategy.id)}`)}
+          data-testid="strategy-backtests-link"
+          title="Open this strategy's runs and stacks on the Backtests page"
+          className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface hover:border-accent/50 rounded-md px-2.5 py-1 text-[12px] transition-colors"
+        >
           <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">
             Backtests
           </span>
-          <span className="font-semibold">{strategy.run_count}</span>
-        </span>
+          <span className="font-semibold text-accent-text">{strategy.run_count}</span>
+          <ChevronRight size={12} className="text-text-tertiary" />
+        </button>
       </div>
-
-      {/* Which portfolio stacks this strategy is in.
-          The Strategies LIST can START a stack (tick 2+ python rows) and nothing anywhere could
-          answer the reverse — given a strategy, what has it already been run alongside? That is
-          the question this page exists for, and on a repo whose stated design is that sample size
-          arrives at the PORTFOLIO level it is the one a reader asks before running anything.
-          ⚠ Matched on `strategy_ids`, never on the joined display names. */}
-      {stacksWithThis.length > 0 && (
-        <div className="mb-7" data-testid="strategy-stacks">
-          <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary mb-2">
-            In {stacksWithThis.length} portfolio stack{stacksWithThis.length === 1 ? '' : 's'}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {(showAllStacks ? stacksWithThis : stacksWithThis.slice(0, STACKS_SHOWN)).map((st) => (
-              <button
-                key={st.stack_id}
-                onClick={() => navigate(`/backtests/stacks/${st.stack_id}`)}
-                className="inline-flex items-center gap-2 border border-border-subtle bg-bg-surface hover:bg-bg-hover
-                           rounded-md px-2.5 py-1.5 text-[12px] transition-colors"
-              >
-                {/* ⚠ The WINDOW and the MODE are on the chip, not just the leg names. Driven
-                    against the live lab, all three of this strategy's stacks are the same two
-                    legs on XAUUSD — so a chip naming only those is three identical buttons and
-                    the reader cannot tell which one they are opening. */}
-                <span className="font-medium">{st.strategy_names}</span>
-                <span className="text-text-tertiary font-mono tabular-nums">
-                  {st.instrument} · {st.start_date} → {st.end_date}
-                </span>
-                <span className="text-[10px] uppercase tracking-[0.4px] font-semibold text-text-tertiary">
-                  {st.mode === 'shared' ? 'Shared' : 'Screen'}
-                </span>
-                <ChevronRight size={12} className="text-text-tertiary" />
-              </button>
-            ))}
-            {stacksWithThis.length > STACKS_SHOWN && (
-              <button
-                onClick={() => setShowAllStacks((v) => !v)}
-                className="text-[12px] text-text-tertiary hover:text-text-secondary px-1"
-              >
-                {showAllStacks ? 'Show fewer' : `+${stacksWithThis.length - STACKS_SHOWN} more`}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Overview */}
       <div className="border border-border-subtle rounded-2xl bg-gradient-to-b from-bg-surface to-bg-sunken mb-7 overflow-hidden">
         <div className="px-[22px] py-5">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary">
-              What it does
+              {tldr.length > 0 ? 'TL;DR' : 'What it does'}
             </p>
             {!editingDesc && !strategy.description && (
               <button
@@ -506,6 +508,23 @@ export function StrategyDetail() {
               </button>
             )}
           </div>
+
+          {/* The TL;DR LEADS (Aaron, 2026-09-13: "tell me what the strategy is" in a handful of
+              bullets). Written in the strategy's meta file with its numbers as tokens, so each
+              line reads the setting's default — see `tldrLines`. */}
+          {tldr.length > 0 && (
+            <ul data-testid="strategy-tldr" className="space-y-1.5 max-w-[820px] mb-3">
+              {tldr.map((line, i) => (
+                <li key={i} className="flex gap-2.5 text-[14px] leading-[1.55] text-text-primary">
+                  <span className="text-text-tertiary select-none" aria-hidden>
+                    •
+                  </span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
           {editingDesc ? (
             <div>
               <textarea
@@ -553,39 +572,20 @@ export function StrategyDetail() {
             )
           )}
 
-          {/* The edge is the lead paragraph, not a box of its own under the steps. As a separate
-              "The edge" section it retold the four steps in prose (2026-09-11); the meta files'
-              edges were cut to what the steps do not already say. */}
-          {strategy.edge && (
-            <p className="text-[14px] text-text-secondary leading-[1.65] max-w-[820px]">
-              {strategy.edge}
-            </p>
-          )}
-
-          {steps.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              {steps.map((s, i) => (
-                <div key={i} className="contents">
-                  <div className="flex-1 min-w-[150px] bg-bg-base border border-border-subtle rounded-[10px] px-3.5 py-3">
-                    {s.label && (
-                      <div className="text-[10px] font-bold text-text-tertiary tracking-[0.5px] uppercase">
-                        {s.label}
-                      </div>
-                    )}
-                    <div className="text-[12.5px] font-semibold mt-0.5">{s.title}</div>
-                    {s.detail && (
-                      <div className="text-[11.5px] text-text-tertiary leading-[1.45] mt-0.5">
-                        {s.detail}
-                      </div>
-                    )}
-                  </div>
-                  {i < steps.length - 1 && (
-                    <div className="flex items-center text-text-tertiary text-base">→</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* With a TL;DR the edge and the four steps fold behind "How it works": the TL;DR
+              already says what they say, and the steps were what read as too technical
+              (2026-09-13). Without one they stay open — they are then the only summary. */}
+          {tldr.length > 0
+            ? (strategy.edge || steps.length > 0) && (
+                <details className="group mt-3" data-testid="strategy-flow">
+                  <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-[12px] text-text-secondary hover:text-text-primary [&::-webkit-details-marker]:hidden">
+                    <ChevronRight size={13} className="transition-transform group-open:rotate-90" />
+                    How it works, step by step
+                  </summary>
+                  <div className="mt-3">{flow}</div>
+                </details>
+              )
+            : flow}
         </div>
       </div>
 

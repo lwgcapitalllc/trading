@@ -23,6 +23,46 @@
       "detail": "Touching the first target moves the stop to breakeven, so the trade can no longer lose. By default nothing is banked early — the whole position rides out on the trailing stop."
     }
   ],
+  "tldr": [
+    {
+      "text": "Waits for price to run the stops past a recent high or low: the last 4-hour candle's, yesterday's or a session's.",
+      "show_if": { "exec_arm_sweep": true, "exec_arm_div": false }
+    },
+    {
+      "text": "Then structure must break the other way, leaving a price gap in the pullback zone. No gap, no trade.",
+      "show_if": { "exec_req_fvg": true, "exec_poi_source": "FVG" }
+    },
+    {
+      "text": "It rests a limit order at or near that gap and waits for price to come back. The stop sits at the zone's far edge.",
+      "show_if": { "exec_sl_level": "0.886", "exec_sl_deep": false }
+    },
+    {
+      "text": "Nothing is banked early: the stop moves to breakeven at the first target, then trails behind the swings.",
+      "show_if": {
+        "exec_tp1_pct": 0,
+        "exec_tp2_pct": 0,
+        "exec_runner_trail": ["Structure (swing)", "Structure + % ratchet"]
+      }
+    },
+    {
+      "text": "It skips a setup when momentum is stretched or turning against it, the market is too quiet, the stop too tight, or the close is near.",
+      "show_if": {
+        "exec_respect_veto": true,
+        "div_veto": true,
+        "show_div": true,
+        "exec_min_atr_pct": { "gt": 0 },
+        "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"],
+        "exec_no_late_day": true
+      }
+    },
+    {
+      "text": "It risks {exec_risk_pct}% of the account per trade, sized off the stop, and holds one trade at a time."
+    },
+    {
+      "text": "It also adds to a winner past its second target, and may take one more trade on the same setup after the first.",
+      "show_if": { "exec_scale_in": true, "exec_secondary": true, "exec_sec_max_per_setup": 1 }
+    }
+  ],
   "params": [
     {
       "name": "exec_arm_div",

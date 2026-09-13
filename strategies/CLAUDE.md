@@ -114,7 +114,9 @@ by what actually depends on what: the parity gates that consume these files live
 3. Click "Scan Strategies" to register it. No deploy, no compile — it runs in the backend process via the top-level `backtest/` package.
 4. **Add `strategies/python/<name>/<name>.meta.json`** — same overlay the `.mq5` strategies use
    (`label`, `desc`, `unit`, `group`, `core`, `widget`, `options`, `show_if`, `guide`, `step`, plus
-   top-level `edge`/`steps`). Without it the detail page is a bare list of raw field names in one
+   top-level `edge`/`steps`, and `tldr` — the page's plain-English summary, required of EVERY
+   strategy on every runner; rules in `command-center/backend/CLAUDE.md` → *The TL;DR*). Without
+   it the detail page is a bare list of raw field names in one
    "Strategy Logic" group. **Note the filename differs from the MT5 convention**: it is
    `<package>.meta.json` inside the package dir (`sos_fade/sos_fade.meta.json`), not
    `<ClassName>.meta.json`. UI-only, so editing it needs no re-parity — but re-scan after editing.

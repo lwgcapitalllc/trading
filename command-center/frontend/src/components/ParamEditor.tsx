@@ -43,7 +43,7 @@ export function isSettled(p: ParamSchemaEntry, value: ParamValue | undefined): b
 }
 
 /** Reads values with `custom_from` resolved — the number a param is ACTUALLY worth right now. */
-function readerFor(schema: ParamSchemaEntry[], values: Record<string, ParamValue>) {
+export function readerFor(schema: ParamSchemaEntry[], values: Record<string, ParamValue>) {
   const raw = (name: string): ParamValue => {
     const p = schema.find((x) => x.name === name)
     return values[name] ?? (p?.default as ParamValue)
@@ -125,15 +125,28 @@ export function fillTokens(
   values: Record<string, ParamValue>
 ): ParamSchemaEntry[] {
   if (!schema.some((p) => p.options && /\{/.test(p.options.off + p.options.on))) return schema
-  const { read } = readerFor(schema, values)
-  const sub = (text: string) =>
-    text.replace(TOKEN, (whole, name) =>
-      schema.some((x) => x.name === name) ? String(read(name)) : whole
-    )
+  const sub = (text: string) => fillText(text, schema, values)
   return schema.map((p) =>
     p.options && /\{/.test(p.options.off + p.options.on)
       ? { ...p, options: { off: sub(p.options.off), on: sub(p.options.on) } }
       : p
+  )
+}
+
+/**
+ * One piece of text with every `{param}` token filled from `values`, custom-resolved — THE token
+ * rule, shared by the option labels above and the strategy page's TL;DR so the two cannot fill a
+ * token differently. An unknown name stays on screen as `{typo}`, for the reason given at TOKEN.
+ */
+export function fillText(
+  text: string,
+  schema: ParamSchemaEntry[],
+  values: Record<string, ParamValue>
+): string {
+  if (!text.includes('{')) return text
+  const { read } = readerFor(schema, values)
+  return text.replace(TOKEN, (whole, name) =>
+    schema.some((x) => x.name === name) ? String(read(name)) : whole
   )
 }
 

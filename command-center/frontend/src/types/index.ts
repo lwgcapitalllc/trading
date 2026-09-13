@@ -1343,6 +1343,7 @@ export interface Strategy {
   // Strategy-level narrative overlaid from <Strategy>.meta.json (optional).
   edge?: string | null
   steps?: StrategyStep[]
+  tldr?: StrategyTldrBullet[]
   avoid_news?: boolean // News toggle starts on "Removed" when true (strategy avoids high-impact news)
   // True = the strategy sizes its own trades off its own risk % param, so the sizing engine
   // must not re-size it and SIZING MODE is hidden (there is nothing to choose).
@@ -1370,6 +1371,14 @@ export interface StrategyStep {
   label?: string // e.g. "01 · Asian"
   title: string // e.g. "Measure the range"
   detail?: string // one-line explanation
+}
+
+// One TL;DR bullet from <Strategy>.meta.json. `{param}` in `text` is filled with that setting's
+// DEFAULT on the page, and a bullet whose `show_if` does not hold against the defaults is not
+// shown — so a default that moves cannot leave the summary describing the old behaviour.
+export interface StrategyTldrBullet {
+  text: string
+  show_if?: Record<string, ParamCondValue>
 }
 
 export interface ScanResult {

@@ -3802,6 +3802,31 @@ thing to ship is a test that fails when somebody tries again, not a comment nobo
 branch nobody remembers. A comment saying *"do not add this yet"* is invisible to the next person
 who adds it.
 
+## The TL;DR is a meta-file key, resolved on the PAGE (2026-09-13)
+
+`tldr` in `<Strategy>.meta.json`, a list of `{text, show_if?}`, is read by
+`_read_strategy_overview`, carried by all three row builders, stored as JSON in `strategies.tldr`
+and served on `Strategy.tldr`. Aaron: *"something that looks at what the default settings of a
+strategy are and tells me … in six bullets."* Page half: `../frontend/CLAUDE.md` → *The strategy
+page leads with a TL;DR*.
+
+- ⚠ **The backend fills nothing.** `{param}` tokens and `show_if` are resolved on the page against
+  the schema's DEFAULTS, through the editor's own token rule and condition evaluator — never a
+  third copy of either.
+- ⚠ **A bullet with no text, a non-object, and an EMPTY `show_if` are dropped at the scan.** Both
+  evaluators read `{}` as "holds nothing", so a kept `{}` would hide its bullet for ever.
+- ⚠ **Migration-only column, like `chart_tag`** — the `strategies` CREATE runs before the migration
+  list. NULL (a row scanned before the column) reaches the page as `[]` through the model's
+  validator, and the page then shows the four-step flow. **A meta edit needs a Scan.**
+- 🔴 **`tests/test_strategy_tldr.py` is the guard, because every failure it catches is SILENT on
+  the page.** Every registered strategy carries 3–7 one-line bullets; every token names a real
+  number, choice or text setting (an on/off token would print `true`); every `show_if` names a real
+  setting; and **every bullet SHOWS at the defaults**, so a default that moves fails the build
+  instead of quietly shortening the summary. Evaluated with `stress_tester._reader_for` /
+  `_cond_holds`, the twin of the page's reader.
+- ⚠ **It describes defaults, never results** — no R, trade counts or dates in a bullet, for the
+  reason the meta's `desc` carries none: nothing re-measures a UI string.
+
 ## History floors — blocking a window the broker has no bars for
 
 **MT5 does not error when a symbol lacks history at the requested timeframe — it returns the nearest

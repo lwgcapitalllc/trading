@@ -1441,6 +1441,11 @@ class Strategy(BaseModel):
     # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only).
     edge: Optional[str] = None
     steps: list[dict] = []  # flow: [{label, title, detail}]
+    # The TL;DR: [{text, show_if?}], plain-English bullets at the top of the strategy page. A
+    # `{param}` token in `text` is filled on the page with that setting's DEFAULT, and a bullet
+    # whose `show_if` does not hold against the defaults is not shown — so a default that moves
+    # cannot leave the summary claiming the old behaviour.
+    tldr: list[dict] = []
     # News-filter default (UI only): 1/true = the News toggle on BacktestDetail starts on "Removed"
     # (this strategy avoids high-impact news); false = starts "Included". From meta.json "avoid_news".
     avoid_news: bool = False
@@ -1466,7 +1471,7 @@ class Strategy(BaseModel):
     # in, never a refusal: a run on another frame is legal and is simply a different experiment.
     suggested_bar_value: Optional[int] = None
 
-    @field_validator("steps", mode="before")
+    @field_validator("steps", "tldr", mode="before")
     @classmethod
     def _steps_default(cls, v):
         # DB rows predating the column store NULL → coerce to [] so list validation passes.

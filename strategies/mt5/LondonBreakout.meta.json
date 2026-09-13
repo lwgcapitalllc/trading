@@ -18,6 +18,31 @@
       "detail": "Enter on the breakout, target a multiple of risk, force-flat before close."
     }
   ],
+  "tldr": [
+    {
+      "text": "Marks the high and low of the quiet Asian session, {AsianStartGMT} to {AsianEndGMT} GMT, on 15-minute candles."
+    },
+    {
+      "text": "At {LondonOpenGMT} GMT it skips the day unless that range is {RangeMinAtr} to {RangeMaxAtr} times the daily average range.",
+      "show_if": { "PipRangeFilter": false }
+    },
+    {
+      "text": "Until {EntryCutoffGMT} GMT it enters at market when a candle closes past the range by over {BufferAtr} times that average.",
+      "show_if": { "PendingEntry": false }
+    },
+    {
+      "text": "The stop sits on the far side of the Asian range: its low for a long, its high for a short."
+    },
+    {
+      "text": "Takes profit at {TargetRR} times the risk, and closes anything still open at {ForceFlatGMT} GMT."
+    },
+    {
+      "text": "Takes at most one trade a day, and skips a setup whose stop is tighter than the broker allows."
+    },
+    {
+      "text": "Every trade is the broker's smallest lot; the lab's sizing engine then sets the real size from the ruleset you pick."
+    }
+  ],
   "params": [
     {
       "name": "PendingEntry",

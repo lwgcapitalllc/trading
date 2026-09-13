@@ -25,6 +25,7 @@ import {
   useDeleteSweep,
   useStacks,
   useDeleteStack,
+  useStrategies,
 } from '@/hooks/useLab'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { useAccountStackBasis } from '@/hooks/useBots'
@@ -74,6 +75,44 @@ function MarketFilterBar({
         </button>
       ))}
     </div>
+  )
+}
+
+/**
+ * Narrows Runs and Stacks to what one strategy took part in. The Strategy page's Backtests chip
+ * links here with it set — that is where "what has this strategy been run in" is answered, rather
+ * than a list of stacks on the strategy page (Aaron, 2026-09-13: *"I don't need that whole section"*).
+ */
+function StrategyFilterSelect({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (id: string) => void
+}) {
+  const { data: strategies } = useStrategies()
+  const options = useMemo(
+    () => [...(strategies ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [strategies]
+  )
+  // A filter naming a strategy the list does not hold (still loading, or a stale link) is still
+  // OFFERED, or the select would show "All strategies" while the list below stays filtered.
+  const listed = options.some((s) => s.id === value)
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      data-testid="strategy-filter"
+      className="bg-bg-sunken border border-border-subtle rounded-md px-2 py-[5px] text-[12px] text-text-secondary focus:outline-none focus:border-accent transition-colors"
+    >
+      <option value="">All strategies</option>
+      {value && !listed && <option value={value}>{value}</option>}
+      {options.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -292,9 +331,13 @@ function TabBar({
 function RunsTab({
   statusFilter,
   marketFilter,
+  strategyFilter,
+  onClearStrategy,
 }: {
   statusFilter: string
   marketFilter: MarketFilter
+  strategyFilter: string
+  onClearStrategy: () => void
 }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -314,7 +357,7 @@ function RunsTab({
   // so the bulk-delete set never references rows that the new filter has hidden.
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [statusFilter, marketFilter])
+  }, [statusFilter, marketFilter, strategyFilter])
 
   const toggleCollapse = (id: string) =>
     setCollapsedRuns((prev) => {
@@ -383,12 +426,13 @@ function RunsTab({
       ?.filter((r) => (!r.optimization_id || r.status === 'running') && !r.sweep_id)
       ?.filter((r) => !fullBtNestIds.has(r.run_id))
       ?.filter((r) => marketFilter === 'all' || runMarket(r.runner) === marketFilter)
+      ?.filter((r) => !strategyFilter || r.strategy_id === strategyFilter)
     if (!base) return base
     // Tune iterations are never top-level rows. They nest under their baseline when it's
     // visible; otherwise (e.g. tuned from an optimization winner) they live only in the
     // workbench — reachable via the optimization banner and the run-detail breadcrumb.
     return base.filter((r) => !(r.source_run_id && !r.sweep_id && !r.optimization_id))
-  }, [allRuns, fullBtNestIds, marketFilter])
+  }, [allRuns, fullBtNestIds, marketFilter, strategyFilter])
 
   const optsBySourceRun = useMemo(() => {
     const map = new Map<string, typeof allOpts>()
@@ -577,6 +621,21 @@ function RunsTab({
 
       {isLoading ? (
         <RunsTableSkeleton />
+      ) : !runs?.length && strategyFilter ? (
+        // A filter that hides every row says so — "No backtest runs yet" would be false here.
+        <EmptyState
+          icon={<Play size={20} />}
+          title="No runs for this strategy"
+          description="Nothing on this tab matches it. Its stacks, if any, are on the Stacks tab."
+          action={
+            <button
+              onClick={onClearStrategy}
+              className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity"
+            >
+              Show all strategies
+            </button>
+          }
+        />
       ) : !runs?.length ? (
         <EmptyState
           icon={<Play size={20} />}
@@ -1454,10 +1513,24 @@ function AccountBasisNotice({ basis }: { basis: AccountStackBasis }) {
   )
 }
 
-function StacksTab() {
+function StacksTab({
+  strategyFilter,
+  onClearStrategy,
+}: {
+  strategyFilter: string
+  onClearStrategy: () => void
+}) {
   const navigate = useNavigate()
   const deleteStack = useDeleteStack()
   const { data: stacks, isLoading } = useStacks()
+  // Matched on `strategy_ids`, never on the joined display names — a name is not an id.
+  const shown = useMemo(
+    () =>
+      strategyFilter
+        ? (stacks ?? []).filter((st) => st.strategy_ids?.includes(strategyFilter))
+        : (stacks ?? []),
+    [stacks, strategyFilter]
+  )
   const [showCreate, setShowCreate] = useState(false)
   const [deleteStackId, setDeleteStackId] = useState<string | null>(null)
 
@@ -1549,6 +1622,21 @@ function StacksTab() {
             </button>
           }
         />
+      ) : !shown.length ? (
+        // A filter that hides every stack says so — "No stacks yet" would be false here.
+        <EmptyState
+          icon={<Layers size={20} />}
+          title="No stacks include this strategy"
+          description="None of the stacks here has it as a leg."
+          action={
+            <button
+              onClick={onClearStrategy}
+              className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity"
+            >
+              Show all stacks
+            </button>
+          }
+        />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">
@@ -1562,14 +1650,14 @@ function StacksTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                 {/* Only while something is unfinished — a column reading COMPLETE on every row
                     says nothing the populated result beside it has not (2026-09-11). */}
-                {stacks.some((x) => x.status !== 'complete') && (
+                {shown.some((x) => x.status !== 'complete') && (
                   <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 )}
                 <th className="px-3 py-3 w-20" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {stacks.map((st) => {
+              {shown.map((st) => {
                 const s = fmtStackStatus(st.status)
                 return (
                   <tr
@@ -1626,7 +1714,7 @@ function StacksTab() {
                     </td>
                     {/* The leg count rides in the pill only while a stack is unfinished. As its own
                         Progress column it read "2/2" beside "COMPLETE" on every finished row. */}
-                    {stacks.some((x) => x.status !== 'complete') && (
+                    {shown.some((x) => x.status !== 'complete') && (
                       <td className="px-4 py-3 whitespace-nowrap">
                         {st.status !== 'complete' && (
                           <span
@@ -1713,7 +1801,31 @@ function StacksTab() {
 export function Backtests() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = (searchParams.get('tab') ?? 'runs') as Tab
-  const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
+  // The strategy filter is carried across a tab change — "what has this strategy been run in" is
+  // one question over Runs and Stacks. Every other param (?account=, ?market=) still belongs to
+  // the tab that read it and is dropped on the way out, as before.
+  const setTab = (t: Tab) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams({ tab: t })
+        const s = prev.get('strategy')
+        if (s) next.set('strategy', s)
+        return next
+      },
+      { replace: true }
+    )
+  // ?strategy= — the Strategy page's Backtests chip links here with it set. MERGES, never drops ?tab=.
+  const strategyFilter = searchParams.get('strategy') ?? ''
+  const setStrategyFilter = (id: string) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (id) next.set('strategy', id)
+        else next.delete('strategy')
+        return next
+      },
+      { replace: true }
+    )
 
   // Runs filters live here so they can sit on the tab row, right-aligned, next to the tabs.
   const [statusFilter, setStatusFilter] = useState('')
@@ -1740,8 +1852,12 @@ export function Backtests() {
   const sweepsActive = allSweeps?.some((s) => s.status === 'running')
   const stacksActive = allStacks?.some((s) => s.status === 'running')
 
+  const strategyControl = (
+    <StrategyFilterSelect value={strategyFilter} onChange={setStrategyFilter} />
+  )
   const runsControls = (
     <>
+      {strategyControl}
       <MarketFilterBar value={marketFilter} onChange={setMarketFilter} />
       <select
         value={statusFilter}
@@ -1789,7 +1905,7 @@ export function Backtests() {
               runsActive={runsActive}
               sweepsActive={sweepsActive}
               stacksActive={stacksActive}
-              right={tab === 'runs' ? runsControls : undefined}
+              right={tab === 'runs' ? runsControls : tab === 'stacks' ? strategyControl : undefined}
             />
 
             {/* The key only when a score is on screen to explain — see `showScore` in RunsTab. */}
@@ -1802,9 +1918,18 @@ export function Backtests() {
         )}
       </StickyHeader>
 
-      {tab === 'runs' && <RunsTab statusFilter={statusFilter} marketFilter={marketFilter} />}
+      {tab === 'runs' && (
+        <RunsTab
+          statusFilter={statusFilter}
+          marketFilter={marketFilter}
+          strategyFilter={strategyFilter}
+          onClearStrategy={() => setStrategyFilter('')}
+        />
+      )}
       {tab === 'sweeps' && <SweepsTab />}
-      {tab === 'stacks' && <StacksTab />}
+      {tab === 'stacks' && (
+        <StacksTab strategyFilter={strategyFilter} onClearStrategy={() => setStrategyFilter('')} />
+      )}
     </div>
   )
 }

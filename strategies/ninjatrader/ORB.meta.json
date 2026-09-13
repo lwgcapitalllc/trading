@@ -1,4 +1,27 @@
 {
   "_comment": "UI metadata for ORB, read by the command-center scanner (not compiled into the strategy). 'avoid_news' sets the starting position of the News filter toggle on a backtest's results page: true = news-window trades start REMOVED (gold avoids high-impact news); the user can still flip it per run.",
-  "avoid_news": true
+  "avoid_news": true,
+  "tldr": [
+    {
+      "text": "Marks the high and low of the first {ORMinutes} minutes after 9:30 on the chart's clock, meant as the New York open."
+    },
+    {
+      "text": "Goes long at market after two bullish closes in a row above that range; shorts mirror it below the range.",
+      "show_if": { "ConfirmationCloses": 1 }
+    },
+    {
+      "text": "The stop sits on the far side of the range: the range low for a long, the range high for a short."
+    },
+    {
+      "text": "Takes profit at {RiskReward} times the risk, and closes anything still open at the ruleset's close-out time."
+    },
+    {
+      "text": "Takes at most one long and one short a day, and never holds both at once.",
+      "show_if": { "OneTradePer": false }
+    },
+    { "text": "Trades only on the days and hours the ruleset allows." },
+    {
+      "text": "Every trade is one contract; the lab's sizing engine then sets the real size from the ruleset you pick."
+    }
+  ]
 }

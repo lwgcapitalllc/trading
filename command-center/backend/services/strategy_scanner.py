@@ -254,6 +254,7 @@ def _parse_file(cs_path: Path, monorepo_root: Path, source: str) -> Optional[dic
         "runner": "ninjatrader",
         "edge": overview.get("edge"),
         "steps": overview.get("steps", []),
+        "tldr": overview.get("tldr", []),
         "avoid_news": overview.get("avoid_news", False),
     }
 
@@ -486,8 +487,13 @@ def is_orphan(row: dict) -> bool:
 def _read_strategy_overview(meta_path: Path) -> dict:
     """Strategy-level narrative from a companion meta.json — UI only.
 
-    Returns {edge?: str, steps?: [{label, title, detail}]}. Absent or malformed
-    file is a no-op ({}); the detail page degrades to the editable description alone.
+    Returns {edge?: str, steps?: [{label, title, detail}], tldr?: [{text, show_if?}]}.
+    Absent or malformed file is a no-op ({}); the detail page degrades to the editable
+    description alone.
+
+    `tldr` is the summary a reader sees first. Its `{param}` tokens and `show_if` are resolved
+    on the PAGE against the strategy's defaults, so the text can never state a number the
+    config no longer has. A bullet with no text is dropped rather than rendered blank.
     """
     if not meta_path.exists():
         return {}
@@ -506,6 +512,21 @@ def _read_strategy_overview(meta_path: Path) -> dict:
         clean = [s for s in steps if isinstance(s, dict) and s.get("title")]
         if clean:
             out["steps"] = clean
+    tldr = meta.get("tldr")
+    if isinstance(tldr, list):
+        bullets = []
+        for b in tldr:
+            text = b.get("text") if isinstance(b, dict) else None
+            if not isinstance(text, str) or not text.strip():
+                continue
+            bullet: dict = {"text": text.strip()}
+            # An EMPTY show_if is dropped, not kept: both condition evaluators read `{}` as
+            # "holds nothing", so kept it would hide the bullet for ever.
+            if isinstance(b.get("show_if"), dict) and b["show_if"]:
+                bullet["show_if"] = b["show_if"]
+            bullets.append(bullet)
+        if bullets:
+            out["tldr"] = bullets
     # News-filter default (UI only): does this strategy avoid trading around high-impact news?
     # Sets the starting position of BacktestDetail's News toggle. Absent -> included (False).
     if isinstance(meta.get("avoid_news"), bool):
@@ -585,6 +606,7 @@ def _parse_mql5_file(mq5_path: Path, monorepo_root: Path, source: str) -> Option
         "runner": "mt5",
         "edge": overview.get("edge"),
         "steps": overview.get("steps", []),
+        "tldr": overview.get("tldr", []),
         "avoid_news": overview.get("avoid_news", False),
     }
 
@@ -734,6 +756,7 @@ def _parse_python_package(
         "runner": "python",
         "edge": overview.get("edge"),
         "steps": overview.get("steps", []),
+        "tldr": overview.get("tldr", []),
         "avoid_news": overview.get("avoid_news", False),
         # Only a python package may declare this. NT8/MT5 strategies are unit-size BY RULE —
         # the gated-layer rule forbids them from baking risk management in — so they are always

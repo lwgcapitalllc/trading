@@ -411,6 +411,11 @@ def init_db() -> None:
             # Declared by the package (LAB_STRATEGY["suggested_bar_value"]), never set by
             # hand, and it is a DEFAULT: nothing refuses a run on another frame.
             "ALTER TABLE strategies ADD COLUMN suggested_bar_value INTEGER",
+            # The TL;DR from <Strategy>.meta.json — the plain-English bullets at the top of the
+            # strategy page, JSON [{text, show_if?}]. UI only, like `edge` and `steps`: nothing
+            # about a run reads it. NULL on a row scanned before the column existed; the model
+            # coerces that to [] and the page falls back to the four-step flow.
+            "ALTER TABLE strategies ADD COLUMN tldr TEXT",
             # Runner field on backtest_runs for platform-specific locking
             "ALTER TABLE backtest_runs ADD COLUMN runner TEXT NOT NULL DEFAULT 'ninjatrader'",
             # Strategy version registry — content-addressed (source_hash → monotonic version).
@@ -2388,7 +2393,10 @@ def list_strategies() -> list[dict]:
             GROUP BY s.id
             ORDER BY s.name
         """).fetchall()
-    return [_parse_json_fields(dict(r), ["default_params", "param_schema", "steps"]) for r in rows]
+    return [
+        _parse_json_fields(dict(r), ["default_params", "param_schema", "steps", "tldr"])
+        for r in rows
+    ]
 
 
 def get_strategy(strategy_id: str) -> Optional[dict]:
@@ -2406,7 +2414,7 @@ def get_strategy(strategy_id: str) -> Optional[dict]:
         ).fetchone()
     if not row:
         return None
-    return _parse_json_fields(dict(row), ["default_params", "param_schema", "steps"])
+    return _parse_json_fields(dict(row), ["default_params", "param_schema", "steps", "tldr"])
 
 
 def get_strategy_hash(strategy_id: str) -> Optional[str]:
@@ -2433,8 +2441,8 @@ def upsert_strategy(data: dict) -> None:
                 (id, name, class_name, source_path, category, suggested_instrument,
                  default_params, param_schema, scanned_at, source_hash, runner, edge, steps,
                  avoid_news, self_sizing, requires_source, display_under,
-                 supports_bid_ask_fills, chart_tag, suggested_bar_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 supports_bid_ask_fills, chart_tag, suggested_bar_value, tldr)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 class_name=excluded.class_name,
@@ -2454,7 +2462,8 @@ def upsert_strategy(data: dict) -> None:
                 display_under=excluded.display_under,
                 supports_bid_ask_fills=excluded.supports_bid_ask_fills,
                 chart_tag=excluded.chart_tag,
-                suggested_bar_value=excluded.suggested_bar_value
+                suggested_bar_value=excluded.suggested_bar_value,
+                tldr=excluded.tldr
         """,
             (
                 data["id"],
@@ -2481,6 +2490,7 @@ def upsert_strategy(data: dict) -> None:
                 1 if data.get("supports_bid_ask_fills", True) else 0,
                 data.get("chart_tag"),
                 data.get("suggested_bar_value"),
+                json.dumps(data.get("tldr", [])),
             ),
         )
 
