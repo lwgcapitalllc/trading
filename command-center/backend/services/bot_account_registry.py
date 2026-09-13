@@ -40,9 +40,16 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+# The scan's own join key and folder name — ONE definition of "the same terminal" for both
+# modules, or two spellings of one path could read as two terminals here and one there.
+from services.terminal_scan import _install_key as _terminal_key
+from services.terminal_scan import _short as _terminal_name
+
 __all__ = [
     "RegisteredAccount",
     "RegistryError",
+    "TerminalTaken",
+    "check_entry",
     "registry_path",
     "load_accounts",
     "account_by_number",
@@ -189,6 +196,49 @@ def _validate(entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> N
             )
 
 
+class TerminalTaken(RegistryError):
+    """The terminal is already recorded on ANOTHER account. The router answers 409: a clash with
+    what is stored, where every other refusal here is about the request itself (400)."""
+
+
+def _refuse_a_taken_terminal(raw: dict, entry: RegisteredAccount) -> None:
+    """🔴 One terminal, one account (Aaron's call, 2026-09-13).
+
+    A terminal holds one login, and a bot connects by logging its terminal into its OWN account.
+    So two accounts recorded on one terminal means a bot on either switches it off the other,
+    under any bot trading there — which then halts on the account mismatch. It nearly happened:
+    the demo bots' terminal was typed onto a new live account the day that account was added.
+
+    ⚠ **Compared as the scan's own join key**, so `C:\\MT5_FFT\\terminal64.exe` and `c:\\mt5_fft\\`
+    are one terminal — two spellings must not slip past as two. ⚠ **An empty terminal claims
+    nothing** and is never a clash, and **an account re-saving its own terminal is not one either**.
+    """
+    mine = _terminal_key(entry.mt5_path)
+    for row in raw["accounts"]:
+        if not isinstance(row, dict) or str(row.get("account")) == str(entry.account):
+            continue
+        theirs = str(row.get("mt5_path") or "")
+        if theirs.strip() and _terminal_key(theirs) == mine:
+            owner = row.get("account")
+            raise TerminalTaken(
+                f"{_terminal_name(entry.mt5_path)} is already account {owner}'s terminal. A "
+                f"terminal holds one login, so a bot on account {entry.account} would log it off "
+                f"{owner} under any bot trading there. Use a terminal no other account uses, or "
+                f"clear it from account {owner} first."
+            )
+
+
+def check_entry(path: Path, entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> None:
+    """Every refusal a write would make, WITHOUT writing.
+
+    ⚠ **For a caller with a side effect to make first** — the save route writes a password to the
+    VPS before the row — so a refused save changes nothing anywhere, rather than leaving a
+    credential behind for a row that was never stored.
+    """
+    _validate(entry, known_profiles)
+    _refuse_a_taken_terminal(_read_raw(path), entry)
+
+
 def _atomic_write(path: Path, raw: dict) -> None:
     """tmp + `os.replace`, so a reader never sees a half-written registry. `sort_keys=False` keeps
     the prose block at the top where somebody will read it."""
@@ -209,6 +259,7 @@ def upsert_account(
     """
     _validate(entry, known_profiles)
     raw = _read_raw(path)
+    _refuse_a_taken_terminal(raw, entry)
     rows: list[Any] = raw["accounts"]
     stored = asdict(entry)
     for i, row in enumerate(rows):

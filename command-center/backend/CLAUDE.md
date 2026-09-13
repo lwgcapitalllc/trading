@@ -1750,6 +1750,12 @@ mutations killed.
   killed.
 - **Unregistering an account a bot still names is refused (409).** That bot would go on trading an
   account this page can no longer describe.
+- 🔴 **A terminal another account already holds is refused (409), before the password is written
+  (2026-09-13).** A terminal holds one login, so two accounts on one terminal means a bot on either
+  logs it off the other, under its bots — the demo bots' terminal was nearly saved onto the new live
+  account. Compared as the scan's join key, so a different spelling cannot slip past; an empty
+  terminal and an account's own terminal are never a clash. ⚠ `check_entry` runs every refusal
+  before the VPS password write, so any refused save leaves nothing behind.
 - **An account that is neither registered nor traded by any bot is a 404** with the fix named.
 
 ### The password path
