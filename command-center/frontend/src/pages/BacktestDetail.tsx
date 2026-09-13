@@ -3681,7 +3681,8 @@ function LogsSection({
               <span className="relative inline-flex rounded-full h-[8px] w-[8px] bg-accent" />
             </span>
           ) : isComplete ? (
-            <span className="w-[8px] h-[8px] rounded-full bg-accent flex-shrink-0" />
+            // Finished is the normal state, so it is grey; cyan is for the run still going.
+            <span className="w-[8px] h-[8px] rounded-full bg-text-tertiary/60 flex-shrink-0" />
           ) : isFailed ? (
             <span className="w-[8px] h-[8px] rounded-full bg-neg-text flex-shrink-0" />
           ) : (
@@ -3692,7 +3693,7 @@ function LogsSection({
           </span>
           {isRunning && <span className="text-micro text-text-tertiary font-mono">· live</span>}
           {isComplete && !isRunning && (
-            <span className="text-micro text-accent font-mono">· complete</span>
+            <span className="text-micro text-text-tertiary font-mono">· complete</span>
           )}
           {isFailed && !isRunning && (
             <span className="text-micro text-neg-text font-mono">· failed</span>
@@ -6926,7 +6927,7 @@ export function BacktestDetail() {
                   >
                     {run.strategy_name || run.strategy_id}
                   </h1>
-                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary flex-shrink-0">
                     {run.instrument}
                   </span>
                   <div className="flex-shrink-0 max-[1100px]:hidden">
@@ -6944,7 +6945,7 @@ export function BacktestDetail() {
                   )}
                   {run.sized && (
                     <span
-                      className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20 flex-shrink-0 max-[1100px]:hidden"
+                      className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary flex-shrink-0 max-[1100px]:hidden"
                       title="Sizing engine set contract size for this run."
                     >
                       Sized · {sizingModeLabel(run.sizing_mode, run.manual_risk_pct)}
@@ -6976,30 +6977,32 @@ export function BacktestDetail() {
                     )}
                     {run.sized && (
                       <span
-                        className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20"
+                        className="inline-flex items-center gap-1 px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary"
                         title="The sizing engine set contract size from each ruleset's contract ladder and room left — this run reflects real prop-firm sizing, not unit size."
                       >
                         Engine-sized · {sizingModeLabel(run.sizing_mode, run.manual_risk_pct)}
                       </span>
                     )}
+                    {/* A label, so neutral; only its two links are cyan, because they are what can
+                        be clicked (2026-09-13). */}
                     {isTuneIteration && (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/20">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary">
                         <SlidersHorizontal size={11} />
                         Tuning iteration
                         <button
                           onClick={() => navigate(`/backtests/runs/${run.source_run_id}/tune`)}
-                          className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                          className="text-accent underline decoration-dotted underline-offset-2 hover:opacity-80"
                         >
                           open workbench
                         </button>
                         {tuneBaseline?.optimization_id && (
                           <>
-                            <span className="text-accent/40">·</span>
+                            <span className="text-text-tertiary">·</span>
                             <button
                               onClick={() =>
                                 navigate(`/optimizations/${tuneBaseline.optimization_id}`)
                               }
-                              className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+                              className="text-accent underline decoration-dotted underline-offset-2 hover:opacity-80"
                             >
                               optimization
                             </button>

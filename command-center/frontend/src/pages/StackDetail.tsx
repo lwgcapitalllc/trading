@@ -876,7 +876,12 @@ function SharedAccountPanel({
         </span>
       </div>
       <div className="h-[5px] rounded-full bg-bg-sunken overflow-hidden">
-        <div className="h-full rounded-full bg-accent" style={{ width: `${fill}%` }} />
+        {/* Grey while the budget never said no; amber once it refused something, matching the
+            chip above. Cyan is for what can be clicked or is running now (2026-09-13). */}
+        <div
+          className={`h-full rounded-full ${anyContention ? 'bg-warn-text' : 'bg-text-tertiary'}`}
+          style={{ width: `${fill}%` }}
+        />
       </div>
       <div className="text-[11px] text-text-tertiary">
         of a {capPct.toFixed(2)}% cap · {report.peak_concurrent_legs} of {report.leg_count} holding

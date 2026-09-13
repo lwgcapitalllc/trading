@@ -153,7 +153,7 @@ function ParamRow({ p, byName }: { p: ParamSchemaEntry; byName: Map<string, Para
           )}
         </div>
         {cond && (
-          <div className="inline-block text-[9.5px] text-gold-text bg-gold-muted border border-gold-text/25 rounded px-1.5 py-px mt-1">
+          <div className="inline-block text-[9.5px] text-text-tertiary bg-bg-surface-2 border border-border-subtle rounded px-1.5 py-px mt-1">
             {cond}
           </div>
         )}
@@ -224,10 +224,10 @@ function GroupTable({
         />
         <span className="text-[13.5px] font-semibold text-text-primary">{group.name}</span>
         <span className="ml-auto flex items-center gap-2 text-[11px] text-text-tertiary">
+          {/* Gold like every other ★ on the page — it counts essential settings, it is not a
+              control (2026-09-13). */}
           {group.coreCount > 0 && (
-            <span className="text-accent-text bg-accent-muted border border-accent/25 rounded-pill px-2 py-px font-semibold">
-              {group.coreCount} ★
-            </span>
+            <span className="text-gold-text font-semibold">{group.coreCount} ★</span>
           )}
           <span>
             {group.params.length} param{group.params.length !== 1 ? 's' : ''}
@@ -420,7 +420,7 @@ export function StrategyDetail() {
             <span className="text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">
               Type
             </span>
-            <span className="font-semibold text-warn-text">{categoryLabel}</span>
+            <span className="font-semibold">{categoryLabel}</span>
           </span>
         )}
         <span className="inline-flex items-center gap-1.5 border border-border-subtle bg-bg-surface rounded-md px-2.5 py-1 text-[12px]">
@@ -472,11 +472,7 @@ export function StrategyDetail() {
                 <span className="text-text-tertiary font-mono tabular-nums">
                   {st.instrument} · {st.start_date} → {st.end_date}
                 </span>
-                <span
-                  className={`text-[10px] uppercase tracking-[0.4px] font-semibold ${
-                    st.mode === 'shared' ? 'text-accent' : 'text-text-tertiary'
-                  }`}
-                >
+                <span className="text-[10px] uppercase tracking-[0.4px] font-semibold text-text-tertiary">
                   {st.mode === 'shared' ? 'Shared' : 'Screen'}
                 </span>
                 <ChevronRight size={12} className="text-text-tertiary" />
@@ -572,7 +568,7 @@ export function StrategyDetail() {
                 <div key={i} className="contents">
                   <div className="flex-1 min-w-[150px] bg-bg-base border border-border-subtle rounded-[10px] px-3.5 py-3">
                     {s.label && (
-                      <div className="text-[10px] font-bold text-accent tracking-[0.5px] uppercase">
+                      <div className="text-[10px] font-bold text-text-tertiary tracking-[0.5px] uppercase">
                         {s.label}
                       </div>
                     )}
@@ -604,7 +600,7 @@ export function StrategyDetail() {
             <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
               {visibleParams.length} parameters
               {essentialCount > 0 && (
-                <span className="text-accent"> · ★ {essentialCount} essential</span>
+                <span className="text-gold-text"> · ★ {essentialCount} essential</span>
               )}
             </span>
             <div className="flex gap-1.5">
