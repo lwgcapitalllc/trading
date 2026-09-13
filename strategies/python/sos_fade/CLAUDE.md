@@ -3438,3 +3438,17 @@ goldens, which run this execution code with it off.
 ⚠ **Read what it RAN before quoting it.** The B leg, divergence arming and the no-gap fallback
 were OFF, so it says NOTHING about them — nor about the re-entries, which are Python-only. Its
 dead-market floor was 0.3 against the bot's 0.08.
+
+## The default risk per trade is 5%, the share the live bot runs (2026-09-13)
+
+`exec_risk_pct` defaults to **5.0** (was 10.0), in `config.py` and `sos_fade_strategy.pine` together —
+Aaron: *"lower the default to 5% so we always in sync."* The strategy page and every lab run on the
+defaults now describe the bot that trades.
+
+- ⚠ **The live bot never read the default** — its instance config states 5.0 — so nothing live moved.
+- ✅ **The trade list and R do not depend on it, MEASURED on this window**: the re-recorded overlap
+  audit replays this bot at 5% to **244 trades / +248.59R**, identical to the 10% reading.
+- ⚠ **A dollar, balance or drawdown-% figure measured on the defaults before today assumed 10%** —
+  pin `exec_risk_pct=10` to reproduce one. A figure that names its own risk is unaffected.
+- ⚠ **`b_leg`, `bos` and `realign` inherit this field and PIN 10.0**, so none of them moved.
+- ⚠ **The golden export ran at 10** and the gate reads risk off it, so parity is untouched.

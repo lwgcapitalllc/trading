@@ -1653,9 +1653,10 @@ refuses to assign, so the stack would measure something nobody can deploy.
 - ⚠ **Checked before the history floor**, which can reach the box. **Screens are never checked** —
   no shared account to cap.
 - ⚠ **`fits=false` is a 200** from the check — a legitimate question, not an error.
-- 🔴 **The shipped defaults do not fit**: SOS Fade 10% + extreme leg 5% = 15% under the 10% default
-  cap, so that pair is blocked until a leg comes down (the live bots run 5 + 5). A rerun of an older
-  over-cap stack is refused the same way.
+- 🔴 **The shipped defaults did not fit until 2026-09-13**: SOS Fade 10% + extreme leg 5% = 15%
+  under the 10% default cap, so that pair was blocked. SOS Fade's default is 5% since then — the
+  live bots' own 5 + 5 — so the pair fits exactly. A rerun of an older over-cap stack is still
+  refused.
 - ⚠ **Nine existing launch tests went red and none was a defect**: their fixtures stated no risk. Each
   now states one that fits and says why; none had risk as its subject.
 
@@ -1820,7 +1821,7 @@ for. When a value is derived, ask what it answers before the thing it derives fr
 
 What an account's bots RUN, as the stack builder's starting point. Read only; the planner is
 `services/account_stack_basis.py`, pure. 🔴 **The bot's own settings, never the strategy's
-defaults** — MEASURED on 700152905: SOS Fade's lab default risks 10%, the bot 5%, so the old
+defaults** — MEASURED on 700152905: SOS Fade's lab default risked 10% (5% since 2026-09-13), the bot 5%, so the old
 Accounts-tab pre-fill asked for 10 + 5 = 15% under a 10% cap and the budget check refused it (the
 bots' own settings fit exactly). ⚠ **Each leg is sent COMPLETE** (stored defaults with the bot's
 pins over them), because a stack's per-leg settings replace the defaults rather than merge.

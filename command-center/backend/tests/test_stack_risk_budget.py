@@ -139,9 +139,10 @@ def _launch_body(**over):
     return body
 
 
-# The shipped defaults as they stand: SOS Fade 10% and the extreme leg 5% — 15% against the 10%
-# default cap. This is the pair the form now blocks until a leg comes down.
-_SHIPPED = {"sos_fade": {"exec_risk_pct": 10.0}, "extreme_leg": {"exec_risk_pct": 5.0}}
+# A pair that does NOT fit: SOS Fade 10% and the extreme leg 5% — 15% against the 10% default
+# cap. It was the shipped defaults until SOS Fade's moved to 5% on 2026-09-13; the fixture states
+# its own risks, so the defaults moving does not move it.
+_OVER_CAP = {"sos_fade": {"exec_risk_pct": 10.0}, "extreme_leg": {"exec_risk_pct": 5.0}}
 
 
 def test_the_form_s_check_and_the_launch_refuse_with_the_SAME_sentence(
@@ -150,7 +151,7 @@ def test_the_form_s_check_and_the_launch_refuse_with_the_SAME_sentence(
     """One function, two callers — the page cannot show a reason the launch does not give.
 
     MUTATION: drop the refusal from `trigger_stack` → the launch answers 202 and this goes red."""
-    _seed(monkeypatch, tmp_path, _SHIPPED)
+    _seed(monkeypatch, tmp_path, _OVER_CAP)
     check = client.post(
         "/backtests/stacks/risk-budget",
         json={"strategy_ids": ["sos_fade", "extreme_leg"], "risk_cap_pct": 10},
@@ -174,7 +175,7 @@ def test_a_leg_brought_down_to_fit_is_accepted_by_both(client, tmp_path, monkeyp
     it fits while the launch refuses on the stored default.
 
     MUTATION: resolve each leg off its stored defaults only → red."""
-    _seed(monkeypatch, tmp_path, _SHIPPED)
+    _seed(monkeypatch, tmp_path, _OVER_CAP)
     lowered = {"sos_fade": {"exec_risk_pct": 5.0}}
     check = client.post(
         "/backtests/stacks/risk-budget",
@@ -195,7 +196,7 @@ def test_a_SCREEN_is_never_refused_on_the_cap(client, tmp_path, monkeypatch):
     """A screen gives every leg its own full account — there is no shared cap to exceed.
 
     MUTATION: apply the refusal regardless of mode → red."""
-    _seed(monkeypatch, tmp_path, _SHIPPED)
+    _seed(monkeypatch, tmp_path, _OVER_CAP)
     # The screen path schedules its legs as a task, so the stand-in has to be awaitable.
     with patch("routers.stacks.run_sweep", new=AsyncMock()):
         res = client.post("/backtests/stack", json=_launch_body(mode="screen"))
@@ -230,7 +231,7 @@ def test_the_recovery_leg_COUNTS_against_the_cap(client, tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("parent", ["extreme_leg", "nobody"])
 def test_a_recovery_parent_outside_the_stack_is_refused(client, tmp_path, monkeypatch, parent):
-    _seed(monkeypatch, tmp_path, _SHIPPED)
+    _seed(monkeypatch, tmp_path, _OVER_CAP)
     res = client.post(
         "/backtests/stacks/risk-budget",
         json={"strategy_ids": ["sos_fade"], "risk_cap_pct": 10, "recovery_parent": parent},

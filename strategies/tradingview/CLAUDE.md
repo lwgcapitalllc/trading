@@ -2084,3 +2084,13 @@ before and landing it without a paste was cheap. At 0.08 it refuses setups in th
 configuration — so a fresh paste of this file is a strategy nobody has run on a chart, and no
 export carries `cfg_min_atr` yet. **Paste it, export it, and run the gate before any number taken
 off it is believed.**
+
+## SOS Fade's risk per trade defaults to 5 (2026-09-13)
+
+"Risk % per trade" moved 10 → 5 in `sos_fade_strategy.pine`, in lockstep with the Python default
+(Aaron's call: the default is now the share the live bot runs). The export twin was regenerated,
+and `recovery_strategy.pine` moved too — with recovery off it must reproduce SOS Fade's book
+exactly, and a different risk default puts a different net under the same trades.
+⚠ **A chart that already has the script keeps its SAVED value** — only a fresh add, or "Reset
+settings to defaults", picks up 5. ⚠ **No declaration moved**, so no other saved input shifts.
+⚠ `b_leg_strategy.pine` and `bos_strategy.pine` still ship 10, and their Python ports pin 10.

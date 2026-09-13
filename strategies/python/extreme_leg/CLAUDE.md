@@ -372,9 +372,10 @@ it"*, and now something has.
 assumed.** `_qty` scales the lot and the only size refusal beside it tests finite-and-positive, so
 **solo it cannot change a single decision**: every trade count and every R figure in this file
 stands, and so does the clash audit, which replays each bot off its OWN equity. **Every STACKED
-figure moves**, because a shared account grants `granted` rather than `qty`. ⚠ **The mixed stack
-above is now 10% + 5% against a 10% cap** — the "zero contention" row was measured at 5% for BOTH
-legs, which saturates that cap exactly, and 10 + 5 does not fit it at all. Re-run before quoting it.
+figure moves**, because a shared account grants `granted` rather than `qty`. ⚠ **At the two
+defaults the mixed stack is 5% + 5% against a 10% cap since 2026-09-13**, when SOS Fade's default
+moved 10 → 5 — the basis the "zero contention" row was measured on, which saturates that cap
+exactly. For eleven days before that it was 10 + 5, which does not fit at all.
 ⚠ **The parity gate is unaffected and that was checked, not reasoned**:
 `compare_extreme_leg.config_from_export` builds the port's config from the export's own `cfg_*`
 columns and never reads this side's defaults.

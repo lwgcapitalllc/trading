@@ -197,6 +197,14 @@ class RealignConfig(SosFadeConfig):
     run that says so, and only after this bot has a parity gate.
     """
 
+    exec_risk_pct: float = 10.0
+    """PINNED at the value this fork has always run. The parent defaulted it 10.0 → 5.0 on
+    2026-09-13 to match SOS Fade's live share; every realign figure was measured at 10.
+
+    ⚠ `realign_strategy.pine` ships 1.0 ("R is scale-free"), so the two sides already differ
+    here. That is for this bot's parity gate to settle, not for a parent's default to move.
+    """
+
     def __post_init__(self) -> None:  # type: ignore[override]
         parent = getattr(super(), "__post_init__", None)
         if parent is not None:

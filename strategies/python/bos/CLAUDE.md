@@ -390,3 +390,9 @@ measured it on — and the combined table said *portfolio*. Rules for the lab si
 cap of 7, a 0.1 floor from 15m up and the close test from 15m up. **The pins follow
 `bos_strategy.pine`, not the indicator, so none of them moved** — only the docstring, which now says
 so. Comment-only.
+
+## Risk per trade is PINNED at 10 (2026-09-13)
+
+`sos_fade`'s default moved 10 → 5 to match its live share; `BosConfig` inherits the field, so it
+is pinned at 10.0 — the value `bos_strategy.pine` ships. Nothing this bot trades moved. ⚠ Its
+golden gate reads risk off the export, so it could never have caught the inheritance either way.

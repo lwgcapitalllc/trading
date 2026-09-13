@@ -77,8 +77,9 @@ def _plan(configs=None, *, strategies=None, declared=None, profile="puprime_ecn"
 
 
 def test_the_bots_OWN_risk_wins_over_the_strategys_default():
-    """The whole reason: SOS Fade's lab default is 10% and the bot runs 5%. Pre-filling defaults
-    asked for 10 + 5 = 15% under a 10% cap, which the stack builder refuses.
+    """The whole reason: SOS Fade's lab default was 10% (5% since 2026-09-13) while the bot ran 5%.
+    Pre-filling defaults asked for 10 + 5 = 15% under a 10% cap, which the stack builder refuses.
+    The fixture keeps the 10% default, so this still tests the rule, not today's defaults.
 
     ⚠ Watched RED by merging the other way round (defaults laid over the pins).
     """

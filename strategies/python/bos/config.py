@@ -86,6 +86,9 @@ class BosConfig(SosFadeConfig):
     #   MEASURED 2026-09-10 on the committed golden export: inherited, the gate went RED on the
     #   first trade (+0.68R against the chart's +0.77R — an add stopped at the TP1 floor); pinned,
     #   every bar agrees. Un-pin only in the commit that ports scale-in into the Pine and export.
+    exec_risk_pct: float = 10.0
+    #   PINNED — the parent defaulted it 10.0 → 5.0 on 2026-09-13 to match SOS Fade's live share.
+    #   `bos_strategy.pine` still ships 10, so this fork keeps its own value.
     exec_sl_level: str = "1.0"
     #   Unused here — the stop comes from `bos_sl_model`. Declared so the parent's `_sl_anchor`
     #   cannot be reached with a value this fork never chose.

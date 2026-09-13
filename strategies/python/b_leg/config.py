@@ -106,6 +106,11 @@ class BLegConfig(SosFadeConfig):
     #   +20.20R off, so the adds bought nothing. `b_leg_demo` already pinned it off (`ca39c72b`).
     #   Un-pin only in the commit that ports scale-in into the B-LEG Pine and its export.
 
+    exec_risk_pct: float = 10.0       # "Risk % per trade" — pinned, NOT inherited
+    #   The parent defaulted this 10.0 → 5.0 on 2026-09-13 to match SOS Fade's live share.
+    #   `b_leg_strategy.pine` still ships 10 and `b_leg_demo` states 10.0, so this fork keeps its
+    #   own value rather than moving with a parent's decision about a different bot.
+
     #   `exec_runner_trail` was PINNED to "Structure (swing)" here from 2026-07-28 until later the
     #   same day, because the parent had moved to "Structure + % ratchet" while this fork's Pine
     #   still shipped the two-option dropdown — inheriting would have moved every B-LEG runner exit

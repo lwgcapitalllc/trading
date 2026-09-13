@@ -818,3 +818,11 @@ on one core. The two memos are separate (seeding the gate's from the export's ow
 compare the fixture with itself), and the round-trip control runs the REAL class. 🔴 **7 bugs planted
 in the gate, 7 caught by the case each names**, including a gate that never decodes the settings —
 the one case a looser key would have hidden. Map in the file.
+
+## Risk per trade is PINNED at 10 (2026-09-13)
+
+`sos_fade`'s default moved 10 → 5 to match its live share, and `BLegConfig` inherits the field —
+so it is pinned at 10.0 here, the value `b_leg_strategy.pine` ships and `b_leg_demo` states.
+Nothing this bot trades moved, and its side of the overlap audit did not drift (step 17 flagged
+only SOS Fade's). ⚠ **A fork inherits its parent's defaults as well as its code** — pin, never
+follow, a parent's decision about a different bot.

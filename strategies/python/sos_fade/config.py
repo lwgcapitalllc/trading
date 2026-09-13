@@ -184,7 +184,12 @@ class SosFadeConfig:
     exec_htf_weekly: str = "Ignore"    # "Weekly bias requirement"
     exec_htf_daily: str = "Ignore"     # "Daily bias requirement"
     #   HTF-bias options: Ignore | Must agree | Must not oppose | Must oppose (reversal)
-    exec_risk_pct: float = 10.0        # "Risk % per trade"
+    exec_risk_pct: float = 5.0         # "Risk % per trade"
+    #   **Defaulted 10.0 → 5.0 on 2026-09-13** (Aaron's call), in lockstep with
+    #   `sos_fade_strategy.pine`, so the default is the share the live bot runs under its account's
+    #   10% cap. The live bot is unaffected — it states its own value. A DOLLAR figure measured on
+    #   the defaults before that date assumed 10: pin it to reproduce one.
+    #   `b_leg`, `bos` and `realign` inherit this field and PIN 10.0, so none of them moved.
     exec_sl_level: str = "0.886"       # "Stop fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
     #   **Defaulted "1.0" → "0.886" on 2026-07-27** (Aaron's call, and how his TradingView chart is
     #   configured), in lockstep with both SOS Fade Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886

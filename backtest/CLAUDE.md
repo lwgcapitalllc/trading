@@ -673,6 +673,9 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   FAILS.** ⚠ `--record` refuses without `--server`, because the record is the basis a re-run
   reproduces. ✅ **First caught one the same day**: B-LEG's adding-to-winners pin moved one setting
   on `sos_fade|b_leg`, step 17 named it, and the re-record read +20.07R → +20.20R, clashes unchanged.
+  ⚠ **Risk per trade is fingerprinted too**, so moving it re-records a pair although it moves no
+  trade here (each bot replays off its own equity): SOS Fade's default went 10 → 5 on 2026-09-13
+  and both SOS Fade pairs re-recorded with every figure unchanged.
 
   Its results are facts about the BOTS, so they live in root `CLAUDE.md`; story and full numbers in
   `HISTORY.md`.

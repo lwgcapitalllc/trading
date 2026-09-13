@@ -61,7 +61,7 @@ bool  execLongs   = input.bool(true,  "Trade longs",                    group = 
 bool  execShorts  = input.bool(true,  "Trade shorts",                   group = G3, tooltip = "Lets short setups trade. Off = longs only.")
 bool  execAplus   = input.bool(true,  "Trade SOS Fade setups",                group = G3, tooltip = "On = the main reversal setup trades normally. Off = it never fires, so you can read the B leg on its own.")
 bool  execBLeg    = input.bool(false, "Trade B-Leg setups",             group = G3, tooltip = "Adds a second setup: when a reversal never gets its pullback, this waits for the pullback to arrive late and buys it there.")
-float execRiskPct = input.float(10,   "Risk % per trade",              group = G3, tooltip = "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk.", minval = 0.1, maxval = 100, step = 0.1)
+float execRiskPct = input.float(5,    "Risk % per trade",              group = G3, tooltip = "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk.", minval = 0.1, maxval = 100, step = 0.1)
 
 // ── 4 · What arms it ────────────────────────────────────────────
 bool  execArmSweep = input.bool(true, "Arm on liquidity sweep",         group = G4, tooltip = "Lets a run on the stops past a recent high or low start a setup.")

@@ -20,7 +20,7 @@
         },
         "warmup": 1000
       },
-      "measured_on": "2026-09-10",
+      "measured_on": "2026-09-13",
       "result": {
         "b_leg": {
           "r": 20.2,
@@ -245,7 +245,7 @@
           "config.exec_recovery_soft_stop_r": 0.0,
           "config.exec_req_fvg": true,
           "config.exec_respect_veto": true,
-          "config.exec_risk_pct": 10.0,
+          "config.exec_risk_pct": 5.0,
           "config.exec_runner_trail": "Structure + % ratchet",
           "config.exec_scale_cap_x": 0.5,
           "config.exec_scale_in": true,
@@ -348,7 +348,7 @@
         },
         "warmup": 1000
       },
-      "measured_on": "2026-09-10",
+      "measured_on": "2026-09-13",
       "result": {
         "extreme_leg": {
           "r": 58.53,
@@ -482,7 +482,7 @@
           "config.exec_recovery_soft_stop_r": 0.0,
           "config.exec_req_fvg": true,
           "config.exec_respect_veto": true,
-          "config.exec_risk_pct": 10.0,
+          "config.exec_risk_pct": 5.0,
           "config.exec_runner_trail": "Structure + % ratchet",
           "config.exec_scale_cap_x": 0.5,
           "config.exec_scale_in": true,

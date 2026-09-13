@@ -412,3 +412,10 @@ which version is worth entering? An arm reading the whole sequence on one frame 
 - ⚠ **Two facts it measured about the engine stream hold on main too** (467,352 5m bars, 5,265
   breaks, at swing length 15 and 10): no bar ever breaks both ways, and once a run has printed its
   first break every counter break is flagged SOS. The first break itself can be a plain BOS.
+
+## Risk per trade is PINNED at 10 (2026-09-13)
+
+`sos_fade`'s default moved 10 → 5 to match its live share; `RealignConfig` inherits the field, so
+it is pinned at 10.0 — the value every figure in this file was measured at. ⚠ **The Pine ships 1.0,
+so the two sides disagreed before this**; R does not depend on it and dollars do, and this bot's
+parity gate (still unbuilt) is what settles which side moves.
