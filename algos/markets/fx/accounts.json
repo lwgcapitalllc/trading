@@ -68,12 +68,12 @@
       "account": 35710389,
       "label": "RichKelly",
       "broker": "PU Prime Ltd",
-      "tier": "",
+      "tier": "ECN",
       "kind": "live",
       "server": "PUPrime-Live",
-      "mt5_path": "",
+      "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe",
       "symbol_suffix": ".p",
-      "account_profile": "",
+      "account_profile": "puprime_ecn",
       "note": "Added by Sync VPS on 2026-09-13: found logged in on PU Prime MT5 Terminal."
     }
   ]
