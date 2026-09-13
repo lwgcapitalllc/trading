@@ -5,7 +5,7 @@
   "_display_name": "The strategy's name and nothing about where it runs, the same as the original's (2026-09-11). It said 'SOS Fade (demo)' for a day, which would have gone on saying demo on real money the moment this bot was moved. What tells the two copies apart in Telegram is the account's kind, added to every message as LIVE or demo when it is sent (bot_state.labelled), and live accounts' trades and signals go to their own channels (algos/shared/telegram_rooms.json).",
   "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
   "_mt5_path": "The MT5_FFT terminal, which serves the demo account 700152905 in accounts.json. A placeholder while benched: assigning the bot to an account ADOPTS that account's terminal, server and symbol suffix.",
-  "account": 700152905,
+  "account": null,
   "server": "PUPrime-Demo",
   "symbol": "XAUUSD.p",
   "magic": 770125,
