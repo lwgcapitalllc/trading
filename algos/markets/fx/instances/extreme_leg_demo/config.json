@@ -4,7 +4,7 @@
   "bot_key": "extreme_leg_demo",
   "display_name": "Extreme Leg",
   "mt5_path": "C:\\MT5_Scalper\\terminal64.exe",
-  "account": 34957946,
+  "account": null,
   "server": "PUPrime-Live",
   "symbol": "XAUUSD.p",
   "magic": 770117,
