@@ -1,24 +1,24 @@
 import type { Condition, Tone, TradeView } from '@/lib/botCondition'
 
 /**
- * How a bot's state is DRAWN, on the Bots page and the Overview alike — one dot, one word.
+ * How a bot's state is DRAWN, on the Bots page, its panels and the Overview alike — one word, and
+ * a count of anything else.
  *
- * The decision is `lib/botCondition.ts`; this only paints it, so the two pages cannot word one
- * fact two ways. See that file for why a row says one thing rather than carrying a tag per fact.
+ * The decision is `lib/botCondition.ts`; this only paints it, so the pages cannot word one fact two
+ * ways. See that file for why a row says one thing rather than carrying a tag per fact.
  *
- * ⚠ **No glow, no pill, no background.** Colour is the exception here: the dot is green for a
- * healthy running bot and is the only colour a healthy row carries besides its P&L.
+ * 🔴 **No dot (2026-09-12).** One sat before every bot's name and said what the word beside it
+ * already said — Aaron: *"the status column is redundant … there is a green or red dot … or remove
+ * the dots and just use the status column solely."* The WORD is the one kept because it says what a
+ * dot cannot (Halted, Needs review, the trade it holds), and the worst thing a row hides is in the
+ * count's colour, so nothing the dot carried is lost.
+ *
+ * ⚠ **No glow, no pill, no background.** Colour is the exception here: a healthy running bot is grey
+ * words, and red or amber means somebody should look.
  */
 
-const DOT: Record<Tone, string> = {
-  bad: 'bg-neg',
-  warn: 'bg-warn',
-  ok: 'bg-pos',
-  idle: 'border border-text-tertiary/60',
-  unknown: 'border border-text-tertiary',
-}
-
-const WORD: Record<Tone, string> = {
+/** A tone's text colour — the one map, for the word here and the bot panel's list of problems. */
+export const TONE_TEXT: Record<Tone, string> = {
   bad: 'text-neg-text',
   warn: 'text-warn-text',
   ok: 'text-text-tertiary',
@@ -27,18 +27,6 @@ const WORD: Record<Tone, string> = {
 }
 
 type Size = 'row' | 'list'
-
-export function StatusDot({ cond, size = 'row' }: { cond: Condition; size?: Size }) {
-  const d = size === 'row' ? 'w-[7px] h-[7px]' : 'w-[6px] h-[6px]'
-  return (
-    <span
-      data-testid="status-dot"
-      data-tone={cond.tone}
-      title={cond.title}
-      className={`inline-block ${d} rounded-full shrink-0 ${DOT[cond.tone]}`}
-    />
-  )
-}
 
 function Trade({ trade }: { trade: TradeView }) {
   return (
@@ -81,7 +69,7 @@ export function StatusText({ cond, size = 'row' }: { cond: Condition; size?: Siz
         <Trade trade={cond.trade} />
       ) : (
         <span
-          className={`shrink-0 ${cond.wordTone === 'bad' || cond.wordTone === 'warn' ? 'font-medium' : ''} ${WORD[cond.wordTone]}`}
+          className={`shrink-0 ${cond.wordTone === 'bad' || cond.wordTone === 'warn' ? 'font-medium' : ''} ${TONE_TEXT[cond.wordTone]}`}
         >
           {cond.word}
         </span>
@@ -91,7 +79,7 @@ export function StatusText({ cond, size = 'row' }: { cond: Condition; size?: Siz
         <span
           data-testid="status-more"
           data-tone={cond.moreTone ?? undefined}
-          className={`shrink-0 text-[11px] font-medium ${cond.moreTone ? WORD[cond.moreTone] : 'text-text-tertiary'}`}
+          className={`shrink-0 text-[11px] font-medium ${cond.moreTone ? TONE_TEXT[cond.moreTone] : 'text-text-tertiary'}`}
         >
           +{cond.more}
         </span>

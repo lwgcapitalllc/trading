@@ -94,7 +94,7 @@ import { VpsSyncDrawer } from './VpsSyncDrawer'
 import { KIND_NAME, KIND_TINT, KindChip, tintOf } from './kind'
 import { botCondition } from '@/lib/botCondition'
 import { restartReason } from '@/lib/botVersion'
-import { StatusDot, StatusText } from '@/components/BotStatus'
+import { StatusText } from '@/components/BotStatus'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -779,8 +779,7 @@ function BotsPageSkeleton() {
               i > 0 ? 'border-t border-border-subtle' : ''
             }`}
           >
-            <span className="flex items-center gap-[9px] pl-4">
-              <Shimmer shape="dot" className="h-[7px] w-[7px]" />
+            <span className="flex items-center pl-4">
               <Shimmer className="h-[13px] w-[96px]" />
             </span>
             <Shimmer className="h-[12px] w-[90px]" />
@@ -1071,10 +1070,11 @@ export function Bots() {
           ? 'pending'
           : 'other'
   // Real money first. ⚠ "Neither" is a section, never a silent drop: an account whose type nobody
-  // stated still has to be on the page.
+  // stated still has to be on the page. ⚠ Just "Live" (2026-09-12, Aaron: *"we know it is live"*) —
+  // the amber word says it; *real money* stays on the controls that spend it.
   const SECTIONS: { key: Side; label: React.ReactNode }[] = [
     { key: 'pending', label: <Shimmer className="h-[10px] w-[70px]" /> },
-    { key: 'live', label: 'Live · real money' },
+    { key: 'live', label: 'Live' },
     { key: 'demo', label: 'Demo' },
     { key: 'other', label: 'Not marked demo or live' },
   ]
@@ -1317,22 +1317,13 @@ export function Bots() {
                 <button
                   onClick={() => set('bot', cfg.key)}
                   title={`Open ${name} — risk, version, account and its settings`}
-                  className="flex items-center gap-[9px] font-medium text-[13px] text-left min-w-0 pl-4"
+                  className="flex items-center font-medium text-[13px] text-left min-w-0 pl-4"
                 >
-                  {/* ⚠ NO identity rail here. It was a 3px bar per bot and Aaron read it
-                   *  as meaningless decoration — which it was, on a row that already
-                   *  names the bot.
-                   *
-                   *  🔴 **ONE dot, carrying the row's worst state (2026-09-12).** Red needs a
-                   *  person, amber is worth a look, green is a healthy running bot, and
-                   *  hollow is a box that did not answer — unknown, never stopped (a dead
-                   *  link drawn as a quiet fleet is the failure this repo keeps paying for).
-                   *  Shimmering, it is still being asked. The words are in Status. */}
-                  {!asked && asking ? (
-                    <Shimmer shape="dot" className="h-[7px] w-[7px]" />
-                  ) : (
-                    <StatusDot cond={cond} />
-                  )}
+                  {/* ⚠ NO identity rail and NO dot here. The rail was a 3px bar per bot Aaron
+                   *  read as decoration; the dot said what the Status column beside it says in
+                   *  words — Aaron, 2026-09-12: *"remove the dots and just use the status column
+                   *  solely since you put other statuses there."* A box that did not answer still
+                   *  reads "Unknown" there, never stopped. */}
                   <span className="truncate group-hover:text-accent transition-colors">{name}</span>
                 </button>
 

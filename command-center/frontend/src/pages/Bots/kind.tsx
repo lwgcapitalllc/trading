@@ -59,8 +59,11 @@ export function KindChip({ kind }: { kind: string | undefined }) {
 
 /**
  * The kind at the top of a panel, where the next click may spend real money. A live account says
- * so in words (*Live · real money*), because a colour alone is the one signal a reader in a hurry
- * does not stop for. ⚠ Nothing is drawn for an unknown kind — see the note above.
+ * so in WORDS, because a colour alone is the one signal a reader in a hurry does not stop for.
+ * ⚠ **Just "Live" since 2026-09-12** (Aaron: *"we don't need to have live - real money … we know it
+ * is live"*) — the word already says it. What still says *real money* is every control that SPENDS
+ * it (the live confirms), where the words guard an action. ⚠ Nothing is drawn for an unknown kind —
+ * see the note above.
  */
 export function KindBadge({ kind }: { kind: string | null | undefined }) {
   if (kind !== 'live' && kind !== 'demo') return null
@@ -71,7 +74,7 @@ export function KindBadge({ kind }: { kind: string | null | undefined }) {
       className={`inline-flex items-center gap-[5px] text-[10px] font-semibold px-[8px] py-[3px] rounded-pill uppercase tracking-[0.6px] border ${KIND_TINT[kind].chip}`}
     >
       <span className={`w-[6px] h-[6px] rounded-full ${KIND_TINT[kind].dot}`} />
-      {kind === 'live' ? 'Live · real money' : 'Demo'}
+      {KIND_NAME[kind]}
     </span>
   )
 }

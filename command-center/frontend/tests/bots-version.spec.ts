@@ -969,7 +969,7 @@ test('the panel header says what the row says — a halted bot never reads a gre
 }) => {
   // 🔴 2026-09-12: the panel drew its own green "Running" over a halted bot while the row beside it
   // said Halted. It reads the row's one condition now.
-  // MUTATION: hand the header a reading without the halt → red on its state and its dot.
+  // MUTATION: hand the header a reading without the halt → red on its state and its tone.
   await mockBot(page, UP_TO_DATE, {
     bot: {
       status: 'RUNNING',
@@ -982,7 +982,9 @@ test('the panel header says what the row says — a halted bot never reads a gre
   const panel = page.getByRole('complementary', { name: /settings/ })
   await expect(panel.getByTestId('bot-status')).toHaveAttribute('data-state', 'halted')
   await expect(panel.getByTestId('bot-status')).toHaveAttribute('title', /MT5 holds none/)
-  await expect(panel.getByTestId('status-dot')).toHaveAttribute('data-tone', 'bad')
+  await expect(panel.getByTestId('bot-status')).toHaveAttribute('data-tone', 'bad')
+  // No dot beside the word since 2026-09-12 — it said what the word says.
+  await expect(panel.getByTestId('status-dot')).toHaveCount(0)
 })
 
 test('it says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {

@@ -10,15 +10,16 @@ import type { BotPosition, BotStatus } from '@/types'
  * doing. Any other problem is counted beside that word and spelled out on hover.
  *
  * ⚠ **Colour marks the EXCEPTION.** `bad` needs a person, `warn` is worth a look, and a healthy
- * running bot is a green dot beside grey words — the dot is the only colour it gets.
+ * running bot is grey words. There is no dot since 2026-09-12 — it said what the word says — so the
+ * worst thing a row hides is carried by its count's colour (`moreTone`).
  *
  * ⚠ **Every flag is read as the field states it: `=== false` / `=== true` only.** `null` is
  * could-not-ask, and a problem is never raised off a question nobody answered (rule 1).
  *
  * ⚠ **Only a RUNNING bot's problem takes the word.** A stopped, errored or benched bot keeps its own
- * word and counts its problems beside it — the problems explain the stop, a red dot beside "Needs
- * review" alone reads as a running bot, and on the Overview, where benched bots share one list with
- * the rest, "Benched" is the only thing saying so.
+ * word and counts its problems beside it — the problems explain the stop, "Needs review" alone reads
+ * as a running bot, and on the Overview, where benched bots share one list with the rest, "Benched"
+ * is the only thing saying so.
  */
 
 export type Tone = 'bad' | 'warn' | 'ok' | 'idle' | 'unknown'
@@ -31,6 +32,11 @@ export interface Issue {
   tone: 'bad' | 'warn'
   word: string
   detail: string
+  /** The review's own findings, one per problem it found — for the bot panel, which has room to
+   *  list them (a hover gets them joined into `detail`). Only on the `review` issue. */
+  findings?: { title: string; detail: string; tone: 'bad' | 'warn' }[]
+  /** When that review ran. Only on the `review` issue. */
+  checkedAt?: string
 }
 
 /** The trade a bot holds AT THE BROKER, as its heartbeat read it. */
@@ -48,9 +54,9 @@ export interface Condition {
   state: StateKey
   tone: Tone
   word: string
-  /** The tone of what the WORD names — its problem's, or the bot's own state's. The dot carries
-   *  the row's worst; the word carries only its own, so "Benched" is never painted red for a
-   *  problem it does not name. */
+  /** The tone of what the WORD names — its problem's, or the bot's own state's. `tone` is the
+   *  row's worst (served as `data-tone`); the word carries only its own, so "Benched" is never
+   *  painted red for a problem it does not name. */
   wordTone: Tone
   /** Problems beyond the one the word names — counted beside it, spelled out on hover. */
   more: number
@@ -161,6 +167,12 @@ function issuesOf(bot: BotStatus): Issue[] {
         tone: review.level === 'alert' ? 'bad' : 'warn',
         word: 'Needs review',
         detail: '\n' + review.findings.map((f) => `• ${f.title}\n  ${f.detail}`).join('\n'),
+        findings: review.findings.map((f) => ({
+          title: f.title,
+          detail: f.detail,
+          tone: (f.level === 'alert' ? 'bad' : 'warn') as 'bad' | 'warn',
+        })),
+        checkedAt: review.checked_at || undefined,
       }
     : null
   if (reviewIssue?.tone === 'bad') out.push(reviewIssue)

@@ -63,7 +63,7 @@ import { AddBotPanel } from './AddBotPanel'
 import { GoLivePanel } from './GoLivePanel'
 import { KindBadge } from './kind'
 import { BotActionPill, type BotAction } from './BotStatusPill'
-import { SectionTitle, StateDot } from './drawerParts'
+import { SectionTitle } from './drawerParts'
 import { pct, useJoinAccount } from './joinAccount'
 
 const chipCls =
@@ -699,7 +699,6 @@ export function AccountDrawer({
                         title={`Open ${b.display} — its risk, account, version and settings`}
                         className="group flex items-center gap-[8px] min-w-0 text-left"
                       >
-                        <StateDot status={st} />
                         <span className="truncate text-[13px] font-medium text-text-primary group-hover:text-accent transition-colors">
                           {b.display}
                         </span>
@@ -710,7 +709,13 @@ export function AccountDrawer({
                           />
                         )}
                       </button>
-                      <span className="text-[11.5px] text-text-tertiary">
+                      {/* The dot beside the name went (2026-09-12) — this word says it. A stopped
+                       *  bot on an account is the exception, so it alone takes a colour, as on the
+                       *  Bots page's rows; an unanswered box stays grey — unknown, not stopped. */}
+                      <span
+                        data-testid={`account-bot-state-${b.key}`}
+                        className={`text-[11.5px] ${known && !running ? 'text-neg-text' : 'text-text-tertiary'}`}
+                      >
                         {!known ? 'unknown' : running ? 'Running' : 'Stopped'}
                       </span>
                       {b.unreadable ? (

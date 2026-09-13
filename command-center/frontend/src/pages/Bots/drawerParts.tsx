@@ -37,29 +37,3 @@ export function SectionTitle({
     </div>
   )
 }
-
-/**
- * Whether a bot's process is running — THREE states. Red meant *stopped* and was also what an
- * UNANSWERED box drew, so a dead link to the VPS rendered as a list of quietly idle bots; unknown is
- * hollow and says so on hover.
- */
-export function StateDot({ status }: { status: string | undefined }) {
-  return (
-    <span
-      title={
-        status === undefined
-          ? 'The trading box has not answered for this bot — unknown, not stopped.'
-          : status === 'RUNNING'
-            ? 'Running'
-            : 'Stopped'
-      }
-      className={`inline-block w-[7px] h-[7px] rounded-full shrink-0 ${
-        status === undefined
-          ? 'border border-text-tertiary'
-          : status === 'RUNNING'
-            ? 'bg-pos'
-            : 'bg-neg'
-      }`}
-    />
-  )
-}

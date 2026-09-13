@@ -44,8 +44,8 @@ import type {
 import { Drawer } from '@/components/Drawer'
 import { Shimmer } from '@/components/Shimmer'
 import { botLabel as labelOf } from '@/lib/botLabel'
-import { botCondition } from '@/lib/botCondition'
-import { StatusDot, StatusText } from '@/components/BotStatus'
+import { botCondition, type Condition } from '@/lib/botCondition'
+import { StatusText, TONE_TEXT } from '@/components/BotStatus'
 import { ParamGroup, VersionBanner } from './ConfigureTab'
 import { BotActionPill, type BotAction } from './BotStatusPill'
 import { BotRiskEditor } from './BotRiskEditor'
@@ -90,6 +90,62 @@ interface PendingMove {
   plan: BotAccountRiskPlan | null
   /** The choice to confirm on a live account; `null` while the ways to make room are on show. */
   staged: JoinChoice | null
+}
+
+const upper = (s: string) => (s ? `${s[0].toUpperCase()}${s.slice(1)}` : s)
+
+/**
+ * What is wrong with this bot, spelled out, first thing in its panel.
+ *
+ * 🔴 **The row said "Needs review" and nothing said what to review (2026-09-12).** Aaron: *"Review
+ * what? nothing is telling me what to act on."* The findings lived only on the status's hover. The
+ * panel is where a bot is acted on, so each problem is listed here in the bot's and the reviewer's
+ * own words — the reviewer's findings one by one, with when that hourly review ran, because it is
+ * why a fixed problem can stay listed until the next pass.
+ *
+ * ⚠ **Nothing is decided here** — which problems exist, and their words, are `botCondition`'s.
+ * Nothing renders for a bot with none.
+ */
+function Attention({ cond }: { cond: Condition }) {
+  if (!cond.issues.length) return null
+  return (
+    <section
+      data-testid="bot-attention"
+      className="py-[14px] border-b border-border-subtle flex flex-col gap-[12px]"
+    >
+      {cond.issues.map((i) =>
+        i.findings ? (
+          <div key={i.key} data-testid={`attention-${i.key}`} className="flex flex-col gap-[8px]">
+            {i.findings.map((f, n) => (
+              <div key={n}>
+                <p className={`text-[12.5px] font-medium ${TONE_TEXT[f.tone]}`}>{f.title}</p>
+                <p className="text-[11.5px] text-text-secondary leading-[1.5] whitespace-pre-line mt-[2px]">
+                  {f.detail}
+                </p>
+              </div>
+            ))}
+            {i.checkedAt && (
+              <p className="text-[10.5px] text-text-tertiary">
+                From the hourly record review at{' '}
+                {new Date(i.checkedAt).toLocaleTimeString([], {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                .
+              </p>
+            )}
+          </div>
+        ) : (
+          <div key={i.key} data-testid={`attention-${i.key}`}>
+            <p className={`text-[12.5px] font-medium ${TONE_TEXT[i.tone]}`}>{i.word}</p>
+            <p className="text-[11.5px] text-text-secondary leading-[1.5] mt-[2px]">
+              {upper(i.detail)}
+            </p>
+          </div>
+        )
+      )}
+    </section>
+  )
 }
 
 export function BotDrawer({
@@ -162,7 +218,13 @@ export function BotDrawer({
   const selected =
     configAccount === undefined ? bot.account || '' : configAccount === null ? '' : configAccount
 
-  const kindOf = (a: number) => (registry ?? []).find((r) => r.account === a)?.kind
+  const regOf = (a: number) => (registry ?? []).find((r) => r.account === a)
+  const kindOf = (a: number) => regOf(a)?.kind
+  // The account's name as the Bots page's heading gives it — the broker, else the label typed here.
+  const myAccountName =
+    typeof configAccount === 'number'
+      ? regOf(configAccount)?.broker || regOf(configAccount)?.label || null
+      : null
   const groupOf = (a: number | null | undefined) =>
     typeof a === 'number'
       ? (groups ?? []).find((g) => g.kind === 'account' && g.account === a)
@@ -257,42 +319,21 @@ export function BotDrawer({
       // Its name plus LIVE or demo: two copies of one strategy share a name since 2026-09-11, and
       // this panel is where their risk and their code are changed.
       title={labelOf(bot)}
+      // 🔴 ITS STATUS AND NOTHING ELSE (2026-09-12). The account's number sat beside the status as a
+      // link into the account's panel, so "Needs review · account 34957946 ›" read as one thing:
+      // Aaron clicked it to find out what needed review and got the account — *"what needs review,
+      // the account or the bot?"* The problems are spelled out in the first section below, and the
+      // account is named, with its link, in its own section.
       subtitle={
-        <div className="flex items-center gap-[7px] flex-wrap mt-[2px]">
-          <StatusDot cond={cond} size="list" />
+        <div className="flex items-center mt-[2px]">
           <StatusText cond={cond} size="list" />
-          {typeof configAccount === 'number' ? (
-            <>
-              <span className="text-text-tertiary">·</span>
-              {onOpenAccount ? (
-                <button
-                  data-testid="bot-account-link"
-                  onClick={() => onOpenAccount(configAccount)}
-                  title={`Open account ${configAccount} — its balance, its budget and its bots`}
-                  className="inline-flex items-center gap-[2px] hover:text-accent transition-colors"
-                >
-                  account <span className="font-mono">{configAccount}</span>
-                  <ChevronRight size={11} />
-                </button>
-              ) : (
-                <span className="font-mono">{configAccount}</span>
-              )}
-            </>
-          ) : configAccount === null ? (
-            <>
-              <span className="text-text-tertiary">·</span>
-              <span>on no account</span>
-            </>
-          ) : bot.account ? (
-            <>
-              <span className="text-text-tertiary">·</span>
-              <span className="font-mono">{bot.account}</span>
-            </>
-          ) : null}
         </div>
       }
     >
       {/* ── do ──────────────────────────────────────────────────────────────── */}
+      {/* ── what is wrong, before what you can do about it ──────────────────── */}
+      <Attention cond={cond} />
+
       <div className="flex items-center gap-2 py-[14px] border-b border-border-subtle">
         {pendingAction ? (
           <BotActionPill action={pendingAction} />
@@ -385,7 +426,38 @@ export function BotDrawer({
 
       {/* ── account ─────────────────────────────────────────────────────────── */}
       <section data-testid="bot-account" className="py-[16px] border-b border-border-subtle">
-        <SectionTitle>Account</SectionTitle>
+        {/* 🔴 **The account's link lives HERE, not beside the status (2026-09-12)** — in the header
+         *  it read as the answer to what needed review. It is a verb, open that account's own
+         *  panel, on the section about the account. */}
+        <SectionTitle
+          aside={
+            typeof configAccount === 'number' && onOpenAccount ? (
+              <button
+                data-testid="bot-account-link"
+                onClick={() => onOpenAccount(configAccount)}
+                title={`Open account ${configAccount} — its balance, its budget and its bots`}
+                className="inline-flex items-center gap-[2px] text-[11.5px] text-text-secondary hover:text-accent transition-colors"
+              >
+                Open account <ChevronRight size={12} />
+              </button>
+            ) : undefined
+          }
+        >
+          Account
+        </SectionTitle>
+        {/* A running bot has no selector to name its account, so it is named here — once. */}
+        {running && (
+          <p data-testid="bot-account-name" className="text-[13px] mb-[6px]">
+            {selected ? (
+              <>
+                <span className="font-mono tabular-nums">{selected}</span>
+                {myAccountName && <span className="text-text-secondary"> · {myAccountName}</span>}
+              </>
+            ) : (
+              <span className="text-text-tertiary">On no account</span>
+            )}
+          </p>
+        )}
         {/* 🔴 **A RUNNING bot cannot be moved, and it is said BEFORE the gesture.** It read its
          *  account at startup, so the write could not reach the live process: the page would show
          *  it under the new account while it went on trading the old one.

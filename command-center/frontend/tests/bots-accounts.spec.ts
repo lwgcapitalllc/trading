@@ -1840,7 +1840,10 @@ test('a row says ONE thing — its worst problem — and counts the rest in the 
   const calm = page.locator('[data-testid="bot-row"][data-bot="sos_fade"]')
   await expect(calm.getByTestId('bot-status')).toHaveAttribute('data-state', 'running')
   await expect(calm.getByTestId('status-more')).toHaveCount(0)
-  await expect(calm.getByTestId('status-dot')).toHaveAttribute('data-tone', 'ok')
+  await expect(calm.getByTestId('bot-status')).toHaveAttribute('data-tone', 'ok')
+  // 🔴 No dot on any row (2026-09-12): it said what the Status column says. Aaron: "remove the
+  // dots and just use the status column solely since you put other statuses there."
+  await expect(page.getByTestId('status-dot')).toHaveCount(0)
 })
 
 test('a benched bot with a problem still reads Benched — only a RUNNING bot’s problem takes the word', async ({
@@ -1970,7 +1973,11 @@ test('live and demo are two switches, both ON at first, each looking exactly as 
   await expect(page.getByTestId('section-live')).toBeVisible()
   await expect(page.getByTestId('section-demo')).toBeVisible()
   // On is filled, in the colour its own heading uses. Polled: the pill eases between looks.
-  const heading = page.getByTestId('section-live').getByText('Live · real money')
+  // Just "Live" since 2026-09-12 — Aaron: "we know it is live". `exact`, so the old "Live · real
+  // money" cannot satisfy it.
+  // MUTATION: put "Live · real money" back on the heading → red on both.
+  const heading = page.getByTestId('section-live').getByText('Live', { exact: true })
+  await expect(page.getByTestId('section-live').getByText(/real money/i)).toHaveCount(0)
   const liveColor = await heading.evaluate((e) => getComputedStyle(e).color)
   await expect.poll(async () => (await style(live)).color).toBe(liveColor)
   await expect.poll(async () => (await style(live)).bg).not.toBe('rgba(0, 0, 0, 0)')
@@ -2399,6 +2406,64 @@ test('a RUNNING bot cannot be moved to another account', async ({ page }) => {
   await openBot(page, 'sos_fade')
   await expect(page.getByTestId('bot-account')).toContainText('Stop it first')
   await expect(page.getByTestId('move-sos_fade')).toHaveCount(0)
+})
+
+test('the bot panel says what needs attention in words, and the account is its own line', async ({
+  page,
+}) => {
+  // 🔴 2026-09-12, Aaron on live SOS Fade: "Review what? nothing is telling me what to act on …
+  // when I click that it gives me a way to manage the account … what needs review, the account or
+  // the bot?" The review's findings lived only on a hover, and the header's status sat beside a
+  // link into the ACCOUNT's panel, so the two read as one thing.
+  // MUTATION: render no attention section → red on the halt's words.
+  // MUTATION: list the review as its one word, not its findings → red on "hourly record review".
+  // MUTATION: drop when the review ran → red on "hourly record review".
+  // MUTATION: open the wrong account from the link → red on the URL.
+  // MUTATION: put "Live · real money" back on the account's badge → red on the badge.
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        bridge_state: 'halted',
+        halt_reason: 'the strategy believes it is in a position but MT5 holds none',
+        review: {
+          level: 'warn',
+          checked_at: '2026-09-12T23:20:02+00:00',
+          findings: [
+            {
+              key: 'restarts:x',
+              level: 'warn',
+              title: 'Restarted 4 times in two days',
+              detail: 'Four starts inside the window.\nExpected if you deployed today.',
+            },
+          ],
+        },
+      },
+    }
+  )
+  await page.goto('/bots?bot=sos_live')
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  const halted = panel.getByTestId('bot-attention').getByTestId('attention-halted')
+  await expect(halted).toContainText('Halted')
+  await expect(halted).toContainText('It places no orders until it is restarted')
+  await expect(halted).toContainText('MT5 holds none')
+  const review = panel.getByTestId('bot-attention').getByTestId('attention-review')
+  await expect(review).toContainText('Restarted 4 times in two days')
+  await expect(review).toContainText('Expected if you deployed today')
+  await expect(review).toContainText('hourly record review')
+
+  // The header is the status and nothing else: ONE link into the account, in its own section.
+  await expect(page.getByTestId('bot-account-link')).toHaveCount(1)
+  const account = panel.getByTestId('bot-account')
+  await expect(account).toContainText(String(LIVE))
+  await account.getByTestId('bot-account-link').click()
+  await expect(page).toHaveURL(new RegExp(`account=${LIVE}`))
+  // The account's own panel says Live, and only Live (2026-09-12: "we know it is live").
+  await expect(page.getByTestId('kind-badge')).toHaveText('Live')
 })
 
 test('moving a bot names the account it is joining', async ({ page }) => {

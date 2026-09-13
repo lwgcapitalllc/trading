@@ -17,7 +17,7 @@ import {
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { botCondition } from '@/lib/botCondition'
-import { StatusDot, StatusText } from '@/components/BotStatus'
+import { StatusText } from '@/components/BotStatus'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import {
   useBacktestRuns,
@@ -80,8 +80,8 @@ function fmtPf(pf: number | null | undefined): string {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-/** A bot on the Overview: the Bots page's own status — one dot, one word, a count of anything else
- *  and the rest on hover (`lib/botCondition.ts`) — so the two pages cannot word one fact two ways.
+/** A bot on the Overview: the Bots page's own status — one word, a count of anything else and the
+ *  rest on hover (`lib/botCondition.ts`) — so the two pages cannot word one fact two ways.
  *  It replaced a word plus up to five tags (2026-09-12). ⚠ It has to be on BOTH pages: a blind or
  *  halted bot presented as a healthy RUNNING row here, and this is the page read first. A bot on NO
  *  account is benched on purpose, never the red of a stopped one. */
@@ -111,10 +111,7 @@ function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
       )}
       <span className="flex-1" />
       {pnlStr && <span className={`text-[11px] font-mono tabular-nums ${pnlColor}`}>{pnlStr}</span>}
-      <span className="inline-flex items-center gap-[6px] min-w-0">
-        <StatusDot cond={cond} size="list" />
-        <StatusText cond={cond} size="list" />
-      </span>
+      <StatusText cond={cond} size="list" />
     </div>
   )
 }

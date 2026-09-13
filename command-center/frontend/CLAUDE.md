@@ -4370,20 +4370,24 @@ page and again with the remainder still naming a deposit.
 trade open, each its own colour and shape. On the live account two wrapped and cut the name to
 "SOS …"; on the demo every pill was green. Aaron: *"my eyes don't know where to go."*
 `src/lib/botCondition.ts` reads a bot ONCE for every list of bots — the Bots rows, the bot panel's
-header, the Overview — and `src/components/BotStatus.tsx` draws it: a dot, one word, a count.
+header, the Overview — and `src/components/BotStatus.tsx` draws it: one word, a count.
 
+- 🔴 **No dot, since the same day.** One sat before every name and said what the Status column
+  says — Aaron: *"the status column is redundant … remove the dots and just use the status column
+  solely since you put other statuses there."* The word is the one kept: it says what a dot cannot.
+  The account panel's bot list lost its dot too; its word is red only for a stopped bot.
 - **The word is a RUNNING bot's worst problem, else what it is doing** — "Running", or the trade it
   holds ("Long 0.40 lots · +1.2R", only the R coloured). Worst first: halted, a review alert,
   trading off, no MT5 link, a review warning, locked for the day. The rest are counted beside the
   word ("Halted +1") and spelled out on hover with the uptime, whose column went.
 - ⚠ **A stopped, errored or benched bot keeps its own word** and counts its problems: they explain
-  the stop, a red dot beside "Needs review" alone reads as a running bot, and on the Overview
-  "Benched" is the only thing saying a bot is benched.
+  the stop, "Needs review" alone reads as a running bot, and on the Overview "Benched" is the only
+  thing saying a bot is benched.
 - ⚠ **The count carries the colour of the worst thing it hides** (a "+1" hiding a halt is red); the
-  word carries only its own, so "Benched" is never red for a problem it does not name. The dot
-  carries the row's worst.
-- ⚠ **Colour marks the EXCEPTION.** A healthy bot is a green dot beside grey words. P&L keeps its
-  sign colour; Return % and Per trade went neutral; the account's net is text, not a pill.
+  word carries only its own, so "Benched" is never red for a problem it does not name. With no dot,
+  the count is what carries the row's worst.
+- ⚠ **Colour marks the EXCEPTION.** A healthy bot is grey words. P&L keeps its sign colour;
+  Return % and Per trade went neutral; the account's net is text, not a pill.
 - ⚠ **Every flag is read `=== false` / `=== true`** — `null` is could-not-ask and raises nothing
   (rule 1). ⚠ **The page decides nothing**: every reason on the hover is the bot's own sentence
   (`algos/CLAUDE.md` → *Whether the account may TRADE*, *The heartbeat says what the bot holds at
@@ -4411,7 +4415,8 @@ Pinned by nine offline checks — five in `tests/bots-accounts.spec.ts` (one wor
 bot keeps its word, trading off, in a trade or halted, no R when unknown) and four in
 `tests/bots-version.spec.ts` (RESTART on row and panel, a newer run is not asked again, a stopped
 bot is not asked, the panel header) — plus `tests/overview.spec.ts` on the running app, 22 of 22.
-16 mutations planted in a throwaway worktree, 16 killed.
+16 mutations planted in a throwaway worktree, 16 killed. *No dot*: the row and panel-header checks
+assert none is drawn, and a dot put back fails both.
 
 Backend half: `../backend/CLAUDE.md` → *The RUNNER is counted too*.
 
@@ -4431,10 +4436,20 @@ status per row* rule, applied to `BotDrawer.tsx`:
   on every open. ⚠ The deploy card keeps the bot's name: on a live deploy it says which bot moves.
 - **Record:** one line — "2 won · 0 lost · record …", or "No closed trades yet", never "0 / 0".
 - ⚠ **Section headings are grey, not gold** (`drawerParts.tsx`), in both panels.
+- 🔴 **What is wrong comes FIRST, in words** (`Attention`, the same day) — Aaron: *"Review what?
+  nothing is telling me what to act on."* Each problem the row counts gets its own sentence, and a
+  review's findings are listed one by one with the time that hourly review ran — a fixed problem
+  stays listed until its next pass. The words are `botCondition`'s; nothing is decided here.
+- 🔴 **The header is the status and nothing else.** The account's number sat beside it as a link
+  into the account's panel, so "Needs review · account N ›" read as one thing and the click meant
+  to explain the review opened the account. The account is named in its own section, with **Open
+  account ›** on its heading (`bot-account-link`).
 
-Pinned by one new check and three re-pointed in `tests/bots-accounts.spec.ts` — the panel says each
-thing once, the running-bot move and remove guards (controls ABSENT, the reason there), and the
-record's one line including a bot with no closed trade. 7 mutations in a throwaway worktree, 7 killed.
+Pinned by two new checks and three re-pointed in `tests/bots-accounts.spec.ts` — the panel says each
+thing once, the running-bot move and remove guards (controls ABSENT, the reason there), the record's
+one line including a bot with no closed trade, and what needs attention in words with the account
+on its own line (the halt, each review finding and its time, **Open account ›** landing on that
+account, the badge reading *Live*). 14 mutations in a throwaway worktree, 14 killed.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
@@ -4738,8 +4753,10 @@ identify the winner."*
   scattered. ⚠ **Not the tab mistake above** — those tabs showed the SAME objects several ways;
   these hold DISJOINT sets. ⚠ **An unreadable config stays on Trading**: a fault may not sit behind
   a tab, and nothing says that bot is not running. ⚠ In the URL (`?show=unassigned`).
-- **On Trading, accounts sit under *Live · real money* then *Demo*.** ⚠ An account whose type is
-  still being asked waits under a shimmering heading, never under "neither", or it jumps on arrival.
+- **On Trading, accounts sit under *Live* then *Demo*.** (*Live · real money* until 2026-09-12 —
+  Aaron: *"we know it is live"*; the words guarding real money are on the controls that spend it,
+  and the switches check fails if they come back to the heading.) ⚠ An account whose type is still
+  being asked waits under a shimmering heading, never under "neither", or it jumps on arrival.
 - 🔴 **ONE colour per kind — amber live, cyan demo** (`KIND_TINT`): the switches, the headings and
   the chips on the Unassigned list. ⚠ Never green or red — those mean P&L here. ⚠ A kind nobody
   stated stays grey.
