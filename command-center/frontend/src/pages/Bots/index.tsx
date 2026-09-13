@@ -1917,11 +1917,10 @@ export function Bots() {
           job={jobByKey.get(selBot.key)}
           busy={busy}
           pendingAction={actionOf(selBot.key)}
-          onStopThen={(what, then, opts) =>
-            void stopThen(selBot.key, labelOf(selBot), what, then, opts)
-          }
+          // Its promise tells the panel when the whole thing is over — a removal closes it then.
+          onStopThen={(what, then, opts) => stopThen(selBot.key, labelOf(selBot), what, then, opts)}
           // The CONFIG's account, or `undefined` until the configs are read — never "on no
-          // account" for a list that has not arrived, or the panel would hide Remove on a bot
+          // account" for a list that has not arrived, or the panel would hide Take off on a bot
           // that is on one.
           configAccount={accountGroups === undefined ? undefined : accountOfBot(selBot.key)}
           onClose={() => set('bot', null)}
@@ -1960,7 +1959,7 @@ export function Bots() {
             onOpenBot={(k) => set('bot', k)}
             onStart={(k) => act(k, 'start', () => startOne.mutate(k))}
             onStop={(k) => act(k, 'stop', () => stopOne.mutate(k))}
-            onStopThen={(k, label, what, then) => void stopThen(k, label, what, then)}
+            onStopThen={(k, label, what, then) => stopThen(k, label, what, then)}
             pendingKey={pending?.key ?? waitingFor}
             pendingAction={pending?.action ?? waitingAction}
             busy={busy}

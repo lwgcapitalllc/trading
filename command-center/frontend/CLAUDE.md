@@ -295,7 +295,8 @@ account selector, and nobody found it.
   value — two controls for one write is two places for its guard to drift.
 - ⚠ **A running bot is STOPPED FIRST** (it read its account at startup) — *A running bot is
   stopped first, never locked*. And **a second click on the same button**, disarming after 6s: the
-  live deploy's pattern.
+  live deploy's pattern. ⚠ **It reads "Take off" since 2026-09-13** — one control with the account
+  panel's rows, see *Take off is ONE button on both panels*.
 - 🔴 **Decided off the CONFIG's account (`configAccount`), never `bot.account`.** That field is what
   the bot last REPORTED and stays on the old account until its next start, so a bot just removed
   would still offer Remove. `undefined` until the configs are read: Remove waits, the selector shows
@@ -4432,7 +4433,7 @@ status per row* rule, applied to `BotDrawer.tsx`:
 - **Risk** (`BotRiskEditor.tsx`): the value lives in its box, the dollars beside it follow what is
   typed, and Save with "was 5%" appears once it changes. The setting's own name prints only when a
   panel has more than one — the heading already names the one it has.
-- **Account:** the selector, the account's name and Remove — for a running bot too since 2026-09-13
+- **Account:** the selector, the account's name and Take off — for a running bot too since 2026-09-13
   (*A running bot is stopped first, never locked*). From 2026-09-12 a running bot got one line and no
   controls, because a greyed selector and Remove beside it said one thing three times.
 - **Version:** what a deploy does is the heading's hover (`SectionTitle`'s `hint`), not a paragraph
@@ -4497,6 +4498,37 @@ off). 15 mutations in a throwaway worktree, 15 killed. The restart and the trade
 live move is not started, a failed move is left stopped, a bot holding a trade offers no move) and
 2 re-pointed (Move starts it again and names the bot in its toasts; Remove never starts it); 14
 mutations, 14 killed, each red on its own assertion.
+
+## Take off is ONE button on both panels (2026-09-13)
+
+Aaron: *"there should just be one button going from take off -> stop and take off -> removing then
+modal close … keep it consistent whether I am on the account removing a bot or I clicked on the
+bot."* Each panel had its own copy in its own words: the bot panel's fell back to its idle label
+mid-flow with a sentence beside it, the account row showed a Stopping pill beside a greyed button,
+and neither closed.
+
+- 🔴 **One flow, one control**: `useTakeOff` (`pages/Bots/takeOff.ts`) runs it and `TakeOffButton`
+  draws it, for the bot panel (`remove-<key>`) and every account-panel row (`take-off-<key>`).
+- **Take off → Stop and take off (Confirm take off for a stopped bot) → Removing…**, then the bot
+  panel closes; the account panel STAYS OPEN (Aaron's call, the same day) and the bot leaves its
+  row. No text beside it; while armed or at work it is the row's only control — no Stopping pill,
+  no Start or Stop. A refusal, or a bot that would not stop in time, gives the button back.
+- ⚠ **The close is an EFFECT, never the flow's own callback** — that closure holds the URL as it was
+  at the press, so it would also close whatever the reader opened since. It never fires once the
+  panel is gone.
+- ⚠ **Removing… keeps the confirm's colours at full strength** — faded like a disabled control, it
+  read as dead.
+- ⚠ **One take-off at a time per panel** — the page holds a single stop-first wait.
+- ⚠ **On the account panel the button holds Removing… until the account list has re-read** and the
+  bot has left its row; letting go at the write would flash Take off on a bot already off.
+- ⚠ `stopThen` now resolves once the write has answered, so the page stays busy through a
+  removal's write, as it already did through a move's.
+- Tests: `bots-accounts.spec.ts` — 3 new (Removing… then the bot panel closes; a refused take-off
+  gives the button back; a running bot's account row, one button with nothing beside it) and 6
+  re-pointed, the account panel's now held open with Removing… until the list re-reads; both Bots
+  specs 143 of 143. 16 bugs planted in a throwaway worktree, 16 caught. 🔴 **A "nothing
+  beside it" count is taken at an instant, never retried**: the take-off ends by itself, and a
+  retried count of 0 waited for that and passed against a planted bug.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 

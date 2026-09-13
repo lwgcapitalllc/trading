@@ -865,7 +865,7 @@ async function stopsWhenAsked(
   return log
 }
 
-test('Remove takes a SECOND click — the first only arms it', async ({ page }) => {
+test('Take off takes a SECOND click — the first only arms it', async ({ page }) => {
   // It is one press from taking a bot off the account it trades, so it works like the live
   // deploy: the first click re-labels the button, only the second sends.
   // MUTATION: drop the arming branch → the first click sends and this goes red.
@@ -873,9 +873,9 @@ test('Remove takes a SECOND click — the first only arms it', async ({ page }) 
   const sent = await recordRemovals(page)
   await openBot(page, 'b_leg')
   const remove = page.getByTestId('remove-b_leg')
-  await expect(remove).toHaveText(/Remove from account/)
+  await expect(remove).toHaveText('Take off')
   await remove.click()
-  await expect(remove).toHaveText(/Click again to remove/)
+  await expect(remove).toHaveText('Confirm take off')
   expect(sent).toHaveLength(0)
 })
 
@@ -889,9 +889,77 @@ test('an armed Remove disarms itself, so a stray click later is not the second o
   await openBot(page, 'b_leg')
   const remove = page.getByTestId('remove-b_leg')
   await remove.click()
-  await expect(remove).toHaveText(/Click again to remove/)
-  await expect(remove).toHaveText(/Remove from account/, { timeout: 5_000 })
+  await expect(remove).toHaveText('Confirm take off')
+  await expect(remove).toHaveText('Take off', { timeout: 5_000 })
   expect(sent).toHaveLength(0)
+})
+
+test('Take off reads "Removing…" itself until it is written, then the panel CLOSES', async ({
+  page,
+}) => {
+  // Aaron, 2026-09-13: "after a bot is removed I need the drawer to auto close; keeping it open
+  // doesn't make sense … the button should stay, do the confirmation and also change into
+  // removing … I dont need the text next to the button." The write is HELD so the in-flight state
+  // can be read before it lands.
+  // MUTATION: drop the close effect → red on the panel. MUTATION: keep the idle label through the
+  // write → red on "Removing…". MUTATION: put the busy line back beside it → red on its count.
+  // MUTATION: fade "Removing…" like a disabled control → red on the opacity (it read as dead).
+  await mock(page, STACKED)
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const sent: unknown[] = []
+  await page.route('**/api/bots/b_leg/account', async (route) => {
+    sent.push(route.request().postDataJSON())
+    await held
+    return route.fulfill({
+      json: {
+        status: 'ok',
+        changed: true,
+        deployed: true,
+        bot: 'b_leg',
+        account: null,
+        restart_required: true,
+        detail: 'benched',
+      },
+    })
+  })
+  await openBot(page, 'b_leg')
+  const panel = page.getByRole('complementary', { name: 'B-LEG settings' })
+  const remove = page.getByTestId('remove-b_leg')
+  await remove.click()
+  await remove.click()
+  await expect.poll(() => sent.length).toBe(1)
+  await expect(remove).toHaveText(/Removing…/)
+  // Counted, never waited on: the busy line and the label come from one state, so a retried count
+  // of 0 could only pass by waiting for the take-off to end.
+  expect(await page.getByTestId('account-busy').count()).toBe(0)
+  await expect(remove).toBeDisabled()
+  await expect(remove).toHaveCSS('opacity', '1')
+  await expect(panel).toBeVisible()
+  release()
+  await expect(panel).toBeHidden()
+  await expect(page).not.toHaveURL(/bot=/)
+  await expect(page.getByText(/will not start until it is on one again/i)).toBeVisible()
+})
+
+test('a REFUSED take-off keeps the panel open and gives the button back', async ({ page }) => {
+  // The panel closes for a bot that is OFF its account. A refusal leaves it on, and the server's
+  // reason is `api.*`'s own toast — so the panel stays, with the button as it was.
+  // MUTATION: close whatever the write answered → red on the button (it is gone with the panel).
+  // MUTATION: leave it reading "Removing…" after a refusal → red on its text.
+  await mock(page, STACKED)
+  await page.route('**/api/bots/b_leg/account', (route) =>
+    route.fulfill({ status: 409, json: { detail: 'Refused for this check.' } })
+  )
+  const toasts = await watchToasts(page)
+  await openBot(page, 'b_leg')
+  const remove = page.getByTestId('remove-b_leg')
+  await remove.click()
+  await remove.click()
+  await expect.poll(async () => (await toasts()).join(' | ')).toContain('Refused for this check.')
+  await expect(remove).toHaveText('Take off')
+  await expect(remove).toBeEnabled()
+  await expect(page.getByRole('complementary', { name: 'B-LEG settings' })).toBeVisible()
 })
 
 test('a RUNNING bot’s Remove says it is stopped first, and the first click sends nothing', async ({
@@ -910,7 +978,7 @@ test('a RUNNING bot’s Remove says it is stopped first, and the first click sen
   await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime')
   const remove = page.getByTestId('remove-sos_fade')
   await remove.click()
-  await expect(remove).toHaveText(/Click again to stop and remove/)
+  await expect(remove).toHaveText('Stop and take off')
   expect(log.order).toEqual([])
 })
 
@@ -919,21 +987,38 @@ test('Remove on a RUNNING bot stops it, WAITS for the box to say so, then takes 
 }) => {
   // 🔴 The stop only ASKS — the bot exits on its next check, up to ~30s later — so a page that
   // wrote on the stop call alone would send a write the server refuses. This box says RUNNING for
-  // one more read after the stop.
-  // MUTATION: write without stopping → red on the order. MUTATION: write once the stop call
-  // returns, without waiting for STOPPED → red on `stoppedAtWrite`.
+  // three more reads after the stop.
+  // MUTATION: write without stopping → red on the Removing… label. MUTATION: write once the stop
+  // call returns, without waiting for STOPPED → red on the row's Stopping pill. Both RUN
+  // 2026-09-13: with no wait the take-off ends before either can be read, so the order and
+  // `stoppedAtWrite` below are backstops.
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
-  const log = await stopsWhenAsked(page, 'sos_fade')
+  // Three more reads to stop, so the wait stays on screen long enough to be looked at.
+  const log = await stopsWhenAsked(page, 'sos_fade', 3)
   await openBot(page, 'sos_fade')
   const remove = page.getByTestId('remove-sos_fade')
   await remove.click()
   await remove.click()
-  await expect(page.getByTestId('account-busy')).toContainText(
-    'Stopping it first, then taking it off'
-  )
+  // The BUTTON carries it — "Removing…" through the stop and the write — and nothing beside it
+  // (2026-09-13). MUTATION: the idle label during the stop → red on its text.
+  await expect(remove).toHaveText(/Removing…/)
+  // Counted at that instant, never waited on: the take-off ends by itself, and a retried count of 0
+  // waited for that and passed against the busy-line mutation (2026-09-13).
+  expect(await page.getByTestId('account-busy').count()).toBe(0)
+  // …and no Stopping pill in the panel while the box catches up. The page's own row behind it
+  // says Stopping from the same state — the positive control that the wait is on screen — so the
+  // panel is counted at that instant, never waited on (the pill goes by itself once the stop
+  // lands). MUTATION: show the panel's pill during a take-off → red on the count.
+  await expect(
+    page.locator('[data-testid="bot-row"][data-bot="sos_fade"]').getByTestId('bot-action-pill')
+  ).toBeVisible()
+  const panel = page.getByRole('complementary', { name: 'SOS Fade settings' })
+  expect(await panel.getByTestId('bot-action-pill').count()).toBe(0)
   await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
   expect(log.stoppedAtWrite).toEqual([true])
   expect(log.sent[0]).toEqual({ account: null, deploy: true })
+  // Off its account, the panel closes. MUTATION: drop the close → red here.
+  await expect(page.getByRole('complementary', { name: 'SOS Fade settings' })).toBeHidden()
   // A bot taken off its account has nowhere to start. MUTATION: start after a removal too → red.
   await page.waitForTimeout(1_000)
   expect(log.order).toEqual(['stop', 'write'])
@@ -961,6 +1046,10 @@ test('a bot that has not stopped in time is NOT taken off, and the page says so'
     page.getByText(/has not stopped yet, so it was not taken off the account/)
   ).toBeVisible()
   expect(log.order).toEqual(['stop'])
+  // Nothing was written, so the panel stays and the button comes back. MUTATION: clear the take-off
+  // only when the write answers → it reads "Removing…" for ever, red on its text.
+  await expect(remove).toHaveText('Take off')
+  await expect(page.getByRole('complementary', { name: 'SOS Fade settings' })).toBeVisible()
 })
 
 test('a bot the CONFIG has on no account offers no Remove, whatever it last reported', async ({
@@ -3623,32 +3712,104 @@ test('moving a bot onto a LIVE account from its own panel asks first', async ({ 
   await expect.poll(() => sent[0]).toEqual({ account: LIVE, confirm_live: true, deploy: true })
 })
 
-test('a bot is taken off from the ACCOUNT panel on a second click — a running one is stopped first', async ({
+/**
+ * Once `key` is taken off, the account list answers `after` — what the real backend's next read
+ * holds — and that first read is HELD until `release()`, so a check can look at the panel while
+ * the write has landed and the list has not caught up. `asked` says the held read has arrived.
+ */
+async function answerAccountsWithout(page: Page, key: string, after: unknown[]) {
+  let written = false
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const state = { asked: false, release: () => release() }
+  page.on('request', (req) => {
+    if (req.method() === 'PATCH' && new URL(req.url()).pathname === `/api/bots/${key}/account`)
+      written = true
+  })
+  await page.route('**/api/bots/accounts', async (route) => {
+    if (!written) return route.fallback()
+    state.asked = true
+    await held
+    return route.fulfill({ json: after })
+  })
+  return state
+}
+
+test('the ACCOUNT panel takes a bot off with the bot panel’s one button, and STAYS OPEN', async ({
   page,
 }) => {
-  // Taking a bot off was only on the bot's own panel; the account panel lists who is spending its
-  // balance and now takes one off where the reader is looking. Since 2026-09-13 a RUNNING bot is
-  // offered it too: the armed button says it is stopped first, and the page waits for the box.
-  // MUTATION: send on the first click → red on the empty list.
-  // MUTATION: take a running bot off without stopping it → red on the order.
+  // Aaron, 2026-09-13: "there should just be one button going from take off -> stop and take off
+  // -> removing … keep it consistent whether I am on the account removing a bot or I clicked on the
+  // bot." Same control, same words — and, asked the same day, the account panel STAYS OPEN so a
+  // second bot is one more click. The button holds Removing… until the list re-reads and the bot
+  // leaves its row, so it never flashes Take off on a bot that is already off.
+  // MUTATION: send on the first click → red on the empty list. MUTATION: close this panel → red on
+  // the panel. MUTATION: let go of Removing… before the list re-reads → red on the label. MUTATION:
+  // keep the panel busy once it lands → red on the other bot's button.
   await mock(page, STACKED)
   const sent = await recordRemovals(page)
-  const log = await stopsWhenAsked(page, 'sos_fade')
-
+  const reread = await answerAccountsWithout(page, 'b_leg', [
+    group({
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 10)],
+      risk_cap_pct: 10,
+      share_total_pct: 10,
+    }),
+  ])
   await openAccount(page)
   const off = page.getByTestId('take-off-b_leg') // STOPPED
+  await expect(off).toHaveText('Take off')
   await off.click()
-  await expect(off).toHaveText('Click again')
+  await expect(off).toHaveText('Confirm take off')
   expect(sent).toHaveLength(0)
   await off.click()
   await expect.poll(() => sent[0]).toEqual({ account: null, deploy: true })
+  // The write has landed and the list's re-read is held: the button still says so, counted at
+  // that instant.
+  await expect.poll(() => reread.asked).toBe(true)
+  expect(await off.textContent()).toContain('Removing…')
+  reread.release()
+  await expect(off).toHaveCount(0)
+  await expect(page.getByRole('complementary', { name: 'Account settings' })).toBeVisible()
+  await expect(page.getByTestId('take-off-sos_fade')).toBeEnabled()
+})
 
-  const runningOff = page.getByTestId('take-off-sos_fade') // RUNNING in the snapshot
-  await expect(runningOff).toBeEnabled()
-  await runningOff.click()
-  await expect(runningOff).toHaveText('Stop & take off')
+test('a RUNNING bot on the account panel: ONE button from Take off to Removing…, nothing beside it', async ({
+  page,
+}) => {
+  // The row showed a Stopping pill beside a greyed Take off while the box caught up — two controls
+  // saying one thing (Aaron's screenshot, 2026-09-13). From the first press the button is the row's
+  // only control: Stop and take off, then Removing…, and the bot leaves its row, the panel open.
+  // MUTATION: keep Stop beside the armed button → red on its count. MUTATION: show the pill while
+  // it is removing → red on its count. MUTATION: take it off without stopping it → red on the
+  // Removing… label; write before STOPPED → red on the row's Stopping pill (with no wait it ends
+  // before either can be read, so the order below is a backstop).
+  await mock(page, STACKED)
+  // Three more reads to stop, so the wait stays on screen long enough to be looked at.
+  const log = await stopsWhenAsked(page, 'sos_fade', 3)
+  const reread = await answerAccountsWithout(page, 'sos_fade', [
+    group({ bots: [bot('b_leg', 'B-LEG', 770116, 10)], risk_cap_pct: 10, share_total_pct: 10 }),
+  ])
+  reread.release()
+  await openAccount(page)
+  const row = page.locator('[data-testid="account-bot"][data-bot="sos_fade"]')
+  const off = page.getByTestId('take-off-sos_fade') // RUNNING in the snapshot
+  await expect(row.getByTestId('stop-sos_fade')).toBeVisible() // the positive control
+  await off.click()
+  await expect(off).toHaveText('Stop and take off')
+  // Counted at that instant — the arming disarms by itself, and a retried count of 0 would wait
+  // for that and pass.
+  expect(await row.getByTestId('stop-sos_fade').count()).toBe(0)
   expect(log.order).toEqual([])
-  await runningOff.click()
+  await off.click()
+  await expect(off).toHaveText(/Removing…/)
+  // The page's own row behind the panel says Stopping from the same state the panel reads — the
+  // positive control that the wait is on screen — so the panel's row is counted at that instant.
+  await expect(
+    page.locator('[data-testid="bot-row"][data-bot="sos_fade"]').getByTestId('bot-action-pill')
+  ).toBeVisible()
+  expect(await row.getByTestId('bot-action-pill').count()).toBe(0)
   await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
   expect(log.stoppedAtWrite).toEqual([true])
+  await expect(row).toHaveCount(0)
+  await expect(page.getByRole('complementary', { name: 'Account settings' })).toBeVisible()
 })

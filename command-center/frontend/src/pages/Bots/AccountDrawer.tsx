@@ -25,7 +25,7 @@
  * out whole — never a modal on top, never a form trailing under the buttons (Aaron, 2026-09-10:
  * *"continue in the side drawer"*).
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   ArrowUp,
   ChevronRight,
@@ -39,12 +39,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import {
-  useAccountRiskPlan,
-  useAssignBotAccount,
-  useSaveAccountRisk,
-  useUnregisterAccount,
-} from '@/hooks/useBots'
+import { useAccountRiskPlan, useSaveAccountRisk, useUnregisterAccount } from '@/hooks/useBots'
 import type {
   AccountEarnings,
   BotAccountBot,
@@ -68,6 +63,8 @@ import { KindBadge } from './kind'
 import { BotActionPill, type BotAction } from './BotStatusPill'
 import { SectionTitle } from './drawerParts'
 import { pct, useJoinAccount } from './joinAccount'
+import { useTakeOff } from './takeOff'
+import { TakeOffButton } from './TakeOffButton'
 
 const chipCls =
   'inline-flex items-center text-[10px] font-semibold px-[7px] py-[2px] rounded-pill uppercase tracking-[0.4px] border'
@@ -208,8 +205,14 @@ export function AccountDrawer({
   onStart?: (key: string) => void
   onStop?: (key: string) => void
   /** Stop a bot, wait for the box to say so, then run `then` — how a RUNNING bot is taken off
-   *  (2026-09-13, `stopFirst.ts`). Held by the page, so closing this panel cannot strand it. */
-  onStopThen?: (key: string, label: string, what: string, then: () => void) => void
+   *  (2026-09-13, `stopFirst.ts`). Held by the page, so closing this panel cannot strand it.
+   *  Resolves once it is over, whether or not `then` ran. */
+  onStopThen?: (
+    key: string,
+    label: string,
+    what: string,
+    then: () => Promise<boolean> | void
+  ) => Promise<void> | void
   /** A start/stop still in flight — the same pill the page's row shows. */
   pendingKey?: string | null
   pendingAction?: BotAction | null
@@ -217,11 +220,14 @@ export function AccountDrawer({
 }) {
   const navigate = useNavigate()
   const unregister = useUnregisterAccount()
-  const takeOff = useAssignBotAccount()
   const join = useJoinAccount()
   const save = useSaveAccountRisk()
 
   const account = group.account
+  // Taking a bot off is the SAME flow and button as the bot panel's (`takeOff.ts`, 2026-09-13):
+  // armed by a first press, Removing… from the second. ⚠ This panel STAYS OPEN once it is off
+  // (Aaron, the same day), so a second bot is one more click — the bot leaves its row instead.
+  const takeOff = useTakeOff(String(account))
   const hasBots = group.bots.length > 0
   const live = reg?.kind === 'live'
   const [editing, setEditing] = useState(false)
@@ -341,15 +347,6 @@ export function AccountDrawer({
           .map((b) => [b.key, { value: shares[b.key], from: b.risk_pct }])
       )
     )
-
-  // Take off takes a SECOND click on the same button — one press from taking a bot off the account
-  // it trades — and disarms itself after 6s, so a stray click later cannot be the second one.
-  const [armedKey, setArmedKey] = useState<string | null>(null)
-  useEffect(() => {
-    if (!armedKey) return
-    const t = setTimeout(() => setArmedKey(null), 6_000)
-    return () => clearTimeout(t)
-  }, [armedKey])
 
   /**
    * Why a bot cannot be added here, in words — stated ON the control before the click rather than
@@ -697,8 +694,7 @@ export function AccountDrawer({
                   // A trade it holds would be left with nothing managing it (the bot panel's rule).
                   const holding = running && botByKey?.get(b.key)?.in_trade === true
                   const action = pendingKey === b.key ? pendingAction : null
-                  const armed = armedKey === b.key
-                  const removing = takeOff.isPending && takeOff.variables?.botKey === b.key
+                  const off = takeOff.stateOf(b.key)
                   const share = shareOf(b)
                   const edited = share !== b.risk_pct
                   return (
@@ -753,7 +749,10 @@ export function AccountDrawer({
                         />
                       )}
                       <div className="flex items-center justify-end gap-[6px]">
-                        {action ? (
+                        {/* While its take-off is armed or under way, that button is the row's
+                         *  ONLY control (2026-09-13, Aaron: "there should just be one button") —
+                         *  no Stopping pill beside it, no Start or Stop. */}
+                        {off !== 'idle' ? null : action ? (
                           <BotActionPill action={action} />
                         ) : running ? (
                           onStop && (
@@ -783,50 +782,29 @@ export function AccountDrawer({
                             </button>
                           )
                         )}
-                        {/* ⚠ Withheld while the box has not answered, and while it HOLDS A TRADE.
-                         *  A RUNNING bot is stopped first, then taken off (2026-09-13,
-                         *  `stopFirst.ts`) — the bot panel's Remove flow, said on the control
-                         *  before the second click. */}
-                        <button
-                          data-testid={`take-off-${b.key}`}
-                          disabled={!known || removing || action !== null || holding}
-                          title={
-                            !known
-                              ? 'The trading box has not answered for this bot — wait for its state before taking it off.'
-                              : holding
-                                ? `${b.display} holds a trade, so it stays on this account until the trade closes — taken off now, nothing would manage that trade.`
-                                : armed
-                                  ? running
-                                    ? 'Click again: it is stopped first, then taken off the account.'
-                                    : 'Click again to take it off the account.'
-                                  : `Take ${b.display} off account ${account}. ${running ? 'It is running, so it is stopped first. ' : ''}It stays registered and stopped until you add it to an account again.`
+                        {/* ⚠ Withheld while the box has not answered, and while it HOLDS A TRADE;
+                         *  a RUNNING bot is stopped first (`stopFirst.ts`). */}
+                        <TakeOffButton
+                          testId={`take-off-${b.key}`}
+                          compact
+                          state={off}
+                          display={b.display}
+                          account={account}
+                          running={running}
+                          holding={holding}
+                          unknown={!known}
+                          blocked={takeOff.busy || action !== null}
+                          onPress={() =>
+                            takeOff.press(
+                              b.key,
+                              b.display,
+                              running && onStopThen
+                                ? (then) =>
+                                    onStopThen(b.key, b.display, 'taken off the account', then)
+                                : null
+                            )
                           }
-                          onClick={() => {
-                            if (!armed) {
-                              setArmedKey(b.key)
-                              return
-                            }
-                            setArmedKey(null)
-                            const off = () =>
-                              takeOff.mutate({ botKey: b.key, account: null, display: b.display })
-                            if (running && onStopThen)
-                              onStopThen(b.key, b.display, 'taken off the account', off)
-                            else off()
-                          }}
-                          className={`px-[9px] h-[26px] rounded-md text-[11.5px] border whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                            armed
-                              ? 'border-warn/50 bg-warn-muted text-warn-text'
-                              : 'border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover'
-                          }`}
-                        >
-                          {removing
-                            ? 'Taking off…'
-                            : armed
-                              ? running
-                                ? 'Stop & take off'
-                                : 'Click again'
-                              : 'Take off'}
-                        </button>
+                        />
                       </div>
                     </div>
                   )
