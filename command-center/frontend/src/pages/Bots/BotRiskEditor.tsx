@@ -34,6 +34,7 @@ export function BotRiskEditor({
   botKey,
   botLabel,
   row,
+  showLabel = false,
   balance,
   account,
   group,
@@ -44,6 +45,9 @@ export function BotRiskEditor({
   /** Name plus LIVE or demo — this is where a live bot's risk is changed. */
   botLabel: string
   row: BotParamRow
+  /** Print the setting's own name above its box. Only when a panel has more than one — with one,
+   *  the section heading already names it, and the two read as the same fact twice (2026-09-12). */
+  showLabel?: boolean
   balance: number | null
   /** The account the bot's CONFIG names: `null` on none, `undefined` while the configs load. */
   account: number | null | undefined
@@ -55,6 +59,9 @@ export function BotRiskEditor({
   const current = Number(row.value)
   const unit = row.unit ?? '%'
   const fmt = (v: number | null) => (v == null ? '—' : `${+v.toFixed(2)}${unit}`)
+  // The strategy's own label carries a sub-setting arrow ("↳ Risk % per trade"); a sentence reads
+  // the name without it.
+  const name = row.label.replace(/^[\s↳]+/, '')
 
   const [edit, setEdit] = useState<{ value: number | null; from: number } | null>(null)
   const draft = edit && edit.from === current ? edit.value : current
@@ -120,52 +127,49 @@ export function BotRiskEditor({
       )
   }
 
+  // The dollars follow the box: what a trade would risk at the value being typed, not the saved one.
+  const shown = dirty ? (draft as number) : current
+
   return (
     <div data-testid="bot-risk">
-      <div className="flex items-end gap-4 flex-wrap">
-        <div>
-          <p className="text-[11px] text-text-tertiary mb-[4px]">{row.label}</p>
-          <div className="flex items-baseline gap-[3px]">
-            <span
-              data-testid="risk-current"
-              className="text-[26px] leading-none font-mono tabular-nums text-text-primary"
-            >
-              {+current.toFixed(2)}
+      {/* 🔴 **The number is said ONCE, in the box that changes it (2026-09-12).** Under a heading
+       *  already saying *Risk per trade* sat the setting's own name, the value in large type, then
+       *  "Change to" and the same value again in a box. Aaron: *"Risk % per trade it is shown twice
+       *  … a lot of redundancy."* Save, and what it was, appear once there is something to save. */}
+      {showLabel && <p className="text-[11px] text-text-tertiary mb-[6px]">{name}</p>}
+      <div className="flex items-center gap-3 flex-wrap">
+        <DecimalInput
+          value={draft}
+          onChange={(v) => {
+            setEdit({ value: v, from: current })
+            setConfirming(false)
+          }}
+          suffix={unit}
+          invalid={draft != null && !inRange}
+          aria-label={name}
+          data-testid="risk-input"
+          className="w-[100px]"
+        />
+        {balance != null && balance > 0 && unit === '%' && (
+          <span data-testid="risk-dollars" className="text-[11.5px] text-text-tertiary">
+            ≈ {usd((balance * shown) / 100)} a trade at {usd(balance)}
+          </span>
+        )}
+        {dirty && (
+          <>
+            <span data-testid="risk-was" className="text-[11px] text-text-tertiary">
+              was {fmt(current)}
             </span>
-            <span className="text-[13px] text-text-tertiary">{unit}</span>
-          </div>
-          {balance != null && balance > 0 && unit === '%' && (
-            <p className="text-[11px] text-text-tertiary mt-[5px]">
-              ≈ {usd((balance * current) / 100)} a trade at {usd(balance)}
-            </p>
-          )}
-        </div>
-
-        <div className="ml-auto flex items-end gap-2">
-          <label className="flex flex-col gap-[4px]">
-            <span className="text-[11px] text-text-tertiary">Change to</span>
-            <DecimalInput
-              value={draft}
-              onChange={(v) => {
-                setEdit({ value: v, from: current })
-                setConfirming(false)
-              }}
-              suffix={unit}
-              invalid={draft != null && !inRange}
-              aria-label={`New ${row.label.toLowerCase()}`}
-              data-testid="risk-input"
-              className="w-[100px]"
-            />
-          </label>
-          <button
-            data-testid="risk-save"
-            disabled={!canSave || confirming}
-            onClick={() => setConfirming(true)}
-            className="px-4 h-[32px] rounded-md text-[12.5px] font-medium bg-accent-muted text-accent-text border border-accent/40 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Save
-          </button>
-        </div>
+            <button
+              data-testid="risk-save"
+              disabled={!canSave || confirming}
+              onClick={() => setConfirming(true)}
+              className="ml-auto px-4 h-[32px] rounded-md text-[12.5px] font-medium bg-accent-muted text-accent-text border border-accent/40 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+          </>
+        )}
       </div>
 
       {draft != null && !inRange && (
@@ -261,7 +265,7 @@ export function BotRiskEditor({
           }`}
         >
           <p className="text-[12.5px] font-semibold text-text-primary">
-            Change {row.label.toLowerCase()} on {botLabel}
+            Change {name.toLowerCase()} on {botLabel}
           </p>
           <div className="flex items-baseline gap-3 mt-[8px] font-mono tabular-nums">
             <span className="text-[19px] text-text-tertiary">{fmt(current)}</span>

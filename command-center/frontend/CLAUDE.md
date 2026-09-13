@@ -293,7 +293,8 @@ account selector, and nobody found it.
   account, so the bot is BENCHED: still registered, listed under Unassigned, and never started by
   the watchdog. The selector now only MOVES; "Not on an account" appears only as a benched bot's
   value — two controls for one write is two places for its guard to drift.
-- ⚠ **Refused while running** (it read its account at startup — the selector's reason), and **a
+- ⚠ **Not offered while running** (it read its account at startup): since 2026-09-12 a running
+  bot's Account section is one line saying so — *The bot panel says each thing once*. And **a
   second click on the same button**, disarming after 6s: the live deploy's pattern.
 - 🔴 **Decided off the CONFIG's account (`configAccount`), never `bot.account`.** That field is what
   the bot last REPORTED and stays on the old account until its next start, so a bot just removed
@@ -4413,6 +4414,27 @@ bot is not asked, the panel header) — plus `tests/overview.spec.ts` on the run
 16 mutations planted in a throwaway worktree, 16 killed.
 
 Backend half: `../backend/CLAUDE.md` → *The RUNNER is counted too*.
+
+## The bot panel says each thing once (2026-09-12)
+
+Aaron, on the live panel: *"Risk % per trade it is shown twice … a lot of redundancy."* The *One
+status per row* rule, applied to `BotDrawer.tsx`:
+
+- **Risk** (`BotRiskEditor.tsx`): the value lives in its box, the dollars beside it follow what is
+  typed, and Save with "was 5%" appears once it changes. The setting's own name prints only when a
+  panel has more than one — the heading already names the one it has.
+- 🔴 **Account, while RUNNING: one line, no controls.** A greyed selector repeating the account the
+  heading names, a greyed Remove and the line said one thing three times. The `running` branches the
+  controls carried went with them — unreachable once hidden, and a branch nothing can kill reads as
+  covered.
+- **Version:** what a deploy does is the heading's hover (`SectionTitle`'s `hint`), not a paragraph
+  on every open. ⚠ The deploy card keeps the bot's name: on a live deploy it says which bot moves.
+- **Record:** one line — "2 won · 0 lost · record …", or "No closed trades yet", never "0 / 0".
+- ⚠ **Section headings are grey, not gold** (`drawerParts.tsx`), in both panels.
+
+Pinned by one new check and three re-pointed in `tests/bots-accounts.spec.ts` — the panel says each
+thing once, the running-bot move and remove guards (controls ABSENT, the reason there), and the
+record's one line including a bot with no closed trade. 7 mutations in a throwaway worktree, 7 killed.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 

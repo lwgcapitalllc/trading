@@ -241,7 +241,8 @@ export function BotDrawer({
     return acc
   }, {})
   const terminal = (v?.identity.mt5_path ?? '').split('\\').filter(Boolean)[0] ?? '—'
-  const selectBusy = running || remove.isPending || moving || checkingDest !== null
+  // ⚠ No `running` here: a running bot is offered no selector at all (the account section below).
+  const selectBusy = remove.isPending || moving || checkingDest !== null
   // The row's own status (2026-09-12): the header said "Running" in green over a HALTED bot.
   const cond = botCondition(bot, { asked: true, onAccount: selected !== '' })
 
@@ -369,6 +370,7 @@ export function BotDrawer({
                 botKey={bot.key}
                 botLabel={labelOf(bot)}
                 row={r}
+                showLabel={v.runtime.length > 1}
                 balance={bot.balance}
                 account={configAccount}
                 // Only the risk share is part of the account's budget.
@@ -382,92 +384,89 @@ export function BotDrawer({
       )}
 
       {/* ── account ─────────────────────────────────────────────────────────── */}
-      <section className="py-[16px] border-b border-border-subtle">
+      <section data-testid="bot-account" className="py-[16px] border-b border-border-subtle">
         <SectionTitle>Account</SectionTitle>
         {/* 🔴 **A RUNNING bot cannot be moved, and it is said BEFORE the gesture.** It read its
          *  account at startup, so the write could not reach the live process: the page would show
          *  it under the new account while it went on trading the old one.
+         *  🔴 **So a running bot gets NO controls here — only the line under them, saying why
+         *  (2026-09-12).** A greyed selector showing the account the heading already names, a greyed
+         *  Remove and that sentence were three things saying one.
          *  ⚠ **An account with no terminal is LISTED and DISABLED, with the reason in the option.**
          *  Hiding it makes an account that exists look like one that does not. */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <select
-            data-testid={`move-${bot.key}`}
-            value={selected}
-            disabled={selectBusy}
-            title={
-              running
-                ? `Stop ${bot.name} first — it read its account at startup, so a move ` +
-                  'cannot reach the running process.'
-                : `Move ${bot.name} to another account.`
-            }
-            onChange={(e) => {
-              if (e.target.value === '') return
-              const dest = Number(e.target.value)
-              if (dest !== configAccount) void pickDestination(dest)
-            }}
-            // A native select sizes itself to its WIDEST option, and an unassignable account's
-            // option carries its reason — so without a width it ran to the panel edge.
-            className="w-[240px] max-w-full text-[12.5px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {destinations.map((d) => (
-              <option key={d.account} value={d.account} disabled={!d.assignable}>
-                {d.account}
-                {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
-              </option>
-            ))}
-            {/* Only what a bot on NO account shows as its value. Taking a bot OFF an account is
-             *  the Remove button beside this — the one place it happens (2026-09-11). */}
-            {selected === '' && (
-              <option value="" disabled>
-                Not on an account
-              </option>
-            )}
-          </select>
-          {/* 🔴 **Remove from account, as its own button (2026-09-11)** — Aaron: *"we can stop but we
-           *  can't remove"*. It BENCHES the bot (still registered, never started by the watchdog).
-           *  ⚠ Refused while running; ⚠ a second click on the same button; ⚠ offered only once the
-           *  CONFIG says the bot is on an account. */}
-          {configAccount != null ? (
-            <button
-              data-testid={`remove-${bot.key}`}
-              disabled={running || remove.isPending || moving}
-              title={
-                running
-                  ? `Stop ${labelOf(bot)} first — it read its account at startup, so removing ` +
-                    'it cannot reach the running process.'
-                  : removeArmed
+        {!running && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              data-testid={`move-${bot.key}`}
+              value={selected}
+              disabled={selectBusy}
+              title={`Move ${bot.name} to another account.`}
+              onChange={(e) => {
+                if (e.target.value === '') return
+                const dest = Number(e.target.value)
+                if (dest !== configAccount) void pickDestination(dest)
+              }}
+              // A native select sizes itself to its WIDEST option, and an unassignable account's
+              // option carries its reason — so without a width it ran to the panel edge.
+              className="w-[240px] max-w-full text-[12.5px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {destinations.map((d) => (
+                <option key={d.account} value={d.account} disabled={!d.assignable}>
+                  {d.account}
+                  {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
+                </option>
+              ))}
+              {/* Only what a bot on NO account shows as its value. Taking a bot OFF an account is
+               *  the Remove button beside this — the one place it happens (2026-09-11). */}
+              {selected === '' && (
+                <option value="" disabled>
+                  Not on an account
+                </option>
+              )}
+            </select>
+            {/* 🔴 **Remove from account, as its own button (2026-09-11)** — Aaron: *"we can stop but we
+             *  can't remove"*. It BENCHES the bot (still registered, never started by the watchdog).
+             *  ⚠ Refused while running; ⚠ a second click on the same button; ⚠ offered only once the
+             *  CONFIG says the bot is on an account. */}
+            {configAccount != null ? (
+              <button
+                data-testid={`remove-${bot.key}`}
+                disabled={remove.isPending || moving}
+                title={
+                  removeArmed
                     ? 'Click again to take it off the account.'
                     : `Take ${labelOf(bot)} off account ${configAccount}. It stays stopped until ` +
                       'you add it to an account again.'
-              }
-              onClick={() => {
-                if (!removeArmed) {
-                  setRemoveArmedFor(bot.key)
-                  return
                 }
-                setRemoveArmedFor(null)
-                remove.mutate({ botKey: bot.key, account: null, display: labelOf(bot) })
-              }}
-              className={`${btnCls} ${
-                removeArmed
-                  ? 'border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10'
-                  : 'border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-              }`}
-            >
-              <Unlink size={12} />
-              {removeArmed ? 'Click again to remove' : 'Remove from account'}
-            </button>
-          ) : null}
-          {(remove.isPending || moving || checkingDest !== null) && (
-            <span className="text-[11.5px] text-accent animate-pulse">
-              {checkingDest !== null
-                ? `Checking account ${checkingDest}…`
-                : remove.isPending
-                  ? 'Removing…'
-                  : 'Moving…'}
-            </span>
-          )}
-        </div>
+                onClick={() => {
+                  if (!removeArmed) {
+                    setRemoveArmedFor(bot.key)
+                    return
+                  }
+                  setRemoveArmedFor(null)
+                  remove.mutate({ botKey: bot.key, account: null, display: labelOf(bot) })
+                }}
+                className={`${btnCls} ${
+                  removeArmed
+                    ? 'border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10'
+                    : 'border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                }`}
+              >
+                <Unlink size={12} />
+                {removeArmed ? 'Click again to remove' : 'Remove from account'}
+              </button>
+            ) : null}
+            {(remove.isPending || moving || checkingDest !== null) && (
+              <span className="text-[11.5px] text-accent animate-pulse">
+                {checkingDest !== null
+                  ? `Checking account ${checkingDest}…`
+                  : remove.isPending
+                    ? 'Removing…'
+                    : 'Moving…'}
+              </span>
+            )}
+          </div>
+        )}
 
         {moveHere && (
           <div data-testid="move-card" className="mt-3 flex flex-col gap-2">
@@ -506,9 +505,9 @@ export function BotDrawer({
           </div>
         )}
 
-        <p className="text-[11px] text-text-tertiary mt-[8px] leading-[1.5]">
+        <p className={`text-[11px] text-text-tertiary leading-[1.5] ${running ? '' : 'mt-[8px]'}`}>
           {running
-            ? `Stop ${bot.name} before moving or removing it — it reads its account when it starts.`
+            ? 'Stop it first to move it or take it off this account — it reads its account when it starts.'
             : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
         </p>
       </section>
@@ -516,12 +515,11 @@ export function BotDrawer({
       {/* ── version, and the only Deploy control ────────────────────────────── */}
       <section className="py-[16px] border-b border-border-subtle">
         {/* 🔴 IT SAYS "DEPLOY" IN THE HEADING (2026-09-06) — *Version* names the noun; the reader is
-         *  looking for the verb. */}
-        <SectionTitle>Version · deploy new code to this bot</SectionTitle>
-        <p className="text-[11px] text-text-tertiary mb-[10px] leading-[1.5] -mt-[4px]">
-          Deploying copies the code on the trading box and restarts the bot on it. Until you do, it
-          keeps running the version it started with.
-        </p>
+         *  looking for the verb. What a deploy does moved to the heading's hover (2026-09-12): a
+         *  paragraph under it said the same two sentences on every open. */}
+        <SectionTitle hint="Deploying copies the code on the trading box and restarts the bot on it. Until you do, it keeps running the version it started with.">
+          Version · deploy new code to this bot
+        </SectionTitle>
         <VersionBanner
           botKey={bot.key}
           botLabel={labelOf(bot)}
@@ -533,21 +531,28 @@ export function BotDrawer({
       </section>
 
       {/* ── its record: only what the row does not already say ─────────────── */}
-      {/* ⚠ A bot with no record still SAYS so, in the server's own words — never "0 / 0". */}
+      {/* ⚠ A bot with no record still SAYS so, in the server's own words.
+       *  ⚠ ONE line since 2026-09-12: a two-row table read "0 / 0" beside "2026-09-11 → 2026-09-11"
+       *  for a bot that had closed nothing on the one day its record covered. */}
       <section data-testid="bot-record" className="py-[16px]">
-        <SectionTitle>Its record</SectionTitle>
+        <SectionTitle>Record</SectionTitle>
         {!earnings || !earnings.traded ? (
           <p className="text-[12px] text-text-tertiary leading-[1.5]">
             {earnings?.reason ??
               'No decision record has been read for this bot, so nothing here has been measured.'}
           </p>
         ) : (
-          <Facts
-            rows={[
-              ['Won / lost', `${earnings.wins ?? 0} / ${earnings.losses ?? 0}`],
-              ['Record covers', `${earnings.records_from} → ${earnings.records_to}`],
-            ]}
-          />
+          <p className="text-[12px] text-text-secondary leading-[1.5]">
+            {(earnings.closed_trades ?? (earnings.wins ?? 0) + (earnings.losses ?? 0)) === 0
+              ? 'No closed trades yet'
+              : `${earnings.wins ?? 0} won · ${earnings.losses ?? 0} lost`}
+            <span className="text-text-tertiary">
+              {' · record '}
+              {earnings.records_from === earnings.records_to
+                ? earnings.records_from
+                : `${earnings.records_from} → ${earnings.records_to}`}
+            </span>
+          </p>
         )}
       </section>
 

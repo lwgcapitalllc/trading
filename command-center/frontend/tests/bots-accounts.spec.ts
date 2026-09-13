@@ -826,11 +826,14 @@ test('an armed Remove disarms itself, so a stray click later is not the second o
 test('a RUNNING bot cannot be removed from its account', async ({ page }) => {
   // It read its account at startup, so taking it off cannot reach the running process — the page
   // would list it as unassigned while it went on trading. The server refuses it; so does this.
-  // MUTATION: drop `running` from the button's `disabled` → it enables and this goes red. The
-  // stopped-bot checks above are the positive control.
+  // Since 2026-09-12 a running bot gets no account controls at all — only the line saying why.
+  // MUTATION: show the account controls to a running bot → Remove is there, red. The stopped-bot
+  // checks above are the positive control.
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
   await openBot(page, 'sos_fade') // the snapshot mock has sos_fade RUNNING
-  await expect(page.getByTestId('remove-sos_fade')).toBeDisabled()
+  // The line is the positive half: an absent button and a panel still loading are the same DOM.
+  await expect(page.getByTestId('bot-account')).toContainText('Stop it first')
+  await expect(page.getByTestId('remove-sos_fade')).toHaveCount(0)
 })
 
 test('a bot the CONFIG has on no account offers no Remove, whatever it last reported', async ({
@@ -2331,10 +2334,19 @@ test('the bot panel says only what its row does not — won/lost, and how far th
   await page.goto('/bots?bot=sos_fade')
   const panel = page.getByRole('complementary', { name: 'SOS Fade settings' })
   const record = panel.getByTestId('bot-record')
-  await expect(record).toContainText('2 / 0')
+  await expect(record).toContainText('2 won · 0 lost')
   await expect(record).toContainText('2026-09-01 → 2026-09-10')
   await expect(panel).not.toContainText('$1,500.00')
   await expect(panel).not.toContainText('of the account')
+
+  // A bot with a record and no closed trade says so, never "0 won · 0 lost" (2026-09-12).
+  // MUTATION: never take the no-closed-trades branch → red on it.
+  await page.goto('/bots?bot=ext_live')
+  const none = page
+    .getByRole('complementary', { name: 'Extreme Leg live settings' })
+    .getByTestId('bot-record')
+  await expect(none).toContainText('No closed trades yet')
+  await expect(none).not.toContainText('won')
 })
 
 // ── Moving a bot between accounts ─────────────────────────────────────────────
@@ -2364,7 +2376,8 @@ const EMPTY = 700104441
  */
 async function openBot(page: Page, botKey: string) {
   await page.goto(`/bots?bot=${botKey}`)
-  await expect(page.getByTestId(`move-${botKey}`)).toBeVisible()
+  // The ACCOUNT SECTION, never its selector: a running bot has no selector since 2026-09-12.
+  await expect(page.getByTestId('bot-account')).toBeVisible()
 }
 
 test('a RUNNING bot cannot be moved to another account', async ({ page }) => {
@@ -2372,7 +2385,8 @@ test('a RUNNING bot cannot be moved to another account', async ({ page }) => {
   // unconditionally, so moving a live bot took the click and came back as an error toast from
   // the server. The server does refuse it — but a page offering a control the box will reject is
   // teaching the reader that its own controls mean nothing.
-  // MUTATION: drop `running` from the select's `disabled` → it enables and this goes red.
+  // Since 2026-09-12 a running bot is offered no selector at all — only the line saying why.
+  // MUTATION: show the account controls to a running bot → the selector is there, red.
   //
   // It read its account at startup, so the write cannot reach the running process: the page would
   // show it under the new account while it went on trading the old one, which is a screen lying
@@ -2383,7 +2397,8 @@ test('a RUNNING bot cannot be moved to another account', async ({ page }) => {
     [reg(), reg({ account: OTHER, label: 'ECN' })]
   )
   await openBot(page, 'sos_fade')
-  await expect(page.getByTestId('move-sos_fade')).toBeDisabled()
+  await expect(page.getByTestId('bot-account')).toContainText('Stop it first')
+  await expect(page.getByTestId('move-sos_fade')).toHaveCount(0)
 })
 
 test('moving a bot names the account it is joining', async ({ page }) => {
@@ -3159,6 +3174,36 @@ test("a bot's risk on an account is saved through the account's budget, after a 
   await page.getByTestId('risk-confirm-go').click()
   await expect.poll(() => sent).toEqual({ shares: { b_leg: 4 }, deploy: true })
   expect(runtimeHit).toBe(false)
+})
+
+test('the bot panel says each thing once — the risk in its box, Save only once it changes', async ({
+  page,
+}) => {
+  // 🔴 Aaron, 2026-09-12, on the live panel: *"Risk % per trade it is shown twice … a lot of
+  // redundancy"*. Under a heading reading Risk per trade sat the setting's own name, the value in
+  // large type, "Change to" and the same value again in a box, a Save nothing could press yet, and
+  // under Version a paragraph saying the same two sentences on every open.
+  // MUTATION: print the setting's own name with only one setting → red on it inside the editor.
+  // MUTATION: show Save before anything changed → red on its count.
+  // MUTATION: drop "was" once the value changes → red on it.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/b_leg/params', (route) =>
+    route.fulfill({ json: paramsWithRisk('b_leg', 5) })
+  )
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) =>
+    route.fulfill({ json: plan({ share_total_pct: 9 }) })
+  )
+  await openBot(page, 'b_leg')
+  const risk = page.getByTestId('bot-risk')
+  await expect(page.getByTestId('risk-input')).toHaveValue('5')
+  await expect(risk).not.toContainText('Risk per trade')
+  await expect(risk).not.toContainText('Change to')
+  await expect(page.getByTestId('risk-save')).toHaveCount(0)
+  await expect(page.getByText('Deploying copies the code')).toHaveCount(0)
+
+  await page.getByTestId('risk-input').fill('4')
+  await expect(page.getByTestId('risk-save')).toBeVisible()
+  await expect(page.getByTestId('risk-was')).toHaveText('was 5%')
 })
 
 test('moving a bot onto a LIVE account from its own panel asks first', async ({ page }) => {
