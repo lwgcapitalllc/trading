@@ -772,6 +772,7 @@ def _write_leg(run_id: str, results: dict, ruleset_ids: list[str]) -> None:
             kpis.get("profit_factor"),
             kpis.get("max_drawdown"),
             kpis.get("trade_count"),
+            equity_curve=equity_curve,
         )
         if w:
             lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])

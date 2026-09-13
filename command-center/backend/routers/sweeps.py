@@ -226,6 +226,7 @@ def reevaluate_sweep(sweep_id: str, req: _SweepReevalRequest) -> dict:
             row.get("profit_factor"),
             row.get("max_drawdown"),
             row.get("trade_count"),
+            equity_curve=equity_curve,
         )
         if w:
             lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])

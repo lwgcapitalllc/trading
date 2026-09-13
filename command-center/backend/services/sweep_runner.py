@@ -63,6 +63,7 @@ async def _handle_complete(run_id: str, job_id: str, ruleset_ids: list[str]) -> 
         kpis.get("profit_factor"),
         kpis.get("max_drawdown"),
         kpis.get("trade_count"),
+        equity_curve=equity_curve,
     )
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])

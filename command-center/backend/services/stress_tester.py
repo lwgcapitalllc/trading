@@ -191,6 +191,40 @@ def choose_shuffle_series(
     return returns, "returns", float(bal[0])
 
 
+def trade_series(
+    equity_curve: Optional[list[dict]],
+) -> tuple[list[float], Optional[list[float]]]:
+    """Each closed trade's P&L and the balance BEFORE it, index-aligned — the two inputs
+    `choose_shuffle_series` decides a run's drawdown unit from.
+
+    `equity` is the balance AFTER the trade on every runner's curve, so the balance before is
+    equity - profit. A curve missing `equity` on any trade gives `None` balances, which is the
+    dollar model. ⚠ The ONE derivation: the Monte Carlo and the run score (`worthiness`) both read
+    it, so the badge on a run and the grade on its stress test are judged in the same unit.
+    """
+    curve = equity_curve or []
+    pnls = [t["profit"] for t in curve if t.get("profit") is not None]
+    balances: Optional[list[float]] = [
+        t["equity"] - t["profit"]
+        for t in curve
+        if t.get("profit") is not None and t.get("equity") is not None
+    ]
+    if len(balances) != len(pnls):
+        balances = None
+    return pnls, balances
+
+
+def drawdown_basis(equity_curve: Optional[list[dict]]) -> str:
+    """`"percent"` when the run compounded (its trade size grew with the account), else `"dollars"`.
+
+    The decision `run_monte_carlo` makes for its `dd_basis`, from the same inputs. No curve, or
+    fewer than `_DRIFT_MIN_TRADES` trades, is `"dollars"`.
+    """
+    pnls, balances = trade_series(equity_curve)
+    _, model, _ = choose_shuffle_series(pnls, balances)
+    return "percent" if model == "returns" else "dollars"
+
+
 # ── Monte Carlo ────────────────────────────────────────────────────────────────
 
 
@@ -2750,24 +2784,15 @@ async def run_stress_test_task(
         # 2026-09-06, sensitivity the day after. The CODE was right the whole time; only the
         # sentence explaining it was wrong, which is the harder kind to notice.
         run = lab_db.get_run(target.target_id) if not target.is_stack else None
-        trade_pnls = [t["profit"] for t in equity_curve if t.get("profit") is not None]
+        # P&L and the balance BEFORE each trade, so the simulation can tell a compounding run from a
+        # fixed-size one (see choose_shuffle_series). Read through `trade_series`, the derivation
+        # the run score also uses, so both judge a run's drawdown in the same unit.
+        trade_pnls, balances = trade_series(equity_curve)
         if not trade_pnls:
             lab_db.update_stress_test_status(
                 stress_test_id, "failed_no_trades", "No trades in equity curve"
             )
             return
-
-        # Balance BEFORE each trade, so the simulation can tell a compounding run from a fixed-size
-        # one (see choose_shuffle_series). `equity` is the balance AFTER the trade on every runner's
-        # curve, so the opening balance is equity - profit. Built in the same pass as the P&L list so
-        # the two stay index-aligned; a curve missing `equity` yields None and the dollar model.
-        balances: Optional[list[float]] = [
-            t["equity"] - t["profit"]
-            for t in equity_curve
-            if t.get("profit") is not None and t.get("equity") is not None
-        ]
-        if len(balances) != len(trade_pnls):
-            balances = None
 
         ruleset = lab_db.get_ruleset(st["ruleset_id"]) if st.get("ruleset_id") else None
 

@@ -2699,7 +2699,7 @@ conditional would produce a response where `params: {}` means both *"I did not a
 
 ## Worthiness scoring
 
-`services/worthiness.py`. Scored against the strictest evaluated prop firm (smallest `max_loss_eod`). When a run is evaluated against personal/demo rulesets only (e.g. a forex run — no prop firm covers forex), it falls back to the strictest personal drawdown limit (`account_size × max_drawdown_from_peak_pct`, via `metrics.effective_dd_limit_usd`) so forex runs still get a tier. Prop rows always win the pick when present.
+`services/worthiness.py`. Scored against the strictest evaluated ruleset. Prop rows win the pick; a run evaluated against personal/demo rulesets only (e.g. a forex run — no prop firm covers forex) is scored against the strictest of those, so forex runs still get a tier.
 
 | Tier | Criteria |
 |---|---|
@@ -2708,6 +2708,24 @@ conditional would produce a response where `params: {}` means both *"I did not a
 | **Tier 3 — DISCARD** | PF < 0.8 OR DD > firm limit OR trade_count < 30 |
 
 Columns on `backtest_runs`: `worthiness_tier`, `worthiness_reason`, `worthiness_computed_against_firm` (firm_id of the strictest firm used). Added via migration — not in the original CREATE TABLE.
+
+🔴 **The drawdown and its limit are compared in ONE unit, and the RUN decides which (2026-09-13).**
+Percent of the running peak when the run compounded, dollars otherwise — `stress_tester.drawdown_basis`,
+the decision the Monte Carlo makes for its own `dd_basis`, off the same `trade_series`. It compared
+dollars always until then, and a compounding run's late dollar drops dwarf a limit written for its
+opening size: run `952f14f8172e` lost 46.84% from its peak against the 55% ruleset and would have
+scored DISCARD ($1,051,553 is past $5,500). No stored run carried a score, so nothing was re-scored.
+
+- ⚠ **"Strictest" is the smallest limit IN THAT UNIT** — $2,000 on $50,000 (4%) is the smaller
+  dollar limit and the looser percent one beside $3,000 on $100,000 (3%).
+- ⚠ **`equity_curve` is keyword-only with NO default.** `None` is a real answer (a native optimizer
+  combo carries KPIs only and is judged in dollars), so every caller states it;
+  `test_every_caller_states_which_curve_it_is_scoring` walks the source for one that forgets.
+- ⚠ **A fixed-size run under a personal ruleset stays in dollars** (`account_size × pct`), as its
+  stress test does. That ruleset's own rule is percent-from-peak; the two agree while the account
+  sits near its opening size, and one unit shared with the grade was kept over a second rule here.
+
+Tests: `tests/test_worthiness.py` (7); 4 mutations planted in memory, 4 killed.
 
 ---
 

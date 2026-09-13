@@ -471,6 +471,7 @@ async def _handle_opt_complete(
         kpis.get("profit_factor"),
         kpis.get("max_drawdown"),
         kpis.get("trade_count"),
+        equity_curve=equity_curve,
     )
     if w:
         lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
@@ -871,6 +872,9 @@ async def run_native_optimization(optimization_id: str) -> None:
                 kpis.get("profit_factor"),
                 kpis_for_eval.get("max_drawdown"),
                 kpis.get("trade_count"),
+                # A native combo arrives with KPIs only — no per-trade curve — so it is judged in
+                # dollars, the only unit its stored drawdown is in.
+                equity_curve=None,
             )
             if w:
                 worthiness_rows.append((s["run_id"], w[0], w[1], w[2]))
