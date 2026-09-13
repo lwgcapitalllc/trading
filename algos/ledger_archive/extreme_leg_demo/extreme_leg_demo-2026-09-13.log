@@ -1,0 +1,4 @@
+2026-09-13 18:01:23,095 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-13 18:01:23,111 [INFO] Stop requested — shutting down.
+2026-09-13 18:01:23,111 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-13 18:01:23,579 [INFO] MT5 disconnected.

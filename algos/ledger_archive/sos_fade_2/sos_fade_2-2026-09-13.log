@@ -17,3 +17,7 @@
 2026-09-13 01:28:39,354 [INFO] Trading is allowed on this account again.
 2026-09-13 02:03:22,774 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
 2026-09-13 02:03:33,336 [INFO] Trading is allowed on this account again.
+2026-09-13 18:17:46,411 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-13 18:17:46,411 [INFO] Stop requested — shutting down.
+2026-09-13 18:17:46,411 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-13 18:17:46,810 [INFO] MT5 disconnected.
