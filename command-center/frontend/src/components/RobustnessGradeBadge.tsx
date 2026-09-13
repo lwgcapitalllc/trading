@@ -2,7 +2,9 @@ import type { StressTest } from '@/types'
 
 const GRADE_CONFIG: Record<string, { label: string; cls: string }> = {
   A: { label: 'A', cls: 'bg-pos-muted text-pos-text border border-pos-text/30' },
-  B: { label: 'B', cls: 'bg-accent-muted text-accent border border-accent/30' },
+  // B passes too, so it is green — an outline, where A is filled. It was cyan, the colour for what
+  // can be clicked, on a letter that cannot (2026-09-13).
+  B: { label: 'B', cls: 'text-pos-text border border-pos-text/40' },
   C: { label: 'C', cls: 'bg-warn-muted text-warn-text border border-warn-text/30' },
   D: { label: 'D', cls: 'bg-neg-muted text-neg-text border border-neg-text/20' },
   F: { label: 'F', cls: 'bg-neg-muted text-neg-text border border-neg-text/30' },

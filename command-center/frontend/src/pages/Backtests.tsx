@@ -1253,6 +1253,7 @@ function SweepsTab() {
     (allRuns?.filter((r) => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length ??
       0) > 0
   const [deleteSweepId, setDeleteSweepId] = useState<string | null>(null)
+  const showSweepScore = !!sweeps?.some((s) => s.best_worthiness)
 
   function fmtSweepStatus(s: string) {
     if (s === 'complete') return { label: 'Complete', cls: 'bg-bg-hover text-text-tertiary' }
@@ -1293,7 +1294,11 @@ function SweepsTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
+                {/* Only when some sweep has a score, same rule as the Runs table — a blank column
+                    on every row says nothing (2026-09-13). */}
+                {showSweepScore && (
+                  <th className="text-left px-4 py-3 text-text-tertiary font-medium">Score</th>
+                )}
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Challenge</th>
                 <th className="px-3 py-3 w-20" />
               </tr>
@@ -1329,19 +1334,21 @@ function SweepsTab() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <WorthinessBadge
-                        worthiness={
-                          sw.best_worthiness
-                            ? {
-                                tier: sw.best_worthiness as WorthinessScore['tier'],
-                                reason: null,
-                                computed_against_firm: null,
-                              }
-                            : null
-                        }
-                      />
-                    </td>
+                    {showSweepScore && (
+                      <td className="px-4 py-3">
+                        <WorthinessBadge
+                          worthiness={
+                            sw.best_worthiness
+                              ? {
+                                  tier: sw.best_worthiness as WorthinessScore['tier'],
+                                  reason: null,
+                                  computed_against_firm: null,
+                                }
+                              : null
+                          }
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex gap-[4px] items-center flex-wrap">
                         {sw.ruleset_ids.slice(0, 2).map((f) => (

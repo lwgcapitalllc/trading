@@ -55,10 +55,10 @@ function firmShortName(firmId: string): string {
   return `${brand}${size} ${tier}`
 }
 
-function firmChipCls(firmId: string): string {
-  if (firmId.includes('_eval')) return 'bg-warn-muted text-warn-text border border-warn-text/20'
-  if (firmId.includes('_funded')) return 'bg-pos-muted text-pos-text border border-pos-text/20'
-  return 'bg-bg-surface border border-border-subtle text-text-tertiary'
+// One neutral style (2026-09-13, same as the Runs list): an evaluation was amber and a funded
+// account green, which read as a warning and a pass on a chip that states neither.
+function firmChipCls(_firmId: string): string {
+  return 'bg-bg-hover text-text-secondary'
 }
 
 // ── Live elapsed timer ────────────────────────────────────────────────────────
@@ -126,14 +126,14 @@ function ProgressCard({
           : hasFailures
             ? 'Partial'
             : 'Failed'
+  // A clean finish is the NORMAL outcome, so it gets the plain card (2026-09-13, same as the
+  // optimization page). Only failures, cancellations and partial results are tinted.
   const borderCls =
-    isComplete && !hasFailures
-      ? 'border-accent/20 bg-accent/5'
-      : allFailed || isCancelled
-        ? 'border-neg-text/20 bg-neg-muted'
-        : hasFailures
-          ? 'border-warn-text/25 bg-warn-muted/20'
-          : 'border-border-default bg-bg-surface'
+    allFailed || isCancelled
+      ? 'border-neg-text/20 bg-neg-muted'
+      : hasFailures
+        ? 'border-warn-text/25 bg-warn-muted/20'
+        : 'border-border-default bg-bg-surface'
 
   return (
     <div className={`rounded-xl border px-6 py-5 ${borderCls}`}>
@@ -144,7 +144,7 @@ function ProgressCard({
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {isRunning && <Loader2 size={14} className="text-accent animate-spin flex-shrink-0" />}
             {isComplete && !hasFailures && (
-              <CheckCircle2 size={14} className="text-accent flex-shrink-0" />
+              <CheckCircle2 size={14} className="text-text-tertiary flex-shrink-0" />
             )}
             {isComplete && hasFailures && (
               <AlertTriangle size={14} className="text-warn-text flex-shrink-0" />
@@ -157,7 +157,7 @@ function ProgressCard({
                 isRunning
                   ? 'text-accent'
                   : isComplete && !hasFailures
-                    ? 'text-accent'
+                    ? 'text-text-primary'
                     : isComplete && hasFailures
                       ? 'text-warn-text'
                       : 'text-neg-text'
@@ -186,7 +186,7 @@ function ProgressCard({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 text-[12px]">
               <span className="text-text-secondary">
-                <span className="font-mono font-semibold text-accent">{completeCount}</span>
+                <span className="font-mono font-semibold text-text-primary">{completeCount}</span>
                 <span className="text-text-tertiary"> complete</span>
               </span>
               {failedCount > 0 && (
@@ -252,7 +252,7 @@ function ProgressCard({
               key={r.run_id}
               className={`inline-flex items-center gap-[5px] px-2 py-[3px] rounded text-[11px] font-mono border ${
                 done
-                  ? 'border-accent/25 bg-accent/10 text-accent'
+                  ? 'border-border-subtle bg-bg-surface text-text-secondary'
                   : failed
                     ? 'border-neg-text/25 bg-neg-muted text-neg-text'
                     : 'border-border-subtle text-text-tertiary'
@@ -391,6 +391,8 @@ function ResultsTable({
     if (ao !== bo) return ao - bo
     return (b.net_pnl ?? -Infinity) - (a.net_pnl ?? -Infinity)
   })
+  // Only when some run has a score — a blank column on every row says nothing (2026-09-13).
+  const showScore = sorted.some((r) => r.worthiness)
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto">
@@ -402,7 +404,9 @@ function ResultsTable({
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Profit Factor</th>
             <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
+            {showScore && (
+              <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
+            )}
             <th className="px-3 py-2 w-16" />
           </tr>
         </thead>
@@ -423,7 +427,8 @@ function ResultsTable({
                     ? `${run.net_pnl >= 0 ? '+' : ''}$${Math.abs(run.net_pnl).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
                     : '—'}
                 </td>
-                <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
+                {/* Neutral, not red: a drawdown can only be a loss, so red ranked nothing. */}
+                <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                   {run.max_drawdown != null
                     ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
                     : '—'}
@@ -434,9 +439,11 @@ function ResultsTable({
                 <td className="px-3 py-[9px] tabular-nums text-text-secondary">
                   {run.trade_count ?? '—'}
                 </td>
-                <td className="px-3 py-[9px]">
-                  <WorthinessBadge worthiness={run.worthiness} />
-                </td>
+                {showScore && (
+                  <td className="px-3 py-[9px]">
+                    <WorthinessBadge worthiness={run.worthiness} />
+                  </td>
+                )}
                 <td className="px-3 py-[9px] text-right">
                   <span className="text-[11px] text-accent">View →</span>
                 </td>
@@ -490,7 +497,7 @@ export function SweepDetail() {
                   <h1 className="text-[14px] font-semibold truncate">
                     {sweep.strategy_name || sweep.strategy_id}
                   </h1>
-                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary flex-shrink-0">
                     {sweep.total_instruments}-inst Sweep
                   </span>
                 </>
@@ -565,7 +572,7 @@ export function SweepDetail() {
               {sweep.strategy_name || sweep.strategy_id}
             </h1>
             <div className="flex flex-wrap gap-1.5">
-              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold font-mono bg-accent/10 text-accent border border-accent/20">
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                 {sweep.total_instruments}-instrument Sweep
               </span>
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">

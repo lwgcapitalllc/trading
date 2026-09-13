@@ -628,7 +628,7 @@ function Tier1ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-pos-muted text-pos-text border border-pos-text/30 hover:bg-pos-text/15 transition-colors"
+            className="px-4 py-[7px] rounded-md text-[13px] font-medium bg-accent/10 text-accent border border-accent/30 hover:bg-accent/15 transition-colors"
           >
             Proceed with optimization
           </button>

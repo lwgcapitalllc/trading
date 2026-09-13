@@ -4,21 +4,23 @@ import { WorthinessBadge } from './WorthinessBadge'
 import type { WorthinessScore } from '@/types'
 
 // Explains the worthiness Score shown in the Runs table's Score column — the automatic verdict on a
-// completed run (how good it is + what to do next). Mirrors the tiers in backend services/worthiness.py.
+// completed run (how good it is + what to do next). Mirrors backend services/worthiness.py exactly:
+// Tier 3 is checked first, Tier 1 needs all three bars, and Tier 2 is everything in between — which
+// is why a strong run with 30–49 trades lands in OPTIMIZE, and the row says so.
 // Collapsible — reference info, default closed. Companion to GradeLegend (which explains stress A–F).
 
 const ROWS: { tier: WorthinessScore['tier']; desc: string }[] = [
   {
     tier: 'TIER_1_STRESS_TEST',
-    desc: 'Strong enough to stress test next. Profit factor above 1.3, drawdown safely under the firm limit, and at least 50 trades.',
+    desc: 'Profit factor above 1.3, drawdown under 70% of the limit, and 50 or more trades.',
   },
   {
     tier: 'TIER_2_OPTIMIZE',
-    desc: 'Promising but not there yet. Profit factor between 0.8 and 1.3, or drawdown nearing the limit — worth optimizing. At least 30 trades.',
+    desc: 'Inside the limit with 30 or more trades, but short of the stress-test bar.',
   },
   {
     tier: 'TIER_3_DISCARD',
-    desc: 'Not viable as-is. Profit factor below 0.8, drawdown over the firm limit, or fewer than 30 trades.',
+    desc: 'Fewer than 30 trades, drawdown past the limit, or profit factor below 0.8.',
   },
 ]
 
@@ -33,7 +35,7 @@ export default function WorthinessLegend({ forceCollapsed = false }: { forceColl
         className="w-full flex items-center justify-between px-4 py-2.5 text-left disabled:cursor-default"
       >
         <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-[0.5px]">
-          Score key — what each score means
+          Score key
         </span>
         {isOpen ? (
           <ChevronUp size={15} className="text-text-tertiary" />
@@ -44,8 +46,8 @@ export default function WorthinessLegend({ forceCollapsed = false }: { forceColl
       {isOpen && (
         <div className="px-4 pb-4 pt-3 space-y-3 border-t border-border-subtle">
           <div className="text-[12px] text-text-secondary leading-relaxed">
-            The Score is an automatic verdict on each completed run — how good the result is and
-            what to do with it next.
+            The next step for a finished run, judged against the strictest drawdown limit it was
+            checked against. A run checked against no limit gets no score.
           </div>
           {ROWS.map((r) => (
             <div key={r.tier} className="flex items-start gap-3">

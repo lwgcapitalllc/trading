@@ -909,14 +909,14 @@ export function TuningWorkbench() {
             <span className="font-semibold text-text-secondary truncate flex-shrink min-w-0">
               {baseline.strategy_name}
             </span>
-            <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-1.5 py-[1px] rounded text-[11px] flex-shrink-0">
+            <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-1.5 py-[1px] rounded text-[11px] flex-shrink-0">
               {baseline.instrument}
             </span>
             <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[1100px]:hidden">
               {baseline.start_date} → {baseline.end_date}
             </span>
             {rulesetIds.length > 0 && (
-              <span className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[900px]:hidden">
+              <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-1.5 py-[1px] rounded text-[11px] flex-shrink-0 max-[900px]:hidden">
                 {rulesetIds.join(', ')}
               </span>
             )}

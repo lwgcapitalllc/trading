@@ -992,13 +992,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                         className="w-4 h-4 rounded accent-accent flex-shrink-0"
                       />
                       <span className="text-[13px] text-text-primary flex-1">{f.name}</span>
-                      <span
-                        className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
-                          f.account_tier === 'funded'
-                            ? 'bg-pos-muted text-pos-text'
-                            : 'bg-warn-muted text-warn-text'
-                        }`}
-                      >
+                      <span className="text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 bg-bg-hover text-text-secondary">
                         {f.account_tier}
                       </span>
                     </label>
@@ -1053,13 +1047,9 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                         <span className="text-[13px] text-text-primary flex-1">
                           {firmChallengeName(f.name)}
                         </span>
-                        <span
-                          className={`text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 ${
-                            f.account_tier === 'funded'
-                              ? 'bg-pos-muted text-pos-text'
-                              : 'bg-warn-muted text-warn-text'
-                          }`}
-                        >
+                        {/* Neutral (2026-09-13): the tier names the account, it is not a warning
+                            or a pass — amber "eval" and green "funded" said both. */}
+                        <span className="text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 bg-bg-hover text-text-secondary">
                           {f.account_tier}
                         </span>
                       </label>

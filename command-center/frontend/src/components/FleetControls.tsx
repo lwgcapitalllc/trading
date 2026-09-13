@@ -177,7 +177,7 @@ export function FleetControls() {
             </>
           }
           confirmLabel={`Start all ${total}`}
-          confirmClass="bg-pos-muted text-pos-text border border-pos/40 hover:bg-pos/10"
+          confirmClass="bg-accent/10 text-accent border border-accent/30 hover:bg-accent/15"
           onConfirm={() => {
             start.mutate()
             setConfirm(null)

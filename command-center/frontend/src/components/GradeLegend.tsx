@@ -3,32 +3,36 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import RobustnessGradeBadge from './RobustnessGradeBadge'
 
 // Explains the A–F robustness grade so the trader knows what each means and what to target before
-// taking a strategy to a bot. Mirrors the backend rubric in services/grading.py (MC tail vs the loss
-// limit + walk-forward degradation + sensitivity worst-case). Collapsible — reference info, default closed.
+// taking a strategy to a bot. Mirrors the backend rubric in services/grading.py (MC tail vs the
+// drawdown limit + walk-forward degradation + sensitivity worst-case) — the 20/30 and 25/40 bars are
+// its _WF_SOLID/_WF_OK and _SENS_SOLID/_SENS_OK. Collapsible — reference info, default closed.
+//
+// Worded for the accounts this lab grades today (2026-09-13): personal demo and live, not prop-firm
+// "funded" and "evaluation". Every limit here is whatever the chosen ruleset states.
 
 type Grade = 'A' | 'B' | 'C' | 'D' | 'F'
 const ROWS: { g: Grade; title: string; desc: string }[] = [
   {
     g: 'A',
-    title: 'Bot-ready · funded',
-    desc: 'Worst 1% of simulations stays under the loss limit, walk-forward degradation < 20%, parameter sensitivity worst-case < 25%.',
+    title: 'Ready for real money',
+    desc: 'Worst 1% of simulations stay inside the drawdown limit · walk-forward under 20% worse on unseen data · no settings nudge costs 25% or more.',
   },
   {
     g: 'B',
-    title: 'Eval-ready',
-    desc: 'Worst 5% stays under the limit, walk-forward degradation < 30%, sensitivity worst-case < 40%.',
+    title: 'Ready for demo',
+    desc: 'Worst 5% stay inside the limit · walk-forward under 30% worse · no nudge costs 40% or more.',
   },
   {
     g: 'C',
-    title: 'Demo · keep testing',
-    desc: 'Median stays under the limit, but it misses the A/B robustness bars. Not ready for real money.',
+    title: 'Keep testing',
+    desc: 'The typical simulation stays inside the limit, but it misses the A and B bars.',
   },
   {
     g: 'D',
     title: 'Risky',
-    desc: 'Median is profitable but the median drawdown breaches the limit — too likely to fail.',
+    desc: 'Profitable on average, but the typical simulation breaks the drawdown limit.',
   },
-  { g: 'F', title: 'Unviable', desc: 'The median simulation loses money.' },
+  { g: 'F', title: 'Unviable', desc: 'The typical simulation loses money.' },
 ]
 
 export default function GradeLegend({ forceCollapsed = false }: { forceCollapsed?: boolean }) {
@@ -42,7 +46,7 @@ export default function GradeLegend({ forceCollapsed = false }: { forceCollapsed
         className="w-full flex items-center justify-between px-4 py-2.5 text-left disabled:cursor-default"
       >
         <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-[0.5px]">
-          Grade key — what each grade means
+          Grade key
         </span>
         {isOpen ? (
           <ChevronUp size={15} className="text-text-tertiary" />
@@ -52,13 +56,6 @@ export default function GradeLegend({ forceCollapsed = false }: { forceCollapsed
       </button>
       {isOpen && (
         <div className="px-4 pb-4 pt-3 space-y-3 border-t border-border-subtle">
-          <div className="text-[12px] text-text-secondary leading-relaxed">
-            Target <span className="text-pos-text font-semibold">A</span> or{' '}
-            <span className="text-accent font-semibold">B</span> before deploying to a bot —
-            <span className="text-pos-text font-semibold"> A</span> for funded accounts,{' '}
-            <span className="text-accent font-semibold">B</span> is the minimum for a paid
-            evaluation.
-          </div>
           {ROWS.map((r) => (
             <div key={r.g} className="flex items-start gap-3">
               <div className="w-6 flex-shrink-0 pt-[1px]">
@@ -70,6 +67,26 @@ export default function GradeLegend({ forceCollapsed = false }: { forceCollapsed
               </div>
             </div>
           ))}
+          {/* The no-letter outcome is a real one (grading.py returns None), so the key shows it —
+              a key that lists only letters leaves an ungraded test looking like a broken page. */}
+          <div className="flex items-start gap-3">
+            <div className="w-6 flex-shrink-0 pt-[1px]">
+              <span className="inline-flex items-center rounded font-mono text-xs px-1.5 py-0.5 bg-bg-hover text-text-tertiary border border-border-subtle">
+                —
+              </span>
+            </div>
+            <div className="min-w-0 text-[12px] leading-snug">
+              <span className="font-semibold text-text-primary">No grade</span>
+              <span className="text-text-tertiary">
+                {' '}
+                — the ruleset sets no drawdown limit, so there is nothing to grade against.
+              </span>
+            </div>
+          </div>
+          <p className="text-[11px] text-text-tertiary leading-snug">
+            Walk-forward and sensitivity count only when they ran. A walk-forward that ran but could
+            not be judged holds the grade at B.
+          </p>
         </div>
       )}
     </div>
