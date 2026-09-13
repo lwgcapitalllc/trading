@@ -1192,6 +1192,8 @@ the other on every commit.
   ⚠ **Made with `git branch <name> stash@{N}`, which needs no checkout.** Two sessions share
   this clone, so switching branches to rescue a stash would yank the working tree out from
   under whoever else is in it.
+- `research/realign-chart-frame` — **a measured negative, parked 2026-09-11, never to be
+  merged**; kept so the result can be re-run. Record: `strategies/python/realign/realign_optimization.md` → Run 1.
 
 ---
 

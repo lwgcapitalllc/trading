@@ -5,19 +5,20 @@ trend on the 15m (SOS → BOS → BOS) is broken by a **bearish shift of structu
 BREAK** — a structural liquidity grab. On the 5m the internal structure then turns bearish and back
 bullish to **realign** with the original external direction, and the trade is taken on that
 realignment, **before** the external bullish SOS that later confirms it. Shorts are the exact mirror.
-**Sweeps:** `realign_optimization.md`, next to this file — **empty on purpose**, and it names
-what blocks the first sweep: this bot has NO parity gate, so tuning it optimises a Python program
-against itself.
+**Sweeps:** `realign_optimization.md`, next to this file — **no sweep of the shipped setup, on
+purpose**, and it names what blocks the first one: this bot has NO parity gate, so tuning it
+optimises a Python program against itself. Its one run is research on a separate arm (below).
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
-**Status:** Built + unit-tested (15 tests green) + **cross-checked against the TradingView Strategy
+**Status:** Built + unit-tested (count them with pytest) + **cross-checked against the TradingView Strategy
 Tester**. 🔴 **NOT PARITY-VALIDATED — there is no export twin, no real CSV and no
 `tools/compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are all outstanding.**
 Every number below is a LAB finding. Read `docs/REALIGN_SPEC.md` for the setup and the full
 measurement record.
-**Last reviewed:** 2026-09-10 — swing length and adding to winners pinned to the Pine; the book re-measured
-and reproduced exactly. Earlier: 2026-08-13 — first commit.
+**Last reviewed:** 2026-09-11 — a 5-minute-only arm researched, measured negative and parked off
+main (last section). Earlier: 2026-09-10 — swing length and adding to winners pinned to the Pine;
+the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
 ---
 
@@ -393,3 +394,21 @@ EXPERIMENT from every number in this file, and has to say so.
 bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
+
+## The 5-minute-only arm — researched 2026-09-11, measured NEGATIVE, parked off main
+
+Aaron's question: on the 5m ALONE — a trend (SOS, then BOS), one counter shift, the shift back —
+which version is worth entering? An arm reading the whole sequence on one frame was built and a
+36-combination study run, pre-declared, with costs, a split and matched random-entry controls.
+
+- 🔴 **All 36 lose after ECN costs, none is positive in both halves, and the four that differ from
+  random past the family-wise bar are all WORSE than random.** Entering on the next break after the
+  realignment is worse per trade in all 18 pairs. Full table: `realign_optimization.md` → Run 1.
+- ⚠ **The shipped two-frame setup was measured against the same kind of control and does not clear
+  the bar either: z 1.85.** Suggestive, not proven — which is why a higher frame setting the trap
+  is the version worth proving next, not the 5m on its own.
+- **The code is on branch `research/realign-chart-frame`, not here** — five settings with no
+  TradingView inputs, for an arm with no edge. Check it out to re-run the study; do not merge it.
+- ⚠ **Two facts it measured about the engine stream hold on main too** (467,352 5m bars, 5,265
+  breaks, at swing length 15 and 10): no bar ever breaks both ways, and once a run has printed its
+  first break every counter break is flagged SOS. The first break itself can be a plain BOS.
