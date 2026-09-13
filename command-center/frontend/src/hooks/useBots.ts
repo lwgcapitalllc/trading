@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
+import { botLabel } from '@/lib/botLabel'
 import { isRestartPending } from '@/lib/botVersion'
 import type {
   AccountStackBasis,
@@ -84,20 +85,28 @@ export const useBotRestart = () => useControlAction('restart')
 
 function useBotAction(action: 'start' | 'stop' | 'restart') {
   const qc = useQueryClient()
+  // 🔴 NAMED, never keyed (2026-09-13): these read "sos_fade_demo stopped". The name comes off the
+  // snapshot the page already holds, with LIVE or demo, as everywhere a name stands alone.
+  const nameOf = (botKey: string) => {
+    const bot = qc
+      .getQueryData<BotSnapshot>(['bots', 'snapshot'])
+      ?.bots.find((b) => b.key === botKey)
+    return bot ? botLabel(bot) : 'The bot'
+  }
   return useMutation({
-    mutationFn: (botName: string) =>
-      api.post<ControlResult>(`/bots/${encodeURIComponent(botName)}/${action}`),
-    onSuccess: (_data, botName) => {
+    mutationFn: (botKey: string) =>
+      api.post<ControlResult>(`/bots/${encodeURIComponent(botKey)}/${action}`),
+    onSuccess: (_data, botKey) => {
       const label = { start: 'started', stop: 'stopped', restart: 'restarted' }[action]
-      toast.success(`${botName} ${label}`)
+      toast.success(`${nameOf(botKey)} ${label}`)
       // 🔴 RETURNED, so the action stays PENDING until the snapshot has been re-read (2026-09-10).
       // Not returned, the row's "Stopping" pill cleared the moment the call came back while the
       // snapshot on screen still said RUNNING — so for one SSH round trip the row offered Stop
       // again on a bot that had just stopped. The deploy watcher holds its finish the same way.
       return qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
-    onError: (err, botName) => {
-      toast.error(`${botName} ${action} failed: ${err}`)
+    onError: (err, botKey) => {
+      toast.error(`${nameOf(botKey)} ${action} failed: ${err}`)
     },
   })
 }
@@ -676,6 +685,9 @@ export function useAssignBotAccount() {
       confirmLive?: boolean
       /** What the toast calls the bot. The server answers with its KEY, which is not a name. */
       display?: string
+      /** The page starts it again straight after — a running bot moved onto a demo account
+       *  (2026-09-13) — so the toast must not tell the reader to start it. */
+      restarting?: boolean
     }) =>
       api.patch<BotAccountAssignResult>(`/bots/${encodeURIComponent(botKey)}/account`, {
         account,
@@ -692,7 +704,9 @@ export function useAssignBotAccount() {
       toast.success(
         data.account === null
           ? `${who} taken off the account — it will not start until it is on one again`
-          : `${who} added to account ${data.account}${at} — start it to trade`
+          : vars.restarting
+            ? `${who} moved to account ${data.account}${at} — starting it there`
+            : `${who} added to account ${data.account}${at} — start it to trade`
       )
       // ⚠ A note is what the move could NOT carry — an unregistered account, or one with no
       // recorded symbol suffix. It is raised as a WARNING rather than folded into the success

@@ -4474,16 +4474,28 @@ says it is stopped first, and `pages/Bots/stopFirst.ts` carries it out.
   write sent on the stop call alone is one the server refuses.
 - 🔴 **Nothing on a guess**: 90s without the box saying stopped writes NOTHING, and the toast says
   it was asked to stop and not moved.
-- ⚠ **It is left stopped** — a move takes effect at its next start, and the reader starts it.
+- 🔴 **A move onto a DEMO account starts it again** (Aaron, the same day: *"let them automatically
+  start"*) — a move changes where a bot trades, not whether. Stop, write, start, in that order,
+  and the start only once the write went through; a write that failed leaves it stopped and says
+  so. ⚠ **Onto a LIVE account it stays stopped** — the first real-money start is a click. A
+  removal leaves it stopped by definition.
+- 🔴 **A bot HOLDING A TRADE is not moved or taken off.** Stopped, its trade stays on the old
+  account with nothing managing it, and it halts on the new one. The controls say so while the
+  heartbeat reports the trade; the server refuses the write off the bot's own trade record, which
+  also covers a stopped bot and the whole-set go-live (`../backend/CLAUDE.md`).
 - ⚠ **The wait lives on the PAGE** (`useStopFirst` in `index.tsx`), so closing a panel mid-wait
-  does not drop the write; the row shows *Stopping* meanwhile.
-- ⚠ **A demo move of a running bot never goes out on the pick** — a card says it is stopped first
-  (`move-stop-first`); a live move says it inside the live confirm.
+  does not drop the write; the row shows *Stopping*, then *Starting*.
+- ⚠ **A demo move of a running bot never goes out on the pick** — a card says it is stopped, moved
+  and started again (`move-stop-first`); a live move says it is left stopped, inside the confirm.
+- ⚠ Start and stop toasts NAME the bot (`SOS Fade · demo stopped`); they printed its key.
 
 Pinned, with the one pill and the shared column width, by `tests/bots-accounts.spec.ts`: 4 new
 checks (Remove waits for STOPPED, a bot that never stops is not taken off, one pill on the row, bot
 panel and account panel, the columns' width) and 3 re-pointed (a running bot's Remove, Move and Take
-off). 15 mutations in a throwaway worktree, 15 killed.
+off). 15 mutations in a throwaway worktree, 15 killed. The restart and the trade guard: 3 new (a
+live move is not started, a failed move is left stopped, a bot holding a trade offers no move) and
+2 re-pointed (Move starts it again and names the bot in its toasts; Remove never starts it); 14
+mutations, 14 killed, each red on its own assertion.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 

@@ -687,6 +687,8 @@ def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeyp
     # The password pre-check SSHes to the box and runs BEFORE this one; the VPS interlock
     # refuses it, which is the interlock working rather than anything about this rule.
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
+    # So does the open-trade check (2026-09-13) — flat here, since this case is about the budget.
+    monkeypatch.setattr(bots_router, "_holds_position", lambda key: False)
     monkeypatch.setattr(
         bots_router,
         "_account_groups",
@@ -698,13 +700,108 @@ def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeyp
 
 
 def _stub_assign_route(monkeypatch, groups):
-    """Everything the assign route asks before it plans, answered without the box."""
+    """Everything the assign route asks before it plans, answered without the box — the bot is
+    stopped and FLAT; a case about the open-trade check states otherwise."""
     from routers import bots as bots_router
 
     monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: False)
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
+    monkeypatch.setattr(bots_router, "_holds_position", lambda key: False)
     monkeypatch.setattr(bots_router, "_account_groups", lambda: groups)
     return bots_router
+
+
+# ── a bot HOLDING A TRADE stays where it is (2026-09-13) ──────────────────────
+#
+# Stopped, its trade stays open on the account it leaves with nothing managing it, and on a new
+# account it halts at its next start. The check reads the bot's own open-trade record on the box.
+def _stub_trade_check(monkeypatch, *, held, was=700107749):
+    bots_router = _stub_assign_route(monkeypatch, [])
+    asked = []
+    monkeypatch.setattr(bots_router, "_holds_position", lambda key: asked.append(key) or held)
+    monkeypatch.setattr(
+        bots_router, "_read_instance_config", lambda key: _cfg(key, account=was, cap=10.0, risk=5.0)
+    )
+    written = []
+    monkeypatch.setattr(bots_router, "_write_instance_config", lambda k, d: written.append(k))
+    return asked, written
+
+
+@pytest.mark.parametrize("account", [700152905, None])
+def test_a_bot_HOLDING_A_TRADE_is_not_moved_or_taken_off(client, monkeypatch, account):
+    """Moved or benched, its trade is left with nothing managing it. MUTATION: drop the refusal →
+    written → red. MUTATION: check a move only, not a bench → the `None` case red."""
+    _, written = _stub_trade_check(monkeypatch, held=True)
+    r = client.patch("/bots/b_leg_demo/account", json={"account": account, "deploy": False})
+    assert r.status_code == 409, r.text
+    assert "holds a trade" in r.json()["detail"]
+    assert written == []
+
+
+def test_an_UNANSWERED_trade_check_refuses_and_writes_nothing(client, monkeypatch):
+    """*Could not ask* is not *flat* (rule 1). MUTATION: read `None` as flat → written → red."""
+    _, written = _stub_trade_check(monkeypatch, held=None)
+    r = client.patch("/bots/b_leg_demo/account", json={"account": None, "deploy": False})
+    assert r.status_code == 503 and "did not answer" in r.json()["detail"]
+    assert written == []
+
+
+def test_a_FLAT_bot_is_moved(client, monkeypatch):
+    """The control: a check that refused every move would pass both cases above."""
+    asked, written = _stub_trade_check(monkeypatch, held=False)
+    r = client.patch("/bots/b_leg_demo/account", json={"account": None, "deploy": False})
+    assert r.status_code == 200, r.text
+    assert (asked, written) == (["b_leg_demo"], ["b_leg_demo"])
+
+
+def test_a_write_that_KEEPS_the_account_asks_nothing_about_trades(client, monkeypatch):
+    """Nothing moves, so no trade is stranded. MUTATION: ask on every write → red."""
+    asked, _ = _stub_trade_check(monkeypatch, held=True, was=None)
+    client.patch("/bots/b_leg_demo/account", json={"account": None, "deploy": False})
+    assert asked == []
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [("HELD", True), ("FLAT", False), ("", None), ("The system cannot find the path.", None)],
+)
+def test_the_trade_check_reads_THREE_answers(monkeypatch, reply, expected):
+    """An empty or garbled reply is *could not ask*, never *flat* (rule 2). MUTATION: fall through
+    to `False` → the two `None` cases red."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(bots_router, "_ssh", lambda cmd: reply)
+    assert bots_router._holds_position("sos_fade_demo") is expected
+
+
+def test_the_trade_check_reads_a_dead_box_as_could_not_ask(monkeypatch):
+    from routers import bots as bots_router
+
+    def unreachable(cmd):
+        raise RuntimeError("ssh to forexvps failed")
+
+    monkeypatch.setattr(bots_router, "_ssh", unreachable)
+    assert bots_router._holds_position("sos_fade_demo") is None
+
+
+def test_the_trade_check_asks_about_the_bots_OWN_record(monkeypatch):
+    """The file the bot writes on the fill and deletes on the close, read off its own source so a
+    rename there turns this red. MUTATION: name another file → red."""
+    import re
+    from pathlib import Path
+
+    from routers import bots as bots_router
+
+    src = (Path(__file__).resolve().parents[3] / "algos" / "live" / "position_state.py").read_text(
+        encoding="utf-8"
+    )
+    m = re.search(r'^FILENAME\s*=\s*"([^"]+)"', src, re.M)
+    assert m, "the record's file name moved — the trade check lost its anchor"
+    seen = []
+    monkeypatch.setattr(bots_router, "_ssh", lambda cmd: seen.append(cmd) or "FLAT")
+    bots_router._holds_position("sos_fade_demo")
+    assert f"\\instances\\sos_fade_demo\\{m.group(1)}" in seen[0]
+    assert "&" not in seen[0]
 
 
 def test_the_assign_body_tells_an_ABSENT_cap_from_a_null_one(client, monkeypatch):

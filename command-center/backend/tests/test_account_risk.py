@@ -321,6 +321,7 @@ def _stub_move(monkeypatch, *, kind="demo", running=False, groups=None):
         kind=kind,
     )
     monkeypatch.setattr(r, "_bot_running_state", lambda key: running)
+    monkeypatch.setattr(r, "_holds_position", lambda key: False)
     monkeypatch.setattr(r, "_accounts_with_a_password", lambda: {ACCOUNT})
     monkeypatch.setattr(r, "_account_groups", lambda: groups or [])
     monkeypatch.setattr(r.bot_account_registry, "account_by_number", lambda path, n: reg)

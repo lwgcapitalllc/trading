@@ -653,6 +653,8 @@ def live_env(monkeypatch, tmp_path):
     monkeypatch.setattr(bots, "_running_bot_keys", lambda: set())
     monkeypatch.setattr(bots, "_account_groups", lambda: [])
     monkeypatch.setattr(bots, "_accounts_with_a_password", lambda: {_LIVE})
+    # Every bot FLAT — a case about a trade still open states otherwise (2026-09-13).
+    monkeypatch.setattr(bots, "_holds_position", lambda key: False)
     monkeypatch.setattr(bots.bot_account_registry, "account_by_number", lambda p, n: _account(n))
     asked: list = []
     monkeypatch.setattr(
@@ -676,6 +678,32 @@ def live_env(monkeypatch, tmp_path):
 
 def _body(**kw):
     return {"bots": BOTH, "account": _LIVE, **kw}
+
+
+# ── a bot HOLDING A TRADE does not go live (2026-09-13) ───────────────────────
+def test_a_set_with_a_bot_HOLDING_A_TRADE_is_refused_and_writes_nothing(
+    client, live_env, monkeypatch
+):
+    """`set_bot_account`'s rule, on the whole-set move: its demo trade would be left with nothing
+    managing it, and it would halt at its first live start holding a record the live terminal does
+    not have. MUTATION: drop the check → written → red."""
+    from routers import bots
+
+    monkeypatch.setattr(bots, "_holds_position", lambda key: key == BOTH[0])
+    r = client.post("/bots/go-live", json=_body())
+    assert r.status_code == 409, r.text
+    assert f"{BOTH[0]} holds a trade" in r.json()["detail"]
+    assert live_env["written"] == {} and live_env["commits"] == []
+
+
+def test_an_UNANSWERED_trade_check_refuses_the_whole_set(client, live_env, monkeypatch):
+    """*Could not ask* is not *flat* (rule 1). MUTATION: read `None` as flat → written → red."""
+    from routers import bots
+
+    monkeypatch.setattr(bots, "_holds_position", lambda key: None)
+    r = client.post("/bots/go-live", json=_body())
+    assert r.status_code == 503 and "did not answer" in r.json()["detail"]
+    assert live_env["written"] == {}
 
 
 def test_the_preview_writes_nothing(client, live_env):

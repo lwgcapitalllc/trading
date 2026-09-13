@@ -2761,6 +2761,30 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
 
     data = _read_instance_config(bot_key)
 
+    # 🔴 A BOT HOLDING A TRADE IS NOT MOVED OR TAKEN OFF (2026-09-13). Stopped, its trade stays open
+    # on the account it leaves with nothing managing it — no trailing stop, no partial exit — and on
+    # a new account it halts at its next start, holding a record of a trade that terminal does not
+    # have. Read off the bot's own record ON THE BOX, so a STOPPED bot is covered too; the page says
+    # it before the click, off the heartbeat. A write that keeps the account moves nothing, so asks
+    # nothing. ⚠ `None` refuses: *could not ask* is not *flat* (rule 1).
+    if update.account != data.get("account"):
+        held = _holds_position(bot_key)
+        name = _KEY_DISPLAY.get(bot_key, bot_key)
+        if held is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Could not check whether {name} holds a trade — the trading box did not "
+                f"answer. Nothing was changed; try again in a moment.",
+            )
+        if held:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{name} holds a trade on account {data.get('account')}, so it cannot be "
+                f"{'taken off' if update.account is None else 'moved'} until that trade closes — "
+                f"nothing would manage it. If {name} is stopped, start it again so it manages "
+                f"the trade.",
+            )
+
     try:
         plan = bot_accounts.assign_plan(
             bot_key,
@@ -3080,6 +3104,28 @@ def _bot_running_state(bot_key: str) -> Optional[bool]:
     except Exception:
         return None
     return any(ch.isdigit() for ch in out)
+
+
+def _holds_position(bot_key: str) -> Optional[bool]:
+    """Does this bot have an open trade on record on the VPS? `None` = the box did not answer.
+
+    The bot writes `<instance>/position.json` on the fill and DELETES it on the close
+    (`algos/live/position_state.py`), so the file is the bot's own statement that a trade is open
+    — and it is there whether the bot is running or stopped, which the heartbeat is not.
+    ⚠ **Two explicit words, never an empty reply.** `if exist` echoes one either way, so an empty or
+    garbled answer is *could not ask*, never *flat* (rule 2). ⚠ Nothing may follow the `if` on this
+    line: a trailing `& next` binds to its block (the snapshot's cmd note).
+    """
+    path = f"{_VPS_INSTANCES}\\{bot_key}\\position.json"
+    try:
+        out = _ssh(f'if exist "{path}" (echo HELD) else (echo FLAT)')
+    except Exception:
+        return None
+    if "HELD" in out:
+        return True
+    if "FLAT" in out:
+        return False
+    return None
 
 
 def _bot_is_running(bot_key: str) -> bool:
@@ -3882,6 +3928,35 @@ def apply_go_live(body: GoLiveRequest):
             status_code=409,
             detail=f"No MT5 password is stored for account {body.account}, so none of these bots "
             f"could log in. Set it under Accounts, then promote.",
+        )
+
+    # 🔴 A bot HOLDING A TRADE does not go live (2026-09-13) — `set_bot_account`'s rule, for the same
+    # reason: its demo trade would be left with nothing managing it, and it would halt at its first
+    # live start holding a record the live terminal does not have. Checked HERE, beside the
+    # password, because it needs the box. ⚠ `None` refuses: *could not ask* is not *flat*.
+    held = {m.bot_key: _holds_position(m.bot_key) for m in plan.moves}
+    # Named the way every other go-live sentence names them — the move's own display name.
+    display = {m.bot_key: m.display or m.bot_key for m in plan.moves}
+
+    def _they(keys: list) -> tuple:
+        names = go_live._join(sorted(display[k] for k in keys))
+        return names, "holds" if len(keys) == 1 else "hold"
+
+    unread = [k for k, v in held.items() if v is None]
+    if unread:
+        who, verb = _they(unread)
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not check whether {who} {verb} a trade — the trading box did not "
+            f"answer. Nothing was changed; try again in a moment.",
+        )
+    holding = [k for k, v in held.items() if v]
+    if holding:
+        who, verb = _they(holding)
+        raise HTTPException(
+            status_code=409,
+            detail=f"{who} {verb} a trade on account {plan.from_account}, so the set cannot go "
+            f"live until it closes — nothing would manage it on the way.",
         )
 
     # 🔴 Compared to the phrase THIS plan produced, not to a constant. The plan is rebuilt above

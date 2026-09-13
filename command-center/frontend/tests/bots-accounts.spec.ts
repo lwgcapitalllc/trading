@@ -800,13 +800,16 @@ async function recordRemovals(page: Page) {
  * The snapshot says RUNNING until the stop is asked AND `readsToStop` more reads have passed, then
  * STOPPED: the real stop only ASKS, and the bot exits on its next check. So a page that writes on
  * the stop call alone, before the box says it has stopped, is caught (`stoppedAtWrite`).
- * `Infinity` is a bot that never stops. `answer` is the account the write reports back.
+ * `Infinity` is a bot that never stops. `answer` is the account the write reports back;
+ * `opts.writeFails` refuses the write; `opts.bot` is merged into the bot's snapshot row (a trade it
+ * holds, say). A START the page sends afterwards is recorded in `order` too.
  */
 async function stopsWhenAsked(
   page: Page,
   key: string,
   readsToStop = 1,
-  answer: number | null = null
+  answer: number | null = null,
+  opts: { writeFails?: boolean; bot?: Record<string, unknown> } = {}
 ) {
   const log = {
     order: [] as string[],
@@ -824,7 +827,9 @@ async function stopsWhenAsked(
         bots: [
           { key: 'sos_fade', name: 'SOS Fade', status: 'RUNNING', account_type: 'demo' },
           { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
-        ].map((b) => (b.key === key && stopped() ? { ...b, status: 'STOPPED' } : b)),
+        ].map((b) =>
+          b.key !== key ? b : { ...b, ...opts.bot, ...(stopped() ? { status: 'STOPPED' } : {}) }
+        ),
         scheduled_jobs: [],
         telegram: { name: 'Telegram', status: 'RUNNING' },
       },
@@ -835,10 +840,16 @@ async function stopsWhenAsked(
     log.order.push('stop')
     return route.fulfill({ json: { status: 'ok', output: '' } })
   })
+  await page.route(`**/api/bots/${key}/start`, (route) => {
+    log.order.push('start')
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
   await page.route(`**/api/bots/${key}/account`, (route) => {
     log.order.push('write')
     log.sent.push(route.request().postDataJSON())
     log.stoppedAtWrite.push(stopped())
+    if (opts.writeFails)
+      return route.fulfill({ status: 409, json: { detail: 'Refused for this check.' } })
     return route.fulfill({
       json: {
         status: 'ok',
@@ -923,6 +934,9 @@ test('Remove on a RUNNING bot stops it, WAITS for the box to say so, then takes 
   await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
   expect(log.stoppedAtWrite).toEqual([true])
   expect(log.sent[0]).toEqual({ account: null, deploy: true })
+  // A bot taken off its account has nowhere to start. MUTATION: start after a removal too → red.
+  await page.waitForTimeout(1_000)
+  expect(log.order).toEqual(['stop', 'write'])
 })
 
 test('a bot that has not stopped in time is NOT taken off, and the page says so', async ({
@@ -2549,7 +2563,7 @@ async function openBot(page: Page, botKey: string) {
   await expect(page.getByTestId('bot-account')).toBeVisible()
 }
 
-test('moving a RUNNING bot says it is stopped first, sends nothing on the pick, then stops and moves', async ({
+test('moving a RUNNING bot onto a demo account stops it, moves it, then STARTS it there', async ({
   page,
 }) => {
   // It read its account at startup, so the write cannot reach the running process: the page would
@@ -2557,26 +2571,123 @@ test('moving a RUNNING bot says it is stopped first, sends nothing on the pick, 
   // (409). 🔴 On 2026-09-06 the selector took the click and came back as that error toast; from
   // 2026-09-12 a running bot got no selector, only "stop it first" — and Aaron found that the
   // unintuitive half (2026-09-13). Now the pick says what will happen, and the confirm stops the
-  // bot, waits for the box to say so, and moves it.
+  // bot, waits for the box to say so, moves it and — Aaron, the same day: "let them automatically
+  // start" — starts it again there.
   // MUTATION: move a running bot on the pick → red on the empty order.
   // MUTATION: move once the stop call returns, without waiting for STOPPED → red on
-  // `stoppedAtWrite`.
+  // `stoppedAtWrite`. MUTATION: never start it after → red on the order.
+  // MUTATION: keep the old "start it to trade" toast → red on the toasts. MUTATION: name the bot by
+  // its key in the stop and start toasts → red on the toasts.
   await mock(
     page,
     [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
     [reg(), reg({ account: OTHER, label: 'ECN' })]
   )
   const log = await stopsWhenAsked(page, 'sos_fade', 1, OTHER)
+  const toasts = await watchToasts(page)
   await openBot(page, 'sos_fade')
   await page.getByTestId('move-sos_fade').selectOption(String(OTHER))
   const card = page.getByTestId('move-stop-first')
-  await expect(card).toContainText(`stopped first, then moved to account ${OTHER}`)
+  await expect(card).toContainText(`moved to account ${OTHER}, and started again there`)
   expect(log.order).toEqual([])
 
   await card.getByTestId('move-stop-confirm').click()
-  await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
+  await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write', 'start'])
   expect(log.stoppedAtWrite).toEqual([true])
   expect(log.sent[0]).toMatchObject({ account: OTHER })
+  // Named, and saying what the page is doing — never "start it to trade" over a bot it is starting.
+  await expect
+    .poll(async () => (await toasts()).join(' | '), { timeout: 15_000 })
+    .toContain('SOS Fade started')
+  const said = (await toasts()).join(' | ')
+  expect(said).toContain('SOS Fade stopped')
+  expect(said).toContain(`SOS Fade moved to account ${OTHER} — starting it there`)
+  expect(said).not.toContain('start it to trade')
+})
+
+test('a RUNNING bot moved onto a LIVE account is stopped and moved, and NOT started', async ({
+  page,
+}) => {
+  // The first real-money start stays a click, and the live confirm says the bot is left stopped.
+  // MUTATION: start it after a live move too → red on the order. MUTATION: drop the sentence →
+  // red on the confirm.
+  await mock(
+    page,
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
+    [reg(), reg({ account: OTHER, label: 'Live', kind: 'live' })]
+  )
+  const log = await stopsWhenAsked(page, 'sos_fade', 1, OTHER)
+  await openBot(page, 'sos_fade')
+  await page.getByTestId('move-sos_fade').selectOption(String(OTHER))
+  const confirm = page.getByTestId('live-confirm')
+  await expect(confirm).toContainText('left stopped until you start it')
+  await confirm.getByTestId('live-confirm-go').click()
+  await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
+  expect(log.sent[0]).toMatchObject({ account: OTHER, confirm_live: true })
+  // Held long enough for a start that was coming to have come (the page's clock runs ten times
+  // fast, so this is ten seconds of it).
+  await page.waitForTimeout(1_000)
+  expect(log.order).toEqual(['stop', 'write'])
+})
+
+test('a move that does not go through leaves the bot stopped, and says so', async ({ page }) => {
+  // The page stopped it only to make the write. MUTATION: start it whatever the write answered →
+  // red on the order. MUTATION: drop the message → red on it.
+  await mock(
+    page,
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
+    [reg(), reg({ account: OTHER, label: 'ECN' })]
+  )
+  const log = await stopsWhenAsked(page, 'sos_fade', 1, OTHER, { writeFails: true })
+  const toasts = await watchToasts(page)
+  await openBot(page, 'sos_fade')
+  await page.getByTestId('move-sos_fade').selectOption(String(OTHER))
+  await page.getByTestId('move-stop-confirm').click()
+  await expect
+    .poll(async () => (await toasts()).join(' | '), { timeout: 15_000 })
+    .toContain('that did not go through, so it is left stopped')
+  expect(log.order).toEqual(['stop', 'write'])
+})
+
+test('a bot HOLDING A TRADE is not moved or taken off, and each control says why', async ({
+  page,
+}) => {
+  // 🔴 Stopped, its trade would stay open on the account it left with nothing managing it, and on
+  // a new account it halts at its next start. The server refuses the write; the page says so
+  // before the click. MUTATION: drop `holding` from the selector → red on it; likewise Remove, and
+  // the account panel's Take off. MUTATION: drop the line → red on it. MUTATION: keep the running
+  // line ("stops it first") beside it → red on that.
+  await mock(
+    page,
+    [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
+    [reg(), reg({ account: OTHER, label: 'ECN' })]
+  )
+  const log = await stopsWhenAsked(page, 'sos_fade', 1, null, {
+    bot: {
+      in_trade: true,
+      position: {
+        side: 'long',
+        lots: 0.4,
+        entry: 2650,
+        stop: 2640,
+        profit_usd: 12,
+        risk_usd: 40,
+        r: 0.3,
+        tickets: 1,
+      },
+    },
+  })
+  await openBot(page, 'sos_fade')
+  await expect(page.getByTestId('account-holding')).toContainText('holds a trade')
+  await expect(page.getByTestId('bot-account')).not.toContainText('stops it first')
+  await expect(page.getByTestId('move-sos_fade')).toBeDisabled()
+  await expect(page.getByTestId('remove-sos_fade')).toBeDisabled()
+
+  await openAccount(page)
+  const takeOff = page.getByTestId('take-off-sos_fade')
+  await expect(takeOff).toBeDisabled()
+  await expect(takeOff).toHaveAttribute('title', /holds a trade/)
+  expect(log.order).toEqual([])
 })
 
 test('the bot panel says what needs attention in words, and the account is its own line', async ({

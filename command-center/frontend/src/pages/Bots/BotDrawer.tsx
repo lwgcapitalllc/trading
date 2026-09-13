@@ -217,9 +217,14 @@ export function BotDrawer({
   /** A start/stop/restart of THIS bot still in flight — the same pill the row shows. */
   pendingAction?: BotAction | null
   /** Stop this bot, wait until the box says it has, then run `then` — how a RUNNING bot is moved or
-   *  taken off (2026-09-13). `what` finishes "…so it was not ___" if it will not stop in time.
+   *  taken off (2026-09-13). `what` finishes "…so it was not ___" if it will not stop in time;
+   *  `restart` starts it again once `then` reports the write went through.
    *  Held by the PAGE, so closing this panel mid-wait cannot strand a stopped bot on its account. */
-  onStopThen?: (what: string, then: () => void) => void
+  onStopThen?: (
+    what: string,
+    then: () => Promise<boolean> | void,
+    opts?: { restart?: boolean }
+  ) => void
   /** Open the account this bot is on, in its own panel. */
   onOpenAccount?: (account: number) => void
 }) {
@@ -251,6 +256,10 @@ export function BotDrawer({
   }, [pendingAction])
 
   const running = bot.status === 'RUNNING'
+  // 🔴 A bot HOLDING A TRADE stays where it is until the trade closes (2026-09-13): moved or taken
+  // off, it would leave that trade open with nothing managing it, and halt on a new account. The
+  // server refuses the write off the bot's own record on the box; this says so before the click.
+  const holding = running && bot.in_trade === true
   const v = data as BotParamsView | undefined
   // Where the selector sits: the config's account once the configs are read, the bot's own report
   // until then (display only — Remove waits for the config, below).
@@ -303,15 +312,32 @@ export function BotDrawer({
     .sort((a, b) => a.account - b.account)
 
   const moving = join.pendingKey === bot.key
-  const doJoin = async (account: number, choice: JoinChoice, live: boolean) => {
-    const ok = await join.join({ account, botKey: bot.key, display: bot.name, choice, live })
+  /** Put it on `account`, and say whether that went through. `restarting`: the page starts it
+   *  again afterwards, so the toast must not tell the reader to. */
+  const doJoin = async (account: number, choice: JoinChoice, live: boolean, restarting = false) => {
+    const ok = await join.join({
+      account,
+      botKey: bot.key,
+      display: bot.name,
+      choice,
+      live,
+      restarting,
+    })
     if (ok) setMove(null)
+    return ok
   }
-  /** Run `then` now — or, on a RUNNING bot, once the page has stopped it and seen it stopped. */
-  const whenStopped = (kind: 'remove' | 'move', then: () => void) => {
-    if (!running || !onStopThen) return then()
+  /** Run `then` now — or, on a RUNNING bot, once the page has stopped it and seen it stopped.
+   *  `restart`: a move onto a DEMO account, started again once the move has gone through (Aaron,
+   *  2026-09-13: "let them automatically start"). Onto a live one it stays stopped until the
+   *  reader starts it — the first real-money start is a click. */
+  const whenStopped = (
+    kind: 'remove' | 'move',
+    then: () => Promise<boolean> | void,
+    restart = false
+  ) => {
+    if (!running || !onStopThen) return void then()
     setAfter(kind)
-    onStopThen(kind === 'remove' ? 'taken off the account' : 'moved', then)
+    onStopThen(kind === 'remove' ? 'taken off the account' : 'moved', then, { restart })
   }
 
   /**
@@ -349,8 +375,21 @@ export function BotDrawer({
     return acc
   }, {})
   const terminal = (v?.identity.mt5_path ?? '').split('\\').filter(Boolean)[0] ?? '—'
-  // ⚠ Busy through the stop a move or a removal waits on, too: the controls stay, not pressable.
-  const selectBusy = remove.isPending || moving || checkingDest !== null || after !== null
+  // ⚠ Busy through the stop a move or a removal waits on, and through any start / stop / restart —
+  // a move's own start included: the controls stay, not pressable.
+  const selectBusy =
+    remove.isPending || moving || checkingDest !== null || after !== null || pendingAction !== null
+  // What the account section says while busy — nothing while the pill above already says it.
+  const busyText =
+    after !== null && pendingAction === 'stop'
+      ? `Stopping it first, then ${after === 'remove' ? 'taking it off' : 'moving it'}…`
+      : checkingDest !== null
+        ? `Checking account ${checkingDest}…`
+        : remove.isPending
+          ? 'Removing…'
+          : moving
+            ? 'Moving…'
+            : null
   // The row's own status (2026-09-12): the header said "Running" in green over a HALTED bot.
   const cond = botCondition(bot, { asked: true, onAccount: selected !== '' })
 
@@ -505,8 +544,12 @@ export function BotDrawer({
           <select
             data-testid={`move-${bot.key}`}
             value={selected}
-            disabled={selectBusy}
-            title={`Move ${bot.name} to another account.`}
+            disabled={selectBusy || holding}
+            title={
+              holding
+                ? `${bot.name} holds a trade, so it stays on this account until that trade closes.`
+                : `Move ${bot.name} to another account.`
+            }
             onChange={(e) => {
               if (e.target.value === '') return
               const dest = Number(e.target.value)
@@ -543,15 +586,17 @@ export function BotDrawer({
           {configAccount != null ? (
             <button
               data-testid={`remove-${bot.key}`}
-              disabled={selectBusy}
+              disabled={selectBusy || holding}
               title={
-                removeArmed
-                  ? running
-                    ? 'Click again: it is stopped first, then taken off the account.'
-                    : 'Click again to take it off the account.'
-                  : `Take ${labelOf(bot)} off account ${configAccount}. ` +
-                    (running ? 'It is running, so it is stopped first. ' : '') +
-                    'It stays stopped until you add it to an account again.'
+                holding
+                  ? `${labelOf(bot)} holds a trade, so it stays on this account until that trade closes.`
+                  : removeArmed
+                    ? running
+                      ? 'Click again: it is stopped first, then taken off the account.'
+                      : 'Click again to take it off the account.'
+                    : `Take ${labelOf(bot)} off account ${configAccount}. ` +
+                      (running ? 'It is running, so it is stopped first. ' : '') +
+                      'It stays stopped until you add it to an account again.'
               }
               onClick={() => {
                 if (!removeArmed) {
@@ -577,18 +622,18 @@ export function BotDrawer({
                 : 'Remove from account'}
             </button>
           ) : null}
-          {selectBusy && (
+          {busyText && (
             <span data-testid="account-busy" className="text-[11.5px] text-accent animate-pulse">
-              {after !== null && pendingAction === 'stop'
-                ? `Stopping it first, then ${after === 'remove' ? 'taking it off' : 'moving it'}…`
-                : checkingDest !== null
-                  ? `Checking account ${checkingDest}…`
-                  : remove.isPending
-                    ? 'Removing…'
-                    : 'Moving…'}
+              {busyText}
             </span>
           )}
         </div>
+        {holding && (
+          <p data-testid="account-holding" className="mt-2 text-[11.5px] text-text-secondary">
+            It holds a trade, so it stays on this account until that trade closes — moved or taken
+            off now, nothing would manage it.
+          </p>
+        )}
 
         {moveHere && (
           <div data-testid="move-card" className="mt-3 flex flex-col gap-2">
@@ -610,25 +655,29 @@ export function BotDrawer({
                 account={moveHere.account}
                 what={
                   describeChoice(moveHere.staged, bot.name, myRisk, moveHere.plan) +
-                  (running ? ' It is running, so it is stopped first and left stopped.' : '')
+                  (running
+                    ? ' It is running, so it is stopped first, and left stopped until you start it there.'
+                    : '')
                 }
                 verb="Move to live account"
                 busy={moving || after !== null}
                 onConfirm={() => {
                   const staged = moveHere.staged as JoinChoice
-                  whenStopped('move', () => void doJoin(moveHere.account, staged, true))
+                  // No restart: the first real-money start is the reader's own click.
+                  whenStopped('move', () => doJoin(moveHere.account, staged, true))
                 }}
                 onCancel={() => setMove(null)}
               />
             ) : moveHere.staged && running ? (
-              // A demo move of a RUNNING bot: the one extra click is the stop, said before it.
+              // A demo move of a RUNNING bot: stopped, moved and started again — said before the
+              // click (Aaron, 2026-09-13: "let them automatically start").
               <div
                 data-testid="move-stop-first"
                 className="flex flex-col gap-2 rounded-md border border-warn/40 bg-warn-muted px-3 py-[10px]"
               >
                 <p className="text-[12.5px] text-warn-text leading-[1.5]">
-                  {bot.name} is running. It is stopped first, then moved to account{' '}
-                  {moveHere.account}, and left stopped.
+                  {bot.name} is running. It is stopped, moved to account {moveHere.account}, and
+                  started again there.
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -636,11 +685,11 @@ export function BotDrawer({
                     disabled={moving || after !== null}
                     onClick={() => {
                       const staged = moveHere.staged as JoinChoice
-                      whenStopped('move', () => void doJoin(moveHere.account, staged, false))
+                      whenStopped('move', () => doJoin(moveHere.account, staged, false, true), true)
                     }}
                     className={`${btnCls} border-warn/50 text-warn-text hover:bg-warn/10`}
                   >
-                    Stop and move
+                    Move and restart
                   </button>
                   <button
                     data-testid="move-stop-cancel"
@@ -664,11 +713,14 @@ export function BotDrawer({
           </div>
         )}
 
-        <p className="text-[11px] text-text-tertiary leading-[1.5] mt-[8px]">
-          {running
-            ? 'It is running: a move or a removal stops it first and leaves it stopped — it reads its account when it starts.'
-            : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
-        </p>
+        {/* ⚠ Not while it holds a trade: the line above says why it cannot move at all. */}
+        {!holding && (
+          <p className="text-[11px] text-text-tertiary leading-[1.5] mt-[8px]">
+            {running
+              ? 'It is running: a move or a removal stops it first, since it reads its account when it starts. A move onto a demo account starts it again there.'
+              : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
+          </p>
+        )}
       </section>
 
       {/* ── version, and the only Deploy control ────────────────────────────── */}

@@ -694,6 +694,8 @@ export function AccountDrawer({
                   const st = statusByKey.get(b.key)
                   const running = st === 'RUNNING'
                   const known = st !== undefined
+                  // A trade it holds would be left with nothing managing it (the bot panel's rule).
+                  const holding = running && botByKey?.get(b.key)?.in_trade === true
                   const action = pendingKey === b.key ? pendingAction : null
                   const armed = armedKey === b.key
                   const removing = takeOff.isPending && takeOff.variables?.botKey === b.key
@@ -781,20 +783,23 @@ export function AccountDrawer({
                             </button>
                           )
                         )}
-                        {/* ⚠ Withheld only while the box has not answered. A RUNNING bot is
-                         *  stopped first, then taken off (2026-09-13, `stopFirst.ts`) — the bot
-                         *  panel's Remove flow, said on the control before the second click. */}
+                        {/* ⚠ Withheld while the box has not answered, and while it HOLDS A TRADE.
+                         *  A RUNNING bot is stopped first, then taken off (2026-09-13,
+                         *  `stopFirst.ts`) — the bot panel's Remove flow, said on the control
+                         *  before the second click. */}
                         <button
                           data-testid={`take-off-${b.key}`}
-                          disabled={!known || removing || action !== null}
+                          disabled={!known || removing || action !== null || holding}
                           title={
                             !known
                               ? 'The trading box has not answered for this bot — wait for its state before taking it off.'
-                              : armed
-                                ? running
-                                  ? 'Click again: it is stopped first, then taken off the account.'
-                                  : 'Click again to take it off the account.'
-                                : `Take ${b.display} off account ${account}. ${running ? 'It is running, so it is stopped first. ' : ''}It stays registered and stopped until you add it to an account again.`
+                              : holding
+                                ? `${b.display} holds a trade, so it stays on this account until the trade closes — taken off now, nothing would manage that trade.`
+                                : armed
+                                  ? running
+                                    ? 'Click again: it is stopped first, then taken off the account.'
+                                    : 'Click again to take it off the account.'
+                                  : `Take ${b.display} off account ${account}. ${running ? 'It is running, so it is stopped first. ' : ''}It stays registered and stopped until you add it to an account again.`
                           }
                           onClick={() => {
                             if (!armed) {

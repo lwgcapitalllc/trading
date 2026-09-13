@@ -1740,6 +1740,14 @@ mutations killed.
   `_accounts_with_a_password()` returns `None` when the VPS could not be asked, and refusing on
   that would send the reader to re-enter a credential that is already there. Same three-state rule
   as `mt5_link`, applied to a pre-condition rather than to a reading.
+- 🔴 **A bot HOLDING A TRADE is not moved or benched (409); an unanswered check is 503
+  (2026-09-13).** Stopped, its trade stays open on the account it leaves with nothing managing it,
+  and on a new account it halts at its next start, holding a record of a trade that terminal lacks.
+  `_holds_position` reads the bot's own `position.json` on the box (written on the fill, deleted on
+  the close), so a STOPPED bot is covered — the heartbeat is not. The whole-set go-live asks it of
+  every bot. ⚠ Two explicit words, `HELD` / `FLAT`; an empty reply is *could not ask*. ⚠ Asked only
+  when the account CHANGES. Tests in `test_bot_accounts.py` / `test_go_live.py`; 8 mutations, 8
+  killed.
 - **Unregistering an account a bot still names is refused (409).** That bot would go on trading an
   account this page can no longer describe.
 - **An account that is neither registered nor traded by any bot is a 404** with the fix named.

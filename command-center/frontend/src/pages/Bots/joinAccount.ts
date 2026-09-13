@@ -97,6 +97,7 @@ export function useJoinAccount() {
     choice,
     riskCapPct,
     live,
+    restarting,
   }: {
     account: number
     botKey: string
@@ -106,6 +107,8 @@ export function useJoinAccount() {
     riskCapPct?: number | null
     /** Confirmed on screen for a live destination. */
     live: boolean
+    /** The page starts it again after the move, so the toast must not tell the reader to. */
+    restarting?: boolean
   }): Promise<boolean> => {
     setPendingKey(botKey)
     try {
@@ -130,6 +133,7 @@ export function useJoinAccount() {
               ? choice.shares[botKey]
               : undefined,
         confirmLive: live || undefined,
+        restarting,
       })
       return true
     } catch {

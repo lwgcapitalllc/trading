@@ -833,16 +833,16 @@ export function Bots() {
   const stopOne = useBotStopOne()
   const restartOne = useBotRestartOne()
   // A move or a removal that has to STOP the bot first, and waits on the box to say it has.
-  const { stopThen, waitingFor } = useStopFirst()
+  const { stopThen, waitingFor, waitingAction } = useStopFirst()
   const busy =
     startOne.isPending || stopOne.isPending || restartOne.isPending || waitingFor !== null
   useEffect(() => {
     if (!busy) setPending(null)
   }, [busy])
-  /** What a bot is in the middle of: a start / stop / restart, or the stop a move or a removal
-   *  is waiting on — the same Stopping pill either way. */
+  /** What a bot is in the middle of: a start / stop / restart, or the part of a move or a removal
+   *  it is on — Stopping while the box catches up, Starting when a move starts it again. */
   const actionOf = (key: string): BotAction | null =>
-    pending?.key === key ? pending.action : waitingFor === key ? 'stop' : null
+    pending?.key === key ? pending.action : waitingFor === key ? waitingAction : null
 
   const bots: BotStatus[] = snapshot?.bots ?? []
   // 🔴 The version reads are keyed off the CONFIG list as well as the snapshot (2026-09-10). A
@@ -1917,7 +1917,9 @@ export function Bots() {
           job={jobByKey.get(selBot.key)}
           busy={busy}
           pendingAction={actionOf(selBot.key)}
-          onStopThen={(what, then) => void stopThen(selBot.key, labelOf(selBot), what, then)}
+          onStopThen={(what, then, opts) =>
+            void stopThen(selBot.key, labelOf(selBot), what, then, opts)
+          }
           // The CONFIG's account, or `undefined` until the configs are read — never "on no
           // account" for a list that has not arrived, or the panel would hide Remove on a bot
           // that is on one.
@@ -1960,7 +1962,7 @@ export function Bots() {
             onStop={(k) => act(k, 'stop', () => stopOne.mutate(k))}
             onStopThen={(k, label, what, then) => void stopThen(k, label, what, then)}
             pendingKey={pending?.key ?? waitingFor}
-            pendingAction={pending?.action ?? (waitingFor ? 'stop' : null)}
+            pendingAction={pending?.action ?? waitingAction}
             busy={busy}
           />
         )}
