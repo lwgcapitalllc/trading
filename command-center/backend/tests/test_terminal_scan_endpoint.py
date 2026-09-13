@@ -159,6 +159,37 @@ def test_a_row_pointing_at_a_terminal_on_another_account_is_contradicted(
     assert "34957946" in check["detail"]
 
 
+def test_the_terminal_suggestion_survives_the_response_model(client, registry, monkeypatch):
+    """A field the response model does not declare is DROPPED without a word — the trap
+    `entry_ms`, `favorable` and `account_source` each hit. This drives the real route, so a
+    suggestion the service makes and the model loses goes red here.
+
+    Watched red by removing `suggested_terminal` from `models.RegistryCheck`."""
+    reg.upsert_account(
+        registry,
+        _acct(
+            account=35710389,
+            label="RichKelly",
+            kind="live",
+            server="PUPrime-Live",
+            mt5_path="",
+            account_profile="",
+        ),
+        _PROFILES,
+    )
+    free = dict(
+        _LIVE,
+        key=r"c:\program files\pu prime mt5 terminal",
+        install=r"C:\Program Files\PU Prime MT5 Terminal",
+        account=35710389,
+    )
+    _stub(monkeypatch, _payload(free))
+
+    (check,) = client.get("/bots/accounts/scan").json()["registry"]
+    assert check["suggested_terminal"] == r"C:\Program Files\PU Prime MT5 Terminal\terminal64.exe"
+    assert "PU Prime MT5 Terminal" in check["terminal_note"]
+
+
 def test_a_row_whose_terminal_could_not_be_asked_is_unverified_not_contradicted(
     client, registry, monkeypatch
 ):

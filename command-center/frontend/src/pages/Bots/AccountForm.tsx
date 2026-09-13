@@ -8,7 +8,7 @@
  */
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { useRegisterAccount, useSetAccountPassword } from '@/hooks/useBots'
+import { useRegisterAccount, useSetAccountPassword, useTerminalSuggestion } from '@/hooks/useBots'
 import type { BotAccountGroup, BotAccountRegistration, BotAccountRegistrationWrite } from '@/types'
 
 /** What an account is called on screen: the broker (or the name somebody gave it). */
@@ -77,7 +77,16 @@ export function AccountForm({
   const [tier, setTier] = useState(seed?.tier ?? '')
   const [kind, setKind] = useState(seed?.kind ?? 'demo')
   const [server, setServer] = useState(seed?.server ?? '')
-  const [mt5Path, setMt5Path] = useState(seed?.mt5_path ?? '')
+  // 🔴 An account with NO terminal asks the box which one it is logged into, and the field starts
+  // on that answer (Aaron, 2026-09-13: *"it should be prepopulated"*). Only the reader's EDIT is
+  // state, so an answer landing after the form opened still reaches an untouched field and never
+  // replaces a typed one. What is offered, and what is refused and why, is the server's
+  // (`_suggest_terminal`). ⚠ The person's Save is what records it — Sync still never sets one.
+  const asksBox = !!existing && !existing.mt5_path
+  const box = useTerminalSuggestion(existing?.account ?? 0, asksBox)
+  const suggested = asksBox ? (box.data?.row?.suggested_terminal ?? null) : null
+  const [pathEdit, setPathEdit] = useState<string | null>(null)
+  const mt5Path = pathEdit ?? (seed?.mt5_path || suggested || '')
   // `null` is a real, distinct value here — "nobody recorded it" — so the control is a checkbox
   // plus a text field rather than an empty string, which would mean "this broker quotes bare
   // symbols" and silently strip the suffix off a live instrument. A discovered account whose
@@ -216,13 +225,24 @@ export function AccountForm({
             label="Terminal path"
             hint="The terminal on the VPS logged into this account. Leave blank and no bot can be assigned — a move would be written, pushed, and then fail at connect time."
           >
+            {/* ⚠ The placeholder is NOT a real path. It was the demo bots' terminal, and on
+             *  2026-09-13 that exact path was typed onto a new LIVE account — a bot added there
+             *  would have logged the demo bots' terminal out from under them. */}
             <input
               data-testid="f-path"
               value={mt5Path}
-              placeholder="C:\\MT5_FFT\\terminal64.exe"
-              onChange={(e) => setMt5Path(e.target.value)}
+              placeholder="the terminal64.exe logged into this account"
+              onChange={(e) => setPathEdit(e.target.value)}
               className={inputCls}
             />
+            {asksBox && (
+              <TerminalNote
+                loading={box.isLoading}
+                failed={box.isError}
+                answer={box.data}
+                filled={pathEdit === null && !!suggested}
+              />
+            )}
           </Field>
           <Field
             label="Cost profile"
@@ -337,6 +357,53 @@ export function AccountForm({
 const inputCls =
   'w-full bg-bg-base border border-border-default rounded px-2 py-[5px] ' +
   'text-small text-text-primary'
+
+/**
+ * What the box said about this account's terminal, under the field. Every reason is the SERVER's
+ * own sentence (`terminal_note`); this only says whether the box was asked and picks the tone.
+ *
+ * ⚠ **Three states kept apart**: still asking, could not ask, and asked — and "asked" found
+ * nothing is its own sentence, never an empty line that reads like a scan still running.
+ */
+function TerminalNote({
+  loading,
+  failed,
+  answer,
+  filled,
+}: {
+  loading: boolean
+  failed: boolean
+  answer: ReturnType<typeof useTerminalSuggestion>['data']
+  filled: boolean
+}) {
+  let text: string
+  let tone = 'text-text-tertiary'
+  if (loading) {
+    text = 'Asking the VPS which terminal is logged into this account…'
+  } else if (failed || !answer) {
+    text = "Couldn't ask the VPS which terminal is logged into this account. Type the path."
+    tone = 'text-warn-text'
+  } else if (!answer.asked) {
+    text = `The VPS would not scan its terminals: ${answer.reason ?? 'no reason given'}`
+    tone = 'text-warn-text'
+  } else {
+    const note = answer.row?.terminal_note ?? ''
+    if (filled) {
+      text = `Filled in from the VPS. ${note} Change it if that's wrong.`
+      tone = 'text-text-secondary'
+    } else if (note) {
+      text = note
+      tone = answer.row?.suggested_terminal ? 'text-text-tertiary' : 'text-warn-text'
+    } else {
+      text = 'No terminal the VPS could ask is logged into this account.'
+    }
+  }
+  return (
+    <span data-testid="f-path-note" className={`text-micro leading-[1.35] ${tone}`}>
+      {text}
+    </span>
+  )
+}
 
 function Field({
   label,

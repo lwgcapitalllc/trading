@@ -1256,6 +1256,98 @@ test('every bot row carries the same version pill, under a labelled column', asy
 // grouping is DERIVED from instance configs, which is right, and it could therefore only ever see
 // accounts a bot was already on — so the first bot onto a new account had nothing to be moved to.
 
+/** One row of the scan's account check — what the edit form reads its terminal off. */
+function check(over: Record<string, unknown> = {}) {
+  return {
+    account: ACCOUNT,
+    label: '',
+    verdict: 'unverified',
+    detail: "No terminal is recorded for it, so there's nothing to check it against.",
+    conflicts: [],
+    seen_on: null,
+    suggested_terminal: null,
+    terminal_note: '',
+    ...over,
+  }
+}
+
+const FREE_PATH = 'C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe'
+const FREE_NOTE =
+  'Logged in on PU Prime MT5 Terminal right now, and no bot or other account uses it.'
+
+async function openEditForm(page: Page) {
+  await openAccount(page)
+  const drawer = page.getByRole('complementary', { name: 'Account settings' })
+  await drawer.getByRole('button', { name: 'Edit' }).click()
+  await expect(page.getByTestId('account-form')).toBeVisible()
+}
+
+test('an account with NO terminal opens its form on the terminal the VPS found it on', async ({
+  page,
+}) => {
+  // Aaron, 2026-09-13: *"When I hit scan VPS, you already know all the information. Why do I have
+  // to put it in?"* The path and the sentence are the SERVER's; the form fills an untouched field.
+  // MUTATION: seed the field from the saved row alone → it stays empty and this goes red.
+  await mock(page, [], [reg({ mt5_path: '', assignable: false })])
+  await routeSync(page, {
+    scan: () =>
+      preview({ registry: [check({ suggested_terminal: FREE_PATH, terminal_note: FREE_NOTE })] }),
+  })
+  await openEditForm(page)
+  await expect(page.getByTestId('f-path')).toHaveValue(FREE_PATH)
+  await expect(page.getByTestId('f-path-note')).toContainText('Filled in from the VPS')
+})
+
+test('a terminal the VPS will not offer leaves the field EMPTY and says why', async ({ page }) => {
+  // The case that nearly happened: the account seen on a terminal another account's bots use.
+  // ⚠ The note is asserted FIRST, so the empty field is the answer rather than a scan in flight.
+  // MUTATION: fill the field from any sighting → the box holds a path and this goes red.
+  const NOTE =
+    "Logged in, but MT5_FFT is account 700152905's terminal. A bot put here would take that terminal over, so it isn't filled in."
+  await mock(page, [], [reg({ mt5_path: '', assignable: false })])
+  await routeSync(page, { scan: () => preview({ registry: [check({ terminal_note: NOTE })] }) })
+  await openEditForm(page)
+  await expect(page.getByTestId('f-path-note')).toContainText('700152905')
+  await expect(page.getByTestId('f-path')).toHaveValue('')
+})
+
+test('an answer that lands AFTER the reader typed never replaces what they typed', async ({
+  page,
+}) => {
+  // Only the reader's EDIT is state; the VPS answer fills an UNTOUCHED field and nothing else.
+  // MUTATION: let the suggestion win over an edit → the typed path is replaced and this goes red.
+  const TYPED = 'C:\\MT5_Mine\\terminal64.exe'
+  await mock(page, [], [reg({ mt5_path: '', assignable: false })])
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/api/bots/accounts/scan', async (route) => {
+    await held
+    await route.fulfill({
+      json: preview({
+        registry: [check({ suggested_terminal: FREE_PATH, terminal_note: FREE_NOTE })],
+      }),
+    })
+  })
+  await openEditForm(page)
+  await expect(page.getByTestId('f-path-note')).toContainText('Asking the VPS')
+  await page.getByTestId('f-path').fill(TYPED)
+  release()
+  await expect(page.getByTestId('f-path-note')).toContainText('PU Prime MT5 Terminal')
+  await expect(page.getByTestId('f-path')).toHaveValue(TYPED)
+})
+
+test('an account that already HAS a terminal does not ask the VPS at all', async ({ page }) => {
+  // The scan SSHes to the box and attaches to its terminals; a form with nothing to fill must not
+  // start one. ⚠ The field is asserted FIRST, so the count is read after the form has settled.
+  // MUTATION: ask whenever the form opens → a scan is counted and this goes red.
+  await mock(page, [], [reg()])
+  const seen = await routeSync(page)
+  await openEditForm(page)
+  await expect(page.getByTestId('f-path')).toHaveValue('C:\\MT5_FFT\\terminal64.exe')
+  await expect(page.getByTestId('f-path-note')).toHaveCount(0)
+  expect(seen.scans).toBe(0)
+})
+
 test('Take live is offered on a DEMO account with bots on it', async ({ page }) => {
   // The positive control for the check below: without it, "not drawn on a live account" would
   // pass against a page that never draws the button anywhere.

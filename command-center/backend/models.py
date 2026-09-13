@@ -1258,6 +1258,11 @@ class RegistryCheck(BaseModel):
     detail: str = ""
     conflicts: list[str] = []
     seen_on: Optional[str] = None
+    # For a row with NO terminal: the one the box found it logged into that no bot and no other
+    # account uses — the path the account form fills in. `None` = nothing to offer, and
+    # `terminal_note` says why. Declared here or Pydantic drops both without a word.
+    suggested_terminal: Optional[str] = None
+    terminal_note: str = ""
 
 
 class TerminalScan(BaseModel):

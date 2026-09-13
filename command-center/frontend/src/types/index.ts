@@ -743,6 +743,12 @@ export interface RegistryCheck {
   detail: string
   conflicts: string[]
   seen_on: string | null
+  /** For a row with NO terminal: the one terminal the box found it logged into that no bot and no
+   *  other account uses — the path the account form fills in. `null` = nothing to offer.
+   *  Optional because answers recorded before it carry neither field. */
+  suggested_terminal?: string | null
+  /** Why that terminal, or why none, in words. `""` = the box found the account nowhere it could ask. */
+  terminal_note?: string
 }
 
 /** What the VPS is actually logged into, checked against the account list.
