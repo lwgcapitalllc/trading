@@ -76,6 +76,9 @@ where an explanation goes (Aaron, 2026-08-20: *"they just have to be simple engl
 added later without one is not an error** — the panel falls back to `label`; it just reads long.
 ⚠ **`strategy_scanner._PARAM_META_KEYS` is a whitelist and `short` is in it** — a key missing
 there is dropped in silence and the UI behaves as though nobody wrote it.
+⚠ **A value carries a unit only if its param STATES one.** `exec_sec_fill_tf_min` did not, so
+the run rail read *Fill clock · 5*; it states `minutes` since 2026-09-13. Its `label` keeps
+*(minutes)* — `config.py` and three backend comments quote it word for word.
 
 ⚠ **THE WHOLE SECONDARY GROUP IS PYTHON-ONLY AND IS EXEMPT FROM THIS RULE — CHECKED, NOT ASSUMED.**
 `sos_fade_strategy.pine` declares 71 inputs and not one of them is a re-entry input (`grep -c "input\."`

@@ -3060,6 +3060,20 @@ one fact is derived from two reads, they must be reads of the same thing.** A fr
 marker is read from disk and whose payload is read from memory does not merely go stale — it
 records that it is up to date, and that record is what stops anyone ever finding out.
 
+## A scan rewrites a Python row whose SCHEMA it would build differently (2026-09-13)
+
+`strategy_scanner._same_schema`. A python row was re-written only when the package's files or its
+meta moved, so a change to the SCANNER never reached a strategy whose source was untouched. The
+python skip now also requires the stored `param_schema` and `default_params` to equal what this
+scan built (canonical JSON — the stored side has been through a round trip). ⚠ **`needs_rescan`
+does not ask it**, so a scanner change shows no *Needs scan* pill; the next Scan applies it.
+
+**First use: the six instrument fields (`_PY_FOUNDATIONAL`) have page names**
+(`_PY_FOUNDATIONAL_WORDS`) — the finished-run panel's *Instrument & broker* fold read `mintick` and
+`daily close hour ny` on every python strategy. A strategy's meta.json still wins where it names
+one. ⚠ Every field in the set needs a name; `tests/test_scanner_instrument_names.py` holds the two
+key sets together. 2 mutations planted in memory, 2 killed.
+
 ## The Backtests list and the Backtest detail page — the 2026-08-06 audit
 
 Aaron asked for an in-depth audit of both pages and then for the fixes. **27 findings; nine were

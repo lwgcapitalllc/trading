@@ -820,6 +820,7 @@
       "widget": "number",
       "label": "Re-entry fill clock (minutes)",
       "short": "Fill clock",
+      "unit": "minutes",
       "min": 1,
       "max": 15,
       "step": 1,

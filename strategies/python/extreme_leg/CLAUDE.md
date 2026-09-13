@@ -851,3 +851,12 @@ step 15 runs this gate on every clone.
 a passing gate's 🔴/⚠ lines. The not-the-shipped-strategy qualifier now prints as two ⚠ lines that
 read alone, and the unreached codes as one ⚠ line naming them.
 `test_the_caveats_survive_a_runner_that_keeps_only_warning_lines`, three mutations watched RED.
+
+## Two minute settings carry a SHORT name (2026-09-13)
+
+`swept_minutes` and `extreme_minutes` gained `short` (*Swept within*, *Extreme lookback*) in
+`extreme_leg.meta.json`. Without one the finished-run panel prints the `label`, and a label ending
+*(minutes)* beside a value reading *180 min* says the unit twice. ⚠ **The labels did not move**:
+each is the Pine input's title word for word (`strategies/tradingview/tools/build_extreme_leg.py`),
+and Pine has no other place to show a unit. ⚠ Display keys only — no setting, default or decision
+changed, so no gate is owed.

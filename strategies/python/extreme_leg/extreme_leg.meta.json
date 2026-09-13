@@ -78,6 +78,7 @@
       "core": true,
       "unit": "min",
       "label": "A level must have been swept within (minutes)",
+      "short": "Swept within",
       "desc": "How recently the liquidity grab must have happened for a turn to count as this setup. Nothing arms without a grab.",
       "guide": [
         "Only a turn right after the grab counts",
@@ -174,6 +175,7 @@
       "core": true,
       "unit": "min",
       "label": "Look back for the extreme (minutes)",
+      "short": "Extreme lookback",
       "desc": "How far back to look for the high or low the stop goes beyond. That extreme is the thing the trade is betting has held.",
       "guide": ["Tight stop, close to the turn", "Wider stop, further back — smaller position"],
       "min": 15,

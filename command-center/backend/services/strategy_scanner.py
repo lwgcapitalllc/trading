@@ -453,6 +453,22 @@ def needs_rescan(row: dict) -> bool:
     return meta_mtime > (row.get("scanned_at") or 0)
 
 
+def _same_schema(existing: dict, data: dict) -> bool:
+    """Whether a stored row already holds the param schema and defaults this scan built.
+
+    Compared as canonical JSON, because the stored side has been through a JSON round trip (a tuple
+    comes back a list) and the built side has not. ⚠ `needs_rescan` does not ask this, so a scanner
+    change shows no "Needs scan" pill — the next Scan is what applies it.
+    """
+
+    def canon(v) -> str:
+        return json.dumps(v, sort_keys=True, default=str)
+
+    return canon(existing.get("param_schema")) == canon(data.get("param_schema")) and canon(
+        existing.get("default_params")
+    ) == canon(data.get("default_params"))
+
+
 def is_orphan(row: dict) -> bool:
     """True when a registered strategy's recorded source_path is gone from disk.
 
@@ -590,6 +606,22 @@ _PY_FOUNDATIONAL = {
     "symbol",
 }
 
+# What each of those is CALLED on a page (2026-09-13). They had no name but the field's own, so the
+# finished-run panel's "Instrument & broker" fold read `mintick` and `daily close hour ny` on every
+# python run. A strategy's meta.json still wins where it names one (sos_fade names three); these
+# are the fallback, kept beside the set that makes them instrument facts in the first place.
+# ⚠ A unit rides with the VALUE ("17 h, New York"), never in the name. ⚠ Every field in
+# `_PY_FOUNDATIONAL` needs an entry here — `tests/test_scanner_instrument_names.py` holds the two
+# key sets together.
+_PY_FOUNDATIONAL_WORDS: dict[str, dict] = {
+    "mintick": {"label": "Tick size"},
+    "point_value": {"label": "Point value"},
+    "daily_close_hour_ny": {"label": "Trading day ends", "unit": "h, New York"},
+    "fill_model": {"label": "Fill model"},
+    "account_profile": {"label": "Account profile"},
+    "symbol": {"label": "Broker symbol"},
+}
+
 
 def _py_param_schema(config_cls) -> list[dict]:
     """Build the lab's param schema from a strategy's config dataclass.
@@ -614,6 +646,8 @@ def _py_param_schema(config_cls) -> list[dict]:
             "group": "Foundational" if category == "foundational" else "Strategy Logic",
             "order": order,
         }
+        # An instrument fact's page name; a meta.json entry overlaid afterwards still wins.
+        param.update(_PY_FOUNDATIONAL_WORDS.get(f.name, {}))
         default = f.default if f.default is not dataclasses.MISSING else None
         if default is not None:
             param["default"] = default
@@ -885,10 +919,15 @@ def scan_strategies() -> dict:
         meta_p = pkg_dir / f"{pkg_dir.name}.meta.json"
         meta_mtime = meta_p.stat().st_mtime if meta_p.exists() else 0
         existing = lab_db.get_strategy(strategy_id)
+        # 🔴 AND the row must already hold the schema this scan BUILT. The package's files and its
+        # meta decide whether a STRATEGY changed, but the scanner decides what a param is called
+        # and where it is filed — so a scanner change (the instrument names, 2026-09-13) never
+        # reached a package whose files had not moved. `data` is built above either way.
         if (
             existing
             and existing.get("source_hash") == current_hash
             and meta_mtime <= (existing.get("scanned_at") or 0)
+            and _same_schema(existing, data)
         ):
             skipped += 1
             continue
