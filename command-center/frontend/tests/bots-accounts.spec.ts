@@ -975,7 +975,8 @@ test('a RUNNING bot’s Remove says it is stopped first, and the first click sen
   const log = await stopsWhenAsked(page, 'sos_fade')
   await openBot(page, 'sos_fade') // the snapshot mock has sos_fade RUNNING
   await expect(page.getByTestId('bot-account')).toContainText('stops it first')
-  await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime')
+  // The account's NICKNAME since 2026-09-13 — `reg()` carries one, so the broker is not printed.
+  await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime ECN demo')
   const remove = page.getByTestId('remove-sos_fade')
   await remove.click()
   await expect(remove).toHaveText('Stop and take off')
@@ -3055,6 +3056,45 @@ test('an account nobody is on YET is still offered as a destination', async ({ p
   )
   await openBot(page, 'b_leg')
   await expect(page.getByTestId('move-b_leg').locator(`option[value="${EMPTY}"]`)).toHaveCount(1)
+})
+
+test('an account is named by its NICKNAME — the broker only when it has none', async ({ page }) => {
+  // Aaron, 2026-09-13: "having the name like PU Prime Ltd doesn't help me differentiate accounts".
+  // The card heading, the account panel's title and the bot panel's account line put the BROKER
+  // first, while the account form's own Name field says it is "used instead of the broker when it
+  // is set" — and the unassigned list and the go-live panel already put the nickname first.
+  // WATCHED RED against HEAD, where the broker led: the heading read "PU Prime Ltd".
+  await mock(
+    page,
+    [
+      group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] }),
+      group({ account: OTHER, bots: [bot('b_leg', 'B-LEG', 770116, null)] }),
+    ],
+    [
+      reg({ label: 'Aaron Algo', broker: 'PU Prime Ltd' }),
+      reg({ account: OTHER, label: '', broker: 'Vantage' }),
+    ]
+  )
+  await page.goto('/bots')
+  const heading = (account: number) =>
+    page
+      .getByTestId('account-card')
+      .filter({ hasText: String(account) })
+      .getByTitle(/^Open this account/)
+  await expect(heading(ACCOUNT)).toContainText('Aaron Algo')
+  // INSTEAD of the broker, not beside it — the form's own promise.
+  await expect(heading(ACCOUNT)).not.toContainText('PU Prime Ltd')
+  // No nickname → the broker. The half that was already right; kept so a rule stated in one
+  // direction is not "simplified" into dropping the fallback.
+  await expect(heading(OTHER)).toContainText('Vantage')
+
+  await openAccount(page)
+  await expect(page.getByRole('complementary', { name: 'Account settings' })).toContainText(
+    'Aaron Algo'
+  )
+
+  await openBot(page, 'sos_fade')
+  await expect(page.getByTestId('bot-account-name')).toHaveText('Aaron Algo')
 })
 
 // ── The page's own state, and the three-state rule on every row ───────────────

@@ -4549,6 +4549,19 @@ and neither closed.
   beside it" count is taken at an instant, never retried**: the take-off ends by itself, and a
   retried count of 0 waited for that and passed against a planted bug.
 
+## An account is named by its NICKNAME, else its broker (2026-09-13)
+
+Aaron: *"PU Prime Ltd doesn't help me differentiate accounts."* `accountName`
+(`pages/Bots/AccountForm.tsx`) is the one rule — the account form's Name, else the broker, else
+`null` — and every place that names an account calls it: the card heading and the account panel's
+title (through `nameOf`), the bot panel's account line, the unassigned list and the go-live panel.
+
+- 🔴 **Three of those five put the BROKER first** while the form's own Name field says it is "used
+  instead of the broker when it is set" — one rule written five times, two copies the other way round.
+- ⚠ **Instead of the broker, never beside it**; the account number still leads the heading.
+- Tests: 1 new and 1 re-pointed in `bots-accounts.spec.ts`, both watched RED against HEAD. The broker
+  fallback passes at HEAD and was not mutation-run.
+
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
 🔴 **Earnings are keyed by ACCOUNT AND BOT, never by bot alone (2026-09-11).** A bot that moved has a

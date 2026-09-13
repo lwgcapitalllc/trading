@@ -11,11 +11,24 @@ import { X } from 'lucide-react'
 import { useRegisterAccount, useSetAccountPassword, useTerminalSuggestion } from '@/hooks/useBots'
 import type { BotAccountGroup, BotAccountRegistration, BotAccountRegistrationWrite } from '@/types'
 
-/** What an account is called on screen: the broker (or the name somebody gave it). */
+/**
+ * What an account is called on screen: the nickname somebody gave it, else its broker, else `null`.
+ *
+ * 🔴 **The nickname LEADS (2026-09-13, Aaron: *"PU Prime Ltd doesn't help me differentiate
+ * accounts"*).** The card heading, the account panel and the bot panel put the broker first while
+ * the Name field below says it is "used instead of the broker when it is set", and the unassigned
+ * list and the go-live panel already put the nickname first — one rule written five times, two
+ * copies the other way round. Every place that names an account calls this.
+ */
+export function accountName(reg: BotAccountRegistration | undefined): string | null {
+  return reg?.label || reg?.broker || null
+}
+
+/** The account card's and panel's name — `accountName`, or what a group that is not an account is. */
 export function nameOf(reg: BotAccountRegistration | undefined, g: BotAccountGroup): string {
   if (g.kind === 'bench') return 'Not on an account'
   if (g.kind === 'unknown') return 'Unreadable configs'
-  return reg?.broker || reg?.label || `Account ${g.account}`
+  return accountName(reg) ?? `Account ${g.account}`
 }
 
 /**

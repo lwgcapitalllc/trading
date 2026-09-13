@@ -38,6 +38,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Lock, Rocket } from 'lucide-react'
 import { useGoLivePreview, useApplyGoLive } from '@/hooks/useBots'
 import { Shimmer } from '@/components/Shimmer'
+import { accountName } from './AccountForm'
 import type {
   BotAccountBot,
   BotAccountGroup,
@@ -280,9 +281,7 @@ export function GoLivePanel({
                   <span className="font-mono tabular-nums text-[13px] font-semibold text-text-primary">
                     {a.account}
                   </span>
-                  <span className="text-[13px] text-text-secondary truncate">
-                    {a.label || a.broker}
-                  </span>
+                  <span className="text-[13px] text-text-secondary truncate">{accountName(a)}</span>
                   <span className="ml-auto text-[11.5px] text-text-tertiary shrink-0">
                     {a.assignable ? `${a.broker} ${a.tier}`.trim() : 'cannot take bots'}
                   </span>
@@ -335,7 +334,7 @@ export function GoLivePanel({
                   {plan.from_account}
                 </p>
                 <p className="text-[12px] text-text-secondary truncate">
-                  {fromReg?.label || 'Demo account'}
+                  {accountName(fromReg) ?? 'Demo account'}
                 </p>
               </div>
               <ArrowRight size={16} className="text-text-tertiary" />
@@ -347,7 +346,7 @@ export function GoLivePanel({
                   {plan.to_account}
                 </p>
                 <p className="text-[12px] text-text-secondary truncate">
-                  {dest?.label || dest?.broker || 'Live account'}
+                  {accountName(dest) ?? 'Live account'}
                 </p>
               </div>
             </div>

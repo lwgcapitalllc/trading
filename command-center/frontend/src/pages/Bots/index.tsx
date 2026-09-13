@@ -89,7 +89,7 @@ import { BotActionPill, type BotAction } from './BotStatusPill'
 import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
-import { emptyGroup, nameOf } from './AccountForm'
+import { accountName, emptyGroup, nameOf } from './AccountForm'
 import { VpsSyncDrawer } from './VpsSyncDrawer'
 import { useStopFirst } from './stopFirst'
 import { KIND_NAME, KIND_TINT, KindChip, tintOf } from './kind'
@@ -1185,9 +1185,9 @@ export function Bots() {
            *  nickname somebody typed here. When the two disagree the number is the one
            *  that is right, so it is the one the eye lands on first. */}
           <span className="text-[14px] font-mono font-semibold tabular-nums">{account}</span>
-          {/* The broker name comes off the registry, which asks the box whether a
-           *  password is stored and so is slow — until it answers, the fallback
-           *  "Account N" would be a guess at a name, so the name shimmers instead. */}
+          {/* The account's name (its nickname, else its broker) comes off the registry, which
+           *  asks the box whether a password is stored and so is slow — until it answers, the
+           *  fallback "Account N" would be a guess at a name, so the name shimmers instead. */}
           {!reg && registryPending ? (
             <Shimmer className="h-[13px] w-[64px]" />
           ) : (
@@ -1560,7 +1560,7 @@ export function Bots() {
             {a.account}
           </span>
           <span className="text-[13px] text-text-secondary">
-            {a.label || a.broker || `Account ${a.account}`}
+            {accountName(a) ?? `Account ${a.account}`}
           </span>
           <KindChip kind={a.kind} />
         </button>

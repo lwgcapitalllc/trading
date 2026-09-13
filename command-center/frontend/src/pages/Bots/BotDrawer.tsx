@@ -46,6 +46,7 @@ import { Shimmer } from '@/components/Shimmer'
 import { botLabel as labelOf } from '@/lib/botLabel'
 import { botCondition, type Condition } from '@/lib/botCondition'
 import { StatusText, TONE_TEXT } from '@/components/BotStatus'
+import { accountName } from './AccountForm'
 import { ParamGroup, VersionBanner } from './ConfigureTab'
 import { BotActionPill, type BotAction } from './BotStatusPill'
 import { BotRiskEditor } from './BotRiskEditor'
@@ -266,11 +267,8 @@ export function BotDrawer({
 
   const regOf = (a: number) => (registry ?? []).find((r) => r.account === a)
   const kindOf = (a: number) => regOf(a)?.kind
-  // The account's name as the Bots page's heading gives it — the broker, else the label typed here.
-  const myAccountName =
-    typeof configAccount === 'number'
-      ? regOf(configAccount)?.broker || regOf(configAccount)?.label || null
-      : null
+  // The account's name as the Bots page's heading gives it — its nickname, else its broker.
+  const myAccountName = typeof configAccount === 'number' ? accountName(regOf(configAccount)) : null
   const groupOf = (a: number | null | undefined) =>
     typeof a === 'number'
       ? (groups ?? []).find((g) => g.kind === 'account' && g.account === a)
