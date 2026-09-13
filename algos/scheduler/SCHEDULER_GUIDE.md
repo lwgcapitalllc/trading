@@ -17,6 +17,7 @@ All tasks run as `trader` user on the VPS.
 | SYS_LEDGERSYNC | Scheduled | Hourly, :20 | `tools/ledger_sync.py --local --alert-on-failure` |
 | SYS_REENTRYWATCH | Scheduled | Hourly, :23 | `tools/watch_reentry.py --bot sos_fade_demo` |
 | SYS_BROKERCOSTS | Scheduled | Daily 06:40 | `tools/watch_broker_costs.py --bot sos_fade_demo` |
+| SYS_GETSCREENRESTART | Scheduled | Weekly, Saturday 12:00 | no script - restarts the host's `Getscreen.me` service |
 
 🔴 **THE THREE SILENT TASKS ARE THE ONES TO CHECK AFTER A REBUILD.** `SYS_DEADMAN`,
 `SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` all report nothing on an ordinary day, so a box that came
@@ -116,6 +117,50 @@ permanently green, which is worse than having no switch, because you would belie
 
 ---
 
+## `SYS_GETSCREENRESTART` — a program the VPS host installed leaks memory (2026-09-13)
+
+**Getscreen.me is the host's browser remote-access agent**: a Windows service with full system
+rights, installed the minute the box last started (2026-05-10), connected to the host's own server
+`getscreen.t-h.cloud`. Nothing in this repo installs or uses it; we connect with the Windows Remote
+Desktop app.
+
+🔴 **It opens Windows handles, about 24 a minute, and never closes them.** After 126 days it held
+**4.35 million — 98.6% of every handle on the box** — and kernel memory that cannot be paged out
+stood at **2.1 GB of a 4 GB machine**, leaving about 460 MB free for everything else. MEASURED on
+this task's first run, `typeperf` before and 90 seconds after:
+
+| | before | after |
+|---|---|---|
+| free memory | 463 MB | 1,963 MB |
+| non-pageable kernel memory | 2.1 GB | 0.31 GB |
+| committed memory | 9.0 GB | 4.5 GB |
+| Getscreen.me handles | 4,351,086 | 396 |
+
+⚠ **Restarted weekly, not removed — Aaron's call.** Nobody uses it, so switching it off would end
+the leak and take a full-rights remote-control agent off a box running live money; it was kept
+because the host put it there. To switch it off later: `sc config Getscreen.me start= disabled`,
+then `sc stop Getscreen.me`. This task then fails and harms nothing.
+
+🔴 **Its failure is SILENT, and that is how the leak went unseen for four months** — nothing on
+the box alarms on low memory. If the task stops running, the leak grows back at ~34,000 handles a
+day. Check both:
+
+```powershell
+schtasks /query /tn SYS_GETSCREENRESTART /fo list /v | findstr /C:"Last Run Time"
+wmic process where name='getscreen.exe' get HandleCount
+```
+
+⚠ **A weekly restart caps it at roughly 100 MB of non-pageable memory by each Saturday** — today's
+1.8 GB freed across 4.35 million handles, scaled to a week's ~240,000. ⚠ **The old process takes
+about 90 seconds to let go after a restart**; a reading inside that window looks as if nothing
+happened.
+
+⚠ Day to day, when the host's server asks for a preview it photographs the Windows sign-in screen
+(the console session, not the trading desktop) and uploads it. Four months of its logs show no
+keyboard, mouse, clipboard or file-transfer activity.
+
+---
+
 ## Install All Tasks (PowerShell)
 
 ```powershell
@@ -128,7 +173,8 @@ $tasks = @(
     "logreview_task.xml:SYS_LOGREVIEW",
     "ledgersync_task.xml:SYS_LEDGERSYNC",
     "reentrywatch_task.xml:SYS_REENTRYWATCH",
-    "brokercosts_task.xml:SYS_BROKERCOSTS"
+    "brokercosts_task.xml:SYS_BROKERCOSTS",
+    "getscreen_restart_task.xml:SYS_GETSCREENRESTART"
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")

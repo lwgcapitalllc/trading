@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>fxut9200941\trader</Author>
+    <URI>\SYS_GETSCREENRESTART</URI>
+    <Description>Restarts the VPS host's Getscreen.me remote-access service every Saturday at 12:00 UTC. It leaks Windows handles, about 24 a minute, and never frees them: on 2026-09-13 it held 4.35 million, with 2.1 GB of kernel memory locked on a 4 GB box. A restart frees them. Nothing in the trading setup uses it. If the host ever removes Getscreen.me this task fails and harms nothing.</Description>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT15M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+  </Settings>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-03T12:00:00</StartBoundary>
+      <ScheduleByWeek>
+        <DaysOfWeek>
+          <Saturday />
+        </DaysOfWeek>
+        <WeeksInterval>1</WeeksInterval>
+      </ScheduleByWeek>
+    </CalendarTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Command>
+      <Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Restart-Service -Name 'Getscreen.me' -Force -ErrorAction Stop"</Arguments>
+    </Exec>
+  </Actions>
+</Task>

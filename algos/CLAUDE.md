@@ -3454,6 +3454,21 @@ full-exit paths built on 2026-09-01/02 are not exercised by it and stay unproven
 the warnings and what does NOT change are in the bot's own `config.json` → `_re_entry_on_2026_09_02`
 — **not restated here**, because a second copy of a decision is how two files come to disagree.
 
+### `SYS_GETSCREENRESTART` — the VPS host's Getscreen.me leaks memory, so it is restarted weekly (2026-09-13)
+
+**Getscreen.me is the host's browser remote-access agent, not ours, and it leaks Windows handles
+(~24 a minute, never freed).** After 126 days it held 4.35 million handles and 2.1 GB of
+non-pageable kernel memory on this 4 GB box, leaving ~460 MB for everything else. The task's first
+run freed 1.8 GB. Measurements and the two checks: `scheduler/SCHEDULER_GUIDE.md`.
+
+- ⚠ **Restarted every Saturday 12:00 UTC, not removed — Aaron's call.** Nothing here uses it;
+  switching it off is one command, in the guide.
+- 🔴 **FOURTH task whose normal state is silence, and nothing on the box alarms on low memory** —
+  which is how the leak went unseen for four months. Prove a run by `Last Run Time`, never by the
+  `schtasks /run` exit code.
+- ⚠ **It touches nothing a bot uses** — MEASURED on its first run: both live bots kept running,
+  broker link up, no restart.
+
 ### 🔴 The de-brand left both silent watchers pointing at a bot that no longer exists (2026-09-04)
 
 `SYS_REENTRYWATCH` and `SYS_BROKERCOSTS` are registered from `algos/scheduler/*.xml`, and both XMLs

@@ -226,6 +226,11 @@ secret and it CHANGES nothing — re-pricing the lab's constant re-bases every c
 repo and stays a deliberate job. 🔴 **THIRD task here whose normal state is silence**, so same
 hazard and same answer: it announces its own failure and writes a health record carrying the
 reading on every run. Rules: `algos/CLAUDE.md` → *`SYS_BROKERCOSTS`*.
+
+⚠ **And `SYS_GETSCREENRESTART` on 2026-09-13** — every Saturday it restarts the VPS host's
+Getscreen.me remote-access agent, which leaked 2.1 GB of kernel memory in four months on this 4 GB
+box. 🔴 **FOURTH task here whose normal state is silence**, and nothing on the box alarms on low
+memory. Rules: `algos/CLAUDE.md` → *`SYS_GETSCREENRESTART`*.
 🔴 `install_ledger_sync.sh` **no longer installs anything and refuses if you ask** — its Mac agent
 was a SECOND WRITER of an append-only file, and two appends to one file end cannot be merged at any
 content (eight hours of hourly conflicts, 2026-08-28). **`--no-push` did not save it: on a shared

@@ -123,6 +123,7 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'ledgersync_task.xml';          Name = 'SYS_LEDGERSYNC' }
     [pscustomobject]@{ Xml = 'reentrywatch_task.xml';        Name = 'SYS_REENTRYWATCH' }
     [pscustomobject]@{ Xml = 'brokercosts_task.xml';         Name = 'SYS_BROKERCOSTS' }
+    [pscustomobject]@{ Xml = 'getscreen_restart_task.xml';   Name = 'SYS_GETSCREENRESTART' }
 )
 # SYS_PNLTRACKER and SYS_REPORTER were removed 2026-08-05 with the scripts behind them.
 # SYS_DEADMAN and SYS_LOGBACKUP were added in the same pass: both had task XMLs sitting in
@@ -152,6 +153,11 @@ $Tasks = @(
 # its own failure rather than dying into a log. ⚠ It needs no secret. ⚠ It CHANGES NOTHING — it
 # never writes the lab's constant, because re-pricing re-bases every charged figure in the repo
 # and is a deliberate job with its own commit.
+# SYS_GETSCREENRESTART was added 2026-09-13. It restarts the VPS host's Getscreen.me remote-access
+# service every Saturday at 12:00 UTC, because that service leaks Windows handles (about 24 a
+# minute, never freed): on 2026-09-13 it held 4.35 million and 2.1 GB of kernel memory on a 4 GB
+# box. Nothing in trading uses it. If the host's image stops shipping Getscreen.me, the task just
+# fails. WARNING: that failure is silent - a task that stops running lets the leak grow back.
 # BOT_ tasks are started by SYS_STARTUP only — disable so they never auto-fire.
 # No bots are registered yet, so this list is empty.
 $DisableTasks = @()
