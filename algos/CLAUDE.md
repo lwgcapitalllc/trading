@@ -3466,6 +3466,10 @@ run freed 1.8 GB. Measurements and the two checks: `scheduler/SCHEDULER_GUIDE.md
 - 🔴 **FOURTH task whose normal state is silence, and nothing on the box alarms on low memory** —
   which is how the leak went unseen for four months. Prove a run by `Last Run Time`, never by the
   `schtasks /run` exit code.
+- ⚠ **No low-memory alarm, and that is a decision — Aaron's call, 2026-09-13.** What low memory
+  would cost is a bot stopping or the box freezing, and `SYS_DEADMAN` catches both from OFF the box
+  (`deadman.py --status` → `configured: yes`, checked that day). If this task stops, the leak took
+  four months to do its damage the first time. Re-raise it only for a NEW source of memory pressure.
 - ⚠ **It touches nothing a bot uses** — MEASURED on its first run: both live bots kept running,
   broker link up, no restart.
 
