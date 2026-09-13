@@ -42,6 +42,23 @@ now met five times: never let "no" and "cannot ask" be the same value — and he
 answer is the dangerous one, because a checker that says nothing is indistinguishable from a
 system with nothing wrong.
 
+## Open, or over — only OPEN counts as "needs review" (2026-09-13)
+
+🔴 **Aaron: *"I don't want to manually mark anything as reviewed. The platform should know that
+this thing was resolved."*** Eight findings stayed on the Bots page for the full two-day window
+after the record showed them over: a halt that recovered, a crash it came back from, a link drop
+that restored, a bar or loop error it carried on past, a closed quiet gap, and a restart loop or
+re-warm burst that had stopped. Every `Finding` now says which it is — `resolved` is the sentence
+saying why it is over, `None` while it still needs a person.
+⚠ **Over is read off the RECORD, never off a timer** — a timer forgets a real repeat.
+⚠ **A REPEAT is over only once the bot has run longer without one than the longest gap between
+them, and for at least three pulses** (`_burst_over`), so a burst of four in five minutes is not
+declared over after six.
+⚠ **An over finding is still written and still announced, once** (✅, not ⚠️): this reviewer owns
+what happened, including what healed before anyone looked. It just stops counting as *needs
+review*, and `review.json` keeps it in a separate `resolved` list — a page that has not learnt the
+field still sees only what is open.
+
 ## Where it reports
 
 Two places, deliberately, because they fail differently:
@@ -101,6 +118,14 @@ PULSE_GAP_ALERT = 3 * PULSE_SECONDS
 # the finding itself for why, and do not "fix" the count back to all starts.
 RESTART_LOOP = 4
 REWARM_STORM = 4
+# The same bar for the other two repeats counted here (2026-09-13): below it, a link drop is one
+# incident that is over once it restores, and a loop error once the bot heartbeat after it; at it,
+# the REPEAT is a finding of its own that stays open until it stops (`_burst_over`).
+# ⚠ No bar-error burst of its own — every bar error is followed by a re-warm (`runner.py`,
+# `after_bar_error`), so `REWARM_STORM` already counts one, and a second finding would be two
+# alarms for one fault.
+LINK_STORM = 4
+LOOP_ERROR_STORM = 4
 
 ALERT, WARN = "alert", "warn"
 # The level a clean run writes. ⚠ NOT `WARN` by falling through the "worst of" test on an empty
@@ -123,13 +148,23 @@ class Finding:
     the timestamp of the event rather than just its type. A key of `"halted"` would alert once
     and then never again, including for a completely new halt a week later — the failure mode of
     every de-duplicating alerter that keys on the kind of thing rather than the thing.
+
+    `resolved` is why it is OVER, in one sentence, or `None` while it still needs a person. ⚠ It
+    never changes the key: the same incident is open on one pass and over on the next, and moving
+    the key with it would re-announce something already said.
     """
 
-    def __init__(self, key: str, level: str, title: str, detail: str) -> None:
+    def __init__(
+        self, key: str, level: str, title: str, detail: str, resolved: Optional[str] = None
+    ) -> None:
         self.key, self.level, self.title, self.detail = key, level, title, detail
+        self.resolved = resolved
 
     def as_dict(self) -> Dict[str, str]:
-        return {"key": self.key, "level": self.level, "title": self.title, "detail": self.detail}
+        out = {"key": self.key, "level": self.level, "title": self.title, "detail": self.detail}
+        if self.resolved is not None:
+            out["resolved"] = self.resolved
+        return out
 
 
 # ── reading the record ───────────────────────────────────────────────────────
@@ -251,6 +286,60 @@ def _halt_tense(pulses: List[dict], supposed_to_run: bool, now: datetime) -> str
     return HALT_NOW if (now - last).total_seconds() <= PULSE_GAP_ALERT else HALT_UNKNOWN
 
 
+# ── is it over? ──────────────────────────────────────────────────────────────
+def _first_after(rows: List[dict], at: Optional[datetime]) -> Optional[dict]:
+    """The earliest row strictly AFTER `at`, or `None`.
+
+    ⚠ Strictly after, and a row whose time cannot be read never counts — the same rule the refusals
+    below have carried since 2026-08-07: a time that cannot be placed must not buy an all-clear.
+    """
+    if at is None:
+        return None
+    later = [(t, r) for r in rows for t in [_parse_ts(r)] if t is not None and t > at]
+    return min(later, key=lambda p: p[0])[1] if later else None
+
+
+def _span(gap: timedelta) -> str:
+    minutes = int(gap.total_seconds() // 60)
+    return f"{minutes} minutes" if minutes < 120 else f"{minutes // 60} hours"
+
+
+def _burst_over(
+    rows: List[dict], pulses: List[dict], settled: Optional[dict] = None
+) -> Optional[str]:
+    """Why a REPEAT is over, or `None` while another could still be on its way.
+
+    Over once the bot has run — to its newest pulse — longer without one than the longest gap
+    between them, and for at least `PULSE_GAP_ALERT` (three pulses). ⚠ **Measured from the burst,
+    never from a clock**: a restart loop of four in five minutes is not over after six, and one
+    of four across a day is not over after an hour. ⚠ `settled` is the row the last one ENDED on,
+    when that is later than the row itself (a link drop ends at its restore).
+    ⚠ **Any time that cannot be read keeps it open**, and so does a record with no pulse after it.
+    """
+    end_row = settled if settled is not None else (rows[-1] if rows else None)
+    times = [_parse_ts(r) for r in rows]
+    end = _parse_ts(end_row) if end_row is not None else None
+    beat = _parse_ts(pulses[-1]) if pulses else None
+    if not rows or end is None or beat is None or any(t is None for t in times):
+        return None
+    ordered = sorted(times)
+    longest = max((b - a for a, b in zip(ordered, ordered[1:])), default=timedelta(0))
+    quiet = beat - end
+    if quiet <= max(longest, timedelta(seconds=PULSE_GAP_ALERT)):
+        return None
+    return (
+        f"None since {_at(end_row)}: {_span(quiet)} without one, longer than any gap between them."
+    )
+
+
+def _carried_on(row: dict, pulses: List[dict]) -> Optional[str]:
+    """Why a one-off incident is over — the bot heartbeat AFTER it — or `None` if nothing shows it."""
+    after = _first_after(pulses, _parse_ts(row))
+    return (
+        None if after is None else f"Its heartbeat carried on after it, last at {_at(pulses[-1])}."
+    )
+
+
 # ── the checks ───────────────────────────────────────────────────────────────
 def _suspect_anchor(bot_key: str, state: dict) -> List[Finding]:
     """The opening balance this bot anchored looks like it was orphaned by a RENAME.
@@ -353,11 +442,10 @@ def review_bot(
     def _of(name: str) -> List[dict]:
         return [r for r in events if r.get("event") == name]
 
-    # Gathered ONCE here because TWO findings below ask *has it started since?* and the two must
-    # not be able to answer differently. `config_change_refused` has asked since 2026-08-07;
-    # `startup_failed` joined it 2026-09-04 (see its own block for why).
+    # Gathered ONCE here because three findings below ask *has it started since?* (`_first_after`)
+    # and they must not be able to answer differently. `config_change_refused` has asked since
+    # 2026-08-07; `startup_failed` and `version_mismatch` joined it 2026-09-04.
     starts = _of("startup")
-    start_times = [t for t in (_parse_ts(r) for r in starts) if t is not None]
 
     # ── the bridge stopped placing orders, and nothing else can see this ─────
     #
@@ -387,9 +475,10 @@ def review_bot(
                 )
             )
         elif tense == HALT_RECOVERED:
-            # Recovered. Still worth a standing chip — a halt is the most consequential thing
-            # this module reports and one that came and went unexamined is how the next one gets
-            # shrugged at — but it is WARN, and it says so in the past tense.
+            # Recovered, so it is OVER (2026-09-13). Still written and announced once — a halt is
+            # the most consequential thing this module reports, and one that came and went unsaid
+            # is how the next one gets shrugged at — but never a standing *needs review*: its own
+            # text says there is nothing to act on, and it stayed lit for two days anyway.
             findings.append(
                 Finding(
                     f"halted:{_ts(row)}",
@@ -399,6 +488,7 @@ def review_bot(
                     f"{row.get('reason', 'no reason recorded')}.\n"
                     f"Its latest heartbeat says the bridge is live again, so this is a record of "
                     f"what happened rather than something to act on. Worth knowing WHY it halted.",
+                    resolved=f"Its heartbeat at {_at(pulses[-1])} says the bridge is live.",
                 )
             )
         else:
@@ -450,8 +540,9 @@ def review_bot(
 
     # ── refused to start at all ──────────────────────────────────────────────
     #
-    # 🔴 **Dropped once the bot has STARTED since the failure** — the same rule, for the same
-    # reason, as the settings refusal below, which has carried it since 2026-08-07. A failed start
+    # 🔴 **Over once the bot has STARTED since the failure** (dropped outright until 2026-09-13) —
+    # the same rule, for the same reason, as the settings refusal below, which has carried it since
+    # 2026-08-07. A failed start
     # is answered by a successful one: the bot read its config fresh and got in. Without this it
     # re-raised for the full two-day window, so a bot fixed and running reads as an open incident.
     #
@@ -472,15 +563,14 @@ def review_bot(
     # ⚠ **It does NOT suppress the restart-loop finding**, which counts starts rather than
     # failures and is the thing that catches a bot flapping its way to a start.
     for row in _of("startup_failed"):
-        at = _parse_ts(row)
-        if at is not None and any(s > at for s in start_times):
-            continue
+        started = _first_after(starts, _parse_ts(row))
         findings.append(
             Finding(
                 f"startup_failed:{_ts(row)}",
                 ALERT,
                 "It failed to start",
                 f"At {_at(row)}: {row.get('error', '?')}",
+                resolved=f"It started at {_at(started)}." if started else None,
             )
         )
     # ⚠ **Same rule, and it is the same finding wearing a different reason** — this is *it refused
@@ -489,15 +579,14 @@ def review_bot(
     # refused-to-start findings sticky while the other two clear is the inconsistency that made
     # this block worth reading twice.
     for row in _of("version_mismatch"):
-        at = _parse_ts(row)
-        if at is not None and any(s > at for s in start_times):
-            continue
+        started = _first_after(starts, _parse_ts(row))
         findings.append(
             Finding(
                 f"version_mismatch:{_ts(row)}",
                 ALERT,
                 "It refused to start — the code is not the promoted version",
                 f"At {_at(row)}: {row.get('detail', '?')}",
+                resolved=f"It started at {_at(started)}." if started else None,
             )
         )
 
@@ -512,6 +601,9 @@ def review_bot(
                     f"The run before {_at(row)} was killed, crashed, or the box went down — it wrote no "
                     f"shutdown record.\n"
                     f"Expected if you restarted it yourself.",
+                    # ⚠ Over the moment it is written: this row IS the start that brought it
+                    # back. A death that REPEATS is the restart loop's, below, and stays open.
+                    resolved=f"It came back at {_at(row)}.",
                 )
             )
 
@@ -542,6 +634,7 @@ def review_bot(
                 f"run that recorded no clean shutdown.\n"
                 f"Either something is killing it, or it is failing and being brought back. A "
                 f"restart you asked for is not counted here.",
+                resolved=_burst_over(unclean_starts, pulses),
             )
         )
 
@@ -550,6 +643,9 @@ def review_bot(
     if outages:
         back = _of("mt5_link_restored")
         total = sum(int(r.get("down_seconds") or 0) for r in back)
+        restored = _first_after(back, _parse_ts(outages[-1]))
+        # ⚠ Still down on the record keeps it OPEN — and the Bots page answers it off the heartbeat's
+        # own link reading between passes (`routers/bots.py`), so it never outlives the outage.
         findings.append(
             Finding(
                 f"mt5_outage:{_ts(outages[-1])}",
@@ -559,8 +655,23 @@ def review_bot(
                 f"total.\n"
                 f"While blind it sees no bars at all. If it keeps happening, check MetaTrader on "
                 f"the VPS.",
+                resolved=f"The link came back at {_at(restored)}." if restored else None,
             )
         )
+        # 🔴 The REPEAT is its own finding, with its own key (2026-09-13): every drop can heal and
+        # the link still be the problem. Open until it has held longer than any gap between drops.
+        if len(outages) >= LINK_STORM:
+            findings.append(
+                Finding(
+                    f"mt5_storm:{_ts(outages[-1])}",
+                    WARN,
+                    "The MT5 link keeps dropping",
+                    f"{len(outages)} drops since {_at(outages[0])}, the last at {_at(outages[-1])}.\n"
+                    f"Each one heals, but while it is down the bot sees no bars. Check MetaTrader "
+                    f"on the VPS.",
+                    resolved=_burst_over(outages, pulses, settled=restored) if restored else None,
+                )
+            )
 
     # ── the bar stream had holes ─────────────────────────────────────────────
     bar_errors = _of("bar_error")
@@ -573,6 +684,7 @@ def review_bot(
                 f"Last at {_at(bar_errors[-1])}: {bar_errors[-1].get('error', '?')}\n"
                 f"Each one is a hole in the bar stream. It re-warms rather than carrying on, so "
                 f"nothing is silently skipped.",
+                resolved=_carried_on(bar_errors[-1], pulses),
             )
         )
 
@@ -584,8 +696,22 @@ def review_bot(
                 WARN,
                 f"{len(loop_errors)} loop error(s)",
                 f"Last at {_at(loop_errors[-1])}: {loop_errors[-1].get('error', '?')}",
+                resolved=_carried_on(loop_errors[-1], pulses),
             )
         )
+        # The repeat, as for the link above: the loop turning after each error does not make an
+        # error on every turn fine.
+        if len(loop_errors) >= LOOP_ERROR_STORM:
+            findings.append(
+                Finding(
+                    f"loop_storm:{_ts(loop_errors[-1])}",
+                    WARN,
+                    "Its loop keeps failing",
+                    f"{len(loop_errors)} loop errors since {_at(loop_errors[0])}, the last at "
+                    f"{_at(loop_errors[-1])}: {loop_errors[-1].get('error', '?')}",
+                    resolved=_burst_over(loop_errors, pulses),
+                )
+            )
 
     rewarms = _of("rewarm")
     if len(rewarms) >= REWARM_STORM:
@@ -596,14 +722,15 @@ def review_bot(
                 f"Re-warmed {len(rewarms)} times",
                 f"Last at {_at(rewarms[-1])}.\n"
                 f"Repeated re-warms mean the bar stream keeps breaking.",
+                resolved=_burst_over(rewarms, pulses),
             )
         )
 
     # ── a settings change did not take ──────────────────────────────────────
     #
-    # 🔴 Dropped once the bot has STARTED since the refusal. A start reads the settings file
-    # fresh, so the refusal has already been answered and this finding's own instruction —
-    # *restart it to take them* — has already been carried out. Without this it re-raised for the
+    # 🔴 Over once the bot has STARTED since the refusal (dropped outright until 2026-09-13). A start
+    # reads the settings file fresh, so the refusal has already been answered and this finding's
+    # own instruction — *restart it to take them* — has already been carried out. Without this it re-raised for the
     # full two-day window, telling you to do a thing you did minutes earlier; and since every
     # change to a setting that cannot be reloaded live writes one of these, a bot under active
     # work never cleared the chip at all.
@@ -621,9 +748,7 @@ def review_bot(
     # run before it ended — that is the question above's, and conflating the two would suppress
     # nothing while looking careful.
     for row in _of("config_change_refused"):
-        at = _parse_ts(row)
-        if at is not None and any(s > at for s in start_times):
-            continue
+        started = _first_after(starts, _parse_ts(row))
         findings.append(
             Finding(
                 f"config_refused:{_ts(row)}",
@@ -632,6 +757,7 @@ def review_bot(
                 f"At {_at(row)}: {row.get('changes', '?')}\n"
                 f"It is still trading the OLD settings, so the Bots page may show what you asked "
                 f"for rather than what it is using. Restart it to take them.",
+                resolved=f"It started at {_at(started)}, which loads them." if started else None,
             )
         )
 
@@ -678,6 +804,8 @@ def _pulse_gaps(pulses: List[dict]) -> List[Finding]:
                     f"Went quiet for {int(gap // 60)} minutes",
                     f"No heartbeat between {_ts(prev)} and {_ts(cur)}. Either the process was down "
                     f"in that window or it was not turning its loop.",
+                    # Closed by construction — `cur` is the beat that ended it.
+                    resolved=f"Its heartbeat resumed at {_at(cur)}.",
                 )
             )
     return out
@@ -729,20 +857,27 @@ def write_flag(instance_dir: Path, bot_key: str, findings: List[Finding]) -> Non
     ⚠ **Do not "tidy" this back into deleting the file when clean.** The clean case is the whole
     point: a flag that exists only when something is wrong cannot distinguish a healthy system
     from a checker that stopped running.
+
+    🔴 **`findings` holds only what is OPEN, and `level` is the worst OPEN one (2026-09-13).** What
+    is over goes in `resolved`, so a page that has never heard of the field still shows only what
+    needs a person — the fix does not wait on every copy of the Command Center being updated.
     """
     path = instance_dir / "review.json"
+    open_ = [f for f in findings if f.resolved is None]
+    over = [f for f in findings if f.resolved is not None]
     try:
-        if not findings:
+        if not open_:
             worst = OK
         else:
-            worst = ALERT if any(f.level == ALERT for f in findings) else WARN
+            worst = ALERT if any(f.level == ALERT for f in open_) else WARN
         path.write_text(
             json.dumps(
                 {
                     "bot": bot_key,
                     "level": worst,
                     "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "findings": [f.as_dict() for f in findings],
+                    "findings": [f.as_dict() for f in open_],
+                    "resolved": [f.as_dict() for f in over],
                 },
                 indent=2,
             ),
@@ -838,8 +973,15 @@ def main(argv=None) -> int:
             # then what to do. The old form put "needs review" on the header and the actual
             # finding on line two, so every message opened with the same four words and the
             # thing that differed was below the fold on a lock screen.
-            icon = "🔴" if f.level == ALERT else "⚠️"
-            if send(alert(icon, "REVIEW", name, f.title, f.detail), args.dry_run):
+            if f.resolved is None:
+                text = alert("🔴" if f.level == ALERT else "⚠️", "REVIEW", name, f.title, f.detail)
+            else:
+                # Over before anyone was told. Still said once — it is the record of what healed
+                # unwatched — but as news, never as an alarm.
+                text = alert(
+                    "✅", "REVIEW", name, f.title, f.detail, f"Nothing to do: {f.resolved}"
+                )
+            if send(text, args.dry_run):
                 total_new += 1
                 if not args.dry_run:
                     seen.append(f.key)

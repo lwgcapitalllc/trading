@@ -1710,6 +1710,24 @@ KEPT** — that bot is down now, which is the finding's whole purpose. ⚠ **An 
 on either side keeps the finding**, and ⚠ **the restart-loop finding is untouched**: it counts
 STARTS, not failures, so a bot flapping its way to a start is still reported.
 
+🔴 **OPEN, OR OVER — AND ONLY OPEN IS "NEEDS REVIEW" (2026-09-13).** Aaron: *"I don't want to
+manually mark anything as reviewed. The platform should know that this thing was resolved."* Eight
+findings stayed lit for the full two-day window after the record showed them over: a halt that
+recovered, a crash it came back from, a link drop that restored, a bar or loop error it carried on
+past, a closed quiet gap, a restart loop or re-warm burst that had stopped. Each `Finding` now
+carries `resolved` (why it is over, `None` while open), and `review.json` files the two apart —
+`findings` / `resolved`, `level` from the open ones — so a Command Center that predates the field
+still shows only what is open. ⚠ **Over is read off the record, never a timer**: a one-off is over
+once the record shows the bot carried on past it (a restore, a start, a later heartbeat).
+⚠ **A REPEAT is over only once the bot has run longer without one than the longest gap between
+them, and three pulses at least** (`_burst_over`). The link and the loop gained a repeat finding of
+their own (`mt5_storm:`, `loop_storm:`, four in the window); bar errors did not — each already
+counts toward the re-warm burst. ⚠ **An over finding is still announced once, as ✅**, and its key
+never moves between open and over. ⚠ **Seven older tests went vacuous the day it landed** — they
+asked whether a refusal was PRESENT, and an answered one now always is — and a planted mutation
+found them. The page answers what is left open between passes off the bot's own heartbeat
+(`command-center/backend/CLAUDE.md` → *Open, or over*). 21 mutations run, 21 killed.
+
 **The charter, stated so this does not grow into a second watchdog: `monitor.py` owns NOW, this owns
 THE RECORD.** The watchdog answers *is it alive this minute* and restarts it; this answers *what does
 today's record say happened*, including things that recovered before anyone looked. That split is why
@@ -2311,7 +2329,7 @@ reason, so this is now a rule for **anything that prints on that box**: reconfig
 UTF-8 with `errors="replace"`, because an unencodable character must cost a glyph, never the message.
 ⚠ **It was found by RUNNING it, not by reading it** — the module's own tests all passed on the Mac.
 
-Tests: `tests/test_log_review.py` (**40** — this line read 23 while there were 27, so count them
+Tests: `tests/test_log_review.py` (**77** — this line read 23 while there were 27, so count them
 with `pytest --collect-only`). The six added on 2026-09-03 for the deploy-noise fix: **3 watched
 RED** against HEAD, and the other 3 proven by MUTATION because HEAD could not fail them; the two
 added the same day for the always-write flag were both watched RED, and of the six for the halt

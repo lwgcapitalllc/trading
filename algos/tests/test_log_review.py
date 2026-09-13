@@ -62,6 +62,16 @@ def _keys(findings) -> set:
     return {f.key.split(":")[0] for f in findings}
 
 
+def _open(findings) -> set:
+    """The kinds still needing a person — the only ones the Bots page counts (2026-09-13)."""
+    return {f.key.split(":")[0] for f in findings if f.resolved is None}
+
+
+def _over(findings) -> dict:
+    """{kind: why it is over}, for what the record shows has ended."""
+    return {f.key.split(":")[0]: f.resolved for f in findings if f.resolved is not None}
+
+
 def _healthy(minutes_back: int = 5) -> list[dict]:
     """A record with nothing wrong in it — one clean start and recent heartbeats."""
     rows = [_event("startup", "2026-08-05T10:00:00+00:00", previous_run_clean=True)]
@@ -289,7 +299,7 @@ def test_a_refused_config_change_is_reported(tmp_path):
         + [_event("config_change_refused", "2026-08-05T14:00:00+00:00", changes="exec_risk_pct")],
     )
 
-    assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "config_refused" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_refused_change_stops_being_reported_once_it_has_restarted(tmp_path):
@@ -298,6 +308,8 @@ def test_a_refused_change_stops_being_reported_once_it_has_restarted(tmp_path):
     A start reads the settings file fresh, so the refusal has been answered and the finding's own
     instruction has been carried out. It is the same defect as the halt wording (2026-08-07): a
     sticky present-tense claim that has stopped being true. Watched RED against HEAD.
+
+    ⚠ Since 2026-09-13 it is OVER rather than dropped — still on record, never counted.
     """
     _write(
         tmp_path,
@@ -307,8 +319,10 @@ def test_a_refused_change_stops_being_reported_once_it_has_restarted(tmp_path):
             _event("startup", "2026-08-05T14:05:00+00:00", previous_run_clean=True),
         ],
     )
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
-    assert "config_refused" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "config_refused" not in _open(found)
+    assert "started at" in _over(found)["config_refused"]
 
 
 def test_an_ungraceful_restart_still_takes_the_settings(tmp_path):
@@ -327,7 +341,7 @@ def test_an_ungraceful_restart_still_takes_the_settings(tmp_path):
         ],
     )
 
-    assert "config_refused" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "config_refused" not in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_restart_at_the_same_second_does_not_clear_the_refusal(tmp_path):
@@ -346,7 +360,7 @@ def test_a_restart_at_the_same_second_does_not_clear_the_refusal(tmp_path):
         ],
     )
 
-    assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "config_refused" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_refusal_with_an_unreadable_time_is_never_suppressed(tmp_path):
@@ -364,7 +378,7 @@ def test_a_refusal_with_an_unreadable_time_is_never_suppressed(tmp_path):
         ],
     )
 
-    assert "config_refused" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "config_refused" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_failed_start_and_a_version_mismatch_are_alerts(tmp_path):
@@ -378,7 +392,7 @@ def test_a_failed_start_and_a_version_mismatch_are_alerts(tmp_path):
     )
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
-    assert {"startup_failed", "version_mismatch"} <= _keys(found)
+    assert {"startup_failed", "version_mismatch"} <= _open(found)
     assert all(
         f.level == lr.ALERT
         for f in found
@@ -422,8 +436,10 @@ def test_a_failed_start_stops_being_reported_once_it_has_STARTED_since(tmp_path)
             _event("startup", "2026-08-05T13:05:00+00:00", previous_run_clean=True),
         ],
     )
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
-    assert "startup_failed" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "startup_failed" not in _open(found)
+    assert "started at" in _over(found)["startup_failed"]
 
 
 def test_a_failed_start_AFTER_the_last_good_one_is_still_reported(tmp_path):
@@ -439,7 +455,7 @@ def test_a_failed_start_AFTER_the_last_good_one_is_still_reported(tmp_path):
         ],
     )
 
-    assert "startup_failed" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "startup_failed" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_VERSION_refusal_also_clears_once_it_has_started(tmp_path):
@@ -455,7 +471,7 @@ def test_a_VERSION_refusal_also_clears_once_it_has_started(tmp_path):
         ],
     )
 
-    assert "version_mismatch" not in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "version_mismatch" not in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_start_at_the_same_second_does_not_clear_a_failed_start(tmp_path):
@@ -472,7 +488,7 @@ def test_a_start_at_the_same_second_does_not_clear_a_failed_start(tmp_path):
         ],
     )
 
-    assert "startup_failed" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "startup_failed" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_a_failed_start_with_an_unreadable_time_is_never_suppressed(tmp_path):
@@ -489,18 +505,24 @@ def test_a_failed_start_with_an_unreadable_time_is_never_suppressed(tmp_path):
         ],
     )
 
-    assert "startup_failed" in _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    assert "startup_failed" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
 
 def test_clearing_a_failed_start_does_not_silence_the_RESTART_LOOP(tmp_path):
     """The two ask different questions: this counts STARTS, that counts failures. A bot flapping
     its way to a start must still be reported, and suppressing both from one signal would hide
-    exactly the case where a bot keeps dying and coming back."""
+    exactly the case where a bot keeps dying and coming back.
+
+    ⚠ The loop is still GOING here (its last death 20 minutes before the newest pulse) — since
+    2026-09-13 a loop that has stopped is over by its own rule, so an old one would prove nothing.
+    """
     rows = _healthy() + [_event("startup_failed", "2026-08-05T13:00:00+00:00", error="x")]
     for i in range(lr.RESTART_LOOP):
-        rows.append(_event("startup", f"2026-08-05T14:0{i}:00+00:00", previous_run_clean=False))
+        rows.append(
+            _event("startup", f"2026-08-05T17:{20 + 5 * i}:00+00:00", previous_run_clean=False)
+        )
     _write(tmp_path, rows)
-    found = _keys(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    found = _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
 
     assert "startup_failed" not in found
     assert "restart_loop" in found
@@ -976,3 +998,272 @@ def test_a_suspect_record_of_the_WRONG_SHAPE_is_ignored_rather_than_crashing():
     right; taking the hourly reviewer down over it is not."""
     for bad in ("nonsense", 5, [1, 2], None):
         assert _anchor_titles({"status": "live", "starting_balance_suspect": bad}) == []
+
+
+# ── open, or over: only OPEN counts as "needs review" (2026-09-13) ───────────
+#
+# 🔴 Aaron: *"I don't want to manually mark anything as reviewed. The platform should know that this
+# thing was resolved."* Eight findings stayed on the Bots page for the full two-day window after the
+# record showed them over. Each is now OVER — still written, still announced once, never counted —
+# the moment the record shows it ended; a REPEAT only once the bot has run longer without one than
+# any gap between them.
+#
+# 🔴 **Seven older tests went VACUOUS the moment this landed, and a mutation found them.** They asked
+# whether a refusal was PRESENT, and an answered refusal is now on record either way — so the
+# same-second rule could be broken with every test green. They ask whether it is OPEN now.
+
+
+def _at_minute(hh: int, mm: int) -> str:
+    return f"2026-08-05T{hh:02d}:{mm:02d}:00+00:00"
+
+
+def _deaths(*times: str) -> list:
+    return [_event("startup", t, previous_run_clean=False) for t in times]
+
+
+def _rewarms(*times: str) -> list:
+    return [_event("rewarm", t, missed_bars=1) for t in times]
+
+
+def _drops(*pairs) -> list:
+    """(lost, restored-or-None) pairs, as the runner writes them."""
+    rows = []
+    for lost, back in pairs:
+        rows.append(_event("mt5_link_lost", lost))
+        if back:
+            rows.append(_event("mt5_link_restored", back, down_seconds=60))
+    return rows
+
+
+def test_a_recovered_halt_is_OVER(tmp_path):
+    """Its own text said *"a record of what happened rather than something to act on"*, and it
+    stayed lit for two days. MUTATION: drop its `resolved` and this goes red."""
+    _write(tmp_path, _healthy() + [_event("halted", _at_minute(14, 0), reason="they disagree")])
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+
+    assert "halted" not in _open(found)
+    assert "bridge is live" in _over(found)["halted"]
+
+
+def test_a_halt_still_on_the_heartbeat_or_unplaceable_stays_OPEN(tmp_path):
+    """The control, both ways: halted on a fresh heartbeat, and a stopped bot whose last word was a
+    halt — that one explains the stop, and only a start answers it."""
+    for state in (RUNNING, STOPPED):
+        halted, _ = _halt_finding(tmp_path, _halted_last(), state)
+        assert halted[0].resolved is None, state
+
+
+def test_a_death_it_came_back_from_is_OVER(tmp_path):
+    """The row IS the start that brought it back. MUTATION: drop its `resolved` → red."""
+    _write(tmp_path, _healthy() + _deaths(_at_minute(16, 0)))
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+
+    assert "unclean" not in _open(found)
+    assert "came back" in _over(found)["unclean"]
+
+
+def test_a_closed_quiet_gap_is_OVER(tmp_path):
+    """Closed by construction: the beat that ended it is on record. MUTATION: drop its `resolved`
+    → red."""
+    _write(
+        tmp_path,
+        [
+            _event("startup", _at_minute(10, 0), previous_run_clean=True),
+            _pulse(_at_minute(12, 0)),
+            _pulse(_at_minute(14, 0)),
+            _pulse((NOW - timedelta(minutes=5)).isoformat(timespec="seconds")),
+        ],
+    )
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+
+    assert "pulse_gap" not in _open(found)
+    assert "resumed" in _over(found)["pulse_gap"]
+
+
+def test_a_link_drop_is_OVER_once_restored_and_OPEN_while_it_is_not(tmp_path):
+    """Still down on the record keeps it open; the page answers that off the heartbeat's own link
+    reading between passes. MUTATION: call it over without a restore → red."""
+    _write(tmp_path, _healthy() + _drops((_at_minute(17, 0), _at_minute(17, 4))))
+    assert "came back" in _over(lr.review_bot("b", tmp_path, RUNNING, now=NOW))["mt5_outage"]
+
+    _write(tmp_path, _healthy() + _drops((_at_minute(17, 0), None)))
+    assert "mt5_outage" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_restore_from_an_EARLIER_drop_does_not_close_the_latest(tmp_path):
+    """Only a restore AFTER the last drop answers it. MUTATION: take any restore → red."""
+    _write(
+        tmp_path,
+        _healthy() + _drops((_at_minute(12, 0), _at_minute(12, 5)), (_at_minute(17, 0), None)),
+    )
+    assert "mt5_outage" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_bar_or_loop_error_is_OVER_once_the_heartbeat_carried_on_and_OPEN_before(tmp_path):
+    """Evidence, not a timer: a beat after it. MUTATION: call it over without one → red."""
+    for kind in ("bar_error", "loop_error"):
+        _write(tmp_path, _healthy() + [_event(kind, _at_minute(16, 0), error="boom")])
+        assert "carried on" in _over(lr.review_bot("b", tmp_path, RUNNING, now=NOW))[kind], kind
+
+        _write(tmp_path, _healthy() + [_event(kind, _at_minute(17, 58), error="boom")])
+        assert kind in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW)), kind
+
+
+def test_a_restart_loop_is_never_over_in_less_than_three_pulses(tmp_path):
+    """Four deaths five minutes apart, the last 20 minutes before the newest pulse: longer than any
+    gap between them, and still too short to call it over. MUTATION: drop the three-pulse floor
+    → red."""
+    _write(tmp_path, _healthy() + _deaths(*(_at_minute(17, m) for m in (20, 25, 30, 35))))
+    assert "restart_loop" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_restart_loop_is_OVER_once_it_has_stayed_up_longer_than_any_gap(tmp_path):
+    """An hour apart, the last at 14:00, pulses to 17:55 — nearly four hours up. MUTATION: keep
+    every loop open → red."""
+    _write(tmp_path, _healthy() + _deaths(*(_at_minute(h, 0) for h in (11, 12, 13, 14))))
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+
+    assert "restart_loop" not in _open(found)
+    assert _over(found)["restart_loop"].startswith("None since")
+
+
+def test_it_is_measured_against_the_LONGEST_gap_not_a_typical_one(tmp_path):
+    """Three quick deaths, then one nearly five hours later: under three hours up since is not yet
+    longer than this loop has already gone quiet once. MUTATION: use the shortest gap → red."""
+    _write(
+        tmp_path,
+        _healthy()
+        + _deaths(_at_minute(10, 0), _at_minute(10, 5), _at_minute(10, 10), _at_minute(15, 0)),
+    )
+    assert "restart_loop" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_repeat_with_a_time_it_cannot_read_stays_OPEN(tmp_path):
+    """A time that cannot be placed must not buy an all-clear. MUTATION: skip the unreadable-time
+    guard → red (the sort raises)."""
+    unreadable = {"ts": "?", "bot": "b", "kind": "event", "event": "startup"}
+    unreadable["previous_run_clean"] = False
+    _write(tmp_path, _healthy() + [unreadable] + _deaths(*(_at_minute(h, 0) for h in (11, 12, 13))))
+    assert "restart_loop" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_re_warm_burst_follows_the_same_rule(tmp_path):
+    """MUTATION: drop its `resolved` → red on the over half."""
+    _write(tmp_path, _healthy() + _rewarms(*(_at_minute(h, 0) for h in (11, 12, 13, 14))))
+    assert "rewarm_storm" in _over(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+    _write(tmp_path, _healthy() + _rewarms(*(_at_minute(17, m) for m in (20, 25, 30, 35))))
+    assert "rewarm_storm" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_link_that_KEEPS_dropping_is_its_own_OPEN_finding_even_when_each_drop_heals(tmp_path):
+    """Every drop restored, so the outage finding is over — and the repeat is the problem.
+    MUTATION: raise the bar past four → red."""
+    drops = [(_at_minute(17, m), _at_minute(17, m + 1)) for m in (10, 20, 30, 40)]
+    _write(tmp_path, _healthy() + _drops(*drops))
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+
+    assert "mt5_outage" not in _open(found)
+    assert "mt5_storm" in _open(found)
+
+
+def test_a_link_storm_is_over_once_the_link_has_held_and_never_while_it_is_down(tmp_path):
+    """Held nearly four hours after its last restore: over. The same drops with the last never
+    restored: open however long the bot has pulsed since — it pulses while blind. MUTATION: ignore
+    the restore → red on the second half."""
+    held = [(_at_minute(h, 0), _at_minute(h, 1)) for h in (11, 12, 13, 14)]
+    _write(tmp_path, _healthy() + _drops(*held))
+    assert "mt5_storm" in _over(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+    _write(tmp_path, _healthy() + _drops(*held[:3], (_at_minute(14, 0), None)))
+    assert "mt5_storm" in _open(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_a_loop_that_KEEPS_failing_is_its_own_OPEN_finding(tmp_path):
+    """The loop turned after each error, so the error finding is over — and it failed four times in
+    fifteen minutes. MUTATION: raise the bar past four → red."""
+    errors = [_event("loop_error", _at_minute(17, m), error="boom") for m in (20, 25, 30, 35)]
+    _write(tmp_path, _healthy() + errors)
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+
+    assert "loop_error" not in _open(found)
+    assert "loop_storm" in _open(found)
+
+    # ...and over once it has stopped. MUTATION: keep it open → red.
+    old = [_event("loop_error", _at_minute(h, 0), error="boom") for h in (11, 12, 13, 14)]
+    _write(tmp_path, _healthy() + old)
+    assert "loop_storm" in _over(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+
+
+def test_the_KEY_does_not_move_when_it_goes_from_open_to_over(tmp_path):
+    """Open on one pass, over on the next: one incident, one key, or the channel is told twice."""
+
+    def _loop(found):
+        return next(f for f in found if f.key.startswith("restart_loop:"))
+
+    deaths = _deaths(*(_at_minute(17, m) for m in (20, 25, 30, 35)))
+    _write(tmp_path, _healthy() + deaths)
+    first = _loop(lr.review_bot("b", tmp_path, RUNNING, now=NOW))
+    later = [_pulse(_at_minute(h, m)) for h, m in ((18, 15), (18, 30), (18, 45), (19, 0))]
+    _write(tmp_path, _healthy() + deaths + later)
+    second = _loop(lr.review_bot("b", tmp_path, RUNNING, now=NOW + timedelta(hours=1)))
+
+    assert first.resolved is None and second.resolved is not None
+    assert first.key == second.key
+
+
+def test_the_flag_counts_only_what_is_OPEN(tmp_path):
+    """What is over goes in `resolved`, and the level is the worst OPEN finding — so a page that has
+    never heard of the field still shows only what needs a person. MUTATION: take the level from
+    every finding → red; write every finding under `findings` → red."""
+    lr.write_flag(
+        tmp_path,
+        "b",
+        [
+            lr.Finding("a:1", lr.ALERT, "t", "d", resolved="over"),
+            lr.Finding("b:2", lr.WARN, "t", "d"),
+        ],
+    )
+    got = json.loads((tmp_path / "review.json").read_text())
+
+    assert got["level"] == lr.WARN
+    assert [f["key"] for f in got["findings"]] == ["b:2"]
+    assert got["resolved"] == [
+        {"key": "a:1", "level": lr.ALERT, "title": "t", "detail": "d", "resolved": "over"}
+    ]
+
+
+def test_a_flag_with_only_history_is_OK(tmp_path):
+    lr.write_flag(tmp_path, "b", [lr.Finding("a:1", lr.ALERT, "t", "d", resolved="over")])
+    got = json.loads((tmp_path / "review.json").read_text())
+
+    assert got["level"] == lr.OK
+    assert got["findings"] == []
+
+
+def _run_main(tmp_path, monkeypatch, rows):
+    """`main` on this file's clock — it reads the real one, and the record here is dated NOW."""
+    _write(tmp_path, rows)
+    review = lr.review_bot
+    monkeypatch.setattr(
+        lr, "review_bot", lambda k, inst, bs, now=None: review(k, inst, bs, now=NOW)
+    )
+    monkeypatch.setattr(lr._bot_state, "BOT_INSTANCES", {"b": tmp_path})
+    monkeypatch.setattr(lr._bot_state, "bot_label", lambda k: "Bot")
+    monkeypatch.setattr(lr._bot_state, "read_bot", lambda k: RUNNING)
+    monkeypatch.setattr(lr, "STATE_FILE", tmp_path / "state.json")
+    assert lr.main(["--dry-run"]) == 0
+
+
+def test_an_OVER_finding_is_announced_as_news_and_an_OPEN_one_as_an_alarm(
+    tmp_path, monkeypatch, capsys
+):
+    """Over before anyone was told is still said once — it is the record of what healed unwatched —
+    but never with an alarm's icon. MUTATION: send every finding as an alarm → red."""
+    _run_main(tmp_path, monkeypatch, _healthy() + [_event("halted", _at_minute(14, 0), reason="x")])
+    out = capsys.readouterr().out
+    assert "✅ REVIEW · Bot" in out and "Nothing to do:" in out
+    assert "⚠️" not in out
+
+    _run_main(tmp_path, monkeypatch, _halted_last())
+    assert "🔴 REVIEW · Bot" in capsys.readouterr().out
