@@ -4477,7 +4477,8 @@ says it is stopped first, and `pages/Bots/stopFirst.ts` carries it out.
 - 🔴 **A move onto a DEMO account starts it again** (Aaron, the same day: *"let them automatically
   start"*) — a move changes where a bot trades, not whether. Stop, write, start, in that order,
   and the start only once the write went through; a write that failed leaves it stopped and says
-  so. ⚠ **Onto a LIVE account it stays stopped** — the first real-money start is a click. A
+  so. ⚠ **Onto a LIVE account it stays stopped** — the first real-money start is a click (Aaron,
+  2026-09-13: *"I will start the live bot manually"*). A
   removal leaves it stopped by definition.
 - 🔴 **A bot HOLDING A TRADE is not moved or taken off.** Stopped, its trade stays on the old
   account with nothing managing it, and it halts on the new one. The controls say so while the
