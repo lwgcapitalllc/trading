@@ -423,6 +423,48 @@ def test_a_DIFFERENT_terminal_is_accepted(tmp_path):
     assert created and stored.assignable
 
 
+def test_the_labs_backtest_terminal_is_REFUSED_for_every_account(tmp_path):
+    """🔴 The backtest agent drives MT5_Lab, so a bot there would trade through the terminal the
+    backtests run on. The tier-probe accounts were logged in there and deliberately left with none.
+
+    MUTATION: drop the lab check → the row lands and this goes red."""
+    p = _file(tmp_path)
+    with pytest.raises(reg.RegistryError, match="backtest"):
+        reg.upsert_account(p, _new_live(mt5_path=r"C:\MT5_Lab\terminal64.exe"), _PROFILES)
+    assert reg.load_accounts(p) == []
+
+
+def test_the_lab_terminal_SPELLED_DIFFERENTLY_is_still_refused(tmp_path):
+    """MUTATION: compare the raw string → a lower-cased, exe-less spelling slips past."""
+    with pytest.raises(reg.RegistryError, match="backtest"):
+        reg.upsert_account(_file(tmp_path), _new_live(mt5_path="c:\\mt5_lab\\"), _PROFILES)
+
+
+def test_the_lab_refusal_is_a_400_and_writes_no_password(client, registry, monkeypatch):
+    """No other account holds MT5_Lab, so this is a statement about the request (400), not a clash
+    with a stored row (409) — and, like every refusal, it is checked before the password write.
+
+    MUTATION: raise it as a taken terminal → the route answers 409 and this goes red."""
+    from routers import bots as bots_router
+
+    written = []
+    monkeypatch.setattr(bots_router, "_write_account_password", lambda a, p: written.append(a))
+    r = client.put(
+        "/bots/accounts/registry/35710389",
+        json={
+            "account": 35710389,
+            "kind": "live",
+            "server": "PUPrime-Live",
+            "mt5_path": r"C:\MT5_Lab\terminal64.exe",
+            "password": "hunter2",
+            "deploy": False,
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "backtest" in r.json()["detail"]
+    assert written == []
+
+
 def test_saving_a_terminal_another_account_holds_is_a_409_and_writes_NOTHING(
     client, registry, monkeypatch
 ):

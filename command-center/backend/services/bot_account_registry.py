@@ -42,6 +42,7 @@ from typing import Any, Optional
 
 # The scan's own join key and folder name — ONE definition of "the same terminal" for both
 # modules, or two spellings of one path could read as two terminals here and one there.
+from services.terminal_scan import _LAB_KEYS as _LAB_TERMINALS
 from services.terminal_scan import _install_key as _terminal_key
 from services.terminal_scan import _short as _terminal_name
 
@@ -194,6 +195,15 @@ def _validate(entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> N
                 f"Known: {', '.join(sorted(known_profiles))}. A name nothing can price is a "
                 f"backtest that refuses and a live config that claims a broker it cannot name."
             )
+    # 🔴 The backtest agent drives this terminal, so a bot there would trade through the terminal
+    # the backtests run on. `_LAB_TERMINALS` is the scan's copy of the agent's path, held to it
+    # by test. An empty path normalises to "" and is never in it.
+    if _terminal_key(entry.mt5_path) in _LAB_TERMINALS:
+        raise RegistryError(
+            f"{_terminal_name(entry.mt5_path)} is the lab's backtest terminal — the backtest agent "
+            f"drives it, so a bot on account {entry.account} would trade through the terminal the "
+            f"backtests run on. Log this account into a terminal of its own."
+        )
 
 
 class TerminalTaken(RegistryError):

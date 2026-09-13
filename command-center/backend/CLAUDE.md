@@ -1756,6 +1756,9 @@ mutations killed.
   account. Compared as the scan's join key, so a different spelling cannot slip past; an empty
   terminal and an account's own terminal are never a clash. ⚠ `check_entry` runs every refusal
   before the VPS password write, so any refused save leaves nothing behind.
+- 🔴 **The lab's backtest terminal is refused outright (400, 2026-09-13).** The backtest agent
+  drives it, so a bot there would trade through the terminal the backtests run on. Same key the
+  scan uses (`terminal_scan._LAB_KEYS`, held to `mt5_agent.py` by test).
 - **An account that is neither registered nor traded by any bot is a 404** with the fix named.
 
 ### The password path
