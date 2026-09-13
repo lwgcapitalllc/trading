@@ -1995,6 +1995,34 @@ files committed; with the paths: 1, the other still staged) and pinned by
 paths → red). ⚠ **Every endpoint that commits goes through this one helper**, so the fix covers
 account moves, caps, risk and the registry alike.
 
+## 🔴 The app's PUSH carried every commit waiting on `main` (2026-09-13)
+
+🔴 **The commit named its paths (above); the push did not — it sent `main`, and `main` holds every
+commit this clone has not pushed.** Two sessions share the clone, so one Bots-page save published
+another session's finished work with it. MEASURED that day: an account save sent three commits
+nobody asked it to, and the next save would have sent a fourth session's local commit before that
+session had run its tests.
+
+✅ **`_push_own_change` rebuilds the change on the REMOTE's tip and pushes it by id.** The local
+commit is still made first, through the real hooks; the remote gets its own tree with the saved
+paths set to that commit's version, under the same message.
+
+- **Nothing else waiting ⇒ the local commit itself goes out**, so the ordinary case leaves one
+  commit. Other work waiting ⇒ the remote gets a copy with the identical change; the next merge is
+  clean and the log shows it twice.
+- 🔴 **A path the remote also changed since this clone last had it is REFUSED**, never overwritten
+  — building on the tip would otherwise undo another machine's save in silence.
+- 🔴 **Nothing in the clone moves.** The old recovery ran `pull --rebase --autostash` here, which
+  rewrote every session's local commits and stashed their unsaved work. The copy is built in a
+  scratch index; `main`, the index and the working tree are untouched.
+- ⚠ **`commit-tree` runs no hook**, so the copy is only ever built from a hooked commit's blobs.
+  The push still runs pre-push, which skips a range holding only a config file.
+- ⚠ **Nothing new to commit is not "nothing to push".** A save whose push was refused left its
+  commit here; saving the same thing again now sends it rather than reporting it deployed.
+
+Tests: `tests/test_bot_git_push.py` (10), on real git — a bare remote, this clone, and the box's
+clone racing the push.
+
 ## 🔴 A REJECTED push was reported as a deployment (2026-09-04)
 
 🔴 **`_git_commit_push` ran `git push` without `check=True` and never read its return code, so it
@@ -2011,9 +2039,9 @@ applied to the push.
 
 ⚠ **A rejection here is the NORMAL case.** The box pushes its own decision record hourly, so any
 deploy landing between its push and this clone's next fetch is a non-fast-forward, and **failing
-loudly alone would turn an hourly race into an hourly manual recovery.** So: fetch, rebase, push
-again, **once**; `--autostash` (two sessions share this clone and it is nearly always dirty); never
-`--force`; a failed rebase is ABORTED before raising.
+loudly alone would turn an hourly race into an hourly manual recovery.** So the change is rebuilt
+on the new tip and sent **once** more; never `--force`. It was `pull --rebase --autostash` here
+until 2026-09-13 — see the section above.
 
 ## Every Deploy button in this app was dead for eight days (2026-08-12)
 

@@ -28,8 +28,11 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 import threading
 import time as _time
 from collections.abc import Callable
@@ -345,7 +348,10 @@ def _write_instance_config(bot_key: str, data: dict) -> None:
 
 
 def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: str) -> str:
-    """Stage files, commit if dirty, push. Returns output summary.
+    """Commit these files here through the real hooks, then push THIS change and nothing else.
+
+    🔴 **Until 2026-09-13 the push carried every commit waiting on `main`**, so one Bots-page
+    save could publish another session's unpushed work. See `_push_own_change`.
 
     🔴 **`docs_reason` is REQUIRED, and without it this function could not commit at all between
     2026-08-04 and 2026-08-12.** The repo's `commit-msg` hook refuses any commit whose changed
@@ -398,15 +404,16 @@ def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: s
         text=True,
         timeout=10,
     )
-    if not status.stdout.strip():
-        return "nothing to commit"
-    subprocess.run(
-        ["git", "-C", root, "commit", "-m", message, "--", *rels],
-        check=True,
-        capture_output=True,
-        timeout=15,
-    )
-    return _push_with_one_rebase(root)
+    if status.stdout.strip():
+        subprocess.run(
+            ["git", "-C", root, "commit", "-m", message, "--", *rels],
+            check=True,
+            capture_output=True,
+            timeout=15,
+        )
+    # Nothing new to commit here can still be something the remote lacks — a save whose push was
+    # refused left its commit local, and saving it again must not report it deployed.
+    return _push_own_change(root, rels, message)
 
 
 def _fail(code: int, text: str) -> "subprocess.CalledProcessError":
@@ -414,76 +421,138 @@ def _fail(code: int, text: str) -> "subprocess.CalledProcessError":
     return subprocess.CalledProcessError(code, "git push", stderr=text.encode())
 
 
-def _push_with_one_rebase(root: str) -> str:
-    """Push. On a REJECTED push, rebase onto the remote once and push again.
+def _push_own_change(root: str, rels: list[str], message: str) -> str:
+    """Push ONLY this change to the remote's `main`, rebuilt on the remote's own tip.
 
-    🔴 **The push ran without `check=True` and nothing read its return code, so a rejected push
-    returned git's own rejection text as this function's SUCCESS value.** Every caller wraps this
-    in `except subprocess.CalledProcessError` and reports *git push failed* — an exception the
-    push could not raise. The endpoint then pulled on the VPS (which succeeded, pulling nothing),
-    announced the deploy, and returned 200.
+    🔴 **It pushed `main`, and `main` carries every commit waiting on this clone (fixed
+    2026-09-13).** Two sessions share the clone, so a Bots-page save published whatever another
+    session had committed and not yet pushed. MEASURED that day: one account save sent three of
+    another session's commits, and a fourth session's local commit sat ready to go out on the next
+    save — before anyone had chosen to publish it or run the tests it needed.
 
-    🔴 **MEASURED 2026-09-04, and it is why a bot sat stopped for an hour**: an account move and a
-    risk-share change were committed on the Mac, both pushes were rejected, and the page reported
-    both as deployed. The box kept reading the old config — bot benched, sibling at its old share
-    — and nothing anywhere disagreed.
+    So the change is rebuilt on the remote's tip — the remote's own tree with these paths set to
+    this clone's committed version, under the same message — and pushed by id:
 
-    ⚠ **A rejection here is the NORMAL case, not an edge case.** The trading box commits and
-    pushes its own decision record hourly (`algos/tools/ledger_sync.py`), so any deploy from this
-    page that lands after the box's push and before this clone has fetched is a non-fast-forward.
-    **Failing loudly alone would turn an hourly race into an hourly manual recovery**, so the
-    rejection is RECOVERED from: fetch, rebase, push again, once.
+    - ⚠ **The LOCAL commit is still made first, through the real hooks** (`_git_commit_push`).
+      `commit-tree` runs no hook, so the copy the remote gets is only ever built from blobs a
+      hooked commit wrote.
+    - **With nothing else waiting, the local commit itself is pushed** — one commit, no copy, the
+      same history as before. With other work waiting, the remote gets a copy carrying the
+      identical change; the next merge is clean and the log shows it twice.
+    - 🔴 **A path the REMOTE also changed since this clone last had it is REFUSED, never
+      overwritten.** Setting it on the tip would quietly undo another machine's save.
+    - 🔴 **Nothing in this clone moves** — no rebase, no stash; `main`, the index and the working
+      tree stay as they were. The recovery this replaced rebased every session's local commits and
+      `--autostash`ed their unsaved work.
+    - ⚠ **A rejection is the NORMAL case** (the box pushes its record hourly), so the change is
+      rebuilt on the new tip and sent ONCE more. A second rejection needs a person. Never
+      `--force`: it would discard the live bot's decision record.
 
-    ⚠ **`--autostash` because this clone is usually dirty** — two sessions share it and a
-    per-machine settings file is nearly always modified. Without it the rebase refuses on
-    unstaged changes and the recovery fails for a reason that has nothing to do with the push.
-
-    ⚠ **Exactly ONE retry, and never `--force`.** A loop would keep racing a box that pushes on a
-    schedule; a force would discard whatever it raced with. If the second push is rejected too,
-    that is a genuine disagreement and a person needs to look at it.
-
-    ⚠ **A failed rebase is ABORTED before raising**, so the clone is left where it started rather
-    than mid-rebase with a detached HEAD for the next session to find.
+    🔴 **A rejected push RAISES, and before 2026-09-04 it did not** — its text came back as this
+    path's success value, the page reported a deploy the box never received, and a bot sat on its
+    old config for an hour.
     """
-    out = subprocess.run(
-        ["git", "-C", root, "push", "origin", "main"],
-        capture_output=True,
-        text=True,
-        timeout=30,
+    detail, code = "", 1
+    for _attempt in range(2):
+        publish = _change_on_remote_tip(root, _remote_tip(root), rels, message)
+        if publish is None:
+            return "nothing to commit"
+        out = subprocess.run(
+            ["git", "-C", root, "push", "origin", f"{publish}:refs/heads/main"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if out.returncode == 0:
+            return (out.stdout + out.stderr).strip()
+        detail, code = (out.stdout + out.stderr).strip(), out.returncode
+    raise _fail(
+        code,
+        "the push was rejected, rebuilt on the remote's new tip and rejected again, so NOTHING "
+        f"was deployed and the commit is still local.\n{detail}",
     )
-    if out.returncode == 0:
-        return (out.stdout + out.stderr).strip()
 
-    rejected = (out.stdout + out.stderr).strip()
-    pull = subprocess.run(
-        ["git", "-C", root, "pull", "--rebase", "--autostash", "origin", "main"],
+
+def _git_step(root: str, *argv: str, env: dict | None = None, stdin: str | None = None) -> str:
+    """One git call on the push path. Any failure means nothing went out, and the error says so."""
+    out = subprocess.run(
+        ["git", "-C", root, *argv],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=60,
+        env=env,
+        input=stdin or "",
     )
-    if pull.returncode != 0:
-        subprocess.run(["git", "-C", root, "rebase", "--abort"], capture_output=True, timeout=30)
+    if out.returncode != 0:
         raise _fail(
             out.returncode,
-            f"the push was rejected and the clone could not be rebased onto the remote, so "
-            f"NOTHING was deployed and the commit is still local.\n"
-            f"push: {rejected}\nrebase: {(pull.stdout + pull.stderr).strip()}",
+            f"git {argv[0]} failed while preparing the push, so NOTHING was deployed and the "
+            f"commit is still local.\n{(out.stdout + out.stderr).strip()}",
         )
+    return out.stdout.strip()
 
-    again = subprocess.run(
-        ["git", "-C", root, "push", "origin", "main"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if again.returncode != 0:
+
+def _remote_tip(root: str) -> str:
+    """Fetch the remote's `main` and return its commit id — the tip this change is built on."""
+    _git_step(root, "fetch", "origin", "main")
+    return _git_step(root, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+
+
+def _tree_entries(root: str, rev: str, rels: list[str]) -> dict[str, tuple[str, str]]:
+    """`{path: (mode, blob)}` for each of `rels` present at `rev`. An absent path is absent."""
+    found: dict[str, tuple[str, str]] = {}
+    for record in _git_step(root, "ls-tree", "-z", rev, "--", *rels).split("\0"):
+        meta, tab, path = record.partition("\t")
+        if tab:
+            mode, _kind, blob = meta.split()
+            found[path] = (mode, blob)
+    return found
+
+
+def _change_on_remote_tip(root: str, tip: str, rels: list[str], message: str) -> str | None:
+    """The commit that puts this clone's version of `rels` on `tip`, or None when `tip` has it.
+
+    Each path is read three ways: where this clone and the remote last agreed (`was`), this clone
+    (`ours`) and the remote (`theirs`). Ours is taken only where theirs is still `was`.
+    """
+    head = _git_step(root, "rev-parse", "--verify", "HEAD^{commit}")
+    base = _git_step(root, "merge-base", head, tip)
+    was = _tree_entries(root, base, rels)
+    ours = _tree_entries(root, head, rels)
+    theirs = _tree_entries(root, tip, rels)
+    take = [rel for rel in rels if theirs.get(rel) != ours.get(rel)]
+    if not take:
+        return None
+    moved = [rel for rel in take if theirs.get(rel) != was.get(rel)]
+    if moved:
         raise _fail(
-            again.returncode,
-            f"the push was rejected, the clone was rebased onto the remote, and the second push "
-            f"was rejected too, so NOTHING was deployed and the commit is still local.\n"
-            f"{(again.stdout + again.stderr).strip()}",
+            1,
+            f"the remote's copy of {', '.join(moved)} changed since this clone last had it, so "
+            "pushing this save would overwrite that change. NOTHING was deployed and the commit "
+            "is still local: pull, check the file, and save again.",
         )
-    return (again.stdout + again.stderr).strip()
+    # A scratch index, so the shared one — and every session's staged work in it — is never read
+    # or written. `read-tree` needs a path that does not exist yet to start one.
+    scratch = tempfile.mkdtemp(prefix="cc-push-")
+    env = {**os.environ, "GIT_INDEX_FILE": os.path.join(scratch, "index")}
+    try:
+        _git_step(root, "read-tree", tip, env=env)
+        for rel in take:
+            if rel in ours:
+                mode, blob = ours[rel]
+                _git_step(
+                    root, "update-index", "--add", "--cacheinfo", f"{mode},{blob},{rel}", env=env
+                )
+            else:
+                _git_step(root, "update-index", "--force-remove", "--", rel, env=env)
+        tree = _git_step(root, "write-tree", env=env)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    # Nothing else waiting: the local commit already IS this change on this tip.
+    parents = _git_step(root, "rev-list", "--parents", "-n", "1", head).split()
+    if parents[1:] == [tip] and _git_step(root, "rev-parse", f"{head}^{{tree}}") == tree:
+        return head
+    return _git_step(root, "commit-tree", tree, "-p", tip, stdin=message)
 
 
 def _notify_telegram(text: str):

@@ -231,7 +231,7 @@ def test_the_commit_carries_ONLY_its_own_paths_never_another_sessions_staged_wor
     git("commit", "-q", "-m", "seed")
 
     monkeypatch.setattr(cfg, "MONOREPO_ROOT", root)
-    monkeypatch.setattr(bots, "_push_with_one_rebase", lambda _root: "pushed")
+    monkeypatch.setattr(bots, "_push_own_change", lambda *_a: "pushed")
 
     # Another session's work, staged and waiting for its own commit.
     (root / "other.tsx").write_text("export const x = 1\n", encoding="utf-8")
