@@ -1,0 +1,140 @@
+{
+  "_comment": "Editor metadata for the Realign bot's own settings. Listed params render first, in this order; every inherited SOS Fade setting follows in source order. Descs are plain English, one or two sentences, and carry no measurements - those live in CLAUDE.md and realign_optimization.md.",
+  "params": [
+    {
+      "name": "realign_arm_frame",
+      "group": "Setup",
+      "core": true,
+      "label": "Where the false break is read",
+      "short": "Arm frame",
+      "choices": ["External frame", "Chart frame"],
+      "desc": "External frame is the shipped setup: the false break happens on the 15-minute chart and the chart timeframe times the entry. Chart frame reads the whole sequence on the chart timeframe alone. Chart frame is lab only - it is not on the TradingView chart yet."
+    },
+    {
+      "name": "realign_min_trend_breaks",
+      "group": "Setup",
+      "core": true,
+      "label": "Trend breaks needed before the counter shift",
+      "short": "Min trend breaks",
+      "show_if": { "realign_arm_frame": "Chart frame" },
+      "step": 1,
+      "desc": "How many with-trend breaks of structure the trend must print before a counter shift can arm a setup. 0 lets the counter shift come straight after the trend's own shift."
+    },
+    {
+      "name": "realign_max_counter_breaks",
+      "group": "Setup",
+      "core": true,
+      "label": "Counter breaks allowed before the realignment",
+      "short": "Max counter breaks",
+      "show_if": { "realign_arm_frame": "Chart frame" },
+      "step": 1,
+      "desc": "How many further breaks against the trend the pullback may make before it has to realign. Empty means no limit; 0 means it must turn back without breaking again."
+    },
+    {
+      "name": "realign_entry_on",
+      "group": "Setup",
+      "core": true,
+      "label": "Enter on",
+      "short": "Entry",
+      "choices": ["Realigning shift", "Next break"],
+      "desc": "Realigning shift enters on the shift that puts the trend back. Next break waits for the first with-trend break after it, which is later and has less room to the target."
+    },
+    {
+      "name": "realign_chart_target_r",
+      "group": "Setup",
+      "label": "Second target (times the risk)",
+      "short": "Target (R)",
+      "show_if": { "realign_arm_frame": "Chart frame" },
+      "step": 0.25,
+      "desc": "Where the second target sits, in multiples of the trade's own risk; the first target is halfway. Reaching them moves the stop to breakeven and then to the first target."
+    },
+    {
+      "name": "realign_htf_minutes",
+      "group": "Setup",
+      "label": "External timeframe (minutes)",
+      "short": "External frame",
+      "show_if": { "realign_arm_frame": "External frame" },
+      "desc": "The timeframe the false break is read on. The bot builds these bars itself from the chart timeframe."
+    },
+    {
+      "name": "realign_window_hrs",
+      "group": "Setup",
+      "label": "Hours a setup stays armed",
+      "short": "Armed window",
+      "step": 0.5,
+      "desc": "How long a setup waits for its realignment after it arms. When it runs out the setup is dropped."
+    },
+    {
+      "name": "realign_pattern",
+      "group": "Setup",
+      "label": "Realignment pattern",
+      "short": "Pattern",
+      "show_if": { "realign_arm_frame": "External frame" },
+      "choices": ["any", "opposing", "strict"],
+      "desc": "Which chart-timeframe sequence counts as the realignment. any is one counter break then a with-trend shift; strict is a with-trend break, a counter shift, then a with-trend shift."
+    },
+    {
+      "name": "realign_long_source",
+      "group": "Setup",
+      "label": "Long trigger structure",
+      "short": "Long source",
+      "show_if": { "realign_arm_frame": "External frame" },
+      "choices": ["swing", "internal"],
+      "desc": "Which structure the long realignment is read from. swing is the chart's own swing structure; internal is the finer structure inside it."
+    },
+    {
+      "name": "realign_short_source",
+      "group": "Setup",
+      "label": "Short trigger structure",
+      "short": "Short source",
+      "show_if": { "realign_arm_frame": "External frame" },
+      "choices": ["swing", "internal"],
+      "desc": "Which structure the short realignment is read from. swing is the chart's own swing structure; internal is the finer structure inside it."
+    },
+    {
+      "name": "realign_longs",
+      "group": "Setup",
+      "label": "Trade longs",
+      "short": "Longs",
+      "desc": "Take long setups."
+    },
+    {
+      "name": "realign_shorts",
+      "group": "Setup",
+      "label": "Trade shorts",
+      "short": "Shorts",
+      "desc": "Take short setups."
+    },
+    {
+      "name": "realign_trend_minutes",
+      "group": "Filters",
+      "label": "Trend timeframe that must agree (minutes)",
+      "short": "Trend filter",
+      "step": 1,
+      "desc": "Refuse a trade against the structure of this slower timeframe. Empty means no trend filter; it must be slower than the frame the false break is read on."
+    },
+    {
+      "name": "realign_min_rr",
+      "group": "Filters",
+      "label": "Minimum reward to risk at entry",
+      "short": "Min reward:risk",
+      "step": 0.1,
+      "desc": "Refuse a setup whose target is closer than this many times its risk. Empty means no minimum."
+    },
+    {
+      "name": "realign_sl_buf_tk",
+      "group": "Risk & stop",
+      "label": "Stop buffer (ticks)",
+      "short": "Stop buffer",
+      "step": 1,
+      "desc": "How many ticks beyond the pullback's extreme the stop sits."
+    },
+    {
+      "name": "exec_scale_in",
+      "group": "Risk & stop",
+      "label": "Add to winning trades",
+      "short": "Scale-in",
+      "desc": "Buys more once the trail is protecting a runner. Off for this bot: it was built and measured on the SOS Fade bot, not on this setup."
+    }
+  ]
+}

@@ -177,6 +177,70 @@ class RealignConfig(SosFadeConfig):
     separately, not in the total. Default is `None` until it does.
     """
 
+    # ── WHERE the false break is read (2026-09-11) ──────────────────────────────
+    realign_arm_frame: str = "External frame"
+    """Where the false break is read: "External frame" (the shipped setup) or "Chart frame".
+
+    "External frame" is the setup as built: a bullish external trend broken by a bearish SOS on
+    the aggregated frame (`realign_htf_minutes`), then the realignment on the chart frame.
+
+    "Chart frame" reads the WHOLE sequence on the chart's own swing structure, with no second
+    frame: the chart trends (its SOS, then BOS), prints ONE counter SOS, and a with-trend SOS puts
+    it back. The counter SOS arms the setup, the stop is the extreme of the entire counter move
+    since the arm, and the target is `realign_chart_target_r` times the trade's own risk.
+
+    🔴 The target is NOT the high the counter move launched from, which is the obvious choice and
+    is measured wrong: on the chart frame the realigning SOS is very often the retake of that very
+    high — 407 of 982 trades over 6.6 years had it at or behind the entry. A target behind the
+    entry satisfies TP2 on the entry bar, the ladder lifts the stop straight to a point between
+    the target and the entry, and the trade becomes a small locked-in loss.
+
+    ⚠ The two stop rules DIFFER on purpose. "External frame" stops behind the extreme since the
+    NEWEST counter break, because chart-frame breaks inside a 15m deviation can belong to
+    different legs. "Chart frame" has one leg by construction — the arm IS the counter shift —
+    so its stop is the whole pullback's extreme.
+
+    ⚠ No Pine counterpart yet, so every chart-frame figure is a LAB finding. The measurement
+    record is `realign_optimization.md`.
+    """
+
+    realign_min_trend_breaks: int = 0
+    """Chart frame only. With-trend BOS the chart must print after the SOS that started its trend
+    and before the counter SOS, for that counter SOS to arm. 0 = the counter SOS may come straight
+    after the trend's own SOS.
+
+    ⚠ REFUSED on "External frame" rather than ignored — a filter nothing consults would read as
+    one that is on.
+    """
+
+    realign_max_counter_breaks: Optional[int] = None
+    """Chart frame only. Further counter-direction BOS allowed after the counter SOS before the
+    realigning SOS. None = no limit; 0 = the pullback must realign without one further counter
+    break. Going past it kills the setup: the pullback has become a trend.
+
+    ⚠ REFUSED on "External frame", for the same reason as `realign_min_trend_breaks`.
+    """
+
+    realign_entry_on: str = "Realigning shift"
+    """"Realigning shift" enters on the SOS that puts the trend back (the shipped rule).
+    "Next break" waits for the first with-trend break AFTER it, on either arm frame.
+
+    ⚠ On "Chart frame" a counter SOS while waiting for that break KILLS the setup — the
+    realignment failed — and that same counter SOS is free to arm a fresh setup of its own.
+    ⚠ The later entry moves neither the stop nor the target, so it enters with less room to the
+    target; a target already behind the entry runs on the trail, exactly as on the shipped rule.
+    """
+
+    realign_chart_target_r: float = 2.0
+    """Chart frame only. The second target, in multiples of the trade's own risk; the first
+    target sits halfway, exactly as on the external frame. With the inherited ladder banking
+    nothing at either rung, these two only decide when the stop moves: to breakeven at the first,
+    to the first target's price at the second, then the trail.
+
+    ⚠ 2.0 was CHOSEN, not measured, and deliberately held fixed across the combination study so
+    the study ranks ENTRY patterns rather than exits. Tune it on a winner, never before.
+    """
+
     # ── inherited defaults this fork must REFUSE ─────────────────────────────────
     exec_secondary: bool = False
     """PINNED OFF — the 1-minute re-entry needs a second bar stream through `run_dual`.
@@ -192,7 +256,8 @@ class RealignConfig(SosFadeConfig):
     call, named for SOS Fade), and `realign_strategy.pine` has no scale-in input or code.
 
     MEASURED 2026-09-10 (Vantage 5m, 2020-01-02 → 2026-08-06, same 162 trades either way): the
-    inherited adds lifted this book +35.81R → +49.29R charged. That is a CANDIDATE, not a
+    inherited adds lifted this book +35.81R → +49.29R charged (free: +45.14R → +61.27R, 77 adds,
+    measured 2026-09-11). That is a CANDIDATE, not a
     result — nobody chose it for this setup and no chart can confirm it. Turn it on only in a
     run that says so, and only after this bot has a parity gate.
     """
@@ -210,13 +275,49 @@ class RealignConfig(SosFadeConfig):
                 raise ValueError(f"{name} must be swing|internal, got {val!r}")
         if self.realign_window_hrs <= 0:
             raise ValueError("realign_window_hrs must be > 0")
-        if self.realign_trend_minutes is not None and self.realign_trend_minutes <= self.realign_htf_minutes:
+        if self.realign_arm_frame not in ("External frame", "Chart frame"):
+            raise ValueError(f"realign_arm_frame must be 'External frame'|'Chart frame', "
+                             f"got {self.realign_arm_frame!r}")
+        if self.realign_entry_on not in ("Realigning shift", "Next break"):
+            raise ValueError(f"realign_entry_on must be 'Realigning shift'|'Next break', "
+                             f"got {self.realign_entry_on!r}")
+        if self.realign_min_trend_breaks < 0:
+            raise ValueError("realign_min_trend_breaks must be >= 0")
+        if self.realign_max_counter_breaks is not None and self.realign_max_counter_breaks < 0:
+            raise ValueError("realign_max_counter_breaks must be >= 0 or None")
+        if not self.realign_chart_target_r > 0:
+            raise ValueError("realign_chart_target_r must be > 0")
+        external = self.realign_arm_frame == "External frame"
+        if external and (self.realign_min_trend_breaks != 0
+                         or self.realign_max_counter_breaks is not None
+                         or self.realign_chart_target_r != 2.0):
+            # Refused rather than ignored: the external arm reads a different frame and keeps its
+            # structural target, so these would report themselves as on while nothing reads them.
+            raise ValueError("realign_min_trend_breaks / realign_max_counter_breaks / "
+                             "realign_chart_target_r are 'Chart frame' settings; the external "
+                             "arm never reads them")
+        if not external:
+            # The chart-frame arm IS the counter shift, so the realignment pattern (which
+            # describes chart-frame breaks after an EXTERNAL arm) has nothing to describe, and
+            # its target is the chart frame's own swing stream.
+            if self.realign_pattern != "any":
+                raise ValueError("realign_pattern must stay 'any' on the 'Chart frame' arm — "
+                                 "the arm itself is the counter shift")
+            if (self.realign_long_source, self.realign_short_source) != ("swing", "swing"):
+                raise ValueError("the 'Chart frame' arm reads the swing stream on both sides; "
+                                 "realign_long_source / realign_short_source must be 'swing'")
+        if (external and self.realign_trend_minutes is not None
+                and self.realign_trend_minutes <= self.realign_htf_minutes):
             # A "trend" frame at or below the frame the false break is read on is not a
             # slower context, it is the same read under another name — and it would pass
-            # silently while filtering on something the setup already knows.
+            # silently while filtering on something the setup already knows. On the chart-frame
+            # arm the frame it must beat is the chart's, which only the strategy knows, so
+            # `RealignStrategy` makes that check on its first bar.
             raise ValueError(
                 f"realign_trend_minutes ({self.realign_trend_minutes}) must be SLOWER than "
                 f"realign_htf_minutes ({self.realign_htf_minutes})")
+        if self.realign_trend_minutes is not None and self.realign_trend_minutes <= 0:
+            raise ValueError("realign_trend_minutes must be > 0 or None")
         if self.realign_min_rr is not None and self.realign_min_rr < 0:
             # A negative floor is indistinguishable from `None` in effect but states
             # something false — that a minimum was chosen. Refuse rather than accept it.

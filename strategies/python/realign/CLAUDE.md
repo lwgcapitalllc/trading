@@ -11,13 +11,14 @@ against itself.
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
-**Status:** Built + unit-tested (15 tests green) + **cross-checked against the TradingView Strategy
+**Status:** Built + unit-tested (count them with pytest) + **cross-checked against the TradingView Strategy
 Tester**. 🔴 **NOT PARITY-VALIDATED — there is no export twin, no real CSV and no
 `tools/compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are all outstanding.**
 Every number below is a LAB finding. Read `docs/REALIGN_SPEC.md` for the setup and the full
 measurement record.
-**Last reviewed:** 2026-09-10 — swing length and adding to winners pinned to the Pine; the book re-measured
-and reproduced exactly. Earlier: 2026-08-13 — first commit.
+**Last reviewed:** 2026-09-11 — the CHART-FRAME arm and its combination study: a measured negative
+(section at the end of this file). Earlier: 2026-09-10 — swing length and adding to winners pinned
+to the Pine; the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
 ---
 
@@ -393,3 +394,67 @@ EXPERIMENT from every number in this file, and has to say so.
 bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
+
+## The CHART-FRAME arm — the whole sequence on one timeframe (2026-09-11)
+
+`realign_arm_frame = "Chart frame"`. Aaron's question: on the 5m the market trends (SOS, then BOS),
+prints ONE counter shift, and shifts back to continue — which version of that is worth trading? The
+shipped setup answers it across two frames (a 15m false break, a 5m realignment); this arm answers
+it on the chart frame alone. **Default is `"External frame"`, byte-identical to before — proven by
+replay: the shipped config's 162-trade list is identical to HEAD's on every field.**
+
+The four steps, long side (short mirrors):
+
+1. the chart trends bullish — its SOS, then at least `realign_min_trend_breaks` BOS;
+2. a bearish SOS **arms** it (the counter shift);
+3. at most `realign_max_counter_breaks` further bearish BOS (`None` = no limit);
+4. a bullish SOS realigns it and **fires** — or, with `realign_entry_on = "Next break"`, the first
+   bullish break after it does.
+
+🔴 **THE TARGET IS PRICED IN R, AND THE OBVIOUS STRUCTURAL TARGET WAS MEASURED WRONG.** The natural
+target is the high the counter leg launched from. On this arm the realigning SOS is very often the
+**retake of that very high** — MEASURED over 6.6 years, **407 of 982 trades had it at or behind the
+entry**. A target behind the entry satisfies TP2 on the entry bar, the ladder lifts the stop straight
+to a point between the target and the entry, and the trade becomes a small locked-in loss: the first
+smoke run showed cells with no winning trade at all. `execution.realign_target` prices TP2 at
+`realign_chart_target_r` (2.0) times the trade's own risk, TP1 halfway. **2.0 is chosen, not
+measured, and is held FIXED across the study so it ranks entries rather than exits.**
+
+⚠ **The stop rule differs from the external arm on purpose.** There it is the extreme since the
+NEWEST counter break, because breaks inside a 15m deviation can belong to different legs. Here the
+arm IS the counter shift, so there is one leg and the stop is its whole extreme.
+
+⚠ **Walk the armed setups BEFORE folding the bar into the arm state** (`_update_chart`) — and know
+that the order is NOT observable on real bars. MEASURED over 467,352 5m bars (5,265 breaks), at swing
+length 15 and again at 10: no bar carries both directions, and once a run has printed its first break
+no counter break arrives without its SOS flag. So walk-first and arming on the SOS rather than any
+counter break are two guards for inputs the engine cannot produce. **Their mutations pass every test
+on purpose** — a test that reached them would feed a stream production never makes. 🔴 **A third was
+wrongly filed here for a day**: a plain BOS flipping the trend looked unreachable at length 15, where
+the run's first break was an SOS; at 10 the first break is a plain BOS, so the branch fires once per
+run and has a test. **"By construction" was a reading of the engine; measuring at the other length
+is what broke it.**
+
+⚠ **A CHoCH bar raises its BOS flag too**, so the trend's own SOS must RESTART the BOS count rather
+than being counted as its first BOS — pinned by a test.
+
+⚠ **Refusals, each a filter that would otherwise read as on while nothing consults it:** the three
+chart-only settings on `"External frame"`; a non-`"any"` pattern or an `"internal"` source on
+`"Chart frame"`; and a trend frame no slower than the chart itself (checked on the first bar, since
+only the strategy knows the chart frame).
+
+🔴 **LAB ONLY, TWICE OVER.** There is no Pine counterpart for any of the five new settings, and this
+bot has no parity gate at all. **The Pine inputs are owed before these settings are committed** —
+`strategies/CLAUDE.md`: a Python dial with no Pine input is invisible to a gate forever.
+
+**The study, its command, the grid and the verdict: `realign_optimization.md` → Run 1.** The tool
+is `backtest/tools/realign_combo_study.py`. 🔴 **Verdict 2026-09-11: all 36 combinations lose after
+costs and do WORSE than random entries on the same stops** — this arm is a measured negative, not
+a candidate.
+
+**Tests:** 30 new in `tests/test_realign.py` (47 total), **proven by 40 targeted mutations — 38
+killed, each for the named reason; the 2 survivors are the unobservable guards above.** 🔴 **The first
+mutation pass found 9 survivors, and the dangerous one was that nothing checked the order layer
+actually USED the R target** — the helper was tested alone, and bypassing it left every chart-frame
+trade on a 0.0 target with all tests green. Now pinned end to end, and confirmed on real bars: all
+742 trades of one full-history cell carry TP2 at exactly entry + 2R.

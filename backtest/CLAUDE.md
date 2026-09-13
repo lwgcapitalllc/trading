@@ -402,6 +402,12 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   default from this tool.** Tables: `strategies/python/realign/CLAUDE.md` → *The pattern rule*.
   `internal_realign_scan.py --pattern any|opposing|strict --frame 5` · defaults to `strict`, the
   sequence that was DRAWN.
+- **`tools/realign_combo_study.py`** (2026-09-11) — a 36-cell grid of 5m structure sequences
+  through the Realign bot's chart-frame arm, costs charged. 🔴 **Its control is a REPLAY, never a
+  fixed-target walk**: forced entries matched on direction, stop, target, month and hour, run
+  through the same ladder and the same one position slot. ⚠ `--split` and `--broker` are required
+  (the flat M1 file records no broker). ⚠ Control classes are pickled by importable path, never
+  `__main__.X`. Rules and results: `strategies/python/realign/realign_optimization.md` → Run 1.
 - **`tools/scratch_audit.py`** + **`tools/swap_audit.py`** (new 2026-08-11) — is a "breakeven" exit
   actually breakeven on a real account, and what does overnight swap cost. Written for Aaron's
   theory that `exec_be_buf_tk` (30 ticks = $0.30) cannot cover a $0.32 spread; full record in

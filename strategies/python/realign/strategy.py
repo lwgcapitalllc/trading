@@ -64,6 +64,7 @@ class RealignStrategy(SosFadeStrategy):
                       if self.config.realign_trend_minutes else None)
         self.decisions: List[Decision] = []
         self.states: List = []
+        self._trend_frame_checked = False
 
     @staticmethod
     def engine_config():
@@ -83,10 +84,23 @@ class RealignStrategy(SosFadeStrategy):
 
     def _step_core(self, state, bar_time_ms: int) -> Decision:
         b = state.bar
-        closed = self.htf.update(bar_time_ms, b.open, b.high, b.low, b.close)
-        if closed is not None:
-            self.tracker.on_htf(closed, bar_time_ms,
-                                self.htf.broken_high, self.htf.broken_low)
+        if self.config.realign_arm_frame == "External frame":
+            closed = self.htf.update(bar_time_ms, b.open, b.high, b.low, b.close)
+            if closed is not None:
+                self.tracker.on_htf(closed, bar_time_ms,
+                                    self.htf.broken_high, self.htf.broken_low)
+        # The chart-frame arm reads no aggregated frame at all; its whole sequence is the chart
+        # structure the tracker is handed below.
+        if self.trend is not None and not self._trend_frame_checked:
+            # The config can only compare the trend frame against the EXTERNAL frame. On the
+            # chart-frame arm the frame it must beat is the chart's, known from the first bar:
+            # a trend frame no slower than the chart is the chart's own read under another name.
+            self._trend_frame_checked = True
+            if (self.config.realign_arm_frame == "Chart frame"
+                    and self.config.realign_trend_minutes * 60_000 <= self.execution.bar_ms):
+                raise ValueError(
+                    f"realign_trend_minutes ({self.config.realign_trend_minutes}) must be SLOWER "
+                    f"than the chart frame ({self.execution.bar_ms // 60_000} minutes)")
         if self.trend is not None:
             # Same no-lookahead contract as the false-break frame: a slow bar is published
             # only once its last chart bar has closed. ⚠ `None` here means the frame has

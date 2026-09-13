@@ -65,6 +65,11 @@ know the suite catches a shortcut; you have to know which test does.
 
 Record the mutation in the test's docstring, so the next reader does not have to rediscover it.
 
+⚠ **That flag only protects the batch if EVERY run in it sets it.** It stops writes, not reads, so
+one run without it leaves a mutant's compiled copy for the rest to pick up — on 2026-09-11 one
+mutant was served through the eighteen after it and another ran its neighbour's code. A fresh
+`PYTHONPYCACHEPREFIX=<new empty dir>` per run is the form one forgotten flag cannot undo.
+
 ### 4. Check for the vacuous shapes
 
 Before reporting green, ask of each new test:

@@ -35,6 +35,23 @@ if str(_PYPKGS) not in sys.path:
 from sos_fade.execution import Execution, _Pending  # noqa: E402
 
 
+def realign_target(cfg, structural_target: float, entry: float, d: int, dist: float) -> float:
+    """TP2 for a trade entered at `entry`, direction `d`, risking `dist` of price.
+
+    External-frame arm: the external extreme that stood before the false break — the setup's
+    own claim, and what every published Realign figure was measured on.
+
+    Chart-frame arm: `realign_chart_target_r` times the trade's own risk. There the realigning
+    SOS is very often the retake of the very high the counter move launched from — MEASURED,
+    407 of 982 trades over 6.6 years had it at or behind the entry — and a target behind the
+    entry satisfies TP2 on the entry bar, lifting the stop straight to a point between the target
+    and the entry and turning the trade into a small locked-in loss.
+    """
+    if cfg.realign_arm_frame == "Chart frame":
+        return entry + d * cfg.realign_chart_target_r * dist
+    return structural_target
+
+
 class RealignExecution(Execution):
     _state = None          # set by step() before the parent calls _place_entries
     _records_misses = False
@@ -78,10 +95,9 @@ class RealignExecution(Execution):
 
         qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
 
-        # TP1 / TP2 off the DEVIATION leg: the pre-deviation extreme is the far end, the
-        # stop side is the near end. TP2 = the extreme itself (the setup's own claim),
-        # TP1 = the midpoint. The runner rides past TP2 on the inherited trail.
-        target = st.trigger_target
+        # TP1 / TP2: TP2 is the target (see `realign_target`), TP1 the midpoint. The runner
+        # rides past TP2 on the inherited trail.
+        target = realign_target(cfg, st.trigger_target, entry, d, dist)
         tp2 = target
         tp1 = entry + (target - entry) * 0.5
 
