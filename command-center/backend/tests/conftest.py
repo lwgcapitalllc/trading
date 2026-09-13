@@ -292,6 +292,36 @@ def _no_live_vps(request):
 
 
 @pytest.fixture(autouse=True)
+def _no_fetch_from_the_real_clone(monkeypatch):
+    """A version read about a commit this clone lacks FETCHES it (`bot_versions.holds_commit`,
+    2026-09-12). On the REAL clone that reaches the network and moves the developer's
+    remote-tracking refs under them, so here it answers *could not fetch* — what production says
+    with the network down. A scratch repo a test points `MONOREPO_ROOT` at fetches for real, from
+    its own local remote.
+
+    ⚠ **An answer, not a refusal like `_no_live_vps`**: asking about an unfetched commit on the
+    real clone was a legitimate test before the fetch existed (`test_bot_versions.py`). A test that
+    needs the fetch's answer stubs `_fetch_upstream` itself, and its patch wins.
+    ⚠ The real root is read here, before a test's own fixture repoints it — autouse runs first.
+    """
+    from pathlib import Path
+
+    import config as cfg
+    from services import bot_versions as bv
+
+    real_root = Path(cfg.MONOREPO_ROOT).resolve()
+    real_fetch = bv._fetch_upstream
+
+    def guarded() -> bool:
+        if Path(cfg.MONOREPO_ROOT).resolve() == real_root:
+            return False
+        return real_fetch()
+
+    monkeypatch.setattr(bv, "_fetch_upstream", guarded)
+    monkeypatch.setattr(bv, "_fetched", {})
+
+
+@pytest.fixture(autouse=True)
 def _no_live_bot_config(request):
     """A test may not WRITE a live bot's instance config. This is `_no_live_vps`'s local twin.
 

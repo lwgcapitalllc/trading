@@ -55,6 +55,8 @@ import ast
 import json
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import config as cfg
@@ -142,6 +144,62 @@ def has_commit(commit: str) -> bool:
     if not commit:
         return False
     return _git("cat-file", "-e", f"{commit}^{{commit}}") is not None
+
+
+# 🔴 **A commit read off the BOX can be newer than this clone's last fetch (2026-09-12).** The box
+# pulls on every deploy and commits its own record hourly, so straight after a deploy made from
+# this very page the panel read *"Version unknown … Pull, then reload"* — this clone had simply
+# not fetched the commit the box had just pulled, and nothing in the app fetched. A commit this
+# clone does not hold is now FETCHED once before it is called unknown (`holds_commit`).
+# ⚠ **At most one fetch a minute per clone, whoever asks** — the page reads every bot's version
+#   when it opens, and N bots on one missing commit must not become N fetches.
+# ⚠ **`git fetch` changes no file in the working tree**, so it cannot reload this server or move
+#   what any bot runs: it only updates what this clone knows the remote holds.
+# ⚠ **A test on the REAL clone never fetches** — `tests/conftest.py` answers *could not fetch*
+#   there, because a version read about an unknown commit would otherwise reach the network.
+_FETCH_EVERY_S = 60.0
+_fetch_lock = threading.Lock()
+# Repo root → (when it last fetched, whether that fetch succeeded). Keyed by ROOT, so a test's
+# scratch repo never waits on another's cooldown.
+_fetched: dict[str, tuple[float, bool]] = {}
+
+
+def _fetch_upstream() -> bool:
+    """One `git fetch` of what this clone tracks. False when it could not — no network, no remote."""
+    return _git("fetch", "--quiet") is not None
+
+
+def holds_commit(commit: str) -> tuple[bool, bool | None]:
+    """Whether this clone holds `commit`, FETCHING once when it does not.
+
+    Returns `(held, fetched)`. When the commit is still missing, `fetched` says whether the last
+    fetch SUCCEEDED — *the remote does not have it* and *could not ask the remote* have different
+    fixes. `None` when no fetch was needed or the commit is empty.
+    """
+    if has_commit(commit):
+        return True, None
+    if not commit:
+        return False, None
+    root = str(cfg.MONOREPO_ROOT)
+    with _fetch_lock:
+        at, ok = _fetched.get(root, (float("-inf"), False))
+        if time.monotonic() - at >= _FETCH_EVERY_S:
+            ok = _fetch_upstream()
+            _fetched[root] = (time.monotonic(), ok)
+    return has_commit(commit), ok
+
+
+def _unheld(commit: str, what: str, fetched: bool | None) -> str:
+    """Why a commit read off the box cannot be placed here, in words that name the fix."""
+    if fetched:
+        return (
+            f"This machine fetched, and the remote does not hold the commit the bot {what} "
+            f"({commit}) either — the trading box may have a commit it has not pushed."
+        )
+    return (
+        f"This machine has not fetched the commit the bot {what} ({commit}), and fetching "
+        "failed — check this machine's connection, then reload."
+    )
 
 
 def _specs(trees: list[str]) -> list[str]:
@@ -494,11 +552,9 @@ def compare(strategy_package: str, deployed_commit: str, stated_params: dict) ->
     if not deployed_commit:
         base["reason"] = "This bot has never been promoted, so it has no deployed version yet."
         return base
-    if not has_commit(deployed_commit):
-        base["reason"] = (
-            f"This machine has not fetched the commit the bot was deployed from "
-            f"({deployed_commit}). Pull, then reload."
-        )
+    held, fetched = holds_commit(deployed_commit)
+    if not held:
+        base["reason"] = _unheld(deployed_commit, "was deployed from", fetched)
         return base
 
     deployed_version = version_at(deployed_commit, trees)
@@ -559,11 +615,9 @@ def running_code(started_commit: str) -> dict:
     if not started_commit:
         base["reason"] = "The bot's last start did not record which code it started on."
         return base
-    if not has_commit(started_commit):
-        base["reason"] = (
-            f"This machine has not fetched the commit the bot started on ({started_commit}). "
-            "Pull, then reload."
-        )
+    held, fetched = holds_commit(started_commit)
+    if not held:
+        base["reason"] = _unheld(started_commit, "started on", fetched)
         return base
     upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
     if not upstream or not upstream.strip():

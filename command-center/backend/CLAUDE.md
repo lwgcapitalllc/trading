@@ -2139,6 +2139,29 @@ Pinned by 6 tests in `tests/test_bot_version.py` and 8 in `tests/test_bot_runnin
 scripted repo, never a mocked `subprocess`); 10 mutations run through `scripts/testing/mutate.py`,
 10 killed. The page's half: `../frontend/CLAUDE.md` → *One status per row*.
 
+### A commit the box has and this clone does not is FETCHED (2026-09-12)
+
+🔴 **Straight after a deploy made from this page, the panel read "Version unknown … Pull, then
+reload."** The box pulls on every deploy and commits its own record hourly, so the commit it reports
+can be newer than this clone's last fetch — and nothing in the app fetched.
+`bot_versions.holds_commit` fetches once before calling a commit unknown; `compare` (the deployed
+commit) and `running_code` (the commit a run started on) both ask it.
+
+- ⚠ **At most one fetch a minute per clone, whoever asks** (`_FETCH_EVERY_S`, under a lock) — the
+  page reads every bot's version when it opens.
+- ⚠ **`git fetch` touches no working-tree file**, so it cannot reload this server or move what a bot
+  runs.
+- ⚠ **Still missing after a fetch is two reasons with two fixes**: the remote does not hold it (the
+  box has a commit it has not pushed), or the fetch failed (this machine's connection).
+- 🔴 **A test on the REAL clone never fetches** — `tests/conftest.py` → `_no_fetch_from_the_real_clone`
+  answers *could not fetch* there, since a version read about an unknown commit would otherwise
+  reach the network and move the developer's remote-tracking refs. A scratch repo fetches for real,
+  from its own local remote.
+
+Pinned by 6 new tests — 4 in `tests/test_bot_running_code.py` (a scripted repo with a bare remote and
+a "box" clone), 2 in `tests/test_bot_versions.py` — and one re-pointed wording check; 7 mutations, 6
+in memory through `scripts/testing/mutate.py` and the fence in a throwaway worktree, 7 killed.
+
 ### The ceiling on a promote is the REMOTE, not this laptop's HEAD (2026-08-14)
 
 🔴 **A successful deploy of `sos_fade_demo` landed v164 while the backtester read v165, and

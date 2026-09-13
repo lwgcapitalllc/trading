@@ -247,6 +247,20 @@ def test_has_commit_is_false_for_a_commit_that_is_not_here():
     assert bv.has_commit("HEAD") is True
 
 
+def test_compare_FETCHES_a_deployed_commit_it_does_not_hold_before_calling_it_unknown(monkeypatch):
+    """🔴 Straight after a deploy the panel read "Version unknown … Pull, then reload" (2026-09-12):
+    the box had pulled a commit this clone had not fetched, and nothing fetched it.
+    ⚠ The fetch is STUBBED — this runs against the real clone, and a test must not reach the network.
+    MUTATION: ask `has_commit` in compare() instead of `holds_commit` → no fetch, red on the count."""
+    calls: list[int] = []
+    monkeypatch.setattr(bv, "_fetch_upstream", lambda: calls.append(1) or False)
+    monkeypatch.setattr(bv, "_fetched", {})
+    r = bv.compare("sos_fade", "0" * 40, {})
+    assert r["comparable"] is False
+    assert calls == [1]
+    assert "fetching failed" in r["reason"]
+
+
 # ── compare() refuses rather than reporting a comparison it cannot make ─────────
 
 
@@ -258,10 +272,22 @@ def test_a_bot_that_has_never_been_promoted_is_not_comparable():
 
 
 def test_an_unfetched_deployed_commit_is_not_comparable_and_names_the_fix():
+    # On the real clone `conftest.py` answers *could not fetch* — what the page says with the
+    # network down — so the fix named is the connection, not a pull (2026-09-12).
     r = bv.compare("sos_fade", "0" * 40, {})
     assert r["comparable"] is False
     assert r["versions_behind"] is None
-    assert "Pull" in r["reason"]
+    assert "fetching failed" in r["reason"]
+
+
+def test_a_test_never_fetches_the_REAL_clone(monkeypatch):
+    """The fetch a version read makes would reach the network from the real clone, so
+    `conftest.py` answers *could not fetch* there without running git.
+    MUTATION: pass the real clone's fetch through in conftest → the git call is made, red."""
+    seen: list[tuple] = []
+    monkeypatch.setattr(bv, "_git", lambda *a: seen.append(a) or None)
+    assert bv._fetch_upstream() is False
+    assert seen == []
 
 
 def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():

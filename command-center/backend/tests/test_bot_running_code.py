@@ -129,6 +129,70 @@ def test_every_could_not_tell_is_None_with_its_own_reason(repo, commit, upstream
     assert needle in out["reason"]
 
 
+# ── A commit the box has and this clone does not is FETCHED (2026-09-12) ───────────────────────
+
+
+def _remote(tmp_path, repo) -> Path:
+    """A bare `origin` the scripted repo tracks, and a second clone of it — the box, in miniature."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "--initial-branch=main", str(origin)], check=True
+    )
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+    _git(repo, "fetch", "-q", "origin")
+    _git(repo, "branch", "--set-upstream-to=origin/main")
+    box = tmp_path / "box"
+    subprocess.run(["git", "clone", "-q", str(origin), str(box)], check=True)
+    return box
+
+
+def test_a_commit_only_the_REMOTE_holds_is_fetched_then_counted(tmp_path, repo):
+    """🔴 Straight after a deploy the panel read "Version unknown … Pull, then reload": the box had
+    pulled a commit this clone had not fetched, and nothing in the app fetched.
+    MUTATION: skip the fetch in `holds_commit` → red on the reason."""
+    _commit(repo, {"algos/live/runner.py": "a = 1\n"}, "start")
+    box = _remote(tmp_path, repo)
+    on_box = _commit(box, {"algos/live/bridge.py": "b = 1\n"}, "box fix")
+    _git(box, "push", "-q", "origin", "HEAD:main")
+    assert not bv.has_commit(on_box)  # the premise: this clone has never seen it
+
+    out = bv.running_code(on_box)
+    assert out["reason"] == ""
+    assert out["changes_waiting"] == 0
+    assert bv.has_commit(on_box)
+
+
+def test_one_fetch_a_minute_whoever_asks(repo, monkeypatch):
+    """The page reads every bot's version when it opens; N bots on one missing commit must not be
+    N fetches. MUTATION: drop the cooldown → red on the count."""
+    calls: list[int] = []
+    monkeypatch.setattr(bv, "_fetch_upstream", lambda: calls.append(1) or True)
+    _track(repo, _commit(repo, {"algos/live/runner.py": "a = 1\n"}, "start"))
+    for _ in range(3):
+        assert bv.running_code("deadbeefdeadbeef")["changes_waiting"] is None
+    assert len(calls) == 1
+
+
+def test_a_fetch_that_FAILED_says_so(repo, monkeypatch):
+    """*Could not ask the remote* and *the remote does not have it* have different fixes.
+    MUTATION: read every miss as fetched-and-absent → red."""
+    monkeypatch.setattr(bv, "_fetch_upstream", lambda: False)
+    _track(repo, _commit(repo, {"algos/live/runner.py": "a = 1\n"}, "start"))
+    out = bv.running_code("deadbeefdeadbeef")
+    assert out["changes_waiting"] is None
+    assert "fetching failed" in out["reason"]
+
+
+def test_fetched_and_still_missing_says_the_box_has_not_pushed_it(repo, monkeypatch):
+    """MUTATION: read every miss as a failed fetch → red."""
+    monkeypatch.setattr(bv, "_fetch_upstream", lambda: True)
+    _track(repo, _commit(repo, {"algos/live/runner.py": "a = 1\n"}, "start"))
+    out = bv.running_code("deadbeefdeadbeef")
+    assert out["changes_waiting"] is None
+    assert "has not pushed" in out["reason"]
+
+
 def test_RUNNER_TREES_names_every_path_runner_py_loads_from_the_checkout():
     """The runner puts its own package, the shared modules and the strategies root on `sys.path`,
     and loads ONE file out of that root by path — the strategy packages beside it are shadowed by
