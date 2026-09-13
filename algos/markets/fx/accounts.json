@@ -63,6 +63,18 @@
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
       "note": ""
+    },
+    {
+      "account": 35710389,
+      "label": "",
+      "broker": "PU Prime Ltd",
+      "tier": "",
+      "kind": "live",
+      "server": "PUPrime-Live",
+      "mt5_path": "",
+      "symbol_suffix": ".p",
+      "account_profile": "",
+      "note": "Added by Sync VPS on 2026-09-13: found logged in on PU Prime MT5 Terminal."
     }
   ]
 }
