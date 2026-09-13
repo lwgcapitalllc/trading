@@ -2466,6 +2466,53 @@ test('the bot panel says what needs attention in words, and the account is its o
   await expect(page.getByTestId('kind-badge')).toHaveText('Live')
 })
 
+test('a review with nothing left OPEN is no status, and what the platform closed is one line away', async ({
+  page,
+}) => {
+  // 🔴 2026-09-13, Aaron: "I don't want to manually mark anything as reviewed. The platform should
+  // know that this thing was resolved." The review files what is over apart from what is open, and
+  // only the open part is a status.
+  // MUTATION: raise "Needs review" off an empty open list → red on the page-wide count.
+  // MUTATION: render no history → red on the resolved line.
+  // MUTATION: drop the reason it is over → red on "says the bridge is live".
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        review: {
+          level: 'ok',
+          checked_at: '2026-09-12T23:20:02+00:00',
+          findings: [],
+          resolved: [
+            {
+              key: 'halted:x',
+              level: 'warn',
+              title: 'Bridge halted earlier — it is placing orders again now',
+              detail: 'It stopped placing orders at 7:07 PM CDT.',
+              resolved: 'Its heartbeat at 7:42 PM CDT says the bridge is live.',
+            },
+          ],
+        },
+      },
+    }
+  )
+  await page.goto('/bots?bot=sos_live')
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByTestId('bot-resolved')).toBeVisible()
+  await expect(page.getByText('Needs review')).toHaveCount(0)
+  await expect(panel.getByTestId('attention-review')).toHaveCount(0)
+
+  const resolved = panel.getByTestId('bot-resolved')
+  await expect(resolved).toContainText('1 resolved on its own')
+  await expect(resolved.getByText('says the bridge is live')).toBeHidden()
+  await resolved.locator('summary').click()
+  await expect(resolved.getByText('says the bridge is live')).toBeVisible()
+})
+
 test('moving a bot names the account it is joining', async ({ page }) => {
   // MUTATION: send the option's label instead of its value → the body carries a string and this
   // goes red on the account.

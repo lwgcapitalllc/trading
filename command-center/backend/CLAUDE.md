@@ -2592,17 +2592,21 @@ read once the bot is no longer running, so hiding the flag on a stopped bot woul
 explanation at the moment somebody is looking for it. `mt5_link` is gated because a stopped bot's
 last link stamp describes a process that no longer exists; a review describes the record, which does.
 
-🔴 **A "halted RIGHT NOW" finding gives way to a NEWER heartbeat (2026-09-12).** It is the review's
-one present-tense finding (`halted_now:`), and the bot writes its bridge state beside every
-heartbeat — so once a heartbeat newer than the review exists, the finding is either stale (the
-heartbeat says live) or a second copy of the Halted state the page raises off that same heartbeat.
-MEASURED: live SOS Fade read *Needs review — Bridge is HALTED right now* for 40 minutes after a
-re-deploy cleared its halt, waiting on the next hourly pass. `_review_payload` drops it
-(`_heartbeat_after_review`). ⚠ **Only a RUNNING bot's heartbeat counts** (the gate its bridge state
-carries). ⚠ **A missing, older or unreadable time KEEPS the finding** — the review is then the
-freshest evidence. ⚠ **Every finding about the RECORD stays**, and the level follows what is left.
-⚠ The prefix is a contract with `log_review.py`, pinned by a test that reads that file. Tests: 8 in
-`tests/test_bot_review_flag.py`; 9 mutations planted in memory, 9 killed.
+🔴 **Open, or over — only OPEN is "needs review" (2026-09-12, widened 2026-09-13).** The reviewer
+files what the record shows has ended under `resolved` (`algos/CLAUDE.md` → `SYS_LOGREVIEW`);
+`_review_payload` passes it on as history and takes the level from what is open — `"ok"` when
+nothing is. A finding filed as open that states why it is over is over wherever it sits; a flag
+with no `resolved` list keeps everything open. **Between passes the bot's own readings SINCE the
+review answer what it left open** (`_answered_since_review`, the table above the prefixes): a
+RUNNING bot's newer heartbeat — bridge not halted, MT5 link up, any beat after a bar or loop error —
+and a run that began after it for a refused start, pin or setting. A newer reading saying the thing
+is STILL so drops the review's copy: the row raises Halted / No MT5 link itself. MEASURED: live SOS
+Fade read *Needs review — Bridge is HALTED right now* for 40 minutes after a re-deploy cleared it.
+⚠ **A repeat is answered by neither** — one good heartbeat does not end a burst. ⚠ **A missing,
+older or unreadable time KEEPS the finding.** ⚠ The start is not gated on RUNNING: a run that began
+after the review answered its refusal even if it stopped since. ⚠ The prefixes and the `resolved`
+list are a contract with `log_review.py`, pinned by a test that reads that file. Tests: 19 in
+`tests/test_bot_review_flag.py`; 15 mutations planted in memory, 15 killed.
 
 ## 🔴 The log panel read a file the bot abandoned nineteen days ago (2026-08-24)
 

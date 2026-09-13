@@ -39,6 +39,7 @@ import type {
   BotParamRow,
   BotParamsView,
   BotPromoteJob,
+  BotReviewFinding,
   BotStatus,
 } from '@/types'
 import { Drawer } from '@/components/Drawer'
@@ -100,14 +101,14 @@ const upper = (s: string) => (s ? `${s[0].toUpperCase()}${s.slice(1)}` : s)
  * 🔴 **The row said "Needs review" and nothing said what to review (2026-09-12).** Aaron: *"Review
  * what? nothing is telling me what to act on."* The findings lived only on the status's hover. The
  * panel is where a bot is acted on, so each problem is listed here in the bot's and the reviewer's
- * own words — the reviewer's findings one by one, with when that hourly review ran, because it is
- * why a fixed problem can stay listed until the next pass.
+ * own words — the reviewer's findings one by one, with when that hourly review ran.
  *
  * ⚠ **Nothing is decided here** — which problems exist, and their words, are `botCondition`'s.
- * Nothing renders for a bot with none.
+ * Nothing renders for a bot with none. ⚠ What the platform found OVER goes under them as one grey
+ * line (`ResolvedOnItsOwn`) — never counted, never a status.
  */
-function Attention({ cond }: { cond: Condition }) {
-  if (!cond.issues.length) return null
+function Attention({ cond, resolved }: { cond: Condition; resolved: BotReviewFinding[] }) {
+  if (!cond.issues.length && !resolved.length) return null
   return (
     <section
       data-testid="bot-attention"
@@ -144,7 +145,35 @@ function Attention({ cond }: { cond: Condition }) {
           </div>
         )
       )}
+      {resolved.length > 0 && <ResolvedOnItsOwn items={resolved} />}
     </section>
+  )
+}
+
+/**
+ * What the platform closed ON ITS OWN — one grey line until opened (2026-09-13).
+ *
+ * 🔴 Aaron: *"I don't want to manually mark anything as reviewed. The platform should know that
+ * this thing was resolved."* The review files what the record shows has ended — a halt that
+ * recovered, a crash it came back from, a link drop that restored — apart from what is still open,
+ * and only the open part is a status. This is where the rest goes: never counted, never coloured,
+ * one click away, so nothing that happened disappears without a trace.
+ */
+function ResolvedOnItsOwn({ items }: { items: BotReviewFinding[] }) {
+  return (
+    <details data-testid="bot-resolved">
+      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-[11.5px] text-text-tertiary hover:text-text-secondary transition-colors">
+        {items.length} resolved on {items.length === 1 ? 'its' : 'their'} own · nothing to do ›
+      </summary>
+      <ul className="mt-[8px] flex flex-col gap-[8px]">
+        {items.map((f) => (
+          <li key={f.key}>
+            <p className="text-[12px] text-text-secondary">{f.title}</p>
+            {f.resolved && <p className="text-[11px] text-text-tertiary mt-[1px]">{f.resolved}</p>}
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }
 
@@ -332,7 +361,7 @@ export function BotDrawer({
     >
       {/* ── do ──────────────────────────────────────────────────────────────── */}
       {/* ── what is wrong, before what you can do about it ──────────────────── */}
-      <Attention cond={cond} />
+      <Attention cond={cond} resolved={bot?.review?.resolved ?? []} />
 
       <div className="flex items-center gap-2 py-[14px] border-b border-border-subtle">
         {pendingAction ? (

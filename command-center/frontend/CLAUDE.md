@@ -4438,18 +4438,24 @@ status per row* rule, applied to `BotDrawer.tsx`:
 - ⚠ **Section headings are grey, not gold** (`drawerParts.tsx`), in both panels.
 - 🔴 **What is wrong comes FIRST, in words** (`Attention`, the same day) — Aaron: *"Review what?
   nothing is telling me what to act on."* Each problem the row counts gets its own sentence, and a
-  review's findings are listed one by one with the time that hourly review ran — a fixed problem
-  stays listed until its next pass. The words are `botCondition`'s; nothing is decided here.
+  review's findings are listed one by one with the time that hourly review ran. The words are
+  `botCondition`'s; nothing is decided here.
+- 🔴 **What the platform closed on its own is one grey line under it** (`ResolvedOnItsOwn`,
+  2026-09-13) — Aaron: *"I don't want to manually mark anything as reviewed."* The review files what
+  is over apart from what is open (`../backend/CLAUDE.md` → *Open, or over*); `botCondition` raises
+  *Needs review* off the open list only, and the rest is a collapsed "N resolved on its own ·
+  nothing to do", each with why it is over. Never counted, never coloured.
 - 🔴 **The header is the status and nothing else.** The account's number sat beside it as a link
   into the account's panel, so "Needs review · account N ›" read as one thing and the click meant
   to explain the review opened the account. The account is named in its own section, with **Open
   account ›** on its heading (`bot-account-link`).
 
-Pinned by two new checks and three re-pointed in `tests/bots-accounts.spec.ts` — the panel says each
-thing once, the running-bot move and remove guards (controls ABSENT, the reason there), the record's
-one line including a bot with no closed trade, and what needs attention in words with the account
-on its own line (the halt, each review finding and its time, **Open account ›** landing on that
-account, the badge reading *Live*). 14 mutations in a throwaway worktree, 14 killed.
+Pinned by three new checks and three re-pointed in `tests/bots-accounts.spec.ts` — the panel says
+each thing once, the running-bot move and remove guards (controls ABSENT, the reason there), the
+record's one line including a bot with no closed trade, what needs attention in words with the
+account on its own line (the halt, each review finding and its time, **Open account ›** landing on
+that account, the badge reading *Live*), and a review with nothing left open reading as no status
+with its history one click away. 17 mutations in a throwaway worktree, 17 killed.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 

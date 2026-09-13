@@ -292,7 +292,10 @@ def test_a_HALTED_RIGHT_NOW_finding_goes_once_a_newer_heartbeat_says_the_bridge_
     MUTATION: drop the supersession → red. MUTATION: compare the two times the wrong way → red."""
     flag = {"checked_at": _fresh(), "findings": [_halted_now()]}
     got = bots._review_payload(flag, NOW, bridge_state="live", heartbeat=_after_the_review(5))
-    assert got is None
+    # Since 2026-09-13 it goes to HISTORY with its reason, rather than vanishing.
+    assert got["findings"] == [] and got["level"] == "ok"
+    assert [f["key"] for f in got["resolved"]] == ["halted_now:unknown"]
+    assert "no longer halted" in got["resolved"][0]["resolved"]
 
 
 def test_it_goes_when_the_heartbeat_says_HALTED_too_because_the_row_raises_that_itself():
@@ -358,8 +361,10 @@ def test_the_key_it_drops_is_the_one_log_review_WRITES():
     MUTATION: change the prefix here → red."""
     writer = Path(__file__).resolve().parents[3] / "algos" / "notifications" / "log_review.py"
     src = writer.read_text(encoding="utf-8")
-    for prefix in bots._PRESENT_TENSE_FINDINGS:
+    for prefix in bots._ANSWERABLE:
         assert f'f"{prefix}{{' in src, prefix
+    # ...and so is the list it files what is OVER under (2026-09-13).
+    assert '"resolved": [' in src
 
 
 def test_the_snapshot_hands_a_RUNNING_bots_heartbeat_to_the_review(monkeypatch):
@@ -388,3 +393,162 @@ def test_the_snapshot_hands_a_RUNNING_bots_heartbeat_to_the_review(monkeypatch):
     assert "halted_now:unknown" not in keys()
     running["value"] = False
     assert "halted_now:unknown" in keys()
+
+
+# ── open, or over: only OPEN counts (2026-09-13) ─────────────────────────────
+#
+# 🔴 Aaron: *"I don't want to manually mark anything as reviewed. The platform should know that this
+# thing was resolved."* The reviewer files what the record shows has ended under `resolved`; the
+# page counts only what is left, and the bot's own readings since the review answer the rest.
+
+
+def _open_keys(got) -> list:
+    return [f["key"] for f in got["findings"]] if got else []
+
+
+def _over_keys(got) -> list:
+    return [f["key"] for f in got["resolved"]] if got else []
+
+
+def _open_one(key: str) -> dict:
+    return {
+        "checked_at": _fresh(),
+        "findings": [{"key": key, "level": "warn", "title": key, "detail": "d"}],
+    }
+
+
+def test_what_the_reviewer_filed_as_OVER_is_passed_on_and_never_counted():
+    """MUTATION: count the `resolved` list as open → red. MUTATION: drop it → red."""
+    over = dict(_finding("alert", "Restarted 4 times"), resolved="None since 2:03 PM")
+    got = bots._review_payload({"checked_at": _fresh(), "findings": [], "resolved": [over]}, NOW)
+
+    assert got["level"] == "ok"
+    assert _open_keys(got) == []
+    assert _over_keys(got) == [over["key"]]
+
+
+def test_an_open_finding_that_says_why_it_is_over_is_over_wherever_it_was_filed():
+    """MUTATION: trust the list it arrived in → red."""
+    over = dict(_finding("warn", "Link drop"), resolved="It came back.")
+    got = bots._review_payload({"checked_at": _fresh(), "findings": [over, _finding()]}, NOW)
+
+    assert _open_keys(got) == ["k:something"]
+    assert _over_keys(got) == [over["key"]]
+
+
+def test_a_flag_from_before_the_split_keeps_everything_open():
+    """A reviewer that has not reached the box yet writes no `resolved`: every finding stays open,
+    the direction that never hides a real one."""
+    got = bots._review_payload({"checked_at": _fresh(), "findings": [_finding("alert")]}, NOW)
+
+    assert got["level"] == "alert"
+    assert _open_keys(got) == ["k:something"] and _over_keys(got) == []
+
+
+def test_the_level_is_the_worst_OPEN_finding():
+    """MUTATION: take the level from history too → red."""
+    over = dict(_finding("alert", "old"), resolved="over")
+    flag = {"checked_at": _fresh(), "findings": [_finding("warn")], "resolved": [over]}
+
+    assert bots._review_payload(flag, NOW)["level"] == "warn"
+
+
+def test_a_link_drop_is_answered_by_the_heartbeats_own_link_reading():
+    """Up = over; down = dropped, because the row raises *No MT5 link* off that same heartbeat;
+    anything else = kept. MUTATION: treat any reading as up → red on the down and unread cases."""
+
+    def review(link):
+        return bots._review_payload(
+            _open_one("mt5_outage:t"),
+            NOW,
+            bridge_state="live",
+            heartbeat=_after_the_review(5),
+            mt5_link=link,
+        )
+
+    assert _open_keys(review(True)) == [] and _over_keys(review(True)) == ["mt5_outage:t"]
+    assert review(False) is None
+    for unread in (None, "yes", 1):
+        assert _open_keys(review(unread)) == ["mt5_outage:t"], unread
+
+
+def test_a_bar_or_loop_error_is_answered_by_any_newer_heartbeat_and_no_older_one():
+    """The loop has turned since. MUTATION: drop the rule → red."""
+    for key in ("bar_error:t", "loop_error:t"):
+        newer = bots._review_payload(
+            _open_one(key), NOW, bridge_state="live", heartbeat=_after_the_review(5)
+        )
+        older = bots._review_payload(
+            _open_one(key), NOW, bridge_state="live", heartbeat=_after_the_review(-5)
+        )
+        assert _over_keys(newer) == [key], key
+        assert _open_keys(older) == [key], key
+
+
+def test_a_refusal_to_start_is_answered_by_a_run_that_began_after_the_review():
+    """It read its settings and its pin again and got in. ⚠ NOT gated on running: a run that began
+    after the review answered the refusal even if it has stopped since.
+
+    MUTATION: drop the rule → red. MUTATION: compare the two times the wrong way → red."""
+    for key in ("startup_failed:t", "version_mismatch:t", "config_refused:t"):
+        after = bots._review_payload(_open_one(key), NOW, started=_after_the_review(5))
+        before = bots._review_payload(_open_one(key), NOW, started=_after_the_review(-5))
+        assert _over_keys(after) == [key], key
+        assert _open_keys(before) == [key], key
+
+
+def test_a_start_nobody_can_read_answers_nothing():
+    """Rule 1: a start written only as text, a bool, NaN or infinity must not buy an all-clear.
+    MUTATION: read the start without `_finite` → red on infinity."""
+    for stamp in (None, "2026-09-03T18:00:00", True, float("nan"), float("inf")):
+        got = bots._review_payload(_open_one("startup_failed:t"), NOW, started=stamp)
+        assert _open_keys(got) == ["startup_failed:t"], stamp
+
+
+def test_a_heartbeat_or_a_start_never_ends_a_REPEAT():
+    """One good heartbeat does not end a burst — only the reviewer's quiet-stretch rule does.
+    MUTATION: answer every finding on a newer heartbeat → red."""
+    for key in ("restart_loop:t", "mt5_storm:t", "loop_storm:t", "rewarm_storm:t"):
+        got = bots._review_payload(
+            _open_one(key),
+            NOW,
+            bridge_state="live",
+            heartbeat=_after_the_review(5),
+            mt5_link=True,
+            started=_after_the_review(5),
+        )
+        assert _open_keys(got) == [key], key
+
+
+def test_a_stopped_bots_heartbeat_answers_nothing():
+    """Only a RUNNING bot passes a bridge reading, and without one neither its stamp nor its link
+    answers anything. MUTATION: drop the missing-bridge check → red."""
+    for key in ("mt5_outage:t", "bar_error:t", "halted:t"):
+        got = bots._review_payload(
+            _open_one(key), NOW, bridge_state=None, heartbeat=_after_the_review(5), mt5_link=True
+        )
+        assert _open_keys(got) == [key], key
+
+
+def test_the_snapshot_hands_the_link_and_the_start_to_the_review(monkeypatch):
+    """The rules only work if the endpoint passes the readings on.
+    MUTATION: drop `mt5_link=` → red. MUTATION: drop `started=` → red."""
+    key = bots._BOTS[0].key
+    now = datetime.now(timezone.utc)
+    flag = {
+        "checked_at": (now - timedelta(minutes=20)).isoformat(timespec="seconds"),
+        "findings": [
+            {"key": "mt5_outage:t", "level": "warn", "title": "t", "detail": "d"},
+            {"key": "startup_failed:t", "level": "alert", "title": "t", "detail": "d"},
+        ],
+    }
+    later = (now - timedelta(minutes=5)).timestamp()
+    state = {"bridge_state": "live", "heartbeat": later, "mt5_link": True, "started": later}
+    monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
+    monkeypatch.setattr(bots, "_parse_bot_states", lambda _snap: {key: state})
+    monkeypatch.setattr(bots, "_parse_reviews", lambda _snap: {key: flag})
+    monkeypatch.setattr(bots, "_bot_runner_running", lambda _snap, _key: True)
+    row = next(b for b in bots.get_snapshot().bots if b.key == key)
+
+    assert row.review.findings == []
+    assert sorted(f.key for f in row.review.resolved) == ["mt5_outage:t", "startup_failed:t"]

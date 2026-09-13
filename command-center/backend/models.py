@@ -268,6 +268,8 @@ class BotReviewFinding(BaseModel):
     level: str  # "alert" | "warn"
     title: str
     detail: str
+    # Why it is OVER, in one sentence; `None` while it still needs a person (2026-09-13).
+    resolved: Optional[str] = None
 
 
 class BotReview(BaseModel):
@@ -279,9 +281,12 @@ class BotReview(BaseModel):
     bot places nothing.** Nothing in the system reported that before 2026-08-05.
     """
 
-    level: str  # the worst level among the findings
+    level: str  # the worst OPEN finding's level — "ok" when only history is left
     checked_at: str
+    # Only what still needs a person: the one list *needs review* counts.
     findings: list[BotReviewFinding] = []
+    # What the record, or the bot's own newer heartbeat, shows is over — each with its reason.
+    resolved: list[BotReviewFinding] = []
 
 
 class BotPosition(BaseModel):

@@ -835,10 +835,20 @@ def _parse_reviews(snap: dict[str, str]) -> dict[str, dict]:
 _REVIEW_STALE_SECONDS = 3 * 60 * 60
 
 
-# log_review's one PRESENT-TENSE finding (`halted_now:<occurrence>`, "Bridge is HALTED right now").
-# Every other finding is about the RECORD; this one is about NOW, which the bot's own heartbeat
-# reads every poll. Pinned against log_review.py by `tests/test_bot_review_flag.py`.
-_PRESENT_TENSE_FINDINGS = ("halted_now:",)
+# What the bot itself says SINCE the review that answers a finding the review left open, by key
+# prefix. Every prefix is pinned against log_review.py by `tests/test_bot_review_flag.py`.
+#   bridge — a RUNNING bot's newer heartbeat: not halted = over; halted = the row raises Halted off
+#            that same heartbeat with the bot's own reason, so the review's copy goes.
+#   link   — the same for the MT5 link: up = over; down = the row's own *No MT5 link*.
+#   beat   — any newer heartbeat: the loop has turned since the error.
+#   start  — a run that began after the review: it read its settings and its pin again and got in.
+# ⚠ A REPEAT (`restart_loop:`, `mt5_storm:`, `loop_storm:`, `rewarm_storm:`) is in none of these,
+# on purpose: one good heartbeat does not end a burst — only the reviewer's quiet-stretch rule does.
+_BRIDGE_ANSWERS = ("halted_now:", "halted:")
+_LINK_ANSWERS = ("mt5_outage:",)
+_BEAT_ANSWERS = ("bar_error:", "loop_error:")
+_START_ANSWERS = ("startup_failed:", "version_mismatch:", "config_refused:")
+_ANSWERABLE = _BRIDGE_ANSWERS + _LINK_ANSWERS + _BEAT_ANSWERS + _START_ANSWERS
 
 
 def _review_payload(
@@ -847,25 +857,31 @@ def _review_payload(
     *,
     bridge_state: Optional[str] = None,
     heartbeat: object = None,
+    mt5_link: object = None,
+    started: object = None,
 ) -> dict | None:
     """The review a bot row carries, or `None` for nothing to show.
 
     Three jobs, and they are separate on purpose:
 
-    1. **Findings** — passed through untouched, except the one a newer heartbeat has read (3). The
-       chip has always been "the reviewer found something", and that is unchanged.
+    1. 🔴 **Open, or over (2026-09-13).** The reviewer files what the record shows has ENDED under
+       `resolved`, each with the sentence saying why, and only `findings` — what is still open —
+       counts toward *needs review* and its level. Aaron: *"I don't want to manually mark anything
+       as reviewed. The platform should know that this thing was resolved."* A finding filed as
+       open that carries its own `resolved` sentence is over wherever it sits. ⚠ A flag from a
+       reviewer that predates the split has no `resolved` list and everything in it stays open —
+       the direction that never hides a real one.
     2. **Freshness** — a flag whose `checked_at` is older than three hourly runs gets an ALERT
        finding of its own, because from that moment its findings describe a state that is up to
        hours old and it is the page's only warning that the reviewer stopped. The stale finding
        goes FIRST: it is the reason not to trust the ones under it.
-    3. 🔴 **A present-tense finding gives way to a NEWER heartbeat (2026-09-12).** "Bridge is HALTED
-       right now" is the review's reading of the bridge at its hourly pass; the bot writes its
-       bridge state beside every heartbeat. Once a heartbeat newer than the review exists, the
-       finding is either STALE (the heartbeat says live) or a second copy of the Halted state the
-       page raises off that same heartbeat. MEASURED: live SOS Fade read "Needs review" for 40
-       minutes after a re-deploy cleared its halt, waiting on the next hourly pass. ⚠ **Kept when
-       no heartbeat can speak** — a stopped bot (only a running one passes a bridge state), or a
-       heartbeat older than the review or unreadable: the review is then the freshest evidence.
+    3. 🔴 **What the bot has said SINCE the review answers what it left open** (2026-09-12, widened
+       2026-09-13; `_answered_since_review`, the table above the prefixes). The review runs hourly
+       and the bot writes its heartbeat every poll — MEASURED: live SOS Fade read "Needs review —
+       Bridge is HALTED right now" for 40 minutes after a re-deploy cleared its halt, waiting on
+       the next pass. ⚠ **Kept when nothing newer can speak** — a stopped bot passes no bridge
+       reading, and a heartbeat or a start older than the review, or unreadable, cannot contradict
+       it: the review is then the freshest evidence.
 
     ⚠ **An absent flag stays quiet rather than becoming an alarm.** The reviewer writes one for
     every registered bot on every run, so after one hourly pass an absence really would mean
@@ -881,11 +897,20 @@ def _review_payload(
     if flag is None:
         return None
 
-    findings = [f for f in (flag.get("findings") or []) if isinstance(f, dict)]
-    if _heartbeat_after_review(flag, bridge_state, heartbeat):
-        findings = [
-            f for f in findings if not str(f.get("key") or "").startswith(_PRESENT_TENSE_FINDINGS)
-        ]
+    findings: list[dict] = []
+    over = [f for f in (flag.get("resolved") or []) if isinstance(f, dict)]
+    for f in flag.get("findings") or []:
+        if isinstance(f, dict):
+            (over if f.get("resolved") else findings).append(f)
+    findings, answered = _answered_since_review(
+        flag,
+        findings,
+        bridge_state=bridge_state,
+        heartbeat=heartbeat,
+        mt5_link=mt5_link,
+        started=started,
+    )
+    over = answered + over
     age = _review_age_seconds(flag, now)
     if age is None or age > _REVIEW_STALE_SECONDS:
         stamp = str(flag.get("checked_at") or "never")
@@ -903,10 +928,18 @@ def _review_payload(
             *findings,
         ]
 
-    if not findings:
+    if not findings and not over:
         return None
-    level = "alert" if any(f.get("level") == "alert" for f in findings) else "warn"
-    return {"level": level, "checked_at": str(flag.get("checked_at") or ""), "findings": findings}
+    if not findings:
+        level = "ok"
+    else:
+        level = "alert" if any(f.get("level") == "alert" for f in findings) else "warn"
+    return {
+        "level": level,
+        "checked_at": str(flag.get("checked_at") or ""),
+        "findings": findings,
+        "resolved": over,
+    }
 
 
 def _review_written_at(flag: dict) -> datetime | None:
@@ -940,6 +973,60 @@ def _heartbeat_after_review(flag: dict, bridge_state: Optional[str], heartbeat: 
     if bridge_state is None or stamp is None or written is None:
         return False
     return stamp > written.timestamp()
+
+
+def _started_after_review(flag: dict, started: object) -> bool:
+    """Whether the bot's current run began AFTER the review read its record.
+
+    `started` is the runner's epoch start stamp (`bot_state.json` → `started`). ⚠ `False` whenever
+    either side cannot say — a start an older writer put down only as text included: the finding
+    then waits for the next pass, the direction that never hides a real refusal.
+    """
+    stamp = _finite(started)
+    written = _review_written_at(flag)
+    if stamp is None or written is None:
+        return False
+    return stamp > written.timestamp()
+
+
+def _answered_since_review(
+    flag: dict,
+    findings: list[dict],
+    *,
+    bridge_state: Optional[str],
+    heartbeat: object,
+    mt5_link: object,
+    started: object,
+) -> tuple[list[dict], list[dict]]:
+    """(still open, over): the review's OPEN findings, against what the bot has said since it.
+
+    ⚠ A finding the bot's newer reading says is STILL so is dropped, not kept: the row raises Halted
+    and *No MT5 link* off that same heartbeat with the bot's own reason, and the review's copy would
+    put one fact on the row twice ("Halted +1").
+    """
+    beat = _heartbeat_after_review(flag, bridge_state, heartbeat)
+    restarted = _started_after_review(flag, started)
+    still: list[dict] = []
+    over: list[dict] = []
+    for f in findings:
+        key = str(f.get("key") or "")
+        answer: Optional[bool] = None
+        why = ""
+        if restarted and key.startswith(_START_ANSWERS):
+            answer, why = True, "It has started again since this review."
+        elif beat and key.startswith(_BRIDGE_ANSWERS):
+            answer = bridge_state != "halted"
+            why = "Its newer heartbeat says the bridge is no longer halted."
+        elif beat and key.startswith(_LINK_ANSWERS):
+            answer = True if mt5_link is True else False if mt5_link is False else None
+            why = "Its newer heartbeat says the MT5 link is up."
+        elif beat and key.startswith(_BEAT_ANSWERS):
+            answer, why = True, "Its loop has turned since this review."
+        if answer is None:
+            still.append(f)
+        elif answer:
+            over.append({**f, "resolved": why})
+    return still, over
 
 
 def _as_float(raw) -> float | None:
@@ -1385,12 +1472,15 @@ def get_snapshot():
                 review=_review_payload(
                     reviews.get(bot_key),
                     _now_utc,
-                    # The bot's own reading of its bridge, and when it took it: a heartbeat newer
-                    # than the review replaces the review's "halted right now". Only a RUNNING bot
-                    # speaks for now — ONE gate, on the bridge state: with no bridge reading the
-                    # stamp drops nothing, so a second gate on it would be a branch nothing kills.
+                    # What the bot has said SINCE the review, which answers what it left open. Only a
+                    # RUNNING bot speaks for now — ONE gate, on the bridge state: with no bridge
+                    # reading neither the stamp nor the link answers anything, so a second gate on
+                    # them would be a branch nothing kills. ⚠ The START is not gated: a run that
+                    # began after the review answered its refusal even if it has stopped since.
                     bridge_state=_bridge_state(state) if status == "RUNNING" else None,
                     heartbeat=state.get("heartbeat"),
+                    mt5_link=state.get("mt5_link"),
+                    started=state.get("started"),
                 ),
                 status=status,
                 uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,

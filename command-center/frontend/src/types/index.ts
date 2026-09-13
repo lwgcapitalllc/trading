@@ -331,13 +331,18 @@ export interface BotReviewFinding {
   level: 'alert' | 'warn'
   title: string
   detail: string
+  /** Why it is OVER, in one sentence — set on the `resolved` list only (2026-09-13). */
+  resolved?: string | null
 }
 
 export interface BotReview {
-  /** The worst level among the findings. */
-  level: 'alert' | 'warn'
+  /** The worst OPEN finding's level — `ok` when only history is left. */
+  level: 'alert' | 'warn' | 'ok'
   checked_at: string
+  /** What still needs a person: the only list "Needs review" counts. */
   findings: BotReviewFinding[]
+  /** What the record, or the bot's own newer heartbeat, shows is over. Never counted. */
+  resolved?: BotReviewFinding[]
 }
 
 /** What a bot holds AT THE BROKER, as its own heartbeat last read it (2026-09-12). Read off the

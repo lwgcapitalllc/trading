@@ -160,7 +160,9 @@ function issuesOf(bot: BotStatus): Issue[] {
         .join(' '),
     })
   }
-  const review = bot.review
+  // Only what is still OPEN raises it (2026-09-13). What the record shows is over is the bot
+  // panel's history, never a status — Aaron: "the platform should know that this thing was resolved".
+  const review = bot.review?.findings.length ? bot.review : null
   const reviewIssue: Issue | null = review
     ? {
         key: 'review',
