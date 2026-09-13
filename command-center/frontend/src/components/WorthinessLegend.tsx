@@ -47,7 +47,8 @@ export default function WorthinessLegend({ forceCollapsed = false }: { forceColl
         <div className="px-4 pb-4 pt-3 space-y-3 border-t border-border-subtle">
           <div className="text-[12px] text-text-secondary leading-relaxed">
             The next step for a finished run, judged against the strictest drawdown limit it was
-            checked against. A run checked against no limit gets no score.
+            checked against — as a share of its peak when the run&apos;s size grew with the account,
+            in dollars otherwise. A run checked against no limit gets no score.
           </div>
           {ROWS.map((r) => (
             <div key={r.tier} className="flex items-start gap-3">

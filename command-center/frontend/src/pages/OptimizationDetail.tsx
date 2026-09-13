@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { runningJobFor, runnerScope } from '@/lib/runner'
+import { brokerName } from '@/lib/brokerName'
 import {
   ArrowLeft,
   Download,
@@ -1255,7 +1256,7 @@ export function OptimizationDetail() {
                 className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary"
                 title={
                   opt.cost_layers?.length
-                    ? `Charged on the ${opt.broker_profile} profile`
+                    ? `Charged on the ${brokerName(opt.broker_profile)} account`
                     : 'Every combination was replayed with no spread, swap or commission'
                 }
               >

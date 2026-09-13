@@ -16,6 +16,7 @@ import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/compone
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import { InstrumentPicker } from '@/components/InstrumentPicker'
 import { isQuotedVerbatim } from '@/lib/instrumentSearch'
+import { brokerName } from '@/lib/brokerName'
 import type { Strategy, Firm, SizingMode, BrokerProfile } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -694,7 +695,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               >
                 {(brokerProfiles ?? []).map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.id}
+                    {brokerName(b.id)}
                     {b.attached ? ' — connected now' : ''}
                   </option>
                 ))}
@@ -727,8 +728,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                        still has to speak: silence here would read as "bare", which is a guess. */
                     instrumentSymbol && brokerNamingUnknown ? (
                       <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
-                        Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
-                        exactly as typed.
+                        Nobody has recorded how {brokerName(brokerProfile)} spells its symbols, so
+                        this is sent exactly as typed.
                       </div>
                     ) : null
                   }
@@ -1211,7 +1212,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   tooltip="A charged run is what you can trade; a free run shows how much of the edge is friction. Every figure is measured on the broker account picked at the top of this form — facts, not settings."
                   open={costsOpen}
                   onToggle={() => setCostsOpen((o) => !o)}
-                  summary={chargeCosts ? `charged · ${brokerProfile}` : 'GROSS — no costs charged'}
+                  summary={
+                    chargeCosts
+                      ? `charged · ${brokerName(brokerProfile)}`
+                      : 'GROSS — no costs charged'
+                  }
                 />
 
                 {/* 🔴 The switch sits OUTSIDE the fold. Everything below it is explanation, and a
@@ -1263,9 +1268,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     pointed at is a legitimate thing to do deliberately. */}
                 {chargeCosts && brokerMatches === false && (
                   <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                    This charges {brokerProfile}&apos;s costs over bars from {attachedProfile?.id},
-                    which is the terminal actually connected. Same run, two brokers — pick{' '}
-                    {attachedProfile?.id} unless you mean to compare.
+                    This charges {brokerName(brokerProfile)}&apos;s costs over bars from{' '}
+                    {brokerName(attachedProfile?.id)}, which is the terminal actually connected.
+                    Same run, two brokers — pick {brokerName(attachedProfile?.id)} unless you mean
+                    to compare.
                   </p>
                 )}
                 {/* `!!`: a bare `.length &&` renders the number 0 when the list is empty. */}

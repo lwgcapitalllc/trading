@@ -13,6 +13,7 @@ import {
 } from '@/hooks/useLab'
 import { InstrumentPicker } from '@/components/InstrumentPicker'
 import { isQuotedVerbatim } from '@/lib/instrumentSearch'
+import { brokerName } from '@/lib/brokerName'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
 import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
 import { DecimalInput } from '@/components/DecimalInput'
@@ -607,7 +608,7 @@ export function StackConfigModal({
               >
                 {(brokerProfiles ?? []).map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.id}
+                    {brokerName(b.id)}
                     {b.attached ? ' — connected now' : ''}
                   </option>
                 ))}
@@ -624,8 +625,8 @@ export function StackConfigModal({
                    which is a guess, and a guessed symbol is what the rewrite exists to prevent. */
                 brokerNamingUnknown ? (
                   <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
-                    Nobody has recorded how {brokerProfile} spells its symbols, so this is sent
-                    exactly as typed.
+                    Nobody has recorded how {brokerName(brokerProfile)} spells its symbols, so this
+                    is sent exactly as typed.
                   </div>
                 ) : null
               }
@@ -965,7 +966,7 @@ export function StackConfigModal({
                       </p>
                     )}
                     {budgetQuery.isError && budgetFresh && (
-                      <p className="mt-1 px-3 text-[11px] text-neg-text leading-snug">
+                      <p className="mt-1 px-3 text-[11px] text-warn-text leading-snug">
                         Could not check the legs against the cap —{' '}
                         {(budgetQuery.error as Error)?.message ?? 'the backend did not answer'}. The
                         run stays blocked until it can be checked.
@@ -1042,9 +1043,10 @@ export function StackConfigModal({
                   legitimate thing to do deliberately. */}
               {chargeCosts && brokerMatches === false && (
                 <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                  This charges {brokerProfile}&apos;s costs over bars from {attachedProfile?.id},
-                  which is the terminal actually connected. Same stack, two brokers — pick{' '}
-                  {attachedProfile?.id} unless you mean to compare.
+                  This charges {brokerName(brokerProfile)}&apos;s costs over bars from{' '}
+                  {brokerName(attachedProfile?.id)}, which is the terminal actually connected. Same
+                  stack, two brokers — pick {brokerName(attachedProfile?.id)} unless you mean to
+                  compare.
                 </p>
               )}
               {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
@@ -1056,7 +1058,7 @@ export function StackConfigModal({
               {/* This one DOES block, because the backend refuses it — a tier nobody has measured
                   would otherwise borrow a sibling's number, and PU Prime's measured 2.7x apart. */}
               {chargeCosts && brokerUnpriced && (
-                <p className="mt-2 text-[11px] text-neg-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                <p className="mt-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
                   This account&apos;s spread has never been measured, so it cannot be run charged.
                   Measure it first, or pick an account that has been.
                 </p>

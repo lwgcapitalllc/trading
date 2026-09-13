@@ -60,22 +60,14 @@ import { api } from '@/api/client'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL, REGIME_ORDER } from '@/lib/regime'
 import { runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
+import { brokerName } from '@/lib/brokerName'
+import { COST_LAYER_LABEL } from '@/lib/costLayers'
 import type { BacktestDetail, BacktestSummary, DailyPnlPoint, ParamSchemaEntry } from '@/types'
 
 // ── Param helpers ───────────────────────────────────────────────────────────────
 
 function isFoundational(schema: ParamSchemaEntry | undefined): boolean {
   return schema?.category === 'foundational'
-}
-
-/** Display names for the cost layers a python run can charge — the SAME map BacktestDetail and the
- *  Run modal use, so the three name the same thing the same way. */
-const COST_LAYER_LABEL: Record<string, string> = {
-  spread: 'spread',
-  swap: 'overnight swap',
-  commission: 'commission',
-  slippage: 'slippage',
-  bid_ask_fills: 'bid/ask fills',
 }
 
 /** The ★ is a claim that one setting beat the others. A profit factor off a handful of trades is
@@ -685,7 +677,7 @@ export function TuningWorkbench() {
   // because it is a claim about what the run will do. See `runIteration`.
   const carriedLayers = baseline.cost_layers ?? []
   const costSummary = carriedLayers.length
-    ? `${carriedLayers.map((l) => COST_LAYER_LABEL[l] ?? l).join(', ')}${baseline.broker_profile ? ` · ${baseline.broker_profile}` : ''}`
+    ? `${carriedLayers.map((l) => COST_LAYER_LABEL[l] ?? l).join(', ')}${baseline.broker_profile ? ` · ${brokerName(baseline.broker_profile)}` : ''}`
     : 'no costs charged'
   const sizingSummary =
     baseline.sizing_mode === 'manual' && baseline.manual_risk_pct != null
@@ -1091,11 +1083,19 @@ export function TuningWorkbench() {
                     </div>
                   )}
                   {/* What the iteration inherits. On screen because it is a claim about the run that
-                      is about to fire, and this page spent its life not making it. */}
+                      is about to fire, and this page spent its life not making it. ⚠ Sizing is
+                      named only where the lab SIZES the strategy: a self-sizing one sizes its own
+                      trades and never reaches the engine, so a mode here would describe code this
+                      iteration does not touch. It is still SENT — the basis travels whole. */}
                   <p className="text-[10px] text-text-tertiary leading-snug mb-2">
                     Same window and costs as the baseline:{' '}
-                    <span className="text-text-secondary">{costSummary}</span> · sizing{' '}
-                    <span className="text-text-secondary">{sizingSummary}</span>
+                    <span className="text-text-secondary">{costSummary}</span>
+                    {strategy && !strategy.self_sizing && (
+                      <>
+                        {' '}
+                        · sizing <span className="text-text-secondary">{sizingSummary}</span>
+                      </>
+                    )}
                   </p>
                   <button
                     onClick={runIteration}

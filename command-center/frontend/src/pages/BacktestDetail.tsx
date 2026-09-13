@@ -71,6 +71,8 @@ import {
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { DATE_INDICATOR_CLS } from '@/lib/inputs'
+import { brokerName } from '@/lib/brokerName'
+import { COST_LAYER_LABEL } from '@/lib/costLayers'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import type {
@@ -137,16 +139,6 @@ const PRICE_TAB_ONLY = ['price'] as const
 const MIN_TRADES_FOR_STRESS = 100
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-
-/** Display names for the cost layers a python run can charge. Reading order matches the Run
- *  modal's, so the page and the form name the same thing the same way. */
-const COST_LAYER_LABEL: Record<string, string> = {
-  spread: 'spread',
-  swap: 'overnight swap',
-  commission: 'commission',
-  slippage: 'slippage',
-  bid_ask_fills: 'bid/ask fills',
-}
 
 function dollar(n: number | null | undefined, signed = false): string {
   if (n == null) return '—'
@@ -1365,7 +1357,7 @@ export function PerformancePanel({
               ? run.cost_layers.map((l) => COST_LAYER_LABEL[l] ?? l).join(', ')
               : 'nothing',
             tip: run.cost_layers.length
-              ? `The cost layers this run had switched on${run.broker_profile ? `, priced off the ${run.broker_profile} account` : ''}. Anything not listed was not charged at all.`
+              ? `The cost layers this run had switched on${run.broker_profile ? `, priced off the ${brokerName(run.broker_profile)} account` : ''}. Anything not listed was not charged at all.`
               : 'This run was deliberately frictionless — no spread, no swap, no commission, no slippage. ⚠ It is a GROSS figure: a diagnostic for how much of the edge is friction, never an answer to whether the strategy works. It is also not comparable trade-for-trade to a charged run, because real fills change which setups exist rather than only what they pay. Charged is the default since 2026-08-24; use the "Run this charged" button on the Performance header for the tradeable twin.',
           } as PanelRow,
         ]
@@ -6171,7 +6163,7 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                   have stopped. Shown always, not only on hover. */}
               {costs.report?.broker_profile && (
                 <span className="ml-1.5 font-normal normal-case tracking-normal text-text-tertiary">
-                  · {costs.report.broker_profile.replace(/_/g, ' ')}
+                  · {brokerName(costs.report.broker_profile)}
                 </span>
               )}
             </span>

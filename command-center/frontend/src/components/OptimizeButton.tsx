@@ -13,6 +13,8 @@ import {
   useStrategy,
 } from '@/hooks/useLab'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
+import { brokerName } from '@/lib/brokerName'
+import { COST_LAYER_LABEL } from '@/lib/costLayers'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
 
 interface Props {
@@ -443,10 +445,10 @@ function OptimizerModal({ run, onClose }: { run: BacktestDetail; onClose: () => 
                 <>
                   Every combo is charged the same costs as this run —{' '}
                   <span className="text-text-secondary font-medium">
-                    {run.cost_layers.join(', ')}
+                    {run.cost_layers.map((l) => COST_LAYER_LABEL[l] ?? l).join(', ')}
                   </span>{' '}
-                  on <span className="font-mono">{run.broker_profile}</span>. The winner is
-                  comparable to the run you launched from.
+                  on {brokerName(run.broker_profile)}. The winner is comparable to the run you
+                  launched from.
                 </>
               ) : (
                 <>

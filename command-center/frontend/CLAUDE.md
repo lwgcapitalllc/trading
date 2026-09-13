@@ -5278,3 +5278,16 @@ test has STOPPED running**: mid-run the line under the steps already says it, an
 
 ⚠ **No Playwright check** — out of the gate by design. Typecheck, lint and the theme check are
 green; the backend half is pinned by 22 tests and 26 killed mutations.
+
+## A broker account is printed in words — `lib/brokerName.ts` (2026-09-13)
+
+Every form, caption and tooltip that names a cost profile prints `brokerName(id)` — `PU Prime ECN`,
+not `puprime_ecn`. The id stays the value every request sends. ⚠ A brand the table does not know is
+capitalised rather than refused. ⚠ Never print a raw profile id on a page.
+
+Same pass: the cost-layer names moved to `lib/costLayers.ts` (the run page and the tuning page each
+carried a copy; the optimize form printed raw ids); the tuning page names a sizing mode only for a
+strategy the lab sizes — a self-sizing one never reaches the engine, so a mode there described code
+the iteration does not touch (it is still SENT); the stack form's *could not check* line and its
+unmeasured-spread banner are amber (a question and a block, not a loss); and the score key says
+which unit a drawdown is judged in (`../backend/CLAUDE.md` → *Worthiness scoring*).
