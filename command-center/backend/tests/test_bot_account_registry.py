@@ -353,6 +353,167 @@ def test_registering_an_account_writes_it_and_does_not_need_the_vps(client, regi
     assert reg.account_by_number(registry, 700152905).symbol_suffix == ".p"
 
 
+# ── one terminal, one account (2026-09-13) ────────────────────────────────────
+_FFT = r"C:\MT5_FFT\terminal64.exe"
+
+
+def _with_demo_on_fft(tmp_path):
+    p = _file(tmp_path)
+    reg.upsert_account(p, _acct(), _PROFILES)  # 700152905 on MT5_FFT
+    return p
+
+
+def _new_live(**kw):
+    base = dict(
+        account=35710389,
+        label="RichKelly",
+        kind="live",
+        server="PUPrime-Live",
+        tier="",
+        account_profile="",
+    )
+    base.update(kw)
+    return _acct(**base)
+
+
+def test_a_terminal_ANOTHER_account_holds_is_REFUSED_and_nothing_is_written(tmp_path):
+    """🔴 The case that nearly happened, 2026-09-13: the demo bots' terminal typed onto the new
+    live account. Saved, a bot there would log that terminal off the demo account under its bots.
+
+    MUTATION: drop the check from the write → the row lands and this goes red."""
+    p = _with_demo_on_fft(tmp_path)
+    before = p.read_text(encoding="utf-8")
+    with pytest.raises(reg.TerminalTaken) as refused:
+        reg.upsert_account(p, _new_live(mt5_path=_FFT), _PROFILES)
+    said = str(refused.value)
+    assert "700152905" in said and "MT5_FFT" in said
+    assert "terminal64.exe" not in said, "name the terminal by its folder, as the scan does"
+    assert p.read_text(encoding="utf-8") == before
+
+
+def test_the_same_terminal_SPELLED_DIFFERENTLY_is_still_refused(tmp_path):
+    """MUTATION: compare the raw strings → a lower-cased, exe-less spelling slips past as a second
+    terminal and this goes red."""
+    p = _with_demo_on_fft(tmp_path)
+    with pytest.raises(reg.TerminalTaken):
+        reg.upsert_account(p, _new_live(mt5_path="c:\\mt5_fft\\"), _PROFILES)
+
+
+def test_an_account_may_re_save_its_OWN_terminal(tmp_path):
+    """MUTATION: stop skipping the account's own row → every edit of an account that has a
+    terminal is refused against itself, and this goes red."""
+    p = _with_demo_on_fft(tmp_path)
+    stored, created = reg.upsert_account(p, _acct(label="renamed"), _PROFILES)
+    assert not created and stored.label == "renamed"
+
+
+def test_an_EMPTY_terminal_is_never_a_clash(tmp_path):
+    """An empty terminal claims nothing, so two accounts with none are not sharing one.
+    MUTATION: drop the empty-row guard → the second empty account is refused and this goes red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _acct(mt5_path=""), _PROFILES)
+    _, created = reg.upsert_account(p, _new_live(mt5_path=""), _PROFILES)
+    assert created
+
+
+def test_a_DIFFERENT_terminal_is_accepted(tmp_path):
+    p = _with_demo_on_fft(tmp_path)
+    free = r"C:\Program Files\PU Prime MT5 Terminal\terminal64.exe"
+    stored, created = reg.upsert_account(p, _new_live(mt5_path=free), _PROFILES)
+    assert created and stored.assignable
+
+
+def test_the_labs_backtest_terminal_is_REFUSED_for_every_account(tmp_path):
+    """🔴 The backtest agent drives MT5_Lab, so a bot there would trade through the terminal the
+    backtests run on. The tier-probe accounts were logged in there and deliberately left with none.
+
+    MUTATION: drop the lab check → the row lands and this goes red."""
+    p = _file(tmp_path)
+    with pytest.raises(reg.RegistryError, match="backtest"):
+        reg.upsert_account(p, _new_live(mt5_path=r"C:\MT5_Lab\terminal64.exe"), _PROFILES)
+    assert reg.load_accounts(p) == []
+
+
+def test_the_lab_terminal_SPELLED_DIFFERENTLY_is_still_refused(tmp_path):
+    """MUTATION: compare the raw string → a lower-cased, exe-less spelling slips past."""
+    with pytest.raises(reg.RegistryError, match="backtest"):
+        reg.upsert_account(_file(tmp_path), _new_live(mt5_path="c:\\mt5_lab\\"), _PROFILES)
+
+
+def test_the_lab_refusal_is_a_400_and_writes_no_password(client, registry, monkeypatch):
+    """No other account holds MT5_Lab, so this is a statement about the request (400), not a clash
+    with a stored row (409) — and, like every refusal, it is checked before the password write.
+
+    MUTATION: raise it as a taken terminal → the route answers 409 and this goes red."""
+    from routers import bots as bots_router
+
+    written = []
+    monkeypatch.setattr(bots_router, "_write_account_password", lambda a, p: written.append(a))
+    r = client.put(
+        "/bots/accounts/registry/35710389",
+        json={
+            "account": 35710389,
+            "kind": "live",
+            "server": "PUPrime-Live",
+            "mt5_path": r"C:\MT5_Lab\terminal64.exe",
+            "password": "hunter2",
+            "deploy": False,
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "backtest" in r.json()["detail"]
+    assert written == []
+
+
+def test_saving_a_terminal_another_account_holds_is_a_409_and_writes_NOTHING(
+    client, registry, monkeypatch
+):
+    """🔴 Checked BEFORE the password write, so a refused save leaves no credential on the VPS for
+    a row that was never stored.
+
+    MUTATION: check only inside the write → the password is written first and this goes red."""
+    from routers import bots as bots_router
+
+    reg.upsert_account(registry, _acct(), _PROFILES)
+    before = registry.read_text(encoding="utf-8")
+    written = []
+    monkeypatch.setattr(bots_router, "_write_account_password", lambda a, p: written.append(a))
+    r = client.put(
+        "/bots/accounts/registry/35710389",
+        json={
+            "account": 35710389,
+            "kind": "live",
+            "server": "PUPrime-Live",
+            "mt5_path": _FFT,
+            "password": "hunter2",
+            "deploy": False,
+        },
+    )
+    assert r.status_code == 409, r.text
+    assert "700152905" in r.json()["detail"]
+    assert written == []
+    assert registry.read_text(encoding="utf-8") == before
+
+
+def test_an_invalid_save_is_still_a_400_and_writes_no_password_either(
+    client, registry, monkeypatch
+):
+    """Only a taken terminal is a 409 — a missing server is a statement about the request — and the
+    same order holds: nothing reaches the VPS for a save that is refused.
+
+    MUTATION: answer every refusal with 409 → red."""
+    from routers import bots as bots_router
+
+    written = []
+    monkeypatch.setattr(bots_router, "_write_account_password", lambda a, p: written.append(a))
+    r = client.put(
+        "/bots/accounts/registry/35710389",
+        json={"account": 35710389, "server": "", "password": "hunter2", "deploy": False},
+    )
+    assert r.status_code == 400, r.text
+    assert written == []
+
+
 def test_a_body_naming_a_different_account_from_the_path_is_a_400(client, registry):
     r = client.put(
         "/bots/accounts/registry/700152905", json={"account": 999, "server": "S", "deploy": False}

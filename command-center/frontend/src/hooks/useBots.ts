@@ -447,6 +447,35 @@ export function useSyncPreview(enabled: boolean) {
 }
 
 /**
+ * Which terminal on the box is logged into ONE account, so the account form can fill it in
+ * (Aaron, 2026-09-13: *"it should be prepopulated"*). The same scan the Sync VPS drawer reads,
+ * narrowed to this account's row; what is offered, and why not, is the SERVER's
+ * (`services/terminal_scan.py` → `_suggest_terminal`).
+ *
+ * ⚠ **Its own key, outside `['bots','accounts']`** — saving the form invalidates that prefix, and a
+ * query under it would re-scan the box the moment the save landed. ⚠ **`gcTime: 0`**, so every
+ * opening of the form is a fresh reading (a terminal's login can change); **`staleTime: Infinity`**,
+ * so it never re-asks on its own — the scan SSHes to the box. ⚠ **Silent, no retry**: the form
+ * renders the failure.
+ */
+export function useTerminalSuggestion(account: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['vps-sync', 'terminal-for', account],
+    queryFn: () => api.get<AccountSyncPreview>('/bots/accounts/scan', { silent: true }),
+    select: (p) => ({
+      asked: p.asked,
+      reason: p.reason,
+      row: p.registry.find((r) => r.account === account) ?? null,
+    }),
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+}
+
+/**
  * Apply the plan the person was SHOWN. The rules are the server's (`services/account_sync.py`):
  * an account a bot trades is never changed, a terminal is only ever cleared, nothing is removed.
  *

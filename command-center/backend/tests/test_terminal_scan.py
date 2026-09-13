@@ -521,3 +521,139 @@ def test_no_sentence_a_person_reads_carries_a_raw_windows_path():
     for sentence in said:
         assert "terminal64.exe" not in sentence, sentence
         assert ":\\" not in sentence, sentence
+
+
+# ---------------------------------------------------------------------------------------
+# A row with NO terminal is offered the one the box found it on — when nothing else uses it
+# ---------------------------------------------------------------------------------------
+
+_PU_PRIME = {
+    "key": r"c:\program files\pu prime mt5 terminal",
+    "install": r"C:\Program Files\PU Prime MT5 Terminal",
+    "state": "probed",
+    "running": True,
+    "owned_by_bots": [],
+    "account": 35710389,
+    "server": "PUPrime-Live",
+    "kind": "live",
+    "symbol_suffix": ".p",
+}
+_PU_PRIME_EXE = r"C:\Program Files\PU Prime MT5 Terminal\terminal64.exe"
+
+
+def _new_live_row(**kw):
+    return _Row(account=35710389, server="PUPrime-Live", kind="live", symbol_suffix=".p", **kw)
+
+
+def test_a_row_with_no_terminal_is_offered_the_one_it_is_logged_into():
+    """🔴 Aaron, 2026-09-13: *"When I hit scan VPS, you already know all the information. Why do I
+    have to put it in?"* The scan had found 35710389 on this terminal and the form still opened
+    empty — and the path typed by hand was the demo bots' terminal.
+
+    Watched red by returning no suggestion from the no-terminal branch."""
+    (check,) = reconcile(_scan(_PU_PRIME), [_new_live_row()]).registry
+    assert check.suggested_terminal == _PU_PRIME_EXE
+    assert "PU Prime MT5 Terminal" in check.terminal_note
+    # A SUGGESTION, not a verdict: the row stays unverified until somebody saves a terminal.
+    assert check.verdict == "unverified"
+
+
+def test_a_terminal_ANOTHER_ACCOUNT_uses_is_never_offered():
+    """The case that nearly happened: a terminal another account's bots depend on, offered to a
+    new account. A bot added there would log that terminal into this account and off the other.
+
+    Watched red by dropping the claimed-terminal check."""
+    rows = [_new_live_row(), _Row(account=700152905, mt5_path=r"C:\MT5_Scalper\terminal64.exe")]
+    payload = _scan(_probed(account=35710389))  # MT5_Scalper, logged into the new account
+    check = next(c for c in reconcile(payload, rows).registry if c.account == 35710389)
+    assert check.suggested_terminal is None
+    assert "700152905" in check.terminal_note
+
+
+def test_the_labs_backtest_terminal_is_never_offered():
+    """The tier-probe accounts were logged into MT5_Lab for minutes and deliberately left with no
+    terminal: a bot pointed there would trade through the terminal the backtests run on.
+
+    Watched red by dropping the lab check."""
+    payload = _scan(_probed(key=r"c:\mt5_lab", install=r"C:\MT5_Lab", account=35710389))
+    (check,) = reconcile(payload, [_new_live_row()]).registry
+    assert check.suggested_terminal is None
+    assert "backtest" in check.terminal_note
+
+
+def test_the_bots_own_terminal_is_never_offered():
+    """A bots' terminal holds one login and those bots trade it. Watched red by dropping the
+    owned-by-bots check."""
+    out = reconcile(
+        _scan(dict(_OWNED)),
+        [_new_live_row()],
+        {"sos_fade_demo": 35710389, "extreme_leg_demo": 35710389},
+    )
+    (check,) = out.registry
+    assert check.suggested_terminal is None
+    assert "your bots trade through" in check.terminal_note
+
+
+def test_two_free_terminals_are_named_and_neither_is_picked():
+    """One account open in two free terminals is a choice about where its bots run — the person's,
+    never a pick made here. Watched red by taking the first free terminal."""
+    other = dict(_PU_PRIME, key=r"c:\mt5_spare", install=r"C:\MT5_Spare")
+    (check,) = reconcile(_scan(_PU_PRIME, other), [_new_live_row()]).registry
+    assert check.suggested_terminal is None
+    assert "MT5_Spare" in check.terminal_note
+    assert "PU Prime MT5 Terminal" in check.terminal_note
+
+
+def test_a_free_terminal_is_still_offered_when_a_barred_one_also_holds_the_account():
+    """An account open in the lab AND one free terminal is normal here. Barring the lab must still
+    leave the free one — a rule that gave up on any barred sighting would offer nothing."""
+    lab = _probed(key=r"c:\mt5_lab", install=r"C:\MT5_Lab", account=35710389)
+    (check,) = reconcile(_scan(lab, _PU_PRIME), [_new_live_row()]).registry
+    assert check.suggested_terminal == _PU_PRIME_EXE
+
+
+def test_a_row_that_already_HAS_a_terminal_is_offered_nothing():
+    """Only an EMPTY terminal is filled in. Offering another on a row that has one would read as a
+    correction, and which terminal a row uses is the person's call."""
+    row = _new_live_row(mt5_path=r"C:\MT5_Scalper\terminal64.exe")
+    (check,) = reconcile(_scan(_PU_PRIME), [row]).registry
+    assert check.suggested_terminal is None
+    assert check.terminal_note == ""
+
+
+def test_an_account_the_box_found_nowhere_gets_no_note():
+    """No terminal it could ask holds the account: say nothing rather than guess a reason."""
+    (check,) = reconcile(_scan(_probed()), [_new_live_row()]).registry
+    assert check.suggested_terminal is None
+    assert check.terminal_note == ""
+
+
+def test_the_note_names_terminals_by_their_folder_never_a_raw_path():
+    """Same rule as every sentence above. The PATH travels in its own field, for the form."""
+    rows = [_new_live_row(), _Row(account=700152905, mt5_path=r"C:\MT5_Scalper\terminal64.exe")]
+    notes = [
+        c.terminal_note
+        for payload in (_scan(_PU_PRIME), _scan(_probed(account=35710389)))
+        for c in reconcile(payload, rows).registry
+    ]
+    assert any(notes), "the fixture must produce notes to check"
+    for note in notes:
+        assert "terminal64.exe" not in note, note
+        assert ":\\" not in note, note
+
+
+def test_the_lab_terminal_is_the_one_the_agent_binds():
+    """`_LAB_KEYS` is a COPY of the lab's install path — this backend cannot import the agent. So
+    this reads the agent's source and fails when its baked-in lab path moves, rather than letting
+    the lab's terminal quietly become one the form would offer."""
+    from pathlib import Path
+
+    from services.terminal_scan import _LAB_KEYS, _install_key
+
+    agent = (
+        Path(__file__).resolve().parents[3] / "algos" / "markets" / "fx" / "tools" / "mt5_agent.py"
+    )
+    assert 'Path(r"C:\\MT5_Lab")' in agent.read_text(encoding="utf-8"), (
+        "the agent no longer binds C:\\MT5_Lab"
+    )
+    assert _install_key(r"C:\MT5_Lab\terminal64.exe") in _LAB_KEYS

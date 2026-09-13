@@ -226,6 +226,14 @@ reached the VPS gets its own banner, and the list shown is `now` — no second s
 at its foot (`data-testid="add-account"`), for a terminal that is not running. ⚠ **Rendered under
 EVERY state**, or that account has no way onto the list.
 
+🔴 **Editing an account with NO terminal asks the box, and the field starts on its answer
+(2026-09-13).** `useTerminalSuggestion` reads the same scan, narrowed to that account; the path and
+the sentence under the field (`f-path-note`) are the server's (`_suggest_terminal`). ⚠ **Only the
+reader's edit is state**, so a late answer fills an untouched field and never replaces a typed one.
+⚠ **An account that has a terminal never scans.** ⚠ The placeholder was the demo bots' real path —
+the one typed onto the new live account — and is words now. Tests: 4 in `bots-accounts.spec.ts`;
+4 bugs planted in a throwaway worktree, 4 caught.
+
 🔴 **Each failure looks different**: the scan could not run (nothing changed; Scan again leads), the
 box refused, the plan moved, a terminal could not be asked (`not_running` / `owned_by_bot` —
 nothing is wrong). ⚠ **A failed SYNC keeps the plan on screen and reads "didn't finish", never

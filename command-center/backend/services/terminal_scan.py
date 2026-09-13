@@ -104,6 +104,11 @@ class RegistryCheck:
     detail: str
     conflicts: list = field(default_factory=list)
     seen_on: Optional[str] = None  # the install where the box actually found this account
+    # For a row with NO terminal only: the one terminal the box found it logged into that no bot
+    # and no other account uses, as the exe path the list stores. `None` = nothing to offer, and
+    # `terminal_note` says why in words (`""` = the box found the account nowhere it could ask).
+    suggested_terminal: Optional[str] = None
+    terminal_note: str = ""
 
 
 @dataclass
@@ -267,12 +272,73 @@ def reconcile(payload: Any, registered: Any, observed_by_bot: Any = None) -> Rec
     # came from the bot trading through it is visible here too. Passing the payload meant the one
     # terminal this tool cannot attach to was also the one no row could ever be checked against.
     by_key = {r.key: r for r in result.terminals}
+    # Which account each terminal already belongs to, so a row with no terminal is never offered
+    # one another account's bots depend on.
+    claimed_by: dict = {}
     for row in rows:
-        result.registry.append(_check_row(row, seen_accounts, by_key))
+        path = str(getattr(row, "mt5_path", "") or "")
+        if path:
+            claimed_by.setdefault(_install_key(path), int(row.account))
+    for row in rows:
+        result.registry.append(_check_row(row, seen_accounts, by_key, claimed_by))
     return result
 
 
-def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
+# The lab's own terminal. `algos/markets/fx/tools/mt5_agent.py` binds the backtest agent to this
+# install (its baked-in default, which the box uses), so a bot pointed here would trade through the
+# terminal the backtests run on. A COPY — this backend cannot import the agent — held to that file
+# by `test_the_lab_terminal_is_the_one_the_agent_binds`.
+_LAB_KEYS = frozenset({r"c:\mt5_lab"})
+
+
+def _suggest_terminal(account: int, by_key: dict, claimed_by: dict) -> tuple:
+    """For a row with NO terminal: the one terminal it can safely be given, or why none can.
+
+    Returns `(exe_path, note)` — the path the list stores, and a sentence for a person. It is only
+    ever a SUGGESTION: the account form fills it in and the person's Save records it, so the rule
+    that Sync never SETS a terminal is untouched (Aaron, 2026-09-13: *"When I hit scan VPS, you
+    already know all the information. Why do I have to put it in?"*).
+
+    🔴 **A terminal is offered only if nothing else depends on it.** A bot connects by logging its
+    terminal into its own account, so a bot on this account would switch that terminal off
+    whatever it holds. Never, then: a terminal a bot's config names, one another registered
+    account claims, or the lab's. The case that made this matter: the demo bots' terminal typed by
+    hand onto a new live account.
+
+    ⚠ **Two free terminals offer NEITHER.** Which one this account's bots use is the person's
+    choice, and picking one here would be a guess wearing a measurement's clothes.
+    """
+    found = sorted((t for t in by_key.values() if t.account == account), key=lambda t: t.key)
+    if not found:
+        return None, ""
+    usable, barred = [], []
+    for t in found:
+        name = _short(t.install)
+        if t.owned_by_bots or t.account_source != "terminal":
+            barred.append(f"{name} is the terminal your bots trade through")
+        elif t.key in _LAB_KEYS:
+            barred.append(f"{name} is the lab's backtest terminal")
+        elif t.key in claimed_by:
+            barred.append(f"{name} is account {claimed_by[t.key]}'s terminal")
+        else:
+            usable.append(t)
+    if len(usable) == 1:
+        only = usable[0]
+        return _exe_for(only), (
+            f"Logged in on {_short(only.install)} right now, and no bot or other account uses it."
+        )
+    if usable:
+        names = ", ".join(_short(t.install) for t in usable)
+        return None, f"Logged in on {names}. Pick the one this account's bots should use."
+    return None, (
+        f"Logged in, but {'; '.join(barred)}. A bot put here would take that terminal over, "
+        "so it isn't filled in."
+    )
+
+
+def _check_row(
+    row: Any, seen: dict, by_key: dict, claimed_by: Optional[dict] = None
+) -> RegistryCheck:
     """Whether the box backs up one row of the account list.
 
     🔴 **An account can be logged in on MORE THAN ONE terminal, and this function was written as
@@ -298,6 +364,7 @@ def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
     claimed = str(getattr(row, "mt5_path", "") or "")
     if not claimed:
         detail = "No terminal is recorded for it, so there's nothing to check it against."
+        offer, note = _suggest_terminal(account, by_key, claimed_by or {})
         if conflicts:
             return RegistryCheck(
                 account,
@@ -306,8 +373,10 @@ def _check_row(row: Any, seen: dict, by_key: dict) -> RegistryCheck:
                 detail,
                 conflicts,
                 reading.install if reading else None,
+                offer,
+                note,
             )
-        return RegistryCheck(account, label, "unverified", detail)
+        return RegistryCheck(account, label, "unverified", detail, [], None, offer, note)
 
     key = _install_key(claimed)
     terminal = by_key.get(key)

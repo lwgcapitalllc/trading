@@ -2176,6 +2176,13 @@ def sync_accounts_with_box(body: AccountSyncRequest):
         _SYNC_LOCK.release()
 
 
+def _registry_refusal(e: bot_account_registry.RegistryError) -> HTTPException:
+    """A terminal another account already holds is a clash with what is STORED (409); every other
+    registry refusal is a statement about the request (400)."""
+    code = 409 if isinstance(e, bot_account_registry.TerminalTaken) else 400
+    return HTTPException(status_code=code, detail=str(e))
+
+
 @router.put("/accounts/registry/{account}", response_model=BotAccountRegistration)
 def register_account(account: int, body: BotAccountRegistrationWrite):
     """Add a broker account, or replace the registered facts about one.
@@ -2189,6 +2196,9 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
     committed. That order is deliberate: a registered account with no credentials is a visible,
     fixable state that the list reports, while a pushed registry row whose password write failed
     afterwards would read as complete.
+
+    ⚠ **Every refusal is checked BEFORE that password write** (`check_entry`), so a refused save
+    — a terminal another account holds, a missing server — leaves nothing on the VPS either.
     """
     if account != body.account:
         raise HTTPException(
@@ -2208,6 +2218,11 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
         note=body.note,
     )
 
+    try:
+        bot_account_registry.check_entry(_registry_path(), entry, _known_profiles())
+    except bot_account_registry.RegistryError as e:
+        raise _registry_refusal(e)
+
     if body.password:
         _write_account_password(account, body.password)
 
@@ -2216,7 +2231,7 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
             _registry_path(), entry, _known_profiles()
         )
     except bot_account_registry.RegistryError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _registry_refusal(e)
 
     if body.deploy:
         _deploy_registry(

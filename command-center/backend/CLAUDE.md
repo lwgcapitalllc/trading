@@ -1750,6 +1750,15 @@ mutations killed.
   killed.
 - **Unregistering an account a bot still names is refused (409).** That bot would go on trading an
   account this page can no longer describe.
+- 🔴 **A terminal another account already holds is refused (409), before the password is written
+  (2026-09-13).** A terminal holds one login, so two accounts on one terminal means a bot on either
+  logs it off the other, under its bots — the demo bots' terminal was nearly saved onto the new live
+  account. Compared as the scan's join key, so a different spelling cannot slip past; an empty
+  terminal and an account's own terminal are never a clash. ⚠ `check_entry` runs every refusal
+  before the VPS password write, so any refused save leaves nothing behind.
+- 🔴 **The lab's backtest terminal is refused outright (400, 2026-09-13).** The backtest agent
+  drives it, so a bot there would trade through the terminal the backtests run on. Same key the
+  scan uses (`terminal_scan._LAB_KEYS`, held to `mt5_agent.py` by test).
 - **An account that is neither registered nor traded by any bot is a 404** with the fix named.
 
 ### The password path
@@ -1902,6 +1911,16 @@ on that account, and this repo refuses an unmeasured cost rather than borrowing 
 account arrives unusable by a bot until somebody stores one. That is the honest state rather than a
 surprise at connect time, and a present-but-empty field would read as "this account has no
 password", which is a different claim.
+
+🔴 **A row with NO terminal is OFFERED one, never given one (2026-09-13).** Aaron: *"When I hit
+scan VPS, you already know all the information. Why do I have to put it in?"* — and the path typed
+by hand was the demo bots' terminal. `_suggest_terminal` fills `RegistryCheck.suggested_terminal`
+(the exe path) and `terminal_note` (why, or why not); the account form fills an EMPTY field with it
+and the person's Save records it, so Sync still never SETS a terminal. ⚠ **Only a terminal nothing
+depends on**: never one a bot's config names, one another account claims, or the lab's
+(`_LAB_KEYS`, a copy of `mt5_agent.py`'s path, held to it by test). ⚠ **Two free terminals offer
+neither** — which one is the person's call. ⚠ Declared on `models.RegistryCheck`, or Pydantic drops
+both. Tests: 11 in `test_terminal_scan.py`, 1 in `test_terminal_scan_endpoint.py`.
 
 ⚠ **It is NOT on the 60-second poll, deliberately** — a scan can take minutes when several
 installed terminals are stopped, so polling would stack slow requests against the box. `_ssh`'s 30s
