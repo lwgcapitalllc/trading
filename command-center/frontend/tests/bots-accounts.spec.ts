@@ -794,6 +794,66 @@ async function recordRemovals(page: Page) {
   return sent
 }
 
+/**
+ * A RUNNING bot that stops only when asked — for the stop-first Remove and Move (2026-09-13).
+ *
+ * The snapshot says RUNNING until the stop is asked AND `readsToStop` more reads have passed, then
+ * STOPPED: the real stop only ASKS, and the bot exits on its next check. So a page that writes on
+ * the stop call alone, before the box says it has stopped, is caught (`stoppedAtWrite`).
+ * `Infinity` is a bot that never stops. `answer` is the account the write reports back.
+ */
+async function stopsWhenAsked(
+  page: Page,
+  key: string,
+  readsToStop = 1,
+  answer: number | null = null
+) {
+  const log = {
+    order: [] as string[],
+    sent: [] as Record<string, unknown>[],
+    stoppedAtWrite: [] as boolean[],
+    readsAfterStop: 0,
+  }
+  let asked = false
+  const stopped = () => asked && log.readsAfterStop > readsToStop
+  await page.route('**/api/bots/snapshot', (route) => {
+    if (asked) log.readsAfterStop++
+    return route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [
+          { key: 'sos_fade', name: 'SOS Fade', status: 'RUNNING', account_type: 'demo' },
+          { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
+        ].map((b) => (b.key === key && stopped() ? { ...b, status: 'STOPPED' } : b)),
+        scheduled_jobs: [],
+        telegram: { name: 'Telegram', status: 'RUNNING' },
+      },
+    })
+  })
+  await page.route(`**/api/bots/${key}/stop`, (route) => {
+    asked = true
+    log.order.push('stop')
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
+  await page.route(`**/api/bots/${key}/account`, (route) => {
+    log.order.push('write')
+    log.sent.push(route.request().postDataJSON())
+    log.stoppedAtWrite.push(stopped())
+    return route.fulfill({
+      json: {
+        status: 'ok',
+        changed: true,
+        deployed: true,
+        bot: key,
+        account: answer,
+        restart_required: true,
+        detail: answer === null ? 'benched' : 'moved',
+      },
+    })
+  })
+  return log
+}
+
 test('Remove takes a SECOND click — the first only arms it', async ({ page }) => {
   // It is one press from taking a bot off the account it trades, so it works like the live
   // deploy: the first click re-labels the button, only the second sends.
@@ -823,17 +883,70 @@ test('an armed Remove disarms itself, so a stray click later is not the second o
   expect(sent).toHaveLength(0)
 })
 
-test('a RUNNING bot cannot be removed from its account', async ({ page }) => {
-  // It read its account at startup, so taking it off cannot reach the running process — the page
-  // would list it as unassigned while it went on trading. The server refuses it; so does this.
-  // Since 2026-09-12 a running bot gets no account controls at all — only the line saying why.
-  // MUTATION: show the account controls to a running bot → Remove is there, red. The stopped-bot
-  // checks above are the positive control.
+test('a RUNNING bot’s Remove says it is stopped first, and the first click sends nothing', async ({
+  page,
+}) => {
+  // It read its account at startup, so the write cannot reach the running process — the server
+  // refuses it (409). Until 2026-09-13 the panel hid the control and said "stop it first"; Aaron:
+  // "it is not intuitive that you have to stop a bot to remove from account." Now it is offered,
+  // and says what it will do. MUTATION: hide Remove from a running bot again → red on the button.
+  // MUTATION: drop the account's name beside the selector → red on it (it replaced the line a
+  // running bot got instead of controls).
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
+  const log = await stopsWhenAsked(page, 'sos_fade')
   await openBot(page, 'sos_fade') // the snapshot mock has sos_fade RUNNING
-  // The line is the positive half: an absent button and a panel still loading are the same DOM.
-  await expect(page.getByTestId('bot-account')).toContainText('Stop it first')
-  await expect(page.getByTestId('remove-sos_fade')).toHaveCount(0)
+  await expect(page.getByTestId('bot-account')).toContainText('stops it first')
+  await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime')
+  const remove = page.getByTestId('remove-sos_fade')
+  await remove.click()
+  await expect(remove).toHaveText(/Click again to stop and remove/)
+  expect(log.order).toEqual([])
+})
+
+test('Remove on a RUNNING bot stops it, WAITS for the box to say so, then takes it off', async ({
+  page,
+}) => {
+  // 🔴 The stop only ASKS — the bot exits on its next check, up to ~30s later — so a page that
+  // wrote on the stop call alone would send a write the server refuses. This box says RUNNING for
+  // one more read after the stop.
+  // MUTATION: write without stopping → red on the order. MUTATION: write once the stop call
+  // returns, without waiting for STOPPED → red on `stoppedAtWrite`.
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
+  const log = await stopsWhenAsked(page, 'sos_fade')
+  await openBot(page, 'sos_fade')
+  const remove = page.getByTestId('remove-sos_fade')
+  await remove.click()
+  await remove.click()
+  await expect(page.getByTestId('account-busy')).toContainText(
+    'Stopping it first, then taking it off'
+  )
+  await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
+  expect(log.stoppedAtWrite).toEqual([true])
+  expect(log.sent[0]).toEqual({ account: null, deploy: true })
+})
+
+test('a bot that has not stopped in time is NOT taken off, and the page says so', async ({
+  page,
+}) => {
+  // Never on a guess: past the wait nothing is written — it was asked to stop, and the message says
+  // nothing moved. MUTATION: drop the deadline → it waits for ever, red on the message.
+  // MUTATION: write without waiting for STOPPED → red on the order.
+  // ⚠ The page's clock is already installed (the spec's quick clock), so it is moved on, never
+  // installed again.
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
+  const log = await stopsWhenAsked(page, 'sos_fade', Infinity)
+  await openBot(page, 'sos_fade')
+  const remove = page.getByTestId('remove-sos_fade')
+  await remove.click()
+  await remove.click()
+  // Only once the page is WAITING — the stop asked and the box read once since — is time moved on.
+  await expect.poll(() => log.readsAfterStop).toBeGreaterThan(0)
+  await page.waitForTimeout(300)
+  await page.clock.fastForward(100_000)
+  await expect(
+    page.getByText(/has not stopped yet, so it was not taken off the account/)
+  ).toBeVisible()
+  expect(log.order).toEqual(['stop'])
 })
 
 test('a bot the CONFIG has on no account offers no Remove, whatever it last reported', async ({
@@ -1870,6 +1983,55 @@ test('a benched bot with a problem still reads Benched — only a RUNNING bot’
   await expect(status.getByTestId('status-more')).toHaveAttribute('data-tone', 'bad')
 })
 
+test('every status is ONE coloured pill — the same on the row, the bot panel and the account panel', async ({
+  page,
+}) => {
+  // 🔴 Aaron, 2026-09-13: "the status for running or stopped should be color coded … whether that
+  // is a pill or a dot make it consistent. Same thing when I open the draw running isn't consistent
+  // in style." A healthy bot was grey words on the row, the account panel said Running / Stopped in
+  // its own colours, and the bot panel's header was a third look.
+  // MUTATION: draw a running bot's pill grey → red on the row.
+  // MUTATION: the account panel reads no bot → its pill is the dashed unknown, red there.
+  // MUTATION: the bot panel's header draws the word without the pill → red there.
+  await mock(page, STACKED)
+  const pillIn = (scope: string) => page.locator(`${scope} [data-testid="status-pill"]`)
+  const row = (key: string) => `[data-testid="bot-row"][data-bot="${key}"]`
+  await page.goto('/bots')
+  await expect(pillIn(row('sos_fade'))).toHaveText('Running')
+  await expect(pillIn(row('sos_fade'))).toHaveClass(/bg-pos-muted/)
+  await expect(pillIn(row('b_leg'))).toHaveClass(/bg-neg-muted/)
+
+  await openAccount(page)
+  await expect(pillIn('[data-testid="account-bot-state-sos_fade"]')).toHaveClass(/bg-pos-muted/)
+  await expect(pillIn('[data-testid="account-bot-state-b_leg"]')).toHaveClass(/bg-neg-muted/)
+
+  await openBot(page, 'sos_fade')
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByTestId('status-pill').first()).toHaveClass(/bg-pos-muted/)
+})
+
+test('the number columns share the spare width — no blank track before Actions', async ({
+  page,
+}) => {
+  // 🔴 Aaron, 2026-09-13: "the columns 3-8 are all crowded, give them some space." The slack went
+  // to a blank track before Actions, so P&L to Version sat at their floors beside a gap as wide as
+  // three of them. Every track now has a floor and a share of what is left.
+  // MUTATION: put the blank track back → red on the heading count.
+  // MUTATION: pin P&L at its floor → red on its width.
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await mock(page, STACKED)
+  await page.goto('/bots')
+  // ⚠ The REAL card's headings, never `.first()` on the page: the loading placeholder draws the same
+  // headings and is swapped out, so a width read off it comes back null.
+  const heads = page
+    .getByTestId('account-card')
+    .getByTestId('column-headings')
+    .locator(':scope > span')
+  await expect(heads).toHaveCount(9)
+  await expect(heads.nth(2)).toHaveText('P&L')
+  await expect.poll(async () => (await heads.nth(2).boundingBox())?.width ?? 0).toBeGreaterThan(110)
+})
+
 test('a trade whose opening risk is unknown shows no R rather than a guess', async ({ page }) => {
   // A trade picked back up after a restart, from a record written before the bot saved the risk it
   // opened with, has no R: the stop has usually moved since, so an R off it would be wrong.
@@ -2387,25 +2549,34 @@ async function openBot(page: Page, botKey: string) {
   await expect(page.getByTestId('bot-account')).toBeVisible()
 }
 
-test('a RUNNING bot cannot be moved to another account', async ({ page }) => {
-  // 🔴 WATCHED RED against the page as it stood on 2026-09-06: the selector was offered
-  // unconditionally, so moving a live bot took the click and came back as an error toast from
-  // the server. The server does refuse it — but a page offering a control the box will reject is
-  // teaching the reader that its own controls mean nothing.
-  // Since 2026-09-12 a running bot is offered no selector at all — only the line saying why.
-  // MUTATION: show the account controls to a running bot → the selector is there, red.
-  //
+test('moving a RUNNING bot says it is stopped first, sends nothing on the pick, then stops and moves', async ({
+  page,
+}) => {
   // It read its account at startup, so the write cannot reach the running process: the page would
-  // show it under the new account while it went on trading the old one, which is a screen lying
-  // about a live position rather than a stale setting.
+  // show it under the new account while it went on trading the old one. The server refuses it
+  // (409). 🔴 On 2026-09-06 the selector took the click and came back as that error toast; from
+  // 2026-09-12 a running bot got no selector, only "stop it first" — and Aaron found that the
+  // unintuitive half (2026-09-13). Now the pick says what will happen, and the confirm stops the
+  // bot, waits for the box to say so, and moves it.
+  // MUTATION: move a running bot on the pick → red on the empty order.
+  // MUTATION: move once the stop call returns, without waiting for STOPPED → red on
+  // `stoppedAtWrite`.
   await mock(
     page,
     [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })],
     [reg(), reg({ account: OTHER, label: 'ECN' })]
   )
+  const log = await stopsWhenAsked(page, 'sos_fade', 1, OTHER)
   await openBot(page, 'sos_fade')
-  await expect(page.getByTestId('bot-account')).toContainText('Stop it first')
-  await expect(page.getByTestId('move-sos_fade')).toHaveCount(0)
+  await page.getByTestId('move-sos_fade').selectOption(String(OTHER))
+  const card = page.getByTestId('move-stop-first')
+  await expect(card).toContainText(`stopped first, then moved to account ${OTHER}`)
+  expect(log.order).toEqual([])
+
+  await card.getByTestId('move-stop-confirm').click()
+  await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
+  expect(log.stoppedAtWrite).toEqual([true])
+  expect(log.sent[0]).toMatchObject({ account: OTHER })
 })
 
 test('the bot panel says what needs attention in words, and the account is its own line', async ({
@@ -3341,22 +3512,32 @@ test('moving a bot onto a LIVE account from its own panel asks first', async ({ 
   await expect.poll(() => sent[0]).toEqual({ account: LIVE, confirm_live: true, deploy: true })
 })
 
-test('a bot is taken off from the ACCOUNT panel on a second click, and never while it runs', async ({
+test('a bot is taken off from the ACCOUNT panel on a second click — a running one is stopped first', async ({
   page,
 }) => {
   // Taking a bot off was only on the bot's own panel; the account panel lists who is spending its
-  // balance and now takes one off where the reader is looking.
-  // MUTATION: send on the first click → red on the empty list. MUTATION: drop `running` from the
-  // button's disabled → the running bot's button enables, red.
+  // balance and now takes one off where the reader is looking. Since 2026-09-13 a RUNNING bot is
+  // offered it too: the armed button says it is stopped first, and the page waits for the box.
+  // MUTATION: send on the first click → red on the empty list.
+  // MUTATION: take a running bot off without stopping it → red on the order.
   await mock(page, STACKED)
   const sent = await recordRemovals(page)
+  const log = await stopsWhenAsked(page, 'sos_fade')
 
   await openAccount(page)
-  await expect(page.getByTestId('take-off-sos_fade')).toBeDisabled() // RUNNING in the snapshot
   const off = page.getByTestId('take-off-b_leg') // STOPPED
   await off.click()
   await expect(off).toHaveText('Click again')
   expect(sent).toHaveLength(0)
   await off.click()
   await expect.poll(() => sent[0]).toEqual({ account: null, deploy: true })
+
+  const runningOff = page.getByTestId('take-off-sos_fade') // RUNNING in the snapshot
+  await expect(runningOff).toBeEnabled()
+  await runningOff.click()
+  await expect(runningOff).toHaveText('Stop & take off')
+  expect(log.order).toEqual([])
+  await runningOff.click()
+  await expect.poll(() => log.order, { timeout: 15_000 }).toEqual(['stop', 'write'])
+  expect(log.stoppedAtWrite).toEqual([true])
 })

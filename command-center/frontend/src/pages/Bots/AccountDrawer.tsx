@@ -52,12 +52,15 @@ import type {
   BotAccountRegistration,
   BotAccountRiskPlan,
   BotAccountRiskRequest,
+  BotStatus,
 } from '@/types'
 import { openingRecorder } from '@/lib/accountEarnings'
 import { useDebounced } from '@/lib/useDebounced'
 import { Drawer } from '@/components/Drawer'
 import { DecimalInput } from '@/components/DecimalInput'
 import { Shimmer } from '@/components/Shimmer'
+import { StatusText } from '@/components/BotStatus'
+import { botCondition } from '@/lib/botCondition'
 import { AccountForm, nameOf } from './AccountForm'
 import { AddBotPanel } from './AddBotPanel'
 import { GoLivePanel } from './GoLivePanel'
@@ -74,7 +77,9 @@ const fixCls =
   'inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors'
 /** One grid for the table's heading and every row under it — a hand-copied column list is how a
  *  heading ends up confidently over the wrong number. */
-const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_66px_112px_136px] items-center gap-3 px-3'
+// ⚠ The status track is FIXED, and wide enough for the widest pill ("Needs review +1"): each row is
+// its own grid, so a track sized to its content would put every row's columns somewhere else.
+const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_116px_112px_136px] items-center gap-3 px-3'
 
 const money = (n: number) =>
   '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -165,10 +170,12 @@ export function AccountDrawer({
   startAdding = false,
   asking = false,
   statusByKey,
+  botByKey,
   onClose,
   onOpenBot,
   onStart,
   onStop,
+  onStopThen,
   pendingKey = null,
   pendingAction = null,
   busy = false,
@@ -192,11 +199,17 @@ export function AccountDrawer({
    *  nobody is answering, which is only true once it has been asked and failed. */
   asking?: boolean
   statusByKey: Map<string, string>
+  /** Each bot as the snapshot read it, for the SAME status pill the Bots rows and the bot panel
+   *  show (2026-09-13). A bot the box has not answered for is absent and reads Unknown. */
+  botByKey?: Map<string, BotStatus>
   onClose: () => void
   /** Open one of this account's bots in its own panel. */
   onOpenBot?: (key: string) => void
   onStart?: (key: string) => void
   onStop?: (key: string) => void
+  /** Stop a bot, wait for the box to say so, then run `then` — how a RUNNING bot is taken off
+   *  (2026-09-13, `stopFirst.ts`). Held by the page, so closing this panel cannot strand it. */
+  onStopThen?: (key: string, label: string, what: string, then: () => void) => void
   /** A start/stop still in flight — the same pill the page's row shows. */
   pendingKey?: string | null
   pendingAction?: BotAction | null
@@ -709,14 +722,18 @@ export function AccountDrawer({
                           />
                         )}
                       </button>
-                      {/* The dot beside the name went (2026-09-12) — this word says it. A stopped
-                       *  bot on an account is the exception, so it alone takes a colour, as on the
-                       *  Bots page's rows; an unanswered box stays grey — unknown, not stopped. */}
-                      <span
-                        data-testid={`account-bot-state-${b.key}`}
-                        className={`text-[11.5px] ${known && !running ? 'text-neg-text' : 'text-text-tertiary'}`}
-                      >
-                        {!known ? 'unknown' : running ? 'Running' : 'Stopped'}
+                      {/* 🔴 The SAME status pill as the Bots rows and the bot panel (2026-09-13) —
+                       *  Aaron: "all statuses should be color coded … make it consistent." This
+                       *  said Running / Stopped in its own words and colours. An unanswered box
+                       *  reads Unknown, never Stopped. */}
+                      <span data-testid={`account-bot-state-${b.key}`} className="min-w-0">
+                        <StatusText
+                          cond={botCondition(botByKey?.get(b.key), {
+                            asked: known,
+                            onAccount: true,
+                          })}
+                          size="list"
+                        />
                       </span>
                       {b.unreadable ? (
                         <span className="text-[11px] text-warn-text">config unreadable</span>
@@ -764,20 +781,20 @@ export function AccountDrawer({
                             </button>
                           )
                         )}
-                        {/* ⚠ Refused while running (it read its account at startup, so the write
-                         *  cannot reach the process) and while the box has not answered — the
-                         *  same guard as the bot panel's Remove, stated on the control. */}
+                        {/* ⚠ Withheld only while the box has not answered. A RUNNING bot is
+                         *  stopped first, then taken off (2026-09-13, `stopFirst.ts`) — the bot
+                         *  panel's Remove flow, said on the control before the second click. */}
                         <button
                           data-testid={`take-off-${b.key}`}
-                          disabled={running || !known || removing}
+                          disabled={!known || removing || action !== null}
                           title={
-                            running
-                              ? `Stop ${b.display} first — it read its account when it started, so taking it off cannot reach the running process.`
-                              : !known
-                                ? 'The trading box has not answered for this bot — wait for its state before taking it off.'
-                                : armed
-                                  ? 'Click again to take it off the account.'
-                                  : `Take ${b.display} off account ${account}. It stays registered and stopped until you add it to an account again.`
+                            !known
+                              ? 'The trading box has not answered for this bot — wait for its state before taking it off.'
+                              : armed
+                                ? running
+                                  ? 'Click again: it is stopped first, then taken off the account.'
+                                  : 'Click again to take it off the account.'
+                                : `Take ${b.display} off account ${account}. ${running ? 'It is running, so it is stopped first. ' : ''}It stays registered and stopped until you add it to an account again.`
                           }
                           onClick={() => {
                             if (!armed) {
@@ -785,7 +802,11 @@ export function AccountDrawer({
                               return
                             }
                             setArmedKey(null)
-                            takeOff.mutate({ botKey: b.key, account: null, display: b.display })
+                            const off = () =>
+                              takeOff.mutate({ botKey: b.key, account: null, display: b.display })
+                            if (running && onStopThen)
+                              onStopThen(b.key, b.display, 'taken off the account', off)
+                            else off()
                           }}
                           className={`px-[9px] h-[26px] rounded-md text-[11.5px] border whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                             armed
@@ -793,7 +814,13 @@ export function AccountDrawer({
                               : 'border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover'
                           }`}
                         >
-                          {removing ? 'Taking off…' : armed ? 'Click again' : 'Take off'}
+                          {removing
+                            ? 'Taking off…'
+                            : armed
+                              ? running
+                                ? 'Stop & take off'
+                                : 'Click again'
+                              : 'Take off'}
                         </button>
                       </div>
                     </div>

@@ -1,6 +1,11 @@
 /**
- * Whether a bot's process is alive, and what it is in the middle of. Shared by the Monitor tab,
- * the Accounts tab and the bot drawer.
+ * What a bot is in the middle of — a start, stop or restart still running. Shared by the Bots row,
+ * the account panel and the bot panel.
+ *
+ * ⚠ **A bot's STATE is not drawn here** — that is the one pill in `components/BotStatus.tsx`, on
+ * every page (2026-09-13). The `BotStatusPill` that lived here drew Running / Stopped a second way
+ * and nothing rendered it any more; a second, unused rendering of one fact is how two pages start
+ * disagreeing, so it went.
  *
  * ⚠ **In its own file rather than exported from `index.tsx`, to avoid a CYCLE.** `index.tsx`
  * imports `AccountsTab`, so `AccountsTab` importing back from `index.tsx` closes a loop — which
@@ -56,20 +61,6 @@ export function BotActionPill({ action }: { action: BotAction }) {
     >
       <Loader2 size={10} className="animate-spin" />
       {ACTION_WORD[action]}
-    </span>
-  )
-}
-
-export function BotStatusPill({ status }: { status: string }) {
-  const isRunning = status === 'RUNNING'
-  const isError = status === 'ERROR'
-  const cls = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
-  const label = isRunning ? 'Running' : isError ? 'Error' : 'Stopped'
-  return (
-    <span
-      className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}
-    >
-      {label}
     </span>
   )
 }

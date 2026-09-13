@@ -9,9 +9,10 @@ import type { BotPosition, BotStatus } from '@/types'
  * where to go."* A row now says ONE thing: on a running bot the worst problem, else what it is
  * doing. Any other problem is counted beside that word and spelled out on hover.
  *
- * ⚠ **Colour marks the EXCEPTION.** `bad` needs a person, `warn` is worth a look, and a healthy
- * running bot is grey words. There is no dot since 2026-09-12 — it said what the word says — so the
- * worst thing a row hides is carried by its count's colour (`moreTone`).
+ * ⚠ **Every state has its colour, drawn as one pill** (`components/BotStatus.tsx`, 2026-09-13):
+ * `bad` needs a person, `warn` is worth a look, `ok` is a healthy running bot — green, since Aaron
+ * asked for running and stopped to be colour coded — and `idle` / `unknown` are grey. No dot beside
+ * the name since 2026-09-12; the worst thing a row hides is its count's colour (`moreTone`).
  *
  * ⚠ **Every flag is read as the field states it: `=== false` / `=== true` only.** `null` is
  * could-not-ask, and a problem is never raised off a question nobody answered (rule 1).

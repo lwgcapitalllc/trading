@@ -188,6 +188,7 @@ export function BotDrawer({
   onRestart,
   busy,
   pendingAction = null,
+  onStopThen,
   configAccount,
   onOpenAccount,
   fetchedAt,
@@ -215,6 +216,10 @@ export function BotDrawer({
   busy: boolean
   /** A start/stop/restart of THIS bot still in flight — the same pill the row shows. */
   pendingAction?: BotAction | null
+  /** Stop this bot, wait until the box says it has, then run `then` — how a RUNNING bot is moved or
+   *  taken off (2026-09-13). `what` finishes "…so it was not ___" if it will not stop in time.
+   *  Held by the PAGE, so closing this panel mid-wait cannot strand a stopped bot on its account. */
+  onStopThen?: (what: string, then: () => void) => void
   /** Open the account this bot is on, in its own panel. */
   onOpenAccount?: (account: number) => void
 }) {
@@ -239,6 +244,11 @@ export function BotDrawer({
   const [move, setMove] = useState<PendingMove | null>(null)
   const moveHere = move && move.bot === bot.key ? move : null
   const [checkingDest, setCheckingDest] = useState<number | null>(null)
+  // What a stop this panel asked for is FOR — the account section says so while the box catches up.
+  const [after, setAfter] = useState<'remove' | 'move' | null>(null)
+  useEffect(() => {
+    if (pendingAction === null) setAfter(null)
+  }, [pendingAction])
 
   const running = bot.status === 'RUNNING'
   const v = data as BotParamsView | undefined
@@ -297,6 +307,12 @@ export function BotDrawer({
     const ok = await join.join({ account, botKey: bot.key, display: bot.name, choice, live })
     if (ok) setMove(null)
   }
+  /** Run `then` now — or, on a RUNNING bot, once the page has stopped it and seen it stopped. */
+  const whenStopped = (kind: 'remove' | 'move', then: () => void) => {
+    if (!running || !onStopThen) return then()
+    setAfter(kind)
+    onStopThen(kind === 'remove' ? 'taken off the account' : 'moved', then)
+  }
 
   /**
    * A destination picked in the selector. Its budget is asked FIRST — the server's plan for this
@@ -314,7 +330,8 @@ export function BotDrawer({
       setCheckingDest(null)
     }
     const needsRoom = plan !== null && !plan.fits
-    if (!live && !needsRoom) {
+    // ⚠ A RUNNING bot never moves on the pick: it is stopped first, and that is confirmed on screen.
+    if (!live && !needsRoom && !running) {
       await doJoin(dest, { kind: 'as-is' }, false)
       return
     }
@@ -332,8 +349,8 @@ export function BotDrawer({
     return acc
   }, {})
   const terminal = (v?.identity.mt5_path ?? '').split('\\').filter(Boolean)[0] ?? '—'
-  // ⚠ No `running` here: a running bot is offered no selector at all (the account section below).
-  const selectBusy = remove.isPending || moving || checkingDest !== null
+  // ⚠ Busy through the stop a move or a removal waits on, too: the controls stay, not pressable.
+  const selectBusy = remove.isPending || moving || checkingDest !== null || after !== null
   // The row's own status (2026-09-12): the header said "Running" in green over a HALTED bot.
   const cond = botCondition(bot, { asked: true, onAccount: selected !== '' })
 
@@ -474,100 +491,104 @@ export function BotDrawer({
         >
           Account
         </SectionTitle>
-        {/* A running bot has no selector to name its account, so it is named here — once. */}
-        {running && (
-          <p data-testid="bot-account-name" className="text-[13px] mb-[6px]">
-            {selected ? (
-              <>
-                <span className="font-mono tabular-nums">{selected}</span>
-                {myAccountName && <span className="text-text-secondary"> · {myAccountName}</span>}
-              </>
-            ) : (
-              <span className="text-text-tertiary">On no account</span>
-            )}
-          </p>
-        )}
-        {/* 🔴 **A RUNNING bot cannot be moved, and it is said BEFORE the gesture.** It read its
-         *  account at startup, so the write could not reach the live process: the page would show
-         *  it under the new account while it went on trading the old one.
-         *  🔴 **So a running bot gets NO controls here — only the line under them, saying why
-         *  (2026-09-12).** A greyed selector showing the account the heading already names, a greyed
-         *  Remove and that sentence were three things saying one.
+        {/* 🔴 **A RUNNING bot can be moved or taken off — it is STOPPED FIRST (2026-09-13).** Aaron:
+         *  "it is not intuitive that you have to stop a bot to remove from account … maybe the
+         *  remove button should always be there and when we click then it says are you sure bot
+         *  will be stopped first?" The rule under it stands: it read its account at startup, so the
+         *  server refuses the write while it runs (409), and a page that moved it anyway would show
+         *  it under the new account while it traded the old one. What changed is who carries it
+         *  out — the confirm says it will be stopped, the PAGE stops it, waits for the box to say
+         *  so, then writes (`stopFirst.ts`), and it is left stopped.
          *  ⚠ **An account with no terminal is LISTED and DISABLED, with the reason in the option.**
          *  Hiding it makes an account that exists look like one that does not. */}
-        {!running && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              data-testid={`move-${bot.key}`}
-              value={selected}
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            data-testid={`move-${bot.key}`}
+            value={selected}
+            disabled={selectBusy}
+            title={`Move ${bot.name} to another account.`}
+            onChange={(e) => {
+              if (e.target.value === '') return
+              const dest = Number(e.target.value)
+              if (dest !== configAccount) void pickDestination(dest)
+            }}
+            // A native select sizes itself to its WIDEST option, and an unassignable account's
+            // option carries its reason — so without a width it ran to the panel edge.
+            className="w-[240px] max-w-full text-[12.5px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {destinations.map((d) => (
+              <option key={d.account} value={d.account} disabled={!d.assignable}>
+                {d.account}
+                {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
+              </option>
+            ))}
+            {/* Only what a bot on NO account shows as its value. Taking a bot OFF an account is
+             *  the Remove button beside this — the one place it happens (2026-09-11). */}
+            {selected === '' && (
+              <option value="" disabled>
+                Not on an account
+              </option>
+            )}
+          </select>
+          {/* The account's name, as its card's heading gives it — the selector shows the number. */}
+          {myAccountName && (
+            <span data-testid="bot-account-name" className="text-[12px] text-text-secondary">
+              {myAccountName}
+            </span>
+          )}
+          {/* 🔴 **Remove from account, as its own button (2026-09-11)** — Aaron: *"we can stop but we
+           *  can't remove"*. It BENCHES the bot (still registered, never started by the watchdog).
+           *  ⚠ A RUNNING bot is stopped first (`whenStopped`); ⚠ a second click on the same button;
+           *  ⚠ offered only once the CONFIG says the bot is on an account. */}
+          {configAccount != null ? (
+            <button
+              data-testid={`remove-${bot.key}`}
               disabled={selectBusy}
-              title={`Move ${bot.name} to another account.`}
-              onChange={(e) => {
-                if (e.target.value === '') return
-                const dest = Number(e.target.value)
-                if (dest !== configAccount) void pickDestination(dest)
-              }}
-              // A native select sizes itself to its WIDEST option, and an unassignable account's
-              // option carries its reason — so without a width it ran to the panel edge.
-              className="w-[240px] max-w-full text-[12.5px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {destinations.map((d) => (
-                <option key={d.account} value={d.account} disabled={!d.assignable}>
-                  {d.account}
-                  {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
-                </option>
-              ))}
-              {/* Only what a bot on NO account shows as its value. Taking a bot OFF an account is
-               *  the Remove button beside this — the one place it happens (2026-09-11). */}
-              {selected === '' && (
-                <option value="" disabled>
-                  Not on an account
-                </option>
-              )}
-            </select>
-            {/* 🔴 **Remove from account, as its own button (2026-09-11)** — Aaron: *"we can stop but we
-             *  can't remove"*. It BENCHES the bot (still registered, never started by the watchdog).
-             *  ⚠ Refused while running; ⚠ a second click on the same button; ⚠ offered only once the
-             *  CONFIG says the bot is on an account. */}
-            {configAccount != null ? (
-              <button
-                data-testid={`remove-${bot.key}`}
-                disabled={remove.isPending || moving}
-                title={
-                  removeArmed
-                    ? 'Click again to take it off the account.'
-                    : `Take ${labelOf(bot)} off account ${configAccount}. It stays stopped until ` +
-                      'you add it to an account again.'
+              title={
+                removeArmed
+                  ? running
+                    ? 'Click again: it is stopped first, then taken off the account.'
+                    : 'Click again to take it off the account.'
+                  : `Take ${labelOf(bot)} off account ${configAccount}. ` +
+                    (running ? 'It is running, so it is stopped first. ' : '') +
+                    'It stays stopped until you add it to an account again.'
+              }
+              onClick={() => {
+                if (!removeArmed) {
+                  setRemoveArmedFor(bot.key)
+                  return
                 }
-                onClick={() => {
-                  if (!removeArmed) {
-                    setRemoveArmedFor(bot.key)
-                    return
-                  }
-                  setRemoveArmedFor(null)
+                setRemoveArmedFor(null)
+                whenStopped('remove', () =>
                   remove.mutate({ botKey: bot.key, account: null, display: labelOf(bot) })
-                }}
-                className={`${btnCls} ${
-                  removeArmed
-                    ? 'border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10'
-                    : 'border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                }`}
-              >
-                <Unlink size={12} />
-                {removeArmed ? 'Click again to remove' : 'Remove from account'}
-              </button>
-            ) : null}
-            {(remove.isPending || moving || checkingDest !== null) && (
-              <span className="text-[11.5px] text-accent animate-pulse">
-                {checkingDest !== null
+                )
+              }}
+              className={`${btnCls} ${
+                removeArmed
+                  ? 'border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10'
+                  : 'border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+              }`}
+            >
+              <Unlink size={12} />
+              {removeArmed
+                ? running
+                  ? 'Click again to stop and remove'
+                  : 'Click again to remove'
+                : 'Remove from account'}
+            </button>
+          ) : null}
+          {selectBusy && (
+            <span data-testid="account-busy" className="text-[11.5px] text-accent animate-pulse">
+              {after !== null && pendingAction === 'stop'
+                ? `Stopping it first, then ${after === 'remove' ? 'taking it off' : 'moving it'}…`
+                : checkingDest !== null
                   ? `Checking account ${checkingDest}…`
                   : remove.isPending
                     ? 'Removing…'
                     : 'Moving…'}
-              </span>
-            )}
-          </div>
-        )}
+            </span>
+          )}
+        </div>
 
         {moveHere && (
           <div data-testid="move-card" className="mt-3 flex flex-col gap-2">
@@ -579,7 +600,7 @@ export function BotDrawer({
                 display={bot.name}
                 busy={moving}
                 onChoose={(c) =>
-                  moveHere.live
+                  moveHere.live || running
                     ? setMove({ ...moveHere, staged: c })
                     : void doJoin(moveHere.account, c, false)
                 }
@@ -587,12 +608,49 @@ export function BotDrawer({
             ) : moveHere.staged && moveHere.live ? (
               <LiveConfirm
                 account={moveHere.account}
-                what={describeChoice(moveHere.staged, bot.name, myRisk, moveHere.plan)}
+                what={
+                  describeChoice(moveHere.staged, bot.name, myRisk, moveHere.plan) +
+                  (running ? ' It is running, so it is stopped first and left stopped.' : '')
+                }
                 verb="Move to live account"
-                busy={moving}
-                onConfirm={() => void doJoin(moveHere.account, moveHere.staged as JoinChoice, true)}
+                busy={moving || after !== null}
+                onConfirm={() => {
+                  const staged = moveHere.staged as JoinChoice
+                  whenStopped('move', () => void doJoin(moveHere.account, staged, true))
+                }}
                 onCancel={() => setMove(null)}
               />
+            ) : moveHere.staged && running ? (
+              // A demo move of a RUNNING bot: the one extra click is the stop, said before it.
+              <div
+                data-testid="move-stop-first"
+                className="flex flex-col gap-2 rounded-md border border-warn/40 bg-warn-muted px-3 py-[10px]"
+              >
+                <p className="text-[12.5px] text-warn-text leading-[1.5]">
+                  {bot.name} is running. It is stopped first, then moved to account{' '}
+                  {moveHere.account}, and left stopped.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    data-testid="move-stop-confirm"
+                    disabled={moving || after !== null}
+                    onClick={() => {
+                      const staged = moveHere.staged as JoinChoice
+                      whenStopped('move', () => void doJoin(moveHere.account, staged, false))
+                    }}
+                    className={`${btnCls} border-warn/50 text-warn-text hover:bg-warn/10`}
+                  >
+                    Stop and move
+                  </button>
+                  <button
+                    data-testid="move-stop-cancel"
+                    onClick={() => setMove(null)}
+                    className={`${btnCls} border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             ) : null}
             {moveHere.staged === null && (
               <button
@@ -606,9 +664,9 @@ export function BotDrawer({
           </div>
         )}
 
-        <p className={`text-[11px] text-text-tertiary leading-[1.5] ${running ? '' : 'mt-[8px]'}`}>
+        <p className="text-[11px] text-text-tertiary leading-[1.5] mt-[8px]">
           {running
-            ? 'Stop it first to move it or take it off this account — it reads its account when it starts.'
+            ? 'It is running: a move or a removal stops it first and leaves it stopped — it reads its account when it starts.'
             : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
         </p>
       </section>

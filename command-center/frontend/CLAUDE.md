@@ -139,8 +139,8 @@ on its row (uptime on the status's hover since 2026-09-12). **Nothing is repeate
 complete** — that habit is what put one account's balance on every row of a stack and let the fleet
 total add it twice.
 
-⚠ **State is a dot, not a shouted word.** `RUNNING` was written on every row of every tab. Since
-2026-09-12 the row carries ONE quiet word beside the dot — see *One status per row*.
+⚠ **State is one coloured pill, not a shouted word.** `RUNNING` was written on every row of every
+tab. Since 2026-09-13 every list of bots draws the same pill — see *One status per row*.
 
 🔴 **A control's own prose does not go on the surface.** The risk editor printed `row.note` — the
 `_`-prefixed paragraph from the instance config, ~1,500 words on `exec_risk_pct` — directly beside
@@ -293,9 +293,9 @@ account selector, and nobody found it.
   account, so the bot is BENCHED: still registered, listed under Unassigned, and never started by
   the watchdog. The selector now only MOVES; "Not on an account" appears only as a benched bot's
   value — two controls for one write is two places for its guard to drift.
-- ⚠ **Not offered while running** (it read its account at startup): since 2026-09-12 a running
-  bot's Account section is one line saying so — *The bot panel says each thing once*. And **a
-  second click on the same button**, disarming after 6s: the live deploy's pattern.
+- ⚠ **A running bot is STOPPED FIRST** (it read its account at startup) — *A running bot is
+  stopped first, never locked*. And **a second click on the same button**, disarming after 6s: the
+  live deploy's pattern.
 - 🔴 **Decided off the CONFIG's account (`configAccount`), never `bot.account`.** That field is what
   the bot last REPORTED and stays on the old account until its next start, so a bot just removed
   would still offer Remove. `undefined` until the configs are read: Remove waits, the selector shows
@@ -358,8 +358,8 @@ issues."* Each had a way to end in a refusal nobody could act on. Backend half: 
   under the box says whether the new share fits, a refused raise offers *also raise the account cap*
   in the same save, and a bot on no account keeps `/runtime`. The confirm is a STEP with the
   numbers, never a modal; on a live account its button says real money. `RuntimeEditor` is deleted.
-- ⚠ **Taking a bot off is on the account panel too** (`take-off-<key>`, second click, refused while
-  running or unanswered); a bot's name there opens its panel. Add bot is disabled, with the reason,
+- ⚠ **Taking a bot off is on the account panel too** (`take-off-<key>`, second click; a running
+  one is stopped first, an unanswered one waits); a bot's name there opens its panel. Add bot is disabled, with the reason,
   on a definite *no password*, and that chip is a button into the account form.
 - ⚠ **Both panels use `components/Drawer.tsx` and `drawerParts.tsx`**, so they read as one. Editing
   the account is a STEP of its panel, like demo → live.
@@ -4370,12 +4370,13 @@ page and again with the remainder still naming a deposit.
 trade open, each its own colour and shape. On the live account two wrapped and cut the name to
 "SOS …"; on the demo every pill was green. Aaron: *"my eyes don't know where to go."*
 `src/lib/botCondition.ts` reads a bot ONCE for every list of bots — the Bots rows, the bot panel's
-header, the Overview — and `src/components/BotStatus.tsx` draws it: one word, a count.
+header, the account panel, the Overview — and `src/components/BotStatus.tsx` draws it: one pill, a
+count.
 
 - 🔴 **No dot, since the same day.** One sat before every name and said what the Status column
   says — Aaron: *"the status column is redundant … remove the dots and just use the status column
   solely since you put other statuses there."* The word is the one kept: it says what a dot cannot.
-  The account panel's bot list lost its dot too; its word is red only for a stopped bot.
+  The account panel's bot list lost its dot too, and since 2026-09-13 draws the same pill.
 - **The word is a RUNNING bot's worst problem, else what it is doing** — "Running", or the trade it
   holds ("Long 0.40 lots · +1.2R", only the R coloured). Worst first: halted, a review alert,
   trading off, no MT5 link, a review warning, locked for the day. The rest are counted beside the
@@ -4386,8 +4387,11 @@ header, the Overview — and `src/components/BotStatus.tsx` draws it: one word, 
 - ⚠ **The count carries the colour of the worst thing it hides** (a "+1" hiding a halt is red); the
   word carries only its own, so "Benched" is never red for a problem it does not name. With no dot,
   the count is what carries the row's worst.
-- ⚠ **Colour marks the EXCEPTION.** A healthy bot is grey words. P&L keeps its sign colour;
-  Return % and Per trade went neutral; the account's net is text, not a pill.
+- 🔴 **The word is a PILL in its state's colour (2026-09-13)** — green running, amber worth a look,
+  red stopped / halted / error, grey benched, dashed grey unknown. Aaron: *"the status for running
+  or stopped should be color coded … make it consistent."* Grey words for a healthy bot read as no
+  status, and the panel header and the account panel each drew it their own way. ⚠ Nothing else
+  took colour: P&L keeps its sign colour, Return % and Per trade stay neutral, the net is text.
 - ⚠ **Every flag is read `=== false` / `=== true`** — `null` is could-not-ask and raises nothing
   (rule 1). ⚠ **The page decides nothing**: every reason on the hover is the bot's own sentence
   (`algos/CLAUDE.md` → *Whether the account may TRADE*, *The heartbeat says what the bot holds at
@@ -4428,10 +4432,9 @@ status per row* rule, applied to `BotDrawer.tsx`:
 - **Risk** (`BotRiskEditor.tsx`): the value lives in its box, the dollars beside it follow what is
   typed, and Save with "was 5%" appears once it changes. The setting's own name prints only when a
   panel has more than one — the heading already names the one it has.
-- 🔴 **Account, while RUNNING: one line, no controls.** A greyed selector repeating the account the
-  heading names, a greyed Remove and the line said one thing three times. The `running` branches the
-  controls carried went with them — unreachable once hidden, and a branch nothing can kill reads as
-  covered.
+- **Account:** the selector, the account's name and Remove — for a running bot too since 2026-09-13
+  (*A running bot is stopped first, never locked*). From 2026-09-12 a running bot got one line and no
+  controls, because a greyed selector and Remove beside it said one thing three times.
 - **Version:** what a deploy does is the heading's hover (`SectionTitle`'s `hint`), not a paragraph
   on every open. ⚠ The deploy card keeps the bot's name: on a live deploy it says which bot moves.
 - **Record:** one line — "2 won · 0 lost · record …", or "No closed trades yet", never "0 / 0".
@@ -4451,11 +4454,36 @@ status per row* rule, applied to `BotDrawer.tsx`:
   account ›** on its heading (`bot-account-link`).
 
 Pinned by three new checks and three re-pointed in `tests/bots-accounts.spec.ts` — the panel says
-each thing once, the running-bot move and remove guards (controls ABSENT, the reason there), the
+each thing once, the running-bot move and remove (re-pointed 2026-09-13 to stop first), the
 record's one line including a bot with no closed trade, what needs attention in words with the
 account on its own line (the halt, each review finding and its time, **Open account ›** landing on
 that account, the badge reading *Live*), and a review with nothing left open reading as no status
 with its history one click away. 17 mutations in a throwaway worktree, 17 killed.
+
+## A running bot is stopped first, never locked (2026-09-13)
+
+Aaron: *"it is not intuitive that you have to stop a bot to remove from account … maybe the remove
+button should always be there and when we click then it says are you sure bot will be stopped
+first?"* Remove, Move and the account panel's Take off are offered on a RUNNING bot; the confirm
+says it is stopped first, and `pages/Bots/stopFirst.ts` carries it out.
+
+- 🔴 **The rule under it stands**: a bot reads its account at startup, so the server refuses the
+  write while it runs (409). What moved is who does the stop — the page, not the reader.
+- 🔴 **The server's stop only ASKS** (`stop.request`; the bot exits within ~30s), so the page
+  re-reads the fleet every 5s until the box says the bot is not RUNNING, and only then writes. A
+  write sent on the stop call alone is one the server refuses.
+- 🔴 **Nothing on a guess**: 90s without the box saying stopped writes NOTHING, and the toast says
+  it was asked to stop and not moved.
+- ⚠ **It is left stopped** — a move takes effect at its next start, and the reader starts it.
+- ⚠ **The wait lives on the PAGE** (`useStopFirst` in `index.tsx`), so closing a panel mid-wait
+  does not drop the write; the row shows *Stopping* meanwhile.
+- ⚠ **A demo move of a running bot never goes out on the pick** — a card says it is stopped first
+  (`move-stop-first`); a live move says it inside the live confirm.
+
+Pinned, with the one pill and the shared column width, by `tests/bots-accounts.spec.ts`: 4 new
+checks (Remove waits for STOPPED, a bot that never stops is not taken off, one pill on the row, bot
+panel and account panel, the columns' width) and 3 re-pointed (a running bot's Remove, Move and Take
+off). 15 mutations in a throwaway worktree, 15 killed.
 
 ## The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 
@@ -4793,9 +4821,11 @@ identify the winner."*
   not — Return % is the bot's dollars over the account's opening balance, and R per trade has no
   account size in it. The best bot holds the ONE trophy. ⚠ **Different icons on purpose** — the
   best bot can sit on the side that is behind. ⚠ A record with no closed trade reads `$0.00` and
-  `0`; a missing record reads `no record yet` and dashes. 🔴 **Every column but the name is a
-  FIXED width, the actions too**: each row is its own grid, and a content-sized actions column put
-  every value ~50px left of its heading on a 1280px screen.
+  `0`; a missing record reads `no record yet` and dashes. 🔴 **Every column has a FIXED floor —
+  never `auto` — and the actions a fixed width**: each row is its own grid, and a content-sized
+  actions column put every value ~50px left of its heading on a 1280px screen. ⚠ **The spare width
+  is SHARED (`minmax(floor, Nfr)`, 2026-09-13)**, never parked in one blank track — that left P&L to
+  Version crowded at their floors (*"the columns 3-8 are all crowded"*).
 - ⚠ **Nothing is awarded without a contest**: a side with no closed trade is not "behind" (a
   default is not a result), a lone scored bot gets no trophy, a tie within 0.005R gets neither, and
   a side missing a bot's record is PARTIAL and cannot lead. ⚠ **Summed from the bots' own records,
