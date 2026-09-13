@@ -2750,30 +2750,35 @@ wants a coin flip — **and it was the mode a `?? 'screen'` default silently pic
 - The mode paragraph is derived from `shared` rather than removed, so a screen's own rerun modal
   explains what it is and says new stacks are shared accounts.
 
-## The shared-account panel — every fact kept, the prose moved to its ⓘ
+## The shared account is two rows in the Verdict card (2026-09-13)
 
-**Condensed 2026-08-10.** Aaron: *"does this section need to be so verbose? Like I'm reading a
-storybook."* It was three big figures with nothing saying what any of them was FOR (*"one account,
-the screen promised, peak open risk — I don't know the significance of these things"*), then a
-rewrite that kept every explanation as body text, which was four paragraphs nobody re-reads.
+Aaron: *"what is the purpose of this shared account section? it is taking up space."* On the live
+pair the cap cost nothing in 6.7 years — one entry trimmed by $8.61 — and the section spent ~250px
+saying so, under an amber `1 REFUSED` chip over a trade that was trimmed, not refused.
 
-It is now three lines: the peak risk with its meter, a refused/not-refused chip, the cap and
-concurrency caption, and a `together $X · apart $Y · +$Z` row sharing a line with the disclosure.
-
-⚠ **The rules those paragraphs stated are load-bearing and are NOT deleted — they are one hover
-away.** Two in particular, and both have a browser check that HOVERS rather than reading the chip:
-
-- **An empty contention log still has to read as a measurement.** *"Nothing was ever refused… open
-  risk is measured to each trade's CURRENT stop… read it as 'the budget would rarely have had
-  anything to arbitrate', never as 'a cap is unnecessary'"* lives on the chip's ⓘ. Asserting only
-  the chip would pass against a build that dropped the explanation entirely, which turns a measured
-  result back into a number nobody can interpret.
-- **The together-vs-apart gap still has to name COMPOUNDING.** Read as risk it is alarming; it is
-  one balance both strategies grow, and `docs/SHARED_RISK_STACK.md` predicted the opposite SIGN
-  from exactly that misreading before the first real run disproved it.
-
-⚠ **The per-strategy table stays behind a disclosure that OPENS ITSELF when there is contention** —
-on every run measured so far its Shrunk / Blocked / Risk-refused columns are entirely em-dashes.
+- **`readCap` is the one reading.** The Verdict card's `Peak risk` / `Cap cost` rows and the table
+  below the panel take the same object, so they cannot disagree about one run.
+- **Peak risk is stated WITH the cap** (`10.06% of 10%`). A peak above the cap is explained on its
+  ⓘ: the cap is checked when a trade opens, and a loss or overnight charge on an open trade lifts
+  the peak past it. It is not a breach.
+- **Cap cost reads `none` in words** when nothing was made smaller or blocked, with the
+  measurement sentence on its ⓘ; else `1 trade smaller` or `1 trade blocked`. 🔴 **No dollar
+  figure in the row**: `1 trimmed · $9` read as the cap COSTING $9 (*"what does 1 trimmed $9
+  mean?"*) — it was risk the trade did not take, and its R did not move. The dollars are on the ⓘ,
+  per strategy. Never "refused" for a trade made smaller. Amber only for a block or a moved R.
+- 🔴 **The per-strategy table appears only when the cap COST something** (`costly`): a blocked
+  entry, a strategy whose R or trade count differs from alone, or a failed seam check. A trim that
+  left every R unchanged is one row, not a section.
+- ⚠ **The rows sit only beside the shared book as it ran** — not with a leg switched off, not under
+  a period window, not collapsed (supporting rows fold; the leg rows stay, they are the control).
+  They go FIRST, so the leg toggles do not move. The section's replaying / failed / cancelled /
+  abandoned states are unchanged.
+- ⚠ **The together/apart dollars line is gone, not moved.** It compared closing dollars across one
+  shared balance — root rule 6 — and its own tooltip had to tell the reader to ignore it.
+- ✅ **Proof: six checks in `tests/stacks.spec.ts` plus the kept seam-failure check; 15 bugs planted
+  one at a time in a throwaway worktree, 15 killed, each on the assertion written for it.** ⚠ The
+  dollars-back-in-the-row plant is caught ONLY by the no-`$` assertion — `1 trade smaller · $9`
+  still contains `1 trade smaller`.
 
 ## A running stack has ONE progress readout (2026-09-03)
 
@@ -2949,15 +2954,10 @@ different numbers, with nothing to tell them apart, is a comparison the reader c
 
 ### The panel, and the three things it must not render as blanks
 
-- **The headline delta is computed off the SOLO CONTROLS** (`solo_closing_balance` per leg, minus
-  the shared opening balance once). Those controls ARE the screen — each leg on its own full
-  account — so it is a like-for-like comparison against a replay that really happened rather than
-  an estimate of one.
-- ⚠ **An empty contention log is rendered as a MEASUREMENT, in words.** It is the EXPECTED state,
-  not a missing one: open risk is measured to each trade's CURRENT stop, so a stop moved to
-  breakeven releases its room before the other strategy asks, and the measured 6.5-year two-bot run
-  refuses nothing at all. A panel that goes blank there is pixel-identical to one that failed to
-  load.
+- ⚠ **An empty contention log is rendered as a MEASUREMENT, in words** — the Verdict card's
+  `Cap cost: none` since 2026-09-13. It is the EXPECTED state: open risk is measured to each
+  trade's CURRENT stop, so a stop at breakeven frees its room before the other strategy asks. A
+  row that goes blank there is pixel-identical to one that failed to load.
 - ⚠ **`available: false` is THREE answers** — this is a screen, it is still replaying, or it
   failed — and the panel renders a different thing for each. `progress` separates the second;
   `stack.mode` separates the first. The **test seam is on all three branches**, not only the
@@ -2968,8 +2968,7 @@ different numbers, with nothing to tell them apart, is a comparison the reader c
   is normalised to the trade's own risk), so a difference is the shared account moving a decision
   it must not touch. That is invisible in a table of numbers unless something says it.
 
-⚠ **The panel sits ABOVE the strategy chips**, which toggle legs in and out of the combined view.
-The budget is a property of the run as it happened, not of whichever legs are currently ticked.
+⚠ **The section ignores the leg toggles** — the budget is a property of the run as it happened.
 
 ⚠ **Contention MARKERS on the price chart are deferred and named** (`docs/SHARED_RISK_STACK.md`).
 Every measured run so far refuses nothing, so a marker layer would be a generic mechanism nobody

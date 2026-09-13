@@ -542,6 +542,148 @@ function UnmeasuredCard({ onAllOn }: { onAllOn: () => void }) {
   )
 }
 
+// ── What the account's risk cap did ───────────────────────────────────────────
+//
+// Read ONCE off the shared report and handed to both places that show it: two rows in the Verdict
+// card, and the per-strategy table below the panel. Two readings of "did the cap cost anything" is
+// how the card could say "none" over a table saying otherwise.
+//
+// 🔴 The table earns its place only when the cap COST something (2026-09-13, Aaron: "it is taking
+// up space"). On the live pair it cost nothing in 6.7 years — one entry trimmed by $8.61 — and the
+// section spent ~250px saying so, under an amber "1 REFUSED" chip over a trade that was trimmed,
+// not refused.
+interface CapReading {
+  /** Most open risk the account carried at once, as a share of its balance at that moment. */
+  peakPct: number | null
+  capPct: number | null
+  holding: number | null
+  legCount: number | null
+  trimmed: number
+  blocked: number
+  /** Risk the budget declined, in dollars — trimmed and blocked together. */
+  riskDeclined: number
+  /** The strategies the budget touched, and what it did to each. */
+  touched: { id: string; trimmed: number; blocked: number; risk: number }[]
+  /** Strategies whose shared R or trade count differs from alone, at the precision the table prints. */
+  moved: string[]
+  seamFailed: boolean
+  /** A blocked entry, a strategy whose R moved, or a failed seam check — the table's only reasons. */
+  costly: boolean
+}
+
+function readCap(report: StackSharedReport): CapReading | null {
+  if (!report.available) return null
+  const legs = report.legs ?? []
+  const touched = legs
+    .filter((l) => (l.shrunk ?? 0) > 0 || (l.blocked ?? 0) > 0)
+    .map((l) => ({
+      id: l.strategy_id,
+      trimmed: l.shrunk ?? 0,
+      blocked: l.blocked ?? 0,
+      risk: l.risk_refused ?? 0,
+    }))
+  const blocked = touched.reduce((a, t) => a + t.blocked, 0)
+  // ⚠ At the precision the table PRINTS. A difference only a fourth decimal can see is not one a
+  // reader could find in the table it would open.
+  const moved = legs
+    .filter(
+      (l) => l.shared_r.toFixed(2) !== l.solo_r.toFixed(2) || l.shared_trades !== l.solo_trades
+    )
+    .map((l) => l.strategy_id)
+  const seamFailed = !!report.neutral?.checkable && report.neutral?.ok === false
+  return {
+    peakPct: report.peak_open_risk_pct,
+    capPct: report.risk_cap_pct,
+    holding: report.peak_concurrent_legs,
+    legCount: report.leg_count,
+    trimmed: touched.reduce((a, t) => a + t.trimmed, 0),
+    blocked,
+    riskDeclined: touched.reduce((a, t) => a + t.risk, 0),
+    touched,
+    moved,
+    seamFailed,
+    costly: blocked > 0 || moved.length > 0 || seamFailed,
+  }
+}
+
+/** A cap is a setting somebody typed, so it reads as typed: `10` → "10%", `12.5` → "12.5%". */
+function pctTyped(v: number): string {
+  return `${Number(v.toFixed(2))}%`
+}
+
+// The Verdict card's two rows. ⚠ Peak risk is stated WITH the cap (10% is either the ceiling or a
+// third of it, and the number alone cannot say which), and an empty contention log reads "none" in
+// words — a row that went blank there would look exactly like one that failed to load.
+function capRows(cap: CapReading | null, nameOf: (id: string) => string): PanelRow[] {
+  if (!cap) return []
+  const events = cap.trimmed + cap.blocked
+  const over = cap.peakPct != null && cap.capPct != null && cap.peakPct > cap.capPct
+  const peakValue =
+    cap.peakPct == null
+      ? 'not recorded'
+      : cap.capPct == null
+        ? `${cap.peakPct.toFixed(2)}% · no cap`
+        : `${cap.peakPct.toFixed(2)}% of ${pctTyped(cap.capPct)}`
+  const holding =
+    cap.holding != null && cap.legCount != null
+      ? ` At most ${cap.holding} of ${cap.legCount} strategies held a trade at once.`
+      : ''
+  // 🔴 A peak above the cap is NOT a breach, and without this sentence it reads as one. The cap is
+  // checked when a trade opens; the peak divides open risk by the balance at each moment after
+  // that, so a loss or an overnight charge on a position already open lifts it past the cap.
+  const peakTip =
+    `The most risk the account held open at once, as a share of its balance at that moment, measured to each trade's current stop.${holding}` +
+    (over
+      ? ' It sits above the cap without any trade breaking it: the cap is checked when a trade opens, and after that a loss or an overnight charge can shrink the balance under trades already open, so the same dollars at risk become a bigger share.'
+      : '')
+
+  const perLeg = cap.touched
+    .map((t) => {
+      const what = [
+        t.blocked ? `${t.blocked} blocked` : '',
+        t.trimmed ? `${t.trimmed} made smaller` : '',
+      ]
+        .filter(Boolean)
+        .join(', ')
+      return `${nameOf(t.id)}: ${what} (${fmtMoney(t.risk, false)} of risk not taken)`
+    })
+    .join('; ')
+  // No dollar figure in the value. "1 trimmed · $9" under "Cap cost" read as the cap costing $9
+  // (Aaron, 2026-09-13: "what does 1 trimmed $9 mean?") — the $9 was risk the trade did not take,
+  // and its R did not move. The dollars live on the ⓘ, beside the strategy they belong to. Never
+  // "refused" for a trade made smaller: it still traded.
+  const nTrades = (n: number) => `${n} ${n === 1 ? 'trade' : 'trades'}`
+  const costValue =
+    events === 0
+      ? 'none'
+      : cap.blocked > 0
+        ? `${nTrades(cap.blocked)} blocked`
+        : `${nTrades(cap.trimmed)} smaller`
+  const costTip =
+    events === 0
+      ? 'No trade was made smaller or blocked. That is a measurement, not a missing one — open risk is measured to each trade’s current stop, so a stop moved to breakeven frees its room before another strategy asks. Read it as “the budget rarely had anything to arbitrate”, never as “a cap is unnecessary”.' +
+        (cap.seamFailed ? ' A strategy’s R moved anyway — see the seam check below the panel.' : '')
+      : `When the budget was full, entries were made smaller to fit or refused outright: ${perLeg}.` +
+        (cap.moved.length
+          ? ` ${cap.moved.map(nameOf).join(' and ')} made different R sharing the account than alone — the table below the panel shows what the cap did to each strategy.`
+          : cap.blocked > 0
+            ? ' The table below the panel shows what the cap did to each strategy.'
+            : ' A trade made smaller still traded at the same entry and stop, so its R is unchanged; only its dollar result shrank, in proportion to the risk it did not take.')
+  return [
+    { key: 'cap-peak', testId: 'cap-peak', label: 'Peak risk', value: peakValue, tip: peakTip },
+    {
+      key: 'cap-cost',
+      testId: 'cap-cost',
+      label: 'Cap cost',
+      value: costValue,
+      tip: costTip,
+      // Amber only when the cap cost something to look at — a blocked entry or a strategy whose R
+      // moved. A trim that left every R unchanged is a count, and a count is grey.
+      cls: events > 0 && (cap.blocked > 0 || cap.moved.length > 0) ? 'text-warn-text' : undefined,
+    },
+  ]
+}
+
 // ── The Verdict card ──────────────────────────────────────────────────────────
 //
 // A stack sits in the same four-column Performance row a single backtest does — Verdict, Made,
@@ -564,6 +706,7 @@ function StackVerdictCard({
   total,
   spanDays,
   mode,
+  cap,
 }: {
   legs: StackStrategyLeg[]
   enabled: Set<string>
@@ -574,6 +717,8 @@ function StackVerdictCard({
   total: number
   spanDays: number | null
   mode: StackMode
+  /** What the account's cap did — null wherever these rows would sit beside a different book. */
+  cap: CapReading | null
 }) {
   const activeCount = legs.filter(
     (l) => enabled.has(l.strategy_id) && l.status === 'complete'
@@ -594,7 +739,7 @@ function StackVerdictCard({
     .filter(Boolean)
     .join(' · ')
 
-  const rows: PanelRow[] = legs.map((leg) => {
+  const legRows: PanelRow[] = legs.map((leg) => {
     const on = enabled.has(leg.strategy_id)
     const done = leg.status === 'complete'
     const failed = leg.status.startsWith('failed')
@@ -687,7 +832,16 @@ function StackVerdictCard({
       {/* No "N-strategy portfolio" line: the page title names every strategy and this card's
           own corner says "N of N on" (2026-09-11). */}
       {cadence && <div className="font-mono text-[10.5px] text-text-tertiary mt-2">{cadence}</div>}
-      {rows.length > 0 && <PanelRows rows={rows} />}
+      {/* The cap's rows go FIRST so the strategy toggles stay exactly where the reader clicks
+          them — the rows block is bottom-aligned, so rows added after them would push them up. */}
+      {(cap || legRows.length > 0) && (
+        <PanelRows
+          rows={[
+            ...capRows(cap, (id) => legs.find((l) => l.strategy_id === id)?.strategy_name ?? id),
+            ...legRows,
+          ]}
+        />
+      )}
     </div>
   )
 }
@@ -731,33 +885,33 @@ const PHASE_WORDS: Record<string, string> = {
 // ── The shared account ────────────────────────────────────────────────────────
 //
 // A screen cannot answer any of this: it runs each leg on its own full account, so nothing was
-// ever refused and there is no budget to report on. This is the ONLY thing on the page a single
-// backtest has no counterpart for, which is why it survives as its own section and why it is one
-// card rather than the three-cards-plus-table it started as.
+// ever refused and there is no budget to report on.
 //
-// 🔴 It was rebuilt on 2026-08-10 because it read as jargon: `One account` / `The screen promised`
-// / `Peak open risk` were three big figures with nothing saying what any of them was FOR, over a
-// seven-column table that was five columns of em-dashes on every run measured so far. Every fact
-// is still here; each one now arrives with the sentence that makes it mean something, and the
-// per-strategy table — which only says anything when the budget actually refused something — is
-// behind a disclosure instead of being the largest thing on the page.
+// 🔴 A FINISHED report renders here ONLY when the cap cost something (2026-09-13, Aaron: "it is
+// taking up space"). What the cap did on an ordinary run — peak risk against the cap, and whether
+// anything was trimmed or blocked — is two rows in the Verdict card (`readCap`). This section is
+// the per-strategy table, for the runs where a strategy was blocked or its R moved, plus the
+// states that have a sentence of their own: still replaying, failed, cancelled, abandoned.
 //
-// ⚠ The two facts that must never be dropped: the peak open risk has to be stated WITH the cap
-// (10% is either the ceiling or a third of it, and the number alone cannot say which), and an
-// empty contention log has to be stated in WORDS as a measurement.
+// ⚠ The facts that must never be dropped moved WITH it: the peak is stated with the cap, and an
+// empty contention log reads "none" in words, never as a blank. The together-vs-apart dollars
+// line is gone on purpose — it compared dollars across one shared balance (root rule 6), and its
+// own tooltip had to tell the reader to ignore it.
 function SharedAccountPanel({
   report,
+  cap,
   colorFor,
   nameFor,
   running,
 }: {
   report: StackSharedReport
+  /** The one reading of what the cap did — the same object the Verdict card's rows read. */
+  cap: CapReading | null
   colorFor: (id: string) => string
   nameFor: (id: string) => string
   /** Is the stack still replaying? Separates "a beat behind" from "nothing is driving this". */
   running: boolean
 }) {
-  const [showLegs, setShowLegs] = useState(false)
   // ⚠ The test seam is on ALL FOUR branches, not only the finished one. A panel that is still
   // replaying, one that failed and one that was abandoned are all this panel — putting the id on
   // the happy path only means a check for "it says what it is doing while running" can never find
@@ -820,78 +974,21 @@ function SharedAccountPanel({
     )
   }
 
-  // The screen is the sum of the SOLO controls — each leg on its own full account, which is
-  // exactly what a screen-mode stack would have produced. So this is a like-for-like comparison
-  // against a run that really happened, not against an estimate.
-  const opening = report.opening_balance ?? 0
-  const screenClosing = report.legs.reduce(
-    (a, l) => a + (l.solo_closing_balance - opening),
-    opening
-  )
-  const sharedClosing = report.closing_balance ?? 0
-  const delta = sharedClosing - screenClosing
-  const anyContention = (report.contention_events ?? 0) > 0
-  const capPct = report.risk_cap_pct ?? 0
-  const peakPct = report.peak_open_risk_pct ?? 0
-  const fill = capPct > 0 ? Math.min(100, (peakPct / capPct) * 100) : 0
-
-  const seamFailed = !!report.neutral?.checkable && report.neutral?.ok === false
+  // The call site renders a finished report only when `cap.costly`, so what is left is the table.
+  // Read off `cap` rather than re-derived: a second reading of "did the seam fail" is how the
+  // Verdict card and this section could disagree about the same run.
+  const seamFailed = !!cap?.seamFailed
 
   return (
     <div
       data-testid="shared-account-panel"
       className="rounded-xl border border-border-default bg-bg-surface px-4 py-3.5 space-y-3"
     >
-      {/* ── How full the budget ever got, and whether it ever had to say no ──
-          ⚠ Every FACT here was already on screen before 2026-08-10; what changed is that the prose
-          explaining each one moved onto its ⓘ. Aaron: "does this section need to be so verbose?
-          Like I'm reading a storybook." The rules those paragraphs stated are load-bearing and are
-          NOT deleted — an empty contention log still has to read as a measurement, and the
-          together-vs-apart gap still has to name compounding — they are one hover away instead of
-          four lines of body text nobody re-reads. */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="flex items-baseline text-[12.5px] text-text-secondary">
-          <span className="font-mono tabular-nums text-[15px] font-semibold text-text-primary">
-            {peakPct.toFixed(2)}%
-          </span>
-          <span className="ml-1.5">peak open risk</span>
-          <InfoTip
-            text={`The most open risk the account ever carried at once, as a share of its balance, measured to each trade's CURRENT stop. Against a ${capPct.toFixed(2)}% cap, with ${report.peak_concurrent_legs} of ${report.leg_count} strategies holding at the peak.`}
-          />
-        </span>
-        <span
-          data-testid="contention-chip"
-          className={`inline-flex items-center rounded-full pl-2.5 pr-1.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.4px] shrink-0 ${
-            anyContention ? 'bg-warn-muted text-warn-text' : 'bg-bg-sunken text-text-secondary'
-          }`}
-        >
-          {anyContention ? `${report.contention_events} refused` : 'Nothing refused'}
-          <InfoTip
-            text={
-              anyContention
-                ? `The budget was full ${report.contention_events} times when a strategy asked, so its entry was shrunk to fit or refused outright. Every difference between this and the same strategies run apart traces to one of these — the per-strategy rows below say which strategy wore them.`
-                : 'Nothing was ever refused. That is a measurement, not a missing one — open risk is measured to each trade’s current stop, so a stop moved to breakeven releases its room before the other strategy asks. Read it as “the budget would rarely have had anything to arbitrate”, never as “a cap is unnecessary”.'
-            }
-          />
-        </span>
-      </div>
-      <div className="h-[5px] rounded-full bg-bg-sunken overflow-hidden">
-        {/* Grey while the budget never said no; amber once it refused something, matching the
-            chip above. Cyan is for what can be clicked or is running now (2026-09-13). */}
-        <div
-          className={`h-full rounded-full ${anyContention ? 'bg-warn-text' : 'bg-text-tertiary'}`}
-          style={{ width: `${fill}%` }}
-        />
-      </div>
-      <div className="text-[11px] text-text-tertiary">
-        of a {capPct.toFixed(2)}% cap · {report.peak_concurrent_legs} of {report.leg_count} holding
-        at once
-      </div>
-
       {/* The one thing this panel can CHECK rather than report. R is normalised to the trade's own
           risk, so with a full budget a leg must post the same R shared as solo — a difference there
           is the shared account moving a decision it must not touch, which is a defect in the seam
-          and not a portfolio effect. A FAILURE is never folded into the disclosure below. */}
+          and not a portfolio effect. A failure is stated in words above the table, never left in a
+          column to be spotted. */}
       {seamFailed && (
         <div className="text-[11px] px-3 py-2 rounded-lg border border-neg-text/25 bg-neg-muted/20 text-neg-text">
           <strong>Seam check failed — </strong>
@@ -899,105 +996,58 @@ function SharedAccountPanel({
         </div>
       )}
 
-      {/* ── Per-strategy detail ──
-          Behind a disclosure because on every run measured so far its Shrunk / Blocked / Risk
-          refused columns are entirely em-dashes — it is the answer to "what did the budget do to
-          each strategy" and the answer is usually "nothing". It OPENS ITSELF when there is
-          contention, so the one state it exists for is never a click away. */}
-      <div className="border-t border-border-subtle pt-2">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-          <button
-            onClick={() => setShowLegs((v) => !v)}
-            className="flex items-center gap-1.5 text-[11px] font-medium text-text-tertiary hover:text-text-secondary transition-colors"
-          >
-            <ChevronDown
-              size={12}
-              className={`transition-transform ${showLegs || anyContention ? '' : '-rotate-90'}`}
-            />
-            Per-strategy detail
-          </button>
-          {/* What sharing one balance changed, as three figures on one line with the reasoning on
-              the ⓘ. ⚠ The tooltip's job is to stop the gap being read as risk: it is mostly
-              COMPOUNDING, and `docs/SHARED_RISK_STACK.md` predicted the opposite sign from exactly
-              that misreading before the first real run disproved it. */}
-          <span
-            data-testid="together-apart"
-            className="flex items-baseline text-[11px] text-text-tertiary"
-          >
-            together
-            <span className="ml-1 font-mono tabular-nums text-text-primary">
-              {fmtMoney(sharedClosing, false)}
-            </span>
-            <span className="mx-1.5">·</span>
-            apart
-            <span className="ml-1 font-mono tabular-nums text-text-secondary">
-              {fmtMoney(screenClosing, false)}
-            </span>
-            <span
-              className={`ml-1.5 font-mono tabular-nums ${delta >= 0 ? 'text-pos-text' : 'text-neg-text'}`}
-            >
-              {fmtMoney(delta)}
-            </span>
-            <InfoTip
-              text={`One balance took ${fmtMoney(opening, false)} to ${fmtMoney(sharedClosing, false)}. Run apart on their own full accounts these same strategies closed ${fmtMoney(screenClosing, false)} between them. ⚠ That gap is mostly COMPOUNDING, not risk — on one account the second strategy sizes off a balance the first has already grown — so judge the sharing on the R columns below, never on these dollars.`}
-            />
-          </span>
-        </div>
-        {(showLegs || anyContention) && (
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead className="text-text-tertiary">
-                <tr className="text-left">
-                  <th className="px-2 py-1.5 font-medium">Strategy</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Shared R</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Alone R</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Trades</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Shrunk</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Blocked</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Risk refused</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.legs.map((l) => (
-                  <tr key={l.strategy_id} className="border-t border-border-subtle">
-                    <td className="px-2 py-1.5">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className="w-2 h-2 rounded-full"
-                          style={{ background: colorFor(l.strategy_id) }}
-                        />
-                        {nameFor(l.strategy_id)}
-                      </span>
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
-                      {l.shared_r.toFixed(2)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-text-secondary">
-                      {l.solo_r.toFixed(2)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
-                      {l.shared_trades}
-                      {l.shared_trades !== l.solo_trades && (
-                        <span className="text-text-tertiary"> / {l.solo_trades} alone</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
-                      {l.shrunk || '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
-                      {l.blocked || '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">
-                      {l.risk_refused ? fmtMoney(l.risk_refused, false) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {report.neutral && !seamFailed && (
-              <div className="mt-2 text-[11px] text-text-tertiary">{report.neutral.reason}</div>
-            )}
-          </div>
+      {/* ── Per-strategy detail — open, because it only renders when there is something in it:
+          a blocked entry, or a strategy whose R or trade count differs from running alone. ── */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead className="text-text-tertiary">
+            <tr className="text-left">
+              <th className="px-2 py-1.5 font-medium">Strategy</th>
+              <th className="px-2 py-1.5 font-medium text-right">Shared R</th>
+              <th className="px-2 py-1.5 font-medium text-right">Alone R</th>
+              <th className="px-2 py-1.5 font-medium text-right">Trades</th>
+              <th className="px-2 py-1.5 font-medium text-right">Shrunk</th>
+              <th className="px-2 py-1.5 font-medium text-right">Blocked</th>
+              <th className="px-2 py-1.5 font-medium text-right">Risk refused</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.legs.map((l) => (
+              <tr key={l.strategy_id} className="border-t border-border-subtle">
+                <td className="px-2 py-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ background: colorFor(l.strategy_id) }}
+                    />
+                    {nameFor(l.strategy_id)}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                  {l.shared_r.toFixed(2)}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums text-text-secondary">
+                  {l.solo_r.toFixed(2)}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                  {l.shared_trades}
+                  {l.shared_trades !== l.solo_trades && (
+                    <span className="text-text-tertiary"> / {l.solo_trades} alone</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{l.shrunk || '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                  {l.blocked || '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                  {l.risk_refused ? fmtMoney(l.risk_refused, false) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {report.neutral && !seamFailed && (
+          <div className="mt-2 text-[11px] text-text-tertiary">{report.neutral.reason}</div>
         )}
       </div>
     </div>
@@ -1210,6 +1260,10 @@ export function StackDetail() {
     return ms > 0 ? ms / 86_400_000 : null
   }, [stack, dates.active, dates.from, dates.to, dates.spanFrom, dates.spanTo])
 
+  // What the account's risk cap did, read ONCE — the Verdict card's rows and the section below the
+  // panel both take this object, so they cannot disagree about the same run.
+  const capReading = useMemo(() => (shared ? readCap(shared) : null), [shared])
+
   // Built once and rendered by BOTH branches of the Performance block — the leg toggles live in
   // this card, so a selection with no book to compute KPIs from still has to show it, or the
   // reader lands in a state they cannot click their way out of.
@@ -1224,6 +1278,10 @@ export function StackDetail() {
       total={combined.run.trade_count ?? 0}
       spanDays={spanDays}
       mode={mode}
+      // ⚠ Only beside the book it describes: the shared account exactly as it ran. With a leg
+      // switched off the cards show a different book, under a period window a slice of it, and
+      // collapsed they show heroes only — the cap's rows are supporting rows like any other.
+      cap={combined.basis === 'shared' && !dates.active && !perfCollapsed ? capReading : null}
     />
   )
 
@@ -1723,23 +1781,27 @@ export function StackDetail() {
             </div>
           )}
 
-          {/* The shared account — the ONE section a single backtest has no counterpart for, which
-              is exactly why it is the only thing on this page that does not mirror one. It sits
+          {/* The shared account — the ONE section a single backtest has no counterpart for. It sits
               BELOW Performance and is deliberately not driven by the leg toggles above: the budget
               is a property of the run as it happened, not of whichever legs are currently on.
+
+              🔴 A FINISHED report renders here only when the cap COST something (`costly`). On an
+              ordinary run the Verdict card's two cap rows say everything this used to say in
+              ~250px (2026-09-13).
 
               ⚠ WITHHELD while the banner is carrying this replay's progress (`sharedInBanner`). A
               heading over a spinner says nothing the bar above already said, and printing the same
               job's progress twice is what made this page read as two terminals. Every state that
-              has something of its OWN to say — a finished report, a failure, a cancellation, an
+              has something of its OWN to say — a costly report, a failure, a cancellation, an
               abandoned run — still renders here. */}
-          {isShared && shared && !sharedInBanner && (
+          {isShared && shared && !sharedInBanner && (!shared.available || capReading?.costly) && (
             <div>
               <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
                 The shared account
               </h2>
               <SharedAccountPanel
                 report={shared}
+                cap={capReading}
                 colorFor={colorFor}
                 nameFor={nameFor}
                 running={stackRunning}

@@ -209,6 +209,46 @@ function sharedReport(over: Record<string, unknown> = {}) {
 }
 
 /**
+ * The live pair's measured shape, cut down: the cap trimmed ONE entry by $8.61 in 6.7 years, the
+ * peak sat a hair above the cap, and both strategies post the same R sharing the account as alone.
+ * The old section opened its whole table for this under an amber "1 REFUSED" chip — the space
+ * complaint of 2026-09-13.
+ */
+function trimmedOnly(over: Record<string, unknown> = {}) {
+  const base = sharedReport()
+  return sharedReport({
+    peak_open_risk_pct: 10.058,
+    contention_events: 1,
+    legs: [base.legs[0], { ...base.legs[1], shrunk: 1, risk_refused: 8.61 }],
+    events: [
+      {
+        leg: 'b_leg',
+        time: 1679937000000,
+        blocked: false,
+        desired_risk: 16979.43,
+        granted_risk: 16970.82,
+      },
+    ],
+    neutral: {
+      checkable: false,
+      reason:
+        'the cap bound, so shared and solo are expected to differ — every difference should ' +
+        'trace to a row in the contention log',
+    },
+    ...over,
+  })
+}
+
+/**
+ * The performance panel opens collapsed in a fresh browser, and the cap rows are supporting rows,
+ * so they fold away with it. A check about the rows opens it first — through the stored
+ * preference rather than a click, so a check about the CAP does not also depend on the toggle.
+ */
+async function expandPerformance(page: Page) {
+  await page.addInitScript(() => localStorage.setItem('performance_panel_collapsed', 'false'))
+}
+
+/**
  * A shared report that has NOT arrived yet — `available: false` with a live phase.
  *
  * ⚠ Every scalar is explicitly `null` rather than omitted. That is what the backend really sends
@@ -383,81 +423,123 @@ test.describe('shared-account stacks', () => {
     expect(asked, 'a screen has no account to contend over — it must not poll for one').toBe(0)
   })
 
-  test('an empty contention log reads as a MEASUREMENT, not as a missing one', async ({ page }) => {
-    // MUTATION: render nothing when `contention_events === 0` → red.
-    // ⚠ This is the check that matters most, because the measured 6.5-year two-bot run refused
-    // NOTHING — so the expected state of this panel is the empty one, and a panel that goes blank
-    // there is indistinguishable from one that failed to load.
+  test('an empty contention log reads as a MEASUREMENT, in the Verdict card', async ({ page }) => {
+    // MUTATION: drop the Cap cost row (or leave its value blank) when nothing was trimmed or
+    // blocked → red. ⚠ This is the check that matters most: the measured 6.5-year two-bot run
+    // refused NOTHING, so the expected state is the empty one, and a row that goes blank there is
+    // indistinguishable from one that failed to load.
+    await expandPerformance(page)
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
-    const panel = page.getByTestId('shared-account-panel')
-    // Visible on the chip, at a glance.
-    await expect(panel).toContainText('Nothing refused')
-    // ⚠ And the REASONING is still reachable — it moved onto the chip's ⓘ when the panel was
-    // condensed (2026-08-10), it was not deleted. Asserting only the chip would pass against a
-    // build that dropped the explanation entirely, which is what turns a measured result back
-    // into a number nobody can interpret.
-    await panel.getByTestId('contention-chip').locator('.cursor-help').hover()
-    const tip = page.locator('body > span', { hasText: 'rarely have had anything to arbitrate' })
-    await expect(tip).toContainText('Nothing was ever refused')
-    await expect(tip).toContainText('current') // ...to each trade's CURRENT stop
+    const cost = page.getByTestId('cap-cost')
+    await expect(cost).toContainText('none')
+    // ⚠ And the REASONING is one hover away. Asserting only the word would pass against a build
+    // that dropped the explanation, which turns a measured result back into a number nobody can
+    // interpret.
+    await cost.locator('.cursor-help').hover()
+    const tip = page.locator('body > span', { hasText: 'rarely had anything to arbitrate' })
+    await expect(tip).toContainText('No trade was made smaller or blocked')
+    await expect(tip).toContainText('current stop')
+    // The section below the panel had nothing to add, so it is gone. ⚠ Asserted AFTER the row —
+    // the row renders only once the report has arrived, so this cannot pass on a page that has
+    // simply not loaded it yet (this file's vacuous-pass trap).
+    await expect(page.getByTestId('shared-account-panel')).toHaveCount(0)
   })
 
-  test('together-vs-apart is computed off the SOLO controls', async ({ page }) => {
-    // MUTATION: sum the legs' shared R instead of their solo closing balances → red.
-    // The solo controls are each leg on its own full account, so this is a like-for-like
-    // comparison against a replay that really happened rather than an estimate.
-    // 21,681.11 + 15,188.43 − 10,000 = 26,869.54 apart; 36,805.85 together; +9,936.31.
-    // (`fmtMoney` renders whole dollars, so the assertions are on the rounded figures.)
-    await mock(page, 'shared')
-    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
-    const row = page.getByTestId('together-apart')
-    await expect(row).toContainText('$36,806')
-    await expect(row).toContainText('$26,870')
-    await expect(row).toContainText('+$9,936')
-    // ⚠ The gap is meaningless — worse, it reads as extra RISK — without the sentence saying it is
-    // compounding: on one account the second strategy sizes off a balance the first has grown, and
-    // `docs/SHARED_RISK_STACK.md` predicted the opposite SIGN from exactly that misreading. When
-    // the panel was condensed the sentence moved onto the ⓘ; it must still be reachable.
-    await row.locator('.cursor-help').hover()
-    await expect(page.locator('body > span', { hasText: 'COMPOUNDING' })).toContainText(
-      'never on these dollars'
-    )
-  })
+  // 'together-vs-apart is computed off the SOLO controls' was DELETED on 2026-09-13 with the line
+  // it tested. That line compared closing DOLLARS across one shared balance — root rule 6 — and
+  // its own tooltip had to tell the reader to judge on R instead. Nothing replaced it: whenever the
+  // cap moved a strategy's R, the per-strategy table shows that R together and alone.
 
-  test('the cap and the peak risk are stated together', async ({ page }) => {
-    // MUTATION: drop the cap from the caption → red. A peak open risk with no cap beside it is a
-    // number the reader cannot judge — 10% is either the ceiling or a third of it.
-    await mock(page, 'shared')
-    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
-    const panel = page.getByTestId('shared-account-panel')
-    await expect(panel).toContainText('10.00%')
-    await expect(panel).toContainText('of a 10.00% cap')
-    await expect(panel).toContainText('2 of 2 holding at once')
-  })
-
-  test('the per-strategy table is folded away when the budget refused nothing', async ({
+  test('the peak risk is stated WITH the cap, and a peak above it is explained', async ({
     page,
   }) => {
-    // MUTATION: render the table unconditionally → the first assertion goes red.
-    // On every run measured so far its Shrunk / Blocked / Risk-refused columns are entirely
-    // em-dashes, so unfolded it is the largest thing on the page saying the least.
-    // ⚠ The SECOND half is the one that matters: with contention it must open ITSELF, or the one
-    // state the table exists for is a click away behind a control nobody has reason to press.
+    // MUTATION 1: drop the cap from the Peak risk value → red on the first assertion. A peak with
+    // no cap beside it is a number the reader cannot judge — 10% is the ceiling or a third of it.
+    // MUTATION 2: drop the above-the-cap sentence from its ⓘ → red on the tooltip. 10.06% on a
+    // 10% cap reads as a breach without it, and it is not one.
+    await expandPerformance(page)
+    await mock(page, 'shared', trimmedOnly())
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const peak = page.getByTestId('cap-peak')
+    await expect(peak).toContainText('10.06% of 10%')
+    await peak.locator('.cursor-help').hover()
+    const tip = page.locator('body > span', { hasText: 'checked when a trade opens' })
+    await expect(tip).toContainText('2 of 2 strategies')
+  })
+
+  test('the cap rows fold away with the rest of the supporting rows', async ({ page }) => {
+    // MUTATION: hand the Verdict card the cap reading whatever the collapse state → red on the
+    // last count. Collapsed means "hero numbers only"; the strategy rows stay because they are
+    // the control, and these rows are a supporting metric like any other card's.
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
-    const panel = page.getByTestId('shared-account-panel')
-    // 🔴 WAIT FOR THE PANEL FIRST. `locator('table')).toHaveCount(0)` is satisfied the instant the
-    // PANEL is absent too, so asserting it straight after `goto` passed against the mutation that
-    // renders the table unconditionally — a fourth instance of this folder's vacuous-pass trap,
-    // caught only by running the mutation.
-    await expect(panel.getByRole('button', { name: /per-strategy detail/i })).toBeVisible()
-    await expect(panel.locator('table')).toHaveCount(0)
-    await panel.getByRole('button', { name: /per-strategy detail/i }).click()
-    await expect(panel.locator('table')).toBeVisible()
+    const toggle = page.getByTestId('perf-collapse-toggle')
+    // ⚠ Open it and SEE the row before asserting it gone. A count of 0 while collapsed is also
+    // what a report that has not arrived yet produces, so asserting it first proves nothing.
+    await toggle.click()
+    await expect(page.getByTestId('cap-peak')).toBeVisible()
+    await toggle.click()
+    await expect(page.getByTestId('cap-peak')).toHaveCount(0)
+    await expect(
+      page.getByTestId('stack-verdict-card').getByRole('button', { name: /B-LEG/ })
+    ).toBeVisible()
+  })
 
-    await mock(page, 'shared', sharedReport({ contention_events: 3 }))
+  test('a trim that cost no R stays one line — no table, and never called a refusal', async ({
+    page,
+  }) => {
+    // MUTATION: treat any contention as costly (`costly = trimmed + blocked > 0`) → red on the
+    // panel count. The live pair's whole history is one $8.61 trim, and that opened ~250px of
+    // table under an amber "1 REFUSED" chip over a trade that was trimmed, not refused.
+    await expandPerformance(page)
+    await mock(page, 'shared', trimmedOnly())
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const cost = page.getByTestId('cap-cost')
+    await expect(cost).toContainText('1 trade smaller')
+    // "1 trimmed · $9" under "Cap cost" read as the cap costing $9 (Aaron, 2026-09-13); the $9 was
+    // risk the trade did not take. MUTATION: put the dollars back in the value → red here.
+    await expect(cost).not.toContainText('$')
+    await expect(cost).not.toContainText('refused')
+    await expect(page.getByTestId('shared-account-panel')).toHaveCount(0)
+  })
+
+  test('a BLOCKED entry opens the per-strategy table', async ({ page }) => {
+    // MUTATION: drop `blocked > 0` from `costly` → red on the table.
+    // ⚠ Every strategy's R and trade count are kept IDENTICAL to alone on purpose: with them
+    // different, the R check opens the table too and this mutation survives.
+    const base = sharedReport()
+    await expandPerformance(page)
+    await mock(
+      page,
+      'shared',
+      trimmedOnly({
+        legs: [base.legs[0], { ...base.legs[1], blocked: 1, risk_refused: 900 }],
+        events: [
+          { leg: 'b_leg', time: 1679937000000, blocked: true, desired_risk: 900, granted_risk: 0 },
+        ],
+      })
+    )
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('cap-cost')).toContainText('1 trade blocked')
+    await expect(page.getByTestId('shared-account-panel').locator('table')).toBeVisible()
+  })
+
+  test('a strategy whose R moved opens the table even with nothing blocked', async ({ page }) => {
+    // MUTATION: drop the R comparison from `costly` → red on the table. Nothing is blocked here,
+    // so the blocked check cannot open it instead. Also pins the plural ("2 trades").
+    const base = sharedReport()
+    await expandPerformance(page)
+    await mock(
+      page,
+      'shared',
+      trimmedOnly({
+        contention_events: 2,
+        legs: [base.legs[0], { ...base.legs[1], shrunk: 2, risk_refused: 1200, shared_r: 6.11 }],
+      })
+    )
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('cap-cost')).toContainText('2 trades smaller')
     await expect(page.getByTestId('shared-account-panel').locator('table')).toBeVisible()
   })
 

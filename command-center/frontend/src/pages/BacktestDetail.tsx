@@ -1030,6 +1030,8 @@ export type PanelRow = {
   /** This row is switched OFF. Dims the WHOLE row, not just the value: an excluded leg is not a
    *  soft number, it is a row that is not in the totals above. */
   muted?: boolean
+  /** A declared test seam, for a row a browser check has to find by more than its words. */
+  testId?: string
 }
 
 // ── Card anatomy ─────────────────────────────────────────────────────────────
@@ -1138,13 +1140,14 @@ export function PanelRows({
           <button
             key={r.key}
             type="button"
+            data-testid={r.testId}
             onClick={r.onClick}
             className={`${cls} text-left transition-colors hover:text-text-primary`}
           >
             {body}
           </button>
         ) : (
-          <div key={r.key} className={cls}>
+          <div key={r.key} data-testid={r.testId} className={cls}>
             {body}
           </div>
         )
