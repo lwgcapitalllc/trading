@@ -39,3 +39,16 @@
 2026-09-13 19:34:09,459 [INFO] Warmed 15000 bars (2026-06-29 06:25:00+00:00 → 2026-09-11 20:50:00+00:00) in 2.1s
 2026-09-13 19:34:09,459 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
 2026-09-13 19:34:09,849 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-13 20:23:43,636 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-13 20:23:43,651 [INFO] Stop requested — shutting down.
+2026-09-13 20:23:43,651 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-13 20:23:44,151 [INFO] MT5 disconnected.
+2026-09-13 21:15:04,010 [INFO] Extreme Leg | ExtremeLegStrategy v178 | hash c06b7889a3c5 | commit 1cb5a3ec | frozen | LIVE
+2026-09-13 21:15:04,541 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-13 21:15:04,541 [INFO] MT5 connection lock released
+2026-09-13 21:15:04,698 [INFO] Sizing against account balance $15,844.46
+2026-09-13 21:15:04,698 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-13 21:15:04,698 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-13 21:15:07,057 [INFO] Warmed 15000 bars (2026-06-29 06:25:00+00:00 → 2026-09-11 20:50:00+00:00) in 2.2s
+2026-09-13 21:15:07,073 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-13 21:15:07,463 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
