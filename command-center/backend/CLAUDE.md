@@ -6912,3 +6912,21 @@ on RUNNING**: a stopped bot's trade may have closed since its last heartbeat.
   NaN and infinity) and DROPPED when unreadable — a 500 here blanks every bot on the page.
 - ⚠ Declared on the model, or Pydantic drops them. Tests: 3 in `test_bot_registry.py`; 7 mutations
   run, 7 killed.
+
+## Retired strategy ids are migrated by a script — `scripts/migrate_debrand_ids.py` (2026-09-13)
+
+🔴 **A strategy's lab id IS its package folder, so the 2026-09-03 de-brand (`mpc_sos_fade` →
+`sos_fade`, `mpc_bleg` → `b_leg`, `mpc_bos` → `bos`, `mpc_realign` → `realign`) left every clone's
+runs filed under ids the code no longer has.** A Retry then failed with *"no Python strategy class
+named 'MpcSosFadeStrategy'"*. The plan's migration SQL had itself been rewritten by the rename's
+find-and-replace into a no-op — `docs/DEBRAND_RENAME_PLAN.md` §4.2 records it.
+
+- **Preview by default; `--apply` needs `--backup`** and will not overwrite one. Idempotent.
+- ⚠ **All or nothing**: an unscanned new id or a colliding `solo/<id>/` folder refuses before any
+  write. Folders move first and are put back if the transaction fails.
+- ⚠ **Version-history rows must go before their strategy row** — the foreign key refuses otherwise,
+  and the script connects with the app's own enforcement on so a wrong order raises.
+- ⚠ **A future package rename needs a new mapping here, or its own script** — the id is the folder.
+
+Tests: `tests/test_migrate_debrand_ids.py` (8), on the real schema; 9 mutations planted in memory, 9
+killed.

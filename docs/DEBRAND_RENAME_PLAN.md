@@ -317,20 +317,27 @@ rename the other; both are needed.
 everything pointing at the old one: 42 completed runs on SOS Fade, 4 on B-LEG, 4 stacks joined
 through those runs, and report folders on disk named after the id.
 
-```sql
--- back the file up first
-UPDATE backtest_runs SET strategy_id = 'sos_fade' WHERE strategy_id = 'sos_fade';
-UPDATE backtest_runs SET strategy_id = 'b_leg'    WHERE strategy_id = 'b_leg';
-UPDATE backtest_runs SET strategy_id = 'bos'      WHERE strategy_id = 'bos';
-UPDATE backtest_runs SET strategy_id = 'realign'  WHERE strategy_id = 'realign';
-DELETE FROM strategies WHERE id LIKE 'mpc_%';   -- the scanner re-creates them under new ids
+🔴 **THE SQL THAT STOOD HERE WAS CAUGHT BY THE RENAME'S OWN FIND-AND-REPLACE** and read
+`WHERE strategy_id = 'sos_fade'` — moving rows onto the id they already had. Typed as written it
+did nothing and reported success. It also left out the old ids' version-history rows, which the
+database refuses to orphan.
+
+✅ **Use the script, which carries the old ids as data** (shipped 2026-09-13):
+
+```
+cd command-center/backend
+.venv/bin/python scripts/migrate_debrand_ids.py                                  # preview
+.venv/bin/python scripts/migrate_debrand_ids.py --apply --backup ~/lab.db.pre-debrand
 ```
 
-Then rename the matching `reports/lab/<stack>/solo/<id>/` directories, re-run Scan Strategies, and
-**open one old run in the UI** — chart, trades and metrics — before calling it done.
+It moves runs, optimizations and recorded stack parents onto the new ids, deletes the old ids'
+version history and strategy rows, and renames each stack's `solo/<id>/` folder — refusing the whole
+run, before writing anything, if a new id was never scanned or a folder would collide. Then **open one
+old run in the UI** — chart, trades and metrics — before calling it done.
 
-⚠ Aaron's brother has his own clone with his own database. Ship the migration as a committed,
-idempotent one-shot script, not as SQL typed once.
+✅ **Run on Aaron's brother's clone 2026-09-13**: 9 runs, 34 version rows, 4 strategy rows and 2
+stack folders moved; the failed Retry that surfaced it ("no Python strategy class named
+'MpcSosFadeStrategy'") resolved.
 
 ### 4.3 The Pine parity gates
 
