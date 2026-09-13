@@ -126,8 +126,9 @@ export function buildRunSettingsView(
 
 /** The caption under each fold. Shared so the two surfaces cannot explain the same fold
  *  differently — a reader who learns what "Already decided" means on one page has learned it. */
+// The heading already says "Already decided", so the caption gives only the two reasons.
 export const SETTLED_CAPTION =
-  'Nothing to decide here — a parent setting is off, or testing settled it. All still sent with the run.'
+  'A parent setting is off, or testing settled it. Still sent with the run.'
 export const FOUNDATIONAL_CAPTION = 'What was traded and how it filled, not how it decided.'
 export const SETTLED_HEADING = 'Already decided'
 export const FOUNDATIONAL_HEADING = 'Instrument & broker'

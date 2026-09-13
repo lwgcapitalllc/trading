@@ -1715,7 +1715,7 @@ export function PerfCollapseToggle({
   return (
     <button
       onClick={onToggle}
-      title={collapsed ? 'Show the supporting metrics' : 'Hero numbers only'}
+      title={collapsed ? 'Show the supporting metrics' : 'Show only the headline numbers'}
       // A declared TEST SEAM. The suffix is the page's only statement of what the numbers under it
       // count, and a page-wide text match for "N of M trades" also finds the news pill's own
       // wording — the vacuous-pass trap this folder has recorded five times.
@@ -2988,6 +2988,8 @@ export function PeriodFilterChip({
                 key={label as string}
                 type="button"
                 onClick={() => preset(months as number)}
+                // "Last" is measured back from the run's final trade, not from today.
+                title={`The last ${(months as number) === 12 ? '12 months' : `${(months as number) / 12} years`} up to this run’s final trade`}
                 className="px-2 py-[3px] rounded text-[11px] border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover"
               >
                 Last {label}
@@ -3006,9 +3008,9 @@ export function PeriodFilterChip({
               self-evident, and it changes every dollar on the page. */}
           <div className="text-[10px] leading-relaxed text-text-tertiary border-t border-border-subtle pt-2">
             {dates.emptyWindow ? (
-              <span className="text-warn-text">
-                No trades in this period. The strategy stood still here — that is the answer, not an
-                empty page.
+              // An answer, not a warning — neutral like every other state of this footer.
+              <span className="text-text-secondary">
+                No trades in this period — the strategy stood still here.
               </span>
             ) : dates.active ? (
               <>
@@ -3018,12 +3020,13 @@ export function PeriodFilterChip({
                 <span className="text-text-secondary font-mono">{dollar(dates.windowBalance)}</span>{' '}
                 entering it, so every dollar below is scaled by ×{dates.scale.toFixed(4)}. Ratios —
                 profit factor, win rate, R, drawdown % — are untouched by that. It is not a rerun:
-                the engines are still warmed up from {fmtDate(dates.spanFrom)}.
+                each trade was still decided on everything the strategy saw from{' '}
+                {fmtDate(dates.spanFrom)}.
               </>
             ) : (
               <>
-                Cuts a period out of this run and re-reads the whole page on it — no rerun. Dollars
-                are rebased so the window starts from the run&rsquo;s own opening balance.
+                Re-reads the whole page on part of this run — no rerun. Dollars restart from the
+                run&rsquo;s own opening balance.
               </>
             )}
           </div>
@@ -4865,7 +4868,7 @@ function ParamsSidePanel({
           </span>
           {changedCount > 0 && (
             <span
-              className="w-[6px] h-[6px] rounded-full bg-accent"
+              className="w-[6px] h-[6px] rounded-full bg-text-secondary"
               title={`${changedCount} changed vs baseline`}
             />
           )}
@@ -4886,7 +4889,7 @@ function ParamsSidePanel({
               Parameters
             </span>
             {baselineParams && changedCount > 0 && (
-              <span className="text-[10px] text-accent whitespace-nowrap">
+              <span className="text-[10px] text-text-primary whitespace-nowrap">
                 {changedCount} changed
               </span>
             )}
@@ -4958,7 +4961,7 @@ function ParamsSidePanel({
                       // the run sent is accounted for SOMEWHERE. A fold that quietly drops a row
                       // is otherwise indistinguishable from one that folds it.
                       data-testid="run-param-row"
-                      className={`px-2 py-[5px] rounded ${changed ? 'bg-accent/5 border border-accent/30' : ''}`}
+                      className={`px-2 py-[5px] rounded ${changed ? 'bg-bg-hover border border-border-default' : ''}`}
                       title={view.descOf(k)}
                     >
                       <div className={TIER_SETTING}>{nameOf(k)}</div>
@@ -5269,7 +5272,6 @@ function ExcludeRule({
   label,
   note,
   count,
-  tone,
   children,
 }: {
   checked: boolean
@@ -5277,7 +5279,6 @@ function ExcludeRule({
   label: string
   note?: string
   count: number
-  tone: 'holiday' | 'news'
   children?: React.ReactNode
 }) {
   return (
@@ -5298,9 +5299,8 @@ function ExcludeRule({
         >
           {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
         </span>
-        <span
-          className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'holiday' ? 'bg-neg-text' : 'bg-gold-text'}`}
-        />
+        {/* No coloured dot (2026-09-13): red and gold here keyed to nothing else on the page, and
+            red means a loss. The name says which rule it is. */}
         <span className="text-[12px] text-text-primary flex-1 min-w-0">
           {label}
           {note && <span className="text-text-tertiary"> · {note}</span>}
@@ -5591,7 +5591,7 @@ function useCostFilter(run: Run | undefined) {
 // ⚠ **Everything except the cost switch is carried across**, which is rule 11: anything that
 // recreates a run for COMPARISON must carry forward everything that decides what it is measured on.
 // A twin differing in a second field turns the difference column into the thing that lies.
-function CostPairButton({ run, blocked }: { run: Run; blocked: string | null }) {
+function CostPairButton({ run }: { run: Run }) {
   const navigate = useNavigate()
   const trigger = useTriggerBacktest()
   const runningJob = useRunningVpsJob()
@@ -5607,7 +5607,7 @@ function CostPairButton({ run, blocked }: { run: Run; blocked: string | null }) 
   const why = wasCharged
     ? 'Replays the identical settings with no costs, so you can read what friction cost — including the setups that only exist when fills are free.'
     : 'Replays the identical settings charged at this broker, which is the result you could actually trade.'
-  const reason = blocked ?? (jobBlocked ? 'A job is already running on this platform' : null)
+  const reason = jobBlocked ? 'A job is already running on this platform' : null
 
   return (
     <button
@@ -5633,6 +5633,10 @@ function CostPairButton({ run, blocked }: { run: Run; blocked: string | null }) 
             evaluate_rulesets: run.evaluations.map((e: EvaluationDetail) => e.ruleset_id),
             sizing_mode: run.sizing_mode,
             manual_risk_pct: run.manual_risk_pct ?? null,
+            // 🔴 The lot ceiling is basis (rule 11) and this sent none, so the twin of a run with no
+            // ceiling ran at the default 100 lots: identical R, different dollars (2026-09-13). A
+            // ceiling the run never recorded is OMITTED, so the backend default decides as it did.
+            ...(run.max_lots_stated ? { max_lots: run.max_lots ?? null } : {}),
             // Links the pair, so the twin is reachable from this run rather than lost in the list.
             source_run_id: run.run_id,
           },
@@ -5689,14 +5693,17 @@ function useNewsFilter(run: Run | undefined) {
 
   // Apply both rules in one pass. The COUNTS are what each rule matches, not what it removed — a
   // rule's row shows its price whether or not it is currently ticked, so you can see what turning it
-  // on would cost before you turn it on. A trade matching both is counted as a holiday only, so the
-  // two counts never double-count the same trade against the total.
+  // on would cost before you turn it on.
   //
   // 🔴 COUNTING and REMOVING are separate decisions, and collapsing them was a real bug. This was
   // one `if / else if` chain, so a trade that was BOTH a holiday and a news window took the holiday
   // branch and the news rule never saw it — turn News on with Holidays off and that trade stayed in
-  // the result, silently exempt from the rule you had just switched on. The counts still use the
-  // holiday-wins precedence (so they sum to at most the total); the REMOVAL is a plain OR.
+  // the result, silently exempt from the rule you had just switched on. The REMOVAL is a plain OR.
+  //
+  // ⚠ Each rule counts EVERY trade it matches (2026-09-13). Holiday-wins precedence left the news
+  // row short by the overlap, so its price tag under-stated what ticking it alone removes. A trade
+  // can match both, so the two rows may sum past the pill — the pill's total comes off the kept
+  // list and is the one figure that never double-counts.
   const view = useMemo(() => {
     const tag = new Map<number, NewsTradeTag>()
     for (const t of report?.trades ?? []) if (t.index != null) tag.set(t.index, t)
@@ -5707,9 +5714,8 @@ function useNewsFilter(run: Run | undefined) {
       const tg = tag.get(p.index)
       const isHoliday = !!tg?.in_holiday
       const isNews = !!tg?.in_news
-      if (isHoliday)
-        holidayCount++ // counted once, holiday takes precedence
-      else if (isNews) newsCount++
+      if (isHoliday) holidayCount++
+      if (isNews) newsCount++
       if ((isHoliday && removeHolidays) || (isNews && removeNews)) continue
       kept.push(p)
     }
@@ -5801,11 +5807,10 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
     setRemoveHolidays,
     holidayCount,
     newsCount,
-    totalTrades,
     excluded,
     noData,
     oldRun,
-    nothingHit,
+    isNt8,
     usable,
   } = news
 
@@ -5832,9 +5837,10 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
 
   // The pill counts what is OUT of the numbers beside it. Always a count of excluded trades, never
   // a state word: "News kept" read as "nothing removed" while 3 holiday trades were being removed
-  // by a rule the UI never showed. One number, one meaning, in every state.
+  // by a rule the UI never showed. One number, one meaning, in every state. A refusal is the one
+  // exception, and it says so plainly — "Excluding n/a" read as a count nobody could parse.
   const label = blocked
-    ? 'Excluding n/a'
+    ? 'Not available'
     : isLoading
       ? 'Checking calendar…'
       : noData
@@ -5845,6 +5851,17 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
             ? `Excluding ${excluded} ${excluded === 1 ? 'trade' : 'trades'}`
             : 'Excluding nothing'
 
+  // Why it cannot open, on the pill itself. These sentences sat in a note under the KPI grid until
+  // 2026-09-13; the pill is what a reader looks at, and the note named a developer script rather
+  // than anything they can do.
+  const reason =
+    blocked ??
+    (noData
+      ? 'No news calendar is stored for these months, so trades cannot be checked against releases.'
+      : oldRun
+        ? `This run recorded no trade times. ${isNt8 ? 'Reload charts or rerun it' : 'Rerun it'} to use this filter.`
+        : undefined)
+
   const disabled = !!blocked || isLoading || !usable
 
   return (
@@ -5852,9 +5869,11 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={disabled}
-        title={blocked ?? undefined}
+        title={reason}
         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-          excluded > 0
+          // Cyan only while it is really filtering the page. Rules ticked before switching to a
+          // firm's view are not applied there, so a refused pill must not look active.
+          excluded > 0 && !blocked
             ? 'border-accent/40 bg-accent/15 text-accent'
             : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'
         }`}
@@ -5879,7 +5898,9 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
             <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
               Exclude from these numbers
             </span>
-            <InfoTip text="The backtest ran RAW — the strategy traded straight through news. This is arithmetic on the finished trade list, not a re-run, so it is instant. It reshapes the Performance numbers and the Equity chart only; the firm Evaluation, the price chart and the regime table still report every trade." />
+            {/* It said the regime table and Breakdown ignored this filter; both follow it since
+                2026-08-16. What still reports every trade is the ruleset checks and the chart. */}
+            <InfoTip text="Takes trades out of this finished run to show the result without them — instant, no rerun. Every number and chart on this page follows, except the ruleset checks on the Verdict card and the price chart." />
           </div>
 
           <ExcludeRule
@@ -5891,7 +5912,6 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
                on 2026-08-01. A caption is a claim about the state beside it; this one contradicted
                its own checkbox. If a default changes, the caption changes in the same commit. */
             count={holidayCount}
-            tone="holiday"
           />
 
           <ExcludeRule
@@ -5899,7 +5919,6 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
             onChange={setRemoveNews}
             label="High-impact news"
             count={newsCount}
-            tone="news"
           >
             {/* The blackout window either side of a release, nested under the rule it belongs to so
                 it can't read as a global setting. Both re-tag live off the backend. */}
@@ -5934,21 +5953,8 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
               </span>
             </label>
           </ExcludeRule>
-
-          <div className="border-t border-border-subtle pt-2.5 text-[12px] text-text-secondary">
-            {nothingHit ? (
-              'No release or holiday landed on a trade — nothing to exclude.'
-            ) : (
-              <>
-                <span className="tabular-nums font-medium text-text-primary">
-                  {totalTrades - excluded}
-                </span>
-                {' of '}
-                <span className="tabular-nums">{totalTrades}</span>
-                {' trades counted'}
-              </>
-            )}
-          </div>
+          {/* No footer total (2026-09-13): the pill states how many trades are out, and each rule
+              row states its own count — a third copy of one number is what "say it once" forbids. */}
         </div>
       )}
     </div>
@@ -5993,7 +5999,6 @@ function CostRule({
   label,
   note,
   costR,
-  tone,
   locked = false,
 }: {
   checked: boolean
@@ -6001,7 +6006,6 @@ function CostRule({
   label: string
   note?: string
   costR: number | undefined
-  tone: 'cost' | 'swap'
   locked?: boolean
 }) {
   return (
@@ -6033,9 +6037,6 @@ function CostRule({
       >
         {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
       </span>
-      <span
-        className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'swap' ? 'bg-neg-text' : 'bg-gold-text'}`}
-      />
       <span className="text-[12px] text-text-primary flex-1 min-w-0">
         {label}
         {note && <span className="text-text-tertiary"> · {note}</span>}
@@ -6048,7 +6049,7 @@ function CostRule({
           figure here would be invented. */}
       <span className="text-[12px] tabular-nums text-text-secondary shrink-0">
         {locked
-          ? 'in the run'
+          ? '—' // the note already says "charged in the run"; the readout said it twice
           : costR == null
             ? '—'
             : costR === 0
@@ -6141,8 +6142,10 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
         disabled={!!blocked}
         title={blocked ?? undefined}
         className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          // Cyan, like the news pill and the period chip beside it: an applied filter is a
+          // SELECTED state. It was gold, which this app keeps for limits and rules.
           active && !blocked
-            ? 'border-gold-text/40 bg-gold-text/15 text-gold-text'
+            ? 'border-accent/40 bg-accent/15 text-accent'
             : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'
         }`}
       >
@@ -6169,7 +6172,9 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 </span>
               )}
             </span>
-            <InfoTip text="The run was measured at whatever costs it was launched with — this re-prices its trades on top, without re-running. It works because each of these costs a fixed amount of R no matter what size the position was, so the R is knowable and the dollars follow. Every figure is priced off the named broker's own MEASURED spread and swap, never a typed-in number. Reshapes the Performance numbers and the Equity chart only." />
+            {/* It said "the Performance numbers and the Equity chart only"; the Breakdown and
+                the regime table follow it too since 2026-08-16. */}
+            <InfoTip text="Charges these costs onto the finished trades without a rerun. Each costs a fixed amount of R whatever the position size, so the R is exact and the dollars follow. Priced off the named broker's measured spread and swap. Every number and chart on this page follows, except the ruleset checks on the Verdict card and the price chart." />
           </div>
 
           {REPRICEABLE.map((l) => {
@@ -6186,7 +6191,6 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 label={COST_ROW_LABEL[l] ?? l}
                 note={baked ? 'charged in the run' : l === 'swap' ? 'approximate' : undefined}
                 costR={baked ? undefined : costs.layerCostR[l]}
-                tone={l === 'swap' ? 'swap' : 'cost'}
               />
             )
           })}
@@ -6205,13 +6209,12 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 the refusal above exists to have stopped — the server DID price most of the book. */}
             {partial > 0 && (
               <p className="text-neg-text">
-                {partial} of {partialOf} trades came back unpriced, so nothing is charged — a
-                partly-charged book shown as a charged one is worse than no charge at all. Re-run
-                the backtest with these costs on to measure them properly.
+                {partial} of {partialOf} trades could not be priced, so nothing is charged — a
+                partly charged book would read as a charged one. Rerun with costs on to measure it.
               </p>
             )}
             {needsRerun.length > 0 && (
-              <p className="text-gold-text">
+              <p className="text-warn-text">
                 {needsRerun.join(' and ')} can’t be applied here —{' '}
                 {needsRerun.length === 1 ? 'it changes' : 'they change'} which setups fill, so{' '}
                 {needsRerun.length === 1 ? 'it needs' : 'they need'} a re-run from the strategy
@@ -6243,11 +6246,8 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 Naming all three is the only way that stops looking like a contradiction. */}
             {active && (
               <div className="space-y-1">
-                <Figure label="Charged" hint="the size of it — the unit the rows above add up in">
-                  <span className="font-medium text-text-primary">
-                    −{Math.abs(totalCostR).toFixed(2)}R
-                  </span>
-                </Figure>
+                {/* No "Charged −12.08R" row (2026-09-13): the pill states the R and the rows above
+                    add up to it. The two dollar figures stay — nothing else names them. */}
                 <Figure
                   label="Fees charged"
                   hint="what actually left the account, on the charged path"
@@ -6270,17 +6270,15 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                       Math.abs(balanceImpact) > Math.abs(totalCost) * 1.5
                         ? `, ${(Math.abs(balanceImpact) / Math.abs(totalCost)).toFixed(0)}x the fees`
                         : ''}
-                      {' — a fee paid early also costs everything it would have compounded into. '}
-                      <span className="text-text-secondary">
-                        Read the cost as R, not as dollars.
-                      </span>
+                      {' — a fee paid early also loses what it would have compounded into.'}
                     </p>
                   </>
                 )}
               </div>
             )}
             {!active && !failed && !partial && needsRerun.length === 0 && (
-              <p>Nothing charged — these are the run’s own numbers.</p>
+              // Not "Nothing charged" — the pill already says so. What is useful here is the cue.
+              <p className="text-text-tertiary">Tick a cost to charge it onto these numbers.</p>
             )}
           </div>
         </div>
@@ -6293,13 +6291,23 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
 // already spanned the column with nothing in it, so the whole control costs zero vertical space —
 // and putting it HERE rather than in a section of its own is what removed the duplicated KPI tiles:
 // the filter reshapes these numbers, so it belongs on their header.
+// Why each control refuses on a firm's sized view, in its own words (2026-09-13). It was one
+// sentence about removing trades, which read as nonsense on the cost and period controls. A sized
+// curve is PATH DEPENDENT: each trade's size comes off the balance the trades before it left.
+const SIZED_VIEW_REASON = {
+  news: 'Not available on a firm’s sized view: each trade’s size depends on the trades before it, so removing one needs a rerun.',
+  costs:
+    'Not available on a firm’s sized view: each trade’s size depends on the balance before it, so a fee changes every later trade.',
+  period:
+    'Not available on a firm’s sized view: that account started at the firm’s size, not at this run’s balance.',
+} as const
+
 function PerformanceHeader({
   news,
   costs,
   dates,
   run,
-  blocked,
-  filtered,
+  sized,
   dated,
   collapsed,
   onToggle,
@@ -6308,39 +6316,22 @@ function PerformanceHeader({
   costs: CostFilter
   dates: DateFilter
   run: Run | undefined
-  blocked: string | null
-  filtered: boolean
+  sized: boolean
   dated: boolean
   collapsed: boolean
   onToggle: () => void
 }) {
-  // Every label here is a COUNT or a DATE, never a state word. "news filtered" told you a filter
-  // existed without saying what it did or how much it moved. The period follows the same rule and
-  // needs it more: a window's headline is a smaller number than the run's, and nothing else on this
-  // row would explain why.
-  //
-  // ⚠ The two denominators are DIFFERENT questions and both are stated. The period's is the whole
-  // run (how much of the backtest am I looking at); the news filter's is the WINDOW, because it was
-  // handed the dated book and can only remove trades from what is already on screen.
-  const suffix =
-    dated || filtered ? (
-      <span className="text-accent normal-case tracking-normal font-medium">
-        {dated && (
-          <>
-            {' '}
-            · {fmtDate(dates.from || dates.spanFrom)} → {fmtDate(dates.to || dates.spanTo)} ·{' '}
-            {dates.kept.length} of {dates.totalTrades} trades
-          </>
-        )}
-        {filtered && (
-          <>
-            {' '}
-            {dated ? '· then ' : '· '}
-            {news.totalTrades - news.excluded} of {news.totalTrades} counted
-          </>
-        )}
-      </span>
-    ) : null
+  // The suffix states what the numbers under it COUNT, once. The window's dates are the chip in the
+  // page header and the news filter's count is its own pill beside this header, so both left here
+  // (2026-09-13) — three copies of one fact is what "say it once" forbids. What stays is the one
+  // figure nothing else shows: how much of the run the window holds. Neutral, not cyan: it is a
+  // count, not a control.
+  const suffix = dated ? (
+    <span className="text-text-primary normal-case tracking-normal font-medium">
+      {' '}
+      · {dates.kept.length} of {dates.totalTrades} trades
+    </span>
+  ) : null
 
   return (
     <div className="flex items-center justify-between gap-3 mb-2">
@@ -6357,45 +6348,16 @@ function PerformanceHeader({
             broken one, and the reader has no way to tell the difference. `costs.spent` is derived
             from the SERVER's own `already_charged`, never from a guess about what a layer set
             implies, so the two cannot disagree about when the pill is useful. */}
-        {costs.enabled && !costs.spent && <CostFilterPill costs={costs} blocked={blocked} />}
-        {run && <CostPairButton run={run} blocked={blocked} />}
-        {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
+        {costs.enabled && !costs.spent && (
+          <CostFilterPill costs={costs} blocked={sized ? SIZED_VIEW_REASON.costs : null} />
+        )}
+        {/* The free/charged TWIN is a NEW run with this run's settings, so which firm's view is on
+            screen has no bearing on it — it takes no sized-view refusal (2026-09-13). */}
+        {run && <CostPairButton run={run} />}
+        {news.enabled && (
+          <NewsFilterPill news={news} blocked={sized ? SIZED_VIEW_REASON.news : null} />
+        )}
       </div>
-    </div>
-  )
-}
-
-// The states where the filter cannot run at all get a one-line explanation under the grid rather
-// than a popover nobody can open — the pill is disabled, so it has nowhere to put this.
-function NewsFilterNote({ news }: { news: NewsFilter }) {
-  const { noData, oldRun, isNt8 } = news
-  if (!noData && !oldRun) return null
-  return (
-    <div className="flex items-start gap-2 text-[11px] text-text-tertiary">
-      <Info
-        size={12}
-        className={`mt-[2px] shrink-0 ${oldRun ? 'text-warn-text' : 'text-text-tertiary'}`}
-      />
-      {noData ? (
-        <span>
-          News filter is off: no calendar data cached for these months. Backfill with{' '}
-          <code className="text-text-secondary">engines/news/tools/backfill.py</code>.
-        </span>
-      ) : (
-        <span>
-          News filter is off: this run recorded no trade times.{' '}
-          {isNt8 ? (
-            <>
-              <span className="text-text-secondary font-medium">Reload charts</span> or rerun it to
-              enable it.
-            </>
-          ) : (
-            <>
-              <span className="text-text-secondary font-medium">Rerun it</span> to enable it.
-            </>
-          )}
-        </span>
-      )}
     </div>
   )
 }
@@ -6658,22 +6620,22 @@ export function BacktestDetail() {
   // curve is re-indexed 1..N over only the trades that firm took, so the news tags (keyed on raw
   // indices) would not even line up. So when a firm's sizing is actually overriding the numbers,
   // the filter is refused outright rather than applied to something it does not describe.
-  const newsBlocked =
-    run && effRun && effRun.equity_curve !== run.equity_curve
-      ? 'Not available while a firm’s sized numbers are shown — position sizes depend on the trades before them, so removing one needs a re-run, not arithmetic.'
-      : null
-  const newsOnKpis = news.active && !newsBlocked && news.filteredRun != null
+  //
+  // Each control states its OWN reason (`SIZED_VIEW_REASON`). One shared sentence about removing
+  // trades read as nonsense on the cost and period controls, which remove nothing (2026-09-13).
+  const sizedView = !!(run && effRun && effRun.equity_curve !== run.equity_curve)
+  const newsOnKpis = news.active && !sizedView && news.filteredRun != null
   // Costs are refused under a firm's sizing for exactly the reason the news filter is, and it is
   // worth stating in its own right: a sized curve is PATH DEPENDENT, so charging trade #7 changes
   // the balance going into #8 and therefore its position size. That is a re-run, not arithmetic.
   // On the raw one-unit curve the charge is size-independent in R, which is the whole reason this
   // control can exist at all.
-  const costOnKpis = costs.active && !newsBlocked && costs.repricedRun != null
+  const costOnKpis = costs.active && !sizedView && costs.repricedRun != null
   // The period filter is refused under a firm's sizing on the SAME guard, for a different reason
   // and it is worth stating: slicing a sized curve by date is honest arithmetic, but that account
   // opened at the firm's own `account_size`, so rebasing it onto the run's deposit would report a
   // prop account that never existed.
-  const dateOnKpis = dates.active && !newsBlocked && dates.filteredRun != null
+  const dateOnKpis = dates.active && !sizedView && dates.filteredRun != null
   const costedRun = costOnKpis ? costs.repricedRun! : effRun
   const datedRun = dateOnKpis ? dates.filteredRun! : costedRun
   const kpiRun = newsOnKpis ? news.filteredRun! : datedRun
@@ -6931,7 +6893,11 @@ export function BacktestDetail() {
                     {run.instrument}
                   </span>
                   <div className="flex-shrink-0 max-[1100px]:hidden">
-                    <PeriodFilterChip dates={dates} blocked={newsBlocked} compact />
+                    <PeriodFilterChip
+                      dates={dates}
+                      blocked={sizedView ? SIZED_VIEW_REASON.period : null}
+                      compact
+                    />
                   </div>
                   {run.evaluations.length > 0 && (
                     <div className="max-[900px]:hidden">
@@ -6967,7 +6933,10 @@ export function BacktestDetail() {
                     <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary">
                       {run.instrument}
                     </span>
-                    <PeriodFilterChip dates={dates} blocked={newsBlocked} />
+                    <PeriodFilterChip
+                      dates={dates}
+                      blocked={sizedView ? SIZED_VIEW_REASON.period : null}
+                    />
                     {run.evaluations.length > 0 && (
                       <HeaderRulesetChip
                         evals={run.evaluations}
@@ -7178,8 +7147,7 @@ export function BacktestDetail() {
                   costs={costs}
                   dates={dates}
                   run={run}
-                  blocked={newsBlocked}
-                  filtered={newsOnKpis}
+                  sized={sizedView}
                   dated={dateOnKpis}
                   collapsed={perfCollapsed}
                   onToggle={togglePerfCollapsed}
@@ -7216,7 +7184,6 @@ export function BacktestDetail() {
                     )
                   }
                 />
-                <NewsFilterNote news={news} />
               </div>
             )}
 

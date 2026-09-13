@@ -76,7 +76,7 @@ export function StressTests() {
                   Stress Tests
                 </h1>
                 {tests && tests.length > 0 && (
-                  <span className="text-[12px] font-semibold font-mono tabular-nums px-2 py-[2px] rounded-full bg-accent/15 text-accent">
+                  <span className="text-[12px] font-semibold font-mono tabular-nums px-2 py-[2px] rounded-full bg-bg-hover text-text-secondary">
                     {tests.length}
                   </span>
                 )}

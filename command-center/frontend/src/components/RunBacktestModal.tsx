@@ -633,16 +633,12 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[15px] font-semibold flex-shrink-0">Run</span>
-            <span className="text-[15px] font-semibold text-accent truncate">
+            {/* Neutral (2026-09-13): the name is a title, not a link, and the market is a label,
+                not a warning — cyan and amber here said "click me" and "look out" about neither. */}
+            <span className="text-[15px] font-semibold text-text-primary truncate">
               {strategy.name || strategy.class_name}
             </span>
-            <span
-              className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border ${
-                isFutures
-                  ? 'bg-accent/10 text-accent border-accent/20'
-                  : 'bg-warn-muted text-warn-text border-warn-text/30'
-              }`}
-            >
+            <span className="text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border bg-bg-hover text-text-secondary border-border-subtle">
               {isFutures ? 'Futures' : 'Forex'}
             </span>
           </div>
@@ -828,7 +824,11 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             <div className="min-w-0">
               <div className="flex items-center mb-1">
                 <label className={labelCls.replace(' mb-1', '')}>Period</label>
-                <InfoTooltip content="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above." />
+                {/* NinjaTrader contract advice, so NinjaTrader only (2026-09-13) — on a Python or
+                    MT5 run it described contracts the form never offers. */}
+                {isNt8 && (
+                  <InfoTooltip content="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above." />
+                )}
               </div>
               <PeriodPicker
                 compact
@@ -926,7 +926,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <SectionHead
                   label="Max Lot Size"
-                  tooltip="The biggest single position this run may take, in lots. A setup that works out larger is TAKEN AT THIS SIZE rather than skipped. Past the ceiling the risk you actually take per trade falls as the balance grows, so a long run stops describing a tradeable account — the run page shows where it bit."
+                  // "the run page shows where it bit" came off (2026-09-13): nothing on the run
+                  // page reads a run's lot ceiling, so the sentence pointed at a display that
+                  // does not exist. What the ceiling COSTS is said once, in the note below.
+                  tooltip="The biggest single position this run may take, in lots. A larger setup is taken at this size, never skipped."
                 />
                 <div className="flex gap-2">
                   <PresetBtn label="Cap at" active={capLots} onClick={() => setCapLots(true)} />
@@ -955,17 +958,15 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                       </p>
                     )}
                     <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                      An oversized setup is resized down to this and taken — never refused. Risk per
-                      trade then falls below what the strategy asked for, and compounding turns
-                      linear, so treat a long run past the ceiling as a floor rather than a
-                      forecast.
+                      Past the ceiling, risk per trade falls as the balance grows and compounding
+                      turns linear — read a long run past it as a floor, not a forecast.
                     </p>
                   </div>
                 ) : (
                   <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                    No clamp at all. Sizes can reach levels no venue would fill, so read the result
-                    as the strategy's arithmetic rather than as a tradeable account. This is also
-                    how a run made before 2026-09-02 is reproduced.
+                    No clamp: sizes can reach levels no venue would fill, so read the result as the
+                    strategy's arithmetic, not a tradeable account. This is how a run made before
+                    2026-09-02 is reproduced.
                   </p>
                 )}
               </div>
@@ -1206,7 +1207,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <SectionHead
                   label="Costs"
-                  tooltip="A charged run is what you can trade; a free run is a diagnostic that tells you how much of the edge is friction. Every figure is measured off the broker account below — they are facts, not settings."
+                  // "below" was wrong: the broker picker is the FIRST control on this form.
+                  tooltip="A charged run is what you can trade; a free run shows how much of the edge is friction. Every figure is measured on the broker account picked at the top of this form — facts, not settings."
                   open={costsOpen}
                   onToggle={() => setCostsOpen((o) => !o)}
                   summary={chargeCosts ? `charged · ${brokerProfile}` : 'GROSS — no costs charged'}
@@ -1241,7 +1243,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     <span className="block text-[11px] text-text-tertiary leading-snug">
                       {chargeCosts
                         ? 'The result is net of friction — the number you can actually trade.'
-                        : 'A diagnostic only. It answers how much of the edge is friction, never whether the strategy works.'}
+                        : 'A diagnostic only — never evidence that the strategy works.'}
                     </span>
                   </span>
                 </div>
@@ -1266,7 +1268,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     {attachedProfile?.id} unless you mean to compare.
                   </p>
                 )}
-                {chargeCosts && brokerMatches === null && brokerProfiles?.length && (
+                {/* `!!`: a bare `.length &&` renders the number 0 when the list is empty. */}
+                {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
                   <p className="mb-2 text-[11px] text-text-tertiary leading-snug">
                     Can&apos;t tell which terminal is connected, so nothing here confirms these
                     costs match the bars this run will replay.

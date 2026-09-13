@@ -883,12 +883,10 @@ function FullBacktestNestRow({ colSpan, onClick }: { colSpan: number; onClick: (
       <td className="px-3 py-2" />
       <td className="pl-10 pr-4 py-2" colSpan={3}>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-gold-text/60 font-mono">↳</span>
-          <span className="text-[11px] font-semibold text-gold-text">Full Backtest</span>
-          <span
-            className="w-[6px] h-[6px] rounded-full bg-gold-text animate-pulse flex-shrink-0"
-            title="Running"
-          />
+          <span className="text-[10px] text-text-tertiary font-mono">↳</span>
+          {/* Neutral label and no pulsing dot (2026-09-13): the Running pill in the next cell
+              already says it is running, in the colour that means running. */}
+          <span className="text-[11px] font-semibold text-text-secondary">Full Backtest</span>
         </div>
       </td>
       <td className="px-4 py-2">

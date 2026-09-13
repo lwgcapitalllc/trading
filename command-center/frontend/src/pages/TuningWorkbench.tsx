@@ -717,9 +717,18 @@ export function TuningWorkbench() {
         // not a contract a NEW run can be created under — `[]` is its honest equivalent and charges
         // exactly the same nothing. Do NOT send `null` here; the API models it as a plain list.
         cost_layers: carriedLayers,
+        // 🔴 `null` = no opinion, so the backend keeps `cost_layers` EXACTLY as sent. Leaving the key
+        // off took the request's default of TRUE, which re-resolved the layers and charged every
+        // iteration — an uncharged baseline was compared against charged tweaks, and the line
+        // above the Run button said otherwise (rule 11, fixed 2026-09-13).
+        charge_costs: null,
         broker_profile: baseline.broker_profile ?? undefined,
         sizing_mode: baseline.sizing_mode,
         manual_risk_pct: baseline.manual_risk_pct ?? null,
+        // The lot ceiling is basis too: R is identical either side of it while every dollar moves.
+        // A ceiling the baseline never recorded is OMITTED (the backend default decides, as it did
+        // for the baseline), never sent as null, which would ask for "no ceiling" nobody chose.
+        ...(baseline.max_lots_stated ? { max_lots: baseline.max_lots ?? null } : {}),
         evaluate_rulesets: rulesetIds,
         source_run_id: baseline.run_id,
       },
@@ -936,7 +945,7 @@ export function TuningWorkbench() {
               </span>
             </div>
             <div className="flex items-center gap-1.5 mb-5 flex-wrap text-[12px]">
-              <span className="font-semibold font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-[2px] rounded">
+              <span className="font-semibold font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded">
                 {baseline.instrument}
               </span>
               <span className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded">
@@ -946,7 +955,7 @@ export function TuningWorkbench() {
                 rulesetIds.map((id) => (
                   <span
                     key={id}
-                    className="font-semibold font-mono bg-warn-muted border border-warn-text/20 text-warn-text px-2 py-[2px] rounded"
+                    className="font-medium font-mono bg-bg-surface border border-border-subtle text-text-secondary px-2 py-[2px] rounded"
                   >
                     {id}
                   </span>
@@ -985,7 +994,7 @@ export function TuningWorkbench() {
                 </span>
                 {dirtyKeys.length > 0 && (
                   <span
-                    className="w-[6px] h-[6px] rounded-full bg-accent"
+                    className="w-[6px] h-[6px] rounded-full bg-text-secondary"
                     title={`${dirtyKeys.length} changed`}
                   />
                 )}
@@ -996,7 +1005,7 @@ export function TuningWorkbench() {
                   <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary flex items-center gap-2">
                     Parameters
                     {dirtyKeys.length > 0 && (
-                      <span className="text-accent normal-case tracking-normal font-medium">
+                      <span className="text-text-primary normal-case tracking-normal font-medium">
                         · {dirtyKeys.length} changed
                       </span>
                     )}
@@ -1247,7 +1256,9 @@ export function TuningWorkbench() {
                         {/* Percent leads because it is the figure comparable across runs whose
                             accounts grew to different sizes; the dollars sit under it because that
                             is the unit a prop-firm limit is written in. */}
-                        <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
+                        {/* Neutral (2026-09-13): a drawdown is negative by definition, so red on
+                            every row ranked nothing. The deltas beside it keep their colour. */}
+                        <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
                           {myDdPct == null && r.max_drawdown == null ? (
                             '—'
                           ) : (
@@ -1334,7 +1345,9 @@ export function TuningWorkbench() {
                                   <span className="text-text-tertiary line-through">
                                     {String(baseline.params[k])}
                                   </span>
-                                  <span className="text-accent">→{String(v)}</span>
+                                  <span className="text-text-primary font-semibold">
+                                    →{String(v)}
+                                  </span>
                                 </span>
                               ))}
                             </div>

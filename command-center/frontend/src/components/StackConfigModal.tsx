@@ -566,13 +566,9 @@ export function StackConfigModal({
             <span className="text-[15px] font-semibold truncate">{title}</span>
             {/* The mode is a BADGE, the way the run modal badges its market. It is the single most
                 consequential fact about a stack and it used to be buried in a paragraph. */}
-            <span
-              className={`text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border flex-shrink-0 ${
-                shared
-                  ? 'bg-accent/10 text-accent border-accent/20'
-                  : 'bg-warn-muted text-warn-text border-warn-text/30'
-              }`}
-            >
+            {/* Neutral for both modes (2026-09-13): a badge is a label, and cyan/amber here read
+                as "clickable" and "warning" about a fact that is neither. */}
+            <span className="text-[10px] px-2 py-[2px] rounded font-semibold uppercase tracking-[0.5px] border flex-shrink-0 bg-bg-hover text-text-secondary border-border-subtle">
               {shared ? 'Shared account' : 'Screen'}
             </span>
           </div>
@@ -592,8 +588,8 @@ export function StackConfigModal({
             data-testid="stack-mode-blurb"
           >
             {shared
-              ? 'Layer 2 or more Python strategies onto ONE balance with ONE risk budget they compete for, replayed together on one clock — so you can see where a strategy was shrunk or blocked because another was already holding the capacity. Every leg is re-run; nothing is reused.'
-              : 'This stack is a SCREEN: each strategy ran on its own full account and the results were added together, so no strategy could ever block another. Rerunning keeps it a screen. New stacks are shared accounts.'}
+              ? 'Replays the strategies together on ONE balance with ONE risk budget they compete for, so you can see where one was shrunk or blocked because another already held the room. Every strategy is re-run — nothing is reused.'
+              : 'This stack is a SCREEN: each strategy ran on its own full account and the results were added together, so none could block another. Rerunning keeps it a screen; new stacks are shared accounts.'}
           </p>
 
           {/* ── Setup — the three facts every leg shares, on ONE row ────────────
@@ -743,7 +739,11 @@ export function StackConfigModal({
               <>
                 {/* Column headings, so the two numbers on each row are not a guess. */}
                 <div className="flex items-center gap-2 px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.5px] text-text-tertiary">
-                  <span className="flex-1">Pick at least 2</span>
+                  {/* The backend counts LEGS, so one strategy plus its loss recovery is a valid
+                      stack — "Pick at least 2" alone said otherwise (2026-09-13). */}
+                  <span className="flex-1">
+                    {shared ? 'Pick 2 or more · loss recovery counts' : 'Pick at least 2'}
+                  </span>
                   <span className="w-[96px] text-center flex-shrink-0">Timeframe</span>
                   <span className="w-[128px] text-center flex-shrink-0">Risk / trade</span>
                 </div>
@@ -793,7 +793,7 @@ export function StackConfigModal({
                             </span>
                             {action === 'reuse' && (
                               <span
-                                className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-pos-text bg-pos-muted/40 border border-pos-text/20 rounded px-1.5 py-0.5"
+                                className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-text-secondary bg-bg-hover border border-border-subtle rounded px-1.5 py-0.5"
                                 title="An existing completed run matches these exact settings — it will be reused, not re-run."
                               >
                                 Reuse
@@ -801,7 +801,7 @@ export function StackConfigModal({
                             )}
                             {action === 'run' && (
                               <span
-                                className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-warn-text bg-warn-muted/30 border border-warn-text/20 rounded px-1.5 py-0.5"
+                                className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.4px] text-text-tertiary bg-bg-sunken border border-border-subtle rounded px-1.5 py-0.5"
                                 title="No matching run exists — this leg will be backtested fresh at the chosen timeframe and costs."
                               >
                                 Run
@@ -1105,12 +1105,12 @@ export function StackConfigModal({
           {/* ── What pressing the button will actually do ─────────────────────── */}
           {settingsReady && shared && (
             <div className="text-[12px] text-text-secondary bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2">
-              <span className="text-warn-text font-semibold">{selected.size + 1} replays</span> —
-              the strategies together, then each one{' '}
-              <strong className="text-text-secondary">alone</strong> as the control. Without the
-              solo run a difference is a mixture of <em>the cap bit</em> and
-              <em> the shared balance re-sized everything</em>, and nothing afterwards separates
-              them.
+              {/* Every leg gets a solo control, the loss recovery included, so the count is
+                  legs + 1. It read strategies + 1 and was one short with a recovery on. */}
+              <span className="text-text-primary font-semibold">{legCount + 1} replays</span> —
+              every strategy together, then each one{' '}
+              <strong className="text-text-secondary">alone</strong> as the control, so you can tell
+              what sharing the account changed.
             </div>
           )}
 
@@ -1118,8 +1118,8 @@ export function StackConfigModal({
             <div className="text-[12px] text-text-secondary bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2">
               {preview.reuse_count > 0 && (
                 <span>
-                  <span className="text-pos-text font-semibold">{preview.reuse_count}</span> reused
-                  from existing runs
+                  <span className="text-text-primary font-semibold">{preview.reuse_count}</span>{' '}
+                  reused from existing runs
                 </span>
               )}
               {preview.reuse_count > 0 && preview.run_count > 0 && (
@@ -1127,7 +1127,7 @@ export function StackConfigModal({
               )}
               {preview.run_count > 0 && (
                 <span>
-                  <span className="text-warn-text font-semibold">{preview.run_count}</span> to
+                  <span className="text-text-primary font-semibold">{preview.run_count}</span> to
                   backtest now
                 </span>
               )}
@@ -1161,9 +1161,9 @@ export function StackConfigModal({
             <Play size={13} />
             {triggerStack.isPending
               ? 'Starting…'
-              : preview && preview.run_count === 0 && selected.size >= 2
+              : preview && preview.run_count === 0 && legCount >= 2
                 ? 'Create stack'
-                : `${submitLabel}${selected.size >= 2 ? ` (${selected.size})` : ''}`}
+                : `${submitLabel}${legCount >= 2 ? ` (${legCount})` : ''}`}
           </button>
         </div>
       </div>

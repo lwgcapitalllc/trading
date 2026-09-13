@@ -223,7 +223,11 @@ function CompactRow(
   const ctlBase =
     'w-[190px] flex-shrink-0 h-[26px] rounded-md border bg-bg-sunken px-2 text-[12px] font-mono ' +
     'focus:outline-none focus:border-accent transition-colors ' +
-    (changed ? 'border-accent/50 text-accent' : 'border-border-subtle text-text-secondary')
+    // A changed value is marked by WEIGHT and a brighter edge, not cyan — this editor's own rule is
+    // that cyan means focus, and a moved setting drawn like a focused one reads as selected.
+    (changed
+      ? 'border-text-tertiary/60 text-text-primary font-semibold'
+      : 'border-border-subtle text-text-secondary')
 
   let control
   if (p.choices?.length) {
@@ -284,15 +288,17 @@ function CompactRow(
     <div
       data-testid={`param-row-${p.name}`}
       className={`flex items-center gap-3 py-[3px] pl-2 pr-1 rounded border-l-2 min-w-0 hover:bg-bg-hover/60 ${
-        changed ? 'border-l-accent/60' : 'border-l-transparent'
+        changed ? 'border-l-text-secondary/60' : 'border-l-transparent'
       }`}
-      title={p.description}
+      // `descOf`, never `p.description` alone: every Python strategy's metadata writes `desc`, so
+      // this row carried no hover text on any Python run until 2026-09-13.
+      title={descOf(p) || undefined}
     >
       <span className="flex-1 min-w-0 truncate text-[12px] text-text-secondary">
         {labelOf(p)}
         {tuned && baseline && (
           <span className="text-[10px] text-text-tertiary ml-1.5">
-            was <b className="text-gold-text font-mono">{fmt(baseline[p.name])}</b>
+            was <b className="text-text-secondary font-mono">{fmt(baseline[p.name])}</b>
           </span>
         )}
       </span>
@@ -734,7 +740,7 @@ function TuneTag(props: Props & { p: ParamSchemaEntry; valueOf: (n: string) => P
   if (String(valueOf(p.name)) === String(baseline[p.name])) return null
   return (
     <span className="text-[10.5px] text-text-tertiary flex-shrink-0">
-      was <b className="text-gold-text font-mono">{fmt(baseline[p.name])}</b>
+      was <b className="text-text-secondary font-mono">{fmt(baseline[p.name])}</b>
     </span>
   )
 }
@@ -1056,7 +1062,7 @@ function Explainer({
         <h3 className="text-[17px] font-semibold mb-2 text-text-primary">{labelOf(p)}</h3>
       )}
       {!inline && p.unit && (
-        <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-accent bg-accent/15 border border-accent/40 rounded px-1.5 py-[2px] mb-2.5">
+        <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-text-secondary bg-bg-hover border border-border-subtle rounded px-1.5 py-[2px] mb-2.5">
           {p.unit}
         </span>
       )}
@@ -1120,7 +1126,7 @@ const KV = ({ k, v }: { k: string; v: string }) => (
 )
 const GuideBox = ({ arrow, text }: { arrow: string; text: string }) => (
   <div className="flex-1 bg-bg-sunken border border-border-subtle rounded-lg p-2.5 text-[11.5px] text-text-secondary">
-    <b className="text-accent block mb-1">{arrow}</b>
+    <b className="text-text-primary block mb-1">{arrow}</b>
     {text}
   </div>
 )
@@ -1160,7 +1166,7 @@ export function ParamCoach({
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-accent flex items-center gap-1.5 min-w-0">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-text-primary flex items-center gap-1.5 min-w-0">
           <ChevronRight size={12} className="flex-shrink-0" />
           <span className="truncate">{labelOf(p)}</span>
         </span>
