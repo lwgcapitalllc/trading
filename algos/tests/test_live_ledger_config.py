@@ -311,6 +311,9 @@ def test_the_shipped_template_loads(tmp_path, monkeypatch):
     (tmp_path / "b1").mkdir()
     template = json.loads((_LIVE / "instance.template.json").read_text())
     template["account"] = 123
+    # A person copying the template names the bot after its folder — `load` refuses a key that
+    # is not its folder's, since the bot would write into another bot's state (2026-09-13).
+    template["bot_key"] = "b1"
     (tmp_path / "b1" / "config.json").write_text(json.dumps(template))
     cfg = live_config.load("b1")
     assert cfg.strategy_class == "SosFadeStrategy"

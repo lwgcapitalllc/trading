@@ -406,6 +406,17 @@ def load(bot_key: str) -> LiveConfig:
     ]
     if missing:
         raise ValueError(f"{p} is missing required key(s): {', '.join(missing)}")
+    # 🔴 A bot IS its folder (`bot_state.BOT_INSTANCES` is discovered from them), and every file
+    # this bot writes — its state, its ledger, its position record — goes to the folder named by
+    # the key IN THIS FILE. So a folder copied to make a new bot, with the key left unchanged, is a
+    # second bot writing into the first bot's folder: two processes, one position record. Refused
+    # at the one moment that reliably precedes trading.
+    if raw["bot_key"] != bot_key:
+        raise ValueError(
+            f"{p} names itself bot {raw['bot_key']!r} but sits in the folder for {bot_key!r}. "
+            f"A bot writes its state, ledger and position record into the folder its key names, "
+            f"so this one would write into another bot's. Set bot_key to {bot_key!r}."
+        )
     raw.setdefault("display_name", raw["bot_key"])
     _assert_magic_is_unique(raw["bot_key"], raw["account"], raw["magic"])
     _assert_account_cap_agrees(raw["bot_key"], raw["account"], raw.get("account_risk_cap_pct"))

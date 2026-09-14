@@ -98,5 +98,69 @@ def test_the_probe_and_the_kill_name_the_runner(monkeypatch):
     monkeypatch.setattr(bots._time, "sleep", lambda *_a: None)
     bots._kill_bot("sos_fade_2")
     wmi = [c for c in sent if "wmic process where" in c]
-    assert wmi and all("runner.py" in c and "--bot sos_fade_2" in c for c in wmi), wmi
+    assert wmi and all("runner.py" in c and "--bot sos[_]fade[_]2" in c for c in wmi), wmi
     assert any("call terminate" in c for c in wmi)
+
+
+# ── the same rule as the algos side, over the SAME cases (2026-09-13) ─────────
+#
+# `algos/shared/bot_registry.is_runner_line` is this rule for the watchdog, the dead-man's switch,
+# the launcher and the chat bot. The two subsystems may not import each other, so ONE list of
+# cases drives both — a shape one side learns and the other does not fails on the side that did
+# not learn it.
+_SHARED_CASES = bots.cfg.MONOREPO_ROOT / "algos" / "tests" / "fixtures" / "runner_lines.json"
+
+
+def _shared_cases():
+    import json
+
+    cases = json.loads(_SHARED_CASES.read_text(encoding="utf-8"))["cases"]
+    assert len(cases) >= 10, "the shared cases parsed as near-empty - this would pass for free"
+    return cases
+
+
+@pytest.mark.parametrize("case", _shared_cases(), ids=lambda c: c["why"][:60])
+def test_the_shared_cases_agree_with_the_algos_side(case):
+    assert bots._is_bot_runner(case["line"], case["key"]) is case["is_runner"], case["why"]
+
+
+# ── the kill's WMI filter is exact too ────────────────────────────────────────
+
+
+def _wql_matches(filter_: str, commandline: str) -> bool:
+    """Evaluate the filter's `commandline like '...'` clauses the way WMI does — `%` any run,
+    `_` any one character, `[x]` the literal x — so the test reads the filter the box reads."""
+    import re
+
+    def like(pattern: str, text: str) -> bool:
+        rx, i = "", 0
+        while i < len(pattern):
+            c = pattern[i]
+            if c == "%":
+                rx += ".*"
+            elif c == "_":
+                rx += "."
+            elif c == "[":
+                j = pattern.index("]", i + 1)
+                rx += re.escape(pattern[i + 1 : j])
+                i = j
+            else:
+                rx += re.escape(c)
+            i += 1
+        return re.fullmatch(rx, text, flags=re.DOTALL) is not None
+
+    clauses = re.findall(r"commandline like '([^']*)'", filter_)
+    assert clauses, f"no LIKE clause found in {filter_!r}"
+    return any(like(p, commandline) for p in clauses)
+
+
+def test_the_kill_filter_never_reaches_a_LONGER_key():
+    """🔴 `_` is a WQL wildcard and a trailing `%` made the key a prefix, so the filter that drives
+    a KILL matched `--bot sos_fade_20` for `sos_fade_2`. MUTATION: drop the `[_]` escaping or the
+    trailing space -> red."""
+    f = bots._runner_wql("sos_fade_2")
+    assert _wql_matches(f, rf"{_RUNNER} --bot sos_fade_2 --live")
+    assert _wql_matches(f, rf"{_RUNNER} --bot sos_fade_2"), "a dry-run launch ends on the key"
+    assert not _wql_matches(f, rf"{_RUNNER} --bot sos_fade_20 --live")
+    assert not _wql_matches(f, rf"{_RUNNER} --bot sosXfadeY2 --live")
+    assert not _wql_matches(f, rf"{_PY} C:\trading\algos\tools\promote.py --bot sos_fade_2 ")

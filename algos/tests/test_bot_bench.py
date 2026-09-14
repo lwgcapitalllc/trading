@@ -110,6 +110,7 @@ def test_the_process_watchdog_skips_a_benched_bot(monkeypatch):
     skip it would launch a bot with no account to trade, every pass, for ever."""
     monitor = _load("monitor_bench", "algos/notifications/monitor.py")
     checked: list[str] = []
+    monkeypatch.setattr(monitor, "_query_process_list", lambda: "")
     monkeypatch.setattr(monitor, "BOTS", {"assigned": {}, "benched": {}})
     monkeypatch.setattr(monitor, "check_bot", lambda k, s, t: checked.append(k) or {})
     monkeypatch.setattr(monitor, "check_telegram_bot", lambda s: {})
@@ -121,92 +122,106 @@ def test_the_process_watchdog_skips_a_benched_bot(monkeypatch):
     assert checked == ["assigned"]
 
 
-# ── the five registries hold the SAME bots ────────────────────────────────────
+# ── every roster is DERIVED from the bot folders ──────────────────────────────
 #
-# 🔴 **"Keep the three registries in step" lived ONLY in a comment until 2026-09-04, and on the
-# day this was written a neighbouring comment about another file turned out to be flat wrong** —
-# `command-center/backend/routers/bots.py` stated that the benched bots are deliberately absent
-# from the watchdog and the dead-man switch, and they are in both. **A rule that lives in a
-# comment is a rule that gets contradicted by the code it describes, quietly.**
-#
-# ⚠ **The failure this catches has no symptom.** A bot missing from `BOT_INSTANCES` dies on
-# startup with a bare KeyError AFTER connecting and warming; one missing from the boot sequence
-# is simply absent after a reboot; one missing from a watcher is a bot nothing is watching. None
-# of those look like a registry problem from outside.
+# 🔴 **A bot lived in FIVE hand-kept lists until 2026-09-13** — the state map and the display names
+# here, the boot sequence, the process watchdog, the dead-man's switch, and the Command Center's own
+# list. Tests held the five together and could catch a mismatch; they could not stop one being
+# written, and every omission was silent: a bot missing from the state map died on startup with a
+# bare KeyError after connecting and warming, one missing from the boot sequence was absent after a
+# reboot, one missing from a watcher was a bot nothing watched. A bot IS its folder now
+# (`bot_registry.discover`); what is left to pin is that every roster reads it and none has grown a
+# hand-kept list again.
 
 
-def _algos_registries():
-    """Every algos-side roster, as {name: set of bot keys}. REFUSES an empty one — an empty set
-    makes every comparison below pass for the wrong reason."""
+def _algos_rosters():
+    """Every algos-side roster, as {name: set of bot keys}."""
     monitor = _load("monitor_registry", "algos/notifications/monitor.py")
     deadman = _load("deadman_registry", "algos/notifications/deadman.py")
     coord = _load("coordinator_registry", "algos/bots/startup_coordinator.py")
-    got = {
+    return {
         "bot_state.BOT_INSTANCES": set(bs.BOT_INSTANCES),
         "bot_state.BOT_NAMES": set(bs.BOT_NAMES),
         "monitor.BOTS": set(monitor.BOTS),
         "deadman.BOTS": set(deadman.BOTS),
-        "startup_coordinator.STARTUP_SEQUENCE": {row[0] for row in coord.STARTUP_SEQUENCE},
+        "startup_coordinator.startup_sequence()": {row[0] for row in coord.startup_sequence()},
     }
-    for name, keys in got.items():
-        assert keys, f"{name} parsed as EMPTY — every assertion here would pass for free"
-    return got
 
 
-def test_every_algos_registry_holds_the_SAME_bots():
-    """MUTATION: drop any one bot from any one registry and this goes red naming both sides."""
-    got = _algos_registries()
-    reference = got["bot_state.BOT_INSTANCES"]
-    for name, keys in got.items():
-        assert keys == reference, (
-            f"{name} holds {sorted(keys)} but bot_state.BOT_INSTANCES holds "
-            f"{sorted(reference)}. Every roster that watches, starts or names a bot must hold "
-            f"the same set — see this section's header for what each omission costs."
+def test_every_algos_roster_IS_the_bot_folders():
+    """MUTATION: hand-type one roster again, or filter one — red, naming both sides.
+
+    ⚠ Refuses an empty folder list: with nothing discovered every comparison passes for free."""
+    import bot_registry
+
+    folders = set(bot_registry.discover())
+    assert folders, "no bot folders found - every assertion here would pass for free"
+    for name, keys in _algos_rosters().items():
+        assert keys == folders, (
+            f"{name} holds {sorted(keys)} but the bot folders are {sorted(folders)}. Every roster "
+            f"that starts, watches or names a bot reads the folders — see this section's header."
         )
 
 
-def test_the_command_center_registry_holds_the_SAME_bots():
-    """The fifth roster, and the one that makes a bot ADDRESSABLE — it is what puts a bot on the
-    Accounts tab so it can be given an account at all.
+def test_a_new_bot_folder_joins_the_rosters_with_no_other_edit(tmp_path):
+    """The feature: creating the folder IS registering the bot. A folder with no config (a watcher
+    once made one named after a renamed bot) is not one."""
+    import bot_registry
+
+    for key in ("alpha_1", "beta_2"):
+        d = tmp_path / key
+        d.mkdir()
+        (d / "config.json").write_text(json.dumps({"bot_key": key, "display_name": key.title()}))
+    (tmp_path / "left_behind").mkdir()
+    coord = _load("coordinator_new_folder", "algos/bots/startup_coordinator.py")
+
+    assert set(bot_registry.discover(tmp_path)) == {"alpha_1", "beta_2"}
+    assert {row[0] for row in coord.startup_sequence(tmp_path)} == {"alpha_1", "beta_2"}
+
+
+def test_the_command_center_keeps_no_hand_list_of_bots():
+    """The Command Center's list is DERIVED from the same folders (`routers/bots.py`
+    `_discover_bots`) — its own backend tests pin the derivation. This pins the other direction:
+    no bot key typed into a `BotReg` by hand, which would be a sixth list the folders cannot move.
 
     ⚠ **Parsed rather than imported, deliberately.** That router lives in another package with
     its own venv and imports FastAPI; importing it here would wire two trees together to answer a
-    question about a list of strings. It REFUSES rather than returning an empty set.
-    MUTATION: remove a `BotReg` line and this goes red.
+    question about a list of strings.
     """
     import re
 
+    import bot_registry
+
     text = (_REPO / "command-center/backend/routers/bots.py").read_text(encoding="utf-8")
-    block = text.split("_BOTS: list[BotReg] = [", 1)
-    assert len(block) == 2, "the _BOTS registry was not found — has it been renamed?"
-    keys = set(re.findall(r'key="([a-z0-9_]+)"', block[1].split("\n]", 1)[0]))
-    assert keys, "the _BOTS registry parsed as EMPTY"
-    assert keys == set(bs.BOT_INSTANCES), (
-        f"the Command Center registers {sorted(keys)} but algos knows {sorted(bs.BOT_INSTANCES)}. "
-        f"A bot missing there cannot be put on an account from the browser; a bot only there is "
-        f"one the browser can arm and no watchdog is watching."
-    )
+    assert "_discover_bots" in text, "the Command Center no longer derives its bot list?"
+    # A POPULATED literal. `_BOTS: list[BotReg] = []` is the empty list the discovery fills in
+    # place, and a plain substring check read that as the hand list coming back.
+    hand_list = re.search(r"_BOTS\s*:\s*list\[BotReg\]\s*=\s*\[\s*[^\]\s]", text)
+    assert not hand_list, "the Command Center's hand-kept bot list is back"
+    typed = set(re.findall(r'key="([a-z0-9_]+)"', text)) & set(bot_registry.discover())
+    assert not typed, f"the Command Center types these bot keys by hand: {sorted(typed)}"
 
 
-def test_every_registered_bot_has_an_instance_config_on_disk():
-    """A roster entry with no config is a bot that reads as registered and cannot start.
-    MUTATION: add a made-up key to any registry and this goes red."""
-    for key, path in bs.BOT_INSTANCES.items():
-        assert (path / "config.json").is_file(), f"{key} has no config.json at {path}"
+def test_every_bot_folder_names_itself():
+    """`live_config.load` REFUSES a config whose `bot_key` is not its folder's name — a copied
+    folder with the key left unchanged would write into the other bot's state, ledger and position
+    record. Pinned on the real folders so a hand-made copy fails here rather than at its start."""
+    import bot_registry
+
+    for key, folder in bot_registry.discover().items():
+        raw = bot_registry.read_config(folder)
+        assert raw is not None, f"{key}: config.json cannot be read"
+        assert raw.get("bot_key") == key, f"{key}/config.json says it is {raw.get('bot_key')!r}"
 
 
-def test_the_display_names_agree_across_the_registries():
-    """One bot, one name. Two rosters disagreeing means one Telegram alert and one page column
-    calling the same bot different things, which is how two bots get read as one.
-    MUTATION: change a display name in one registry and this goes red."""
-    monitor = _load("monitor_names", "algos/notifications/monitor.py")
-    deadman = _load("deadman_names", "algos/notifications/deadman.py")
-    coord = _load("coordinator_names", "algos/bots/startup_coordinator.py")
-    coord_names = {row[0]: row[1] for row in coord.STARTUP_SEQUENCE}
-    for key, name in bs.BOT_NAMES.items():
-        assert monitor.BOTS[key]["name"] == name, key
-        assert deadman.BOTS[key] == name, key
-        assert coord_names[key] == name, key
+def test_each_bots_name_comes_from_its_own_config():
+    """One bot, one name, read off its own file — so a Telegram alert and a page column cannot
+    call one bot two things. MUTATION: fall back to the key when a display name exists -> red."""
+    import bot_registry
+
+    for key, folder in bot_registry.discover().items():
+        raw = bot_registry.read_config(folder) or {}
+        assert bs.BOT_NAMES[key] == (raw.get("display_name") or key), key
 
 
 def test_every_bot_pins_every_setting_its_strategy_declares():

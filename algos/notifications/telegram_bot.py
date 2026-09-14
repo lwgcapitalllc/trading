@@ -198,6 +198,8 @@ def release_singleton():
 
 
 def is_running(script: str) -> bool:
+    """A SUBSTRING of the process list — for this chat bot's own line only. A trading bot is
+    `bot_running`, which matches its key exactly."""
     try:
         r = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
@@ -208,6 +210,28 @@ def is_running(script: str) -> bool:
         return script in r.stdout
     except Exception:
         return False
+
+
+def bot_running(bot_key: str) -> bool:
+    """Is this trading bot's runner up — `runner.py` with `--bot <key>` EXACTLY?
+
+    It was `is_running(f"--bot {key}")` until 2026-09-13: a substring, so `sos_fade_2` read as
+    running while `sos_fade_20` was, or while a deploy carrying its key was. The one rule is
+    `bot_registry.is_runner_line`. ⚠ An unreadable list answers False here because this is a
+    DISPLAY — `/status` saying "stopped" is checked by anyone who reads it; nothing acts on it.
+    """
+    try:
+        r = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return False
+    import bot_registry
+
+    return bool(bot_registry.runner_keys(r.stdout or "", [bot_key]))
 
 
 # =============================================================================
@@ -245,7 +269,7 @@ def cmd_status() -> str:
     if not bots:
         lines.append("No bot has written a state file. Either none is running, or none can write.")
     for key, st in sorted(bots.items()):
-        alive = is_running(f"--bot {key}")
+        alive = bot_running(key)
         # `mt5_link` is Optional[bool]: None means the bot never said, which is not the claim
         # "disconnected". Read `is False`, never falsy — the same rule the Bots page follows.
         blind = st.get("mt5_link") is False

@@ -133,7 +133,7 @@ def watch(monkeypatch):
     """Drive `check_bot` with a scripted bot state, capturing alerts instead of sending."""
     sent = []
     monkeypatch.setattr(monitor, "send_alert", lambda msg: sent.append(msg))
-    monkeypatch.setattr(monitor, "is_running", lambda script: True)
+    monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
 
     def run(live_state, carried=None):
@@ -245,7 +245,7 @@ def down(monkeypatch):
     """Drive `check_bot` against a bot whose process is gone, capturing the restart attempt."""
     sent, attempts = [], []
     monkeypatch.setattr(monitor, "send_alert", lambda msg: sent.append(msg))
-    monkeypatch.setattr(monitor, "is_running", lambda script: False)
+    monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: False)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {})
 
@@ -326,66 +326,110 @@ def test_coming_back_clears_the_counter(watch):
 
 
 # ── the two sides agree about which bots exist ──────────────────────────────────
-def _coordinator_sequence():
-    """Read STARTUP_SEQUENCE out of the launcher WITHOUT importing it.
+def _coordinator():
+    """The launcher itself, IMPORTED. It hardcoded `Path("C:/trading/algos")` until 2026-09-13
+    and could only be parsed off the VPS, so these checks read a literal list rather than running
+    the code that builds it. It derives its paths from its own file now, and both sides read the
+    bot folders (`bot_registry.discover`)."""
+    p = str(_REPO / "algos" / "bots")
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import startup_coordinator
 
-    `startup_coordinator.py` hardcodes `Path("C:/trading/algos")` and imports from it at
-    module scope, so it cannot be imported anywhere but the VPS. Parsing keeps this check
-    running on the machine where the mistake actually gets made.
-    """
-    src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
-    for node in ast.walk(ast.parse(src)):
-        if (
-            isinstance(node, ast.Assign)
-            and getattr(node.targets[0], "id", "") == "STARTUP_SEQUENCE"
-        ):
-            out = []
-            for elt in node.value.elts:
-                bot_key = elt.elts[0].value
-                argv = [a.value for a in elt.elts[3].elts]
-                out.append((bot_key, argv))
-            return out
-    raise AssertionError("STARTUP_SEQUENCE not found in startup_coordinator.py")
+    return startup_coordinator
 
 
 def test_every_bot_the_vps_starts_is_watched():
-    """A bot added to the launcher and forgotten here is a bot that can die unnoticed —
-    and it fails in the quietest possible way, because everything still looks fine."""
-    for bot_key, _ in _coordinator_sequence():
-        assert bot_key in monitor.BOTS, f"{bot_key} boots on the VPS but nothing watches it"
+    """A bot the launcher starts and the watchdog does not watch can die unnoticed — and it fails
+    in the quietest possible way, because everything still looks fine."""
+    seq = _coordinator().startup_sequence()
+    assert seq, "the launcher found no bots - this would pass for free"
+    for row in seq:
+        assert row[0] in monitor.BOTS, f"{row[0]} boots on the VPS but nothing watches it"
 
 
 def test_the_monitor_matches_the_commandline_the_launcher_actually_produces():
-    """`is_running` greps the process commandline for `BOTS[key]["script"]`.
+    """The launcher BUILDS the command line; the watchdog RECOGNISES it — as this bot and as no
+    other. If the two drift apart the watchdog reports a healthy bot as permanently offline, or
+    worse, matches a DIFFERENT bot's process and reports a dead one as alive.
 
-    Every live bot is `runner.py`, so the match has to be the bot_key in argv. If the two
-    drift apart the watchdog reports a healthy bot as permanently offline (alert fatigue),
-    or worse, matches a DIFFERENT bot's process and reports a dead one as alive.
+    MUTATION: match the key as a substring in `bot_registry.is_runner_line` -> red once any key
+    starts another (none do today, so the real sequence alone could not catch it — the shared
+    cases in `test_bot_registry.py` carry `sos_fade_2` / `sos_fade_20`).
     """
-    for bot_key, argv in _coordinator_sequence():
-        needle = monitor.BOTS[bot_key]["script"]
-        assert needle in " ".join(argv), (
-            f"{bot_key}: monitor greps for {needle!r}, which never appears in {argv}"
+    sc = _coordinator()
+    seq = sc.startup_sequence()
+    assert seq, "the launcher found no bots - this would pass for free"
+    for key, _name, script, argv, *_ in seq:
+        line = " ".join([sc.PYTHON, script, *argv])
+        assert monitor._registry.is_runner_line(line, key), (
+            f"{key}: the watchdog does not recognise the process the launcher starts: {line!r}"
         )
+        for other, *_rest in seq:
+            if other != key:
+                assert not monitor._registry.is_runner_line(line, other), (
+                    f"{other} would read {key}'s process as its own"
+                )
 
 
 def test_no_bot_is_watched_that_nothing_can_start():
     """The mirror of the above — a stale entry alerts forever about a bot that does not
     exist, which is the other way to get the channel muted."""
-    started = {k for k, _ in _coordinator_sequence()}
+    started = {row[0] for row in _coordinator().startup_sequence()}
     assert set(monitor.BOTS) <= started, (
         f"watched but never launched: {set(monitor.BOTS) - started}"
     )
 
 
+def test_one_process_list_serves_the_whole_pass(monkeypatch):
+    """One `wmic` per watchdog pass, not one per bot (2026-09-13) — the pass must finish inside
+    its own one-minute cadence however many bots there are. And the list is held ONLY while the
+    pass runs, so no caller outside it is ever handed a stale one.
+
+    MUTATION: drop the `"procs" in _PASS` cache check -> red (two queries).
+    MUTATION: leave `_PASS` populated after `main` -> red (the post-pass read is not fresh).
+    """
+    queries = []
+    monkeypatch.setattr(monitor, "_query_process_list", lambda: queries.append(1) or "")
+    monkeypatch.setattr(monitor, "BOTS", {"a": {"name": "A"}, "b": {"name": "B"}})
+    monkeypatch.setattr(monitor._bot_state, "is_assigned", lambda k: True)
+    monkeypatch.setattr(monitor, "check_telegram_bot", lambda s: {})
+    monkeypatch.setattr(monitor, "load_state", lambda: {})
+    monkeypatch.setattr(monitor, "save_state", lambda s: None)
+    monkeypatch.setattr(
+        monitor, "check_bot", lambda key, state, today: monitor.is_bot_running(key) or {}
+    )
+
+    monitor.main()
+    assert len(queries) == 1, f"{len(queries)} process-list queries for one pass"
+
+    monitor.is_bot_running("a")
+    assert len(queries) == 2, "a read outside the pass was served the pass's list"
+
+
+def test_the_post_restart_check_reads_the_list_AGAIN(monkeypatch):
+    """The confirmation after a restart asks what changed since the pass began, so it must not be
+    handed the list from before the restart. MUTATION: drop `fresh=True` -> red."""
+    monitor._PASS["procs"] = ""  # a pass in progress, with no runner in it
+    try:
+        monkeypatch.setattr(
+            monitor,
+            "_query_process_list",
+            lambda: "python.exe C:\\trading\\algos\\live\\runner.py --bot a --live\n",
+        )
+        monkeypatch.setattr(monitor.subprocess, "Popen", lambda *a, **k: None)
+        monkeypatch.setattr(monitor.time, "sleep", lambda s: None)
+        assert monitor.restart_bot("a") is True
+    finally:
+        monitor._PASS.clear()
+
+
 # ── starting a bot must not take the alert channel down with it ─────────────────
 def _coordinator_telegram_fns(proc_stdout, spawns):
-    """Load the launcher's REAL telegram functions without importing the module.
-
-    Same constraint as `_coordinator_sequence` above — `startup_coordinator.py` hardcodes
-    `Path("C:/trading/algos")` and imports from it at module scope, so it only imports on the
-    VPS. Pulling the two function bodies out of the AST and exec'ing them tests the shipped
-    code rather than a copy of it that can drift.
+    """Load the launcher's REAL telegram functions out of its AST and exec them against a fake
+    process list. The module imports anywhere since 2026-09-13; these two functions are still
+    exec'd alone because they are self-contained and a stand-in `subprocess` is then the whole of
+    the fixture.
     """
     src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
     tree = ast.parse(src)
@@ -468,55 +512,60 @@ def test_an_unreadable_process_list_starts_one_rather_than_assuming_it_is_up():
 
 
 # ── one bot, one process ────────────────────────────────────────────────────────
-def _coordinator_fn(name, proc_stdout, *, raises=False):
-    """Exec one launcher function out of its AST, as above."""
-    src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
-    fns = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == name]
-    assert fns, f"{name} missing from startup_coordinator.py"
+def _bot_is_running(monkeypatch, proc_stdout, *, raises=False):
+    """The launcher's REAL `bot_is_running`, against a fake process list."""
+    sc = _coordinator()
 
     def _run(*a, **k):
         if raises:
             raise OSError("wmic unavailable")
-        return SimpleNamespace(stdout=proc_stdout)
+        return SimpleNamespace(stdout=proc_stdout, returncode=0)
 
-    ns = {"subprocess": SimpleNamespace(run=_run), "print": lambda *a, **k: None}
-    exec(compile(ast.Module(body=fns, type_ignores=[]), "<launcher>", "exec"), ns)
-    return ns[name]
+    monkeypatch.setattr(sc.subprocess, "run", _run)
+    return sc.bot_is_running
 
 
-def test_the_launcher_does_not_start_a_bot_that_is_already_running():
+def test_the_launcher_does_not_start_a_bot_that_is_already_running(monkeypatch):
     """MEASURED 2026-08-04: `schtasks /run /tn SYS_STARTUP` on a box where the bot was already
     up produced TWO `runner.py --bot sos_fade_demo` processes four minutes apart, and
     nothing anywhere reported it. They share an account, a magic number and a strategy, so both
     size a full position off the same setup — double the risk from a state neither can see."""
-    fn = _coordinator_fn(
-        "bot_is_running",
-        "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo 8892",
+    fn = _bot_is_running(
+        monkeypatch, "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo 8892"
     )
     assert fn("sos_fade_demo") is True
 
 
-def test_a_bot_that_is_genuinely_down_is_started():
-    fn = _coordinator_fn(
-        "bot_is_running", "python.exe C:\\trading\\algos\\notifications\\telegram_bot.py 12780"
+def test_a_bot_that_is_genuinely_down_is_started(monkeypatch):
+    fn = _bot_is_running(
+        monkeypatch, "python.exe C:\\trading\\algos\\notifications\\telegram_bot.py 12780"
     )
     assert fn("sos_fade_demo") is False
 
 
-def test_a_different_bot_running_does_not_block_this_one():
+def test_a_different_bot_running_does_not_block_this_one(monkeypatch):
     """Matched on the KEY, not the script. Every live bot is `runner.py`, so matching the script
     name would stop a second, different bot from ever starting."""
-    fn = _coordinator_fn(
-        "bot_is_running", "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot_demo 4242"
+    fn = _bot_is_running(
+        monkeypatch, "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot_demo 4242"
     )
     assert fn("sos_fade_demo") is False
 
 
-def test_an_unreadable_process_list_leaves_the_bot_alone():
+def test_a_LONGER_key_running_does_not_block_this_one(monkeypatch):
+    """🔴 `sos_fade_2` is a substring of `--bot sos_fade_20`, so a substring match refused to start
+    one bot because another was up (2026-09-13). MUTATION: substring match again -> red."""
+    fn = _bot_is_running(
+        monkeypatch, "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_20 --live 4242"
+    )
+    assert fn("sos_fade_2") is False
+
+
+def test_an_unreadable_process_list_leaves_the_bot_alone(monkeypatch):
     """The safe direction is the OPPOSITE of the Telegram case, and deliberately so: a duplicate
     bot is two positions on one account, while a duplicate Telegram is refused by its own
     singleton guard. `runner.py`'s guard is the backstop if this one is over-cautious."""
-    fn = _coordinator_fn("bot_is_running", "", raises=True)
+    fn = _bot_is_running(monkeypatch, "", raises=True)
     assert fn("sos_fade_demo") is True
 
 
@@ -525,16 +574,17 @@ def test_both_launch_paths_are_guarded():
     the command center's per-bot Start button drives, and pressing Start on a running bot is a
     perfectly reasonable thing to do. It was missed on the first pass of this fix.
 
-    Asserted structurally rather than behaviourally because `main()` cannot be exec'd in
-    isolation (it reaches module-scope state and `bot_state`); this at least fails when a third
-    launch path is added without a guard.
+    Asserted structurally because `main()`'s full pass reads ONE process list and asks it per bot
+    (`_running_in`), while single-bot mode asks `bot_is_running` — so each launch path has its
+    own guard call, and a third path added without one fails here.
     """
     src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
     fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "main")
     guards = [
         n
         for n in ast.walk(fn)
-        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "bot_is_running"
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "id", "") in {"bot_is_running", "_running_in"}
     ]
     assert len(guards) == 2, (
         f"{len(guards)} launch path(s) check whether the bot is already running — full startup "
@@ -622,7 +672,7 @@ def test_a_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
     """
     sent, attempts = [], []
     monkeypatch.setattr(monitor, "send_alert", lambda msg: sent.append(msg))
-    monkeypatch.setattr(monitor, "is_running", lambda script: None)
+    monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: None)
     monkeypatch.setattr(monitor, "restart_bot", lambda k: attempts.append(k) or True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {})
@@ -754,7 +804,7 @@ def test_a_requested_stop_is_honoured_on_the_FIRST_sighting_too(monkeypatch, tmp
     the restart guard has to read the record itself rather than trust a previous pass."""
     sent, attempts = [], []
     monkeypatch.setattr(monitor, "send_alert", lambda m: sent.append(m))
-    monkeypatch.setattr(monitor, "is_running", lambda script: False)
+    monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: False)
     monkeypatch.setattr(monitor, "restart_bot", lambda k: attempts.append(k) or True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
 

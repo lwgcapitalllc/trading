@@ -155,6 +155,7 @@ def test_status_lists_a_bot_that_is_running(bot, monkeypatch):
 
     monkeypatch.setattr(bot_state, "read_all", lambda: _state())
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "3h 12m")
+    monkeypatch.setattr(bot, "bot_running", lambda k: True)
     monkeypatch.setattr(bot, "is_running", lambda s: True)
     out = bot.cmd_status()
     assert "SOS Fade" in out
@@ -178,6 +179,7 @@ def test_status_names_each_bot_with_its_ACCOUNTS_KIND_not_its_stored_name(bot, m
     monkeypatch.setattr(
         bot_state, "bot_label", lambda k: {"live_copy": "SOS Fade · LIVE"}.get(k, "SOS Fade · demo")
     )
+    monkeypatch.setattr(bot, "bot_running", lambda k: True)
     monkeypatch.setattr(bot, "is_running", lambda s: True)
     out = bot.cmd_status()
     assert "SOS Fade · LIVE" in out and "SOS Fade · demo" in out
@@ -192,6 +194,7 @@ def test_status_separates_alive_from_blind(bot, monkeypatch):
 
     monkeypatch.setattr(bot_state, "read_all", lambda: _state(mt5_link=False))
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "3h 12m")
+    monkeypatch.setattr(bot, "bot_running", lambda k: True)
     monkeypatch.setattr(bot, "is_running", lambda s: True)
     out = bot.cmd_status()
     assert "no MT5 link" in out
@@ -213,22 +216,42 @@ def test_an_unasked_link_is_not_reported_as_disconnected(bot, monkeypatch):
 
     monkeypatch.setattr(bot_state, "read_all", lambda: _state(mt5_link=None))
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "1m")
+    monkeypatch.setattr(bot, "bot_running", lambda k: True)
     monkeypatch.setattr(bot, "is_running", lambda s: True)
     assert "no MT5 link" not in bot.cmd_status()
 
 
-def test_status_matches_the_bot_key_not_the_script_name(bot, monkeypatch):
-    """Every live bot IS `runner.py`, so the script identifies the FLEET and only the key
-    identifies the bot. Matching on the script would call every bot running as soon as any one
-    of them was."""
+def test_status_matches_the_bot_by_its_EXACT_key(bot, monkeypatch):
+    """Every live bot IS `runner.py`, so only the key tells two apart — and a key matched as a
+    substring tells them apart wrongly: `sos_fade_2` read as running while `sos_fade_20` was
+    (2026-09-13). The rule is `bot_registry.is_runner_line`.
+    MUTATION: match `f"--bot {key}" in stdout` again -> red."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        bot.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0,
+            stdout="python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_20 --live\n",
+        ),
+    )
+    assert bot.bot_running("sos_fade_20") is True
+    assert bot.bot_running("sos_fade_2") is False
+
+
+def test_status_asks_about_each_bot_by_its_key(bot, monkeypatch):
+    """`/status` asks per KEY, never per script name — matching the script would call every bot
+    running as soon as any one of them was."""
     seen = []
     import bot_state
 
     monkeypatch.setattr(bot_state, "read_all", lambda: _state())
     monkeypatch.setattr(bot_state, "get_uptime_str", lambda k: "1m")
-    monkeypatch.setattr(bot, "is_running", lambda s: seen.append(s) or True)
+    monkeypatch.setattr(bot, "bot_running", lambda k: seen.append(k) or True)
+    monkeypatch.setattr(bot, "is_running", lambda s: True)
     bot.cmd_status()
-    assert "--bot sos_fade_demo" in seen
+    assert seen == ["sos_fade_demo"]
 
 
 def test_status_says_so_when_nothing_has_written_a_state_file(bot, monkeypatch):
@@ -237,6 +260,7 @@ def test_status_says_so_when_nothing_has_written_a_state_file(bot, monkeypatch):
     import bot_state
 
     monkeypatch.setattr(bot_state, "read_all", lambda: {})
+    monkeypatch.setattr(bot, "bot_running", lambda k: False)
     monkeypatch.setattr(bot, "is_running", lambda s: False)
     out = bot.cmd_status()
     assert "No bot has written a state file" in out

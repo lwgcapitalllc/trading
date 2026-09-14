@@ -39,38 +39,53 @@ from pathlib import Path
 # same C:/trading/algos it always was.
 ALGOS_ROOT = Path(__file__).resolve().parent.parent
 
-# Bot registries — both are keyed by bot_key and must stay in step.
+import bot_registry as _registry  # noqa: E402 — the sibling module, on the path whenever this is
+
+# ── Which bots exist: DISCOVERED from their folders, never listed here ─────────────────────────
 #
-# ⚠ An unregistered key is a CRASH, not a no-op: write_bot() does BOT_INSTANCES[key],
-# unguarded. algos/live/runner.py calls set_started() at the top of its loop, so a bot
-# missing from here dies on startup with a bare KeyError after connecting to MT5 and
-# warming the engines.
+# 🔴 These two were hand-kept dicts until 2026-09-13, and so were three more rosters in other
+# files. A bot is its instance folder now (`bot_registry.discover`), so creating the folder is the
+# whole of registering one — see that module for why each omission used to be silent.
+#
+# ⚠ Read ONCE, at import. Every short-lived reader (the watchdog, the dead-man's switch, the log
+# review) is a fresh process per run, and the runner only ever asks about its own key, whose folder
+# existed before it started. The one long-lived reader that lists the fleet — the chat bot's
+# `/status` — calls `refresh()` through `read_all()`.
+#
+# ⚠ An unreadable folder leaves both EMPTY and says why in `REGISTRY_ERROR`, which the dead-man's
+# switch reports as a problem. It does not raise here: this module is imported by every watcher,
+# and an import that throws is a watcher that dies silently — the one failure it exists to report.
 _INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 
-# Instance directory for each bot key
-BOT_INSTANCES = {
-    "sos_fade_demo": _INSTANCES / "sos_fade_demo",
-    "b_leg_demo": _INSTANCES / "b_leg_demo",
-    "extreme_leg_demo": _INSTANCES / "extreme_leg_demo",
-    # The DEMO copies of the two live bots (2026-09-11) — same strategy, own process, own
-    # account, own deploy. Keyed by a number rather than a place: `sos_fade_demo` now trades the
-    # LIVE account, which is what a key naming its account turns into.
-    "sos_fade_2": _INSTANCES / "sos_fade_2",
-    "extreme_leg_2": _INSTANCES / "extreme_leg_2",
-}
+try:
+    BOT_INSTANCES = _registry.discover(_INSTANCES)
+    REGISTRY_ERROR = ""
+except _registry.RegistryUnreadable as _e:
+    BOT_INSTANCES = {}
+    REGISTRY_ERROR = str(_e)
 
-# Display names — the STRATEGY a bot runs, and nothing about where it runs. Two copies of one
-# strategy share a name on purpose (2026-09-11, Aaron: "it's a generic strategy, not a demo
-# specific strategy"): demo or live is a fact about the ACCOUNT, and a bot can be moved. The names
-# said "(demo)" for the day the copies existed, which would have read "SOS Fade (demo)" on real
-# money the moment one was moved. What tells two copies apart in a message is `labelled` below.
-BOT_NAMES = {
-    "sos_fade_demo": "SOS Fade",
-    "b_leg_demo": "B-LEG",
-    "extreme_leg_demo": "Extreme Leg",
-    "sos_fade_2": "SOS Fade",
-    "extreme_leg_2": "Extreme Leg",
-}
+# Display names — the STRATEGY a bot runs, and nothing about where it runs, read off each bot's
+# own config. Two copies of one strategy share a name on purpose (2026-09-11, Aaron: "it's a
+# generic strategy, not a demo specific strategy"): demo or live is a fact about the ACCOUNT, and a
+# bot can be moved. What tells two copies apart in a message is `labelled` below.
+BOT_NAMES = {key: _registry.display_name(path, key) for key, path in BOT_INSTANCES.items()}
+
+
+def refresh() -> None:
+    """Pick up bots created since this process started — ADD only, never remove.
+
+    For the one long-lived reader that lists the fleet. Add-only because removing a key under a
+    caller holding it turns a lookup into a KeyError, and deleting a bot is a deliberate act that
+    restarts every process that cares. Never raises: an unreadable folder leaves the list as it was.
+    """
+    try:
+        found = _registry.discover(_INSTANCES)
+    except _registry.RegistryUnreadable:
+        return
+    for key, path in found.items():
+        BOT_INSTANCES.setdefault(key, path)
+        BOT_NAMES[key] = _registry.display_name(path, key)
+
 
 # The account registry — the one file that states what an account IS (`kind: live` or `demo`). The
 # command center writes it; nothing on this side read it until 2026-09-11.
@@ -265,7 +280,9 @@ def read_bot(bot_key: str) -> dict:
 
 
 def read_all() -> dict:
-    """Read state for all bots. Returns {bot_key: state_dict}."""
+    """Read state for all bots. Returns {bot_key: state_dict}. Includes a bot created after this
+    process started — see `refresh`."""
+    refresh()
     result = {}
     for bot_key in BOT_INSTANCES:
         result[bot_key] = read_bot(bot_key)

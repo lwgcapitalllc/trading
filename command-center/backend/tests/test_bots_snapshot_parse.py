@@ -22,14 +22,17 @@ from routers import bots
 # The section NAME is derived from the registry, never spelled out here — the whole point
 # of the 2026-08-04 registry change is that a bot is declared once. A literal in the test
 # would keep passing while the fetch command asked for a different section entirely.
-_SECTION = bots._BOTS[0].state_section  # e.g. "state_sos_fade_demo"
+# ⚠ So is the KEY. The list is discovered from the bot folders in name order since 2026-09-13,
+# and a key typed here passed only while the hand-kept list happened to start with it.
+_KEY = bots._BOTS[0].key
+_SECTION = bots._BOTS[0].state_section  # e.g. "state_b_leg_demo"
 _MARKER = f"==={_SECTION.upper()}==="
 
 
 def _state_blob() -> str:
     return json.dumps(
         {
-            "sos_fade_demo": {
+            _KEY: {
                 "name": "SOS Fade",
                 "status": "live",
                 "started": 1785471363.6,
@@ -56,7 +59,7 @@ def test_a_section_marker_glued_to_the_previous_line_is_still_found():
 def test_bot_state_is_read_out_of_its_section():
     raw = f"{_MARKER}\n{_state_blob()}\n===TELEGRAM_START===\n"
     states = bots._parse_bot_states(bots._parse_sections(raw, "head"))
-    assert states["sos_fade_demo"]["balance"] == 2000.0
+    assert states[_KEY]["balance"] == 2000.0
 
 
 def test_a_bot_that_has_never_run_leaves_the_later_sections_intact():

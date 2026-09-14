@@ -24,9 +24,13 @@ that is fine.**
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+import pytest
 
 _REPO = Path(__file__).resolve().parent.parent.parent
 # `bots/` for the module itself, `shared/` for the `bot_state` it imports bare — the coordinator
@@ -290,13 +294,106 @@ def test_a_config_that_does_not_exist_is_treated_as_assigned(tmp_path, monkeypat
     assert sc.bot_is_assigned("never_created") is True
 
 
-def test_every_bot_in_the_startup_sequence_has_an_instance_config():
-    """The two lists are edited separately and a bot listed here with no config would be
-    launched, fail on the missing file, and be reported `offline` by the boot task."""
-    from pathlib import Path
+# ── the sequence IS the bot folders (2026-09-13) ─────────────────────────────
+#
+# 🔴 A hand-kept list until this date. A bot missing from it was simply absent after a reboot,
+# which nothing distinguishes from a bot nobody has armed.
 
-    algos = Path(__file__).resolve().parent.parent
-    for entry in sc.STARTUP_SEQUENCE:
-        key = entry[0]
-        cfg = algos / "markets" / "fx" / "instances" / key / "config.json"
-        assert cfg.exists(), f"{key} is in STARTUP_SEQUENCE with no instance config at {cfg}"
+
+def test_the_sequence_is_every_bot_folder_and_nothing_else(tmp_path, monkeypatch):
+    """A folder holding a config IS a bot; a folder without one is not (a watcher once created
+    one named after a renamed bot). MUTATION: drop the config-file test in `discover` -> red."""
+    for key in ("b_bot", "a_bot"):
+        _instance(
+            tmp_path,
+            monkeypatch,
+            key,
+            {"bot_key": key, "account": None, "display_name": key.upper()},
+        )
+    (tmp_path / "markets" / "fx" / "instances" / "left_behind").mkdir()
+
+    seq = sc.startup_sequence()
+    assert [row[0] for row in seq] == ["a_bot", "b_bot"]
+    assert seq[0][1] == "A_BOT"
+    assert seq[0][3] == ["--bot", "a_bot", "--live"], (
+        "every start path must arm the bot the same way"
+    )
+
+
+def test_live_account_bots_boot_first(tmp_path, monkeypatch):
+    """After a reboot the bots holding real money are the ones worth having back soonest, and each
+    start can wait on the one before it. MUTATION: sort by key alone -> red."""
+    _instance(tmp_path, monkeypatch, "a_demo", {"bot_key": "a_demo", "account": 2})
+    _instance(tmp_path, monkeypatch, "z_live", {"bot_key": "z_live", "account": 1})
+    monkeypatch.setattr(sc, "account_kind", lambda acct: {1: "live", 2: "demo"}.get(acct))
+    assert [row[0] for row in sc.startup_sequence()] == ["z_live", "a_demo"]
+
+
+def test_an_unreadable_bot_folder_is_not_an_empty_boot(tmp_path, monkeypatch):
+    """Rule 1: a boot that could not SEE its bots must say so, never report nothing to start."""
+    monkeypatch.setattr(sc, "ALGOS", tmp_path / "nowhere")
+    with pytest.raises(sc.bot_registry.RegistryUnreadable):
+        sc.startup_sequence()
+
+
+def _full_pass(monkeypatch, *, running_line, assigned):
+    """Drive the FULL boot pass over three bots — one running, one down, one benched."""
+    calls = []
+    rows = [
+        (k, k.title(), "runner.py", ["--bot", k, "--live"], f"{k}.log", "Connected | #", 1)
+        for k in ("up", "down", "bench")
+    ]
+    monkeypatch.setattr(sc, "startup_sequence", lambda root=None: rows)
+    monkeypatch.setattr(sc, "clear_stale_locks", lambda: None)
+    monkeypatch.setattr(sc, "process_list", lambda: running_line)
+    monkeypatch.setattr(sc, "bot_is_assigned", assigned)
+    monkeypatch.setattr(sc, "set_status", lambda k, s: calls.append(("status", k, s)))
+    monkeypatch.setattr(sc, "set_started", lambda k: calls.append(("started", k)))
+    monkeypatch.setattr(sc, "log_baseline", lambda p: (Path(p), 0))
+    monkeypatch.setattr(sc, "wait_for_connection", lambda *a, **k: True)
+    monkeypatch.setattr(sc.subprocess, "Popen", lambda *a, **k: calls.append(("spawn", a[0][-2])))
+    monkeypatch.setattr(sc.subprocess, "CREATE_NEW_PROCESS_GROUP", 0, raising=False)
+    monkeypatch.setattr(sc.time, "sleep", lambda s: None)
+    monkeypatch.setattr(sc, "start_telegram_if_needed", lambda: None)
+    monkeypatch.setattr(sys, "argv", ["startup_coordinator.py"])
+    sc.main()
+    return calls
+
+
+def test_a_full_pass_never_writes_into_a_RUNNING_bots_state(monkeypatch):
+    """🔴 The pass marked EVERY bot "stopped" before it started any, and this pass is what the
+    documented restart fires — so restarting one bot flipped every other bot's state file to
+    stopped until its next heartbeat. One bot's restart writing into another's file.
+    MUTATION: restore the blanket "mark all stopped" loop -> red."""
+    calls = _full_pass(
+        monkeypatch,
+        running_line="python.exe C:\\trading\\algos\\live\\runner.py --bot up --live\n",
+        assigned=lambda k: k != "bench",
+    )
+    assert not [c for c in calls if c[1] == "up"], f"touched the running bot: {calls}"
+    assert ("started", "down") in calls and ("spawn", "down") in calls
+    # A benched bot that is not running still has a stale status reset — the job the blanket
+    # loop was doing for it.
+    assert ("status", "bench", "stopped") in calls
+
+
+def test_a_full_pass_that_cannot_read_the_process_list_starts_nothing(monkeypatch):
+    """An unreadable list is read as RUNNING — the safe direction for a launcher, since a
+    duplicate bot is two positions on one account. MUTATION: read `None` as "not running" -> red."""
+    calls = _full_pass(monkeypatch, running_line=None, assigned=lambda k: True)
+    assert not [c for c in calls if c[0] in ("started", "spawn")], calls
+
+
+def test_the_boot_sweep_clears_an_abandoned_lock_and_keeps_a_fresh_one(tmp_path, monkeypatch):
+    """🔴 It deleted the connect lock outright on every full pass, so restarting ONE bot pulled the
+    lock from under another bot mid-connect. MUTATION: remove every lock regardless of age -> red."""
+    monkeypatch.setattr(sc, "ALGOS", tmp_path)
+    old = tmp_path / "mt5_connect.lock"
+    old.write_text("someone_1")
+    os.utime(old, (time.time() - 3600, time.time() - 3600))
+    fresh = tmp_path / "mt5_connect_c_mt5_fft_terminal64_exe.lock"
+    fresh.write_text("connecting_2")
+
+    sc.clear_stale_locks()
+    assert not old.exists(), "an abandoned lock survived the boot"
+    assert fresh.exists(), "a bot mid-connect lost its lock to somebody else's restart"

@@ -70,7 +70,7 @@ Everything here was kept when the first bot suite was deleted (`algos/docs/BOT_D
 | `BotMT5` | `algos/shared/mt5_ops.py` | Terminal binding by explicit `mt5_path` (this is how "which MT5 instance" is answered), login, **account-number guard that refuses to trade the wrong account**, connection lock, market orders, `move_sl`, `partial_close`, `close_position`, `lot_size`, `recover_open_positions` |
 | Instance configs | `algos/markets/fx/instances/<name>/config.json` + `bots/bot_utils.py` | Account, symbol, risk, params — never hardcoded. Loader + logger + path resolver |
 | Boot chain | `algos/scheduler/*.xml`, `bots/launcher.py`, `bots/startup_coordinator.py` | Auto-start on VPS boot, bots started one at a time so they don't race the MT5 connection |
-| Connection lock | `algos/mt5_connect.lock` | Stops two bots initializing the same terminal at once |
+| Connection locks | `algos/mt5_connect_<terminal>.lock` (`shared/mt5_lock.py`) | Stops two bots initializing the SAME terminal at once; bots on different terminals never wait on each other |
 | Liveness | `algos/shared/bot_state.py` | `bot_state.json` per instance — heartbeat, status, balance, daily/weekly P&L |
 | Crash alerts | `algos/notifications/monitor.py` | Watches for stale logs / dead processes, alerts Telegram |
 | Broker clock | `algos/markets/fx/tools/broker_clock.py` | MT5 server time → true UTC, DST-aware, **measured not assumed**. Critical and already solved |

@@ -68,8 +68,12 @@ def _kills(sent: list[str]) -> list[str]:
 
 
 def _assert_scoped(cmd: str, bot_key: str) -> None:
+    """Scoped to python AND to this bot's `--bot` flag. The key arrives ESCAPED for WQL since
+    2026-09-13 (`_` is a wildcard there), so the escaped spelling is what the filter must carry."""
     assert "name='python.exe'" in cmd, f"kill is not limited to python: {cmd}"
-    assert f"--bot {bot_key}" in cmd, f"kill does not match the --bot flag: {cmd}"
+    assert f"--bot {bots._wql_like_literal(bot_key)}" in cmd, (
+        f"kill does not match the --bot flag: {cmd}"
+    )
 
 
 # ── The routes ────────────────────────────────────────────────────────────────

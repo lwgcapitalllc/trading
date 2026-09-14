@@ -232,7 +232,7 @@ ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot sos_fade_demo%'\" call terminate"
 
 # Restart everything
-ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul"
+ssh forexvps "del C:\trading\algos\mt5_connect*.lock 2>nul"
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ```
 

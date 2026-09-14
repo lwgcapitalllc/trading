@@ -44,6 +44,7 @@ SUPPRESS_FILE = ALGOS_ROOT / "stop_suppress.json"
 TEXAS = ZoneInfo("America/Chicago")
 
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+import bot_registry as _registry
 import bot_state as _bot_state
 from alert_format import alert  # noqa: E402
 
@@ -58,59 +59,23 @@ TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
 LOG_STALE_SECS = 5 * 60
 
-# Registered bots — {"name", "suppress_key", "script", "log"}.
+# Registered bots — {"name", "suppress_key"} per key, DISCOVERED from the bot folders
+# (`bot_registry.discover`, read once by `bot_state` — this task is a fresh process every minute,
+# so a bot created a minute ago is watched on the next pass).
 #
-# ⚠ SYS_MONITOR itself is DISABLED (algos/CLAUDE.md → "On hold, by Aaron's call"), so
-# nothing below runs yet. It is filled in anyway so re-enabling is one schtasks command
-# and not a code change — a watchdog that has to be written at the moment you need it is
-# a watchdog you do not have.
+# 🔴 A hand-kept dict until 2026-09-13. A bot missing from it was a bot nothing watched, which has
+# no symptom at all — the empty alert channel reads as good news.
 #
-# `script` is matched as a SUBSTRING of the process commandline. The bot_key is what
-# appears there (`runner.py --bot sos_fade_demo`), so it is the match — never the
-# script filename, which is `runner.py` for every live bot and would make them
-# indistinguishable the moment a second one exists.
+# ⚠ Every bot is registered, benched or not, and `main` skips a benched one per pass. Being here
+# says a bot CAN be watched; having an account says it SHOULD be — so the Bots page can never arm a
+# bot this watchdog does not watch.
+#
+# ⚠ A bot is matched by its KEY, exactly (`bot_registry.is_runner_line`), never as a substring of
+# the process list: `sos_fade_2` is a substring of `--bot sos_fade_20`, and every tool that acts on
+# a bot carries its key, so a substring read a dead bot as alive whenever one of them ran.
 BOTS = {
-    "sos_fade_demo": {
-        "name": "SOS Fade",
-        "suppress_key": "sos_fade_demo",
-        "script": "sos_fade_demo",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/sos_fade_demo/sos_fade_demo.log"),
-    },
-    # Registered while it sits on the BENCH, and that pairing is deliberate. `check_bot` skips a
-    # bot with no account, so this costs nothing today — but registering it only when somebody
-    # assigns it would mean the Bots page could arm a bot the watchdog does not watch, with
-    # nothing to notice until it died unobserved. The registry is static and complete; whether a
-    # bot is EXPECTED to be running is read from its own config, every pass.
-    "b_leg_demo": {
-        "name": "B-LEG",
-        "suppress_key": "b_leg_demo",
-        "script": "b_leg_demo",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/b_leg_demo/b_leg_demo.log"),
-    },
-    # Benched too, and registered for the same reason as the entry above.
-    "extreme_leg_demo": {
-        "name": "Extreme Leg",
-        "suppress_key": "extreme_leg_demo",
-        "script": "extreme_leg_demo",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/extreme_leg_demo/extreme_leg_demo.log"),
-    },
-    # The demo copies of the two live bots (2026-09-11). ⚠ `script` is a SUBSTRING match, so no
-    # key may be a substring of another's commandline — `sos_fade_2` is not in
-    # `--bot sos_fade_demo` and the reverse holds too; a future `sos_fade_20` would break it.
-    # ⚠ Same NAME as the original, on purpose: a name is the strategy, and what tells the two
-    # apart in a message is the account's kind, added by `bot_state.bot_label` when it is sent.
-    "sos_fade_2": {
-        "name": "SOS Fade",
-        "suppress_key": "sos_fade_2",
-        "script": "sos_fade_2",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/sos_fade_2/sos_fade_2.log"),
-    },
-    "extreme_leg_2": {
-        "name": "Extreme Leg",
-        "suppress_key": "extreme_leg_2",
-        "script": "extreme_leg_2",
-        "log": str(ALGOS_ROOT / "markets/fx/instances/extreme_leg_2/extreme_leg_2.log"),
-    },
+    key: {"name": _bot_state.BOT_NAMES.get(key, key), "suppress_key": key}
+    for key in _bot_state.BOT_INSTANCES
 }
 
 # How many times a bot is restarted before this gives up and asks for a human. Same shape as the
@@ -171,7 +136,45 @@ def is_running(script: str):
     ⚠ **A non-zero exit is also `None`, not `False`.** `wmic` printing nothing because it failed
     and printing nothing because no bot is running are the same empty string, and only the exit
     code separates them.
+
+    ⚠ A SUBSTRING match, so it is for the chat bot (`telegram_bot.py`) only. A trading bot is
+    `is_bot_running`, which matches its key exactly.
     """
+    procs = _process_list()
+    return None if procs is None else script in procs
+
+
+def is_bot_running(bot_key: str, fresh: bool = False):
+    """True / False / **None** for ONE trading bot — its runner with `--bot <key>` exactly.
+
+    `None` is CANNOT ASK and every caller treats it as `is_running`'s does. `fresh=True` re-reads
+    the list rather than using this pass's — the one caller is the post-restart confirmation, whose
+    whole question is what changed since the pass began.
+    """
+    procs = _process_list(fresh)
+    if procs is None:
+        return None
+    return bool(_registry.runner_keys(procs, [bot_key]))
+
+
+# ONE read of the process list per watchdog pass, held only while `main` runs it. Outside a pass
+# every read is fresh, so a caller outside `main` can never be handed a stale list. It was one
+# `wmic` per bot until 2026-09-13 — a pass that grows by a process query per bot, on a task that
+# must finish inside its own one-minute cadence.
+_PASS: dict = {}
+
+
+def _process_list(fresh: bool = False):
+    """The python process list, `None` when it could not be asked — cached for the pass."""
+    if not fresh and "procs" in _PASS:
+        return _PASS["procs"]
+    procs = _query_process_list()
+    if "procs" in _PASS:
+        _PASS["procs"] = procs
+    return procs
+
+
+def _query_process_list():
     try:
         result = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
@@ -185,7 +188,7 @@ def is_running(script: str):
     if result.returncode != 0:
         print(f"  ! process list query failed (exit {result.returncode}) - answering 'cannot ask'")
         return None
-    return script in result.stdout
+    return result.stdout
 
 
 # The exact closing line `runner._run` writes when a stop was ASKED for — the `stop.request`
@@ -322,7 +325,7 @@ def restart_bot(bot_key: str) -> bool:
     # the PROCESS exists almost immediately, and that is all this needs to confirm. Waiting for
     # the warm-up would hold the whole monitor pass open for a minute every time.
     time.sleep(8)
-    confirmed = is_running(BOTS[bot_key]["script"])
+    confirmed = is_bot_running(bot_key, fresh=True)
     # ⚠ CANNOT ASK reports NOT CONFIRMED, which is the conservative direction here and the
     # opposite of the call `check_bot` makes. There, an unread process list must not trigger a
     # restart; here the restart has ALREADY been launched, so the only question left is whether
@@ -343,7 +346,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # the one health room both kinds share (2026-09-11).
     name = _bot_state.labelled(cfg["name"], _bot_state.read_account(bot_key))
 
-    running = is_running(cfg["script"])
+    running = is_bot_running(bot_key)
     # 🔴 CANNOT ASK. Leave every stored fact exactly as it was and take no action: alerting would
     # cry wolf and restarting would start a second copy of a bot that is probably still running.
     # The next pass is 60 seconds away, so the cost of doing nothing is one minute of not knowing;
@@ -600,29 +603,59 @@ def check_telegram_bot(state: dict) -> dict:
     return tg_state
 
 
+def _say_if_the_bots_cannot_be_seen(state: dict) -> None:
+    """Alert ONCE per distinct reason when the bot folders could not be read, and forget it once
+    they can. A watchdog handed an empty list watches nothing and says nothing, which reads exactly
+    like a quiet night (rule 8)."""
+    err = _bot_state.REGISTRY_ERROR
+    if not err:
+        state.pop("registry_error", None)
+        return
+    print(f"Cannot see the bots: {err}")
+    if state.get("registry_error") != err:
+        send_alert(
+            alert(
+                "🚨",
+                "CANNOT SEE THE BOTS",
+                "Watchdog",
+                f"The bot folders could not be read ({err}), so no bot is being watched.",
+                "Check the box's disk and the algos folder.",
+            )
+        )
+    state["registry_error"] = err
+
+
 def main():
     state = load_state()
     today = datetime.now(TEXAS).date().isoformat()
 
-    # Telegram bot watchdog — always check first
+    # One process list for the whole pass — see `_PASS`.
+    _PASS.clear()
+    _PASS["procs"] = _query_process_list()
     try:
-        state["telegram_bot"] = check_telegram_bot(state)
-    except Exception as e:
-        print(f"Telegram watchdog error: {e}")
+        _say_if_the_bots_cannot_be_seen(state)
 
-    # Trading bot checks
-    for bot_key in BOTS:
-        # A bot on the BENCH (`account: null`) is not supposed to be running, so "the process is
-        # gone" is not a finding about it — it is the state somebody chose from the Bots page.
-        # Alerting and then RESTARTING it would be worse than noisy: this watchdog's response to
-        # an offline bot is to start it, and it would start a bot with no account to trade, every
-        # sixty seconds, for ever.
-        if not _bot_state.is_assigned(bot_key):
-            continue
+        # Telegram bot watchdog — always check first
         try:
-            state[bot_key] = check_bot(bot_key, state, today)
+            state["telegram_bot"] = check_telegram_bot(state)
         except Exception as e:
-            print(f"Error checking {bot_key}: {e}")
+            print(f"Telegram watchdog error: {e}")
+
+        # Trading bot checks
+        for bot_key in BOTS:
+            # A bot on the BENCH (`account: null`) is not supposed to be running, so "the process
+            # is gone" is not a finding about it — it is the state somebody chose from the Bots
+            # page. Alerting and then RESTARTING it would be worse than noisy: this watchdog's
+            # response to an offline bot is to start it, and it would start a bot with no account
+            # to trade, every sixty seconds, for ever.
+            if not _bot_state.is_assigned(bot_key):
+                continue
+            try:
+                state[bot_key] = check_bot(bot_key, state, today)
+            except Exception as e:
+                print(f"Error checking {bot_key}: {e}")
+    finally:
+        _PASS.clear()
 
     save_state(state)
     print(f"Monitor check complete — {datetime.now(TEXAS).strftime('%I:%M %p CT')}")

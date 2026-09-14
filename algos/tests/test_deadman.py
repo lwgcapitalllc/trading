@@ -410,17 +410,53 @@ def test_the_real_send_swallows_network_errors(monkeypatch):
     assert dm._send("https://hc-ping.com/abc") is False
 
 
-# ── registry drift ───────────────────────────────────────────────────────────────
+# ── which bots, and which process is which ───────────────────────────────────────
+#
+# 🔴 `BOTS` was a hand-kept dict until 2026-09-13, held to the other rosters by a test that grepped
+# their source for each key. It is the bot folders now (`bot_registry.discover`), and
+# `test_bot_bench.py::test_every_algos_roster_IS_the_bot_folders` holds every roster to them.
 
 
-def test_the_bot_registry_matches_the_startup_coordinators():
-    # Three files key bots by `--bot <key>`: this one, monitor.py, and startup_coordinator.py.
-    # A bot added to the fleet and missed here is not an error anywhere — it is simply never
-    # watched, which is the silent failure this whole module exists to prevent.
-    coord = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
-    for key in dm.BOTS:
-        assert f'"{key}"' in coord, f"{key} is watched here but not started by the coordinator"
+def test_the_switch_watches_every_bot_folder():
+    import bot_registry
 
-    monitor = (_REPO / "algos" / "notifications" / "monitor.py").read_text()
-    for key in dm.BOTS:
-        assert f'"{key}"' in monitor, f"{key} is watched here but not by monitor.py"
+    folders = set(bot_registry.discover())
+    assert folders, "no bot folders found - this would pass for free"
+    assert set(dm.BOTS) == folders
+
+
+def test_an_unreadable_bot_list_is_a_PROBLEM_not_a_quiet_box(wired):
+    """Rule 8, in the one alarm whose silence has to mean something: a switch handed an empty bot
+    list pings green over a box nobody can see into. MUTATION: drop the `_registry_error` check
+    -> red."""
+    wired.setattr(dm, "_registry_error", lambda: "cannot list the bot folders at X (OSError: no)")
+    problems = dm.check_health()
+    assert any("cannot see the bots" in p for p in problems), problems
+
+
+def test_the_process_read_matches_each_bot_EXACTLY(monkeypatch):
+    """🔴 A substring of the whole process list read `sos_fade_2` as running whenever
+    `sos_fade_20` was. MUTATION: `f"--bot {k}" in stdout` again -> red."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(dm, "BOTS", {"sos_fade_2": "SOS Fade", "sos_fade_20": "SOS Fade"})
+    monkeypatch.setattr(
+        dm.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0,
+            stdout="python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_20 --live\n",
+        ),
+    )
+    assert dm._running_keys() == {"sos_fade_20"}
+
+
+def test_a_FAILED_process_query_is_cannot_ask_not_nothing_running(monkeypatch):
+    """A failed `wmic` and a box running no python both print nothing; only the exit code tells
+    them apart. MUTATION: ignore the exit code -> red (an empty set, i.e. "every bot is down")."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        dm.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1, stdout="")
+    )
+    assert dm._running_keys() is None

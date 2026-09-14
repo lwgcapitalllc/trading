@@ -325,3 +325,94 @@ def test_the_snapshot_carries_the_key_the_routes_accept(monkeypatch):
     monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
     for row in bots.get_snapshot().bots:
         assert bots._resolve_bot(row.key)[1] == row.key
+
+
+# ── The list is DISCOVERED from the bot folders (2026-09-13) ──────────────────
+#
+# 🔴 A hand-kept list of `BotReg`s until this date, and one of five: a bot missing here could not
+# be put on an account from this page, and a bot only here was one the page could arm and no
+# watchdog watched. A bot IS its folder now, on both sides (`algos/shared/bot_registry.py`).
+
+
+@pytest.fixture
+def bot_folders(tmp_path):
+    """A private instances folder. The maps are rebuilt IN PLACE, so the real list is rebuilt on
+    the way out — a test leaving scratch bots in `_BOTS` would hand them to every test after it."""
+    import json
+
+    real = bots._INSTANCES_ROOT
+    bots._INSTANCES_ROOT = tmp_path
+    bots._REGISTRY_SIG = None
+
+    def make(key, **body):
+        d = tmp_path / key
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "config.json").write_text(json.dumps({"bot_key": key, **body}))
+        return d
+
+    yield make
+    bots._INSTANCES_ROOT = real
+    bots._REGISTRY_SIG = None
+    bots._refresh_bots()
+
+
+def test_the_list_is_the_bot_folders_and_nothing_else(bot_folders, tmp_path):
+    """A folder holding a config IS a bot; a folder without one is not.
+    MUTATION: drop the config-file test in `_discover_bots` -> red."""
+    bot_folders("b_bot", display_name="B", account=None)
+    bot_folders("a_bot", display_name="A", account=None)
+    (tmp_path / "left_behind").mkdir()
+    (tmp_path / "Bad-Name").mkdir()
+    (tmp_path / "Bad-Name" / "config.json").write_text("{}")
+
+    bots._refresh_bots()
+    assert [b.key for b in bots._BOTS] == ["a_bot", "b_bot"]
+    assert bots._KEY_DISPLAY == {"a_bot": "A", "b_bot": "B"}
+    assert bots._BOT_INSTANCE_MAP["a_bot"]["path"] == tmp_path / "a_bot" / "config.json"
+    assert [s for s, _ in bots._BOT_STATE_SECTIONS] == ["state_a_bot", "state_b_bot"]
+
+
+def test_a_new_folder_shows_up_on_the_NEXT_request_with_no_restart(bot_folders, client):
+    """The feature a copy of a bot needs: made from this page, listed on the next request.
+    MUTATION: drop the router's `_current_bots` dependency -> red."""
+    bot_folders("a_bot", account=None)
+    assert [b["key"] for b in client.get("/bots/accounts").json()[0]["bots"]] == ["a_bot"]
+
+    bot_folders("b_bot", account=None)
+    keys = {b["key"] for g in client.get("/bots/accounts").json() for b in g["bots"]}
+    assert keys == {"a_bot", "b_bot"}
+
+
+def test_an_unchanged_tree_is_not_rebuilt(bot_folders):
+    """A directory listing per request, and nothing more unless something moved — the maps keep
+    their identity. MUTATION: rebuild unconditionally -> red."""
+    bot_folders("a_bot", account=None)
+    bots._refresh_bots()
+    first = bots._BOTS[0]
+    bots._refresh_bots()
+    assert bots._BOTS[0] is first
+
+
+def test_a_folder_that_cannot_be_listed_is_a_503_never_an_empty_page(bot_folders, tmp_path):
+    """A Bots page with no bots on it reads as "you have no bots" — the confident wrong answer.
+    MUTATION: swallow the OSError and return an empty list -> red."""
+    bots._INSTANCES_ROOT = tmp_path / "missing"
+    bots._REGISTRY_SIG = None
+    with pytest.raises(bots.HTTPException) as e:
+        bots._refresh_bots()
+    assert e.value.status_code == 503
+    assert "missing" in e.value.detail
+
+
+def test_an_unclassifiable_account_is_labelled_LIVE_and_a_benched_bot_demo(
+    bot_folders, monkeypatch
+):
+    """The fallback `_account_type_of` uses when the account list cannot be read: under-reporting
+    real money is the failure that label exists to prevent. MUTATION: default to demo -> red."""
+    monkeypatch.setattr(bots, "_account_kinds_now", lambda: {1: "demo"})
+    bot_folders("benched", account=None)
+    bot_folders("known_demo", account=1)
+    bot_folders("unknown", account=999)
+    bots._refresh_bots()
+    kinds = {b.key: b.account_type for b in bots._BOTS}
+    assert kinds == {"benched": "demo", "known_demo": "demo", "unknown": "live"}

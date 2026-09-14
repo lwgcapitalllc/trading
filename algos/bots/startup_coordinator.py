@@ -21,16 +21,27 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 PYTHON = sys.executable
-ALGOS = Path("C:/trading/algos")
-BOTS = Path("C:/trading/algos/bots")
+# DERIVED from this file, never typed. It read `Path("C:/trading/algos")` until 2026-09-13, which is
+# right on the VPS and made this module unimportable anywhere else — so its tests had to parse it
+# rather than run it, and a parse can only check what the literal says.
+ALGOS = Path(__file__).resolve().parent.parent
+BOTS = ALGOS / "bots"
 
 sys.path.insert(0, str(ALGOS / "shared"))
-from bot_state import set_started, set_status
+import bot_registry  # noqa: E402
+import mt5_lock  # noqa: E402
+from bot_state import account_kind, set_started, set_status  # noqa: E402
 
-# (bot_key, display name, script, argv, log path, ready string, connect timeout)
+RUNNER = ALGOS / "live" / "runner.py"
+READY_STRING = "Connected | #"
+CONNECT_TIMEOUT = 180
+
+# (bot_key, display name, script, argv, log path, ready string, connect timeout) — one per bot
+# FOLDER, built by `startup_sequence()`. It was a hand-kept list until 2026-09-13; a bot missing
+# from it was simply absent after a reboot, which nothing distinguishes from a bot nobody armed.
 #
 # `argv` is the FULL argument list, not a config path. The old bots all took
 # `--config <file>`; algos/live/runner.py takes `--bot <key>` and resolves its own
@@ -60,69 +71,55 @@ from bot_state import set_started, set_status
 # ⚠ It follows that arming is now the DEFAULT for this bot on this box: every automatic
 # recovery brings it back live. Disarming means deleting the flag here and restarting — not
 # stopping the bot, which the watchdog will simply undo.
-STARTUP_SEQUENCE = [
-    (
-        "sos_fade_demo",
-        "SOS Fade",
-        str(ALGOS / "live" / "runner.py"),
-        ["--bot", "sos_fade_demo", "--live"],
-        str(ALGOS / "markets/fx/instances/sos_fade_demo/sos_fade_demo.log"),
-        "Connected | #",
-        180,
-    ),
-    (
-        "b_leg_demo",
-        "B-LEG",
-        str(ALGOS / "live" / "runner.py"),
-        ["--bot", "b_leg_demo", "--live"],
-        str(ALGOS / "markets/fx/instances/b_leg_demo/b_leg_demo.log"),
-        "Connected | #",
-        180,
-    ),
-    # ⚠ **Listed while on the BENCH, exactly as the sibling above is, and `bot_is_assigned`
-    # skips it every pass.** Being here says a bot CAN be started; having an account says it
-    # SHOULD be. Adding it only once somebody assigns it would mean the Bots page could put a bot
-    # on an account that no boot sequence brings back after a reboot — and the symptom of that is
-    # a bot that is simply absent, which nothing distinguishes from one nobody has armed yet.
-    (
-        "extreme_leg_demo",
-        "Extreme Leg",
-        str(ALGOS / "live" / "runner.py"),
-        ["--bot", "extreme_leg_demo", "--live"],
-        str(ALGOS / "markets/fx/instances/extreme_leg_demo/extreme_leg_demo.log"),
-        "Connected | #",
-        180,
-    ),
-    # The demo copies of the two live bots (2026-09-11). Listed from birth for the reason above,
-    # and born BENCHED so the box can deploy their snapshot before anything expects them to run.
-    # Same names as the originals, on purpose — the account's kind tells them apart.
-    (
-        "sos_fade_2",
-        "SOS Fade",
-        str(ALGOS / "live" / "runner.py"),
-        ["--bot", "sos_fade_2", "--live"],
-        str(ALGOS / "markets/fx/instances/sos_fade_2/sos_fade_2.log"),
-        "Connected | #",
-        180,
-    ),
-    (
-        "extreme_leg_2",
-        "Extreme Leg",
-        str(ALGOS / "live" / "runner.py"),
-        ["--bot", "extreme_leg_2", "--live"],
-        str(ALGOS / "markets/fx/instances/extreme_leg_2/extreme_leg_2.log"),
-        "Connected | #",
-        180,
-    ),
-]
+#
+# ⚠ **A BENCHED bot is in the sequence and `bot_is_assigned` skips it every pass.** Being here says
+# a bot CAN be started; having an account says it SHOULD be. That split is what lets the Bots page
+# put a bot on an account and have every reboot bring it back.
+Row = Tuple[str, str, str, List[str], str, str, int]
+
+
+def startup_sequence(root: Optional[Path] = None) -> List[Row]:
+    """Every bot FOLDER, as the launcher starts it — LIVE accounts first, then by key.
+
+    Raises `bot_registry.RegistryUnreadable` when the folders cannot be listed: a boot that could
+    not see its bots must say so, never report that there was nothing to start.
+
+    ⚠ **Live-account bots boot first**, because after a reboot the bots holding real money are the
+    ones worth having back soonest, and each start can wait up to `CONNECT_TIMEOUT` on the one
+    before it. An account whose kind cannot be read sorts with the rest rather than guessing.
+    """
+    base = Path(root) if root is not None else ALGOS / "markets" / "fx" / "instances"
+    bots = bot_registry.discover(base)
+    rows: List[Row] = [
+        (
+            key,
+            bot_registry.display_name(path, key),
+            str(RUNNER),
+            ["--bot", key, "--live"],
+            str(path / f"{key}.log"),
+            READY_STRING,
+            CONNECT_TIMEOUT,
+        )
+        for key, path in bots.items()
+    ]
+    return sorted(rows, key=lambda row: (0 if _is_live(bots[row[0]]) else 1, row[0]))
+
+
+def _is_live(folder: Path) -> bool:
+    """Whether this bot's config names a LIVE account. Never raises — boot order is a preference,
+    and a lookup that failed must cost the ordering, never the boot."""
+    try:
+        return account_kind((bot_registry.read_config(folder) or {}).get("account")) == "live"
+    except Exception:
+        return False
 
 
 def bot_is_assigned(bot_key: str) -> bool:
     """Whether this bot has an account to trade, read from its own instance config.
 
     `account: null` is the BENCH — registered, configured, and deliberately not on any account
-    (see `algos/live/live_config.py`). Being listed in `STARTUP_SEQUENCE` says a bot CAN be
-    started; having an account says it SHOULD be. Keeping those separate is what lets a bot be
+    (see `algos/live/live_config.py`). Having a folder says a bot CAN be started; having an
+    account says it SHOULD be. Keeping those separate is what lets a bot be
     added to and removed from an account from the Bots page without editing this file — and
     without a removed bot being started again by the next boot or the next watchdog pass, which
     is the whole point: `runner.run()` refuses too, but it refuses after the process has been
@@ -142,11 +139,20 @@ def bot_is_assigned(bot_key: str) -> bool:
         return True
 
 
-def clear_lock():
-    lock = Path(r"C:\trading\algos\mt5_connect.lock")
-    if lock.exists():
-        lock.unlink()
-        print("Cleared stale MT5 lock")
+def clear_stale_locks() -> None:
+    """Remove only the MT5 connect locks old enough to be abandoned.
+
+    🔴 **It deleted the one box-wide lock outright on every full run until 2026-09-13**, and this
+    sequence is what the documented restart path fires — so restarting ONE bot pulled the lock from
+    under whichever other bot was mid-connect at that moment. A fresh lock is a bot connecting;
+    after a reboot every lock is old, so the boot still clears them all. Rules: `mt5_lock.py`.
+    """
+    for lock in mt5_lock.stale_locks(ALGOS):
+        try:
+            lock.unlink()
+            print(f"Cleared stale MT5 lock {lock.name}")
+        except OSError as e:
+            print(f"  ! Could not clear {lock.name} ({e}) — a connect will take it over when stale")
 
 
 def live_log(log_path: str) -> Path:
@@ -228,11 +234,18 @@ def main():
     )
     args = parser.parse_args()
 
+    try:
+        sequence = startup_sequence()
+    except bot_registry.RegistryUnreadable as e:
+        # Not "no bots": the folders could not be read, so nothing here can say what should run.
+        print(f"Cannot list the bots — {e}")
+        sys.exit(1)
+
     # ── Single-bot mode ───────────────────────────────────────────────────────
     if args.bot:
-        entry = next((e for e in STARTUP_SEQUENCE if e[0] == args.bot), None)
+        entry = next((e for e in sequence if e[0] == args.bot), None)
         if entry is None:
-            keys = [e[0] for e in STARTUP_SEQUENCE]
+            keys = [e[0] for e in sequence]
             print(f"Unknown bot key '{args.bot}'. Available: {', '.join(keys)}")
             sys.exit(1)
 
@@ -286,22 +299,25 @@ def main():
     print("=" * 60)
     print()
 
-    clear_lock()
+    clear_stale_locks()
 
-    # Mark all bots as stopped at startup
-    for bot_key, _, _, _, _, _, _ in STARTUP_SEQUENCE:
-        set_status(bot_key, "stopped")
+    # ONE read of the process list for the whole pass, not one per bot — the pass is linear in the
+    # number of bots either way, and a `wmic` per bot is the part that grows.
+    procs = process_list()
 
     all_ok = True
 
-    for bot_key, name, script, argv, log_path, ready_str, timeout in STARTUP_SEQUENCE:
-        print(f"Starting {name}...")
+    for bot_key, name, script, argv, log_path, ready_str, timeout in sequence:
+        print(f"Starting {name} ({bot_key})...")
+        running = _running_in(procs, bot_key)
 
         # On the bench — skip QUIETLY, and do not count it against `all_ok`. This is the boot
         # sequence and the watchdog's recovery path, both of which run unattended: a bot nobody
         # has assigned is a deliberate state, so treating it as a failed start would mark the
         # whole boot unhealthy every time and train everyone to ignore that signal.
         if not bot_is_assigned(bot_key):
+            if not running:
+                set_status(bot_key, "stopped")
             print("  - Not assigned to an account — skipped")
             continue
 
@@ -310,7 +326,11 @@ def main():
         # you TWO processes on one account and one magic number, both sizing full positions
         # off the same setup. Measured 2026-08-04: a SYS_STARTUP run while the bot was up
         # produced exactly that, and nothing anywhere reported it.
-        if bot_is_running(bot_key):
+        #
+        # 🔴 **Its status is left alone too (2026-09-13).** This pass marked EVERY bot "stopped"
+        # before it started, so running it to restart one bot flipped every other bot's state file
+        # to stopped until its next heartbeat — one bot's restart writing into the others' files.
+        if running:
             print("  ✓ Already running — left alone")
             continue
 
@@ -367,6 +387,18 @@ def bot_is_running(bot_key: str) -> bool:
     alone identifies which fleet. **Only the pair identifies a running bot**, and a coordinator
     holding the same key is not one.
     """
+    procs = process_list()
+    if procs is None:
+        print(f"  ! Could not read the process list — assuming {bot_key} is up, not starting it")
+    return _running_in(procs, bot_key)
+
+
+def process_list() -> Optional[str]:
+    """The box's python process list, or **`None` when it could not be asked** — never `""`.
+
+    A failed query and a box running no python both print nothing; only the exit code separates
+    them, so a non-zero one is `None` too (the watchdog's own rule, `monitor.is_running`).
+    """
     try:
         r = subprocess.run(
             ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
@@ -374,12 +406,22 @@ def bot_is_running(bot_key: str) -> bool:
             text=True,
             timeout=10,
         )
-    except Exception as e:
-        print(
-            f"  ! Could not read the process list ({e}) — assuming {bot_key} is up, not starting it"
-        )
+    except Exception:
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout
+
+
+def _running_in(procs: Optional[str], bot_key: str) -> bool:
+    """Whether `bot_key`'s runner is in this process list — **True when the list is `None`**.
+
+    The exact rule is `bot_registry.is_runner_line`: the runner script AND `--bot <key>` ending at
+    the key, so neither this launcher's own command line nor `--bot <key>0` reads as the bot.
+    """
+    if procs is None:
         return True
-    return any(f"--bot {bot_key}" in line and "runner.py" in line for line in r.stdout.splitlines())
+    return bool(bot_registry.runner_keys(procs, [bot_key]))
 
 
 def telegram_is_running() -> bool:

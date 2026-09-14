@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Optional
 
 import config as cfg
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from models import (
     AccountEarnings,
@@ -114,7 +114,13 @@ from services import (
 from services.alert_format import alert, joined
 from services.notify import send_telegram_id
 
-router = APIRouter(prefix="/bots", tags=["bots"])
+
+def _current_bots() -> None:
+    """Every /bots request sees the bot folders as they are NOW — see `_refresh_bots`."""
+    _refresh_bots()
+
+
+router = APIRouter(prefix="/bots", tags=["bots"], dependencies=[Depends(_current_bots)])
 
 VPS_HOST = cfg.SSH_ALIAS
 
@@ -197,78 +203,161 @@ class BotReg:
 
     @property
     def config_path(self) -> Path:
-        return (
-            cfg.MONOREPO_ROOT
-            / "algos"
-            / "markets"
-            / "fx"
-            / "instances"
-            / self.instance_dir
-            / "config.json"
+        return _INSTANCES_ROOT / self.instance_dir / "config.json"
+
+
+# ── The bot list is DISCOVERED from the bot folders, never typed here (2026-09-13) ──────────────
+#
+# 🔴 **This was a hand-kept list of `BotReg`s, and it was one of FIVE** — the algos side kept four
+# more (the state map, the boot sequence, the watchdog, the dead-man's switch). A bot missing here
+# could not be put on an account from this page; a bot only here was one the page could arm and no
+# watchdog watched. A bot IS its folder now, `algos/markets/fx/instances/<key>/config.json`, on
+# both sides of the boundary — `algos/shared/bot_registry.discover` there, `_discover_bots` here,
+# by the same rule, because the two subsystems may not import each other.
+#
+# ⚠ **Refreshed on every /bots request, rebuilt only when the folders or the account list CHANGED**
+# (`_registry_signature` — each folder's config time, plus the account list's). A copy made from
+# this page appears on the next request with no restart, and an unchanged tree costs a directory
+# listing. The maps below are mutated IN PLACE, so every function that reads one by name sees the
+# current list.
+#
+# ⚠ `account_type` is the account's kind off the account list — the fallback `_account_type_of`
+# uses when the list cannot be read at snapshot time. A bot on NO account is `demo` (it holds no
+# money); an assigned bot whose account the list cannot classify is `live`, because under-reporting
+# real money is the failure that label exists to prevent.
+_INSTANCES_ROOT = cfg.MONOREPO_ROOT / "algos" / "markets" / "fx" / "instances"
+
+# The algos side's `bot_registry.KEY_PATTERN`, restated because the subsystems may not import each
+# other: a key names a folder, a process argument, a Telegram label and a section in the batched
+# SSH read below, so it is held to the one alphabet all four take without quoting.
+_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
+
+_BOTS: list[BotReg] = []
+_BOT_DISPLAY_ORDER: list[str] = []
+_BY_TASK: dict[str, BotReg] = {}
+_BY_KEY: dict[str, BotReg] = {}
+_REGISTRY_SIG: Optional[tuple] = None
+
+
+def _folder_config(folder: Path) -> Optional[dict]:
+    """A bot folder's config, `None` when it cannot be read — never `{}`."""
+    try:
+        raw = json.loads((folder / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _account_kinds_now() -> dict[int, str]:
+    """Every registered account → its kind, `{}` when the list cannot be read."""
+    try:
+        path = bot_account_registry.registry_path(cfg.MONOREPO_ROOT)
+        return {a.account: a.kind for a in bot_account_registry.load_accounts(path)}
+    except Exception:  # noqa: BLE001 — `_kind_label` then falls back in the safe direction
+        return {}
+
+
+def _kind_label(account, kinds: dict[int, str]) -> str:
+    if account is None:
+        return "demo"
+    try:
+        kind = kinds.get(int(account))
+    except (TypeError, ValueError):
+        kind = None
+    return kind if kind in ("demo", "live") else "live"
+
+
+def _discover_bots(root: Path) -> list[BotReg]:
+    """One `BotReg` per bot FOLDER — a folder holding a `config.json` whose name is a key.
+
+    ⚠ **An unreadable config is still a bot** (the algos rule): its folder says it exists. It is
+    listed under its key, and every reader of its config already says when that cannot be read.
+    Raises `OSError` when the folder itself cannot be listed — never an empty list.
+    """
+    names = sorted(p.name for p in root.iterdir() if p.is_dir())
+    kinds = _account_kinds_now()
+    out: list[BotReg] = []
+    for name in names:
+        folder = root / name
+        if not _KEY_PATTERN.match(name) or not (folder / "config.json").is_file():
+            continue
+        raw = _folder_config(folder) or {}
+        shown = raw.get("display_name")
+        out.append(
+            BotReg(
+                task=f"BOT_{name.upper()}",
+                key=name,
+                display=shown.strip() if isinstance(shown, str) and shown.strip() else name,
+                account_type=_kind_label(raw.get("account"), kinds),
+            )
         )
+    return out
 
 
-_BOTS: list[BotReg] = [
-    BotReg(
-        task="BOT_SOS_FADE",
-        key="sos_fade_demo",
-        display="SOS Fade",
-        account_type="demo",
-    ),
-    # ON THE BENCH (`account: null` in its instance config), and registered here anyway — that
-    # pairing is the point. Registration is what makes a bot ADDRESSABLE: it is what puts it on
-    # the Accounts tab so it can be added to an account from the browser, and it is what makes
-    # its version, its params and its state readable. Whether it TRADES is a different question,
-    # answered by its account, and `startup_coordinator` skips a bot that has none.
-    #
-    # ⚠ It reads STOPPED on the Monitor tab and that is correct rather than a gap: it is not
-    # running, nothing has started it, and nothing will until somebody assigns it.
-    #
-    # 🔴 **THIS COMMENT SAID THE BENCHED BOTS ARE DELIBERATELY ABSENT FROM
-    # `algos/notifications/monitor.py` AND `deadman.py`. THEY ARE IN BOTH, AND HAVE BEEN — the
-    # claim was corrected on 2026-09-04 by reading those two files rather than this line.** Its
-    # reasoning was sound and its conclusion was reversed where the code lives: both watchers
-    # register every bot STATICALLY and ask `bot_state.is_assigned` per pass, which is the ONE
-    # definition of the bench. Registering only on assignment would let this page arm a bot no
-    # watchdog is watching — the failure with no symptom — where a static registry costs nothing
-    # while a bot sits benched. **Rule 7: a comment about another file is a claim, and the line
-    # that consumes it is the only thing that settles it.**
-    BotReg(task="BOT_B_LEG", key="b_leg_demo", display="B-LEG", account_type="demo"),
-    # Benched too (2026-09-04). ⚠ **Its frame is M5**, unlike every other bot here — on M15 the
-    # strategy runs, logs cleanly and never fires, which is indistinguishable from a quiet
-    # market. That lives in its instance config, not here; it is mentioned because this page is
-    # where somebody assigns it.
-    BotReg(
-        task="BOT_EXTREME_LEG",
-        key="extreme_leg_demo",
-        display="Extreme Leg",
-        account_type="demo",
-    ),
-    # The DEMO copies of the two live bots (2026-09-11): same strategy, own process, own account,
-    # own deploy — so a new version can be trialled on demo while live keeps the proven one.
-    # Keyed by a number, not a place: the two keys above say `demo` and trade the LIVE account.
-    # ⚠ The SAME display name as the original, on purpose (Aaron: "it's a generic strategy"): demo
-    # or live belongs to the account, which the page groups by, and a name saying "(demo)" would
-    # have gone on saying it on real money the day the bot moved. Where a name appears WITHOUT its
-    # account — a Telegram message — the kind is added when it is written.
-    BotReg(
-        task="BOT_SOS_FADE_2",
-        key="sos_fade_2",
-        display="SOS Fade",
-        account_type="demo",
-    ),
-    BotReg(
-        task="BOT_EXTREME_LEG_2",
-        key="extreme_leg_2",
-        display="Extreme Leg",
-        account_type="demo",
-    ),
-]
+def _registry_signature(root: Path) -> tuple:
+    """What the list was built from: each folder's config time, and the account list's."""
+    sig: list = []
+    for p in sorted(root.iterdir()):
+        try:
+            sig.append((p.name, (p / "config.json").stat().st_mtime_ns))
+        except OSError:
+            continue
+    try:
+        registry = bot_account_registry.registry_path(cfg.MONOREPO_ROOT)
+        sig.append(("", registry.stat().st_mtime_ns))
+    except OSError:
+        pass
+    return tuple(sig)
 
-# ── Derived views. Never edit one of these — add a BotReg above. ──────────────
-_BOT_DISPLAY_ORDER = [b.task for b in _BOTS]
-_BY_TASK: dict[str, BotReg] = {b.task: b for b in _BOTS}
-_BY_KEY: dict[str, BotReg] = {b.key: b for b in _BOTS}
+
+def _refresh_bots() -> None:
+    """Rebuild the bot list and every map below when the folders changed; otherwise nothing.
+
+    ⚠ **A folder that cannot be listed is a 503 naming it, never an empty page** — a Bots page
+    showing no bots reads as "you have no bots", which is the confident wrong answer (rule 1).
+    """
+    global _REGISTRY_SIG
+    try:
+        sig = _registry_signature(_INSTANCES_ROOT)
+        if sig == _REGISTRY_SIG:
+            return
+        bots = _discover_bots(_INSTANCES_ROOT)
+    except OSError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Cannot list the bot folders at {_INSTANCES_ROOT}: {e}"
+        )
+    _BOTS[:] = bots
+    _BOT_DISPLAY_ORDER[:] = [b.task for b in bots]
+    for target, built in (
+        (_BY_TASK, {b.task: b for b in bots}),
+        (_BY_KEY, {b.key: b for b in bots}),
+        (_DISPLAY_NAMES, {**{b.task: b.display for b in bots}, **_SYS_DISPLAY_NAMES}),
+        (_TASK_BOT_KEYS, {b.task: b.key for b in bots}),
+        (_KEY_DISPLAY, {b.key: b.display for b in bots}),
+        (_SUPPRESS_KEYS, {b.key: b.suppress_key for b in bots}),
+        (
+            _BOT_INSTANCE_MAP,
+            {b.key: {"path": b.config_path, "section": b.config_section} for b in bots},
+        ),
+        (_BOT_STATE_PATHS, {b.state_section: b.state_file for b in bots}),
+    ):
+        target.clear()
+        target.update(built)
+    # `(section, [bot keys in that bot_state.json])` — one entry per FILE, and the value is a list
+    # because a single bot_state.json can hold several bot keys (two bots sharing an instance dir
+    # share a `state_section`, and this groups them).
+    _BOT_STATE_SECTIONS[:] = [
+        (section, [b.key for b in bots if b.state_section == section])
+        for section in dict.fromkeys(b.state_section for b in bots)
+    ]
+    _REGISTRY_SIG = sig
+
+
+# ── Derived views, rebuilt IN PLACE by `_refresh_bots`. Never edit one of these by hand. ────────
+_BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = []
+# section → the VPS path `_fetch_vps_snapshot` types. Windows paths throughout — never anything
+# derived from this Mac's filesystem.
+_BOT_STATE_PATHS: dict[str, str] = {}
 
 # ⚠ `SYS_REPORTER` and `SYS_PNLTRACKER` were removed 2026-08-05 with the scripts behind
 # them (see `algos/CLAUDE.md`). They had rendered here as DISABLED jobs "waiting for a bot
@@ -290,9 +379,9 @@ _SYS_DISPLAY_NAMES = {
     "SYS_LOGREVIEW": "Record review",
     "SYS_REENTRYWATCH": "Re-entry watch",
 }
-_DISPLAY_NAMES = {**{b.task: b.display for b in _BOTS}, **_SYS_DISPLAY_NAMES}
-_TASK_BOT_KEYS = {b.task: b.key for b in _BOTS}
-_KEY_DISPLAY = {b.key: b.display for b in _BOTS}
+_DISPLAY_NAMES: dict[str, str] = {}
+_TASK_BOT_KEYS: dict[str, str] = {}
+_KEY_DISPLAY: dict[str, str] = {}
 
 # The jobs this page reports on. Every entry must have a task in `_SYS_TASK_BY_JOB` below
 # — a name with no task resolves to a permanent UNKNOWN, which reads as a job the page
@@ -311,7 +400,7 @@ _SCHEDULED_JOBS = [
 _SYS_TASK_BY_JOB = {v: k for k, v in _SYS_DISPLAY_NAMES.items()}
 
 # Crash-alert suppress keys — must match telegram_bot.py / monitor.py.
-_SUPPRESS_KEYS: dict[str, str] = {b.key: b.suppress_key for b in _BOTS}
+_SUPPRESS_KEYS: dict[str, str] = {}
 
 # ⚠ The risk-cap block that stood here is GONE (2026-08-05), along with
 # `algos/shared/thresholds.json` and `bot_state.BOT_THRESHOLDS`. Those numbers were the P&L
@@ -326,9 +415,15 @@ _SUPPRESS_KEYS: dict[str, str] = {b.key: b.suppress_key for b in _BOTS}
 # ── Per-bot config file mapping ───────────────────────────────────────────────
 # Derived from the registry — bot_key → the instance config.json path and the strategy
 # section name. Kept as a dict because several call sites read `["path"]` / `["section"]`.
-_BOT_INSTANCE_MAP: dict[str, dict] = {
-    b.key: {"path": b.config_path, "section": b.config_section} for b in _BOTS
-}
+_BOT_INSTANCE_MAP: dict[str, dict] = {}
+
+# The first build, at import — every map above now exists to be filled. A folder that cannot be
+# listed leaves the list empty and the signature unset, so the next request retries and answers
+# with the reason (`_refresh_bots`) instead of a page with no bots on it.
+try:
+    _refresh_bots()
+except HTTPException:
+    pass
 
 
 def _read_instance_config(bot_key: str) -> dict:
@@ -739,17 +834,7 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     return sections
 
 
-# Derived from the registry. `(section, [bot keys in that bot_state.json])` — one entry per
-# FILE, and the value is a list because a single bot_state.json can hold several bot keys
-# (two bots sharing an instance dir share a `state_section`, and this groups them).
-_BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = [
-    (section, [b.key for b in _BOTS if b.state_section == section])
-    for section in dict.fromkeys(b.state_section for b in _BOTS)
-]
-
-# section → the VPS path `_fetch_vps_snapshot` types. Windows paths throughout — never
-# anything derived from this Mac's filesystem.
-_BOT_STATE_PATHS: dict[str, str] = {b.state_section: b.state_file for b in _BOTS}
+# `_BOT_STATE_SECTIONS` and `_BOT_STATE_PATHS` are built with the bot list — see `_refresh_bots`.
 
 
 def _review_section(bot_key: str) -> str:
@@ -3083,7 +3168,7 @@ def get_bot_log(bot_name: str, lines: int = 500):
 # ── Control actions ───────────────────────────────────────────────────────────
 #
 # All actions run over SSH.
-#   stop  = kill each registered BOT process + delete the MT5 lock
+#   stop  = kill each registered BOT process + delete the MT5 connect locks
 #   start = run SYS_STARTUP scheduled task
 #   restart = stop then start (with a 3-second gap)
 #   emergency = kill the bots immediately, no lock cleanup (fastest path)
@@ -3091,7 +3176,9 @@ def get_bot_log(bot_name: str, lines: int = 500):
 # Each endpoint returns { "status": "ok"|"error", "output": "<ssh stdout>" }.
 # A 502 is raised when the SSH call itself fails or times out.
 
-_LOCK_PATH = r"C:\trading\algos\mt5_connect.lock"
+# One connect lock PER TERMINAL since 2026-09-13 (`algos/shared/mt5_lock.py`), so the fleet stop
+# clears them all. The pattern also matches the single box-wide lock older runner code takes.
+_LOCK_GLOB = r"C:\trading\algos\mt5_connect*.lock"
 _STARTUP_TN = "SYS_STARTUP"
 
 
@@ -3230,10 +3317,24 @@ def _runner_wql(bot_key: str) -> str:
     ⚠ **`runner.py` is in it (2026-09-11)**, the rule `_is_bot_runner` states in Python: without
     it the kill also terminated whatever else carried `--bot <key>` at that moment — the bot's own
     deploy, the hourly re-entry check — and the probe waited on them as if they were the bot.
-    ⚠ Verified on the box with a read-only query before this shipped. ⚠ WQL's `_` matches any one
-    character and the match is a prefix, so no key may be the start of another's (root doc).
+
+    🔴 **The key is matched EXACTLY since 2026-09-13.** WQL's `_` matches ANY one character and a
+    trailing `%` makes the key a prefix, so `--bot sos_fade_2%` also matched `--bot sos_fade_20` —
+    and this filter drives a KILL. So each `_` is escaped (`[_]`), and the key must be followed by
+    a space (`--live` follows it in every launch) or end the line (a dry-run launch). ⚠ It does
+    not accept argparse's `--bot=key`, which nothing that launches a bot writes.
     """
-    return f"name='python.exe' and commandline like '%runner.py%--bot {bot_key}%'"
+    k = _wql_like_literal(bot_key)
+    return (
+        "name='python.exe' and ("
+        f"commandline like '%runner.py%--bot {k} %' or commandline like '%runner.py%--bot {k}'"
+        ")"
+    )
+
+
+def _wql_like_literal(text: str) -> str:
+    """`text` as a LITERAL inside a WQL LIKE pattern, where `_`, `%` and `[` are all wildcards."""
+    return text.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")
 
 
 def _kill_bot(bot_key: str) -> str:
@@ -3260,10 +3361,12 @@ def _kill_bot(bot_key: str) -> str:
     stayed dead for three days, because at the time nothing restarted it. It also silently
     breaks any in-flight lab backtest, since both agents are Python too.
 
-    The bot key is already this repo's process identity — `monitor.is_running` matches on the
-    same string, because `runner.py` is the entrypoint for EVERY live bot and the script name
-    alone cannot tell two of them apart. Verified on the VPS 2026-08-04: this terminated the
-    bot and left the Telegram bot and both agents running on their original PIDs.
+    The bot key is this repo's process identity, read EXACTLY: `runner.py` is the entrypoint for
+    EVERY live bot, so the script name alone cannot tell two of them apart, and `_runner_wql`
+    requires the script AND this key ending at a space or the line end — the rule the watchdog
+    and the dead-man's switch apply too (`algos/shared/bot_registry.is_runner_line`). Verified
+    on the VPS 2026-08-04: this terminated the bot and left the Telegram bot and both agents
+    running on their original PIDs.
     """
     steps = [_ssh(f"echo stop > {_instance_dir(bot_key)}\\stop.request")]
 
@@ -3295,8 +3398,8 @@ def _stop_procs(clear_lock: bool = True) -> str:
     """
     outs = [_kill_bot(b.key) for b in _BOTS]
     if clear_lock:
-        # Only meaningful once the bots are actually gone — a live bot re-creates it.
-        outs.append(_ssh(f"del {_LOCK_PATH} 2>nul"))
+        # Only meaningful once the bots are actually gone — a live bot re-creates its own.
+        outs.append(_ssh(f"del {_LOCK_GLOB} 2>nul"))
     return "\n".join(o for o in outs if o).strip()
 
 

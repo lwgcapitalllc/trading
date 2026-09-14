@@ -658,7 +658,7 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Domain | Status | What it does |
 |---|---|---|
 | Smart Money | ✅ Live | Scan, terminal, rankings, profile, disqualified log, config, cache tabs. |
-| Bots | ✅ Live | SSH monitor + control. **THREE bots registered, ONE trading** — `sos_fade_demo` is live and armed; `b_leg_demo` and `extreme_leg_demo` are registered and BENCHED (`account: null`). ⚠ **Count them in `routers/bots.py::_BOTS`, never from this line** — it read "none currently registered" until 2026-08-04 and "one" until 2026-09-04, both times while it was wrong. **Registered and TRADING are different questions**: registration is what makes a bot addressable so it can be given an account at all. [Detail](../docs/BACKEND_BUILD_NOTES.md#bots) |
+| Bots | ✅ Live | SSH monitor + control. A bot IS its folder under `algos/markets/fx/instances/`. ⚠ **Count them there or on the Bots page, never from this line** — it read "none registered" until 2026-08-04 and "three, one trading" until 2026-09-13, each time while wrong. **Registered and TRADING are different questions**: registration is what makes a bot addressable so it can be given an account at all. [Detail](../docs/BACKEND_BUILD_NOTES.md#bots) |
 | Strategies | ✅ Live | Registry scanned from `strategies/`. Param schema from `[NinjaScriptProperty]`. `runner` field per strategy. [Detail](../docs/BACKEND_BUILD_NOTES.md#strategies) |
 | Rulesets | ✅ Live | CRUD at `/rulesets`. 4 types: `prop_eval`, `prop_funded`, `personal`, `demo`. 18 seeded rows (14 prop + 2 personal demo + `unconstrained` + `personal_forex_risk`). [Detail](../docs/BACKEND_BUILD_NOTES.md#rulesets) |
 | Backtests | ✅ Live | NT8/MT5 runs via agent. Equity curve, daily P&L, per-ruleset verdicts, Worthiness tier (1/2/3). |
@@ -2514,35 +2514,35 @@ Fade copy read RUNNING straight after its first deploy, with no process and no a
 - `_runner_wql` is the same rule in WMI, for the probe and the forced stop: `runner.py` is in the
   filter, so a forced stop never kills the bot's own deploy or re-entry check. ✅ **Verified on the box
   with a read-only query before it shipped** (the two live bots by their PIDs, nothing for a stopped
-  one). ⚠ WQL's `_` matches any character and the match is a prefix — no key may start another's.
-- ⚠ **The Telegram bot keeps the loose match, and so do the watchdog and the dead-man switch** — on
-  the box a tool flash only delays a restart by one pass. The coordinator and the runner already
-  require `runner.py`. Tests: `tests/test_bot_process_match.py`; 6 mutations run, 6 killed — the
-  status one first SURVIVED the helper-only tests and needed a check through `get_snapshot`.
+  one). ⚠ **Exact since 2026-09-13**: WQL's `_` is escaped as `[_]` and the key must end at a
+  space or the line end, so one key may start another's. Verified read-only on the box.
+- ✅ **Every bot check on the box uses the same rule since 2026-09-13** — the watchdog, the dead-man
+  switch, the coordinator and the chat bot (`algos/shared/bot_registry.is_runner_line`) — and both
+  sides are tested against ONE list of cases, `algos/tests/fixtures/runner_lines.json`. Tests:
+  `tests/test_bot_process_match.py`; 6 mutations run, 6 killed — the status one first SURVIVED the
+  helper-only tests and needed a check through `get_snapshot`.
 
-## `_BOTS` is ONE of FIVE registries, and its comment about the other four was wrong (2026-09-04)
+## `_BOTS` is DISCOVERED from the bot folders (2026-09-13)
 
-Registering a bot here is what makes it ADDRESSABLE — it is what puts it on the Accounts tab so it
-can be given an account at all, and what makes its version, params and state readable. **Whether it
-TRADES is a different question**, answered by its instance config's `account`.
+Listing a bot here makes it ADDRESSABLE — the Accounts tab, its version, params and state. **Whether
+it TRADES is a different question**, answered by its config's `account`. It was a hand-kept list,
+one of five; a bot IS its folder now (`_discover_bots`, by the rule `algos/CLAUDE.md` →
+*Registering a bot* owns — not restated here).
 
-🔴 **THE COMMENT ON THE BENCHED ROW SAID THOSE BOTS ARE DELIBERATELY ABSENT FROM
-`algos/notifications/monitor.py` AND `deadman.py`. THEY ARE IN BOTH.** Its reasoning was sound —
-an alarm on a bot whose normal state is *not running* is one people learn to scroll past — and its
-conclusion was reversed where the code lives: both watchers register every bot STATICALLY and ask
-`bot_state.is_assigned` each pass, so a benched bot costs nothing and the Bots page can never arm
-one no watchdog is watching. **A comment about another file is a claim, and only that file settles
-it** (rule 7, in its quietest form: nothing goes red).
+- ⚠ **Refreshed on every /bots request, rebuilt only when a config or the account list CHANGED**
+  (`_registry_signature`, a router dependency), so a new folder appears with no restart. The maps
+  are rebuilt IN PLACE, so a function reading one by name sees the current list.
+- ⚠ **A folder that cannot be listed is a 503**, never an empty page (rule 1).
+- 🔴 **`BotReg.account_type` is read off the folder's config and the account list** — `demo` for a
+  benched bot, `live` for an account the list cannot classify. It is `_account_type_of`'s FALLBACK,
+  so a test stubbing a config with NO account meets the real folder's label: the settings copy
+  correctly refused the live `sos_fade_demo` until the stub stated and classified its account.
+- ⚠ `algos/tests/test_bot_bench.py` PARSES this file and fails on a filled `_BOTS` literal or a real
+  bot key typed into a `key="..."`.
 
-⚠ **The five rosters are now held together by test**, in `algos/tests/test_bot_bench.py`, which
-PARSES this file rather than importing it — this router lives in another venv and imports FastAPI,
-and wiring two trees together to compare a list of strings is not worth it. **The rule and what each
-omission costs live in `algos/CLAUDE.md`** → *A bot lives in FIVE registries*; do not restate them
-here. Adding a `BotReg` without the four algos-side entries fails that test by name.
-
-⚠ **One strategy can now be TWO bots (2026-09-11)** — `sos_fade_2` and `extreme_leg_2` are the
-demo copies of the two live bots, each its own `BotReg`, process and deploy. Born benched; the
-order (register → promote → assign) and why lives in `algos/CLAUDE.md` → *One strategy, two bots*.
+⚠ **One strategy can be TWO bots (2026-09-11)** — `sos_fade_2` and `extreme_leg_2` are the demo
+copies of the two live bots, each its own folder, process and deploy. Born benched; the order
+(register → promote → assign) and why lives in `algos/CLAUDE.md` → *One strategy, two bots*.
 
 🔴 **The copies carry the SAME display name as the originals (same day, Aaron: *"it's a generic
 strategy"*)** — a name is the strategy, demo or live belongs to the account, and "(demo)" would have

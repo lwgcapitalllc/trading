@@ -92,9 +92,12 @@ from broker_result import UNKNOWN
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "markets" / "fx" / "tools"))
 import broker_clock as _broker_clock  # noqa: E402
 
-_LOCK_FILE = Path(r"C:\trading\algos\mt5_connect.lock")
-_LOCK_TIMEOUT = 90  # seconds to wait for the file lock
-_LOCK_TTL = 45  # seconds after which a stale lock is removed
+# The connect lock is ONE PER TERMINAL since 2026-09-13 — one account's terminal hanging mid-connect
+# used to make every other account's bots wait behind it. Rules: `mt5_lock.py`.
+from mt5_lock import LOCK_TIMEOUT as _LOCK_TIMEOUT  # noqa: E402
+from mt5_lock import LOCK_TTL as _LOCK_TTL  # noqa: E402
+from mt5_lock import lock_path as _lock_path  # noqa: E402
+
 _TEXAS = ZoneInfo("America/Chicago")
 
 
@@ -317,16 +320,16 @@ class BotMT5:
         """
         log = self.log
 
-        def _acquire_lock(bot_id: str) -> bool:
+        def _acquire_lock(bot_id: str, lock_file: Path) -> bool:
             waited = 0
             while waited < _LOCK_TIMEOUT:
-                if _LOCK_FILE.exists():
+                if lock_file.exists():
                     try:
-                        age = time.time() - _LOCK_FILE.stat().st_mtime
-                        holder = _LOCK_FILE.read_text().strip()
+                        age = time.time() - lock_file.stat().st_mtime
+                        holder = lock_file.read_text().strip()
                         if age > _LOCK_TTL:
                             log.warning(f"Stale lock ({age:.0f}s, held by {holder}) — removing")
-                            _LOCK_FILE.unlink(missing_ok=True)
+                            lock_file.unlink(missing_ok=True)
                         else:
                             log.info(f"Waiting for MT5 lock (held by {holder}, {age:.0f}s)...")
                             time.sleep(3)
@@ -335,9 +338,9 @@ class BotMT5:
                     except Exception:
                         pass
                 try:
-                    _LOCK_FILE.write_text(bot_id)
+                    lock_file.write_text(bot_id)
                     time.sleep(0.5)
-                    if _LOCK_FILE.exists() and _LOCK_FILE.read_text().strip() == bot_id:
+                    if lock_file.exists() and lock_file.read_text().strip() == bot_id:
                         return True
                 except Exception as e:
                     log.warning(f"Lock write error: {e}")
@@ -354,8 +357,10 @@ class BotMT5:
         mt5_path = self._cfg.get("mt5_path", "")
         expected_id = self._account.get("login")
         bot_id = f"{self.bot_label}_{expected_id}"
+        # THIS terminal's lock, never one for the box — see `mt5_lock.py`.
+        lock_file = _lock_path(mt5_path)
 
-        if not _acquire_lock(bot_id):
+        if not _acquire_lock(bot_id, lock_file):
             return False
 
         try:
@@ -414,7 +419,7 @@ class BotMT5:
 
         finally:
             try:
-                _LOCK_FILE.unlink(missing_ok=True)
+                lock_file.unlink(missing_ok=True)
             except Exception:
                 pass
             log.info("MT5 connection lock released")

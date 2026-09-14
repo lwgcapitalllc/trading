@@ -1,0 +1,95 @@
+{
+  "_README": "Which process-list line IS a bot's runner. ONE list of cases read by TWO implementations of the same rule, which may not import each other: algos/shared/bot_registry.py::is_runner_line (the watchdog, the dead-man's switch, the boot sequence, the chat bot, the runner's own duplicate guard) and command-center/backend/routers/bots.py::_is_bot_runner (the Bots page). A shape one side learns and the other does not fails on the side that did not learn it. Every line is the shape wmic prints: a table row (commandline, sometimes followed by a process id) or a /format:list row.",
+  "cases": [
+    {
+      "key": "sos_fade_demo",
+      "is_runner": true,
+      "why": "the bot itself, as the boot sequence launches it",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo --live"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": true,
+      "why": "a dry-run launch ends on the key",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_2"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": true,
+      "why": "the process-id column follows the command line",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_2 --live  4242"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": true,
+      "why": "a /format:list row",
+      "line": "CommandLine=python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_2 --live"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": true,
+      "why": "quoted program and script paths",
+      "line": "\"C:\\Python311\\python.exe\" \"C:\\trading\\algos\\live\\runner.py\" --bot sos_fade_2 --live"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": true,
+      "why": "argparse's other spelling",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot=sos_fade_2 --live"
+    },
+    {
+      "key": "extreme_leg_2",
+      "is_runner": true,
+      "why": "the flag after another one",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --live --bot extreme_leg_2"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": false,
+      "why": "a LONGER key that starts with this one - substring matching read sos_fade_2 as running",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_20 --live"
+    },
+    {
+      "key": "sos_fade_demo",
+      "is_runner": false,
+      "why": "a longer key again, with an underscore after",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot sos_fade_demo_x --live"
+    },
+    {
+      "key": "sos_fade_demo",
+      "is_runner": false,
+      "why": "another bot's runner",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py --bot b_leg_demo --live"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": false,
+      "why": "the coordinator launching the bot carries the key and is not the bot",
+      "line": "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot sos_fade_2"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": false,
+      "why": "a deploy carries the key and is not the bot",
+      "line": "python.exe C:\\trading\\algos\\tools\\promote.py --bot sos_fade_2"
+    },
+    {
+      "key": "sos_fade_demo",
+      "is_runner": false,
+      "why": "the hourly re-entry watcher carries the key and is not the bot",
+      "line": "python.exe C:\\trading\\algos\\tools\\watch_reentry.py --bot sos_fade_demo"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": false,
+      "why": "a script whose name only ENDS in runner.py",
+      "line": "python.exe C:\\trading\\algos\\live\\my_runner.py --bot sos_fade_2 --live"
+    },
+    {
+      "key": "sos_fade_2",
+      "is_runner": false,
+      "why": "the key with no flag in front of it",
+      "line": "python.exe C:\\trading\\algos\\live\\runner.py sos_fade_2 --live"
+    }
+  ]
+}

@@ -48,9 +48,10 @@ How bots auto-start on VPS boot:
   resolves the script, writes the stdout log next to the config, and detaches the process so it
   survives the launching session closing.
 
-### 5. MT5 connection lock — `algos/mt5_connect.lock`
-A lock file that prevents two bots from initializing the same MT5 terminal connection at the same
-moment during a simultaneous boot. Cleared by the coordinator at startup.
+### 5. MT5 connection locks — `algos/mt5_connect_<terminal>.lock`
+One lock file per MT5 terminal (`algos/shared/mt5_lock.py`), so two bots on the same terminal
+take turns connecting while bots on different terminals never wait on each other. The
+coordinator clears only STALE locks at startup; a live one belongs to a bot that is connecting.
 
 ### 6. Liveness + control layer
 - `algos/shared/bot_state.py` — single source of truth (`bot_state.json` per instance): heartbeat,

@@ -1536,9 +1536,14 @@ class LiveRunner:
                 f"Could not check for another copy of this bot ({e}) — starting anyway"
             )
             return False
+        # ⚠ The ONE rule for which process is which bot, shared with the watchdog and the launcher
+        # (`bot_registry.is_runner_line`). A key matched as a substring read `--bot sos_fade_20` as
+        # this bot when this bot was `sos_fade_2`, and refused to start it.
+        import bot_registry
+
         me = str(os.getpid())
         for line in r.stdout.splitlines():
-            if f"--bot {self.cfg.bot_key}" not in line or "runner.py" not in line:
+            if not bot_registry.is_runner_line(line, self.cfg.bot_key):
                 continue
             pid = line.strip().split()[-1]
             if pid.isdigit() and pid != me:

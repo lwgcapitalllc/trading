@@ -332,8 +332,14 @@ def _bot(monkeypatch):
     # result — MEASURED: that mutation SURVIVED until this setting was added. A fixture whose
     # inputs cannot distinguish the behaviours the test names is describing a system where the
     # thing under test does nothing.
+    #
+    # ⚠ The account is STATED and classified here, never left to the registry's fallback label.
+    # That label is read off the REAL bot folder since 2026-09-13, and the real `sos_fade_demo`
+    # trades a live account — so a scratch config with no account was a live bot in disguise, and
+    # this control correctly refused it.
     cfg = {
         "bot_key": "sos_fade_demo",
+        "account": 700152905,
         "symbol": "XAUUSD.p",
         "timeframe": "M15",
         "strategy_package": "sos_fade",
@@ -341,6 +347,7 @@ def _bot(monkeypatch):
     }
     written = {}
 
+    monkeypatch.setattr(bots, "_registered_kinds", lambda: {700152905: "demo"})
     monkeypatch.setattr(bots, "_read_instance_config", lambda key: json.loads(json.dumps(cfg)))
     monkeypatch.setattr(bots, "_write_instance_config", lambda key, data: written.update(data))
     monkeypatch.setattr(bots, "_declared_strategy_params", lambda pkg: set(_DECLARED))

@@ -70,23 +70,30 @@ sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 
 from credentials import env_name, get  # noqa: E402
 
-# Which bots must be alive for this box to count as healthy. Keyed the same way
-# `monitor.py` and `startup_coordinator.py` key theirs, and for the same reason: every live
-# bot is `runner.py`, so `--bot <key>` in the commandline is the only thing that identifies
-# ONE of them. Keep the three registries in step.
-BOTS = {
-    "sos_fade_demo": "SOS Fade",
-    # On the BENCH today (`account: null`). Registered anyway, and skipped per-pass by
-    # `_is_assigned` — see the same note in `monitor.py`: registering a bot only once somebody
-    # assigns it would let the Bots page arm a bot no switch is watching.
-    "b_leg_demo": "B-LEG",
-    # Benched too, and registered for the same reason.
-    "extreme_leg_demo": "Extreme Leg",
-    # The demo copies of the two live bots (2026-09-11), registered from birth for that reason.
-    # Same names as the originals: the account's kind tells them apart (`bot_state.bot_label`).
-    "sos_fade_2": "SOS Fade",
-    "extreme_leg_2": "Extreme Leg",
-}
+
+def _registered() -> dict:
+    """`{bot key: display name}` for every bot FOLDER — discovered by `bot_registry`, read once
+    by `bot_state`. This task is a fresh process every five minutes, so a new bot is covered on
+    the next pass.
+
+    🔴 A hand-kept dict until 2026-09-13, with a comment saying *"keep the three registries in
+    step"* — a rule that lived in a comment. A bot missing here was never watched by the one
+    alert that survives the box, and nothing errored.
+
+    ⚠ An import that fails answers `{}` and `check_health` reports WHY through `_registry_error`,
+    so an empty list here can never ping green on its own.
+    """
+    try:
+        import bot_state as bs
+
+        return dict(bs.BOT_NAMES)
+    except Exception:
+        return {}
+
+
+# Which bots must be alive for this box to count as healthy. Every live bot is `runner.py`, so
+# `--bot <key>` in the commandline — matched EXACTLY — is the only thing that identifies one.
+BOTS = _registered()
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor
 # and this deliberately matches it: two watchdogs disagreeing about what "stalled" means
@@ -172,12 +179,27 @@ def _bot_state() -> dict:
     return out
 
 
+def _registry_error() -> str:
+    """Why the bot list could not be read, or `""`. Never raises."""
+    try:
+        import bot_state as bs
+
+        return bs.REGISTRY_ERROR
+    except Exception as e:
+        return f"the bot list could not be loaded ({type(e).__name__}: {e})"
+
+
 def _running_keys() -> set[str] | None:
     """Which registered bots have a live process. None when the process list is unreadable.
 
     None is a third answer and the callers treat it as a failure, not as "nothing running":
     reporting a box we cannot inspect as either healthy or dead is a guess, and one of those
     guesses is silent.
+
+    ⚠ **Matched per line and EXACTLY** (`bot_registry.is_runner_line`). It was a substring of the
+    whole process list until 2026-09-13, so `sos_fade_2` read as running whenever `sos_fade_20`
+    was, or whenever a deploy or a watcher carrying its key happened to be alive. ⚠ A non-zero exit
+    is `None` too: a failed query and a box running no python both print nothing.
     """
     try:
         r = subprocess.run(
@@ -188,7 +210,11 @@ def _running_keys() -> set[str] | None:
         )
     except Exception:
         return None
-    return {k for k in BOTS if f"--bot {k}" in r.stdout}
+    if r.returncode != 0:
+        return None
+    import bot_registry
+
+    return bot_registry.runner_keys(r.stdout, BOTS)
 
 
 def check_health(now: float | None = None) -> list[str]:
@@ -201,9 +227,15 @@ def check_health(now: float | None = None) -> list[str]:
     now = time.time() if now is None else now
     problems: list[str] = []
 
+    # An unreadable bot list would otherwise leave `BOTS` empty and ping green over a box nobody
+    # can see into — rule 8, in the one alarm whose silence has to mean something.
+    err = _registry_error()
+    if err:
+        problems.append(f"cannot see the bots: {err}")
+
     running = _running_keys()
     if running is None:
-        return ["cannot read the process list - the box is not answering wmic"]
+        return problems + ["cannot read the process list - the box is not answering wmic"]
 
     states = _bot_state()
     for key, name in BOTS.items():

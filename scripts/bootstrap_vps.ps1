@@ -84,7 +84,9 @@ $ErrorActionPreference = 'Stop'
 # Static configuration — derived from the repo docs. Edit here, not inline.
 # --------------------------------------------------------------------------
 $AlgosRoot     = Join-Path $RepoRoot 'algos'
-$LockFile      = Join-Path $AlgosRoot 'mt5_connect.lock'
+# One connect lock per MT5 terminal (algos/shared/mt5_lock.py); the pattern also matches the
+# single box-wide lock older runner code takes.
+$LockGlob      = Join-Path $AlgosRoot 'mt5_connect*.lock'
 $TempDir       = 'C:\temp'
 
 # Runtime Python packages. NOTE: `zoneinfo` is a pre-3.9 backport that fails to
@@ -414,7 +416,9 @@ function Invoke-StartSystem {
     Write-Phase 'Phase 6 — Start system'
     if ($NoStart) { Write-Info 'Skipped (-NoStart).'; $script:Results['Start'] = 'skipped'; return }
 
-    if (Test-Path $LockFile) { Remove-Item $LockFile -Force; Write-Info 'Cleared stale mt5_connect.lock' }
+    # Nothing is running yet on a rebuilt box, so every connect lock here is stale.
+    $stale = @(Get-ChildItem -Path $LockGlob -ErrorAction SilentlyContinue)
+    if ($stale.Count -gt 0) { $stale | Remove-Item -Force; Write-Info "Cleared $($stale.Count) stale MT5 connect lock(s)" }
 
     # No bots registered — SYS_STARTUP only launches Telegram + monitoring. Fire it
     # and report, but skip the bot-connection wait (there is nothing to wait for).

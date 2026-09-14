@@ -775,7 +775,7 @@ restart after a pull, with no promote. Nothing here changes a trading decision.
 
 ### The Bots
 
-🔴 **This line said "there are currently no live bots" until 2026-09-11 — while two were trading real money.** The roster is the five registries in `### Registering a bot` below, and which bot trades which account lives in each bot's instance config and on Bots → Accounts. **Count them with `box_status`, never from this file.** The four first-attempt bots (SMC Trend, Scalper, FFT, Mean Reversion) were deleted 2026-06-22 to rebuild the suite backtest-first.
+🔴 **This line said "there are currently no live bots" until 2026-09-11 — while two were trading real money.** The roster is the bot folders (`### Registering a bot` below), and which bot trades which account lives in each bot's instance config and on Bots → Accounts. **Count them with `box_status`, never from this file.** The four first-attempt bots (SMC Trend, Scalper, FFT, Mean Reversion) were deleted 2026-06-22 to rebuild the suite backtest-first.
 
 New bots follow the S.Y.S.T.E.M. process in `docs/BOT_DEVELOPMENT_METHOD.md` (specify → backtest → stress test → live demo). The reusable deployment plumbing left behind by the deleted suite — the MT5 connection layer, per-instance configs, Task Scheduler wiring, and the liveness/notification layer — is documented in `docs/BOT_DEPLOYMENT_INFRA.md` so a validated strategy can be wired to live demo without rebuilding the infrastructure.
 
@@ -2347,27 +2347,38 @@ same reason `test_deadman.py` is. **A bug in this module is silent by constructi
 here fails loudly and gets reported, this one fails by having nothing to say, and having nothing to
 say is also what a healthy day looks like.**
 
-### Registering a bot — the five registries, and the crash if you miss one
+### Registering a bot — a bot IS its folder (2026-09-13)
 
-**2026-07-31: `sos_fade_demo` is registered.** It is the first bot in the rebuilt suite. Five
-registries had to be filled and they are not optional — `bot_state.set_started()` does
-`BOT_ACCOUNTS[key]` unguarded and `algos/live/runner.py` calls it at the top of its loop, so a bot
-missing from ONE of them connects to MT5, warms 5,000 bars, and then dies on a bare `KeyError`:
+**A bot is `markets/fx/instances/<key>/config.json`, and the folder is the whole registration.**
+`shared/bot_registry.discover()` lists them; the state map, the boot order, the watchdog, the
+dead-man's switch and the chat bot read that one list, and the Command Center lists the same folders
+by the same rule (`routers/bots.py::_discover_bots` — the subsystems may not import each other).
+🔴 **It was five hand-kept lists until this date, and every omission was silent and failed
+differently** — a startup `KeyError` after warming, a bot absent after a reboot, a bot nothing
+watched — while two comments claimed the lists agreed. **A list stated twice is two lists.**
 
-| File | What it registers |
-|---|---|
-| `shared/bot_state.py` | `BOT_INSTANCES` / `BOT_ACCOUNTS` / `BOT_NAMES` — the state file, account, display name |
-| `bots/startup_coordinator.py` | `STARTUP_SEQUENCE` — how it boots, and the log line that means "connected" |
-| `notifications/monitor.py` | `BOTS` — liveness watch (inert while SYS_MONITOR is disabled) |
-| `notifications/deadman.py` | `BOTS` — what the external dead-man's switch requires to be healthy. A bot missed here is never watched by the one alert that survives the box, and nothing errors — a test cross-checks it against the coordinator and the monitor |
-| `command-center/backend/routers/bots.py` | Six task/bot maps — how it appears on the Bots page |
-
-Two things about that list. `STARTUP_SEQUENCE` entries carry a **full argv**, not a config path
-(the deleted bots took `--config`, `algos/live/runner.py` takes `--bot`) and deliberately do **not**
-pass `--live`, so a bot that boots with the VPS can never arm itself. And there is **no per-bot
-`BOT_*` scheduled task** — boot goes SYS_STARTUP → coordinator, and the command center starts a bot
-through that same coordinator over WMI. The command center's maps are keyed by a task name that
-does not exist as a real task, which is harmless: the PROCESS LIST is authoritative there.
+- ⚠ **The folder name IS the key** (`^[a-z][a-z0-9_]{1,63}$`), and `live_config.load` refuses a
+  config whose `bot_key` names another folder: a copy with the key left unchanged would write into
+  the other bot's state, ledger and position record.
+- ⚠ **A folder that cannot be listed RAISES (`RegistryUnreadable`), never an empty list** — no bots
+  reads as nothing to watch (rule 1). The watchdog alerts once, the dead-man's switch reports it as
+  a problem, the coordinator refuses to run, the Command Center answers 503.
+- ⚠ **The boot order is derived: live-account bots first.** Argv is `runner.py --bot <key>` with
+  **no `--live`**, so a bot booting with the VPS never arms itself. No per-bot `BOT_*` task exists.
+- 🔴 **Which process IS a bot is one rule, `bot_registry.is_runner_line`**: a line running
+  `runner.py` whose `--bot` value is exactly the key, ending at a space, a quote or the line end. So
+  `sos_fade_2` is never `sos_fade_20`, and a deploy, a re-entry check or the coordinator carrying the
+  key is never the bot. Every check on the box uses it; `tests/fixtures/runner_lines.json` holds the
+  cases, and the Command Center's own copy of the rule is tested against the same file.
+- 🔴 **The MT5 connect lock is per TERMINAL** (`shared/mt5_lock.py`, `mt5_connect_<terminal>.lock`).
+  It was one lock for the box, so one account's hung terminal held every other account's connects
+  for up to 90s. Bots on one terminal still take turns. The coordinator clears only STALE locks
+  (older than 45s); the fleet stop clears all of them.
+- ⚠ **The watchdog and the coordinator read the process list ONCE per pass, and an unreadable list is
+  *cannot tell*, never *not running*** — the coordinator then leaves the bot and its recorded status
+  alone, where it used to mark every bot stopped.
+- ⚠ `tests/test_bot_bench.py` asserts every roster IS the folders, and that the Command Center keeps
+  no hand list and types no real key.
 
 ### One strategy, two bots — the demo copies (2026-09-11)
 
@@ -2398,8 +2409,6 @@ the other.** Settings were copied from the live bots on 2026-09-11 (the snapshot
   fails every minute. Assigning from Bots → Accounts pulls the box, so the copy starts on the next
   watchdog pass.
 - ⚠ **Compare the pair in R, never dollars** — the two balances are nothing alike (rule 6).
-- ⚠ **No key may be a substring of another's commandline** — the watchdog matches `--bot <key>` by
-  substring, so a future `sos_fade_20` would read as `sos_fade_2` running.
 
 `bot_state.ALGOS_ROOT` is **derived from `__file__`**, not the literal `C:/trading/algos` it used to
 be. The runner is dry-run-capable off the VPS, and a hardcoded Windows path made every state write
@@ -3278,45 +3287,6 @@ event to watch.
 ⚠ **Magic `770117`**, one above `b_leg_demo`. Both guards that would police it — the magic clash and
 the account-cap agreement — **exempt a benched bot**, so neither enforces anything today; the number
 is chosen now so assignment is never blocked by it.
-
-### A bot lives in FIVE registries, and nothing checked they agreed until 2026-09-04
-
-Registering one means five entries: the instance-directory map and the display names
-(`shared/bot_state.py`), the boot sequence (`bots/startup_coordinator.py`), the process watchdog
-(`notifications/monitor.py`), the dead-man switch (`notifications/deadman.py`), and the Command
-Center's own list, which is what makes a bot ADDRESSABLE — it is what puts it on the Accounts tab so
-it can be given an account at all.
-
-🔴 **EVERY OMISSION IS SILENT AND THEY FAIL DIFFERENTLY, WHICH IS WHY A COUNT OF FIVE IS NOT THE
-POINT.** Missing from the instance map, a bot dies on startup with a bare `KeyError` **after**
-connecting and warming. Missing from the boot sequence, it is simply absent after a reboot — which
-looks exactly like a bot nobody has armed. Missing from a watcher, it is a bot nothing is watching,
-and that one has no symptom at all.
-
-🔴 **`deadman.py` HAS SAID *"keep the three registries in step"* IN A COMMENT SINCE IT WAS
-WRITTEN, AND A NEIGHBOURING COMMENT ABOUT ANOTHER FILE TURNED OUT TO BE FLATLY WRONG ON THE SAME
-DAY** — the Command Center's registry stated that the benched bots are deliberately absent from the
-watchdog and the dead-man switch, and they are in **both**, each with its own note explaining why
-registering while benched is correct. **A rule that lives in a comment is a rule the code it
-describes can contradict without anything going red.** Rule 7, in the one direction that is hardest
-to notice: a comment is a CLAIM about another file, and only the other file settles it.
-
-✅ **Four tests in `algos/tests/test_bot_bench.py` now hold the five together** — the four
-algos-side rosters must carry the same keys, the Command Center's must match them, every registered
-key must have a config on disk, and the display names must agree. ⚠ **The Command Center's list is
-PARSED rather than imported**: it lives in another package with its own venv and imports FastAPI, so
-importing it would wire two trees together to answer a question about a list of strings. ⚠ **Every
-roster REFUSES to parse as empty** — an empty set makes every comparison pass for free, which is the
-same vacuous shape this file records elsewhere.
-
-⚠ **Registering a BENCHED bot in the two alarm registries is correct, not premature.** Both ask
-`bot_state.is_assigned` per pass — the ONE definition of the bench — so a bot with no account costs
-nothing. Registering only on assignment would let the Bots page arm a bot no watchdog is watching,
-and that is the failure with no symptom.
-
-⚠ **It is deliberately NOT in the VPS task list.** No `BOT_` scheduled task exists for it, and
-`SYS_STARTUP` is what launches a bot; the task name in the Command Center's row is an identifier
-that becomes real when somebody creates the task.
 
 ### ✅ The bridge can OPEN AT MARKET, and the flag that asked for it finally has a consumer (2026-09-03)
 
