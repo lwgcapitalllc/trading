@@ -267,6 +267,23 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
     if (u.pathname === '/api/bots/accounts/scan') {
       return route.fulfill({ json: preview() })
     }
+    // The measured cost profiles the account form's Cost model lists. A read, but routed so the
+    // list is a fixture rather than whatever this machine's backend has measured.
+    if (u.pathname === '/api/backtests/broker-profiles') {
+      return route.fulfill({
+        json: ['puprime_ecn', 'vantage_demo'].map((id) => ({
+          id,
+          spread: 0.2,
+          commission_per_side_per_lot: 3,
+          swap_long_points: null,
+          swap_short_points: null,
+          contract_size: 100,
+          server: '',
+          account: null,
+          symbol_suffix: null,
+        })),
+      })
+    }
     // Every bot's latest deploy, which the page watches for the row's version pill. `null` is
     // "no deploy run" — left to the real backend, a deploy somebody ran there today would turn a
     // pill in these checks into "deploying".
@@ -880,9 +897,9 @@ test('Take off takes a SECOND click — the first only arms it', async ({ page }
   const sent = await recordRemovals(page)
   await openBot(page, 'b_leg')
   const remove = page.getByTestId('remove-b_leg')
-  await expect(remove).toHaveText('Take off')
+  await expect(remove).toHaveText('Remove')
   await remove.click()
-  await expect(remove).toHaveText('Confirm take off')
+  await expect(remove).toHaveText('Confirm remove')
   expect(sent).toHaveLength(0)
 })
 
@@ -896,7 +913,7 @@ test('an armed Remove disarms itself, so a stray click later is not the second o
   await openBot(page, 'b_leg')
   const remove = page.getByTestId('remove-b_leg')
   await remove.click()
-  await expect(remove).toHaveText('Confirm take off')
+  await expect(remove).toHaveText('Confirm remove')
   await expect(remove).toHaveText('Take off', { timeout: 5_000 })
   expect(sent).toHaveLength(0)
 })
@@ -964,7 +981,7 @@ test('a REFUSED take-off keeps the panel open and gives the button back', async 
   await remove.click()
   await remove.click()
   await expect.poll(async () => (await toasts()).join(' | ')).toContain('Refused for this check.')
-  await expect(remove).toHaveText('Take off')
+  await expect(remove).toHaveText('Remove')
   await expect(remove).toBeEnabled()
   await expect(page.getByRole('complementary', { name: 'B-LEG settings' })).toBeVisible()
 })
@@ -986,7 +1003,7 @@ test('a RUNNING bot’s Remove says it is stopped first, and the first click sen
   await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime ECN demo')
   const remove = page.getByTestId('remove-sos_fade')
   await remove.click()
-  await expect(remove).toHaveText('Stop and take off')
+  await expect(remove).toHaveText('Stop and remove')
   expect(log.order).toEqual([])
 })
 
@@ -1056,7 +1073,7 @@ test('a bot that has not stopped in time is NOT taken off, and the page says so'
   expect(log.order).toEqual(['stop'])
   // Nothing was written, so the panel stays and the button comes back. MUTATION: clear the take-off
   // only when the write answers → it reads "Removing…" for ever, red on its text.
-  await expect(remove).toHaveText('Take off')
+  await expect(remove).toHaveText('Remove')
   await expect(page.getByRole('complementary', { name: 'SOS Fade settings' })).toBeVisible()
 })
 
@@ -1286,7 +1303,7 @@ const FREE_NOTE =
 async function openEditForm(page: Page) {
   await openAccount(page)
   const drawer = page.getByRole('complementary', { name: 'Account settings' })
-  await drawer.getByRole('button', { name: 'Edit' }).click()
+  await drawer.getByTestId('account-settings').click()
   await expect(page.getByTestId('account-form')).toBeVisible()
 }
 
@@ -1302,7 +1319,7 @@ test('an account with NO terminal opens its form on the terminal the VPS found i
       preview({ registry: [check({ suggested_terminal: FREE_PATH, terminal_note: FREE_NOTE })] }),
   })
   await openEditForm(page)
-  await expect(page.getByTestId('f-path')).toHaveValue(FREE_PATH)
+  await expect(page.getByTestId('f-path')).toHaveText(FREE_PATH)
   await expect(page.getByTestId('f-path-note')).toContainText('Filled in from the VPS')
 })
 
@@ -1316,7 +1333,9 @@ test('a terminal the VPS will not offer leaves the field EMPTY and says why', as
   await routeSync(page, { scan: () => preview({ registry: [check({ terminal_note: NOTE })] }) })
   await openEditForm(page)
   await expect(page.getByTestId('f-path-note')).toContainText('700152905')
-  await expect(page.getByTestId('f-path')).toHaveValue('')
+  // Nothing filled: no path on screen, and the by-hand route offered in its place.
+  await expect(page.getByTestId('f-path')).toHaveCount(0)
+  await expect(page.getByTestId('f-path-by-hand')).toBeVisible()
 })
 
 test('an answer that lands AFTER the reader typed never replaces what they typed', async ({
@@ -1338,6 +1357,7 @@ test('an answer that lands AFTER the reader typed never replaces what they typed
   })
   await openEditForm(page)
   await expect(page.getByTestId('f-path-note')).toContainText('Asking the VPS')
+  await page.getByTestId('f-path-by-hand').click()
   await page.getByTestId('f-path').fill(TYPED)
   release()
   await expect(page.getByTestId('f-path-note')).toContainText('PU Prime MT5 Terminal')
@@ -1351,7 +1371,7 @@ test('an account that already HAS a terminal does not ask the VPS at all', async
   await mock(page, [], [reg()])
   const seen = await routeSync(page)
   await openEditForm(page)
-  await expect(page.getByTestId('f-path')).toHaveValue('C:\\MT5_FFT\\terminal64.exe')
+  await expect(page.getByTestId('f-path')).toHaveText('C:\\MT5_FFT\\terminal64.exe')
   await expect(page.getByTestId('f-path-note')).toHaveCount(0)
   expect(seen.scans).toBe(0)
 })
@@ -1378,7 +1398,7 @@ test('Take live is NOT DRAWN on a live account', async ({ page }) => {
   )
   await openAccount(page, LIVE_ACCOUNT)
   const drawer = page.getByRole('complementary', { name: 'Account settings' })
-  await expect(drawer.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(drawer.getByTestId('account-settings')).toBeVisible()
   await expect(drawer.getByTestId('go-live')).toHaveCount(0)
 })
 
@@ -1392,7 +1412,7 @@ test('Backtest these bots is offered on a DEMO account', async ({ page }) => {
 test('Backtest these bots is NOT DRAWN on a live account', async ({ page }) => {
   // 🔴 2026-09-11, Aaron: *"backtest these bots should only be on demo accounts, not live
   // accounts."* Demo is where a set is tried; the live bots run what was tested there.
-  // ⚠ The account's own Edit control is asserted FIRST, so the absence is an answer rather than
+  // ⚠ The account's own Settings control is asserted FIRST, so the absence is an answer rather than
   // a panel still waiting on the registry.
   // MUTATION: drop the demo-only condition → the button is drawn and this goes red.
   const LIVE_ACCOUNT = 34957946
@@ -1403,7 +1423,7 @@ test('Backtest these bots is NOT DRAWN on a live account', async ({ page }) => {
   )
   await openAccount(page, LIVE_ACCOUNT)
   const drawer = page.getByRole('complementary', { name: 'Account settings' })
-  await expect(drawer.getByRole('button', { name: 'Edit' })).toBeVisible()
+  await expect(drawer.getByTestId('account-settings')).toBeVisible()
   await expect(drawer.getByTestId('backtest-account-bots')).toHaveCount(0)
 })
 
@@ -1441,11 +1461,11 @@ test('an account with no terminal cannot be added to, and says why', async ({ pa
   // the drawer offered Add bot on an account no terminal is logged into.
   await openAccount(page)
 
-  await expect(page.getByTestId('no-terminal')).toBeVisible()
+  await expect(page.getByTestId('ready-terminal')).toHaveAttribute('data-state', 'missing')
   await expect(page.getByTestId('add-bot')).toBeDisabled()
   // ⚠ The REASON, not merely the disabled state — a greyed control with no explanation reads as
   // a rendering fault, and the reader cannot tell it from an account that is simply busy.
-  await expect(page.getByTestId('no-terminal')).toHaveAttribute('title', /no terminal/)
+  await expect(page.getByTestId('ready-terminal')).toHaveAttribute('title', /no terminal/)
 })
 
 test('a password the VPS could not be asked about reads UNKNOWN, never "no password"', async ({
@@ -1464,9 +1484,10 @@ test('a password the VPS could not be asked about reads UNKNOWN, never "no passw
   await mock(page, [], [reg({ has_password: null })])
   await openAccount(page)
 
-  const chip = page.getByTestId('password-chip')
-  await expect(chip).toContainText(/password unknown/i)
-  await expect(chip).not.toContainText(/no password/i)
+  const step = page.getByTestId('ready-password')
+  await expect(step).toHaveAttribute('data-state', 'unknown')
+  await expect(step).toContainText(/unknown/i)
+  await expect(step).not.toContainText(/missing/i)
 })
 
 test('an account with no stored password says so before you try to move a bot onto it', async ({
@@ -1476,7 +1497,8 @@ test('an account with no stored password says so before you try to move a bot on
   // the click rather than after it.
   await mock(page, [], [reg({ has_password: false })])
   await openAccount(page)
-  await expect(page.getByTestId('password-chip')).toContainText(/no password/i)
+  await expect(page.getByTestId('ready-password')).toHaveAttribute('data-state', 'missing')
+  await expect(page.getByTestId('ready-password')).toContainText(/missing/i)
 })
 
 test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move forgot', async ({
@@ -1497,14 +1519,17 @@ test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move
   await openManualAdd(page)
   await page.getByTestId('f-account').fill('700152905')
   await page.getByTestId('f-server').fill('PUPrime-Demo')
+  await page.getByTestId('f-suffix-mode').selectOption('suffix')
   await page.getByTestId('f-suffix').fill('.p')
-  await page.getByTestId('f-profile').fill('puprime_ecn')
+  // A LIST of the measured profiles — a name the server would refuse cannot be typed.
+  await page.getByTestId('f-profile').selectOption('puprime_ecn')
   await page.getByTestId('save-account').click()
 
   await expect.poll(() => body).not.toBeNull()
   expect(body!.account).toBe(700152905)
   expect(body!.server).toBe('PUPrime-Demo')
   expect(body!.symbol_suffix).toBe('.p')
+  expect(body!.account_profile).toBe('puprime_ecn')
 })
 
 // ── Sync VPS: scan first, then a Sync button ──────────────────────────────────────────────────
@@ -1801,8 +1826,8 @@ test('a scan the box REFUSED is an answer, not a failure, and offers no sync', a
   await expect(page.getByTestId('sync-apply')).toHaveCount(0)
 })
 
-test('an unticked suffix box sends NULL, not an empty string', async ({ page }) => {
-  // MUTATION: send `symbol_suffix: suffix` unconditionally → this sends "" and goes red.
+test('a symbol ending left NOT RECORDED sends NULL, not an empty string', async ({ page }) => {
+  // MUTATION: send `symbol_suffix: suffix.trim()` unconditionally → this sends "" and goes red.
   //
   // ⚠ They are different answers and collapsing them is destructive. `""` means this broker
   // quotes BARE symbols, so a move would rewrite XAUUSD.s → XAUUSD; `null` means nobody recorded
@@ -1819,11 +1844,38 @@ test('an unticked suffix box sends NULL, not an empty string', async ({ page }) 
   await openManualAdd(page)
   await page.getByTestId('f-account').fill('700152905')
   await page.getByTestId('f-server').fill('PUPrime-Demo')
-  await page.getByTestId('f-has-suffix').uncheck()
+  await page.getByTestId('f-suffix-mode').selectOption('unknown')
   await page.getByTestId('save-account').click()
 
   await expect.poll(() => body).not.toBeNull()
   expect(body!.symbol_suffix).toBeNull()
+})
+
+test('an EMPTY suffix box cannot be saved — bare names is its own choice, and sends ""', async ({
+  page,
+}) => {
+  // 🔴 The old form sent "" for a ticked box left empty, while its own sentence said UNTICKED meant
+  // bare symbols — the one value that strips a suffix off a live instrument, reached by leaving a
+  // box blank. Now "" is only ever sent by picking Bare names.
+  // MUTATION: drop `suffixMissing` from `valid` → Add enables over the empty box → red.
+  let body: Record<string, unknown> | null = null
+  await mock(page, [], [])
+  await page.route('**/api/bots/accounts/registry/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    body = route.request().postDataJSON()
+    return route.fulfill({ json: reg() })
+  })
+
+  await openManualAdd(page)
+  await page.getByTestId('f-account').fill('700152905')
+  await page.getByTestId('f-server').fill('PUPrime-Demo')
+  await page.getByTestId('f-suffix-mode').selectOption('suffix')
+  await expect(page.getByTestId('save-account')).toBeDisabled()
+  await page.getByTestId('f-suffix-mode').selectOption('bare')
+  await page.getByTestId('save-account').click()
+
+  await expect.poll(() => body).not.toBeNull()
+  expect(body!.symbol_suffix).toBe('')
 })
 
 test('an account a bot still trades cannot be unregistered', async ({ page }) => {
@@ -1840,9 +1892,9 @@ test('an account nobody registered still renders, with the gap named', async ({ 
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [])
   await openAccount(page)
   await expect(page.getByTestId('unregistered')).toBeVisible()
-  // ⚠ And NO password chip, because nothing was ever asked about a login nobody registered —
-  // a chip reading "no password" there would be a claim off a measurement that was never taken.
-  await expect(page.getByTestId('password-chip')).toHaveCount(0)
+  // ⚠ And NO setup checklist, because nothing was ever asked about a login nobody registered —
+  // a step reading "password missing" there would be a claim off a measurement never taken.
+  await expect(page.getByTestId('readiness')).toHaveCount(0)
 })
 
 // ── Live against demo: split, and scored so the winner is easy to see ─────────────────────────
@@ -3896,9 +3948,9 @@ test('the ACCOUNT panel takes a bot off with the bot panel’s one button, and S
   ])
   await openAccount(page)
   const off = page.getByTestId('take-off-b_leg') // STOPPED
-  await expect(off).toHaveText('Take off')
+  await expect(off).toHaveText('Remove')
   await off.click()
-  await expect(off).toHaveText('Confirm take off')
+  await expect(off).toHaveText('Confirm remove')
   expect(sent).toHaveLength(0)
   await off.click()
   await expect.poll(() => sent[0]).toEqual({ account: null, deploy: true })
@@ -3934,7 +3986,7 @@ test('a RUNNING bot on the account panel: ONE button from Take off to Removing�
   const off = page.getByTestId('take-off-sos_fade') // RUNNING in the snapshot
   await expect(row.getByTestId('stop-sos_fade')).toBeVisible() // the positive control
   await off.click()
-  await expect(off).toHaveText('Stop and take off')
+  await expect(off).toHaveText('Stop and remove')
   // Counted at that instant — the arming disarms by itself, and a retried count of 0 would wait
   // for that and pass.
   expect(await row.getByTestId('stop-sos_fade').count()).toBe(0)
@@ -4012,9 +4064,12 @@ test('a live account with no channels says so, and Add bot is refused with the r
   // explanation reads as a busy account.
   await mock(page, [], [owedReg(ACCOUNT)])
   await openAccount(page)
-  const chip = page.getByTestId('no-channels')
-  await expect(chip).toBeVisible()
-  await expect(chip).toHaveText(/no trades or signals channel/)
+  await expect(page.getByTestId('ready-trades')).toHaveAttribute('data-state', 'missing')
+  await expect(page.getByTestId('ready-signals')).toHaveAttribute('data-state', 'missing')
+  await expect(page.getByTestId('ready-trades')).toHaveAttribute(
+    'title',
+    /no trades and signals channel/
+  )
   await expect(page.getByTestId('add-bot')).toBeDisabled()
   await expect(page.getByTestId('add-bot')).toHaveAttribute(
     'title',
@@ -4027,7 +4082,8 @@ test('a live account WITH its channels shows no chip and takes a bot', async ({ 
   await mock(page, [], [liveReg(ACCOUNT)])
   await openAccount(page)
   await expect(page.getByTestId('add-bot')).toBeEnabled()
-  await expect(page.getByTestId('no-channels')).toHaveCount(0)
+  await expect(page.getByTestId('ready-trades')).toHaveAttribute('data-state', 'ok')
+  await expect(page.getByTestId('ready-signals')).toHaveAttribute('data-state', 'ok')
 })
 
 test('a recorded account with NO channel fields at all still renders and takes a bot', async ({
@@ -4041,7 +4097,7 @@ test('a recorded account with NO channel fields at all still renders and takes a
   await mock(page, [], [old])
   await openAccount(page)
   await expect(page.getByTestId('add-bot')).toBeEnabled()
-  await expect(page.getByTestId('no-channels')).toHaveCount(0)
+  await expect(page.getByTestId('ready-trades')).toHaveAttribute('data-state', 'shared')
 })
 
 test('Take live LISTS a channel-less live account but will not let it be picked', async ({
@@ -4169,4 +4225,133 @@ test('Save account SENDS all three channels', async ({ page }) => {
     // Trimmed: a stray space survives a copy-paste and looks configured in every listing.
     telegram_health_chat: '-1001234567890',
   })
+})
+
+// ── The account settings: a setup checklist in the heading, the MT5 facts locked ─────────────
+//
+// Aaron, 2026-09-13: *"some of these fields I should NOT be able to edit — they are read directly
+// off the VPS mt5 instance … in the heading I can't tell what is missing and what is not."*
+
+test('the heading lists all four setup steps, and marks only what is missing', async ({ page }) => {
+  // Absence is read off a list that never changes shape: every step drawn, only its state moves.
+  // MUTATION: draw only the steps that are not done → the count reads 2 → red.
+  await mock(page, [], [owedReg(ACCOUNT)])
+  await openAccount(page)
+  await expect(page.getByTestId('ready-terminal')).toHaveAttribute('data-state', 'ok')
+  await expect(page.getByTestId('ready-password')).toHaveAttribute('data-state', 'ok')
+  await expect(page.getByTestId('ready-trades')).toHaveAttribute('data-state', 'missing')
+  await expect(page.getByTestId('ready-signals')).toHaveAttribute('data-state', 'missing')
+  await expect(page.getByTestId('readiness').locator('[data-testid^="ready-"]')).toHaveCount(4)
+})
+
+test('a demo account’s blank channel reads SHARED ROOM, never missing', async ({ page }) => {
+  // Only the server's `missing_channels` may call a channel missing; a blank one elsewhere posts
+  // to the shared room. MUTATION: call a blank channel missing → red.
+  await mock(page, [], [reg()])
+  await openAccount(page)
+  const step = page.getByTestId('ready-trades')
+  await expect(step).toHaveAttribute('data-state', 'shared')
+  await expect(step).toContainText('shared room')
+})
+
+test('a missing step opens the settings on its fix, with the cursor in the first empty channel', async ({
+  page,
+}) => {
+  // MUTATION: drop the focus effect in AccountForm → the box is not focused → red.
+  await mock(page, [], [owedReg(ACCOUNT)])
+  await openAccount(page)
+  await page.getByTestId('ready-trades').click()
+  await expect(page.getByTestId('account-form')).toBeVisible()
+  await expect(page.getByTestId('f-chat-trade')).toBeFocused()
+  // The checklist stays in the heading while the fix is being made.
+  await expect(page.getByTestId('readiness')).toBeVisible()
+})
+
+test('an account’s MT5 facts are text, not boxes, and Save sends them back unchanged', async ({
+  page,
+}) => {
+  // MUTATION: `const locked = false` → the facts render as inputs → red on the count of zero.
+  await mock(page, [], [reg()])
+  let body: Record<string, unknown> | null = null
+  await page.route(`**/api/bots/accounts/registry/${ACCOUNT}`, async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    body = route.request().postDataJSON()
+    return route.fulfill({ json: reg() })
+  })
+  await openEditForm(page)
+  const form = page.getByTestId('account-form')
+  await expect(page.getByTestId('mt5-locked')).toBeVisible()
+  await expect(page.getByTestId('f-broker')).toHaveText('PU Prime')
+  await expect(page.getByTestId('f-path')).toHaveText('C:\\MT5_FFT\\terminal64.exe')
+  await expect(page.getByTestId('f-suffix-shown')).toContainText('.p')
+  for (const id of ['f-account', 'f-server', 'f-broker', 'f-kind', 'f-path', 'f-suffix-mode']) {
+    await expect(
+      form.locator(`input[data-testid="${id}"], select[data-testid="${id}"]`)
+    ).toHaveCount(0)
+  }
+  await page.getByTestId('f-chat-trade').fill('-1004410831757')
+  await page.getByTestId('save-account').click()
+  await expect.poll(() => body).not.toBeNull()
+  expect(body).toMatchObject({
+    account: ACCOUNT,
+    server: 'PUPrime-Demo',
+    kind: 'demo',
+    broker: 'PU Prime',
+    mt5_path: 'C:\\MT5_FFT\\terminal64.exe',
+    symbol_suffix: '.p',
+    telegram_trade_chat: '-1004410831757',
+  })
+})
+
+test('Save is off until something changes, and the footer lists what it will write', async ({
+  page,
+}) => {
+  // MUTATION: drop the `changes.length > 0` condition from `canSave` → enabled on open → red.
+  await mock(page, [], [reg()])
+  await openEditForm(page)
+  await expect(page.getByTestId('save-account')).toBeDisabled()
+  await page.getByTestId('f-label').fill('RichKelly')
+  await expect(page.getByTestId('save-account')).toBeEnabled()
+  await expect(page.getByTestId('form-changes')).toContainText('Name')
+  await expect(page.getByTestId('form-changes')).toContainText('RichKelly')
+})
+
+test('a password on its own is stored on the VPS, and the account list is not committed', async ({
+  page,
+}) => {
+  // MUTATION: drop the password-only branch from `submit` → the registry PUT is recorded → red.
+  await mock(page, [], [reg()])
+  const puts: string[] = []
+  await page.route(`**/api/bots/accounts/registry/${ACCOUNT}**`, async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    const path = new URL(route.request().url()).pathname
+    puts.push(path)
+    return route.fulfill({ json: path.endsWith('/password') ? { status: 'ok' } : reg() })
+  })
+  await openEditForm(page)
+  // Stored, so one click away rather than an open box asking for it again.
+  await expect(page.getByTestId('f-password')).toHaveCount(0)
+  await page.getByTestId('f-password-replace').click()
+  await page.getByTestId('f-password').fill('not-the-investor-one')
+  await page.getByTestId('save-account').click()
+  await expect.poll(() => puts).toEqual([`/api/bots/accounts/registry/${ACCOUNT}/password`])
+})
+
+test('a symbol ending nobody recorded can be set by hand, and is sent', async ({ page }) => {
+  // The one MT5 fact the box may never have measured, so the one that opens.
+  // MUTATION: render the recorded-value text for a null ending → no "Set by hand" → red.
+  await mock(page, [], [reg({ symbol_suffix: null })])
+  let body: Record<string, unknown> | null = null
+  await page.route(`**/api/bots/accounts/registry/${ACCOUNT}`, async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    body = route.request().postDataJSON()
+    return route.fulfill({ json: reg() })
+  })
+  await openEditForm(page)
+  await expect(page.getByTestId('f-suffix-shown')).toHaveText('Not recorded')
+  await page.getByTestId('f-suffix-by-hand').click()
+  await page.getByTestId('f-suffix').fill('.p')
+  await page.getByTestId('save-account').click()
+  await expect.poll(() => body).not.toBeNull()
+  expect(body!.symbol_suffix).toBe('.p')
 })

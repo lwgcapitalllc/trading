@@ -339,8 +339,9 @@ refuses every move that would put a bot there (`backend/notes/accounts-risk.md`)
   the field and it goes, so no mark ever sits beside an untested id. 🔴 **Three outcomes:** arrived,
   did not arrive (Telegram's reason, unreworded), and **not tested** when the box could not be
   reached — rendered neutral, never as a failed channel.
-- **The account panel** (`AccountDrawer.tsx`) shows a *no … channel · add* chip that opens the
-  form, and Add bot is disabled with the reason. Checked after the terminal, before the password.
+- **The account panel** (`AccountDrawer.tsx`) marks each owed channel *missing* in the heading's
+  setup checklist (see the next section; this was a *no … channel · add* chip until later the same
+  day), and Add bot is disabled with the reason. Checked after the terminal, before the password.
 - **Take live** (`GoLivePanel.tsx`) LISTS a channel-less live account, disabled and marked *needs
   its Telegram channels* — never hidden, since a destination that vanishes reads as a bug.
 
@@ -349,3 +350,43 @@ them; a browser check drives exactly that row.
 
 **TESTED:** `tests/bots-accounts.spec.ts`, the checks under *A LIVE account names its own Telegram
 channels*.
+
+## The account settings: a setup checklist, the MT5 facts locked, three cards (2026-09-13)
+
+Aaron: *"some of these fields I should NOT be able to edit — they are read directly off the VPS mt5
+instance … find a way to separate mt5 level info from telegram channel stuff … in the heading I
+can't tell what is missing and what is not missing."*
+
+- **The heading's chips are a fixed four-step checklist** (`pages/Bots/readiness.tsx`): Terminal,
+  Password, Trades channel, Signals channel — all four every time, each *done*, *missing*,
+  *unknown* or *shared room*. The old chips drew only some states, and `password set` and `no
+  trades or signals channel · add` were the same pill shape. A missing step is a button that opens
+  the settings on its fix, cursor in the first empty channel. ⚠ Every state is the server's field;
+  a blank channel on an account that owes none is *shared room*, never missing. This replaces the
+  three chips described under *Adding a broker account* above.
+- **Edit became Settings, in three cards** (`AccountForm.tsx`): *MT5 account* — broker, terminal,
+  symbol ending and the password, as TEXT under *Locked · Sync VPS updates these*; *In this app* —
+  name, cost model, tier; *Telegram* — the three channels, each with Send test.
+- ⚠ **Login, server and demo-or-live are not repeated in the card** — the heading carries them
+  (*Say it once*). The by-hand add (Sync VPS → add by hand) has no such heading and still types
+  every fact.
+- ⚠ **Three locked facts can still be filled, each only when the box left it empty:** a terminal
+  nobody recorded (the VPS is asked first; *Enter the path by hand* appears only when it offers
+  none), a symbol ending nobody recorded (*Set by hand*), and a demo-or-live the broker never stated
+  (a picker).
+- 🔴 **The symbol ending is a three-way choice, not a checkbox.** The checkbox's own sentence said
+  *unticked means bare symbols* while unticked SENT `null`, and a ticked empty box sent `""` — the
+  value that strips a live instrument's suffix. Now `""` is sent only by picking *Bare names*,
+  *End in a suffix* with an empty box cannot be saved, and a new account starts on *Not recorded*.
+- **Cost model is a list** of the measured profiles (`useBrokerProfiles`), so a name the server
+  would refuse cannot be typed. ⚠ A list that could not be read falls back to a text box.
+- **The Save row is the drawer's pinned footer** — the form hands its body and footer to a `frame`
+  from whichever drawer hosts it, instead of drawing a bordered box with its own scroll inside the
+  drawer's. It lists every pending change with the risk budget's `Change` chip (moved to
+  `drawerParts.tsx`) and is off until something changes. **A password on its own goes to the
+  password endpoint** — the account list is not committed for a row that did not change.
+- ⚠ **The lock is on the PAGE.** The form sends the saved values back unchanged, but the server's
+  save still accepts a different server or demo-or-live.
+
+**TESTED:** `tests/bots-accounts.spec.ts` — the checks under *The account settings*, plus the
+terminal, password, channel and suffix checks re-pointed at the checklist and the locked card.

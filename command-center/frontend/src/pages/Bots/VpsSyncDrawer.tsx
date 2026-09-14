@@ -28,6 +28,7 @@ import type {
   ScannedTerminal,
 } from '@/types'
 import { AccountForm } from './AccountForm'
+import { BackButton } from './drawerParts'
 
 /**
  * Sync the account list with what the VPS is logged into — SCAN FIRST, then a Sync button.
@@ -108,86 +109,91 @@ function OpenSyncDrawer({ sync, onClose }: { sync: Sync; onClose: () => void }) 
   }
   const pending = scan && !scan.blocked ? scan.changes.length : 0
 
+  // The by-hand form is a STEP of this drawer: same shell, its Save row in the pinned footer.
+  if (manual) {
+    return (
+      <AccountForm
+        onClose={() => setManual(false)}
+        frame={(body, formFooter) => (
+          <Drawer
+            open
+            onClose={onClose}
+            label="Sync the account list with the VPS"
+            title="Add an account by hand"
+            subtitle="For an account sync can’t see — nothing is written until you save"
+            actions={<BackButton onClick={() => setManual(false)} />}
+            footer={formFooter}
+          >
+            {body}
+          </Drawer>
+        )}
+      />
+    )
+  }
+
   return (
     <Drawer
       open
       onClose={onClose}
       label="Sync the account list with the VPS"
-      title={manual ? 'Add an account by hand' : 'Sync with the VPS'}
-      subtitle={
-        manual ? (
-          'For an account sync can’t see — nothing is written until you save'
-        ) : (
-          <Checked scan={scan} asking={preview.isLoading} failed={preview.isError} />
-        )
-      }
-      actions={
-        manual ? <SmallButton onClick={() => setManual(false)}>Back</SmallButton> : undefined
-      }
+      title="Sync with the VPS"
+      subtitle={<Checked scan={scan} asking={preview.isLoading} failed={preview.isError} />}
       footer={
-        manual ? undefined : (
-          <Footer
-            phase={phase}
-            pending={pending}
-            blocked={scan?.blocked ?? null}
-            busy={preview.isFetching || sync.isPending}
-            onSync={() => scan && sync.mutate(scan.plan_id)}
-            onScanAgain={scanAgain}
-            onDone={onClose}
-          />
-        )
+        <Footer
+          phase={phase}
+          pending={pending}
+          blocked={scan?.blocked ?? null}
+          busy={preview.isFetching || sync.isPending}
+          onSync={() => scan && sync.mutate(scan.plan_id)}
+          onScanAgain={scanAgain}
+          onDone={onClose}
+        />
       }
     >
-      {manual ? (
-        <div className="pt-4">
-          <AccountForm onClose={() => setManual(false)} />
-        </div>
-      ) : (
-        <>
-          <StepBar phase={phase} />
-          <div className="flex flex-col gap-5 pt-4">
-            <Hero
-              phase={phase}
-              scan={scan}
-              receipt={receipt}
-              scanError={preview.error}
-              submittedAt={sync.submittedAt}
-            />
+      <>
+        <StepBar phase={phase} />
+        <div className="flex flex-col gap-5 pt-4">
+          <Hero
+            phase={phase}
+            scan={scan}
+            receipt={receipt}
+            scanError={preview.error}
+            submittedAt={sync.submittedAt}
+          />
 
-            {sync.isError && (
-              <Banner tone="neg" title="The sync didn’t finish" testId="sync-error">
-                {errorText(sync.error)}
-                <p className="mt-2 opacity-80">Scan again to see where your list stands now.</p>
-              </Banner>
-            )}
+          {sync.isError && (
+            <Banner tone="neg" title="The sync didn’t finish" testId="sync-error">
+              {errorText(sync.error)}
+              <p className="mt-2 opacity-80">Scan again to see where your list stands now.</p>
+            </Banner>
+          )}
 
-            {/* 🔴 NOTHING was written. The list below is the NEW plan, not the one approved —
+          {/* 🔴 NOTHING was written. The list below is the NEW plan, not the one approved —
                 pressing Sync again approves this one. */}
-            {planChanged && scan && (
-              <Banner
-                tone="warn"
-                title="The VPS changed since your scan, so nothing was saved"
-                testId="sync-plan-changed"
-              >
-                {scan.changes.length > 0
-                  ? 'Below is what sync would change now. Check it, then press Sync again.'
-                  : 'Your list already matches the VPS as it is now.'}
-              </Banner>
-            )}
+          {planChanged && scan && (
+            <Banner
+              tone="warn"
+              title="The VPS changed since your scan, so nothing was saved"
+              testId="sync-plan-changed"
+            >
+              {scan.changes.length > 0
+                ? 'Below is what sync would change now. Check it, then press Sync again.'
+                : 'Your list already matches the VPS as it is now.'}
+            </Banner>
+          )}
 
-            {receipt && <Receipt receipt={receipt} />}
+          {receipt && <Receipt receipt={receipt} />}
 
-            {scan?.asked && (
-              <div className={phase === 'syncing' ? 'opacity-55 pointer-events-none' : ''}>
-                <Plan scan={scan} after={!!receipt} />
-              </div>
-            )}
+          {scan?.asked && (
+            <div className={phase === 'syncing' ? 'opacity-55 pointer-events-none' : ''}>
+              <Plan scan={scan} after={!!receipt} />
+            </div>
+          )}
 
-            {phase === 'scanning' && <TerminalsSkeleton />}
-          </div>
-          <ManualAdd onClick={() => setManual(true)} />
-        </>
-      )}
+          {phase === 'scanning' && <TerminalsSkeleton />}
+        </div>
+        <ManualAdd onClick={() => setManual(true)} />
+      </>
     </Drawer>
   )
 }
@@ -1047,17 +1053,6 @@ function SecondaryButton({
       disabled={disabled}
       data-testid={testId}
       className="inline-flex items-center gap-[6px] px-3 py-[7px] rounded-md text-[12.5px] border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-    >
-      {children}
-    </button>
-  )
-}
-
-function SmallButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
     >
       {children}
     </button>

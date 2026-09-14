@@ -6,6 +6,7 @@
  * lifted out to end.
  */
 import type { ReactNode } from 'react'
+import { ArrowLeft } from 'lucide-react'
 
 /**
  * A section's heading: grey small caps, with an optional control on the right.
@@ -35,5 +36,40 @@ export function SectionTitle({
       </p>
       {aside && <div className="ml-auto flex items-center gap-2">{aside}</div>}
     </div>
+  )
+}
+
+/**
+ * One change a pinned Save will write, read as `B-LEG 10% → 8%`. The risk budget's footer and the
+ * account settings' footer both list their pending changes with it, so the two read alike.
+ */
+export function Change({ label, from, to }: { label: string; from: string; to: string }) {
+  return (
+    <span className="inline-flex items-center gap-[5px] text-[11.5px] px-[8px] py-[3px] rounded-md bg-bg-surface-2 border border-border-subtle">
+      <span className="text-text-secondary">{label}</span>
+      <span
+        title={from}
+        className="font-mono tabular-nums text-text-tertiary max-w-[160px] truncate"
+      >
+        {from}
+      </span>
+      <span className="text-text-tertiary">→</span>
+      <span title={to} className="font-mono tabular-nums text-text-primary max-w-[160px] truncate">
+        {to}
+      </span>
+    </span>
+  )
+}
+
+/** The labelled way back from a panel's inner step, beside its close button. */
+export function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      data-testid="panel-back"
+      onClick={onClick}
+      className="inline-flex items-center gap-[5px] text-[12px] px-[10px] py-[5px] rounded-md border border-border-default text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+    >
+      <ArrowLeft size={12} /> Back
+    </button>
   )
 }

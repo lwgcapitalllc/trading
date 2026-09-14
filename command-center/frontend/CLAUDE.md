@@ -422,6 +422,7 @@ Most-cited code: `pages/Bots/AccountForm.tsx`, `lib/brokerName.ts`, `lib/costLay
 - The account net is measured off what went IN, and the page says which (2026-09-12)
 - A broker account is printed in words — `lib/brokerName.ts` (2026-09-13)
 - A LIVE account's Telegram channels — entered on the form, tested from the box (2026-09-13)
+- The account settings: a setup checklist, the MT5 facts locked, three cards (2026-09-13)
 
 ### `notes/version-deploy.md` — Version banner, fleet strip and strategy deployment
 
