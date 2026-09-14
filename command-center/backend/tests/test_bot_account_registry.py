@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -491,6 +492,121 @@ def test_saving_a_terminal_another_account_holds_is_a_409_and_writes_NOTHING(
     )
     assert r.status_code == 409, r.text
     assert "700152905" in r.json()["detail"]
+    assert written == []
+    assert registry.read_text(encoding="utf-8") == before
+
+
+# ── an account keeps its kind — a flip is refused, a MOVE is the real route (2026-09-14) ─────
+#
+# 🔴 The frontend LOCKS demo/live on an existing account's settings, but that lock lives in the
+# browser. This is the same rule where nothing else that reaches the SAVE ROUTE can bypass it — a
+# bot's live tint, its fleet-action warning and its Telegram channel requirement all read this
+# field, so it may never be edited in place there. "Take live" (`services/go_live.py`) is the real
+# route: it MOVES a demo account's bots onto a separate, already-live account.
+#
+# ⚠ **The guard lives in `check_entry` ONLY, not in `upsert_account`.** `check_entry` is what the
+# save route calls before it writes a person's edit; `upsert_account` is the shared writer sync
+# also calls directly with a MEASURED correction (below), and that correction must keep landing.
+# So every check here calls `check_entry` — the route a person's Save actually goes through —
+# never `upsert_account` on its own.
+
+
+def test_an_existing_DEMO_account_cannot_be_SAVED_as_live(tmp_path):
+    """MUTATION: drop `_refuse_a_kind_flip` from `check_entry` → this raises nothing and goes red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _acct(kind="demo"), _PROFILES)
+    with pytest.raises(reg.RegistryError, match="recorded as demo"):
+        reg.check_entry(p, _acct(kind="live", server="PUPrime-Live"), _PROFILES)
+    stored = reg.account_by_number(p, 700152905)
+    assert stored.kind == "demo", "a refused check must be paired with a write that never happens"
+
+
+def test_an_existing_LIVE_account_cannot_be_SAVED_as_demo(tmp_path):
+    p = _file(tmp_path)
+    reg.upsert_account(p, _acct(kind="live", server="PUPrime-Live"), _PROFILES)
+    with pytest.raises(reg.RegistryError, match="recorded as live"):
+        reg.check_entry(p, _acct(kind="demo", server="PUPrime-Demo"), _PROFILES)
+
+
+def test_re_saving_an_account_with_its_OWN_kind_is_not_a_flip(tmp_path):
+    """The positive control: every ordinary edit re-sends the kind it already has, and none of
+    those may be caught by the guard meant for an actual change.
+
+    MUTATION: compare on IDENTITY instead of on the two kinds → every re-save is refused → red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _acct(kind="demo", label="first"), _PROFILES)
+    reg.check_entry(p, _acct(kind="demo", label="renamed"), _PROFILES)  # must not raise
+    stored, created = reg.upsert_account(p, _acct(kind="demo", label="renamed"), _PROFILES)
+    assert not created and stored.label == "renamed"
+
+
+def test_a_NEW_account_may_be_registered_as_either_kind(tmp_path):
+    """The guard is about a row that already EXISTS — a brand new account has nothing to flip.
+
+    MUTATION: look the account up before checking whether it exists → a new account is refused
+    against itself and this goes red."""
+    p = _file(tmp_path)
+    reg.check_entry(p, _acct(kind="live", server="PUPrime-Live"), _PROFILES)  # must not raise
+    _, created = reg.upsert_account(p, _acct(kind="live", server="PUPrime-Live"), _PROFILES)
+    assert created
+
+
+def test_a_row_a_stale_file_left_with_an_INVALID_kind_can_still_be_CORRECTED(tmp_path):
+    """🔴 Only a VALID stored kind is protected. `_validate` has refused anything else since before
+    this guard existed, so the only way a row holds something other than demo/live is a file
+    written outside this module — and that is a correction to make, not a flip to block. This is
+    the same case the form's own kind picker exists for.
+
+    MUTATION: drop the `existing.kind not in ("demo", "live")` escape → the correction is refused
+    and this goes red."""
+    p = _file(tmp_path, [asdict(_acct(kind="contest"))])
+    reg.check_entry(p, _acct(kind="live", server="PUPrime-Live"), _PROFILES)  # must not raise
+    stored, created = reg.upsert_account(p, _acct(kind="live", server="PUPrime-Live"), _PROFILES)
+    assert not created and stored.kind == "live"
+
+
+def test_a_SYNCED_kind_correction_still_WRITES_and_is_not_caught_by_the_guard(tmp_path):
+    """🔴 The conflict this guard almost caused: `account_sync.plan_sync` corrects an account's
+    demo/live field from the broker's own MEASURED answer, for an account no bot trades, and
+    `apply_sync` writes that correction through `upsert_account` DIRECTLY — never through
+    `check_entry`. A guard placed in the shared writer would silently refuse the exact job sync
+    exists to do, for the exact same field, on the exact same account.
+
+    MUTATION: move `_refuse_a_kind_flip` back into `upsert_account` → this goes red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _acct(kind="demo", account=34957946, server="PUPrime-Old"), _PROFILES)
+    # `apply_sync` never calls `check_entry` — it goes straight to `upsert_account`, exactly as
+    # `services/account_sync.py::apply_sync` does with a plan's own correction.
+    stored, created = reg.upsert_account(
+        p, _acct(kind="live", account=34957946, server="PUPrime-Live"), _PROFILES
+    )
+    assert not created and stored.kind == "live"
+
+
+def test_the_kind_flip_refusal_is_a_400_and_writes_no_password(client, registry, monkeypatch):
+    """A statement about the request, not a clash with another stored row — 409 stays reserved for
+    the taken-terminal case.
+
+    MUTATION: raise it as `TerminalTaken` → the route answers 409 and this goes red."""
+    from routers import bots as bots_router
+
+    reg.upsert_account(registry, _acct(kind="demo"), _PROFILES)
+    before = registry.read_text(encoding="utf-8")
+    written = []
+    monkeypatch.setattr(bots_router, "_write_account_password", lambda a, p: written.append(a))
+    r = client.put(
+        "/bots/accounts/registry/700152905",
+        json={
+            "account": 700152905,
+            "kind": "live",
+            "server": "PUPrime-Live",
+            "mt5_path": _FFT,
+            "password": "hunter2",
+            "deploy": False,
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "recorded as demo" in r.json()["detail"]
     assert written == []
     assert registry.read_text(encoding="utf-8") == before
 

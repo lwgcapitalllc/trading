@@ -306,6 +306,43 @@ def _refuse_a_taken_terminal(raw: dict, entry: RegisteredAccount) -> None:
             )
 
 
+def _refuse_a_kind_flip(path: Path, entry: RegisteredAccount) -> None:
+    """🔴 A PERSON may not SAVE an account already recorded as demo or live as the other one.
+
+    The frontend locks this field on the account settings page for exactly this reason, but that
+    lock lives in the browser — this is the same rule where it cannot be bypassed by anything else
+    that reaches the save route. **Going live is a MOVE, never a flip:** `services/go_live.py`
+    moves a demo account's bots onto a separate, already-live account, with its own confirms and
+    its own channel checks. Silently flipping the field here instead would drop the live tint, the
+    fleet-action warning and the Telegram channel requirement in one write, with nothing on screen
+    to say so.
+
+    ⚠ **Only refused once the account already holds a VALID kind.** A row a stale file left with
+    something other than `demo`/`live` (the one case `_validate` did not create) is a correction,
+    not a flip, and the form's own picker exists to make exactly that fix.
+
+    🔴 **Called from `check_entry` ONLY — never from `upsert_account`.** `account_sync.plan_sync`
+    corrects this exact field from the broker's own MEASURED answer, for an account no bot trades,
+    and previews it before anything is written (`services/account_sync.py` — "only what the box
+    MEASURED is written: server, demo-or-live, the symbol ending"). `apply_sync` writes that
+    correction through `upsert_account` directly, never through `check_entry`, so putting the
+    guard in the shared writer would silently refuse a sync doing exactly the job it exists for —
+    the same account, the same field, but a MEASUREMENT rather than a person's keystroke. Guarding
+    only the route a person's typed edit crosses is what keeps the two apart.
+    """
+    existing = account_by_number(path, entry.account)
+    if existing is None or existing.kind not in ("demo", "live"):
+        return
+    if entry.kind != existing.kind:
+        raise RegistryError(
+            f"account {entry.account} is recorded as {existing.kind}, and this write would save "
+            f"it as {entry.kind} — refused. A live account's tint, its fleet-action warning and "
+            f"its Telegram channel requirement all read this field, so it is never edited in "
+            f"place. Move the bots to an already-{entry.kind} account instead ('Take live' on a "
+            f"demo account with bots on it)."
+        )
+
+
 def check_entry(path: Path, entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> None:
     """Every refusal a write would make, WITHOUT writing.
 
@@ -315,6 +352,7 @@ def check_entry(path: Path, entry: RegisteredAccount, known_profiles: Optional[s
     """
     _validate(entry, known_profiles)
     _refuse_a_taken_terminal(_read_raw(path), entry)
+    _refuse_a_kind_flip(path, entry)
 
 
 def _atomic_write(path: Path, raw: dict) -> None:

@@ -675,3 +675,33 @@ a laptop tests a different sender. It writes nothing.
 **TESTED:** `tests/test_account_channels.py` (39), plus routing checks added to
 `test_bot_label.py`, `test_bot_promote.py`, `test_account_risk.py` and `test_go_live.py`. Full
 backend suite 2194 passed, 8 skipped.
+
+## An account's demo/live field is LOCKED on the page — and now on the save route too (2026-09-14)
+
+The frontend locked `kind` on an existing account's settings the same day it split the form into
+three cards (`../frontend/notes/accounts-broker.md` → *The account settings*), because nothing
+server-side stopped a save from flipping it. `_refuse_a_kind_flip` closes that: `check_entry`
+refuses a save where an account already recorded as `demo` or `live` would be stored as the other
+one. **Going live is a MOVE, never a flip** — `services/go_live.py` moves a demo account's bots
+onto a separate, already-live account, with its own confirm and its own channel checks. Flipping
+the field in place instead would drop the live tint, the fleet-action warning and the Telegram
+channel requirement in one write, with nothing on screen to say so.
+
+🔴 **The guard lives in `check_entry` ONLY, never in `upsert_account`** — the one real conflict
+this needed resolving before it shipped. `account_sync.plan_sync` corrects this exact field from
+the broker's own MEASURED reading, for an account no bot trades, and previews it before anything
+is written (*"only what the box MEASURED is written: server, demo-or-live, the symbol ending"*).
+`apply_sync` writes that correction through `upsert_account` **directly**, never through
+`check_entry` — so a guard in the shared writer would have silently refused the sync doing exactly
+the job it exists for, on the same account, the same field. `check_entry` is the route only a
+person's typed Save crosses; `upsert_account` stays the "write what you're given, once validated"
+primitive both callers share.
+
+⚠ **Only refused once the account already holds a VALID `demo`/`live` kind.** A row a stale file
+left with anything else (the one case `_validate` never let a normal write create) is a
+correction, not a flip — the same case the form's own kind picker exists for on a scanned reading
+the broker never called demo or live.
+
+**TESTED:** `tests/test_bot_account_registry.py` — six new checks, each watched RED by a named
+mutation, including one proving a guard placed back in `upsert_account` breaks sync's own
+correction. Full suite here plus `test_account_sync.py` and `test_go_live.py`: 141 passed.
