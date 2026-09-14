@@ -46,7 +46,7 @@
  * carries the account's sign, so no edge colour repeats it; a side's pooled score shows only when it
  * pools two or more bots, because a pool of one is that bot's row.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   FileText,
@@ -175,12 +175,14 @@ function IconBtn({
   onClick,
   tone,
   disabled,
+  testId,
 }: {
   icon: typeof Play
   title: string
   onClick: () => void
   tone?: 'pos' | 'neg'
   disabled?: boolean
+  testId?: string
 }) {
   const hover =
     tone === 'neg'
@@ -190,6 +192,7 @@ function IconBtn({
         : 'hover:text-text-primary hover:border-border-default'
   return (
     <button
+      data-testid={testId}
       title={title}
       aria-label={title}
       disabled={disabled}
@@ -673,6 +676,51 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
   )
 }
 
+/** The typical bot's own return here — the MEAN of each current bot's Return % (the same figure
+ *  the per-row Return % column states), never their SUM. Two bots sharing one balance cannot have
+ *  their shares added — root CLAUDE.md's "never sum a number across bots that share it" — but a
+ *  mean answers a different, legitimate question: what does a bot on this account typically make,
+ *  independent of one bot pulling the account's own net around, or of money no bot recorded.
+ *
+ *  ⚠ Only counts bots CURRENTLY on the account (`former` excluded) that have actually traded — a
+ *  bot with no closed trade has nothing to average in, never a silent zero. `null` renders a dash. */
+function AvgBotReturn({ bots, asking }: { bots: BotEarnings[] | undefined; asking: boolean }) {
+  if (!bots && asking)
+    return (
+      <Shimmer>
+        <span className="text-[13px] font-mono tabular-nums font-semibold">+00.0%</span>
+      </Shimmer>
+    )
+  const active = (bots ?? []).filter((b) => !b.former && b.traded && b.pct_of_opening != null)
+  if (!active.length) return <Dash />
+  const avg = active.reduce((sum, b) => sum + (b.pct_of_opening as number), 0) / active.length
+  const up = avg >= 0
+  return (
+    <span
+      data-testid="avg-bot-return"
+      title={`The mean Return % across the ${active.length} bot${active.length === 1 ? '' : 's'} on this account with a closed trade — a mean, never a sum, since they share one balance.`}
+      className={`text-[13px] font-mono tabular-nums font-semibold cursor-default ${up ? 'text-pos-text' : 'text-neg-text'}`}
+    >
+      {avg > 0 ? '+' : ''}
+      {avg.toFixed(1)}%
+    </span>
+  )
+}
+
+/** The tiny uppercase word over a header stat — one look for Equity / Return / Avg per bot, the
+ *  same treatment `ColumnHeadings` gives a column name, so the header reads as more of that
+ *  system rather than a one-off. */
+function StatLabel({ children, title }: { children: ReactNode; title?: string }) {
+  return (
+    <span
+      title={title}
+      className="text-[9.5px] font-semibold uppercase tracking-[0.6px] text-text-tertiary cursor-default"
+    >
+      {children}
+    </span>
+  )
+}
+
 /** The money an account made that NO BOT here recorded making.
  *
  * 🔴 **This was a stacked bar with a segment per bot, and the segments were a second copy of the
@@ -765,15 +813,36 @@ function BotsPageSkeleton() {
       className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
     >
       <div className="flex items-center gap-3 px-4 py-[13px]">
-        <Shimmer className="h-[15px] w-[92px]" />
-        <Shimmer className="h-[13px] w-[64px]" />
-        <Shimmer shape="pill" className="h-[22px] w-[64px]" />
-        {/* The SAME loading states the real card renders — never a private copy of them. */}
-        <span className="ml-auto flex items-baseline gap-[10px]">
-          <span className="text-[17px] font-mono tabular-nums font-medium">
-            <Shimmer>$00,000.00</Shimmer>
+        <span className="flex items-center gap-3 min-w-0">
+          <Shimmer className="h-[15px] w-[92px]" />
+          <Shimmer className="h-[13px] w-[64px]" />
+        </span>
+        {/* The SAME loading states the real card renders — never a private copy of them.
+         *  ⚠ The cap is a FAULT pill in the rare case, so this placeholder shimmers the common
+         *  one instead — a quiet gold figure in the stat row, same as every account settles to
+         *  once its bots agree on a ceiling. */}
+        <span className="ml-auto flex items-stretch">
+          <span className="flex flex-col items-end justify-center gap-[3px] pr-[14px]">
+            <StatLabel>Cap</StatLabel>
+            <Shimmer className="h-[13px] w-[30px]" />
           </span>
-          <AccountNet e={undefined} asking />
+          <span className="w-px self-stretch bg-border-subtle" />
+          <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+            <StatLabel>Return</StatLabel>
+            <AccountNet e={undefined} asking />
+          </span>
+          <span className="w-px self-stretch bg-border-subtle" />
+          <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+            <StatLabel>Avg / bot</StatLabel>
+            <AvgBotReturn bots={undefined} asking />
+          </span>
+          <span className="w-px self-stretch bg-border-subtle" />
+          <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px]">
+            <StatLabel>Equity</StatLabel>
+            <span className="text-[17px] font-mono tabular-nums font-medium">
+              <Shimmer>$00,000.00</Shimmer>
+            </span>
+          </span>
         </span>
       </div>
       <div className="border-t border-border-subtle">
@@ -1177,117 +1246,185 @@ export function Bots() {
         <button
           onClick={() => set('account', String(account))}
           title="Open this account — balance, risk cap, and which bots are on it"
-          className="w-full flex items-center gap-3 px-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
+          className="w-full flex items-center flex-wrap gap-y-2 gap-x-3 px-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
         >
           {/* 🔴 THE NUMBER LEADS (2026-09-06, Aaron: *"the account number should be the
            *  thing prefix in the account"*). The login is what the broker, the terminal,
            *  the instance config and every refusal message name it by; the label is a
            *  nickname somebody typed here. When the two disagree the number is the one
-           *  that is right, so it is the one the eye lands on first. */}
-          <span className="text-[14px] font-mono font-semibold tabular-nums">{account}</span>
-          {/* The account's name (its nickname, else its broker) comes off the registry, which
-           *  asks the box whether a password is stored and so is slow — until it answers, the
-           *  fallback "Account N" would be a guess at a name, so the name shimmers instead. */}
-          {!reg && registryPending ? (
-            <Shimmer className="h-[13px] w-[64px]" />
-          ) : (
-            <span className="text-[13px] text-text-secondary">{nameOf(reg, group)}</span>
-          )}
+           *  that is right, so it is the one the eye lands on first.
+           *
+           *  ⚠ **Grouped in its own identity cluster (2026-09-14)**, so it can wrap onto its
+           *  own line at a narrow width without the stats beside it reflowing too — the two
+           *  clusters answer different questions (which account; how is it doing) and a
+           *  redesign that lets them compete for the same row is why the header read as one
+           *  flat strip of text rather than two things worth looking at separately. */}
+          <span className="flex items-center gap-3 min-w-0">
+            <span className="text-[14px] font-mono font-semibold tabular-nums shrink-0">
+              {account}
+            </span>
+            {/* The account's name (its nickname, else its broker) comes off the registry, which
+             *  asks the box whether a password is stored and so is slow — until it answers, the
+             *  fallback "Account N" would be a guess at a name, so the name shimmers instead. */}
+            {!reg && registryPending ? (
+              <Shimmer className="h-[13px] w-[64px]" />
+            ) : (
+              <span className="text-[13px] text-text-secondary truncate">{nameOf(reg, group)}</span>
+            )}
 
-          {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
-           *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
-           *  The rows below state both, and a number restating what is already on
-           *  screen is the duplication this page was rebuilt to remove.
-           *
-           *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
-           *  number it read as another piece of identity — Aaron: *"the cap is missing.
-           *  Well, not missing. It's just not obvious."* It is the one number here that
-           *  can refuse a trade, so it gets a border and the gold the page reserves for
-           *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
-           *  is the condition worth noticing, and rendering it quieter than a set cap
-           *  is backwards. */}
-          {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
-           *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
-           *  *nothing here refuses a trade for being too large* — the opposite of what
-           *  is true. When the bots on one balance state different ceilings, NONE of
-           *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
-           *  a chip: *nobody set one* and *they cannot agree* are different facts and
-           *  only one of them is safe to read as quiet.**
-           *
-           *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
-           *  forced to null above, because printing one bot's number would name a
-           *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
-           *  fix beside it; this is the half a reader sees without opening anything.
-           *
-           *  ⚠ **No chip at all while no bot is on the account.** The ceiling is stored on each
-           *  bot, so with none there is no cap to state — and "no cap" in warn over an account
-           *  nothing is trading is an alarm about nothing. It returns with the first bot. */}
-          {idle ? null : !group.cap_agrees ? (
-            <span
-              data-testid="cap-chip"
-              title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
-              className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
-            >
-              cap disagreement
-            </span>
-          ) : cap == null ? (
-            <span
-              data-testid="cap-chip"
-              title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
-              className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
-            >
-              no cap
-            </span>
-          ) : (
-            <span
-              data-testid="cap-chip"
-              title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
-              className="inline-flex items-baseline gap-[4px] text-[11px] px-[7px] py-[3px] rounded-pill bg-gold-muted border border-gold/30 cursor-default"
-            >
-              <span className="font-mono tabular-nums font-semibold text-gold-text">{cap}%</span>
-              <span className="text-[10px] text-gold-text/70 uppercase tracking-[0.4px]">cap</span>
-            </span>
-          )}
+            {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
+             *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
+             *  The rows below state both, and a number restating what is already on
+             *  screen is the duplication this page was rebuilt to remove.
+             *
+             *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
+             *  number it read as another piece of identity — Aaron: *"the cap is missing.
+             *  Well, not missing. It's just not obvious."* It is the one number here that
+             *  can refuse a trade, so it gets a border and the gold the page reserves for
+             *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
+             *  is the condition worth noticing, and rendering it quieter than a set cap
+             *  is backwards. */}
+            {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
+             *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
+             *  *nothing here refuses a trade for being too large* — the opposite of what
+             *  is true. When the bots on one balance state different ceilings, NONE of
+             *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
+             *  a chip: *nobody set one* and *they cannot agree* are different facts and
+             *  only one of them is safe to read as quiet.**
+             *
+             *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
+             *  forced to null above, because printing one bot's number would name a
+             *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
+             *  fix beside it; this is the half a reader sees without opening anything.
+             *
+             *  ⚠ **No chip at all while no bot is on the account.** The ceiling is stored on each
+             *  bot, so with none there is no cap to state — and "no cap" in warn over an account
+             *  nothing is trading is an alarm about nothing. It returns with the first bot.
+             *
+             *  🔴 **Only the two FAULT states stay a pill here (2026-09-14).** A pill is an
+             *  alarm shape — border, background, uppercase — and belongs beside the account's
+             *  name exactly because a disagreement or an unset ceiling is something wrong with
+             *  the ACCOUNT, not a performance figure. A cap that is simply SET has nothing wrong
+             *  with it, so once the header grew a real stat cluster (Equity / Return / Avg per
+             *  bot) a calm gold NUMBER moved there as one more of those — see below — rather
+             *  than staying a pill with nothing to warn about, dropped into a row of plain
+             *  identity text it no longer matched. */}
+            {idle ? null : !group.cap_agrees ? (
+              <span
+                data-testid="cap-chip"
+                title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
+                className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
+              >
+                cap disagreement
+              </span>
+            ) : cap == null ? (
+              <span
+                data-testid="cap-chip"
+                title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
+                className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
+              >
+                no cap
+              </span>
+            ) : null}
+          </span>
 
-          <span className="ml-auto flex items-baseline gap-[10px]">
-            <span className="text-[17px] font-mono tabular-nums font-medium">
-              {/* ⚠ `balance unread` is a warning and is only true once the box has
-               *  answered without one — while it is still being asked it shimmers. */}
-              {balance == null && asking ? (
-                <Shimmer>$00,000.00</Shimmer>
-              ) : balance == null && idle ? (
-                // Not a fault: nothing is on the account to read it, and no bot that left it
-                // took a reading. Grey, never the warning a silent bot earns.
-                <span
-                  title="No bot is on this account, and none that traded here left a reading of its balance."
-                  className="text-[12px] text-text-tertiary"
-                >
-                  balance not read
-                </span>
-              ) : balance == null ? (
-                <span className="text-[12px] text-warn-text">balance unread</span>
-              ) : readAt ? (
-                <span
-                  title={
-                    idle
-                      ? `The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`
-                      : `The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`
-                  }
-                  className="inline-flex items-baseline gap-[7px] cursor-default"
-                >
-                  {money(balance, false)}
-                  <span
-                    data-testid="balance-read-at"
-                    className="text-[10.5px] font-sans font-normal text-text-tertiary"
+          {/* 🔴 THE STAT CLUSTER (2026-09-14, redesigned off Aaron: *"it's just kinda boring"*).
+           *  Four questions, each with its own label over its own value, divided by a hairline —
+           *  the same "small word over a number" grammar `ColumnHeadings` already teaches the
+           *  reader two inches below, rather than a row of figures with nothing saying what any
+           *  one of them is. Right-aligned so every account's numbers land on the same edge.
+           *
+           *  ⚠ **Equity is the RIGHTMOST stat (Aaron's call, 2026-09-14)** — the outer edge is
+           *  where a row of figures conventionally puts its headline number (a table's total
+           *  column), and equity is the one every other figure here is read against. Cap → Return
+           *  → Avg per bot → Equity, so the eye lands on the biggest number last, not second. */}
+          <span className="ml-auto flex items-stretch">
+            {/* ⚠ Only the SET-and-agreed cap lands here — a disagreement or an unset ceiling is
+             *  a fault about the account and stays a loud pill up in the identity cluster,
+             *  never quieted into this row (see the comment on the chip above). */}
+            {!idle && group.cap_agrees && cap != null && (
+              <>
+                <span className="flex flex-col items-end justify-center gap-[3px] pr-[14px]">
+                  <StatLabel
+                    title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
                   >
-                    read {readTime(readAt)}
+                    Cap
+                  </StatLabel>
+                  <span className="text-[13px] font-mono tabular-nums font-semibold text-gold-text cursor-default">
+                    {cap}%
                   </span>
                 </span>
-              ) : (
-                money(balance, false)
-              )}
+                <span className="w-px self-stretch bg-border-subtle" />
+              </>
+            )}
+
+            <span
+              className={`flex flex-col items-end justify-center gap-[3px] pr-[14px] ${
+                !idle && group.cap_agrees && cap != null ? 'pl-[14px]' : ''
+              }`}
+            >
+              <StatLabel>Return</StatLabel>
+              <AccountNet e={earn} asking={asking} />
             </span>
-            <AccountNet e={earn} asking={asking} />
+
+            {/* ⚠ Only when at least two bots are ON the account now — with one bot, its mean is
+             *  the same number the Return % column already states for that bot, and a second
+             *  label on an unchanged figure is the exact duplication this page keeps getting
+             *  rebuilt to remove. It returns the moment a second bot lands on the account. */}
+            {rows.length >= 2 && (
+              <>
+                <span className="w-px self-stretch bg-border-subtle" />
+                <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+                  <StatLabel title="The mean Return % across the bots on this account — never a sum, since they share one balance.">
+                    Avg / bot
+                  </StatLabel>
+                  <AvgBotReturn bots={earn?.bots} asking={asking} />
+                </span>
+              </>
+            )}
+
+            <span className="w-px self-stretch bg-border-subtle" />
+
+            <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px]">
+              <StatLabel>Equity</StatLabel>
+              <span className="text-[17px] font-mono tabular-nums font-medium">
+                {/* ⚠ `balance unread` is a warning and is only true once the box has
+                 *  answered without one — while it is still being asked it shimmers. */}
+                {balance == null && asking ? (
+                  <Shimmer>$00,000.00</Shimmer>
+                ) : balance == null && idle ? (
+                  // Not a fault: nothing is on the account to read it, and no bot that left it
+                  // took a reading. Grey, never the warning a silent bot earns.
+                  <span
+                    title="No bot is on this account, and none that traded here left a reading of its balance."
+                    className="text-[12px] text-text-tertiary"
+                  >
+                    balance not read
+                  </span>
+                ) : balance == null ? (
+                  <span className="text-[12px] text-warn-text">balance unread</span>
+                ) : readAt ? (
+                  <span
+                    title={
+                      idle
+                        ? `The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`
+                        : `The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`
+                    }
+                    className="inline-flex items-baseline gap-[7px] cursor-default"
+                  >
+                    {money(balance, false)}
+                    <span
+                      data-testid="balance-read-at"
+                      className="text-[10.5px] font-sans font-normal text-text-tertiary"
+                    >
+                      read {readTime(readAt)}
+                    </span>
+                  </span>
+                ) : (
+                  money(balance, false)
+                )}
+              </span>
+            </span>
           </span>
         </button>
 
@@ -1436,32 +1573,24 @@ export function Bots() {
                   {!acting && (
                     <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(cfg.key)} />
                   )}
-                  {/* 🔴 THE CONTROL AARON COULD NOT FIND, TWICE. First it was only the
-                   *  row itself; then it was an ICON among three other icons, and he
-                   *  still asked *"where is configure? We used to have a Configure tab.
-                   *  That's gone completely now."*
+                  {/* 🔴 WENT BACK TO ICON-ONLY (2026-09-14, Aaron's call, made knowing the
+                   *  history below). It is the same target as clicking the name — one
+                   *  drawer, one route in — so nothing here is a second implementation,
+                   *  only a second way in.
                    *
-                   *  ⚠ **It says the word.** An icon is a rebus for anybody who has not
-                   *  already learned it, and the whole reason this control keeps going
-                   *  missing is that the tab it replaced had a NAME. The other three
-                   *  stay icons because they are verbs you can guess from a shape;
-                   *  "configure" is not a shape.
-                   *
-                   *  ⚠ It is the same target as clicking the name — one drawer, one
-                   *  route in. A second way in is fine; a second IMPLEMENTATION is what
-                   *  this page keeps being rebuilt to remove. */}
-                  <button
-                    data-testid="configure-bot"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      set('bot', cfg.key)
-                    }}
+                   *  ⚠ Previously worded, deliberately kept as the reason a future pass
+                   *  should not silently re-add the label: Aaron lost this control twice
+                   *  when it was icon-only, once as a whole row and once as a bare icon
+                   *  among three others ("where is configure? We used to have a Configure
+                   *  tab.") — the fix then was to spell it out because the other three
+                   *  icons are verbs you can guess from a shape and "configure" is not.
+                   *  If it goes missing again, that is the failure to check first. */}
+                  <IconBtn
+                    testId="configure-bot"
+                    icon={SlidersHorizontal}
                     title={`Configure ${name} — risk per trade, version, account and all its settings`}
-                    className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
-                  >
-                    <SlidersHorizontal size={11} />
-                    Configure
-                  </button>
+                    onClick={() => set('bot', cfg.key)}
+                  />
                 </span>
               </div>
             )
@@ -1880,15 +2009,12 @@ export function Bots() {
                       {versionByKey.get(bot.key)?.data?.frozen ? 'idle' : 'never deployed'}
                     </span>
                     <IconBtn icon={FileText} title="Logs" onClick={() => setLogBot(bot.key)} />
-                    <button
-                      data-testid="configure-bot"
-                      onClick={() => set('bot', bot.key)}
+                    <IconBtn
+                      testId="configure-bot"
+                      icon={SlidersHorizontal}
                       title={`Configure ${bot.name}`}
-                      className="flex items-center gap-[5px] ml-[6px] px-[9px] h-[26px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:border-accent/50 hover:bg-accent-muted transition-colors"
-                    >
-                      <SlidersHorizontal size={11} />
-                      Configure
-                    </button>
+                      onClick={() => set('bot', bot.key)}
+                    />
                   </div>
                 ))}
               </div>
@@ -1920,7 +2046,7 @@ export function Bots() {
           // Its promise tells the panel when the whole thing is over — a removal closes it then.
           onStopThen={(what, then, opts) => stopThen(selBot.key, labelOf(selBot), what, then, opts)}
           // The CONFIG's account, or `undefined` until the configs are read — never "on no
-          // account" for a list that has not arrived, or the panel would hide Take off on a bot
+          // account" for a list that has not arrived, or the panel would hide Remove on a bot
           // that is on one.
           configAccount={accountGroups === undefined ? undefined : accountOfBot(selBot.key)}
           onClose={() => set('bot', null)}

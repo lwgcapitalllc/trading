@@ -403,6 +403,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - The bot panel says each thing once (2026-09-12)
 - A running bot is stopped first, never locked (2026-09-13)
 - Take off is ONE button on both panels (2026-09-13)
+- The account header — a stat cluster instead of a boring row (2026-09-14)
 - The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 - Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
 - 🔴 The page may NOT add the risk shares up itself (2026-09-04)
