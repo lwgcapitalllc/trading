@@ -159,105 +159,6 @@ by what actually depends on what: the parity gates that consume these files live
 
 ---
 
-## What makes a strategy LIVE-capable — the contract, not one bot's wiring
-
-**`strategies/python/live_contract.py` (new 2026-09-03).** Read it before trying to make any
-strategy a bot.
-
-🔴 **Until this existed the live contract had no definition.** It was whatever
-`sos_fade.execution.Execution` happened to implement, and a strategy became live-capable by
-SUBCLASSING that class — which `b_leg`, `bos` and `realign` all do. That works for a strategy
-shaped like SOS Fade and offers nothing to one that is not: `extreme_leg` is an independent
-implementation, so it inherited none of it and could not be a bot at all.
-
-🔴 **THE FAILURE MODE THAT HIDES IS THE REASON THIS IS A RULE.** `algos/live/` reads almost every
-decision field through `getattr(dec, name, default)`, so **a field a strategy never sets is
-indistinguishable from a field with nothing to report.** Omit the stop and the bridge never
-ratchets the broker's stop — no error, no halt, no log line, and a position rides its original
-stop while every dashboard stays green. **That is rule 1 in a new place, and a defensive read
-cannot tell the two apart, so the distinction has to be made before the bot starts.**
-
-⚠ **Of the thirteen decision fields, exactly TWO move money** — the stop the bridge ratchets and
-the fills that book the trade. The other eleven are reporting. **An adopter's tests must assert
-those two are POPULATED on a bar that should populate them**; asserting that a decision comes back
-passes against an adapter that sets nothing.
-
-⚠ **The contract lists are MEASURED off `algos/live/`, never remembered.**
-`python/tests/test_live_contract.py` re-derives them from that source, so a live path that starts
-reading something new goes RED here instead of going silent in a bot. **A hand-maintained list of
-what the live path needs is a second implementation of the live path.**
-
-⚠ **`verify_live_ready(strategy)` checks PRESENCE, never correctness.** It turns "AttributeError
-somewhere in the bar loop at 3am" into "refused at startup, by name". That is worth having and is
-not the same as being proven — rule 9 still applies to every adopter.
-
-⚠ **SOS Fade satisfies the contract WITHOUT importing it, and a test asserts exactly that.** It is
-the independent witness that keeps this module honest: anything the contract demands that the live
-bot does not provide is something the live path demonstrably does not need. **It is deliberately
-NOT being migrated onto the shared decision class** — that would change the strategy currently
-trading, for tidiness.
-
-⚠ **`_POSITION_FIELDS` is the WHOLE open-trade state and a missing entry is SILENT.** The record
-round-trips, the bot restarts, and the omitted latch returns at its class default — so a trade
-already moved to breakeven is managed as though it never was. Pin it with a test comparing the
-list against what the class actually assigns while a position is open. **Restore REFUSES an
-incomplete record rather than defaulting, and that refusal is the safety property.**
-
-### A package may BORROW from its siblings, and `package_deps.py` is what makes that survive a deploy
-
-**`strategies/python/package_deps.py` (new 2026-09-04).** Borrowing is normal here — `b_leg`,
-`bos` and `realign` all build on `sos_fade`, `extreme_leg` takes one class from it plus the shared
-live contract, and `sos_fade` itself takes `loss_recovery`. The imports are BARE NAMES resolved by
-a `sys.path.insert` pointing at `python/`, so in the repo they simply work and **nothing anywhere
-recorded that a dependency existed.**
-
-🔴 **A live bot does not run from the repo — it runs from a frozen snapshot built out of ONE
-strategy directory, so a snapshot for any borrowing bot could not import.** This module walks the
-imports and answers with the closure; the deploy tool and the lab's version count both call it.
-The deploy story, the pin gap it exposes, and what it does to a bot's version number are in
-`algos/CLAUDE.md` → *A snapshot carries what the package IMPORTS* — not restated here.
-
-**What it means when you write a strategy:**
-
-- **Borrow freely from a sibling package or a loose module here.** It ships now.
-- ⚠ **A file that will not PARSE stops a promote**, by name. That is deliberate: the alternative
-  is a partial answer and a snapshot that does not import.
-- ⚠ **`tests/` is not scanned and not copied**, so a test's imports cannot widen a live bot's
-  deployment. `tools/` IS both — a parity harness ships with its strategy.
-- ⚠ **A borrowing is a REAL coupling and the closure makes it visible rather than acceptable.**
-  Every bot that borrows `sos_fade` now carries it, which is honest and is also a reason to think
-  before adding one: the snapshot, the version count and the parity surface all grow with it.
-- 🔴 **It also owns what a VERSION counts (`version_pathspecs`, 2026-09-10): a commit counts only
-  when it changes a file `snapshot_sources` ships.** Counting every commit touching the trees made
-  a notes edit a new version for every bot. The deploy tool and the Command Center both call it,
-  so an edit to a CLAUDE.md, a test, a meta file or a golden export here is never a version.
-
-### Every order layer DECLARES how it opens a position (`entry_style`, 2026-09-03)
-
-🔴 **ONE OBSERVABLE STATE, TWO OPPOSITE CORRECT ANSWERS — WHICH IS WHY THIS IS DECLARED AND NEVER
-INFERRED.** *Emulator holding a position, broker holding none, an entry fill on this bar's
-decision* is exactly what a **resting** strategy looks like when its limit filled in one book and
-not the other — the 2026-08-07 divergence, where the bot must HALT. It is also exactly what a
-**market** strategy looks like one instant after its own fill, where the bot must place the
-matching order. **The position, the direction, the fill record and the empty broker book are
-identical in both cases**, so `algos/live/` asks the strategy instead of guessing.
-
-⚠ **A strategy that enters at market CANNOT be a live bot without this.** It fills inside its own
-emulator during the step, so there is nothing left to place ahead of the fill and the bridge's
-order-placing branch — which requires the emulator to be FLAT — is never reached. Before the
-declaration existed, such a bot halted on its first setup, every time.
-
-⚠ **The value is the one field the contract checks rather than merely counts.** A typo is not a
-missing feature: the bridge falls back to `"resting"` and the bot halts on trade one, so
-`verify_live_ready` refuses an unrecognised value BY NAME at startup. The fallback is the
-backstop, never the thing anything relies on — and it is the halting one on purpose.
-
-⚠ **It does NOT mean the strategy sizes its own live order.** The broker's lot count still comes
-from the single live sizing seam, against the BROKER's balance; the declaration decides which
-ORDER is sent, nothing else.
-
----
-
 ## Adding a new TradingView strategy
 
 1. **Write it into `tradingview/research/`.** It has no panel contract to honour there, nothing
@@ -319,15 +220,6 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 
 ---
 
-## TradingView (Pine) gotchas — learned on `ny_orb.pine`
-
-- **No trades on futures = order-size/margin, not the script.** TV's Properties "order size" defaults to a cash/% value; one expensive futures contract (NQ ≈ $420k notional, MES ≈ $27k) divided by that rounds to **0 contracts**, or fails the 100% margin check against a small initial capital → every order rejected. FX fills because one unit is tiny. Fixes: pass an explicit `qty` (the script forces `orderQty`), set Properties order size to **Contracts**, raise initial capital, or lower margin %. Use the `SYMBOL1!` continuous contract (e.g. `MNQ1!`) and prefer micros for eval-sized accounts.
-- **OR window ≠ chart timeframe.** A 15-min opening range on a 15-min chart is one candle and barely trades; run it on 1–5 min bars.
-- **The volume thin/holiday filter is a backtest-only proxy.** Pine has no holiday/economic calendar. Live, the correct pattern is a shared calendar/event-gate service (like the regime classifier) that every bot checks before trading — it's proactive and also covers high-impact news (which is high-volume, so the volume filter misses it). Keep the volume proxy for TV research only.
-- **Pin `slippage = 0` AND `margin_long/short = 0.2` in the `strategy()` call, not the Properties UI.** The `.pine` strategy files (`sos_fade_strategy`, `sos_fade_strategy_export`, `b_leg_strategy`, `ny_orb`, `london_breakout`) declare `slippage = 0` (2026-07-23) and `margin_long = 0.2, margin_short = 0.2` (2026-07-24), so the Strategy Tester Properties tab defaults to zero slippage and 500x leverage (margin % = 100 / leverage) to match Aaron's demo account. Both are broker-emulator SETTINGS, not signal logic: TV slippage is a flat per-fill cost (in ticks; 25 ticks = $0.25 on gold) that is neither honest (a resting limit never slips) nor comparable to a zero-cost Python bar-mode run, and margin only sets the leverage the tester assumes. Model real costs in the LAB's tick fill model instead. The breakeven buffer is a strategy INPUT (signal logic), not a cost — leave it alone.
-
-- **"Trades on chart" (Style tab) CANNOT be pinned from code, and it is the cousin of the bullet above rather than another instance of it.** `slippage` and `margin_long/short` ARE `strategy()` arguments, so the Properties tab can be defaulted; the Style tab's trade markers are not. Checked 2026-08-12 against TradingView's Pine reference and its Strategies FAQ, which says trade-marker visibility is chart-side UI with no Pine equivalent — `display = display.none` works on a `plot`, and the markers are not a plot. **It is a per-INSTANCE setting: it survives ordinary code saves and returns only on a fresh add or a "Reset settings to defaults"**, so untick it in the same visit as any reset. ⚠ **On the `indicators/` strategies it is not cosmetic — it DOUBLE-DRAWS.** Those files draw their own position box, entry triangles, TP tags and result label, and `execShowPosBox` says it *replaces* the built-in markers, which it only does if they are off; leaving both on puts two renderings of one trade on the same candles, at two different exit prices whenever a partial filled. Full note: `indicators/CLAUDE.md`.
-
 ## References
 
 - `mt5/LONDON_BREAKOUT.md` — LondonBreakout design notes, v3 reshape detail, and backtest record
@@ -336,104 +228,39 @@ To fix: add a Windows scheduled task (trigger: At startup, run whether user is l
 - `command-center/frontend/CLAUDE.md` — Strategies page, Deployed tab, Deploy button, MT5 compile button
 - `algos/markets/fx/tools/mt5_agent.py` — MT5 agent on VPS (port 8766); owns the Experts folder write path
 
-## The live contract gained `intents`, and it is LOAD-BEARING (2026-09-08)
+---
 
-`DECISION_FIELDS` now declares `intents` — what a bar ASKED FOR, as `execution.intents.OrderIntent`
-values — and `LOAD_BEARING` is three fields rather than two.
+## The notes — read the matching file BEFORE touching its code
 
-🔴 **EVERY OTHER FIELD IN THAT CONTRACT DESCRIBES WHAT THE STRATEGY DID; THIS ONE IS THE ONLY
-CHANNEL FOR SOMETHING IT WANTS DONE THAT LEAVES NO OTHER TRACE.** A scale-in lot is separate lots,
-so it never reaches `fills` at all — a live path reading fills alone trades the base position and
-says nothing, which is the divergence the whole add path exists to close.
+🔴 **This file was 45 KB on 2026-09-13 and loaded in full every time anyone opened
+a file in this folder.** Everything outside the rules above moved VERBATIM into
+`notes/` — nothing reworded, nothing dropped.
 
-🔴 **IT IS LOAD-BEARING BECAUSE ITS VALUE BECOMES A LIVE ORDER**, the same test `stop` passes. A
-strategy that adds size and leaves this empty produces a bot that scales in on paper and not at the
-broker; the read is a defensive `getattr`, so nothing fails loudly and the only clue is a halt
-naming a lot nobody sent.
+**How to write here from now on:** a rule gets ONE line under its topic below; its story and
+evidence go in that topic's notes file. A notes file satisfies the commit hook's doc check.
 
-⚠ **Its "should populate" is NARROWER than the other two.** Most bars ask for no order, so empty is
-the ordinary answer and cannot be asserted blanket-fashion. What an adopter must pin is a bar that
-DOES add size.
+⚠ **An old pointer to a section of this file still resolves** — every moved heading is
+listed below under the notes file that now holds it.
 
-⚠ **`LiveDecision` declares it as a LIST with a per-instance default, while the contract declares
-the empty tuple.** They are deliberately different and the difference is not sloppiness: the
-contract states what the live path READS WITH (an absent field must be safely iterable), and the
-dataclass states what a PRODUCER appends to — one shared mutable default would grow without bound
-and hand each bar the previous bars' orders. The two agree on emptiness, which is the only property
-either side uses.
+### `notes/live_contract.md` — The live-capable strategy contract
 
-🔴 **NOBODY DECLARED IT FOR AS LONG AS IT EXISTED, AND THE GUARD IS WHAT FOUND IT.**
-`test_live_contract.py` greps `algos/live/` for decision reads and requires each to be declared —
-it went red the moment the bridge started reading `intents`, then red again on `LiveDecision` for
-the same field. **Two links of one chain, each catching the next.** ⚠ `sos_fade.execution.Decision`
-satisfies the contract independently and is still not being migrated onto `LiveDecision`; the test
-asserts the two agree, it does not merge them.
+**Read before touching:** before making any Python strategy a live bot, or before adding/changing a decision field `algos/live/` reads.
+Most-cited code: `strategies/python/live_contract.py`, `python/tests/test_live_contract.py`, `package_deps.py`, `strategies/python/package_deps.py`.
 
-## The contract gained `full_exit_price`, and it is REQUIRED (2026-09-09)
+- What makes a strategy LIVE-capable — the contract, not one bot's wiring
 
-**`EXECUTION_ATTRS` now asks one more question: at what price do you close the WHOLE position, or
-`None`.** The live bridge hands the answer to the broker so a target fills AT its price instead of
-at market on the next bar close.
+### `notes/live_contract_changelog.md` — Live contract changelog — intents, full_exit_price, planned_full_exit_price
 
-🔴 **REQUIRED RATHER THAN OPTIONAL, AND THAT IS THE WHOLE REASON IT IS IN THE CONTRACT.** Read
-defensively, *never implemented* and *this trade has no price target* are the same answer — and the
-first means a bot closing at market for its whole life with nothing anywhere saying so. Requiring
-it makes a strategy SAY none. Rule 1, in the place this module exists for.
+**Read before touching:** before reading or changing any of these three fields, or before trusting a bot's whole-position exit pricing.
+Most-cited code: `test_live_contract.py`, `extreme_leg/tests/test_live_seams.py`.
 
-⚠ **A WHOLE-position price, never a partial rung's.** A venue take-profit closes the entire
-position, so a strategy banking half at a price answers `None` and lets the bridge reconcile that
-rung at market. Answering the rung's price deletes a runner the strategy is still managing.
+- The live contract gained `intents`, and it is LOAD-BEARING (2026-09-08)
+- The contract gained `full_exit_price`, and it is REQUIRED (2026-09-09)
+- The contract gained `planned_full_exit_price`, and it is REQUIRED (2026-09-09)
 
-⚠ **Two implementations cover every live bot, and they decide it differently** — which is why this
-is a question rather than a shared helper. `sos_fade.Execution` branches on what KIND of trade is
-open (on the live bot a re-entry after a stop-out banks 100% and one into a gap banks 0);
-`ExtremeLegExecution` has one target that always takes the lot. `b_leg`, `bos` and `realign`
-inherit the first. **Neither strategy can answer for the other.**
+### `notes/pine_gotchas.md` — TradingView Pine gotchas
 
-🔴 **`verify_live_ready` IS NOT WIRED, so this contract is not enforced at startup.** Four
-docstrings in `algos/live/` describe it as the gate that refuses a non-conforming bot by name; its
-only caller anywhere is `extreme_leg/tests/test_live_seams.py` (grepped, not assumed, 2026-09-09).
-**So adding a required attribute does NOT produce a startup refusal today** — the bridge halts at
-the moment of use instead, and that is a workaround rather than the design. Wiring it is its own
-change: it would refuse bots that currently start, so it needs its own measurement.
+**Read before touching:** before writing or debugging any TradingView `strategy()` file.
+Most-cited code: `ny_orb.pine`.
 
-## The contract gained `planned_full_exit_price`, and it is REQUIRED (2026-09-09)
-
-**`EXECUTION_ATTRS` now asks the whole-position-target question TWICE, about two different things.**
-`full_exit_price` answers for the trade that is OPEN. This one answers for an order being PLACED:
-*if this resting order filled at its own price, where would the whole position come off?*
-
-🔴 **IT EXISTS BECAUSE THE STOP TRAVELLED WITH THE ORDER AND THE TARGET DID NOT.** Both placement
-branches in `algos/live/` sent a hardcoded zero, so every trade was open at the broker with no
-target until the next reconciliation pass — and a trade that reached its price inside that window
-closed at MARKET instead, which is the drift the 2026-09-09 work exists to remove.
-
-🔴 **THE ANSWER IS AN ESTIMATE AND IT IS SAFE IN EXACTLY ONE DIRECTION — THAT PROPERTY IS THE WHOLE
-JUSTIFICATION, AND IT WAS WORKED RATHER THAN REASONED.** A rung priced in R depends on the FILL,
-which is not known when the order is placed. But a limit fills at its price **or better**, a better
-fill is a **smaller** risk, and a smaller risk puts the rung **nearer** the entry — so the estimate
-always sits at or BEYOND the price the strategy will bank at, and the broker's target cannot fire
-before the strategy's own trigger. ⚠ **It reads backwards for a short and the first pass through it
-here got it backwards**: for a short, *nearer* means HIGHER. Both directions are pinned by a test.
-
-🔴 **A MARKET entry is REFUSED rather than estimated, and that is the case the property does not
-cover.** A market order fills at the next bar's open, which can be worse as easily as better — and
-a worse fill puts the real rung FURTHER out, leaving the estimate NEARER, which closes a trade
-early at a price the strategy never chose.
-
-⚠ **REQUIRED, for the reason `full_exit_price` is.** Read defensively, *never implemented* and
-*this order has no target* are one value, and the first is a bot that silently never sends one.
-Rule 1. ⚠ **`verify_live_ready` is still not wired**, so the refusal happens at the moment of use
-in the bridge, not at startup — see the note under `full_exit_price` above.
-
-⚠ **A strategy that never rests an order answers `None` and loses NOTHING.** `extreme_leg` declares
-it enters at market, so it has already filled by the time the bridge sends anything and the bridge
-asks `full_exit_price` — the exact price, no forecast. **The constant answer is a fact about that
-bot, not a stub**, and it is pinned by a test so the next reader does not read it as a gap.
-
-🔴 **THE ORDER NOW CARRIES ITS OWN TRADE KIND (`_Pending.kind`) AND DERIVING IT WAS A RULE-1 BUG
-WAITING TO HAPPEN.** Which share the first rung takes depends on whether the trade is a primary or
-a re-entry — but `src` is `None` on every primary AND on a re-entry whose trigger did not name
-itself, so the two were genuinely one value. The fill path was never exposed to this (it is TOLD
-the kind by its caller); the planned answer is asked before the fill and has only the order to go
-on. **Pinned by a pair of tests on one config where only the kind differs and it flips the answer.**
+- TradingView (Pine) gotchas — learned on `ny_orb.pine`

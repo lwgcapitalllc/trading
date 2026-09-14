@@ -125,166 +125,6 @@ faithfully instead of pretending to cover a branch it cannot reach.
 ⚠ **57 of TradingView's 64 plot slots.** `fib_export.pine` is at 63 of 64, which is why the band
 could not simply be added there — that direction is closed, not merely unattractive.
 
-## 🔴 `fvg_export.pine` was under-checking half its own bars (2026-09-10)
-
-It plotted 10 slots per array while the live gap list reaches **17**, exceeding 10 on **52.2%** of
-bars on the committed golden export — all reported green. Now **18 slots**, direction packed into ONE
-column, plus whole-array aggregates so a longer list is still compared. The measurement, the expired
-guard behind it and the tolerance rules live in `engines/fair_value_gaps/CLAUDE.md` and are not
-restated here.
-
-⚠ **The `fvgMaxCount` maxval, the plotted slots and `compare_fvg.py`'s slot count still move
-together** — but the aggregates are what make a mismatch between them VISIBLE rather than silent.
-
-## 🔴 `fvg_export.pine` embeds the equal-level block, and that copy was missed (fixed 2026-09-09)
-
-The gap harness embeds the equal-level block ONLY to reproduce the cap exemption — its own detection
-is gated by `eq_export.pine`. That embedded copy kept the old CLOSE mitigation and the old 0.1/6
-settings when everything else moved, so the next gap export would have put `compare_fvg.py` red
-against a correct Python engine.
-
-⚠ **A harness that embeds another engine's block OWNS a copy of that engine's rules, and nothing in
-the owning engine's directory points at it.** That is why it was missed twice: once when the rule
-moved, and once when the settings did. It is the seventh and eighth copy of things whose recorded
-count was three.
-
-✅ Found by `scripts/check_pine_blocks.py`, which DISCOVERS the copies rather than listing them.
-
-## 🔴 `eq_export.pine` claimed its defaults matched mpc and they never did (fixed 2026-09-09)
-
-The equal-highs/lows parity harness carried a comment saying *defaults == mpc_jarvis.pine* while its
-tolerance sat at **0.1 against mpc's 0.25** and its level cap at **6 against mpc's 14**. Its
-mitigation was also still a CLOSE where mpc moved to a WICK on 2026-08-04. Both are fixed and the
-gate is green on two fresh exports.
-
-⚠ **A harness that misdescribes its own settings sends the next reader at the ENGINE.** That is
-what makes this worse than an ordinary stale comment: the harness is one half of the gate, so when
-it disagrees with the engine the output looks like an engine bug, and the engine is where people go
-looking.
-
-⚠ **The six plot slots per side are a HARNESS limit, not the cap.** They are the FIRST six of an
-up-to-14 array, so `compare_eq.py` must run at `--max-levels 14`; at 6 every slot mismatches on
-about half the bars — a six-cap engine keeps the NEWEST six while the export shows the OLDEST six.
-**That red is the tool being misconfigured and it is indistinguishable from a broken engine.**
-
-⚠ **Engine and harness move in the SAME commit, always** — fixing one alone turns the gate red and
-blames the other.
-
-## 🔴 The one real defect: `f_rev15` had three ways to die and the chart-side SOS Fade engine has four
-
-The missing one is the one that fires on a WIN — `fibo7Touched`, price back at the leg origin. So on the 15m chart the REV row read `Pass` the moment TP3 printed, while the **1m chart kept the same leg alive at stage 4 saying TAKE PROFIT** until an opposite SOS or a continuation BOS happened along, which can be hours. Two charts, two answers, one setup. Worse than a stale row: the RE-ENTRY round trip clears the TP latches when price returns to 0.618, so a finished trade could hand the 1m a fresh AWAIT and ask for a 1m SOS on a leg the 15m had closed the book on. Fixed with `or L_tp0` / `or S_tp0` on the two death conditions — `L_tp0` **is** TP3, since `p0` is `L_high`, the leg origin, the same 0.0 the drawn fib labels TP3. ⚠ **It kills one bar LATE**: the death block runs before the fib block that sets the latch, where the 15m side kills on the bar itself. Left as is — every other value this engine ships crosses the security boundary a bar late in the same way. ⚠ **It retires the whole 1m stack together, not just the row** — `rStage` falling below 3 drops `_m15Retraced`, which is what `fiboShowAligned`, the 1m External Fib, the 1m Sniper Zone and the 1m ENTRY row all hang off. ⚠ **Nothing on the 15m moves**: every consumer of `rStage`/`rTp50`/`rDeepCode`/`rZoneLo` sits behind `_fibOneMin`, `_sn1m`, `revOn1m` or the non-15m branch of the table, checked one by one; `f_rev15` exists only in `mpc_jarvis.pine` and `m15_playbook.pine`, so **no bot and no parity gate can see this.**
-
----
-
-## 🔴 The refused-wick duplicate label (fixed 2026-08-21) — the sequel, and the tie guard could not see it
-
-Three symptoms, one cause: a doubled `LL`, an `ASH` printed beside an `HH`, and a bogus `HH` after
-it. **Structure breaks on a CLOSE; the post-break rescan reads the WICK** — over a window bounded by
-the opposite side's last confirmed bar, which reaches back before the swing just confirmed. So it
-resurrects a wick the break rule already refused and installs it as the new active swing: earlier
-than, and more extreme than, the swing just labelled.
-
-The 2026-08-20 tie guard fires only on an EXACT price match and so could never catch it. The fix
-folds into that guard — *a rescan may only install a swing strictly NEWER than the one just
-confirmed* — costing one line of code per site.
-
-⚠ **`processMTF` in `mpc_jarvis.pine` needed it too**, unlike the tie guard: this snap moves the
-VALUE, and `st.ash := highest_val` is what the next break is tested against. Its "deliberately NOT
-repeated here" note was corrected in place.
-
-⚠ **Not cosmetic** — `fibo_ash := st.ash`, so it moves the fib anchor, E1-E4 and the TP ladder. The
-measurements, the traced bars and the outstanding parity-gate position are in
-`engines/market_structure/CLAUDE.md` → *The 2026-08-21 refused-wick fix*, and are not repeated here.
-
-## 🔴 The tied-extreme duplicate label (fixed 2026-08-20) — one swing, two labels that never go away
-
-Aaron read an `LL` and an `HL` printed on the *same* 15m swing low and asked whether he had broken
-something recently. He had not. The logic is as old as the port and was byte-identical here and in
-`engines/market_structure/engine.py` — **rule 14 in the wild: the parity gate said the two agree,
-and both were wrong the same way for the engine's whole life.**
-
-**The mechanism, in one line:** when two bars print an identical extreme the post-break rescan (a
-strict `<` running newest-to-oldest) anchors on the **later** bar, while the label for that swing is
-already drawn on the **earlier** one — so `already_conf_low`, which compares bar index as well as
-price, reads it as a new swing and draws a second label. **Pine cannot delete those labels, so they
-stack forever.** The full trace, the before/after numbers and the reasoning live in
-`engines/market_structure/CLAUDE.md` → *The 2026-08-20 tied-extreme fix*, and are not repeated here.
-
-**What changed:** two guards, one per side, each keeping the original anchor when the rescan
-ties the last confirmed extreme. Applied to **all five** engine files carrying this state
-machine — `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine`,
-`fib_export.pine`, `mss_sweeps.pine` — plus the ten files in `strategies/tradingview/`.
-**Sixteen Pine files hold copies of one engine, and a fix applied to one of them is a fix that
-has diverged from fifteen.**
-
-🔴 **`structure_engine_export.pine` HAD TO MOVE WITH THE PYTHON, AND IT IS THE ONE THAT WOULD
-HAVE BITTEN SILENTLY.** It plots `px_bull_bos_l_ago` / `px_bear_bos_h_ago` — columns derived
-from the very bar indices this guard changes — and those columns are what `compare_tradingview.py`
-diffs. Fixing Python and leaving the export alone would make the next parity run go RED on tie
-bars and read as *"the fix broke parity"*, when the truth is the two sides were being asked
-different questions. ⚠ **When a fix touches a value the export EMITS, the export is part of the
-fix, not a follow-up.**
-
-✅ **`fib_export.pine` USED TO run its high-side steps in the OPPOSITE order to the other four**
-— it promoted and *then* rescanned, where they rescan and then promote. **Re-synced 2026-08-20 to
-the reference order (rescan, then promote); it is no longer the odd one out.** The note above was
-correct and is kept because the check it describes is the right one: the guard did land in the
-same place (immediately before `st.bear_bos_high`), the ordering WAS checked per file rather than
-assumed, and one file differing out of sixteen is exactly why you check.
-
-🔴 **But the per-file ordering check did not catch what was actually wrong with this file, and
-that is the lesson worth keeping.** `fib_export.pine` has **never** carried the fallback-promotion
-`else` branch that landed in the 2026-07-08 structure re-sync (`f2a8411`) and that
-`mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine` and the canonical
-Python engine all have — `git log -S'fallback_is_hh'` on that path returns nothing, so this is
-drift from birth, not a regression from the tied-extreme fix. ⚠ **The guard was NOT inert** — the
-normal path promotes before it, so on any bar with an active swing high it behaved correctly.
-**The divergence was the `st.ash IS na` path alone**: the reference promotes `last_conf_high` to
-the rescanned high and prints an HH/LH label there, and this file promoted nothing and printed
-nothing, leaving a stale value behind. **A guard COUNT proves presence; an ORDERING check proves
-placement; neither one can see a branch that was never there at all.** The only thing that found
-it was diffing the whole method against the reference.
-
-**The re-sync (2026-08-20):** fallback branch added, and the block reordered so the extreme scan
-runs before the promotion — the fallback reads `highest_val`/`highest_loc` and cannot see them
-otherwise. ⚠ **The reorder is behaviour-preserving, CHECKED not argued**: the scan reads only
-`high[i]` and `st.last_conf_low_loc`, and the promotion block writes neither, so the normal path
-is bit-identical. The two `process()` methods now diff to **zero logic differences** — all that
-remains is the `f_swingCol` colour helper and the `showExternal` display toggle, neither of which
-exists in this harness by design. ✅ **COMPILED AND GATED 2026-08-20** — Aaron pasted it into
-TradingView and exported 20,990 M15 bars (`VANTAGE_XAUUSD, 15_b201e.csv`); `compare_fib.py
---warmup 900` exits **0** across Structure + Sniper + Internal. **The re-sync did not move a
-single fib output on 20,991 bars, which is the evidence that the reorder is harmless** — it
-changes the normal path on every bar, so a green across all of them is a real result.
-⚠ **The ADDED fallback branch is a different matter: instrumented, it was reached 0 times in
-those 20,991 bars.** It is present and correct-by-construction against the reference, and it is
-UNTESTED by this export. ✅ **Macro fib closed the same night** — a 5m export
-(`VANTAGE_XAUUSD, 5_84d6c.csv`, 20,376 bars) drove `compare_fib.py --warmup 900` to **0** at
-scope Structure + Sniper + Macro + Internal. **All four fibs green against the re-synced
-harness.** ⚠ **The added fallback branch was reached 0 times on that export too** — 41,368 bars
-across two timeframes have now failed to enter it.
-
-⚠ **The high-side guard is NOT placed symmetrically with the low-side one, and that is deliberate.**
-The two sides run their steps in opposite order — the low side promotes then rescans, the high side
-rescans then promotes — so the high-side guard sits immediately before `st.bear_bos_high`. Placed
-beside its scan it reads a `last_conf_high` the promotion has not written yet and silently does
-nothing, which is exactly what the first attempt did. **It looked right and changed nothing.**
-
-⚠ **`processMTF` carries the same two guards and was left alone on purpose.** `f_mtfStruct` returns
-`[dir, sEv]` only, `dir` is decided by close-vs-price breaks, and no `*_loc` in that method has any
-consumer — checked, not assumed. **The 1m/15m/4H confirmation rows were never affected by this.** A
-comment at each site records that, so the next reader does not "fix" a no-op into a token-ceiling
-problem. See `mpc-assistant-token-ceiling`: this file has no room to spend on nothing.
-
-🔴 **NOT PARITY-GATED — the gate cannot run on this machine.** `compare_tradingview.py` needs an
-export carrying `px_ash`/`px_asl`/`px_dir`, and the only CSVs present are strategy exports. **Rule
-22 blocks the commit until `structure_engine_export.pine` is put on a chart and exported.** The
-Python half is covered by `engines/market_structure/tests/test_duplicate_swing_labels.py` (watched
-RED), but **that proves the Python, not the Pine** — the Pine change is unverified until the gate
-runs, and it has not been pasted into TradingView either, so it is not even known to compile.
-
----
-
 ## Key paths & entry points
 
 - `indicators/engines/smc_engine_v2.pine` — the current pullback-only rewrite (v6 Pine Script), overlay indicator named "SMC Engine"
@@ -331,3 +171,31 @@ runs, and it has not been pasted into TradingView either, so it is not even know
 - Do not treat a wick-only touch of a range boundary as a break — only a candle body close beyond the boundary counts (BOS/CHoCH).
 
 ---
+
+## The notes — read the matching file BEFORE touching its code
+
+🔴 **This file was 43 KB on 2026-09-13 and loaded in full every time anyone opened
+a file in this folder.** Everything outside the rules above moved VERBATIM into
+`notes/` — nothing reworded, nothing dropped.
+
+**How to write here from now on:** a rule gets ONE line under its topic below; its story and
+evidence go in that topic's notes file. A notes file satisfies the commit hook's doc check.
+
+⚠ **An old pointer to a section of this file still resolves** — every moved heading is
+listed below under the notes file that now holds it.
+
+### `notes/duplicate_labels.md` — The duplicate-label defects (tied-extreme and refused-wick swings)
+
+**Read before touching:** before touching swing/extreme detection or duplicate-label guards in mpc_jarvis.pine or its exports.
+
+- 🔴 The refused-wick duplicate label (fixed 2026-08-21) — the sequel, and the tie guard could not see it
+- 🔴 The tied-extreme duplicate label (fixed 2026-08-20) — one swing, two labels that never go away
+
+### `notes/export_parity_fixes.md` — fvg/eq export parity fixes and the f_rev15 defect
+
+**Read before touching:** before trusting fvg/eq export bar coverage or the f_rev15 / SOS Fade engine kill conditions.
+
+- 🔴 `fvg_export.pine` was under-checking half its own bars (2026-09-10)
+- 🔴 `fvg_export.pine` embeds the equal-level block, and that copy was missed (fixed 2026-09-09)
+- 🔴 `eq_export.pine` claimed its defaults matched mpc and they never did (fixed 2026-09-09)
+- 🔴 The one real defect: `f_rev15` had three ways to die and the chart-side SOS Fade engine has four

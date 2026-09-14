@@ -181,433 +181,12 @@ The reuse needed three ADDITIVE, decision-neutral changes there (all re-verified
 3. **`execution.py`** — the SOS Fade arm decision was extracted from `_place_entries` into `_armed()`
    (a pure refactor) so the B-LEG subclass can reuse the priority gate. No behaviour change.
 
-## The exit ladder is inherited (2026-07-26)
-
-The structure runner trail, the TP2 stop-floor dropdown and the two setup toggles were ported into
-`sos_fade`, and this bot picks up ALL of them for free — `BLegConfig` subclasses `SosFadeConfig`
-and `BLegExecution` subclasses `Execution`, and the exit ladder lives entirely in the parent. The
-full register is `sos_fade/CLAUDE.md` → `## The exit ladder`. What is specific here:
-
-- **`exec_bleg` is re-defaulted to True.** `b_leg_strategy.pine` ships `execBLeg = true` (the
-  SOS Fade file ships it false), so `BLegConfig` overrides the inherited default to match. It gates the
-  B-LEG arm in `_place_entries`; OFF the bot trades nothing, which is its only real use.
-- **`exec_aplus` controls the PRIORITY GATE here, not entries.** SOS Fade never places an order in this
-  fork, so `exec_aplus=False` doesn't disable an entry path — it drops the "SOS Fade stands the B leg
-  down" gate entirely. That is the tuning experiment this file's own notes have called for since
-  2026-07-24, now a one-flag run instead of a code edit. The same input was added to
-  `strategies/tradingview/b_leg_strategy.pine` under the label "SOS Fade has priority (stand the B-leg down)".
-- **This bot OVERRIDES TP1 / TP2 / SL** with its band prices (SL = band origin, TP1 = the broken
-  swing extreme, TP2 = the expansion extreme). Everything from the stop staging down — the floor,
-  the trail, both dropdowns — is the parent's, unchanged.
-- **`exec_min_stop_mode` is PINNED `"Off"` (2026-07-30) and is INERT here.** The parent's
-  minimum-stop guard runs inside `_place_entries`, which this fork overrides, so the floor is never
-  applied on this path — and there is no `execMinStopMode` in `b_leg_strategy.pine` to be
-  parity-checked against. The pin exists so a future parent default change cannot make this config
-  claim a guard the code does not run. Structurally the hazard is absent too: a B leg's stop is the
-  band ORIGIN, a full band away from the 0.5 entry edge, so it cannot collapse onto the entry the
-  way a fib stop can. Porting it is three edits in one commit (Pine input, floor check in this
-  fork's `_place_entries`, `cfg_min_stop` export column) followed by `compare_bleg.py`.
-
-`strategies/tradingview/b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
-`execStructTrailBufTk`, `execTp2StopMode`, `execAplus`, and the `lStage2Floor` / structure-trail
-exit block copied line-for-line from `sos_fade_strategy.pine`. **Completed 2026-07-28** — that Pine had
-fallen a lever behind: it lacked the `"Structure + % ratchet"` trail method (+ `f_swingRatchet` and
-`execTrailPct`), still defaulted the TP rungs 30/40, and still called `strategy.exit()` on a 0% rung.
-All three were ported, so the two forks are back on ONE ladder with nothing pinned around a gap. **Not ported, deliberately:** `execSlLevel`
-(the SL fib dropdown) is meaningless here because the B leg's stop is its band origin, not a fib; and
-the pink blocked-trade markers, whose codes describe why an **SOS Fade** setup was refused — in this fork
-SOS Fade never trades, so those tags would report the opposite of what a reader would assume. A B-LEG
-block tag would need its own code set, which is new design work, not a port.
-
-**That non-port now also holds on the PYTHON side (2026-07-27).** `sos_fade`'s `Execution` gained
-`blocks` (the same six codes, feeding the lab price chart's Blocked layer). This fork records none by
-CONSTRUCTION: the recording hangs off the parent's `_place_entries`, which `BLegExecution` overrides.
-`test_this_fork_records_no_blocked_setups` pins it, so restoring the parent's entry path here can't
-quietly switch on tags that would mean the opposite of what they say.
-
-**Same call for the MISSED-setup markers (2026-07-27), but this one is NOT free.** The parent's miss
-watch scores how far an **SOS Fade** setup got before it died (2 of 3 / 3 of 3) — meaningless in a fork
-where SOS Fade never places an order. Unlike the blocks it runs from `step()`, which this fork delegates
-straight to the parent, so it takes an explicit class-level opt-out: `BLegExecution._records_misses
-= False`. `test_this_fork_records_no_missed_setups` pins it — a flag is far easier to flip by
-accident than an overridden method. A B-LEG version of either marker needs its own code set (what
-would "2 of 3" even mean for a frozen band?), which is new design work, not a port.
-
-## The recorded fib (2026-08-11) — this fork records its OWN, and the convention is the design
-
-**Unlike the blocked and missed markers above, this one IS ported — and it had to be built rather
-than inherited.** The lab's price chart draws a `Fibs` layer from `Trade.fib`, a ladder the strategy
-snapshots when it places the order. That snapshot lives in the parent's `_place_entries`, which this
-fork overrides, so **every B-LEG trade carried `fib=None` and the chart offered no Fibs row at all**
-— on the bot whose entry, stop and first target are all fib levels of one leg.
-
-**`execution._band_fib(ext, inv, direction, leg_ms)` builds it from the frozen band's own anchors.**
-Not from `sig` — the parent's `_freeze_fib` reads the live **Structure** fib, which is a different
-leg on a different bar, so inheriting it would have attached a real, fully populated, entirely
-plausible ladder describing something the trade was never priced against.
-
-🔴 **THE CONVENTION IS THE WHOLE OF IT, BECAUSE THIS FORK SPEAKS THE OTHER ONE.**
-
-| | measured from | entry | band far edge | stop | TP1 |
-|---|---|---|---|---|---|
-| this fork's own vocabulary (`bleg.py`, the Pine) | leg ORIGIN | 0.5 | **0.382** | — | — |
-| what is RECORDED (`fib_level`, the SOS Fade bot's) | leg EXTREME | 0.5 | **0.618** | 1.0 | 0.0 |
-
-Same two prices, two namings — and `BLegState`'s own docstring already assumed the second one when
-it called `*_inv` *the leg origin (fib 1.0)*. The record uses the DRAWING convention so a ratio
-means one thing on a chart showing both bots' fibs. **The one visible consequence is that the band's
-far edge draws as 0.618**, which reads as wrong until you know it is the same line named from the
-other end. `tests/test_bleg_fib.py::test_the_band_far_edge_is_recorded_as_0_618_not_0_382` pins it
-in both directions.
-
-Rules that hold it together:
-
-- **All eight rungs, and four are COMPUTED** — through the canonical
-  `engines.fibonacci.geometry.fib_level()`, never inline arithmetic. A four-rung ladder reads as
-  *this trade had no 0.786* when the level exists on that leg and the bot merely did not act on it;
-  the SOS Fade ladder has the identical all-or-nothing rule.
-- **The ratios are byte-identical to the SOS Fade bot's, asserted by test.** That also keeps every rung on
-  a named factory colour in the browser rather than falling through to grey.
-- **`*_ext` / `*_leg_ms` are frozen WITH the band and re-frozen on a migration.** The deepest-band
-  rule can replace a band mid-watch, and a kept leg beside a moved band would draw one leg's fib
-  around another leg's entry.
-- ⚠ **`*_ext` is NOT `*_tgt`.** The target keeps tracking the expansion extreme after the freeze and
-  runs past the leg, so reusing it would stretch the ladder to wherever price went.
-- **An undatable leg records NOTHING.** A swing predating the replay window has no honest x-anchor,
-  and drawing from the entry bar would hide the retracement the fib exists to show.
-- **Reporting only** — no rule reads `*_ext`, `*_leg_ms` or `Trade.fib`, so `compare_bleg.py` is
-  structurally unaffected (exit 0 at warmup 800, and the baseline reproduces at 99 / +17.8674R).
-
-⚠ **It needed four reporting-only fields on `Signals`** (`bull_bos_high_ms` and its three siblings),
-read straight off the structure engine's long-published `bull_bos_h_loc` etc. **Nothing in the
-engine changed** — the leg's bar positions were there the whole time and nobody had threaded them
-through.
-
-⚠ **EXISTING B-LEG RUNS NEED A RERUN.** The ladder is written into the run's own equity curve at
-replay time, so *Rebuild chart* cannot supply it.
-
 ## Sizing — sizes ITSELF
 
 `LAB_STRATEGY` declares `self_sizing: True` (like the SOS Fade bot): `qty = equity·exec_risk_pct /
 stop_distance`, so the lab's dynamic sizing engine leaves it alone and `exec_risk_pct` is the
 risk knob. Registered as class `BLegStrategy` (distinct from `SosFadeStrategy`), so both
 register and run side by side — the parallel-stack use case.
-
-## The parity gate — `tools/compare_bleg.py` + `b_leg_strategy_export.pine` (built 2026-07-26)
-
-### The unsettled tail is a DAY, and the pivot lookahead was too small (2026-09-03)
-
-🟢 **GREEN on a fresh 15m export — `engines/VANTAGE_XAUUSD, 15_b480e.csv`, 21,702 bars compared,
-exit 0 at warmups 100 / 500 / 1000.**
-
-🔴 **THE TRIM ADDED ON 2026-09-02 WAS SIZED TO THE SWING LOOKAHEAD AND DID NOT COVER THIS FORK'S
-OTHER UNSETTLED DEPENDENCY.** It inherits SOS Fade's DAY-HIGH liquidity line, which is time-based: on
-the fresh export Python placed a new Day High at 2026-09-03 00:45 and swept it while Pine still
-pointed at the previous one, **65 bars from the end — four times outside a 15-bar trim.** ~230
-COMPLETED day boundaries in the same file agree exactly, which is what says settling rather than a
-bug. The trim is now the export's final calendar day, **floored by `major_length`** so a file
-ending minutes into a new day still covers unconfirmed pivots.
-
-⚠ **`unsettled_tail` is IMPORTED from `sos_fade/tools/compare_strategy.py`, not copied** — this
-gate already imports that module's decoders, and two copies of a trim rule is how the two drift.
-SOS Fade hit the identical defect the same day; the transferable half is that **a sibling gate's tail
-constant is sized to ITS unsettled dependency and does not transfer**, and neither does a bar count
-fitted to one export.
-
-🔴 **`test_the_tail_is_the_pivot_lookahead_and_nothing_wider` IS RETRACTED AND RENAMED.** Its claim
-— one bar wider and the gate skips settled bars — was right about padding and wrong about the set
-of things that do not settle. **It stayed green through the whole period the gate was red.** The
-constant is now a FLOOR, and the widening is measured rather than "to be safe".
-
-⚠ **Three mutations SURVIVED the entire suite when this landed** — reverting the trim to the bare
-constant, dropping the lookahead floor, and disabling the empty-window refusal. The first was
-caught only by one real export on one machine, which is exactly the fragility rule 22 warns about.
-Three tests now cover them; all three were watched RED.
-
-
-🟢 **GREEN, re-run 2026-08-23 on `engines/VANTAGE_XAUUSD, 5_f8228.csv` — 20,573 M5 bars, identical
-from bar 0, no warmup needed.** ⚠ Rule 14 still applies: it says the two AGREE, never that either is
-RIGHT, and nothing about a branch neither entered. 🔴 **The export before it was RED, and the code was
-innocent — a stale twin reds this gate exactly like a bug does.** Before hunting a defect, check which
-side is older: prove the red at HEAD first (it was), then look at the export's date.
-
-`strategies/tradingview/b_leg_strategy_export.pine`
-= `b_leg_strategy.pine` (body byte-identical, only the line-40 `strategy()` title differs) + an
-appended PARITY EXPORT block. Export it from a 15m XAUUSD chart, then:
-
-```
-command-center/backend/.venv/bin/python strategies/python/b_leg/tools/compare_bleg.py <export.csv> --warmup N
-```
-
-Exit 0 = bar-for-bar identical. It is also registered in `backtest/tools/verify_parity.py`, so the
-one-shot "is everything in sync?" run covers the B leg now.
-
-**What it diffs, and why it is NOT a flag on `compare_strategy.py`.** The two bots diff DIFFERENT
-fields. In this fork SOS Fade never places an order, so:
-- `px_dec_bits`' arm bits are the **B-LEG** arm (`bLegLongArm`/`bLegShortArm`), not `longArmed`.
-  Diffing `longArmed` here would test a decision that never happens.
-- `px_edge` is the frozen band's 0.5 edge, not an FVG edge.
-- `px_tp1`/`px_tp2` are their own columns because the B leg derives its ladder from the band
-  (TP1 = 2·edge − origin, TP2 = the expansion extreme) instead of reading fib levels.
-- `px_stages` IS still diffed: the B leg arms off the SOS Fade sequence's death, so an SOS Fade stage drift is
-  where a B-LEG mismatch usually ORIGINATES. It turns "a trade differs" into "the upstream moved".
-
-What IS shared — the packed `cfg_*` decoding — is imported, not duplicated: both export Pines plot
-`cfg_*` with one identical scheme on purpose, and `compare_strategy.config_from_export` now returns
-the caller's config CLASS, so passing a `BLegConfig` gets one back with `bleg_max_days` intact.
-`allow_bleg=True` is needed because the SOS Fade decoder (correctly) REFUSES an export with `execBLeg` on,
-and this fork's export always ships it on.
-
-**The `bl_*` columns are the point.** They carry the TRACKER's own state — `bl_bits` (on/tap per
-side), `bl_bars` (the armed bar per side, packed as bar+1 so 0 = none), and the four band prices per
-side (top / bot / inv / tgt). Every new B-LEG rule lives in the tracker (band freeze, deepest-band
-migration, target track, tap, staleness death), and a bug there shows as a wrong band price MANY bars
-before it becomes a wrong trade. Without them a mismatch says "a trade differs" and nothing about why.
-
-**Two things that are NOT in the export, deliberately:**
-- `execSlLevel` — the fork has no such input (the B-LEG stop is its band ORIGIN, not a fib on the SOS Fade
-  leg). `cfg_strcodes`' SL slot is pinned to the "1.0" code so the shared decoder reads
-  `exec_sl_level = "1.0"` — correct-and-unused here, and one decoder keeps serving both exports.
-- The Diagnostic Log block, dropped in the export copy to stay under Pine's token cap (CE10117),
-  exactly as the SOS Fade export does.
-
-**Regenerate it whenever `b_leg_strategy.pine` changes** — the split point is exact and is
-recorded in the export's own header (`sed -n '1,4486p'`, then re-append the block and restore the
-line-40 title). A new trade-affecting input = a new `config.py` field + a new `cfg_*` plot + a new
-read in `compare_bleg.config_from_export`, in the SAME commit as the Pine change.
-
-Offline guard: `tests/test_compare_bleg.py` (8 tests) round-trips the tool — run the bot, serialise
-its own decisions + tracker state into an export-shaped CSV using the Pine's packing, feed it back,
-require exit 0 — then plants a `bl_l_top` mismatch and a `px_dec_bits` mismatch and requires the tool
-to catch each at the right bar. The encoder there is written from the Pine's plot expressions rather
-than from the tool's decoder, so it also catches the two drifting apart. It uses 30 synthetic days,
-not 10: on 10 no leg ever ARMS, so the `bl_*` diff would prove nothing.
-
-Two of those eight cover the **partial-export** case added 2026-07-31 — one re-packs `bl_bars` as
-if the chart held 15,362 bars before the export's first row and requires exit 0, the other shifts
-all but ONE armed bar and requires that odd one to still be caught. They are a pair on purpose:
-the first alone would pass just as happily if the tool had stopped diffing the bar index at all.
-
-### PARITY GREEN 2026-07-31 (exit 0) — the session-window build
-
-`compare_bleg.py "VANTAGE_XAUUSD, 15_cabec.csv" --warmup 800` → **exit 0**. 6,329 bars,
-2026-04-27 → 2026-07-31. Green at warmup 1200, 2000 and 3000 too, so nothing late is hiding
-behind the skip.
-
-**Why the warm-up is 800 and not 100.** This export is a partial chart — it starts 15,362 bars
-into the loaded history, so Pine walks in already holding a frozen band that the Python side has
-never seen. It has to wait for a whole fresh band to form. That is cold start in the ordinary
-sense, just a longer one than a from-bar-zero export needs; the same run at `--warmup 400` fails
-only on `bl_s_top`-style band prices Pine carried in, never on a decision.
-
-**What it proves that the 21k-bar 2026-07-29 run could not.** The window is entirely inside
-BST/EDT, which is exactly where the new city-clock session windows differ from the old fixed
-GMT-4 ones. `b_leg_strategy.pine` had been a genuine fork on those windows; a Python side
-still on the old offsets would have disagreed with Pine on every session boundary here. Config
-decoded off the export: `cfg_exitmode = 20` (the ratchet trail), `cfg_trail_pct = 1`,
-`cfg_tp1_pct = cfg_tp2_pct = 0`, `cfg_bleg_days = 1.25`, risk 10%, `aplus_window = 4320`.
-
-Exercised: 605 / 695 bars with a live long / short leg, 2,063 bars armed, **2 entries, 2 trades
-graded, sum 5.73R**. The usual caveat applies harder than ever on a 3-month window — that trade
-count proves the two implementations agree and says nothing about the edge.
-
-**It also found the harness bug described in "Last reviewed"** — the raw `bar_index` comparison.
-Worth restating as a rule: a round trip proves the two halves agree, and a full-history export
-hides an origin assumption, so **the first PARTIAL export is its own kind of gate.**
-
-### PARITY GREEN 2026-07-29 (exit 0) — the ratchet build
-
-`compare_bleg.py "VANTAGE_XAUUSD, 15_ab202.csv" --warmup 100` → **exit 0**. 21,493 bars,
-2025-08-31 → 2026-07-29. Green at warmup 200, 500, 1000 and 2000 as well, same cold-start
-picture as the first run.
-
-This is the run that clears the 2026-07-28 stale-export warning. What makes it non-vacuous is
-what the export DECODED, not just the bar count: `cfg_exitmode = 20`, `cfg_trail_pct = 1`,
-`cfg_tp1_pct = cfg_tp2_pct = 0`. The tens digit of `cfg_exitmode` is the trail method, and it
-went 2-way → 3-way when the ratchet landed. An OLD export would have decoded the ratchet as
-the plain structure trail and gone green while comparing two different exit ladders — this one
-carries the third code, so the Python side really was configured to the ratchet.
-
-5 trades graded, **sum 10.91R** over the window. That trade count is the same warning as ever:
-enough to prove the two implementations agree, nowhere near enough to tune against.
-
-### PARITY GREEN 2026-07-26 (exit 0) — first real export
-
-`compare_bleg.py "VANTAGE_XAUUSD, 15_9b74a.csv" --warmup 100` → **exit 0**. 21,231 bars,
-2025-08-31 → 2026-07-24. Green at every warmup from 100 to 2000, so the ~100-bar skip is genuine
-engine cold start, not a mask.
-
-**The run was not vacuous** — it exercised the machinery this harness exists to check:
-
-| what | count |
-|---|---|
-| bars with a live long / short leg | 2,195 / 1,010 |
-| bars tapped (long / short) | 568 / 141 |
-| bars ARMED (long / short) | 2,024 / 862 |
-| entries taken (long / short) | 2 / 3 |
-| trades closed and graded in R | 5 |
-| distinct frozen band prices diffed | 48 long / 45 short |
-
-So the band freeze, the deepest-band migration, the target track, the tap and the staleness death
-were all diffed against Pine across ~90 distinct bands — not just the 5 bars that became trades.
-That breadth is the whole reason the `bl_*` columns exist.
-
-**The first run found a bug — in the HARNESS, not the port.** `bar 680 px_entry_dir: py=1 pine=-1`.
-`_py_row` derived the trade direction from `Fill.qty`'s sign, but `qty` is NOT signed in this
-codebase — `Fill.dir` is. Every short read as a long. Fixed to read `Fill.dir`.
-
-**Why the round-trip test could never have caught it:** the test's encoder had the identical wrong
-derivation, so encoder and decoder agreed and the round trip passed. A round trip only proves the
-two halves are consistent with each other, never that either is right. That is the structural limit
-of the technique, and it is why a real export is the gate.
-`test_entry_direction_comes_from_fill_dir_not_qty_sign` now asserts against the FIELD rather than
-against a round trip — the only way a shared-mistake bug like that gets caught offline. Apply the
-same shape to any future packed column whose value is DERIVED rather than copied.
-
-**Config decoded off the export** (all of it correct): `bleg_max_days` 1.25, SOS Fade-priority ON,
-`execBLeg` ON, Structure trail, TP2 floor = TP1 price, TP1/TP2 30/40%, risk 10%.
-
-Backtest numbers are now validated logic, not directional guesses — with the standing caveat that
-**5 trades is far too thin a sample to tune against.** Parity says the code is right; it says nothing
-about whether the edge is real.
-
-## The 6.5-year measurement — 2026-08-04 — 🔴 **SUPERSEDED, AND KEPT AS THE RECORD OF WHY**
-
-⚠ **EVERY NUMBER IN THIS SECTION IS DEAD. Do not quote it.** It measures the configuration that
-existed on 2026-08-04, and **three defaults moved on 2026-08-06** — `bleg_max_days` 1.25 → 4.0,
-`exec_trail_pct` 1.0 → 0.05, `exec_time_stop_hrs` 36 → 8 (see the two 2026-08-06 header entries).
-Re-measured on 2026-08-09 over the same 155,531 bars, by two independent drivers that agree to the
-cent: **99 trades, +17.87R**, free. Charged over the full history: 114 / +17.56R / PF 1.45 /
-maxDD **−5.15R**. The drawdown is the real change — it used to be nearly double SOS Fade's and is now
-slightly under it.
-
-⚠ **The section stays because the STATISTICAL argument in it is still the right argument**, and it
-now points the other way: 99 trades is still not many, and **no jitter audit has ever been run on this
-bot**, so +17.87R has no error bar. SOS Fade's equivalent measured a run-to-run spread of sd 15.06R —
-larger than B-LEG's entire total. Read the CI reasoning below, substitute today's numbers, and the
-honest verdict is *"positive and not yet distinguishable from noise"* rather than *"no edge"*.
-
-🔴 **The lesson is about the DOCS, not the bot.** This file's header recorded the new numbers on
-2026-08-06 the same day they were measured. `docs/LIVE_TRADING_PIPELINE.md` → G15 and the root
-`CLAUDE.md` went on quoting −0.94R for three days, and those are the two files a decision is read
-out of. **The number was corrected where it was produced and not where it was consumed.**
-
----
-
-That last sentence was finally acted on. **Nothing above this line changes** — parity is still green
-and the code is still right. What is new is that the bot has been *replayed*, rather than validated,
-over a real window.
-
-```
-python backtest/tools/run_report.py --strategy b_leg --start 2020-01-01 --end 2026-08-03
-```
-
-**155,453 M15 bars, 50 trades, −0.94R.** No cost layers (the free baseline, comparable to the
-Strategy Tester). Win rate 34%, average win +1.65R, average loss −1.01R, expectancy −0.02R/trade,
-peak-to-trough **−15.62R**.
-
-| | trades | sum R | mean R | 95% CI on mean R | max DD (R) |
-|---|---|---|---|---|---|
-| `sos_fade` | 161 | **+135.94** | +0.84 | **+0.29 → +1.40** | −7.99 |
-| `b_leg` | 50 | **−0.94** | −0.02 | **−0.40 → +0.37** | −15.62 |
-
-**Read the CI column, not the sum R column.** SOS Fade's interval is entirely positive — 6.5 years of gold
-is enough to say its edge is real. B-LEG's straddles zero and is centred on it: its true 6.5-year
-total belongs anywhere between −20R and +18R, and no amount of staring at the −0.94 will narrow that.
-This is the one place where `CLAUDE.md`'s "sample size arrives at the portfolio level" argument does
-**not** apply: that rule says do not reject a strategy for trading rarely, and this is not a rejection
-— it is the statement that the measurement cannot yet distinguish this bot from a coin.
-
-⚠ **Everything here is about the SHIPPED DEFAULTS.** `exec_tp1_pct`/`exec_tp2_pct` = 0/0 and
-`exec_sl_level` = "1.0" are **pinned to this fork's Pine for parity**, which is a correctness
-decision, never a performance one. Lab run `096432c2ad20` ran 30/40. Read the table as "the
-parity-pinned configuration has no measured edge", never as "the B-LEG setup does not work".
-
-⚠ **The obvious next move is also the dangerous one.** Optimizing over 50 trades will find a winning
-combination whether or not one exists. If it is done: state the out-of-sample split **before** the
-grid runs, and expect the honest answer to be "not enough data", because `sos_fade_optimization.md`
-Run 12 already showed on the SOS Fade bot that buying trade count by loosening a rule loses money.
-
-⚠ **`--no-regime` was passed** on this run (the regime tag is reporting-only and does not touch a
-trade). The "by regime" answer for B-LEG has not been measured and is a genuinely open question — the
-2021–2023 losing stretch and the 2024–2026 recovery could be regime or could be noise at n=50.
-
-## The exit-ladder re-default — 2026-08-06
-
-Two defaults moved. Both are FORK PINS in `config.py` and matched defaults in
-`strategies/tradingview/b_leg_strategy.pine` + its export; neither is inherited, and neither should be
-"reconciled" with the SOS Fade parent, whose own measurements say the opposite in both cases.
-
-| | `exec_trail_pct` | `bleg_max_days` |
-|---|---|---|
-| was | 1.0 (inherited) | 1.25 (`maxval` 3) |
-| now | **0.05** | **4.0** (`maxval` 6) |
-| SOS Fade parent | keeps 1.0 — its sweep gives 0.25% → 43.6R vs 109.3R at 1.0 | n/a, B-LEG-only input |
-
-🔴 **EVERY NUMBER IN THIS SECTION PREDATES THE 2026-08-22 STRUCTURE FIX AND NO LONGER DESCRIBES
-THIS BOT — and the free-book figure below never reproduced at all.** `f4b0410b` stopped the
-structure engine anchoring backwards onto a candle a break had just rejected; on these exact bars
-it moves B-LEG **+23.28R → +20.91R** across an unchanged 114 trades. ⚠ **And replaying the
-2026-08-06 commit itself gives 114 / +23.28R, not the 112 / +17.64R recorded here** — so that free
-figure came from a run whose settings nobody wrote down and **may not be used as a control.** The
-usable control is `b_leg_optimization.md` → *The control*, measured on the account this bot trades.
-**The RANKINGS in this section still stand — every row moved together — the totals do not.**
-
-**Charged (spread + swap, `vantage_demo`), 186,312 M15 bars, 2018-09-13 → 2026-08-05:**
-
-| | trades | sum R | PF | wins | max DD | IS | OOS |
-|---|---|---|---|---|---|---|---|
-| old defaults | 59 | −1.73 | 0.94 | 21 | −16.00R | −8.15 | +6.42 |
-| **shipped now** | **112** | **+12.02** | **1.23** | 37 | **−8.89R** | **+0.78** | **+11.24** |
-
-Free book at the new defaults: 112 / +17.64R / PF 1.36 / maxDD −6.21R.
-
-**The protocol, because at n≈60 the protocol is most of the evidence.** The split was declared
-before any row ran (IS 2018-09-13 → 2022-09-30, OOS after). Every row is a REAL REPLAY of the full
-window; IS/OOS are computed by splitting the resulting trade list on entry time, which is safe here
-only because it splits the OUTPUT of one identical run and therefore cannot change which trades
-exist. Levers were measured ONE AXIS AT A TIME off the shipped baseline, never as a grid — a grid
-over 60 trades finds a winner whether or not one exists, and this file said so before the work
-started. The two that survived their own axis were then combined and re-checked in both halves.
-
-⚠ **The reason to trust the combination is the FLATNESS, not the peak.** PF is 1.18–1.25 across the
-whole 4×3 grid of trail step {0.05, 0.08, 0.10, 0.15} × staleness {3, 4, 5}. Every cell beats the
-old PF of 0.94. There is no sharp optimum to have fitted to.
-
-⚠ **It is still not an edge.** 95% CI on mean R = **−0.140 → +0.355**, i.e. the 7.9-year total
-belongs anywhere in −16R to +40R. The top 3 trades are 100% of the total and the single best is
-+5.07R of it. What genuinely improved is the drawdown, the sample size and the sign of the first
-half — all three of which are what a live decision is actually made on, and none of which is proof.
-
-### Rejected, with the reason each was worth trying
-
-- **The minimum-stop guard** (floors 0.10%–0.40% of price, prototyped as a `_place_entries`
-  subclass): no effect that survives both halves. The hypothesis was reasonable — this fork's stop
-  distances span $2.51 to $49.02 and `qty = risk / dist`, so the tight end buys a position a single
-  15m gold bar can traverse whole — and it is simply not where the money goes. ⚠ **The cheap
-  estimate disagreed and was wrong in the usual direction**: deleting the refused rows from the
-  finished 50-trade list scores a 0.25% floor at **+6R**, the real replay scores **zero**. This
-  file's warning about entry-side filters and the one position slot, reproduced on demand.
-- **The deeper band edge** (rest at `l_bot`, the 0.618 retrace, instead of `l_top`): PF 2.43,
-  maxDD −4.58R, and **28 trades with +15.81 of its +17.25R in the first half**. Fill rate collapses
-  112 → 28, which is the real cost and the reason the headline PF is meaningless.
-- **Shorts only**: PF 1.58, IS −1.15 / OOS +14.82. A bet on gold's 2023-2026 run wearing a filter.
-- **Dropping the SOS Fade priority gate** (`exec_aplus = False`): this file has called it the first tuning
-  candidate since 2026-07-24. It adds exactly one trade over 7.9 years and that trade loses.
-
-### Open lead — the Asia-session filter (NOT shipped)
-
-Refusing entries in the Asia session and the late-day window gives **79 trades / +12.32R / PF 1.37
-/ maxDD −4.98R**, positive in both halves (IS +2.89 / OOS +9.42) — the best drawdown of anything
-measured, on Aaron's stated objective. Two independent samples agree: the original 50-trade baseline
-had Asia at −5.0R on 13 trades. The mechanism is plausible (Asia is the thinnest book for gold, and
-this fork's tightest stops are the ones a thin-book wick reaches).
-
-**It is not shipped because it is new code, not a default.** Neither `b_leg_strategy.pine` nor
-this package has a session filter for the B-LEG arm; adding one is a Pine input + a `cfg_` column +
-the Python gate + a parity re-run, in one commit. It is also the most curve-fit-prone thing measured
-here — slicing 112 trades by session is exactly the shape that finds a pattern in noise — so it
-needs its own out-of-sample statement before it ships, not this one reused.
 
 ## Tests
 
@@ -616,27 +195,6 @@ command-center/backend/.venv/bin/python -m pytest strategies/python/b_leg/tests/
 ```
 Offline. Hand-traced `BLegTracker` (band maths, arm, tap, staleness + invalidation death,
 deepest-band migration, BLEG_MAX conversion) + end-to-end driver run + longs/shorts-off.
-
-## 🔴 This gate refuses a sub-15m export too, and the green above was re-checked (2026-08-23)
-
-This fork's engine config is the parent's with one field replaced, so it inherits the
-parent's **15-minute gap pins** while its Pine reads those two values off the CHART. Below
-15m the two sides are configured differently before a bar is replayed, so `compare_bleg.py`
-REFUSES rather than reporting a mismatch. Full reasoning and the measurement that forced it:
-`strategies/python/sos_fade/CLAUDE.md` → *The gate REFUSES an export from a chart faster
-than 15m*.
-
-✅ **The M5 green recorded above STANDS, and it was re-measured rather than defended.** That
-export was replayed a second time with the sub-15m pair the Pine actually used and came back
-green on every bar as well — so the difference provably decided nothing there. It could not:
-a B-LEG entry rests on the frozen band, never on a gap.
-
-🔴 **That is exactly why the check was still added.** *"It did not bite this time"* is a fact
-about one export and one entry rule, and the next run gets no such promise. A green obtained
-under a configuration mismatch is right by luck, and luck is not a gate.
-
-**Tests:** 2 in `tests/test_compare_bleg.py` — the refusal and its deliberate override —
-both watched RED by mutation.
 
 ## It is LISTED under the SOS Fade bot (2026-08-23)
 
@@ -712,113 +270,6 @@ bot and a 15m bot on one account meant one of the two was replayed on a frame no
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
 
-## 🔴 The gate was RED for seventeen days and the CODE was innocent — the export was stale (2026-09-02)
-
-`compare_bleg.py` failed at `px_l_stage: py=3 pine=2` on 2026-05-08 02:30. Nothing was wrong with
-this bot. **The export was taken on 2026-08-16 and two STRUCTURE fixes landed after it** —
-`700f7f65` (the tied-extreme duplicate swing) and `f4b0410b` (a break may not install a swing the
-break itself refused). Both change the swing anchor the fib is measured from, so Python extended
-its anchor where the older chart did not, which moved the 0.5 level below the bar's low and latched
-the half-retrace the Pine never saw. A fresh export cleared it.
-
-🔴 **THE PROOF THAT IT WAS THE EXPORT, NOT THE CODE, IS THAT THE TWO PINE EXPORTS DISAGREED WITH
-EACH OTHER.** The SOS Fade export (2026-09-02) and the B-LEG export (2026-08-16) start on the same bar of
-the same Vantage 15m chart, and at that timestamp one says stage 3 and the other says 2. **Python
-matched the newer one.** Two exports of one chart disagreeing is a statement about WHEN they were
-taken; nothing in either Python package can produce it.
-
-⚠ **The diagnosis cost four wrong hypotheses, and every one was ruled out by MEASUREMENT rather
-than by reading**: a re-armed SOS carrying its predecessor's latch (zero re-arms in the whole run),
-the EQ/FVG coupling (flipping it moves no stage), the packed structure codes (they carry only the
-stop level and the HTF flags), and the two fib toggles (Python already matched the export).
-**A source comparison cannot settle this class of question** — the fib logic, the anchor
-assignment and the inlined structure engine are all byte-identical between the two Pine files.
-
-⚠ **This is the SECOND time a stale twin has reddened this gate** (the first is recorded under
-*The parity gate*). **Check the export's DATE against the Pine's git log before hunting a defect**,
-and prove the red at HEAD first — it was, in a throwaway worktree, byte-identical failure.
-
-## The gate does not compare the UNCONFIRMED TAIL (2026-09-02)
-
-The last `UNCONFIRMED_TAIL` bars of an export are skipped, and the number is **DERIVED from
-`major_length`, never typed**. Swings come from `ta.pivothigh(high, majorLength, majorLength)`,
-which cannot confirm a pivot until `majorLength` further bars exist — so an export pulled from a
-LIVE chart ends with bars whose structure has not settled on the Pine side, and Python is entitled
-to a different answer there. MEASURED on the fresh export: green on every bar except the last 10,
-and trimming turned the whole run green.
-
-⚠ **It is a REPORTING window, never a shortened replay.** Every bar is still stepped, so the state
-carried into the compared bars is the state the whole export produced, and a real drift starting in
-the tail still shows on the next export.
-
-⚠ **It ANNOUNCES itself on every run, and the SUCCESS line carries it too** — *"every bar from N to
-the last 15 (unconfirmed swings, not compared)"*. A silently-trimmed comparison printing PARITY OK
-is a gate claiming ground nobody covered, which is the over-claiming green this repo keeps
-recording. `--tail 0` diffs them anyway.
-
-🔴 **A TEST DEFINED RELATIVE TO THE NUMBER IT POLICES CANNOT POLICE IT, and that was MEASURED here
-rather than reasoned.** `test_a_mismatch_OUTSIDE_the_tail_is_still_reported` plants at
-`len - UNCONFIRMED_TAIL - 1`, so widening the constant moves its own plant with it — a 10x widening
-reddened nothing. The value is pinned separately by
-`test_the_tail_is_the_pivot_lookahead_and_nothing_wider`, which asserts the DERIVATION rather than
-the number 15. **Its docstring says what it cannot catch**, because a test naming the wrong
-mutation reports coverage that is not there.
-
-**Tests: 4 in `tests/test_compare_bleg.py`, 5 mutations each watched RED against its own named
-test** with an unrelated control staying green. The first two are a PAIR — *it is ignored* alone
-would pass just as happily if the diff had stopped reading that column.
-
-## ✅ This fork's shipped default is back inside its gate (2026-09-07 → 2026-09-10)
-
-`BLegConfig` extends `SosFadeConfig`, so it inherited `exec_scale_in` when that default moved
-off → on for SOS Fade on 2026-09-06. **The B-LEG Pine has no scale-in at all** — no input, no code,
-no `cfg_scale_in` column — so the gate decodes it OFF on every export, correctly, while the SHIPPED
-default was ON: a mode nothing could check. ✅ **Pinned OFF in `config.py` on 2026-09-10.** Aaron's
-2026-09-06 call named SOS Fade, `b_leg_demo` had already pinned it off (`ca39c72b`), and the adds
-bought nothing — MEASURED on PU Prime `XAUUSD.p`, 2020 → 2026-08-23: same 101 trades, **+20.07R on,
-+20.20R off**. The overlap audit was re-recorded the same day. BOS had the same inheritance and it
-put that bot's gate red (`strategies/python/bos/CLAUDE.md`).
-`test_the_fork_does_not_add_to_winners_its_pine_cannot` goes red if the pin goes or the Pine gains
-the input — the day the pin has to come out. Watched red both ways.
-
-✅ `_write` still pins it off for a case that asks for it ON, and
-`test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one` states what is left of
-the hole — a config switched on by hand — as a test rather than a comment.
-
-✅ **The golden export, 2026-09-10: `exports/golden/`, run by step 15 on every clone.** 20,220
-Vantage M15 bars; every one of 19,668 matches from a MEASURED warm-up of 468 (the short-side SOS Fade
-arm stage this fork inherits — SOS Fade measured the same 468 on the same window). 10 B-leg trades
-close in the window, +3.13R on the chart.
-
-### Two more columns the encoder was missing
-
-`cfg_time_stop` and `cfg_time_stop_hrs` are plotted by this fork's export Pine and were absent from
-the fixture, so the tool decoded the clock as OFF while the fixture replayed with it ON. Added.
-
-⚠ **The clock is set to TWO HOURS in the non-default case on purpose, and the number is measured.**
-At six hours and above the trade closes on its ladder either way (+1.26R with the clock on or off),
-so the mutation that drops those columns SURVIVED — the fixture could not tell the two
-configurations apart. At two hours the clock fires and the same trade closes −0.5753R, and the
-mutation dies. **A column nothing can distinguish is a column whose absence no test will report.**
-
-## 🔴 The gate REFUSES an export missing a column it compares (2026-09-10)
-
-A file that is not this fork's twin crashed the gate with a `KeyError` out of `_expand`, and a
-PARTIAL export passed, because the diff skipped any column it lacked. **Both now exit 2 by name**
-through `missing_columns_refusal` — the SOS Fade gate's function, shared rather than copied; rule and
-story in `strategies/python/sos_fade/CLAUDE.md`. The loop's skips are deleted, and a test holds every
-compared column to this fork's own twin (every one is plotted today, so no real export is refused).
-
-
-## Its gate tests replay once per distinct input (2026-09-10)
-
-`tests/test_compare_bleg.py` builds each synthetic export once per config and remembers the gate's
-replay keyed on the settings and engine settings it DECODED plus the bars byte for byte — 52s → 20s
-on one core. The two memos are separate (seeding the gate's from the export's own replay would
-compare the fixture with itself), and the round-trip control runs the REAL class. 🔴 **7 bugs planted
-in the gate, 7 caught by the case each names**, including a gate that never decodes the settings —
-the one case a looser key would have hidden. Map in the file.
-
 ## Risk per trade is PINNED at 10 (2026-09-13)
 
 `sos_fade`'s default moved 10 → 5 to match its live share, and `BLegConfig` inherits the field —
@@ -826,3 +277,46 @@ so it is pinned at 10.0 here, the value `b_leg_strategy.pine` ships and `b_leg_d
 Nothing this bot trades moved, and its side of the overlap audit did not drift (step 17 flagged
 only SOS Fade's). ⚠ **A fork inherits its parent's defaults as well as its code** — pin, never
 follow, a parent's decision about a different bot.
+
+---
+
+## The notes — read the matching file BEFORE touching its code
+
+🔴 **This file was 60 KB on 2026-09-13 and loaded in full every time anyone opened
+a file in this folder.** Everything outside the rules above moved VERBATIM into
+`notes/` — nothing reworded, nothing dropped.
+
+**How to write here from now on:** a rule gets ONE line under its topic below; its story and
+evidence go in that topic's notes file. A notes file satisfies the commit hook's doc check.
+
+⚠ **An old pointer to a section of this file still resolves** — every moved heading is
+listed below under the notes file that now holds it.
+
+### `notes/inherited_design.md` — The inherited exit ladder and the recorded-fib convention
+
+**Read before touching:** the exit ladder, the TP1/TP2/SL overrides, the blocked/missed-setup markers, or the Fibs layer this bot draws on the price chart.
+Most-cited code: `BLegConfig`, `BLegExecution`, `b_leg_strategy.pine`, `strategies/tradingview/b_leg_strategy.pine`, `compare_bleg.py`, `sos_fade_strategy.pine`.
+
+- The exit ladder is inherited (2026-07-26)
+- The recorded fib (2026-08-11) — this fork records its OWN, and the convention is the design
+
+### `notes/parity_gate.md` — The parity gate — build history, refusals and gotchas
+
+**Read before touching:** `tools/compare_bleg.py` or `b_leg_strategy_export.pine`, or before trusting any parity result this gate has produced.
+Most-cited code: `tests/test_compare_bleg.py`, `b_leg_strategy.pine`, `BLegConfig`, `config.py`, `compare_bleg.py`, `tools/compare_bleg.py`.
+
+- The parity gate — `tools/compare_bleg.py` + `b_leg_strategy_export.pine` (built 2026-07-26)
+- 🔴 This gate refuses a sub-15m export too, and the green above was re-checked (2026-08-23)
+- 🔴 The gate was RED for seventeen days and the CODE was innocent — the export was stale (2026-09-02)
+- The gate does not compare the UNCONFIRMED TAIL (2026-09-02)
+- ✅ This fork's shipped default is back inside its gate (2026-09-07 → 2026-09-10)
+- 🔴 The gate REFUSES an export missing a column it compares (2026-09-10)
+- Its gate tests replay once per distinct input (2026-09-10)
+
+### `notes/measurements.md` — Superseded measurements and the exit-ladder re-default
+
+**Read before touching:** quoting a historical B-LEG performance number, or re-opening the exit-ladder tuning question.
+Most-cited code: `config.py`, `strategies/tradingview/b_leg_strategy.pine`, `b_leg_strategy.pine`.
+
+- The 6.5-year measurement — 2026-08-04 — 🔴 **SUPERSEDED, AND KEPT AS THE RECORD OF WHY**
+- The exit-ladder re-default — 2026-08-06

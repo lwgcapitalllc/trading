@@ -144,8 +144,9 @@ def oversized_claude_md(path: str, tool_input: dict) -> str:
     return (
         opening + " Every byte of it loads into context whenever anyone works in "
         "this subsystem. Before adding: is what you are writing a RULE, or is it the story "
-        "of what happened today? The story belongs in the sibling BUILD_NOTES/HISTORY file "
-        "with a pointer left behind. Two hard rules if you drain some while you are here — "
+        "of what happened today? The story belongs in the matching topic file in this "
+        "folder's notes/ (the index at the bottom of the CLAUDE.md names it), with one index "
+        "line left here. Two hard rules if you drain some while you are here — "
         "(1) a fact lives in exactly ONE CLAUDE.md, the one next to the code it describes, "
         "because a parent keeping its own copy is how three files came to disagree about "
         "whether a bot was live; (2) the rule and the reason it exists stay together, since "
@@ -419,8 +420,9 @@ def post_tool_use(event: dict) -> None:
                         + "\n- ".join(lines)
                         + "\n\nEvery byte loads into context whenever anyone works in that "
                         "subsystem. Before you finish: is what you added a RULE, or is it the "
-                        "story of what happened today? The story belongs in the sibling "
-                        "BUILD_NOTES/HISTORY file with a pointer left behind. Two hard rules if "
+                        "story of what happened today? The story belongs in the matching topic "
+                        "file in that folder's notes/, with one index line left in the CLAUDE.md. "
+                        "Two hard rules if "
                         "you drain some while you are here — (1) a fact lives in exactly ONE "
                         "CLAUDE.md, the one next to the code it describes; (2) the rule and the "
                         "reason it exists stay together, or the next reader tidies it away. "

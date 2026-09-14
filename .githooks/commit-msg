@@ -184,8 +184,23 @@ EOF
 [ -z "$PAIRS" ] && exit 0
 
 # Owners not present in this same commit.
+#
+# A markdown file DIRECTLY inside the owner's own `notes/` folder counts as the owner (2026-09-13).
+# The big CLAUDE.md files were split into a slim rules file plus topic notes that load only when
+# opened; requiring the CLAUDE.md itself here is what grew them back after the 2026-08-12 cleanup,
+# because every code change had to append to the one file that loads in full. Direct children
+# only, and only that owner's folder — a notes file somewhere else documents a different owner.
+has_notes_change() {
+  prefix="$(dirname "$1")/notes/"
+  [ "$prefix" = "./notes/" ] && prefix="notes/"
+  printf '%s\n' "$STAGED" | awk -v p="$prefix" '
+    index($0, p) == 1 && substr($0, length(p) + 1) ~ /^[^\/]+\.md$/ { found = 1 }
+    END { exit !found }'
+}
 MISSING="$(printf '%s' "$PAIRS" | cut -f1 | sort -u | while IFS= read -r owner; do
-  printf '%s\n' "$STAGED" | grep -qxF "$owner" || printf '%s\n' "$owner"
+  printf '%s\n' "$STAGED" | grep -qxF "$owner" && continue
+  has_notes_change "$owner" && continue
+  printf '%s\n' "$owner"
 done)"
 
 [ -z "$MISSING" ] && exit 0

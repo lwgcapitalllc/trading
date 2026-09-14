@@ -75,7 +75,15 @@ import tempfile
 # paths below assume the clone's folder is named `trading`, which a default clone of this repo is.
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HOOK = f"{REPO}/.claude/hooks/guard_sensitive_paths.py"
-BIG = f"{REPO}/command-center/backend/CLAUDE.md"
+# 🔴 BIG is a GENERATED file, never a real doc (2026-09-13). It pointed at the backend CLAUDE.md
+# until that doc was split from 574 KB to ~25 KB — the premise assertion below then fired, as it
+# should, and the fixture moved here so that trimming a real doc can never again break this file.
+# The guard sizes a CLAUDE.md by its name and its bytes alone, so a temp file is the real thing.
+_BIG_TMP = tempfile.TemporaryDirectory(prefix="guard-big-")
+BIG = os.path.join(_BIG_TMP.name, "trading", "big", "CLAUDE.md")
+os.makedirs(os.path.dirname(BIG))
+with open(BIG, "w") as _f:
+    _f.write("a line of an oversized doc, repeated to ~100 KB\n" * 2100)
 SMALL = f"{REPO}/engines/vwap/CLAUDE.md"
 LIVE = f"{REPO}/algos/live/runner.py"
 
@@ -94,8 +102,8 @@ def _size(path):
 # grows is a case with an expiry date nobody wrote down**, and it is the same shape as the case
 # pinned to a path that moved on 2026-09-02: a fixture describing a repo you no longer have.
 #
-# ⚠ The two PREMISE assertions below are the other half. Trim that doc under the ceiling and every
-# "oversized" case here silently becomes a test of the quiet path — passing, and checking nothing.
+# ⚠ The two PREMISE assertions below are the other half. Shrink either fixture across the ceiling
+# and every case on that side silently becomes a test of the other path — passing, checking nothing.
 assert _size(BIG) > CEILING, f"{BIG} is no longer oversized — every 'oversized' case is vacuous"
 assert _size(SMALL) < CEILING, f"{SMALL} is now oversized — every 'under the ceiling' case is too"
 
