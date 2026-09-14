@@ -72,7 +72,7 @@
       "tier": "ECN",
       "kind": "live",
       "server": "PUPrime-Live",
-      "mt5_path": "C:\\MT5_Scalper\\terminal64.exe",
+      "mt5_path": "C:\\MT5_Aaron\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
       "telegram_trade_chat": "-1004410831757",

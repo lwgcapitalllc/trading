@@ -1,8 +1,8 @@
 {
-  "_README": "The SOS Fade bot on the MT5_FFT terminal (PU Prime demo). This file is the ONLY thing that decides which terminal, account, symbol and strategy VERSION this bot trades — nothing is read from strategies/python/sos_fade/config.py, so lab experiments cannot reach it. No secrets live here: the MT5 password is in algos/credentials.json under mt5_accounts, and Telegram routing falls back to the shared group. The account MOVED from the Standard demo to the ECN demo on 2026-08-12 — read _moved_to_ecn FIRST, and note that _measured below is STALE because it describes the account this bot left.",
+  "_README": "The SOS Fade bot. Its terminal and account are the fields below (on Aaron's live account 34957946 since 2026-09-11, through the C:\\MT5_Aaron terminal, named MT5_Scalper until 2026-09-14; before that it traded the demo through MT5_FFT, now MT5_Demo). This file is the ONLY thing that decides which terminal, account, symbol and strategy VERSION this bot trades — nothing is read from strategies/python/sos_fade/config.py, so lab experiments cannot reach it. No secrets live here: the MT5 password is in algos/credentials.json under mt5_accounts, and Telegram routing falls back to the shared group. The account MOVED from the Standard demo to the ECN demo on 2026-08-12 — read _moved_to_ecn FIRST, and note that _measured below is STALE because it describes the account this bot left.",
   "bot_key": "sos_fade_demo",
   "display_name": "SOS Fade",
-  "mt5_path": "C:\\MT5_Scalper\\terminal64.exe",
+  "mt5_path": "C:\\MT5_Aaron\\terminal64.exe",
   "account": 34957946,
   "server": "PUPrime-Live",
   "symbol": "XAUUSD.p",
