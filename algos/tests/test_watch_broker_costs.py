@@ -197,7 +197,7 @@ def test_a_terminal_that_CANNOT_BE_READ_still_raises_the_alarm(monkeypatch):
     before the fix: the message reached stderr and NO alert was sent, which is precisely the
     silence this watcher exists to break. RED if the handler stops naming SystemExit."""
     sent = []
-    monkeypatch.setattr(watch, "_send", lambda text, dry: sent.append(text))
+    monkeypatch.setattr(watch, "_send", lambda text, dry, account=None: sent.append(text))
     monkeypatch.setattr(watch, "_health", lambda bot, **f: None)
 
     def cannot_attach(cfg):
@@ -212,6 +212,21 @@ def test_a_terminal_that_CANNOT_BE_READ_still_raises_the_alarm(monkeypatch):
     assert "terminal not running" in sent[0], "the alarm must name the cause, not just ring"
 
 
+def test_the_alarm_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(monkeypatch):
+    """Each account may name its own health channel (2026-09-13). A stub widened to ACCEPT an
+    account proves nothing about whether one is ever handed over — this is the half that does.
+    MUTATION: drop `_account(...)` from either `_send` call here -> red."""
+    seen = []
+    monkeypatch.setattr(watch, "_send", lambda text, dry, account=None: seen.append(account))
+    monkeypatch.setattr(watch, "_health", lambda bot, **f: None)
+    monkeypatch.setattr(watch, "_account", lambda bot: 34957946)
+    monkeypatch.setattr(
+        watch, "read_live", lambda cfg: (_ for _ in ()).throw(SystemExit("no terminal"))
+    )
+    assert watch.main(["--bot", "sos_fade_demo"]) == 1
+    assert seen == [34957946]
+
+
 def test_the_messages_name_the_bot_with_its_accounts_kind_never_its_key(monkeypatch):
     """🔴 (2026-09-11) The key says nothing about the account — `sos_fade_demo` trades the LIVE one
     — and these messages are Markdown, which ate its underscores ("sosfadedemo"). MUTATION: put
@@ -222,7 +237,7 @@ def test_the_messages_name_the_bot_with_its_accounts_kind_never_its_key(monkeypa
     assert "sos_fade_demo" not in watch.summarise(v, "sos_fade_demo", "puprime_ecn")
 
     sent = []
-    monkeypatch.setattr(watch, "_send", lambda text, dry: sent.append(text))
+    monkeypatch.setattr(watch, "_send", lambda text, dry, account=None: sent.append(text))
     monkeypatch.setattr(watch, "_health", lambda bot, **f: None)
     monkeypatch.setattr(
         watch, "read_live", lambda cfg: (_ for _ in ()).throw(RuntimeError("the terminal lied"))
@@ -235,7 +250,7 @@ def test_an_ordinary_exception_still_raises_the_alarm(monkeypatch):
     """The control for the case above — widening to SystemExit must not have dropped the plain
     path. Both failures leave the watch not watching, so both have to speak."""
     sent = []
-    monkeypatch.setattr(watch, "_send", lambda text, dry: sent.append(text))
+    monkeypatch.setattr(watch, "_send", lambda text, dry, account=None: sent.append(text))
     monkeypatch.setattr(watch, "_health", lambda bot, **f: None)
     monkeypatch.setattr(
         watch, "read_live", lambda cfg: (_ for _ in ()).throw(RuntimeError("the terminal lied"))

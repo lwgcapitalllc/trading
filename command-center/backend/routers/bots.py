@@ -66,6 +66,8 @@ from models import (
     BotAccountRiskPlan,
     BotAccountRiskRequest,
     BotAccountRiskShare,
+    BotChannelTest,
+    BotChannelTestResult,
     BotDeployedVersion,
     BotParamsView,
     BotPromoteJob,
@@ -650,8 +652,41 @@ def _change_on_remote_tip(root: str, tip: str, rels: list[str], message: str) ->
     return _git_step(root, "commit-tree", tree, "-p", tip, stdin=message)
 
 
-def _notify_telegram(text: str):
+def _account_health_chat(*, bot_key: str = "", account=None) -> str:
+    """The health channel of the account this message is ABOUT, or `""` for the shared room.
+
+    🔴 **The deploy thread is why this exists rather than being a nicety.** A promote produces
+    three messages from two machines — this app's PROMOTED, then the bot's own STOPPED and ONLINE
+    — and the bot's two are REPLIES to the first. A reply only threads inside one chat, so a root
+    sent to the shared room while the bot reports into its account's own channel is a thread that
+    silently stops working: Telegram refuses the reply and the bot falls back to a standalone
+    message. The root has to land where the bot will answer it.
+
+    ⚠ **Read from the account registry in this clone, per call**, which is the same file the box
+    reads — so there is one answer rather than two that can drift. An account that names no health
+    channel answers `""` and the message goes to the shared room, which is where every one of them
+    went before this existed.
+
+    ⚠ NEVER raises: this is on the path of an alert, and a message that fails over its own routing
+    is worse than one in the wrong room.
+    """
+    try:
+        if bot_key and account is None:
+            account = (_read_instance_config(bot_key) or {}).get("account")
+        if account is None:
+            return ""
+        entry = bot_account_registry.account_by_number(_registry_path(), account)
+        return str(getattr(entry, "telegram_health_chat", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _notify_telegram(text: str, *, bot_key: str = "", account=None):
     """Send a Telegram notification. Never raises.
+
+    `bot_key` / `account` name what the message is ABOUT, so it lands in that account's health
+    channel when it names one — see `_account_health_chat`. Neither is required: a message about
+    the box itself (the fleet stop) names no account and goes to the shared room.
 
     Delegates to `services/notify.py` — this router used to carry its own copy of the token,
     chat id and urllib call, which is how the credential ended up committed in six places at
@@ -668,7 +703,9 @@ def _notify_telegram(text: str):
     deploy sequence does, because its three messages come from two different machines and a
     thread is the only thing that says they are one event.
     """
-    return send_telegram_id(text, notify.HEALTH)
+    return send_telegram_id(
+        text, notify.HEALTH, chat_id=_account_health_chat(bot_key=bot_key, account=account)
+    )
 
 
 def _suppress_stop_alert(bot_key: str) -> None:
@@ -2064,6 +2101,8 @@ def _registration(entry, bot_keys: list[str], with_password: set[int] | None):
         **{k: v for k, v in vars(entry).items()},
         assignable=entry.assignable,
         unassignable_reason=entry.unassignable_reason,
+        missing_channels=entry.missing_channels,
+        channels_reason=entry.channels_reason,
         has_password=None if with_password is None else (entry.account in with_password),
         bot_keys=bot_keys,
     )
@@ -2369,6 +2408,9 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
         mt5_path=body.mt5_path,
         symbol_suffix=body.symbol_suffix,
         account_profile=body.account_profile,
+        telegram_trade_chat=body.telegram_trade_chat,
+        telegram_signal_chat=body.telegram_signal_chat,
+        telegram_health_chat=body.telegram_health_chat,
         note=body.note,
     )
 
@@ -2376,6 +2418,30 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
         bot_account_registry.check_entry(_registry_path(), entry, _known_profiles())
     except bot_account_registry.RegistryError as e:
         raise _registry_refusal(e)
+
+    # 🔴 CLEARING a live account's channels while bots are on it is refused, and it is a separate
+    # check from the one above because it is about the BOTS rather than about the row. A bot on a
+    # live account with no channel stops sending its fills the moment the box pulls this file —
+    # silently, from the reader's side, because the messages simply stop — and it refuses to start
+    # the next time anything restarts it. This write is the only way to reach that state from the
+    # page, so this is the only place it can be caught.
+    #
+    # ⚠ It refuses the STATE, not the change: an account that already had no channels and still
+    # has none is saved, because that is how a row gets edited before its owner has entered them.
+    bots_here = [
+        b.key
+        for g in _account_groups()
+        if g.kind == "account" and g.account == account
+        for b in g.bots
+    ]
+    if bots_here and entry.missing_channels:
+        owed = " and ".join(entry.missing_channels)
+        raise HTTPException(
+            status_code=409,
+            detail=f"{', '.join(sorted(bots_here))} trade live account {account}, so its {owed} "
+            f"channel cannot be left empty — they would have nowhere to report real money and "
+            f"would refuse to start. Enter it, or move the bots off the account first.",
+        )
 
     if body.password:
         _write_account_password(account, body.password)
@@ -2394,7 +2460,6 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
         )
 
     with_password = _accounts_with_a_password()
-    bots_here = [b.key for g in _account_groups() if g.account == account for b in g.bots]
     return _registration(stored, bots_here, with_password)
 
 
@@ -2452,6 +2517,57 @@ def set_account_password(account: int, body: BotAccountPassword):
         )
     _write_account_password(account, body.password)
     return {"status": "ok", "account": account, "has_password": True}
+
+
+_VERIFY_CHANNEL = "algos/tools/verify_channel.py"
+
+
+@router.post("/accounts/registry/{account}/test-channel", response_model=BotChannelTestResult)
+def test_account_channel(account: int, body: BotChannelTest):
+    """Post a test message to one of this account's Telegram channels, and report what happened.
+
+    🔴 **IT RUNS ON THE BOX, and that is the whole point.** The Telegram token lives in the box's
+    git-ignored credentials file and nowhere else, so a message posted from this laptop would be
+    testing a DIFFERENT sender from the one that will carry the fills — a Telegram bot can only
+    post to a chat it has been added to, so "it worked from my machine" says nothing at all about
+    the bot that matters. This is rule 7 in its usual shape: the green tick on the page is a claim
+    about code somewhere else, and the only way to make it true is to drive that code.
+
+    ⚠ **It sends and reports; it writes NOTHING.** Saving the channel is the registry write above,
+    and a call that both tested and saved would make a failed test look like a saved one.
+
+    ⚠ **A blank `chat_id` tests what the box's registry ALREADY names**, which is only the same
+    thing as what this page shows once the write has been deployed and pulled. That is the
+    honest check for "can a live bot report from here"; use a typed id to check one before it is
+    saved.
+    """
+    kind = body.kind
+    typed = str(body.chat_id or "").strip()
+    cmd = f"cd {_VPS_REPO} & {_PYTHON_EXE} {_VERIFY_CHANNEL} --kind {kind} --account {int(account)}"
+    if typed:
+        # `--chat-id=` rather than a space: an id begins with `-`, and argparse reads a bare
+        # `-100...` after a space as a flag. Real ids are all digits so its negative-number rule
+        # lets them through, but a channel USERNAME (`@name`) or any future format would not be,
+        # and a parse failure here would report as a dead channel.
+        cmd += f' --chat-id="{typed}"'
+    try:
+        result = vps_ssh.run(["ssh", VPS_HOST, cmd], capture_output=True, timeout=60)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    out = result.stdout.decode("utf-8", errors="replace").strip()
+    if result.returncode == 255 and not out:
+        # OpenSSH's own failure code with nothing printed — we never reached the tool, so there
+        # is no verdict to report. Saying "the channel does not work" here would blame a channel
+        # for a dead tunnel.
+        err = result.stderr.decode("utf-8", errors="replace").strip()
+        raise HTTPException(status_code=502, detail=err or f"ssh to {VPS_HOST} said nothing")
+    # 🔴 The EXIT CODE is the verdict, never the text. The tool's output is written for a person
+    # and its wording is free to change; its exit code is what the program decided.
+    ok = result.returncode == 0
+    detail = out or (
+        "the box printed nothing" if ok else f"the check exited {result.returncode} in silence"
+    )
+    return BotChannelTestResult(ok=ok, kind=kind, chat_id=typed, detail=detail)
 
 
 def _deploy_registry(message: str) -> None:
@@ -2573,7 +2689,8 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
             f"account {account}",
             f"Cap {cap_s} written to {len(targets)} bot(s).",
             _RISK_APPLIES,
-        )
+        ),
+        account=account,
     )
     return {
         "status": "ok",
@@ -2788,7 +2905,8 @@ def set_account_risk(account: int, body: BotAccountRiskRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
     _notify_telegram(
-        alert("⚙️", "RISK CHANGED", f"account {account}", "; ".join(parts), _RISK_APPLIES)
+        alert("⚙️", "RISK CHANGED", f"account {account}", "; ".join(parts), _RISK_APPLIES),
+        account=account,
     )
     return _risk_plan_view(plan, written=written, deployed=True, detail=summary)
 
@@ -2914,6 +3032,16 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
                 detail=f"Account {update.account} is a LIVE account — real money. Confirm the move "
                 f"to put {_KEY_DISPLAY.get(bot_key, bot_key)} on it.",
             )
+
+        # 🔴 A LIVE ACCOUNT WITH NOWHERE TO REPORT TAKES NO BOT (2026-09-13). Aaron's rule the day
+        # a second person's live account joined the box: the owner says where the money is
+        # reported BEFORE anything puts money at risk. The bot would refuse to start
+        # (`algos/live/runner.py`), so without this the move commits, pushes, pulls and then
+        # produces a bot that will not run — the discovery loop this page exists to remove.
+        # ⚠ A bot ALREADY on that account is not moving onto it, so it is not asked.
+        if registered is not None and (current is None or current.account != update.account):
+            if registered.channels_reason:
+                raise HTTPException(status_code=409, detail=registered.channels_reason)
 
         # ⚠ Refused on a DEFINITE no, never on an unanswered question. A bot on an account with
         # no stored password cannot connect, and finding that out at the next start — after a
@@ -3079,7 +3207,8 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             "It is not trading it yet — start the bot to apply."
             if update.account is not None
             else "It will not start until it is on an account again.",
-        )
+        ),
+        bot_key=bot_key,
     )
     # ⚠ `notes` is what could NOT be carried — an account with no recorded symbol suffix, or one
     # that is not registered at all. It is served rather than swallowed because the failure it
@@ -4213,7 +4342,8 @@ def apply_go_live(body: GoLiveRequest):
             f"Moved from demo {plan.from_account} to LIVE {plan.to_account} "
             f"({registered.broker or 'broker unrecorded'}{cap_note}).",
             "Not trading yet — every bot is stopped and has to be started.",
-        )
+        ),
+        account=plan.to_account,
     )
 
     resp.applied = True
@@ -4617,7 +4747,8 @@ def _finish_promote(
                 _bot_label(bot_key),
                 joined([moved, "deployed"]) or "The new code is deployed.",
                 "Restarting it now." if req.restart else "Restart it to pick the new version up.",
-            )
+            ),
+            bot_key=bot_key,
         )
         if req.restart:
             _set_alert_thread(bot_key, root)
@@ -5044,7 +5175,8 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
             display,
             changed,
             "It will apply at the next bar the bot is flat.",
-        )
+        ),
+        bot_key=bot_key,
     )
     return {"status": "ok", "changed": True, "deployed": True, "detail": changed, "output": out}
 
@@ -5080,7 +5212,9 @@ def start_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _bot_label(bot_key)
-    _notify_telegram(alert("▶️", "STARTING", display, "Requested from the command center."))
+    _notify_telegram(
+        alert("▶️", "STARTING", display, "Requested from the command center."), bot_key=bot_key
+    )
     return {"status": "ok", "output": out}
 
 
@@ -5108,7 +5242,8 @@ def stop_bot(bot_name: str):
             "STOPPED",
             display,
             "Stopped from the command center. It will not come back on its own.",
-        )
+        ),
+        bot_key=bot_key,
     )
     return {"status": "ok", "output": out}
 
@@ -5128,5 +5263,7 @@ def restart_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _bot_label(bot_key)
-    _notify_telegram(alert("🔄", "RESTARTING", display, "Requested from the command center."))
+    _notify_telegram(
+        alert("🔄", "RESTARTING", display, "Requested from the command center."), bot_key=bot_key
+    )
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

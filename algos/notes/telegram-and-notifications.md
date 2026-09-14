@@ -38,25 +38,50 @@ tests also assert they MATCHED something — a sweep that finds nothing passes f
 and warns once; TRADE never borrows the health chat. Health in the wrong room is a nuisance you can
 see, a fill buried in re-warm chatter is the thing being prevented.
 
-### The live rooms — a LIVE account's trades and signals go to their own channels (2026-09-11)
+### The live rooms — each ACCOUNT names its own channels (2026-09-13)
 
-Aaron's call, the day two bots went onto real money while their demo copies kept trading the same
-strategy. `shared/telegram_rooms.json` names a live TRADE and a live SIGNAL channel (the bot posts as
-an admin with only *Post Messages*); `notify.chat_for(kind, override, account_kind)` sends a live
-TRADE/SIGNAL there, and the runner passes its account's `kind` off `markets/fx/accounts.json` on
-every send. The existing shared rooms are the demo rooms.
+**Superseded the 2026-09-11 design** (one live trades room and one live signals room for every live
+account, in `shared/telegram_rooms.json`). Aaron's rule the day a second person's live account
+(35710389) joined the box: two owners, two lots of real money, and neither may read the other's
+fills. So a room is a property of the ACCOUNT — `telegram_trade_chat`, `telegram_signal_chat` and
+`telegram_health_chat` on its row in `markets/fx/accounts.json` — and `notify.chat_for(kind,
+override, account)` routes by the account a message is ABOUT. 34957946 carries the two channels that
+were in the retired file; 35710389 names none until its owner enters them.
 
-- 🔴 **The room follows the ACCOUNT, never the bot** — a bot moved onto a live account reports
-  there with no edit, the same reason no name says demo or live. ⚠ A per-bot room in an instance
-  config still wins outright and stays WITH the bot on a move; nothing sets one today.
-- ⚠ **HEALTH has no live room, by decision**: most of it is about the one box both kinds share,
-  and every subject says LIVE or demo. A health room added to the file is honoured with no code.
-- ⚠ **Committed, not in `credentials.json`**: a chat id is not a secret (the token stays in the
-  credentials file), so it reaches the box with a pull and survives a rebuild. Read per message.
-- ⚠ A live TRADE/SIGNAL with no live room falls back to the shared room and SAYS so once; an
-  account the registry cannot classify keeps the shared rooms and the plain name.
-- Proof: `tests/test_notification_routing.py`, `test_account_label.py`, `test_live_rooms_runner.py`
-  (the runner through the REAL router), plus the watchers' own tests; 20 bugs planted, 20 caught.
+- 🔴 **A LIVE account never borrows a room.** A trade or signal for a live account that names no
+  room of its own is NOT SENT (empty chat id) and says so once per account and kind. Until
+  2026-09-13 it fell back to the shared room — right with one owner, a privacy failure with two.
+- 🔴 **A bot on a live account with no trades or signals channel REFUSES TO START**
+  (`runner._unnamed_channels`, placed after the already-running check and before the version pin):
+  exit 5, ledger `startup_failed`, and a WILL NOT START health alert into the room that still works.
+  ⚠ **An UNREADABLE registry lets it start — a decision, not a fallthrough.** A bot that does not
+  trade because a JSON file will not parse costs setups nobody gets back; a message in the shared
+  room is a privacy failure somebody can see and correct. The notifier says so on every send.
+- ⚠ **Health is optional**, and falls back to the shared room: most of it is about the one box every
+  account shares. Health ABOUT a bot (the monitor, the log review, both watchers) goes to that bot's
+  account's health room when it names one; box-level alerts (chat bot down, unreadable registry)
+  name no account.
+- ⚠ **Three answers, never two** (rule 1): `bot_state.account_row` returns the row, `{}` when the
+  registry was read and the account is not in it, and `None` when it could not be read.
+  `notify.account_rooms` and `notify.missing_rooms` mirror it.
+- 🔴 **`bot_state._account_rows` answers the LAST GOOD rows on a failed read, and that is
+  load-bearing.** The box's hourly ledger sync runs `git pull`, which rewrites this file; a fill
+  composed inside that window would otherwise read "unreadable" and go to the shared room.
+- The room still follows the ACCOUNT, never the bot — move a bot and its next fill reports in the new
+  account's room with no edit. A per-bot room in an instance config still wins outright; nothing sets
+  one today.
+- Channels are entered on the Command Center (Bots → the account → Edit), which refuses every move
+  that would put a bot on a live account with none. Its **Send test** runs `tools/verify_channel.py`
+  on the box, because the token lives only there. Exit codes: 0 posted, 1 refused or unexpected,
+  2 bad arguments, 3 registry unreadable, 4 the account names no channel of that kind.
+- ⚠ **`shared/telegram_rooms.json` is RETIRED and KEPT for the transition.** No current code reads
+  it, but a bot still running the old code does: deleting it now would send 34957946's live fills to
+  the shared demo room. **Delete it once every bot on the box has restarted onto this code.** Until
+  then a bot on 35710389 still on the old code would send its live fills to the room in that file —
+  nothing trades there today.
+- Proof: `tests/test_notification_routing.py`, `test_live_rooms_runner.py` (the runner through the
+  REAL router, the start gate driven through `_run`), `test_verify_channel.py`, plus the monitor,
+  log-review and watcher tests; 12 bugs planted by `scripts.testing.mutate`, 12 caught.
 
 ⚠ **The HALT is HEALTH, and it is the call worth defending** — it is the most consequential message
 here, which is precisely why it must not sit in a room only checked when a fill arrives. It is also

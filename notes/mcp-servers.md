@@ -29,8 +29,10 @@ the app's own scripts and rejects bot start/stop/restart, promote (and, since 20
 same deploy started as a background job — `POST …/promote/job`), strategy deploy and delete,
 account writes, moving bots onto another account or demo → live (added 2026-09-10 — the go-live
 write had shipped three days earlier with no rule here), risk writes — a bot's risk per trade and an
-account's cap or budget (added 2026-09-11; the budget PLAN stays allowed) — and agent starts INSIDE
-the browser; they never reach the backend. Promote
+account's cap or budget (added 2026-09-11; the budget PLAN stays allowed), a channel Send test
+(added 2026-09-13 with its route — it writes nothing but posts a REAL message into a Telegram channel
+a person reads, from the live box) — and agent starts INSIDE the browser; they never reach the
+backend. Promote
 PREVIEW and every lab write stay allowed — those cost compute, never money, and a guard that
 blocks the useful half gets switched off. ✅ **A missing guard file makes the server refuse to
 start**, so there is no unguarded state. ⚠ **Not a security boundary** — it makes an accident

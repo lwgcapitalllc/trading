@@ -266,13 +266,25 @@ def _label(bot: str) -> str:
         return bot
 
 
-def _send(text: str, dry_run: bool) -> None:
+def _account(bot: str):
+    """The broker login this bot trades, so the message lands in that ACCOUNT's health channel
+    when it names one (2026-09-13). `None` — the shared room — if the lookup cannot run; a message
+    must never be lost over its routing."""
+    try:
+        import bot_state
+
+        return bot_state.read_account(bot)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _send(text: str, dry_run: bool, account=None) -> None:
     if dry_run:
         print("\n--- would send ---\n" + text + "\n------------------")
         return
     from notify import HEALTH, send_telegram
 
-    send_telegram(text, HEALTH)
+    send_telegram(text, HEALTH, account=account)
 
 
 def _health(bot: str, **fields) -> None:
@@ -333,7 +345,7 @@ def run(bot: str, dry_run: bool = False) -> int:
     verdict = assess(reading, previous, lab)
     speak = verdict["first_reading"] or bool(verdict["moved"])
     if speak:
-        _send(summarise(verdict, bot, profile_key), dry_run)
+        _send(summarise(verdict, bot, profile_key), dry_run, _account(bot))
 
     if not dry_run:
         state["last_reading"] = {"long": reading["long"], "short": reading["short"]}
@@ -385,6 +397,7 @@ def main(argv=None) -> int:
                 "Until this is fixed, a change in the broker's overnight cost will pass "
                 "unnoticed — silence from this watch no longer means the rate held.",
                 args.dry_run,
+                _account(args.bot),
             )
         except Exception:  # noqa: BLE001 — a failed alarm must not mask the failure it reports
             pass

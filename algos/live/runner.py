@@ -453,16 +453,51 @@ class LiveRunner:
         except Exception:
             return self.cfg.display_name
 
-    def _account_kind(self):
-        """`"live"`, `"demo"` or `None` for the account this bot trades, off the account registry.
-        It is what sends this bot's trades and signals to the LIVE rooms (`notify.chat_for`).
-        NEVER raises: `None` keeps the shared rooms, which is where every message went before."""
+    def _unnamed_channels(self) -> str:
+        """Which of a LIVE account's required Telegram channels are not set, as words a person
+        reads (`"trades"`, `"signals"`, `"trades and signals"`). `""` means this bot may start.
+
+        🔴 **A live bot with nowhere to report its fills does not trade.** Aaron's rule, the day a
+        second person's live account joined the box: the owner of an account says where its money
+        is reported before anything puts money at risk on it. Health is deliberately not required
+        — it is about the one box every account shares and it falls back to the shared room.
+
+        ⚠ **Only a LIVE account is gated.** A demo account keeps the shared rooms and always has.
+
+        🔴 **A registry that cannot be read starts the bot anyway, and that is a decision rather
+        than a fallthrough.** Of the two wrong answers, a bot that does not trade because a JSON
+        file would not parse costs setups that cannot be recovered, while a message reaching the
+        shared room is a privacy failure somebody can see and correct. Money outranks privacy
+        here, and the notifier says so loudly on every send (`notify.chat_for`).
+
+        ⚠ NEVER raises. A gate that can crash the startup it guards is worse than the gap it
+        closes.
+        """
         try:
             import bot_state
+            from notify import REQUIRED_LIVE_KINDS, SIGNAL, TRADE, missing_rooms
 
-            return bot_state.account_kind(self.cfg.account)
-        except Exception:
-            return None
+            if bot_state.account_kind(self.cfg.account) != "live":
+                return ""
+            missing = missing_rooms(self.cfg.account)
+        except Exception as e:
+            self.log.warning(
+                f"Could not check this account's Telegram channels, so the check is being "
+                f"skipped and the bot is starting: {e}"
+            )
+            return ""
+        if missing is None:
+            self.log.warning(
+                "The account registry could not be read, so this bot's Telegram channels could "
+                "not be checked. Starting anyway - a missed trade costs more than a message in "
+                "the wrong room, and every send says which room it used."
+            )
+            return ""
+        words = {TRADE: "trades", SIGNAL: "signals"}
+        # Ordered by `REQUIRED_LIVE_KINDS` rather than by whatever order the set came back in, so
+        # the same two missing channels always read the same way in the log and in Telegram.
+        named = [words.get(kind, kind) for kind in REQUIRED_LIVE_KINDS if kind in missing]
+        return " and ".join(named)
 
     def _notify(self, text: str, kind: str, reply_to=None):
         """Every message this bot sends goes to ITS OWN configured destination — the routing is
@@ -474,9 +509,14 @@ class LiveRunner:
         TRADE messages are the entry and the exit, both sent by the bridge; SIGNAL is the
         pre-trade setup channel (`setup_alerts.py`).
 
-        The account's kind rides along on every send (2026-09-11): on a LIVE account the trades
-        and signals go to the live rooms (`algos/shared/telegram_rooms.json`), and health stays in
-        the one shared room. Worked out per message from the account, never set on the bot.
+        The ACCOUNT rides along on every send (2026-09-13): its row in the account registry names
+        the rooms this bot's trades, signals and health land in, so two accounts on one box never
+        share a feed. Read per message from the account, never set on the bot — a bot moved onto
+        another account reports into that account's rooms with no edit.
+
+        🔴 **A trade or a signal for a LIVE account with no room of its own is NOT SENT**, and this
+        returns None. That is deliberate and the startup gate exists so it cannot be the ordinary
+        state: a live fill in a room the wrong person reads cannot be taken back.
 
         ⚠ **An unknown kind falls back to the HEALTH room rather than raising**, because this
         method is on the path of the alert reporting a problem. `notify.chat_for` still refuses
@@ -496,7 +536,7 @@ class LiveRunner:
                 chat_id=per_bot.get(kind, self.cfg.telegram_health_chat),
                 token_key=self.cfg.telegram_token_key,
                 reply_to=reply_to,
-                account_kind=self._account_kind(),
+                account=self.cfg.account,
                 # 🔴 Everything this bot sends is built by `alerts.py`, which is plain text BY
                 # DESIGN ("Plain text, no Markdown, ever" — a name, a symbol or a traceback is
                 # full of underscores). Asking Telegram to parse it can only corrupt it, and it
@@ -1624,6 +1664,31 @@ class LiveRunner:
             # exit worth recording: a start that declined to start is exactly the event
             # somebody is looking for when they ask why a restart "did nothing".
             return 0, "another copy of this bot is already running"
+        # ── does this LIVE account have somewhere to report? ──────────────────
+        # Checked ahead of the version pin because it is the more fundamental refusal: the pin
+        # says this bot is running the wrong code, this says it may not trade on this account at
+        # all until its owner says where its fills go.
+        unnamed = self._unnamed_channels()
+        if unnamed:
+            reason = f"the account names no {unnamed} channel"
+            self.log.error(
+                f"WILL NOT START: live account {self.cfg.account} names no {unnamed} channel, so "
+                f"this bot has nowhere to report its real-money {unnamed}. Set it on the command "
+                f"center's Bots → Accounts tab, then start it."
+            )
+            self.ledger.event("startup_failed", error=reason)
+            self._notify_health(
+                alert(
+                    "⛔",
+                    "WILL NOT START",
+                    self._label,
+                    f"Live account {self.cfg.account} names no {unnamed} channel, so there is "
+                    f"nowhere to report real money.",
+                    "It is down and will stay down. Enter the channel on Bots → Accounts, then "
+                    "start it.",
+                )
+            )
+            return 5, reason
         commit = current_commit(self.cfg.repo_root)
         try:
             self._bind_code()

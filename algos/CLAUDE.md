@@ -258,6 +258,8 @@ Most-cited code: `tools/ledger_sync.py`, `live/runner.py`, `tools/promote.py`, `
 **Read before touching:** Telegram notifications, alert formatting, or bot naming for messages.
 Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `shared/notify.py`, `tools/signal_samples.py`, `tools/alert_rate.py`.
 
+- 🔴 The live rooms — each ACCOUNT names its own channels; a live bot with none refuses to start (2026-09-13)
+
 
 ### `notes/bot-registries-and-lifecycle.md` — Bot registries and lifecycle
 

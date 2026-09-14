@@ -662,6 +662,23 @@ export interface BotAccountRegistration {
   symbol_suffix: string | null
   account_profile: string
   note: string
+  /**
+   * Where THIS account's bots report (2026-09-13). `""` = none named. A LIVE account must name the
+   * trades and signals channels before a bot may trade on it — the bot refuses to start without
+   * them, and the page refuses to put one there. Health is optional and falls back to the shared
+   * room. A demo account may name its own or leave all three blank for the shared rooms.
+   */
+  telegram_trade_chat: string
+  telegram_signal_chat: string
+  telegram_health_chat: string
+  /**
+   * Derived. What a LIVE account still owes before a bot may go on it, as words a person reads
+   * (`["trades", "signals"]`); always empty on demo. ⚠ Read it null-safe: a recorded answer from
+   * before 2026-09-13 does not carry it.
+   */
+  missing_channels: string[]
+  /** Derived. The sentence that refuses a bot here for want of a channel, or `""`. */
+  channels_reason: string
   /** Derived. False ⇒ no terminal serves it, so a move would fail at connect time. */
   assignable: boolean
   unassignable_reason: string
@@ -682,9 +699,31 @@ export interface BotAccountRegistrationWrite {
   symbol_suffix?: string | null
   account_profile?: string
   note?: string
+  telegram_trade_chat?: string
+  telegram_signal_chat?: string
+  telegram_health_chat?: string
   /** WRITE-ONLY. Never comes back out of any endpoint; stored in the VPS credentials file. */
   password?: string
   deploy?: boolean
+}
+
+/** Which of an account's three Telegram channels a message or a test is for. */
+export type ChannelKind = 'trade' | 'signal' | 'health'
+
+/**
+ * What the TRADING BOX said when it tried to post a test message into a channel.
+ *
+ * 🔴 `ok` is the tool's EXIT CODE, never a word read out of `detail` — and it is two-state on
+ * purpose: a box that could not be REACHED is an HTTP error, never `ok: false`, because "the
+ * channel does not work" and "nothing was tested" need different work.
+ */
+export interface BotChannelTestResult {
+  ok: boolean
+  kind: ChannelKind
+  /** What was posted to, as typed. `""` = the id the box's saved row already names. */
+  chat_id: string
+  /** The box's own line, unreworded — Telegram's refusal reason when there is one. */
+  detail: string
 }
 
 /** One MT5 terminal on the VPS, and how it lines up with the account list.

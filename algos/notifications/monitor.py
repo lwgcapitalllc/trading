@@ -86,16 +86,22 @@ BOTS = {
 MAX_BOT_RESTARTS = 3
 
 
-def send_alert(message: str):
+def send_alert(message: str, account=None):
     """Every message this watchdog sends is HEALTH — offline, restarted, stalled, recovered.
 
     Not one of them is a trade, which is the whole reason the routing exists: this module alone
     can produce nine different alerts about the machinery, and pointing them at the room that
     carries fills is what teaches you to swipe that room away. The chat is resolved PER CALL
-    rather than at import, so setting `telegram_health_chat` takes effect on the next alert
-    instead of at the next restart of a task that runs every 60 seconds.
+    rather than at import, so setting a health channel takes effect on the next alert instead of
+    at the next restart of a task that runs every 60 seconds.
+
+    `account` is the broker login the alert is ABOUT, so an account that names its own health
+    channel gets its bots' alerts there (2026-09-13). ⚠ It is omitted, deliberately, by the
+    alerts about the box itself — the chat bot being down, an unreadable bot list — which belong
+    to nobody's account. An account with no health channel of its own keeps the shared room, live
+    accounts included.
     """
-    dest, _dedicated = chat_for(HEALTH)
+    dest, _dedicated = chat_for(HEALTH, account=account)
     if not TELEGRAM_TOKEN or not dest:
         print(f"Alert dropped (Telegram not configured): {message[:80]}")
         return
@@ -344,7 +350,10 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # What every alert below calls this bot: its name plus LIVE or demo, off the account its own
     # config names. Two copies of one strategy share a name, and this is what tells them apart in
     # the one health room both kinds share (2026-09-11).
-    name = _bot_state.labelled(cfg["name"], _bot_state.read_account(bot_key))
+    # Read ONCE and used by the label AND by every alert's routing below. Deciding it twice is how
+    # a message comes to name one account in its subject and land in another account's room.
+    account = _bot_state.read_account(bot_key)
+    name = _bot_state.labelled(cfg["name"], account)
 
     running = is_bot_running(bot_key)
     # 🔴 CANNOT ASK. Leave every stored fact exactly as it was and take no action: alerting would
@@ -381,11 +390,17 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 suppressed = True
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
-                send_alert(alert("🔴", "OFFLINE", name, "The process is gone. Restarting it now."))
+                send_alert(
+                    alert("🔴", "OFFLINE", name, "The process is gone. Restarting it now."),
+                    account,
+                )
             _bot_state.set_status(bot_key, "offline")
         else:
             if not bot_state.get("stop_suppressed"):
-                send_alert(alert("🟢", "BACK ONLINE", name, "It is running again. Nothing to do."))
+                send_alert(
+                    alert("🟢", "BACK ONLINE", name, "It is running again. Nothing to do."),
+                    account,
+                )
             bot_state["stop_suppressed"] = False
             bot_state["restart_tries"] = 0
             bot_state["max_retry_alerted"] = False
@@ -433,7 +448,8 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                         name,
                         "It was offline and has been restarted automatically.",
                         "Worth checking the log for why it stopped.",
-                    )
+                    ),
+                    account,
                 )
                 _bot_state.set_status(bot_key, "running")
             else:
@@ -452,7 +468,8 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     f"not retry.",
                     "It will stay down until someone looks. Usually a version pin or the MT5 login "
                     "— check its log.",
-                )
+                ),
+                account,
             )
         return bot_state
 
@@ -484,7 +501,8 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     f"The process is alive but has not stamped its heartbeat for "
                     f"{stale_secs / 60:.0f} minutes, so it is not working through bars.",
                     "Restart it from the command center, or check its log.",
-                )
+                ),
+                account,
             )
             bot_state["stale_alerted"] = True
             _bot_state.set_status(bot_key, "stalled")
@@ -497,7 +515,8 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     name,
                     "The heartbeat resumed and it is working through bars again.",
                     "Nothing to do.",
-                )
+                ),
+                account,
             )
             _bot_state.set_status(bot_key, "running")
         bot_state["stale_alerted"] = False
@@ -517,7 +536,8 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     name,
                     f"The broker does not list {sym}, so it was skipped this cycle.",
                     "Fix the watchlist in config.json.",
-                )
+                ),
+                account,
             )
             alerted_today[sym] = today
     bot_state["unresolved_symbols_alerted"] = alerted_today

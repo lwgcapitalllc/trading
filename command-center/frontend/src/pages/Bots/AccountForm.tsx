@@ -8,8 +8,18 @@
  */
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { useRegisterAccount, useSetAccountPassword, useTerminalSuggestion } from '@/hooks/useBots'
-import type { BotAccountGroup, BotAccountRegistration, BotAccountRegistrationWrite } from '@/types'
+import {
+  useRegisterAccount,
+  useSetAccountPassword,
+  useTerminalSuggestion,
+  useTestChannel,
+} from '@/hooks/useBots'
+import type {
+  BotAccountGroup,
+  BotAccountRegistration,
+  BotAccountRegistrationWrite,
+  ChannelKind,
+} from '@/types'
 
 /**
  * What an account is called on screen: the nickname somebody gave it, else its broker, else `null`.
@@ -108,8 +118,17 @@ export function AccountForm({
   const [suffix, setSuffix] = useState(seed?.symbol_suffix ?? '')
   const [profile, setProfile] = useState(seed?.account_profile ?? '')
   const [password, setPwd] = useState('')
+  const [tradeChat, setTradeChat] = useState(seed?.telegram_trade_chat ?? '')
+  const [signalChat, setSignalChat] = useState(seed?.telegram_signal_chat ?? '')
+  const [healthChat, setHealthChat] = useState(seed?.telegram_health_chat ?? '')
 
   const num = Number(account)
+  // What a LIVE account would still owe if saved as it stands — said here, before the save, rather
+  // than as the refusal a later move would meet. The server's own list is the authority once saved.
+  const owed = [
+    ...(kind === 'live' && !tradeChat.trim() ? ['trades'] : []),
+    ...(kind === 'live' && !signalChat.trim() ? ['signals'] : []),
+  ]
   const valid = Number.isFinite(num) && num > 0 && server.trim().length > 0
 
   const submit = () => {
@@ -125,6 +144,9 @@ export function AccountForm({
         mt5_path: mt5Path,
         symbol_suffix: hasSuffix ? suffix : null,
         account_profile: profile,
+        telegram_trade_chat: tradeChat.trim(),
+        telegram_signal_chat: signalChat.trim(),
+        telegram_health_chat: healthChat.trim(),
         note: existing?.note ?? '',
         // Sent on the SAME request when there is one, so the credential lands before the registry
         // row is committed and pushed — a registered account with no password is a visible, fixable
@@ -301,6 +323,66 @@ export function AccountForm({
           </div>
         </div>
 
+        {/* ── WHERE THIS ACCOUNT REPORTS (2026-09-13) ──────────────────────────────────
+         *  🔴 Aaron's rule the day a second person's live account joined the box: each LIVE
+         *  account names its own trades and signals channels, neither owner reads the other's
+         *  fills, and a bot on a live account with no channel refuses to start. Health is optional
+         *  — most of it is about the box every account shares. Every row has a Send test, because
+         *  a wrong id fails silently at the moment a real fill is sent. */}
+        <div
+          data-testid="f-channels"
+          className="flex flex-col gap-2 border-t border-border-subtle pt-3"
+        >
+          <div className="text-small text-text-primary font-semibold">Telegram channels</div>
+          {owed.length > 0 && (
+            <div
+              data-testid="f-channels-owed"
+              className="text-micro text-warn-text bg-warn-muted border border-warn/40 rounded px-2 py-[5px] max-w-[720px]"
+            >
+              A live account needs its {owed.join(' and ')} channel before a bot can trade on it — a
+              bot here would refuse to start, and none can be added until it is set.
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-3 max-w-[720px]">
+            <ChannelRow
+              kind="trade"
+              label="Trades channel"
+              hint={
+                kind === 'live'
+                  ? 'Where fills are posted. Required on a live account. Paste the channel id (a minus and thirteen digits) or its public @name — the Telegram bot must be a member.'
+                  : 'Where fills are posted. Blank uses the shared trades room.'
+              }
+              value={tradeChat}
+              onChange={setTradeChat}
+              account={Number.isFinite(num) && num > 0 ? num : 0}
+            />
+            <ChannelRow
+              kind="signal"
+              label="Signals channel"
+              hint={
+                kind === 'live'
+                  ? 'Where setups are posted before they fill. Required on a live account, the same as trades.'
+                  : 'Where setups are posted. Blank uses the shared signals room.'
+              }
+              value={signalChat}
+              onChange={setSignalChat}
+              account={Number.isFinite(num) && num > 0 ? num : 0}
+            />
+            <ChannelRow
+              kind="health"
+              label="Health channel"
+              hint="Optional. Starts, stops, deploys and warnings. Blank uses the shared health room, which is where box-wide alerts go either way."
+              value={healthChat}
+              onChange={setHealthChat}
+              account={Number.isFinite(num) && num > 0 ? num : 0}
+            />
+          </div>
+          <div className="text-micro text-text-tertiary max-w-[720px]">
+            Send test posts a real message from the trading box, through the same sender a bot uses.
+            It saves nothing — Save account does that.
+          </div>
+        </div>
+
         <div className="flex flex-col gap-1 border-t border-border-subtle pt-3">
           {/* THE TRADING PASSWORD (2026-09-11). A read-only "investor" password logs in and reads
            *  prices, then the broker refuses every order (10017 "trade disabled"). So does an
@@ -415,6 +497,104 @@ function TerminalNote({
     <span data-testid="f-path-note" className={`text-micro leading-[1.35] ${tone}`}>
       {text}
     </span>
+  )
+}
+
+/**
+ * One channel field and its Send test.
+ *
+ * ⚠ **A verdict belongs to the VALUE it tested.** It is stored with that value and shown only while
+ * the field still holds it — so editing the id after a green test cannot leave a green tick beside
+ * an id nobody has tested.
+ *
+ * 🔴 **THREE outcomes, not two.** `ok: null` means the box could not be reached, so NOTHING was
+ * tested — rendered neutral, never as a failed channel, or the reader goes hunting for a wrong id
+ * that was always right.
+ */
+function ChannelRow({
+  kind,
+  label,
+  hint,
+  value,
+  onChange,
+  account,
+}: {
+  kind: ChannelKind
+  label: string
+  hint: string
+  value: string
+  onChange: (v: string) => void
+  account: number
+}) {
+  const test = useTestChannel()
+  const [verdict, setVerdict] = useState<{
+    value: string
+    ok: boolean | null
+    detail: string
+  } | null>(null)
+  const typed = value.trim()
+  const shown = verdict && verdict.value === typed ? verdict : null
+
+  const send = () => {
+    if (!typed || !account) return
+    test.mutate(
+      { account, kind, chat_id: typed },
+      {
+        onSuccess: (r) => setVerdict({ value: typed, ok: r.ok, detail: r.detail }),
+        onError: (e) =>
+          setVerdict({
+            value: typed,
+            ok: null,
+            detail: `Not tested — the trading box could not be reached (${
+              (e as Error).message
+            }). This says nothing about the channel.`,
+          }),
+      }
+    )
+  }
+
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <input
+          data-testid={`f-chat-${kind}`}
+          value={value}
+          placeholder="-100… or @channel"
+          onChange={(e) => onChange(e.target.value)}
+          className={inputCls}
+        />
+        <button
+          type="button"
+          data-testid={`test-chat-${kind}`}
+          disabled={!typed || !account || test.isPending}
+          title={!account ? 'Enter the account number first.' : undefined}
+          onClick={(e) => {
+            // Inside a <label>: stop the click reaching the input the label is for.
+            e.preventDefault()
+            send()
+          }}
+          className="shrink-0 px-[10px] py-[5px] rounded-md border border-border-default text-[11.5px] text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {test.isPending ? 'Sending…' : 'Send test'}
+        </button>
+      </div>
+      {shown && (
+        <span
+          data-testid={`chat-verdict-${kind}`}
+          data-ok={shown.ok === null ? 'unknown' : String(shown.ok)}
+          className={`text-micro leading-[1.35] ${
+            shown.ok === true
+              ? 'text-pos-text'
+              : shown.ok === false
+                ? 'text-warn-text'
+                : 'text-text-tertiary'
+          }`}
+        >
+          {shown.ok === true ? 'Arrived. ' : shown.ok === false ? 'Did not arrive. ' : ''}
+          {shown.detail}
+        </span>
+      )}
+    </Field>
   )
 }
 

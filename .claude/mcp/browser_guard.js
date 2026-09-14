@@ -74,6 +74,16 @@
       path: /^\/strategies\/[^/]+$/,
     },
     {
+      // 🔴 Added 2026-09-13 with the route. It POSTS A REAL MESSAGE into a Telegram channel a
+      // person reads, by running a program on the live box — so it is an outward-facing action
+      // even though it writes nothing. It sits under /registry/ and the broader rule below would
+      // catch it anyway; it is named here so the refusal SAYS WHAT IT STOPPED rather than
+      // reporting a channel test as an account edit.
+      what: 'post a test message into a Telegram channel from the trading box',
+      methods: ['POST'],
+      path: /^\/bots\/accounts\/registry\/[^/]+\/test-channel$/,
+    },
+    {
       what: 'add, change or remove a broker account (including its password)',
       methods: ['PUT', 'DELETE', 'POST'],
       path: /^\/bots\/accounts\/registry(\/.*)?$/,

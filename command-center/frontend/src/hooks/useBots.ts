@@ -19,6 +19,8 @@ import type {
   BotAccountRiskRequest,
   BotAccountRegistration,
   BotAccountRegistrationWrite,
+  BotChannelTestResult,
+  ChannelKind,
   BotDeployedVersion,
   BotPromoteJob,
   BotSnapshot,
@@ -557,6 +559,37 @@ export function useSetAccountPassword() {
       toast.success('Password saved on the VPS')
       qc.invalidateQueries({ queryKey: ['bots', 'accounts', 'registry'] })
     },
+  })
+}
+
+/**
+ * Post a test message into one of an account's Telegram channels — FROM THE TRADING BOX.
+ *
+ * 🔴 **Why the box and not this laptop:** the Telegram token lives only in the box's credentials
+ * file, and a Telegram bot can only post to a chat it has been added to — so a message sent from
+ * here would test a different sender from the one that carries the fills. A wrong channel id
+ * otherwise fails in exactly the way this feature exists to prevent: silently, when a real fill
+ * arrives.
+ *
+ * ⚠ It writes NOTHING, so there is no invalidation and no success toast: the verdict is shown
+ * beside the field it is about. `chat_id` tests what is TYPED, before it is saved; omit it to test
+ * what the box's saved row already names.
+ */
+export function useTestChannel() {
+  return useMutation({
+    mutationFn: ({
+      account,
+      kind,
+      chat_id,
+    }: {
+      account: number
+      kind: ChannelKind
+      chat_id?: string
+    }) =>
+      api.post<BotChannelTestResult>(`/bots/accounts/registry/${account}/test-channel`, {
+        kind,
+        chat_id: chat_id ?? '',
+      }),
   })
 }
 

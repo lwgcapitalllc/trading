@@ -219,6 +219,13 @@ export function reg(over: Record<string, unknown> = {}) {
     symbol_suffix: '.p',
     account_profile: 'puprime_ecn',
     note: '',
+    // Every field the server sends (2026-09-13). A demo row names no channel and owes none — the
+    // same as the committed registry — so these defaults change nothing a check above relied on.
+    telegram_trade_chat: '',
+    telegram_signal_chat: '',
+    telegram_health_chat: '',
+    missing_channels: [],
+    channels_reason: '',
     assignable: true,
     unassignable_reason: '',
     has_password: true,
@@ -3944,4 +3951,222 @@ test('a RUNNING bot on the account panel: ONE button from Take off to Removing�
   expect(log.stoppedAtWrite).toEqual([true])
   await expect(row).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: 'Account settings' })).toBeVisible()
+})
+
+// ── A LIVE account names its own Telegram channels (2026-09-13) ─────────────────────────────
+//
+// 🔴 Aaron's rule the day a second person's live account joined the box: each live account names
+// its own trades and signals channels, and a bot on one without them refuses to start. The server
+// refuses the move (`tests/test_account_channels.py`); these check the page says so BEFORE the
+// click, and that the Send test beside each field reports what the box actually said.
+
+const LIVE_OWED = 35710389
+const OWED_REASON =
+  `live account ${LIVE_OWED} has no trades and signals channel, so a bot on it would have ` +
+  'nowhere to report real money — it would refuse to start. Enter the channel on the account first.'
+
+function liveReg(account: number, over: Record<string, unknown> = {}) {
+  return reg({
+    account,
+    kind: 'live',
+    server: 'PUPrime-Live',
+    telegram_trade_chat: '-1004410831757',
+    telegram_signal_chat: '-1003332727688',
+    ...over,
+  })
+}
+
+/** Every STACKED bot reported STOPPED. Take live is only offered then: a bot the box has not
+ *  answered for is never counted as stopped, so without this the button stays disabled. */
+async function routeStopped(page: Page) {
+  await page.route('**/api/bots/snapshot', (route) =>
+    route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [
+          { key: 'sos_fade', name: 'SOS Fade', status: 'STOPPED', account_type: 'demo' },
+          { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
+        ],
+        scheduled_jobs: [],
+        telegram: { name: 'Telegram', status: 'RUNNING' },
+        earnings: [],
+      },
+    })
+  )
+}
+
+function owedReg(account: number = LIVE_OWED) {
+  return liveReg(account, {
+    telegram_trade_chat: '',
+    telegram_signal_chat: '',
+    missing_channels: ['trades', 'signals'],
+    channels_reason: OWED_REASON.replace(String(LIVE_OWED), String(account)),
+  })
+}
+
+test('a live account with no channels says so, and Add bot is refused with the reason', async ({
+  page,
+}) => {
+  // MUTATION: drop the `channels_reason` branch from the drawer's add-block → Add bot enables and
+  // this goes red. ⚠ The REASON is asserted, not only the disabled state: a greyed button with no
+  // explanation reads as a busy account.
+  await mock(page, [], [owedReg(ACCOUNT)])
+  await openAccount(page)
+  const chip = page.getByTestId('no-channels')
+  await expect(chip).toBeVisible()
+  await expect(chip).toHaveText(/no trades or signals channel/)
+  await expect(page.getByTestId('add-bot')).toBeDisabled()
+  await expect(page.getByTestId('add-bot')).toHaveAttribute(
+    'title',
+    /no trades and signals channel/
+  )
+})
+
+test('a live account WITH its channels shows no chip and takes a bot', async ({ page }) => {
+  // The control for the case above — without it a drawer that refused every live account passes.
+  await mock(page, [], [liveReg(ACCOUNT)])
+  await openAccount(page)
+  await expect(page.getByTestId('add-bot')).toBeEnabled()
+  await expect(page.getByTestId('no-channels')).toHaveCount(0)
+})
+
+test('a recorded account with NO channel fields at all still renders and takes a bot', async ({
+  page,
+}) => {
+  // ⚠ Null-safety, measured rather than assumed: an answer recorded before 2026-09-13 carries none
+  // of the new fields. A drawer that read `.length` off a missing list would blank the panel.
+  const old = reg() as Record<string, unknown>
+  delete old.missing_channels
+  delete old.channels_reason
+  await mock(page, [], [old])
+  await openAccount(page)
+  await expect(page.getByTestId('add-bot')).toBeEnabled()
+  await expect(page.getByTestId('no-channels')).toHaveCount(0)
+})
+
+test('Take live LISTS a channel-less live account but will not let it be picked', async ({
+  page,
+}) => {
+  // 🔴 The one control that puts money at risk. The bots would refuse to start on that account, so
+  // offering it walks the reader through a typed phrase to a set that will not run.
+  // ⚠ It is LISTED and disabled with the reason, never hidden — a destination that silently
+  // vanishes reads as a bug. Two configured accounts sit beside it as the control, and two so
+  // nothing is auto-picked (which would send a preview this check does not route).
+  // MUTATION: make `refusalOf` ignore `channels_reason` → the owed account enables → red.
+  await mock(page, STACKED, [reg(), liveReg(34957946), liveReg(800345678), owedReg()])
+  await routeStopped(page)
+  await openAccount(page)
+  await page.getByTestId('go-live').click()
+  const owed = page.getByTestId(`golive-account-${LIVE_OWED}`)
+  await expect(owed).toBeDisabled()
+  await expect(owed).toHaveAttribute('title', /no trades and signals channel/)
+  await expect(owed).toContainText('needs its Telegram channels')
+  await expect(page.getByTestId('golive-account-34957946')).toBeEnabled()
+})
+
+test('Take live is REFUSED when the only live account owes its channels', async ({ page }) => {
+  // The drawer's half of the picker rule: with nowhere ready to go, the button says so rather than
+  // opening a panel whose every destination is disabled.
+  // MUTATION: drop the `channels_reason` filter from `liveTargets` → the button enables → red.
+  await mock(page, STACKED, [reg(), owedReg()])
+  await routeStopped(page)
+  await openAccount(page)
+  const button = page.getByTestId('go-live')
+  await expect(button).toBeDisabled()
+  await expect(button).toHaveAttribute('title', /trades and signals channels/)
+})
+
+test('the form warns that a LIVE account still owes its channels, until they are typed', async ({
+  page,
+}) => {
+  // Said BEFORE the save, not as the refusal a later move would meet.
+  // MUTATION: compute `owed` without the live check → a demo form warns too; drop it → red here.
+  await mock(page, [], [owedReg(ACCOUNT)])
+  await openEditForm(page)
+  const owed = page.getByTestId('f-channels-owed')
+  await expect(owed).toContainText('trades and signals')
+  await page.getByTestId('f-chat-trade').fill('-1004410831757')
+  await expect(owed).toContainText('signals')
+  await expect(owed).not.toContainText('trades')
+  await page.getByTestId('f-chat-signal').fill('-1003332727688')
+  await expect(owed).toHaveCount(0)
+})
+
+test('a DEMO account form owes no channel', async ({ page }) => {
+  // The control: the shared rooms are a demo account's default and always have been.
+  await mock(page, [], [reg()])
+  await openEditForm(page)
+  await expect(page.getByTestId('f-channels')).toBeVisible()
+  await expect(page.getByTestId('f-channels-owed')).toHaveCount(0)
+})
+
+test('Send test posts the TYPED id and shows what the box said, bound to that id', async ({
+  page,
+}) => {
+  // 🔴 A wrong id fails silently at the moment a real fill is sent, so the only honest check is to
+  // post. Telegram's own reason must survive to the page. ⚠ The verdict belongs to the value it
+  // tested: edit the field and it goes, or a red (or green) mark sits beside an untested id.
+  // MUTATION: render the verdict regardless of the current value → the last assertion goes red.
+  await mock(page, [], [reg()])
+  const sent: Record<string, unknown>[] = []
+  await page.route(`**/api/bots/accounts/registry/${ACCOUNT}/test-channel`, async (route) => {
+    sent.push(route.request().postDataJSON())
+    return route.fulfill({
+      json: {
+        ok: false,
+        kind: 'trade',
+        chat_id: '-1009999999999',
+        detail: 'FAIL: could not post to -1009999999999. Bad Request: chat not found',
+      },
+    })
+  })
+  await openEditForm(page)
+  await page.getByTestId('f-chat-trade').fill('-1009999999999')
+  await page.getByTestId('test-chat-trade').click()
+  const verdict = page.getByTestId('chat-verdict-trade')
+  await expect(verdict).toHaveAttribute('data-ok', 'false')
+  await expect(verdict).toContainText('chat not found')
+  expect(sent).toEqual([{ kind: 'trade', chat_id: '-1009999999999' }])
+  await page.getByTestId('f-chat-trade').fill('-1004410831757')
+  await expect(verdict).toHaveCount(0)
+})
+
+test('a box that cannot be REACHED is "not tested", never a failed channel', async ({ page }) => {
+  // 🔴 Rule 1 on the page: *the channel does not work* and *nobody could ask* are different facts,
+  // and reading the second as the first sends the reader hunting for a wrong id that was right.
+  // MUTATION: set `ok: false` in the error branch → data-ok reads "false" → red.
+  await mock(page, [], [reg()])
+  await page.route(`**/api/bots/accounts/registry/${ACCOUNT}/test-channel`, (route) =>
+    route.fulfill({ status: 502, json: { detail: 'ssh to forexvps said nothing' } })
+  )
+  await openEditForm(page)
+  await page.getByTestId('f-chat-signal').fill('-1003332727688')
+  await page.getByTestId('test-chat-signal').click()
+  const verdict = page.getByTestId('chat-verdict-signal')
+  await expect(verdict).toHaveAttribute('data-ok', 'unknown')
+  await expect(verdict).toContainText('Not tested')
+})
+
+test('Save account SENDS all three channels', async ({ page }) => {
+  // A field the form shows and never sends is worse than no field: it looks saved.
+  // MUTATION: drop one channel from the submit body → red.
+  await mock(page, [], [reg()])
+  let body: Record<string, unknown> | null = null
+  await page.route(`**/api/bots/accounts/registry/${ACCOUNT}`, async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    body = route.request().postDataJSON()
+    return route.fulfill({ json: reg() })
+  })
+  await openEditForm(page)
+  await page.getByTestId('f-chat-trade').fill('-1004410831757')
+  await page.getByTestId('f-chat-signal').fill('@lwg_signals')
+  await page.getByTestId('f-chat-health').fill('  -1001234567890  ')
+  await page.getByTestId('save-account').click()
+  await expect.poll(() => body).not.toBeNull()
+  expect(body).toMatchObject({
+    telegram_trade_chat: '-1004410831757',
+    telegram_signal_chat: '@lwg_signals',
+    // Trimmed: a stray space survives a copy-paste and looks configured in every listing.
+    telegram_health_chat: '-1001234567890',
+  })
 })

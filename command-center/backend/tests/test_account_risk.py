@@ -189,7 +189,12 @@ def budget(monkeypatch):
         r, "_git_commit_push", lambda paths, msg, reason: out.commits.append((list(paths), msg))
     )
     monkeypatch.setattr(r, "_ssh", lambda cmd: "Already up to date.")
-    monkeypatch.setattr(r, "_notify_telegram", lambda *a, **k: out.notes.append(a))
+    out.routed = []
+    monkeypatch.setattr(
+        r,
+        "_notify_telegram",
+        lambda *a, **k: out.notes.append(a) or out.routed.append(k.get("account")),
+    )
     return out
 
 
@@ -207,6 +212,15 @@ def test_ONE_save_writes_every_share_AND_the_cap_in_ONE_commit(client, budget):
     assert budget.written["extreme_leg_demo"]["account_risk_cap_pct"] == 15.0
     assert len(budget.commits) == 1 and len(budget.commits[0][0]) == 2
     assert "no restart" in body["applies"]
+
+
+def test_the_risk_alert_lands_in_THAT_accounts_room(client, budget):
+    """Each account may name its own health channel (2026-09-13); a risk change on one owner's
+    account is news for that owner. MUTATION: drop `account=account` from the RISK CHANGED call
+    -> red."""
+    r = client.patch(f"/bots/accounts/{ACCOUNT}/risk", json={"shares": {"sos_fade_demo": 4.0}})
+    assert r.status_code == 200, r.text
+    assert budget.routed == [ACCOUNT]
 
 
 def test_a_save_that_ADDS_risk_past_the_cap_is_refused_and_writes_NOTHING(client, budget):
@@ -318,6 +332,12 @@ def _stub_move(monkeypatch, *, kind="demo", running=False, groups=None):
         symbol_suffix=".p",
         assignable=True,
         unassignable_reason="",
+        # A live account that names its Telegram channels, i.e. one that is READY to receive a
+        # bot. ⚠ Defaulted rather than left off: an account with no channels is refused outright
+        # since 2026-09-13, so omitting this would make every case here pass for the wrong reason.
+        # The missing-channel case has its own test, which sets a reason.
+        missing_channels=[],
+        channels_reason="",
         kind=kind,
     )
     monkeypatch.setattr(r, "_bot_running_state", lambda key: running)

@@ -66,10 +66,24 @@ def test_an_unreadable_config_or_registry_costs_the_tag_never_the_message(world,
     assert bots._bot_label("sos_fade_demo") == "SOS Fade"
 
 
+class _Sent(list):
+    """The texts, plus WHICH bot each one said it was about (`routed`) — the half that decides
+    which account's health channel it lands in (2026-09-13)."""
+
+    def __init__(self):
+        super().__init__()
+        self.routed: list = []
+
+
 @pytest.fixture
 def sent(world, monkeypatch):
-    out: list[str] = []
-    monkeypatch.setattr(bots, "_notify_telegram", lambda text: out.append(text))
+    out = _Sent()
+
+    def _record(text, **kw):
+        out.append(text)
+        out.routed.append(kw.get("bot_key"))
+
+    monkeypatch.setattr(bots, "_notify_telegram", _record)
     monkeypatch.setattr(bots, "_launch_bot", lambda key: "")
     monkeypatch.setattr(bots, "_kill_bot", lambda key: "")
     monkeypatch.setattr(bots, "_suppress_stop_alert", lambda key: None)
@@ -90,6 +104,15 @@ def test_a_one_bot_action_announces_which_KIND_of_account_it_touched(sent, route
     bot and on its demo copy must not read the same in the health room."""
     route("sos_fade_demo")
     assert sent[-1].splitlines()[0] == head
+
+
+@pytest.mark.parametrize("route", [bots.start_bot, bots.stop_bot, bots.restart_bot])
+def test_a_one_bot_action_is_ROUTED_to_that_bots_account(sent, route):
+    """🔴 Each account may name its own health channel (2026-09-13), and a stop pressed on the
+    brother's live bot belongs in his room, not Aaron's. MUTATION: drop `bot_key=bot_key` from the
+    route's `_notify_telegram` call -> red."""
+    route("sos_fade_demo")
+    assert sent.routed[-1] == "sos_fade_demo"
 
 
 def test_the_demo_copy_is_announced_as_demo(sent):

@@ -182,7 +182,15 @@ export function GoLivePanel({
   // Only LIVE accounts are destinations. One that cannot take a bot is LISTED and DISABLED with
   // the reason, never hidden — a destination that silently vanishes reads as a bug.
   const live = registry.filter((a) => a.kind === 'live')
-  const choosable = live.filter((a) => a.assignable)
+  // Why an account cannot receive the set, or `''` — the terminal first, then the channels. 🔴 A
+  // live account with no trades or signals channel takes no bot (2026-09-13): the bots would refuse
+  // to start, so offering it would walk the reader through a typed phrase to a set that will not
+  // run. ⚠ Null-safe on the channels: a recorded answer from before that date carries none.
+  const refusalOf = (a: (typeof registry)[number]) =>
+    !a.assignable
+      ? a.unassignable_reason || 'no terminal on the box is logged into it'
+      : (a.channels_reason ?? '')
+  const choosable = live.filter((a) => !refusalOf(a))
   // With exactly one live account there is nothing to choose, so it is picked for you. The preview
   // writes nothing, and the typed phrase still stands between this and real money.
   const [account, setAccount] = useState<number | null>(() =>
@@ -264,8 +272,9 @@ export function GoLivePanel({
               return (
                 <button
                   key={a.account}
-                  disabled={!a.assignable}
-                  title={a.assignable ? undefined : a.unassignable_reason}
+                  data-testid={`golive-account-${a.account}`}
+                  disabled={!!refusalOf(a)}
+                  title={refusalOf(a) || undefined}
                   onClick={() => {
                     setAccount(a.account)
                     setTyped('')
@@ -273,7 +282,7 @@ export function GoLivePanel({
                   className={`flex items-center gap-3 px-[14px] py-[10px] rounded-lg border text-left transition-colors ${
                     selected
                       ? 'border-warn/60 bg-warn-muted'
-                      : a.assignable
+                      : !refusalOf(a)
                         ? 'border-border-subtle bg-bg-sunken hover:border-border-default'
                         : 'border-border-subtle bg-bg-sunken opacity-60 cursor-not-allowed'
                   }`}
@@ -283,7 +292,11 @@ export function GoLivePanel({
                   </span>
                   <span className="text-[13px] text-text-secondary truncate">{accountName(a)}</span>
                   <span className="ml-auto text-[11.5px] text-text-tertiary shrink-0">
-                    {a.assignable ? `${a.broker} ${a.tier}`.trim() : 'cannot take bots'}
+                    {!refusalOf(a)
+                      ? `${a.broker} ${a.tier}`.trim()
+                      : a.assignable
+                        ? 'needs its Telegram channels'
+                        : 'cannot take bots'}
                   </span>
                 </button>
               )

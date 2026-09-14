@@ -60,6 +60,12 @@ def _bot(
 
 
 def _account(number=_LIVE, *, kind="live", mt5_path=r"C:\MT5_Live", suffix=".p", **kw):
+    """A destination that is ready to receive bots.
+
+    ⚠ **The Telegram channels are part of READY as of 2026-09-13** and are defaulted here rather
+    than set per test: a live account that names none is refused outright, so leaving them out
+    would make every case below pass for the wrong reason. The case where they are MISSING gets
+    its own test, which clears them explicitly."""
     return RegisteredAccount(
         account=number,
         kind=kind,
@@ -68,7 +74,11 @@ def _account(number=_LIVE, *, kind="live", mt5_path=r"C:\MT5_Live", suffix=".p",
         mt5_path=mt5_path,
         symbol_suffix=suffix,
         account_profile="pu_ecn",
-        **kw,
+        **{
+            "telegram_trade_chat": "-1004410831757",
+            "telegram_signal_chat": "-1003332727688",
+            **kw,
+        },
     )
 
 
@@ -228,6 +238,31 @@ def test_a_destination_with_no_terminal_logged_into_it_is_refused():
     # first, and naming a single key made this assertion depend on the iteration order — it was
     # still passing under the mutation for exactly that reason.
     assert not any(plan.blocked.startswith(f"{k}:") for k in BOTH)
+
+
+def test_a_set_may_NOT_go_live_onto_an_account_with_no_channels():
+    """🔴 A LIVE ACCOUNT WITH NOWHERE TO REPORT TAKES NO BOT (Aaron, 2026-09-13, the day a second
+    person's live account joined the box). The bots this moves would refuse to start
+    (`algos/live/runner.py`), so without this the promotion commits, pushes and pulls, and leaves
+    a set of bots that will not run on real money — discovered when a fill does not arrive.
+
+    ⚠ **It asserts WHICH rule refused**, the same trap the terminal case above records: a set-level
+    guard that has been deleted still produces a per-bot refusal mentioning the account.
+    MUTATION: delete the `channels_reason` branch from `plan_go_live` → red.
+    """
+    plan = _plan(destination=_account(telegram_trade_chat="", telegram_signal_chat=""))
+    assert "no trades and signals channel" in plan.blocked
+    assert not any(plan.blocked.startswith(f"{k}:") for k in BOTH)
+
+
+def test_a_missing_channel_and_a_missing_terminal_are_DIFFERENT_refusals():
+    """Two causes needing two different jobs — log a terminal in, or enter a channel. One merged
+    message sends the reader to do only one of them."""
+    no_channel = _plan(destination=_account(telegram_signal_chat=""))
+    no_terminal = _plan(destination=_account(mt5_path=""))
+    assert "no signals channel" in no_channel.blocked
+    assert "no terminal" in no_terminal.blocked
+    assert no_channel.blocked != no_terminal.blocked
 
 
 def test_moving_a_set_onto_the_account_it_is_already_on_is_refused():
@@ -666,7 +701,13 @@ def live_env(monkeypatch, tmp_path):
         bots, "_git_commit_push", lambda paths, msg, reason: commits.append((paths, msg)) or "ok"
     )
     monkeypatch.setattr(bots, "_ssh", lambda cmd, **kw: "pulled")
-    monkeypatch.setattr(bots, "_notify_telegram", lambda msg: alerts.append(msg))
+    # `account=` since 2026-09-13: the alert lands in the DESTINATION account's health channel.
+    # ⚠ Recorded, not just accepted — a stub widened to swallow a keyword proves nothing about
+    # whether one is ever handed over, and `test_going_live_ANNOUNCES_INTO_the_new_accounts_room`
+    # below is the half that does.
+    monkeypatch.setattr(
+        bots, "_notify_telegram", lambda msg, **kw: alerts.append((msg, kw.get("account")))
+    )
     return {
         "configs": configs,
         "written": written,
@@ -839,7 +880,15 @@ def test_going_live_is_ANNOUNCED_on_telegram(client, live_env):
     """
     client.post("/bots/go-live", json=_body(confirm=f"GO LIVE {_LIVE}"))
     assert len(live_env["alerts"]) == 1
-    assert str(_LIVE) in live_env["alerts"][0]
+    assert str(_LIVE) in live_env["alerts"][0][0]
+
+
+def test_going_live_ANNOUNCES_INTO_the_new_accounts_room(client, live_env):
+    """🔴 The destination account, never the one it came from and never the shared room. This is
+    the message saying real money is now at risk, and the people who own that account are the ones
+    who have to see it. MUTATION: drop `account=plan.to_account` from the call → red."""
+    client.post("/bots/go-live", json=_body(confirm=f"GO LIVE {_LIVE}"))
+    assert live_env["alerts"][0][1] == _LIVE
 
 
 # ── The demo/live label follows the ACCOUNT, not a hardcode ─────────────────────────────

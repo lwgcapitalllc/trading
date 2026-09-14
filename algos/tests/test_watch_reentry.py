@@ -98,7 +98,7 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setattr(audit, "_REPO", tmp_path)
 
     sent: list[str] = []
-    monkeypatch.setattr(watch, "_send", lambda text, dry: sent.append(text))
+    monkeypatch.setattr(watch, "_send", lambda text, dry, account=None: sent.append(text))
     return type("Box", (), {"inst": inst, "sent": sent})()
 
 
@@ -112,6 +112,18 @@ def _health_rows(box):
     for p in (box.inst / "ledger").glob("health-*.jsonl"):
         out += [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln]
     return out
+
+
+def test_the_message_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(box, monkeypatch):
+    """Each account may name its own health channel (2026-09-13). A stub widened to ACCEPT an
+    account proves nothing about whether one is ever handed over — this is the half that does.
+    MUTATION: drop `_account(bot)` from the `_send` call in `run` -> red."""
+    seen = []
+    monkeypatch.setattr(watch, "_send", lambda text, dry, account=None: seen.append(account))
+    monkeypatch.setattr(watch, "_account", lambda bot: 34957946)
+    _write(box, _opened())
+    watch.run("bot", dry_run=False)
+    assert seen == [34957946]
 
 
 # ── the three things it says ─────────────────────────────────────────────────

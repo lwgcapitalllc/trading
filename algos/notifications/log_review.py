@@ -887,22 +887,26 @@ def write_flag(instance_dir: Path, bot_key: str, findings: List[Finding]) -> Non
         print(f"  ! could not write the review flag for {bot_key} ({e})")
 
 
-def health_chat() -> tuple[str, str, bool]:
+def health_chat(account=None) -> tuple[str, str, bool]:
     """(token, chat_id, is_dedicated). Falls back to the main group and says which it used.
 
     ⚠ The lookup goes through `notify.chat_for`, NOT a direct read of `credentials.json`. It read
-    the file itself until 2026-08-05, which silently ignored `LWG_TELEGRAM_HEALTH_CHAT` — an env
-    override this repo's own template documented and nothing honoured, so setting it routed every
-    finding to the main group while the docs said otherwise. One resolver, one answer.
+    the file itself until 2026-08-05, which silently ignored the environment override — one this
+    repo's own template documented and nothing honoured, so setting it routed every finding to the
+    main group while the docs said otherwise. One resolver, one answer.
+
+    `account` is the broker login the finding is about, so an account that names its own health
+    channel gets its bots' findings there (2026-09-13). An account that names none keeps the
+    shared room, live accounts included.
     """
     token, _group, _admin = telegram_credentials()
-    chat, dedicated = chat_for(HEALTH)
+    chat, dedicated = chat_for(HEALTH, account=account)
     return token, chat, dedicated
 
 
-def send(text: str, dry_run: bool = False) -> bool:
-    token, chat, dedicated = health_chat()
-    where = "health chat" if dedicated else "main group (set telegram_health_chat to split)"
+def send(text: str, dry_run: bool = False, account=None) -> bool:
+    token, chat, dedicated = health_chat(account)
+    where = "health chat" if dedicated else "main group (set a health channel to split)"
     if dry_run:
         print(f"  [dry run] would send to the {where}:\n{text}\n")
         return True
@@ -955,6 +959,9 @@ def main(argv=None) -> int:
         # Its name plus LIVE or demo (`bot_state.bot_label`): two copies of one strategy share a
         # name since 2026-09-11, and a REVIEW finding in the shared health room must say which.
         name = _bot_state.bot_label(bot_key)
+        # Which account this finding is ABOUT, so it lands in that account's health channel when
+        # it names one (2026-09-13). An account that names none keeps the shared room.
+        account = _bot_state.read_account(bot_key)
         try:
             bs = _bot_state.read_bot(bot_key)
         except Exception as e:
@@ -981,7 +988,7 @@ def main(argv=None) -> int:
                 text = alert(
                     "✅", "REVIEW", name, f.title, f.detail, f"Nothing to do: {f.resolved}"
                 )
-            if send(text, args.dry_run):
+            if send(text, args.dry_run, account):
                 total_new += 1
                 if not args.dry_run:
                     seen.append(f.key)

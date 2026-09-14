@@ -353,12 +353,18 @@ export function AccountDrawer({
    * as a refusal after it. ⚠ A password the VPS could not be ASKED about (`null`) blocks nothing:
    * only a definite no does, or the reader is sent to re-enter one that is already there.
    */
+  // 🔴 A LIVE account with no trades or signals channel takes no bot (2026-09-13) — the server
+  // refuses the move and the bot would refuse to start. Checked after the terminal and before the
+  // password: each needs different work, so each gets its own sentence. ⚠ Null-safe — a recorded
+  // answer from before that date carries no reason.
   const addBlock =
     reg && !reg.assignable
       ? `Cannot add a bot here — ${reg.unassignable_reason || 'no terminal on the box is logged into it'}.`
-      : reg?.has_password === false
-        ? 'No password is stored for this account, so a bot put here cannot log in. Add the trading password first (Edit).'
-        : null
+      : reg?.channels_reason
+        ? `Cannot add a bot here — ${reg.channels_reason}`
+        : reg?.has_password === false
+          ? 'No password is stored for this account, so a bot put here cannot log in. Add the trading password first (Edit).'
+          : null
 
   /**
    * Why this set cannot go live, or `null` when it can — worst first, ONE reason. ⚠ A bot the box
@@ -367,11 +373,15 @@ export function AccountDrawer({
    * that is trading.
    */
   const anyRunning = group.bots.some((b) => statusByKey.get(b.key) !== 'STOPPED')
-  const liveTargets = registry.filter((a) => a.kind === 'live' && a.assignable)
+  // A live account that owes its Telegram channels is no target either (2026-09-13) — the same rule
+  // the picker applies — so Take live is not offered when every live account would be refused.
+  const liveTargets = registry.filter(
+    (a) => a.kind === 'live' && a.assignable && !(a.channels_reason ?? '')
+  )
   const goLiveBlock: string | null = anyRunning
     ? 'Stop every bot on this account first — a bot reads its account when it starts, so a move cannot reach a running one'
     : liveTargets.length === 0
-      ? 'No live account with a terminal on the box to move them to'
+      ? 'No live account is ready to take them — each needs a terminal on the box and its trades and signals channels'
       : null
 
   // 🔴 SERVED, never summed here — `BotAccountGroup.share_total_pct` carries why in its own type.
@@ -538,6 +548,18 @@ export function AccountDrawer({
             >
               no terminal
             </span>
+          )}
+          {/* A BUTTON, like the password chip: it opens the form where the channel is entered. Only
+           *  a live account ever owes one, so a demo account never shows it. */}
+          {reg && (reg.missing_channels ?? []).length > 0 && (
+            <button
+              data-testid="no-channels"
+              onClick={() => setEditing(true)}
+              title={reg.channels_reason}
+              className={`${chipCls} bg-warn-muted text-warn-text border-warn/40 hover:bg-warn/15 transition-colors`}
+            >
+              no {(reg.missing_channels ?? []).join(' or ')} channel · add
+            </button>
           )}
           {/* ⚠ An account a bot NAMES that nobody registered still works — the move reads its
            *  peers — so this says what this page cannot do with it rather than hiding it. */}

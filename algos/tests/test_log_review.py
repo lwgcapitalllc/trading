@@ -1267,3 +1267,17 @@ def test_an_OVER_finding_is_announced_as_news_and_an_OPEN_one_as_an_alarm(
 
     _run_main(tmp_path, monkeypatch, _halted_last())
     assert "🔴 REVIEW · Bot" in capsys.readouterr().out
+
+
+def test_a_finding_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(tmp_path, monkeypatch):
+    """Each account may name its own health channel (2026-09-13), so a finding has to say which
+    account it is about. A `send` widened to ACCEPT an account proves nothing about whether one is
+    ever handed over — this is the half that does.
+
+    MUTATION: drop the account from the `send(...)` call in `main` -> red.
+    """
+    seen = []
+    monkeypatch.setattr(lr, "send", lambda text, dry_run=False, account=None: seen.append(account))
+    monkeypatch.setattr(lr._bot_state, "read_account", lambda k: 34957946)
+    _run_main(tmp_path, monkeypatch, _halted_last())
+    assert seen and set(seen) == {34957946}

@@ -155,6 +155,62 @@ def is_assigned(bot_key: str) -> bool:
     return raw.get("account") is not None
 
 
+#: The rows as they were last read SUCCESSFULLY. See `_account_rows`.
+_accounts_cache = None
+
+
+def _account_rows():
+    """Every row of the account registry, or **`None` when it has never been readable here**.
+
+    Read per call (the file is a handful of rows) so a corrected row reaches a running bot.
+
+    🔴 **A failed read answers with the LAST GOOD rows, and that cache is load-bearing rather than
+    an optimisation.** The box's hourly ledger sync runs `git pull`, which REWRITES this file — so
+    a message composed inside that window would otherwise be told its account does not exist, and
+    for a live account that means a fill nobody is sent (`notify.chat_for` refuses to borrow a
+    room). The cache is consulted ONLY when the read fails, so a row somebody edited on purpose is
+    picked up on the next message either way.
+
+    NEVER raises: every caller is building a notification or a label, and neither may be able to
+    stop a trading loop.
+    """
+    global _accounts_cache
+    try:
+        rows = json.loads(_ACCOUNTS.read_text(encoding="utf-8")).get("accounts")
+    except (OSError, ValueError, AttributeError):
+        return _accounts_cache
+    if not isinstance(rows, list):
+        return _accounts_cache
+    _accounts_cache = rows
+    return rows
+
+
+def account_row(account):
+    """This login's row in the account registry. **THREE answers, never two:** the row itself, `{}`
+    when the registry was read and does not carry this account (or there is no account at all), and
+    **`None` when the registry could not be read**.
+
+    That third state is the whole reason this is not a plain lookup. *This account names no
+    Telegram room* and *nobody could open the file that would say* call for opposite answers in
+    `notify.chat_for` — one sends to the shared room, the other must not decide anything — and a
+    single `None` for both is this repo's oldest defect shape.
+
+    NEVER raises.
+    """
+    if account is None:
+        return {}
+    rows = _account_rows()
+    if rows is None:
+        return None
+    for row in rows:
+        try:
+            if int(row.get("account")) == int(account):
+                return row
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return {}
+
+
 def account_kind(account):
     """`"live"` or `"demo"` for this login, off its row in the account registry. **`None` when the
     registry does not say** — no account (benched), a login nobody registered, an unreadable file,
@@ -165,25 +221,13 @@ def account_kind(account):
     demo/live label and its go-live refusal read, so a message and the Bots page cannot disagree.
 
     ⚠ `None` is never guessed into a kind. A message about an account nobody can classify keeps
-    the plain name and the shared room — which is what every message did before this existed.
+    the plain name — which is what every message did before this existed.
 
-    Read per call (the file is five rows) so a corrected row reaches a running bot. NEVER raises:
-    its callers are building a notification, and that may not be able to stop a trading loop.
+    NEVER raises: its callers are building a notification, and that may not be able to stop a
+    trading loop.
     """
-    if account is None:
-        return None
-    try:
-        rows = json.loads(_ACCOUNTS.read_text(encoding="utf-8")).get("accounts") or []
-    except (OSError, ValueError, AttributeError):
-        return None
-    for row in rows:
-        try:
-            if int(row.get("account")) != int(account):
-                continue
-        except (TypeError, ValueError, AttributeError):
-            continue
-        kind = row.get("kind")
-        return kind if kind in _KIND_TAGS else None
+    kind = (account_row(account) or {}).get("kind")
+    return kind if kind in _KIND_TAGS else None
     return None
 
 

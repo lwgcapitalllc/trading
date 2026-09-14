@@ -621,3 +621,57 @@ cost nothing, because exactly **4** of 2,872 lines reach the parser either way.
 tests could not catch their mutation first time: one gave a bot `balance=None` so *"summed"* and
 *"read once"* were the same assertion, and one targeted a branch that never runs when the opening
 is `None`. **Check that a test's inputs can distinguish the behaviours it names.**
+
+## A LIVE account names its own Telegram channels, and no door puts a bot on one that does not (2026-09-13)
+
+**Aaron's rule, the day a second person's live account (35710389) joined the box.** Two owners,
+two lots of real money, and neither may read the other's fills. A Telegram room is therefore a
+property of the **account** — three fields on its registry row (trades, signals, health) — and
+never of the bot. The bot refuses to start on a live account that names no trades or signals
+channel (`algos/live/runner.py`, exit 5); this app is the other half and refuses to PUT one there.
+
+**The four doors, each refused with the same sentence (`RegisteredAccount.channels_reason`):**
+
+- **Moving one bot** onto a live account with no channels — `set_bot_account`, 409. A bot already
+  on that account is not "moving onto it" and is not asked.
+- **Taking a proven set live** — `services/go_live.py`, blocked. A separate refusal from the
+  missing-terminal one, because each needs different work.
+- **Clearing a live account's channels while bots are on it** — `register_account`, 409. ⚠ It
+  refuses the STATE, not the change: a row with no bots saves with no channels, because that is
+  how a live account gets registered before its owner has been asked for one.
+- **The Add bot button** on the account panel — disabled with the reason, before the click.
+
+⚠ **Health is optional by decision.** Most of it is about the one box every account shares, so an
+account naming none falls back to the shared room. A demo account owes nothing and may name its
+own.
+
+**A chat id is validated when typed** (`_CHAT_ID`: a number of 5–20 digits with an optional
+leading minus, or a public `@name`). A wrong id otherwise fails at the moment a real fill is sent.
+
+### This app's own alerts land in the account's health channel
+
+`_notify_telegram(text, bot_key=…, account=…)` names what a message is ABOUT, and
+`_account_health_chat` looks that account's health channel up in the registry, per call, never
+raising. 🔴 **The deploy thread is why this matters:** the PROMOTED root is sent from here and the
+bot's STOPPED and ONLINE are REPLIES sent from the box into its account's channel — a reply only
+threads inside one chat. The three **All bots** alerts (start, stop, restart) are about the box and
+deliberately name no account. `tests/test_account_channels.py` reads the router and refuses any
+new `_notify_telegram(...)` that names neither, so a route added later cannot quietly land in the
+shared room.
+
+### Send test — `POST /bots/accounts/registry/{account}/test-channel`
+
+Runs `algos/tools/verify_channel.py` **on the box**, because the Telegram token lives only in the
+box's credentials file and a Telegram bot can only post where it is a member — a message sent from
+a laptop tests a different sender. It writes nothing.
+
+- `ok` is the tool's **exit code**, never a word read out of its text.
+- ssh's own failure (255, nothing printed) is a **502**, never `ok: false` — "the channel is
+  wrong" and "nobody could ask" need different work.
+- A typed id goes as `--chat-id="…"`: every channel id starts with a minus, which argparse reads
+  as a flag after a space unless the value is all digits.
+- Refused by the browser guard (`.claude/mcp/browser_guard.js`) — it posts a real message.
+
+**TESTED:** `tests/test_account_channels.py` (39), plus routing checks added to
+`test_bot_label.py`, `test_bot_promote.py`, `test_account_risk.py` and `test_go_live.py`. Full
+backend suite 2194 passed, 8 skipped.

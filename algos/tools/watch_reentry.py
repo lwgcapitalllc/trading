@@ -128,13 +128,25 @@ def _summarise(rep: audit.Report, when: str, label: str = "") -> str:
     return "\n".join(lines)
 
 
-def _send(text: str, dry_run: bool) -> None:
+def _account(bot: str):
+    """The broker login this bot trades, so the message lands in that ACCOUNT's health channel
+    when it names one (2026-09-13). `None` — the shared room — if the lookup cannot run; a message
+    must never be lost over its routing."""
+    try:
+        import bot_state
+
+        return bot_state.read_account(bot)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _send(text: str, dry_run: bool, account=None) -> None:
     if dry_run:
         print("\n--- would send ---\n" + text + "\n------------------")
         return
     from notify import HEALTH, send_telegram
 
-    send_telegram(text, HEALTH)
+    send_telegram(text, HEALTH, account=account)
 
 
 def _health(bot: str, **fields) -> None:
@@ -173,7 +185,11 @@ def run(bot: str, dry_run: bool = False) -> int:
             continue
         events = [r for r in rows if r.get("ticket") == ticket and r.get("kind") != "trade"]
         rep = audit.audit_trade(op, closed, events, params)
-        _send(_summarise(rep, "now closed" if closed else "still open", _label(bot)), dry_run)
+        _send(
+            _summarise(rep, "now closed" if closed else "still open", _label(bot)),
+            dry_run,
+            _account(bot),
+        )
         sent += 1
         if not dry_run:
             reported[str(ticket)] = half
@@ -218,6 +234,7 @@ def main(argv=None) -> int:
                 "Nothing is watching for the first re-entry until this is fixed. "
                 "Silence from here does NOT mean nothing happened.",
                 args.dry_run,
+                _account(args.bot),
             )
         except Exception:
             pass  # a broken notifier must not hide the exit code below

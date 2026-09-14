@@ -50,6 +50,14 @@ const CASES = [
   // Sync REWRITES the account list and pushes it to the box. It sits under /registry/ so the
   // existing account-write rule covers it; this pins that it stays there.
   [REFUSE, 'POST', '/api/bots/accounts/registry/sync', 'sync the account list with the VPS'],
+  // Writes nothing, and is refused anyway: it posts a real message into a channel a person reads,
+  // by running a program on the live box.
+  [
+    REFUSE,
+    'POST',
+    '/api/bots/accounts/registry/34957946/test-channel',
+    'post a test message into a Telegram channel',
+  ],
   [REFUSE, 'POST', '/api/bots/users', 'add a Telegram user'],
   [REFUSE, 'DELETE', '/api/bots/users/123456', 'remove a Telegram user'],
   [REFUSE, 'POST', '/api/system/mt5-agent/start', 'start an agent on a trading box'],

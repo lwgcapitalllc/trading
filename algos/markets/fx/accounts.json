@@ -3,6 +3,7 @@
   "_WHAT_IS_HERE_AND_WHAT_IS_NOT": "Every field below is a fact about the BROKER ACCOUNT - which server it logs into, which terminal on the VPS is logged into it, what suffix it puts on a symbol, which measured cost profile prices it. What is deliberately NOT here is the account-level RISK CAP: that is DERIVED from the instance configs of the bots on the account, because the bots are what actually read it, and a second copy here would be a second answer that can disagree with them. Same rule as the grouping itself - see command-center/backend/services/bot_accounts.py.",
   "_symbol_suffix": "The string this account appends to an instrument's base name: PU Prime Standard quotes gold as XAUUSD.s and its Prime/ECN books quote it as XAUUSD.p. Moving a bot between accounts REBASES its symbol onto the target's suffix and keeps the instrument, so a gold bot and an FX bot can share an account without either being rewritten to the other's instrument. THREE STATES, and they must not collapse into two: a string is the suffix, an EMPTY STRING means this broker quotes bare symbols (XAUUSD), and NULL means nobody has recorded it - a bot moved onto such an account keeps whatever symbol it had and the move SAYS SO rather than guessing.",
   "_mt5_path": "The terminal on the VPS that is logged into this account. EMPTY means no terminal serves it, and assigning a bot to it is REFUSED rather than left to fail at connect time with a message about credentials. That is why the two tier-measurement accounts below carry no path: they were logged into MT5_Lab for minutes at a time to read spreads and commission, and MT5_Lab drives the backtest agent - a live bot must never be pointed at it.",
+  "_telegram_channels": "Where THIS account's bots report. telegram_trade_chat carries fills, telegram_signal_chat carries pre-trade setups, telegram_health_chat carries everything about the machinery. Aaron's call, 2026-09-13: two people own two live accounts, so each account names its own rooms and neither can read the other's money. A LIVE account never borrows another account's room - a trade or signal with no room of its own is NOT SENT, and a live bot REFUSES TO START without both a trade and a signal channel. Health is optional and falls back to the shared room, because it is about the one box every account shares. A demo account with no rooms keeps the shared rooms in algos/credentials.json, unchanged. A chat id is not a secret - nothing can post without the bot token, which stays in the git-ignored credentials file - so these are committed, reach the box with a pull, and survive a rebuild. Read per message, so an edit reaches a running bot with no restart. Edit them from the Command Center (Bots -> Accounts), which validates the shape and refuses to blank a live account's rooms while bots are on it.",
   "accounts": [
     {
       "account": 700152905,
@@ -14,6 +15,9 @@
       "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
+      "telegram_trade_chat": "",
+      "telegram_signal_chat": "",
+      "telegram_health_chat": "",
       "note": "The demo account. sos_fade_demo traded here from 2026-08-12 and extreme_leg_demo from 2026-09-04, until both moved to live account 34957946 on 2026-09-11; their history stays here. Which bots trade it NOW is shown on Bots -> Accounts and is deliberately not written here - this note called it 'the live bot's account' after that stopped being true. Chosen by measurement, not preference: Prime and ECN are the SAME book with two commission rates (same symbol, same $0.12 spread, same swap, same 20-point stops level), so the cheaper toll wins with no trade-off to weigh. Round trip per ounce - Standard $0.31, Prime $0.19, ECN $0.14. Commission is a REAL cost here ($1.00/side/lot) where Standard charged none and buried $0.19 of markup in the spread instead."
     },
     {
@@ -26,6 +30,9 @@
       "mt5_path": "",
       "symbol_suffix": ".s",
       "account_profile": "puprime_standard",
+      "telegram_trade_chat": "",
+      "telegram_signal_chat": "",
+      "telegram_health_chat": "",
       "note": "The account sos_fade_demo traded from 2026-08-05 to 2026-08-12, kept because it is real and reachable and its balance history stays on it. The terminal is NOT logged into it today - MT5_FFT is on the ECN account - so assigning a bot here means logging that terminal back in first."
     },
     {
@@ -38,6 +45,9 @@
       "mt5_path": "",
       "symbol_suffix": ".s",
       "account_profile": "puprime_standard",
+      "telegram_trade_chat": "",
+      "telegram_signal_chat": "",
+      "telegram_health_chat": "",
       "note": "Opened 2026-08-10 to read the Standard tier's spread and commission off our own terminal rather than off a marketing page. NO TERMINAL SERVES IT - it was logged into MT5_Lab for minutes and MT5_Lab drives the backtest agent, so a bot must not be pointed at it. It is here so the measurement has a home, not so anything can trade it."
     },
     {
@@ -50,6 +60,9 @@
       "mt5_path": "",
       "symbol_suffix": ".p",
       "account_profile": "puprime_prime",
+      "telegram_trade_chat": "",
+      "telegram_signal_chat": "",
+      "telegram_health_chat": "",
       "note": "The same probe on the Prime tier, and the one that settled the decision: byte for byte identical to ECN except commission ($3.50/side/lot against $1.00). NO TERMINAL SERVES IT, for the reason above."
     },
     {
@@ -62,7 +75,10 @@
       "mt5_path": "C:\\MT5_Scalper\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
-      "note": ""
+      "telegram_trade_chat": "-1004410831757",
+      "telegram_signal_chat": "-1003332727688",
+      "telegram_health_chat": "",
+      "note": "Aaron's own live account. Its trade and signal channels are the ones shared/telegram_rooms.json named as THE live rooms until 2026-09-13, moved here so the other live account can name its own; health falls through to the shared room."
     },
     {
       "account": 35710389,
@@ -74,7 +90,10 @@
       "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
-      "note": "Added by Sync VPS on 2026-09-13: found logged in on PU Prime MT5 Terminal."
+      "telegram_trade_chat": "",
+      "telegram_signal_chat": "",
+      "telegram_health_chat": "",
+      "note": "Added by Sync VPS on 2026-09-13: found logged in on PU Prime MT5 Terminal. Its owner enters his own Telegram channels; until both a trade and a signal channel are set, a bot on this account REFUSES TO START."
     }
   ]
 }

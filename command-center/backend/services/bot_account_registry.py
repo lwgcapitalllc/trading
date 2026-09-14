@@ -64,6 +64,17 @@ __all__ = [
 # config here follows.
 _PROSE = re.compile(r"^_")
 
+# 🔴 A Telegram destination is a numeric chat id or a public `@name`, and this is the ONE
+# definition — the frontend shows the same rule in its hint and the box-side tool posts to
+# whatever this let through. It is a SHAPE check and nothing more: only posting to a channel
+# proves the bot can reach it, which is what `algos/tools/verify_channel.py` is for.
+#
+# ⚠ Deliberately loose on the digit count. A supergroup id is `-100` plus ten digits, a basic
+# group's is shorter and carries no `-100` prefix (Aaron's signals group was one), and a private
+# chat id is positive — a rule tightened to the shape somebody happens to have would refuse the
+# next kind of chat with a message about it not being a channel.
+_CHAT_ID = re.compile(r"-?\d{5,20}|@[A-Za-z0-9_]{5,32}")
+
 
 class RegistryError(ValueError):
     """A registry the caller may not write, or an entry it may not store. Routers turn it into a
@@ -83,7 +94,52 @@ class RegisteredAccount:
     mt5_path: str = ""  # "" = no terminal serves it ⇒ not assignable
     symbol_suffix: Optional[str] = None  # None = unrecorded; "" = bare symbols
     account_profile: str = ""  # a key of backtest.fills.PROFILES
+    # Where THIS account's bots report. See `missing_channels` below.
+    telegram_trade_chat: str = ""
+    telegram_signal_chat: str = ""
+    telegram_health_chat: str = ""
     note: str = ""
+
+    @property
+    def missing_channels(self) -> list[str]:
+        """Which Telegram channels a LIVE account still owes before a bot may trade on it, as
+        words a person reads (`["trades", "signals"]`). Empty for every demo account.
+
+        🔴 **Aaron's rule, 2026-09-13, the day a second person's live account joined the box:**
+        the owner of an account says where its money is reported BEFORE anything puts money at
+        risk on it. Two owners, two lots of real money, and neither may read the other's fills —
+        so a live account names its own rooms and a bot on it refuses to start without them
+        (`algos/live/runner.py`). This page is the other half: it refuses to put a bot there.
+
+        ⚠ **Health is deliberately not required.** Most of it is about the one box every account
+        shares, so it falls back to the shared room — requiring it would stop a bot starting over
+        a channel that is meant to be shared.
+
+        ⚠ **The words are what a person reads, never the field names.** This list is rendered
+        straight into a refusal somebody has to act on.
+        """
+        if self.kind != "live":
+            return []
+        owed = []
+        if not self.telegram_trade_chat.strip():
+            owed.append("trades")
+        if not self.telegram_signal_chat.strip():
+            owed.append("signals")
+        return owed
+
+    @property
+    def channels_reason(self) -> str:
+        """Why a bot may not go on this account yet, or `""`. Paired with `unassignable_reason`
+        below so a caller has one sentence per cause rather than one for both — two refusals
+        needing different work must never render as one message."""
+        owed = self.missing_channels
+        if not owed:
+            return ""
+        return (
+            f"live account {self.account} has no {' and '.join(owed)} channel, so a bot on it "
+            f"would have nowhere to report real money — it would refuse to start. Enter the "
+            f"channel on the account first."
+        )
 
     @property
     def assignable(self) -> bool:
@@ -186,6 +242,18 @@ def _validate(entry: RegisteredAccount, known_profiles: Optional[set[str]]) -> N
             f"symbol_suffix {entry.symbol_suffix!r} is not a symbol suffix. It is appended to an "
             f"instrument name and sent to the broker; leave it null if it is not known."
         )
+    for field, value in (
+        ("trades", entry.telegram_trade_chat),
+        ("signals", entry.telegram_signal_chat),
+        ("health", entry.telegram_health_chat),
+    ):
+        if value.strip() and not _CHAT_ID.fullmatch(value.strip()):
+            raise RegistryError(
+                f"{value!r} is not a Telegram channel — the {field} channel must be a numeric id "
+                f"(usually a minus and twelve or more digits, copied from the channel) or a "
+                f"public @name. A value Telegram cannot resolve fails at the moment a real fill "
+                f"is sent, which is the one moment nobody is watching the log."
+            )
     # ⚠ `None` means the caller could not supply the roster, so the check is SKIPPED and that is
     # the caller's decision to state — never a silent pass. The router always supplies it.
     if known_profiles is not None and entry.account_profile:

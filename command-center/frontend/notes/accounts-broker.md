@@ -324,3 +324,28 @@ strategy the lab sizes — a self-sizing one never reaches the engine, so a mode
 the iteration does not touch (it is still SENT); the stack form's *could not check* line and its
 unmeasured-spread banner are amber (a question and a block, not a loss); and the score key says
 which unit a drawdown is judged in (`../backend/CLAUDE.md` → *Worthiness scoring*).
+
+## A LIVE account's Telegram channels — entered on the form, tested from the box (2026-09-13)
+
+**Aaron's rule, the day a second person's live account joined the box:** each live account names
+its own trades and signals channels, and a bot on one without them refuses to start. The server
+refuses every move that would put a bot there (`backend/notes/accounts-risk.md`); the page says so
+**before** the click.
+
+- **The form** (`AccountForm.tsx`) has a *Telegram channels* block with one row per channel. On a
+  live account it warns which are still owed as they are typed; a demo account owes none.
+- **Send test** beside each field posts a real message **from the trading box** (the token lives
+  only there) and shows what the box said. ⚠ **A verdict belongs to the VALUE it tested** — edit
+  the field and it goes, so no mark ever sits beside an untested id. 🔴 **Three outcomes:** arrived,
+  did not arrive (Telegram's reason, unreworded), and **not tested** when the box could not be
+  reached — rendered neutral, never as a failed channel.
+- **The account panel** (`AccountDrawer.tsx`) shows a *no … channel · add* chip that opens the
+  form, and Add bot is disabled with the reason. Checked after the terminal, before the password.
+- **Take live** (`GoLivePanel.tsx`) LISTS a channel-less live account, disabled and marked *needs
+  its Telegram channels* — never hidden, since a destination that vanishes reads as a bug.
+
+⚠ **Read the new fields null-safe.** A recorded answer from before 2026-09-13 carries none of
+them; a browser check drives exactly that row.
+
+**TESTED:** `tests/bots-accounts.spec.ts`, the checks under *A LIVE account names its own Telegram
+channels*.

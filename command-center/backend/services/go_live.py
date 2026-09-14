@@ -172,6 +172,14 @@ def plan_go_live(
         )
     if not destination.assignable:
         return _blocked(destination.unassignable_reason)
+    # 🔴 A LIVE ACCOUNT WITH NOWHERE TO REPORT TAKES NO BOT (2026-09-13). This is the one control
+    # on the page that puts money at risk, and the bots it moves would refuse to start
+    # (`algos/live/runner.py`) — so without this the promotion commits, pushes, pulls, and leaves
+    # a set of bots that will not run on real money. ⚠ It is a SEPARATE refusal from the terminal
+    # one above and says a different sentence, because the two need different work: log a terminal
+    # in, or enter a channel.
+    if destination.channels_reason:
+        return _blocked(destination.channels_reason)
 
     # ── one demo account, and every bot on it ────────────────────────────────────────────
     moving = [by_key[k] for k in sorted(bot_keys)]

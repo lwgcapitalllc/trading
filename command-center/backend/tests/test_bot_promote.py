@@ -138,6 +138,20 @@ def test_the_promoted_alert_names_the_version_it_moved_from_and_to(vps, sent):
     assert "v164 → v165" in sent[0]
 
 
+def test_the_PROMOTED_root_lands_in_the_bots_OWN_accounts_room(vps, monkeypatch):
+    """🔴 The thread depends on it. The bot's STOPPED and ONLINE are REPLIES to this message, sent
+    from the box into its account's health channel — and a reply only threads inside one chat. A
+    root in the shared room is a thread that silently stops working.
+    MUTATION: drop `bot_key=bot_key` from the PROMOTED call -> red."""
+    routed = []
+    # Answers None (no message id), so the promote does not go on to write the thread file on
+    # the box — that write is covered by its own tests and is not what this one is about.
+    monkeypatch.setattr(bots, "_notify_telegram", lambda m, **k: routed.append(k.get("bot_key")))
+    vps["out"] = f"  pinned abc123\n{bots._VERSION_MARK} 164 165\n{bots._PROMOTE_OK}"
+    bots.promote_bot("sos_fade_demo", REQ)
+    assert routed and routed[0] == "sos_fade_demo"
+
+
 def test_an_uncountable_side_reads_v_question_and_is_still_PRINTED(vps, sent):
     """A bot promoted before the version stamp existed has no "from". Dropping the line
     silently would make the message look complete while answering half the question; `v?` says

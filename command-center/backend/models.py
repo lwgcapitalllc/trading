@@ -1142,11 +1142,22 @@ class BotAccountRegistration(BaseModel):
     mt5_path: str = ""  # "" = no terminal serves it ⇒ not assignable
     symbol_suffix: Optional[str] = None
     account_profile: str = ""
+    # Where this account's bots report. A LIVE account must name its own trades and signals
+    # channels before a bot may be put on it — neither owner of a live account on this box may
+    # read the other's fills, so nothing falls back. Health is optional and shared.
+    telegram_trade_chat: str = ""
+    telegram_signal_chat: str = ""
+    telegram_health_chat: str = ""
     note: str = ""
     # Derived, read-only. Served so the page can disable an unassignable account with its reason
     # rather than offering a move that is refused after the reader has committed to it.
     assignable: bool = True
     unassignable_reason: str = ""
+    # Which channels a live account still owes, as words a person reads. Empty for a demo account
+    # and for a live one that names both. Served for the same reason as `unassignable_reason`:
+    # the page says why a move is unavailable instead of offering it and refusing afterwards.
+    missing_channels: list[str] = []
+    channels_reason: str = ""
     has_password: Optional[bool] = None  # None = the VPS could not be asked, never "no password"
     bot_keys: list[str] = []  # bots currently naming this account
 
@@ -1168,6 +1179,9 @@ class BotAccountRegistrationWrite(BaseModel):
     mt5_path: str = ""
     symbol_suffix: Optional[str] = None
     account_profile: str = ""
+    telegram_trade_chat: str = ""
+    telegram_signal_chat: str = ""
+    telegram_health_chat: str = ""
     note: str = ""
     # The MT5 password, if it is being set in the same action. **Write-only** — it never comes
     # back out of any endpoint, and it is stored in the git-ignored `algos/credentials.json` on
@@ -1200,6 +1214,43 @@ class BotAccountPassword(BaseModel):
             # configured account whose login fails. Deleting is a different action.
             raise ValueError("password must not be empty; use the delete action to remove one")
         return v
+
+
+class BotChannelTest(BaseModel):
+    """Post a test message to one Telegram channel, from the box.
+
+    A chat id is typed in by a person, and a wrong one fails in the one way this whole design
+    exists to stop: silently, at the moment a real fill arrives. The only honest check is to post.
+
+    `chat_id` tests an id BEFORE it is saved; leaving it blank tests what the account's saved row
+    already names, which is the check that says a live bot can actually report.
+    """
+
+    kind: str = "trade"  # trade, signal or health
+    chat_id: str = ""
+
+    @field_validator("kind")
+    @classmethod
+    def _known(cls, v: str) -> str:
+        if v not in ("trade", "signal", "health"):
+            raise ValueError("kind must be trade, signal or health")
+        return v
+
+
+class BotChannelTestResult(BaseModel):
+    """What the box said when it tried to post.
+
+    🔴 **`ok` is read off the tool's EXIT CODE, never off its text.** A verdict parsed out of
+    prose is a claim about a string; the exit code is what the program actually decided.
+
+    `detail` is the tool's own line, unreworded — it is the product, and a backend that
+    paraphrased Telegram's refusal would be the layer that hides the reason.
+    """
+
+    ok: bool
+    kind: str
+    chat_id: str = ""  # what was actually posted to, as the box resolved it
+    detail: str = ""
 
 
 class ScannedTerminal(BaseModel):
