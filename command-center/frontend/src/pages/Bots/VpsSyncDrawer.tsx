@@ -25,6 +25,7 @@ import type {
   AccountSyncChange,
   AccountSyncDiff,
   AccountSyncPreview,
+  RegistryCheck,
   ScannedTerminal,
 } from '@/types'
 import { AccountForm } from './AccountForm'
@@ -586,16 +587,16 @@ function Elapsed({ from }: { from?: number }) {
 // ── What the scan found ──────────────────────────────────────────────────────────────────────
 
 /**
- * The plan, then what it will not touch, then the box itself — in that order, because the reader
- * came to decide whether to press Sync.
+ * The plan, then what it will not touch, then the box itself, then how the box's answer stacks up
+ * against your saved list — in that order, because the reader came to decide whether to press
+ * Sync, and each later section answers a narrower question than the one before it.
  *
  * ⚠ **`after` means this is the list as it is AFTER a sync** (`now`), so anything still in
  * `changes` is something that press did not fix, and is titled that way.
  */
 function Plan({ scan, after }: { scan: AccountSyncPreview; after: boolean }) {
-  const matches = scan.registry.filter((c) => c.verdict === 'confirmed')
-  const wrong = scan.registry.filter((c) => c.verdict === 'contradicted')
-  const unchecked = scan.registry.filter((c) => c.verdict === 'unverified')
+  const online = scan.terminals.filter((t) => t.state !== 'not_running')
+  const offline = scan.terminals.filter((t) => t.state === 'not_running')
   return (
     <div className="flex flex-col gap-5">
       {!scan.blocked && scan.changes.length > 0 && (
@@ -614,45 +615,83 @@ function Plan({ scan, after }: { scan: AccountSyncPreview; after: boolean }) {
         </Section>
       )}
 
-      <Section title="On the VPS">
+      {/* Which MT5 installs are on the box right now — a fact about the MACHINE. */}
+      <Section title="Terminals on the VPS">
         <div className="rounded-lg border border-border-subtle divide-y divide-border-subtle">
-          {scan.terminals.map((t) => (
+          {online.map((t) => (
             <TerminalRow key={t.key} terminal={t} />
           ))}
+          {offline.length > 0 && <OfflineTerminalsRow terminals={offline} />}
         </div>
       </Section>
 
-      {/* ⚠ Deliberately QUIET. "Couldn't be checked" is not a finding against a row. */}
-      {(matches.length > 0 || wrong.length > 0 || unchecked.length > 0) && (
-        <div className="text-small text-text-tertiary">
-          <p>
-            {after ? 'Your list now: ' : 'Your list: '}
-            {[
-              matches.length > 0 &&
-                `${matches.length} match${matches.length === 1 ? 'es' : ''} the VPS`,
-              wrong.length > 0 && `${wrong.length} doesn’t`,
-              unchecked.length > 0 && `${unchecked.length} couldn’t be checked`,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-          {unchecked.length > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer hover:text-text-secondary">
-                Why some couldn’t be checked
-              </summary>
-              <ul className="mt-2 flex flex-col gap-1 pl-3">
-                {unchecked.map((c) => (
-                  <li key={c.account}>
-                    #{c.account}
-                    {c.label ? ` · ${c.label}` : ''} — {c.detail}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
+      {/* Whether YOUR SAVED LIST agrees with what those terminals just reported — a different
+          question from the section above, so it gets its own title rather than a trailing line. */}
+      <RegistrySummary registry={scan.registry} after={after} />
+    </div>
+  )
+}
+
+/**
+ * Your saved accounts checked against what the scan just found — never hidden behind a fold,
+ * since there are only ever a handful of them. Only the ones worth reading get a row: a match is
+ * nothing to explain, so it collapses into one count instead of a row per account.
+ */
+function RegistrySummary({ registry, after }: { registry: RegistryCheck[]; after: boolean }) {
+  if (registry.length === 0) return null
+  const matches = registry.filter((c) => c.verdict === 'confirmed')
+  const wrong = registry.filter((c) => c.verdict === 'contradicted')
+  const unchecked = registry.filter((c) => c.verdict === 'unverified')
+  const noun = (k: number) => `${k} account${k === 1 ? '' : 's'}`
+
+  if (wrong.length === 0 && unchecked.length === 0) {
+    return (
+      <p className="text-small text-text-tertiary">
+        {after ? 'Your list now matches ' : 'Your list matches '}
+        {noun(matches.length)} the scan could check.
+      </p>
+    )
+  }
+
+  return (
+    <Section title="Your saved accounts">
+      {matches.length > 0 && (
+        <p className="text-[11.5px] text-text-tertiary">
+          {noun(matches.length)} match{matches.length === 1 ? 'es' : ''} what the scan found.
+        </p>
       )}
+      {wrong.map((c) => (
+        <RegistryCheckRow key={c.account} item={c} tone="warn" />
+      ))}
+      {unchecked.map((c) => (
+        <RegistryCheckRow key={c.account} item={c} tone="muted" />
+      ))}
+    </Section>
+  )
+}
+
+/** One saved account the scan flagged: wrong (it found something else) or unchecked (it couldn’t
+ *  ask), with the reason right on the row — never behind a click. */
+function RegistryCheckRow({ item, tone }: { item: RegistryCheck; tone: 'warn' | 'muted' }) {
+  const cls =
+    tone === 'warn'
+      ? 'border-warn/40 bg-warn-muted text-warn-text'
+      : 'border-border-subtle bg-bg-sunken text-text-tertiary'
+  return (
+    <div
+      data-testid="registry-check"
+      className={`rounded-lg border px-3 py-[9px] flex gap-[8px] ${cls}`}
+    >
+      {tone === 'warn' ? (
+        <AlertTriangle size={13} className="shrink-0 mt-[1px]" />
+      ) : (
+        <Info size={13} className="shrink-0 mt-[1px] text-text-tertiary" />
+      )}
+      <div className="min-w-0 text-[11.5px]">
+        <span className="font-mono text-text-primary">#{item.account}</span>
+        {item.label && <span className="text-text-secondary"> · {item.label}</span>}
+        <p className="mt-[1px]">{item.detail}</p>
+      </div>
     </div>
   )
 }
@@ -825,7 +864,7 @@ function AttentionCard({ item }: { item: AccountSyncAttention }) {
  */
 function TerminalsSkeleton() {
   return (
-    <Section title="On the VPS">
+    <Section title="Terminals on the VPS">
       <div className="rounded-lg border border-border-subtle divide-y divide-border-subtle">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="px-3 py-[10px] flex items-center justify-between">
@@ -835,6 +874,25 @@ function TerminalsSkeleton() {
         ))}
       </div>
     </Section>
+  )
+}
+
+/** Terminals nobody is running right now — grouped into one quiet row instead of N rows that each
+ *  say nothing but a dash, so the list above them is the only part worth scanning by eye. */
+function OfflineTerminalsRow({ terminals }: { terminals: ScannedTerminal[] }) {
+  const names = terminals.map((t) => shortName(t.install)).join(', ')
+  return (
+    <div className="px-3 py-[10px]">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-[7px] h-[7px] rounded-full shrink-0 bg-text-tertiary" />
+        <span className="text-small text-text-tertiary">
+          {terminals.length} terminal{terminals.length === 1 ? '' : 's'} not running
+        </span>
+      </div>
+      <p className="text-[11.5px] text-text-tertiary mt-[2px] pl-[15px] truncate" title={names}>
+        {names}
+      </p>
+    </div>
   )
 }
 

@@ -106,11 +106,13 @@ under a banner, and the next press approves THAT plan. ⚠ **A refused press is 
 drawer goes back to review, never "saved".
 
 🔴 **Order: Scan → Review → Sync steps → one hero card that IS the outcome → the plan, field by field
-(struck-out old value → new value, the evidence under it) → what needs you → the terminals → a quiet
-footnote.** ⚠ **An ADD draws no old value** — *not in your list yet* is not a blank field. ⚠ **Real
-money is said in words.** ⚠ **Nothing to change = no Sync button** (Done instead); **a blocked plan
-= a disabled one with the reason.** ⚠ **After a sync the same cards read "Saved"**, a push that never
-reached the VPS gets its own banner, and the list shown is `now` — no second scan.
+(struck-out old value → new value, the evidence under it) → what needs you → the terminals on the box
+→ how your saved list checks out against them.** *(The last two used to be one Section plus a
+trailing paragraph; 2026-09-14 split them — see below.)* ⚠ **An ADD draws no old value** — *not in
+your list yet* is not a blank field. ⚠ **Real money is said in words.** ⚠ **Nothing to change = no
+Sync button** (Done instead); **a blocked plan = a disabled one with the reason.** ⚠ **After a sync
+the same cards read "Saved"**, a push that never reached the VPS gets its own banner, and the list
+shown is `now` — no second scan.
 
 🔴 **This drawer is the ONLY way to add an account (Aaron's call)** — a quiet "Add it by hand" link
 at its foot (`data-testid="add-account"`), for a terminal that is not running. ⚠ **Rendered under
@@ -144,7 +146,25 @@ with an unrecognised flag IS an anomaly and keeps the warning.
 ⚠ **No bot COUNT on a terminal.** Ownership comes from which configs name it, and a benched bot
 still does — the first wording said "3 bots trade here" with one trading nothing.
 
-⚠ **`unverified` is deliberately QUIET.** It is not a finding against a row.
+🔴 **The terminal list and the registry check are two different questions, and the 2026-09-14 redesign
+gave each its own titled Section instead of one block.** Aaron: *"the on the VPS section... super
+confusing... I don't even know what that section is... why some couldn't be checked, what is it?"*
+The terminal list (`TerminalRow`) answers "what's on the box"; the registry check (`scan.registry`,
+`confirmed`/`contradicted`/`unverified`) answers "does MY SAVED LIST agree with what the box just
+said" — a different axis (per ACCOUNT, not per terminal) that a trailing sentence plus a `<details>`
+accordion did not explain was even a different question. Now: **"Terminals on the VPS"** lists only
+running terminals — a `not_running` one carries no information beyond a dash, so all of them collapse
+into one line (`OfflineTerminalsRow`, name-only) instead of N rows that each say nothing. **"Your
+saved accounts"** is its own Section, rendered only when there is something to read: a `confirmed`
+match is still quiet (one count line — it is not a finding against a row), but `contradicted` and
+`unverified` now render `RegistryCheckRow`s with the reason ON the row, not behind a click — there are
+only ever a handful, so hiding the reason cost a click and answered nothing about what "checked"
+even meant. Tests: `bots-accounts.spec.ts` (existing 10 sync checks updated and passing); `tsc --noEmit`
+clean. `RegistrySummary` / `RegistryCheckRow` / `OfflineTerminalsRow` in `VpsSyncDrawer.tsx`.
+
+⚠ **`unverified` is still deliberately not treated as a fault** (no warning colour, `Info` not
+`AlertTriangle`) — it is a QUESTION the scan could not ask, not a finding against a row. That is
+narrower than before: it used to also mean HIDDEN, which is the part Aaron could not read.
 
 ⚠ **`components/Drawer.tsx` is the shared slide-out shell** (and closes on Escape), with a pinned
 `footer` slot since 2026-09-10 for the one action a panel builds up to — the Sync button would
@@ -989,3 +1009,48 @@ gate** — the backend warns on a weak or absent one and still allows it.
 ⚠ **NO automated check.** Playwright is out of the gate by design and this needs the app and the
 backend up. The behaviour is pinned backend-side by 27 tests and 20 killed mutations; what is
 unverified here is the rendering.
+
+## The account header — a stat cluster instead of a boring row (2026-09-14)
+
+Aaron: *"I feel like when I look at it, it's just kinda boring"* — the header was one flat baseline
+row (account number, nickname, cap pill, then balance and net mashed together at the far edge) with
+nothing saying what any of the two numbers on the right were.
+
+- 🔴 **Split into two clusters.** An identity cluster (account number, nickname) that can wrap onto
+  its own line at a narrow width, and a right-aligned stat cluster that cannot be mistaken for plain
+  text: each figure gets a small uppercase label above it (`StatLabel`, the same "word over a
+  number" grammar `ColumnHeadings` already teaches two inches below), divided by hairlines.
+- **Added an average return across the bots on the account** (`AvgBotReturn`) — the MEAN of each
+  current bot's own Return %, never their sum (root CLAUDE.md's "never sum a number across bots
+  that share it" — a mean is a different, legitimate question). Counts only bots on the account now
+  (`former` excluded) that have actually closed a trade; `null` renders a dash. ⚠ **Only rendered
+  once there are 2+ bots on the account** — with one bot the mean is the exact figure the Return %
+  column already states for that bot, and a second label on the same number is the duplication this
+  page keeps getting rebuilt to remove. It returns the moment a second bot lands.
+- 🔴 **The risk-cap chip split by WHETHER IT IS A FAULT, not just moved (2026-09-14, Aaron: *"the
+  10% cap feels out of place"*).** A pill is an alarm shape — border, background, uppercase — and a
+  disagreement or an unset ceiling stays exactly that, beside the account name where the account's
+  own faults live. A cap that is simply SET has nothing to warn about, so that case left the
+  identity row and became one more calm gold figure in the stat cluster. Moving the whole chip in
+  either direction would have been wrong: keeping the alarm shape for the common case is noise,
+  and quieting the fault states into the stat row would bury the one condition here that stops
+  every bot on the account from starting.
+  ⚠ **Never both** — the stat-cluster Cap figure is gated on `!idle && group.cap_agrees && cap != null`,
+  the exact complement of the pill's own condition, so an account can never show a calm cap number
+  and a fault pill at the same time.
+- **Order is Cap → Return → Avg / bot → Equity, Equity rightmost** (Aaron's call, 2026-09-14) — the
+  outer edge is where a row of figures conventionally puts its headline number, and equity is the
+  one every other figure here is read against.
+- **The settings-icon button went back to icon-only** (`IconBtn` gained an optional `testId` prop so
+  `data-testid="configure-bot"` survives the change) in both places it appears — the account card's
+  bot rows and the Unassigned tab's rows. ⚠ **Read the comment on it before re-adding the word**: it
+  carried the word since 2026-09-06 because Aaron lost the control twice when it was icon-only and
+  asked for it back in words both times. Reverted anyway on his direct 2026-09-14 instruction, made
+  knowing that history — if it goes missing a third time, that is the failure to have checked first.
+- `BotsPageSkeleton` mirrors the new header (including the Cap slot, shimmering the common
+  set-and-agreed case rather than the rare fault pill) so the swap from skeleton to a real card does
+  not move a pixel.
+- Tests: all 132 `bots-accounts.spec.ts` + 36 `bots-version.spec.ts` pass unchanged (the tests target
+  `data-testid`s, not button text or DOM shape) — verified visually with four temporary Playwright
+  screenshots (two-bot accounts, a 1280px width, a single-bot account, and a cap-disagreement
+  account) that were removed before commit, never landed as fixtures.
