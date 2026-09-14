@@ -61,7 +61,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import position_state  # noqa: E402
-from alert_format import alert, joined  # noqa: E402
+from alert_format import CRITICAL, OK, WARNING, alert, joined  # noqa: E402
 
 # The third answer a broker call can give. Its own dependency-free module on purpose — see
 # the note in `algos/shared/broker_result.py` about what importing it from `mt5_ops` broke.
@@ -931,7 +931,7 @@ class OrderBridge:
         if announce:
             self._notify(
                 alert(
-                    "🔄",
+                    OK,
                     "TRADE RESUMED",
                     self._message_name(),
                     joined(
@@ -1406,7 +1406,7 @@ class OrderBridge:
             self._ledger.event("commanded_close_failed", ticket=self._pos_ticket, exit=label)
             self._notify(
                 alert(
-                    "⛔",
+                    CRITICAL,
                     "CLOSE FAILED",
                     self._message_name(),
                     "It was asked to close the open trade and the broker refused.",
@@ -1902,7 +1902,7 @@ class OrderBridge:
         if orphans:
             self._notify(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "ORPHAN ORDERS",
                     self._message_name(),
                     f"{len(orphans)} resting order(s) were at the broker under this bot's magic "
@@ -1957,7 +1957,7 @@ class OrderBridge:
             # instruction, which is the same class of fact as a halt.
             self._notify(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "ORDER GONE",
                     self._message_name(),
                     why,
@@ -2332,7 +2332,7 @@ class OrderBridge:
             self._ledger.event("account_room_exhausted", reason=why)
             self._notify(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "NO ACCOUNT RISK LEFT",
                     self._message_name(),
                     f"This bot cannot open a trade: {why}.",
@@ -2345,7 +2345,7 @@ class OrderBridge:
             self._ledger.event("account_room_restored", room_ccy=round(room, 2))
             self._notify(
                 alert(
-                    "✅",
+                    OK,
                     "ACCOUNT RISK AVAILABLE",
                     self._message_name(),
                     f"${room:,.2f} of account risk budget is free again.",
@@ -2589,7 +2589,7 @@ class OrderBridge:
         self._refusal_alerted[slot] = plan.code
         self._notify(
             alert(
-                "⚠️",
+                WARNING,
                 "ORDER REFUSED",
                 self._message_name(),
                 f"A {slot_label(slot)} setup was ready and no order was placed.\n{plan.detail}",
@@ -2767,7 +2767,7 @@ class OrderBridge:
         self._partial_alerted = code
         self._notify(
             alert(
-                "⚠️",
+                WARNING,
                 "PARTIAL NOT BANKED",
                 self._message_name(),
                 body,
@@ -2860,7 +2860,7 @@ class OrderBridge:
             self._ledger.event("add_close_failed", ticket=ticket, reason=why)
             self._notify(
                 alert(
-                    "⛔",
+                    CRITICAL,
                     "SCALE-IN CLOSE FAILED",
                     self._message_name(),
                     f"It was asked to close scale-in lot T{ticket} and the broker refused.",
@@ -3492,7 +3492,7 @@ class OrderBridge:
         # because one Telegram line, in any room, is not enough for this one.
         self._notify(
             alert(
-                "⛔",
+                CRITICAL,
                 "HALTED",
                 self._message_name(),
                 reason,

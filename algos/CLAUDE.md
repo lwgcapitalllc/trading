@@ -259,7 +259,16 @@ Most-cited code: `tools/ledger_sync.py`, `live/runner.py`, `tools/promote.py`, `
 Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `shared/notify.py`, `tools/signal_samples.py`, `tools/alert_rate.py`.
 
 - 🔴 The live rooms — each ACCOUNT names its own channels; a live bot with none refuses to start (2026-09-13)
+- ✅ The health room's icons collapsed from 14 ad hoc glyphs to 4 named severity levels; every example is in `notes/telegram-message-catalog.md` (2026-09-14)
 
+### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room
+
+**Read before touching:** wording or icons on any Telegram message, or before adding a new one.
+Most-cited code: `shared/alert_format.py`, `live/alerts.py`, `live/runner.py`, `live/bridge.py`.
+
+- Real, rendered examples of every message in the trades, signals and health rooms, grouped by
+  the health room's four severity levels. Not executable — re-write an example by hand whenever
+  its wording changes, or the catalog goes stale while looking current.
 
 ### `notes/bot-registries-and-lifecycle.md` — Bot registries and lifecycle
 

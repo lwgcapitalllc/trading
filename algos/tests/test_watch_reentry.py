@@ -140,7 +140,7 @@ def test_an_open_re_entry_is_reported_immediately(box):
     _write(box, _opened())
     assert watch.run("bot") == 0
     assert len(box.sent) == 1
-    assert "still open" in box.sent[0]
+    assert "Still open" in box.sent[0]
 
 
 def test_the_message_names_the_bot_with_its_accounts_kind_never_its_key(box, monkeypatch):
@@ -180,8 +180,8 @@ def test_the_CLOSE_is_reported_as_a_SECOND_message(box):
     watch.run("bot")
 
     assert len(box.sent) == 2
-    assert "still open" in box.sent[0]
-    assert "now closed" in box.sent[1]
+    assert "Still open" in box.sent[0]
+    assert "Now closed" in box.sent[1]
     assert "R matches the prices" not in box.sent[0], "an open trade has no exit to grade"
 
 
@@ -197,7 +197,7 @@ def test_a_FAILED_check_leads_the_message(box):
     bottom — a re-entry sized like a full trade is money, and it must not arrive as '8 passed'."""
     _write(box, _opened(risk_pct_realised=10.0), _closed())
     watch.run("bot")
-    assert "SOMETHING IS WRONG" in box.sent[0]
+    assert "RE-ENTRY FAILED" in box.sent[0]
     assert "risk sized correctly" in box.sent[0]
 
 
@@ -205,7 +205,7 @@ def test_a_clean_trade_says_so_without_crying_wolf(box):
     _write(box, _opened(), _closed())
     watch.run("bot")
     assert "RE-ENTRY CHECKED" in box.sent[0]
-    assert "SOMETHING IS WRONG" not in box.sent[0]
+    assert "RE-ENTRY FAILED" not in box.sent[0]
 
 
 # ── silence, and the one case where silence would be a lie ───────────────────
@@ -238,7 +238,7 @@ def test_a_watch_that_CANNOT_RUN_says_so_rather_than_going_quiet(box, monkeypatc
     monkeypatch.setattr(audit, "load_ledger", boom)
     assert watch.main(["--bot", "bot"]) == 1
     assert len(box.sent) == 1
-    assert "NOT RUNNING" in box.sent[0]
+    assert "WATCH DOWN" in box.sent[0]
     assert "ledger is unreadable" in box.sent[0]
     assert "does NOT mean nothing happened" in box.sent[0]
 

@@ -47,7 +47,7 @@ ALGOS_ROOT = Path("C:/trading/algos")
 # algos/credentials.json — never pasted here. See algos/shared/credentials.py.
 # ADMIN_CHAT is the primary admin — always has access even if users.json is missing.
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
-from alert_format import alert  # noqa: E402
+from alert_format import OK, alert  # noqa: E402
 from credentials import telegram_credentials  # noqa: E402
 from notify import HEALTH, chat_for  # noqa: E402
 
@@ -102,7 +102,10 @@ def send(text: str):
         print(f"Send dropped (Telegram not configured): {text[:80]}")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": dest, "text": text, "parse_mode": "Markdown"}
+    # Plain text always — see `shared/alert_format.py`'s docstring. Every message this sends is
+    # built by `alert()`, and asking Telegram to parse it as Markdown is the one thing that can
+    # silently corrupt a bot label carrying an underscore.
+    data = {"chat_id": dest, "text": text}
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:
@@ -407,7 +410,7 @@ def main():
     try:
         send(
             alert(
-                "🟢",
+                OK,
                 "COMMANDS ONLINE",
                 "Telegram bot",
                 "It is listening again. Send /help for the list.",

@@ -143,7 +143,7 @@ def test_the_message_says_NOTHING_WAS_CHANGED():
     """The tool does not re-price, and a message that did not say so would read as though the
     lab had been updated — after which nobody does it."""
     v = watch.assess(READING, {"long": -81.18, "short": 31.29}, LAB)
-    assert "Nothing has been changed" in watch.summarise(v, "bot", "puprime_ecn")
+    assert "Nothing changed here" in watch.summarise(v, "bot", "puprime_ecn")
 
 
 def test_the_first_reading_message_does_not_claim_a_move():
@@ -155,7 +155,7 @@ def test_the_first_reading_message_does_not_claim_a_move():
 
 def test_an_unmeasured_tier_is_SAID_rather_than_shown_as_a_number():
     v = watch.assess(READING, None, {"long": watch.UNMEASURED, "short": watch.UNMEASURED})
-    assert "refuses to charge" in watch.summarise(v, "bot", "puprime_cent")
+    assert "refuses this tier" in watch.summarise(v, "bot", "puprime_cent")
 
 
 # ── the state file ────────────────────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ def test_a_terminal_that_CANNOT_BE_READ_still_raises_the_alarm(monkeypatch):
     rc = watch.main(["--bot", "sos_fade_demo"])
     assert rc == 1, "a watch that cannot run must not report success"
     assert len(sent) == 1, "the failure was silent — the alarm cannot fire"
-    assert "NOT RUNNING" in sent[0]
+    assert "WATCH DOWN" in sent[0]
     assert "terminal not running" in sent[0], "the alarm must name the cause, not just ring"
 
 

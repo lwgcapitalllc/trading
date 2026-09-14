@@ -99,7 +99,8 @@ sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
 
 import bot_state as _bot_state  # noqa: E402
-from alert_format import alert, when  # noqa: E402
+from alert_format import CRITICAL, WARNING, alert, when  # noqa: E402
+from alert_format import OK as OK_ICON  # noqa: E402 — this file's own OK is a finding verdict
 from credentials import telegram_credentials  # noqa: E402
 from notify import HEALTH, chat_for  # noqa: E402
 
@@ -981,12 +982,14 @@ def main(argv=None) -> int:
             # finding on line two, so every message opened with the same four words and the
             # thing that differed was below the fold on a lock screen.
             if f.resolved is None:
-                text = alert("🔴" if f.level == ALERT else "⚠️", "REVIEW", name, f.title, f.detail)
+                text = alert(
+                    CRITICAL if f.level == ALERT else WARNING, "REVIEW", name, f.title, f.detail
+                )
             else:
                 # Over before anyone was told. Still said once — it is the record of what healed
                 # unwatched — but as news, never as an alarm.
                 text = alert(
-                    "✅", "REVIEW", name, f.title, f.detail, f"Nothing to do: {f.resolved}"
+                    OK_ICON, "REVIEW", name, f.title, f.detail, f"Nothing to do: {f.resolved}"
                 )
             if send(text, args.dry_run, account):
                 total_new += 1

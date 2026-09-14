@@ -1266,7 +1266,7 @@ def test_an_OVER_finding_is_announced_as_news_and_an_OPEN_one_as_an_alarm(
     assert "⚠️" not in out
 
     _run_main(tmp_path, monkeypatch, _halted_last())
-    assert "🔴 REVIEW · Bot" in capsys.readouterr().out
+    assert "⛔ REVIEW · Bot" in capsys.readouterr().out
 
 
 def test_a_finding_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(tmp_path, monkeypatch):

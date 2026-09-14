@@ -38,6 +38,28 @@ never need rescuing, and the alert most likely to trip it is the one carrying an
 ⚠ **`command-center/backend/services/alert_format.py` is a deliberate MIRROR of this file.** The
 two subsystems may share a data file and may not import each other's code. `SPEC` below is the
 contract both sides render, and a test on each side reads the other file to pin them together.
+
+**Four icons, and they mean SEVERITY, never the event (2026-09-14).** Before this, a health
+message picked its icon per event — 🔴, 🚨 and ⛔ all meant "this needs you now" depending on
+which file wrote it, 🟢, ✅, 🔄 and ⚙️ all meant "resolved, nothing to do" the same way — 14
+different glyphs across the health room with no shared meaning, so reading it took reading every
+word rather than glancing at the icon. Aaron: *"I can't get the significance of messages."* Every
+health sender now picks ONE of these four:
+
+    CRITICAL  ⛔   trading has stopped, or cannot start — act now
+    WARNING   ⚠️   nothing has stopped, but this is worth reading
+    OK        ✅   a CRITICAL or WARNING state just resolved — nothing to do
+    INFO      ℹ️   a neutral fact — a deliberate stop, a status reply — no concern either way
+
+⚠ **This is deliberately NARROW to the health room.** `live/alerts.py`'s direction and outcome
+icons (📈/📉 for long/short, ✅/❌/➖ for win/loss/breakeven, 👀/🎯/🚫/👋 for a setup's stage) answer
+a different question — WHAT this message is about, in a room that is already low-volume and
+always about a trade — and stay exactly as they are. Severity is a health-room concept; a fill is
+not "critical", it is a fact you act on the moment it lands.
+
+⚠ **A message with no room of its own to make icons redundant still gets one** — the four are
+also how a NEW health sender picks its icon without inventing a fifth meaning. Import the
+constant, not the character: `CRITICAL` reads at the call site, `"⛔"` does not say why.
 """
 
 from __future__ import annotations
@@ -50,7 +72,16 @@ try:  # 3.9+ on the VPS; the fallback keeps the Mac tests honest
 except ImportError:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 
-__all__ = ["alert", "when", "LOCAL_TZ", "SPEC"]
+__all__ = [
+    "alert",
+    "when",
+    "LOCAL_TZ",
+    "SPEC",
+    "CRITICAL",
+    "WARNING",
+    "OK",
+    "INFO",
+]
 
 #: The box's own clock, used ONLY for a message about something that happened earlier. Telegram
 #: renders the send time in each reader's local zone already, so "now" never needs stamping.
@@ -58,6 +89,14 @@ LOCAL_TZ = "America/Chicago"
 
 #: The contract, in one string, so both implementations and their tests quote the same thing.
 SPEC = "<icon> <LABEL> · <subject>\\n<facts>\\n<what to do>"
+
+# ── The four severity icons — see the docstring's "Four icons" section for why these four and
+# no others. Every health-room sender picks one of these; a fifth glyph is a new sender that
+# has not read this file. ────────────────────────────────────────────────────────────────────
+CRITICAL = "⛔"
+WARNING = "⚠️"
+OK = "✅"
+INFO = "ℹ️"
 
 
 def alert(icon: str, label: str, subject: str = "", *lines: str) -> str:

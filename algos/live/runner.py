@@ -74,7 +74,7 @@ for _p in (
 
 import live_config  # noqa: E402  (algos/live/live_config.py)
 from account_flows import account_return  # noqa: E402  (algos/shared/account_flows.py)
-from alert_format import alert, joined, money  # noqa: E402
+from alert_format import CRITICAL, INFO, OK, WARNING, alert, joined, money  # noqa: E402
 from bridge import (  # noqa: E402
     BridgeState,
     OrderBridge,
@@ -940,7 +940,7 @@ class LiveRunner:
             self._fast_stale_alerted = True
             self._notify_health(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "RE-ENTRY FEED GAP",
                     self._label,
                     f"Missed {gap} {self.fast_feed.timeframe} bars on the re-entry's fill clock, "
@@ -1207,7 +1207,7 @@ class LiveRunner:
             self.ledger.event("mt5_link_lost", last_bar=str(self.feed.last_bar_time))
             self._notify_health(
                 alert(
-                    "🔌",
+                    CRITICAL,
                     "NO MT5 LINK",
                     self._label,
                     "Lost its connection to the terminal — still running, but seeing no market at all.",
@@ -1245,7 +1245,7 @@ class LiveRunner:
         halted = self.bridge.state is BridgeState.HALTED
         self._notify_health(
             alert(
-                "🟢" if not halted else "⛔",
+                OK if not halted else CRITICAL,
                 "RECONNECTED" if not halted else "RECONNECTED — STILL HALTED",
                 self._label,
                 f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
@@ -1679,7 +1679,7 @@ class LiveRunner:
             self.ledger.event("startup_failed", error=reason)
             self._notify_health(
                 alert(
-                    "⛔",
+                    CRITICAL,
                     "WILL NOT START",
                     self._label,
                     f"Live account {self.cfg.account} names no {unnamed} channel, so there is "
@@ -1703,7 +1703,7 @@ class LiveRunner:
             self.ledger.event("version_mismatch", detail=str(e))
             self._notify_health(
                 alert(
-                    "⛔",
+                    CRITICAL,
                     "WILL NOT START",
                     self._label,
                     "The code on disk is not the version this bot was promoted to run, so it "
@@ -1810,7 +1810,7 @@ class LiveRunner:
             self.ledger.event("startup_failed", error=str(e))
             self._notify_health(
                 alert(
-                    "⛔",
+                    CRITICAL,
                     "WILL NOT START",
                     self._label,
                     f"Startup failed: {e}",
@@ -1823,7 +1823,7 @@ class LiveRunner:
         # three, so it consumes the thread below — a deploy is finished once the bot is back.
         self._notify_health(
             alert(
-                "🟢",
+                OK,
                 "ONLINE",
                 self._label,
                 joined(
@@ -1983,7 +1983,7 @@ class LiveRunner:
                                 # a channel that also carries trade alerts gets muted.
                                 self._notify_health(
                                     alert(
-                                        "⚠️",
+                                        WARNING,
                                         "DROPPED A BAR",
                                         self._label,
                                         f"Failed to process the {row.name} bar, so it is re-warming "
@@ -1994,7 +1994,7 @@ class LiveRunner:
                             if bar_errors >= 10:
                                 self._notify_health(
                                     alert(
-                                        "⛔",
+                                        CRITICAL,
                                         "STOPPING",
                                         self._label,
                                         "Ten bars in a row failed to process and re-warming is not "
@@ -2029,7 +2029,7 @@ class LiveRunner:
                 if consecutive_errors >= 10:
                     self._notify_health(
                         alert(
-                            "⛔",
+                            CRITICAL,
                             "STOPPING",
                             self._label,
                             "Ten passes of its main loop failed in a row, so it is shutting itself "
@@ -2050,7 +2050,7 @@ class LiveRunner:
         # expiry instead.
         self._notify_health(
             alert(
-                "⏹",
+                INFO,
                 "STOPPED",
                 self._label,
                 "Shut down cleanly. It will not come back on its own.",
@@ -2174,7 +2174,7 @@ class LiveRunner:
         self.ledger.event("close_requested", reason=reason, accepted=took)
         self._notify_health(
             alert(
-                "🛑" if took else "ℹ️",
+                INFO,
                 "CLOSE REQUESTED" if took else "NOTHING TO CLOSE",
                 self._label,
                 reason,
@@ -2222,7 +2222,7 @@ class LiveRunner:
         # room that is only opened when a fill arrives.
         self._notify_health(
             alert(
-                "⛔",
+                CRITICAL,
                 "FLEET HALT",
                 self._label,
                 reading.reason,
@@ -2287,7 +2287,7 @@ class LiveRunner:
         # HEALTH: this is the machinery refusing to trade, not a setup being refused.
         self._notify_health(
             alert(
-                "⛔",
+                CRITICAL,
                 "ACCOUNT MISMATCH",
                 self._label,
                 f"Terminal is on #{seen}; this bot trades #{self.cfg.account}.",
@@ -2350,7 +2350,7 @@ class LiveRunner:
                 self.ledger.event("trading_disabled", reason=why, account=self.cfg.account)
                 self._notify_health(
                     alert(
-                        "⛔",
+                        CRITICAL,
                         "TRADING OFF",
                         self._label,
                         f"{why[0].upper()}{why[1:]}.",
@@ -2374,7 +2374,7 @@ class LiveRunner:
                     )
                     self._notify_health(
                         alert(
-                            "⛔",
+                            CRITICAL,
                             "STILL HALTED",
                             self._label,
                             "Trading is allowed on the account again, but this bot halted while "
@@ -2386,7 +2386,7 @@ class LiveRunner:
                     self.log.info("Trading is allowed on this account again.")
                     self._notify_health(
                         alert(
-                            "✅",
+                            OK,
                             "TRADING BACK ON",
                             self._label,
                             "The account can trade again.",
@@ -2637,7 +2637,7 @@ class LiveRunner:
             self.ledger.event("config_change_refused", changes=detail)
             self._notify_health(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "SETTINGS NOT APPLIED",
                     self._label,
                     "Its config changed on disk but the new values were refused, so it is still "
@@ -2700,7 +2700,7 @@ class LiveRunner:
         halted = self.bridge.state is BridgeState.HALTED
         self._notify_health(
             alert(
-                "⚙️" if not halted else "⛔",
+                OK if not halted else CRITICAL,
                 "SETTINGS APPLIED" if not halted else "SETTINGS LOADED — STILL HALTED",
                 self._label,
                 detail,

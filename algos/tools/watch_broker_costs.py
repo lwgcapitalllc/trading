@@ -59,6 +59,8 @@ for _p in (_HERE, _REPO, _REPO / "algos" / "live", _REPO / "algos" / "shared"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+from alert_format import CRITICAL, INFO, WARNING, alert  # noqa: E402
+
 STATE_NAME = "broker_costs_watch.json"
 
 #: What the lab holds for a tier nobody has read. Distinct from a number, and it must stay
@@ -193,44 +195,45 @@ def _fmt_pct(pct) -> str:
 
 
 def summarise(verdict: dict, bot: str, profile_key: str) -> str:
-    """One Telegram message. Plain words — somebody reads this on a phone.
+    """One Telegram message, in the house shape (`shared/alert_format.py`).
 
     ⚠ Both numbers appear on every side, always, and neither is turned into a verdict. What a
     drift is WORTH depends on how long the strategy holds and how big the bill is, and this tool
-    has measured neither.
+    has measured neither — so the icon is INFO on a first reading and WARNING on a move, never
+    CRITICAL: nothing here has stopped the bot trading.
     """
     r = verdict["reading"]
+    subject = f"{_label(bot)} · {r['symbol']}"
     if verdict["first_reading"]:
-        head = "🔵 OVERNIGHT COST WATCH — FIRST READING"
-        why = "This is the first reading on record, so there is nothing to compare it against yet."
+        icon, label = INFO, "OVERNIGHT COST — FIRST READING"
+        why = "First reading on record — nothing to compare it against yet."
     else:
-        head = "🟠 THE BROKER MOVED ITS OVERNIGHT COST"
+        icon, label = WARNING, "OVERNIGHT COST MOVED"
         parts = [
-            f"{side}: {m['was']:+.2f} → {m['now']:+.2f} ({m['by']:+.2f})"
+            f"{side} {m['was']:+.2f} → {m['now']:+.2f} ({m['by']:+.2f})"
             for side, m in verdict["moved"].items()
         ]
-        why = "Changed since the last reading — " + "; ".join(parts) + "."
+        why = "Changed since the last reading — " + "; ".join(parts)
 
-    lines = [f"*{head}*", f"{_label(bot)}, {r['symbol']}, per lot per night.", "", why, ""]
-    lines.append(f"Broker now: long {r['long']:+.2f}, short {r['short']:+.2f}")
+    lines = [
+        "Per lot, per night.",
+        why,
+        f"Broker now: long {r['long']:+.2f} · short {r['short']:+.2f}",
+    ]
 
     gaps = []
     for side in ("long", "short"):
         g = verdict["lab_gap"][side]
         held = g["held"]
         if held is None:
-            gaps.append(f"{side}: the lab charges no overnight cost on this tier")
+            gaps.append(f"{side}: lab charges none on this tier")
         elif held == UNMEASURED:
-            gaps.append(f"{side}: the lab refuses to charge this tier — nobody has read it")
+            gaps.append(f"{side}: lab refuses this tier — unmeasured")
         else:
             gaps.append(f"{side}: lab holds {held:+.2f}, {_fmt_pct(g['pct'])} away")
-    lines.append(f"Backtests ({profile_key}) — " + "; ".join(gaps))
-    lines += [
-        "",
-        "Nothing has been changed. Updating the lab's number re-prices every charged figure in "
-        "the repo, so it is a deliberate job with its own commit.",
-    ]
-    return "\n".join(lines)
+    lines.append(f"Backtests ({profile_key}) — " + " · ".join(gaps))
+    lines.append("Nothing changed here — re-pricing the lab is a separate, deliberate commit.")
+    return alert(icon, label, subject, *lines)
 
 
 def _load_state(path: Path) -> dict:
@@ -284,7 +287,9 @@ def _send(text: str, dry_run: bool, account=None) -> None:
         return
     from notify import HEALTH, send_telegram
 
-    send_telegram(text, HEALTH, account=account)
+    # Plain text always — see `shared/alert_format.py`'s docstring. A bot label or a symbol can
+    # carry an underscore, and Markdown eats it silently rather than rejecting the message.
+    send_telegram(text, HEALTH, account=account, markdown=False)
 
 
 def _health(bot: str, **fields) -> None:
@@ -392,10 +397,14 @@ def main(argv=None) -> int:
         traceback.print_exc(file=sys.stderr)
         try:
             _send(
-                "*⚠️ OVERNIGHT COST WATCH IS NOT RUNNING*\n"
-                f"The check on {_label(args.bot)} failed: {detail}\n\n"
-                "Until this is fixed, a change in the broker's overnight cost will pass "
-                "unnoticed — silence from this watch no longer means the rate held.",
+                alert(
+                    CRITICAL,
+                    "OVERNIGHT COST WATCH DOWN",
+                    _label(args.bot),
+                    f"The check failed: {detail}",
+                    "Until this is fixed, a change in the broker's overnight cost will pass "
+                    "unnoticed.",
+                ),
                 args.dry_run,
                 _account(args.bot),
             )

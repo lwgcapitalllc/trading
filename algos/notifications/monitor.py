@@ -46,7 +46,7 @@ TEXAS = ZoneInfo("America/Chicago")
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 import bot_registry as _registry
 import bot_state as _bot_state
-from alert_format import alert  # noqa: E402
+from alert_format import CRITICAL, OK, WARNING, alert  # noqa: E402
 
 # Telegram credentials are resolved from the environment or the git-ignored
 # algos/credentials.json — never pasted here. See algos/shared/credentials.py.
@@ -391,14 +391,14 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
                 send_alert(
-                    alert("🔴", "OFFLINE", name, "The process is gone. Restarting it now."),
+                    alert(CRITICAL, "OFFLINE", name, "The process is gone. Restarting it now."),
                     account,
                 )
             _bot_state.set_status(bot_key, "offline")
         else:
             if not bot_state.get("stop_suppressed"):
                 send_alert(
-                    alert("🟢", "BACK ONLINE", name, "It is running again. Nothing to do."),
+                    alert(OK, "BACK ONLINE", name, "It is running again. Nothing to do."),
                     account,
                 )
             bot_state["stop_suppressed"] = False
@@ -443,7 +443,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 bot_state["running"] = True
                 send_alert(
                     alert(
-                        "🟢",
+                        OK,
                         "RESTARTED",
                         name,
                         "It was offline and has been restarted automatically.",
@@ -461,7 +461,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             bot_state["max_retry_alerted"] = True
             send_alert(
                 alert(
-                    "🚨",
+                    CRITICAL,
                     "WILL NOT START",
                     name,
                     f"{MAX_BOT_RESTARTS} restart attempts have failed. It is not trading and will "
@@ -495,7 +495,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
         if not bot_state.get("stale_alerted"):
             send_alert(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "STALLED",
                     name,
                     f"The process is alive but has not stamped its heartbeat for "
@@ -510,7 +510,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
         if bot_state.get("stale_alerted"):
             send_alert(
                 alert(
-                    "🟢",
+                    OK,
                     "RECOVERED",
                     name,
                     "The heartbeat resumed and it is working through bars again.",
@@ -531,7 +531,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 continue
             send_alert(
                 alert(
-                    "⚠️",
+                    WARNING,
                     "SYMBOL NOT FOUND",
                     name,
                     f"The broker does not list {sym}, so it was skipped this cycle.",
@@ -588,7 +588,7 @@ def check_telegram_bot(state: dict) -> dict:
                         print("Telegram bot restarted successfully.")
                         send_alert(
                             alert(
-                                "🟢",
+                                OK,
                                 "RESTARTED",
                                 "Telegram bot",
                                 "It was offline and has been restarted. Commands work again.",
@@ -607,7 +607,7 @@ def check_telegram_bot(state: dict) -> dict:
             if not tg_state.get("max_retry_alerted"):
                 send_alert(
                     alert(
-                        "🚨",
+                        CRITICAL,
                         "WILL NOT START",
                         "Telegram bot",
                         f"{max_tries} restart attempts have failed, so commands are unavailable.",
@@ -635,7 +635,7 @@ def _say_if_the_bots_cannot_be_seen(state: dict) -> None:
     if state.get("registry_error") != err:
         send_alert(
             alert(
-                "🚨",
+                CRITICAL,
                 "CANNOT SEE THE BOTS",
                 "Watchdog",
                 f"The bot folders could not be read ({err}), so no bot is being watched.",

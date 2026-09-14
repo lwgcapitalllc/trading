@@ -57,6 +57,7 @@ for _p in (_HERE, _REPO / "algos" / "live", _REPO / "algos" / "shared"):
         sys.path.insert(0, str(_p))
 
 import audit_reentry as audit  # noqa: E402
+from alert_format import CRITICAL, OK, alert  # noqa: E402
 
 STATE_NAME = "reentry_watch.json"
 
@@ -102,30 +103,35 @@ def _label(bot: str) -> str:
 
 
 def _summarise(rep: audit.Report, when: str, label: str = "") -> str:
-    """One Telegram message for one trade. Plain words — a person reads this on a phone.
+    """One Telegram message for one trade, in the house shape (`shared/alert_format.py`).
 
     `label` names the bot (`_label`), because two copies of one strategy can each have re-entries
-    now and "Trade 123" alone does not say whose. Empty leaves the line as it always read."""
-    fails = [f"❌ {rule} — {detail}" for _v, rule, detail in rep.rows if _v == audit.FAIL]
+    now and "Trade 123" alone does not say whose. Empty leaves the subject as it always read.
+
+    ⚠ **Failing checks join onto ONE line, the same call `format_blocked` makes for a setup
+    blocked by several rules at once** — a reader asking "is this rule earning its keep" needs
+    the whole set, and one line per failure is the per-item noise the house shape exists to cut.
+    """
+    fails = [(rule, detail) for _v, rule, detail in rep.rows if _v == audit.FAIL]
     unknown = [rule for _v, rule, _d in rep.rows if _v == audit.UNKNOWN]
     passed = len(rep.rows) - len(fails) - len(unknown)
 
-    head = "🔴 RE-ENTRY — SOMETHING IS WRONG" if fails else "🟢 RE-ENTRY CHECKED"
-    whose = f"{label} · trade" if label else "Trade"
-    lines = [f"*{head}*", f"{whose} {rep.ticket}, {when}.", ""]
+    subject = f"{label} · trade {rep.ticket}" if label else f"Trade {rep.ticket}"
+    lines = [f"{when.capitalize()}."]
     if fails:
-        lines += fails + [""]
-    lines.append(
-        f"{passed} checks passed, {len(fails)} failed, {len(unknown)} could not be checked."
-    )
+        lines.append(" · ".join(f"{rule} — {detail}" for rule, detail in fails))
+    lines.append(f"{passed} passed · {len(fails)} failed · {len(unknown)} could not be checked")
     if unknown:
         # ⚠ NAMED, not counted. "2 could not be checked" tells a reader nothing about whether the
         # unchecked half is the half that matters.
         lines.append("Not checked: " + "; ".join(unknown))
-    if fails:
-        lines.append("")
-        lines.append("This is the first live re-entry work — read it before the next one arms.")
-    return "\n".join(lines)
+    lines.append("Read the failed check(s) above." if fails else "Nothing to do.")
+    return alert(
+        CRITICAL if fails else OK,
+        "RE-ENTRY FAILED" if fails else "RE-ENTRY CHECKED",
+        subject,
+        *lines,
+    )
 
 
 def _account(bot: str):
@@ -146,7 +152,9 @@ def _send(text: str, dry_run: bool, account=None) -> None:
         return
     from notify import HEALTH, send_telegram
 
-    send_telegram(text, HEALTH, account=account)
+    # Plain text always — see `shared/alert_format.py`'s docstring. A bot label or a rule name can
+    # carry an underscore, and Markdown eats it silently rather than rejecting the message.
+    send_telegram(text, HEALTH, account=account, markdown=False)
 
 
 def _health(bot: str, **fields) -> None:
@@ -229,10 +237,14 @@ def main(argv=None) -> int:
         traceback.print_exc(file=sys.stderr)
         try:
             _send(
-                "*⚠️ RE-ENTRY WATCH IS NOT RUNNING*\n"
-                f"The hourly check on {_label(args.bot)} failed: {detail}\n\n"
-                "Nothing is watching for the first re-entry until this is fixed. "
-                "Silence from here does NOT mean nothing happened.",
+                alert(
+                    CRITICAL,
+                    "RE-ENTRY WATCH DOWN",
+                    _label(args.bot),
+                    f"The hourly check failed: {detail}",
+                    "Nothing is watching for a re-entry until this is fixed — silence does NOT "
+                    "mean nothing happened.",
+                ),
                 args.dry_run,
                 _account(args.bot),
             )
