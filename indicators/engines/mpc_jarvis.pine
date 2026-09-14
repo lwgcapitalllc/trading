@@ -654,7 +654,10 @@ f_liqSize() =>
 
 bool i_isDailyEnabled   = true
 bool i_isWeeklyEnabled  = true
-bool i_showSessionHL    = true
+// Session and H4 levels switch OFF on charts bigger than themselves — see the one rule at
+// canShowDaily / canShowWeekly. Sessions follow the session boxes (intraday only); H4
+// stops above the 4-hour chart.
+bool i_showSessionHL    = timeframe.isintraday
 
 // Single flag drives all three session H/L sets — kept as separate internal
 // flags so the drawing/mitigation logic below stays unchanged.
@@ -662,7 +665,7 @@ bool i_showAsiaHL      = i_showSessionHL
 bool i_showLondonHL    = i_showSessionHL
 bool i_showNYHL        = i_showSessionHL
 bool i_showPWC         = true
-bool i_showH4Sweep     = true
+bool i_showH4Sweep     = timeframe.in_seconds() <= 14400
 // ── MITIGATED LEVELS STAY ON THE CHART, DOTTED (Aaron, 2026-08-07) ──
 // He had this before and it went with the Chart Tools lock-down: it used to be the
 // "Show Mitigated Liquidity Lines" input (default OFF) and was frozen at its default
@@ -1467,7 +1470,7 @@ float pdl = _pdDayChart ? pdlOff : pdlOn
 bool  _pwWkChart = timeframe.isweekly or timeframe.ismonthly
 float pwh = _pwWkChart ? pwhOff : pwhOn
 float pwl = _pwWkChart ? pwlOff : pwlOn
-pwcSecurity = timeframe.isweekly or timeframe.ismonthly ? request.security(syminfo.tickerid, "W", close, lookahead = barmerge.lookahead_off) : request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
+pwcSecurity = _pwWkChart ? request.security(syminfo.tickerid, "W", close, lookahead = barmerge.lookahead_off) : request.security(syminfo.tickerid, "W", close[1], lookahead = barmerge.lookahead_on)
 [h4Time, h4PrevHigh, h4PrevLow] = request.security(syminfo.tickerid, "240", [time, high[1], low[1]], lookahead = barmerge.lookahead_on)
 h4BarChanged = ta.change(h4Time) != 0
 
@@ -2276,6 +2279,20 @@ else if rStage != 4
 //var bool revContFvg = false
 //revContFvg := rContStage < 3 ? false : (revContFvg or _contFvgTapNow)
 
+// ── ONE RULE FOR EVERY LEVEL TIER (2026-09-14): it draws only on charts whose candle is no
+// longer than the level's own period. On a bigger chart the level is read from inside ONE
+// candle, and its taken/untaken state cannot update until that candle closes — so a line
+// price has already run through keeps reading as untouched.
+//   H4       — 4-hour and below                          (i_showH4Sweep)
+//   Sessions — intraday, where the session boxes draw    (i_showSessionHL)
+//   Daily    — daily and below                           (canShowDaily)
+//   Weekly   — weekly and below, PWC included            (canShowWeekly)
+// ⚠ Before this, H4 drew on the daily and weekly charts — the last 4-hour candle, whose sweep
+// test waits for a closed chart bar, so it sat solid all day after price took it — and the
+// weekly chart labelled the prior week's range "Asia H / Ldn H / NY H". PWC drew on the monthly.
+// ⚠ The LIQ table rows and the SOS Fade arm read the same switches, so those tiers drop out of
+// them too on the bigger charts. The SOS Fade row and its alerts only run on 15m/1m, where
+// every tier is still on, so no signal moves.
 var canShowDaily   = i_isDailyEnabled   and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily)
 var canShowWeekly  = i_isWeeklyEnabled  and i_showLiquidity and (timeframe.isintraday or timeframe.isdaily or timeframe.isweekly)
 
@@ -4142,7 +4159,11 @@ var label pwc_lbl   = na
 var float pwc_price = na
 var int   pwc_bar   = na
 
-if i_showPWC and i_showLiquidity and not na(pwcSecurity) and barstate.isconfirmed
+// Same gates as PWH/PWL. It shows on the same charts (canShowWeekly — weekly and below), and
+// below a weekly chart the value is last week's close, final from the week's first tick, so it
+// rolls on the live bar instead of waiting a whole chart bar (a day on D). On the weekly chart
+// it IS the live close, so there it still waits for the bar to close.
+if i_showPWC and canShowWeekly and not na(pwcSecurity) and (not _pwWkChart or barstate.isconfirmed)
     if na(pwc_price) or pwcSecurity != pwc_price
         if not na(pwc_line)
             line.delete(pwc_line)
