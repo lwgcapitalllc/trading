@@ -78,7 +78,7 @@
       "telegram_trade_chat": "-1004410831757",
       "telegram_signal_chat": "-1003332727688",
       "telegram_health_chat": "",
-      "note": "Aaron's own live account. Its trade and signal channels are the ones shared/telegram_rooms.json named as THE live rooms until 2026-09-13, moved here so the other live account can name its own; health falls through to the shared room."
+      "note": "Aaron's own live account. Its trade and signal channels were the single live rooms every live account shared until 2026-09-13 (in a file deleted 2026-09-14), moved here so the other live account can name its own; health falls through to the shared room."
     },
     {
       "account": 35710389,

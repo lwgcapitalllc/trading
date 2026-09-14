@@ -95,9 +95,8 @@ _warned_unreadable: set = set()
 # survives a rebuild — the per-bot rooms in the instance configs are committed the same way. Read
 # per message, so an edit reaches a running bot with no restart.
 #
-# ⚠ **`shared/telegram_rooms.json` is NOT read here any more and is kept for the transition** —
-# a bot still running the older code reads it, and deleting it would send that bot's live fills
-# to the shared demo room until somebody restarts it. See that file's own note.
+# ⚠ **`shared/telegram_rooms.json` was retired 2026-09-13 and DELETED 2026-09-14**, once both
+# live bots had restarted onto this code. Only the older code read it, and only for a live account.
 LIVE = "live"
 
 #: kind -> the field on an account's registry row naming that kind's room.

@@ -74,11 +74,12 @@ were in the retired file; 35710389 names none until its owner enters them.
   that would put a bot on a live account with none. Its **Send test** runs `tools/verify_channel.py`
   on the box, because the token lives only there. Exit codes: 0 posted, 1 refused or unexpected,
   2 bad arguments, 3 registry unreadable, 4 the account names no channel of that kind.
-- ⚠ **`shared/telegram_rooms.json` is RETIRED and KEPT for the transition.** No current code reads
-  it, but a bot still running the old code does: deleting it now would send 34957946's live fills to
-  the shared demo room. **Delete it once every bot on the box has restarted onto this code.** Until
-  then a bot on 35710389 still on the old code would send its live fills to the room in that file —
-  nothing trades there today.
+- **`shared/telegram_rooms.json` was DELETED on 2026-09-14**, once both live bots had restarted
+  onto this code. The older code only ever opened it for a live account and treated a missing
+  file as "no live room", so the demo copies still on that code were unaffected.
+- 🔴 **The start-up log names the room signals actually go to** (`runner._signal_room`). Until
+  2026-09-14 it printed "the shared telegram_signal_chat" for every bot without a per-bot room,
+  while the live bot's signals were going to its account's channel — a label that never asked.
 - Proof: `tests/test_notification_routing.py`, `test_live_rooms_runner.py` (the runner through the
   REAL router, the start gate driven through `_run`), `test_verify_channel.py`, plus the monitor,
   log-review and watcher tests; 12 bugs planted by `scripts.testing.mutate`, 12 caught.

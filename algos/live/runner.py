@@ -499,6 +499,30 @@ class LiveRunner:
         named = [words.get(kind, kind) for kind in REQUIRED_LIVE_KINDS if kind in missing]
         return " and ".join(named)
 
+    def _signal_room(self) -> str:
+        """Where this bot's setup alerts land, in words for the start-up log: its own per-bot
+        channel, else its ACCOUNT's signals channel, else the shared one — the order
+        `notify.chat_for` decides it in.
+
+        🔴 **It printed "the shared telegram_signal_chat" for every bot without a per-bot room
+        until 2026-09-14** — a label that never asked. It was wrong for a live account from the
+        day accounts named their own channels (2026-09-13): the live bot's signals were going to
+        its account's channel while its own log said the shared room. Rule 7.
+
+        ⚠ NEVER raises — it only describes, and a start-up log line must not stop a start.
+        """
+        if self.cfg.telegram_signal_chat:
+            return f"this bot's own signals channel {self.cfg.telegram_signal_chat}"
+        try:
+            from notify import SIGNAL, account_rooms
+
+            own = (account_rooms(self.cfg.account) or {}).get(SIGNAL, "")
+        except Exception:
+            own = ""
+        if own:
+            return f"account {self.cfg.account}'s own signals channel {own}"
+        return "the shared signals channel"
+
     def _notify(self, text: str, kind: str, reply_to=None):
         """Every message this bot sends goes to ITS OWN configured destination — the routing is
         per instance, not global, so two bots on two accounts never share one feed unless their
@@ -1350,8 +1374,9 @@ class LiveRunner:
                     "config — the signals channel will stay silent."
                 )
             self.setup_alerts = alerts_obj
-            room = self.cfg.telegram_signal_chat or "the shared telegram_signal_chat"
-            self.log.info(f"Setup alerts: ON — {', '.join(cats) or 'nothing'} → {room}")
+            self.log.info(
+                f"Setup alerts: ON — {', '.join(cats) or 'nothing'} → {self._signal_room()}"
+            )
             self.ledger.event("setup_alerts", enabled=True, categories=list(cats))
         except Exception as e:
             self.log.warning(

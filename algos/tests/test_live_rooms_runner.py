@@ -299,3 +299,36 @@ def test_a_LIVE_bot_WITH_its_channels_is_not_stopped_by_the_gate(world, monkeypa
     code, _reason = r._run()
     assert reached == ["bound"]
     assert code == 2  # the version-pin refusal, i.e. it got past this gate
+
+
+# ── what the start-up log SAYS about where signals go ───────────────────────────────────────
+
+
+def test_the_start_up_line_names_the_ACCOUNTS_signals_channel_on_a_live_account(world):
+    """🔴 Rule 7 on the bot's own log. It said "the shared telegram_signal_chat" for every bot with
+    no per-bot room until 2026-09-14, while the live bot's signals were going to its account's
+    channel — so the one line a person reads at start-up described a room nothing was using.
+    MUTATION: return the shared room without asking the account -> red."""
+    assert _runner(_LIVE)._signal_room() == f"account {_LIVE}'s own signals channel -100mine_s"
+
+
+def test_the_start_up_line_says_SHARED_only_when_it_is(world):
+    """The control: a demo account names no room, and its signals really do go to the shared one."""
+    assert _runner(_DEMO)._signal_room() == "the shared signals channel"
+
+
+def test_a_per_bot_signals_room_is_named_first(world):
+    """The order `notify.chat_for` routes in — a per-bot room wins outright."""
+    r = _runner(_LIVE)
+    r.cfg.telegram_signal_chat = "-100perbot"
+    assert r._signal_room() == "this bot's own signals channel -100perbot"
+
+
+def test_the_start_up_line_NEVER_raises(world, monkeypatch):
+    """It only describes; a start-up log line must never stop a start."""
+
+    def boom(_account):
+        raise RuntimeError("registry on fire")
+
+    monkeypatch.setattr(notify, "account_rooms", boom)
+    assert _runner(_LIVE)._signal_room() == "the shared signals channel"
