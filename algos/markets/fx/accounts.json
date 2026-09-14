@@ -12,7 +12,7 @@
       "tier": "ECN",
       "kind": "demo",
       "server": "PUPrime-Demo",
-      "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
+      "mt5_path": "C:\\MT5_Demo\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
       "telegram_trade_chat": "",
@@ -33,7 +33,7 @@
       "telegram_trade_chat": "",
       "telegram_signal_chat": "",
       "telegram_health_chat": "",
-      "note": "The account sos_fade_demo traded from 2026-08-05 to 2026-08-12, kept because it is real and reachable and its balance history stays on it. The terminal is NOT logged into it today - MT5_FFT is on the ECN account - so assigning a bot here means logging that terminal back in first."
+      "note": "The account sos_fade_demo traded from 2026-08-05 to 2026-08-12, kept because it is real and reachable and its balance history stays on it. The terminal is NOT logged into it today - MT5_Demo (named MT5_FFT until 2026-09-14) is on the ECN account - so assigning a bot here means logging that terminal back in first."
     },
     {
       "account": 700119432,
@@ -87,13 +87,13 @@
       "tier": "ECN",
       "kind": "live",
       "server": "PUPrime-Live",
-      "mt5_path": "C:\\Program Files\\PU Prime MT5 Terminal\\terminal64.exe",
+      "mt5_path": "C:\\MT5_Richard\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
       "telegram_trade_chat": "",
       "telegram_signal_chat": "",
       "telegram_health_chat": "",
-      "note": "Added by Sync VPS on 2026-09-13: found logged in on PU Prime MT5 Terminal. Its owner enters his own Telegram channels; until both a trade and a signal channel are set, a bot on this account REFUSES TO START."
+      "note": "Richard's live account. Added by Sync VPS on 2026-09-13, found logged in on the PU Prime installer's default folder under Program Files; that install was moved to C:\\MT5_Richard on 2026-09-14 so the folder names whose account it holds. Its owner enters his own Telegram channels; until both a trade and a signal channel are set, a bot on this account REFUSES TO START."
     }
   ]
 }

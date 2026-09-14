@@ -246,6 +246,16 @@ forward, and nothing is expected to still be on disk.** Both the VPS and the rep
    docstring; `git show <commit>^:<path>` gives you the real thing.
 4. **What was deliberately KEPT:** all four MT5 terminal installs (`MT5_FFT`, `MT5_Lab`,
    `MT5_Scalper`, and the Program Files instances) — Aaron may attach new bots to them;
+   ⚠ **Renamed 2026-09-14 so each folder names whose account it holds:** `C:\MT5_FFT` →
+   `C:\MT5_Demo` (demo 700152905), `C:\MT5_Scalper` → `C:\MT5_Aaron` (live 34957946),
+   `C:\Program Files\PU Prime MT5 Terminal` → `C:\MT5_Richard` (live 35710389); `C:\MT5_Lab`
+   unchanged. Older notes and ledgers keep the old names. 🔴 **None of these terminals is
+   portable** — each keeps its login and settings in
+   `C:\Users\Administrator\AppData\Roaming\MetaQuotes\Terminal\<MD5 of the upper-cased install
+   path, UTF-16LE>`, so a folder rename opens a blank, logged-out terminal unless that data folder
+   is copied under the new name first (with `origin.txt` rewritten). The terminals run in
+   trader's remote-desktop session; the bots run as SYSTEM, so a bot must never be the thing that
+   launches a terminal. Relaunch one from an interactive task as `trader`.
    `start_mt5_agent.bat` (`MT5AgentRDP` runs it); `credentials.json` and `users.json`; and the
    `C:\temp` directory itself, which `bootstrap_vps.ps1` uses as its staging dir.
 5. **Only the Telegram bot is maintained from the original suite**, and only for trade ENTRY and
