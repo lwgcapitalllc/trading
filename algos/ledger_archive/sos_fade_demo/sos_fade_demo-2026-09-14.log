@@ -1,0 +1,31 @@
+2026-09-14 03:23:14,698 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-14 03:23:14,713 [INFO] Stop requested — shutting down.
+2026-09-14 03:23:14,713 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-14 03:23:15,516 [INFO] MT5 disconnected.
+2026-09-14 03:23:28,464 [INFO] SOS Fade | SosFadeStrategy v175 | hash 4325c2b1da71 | commit a7aeec3b | frozen | LIVE
+2026-09-14 03:23:28,999 [INFO] Connected | #34957946 | $10,311.48 | PUPrime-Live
+2026-09-14 03:23:28,999 [INFO] MT5 connection lock released
+2026-09-14 03:23:29,300 [INFO] Sizing against account balance $10,311.48
+2026-09-14 03:23:29,332 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-14 03:23:29,332 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-14 03:23:29,332 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared telegram_signal_chat
+2026-09-14 03:23:32,251 [INFO] Warmed 5000 bars (2026-06-29 11:45:00+00:00 → 2026-09-14 03:00:00+00:00) in 2.7s
+2026-09-14 03:23:35,196 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-29 11:50:00+00:00 → 2026-09-14 03:15:00+00:00).
+2026-09-14 03:23:35,212 [INFO] Equity re-anchored to the account after warm-up: 8,897.79 → 10,311.48
+2026-09-14 03:23:35,970 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-14 03:57:14,285 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-14 03:57:14,285 [INFO] Stop requested — shutting down.
+2026-09-14 03:57:14,285 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-14 03:57:15,067 [INFO] MT5 disconnected.
+2026-09-14 04:00:29,436 [INFO] SOS Fade | SosFadeStrategy v175 | hash 4325c2b1da71 | commit 6e287459 | frozen | LIVE
+2026-09-14 04:00:29,983 [INFO] Connected | #34957946 | $10,311.48 | PUPrime-Live
+2026-09-14 04:00:29,983 [INFO] MT5 connection lock released
+2026-09-14 04:00:30,139 [INFO] Sizing against account balance $10,311.48
+2026-09-14 04:00:30,155 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-14 04:00:30,155 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-14 04:00:30,155 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-14 04:00:33,609 [INFO] Warmed 5000 bars (2026-06-29 12:30:00+00:00 → 2026-09-14 03:45:00+00:00) in 3.3s
+2026-09-14 04:00:36,420 [INFO] Fast feed bookmarked at 2026-09-14 03:59:59.999000+00:00 — the 15m context is already past it.
+2026-09-14 04:00:36,436 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-29 12:30:00+00:00 → 2026-09-14 03:55:00+00:00).
+2026-09-14 04:00:36,452 [INFO] Equity re-anchored to the account after warm-up: 8,897.79 → 10,311.48
+2026-09-14 04:00:37,174 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
