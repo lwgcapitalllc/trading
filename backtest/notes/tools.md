@@ -101,6 +101,42 @@ CLAUDE.md gets at most one index line.
   measured, it has been mis-specified** — do not read the zero as "RSO has no edge". ⚠ Trigger only:
   no 4H bias and no discount filter, because `run_sweep` replays a single frame. No baseline moves —
   this is a new tool and nothing consumed it before today.
+- **`tools/loaded_level_study.py`** (new 2026-09-14) — the Loaded Level setup as the user's OWN
+  trades define it (Examples 3–9 in `docs/DAVINCI_MODEL_SPEC.md`), detected on the canonical
+  structure, liquidity and equal-highs engines, replayed with ONE position slot and real costs, and
+  graded over 3,888 cells: reward floor × target ("4" / nearest untaken pool / nearest named pool
+  below 4) × entry (stab / reclaim) × min stop × min top-to-4 range × touches × SOS × direction.
+  **It supersedes `loaded_level_scan.py` for this model** — that scanner never found the user's
+  trades; this one finds all seven (`--recall-only`).
+  **MEASURED 2026-09-14, PU Prime `XAUUSD.p` M5, 475,081 bars (2020-01-01 → 2026-09-11),
+  `puprime_ecn`: sized like the user's trades (stop ≥ 2 ATR(50), top-to-4 ≥ 10 ATR) all 108
+  floor × target × entry × direction cells LOSE net.** Best: short, stab, named target, floor 2.0 —
+  1,108 trades, 26.5% win at 2.80R, −28.7R. Reclaim entry: 0 of 54 positive. The named pool past
+  "4" beats "4" in every row (that same cell: −28.7R vs −69.8R) and no floor rescues it — the win
+  rate falls as fast as the reward rises.
+  ✅ **The structure carries real information, and too little of it.** Against random STABS of any
+  lower high with the same stop and target distances, the user-sized shorts win +3.8 to +4.4
+  points (z +3.1 to +3.3) — smaller than what shorting gold's 2020–26 rise costs, plus spread and swap.
+  ⚠ **One family is positive in both halves and every year** — both directions, stab, named target,
+  NO floor (avg R:R 0.84), loaded (2 touches), bearish SOS required, user-sized: +45.9R over 1,219
+  trades (+0.038R, t +1.46, z +5.6 vs random stabs) on ECN, **+13.7R (t +0.45) on Standard**; each
+  side ALONE is negative (short −11.6R, long −5.7R) and floor 1.0 is −41.6R. **A search winner —
+  cost-sensitive and path-dependent. A forward-test candidate at most, never a baseline.**
+  🔴 **ITS FIRST TWO GRIDS WERE CONTAMINATED BY ITS OWN CACHE, AND THE NUMBERS LOOKED FINE.** The walk
+  cache was keyed on a side's POSITION in the list of sides, and a long-only run puts the long book
+  at the index where "both" and "short" keep the short one — so directions read each other's cached
+  trades, by grid order. Found only because one cell re-scored alone gave 1,108 trades against the
+  grid's 1,089. Now keyed on the side's NAME, the owner is checked on every read, and five cells
+  re-scored in reverse order with a fresh cache match the grid exactly.
+  🔴 **R without a minimum stop measures the stop.** Swap is charged per LOT, so in R it scales with
+  1/stop — one cents-wide long carried −408R of swap in the first grid. Min stop is a grid axis.
+  🔴 **PU Prime's daily REOPEN bar can print a spike no chart shows** (22 Jul 2026: open 19.20 below
+  both neighbours, through the user's target three hours before their entry). 2 of 139 reopen bars
+  in 2026 do this against 2 of 49,299 others. Detection clips it; fills, stops and targets use the
+  RAW bars. ⚠ Mirror symmetry was CHECKED, not assumed: on 73,294 bars every bullish/bearish
+  structure count and every high/low liquidity count equals its mirror. ⚠ No Pine twin and no
+  parity gate — every number is a lab finding. No documented baseline moves: nothing consumed
+  this tool before today.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when

@@ -238,6 +238,111 @@ also exactly why this model cannot be gated on a trend filter.
 **Measured:** the band is 10.31 points at ~4,228, i.e. **0.244% of price**. Recorded for interest
 only, per the caveat above.
 
+### Example 3 — a real trade, MPC-JARVIS, XAUUSD 5m, 2026-08-26, SHORT, winner
+
+Sent 2026-09-14 from TradingView account MillionaireKelly — the first of a series of real trades
+sent to define this strategy from practice rather than from the videos. ⚠ **A trade somebody TOOK,
+not a mark-up**, which makes it the most useful kind this file has had. Timeframe read off the bar
+spacing (5m); chart time is New York (UTC-4). The symbol is not on the screenshot; every level below
+was checked against PU Prime `XAUUSD.p` M5 bars in `backtest/cache/PUPrime_Demo/`.
+
+**On the position tool (exact):** entry 4,633.87 · stop 4,673.26 · target 4,583.10 · stop 39.39 ·
+target 50.77 · **R:R 1.29**.
+
+**Each step on the broker's bars and on the canonical engines' own events** (replayed 2026-09-14,
+default `EngineConfig`, `EqualHighsLowsEngine` at its defaults):
+
+| Step | Class 14 deck | Bars (NY time) | Engine event |
+|---|---|---|---|
+| old highs ("NL") | — | 4,668.02 (Tue 15:15), 4,669.04 (16:10) | ext bull BOS 4,668.02; EQH 4,669.04 formed |
+| 1 · empty level | sweep an old high, walk away | 4,673.72 (Tue 18:50) | ext bull BOS 4,669.04 at 18:35 takes the EQH, then **ext bear BOS 4,656.22 = SOS** at 19:40 |
+| 3 · inducement | a small low taken (BOS) | 4,613.48, 4,597.99 | ext bear BOS at Wed 09:00 and 11:05 |
+| 2 · loaded (entry) | came back, held, walked away | double top 4,633.45 (Wed 08:30) / 4,633.54 (10:00) | the external protected high — its break is **ext bull BOS 4,633.54 = SOS** |
+| 4 · loaded (target) | loads on the far side | 4,583.13 (Wed 11:15) / 4,584.10 (16:20) | ext swing low 4,583.13; liquidity engine: London L, NY L and PDL all 4,583.13 |
+| 5 · entry | the stab, no close | Wed 21:50 bar, high 4,635.48 | the SAME bar as that bull SOS — the "false SOS" the deck warns of |
+| result | — | heat to 4,643.06 (22:00) = 0.23R; target on the Thu 05:35 bar | ext bear BOS 4,583.13 = SOS at 05:40 |
+
+**What it pins down:**
+
+- **Every step is an event the structure engine already emits.** Arm = an external bull BOS that
+  takes a liquidity level, then an external bear SOS; inducement = external bear BOS; entry = the
+  price of the protected high; target = the leg's external swing low. The deck's *"market
+  structure can assist, but not always"* — on this trade it covered every step.
+- 🔴 **`loaded_level_scan.py` does not find this trade at any RR floor** (at `min_rr 0` its only
+  entry in the window is an unrelated 0.15R micro-setup). **So the 2026-08-13 "short side has no
+  edge" figure describes the scanner's detector, not this setup — do not quote it against it.**
+- 🔴 **The equal-highs/lows engine misses BOTH loaded levels.** It compares CONSECUTIVE pivots
+  only, and smaller pivots sat between each pair (4,626.36 between the tops; nine between the
+  lows). A "loaded" rule built on EQH as it stands would never fire here.
+- **"Held" must tolerate an overshoot.** The second top is 0.09 ABOVE the first; the scanner's rule
+  (the later high may not exceed the earlier) rejects it by nine cents.
+- **The entry level is NOT the first lower high after the extreme** (that was 4,670.77, Tue 22:00,
+  never used) — it is the protected high the rally breaks. That departs from Example 1b's answer to
+  question 3, and it is the version that maps onto a structure event.
+- **Steps 2 and 3 interleave**: the second top (10:00) printed between the two inducement BOS
+  (09:00, 11:05). A detector must not enforce the deck's numbering as a strict order.
+- ⚠ **The stop 4,673.26 is 0.46 BELOW the broker's high (4,673.72)** — a feed difference. A stop
+  rule adds its buffer to the EXECUTING broker's high, never to the chart's.
+- ⚠ **1.29R fails the deck's own "3× risk or skip" rule**, and the only edge ever measured on this
+  model lived above a 2R floor. Open question 11.
+
+### Examples 4–9 — six more real trades, same sender, same day (2026-09-14)
+
+Seven more charts. One is Example 3 re-drawn with the deck's 1–5 numbering, and it confirms the
+mapping above: 1 = the 4,673.7 top, 2 = the 4,633.45 top, 3 = the 4,598 low, 4 = the 4,583 low,
+5 = the stab. **All six new ones are 5-minute SHORTS and all six WON**; five sit in the same
+two-week gold decline as Example 3 (25 Aug → 8 Sep, ~4,697 → ~4,365). Every level was checked
+against PU Prime `XAUUSD.p` M5; engine events come from a default-stack replay (scratch script,
+not committed). NY time.
+
+| Ex | Entry | Entry / stop / target | R:R | Broker top "1", stop vs it | What the top took | Entry-level touches after the top | Target is | Entry bar printed | Worst against | To target |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3 | Wed 26 Aug 21:50 | 4,633.87 / 4,673.26 / 4,583.10 | 1.29 | 4,673.72, −0.46 | EQH 4,669.04 (bull BOS) | 3 | "4" (4,583.13) | ext bull SOS | 0.23R | 7.8h |
+| 4 | Tue 25 Aug 11:35 | 4,653.83 / 4,696.46 / 4,594.56 | 1.39 | 4,696.75, −0.29 | PDH = London H = NY H 4,680.92 (bull BOS) | 1 (+4 before the top) | next pool: PDL 4,594.77 | ext bull SOS 4,653.50 | 0.47R | ~23h |
+| 5 | Fri 28 Aug 09:55 | 4,616.75 / 4,642.30 / 4,568.54 | 1.89 | 4,643.06, −0.76 | London H 4,639.35 | 2 (+ Asia EQH 4,614.4–4,614.6) | "4": double bottom 4,569.13 / 4,568.52 | took NY H 4,618.06 + Asia H | 0.57R | 10 min |
+| 6 | Mon 31 Aug 06:50 | 4,453.98 / 4,471.65 / 4,396.16 | 3.27 | 4,472.08, −0.43 | 4-hour high 4,471.69, after a bull SOS 4,467.02 | 3 (EQH; prior-week close 4,454.36) | "4" (4,396.51) | nothing external | 0.57R | 21.2h |
+| 7 | Fri 4 Sep 03:40 | 4,486.20 / 4,510.80 / 4,457.07 | 1.18 | 4,510.83, −0.03 | 4-hour high 4,495.98 (bull BOS) | 1 (4,487.12) | next pool: 4,456.82, the up-leg's protected low | internal bull SOS | 0.19R | 4.8h |
+| 8 | Mon 7 Sep 21:45 | 4,438.20 / 4,448.95 / 4,364.87 | 6.82 | 4,449.00, −0.05 | an internal high ~4,442 only | 2 (4,438.44 Fri, 4,436.97 Mon) | next pool: Friday's low 4,365.57 (PDL) | nothing external | 0.45R | 17.0h |
+| 9 | Wed 22 Jul 21:00 | 4,138.07 / 4,165.82 / 4,106.68 | 1.13 | 4,166.08, −0.26 | bull BOS 4,163.44 | 2 | next pool: 08:55 low 4,106.75 (London L) | nothing external | 0.11R | 6.2h |
+
+**What the batch pins down:**
+
+- **One anatomy on all seven**: a top that takes a prior high; a lower high beneath it (the entry
+  level); a low taken by a lower low (3 → 4); a rally that stabs the lower high; stop at the top;
+  target at 4 or at the next pool below it. Every piece is a structure- or liquidity-engine event.
+- **The deck's 3× floor is not the practice** — R:R 1.13–6.82, median 1.39, five of seven under 2R.
+  That answers open question 11 for PRACTICE only. Whether sub-2R setups pay is the backtest's
+  question, and it must report results split by reward size.
+- **The stop sits AT the top on the chart feed, never past it** — 0.03 to 0.76 below the broker's
+  top on all seven. On the broker every one of those stops sits inside the top's wick. The strategy
+  puts it above the broker's top plus a buffer.
+- ⚠ **Winners only, so the worst-against column cannot place the stop.** 0.11–0.57R says none of
+  these came close; it says nothing about the trades that did. Losers are the missing half.
+- **Target: "4" on three, the next pool below "4" on four.** Two variants to test — nothing on the
+  charts says which rule picks.
+- **"Loaded" is looser than touched-twice**: two entries had one touch after the top (Example 4's
+  level had four touches BEFORE the top). The entry level is the lower high the rally stabs; touch
+  count is a filter to measure, not a requirement.
+- **Bearish SOS after the top: 5 of 7.** Example 7 had none on external structure; Example 8's top
+  formed inside a downtrend that had already shifted. **A bullish SOS on the entry bar (the deck's
+  "false SOS"): 3 of 7.** Both are candidate filters, not gates.
+- ⚠ **Example 5's target was hit 10 minutes after entry, in one spike at 10:00 NY.** It looks like a
+  news release, but the news calendar cache on this machine ends 31 Jul, so that is UNVERIFIED —
+  refresh the cache before quoting it.
+- 🔴 **The broker's daily REOPEN bar can take a level the chart never touched.** Example 9's target
+  (4,106.75) was traded through at 18:00 NY by PU Prime's reopen print — open 4,101.09, 19.20 below
+  both neighbours, back to 4,120.77 by its close — three hours BEFORE the entry. The chart shows no
+  such print. A detector reading the broker feed calls the target already swept and refuses the
+  trade. **2 of 139 reopen bars in 2026 did this, against 2 of 49,299 other bars** (poking more than
+  max($2, 3× a typical bar) past both neighbours). Rare, and it lands on exactly the levels this
+  model trades: a lone reopen-bar spike must not count as a sweep.
+- ⚠ **One market, one direction, one fortnight.** Six of seven are consecutive shorts in one
+  decline, and selling rallies into lower highs in a falling market wins whatever the model is
+  called. The long side and a rising market are unobserved.
+- The re-drawn Example 3 carries entry 4,633.45 / stop 4,673.58 / target 4,570.02. That target has
+  no low under it before the entry (the nearest untaken one is 4,580.68, 21 Aug) and matches where
+  price went afterwards (4,569.13, Thu 06:00) — treated as hindsight until the sender says otherwise.
+
 ---
 
 ## Open questions — what the next screenshots need to answer
@@ -267,6 +372,9 @@ Each of these changes the trade. None is answered by the video.
    screenshot showing a stop that has been moved.
 10. **How long does a level stay "consumed"?** Video 1 says a level price never returned to holds
    nothing. It gives no expiry. Without one, every old swept low is a live stop anchor for ever.
+11. **Is the 3× floor real?** Example 3 won at 1.29R as drawn, against the Class 14 deck's own
+   "3× risk or skip". Either the drawn stop is not the stop that was used, or the floor is not the
+   rule — and the RR veto, the sizing and every measured edge hang on which.
 
 ---
 
@@ -324,6 +432,40 @@ levels.
 it had **no control**, which the sibling `trigger_edge.py` calls the tool itself. The long-side
 funnel and outcomes reproduce **exactly** across the change (1,073/1,052/925/727/49, 17 target /
 32 stop), so no prior figure moves.
+
+---
+
+## MEASURED 2026-09-14 — the user's own version, and it does not pay
+
+`python backtest/tools/loaded_level_study.py` — rules in its docstring, tool record in
+`backtest/notes/tools.md`. The setup as Examples 3–9 define it, found by the canonical engines,
+replayed on PU Prime `XAUUSD.p` M5 2020-01-01 → 2026-09-11 (475,081 bars), one position at a time,
+ECN costs (spread 0.12, $1/side/lot, measured swap). **Recall: 7 of 7** — the same top, and a level
+stab within 3 bars and $2.20 of each entry.
+
+| Sized like the trades (stop ≥ 2 ATR, top-to-4 ≥ 10 ATR), stab entry | Trades | Win | R:R | Net R/trade | Total |
+|---|---|---|---|---|---|
+| short, target past 4 (named pool), floor 2.0 — the best cell | 1,108 | 26.5% | 2.80 | −0.026 | −28.7R |
+| short, target 4, floor 2.0 | 1,106 | 25.6% | 2.81 | −0.063 | −69.8R |
+| short, target past 4, floor 1.0 | 1,222 | 38.8% | 1.61 | −0.044 | −54.0R |
+| both directions, target past 4, floor 1.0 | 1,507 | 36.6% | 1.81 | −0.090 | −135.7R |
+
+- **Every floor × target × entry × direction cell at the user's size loses** (108 of 108). The
+  reclaim entry is worse (0 of 54 positive).
+- **Past 4 beats 4 in every row**, by 15–40R over the window, and still loses.
+- **No reward floor fixes it** — the win rate falls in step with the reward.
+- **The structure is informative, just not enough**: +3.8 to +4.4 points of win rate over random
+  stabs of any lower high with the same geometry (z +3.1 to +3.3).
+- **One family is positive in both halves and every year** — the first loaded (2-touch) level after
+  a bearish SOS, no floor (R:R 0.84), target past 4: +45.9R over 1,219 trades on ECN (+0.038R,
+  t +1.46), **+13.7R on Standard**, negative on each side alone. A search winner, not a strategy.
+- ⚠ **The rules fire ~15 times a month at the user's size; the Class 14 deck says "a couple of times
+  a week at best".** The user's eye throws away most of what these rules take, and all seven trades
+  it kept WON where the rules win 27–39% at the same reward-to-risk. That filter is not in these
+  rules. Open question 12.
+
+12. **What separates the trades the user takes from the ones the detector takes?** Only the user's
+    losing trades and skipped setups can answer it — seven winners cannot.
 
 ---
 

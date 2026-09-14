@@ -199,3 +199,10 @@ listed below under the notes file that now holds it.
 - 🔴 `fvg_export.pine` embeds the equal-level block, and that copy was missed (fixed 2026-09-09)
 - 🔴 `eq_export.pine` claimed its defaults matched mpc and they never did (fixed 2026-09-09)
 - 🔴 The one real defect: `f_rev15` had three ways to die and the chart-side SOS Fade engine has four
+
+### `notes/liquidity_levels.md` — which charts each level tier shows on, and when PWC rolls
+
+**Read before touching:** the H4, session, daily, weekly or PWC level gates in mpc_jarvis.pine.
+
+- 🔴 Each level tier shows only up to its own timeframe (2026-09-14) — H4 ≤ 4H, sessions intraday, daily ≤ D, weekly and PWC ≤ W; written once at `canShowDaily`
+- 🔴 PWC rolls at the week's open, with PWH/PWL (2026-09-14) — the strategy Pines are deliberately left on their older weekly block
