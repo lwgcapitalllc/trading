@@ -431,6 +431,114 @@ def test_BUILDING_a_strategy_runs_the_contract_check(tmp_path, monkeypatch):
     assert lc.EXECUTION_ATTRS[0] in str(e.value)
 
 
+# ── What MT5 said at connect reaches the record before anything can refuse (2026-09-14) ───────
+#
+# 🔴 Both bots taken live read $0.00 on the live terminal and refused to start. Their records still
+# held the demo account's $15,844.46 — the heartbeat is the only other writer of a balance, and a
+# refusal comes before the first one — so the Command Center showed the demo's equity on the live
+# account. What MT5 gave at connect has to be in the record first.
+
+
+def _run_to_the_build(tmp_path, monkeypatch, *, balance, login):
+    """Drive `_run` to the strategy build with MT5 answering `balance` on `login`, and refuse there
+    the way an empty account does. Returns every balance-bearing write that reached the bot's
+    record, and how many had arrived when the build began."""
+    import bot_state
+
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch, account=900000001))
+    writes: list[dict] = []
+    at_build: list[int] = []
+    monkeypatch.setattr(
+        bot_state,
+        "write_bot",
+        lambda _key, updates: writes.append(dict(updates)) if "balance" in updates else None,
+    )
+    # Each of these is a different guard with its own tests; none is the subject here.
+    monkeypatch.setattr(r, "already_running", lambda: False)
+    monkeypatch.setattr(r, "_unnamed_channels", lambda: None)
+    monkeypatch.setattr(r, "_bind_code", lambda: None)
+    monkeypatch.setattr(runner, "verify_pin", lambda *a, **k: "0" * 40)
+    monkeypatch.setattr(r, "_notify_health", lambda *a, **k: None)
+    monkeypatch.setattr(r, "connect", lambda: True)
+
+    def probe():
+        r._observed_account = login
+        return balance is not None, balance
+
+    def build():
+        at_build.append(len(writes))
+        raise RuntimeError("the refusal under test")
+
+    monkeypatch.setattr(r, "probe_link", probe)
+    monkeypatch.setattr(r, "_build_strategy", build)
+    code, _ = r._run()
+    assert code == 5, "the build's refusal must still end the start"
+    return writes, at_build
+
+
+def test_a_bot_that_REFUSES_to_start_still_leaves_what_MT5_said(tmp_path, monkeypatch):
+    """MUTATION: drop the connect write → red, nothing reaches the record. MUTATION: write it after
+    the build → red on `at_build`. MUTATION: keep the old account's deposits → red on the three."""
+    writes, at_build = _run_to_the_build(tmp_path, monkeypatch, balance=0.0, login=900000001)
+    assert at_build == [1], "MT5's reading must be in the record BEFORE anything can refuse"
+    w = writes[0]
+    # What MT5 said, and which account it said it about — off one `account_info()` call.
+    assert (w["balance"], w["observed_account"]) == (0.0, 900000001)
+    # Worked out at the LAST reading, maybe on another account: cleared, never kept beside it.
+    assert {k: w.get(k, "absent") for k in ("capital_in", "total_pnl_pct", "pnl_usd")} == {
+        "capital_in": None,
+        "total_pnl_pct": None,
+        "pnl_usd": None,
+    }
+
+
+def test_a_terminal_that_cannot_be_asked_records_None_never_a_zero(tmp_path, monkeypatch):
+    """Rule 1: `None` is *could not ask*, `0.0` is *MT5 says empty*.
+
+    MUTATION: write `balance or 0.0` → red."""
+    writes, _ = _run_to_the_build(tmp_path, monkeypatch, balance=None, login=None)
+    assert writes and writes[0]["balance"] is None
+    assert writes[0]["observed_account"] is None
+
+
+def test_a_ZERO_balance_refusal_says_zero_and_never_could_not_read(tmp_path, monkeypatch):
+    """Two refusals, and the message has to say which (2026-09-14).
+
+    🔴 Both bots taken live to account 35710389 connected, read **$0.00**, and refused with *"Could
+    not read the account balance"*. It had been read — the account is empty — and the two call for
+    different fixes: fund the account, or look at the terminal. Rule 1, inside an error message.
+
+    MUTATION: say "could not read" for a number too (the old message) → red on "$0.00".
+    MUTATION: say "$0.00" for an unread balance → red on the second half.
+    """
+    import types
+
+    r = runner.LiveRunner(
+        _cfg(
+            tmp_path,
+            monkeypatch,
+            strategy_package="fake_pkg",
+            strategy_class="FakeStrategy",
+            initial_capital=0.0,
+        )
+    )
+    _fake_package(monkeypatch, _Strategy())
+    mt5 = types.ModuleType("MetaTrader5")
+    monkeypatch.setitem(sys.modules, "MetaTrader5", mt5)
+
+    mt5.account_info = lambda: types.SimpleNamespace(balance=0.0)
+    with pytest.raises(RuntimeError) as e:
+        r._build_strategy()
+    assert "$0.00" in str(e.value)
+    assert "Could not read" not in str(e.value)
+
+    mt5.account_info = lambda: None
+    with pytest.raises(RuntimeError) as e:
+        r._build_strategy()
+    assert "Could not read the account balance" in str(e.value)
+    assert "$" not in str(e.value)
+
+
 def test_BUILDING_a_conformant_strategy_still_returns_it(tmp_path, monkeypatch):
     """MUTATION: make `_build_strategy` raise whatever the check says. RUN — red.
 

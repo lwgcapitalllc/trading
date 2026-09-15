@@ -6,6 +6,29 @@ CLAUDE.md gets at most one index line.
 
 ---
 
+## 🔴 What MT5 says at connect reaches the record before anything can refuse (2026-09-14)
+
+**Measured:** `extreme_leg_2` and `sos_fade_2`, moved from demo 700152905 to live 35710389, connected
+to the live terminal, read **$0.00** and refused to start. Their records still held the demo's
+**$15,844.46** — the heartbeat was the only writer of a balance, and a refusal comes before the first
+one — and `set_started` had re-stamped `account` with the live number, so the Command Center showed
+the demo's equity on the live account.
+
+- 🔴 **`_run` calls `_record_connect_reading` straight after `connect()`**, before the strategy build:
+  the balance and `observed_account` off ONE `account_info()` call (`probe_link`), `mt5_link`, the time.
+- ⚠ **`capital_in`, `total_pnl_pct` and `pnl_usd` are written as `None`.** They were worked out at the
+  last reading, maybe on another account, and beside a new balance they read as the whole deposit
+  lost. A bot that starts has them back from its first heartbeat.
+- ⚠ **A `None` balance is could-not-ask, never 0.0** (rule 1). It decides nothing, and a failed write is
+  a warning — `connect()` has already refused a terminal on the wrong login.
+- ⚠ **The empty-account refusal now says so:** *MT5 reports a balance of $0.00 for this account*, where
+  it said *Could not read the account balance* — one is fixed by funding, the other at the terminal.
+- ⚠ **It reaches a bot only when that bot is PROMOTED** — a live bot imports a frozen snapshot.
+
+Tests: 3 in `tests/test_live_runner_startup.py`, each watched red on the unfixed runner.
+⚠ **Still open:** Telegram's `/balance` prints each record's balance beside a label off its config,
+with no check of which account it was read on — a moved bot that never starts still shows the old one.
+
 ## 🔴 The status file is REPLACED, never emptied and refilled (2026-08-24)
 
 `algos/shared/bot_state.py::_save_instance_state` writes a temp file and `os.replace`s it, the same
