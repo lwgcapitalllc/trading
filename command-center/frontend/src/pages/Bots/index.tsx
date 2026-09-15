@@ -518,34 +518,50 @@ function SideSection({
 }
 
 /**
- * The Live / Demo group header inside the rail — a FULL-WIDTH FILLED COLOUR BAR, not a small text
- * label (2026-09-15, exact spec — Aaron picked this over two more mockup rounds after the
- * dot-plus-label version above). Live is GOLD, demo stays the page's usual accent cyan.
+ * The Live / Demo group heading inside the rail — a QUIET sticky header: a coloured dot, the
+ * group's name, and how many accounts are under it. Live is GOLD, demo the page's accent cyan,
+ * and the colour is carried by the dot and the label only.
+ *
+ * 🔴 **It was a full-bleed filled colour band until 2026-09-15 (fourth pass) and that is what
+ * made the whole column read as decoration** — a saturated band plus a saturated open row meant
+ * roughly every pixel of a 250px column was a fill, so nothing in it could be emphasis any more.
+ * A heading for a one- or two-row group is the least important thing in the rail and may not be
+ * the loudest. Aaron, on the running page: *"the account list design looks ugly."* Colour in this
+ * column now means exactly two things — the sign of a figure, and which account is open.
  *
  * 🔴 **A DELIBERATE, SCOPED exception to `KIND_TINT`** (`kind.tsx`), not a change to it — every
- * filter pill, chip and badge on this page still reads amber for live exactly as before; this one
- * bar, specifically, is the mockup Aaron approved. `KIND_TINT` is untouched.
+ * filter pill, chip and badge on this page still reads amber for live exactly as before.
  *
- * 🔴 **No pooled score in here — not any more, and not a fourth reskin (2026-09-15, same day).**
- * A live/demo comparison figure lived here for one round, in the section heading before that, and
- * as a pair of tiles above the page before THAT — three shapes, and Aaron read all three: *"what
- * is the purpose of this section?"* (2026-09-10, the tiles), then, of this exact bar, *"I don't
- * know what was the purpose of it, it looks kind of out of place and it does nothing for me."*
- * Three strikes on the same idea is a signal to remove it, not find it a fourth home — see
- * `notes/bots-page.md` for the full history. This bar is just the group's name now: a dot and a
- * label, nothing pooled or compared.
+ * 🔴 **No pooled score in here — three shapes were tried and all three were read as noise.** See
+ * `notes/bots-page.md`. This is the group's name and its count, nothing compared.
+ *
+ * ⚠ **Sticky** — the rail scrolls once a few accounts are on the box, and a group's name must
+ * stay on screen while its own rows are under the pointer.
  */
-function RailGroupBar({ kind, label }: { kind: 'live' | 'demo'; label: React.ReactNode }) {
-  const fill = kind === 'live' ? 'bg-gold-muted' : 'bg-accent-muted'
+function RailGroupBar({
+  kind,
+  label,
+  count,
+}: {
+  kind: 'live' | 'demo'
+  label: React.ReactNode
+  count: number
+}) {
   const text = kind === 'live' ? 'text-gold-text' : 'text-accent-text'
   const dot = kind === 'live' ? 'bg-gold' : 'bg-accent'
   return (
     <div
       data-testid={`rail-bar-${kind}`}
-      className={`flex items-center gap-[8px] px-[8px] py-[7px] ${fill}`}
+      /* ⚠ SUNKEN, not the raised surface an OPEN row uses — one surface may not mean two things
+       *  in the same column, or "which account is showing on the right" stops being readable at a
+       *  glance. A heading recedes; an open row rises. */
+      className="sticky top-0 z-[1] flex items-center gap-[7px] px-[10px] py-[6px] bg-bg-sunken border-b border-border-subtle"
     >
-      <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${dot}`} />
-      <span className={`text-[11px] font-bold uppercase tracking-[0.6px] ${text}`}>{label}</span>
+      <span className={`w-[6px] h-[6px] rounded-full shrink-0 ${dot}`} />
+      <span className={`text-[10px] font-bold uppercase tracking-[0.9px] ${text}`}>{label}</span>
+      {/* How many accounts are under this heading — the one figure a group legitimately owns,
+       *  since it counts rows rather than pooling anything the rows themselves state. */}
+      <span className="ml-auto text-[10px] font-mono tabular-nums text-text-tertiary">{count}</span>
     </div>
   )
 }
@@ -1344,32 +1360,57 @@ export function Bots() {
   type AccountView = ReturnType<typeof prepareAccountView>
 
   /**
-   * One compact line per account — the RAIL (2026-09-15, replacing the fold/unfold accordion
-   * after Aaron reviewed three layout mockups and picked rail + detail). Pin, worst-status
-   * marker, identity, one headline figure, and the open/closed state itself — click toggles the
-   * account in the shared `expandedAccounts` set, same as the old chevron did. Any number from
-   * zero to all can be open; the open ones render in this same rail order in the detail column.
+   * One compact line per account — the RAIL. Pin, worst-status marker, identity, two figures, and
+   * the open/closed state itself — click toggles the account in the shared `expandedAccounts` set.
+   * Any number from zero to all can be open; the open ones render in this same rail order in the
+   * detail column.
    *
-   * ⚠ **Needs no VPS to render** — same rule the old card's identity line answered to: the
-   * account list is read off the local instance configs, so a rail row (and its worst-status
-   * marker, off whatever the box HAS answered for) must never wait on a slow or dead box.
+   * 🔴 **A LEDGER, NOT A STACK OF CARDS (2026-09-15, fourth pass — Aaron: *"the account list
+   * design looks ugly"*).** Three things changed and each was a specific defect:
+   *
+   *  1. **The open row is no longer a saturated cyan fill.** It is the page's own raised surface
+   *     plus a 2px coloured edge in its kind's colour. A filled block per open account, under a
+   *     filled group band, left the column with no quiet ground to read anything against — and a
+   *     fill that loud says "alarm" where all it means is "showing on the right".
+   *  2. **The figures are RIGHT-ALIGNED in their own column**, mono and tabular, so % sits over %
+   *     and equity over equity down the whole rail. They used to run inline after the name at two
+   *     different sizes, which is why a column of money read as wrapped prose — the one thing a
+   *     reader scans an account list FOR is the odd one out, and that needs a shared right edge.
+   *  3. **Identity owns the left column**: number over name, both left-aligned on the same edge,
+   *     with a fixed status gutter to the left of them so a row with a problem never shifts the
+   *     number sideways relative to a row without one.
+   *
+   * ⚠ **The pin is revealed on hover/focus but keeps its space always** — a ★ outline on every
+   * row was per-row noise in the corner of a 250px column, and collapsing its box on hover would
+   * make every row twitch. Pinned rows show it permanently, because that one IS a state.
+   *
+   * ⚠ **Needs no VPS to render** — the account list is read off the local instance configs, so a
+   * rail row (and its worst-status marker, off whatever the box HAS answered for) must never wait
+   * on a slow or dead box.
    */
   const renderRailRow = (view: AccountView) => {
     const { account, group, key, reg, earn, worst, balance, idle, readAt } = view
     const isOpen = expandedAccounts.has(key)
     const showWorst = !!worst && (worst.tone === 'bad' || worst.tone === 'warn')
+    const pinned = !!group.pinned
+    // The open row's edge takes the account's OWN kind colour — gold for real money, accent for
+    // demo — so "which of these is open" and "which of these is live" are one glance, not two.
+    // An unstated kind keeps the neutral accent rather than guessing live: see `kind.tsx`.
+    const edge = reg?.kind === 'live' ? 'bg-gold' : 'bg-accent'
     return (
       <div
         key={key}
         data-testid="account-rail-row"
-        className={`flex items-start transition-colors ${isOpen ? 'bg-accent-muted' : 'hover:bg-bg-hover'}`}
+        className={`group/row relative flex items-stretch transition-colors ${
+          isOpen ? 'bg-bg-surface-2' : 'hover:bg-bg-hover'
+        }`}
       >
-        {/* 🔴 TWO LINES, DELIBERATELY (2026-09-15, third round — Aaron picked this over the
-         *  one-line version across two more mockup rounds). A `grid-cols-[auto_1fr]` rather than
-         *  two independent flex rows: line 2's content is placed in the SAME second column as the
-         *  name, so it aligns under the name regardless of how wide the account number is,
-         *  without a hand-guessed padding value. Line 1: number, name, (pin is a sibling, not a
-         *  grid child — see below). Line 2: return %, equity, the worst-status DOT. */}
+        {/* The open marker — a 2px edge, full row height. Drawn as an absolute sibling rather than
+         *  a border on the row so opening an account never moves its text by 2px. */}
+        <span
+          aria-hidden
+          className={`absolute left-0 top-0 bottom-0 w-[2px] ${isOpen ? edge : 'bg-transparent'}`}
+        />
         <button
           data-testid="account-rail-toggle"
           onClick={() => toggleAccount(key)}
@@ -1379,65 +1420,14 @@ export function Bots() {
               ? `Hide account ${account} from the detail column`
               : `Show account ${account} in the detail column`
           }
-          className="flex-1 min-w-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-[6px] gap-y-[3px] px-[8px] py-[8px] text-left"
+          className="flex-1 min-w-0 grid grid-cols-[9px_minmax(0,1fr)_auto] items-center gap-x-[8px] gap-y-[2px] pl-[11px] pr-[2px] py-[9px] text-left"
         >
-          {/* 🔴 LINE 1 IS THE DOMINANT ELEMENT (2026-09-15, Aaron on the mockup: the number and
-           *  name are the row's identity and must read as such at a glance, more prominent than
-           *  the return/equity line under them — not just technically first in the markup). Bumped
-           *  a full step up from line 2's now-shrunk figures: 13px bold mono for the number (was
-           *  12px, matching the detail panel's OWN identity number), 12px semibold for the name
-           *  (was 11px regular/medium) — and the name stays full-strength primary text whether or
-           *  not the row is open, rather than only brightening on open, so the gap to line 2 holds
-           *  in both states. */}
-          <span className="col-start-1 row-start-1 text-[13px] font-mono font-bold tabular-nums text-text-primary">
-            {account}
-          </span>
-          {/* Nickname else broker — the same rule the detail panel's own identity line uses
-           *  (`nameOf`), off the same slow-to-answer registry, so it shimmers for the same
-           *  reason there rather than guessing "Account N" in the meantime. */}
-          {!reg && registryPending ? (
-            <Shimmer className="col-start-2 row-start-1 h-[12px] w-[56px]" />
-          ) : (
-            <span className="col-start-2 row-start-1 truncate text-[12px] font-semibold text-text-primary">
-              {nameOf(reg, group)}
-            </span>
-          )}
-          <span className="col-start-2 row-start-2 flex items-center gap-[6px] min-w-0">
-            {/* Return % — same figure the detail panel's own Return stat states in full; `compact`
-             *  hides only the dollar NET-CHANGE half (a different figure from the equity beside it
-             *  here), the % keeps its full tooltip. */}
-            <AccountNet e={earn} asking={asking} compact />
-            {/* Equity — the account's own balance, the same figure the detail panel's Equity stat
-             *  shows, muted and smaller here since the rail's headline is the % beside it. */}
-            {balance == null && asking ? (
-              <Shimmer className="h-[10px] w-[48px]" />
-            ) : balance == null && idle ? (
-              <span
-                title="No bot is on this account, and none that traded here left a reading of its balance."
-                className="text-[10px] text-text-tertiary truncate"
-              >
-                not read
-              </span>
-            ) : balance == null ? (
-              <span
-                title="Balance unread — see Equity in the detail panel."
-                className="text-[10px] text-warn-text truncate"
-              >
-                unread
-              </span>
-            ) : (
-              <span
-                title={readAt ? `Equity — last read ${readTime(readAt)}.` : 'Equity'}
-                className="text-[10.5px] text-text-tertiary tabular-nums truncate"
-              >
-                {money(balance, false)}
-              </span>
-            )}
-            {/* 🔴 A DOT, NEVER THE PILL (2026-09-15) — same restraint as before (only `bad`/`warn`
-             *  ever draw one; a healthy or not-yet-answered account earns no marker), but a fixed
-             *  6px circle can never wrap or grow a row, where the pill's word ("Stopped") plus its
-             *  "+1" badge could. The full pill still draws in the detail panel, where there is
-             *  room for it; the account's own worst-problem SENTENCE is one hover away (`title`). */}
+          {/* 🔴 A FIXED STATUS GUTTER, spanning both lines. 'ok'/'idle'/'unknown' are not findings
+           *  — a healthy or not-yet-answered account earns no marker — but the COLUMN is always
+           *  there, so the number beside it starts on the same x whether or not this account has a
+           *  problem. The account's own worst-problem sentence is one hover away; the full pill
+           *  still draws in the detail panel, where there is room for its words. */}
+          <span className="col-start-1 row-start-1 row-span-2 flex items-center justify-center self-stretch">
             {showWorst && worst && (
               <span
                 data-testid="rail-worst-dot"
@@ -1446,15 +1436,73 @@ export function Bots() {
               />
             )}
           </span>
+          {/* LINE 1, LEFT — the account number, the row's identity and its dominant element. */}
+          <span className="col-start-2 row-start-1 truncate text-[12.5px] font-mono font-bold tabular-nums text-text-primary">
+            {account}
+          </span>
+          {/* LINE 1, RIGHT — the account's own return. The one span on this row still allowed real
+           *  colour, because the sign of it is a finding. `compact` drops only the dollar
+           *  net-change half (a different figure from the equity under it); the full sentence is
+           *  one hover away on the same `title`. */}
+          <span className="col-start-3 row-start-1 flex justify-end">
+            <AccountNet e={earn} asking={asking} compact />
+          </span>
+          {/* LINE 2, LEFT — nickname else broker, off the same slow-to-answer registry the detail
+           *  panel's own identity line reads (`nameOf`), so it shimmers for the same reason there
+           *  rather than guessing "Account N" in the meantime. */}
+          {!reg && registryPending ? (
+            <Shimmer className="col-start-2 row-start-2 h-[11px] w-[56px]" />
+          ) : (
+            <span className="col-start-2 row-start-2 truncate text-[11.5px] text-text-secondary">
+              {nameOf(reg, group)}
+            </span>
+          )}
+          {/* LINE 2, RIGHT — equity, the same figure the detail panel's Equity stat shows, muted
+           *  and smaller here since the rail's headline is the % above it. ⚠ Unread, not-read and
+           *  a real balance are three different answers and each says which it is. */}
+          <span className="col-start-3 row-start-2 flex justify-end min-w-0">
+            {balance == null && asking ? (
+              <Shimmer className="h-[10px] w-[52px]" />
+            ) : balance == null && idle ? (
+              <span
+                title="No bot is on this account, and none that traded here left a reading of its balance."
+                className="text-[10.5px] text-text-tertiary truncate"
+              >
+                not read
+              </span>
+            ) : balance == null ? (
+              <span
+                title="Balance unread — see Equity in the detail panel."
+                className="text-[10.5px] text-warn-text truncate"
+              >
+                unread
+              </span>
+            ) : (
+              <span
+                title={readAt ? `Equity — last read ${readTime(readAt)}.` : 'Equity'}
+                className="text-[10.5px] font-mono tabular-nums text-text-tertiary truncate"
+              >
+                {money(balance, false)}
+              </span>
+            )}
+          </span>
         </button>
-        {/* Pin — a sibling of the toggle button (never nested inside it), aligned to the TOP of
-         *  the row via the parent's `items-start` so it sits level with LINE 1, not centred
-         *  across both lines. */}
-        <PinToggle
-          pinned={!!group.pinned}
-          disabled={setPin.isPending && setPin.variables?.account === account}
-          onClick={() => setPin.mutate({ account, pinned: !group.pinned })}
-        />
+        {/* Pin — a sibling of the toggle button (never nested inside it), centred on the row now
+         *  that the row is a two-line ledger rather than two stacked flex lines. Its BOX is always
+         *  there; only its ink comes and goes, so no row moves when the pointer crosses it. */}
+        <span
+          className={`shrink-0 self-center pr-[4px] transition-opacity ${
+            pinned
+              ? 'opacity-100'
+              : 'opacity-0 group-hover/row:opacity-100 focus-within:opacity-100'
+          }`}
+        >
+          <PinToggle
+            pinned={pinned}
+            disabled={setPin.isPending && setPin.variables?.account === account}
+            onClick={() => setPin.mutate({ account, pinned: !pinned })}
+          />
+        </span>
       </div>
     )
   }
@@ -2242,7 +2290,7 @@ export function Bots() {
                         if (isKind) {
                           return (
                             <div key={key} data-testid={`section-${key}`}>
-                              <RailGroupBar kind={key} label={label} />
+                              <RailGroupBar kind={key} label={label} count={accounts.length} />
                               {rowList}
                             </div>
                           )

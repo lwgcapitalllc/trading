@@ -1527,3 +1527,56 @@ anything taller.
   accounts closed (Aaron's exact scenario) — no score line anywhere, both the rail and the empty
   state reach the same bottom edge with no visible gap. `tsc --noEmit` clean, eslint clean (the
   same one pre-existing warning), `npm run build` clean.
+
+### The rail reads as a ledger, not a stack of cards (2026-09-15, fourth pass)
+
+Aaron, on the running page: *"the account list design looks ugly in my opinion. Redesign it for
+better UX."* No structural change — rail + detail stands, and so does every rule the passes above
+settled (one fact once, no pooled score, no worst-status pill in the rail). This pass is about
+where the COLOUR and the ALIGNMENT go inside the rail's own 248px column.
+
+🔴 **Root cause of "ugly": the column had no quiet ground left in it.** A full-bleed filled bar
+per group (gold for Live, accent for Demo) plus a fully filled `bg-accent-muted` row for every OPEN
+account meant that with two groups and two accounts open, roughly every pixel of the rail was a
+saturated fill. Nothing in a column like that can be emphasis, because emphasis is a difference
+from a ground and there was no ground. It also mis-states importance: a group heading over one or
+two rows is the LEAST important thing in the rail and was the loudest, while a fill that strong
+reads as an alarm when all it means is "this one is showing on the right".
+
+Three changes, each answering a specific defect:
+
+- **The group heading recedes.** `RailGroupBar` is now a sticky header on `bg-bg-sunken` with a
+  coloured dot, its label in its kind's text colour, and the number of accounts under it —
+  the one figure a heading legitimately owns, since it counts its own rows rather than pooling
+  anything the rows state (the three-times-rejected score is NOT coming back; see the section
+  above). Gold still means Live here, so the scoped `KIND_TINT` exception documented in `kind.tsx`
+  is unchanged. ⚠ Sunken, deliberately — a heading and an OPEN row may not share a surface, or
+  "which account is open" stops being readable at a glance.
+- **The open row rises instead of filling.** `bg-bg-surface-2` plus a 2px left edge in the
+  ACCOUNT's own kind colour (gold for real money, accent for demo, off `reg.kind` — an unstated
+  kind keeps accent rather than guessing live). The edge is an absolutely-positioned sibling, not a
+  border, so opening an account never shifts its text sideways by 2px.
+- **The figures got their own right-aligned column.** The row is a three-track grid: a fixed 9px
+  status gutter, identity (number over name, one left edge), then return % over equity, both mono
+  and tabular, right-aligned. They used to run inline after the name at two sizes, which is why a
+  column of money read as wrapped prose — the thing anyone scans an account list FOR is the odd one
+  out, and that needs a shared right edge to be visible at all. The status gutter is always there
+  whether or not this account has a finding, so a row with a problem never shifts its number
+  relative to a row without one (the marker rule itself is unchanged: only `bad`/`warn` draw a dot,
+  and it is a dot, never the pill).
+
+⚠ **The pin is revealed on hover/focus and keeps its box always.** A ★ outline in the corner of
+every row was per-row noise in a 248px column; collapsing the box on hover instead of the ink would
+make every row twitch as the pointer crossed it. A PINNED account shows its star permanently —
+that one is a state, not a control waiting to be found.
+
+⚠ **The rail stays 248px wide and that is a MEASURED constraint, not a preference.** It was widened
+to 270px mid-pass for a little more name room and that took the detail table's P&L column from
+102.86px to just under the 100px the column-sharing test guards (floor 96px) — the rail's width is
+spent out of the same pool those nine columns share. Reverted to 248; the longest real nickname
+(`PU Prime ECN demo`) still fits beside its equity figure at that width. If the rail ever needs to
+be wider, the detail table's own thresholds have to be re-measured in the same pass.
+
+Verified: `tsc --noEmit` clean; `bots-accounts.spec.ts` 135/135 against the offline build; loaded
+in a real browser against the live backend at 1600×1000 — both groups, three accounts, one open per
+kind, the hover-revealed pin, and the red worst-status dot on the account whose bot is troubled.

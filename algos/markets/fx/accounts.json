@@ -71,6 +71,7 @@
       "broker": "PU Prime Ltd",
       "tier": "ECN",
       "kind": "live",
+      "pinned": true,
       "server": "PUPrime-Live",
       "mt5_path": "C:\\MT5_Aaron\\terminal64.exe",
       "symbol_suffix": ".p",
