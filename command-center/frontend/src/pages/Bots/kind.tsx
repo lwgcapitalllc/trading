@@ -1,8 +1,7 @@
 /**
  * Live or demo — ONE colour per kind of account, used everywhere a kind appears on the Bots page:
- * the filter switches, the section headings, the chips on the Unassigned list and both panels'
- * headers (Aaron, 2026-09-10: *"the live and demo pills should stand out"*). Amber is real money;
- * cyan is demo.
+ * the filter switches, the chips on the Unassigned list and both panels' headers (Aaron,
+ * 2026-09-10: *"the live and demo pills should stand out"*). Amber is real money; cyan is demo.
  *
  * ⚠ **In its own file so the page and both panels read ONE definition** — it lived inside
  * `index.tsx`, and a panel drawing its own amber would be a second answer to "which colour is real
@@ -11,6 +10,15 @@
  * ⚠ **Neither is green or red** — those are reserved for P&L here, so a coloured figure keeps
  * meaning up or down. ⚠ **A kind nobody stated stays grey**: painting it either colour is a guess,
  * and guessing "demo" for real money is the one direction that may not happen.
+ *
+ * 🔴 **ONE deliberate, scoped exception since 2026-09-15: the rail's own Live/Demo section
+ * heading.** `RailGroupBar` in `index.tsx` paints Live GOLD there, not this file's amber — the
+ * exact mockup Aaron picked over two rounds for that one full-width bar. It does not read from
+ * this file at all (no import), so it cannot drift out of sync with a value defined here; it is a
+ * second, independent answer to "what colour is Live" for that one element only. Everywhere else
+ * — the filter switches, the chips, both panels' headers — still reads this file and still means
+ * amber. Do not "fix" the rail bar back to amber to match this file, and do not fold the rail's
+ * gold in here: `KIND_TINT` stays the one true answer for every OTHER consumer.
  */
 
 export const KIND_TINT: Record<

@@ -1185,3 +1185,345 @@ The only route past it was a person hand-editing a new instance file on the VPS.
   an account already running every known strategy says so by name; a strategy not yet on that
   account is still offered even once every other one is. All 134 pass. tsc --noEmit and eslint
   clean on every changed file.
+
+## Accounts are a RAIL + DETAIL, and one per kind can be PINNED open (2026-09-15)
+
+Every account on Trading rendered its full bot table, always open. That reads fine at two or three
+accounts; it stops being a list and starts being a wall the moment the fleet grows past a handful —
+the exact growth this whole page keeps getting rebuilt to survive (*one list, one drawer, no tabs*,
+above).
+
+🔴 **A fold/unfold accordion shipped first, same day, and was replaced before it was ever
+committed.** Aaron reviewed three layout mockups (built outside this codebase) and picked
+**rail + detail** over the accordion — a compact line per account on the left, full content for
+every OPEN account stacked on the right. Nothing about the accordion's rendering survives below;
+where it matters, this entry says what replaced it rather than describing code that is gone.
+
+- 🔴 **The RAIL** (`renderRailRow`, `w-[248px]` — reusing the width of this app's one other
+  rail+detail precedent, the deleted `AccountsTab.tsx`'s own rail, matched from git history since
+  Aaron asked this to look like that one rather than invent a third rail idiom in the same app).
+  One compact line per account: the pin star, the worst-status marker, the account's identity
+  (number leads, nickname else broker — unchanged rule), one headline figure, and the open/closed
+  state itself as the row's own highlight (`bg-accent-muted border-accent/30` open, matching this
+  app's own colour rule that accent marks the thing selected). Clicking a row toggles that account
+  in the shared open set; **not single-select** — any number from zero to all can be open at once.
+  ⚠ **Long nicknames truncate in the rail** (`PU Prime ECN demo` → `PU Prime EC…` at 248px) — the
+  account NUMBER stays whole either way and is this app's own tie-breaker when a name and a number
+  would otherwise disagree, so a truncated name never costs identification. The historical rail
+  this width came from truncated names the same way; it is the accepted shape for a compact list,
+  not a defect introduced here.
+- **The headline figure is Return %, not Equity** — one number, never both crammed into a ~230px
+  row (the detail panel beside it states the same figure in full, plus the other three stats; that
+  is a preview and a detail view of the SAME fact, not two different facts). `AccountNet` grew a
+  `compact` prop for this rather than forking a second component — hide the dollar span, keep the
+  `title` (the full sentence, including what it is measured from, is one hover away either way).
+- 🔴 **THE DETAIL COLUMN holds every account currently OPEN, stacked in RAIL ORDER** — Live
+  section's pinned-first order, then Demo's — **never click order**, so toggling one account never
+  reshuffles a panel that is already open. Each panel (`renderDetailPanel`, `account-detail`) is
+  the account's full content unchanged from the old card: the identity + stat cluster header (Cap
+  / Return / Avg per bot / Equity, the idle/cap-disagreement chip), the bot table, Configure
+  access, and the Unattributed line. **No worst-status marker here** — the rail states it once;
+  drawing it again in the open panel would be the exact duplication this page keeps getting
+  rebuilt to remove. **No pin here either** — it moved into the rail row, one control, not a copy
+  in every open panel.
+- **Nothing open → an `EmptyState`** ("No account open — Pick one or more accounts on the left…"),
+  this app's existing component rather than a hand-rolled placeholder. In practice this is rare:
+  the default (below) guarantees something is open the moment there is anything to show, so it is
+  only ever seen after a reader has deliberately closed every account they had open.
+- 🔴 **`prepareAccountView` computes an account's cap, balance, bot rows and worst condition
+  ONCE**, read by both the rail row and its detail panel, so the two surfaces can never disagree
+  about what an account IS — only about how much of it is currently on screen. Both are keyed off
+  the same `accountKey`, and `accountViews` (a `Map`) holds one entry per account for the whole
+  render pass rather than recomputing per surface.
+- **The open/selected state itself is UNCHANGED and layout-agnostic** — `expandedAccounts` (a
+  `Set<string>`), `toggleAccount`, and the default-expand effect (`defaultExpandKeys` /
+  `defaultExpandSignature`, frozen forever once `userTouchedExpand` flips) all carry over exactly
+  as they were. That effect took two rounds to get right — it recomputes off whatever Live/Demo
+  classification is currently best-available (including the provisional `pending` bucket before
+  the box or the registry has answered) so something is always open from the very first paint, and
+  freezes the moment a reader touches a toggle so a later refetch or pin write can never silently
+  override a manual choice. A real regression shipped here once, on the accordion's watch: an
+  earlier version of this same effect fired only once and waited for the box to answer first,
+  which left every account collapsed with nothing on screen for as long as the VPS was slow or
+  down — `bots-accounts.spec.ts` caught it the same day (`the accounts render while the VPS
+  snapshot is still unanswered`, `a bot the box has not answered for reads UNKNOWN, never
+  stopped`). The fix (recompute continuously, stop forever on the first manual touch) is what
+  ships now, under either rendering — this page's rule-1 lesson one layer up from where it usually
+  bites: not a bot's STATUS value, but the ROW ITSELF staying visible while nobody has answered yet.
+- 🔴 **One pin per demo/live KIND, never a free ranking — the backend's rule, this page just draws
+  it.** `PATCH /bots/accounts/{account}/pin` states what ONE account should now be; setting one
+  un-pins whatever else of the same kind held it, entirely server-side, so the page never counts or
+  reconciles pins itself (the same discipline as the risk-share total three sections up). A pin
+  never crosses Live and Demo — `withPinnedFirst` reorders each section independently and the two
+  sections are never merged before it runs. The pinned account is also the one the default-expand
+  effect opens, since it reads the same pinned-first list the rail renders.
+- ⚠ **The pin is a ★, gold only while held** (root CLAUDE.md's colour rule: gold is for ★ markers
+  and limits). `bench`/`unknown` kind groups and the client-synthesized `emptyGroup` (an account
+  with no bots on `/bots/accounts` at all) report `pinned: false` and are never reordered — there is
+  no account number for a pin to mean anything about.
+- ⚠ **The rail costs the detail table real width, and one test's threshold moved to say so
+  honestly.** A persistent 248px rail sits beside the detail column at every viewport now, which
+  the table never had to share room with in the full-width accordion. MEASURED at 1600px: the
+  P&L column (96px floor) renders 102.86px — real sharing still happens (Aaron's original "give
+  the columns some space" fix is intact), just against a smaller pool than a single full-width
+  card ever had. `bots-accounts.spec.ts`'s width check moved its bar from 110px to 100px with the
+  measurement and the reason written beside it, rather than describing a page width this layout no
+  longer has.
+- 🔴 **The pin itself had three rounds of live-testing against the real backend and ZERO automated
+  coverage until this line** — a gap named directly (a feature nobody has watched fail for the
+  right reason is not proven, this repo's own rule 12) rather than left standing because the manual
+  checks all happened to pass. Four new tests, fixtured with `mock()`/`group()`/`reg()` exactly
+  like every other check in this file — never against the live server: a pinned account leads its
+  section over a lower-numbered unpinned one (watched red with `withPinnedFirst` neutered to a
+  no-op, so the fixture/array order won instead); the pinned account is the one open by default,
+  untouched (same mutation, same red); pinning is scoped to its own demo/live KIND — a live pin
+  cannot reorder or open the demo side or the reverse (four accounts, two per side, the pinned one
+  on each side deliberately listed second and numbered higher so a cross-side leak or an
+  array-order fallback would both show); and clicking the pin star sends the account and the
+  OPPOSITE of its current state (fixture starts PINNED specifically, so a hardcoded `pinned: true`
+  click handler — which would pass by coincidence against an unpinned fixture — is caught; watched
+  red with the click wired to send `true` unconditionally).
+- Verified: `tsc --noEmit`, `npm run build`, and eslint all clean. `npx playwright test
+  tests/bots-accounts.spec.ts` (138/138) and `tests/bots-version.spec.ts` (36/36) — every test in
+  the first file that touched the Trading tab's account rendering was watched red against the new
+  DOM (missing `account-card`/`account-toggle`, or a locator now finding TWO matches because the
+  same fact legitimately renders twice — once compact in the rail, once in full in the detail
+  panel) before being re-pointed to `account-rail-row` / `account-detail`, scoped to whichever one
+  actually holds what each test protects. A full unscoped `npx playwright test` (all 381, every
+  project — file-scoping earlier is exactly what let the rule-1 regression above slip past a
+  narrower run) comes back with only the same pre-existing, unrelated failures already confirmed
+  by `git stash`-ing this pass's files and re-running against bare `main`
+  (`backtests.spec.ts`, `overview.spec.ts` ×2, `strategies.spec.ts` flaked once and passed clean on
+  a rerun, `tuning.spec.ts`) — none in `bots-accounts`/`bots-version`.
+  Live-tested against the real backend in a real browser throughout: the rail renders and its
+  worst-status marker shows before the VPS answers, pinning moves an account to the top of its
+  section and opens it by default on reload, multiple accounts open and close independently in
+  rail order, the empty state appears once every account is closed by hand, and Configure still
+  reaches the same account settings panel it always did.
+
+### The rail, actually looked at (2026-09-15, second pass)
+
+The rail+detail decision above was verified by code and tests alone, and it shipped looking rough
+— Aaron on the running page: row heights inconsistent, Live and Demo blending together, the side's
+own score line reading as one account's number, and a rail that stops wherever the list ends
+rather than looking like a sidebar. Four fixes, all visual, none touching the rail+detail decision:
+
+- 🔴 **The status marker is a DOT, never `StatusText`'s pill (the actual bug behind "different
+  heights").** `StatusText` is built for a full-width card header — its word ("Stopped") plus a
+  "+1" badge wrapped onto its own line in a ~230px row, so a troubled account's rail row was
+  visibly taller than a healthy one's. A `w-[6px] h-[6px] rounded-full` dot can never wrap or grow
+  a row; the same `bad`/`warn`-only restraint stays (a new `TONE_DOT` map beside `BotStatus.tsx`'s
+  existing `PILL`/`TONE_TEXT`, same solid-fill convention this page already uses for a kind's own
+  dot in `kind.tsx`), and the worst bot's own sentence is still one hover away via `title`. The
+  full pill still draws in the detail panel, where there is room for it.
+- **Live and Demo get real separation** — `divide-y` between the rail's sections plus a bigger
+  gap either side of the line (26px), not just a small coloured dot and a label.
+- 🔴 **The pooled score line moved to sit BESIDE its own section's label, not floating above the
+  account list.** `SideScoreLine` sums a whole SIDE across every account on it — Aaron: *"this...
+  for demo — live doesn't have that, so why does demo have it?"* — and with exactly one Demo
+  account currently registered, the figure sitting on its own line right above that one row read
+  as if it belonged to it. It is still the side's total (`scoreOf`, unchanged, still needs 2+
+  scored bots to show a pooled figure) — this did not reopen "should this exist", only where it
+  reads as attached: `SideSection`'s heading is one `flex-wrap` row again (dot, label, hint, then
+  `aside`), so the score sits right after the label when there is room and wraps directly under it
+  — never a line of its own further down — when there is not.
+- **The rail is a real panel, stretched to the row's full height** — Aaron: *"have it show it's
+  the height of the page."* The outer row is `items-stretch` with a `min-h-[420px]` floor (this
+  app's own rail+detail precedent, the deleted `AccountsTab.tsx`'s shell, reused exactly) instead
+  of `items-start`; the rail's own `bg-bg-surface border rounded-lg` panel then fills that stretched
+  height. ⚠ **The flex item that stretches must NOT also carry an explicit height itself** — the
+  first attempt put `h-full` on that item, which computes to `auto` against a container whose own
+  height is merely min-height-bounded (not a definite value CSS percentage-resolution accepts),
+  and an explicit-but-invalid height silently overrides the default `stretch` behaviour the same
+  as a valid one would. MEASURED: with `h-full` on that item its rendered height was 250px against
+  a 439px row; removing it (and leaving only `h-full` one level DOWN, on that item's own child,
+  which now inherits a genuinely definite height from the stretch) fixed it to the full 420px.
+- Verified the same way every other round should have been from the start: the dev server up,
+  `/bots` loaded in a real browser, screenshots taken at both a normal width and a realistic narrow
+  one (1024px, not a phone width this desktop ops tool was never built for) with a fixture carrying
+  a halted bot specifically to see the dot. All four fixes confirmed by eye, not just by locator.
+  `tsc --noEmit`, `npm run build`, eslint clean (one more pre-existing-shaped warning on the new
+  `TONE_DOT` export, same as `TONE_TEXT` beside it — this file already trades fast-refresh purity
+  for one shared tone vocabulary). `bots-accounts.spec.ts` + `bots-version.spec.ts` 172/172
+  (unchanged from the pin-test pass — this round touched no test, only markup and classes) and a
+  full unscoped `npx playwright test` with only the same pre-existing, unrelated failures.
+
+### The rail, locked to an exact spec (2026-09-15, third pass)
+
+The second pass above was still open-ended ("distinguish Live/Demo better", "make rows
+consistent"). Aaron picked between real mockups over two more rounds and this pass is that exact,
+now-locked design — it REPLACES the dot-plus-label heading and the one-line row above, not a tweak
+on top of them.
+
+- 🔴 **ONE bordered panel holds the whole rail — Live then Demo INSIDE it, not two panels.** The
+  outer `bg-bg-surface border border-border-subtle rounded-lg` shell is unchanged (same element
+  that already stretched full height in the second pass); what moved inside it is the `p-[8px]`
+  wrapper and the per-section `gap-[26px] divide-y` spacing, both gone. Live and Demo now butt
+  directly against each other with no gap of their own — the colour change between one group's
+  last row and the next group's filled bar is the only separation, which is also why there is no
+  hairline between groups: `divide-y` is scoped to each group's OWN row list, so it draws lines
+  between rows within a group and never after the last one or before the first (see `RailGroupBar`
+  usage in `index.tsx`). `pending` (still classifying) and `other` (kind nobody stated) are not
+  real live/demo kinds, so they keep `SideSection`'s existing subtle dot-and-label heading with its
+  own small inset — only Live and Demo get the treatment below.
+- 🔴 **Live and Demo are FULL-WIDTH FILLED COLOUR BARS now, not a small dot-plus-label** — a new
+  `RailGroupBar` component, used only for `key === 'live' || key === 'demo'`. Live is
+  `bg-gold-muted` / `text-gold-text` / `bg-gold` dot; Demo keeps the page's usual
+  `bg-accent-muted` / `text-accent-text` / `bg-accent` (cyan). ⚠ **Live's gold is a DELIBERATE,
+  SCOPED exception to `KIND_TINT`** (`kind.tsx`, amber for live everywhere else — the filter pill,
+  every chip, every badge) — this one bar is the mockup Aaron approved; `KIND_TINT` itself was not
+  touched, and MEASURED via `getComputedStyle`: the bar's fill (`rgb(45,36,16)`) and its text
+  (`rgb(231,191,107)`) are visibly distinct from the live filter pill's own amber fill
+  (`rgba(255,179,0,.15)`) and text (`rgb(255,214,78)`) — a real second colour, not a same-value
+  rename. The pooled side score (`SideScoreLine`, unchanged, still needs 2+ scored bots to draw a
+  figure) folds INTO this same bar, right-aligned via `ml-auto` — MEASURED at 1440px: the score
+  span's right edge sits 8px inside the bar's own right edge, same inset as the bar's own left
+  padding, i.e. genuinely right-aligned rather than merely "on the right some of the time." A bar
+  with nothing to score (fewer than 2 scored bots, or asking) still draws — the dot and the label
+  are the group's name and are never conditional; only the number is.
+  ⚠ **A test that used to assert the "Live" heading's colour equals the live filter pill's colour
+  is now WRONG BY DESIGN** (`bots-accounts.spec.ts`, "live and demo are two switches..." — that
+  coupling was true when both read off one `KIND_TINT`, and stopped being true the moment this
+  bar's gold shipped) — rewritten to check what is actually still invariant: the pill is genuinely
+  filled while on and reverts to a different, unfilled look once off, no longer anchored to the
+  rail heading's own colour.
+- 🔴 **Each rail row is now TWO LINES, laid out on a CSS grid** (`grid-cols-[auto_minmax(0,1fr)]`)
+  so line 2 always lands under the NAME column, not a hand-guessed padding value that would drift
+  every time the account number's digit count changed. Line 1: account number (bold mono, now
+  13px/700 — bumped a full step, see below) then the name (12px/600, `text-text-primary` in both
+  open and closed states — previously only brightened on open, which shrank the gap to line 2 in
+  the more common closed state), pin star as a flex SIBLING of the row's toggle button (never
+  nested — this file's own established rule) aligned to the row's TOP via `items-start` on the
+  outer flex container, not centred across both lines. Line 2, in the same grid column as the
+  name: return % (still `AccountNet` with `compact`, hiding only the dollar half), the account's
+  own EQUITY (its real balance — `money(balance, false)`, the same figure the detail panel's own
+  Equity stat shows — NOT the net dollar change `AccountNet` already states as a %, a different
+  question), then the worst-status dot, unchanged from the second pass.
+- 🔴 **Line 1 is the DOMINANT element, line 2 deliberately quieter — Aaron on the mockup, a
+  correction on top of the two-line spec itself**: the return %/equity line at its original size
+  (13px, the same weight the full stat-cluster uses) competed with the identity line instead of
+  sitting under it. Fixed on both ends: line 1's number moved 12px→13px and semibold→bold, the name
+  11px→12px and now always full-strength `text-text-primary` (was secondary/muted while closed);
+  `AccountNet`'s own `compact` mode gained a real size drop (13px→11px) so the SAME component
+  reads authoritative in the full stat cluster and quiet in the rail, off one prop rather than two
+  copies of the return-% renderer. MEASURED via `getComputedStyle` at 1440px: line 1 is
+  13px/700 + 12px/600 in `text-text-primary`; line 2 is 11px/600 (coloured, since sign is a
+  finding) then 10.5px/400 in `text-text-tertiary` — a real, visible step down, not just a
+  technically-different class.
+  ⚠ **Line 2 sits LEFT-aligned under the name, not right or centred** — a second correction on the
+  same mockup pass. The grid placement already put line 2's content in the name's own column; what
+  needed checking was that nothing inside that column pushed right (no stray `ml-auto`/`justify-*`
+  survived from the old one-line row's right-aligned net figure). MEASURED: line 1's name and line
+  2's content share the exact same `getBoundingClientRect().x` (confirmed identical to sub-pixel
+  precision on a real row), so the two lines' left edges genuinely align rather than only
+  approximately lining up.
+- Verified the same way as every pass before it: dev server up, `/bots` loaded in a real browser,
+  screenshots at 1440px (normal desktop) and 1024px (the realistic narrow window this pass in the
+  second round already established, not a phone width) with real account data, not a fixture —
+  both groups' bars, the two-line rows, the divider-within-a-group-only rule, the full-height
+  stretch and the left-aligned line 2 all confirmed by eye and by direct DOM measurement, not just
+  by locator. `tsc --noEmit` clean, eslint clean (same one pre-existing warning as every prior
+  pass, unrelated to this file's own changes), `npm run build` clean. `bots-accounts.spec.ts`
+  (138/138, including all four pin tests from the previous pass) and `bots-version.spec.ts`
+  (36/36) both green with one test's assertion rewritten (the live-heading-colour coupling above)
+  and no other locator changes — every `data-testid` this round's markup rewrite depends on
+  (`section-live`, `section-demo`, `account-rail-row`, `pin-account`) was kept exactly where the
+  existing suite already expects it.
+
+### The pooled side score is DELETED, not reskinned a fourth time (2026-09-15, fourth pass)
+
+🔴 **Three strikes, same idea, three different shapes — removed rather than restyled again.**
+A live-vs-demo comparison figure has now failed to justify itself to Aaron three separate times:
+
+1. **2026-09-10, a pair of tiles above the page.** *"What is the purpose of this section? If I
+   select demo only then it goes away."* Moved into each side's own section heading so it would
+   survive a filter.
+2. **One round later, on the section heading.** Live doesn't get one — *"why does demo have it…
+   should it not be specific to the account."* Moved again, this time folded into the new
+   `RailGroupBar` (the gold/accent bar built the same day), right-aligned on the bar's own row.
+3. **2026-09-15, on the bar, hours after it shipped.** *"The plus one return a trade from 3 trades
+   from two bots… I don't know what was the purpose of it, it looks kind of out of place and it
+   does nothing for me to be honest."*
+
+Three different homes, three different objections, the same underlying idea each time. That is a
+signal the FEATURE is wrong, not that it has not yet found the right container — restyling it a
+fourth time would be the same mistake with better CSS. **Deleted outright**, not hidden behind a
+flag: `SideScoreLine`, `scoreOf`, `leadOf`, the `SideScore` interface, `liveScore`/`demoScore`/
+`lead`, the `Leading` chip, and `RailGroupBar`'s `score`/`leading` props (it now takes only `kind`
+and `label` — a dot and a name, nothing pooled or compared). `PerTrade`'s own trophy — which BOT
+is best on R per trade, a different and unproblematic question — is untouched; that one has never
+drawn an objection and this removal does not relitigate it.
+
+⚠ **If anyone is tempted to re-add a live-vs-demo comparison figure here, read this section
+first** — three different presentations of the same idea have each been read and rejected by the
+person who has to look at this page every day. The rows underneath already state each bot's own
+R-per-trade and trade count; that is apparently enough, and a pooled subtotal on top of it has
+never once landed as useful.
+
+Test fallout: the whole dedicated test block for the feature is gone (`score-live`/`score-demo`/
+`side-pooled`/`leading` testids) — four tests deleted outright (the side-leads test, the
+partial-score test, the filter-keeps-its-score test, and the score half of a fifth), one narrowed
+to keep only its still-valid half (renamed **"no trophy is awarded until there is a contest"** —
+the trophy assertion stayed, the "no side leads" assertions did not), and two more had a single
+stray score assertion removed from an otherwise-still-valid test (the demo-trades-stay-on-demo
+regression test, and the new-bot-replaces-the-idle-view test, retitled since "keeps the departed
+bots in its score" is no longer a thing that happens). `bots-accounts.spec.ts` + `bots-version.spec.ts`: 169/169.
+
+### The rail + detail area fills the real page, not a content-sized floor (2026-09-15, same pass)
+
+Aaron, on the running page with nothing open: *"I want the accounts side panel to stretch the
+entire height of the page"* and *"when there's no accounts open… just fill the whole page, this
+cropping behaviour… I don't like it."* The `min-h-[420px]` floor from the second pass was a
+**guessed number**, not a real answer to "how tall is the page" — it looked fine near 420–700px of
+real content and left a visible gap under both the rail and the "No account open" placeholder on
+anything taller.
+
+- 🔴 **Root cause: the row's height was never tied to the viewport at all.** The app shell's
+  `<main>` (`App.tsx`) is the actual scroll container, sized to `flex-1` inside a `h-screen` shell
+  — a genuinely DEFINITE height. But the Bots page's own root was a plain `<div>` (ordinary block
+  flow), so nothing below it had any relationship to that height; the rail+detail row's only
+  height signal was its own `min-h-[420px]`, a content-based constant with no idea how tall the
+  browser window actually is.
+- Fix, three levels, each chained off the one before: the page root is now `min-h-full flex
+  flex-col` (NOT a hard `h-full`, see the CSS trap below); the Trading tab's own top-level wrapper
+  is `flex-1 min-h-0` inside that column, so it claims whatever height the header and tab strip
+  above it do not use; the rail+detail row itself is `flex-1 min-h-0` in place of `min-h-[420px]`,
+  so it is genuinely "whatever is left of the viewport" rather than a guess.
+- 🔴 **`min-h-full`, not `h-full`, on the page root — a deliberate difference from the coordinator's
+  own suggested wording, and the reason is safety.** This is the standard "sticky footer" flexbox
+  pattern (`min-height:100%; display:flex; flex-direction:column` on the outer box, `flex:1` on the
+  growing child): when real content — many accounts open, long bot tables — needs MORE height than
+  the viewport, the column simply grows past `min-h-full` and `main`'s own `overflow-y-auto` scrolls
+  the whole taller page, exactly like it already does everywhere else in this app. A hard `h-full`
+  would have fixed the page root at exactly `main`'s content height regardless of content, risking
+  either clipped content or a fragile reliance on how a browser scores overflow:visible content
+  toward an ancestor's scrollable area. MEASURED at a squeezed 500px-tall viewport with three
+  accounts open: `main.scrollHeight` (827px) exceeds `main.clientHeight` (444px) and the page
+  scrolls — no clipping.
+- 🔴 **The "No account open" empty state needed a second, separate fix — it does not get a tall box
+  for free just because its flex parent is now tall.** `EmptyState` pads itself to a fixed height
+  (`py-[90px]`) and has no idea how tall the panel around it is, so left alone it kept stopping
+  wherever that padding ended even after the row itself grew — a shorter box next to the (now
+  genuinely full-height) rail, the exact "cropping" complaint in a new spot. Fixed by making its
+  wrapper `flex-1` (grow to the row's full height, same as the rail panel) plus its own `flex
+  items-center justify-center` (centre `EmptyState`'s content inside that full height, rather than
+  pinning it to the top with the extra space sitting empty below). MEASURED at 1440×900 with
+  nothing open: both the rail panel and this wrapper's `getBoundingClientRect().bottom` land at
+  exactly 878px — `main`'s own content-box bottom (900px viewport − 22px padding) — so neither
+  panel undershoots the page by even a pixel.
+- ⚠ **Individual account detail cards, when one or more IS open, are deliberately NOT stretched to
+  fill any leftover space** — that was never part of what was asked (only the rail panel and the
+  empty-state placeholder were named), and stretching a real data card to fill arbitrary empty
+  space would look like a broken layout, not a feature. The space below a short stack of open
+  account cards is just page background, same as before this pass.
+- ⚠ **Re-read before touching this again**: a flex item that STRETCHES must never carry an
+  explicit `height` itself (only `min-`/`flex-` sizing) — an explicit-but-unresolvable percentage
+  height computes to `auto` and silently cancels the stretch, which is exactly what broke the rail
+  in the second pass (documented above) and is why this pass's three new containers all use
+  `min-h-full`/`flex-1`/`min-h-0` rather than `h-full` anywhere in the new chain. The rail panel's
+  own long-standing `h-full` (on its INNER child only, per the second pass's fix) was left
+  untouched and still works, now against an even more genuinely definite ancestor chain than before.
+- Verified: dev server up, `/bots` loaded in a real browser, screenshot at 1440×900 with both
+  accounts closed (Aaron's exact scenario) — no score line anywhere, both the rail and the empty
+  state reach the same bottom edge with no visible gap. `tsc --noEmit` clean, eslint clean (the
+  same one pre-existing warning), `npm run build` clean.

@@ -37,6 +37,19 @@ const PILL: Record<Tone, string> = {
   unknown: 'border-dashed border-border-default text-text-tertiary',
 }
 
+/** A tone's SOLID dot — for a space too tight for the pill (a compact rail row, say), where a
+ *  wrapping pill+badge would change that row's height. Only `bad`/`warn` are ever meant to be
+ *  drawn: an `ok`/`idle`/`unknown` dot would be the exact "green means nothing is wrong" noise
+ *  the pill form already avoids by only colouring a real finding. Same solid-fill convention this
+ *  app already uses for a kind's own dot (`pages/Bots/kind.tsx`'s `KIND_TINT[...].dot`). */
+export const TONE_DOT: Record<Tone, string> = {
+  ok: 'bg-pos',
+  warn: 'bg-warn',
+  bad: 'bg-neg',
+  idle: 'bg-text-tertiary',
+  unknown: 'bg-text-tertiary',
+}
+
 type Size = 'row' | 'list'
 
 function Trade({ trade, inPill = false }: { trade: TradeView; inPill?: boolean }) {

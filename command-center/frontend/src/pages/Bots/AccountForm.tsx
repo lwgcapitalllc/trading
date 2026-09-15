@@ -87,6 +87,11 @@ export function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
     // No cap yet, so nothing to measure room against — `null`, never a number.
     room_pct: null,
     magic_clash: [],
+    // A group synthesized here stands in for an account nothing on `/bots/accounts` names (no
+    // bots on it now, or none ever) — this app never learned whether it was pinned, and `false`
+    // is the safe reading: it just means this account does not jump the queue or open by
+    // default until the real group (with the real answer) arrives.
+    pinned: false,
   }
 }
 

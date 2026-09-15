@@ -597,6 +597,15 @@ export interface BotAccountGroup {
    *  Empty is the healthy answer, and the page shows the fact only when it is true — which is
    *  why there is no raw `magic` column any more. */
   magic_clash: string[]
+  /**
+   * This account is the one held open and sorted first in its own Live/Demo section, by choice.
+   *
+   * ⚠ **Exactly one account per demo/live KIND can hold this at a time — the backend enforces it**,
+   * so setting one here un-pins whatever else of the same kind held it. The frontend never counts
+   * or reconciles this itself. `bench`/`unknown` kind groups always report `false` and are never
+   * reorderable — they carry no account number for a pin to mean anything about.
+   */
+  pinned: boolean
 }
 
 /** A freshly minted, unassigned, never-promoted copy of an existing bot — hand its key straight

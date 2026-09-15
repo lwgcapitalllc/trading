@@ -564,6 +564,25 @@ export function useSetAccountPassword() {
 }
 
 /**
+ * Pin (or unpin) one account — the header's pin control on the Bots page.
+ *
+ * ⚠ **The backend enforces "one per demo/live kind", not this hook.** Pinning a demo account
+ * un-pins whatever else of demo was pinned before, entirely server-side; this call only ever
+ * states what the ONE account clicked should now be, never a list to reconcile.
+ */
+export function useSetAccountPin() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ account, pinned }: { account: number; pinned: boolean }) =>
+      api.patch<BotAccountRegistration>(`/bots/accounts/${account}/pin`, { pinned }),
+    onSuccess: (_, { account, pinned }) => {
+      toast.success(pinned ? `Account ${account} pinned` : `Account ${account} unpinned`)
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
+    },
+  })
+}
+
+/**
  * Post a test message into one of an account's Telegram channels — FROM THE TRADING BOX.
  *
  * 🔴 **Why the box and not this laptop:** the Telegram token lives only in the box's credentials

@@ -441,7 +441,7 @@ test('two bots on one account render as ONE card, not one card each', async ({ p
   // MUTATION: group by bot rather than by account → two cards and this goes red.
   await mock(page, STACKED)
   await page.goto('/bots')
-  await expect(page.getByTestId('account-card')).toHaveCount(1)
+  await expect(page.getByTestId('account-rail-row')).toHaveCount(1)
   await openAccount(page)
   await expect(page.getByText('Bots on this balance · 2')).toBeVisible()
 })
@@ -629,7 +629,7 @@ test('an old ?tab=monitor link still lands on the fleet', async ({ page }) => {
   // nobody has.
   await mock(page, STACKED)
   await page.goto('/bots?tab=monitor')
-  await expect(page.getByTestId('account-card')).toHaveCount(1)
+  await expect(page.getByTestId('account-detail')).toHaveCount(1)
   await expect(page.getByTestId('bot-row')).toHaveCount(2)
 })
 
@@ -1313,7 +1313,7 @@ test('there is no raw magic column left to misread', async ({ page }) => {
   await mock(page, STACKED)
   await page.goto('/bots')
   await expect(page.locator('th', { hasText: /^Magic$/ })).toHaveCount(0)
-  await expect(page.getByTestId('account-card')).not.toContainText('770115')
+  await expect(page.getByTestId('account-detail')).not.toContainText('770115')
 })
 
 test('the version pill reports the DEPLOYED version and how far behind it is', async ({ page }) => {
@@ -2147,11 +2147,16 @@ test('an account measured off what went IN says so, and no longer blames a depos
       unattributed_usd: 25,
     },
   })
-  await expect(page.getByTitle(/put in \(deposits less withdrawals\)/)).toHaveCount(1)
+  // ⚠ Scoped to the DETAIL panel, not the whole page — since 2026-09-15 the same account's
+  // Return tooltip also sits on its compact rail row (rail + detail, not one card), so a
+  // page-wide count of this title is 2 per account showing it, not 1.
+  await expect(
+    page.getByTestId('account-detail').getByTitle(/put in \(deposits less withdrawals\)/)
+  ).toHaveCount(1)
   await expect(page.getByText('— a manual fill, or a trade older than the record')).toBeVisible()
   // The account still on the older basis keeps its opening, so the branch is PER ACCOUNT — a page
   // that switched every account at once would pass the two lines above.
-  await expect(page.getByTitle(/^Opened at /)).toHaveCount(1)
+  await expect(page.getByTestId('account-detail').getByTitle(/^Opened at /)).toHaveCount(1)
 })
 
 test('a bot whose account cannot trade says so on its row, and nothing else does', async ({
@@ -2220,14 +2225,18 @@ test('a bot in a trade and a HALTED bot each say so on their row, and no other b
       },
     }
   )
-  const trade = page.getByTestId('trade-open')
+  // ⚠ Scoped to the DETAIL panel's bot rows — since 2026-09-15 a `bad`/`warn` worst also draws
+  // the identical `StatusText` pill on the account's own rail row, so a page-wide count of a
+  // tone/state is 2 (the bot's own row, plus the account rail summarising it) rather than 1.
+  const detail = page.getByTestId('account-detail')
+  const trade = detail.getByTestId('trade-open')
   await expect(trade).toHaveCount(1)
   await expect(trade).toHaveText(/long 0\.40 lots · \+1\.2R/i)
   await expect(trade).toHaveAttribute(
     'title',
     /\+\$83\.00: \+1\.19R of the \$70\.00 risked at entry/
   )
-  const halted = page.locator('[data-testid="bot-status"][data-state="halted"]')
+  const halted = detail.locator('[data-testid="bot-status"][data-state="halted"]')
   await expect(halted).toHaveCount(1)
   await expect(halted).toHaveAttribute('data-tone', 'bad')
   await expect(halted).toHaveAttribute('title', /MT5 holds none/)
@@ -2351,18 +2360,24 @@ test('the number columns share the spare width — no blank track before Actions
   // three of them. Every track now has a floor and a share of what is left.
   // MUTATION: put the blank track back → red on the heading count.
   // MUTATION: pin P&L at its floor → red on its width.
+  // ⚠ **Threshold re-measured for the rail + detail layout (2026-09-15)** — a persistent 248px
+  // rail now sits beside the detail column at every width, which this table never had to share
+  // room with before. P&L's floor is 96px; MEASURED at 1600px with the rail on screen it now
+  // renders 102.86px — real sharing, just against a smaller pool than the old full-width card had.
+  // 110 assumed the whole page was the table's to spend; 100 is comfortably above the bare floor
+  // (the property this guards) while being honest about what a two-column page can spare.
   await page.setViewportSize({ width: 1600, height: 900 })
   await mock(page, STACKED)
   await page.goto('/bots')
   // ⚠ The REAL card's headings, never `.first()` on the page: the loading placeholder draws the same
   // headings and is swapped out, so a width read off it comes back null.
   const heads = page
-    .getByTestId('account-card')
+    .getByTestId('account-detail')
     .getByTestId('column-headings')
     .locator(':scope > span')
   await expect(heads).toHaveCount(9)
   await expect(heads.nth(2)).toHaveText('P&L')
-  await expect.poll(async () => (await heads.nth(2).boundingBox())?.width ?? 0).toBeGreaterThan(110)
+  await expect.poll(async () => (await heads.nth(2).boundingBox())?.width ?? 0).toBeGreaterThan(100)
 })
 
 test('a trade whose opening risk is unknown shows no R rather than a guess', async ({ page }) => {
@@ -2405,10 +2420,13 @@ test('with no filter, live and demo are split — every account under its own si
   await mockBothSides(page, SCORED)
   const live = page.getByTestId('section-live')
   const demo = page.getByTestId('section-demo')
-  await expect(live.getByTestId('account-card')).toHaveCount(1)
-  await expect(live.getByTestId('account-card')).toContainText(String(LIVE))
-  await expect(demo.getByTestId('account-card')).toHaveCount(1)
-  await expect(demo.getByTestId('account-card')).toContainText(String(ACCOUNT))
+  // ⚠ The RAIL row, not a detail panel — `section-live`/`section-demo` group the rail now; the
+  // detail column is a separate flex sibling, not nested under either section (see "rail order",
+  // just below this file's tests for the pin).
+  await expect(live.getByTestId('account-rail-row')).toHaveCount(1)
+  await expect(live.getByTestId('account-rail-row')).toContainText(String(LIVE))
+  await expect(demo.getByTestId('account-rail-row')).toHaveCount(1)
+  await expect(demo.getByTestId('account-rail-row')).toContainText(String(ACCOUNT))
   // Real money first.
   const order = await page
     .locator('[data-testid^="section-"]')
@@ -2429,7 +2447,7 @@ test('the first look is ONLY accounts with bots — the rest is one tab away, gr
     { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
   ])
   await expect(page.getByTestId('tab-trading')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByTestId('account-card')).toHaveCount(2)
+  await expect(page.getByTestId('account-rail-row')).toHaveCount(2)
   await expect(page.getByTestId('empty-account')).toHaveCount(0)
   await expect(page.getByText('B-LEG')).toHaveCount(0)
   await expect(page.getByTestId('tab-unassigned')).toContainText('3')
@@ -2437,7 +2455,7 @@ test('the first look is ONLY accounts with bots — the rest is one tab away, gr
   await page.getByTestId('tab-unassigned').click()
   await page.reload()
   await expect(page.getByTestId('tab-unassigned')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByTestId('account-card')).toHaveCount(0)
+  await expect(page.getByTestId('account-rail-row')).toHaveCount(0)
   const spares = page.getByTestId('section-no-bots').getByTestId('empty-account')
   await expect(spares).toHaveCount(2)
   await expect(spares.first()).toContainText('Spare live')
@@ -2467,14 +2485,19 @@ test('live and demo are two switches, both ON at first, each looking exactly as 
   await expect(demo).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('section-live')).toBeVisible()
   await expect(page.getByTestId('section-demo')).toBeVisible()
-  // On is filled, in the colour its own heading uses. Polled: the pill eases between looks.
   // Just "Live" since 2026-09-12 — Aaron: "we know it is live". `exact`, so the old "Live · real
   // money" cannot satisfy it.
-  // MUTATION: put "Live · real money" back on the heading → red on both.
-  const heading = page.getByTestId('section-live').getByText('Live', { exact: true })
+  // MUTATION: put "Live · real money" back on the heading → red on this.
+  await expect(page.getByTestId('section-live').getByText('Live', { exact: true })).toBeVisible()
   await expect(page.getByTestId('section-live').getByText(/real money/i)).toHaveCount(0)
-  const liveColor = await heading.evaluate((e) => getComputedStyle(e).color)
-  await expect.poll(async () => (await style(live)).color).toBe(liveColor)
+  // On is filled with a real colour, captured off the PILL itself, not the rail's own "Live"
+  // heading — since 2026-09-15 that heading is a deliberate GOLD exception (`RailGroupBar` in
+  // index.tsx: Aaron picked a gold bar for this one element over two mockup rounds), so it no
+  // longer shares a colour with this filter pill, which still paints Live amber via `KIND_TINT`
+  // exactly as before. What still holds, and is what this test actually checks below: the pill
+  // is genuinely FILLED while on (a real background, a real colour) and reverts to a different,
+  // unfilled look once switched off.
+  const liveColor = await live.evaluate((e) => getComputedStyle(e).color)
   await expect.poll(async () => (await style(live)).bg).not.toBe('rgba(0, 0, 0, 0)')
 
   // Live OFF: its side goes, demo stays, and the page says why.
@@ -2508,8 +2531,9 @@ test('no fact is said twice: the heading names the side, so no card repeats it',
   // MUTATION: put the live/demo chip back on the account card → red on the count.
   // MUTATION: put "no bots" back on an account under "Accounts with no bots" → red.
   await mockBothSides(page, SCORED)
-  await expect(page.getByTestId('account-card')).toHaveCount(2)
-  await expect(page.getByTestId('account-card').getByTestId('kind-chip')).toHaveCount(0)
+  await expect(page.getByTestId('account-rail-row')).toHaveCount(2)
+  await expect(page.getByTestId('account-rail-row').getByTestId('kind-chip')).toHaveCount(0)
+  await expect(page.getByTestId('account-detail').getByTestId('kind-chip')).toHaveCount(0)
 
   // The Unassigned list mixes live and demo under one heading, so there the chip is the only
   // place a row says which — it stays, and the heading's "no bots" is not repeated on each row.
@@ -2518,29 +2542,6 @@ test('no fact is said twice: the heading names the side, so no card repeats it',
   await expect(spares).toHaveCount(2)
   await expect(spares.getByTestId('kind-chip')).toHaveCount(2)
   await expect(spares.filter({ hasText: 'no bots' })).toHaveCount(0)
-})
-
-test('the side ahead on R PER TRADE leads — not the one with more dollars or more total R', async ({
-  page,
-}) => {
-  // MUTATION: score sides by dollars → red (demo made $2,805 to live's $412).
-  // MUTATION: score sides by total R → red (demo 3.01R to live 2.95R).
-  // MUTATION: show a pooled score over ONE scored bot → red: live's +1.48R is already that bot's
-  // own row, and a subtotal of one row is a copy of it.
-  // ⚠ Asserted on the pooled block's own testid, never on text like "R a trade": the number and
-  // the words are separate spans, so the page's text reads "+1.48Ra trade" and a text match can
-  // never fail. That version SURVIVED its mutation. Demo's block is the positive control.
-  await mockBothSides(page, SCORED)
-  const live = page.getByTestId('score-live')
-  const demo = page.getByTestId('score-demo')
-  await expect(live).toHaveAttribute('data-leading', 'true')
-  await expect(live.getByTestId('leading')).toBeVisible()
-  await expect(demo.getByTestId('side-pooled')).toContainText('+1.00R')
-  await expect(demo.getByTestId('side-pooled')).toContainText('3 trades from 2 bots')
-  await expect(live.getByTestId('side-pooled')).toHaveCount(0)
-  await expect(live).not.toContainText('+1.48R')
-  await expect(demo).not.toHaveAttribute('data-leading', 'true')
-  await expect(page.getByTestId('leading')).toHaveCount(1)
 })
 
 test('the best bot on R per trade holds the one trophy, with its sample beside it', async ({
@@ -2573,7 +2574,9 @@ test('one value per cell — return % and the trade count each have their own co
   // MUTATION: drop the Return % column → red.
   // MUTATION: count a record holding no closed trade as "no record" → red on its "0".
   await mockBothSides(page, SCORED)
-  const heads = page.getByTestId('section-demo').getByTestId('account-card').first()
+  // ⚠ Filtered by account number, not `section-demo` — the detail column is a sibling of the
+  // rail now, not nested under either section's heading (see "rail order" in `notes/bots-page.md`).
+  const heads = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
   await expect(heads).toContainText('Return %')
   await expect(heads).toContainText('Trades')
   const ext = page
@@ -2596,7 +2599,7 @@ test('every value sits under its own heading — on a 1280px screen too', async 
   // MUTATION: size the actions column to its content again → red on the offset.
   await page.setViewportSize({ width: 1280, height: 900 })
   await mockBothSides(page, SCORED)
-  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  const card = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
   const left = (l: ReturnType<Page['getByTestId']>) =>
     l.evaluate((e) => e.getBoundingClientRect().left)
   const head = await left(card.getByText('Trades', { exact: true }))
@@ -2604,10 +2607,8 @@ test('every value sits under its own heading — on a 1280px screen too', async 
   expect(Math.abs(head - cell)).toBeLessThan(2)
 })
 
-test('no side leads, and no trophy is awarded, until there is a contest', async ({ page }) => {
-  // Live has nothing closed; on demo only ONE bot has a score.
-  // MUTATION: count a side with no trades as 0R a trade → red: demo would "lead" a side that has
-  // not traded, which is a default rather than a result.
+test('no trophy is awarded until there is a contest', async ({ page }) => {
+  // Live has nothing closed; on demo only ONE bot has a score — one scored bot is not a contest.
   // MUTATION: award the trophy to a lone scored bot → red.
   await mockBothSides(page, {
     sos_fade: {},
@@ -2615,55 +2616,7 @@ test('no side leads, and no trophy is awarded, until there is a contest', async 
     sos_live: {},
     ext_live: {},
   })
-  // Neither heading carries a number: live has nothing to pool, demo only one scored bot.
-  // MUTATION: pool a single scored bot → red: demo's heading would repeat Extreme Leg's +2.10R.
-  await expect(page.getByTestId('score-live').getByTestId('side-pooled')).toHaveCount(0)
-  await expect(page.getByTestId('score-demo').getByTestId('side-pooled')).toHaveCount(0)
-  await expect(page.getByTestId('score-demo')).not.toContainText('+2.10R')
-  await expect(page.getByTestId('leading')).toHaveCount(0)
   await expect(page.locator('[data-top="true"]')).toHaveCount(0)
-})
-
-test('a side missing a bot’s record is PARTIAL and cannot lead', async ({ page }) => {
-  // Demo pools two scored bots while its third record was not read. Live reads best per trade,
-  // but demo's score is partial and could overtake it when the record lands.
-  // MUTATION: ignore the unread record → red: live would lead against half a score.
-  // MUTATION: drop the partial note → red.
-  await mockBothSides(
-    page,
-    {
-      sos_fade: SCORED.sos_fade,
-      ext_leg: SCORED.ext_leg,
-      sos_live: SCORED.sos_live,
-      ext_live: {},
-    },
-    [],
-    true
-  )
-  await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
-  await expect(page.getByTestId('score-demo')).toContainText('1 record not read — partial')
-  await expect(page.getByTestId('leading')).toHaveCount(0)
-})
-
-test('a filter shows one side — and that side keeps its score and its lead', async ({ page }) => {
-  // 🔴 Aaron, 2026-09-10: *"what is the purpose of this section? If I select demo only then it
-  // goes away."* The score was a pair of tiles a filter had to remove. It sits on each side's own
-  // heading now, and is scored off EVERY account, so a filter changes what is shown, never what a
-  // side scored or who leads.
-  // MUTATION: score sides off the FILTERED accounts → red: live alone "leads" nothing.
-  // MUTATION: withhold the score line under a filter → red on both halves.
-  await mockBothSides(page, SCORED)
-  // Demo off → live alone.
-  await page.getByTestId('kind-demo').click()
-  await expect(page.getByTestId('section-live')).toBeVisible()
-  await expect(page.getByTestId('section-demo')).toHaveCount(0)
-  await expect(page.getByTestId('score-live')).toHaveAttribute('data-leading', 'true')
-
-  // Demo back on, live off → demo alone.
-  await page.getByTestId('kind-demo').click()
-  await page.getByTestId('kind-live').click()
-  await expect(page.getByTestId('section-live')).toHaveCount(0)
-  await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 
 /** The demo account a set went live from, after the move: no bot on it, the two that left carried
@@ -2741,17 +2694,18 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
   // made on. ⚠ The earnings list is in the SERVER's order — live before demo — so a map keyed by
   // bot alone (last entry wins) hands the live rows the demo figures, which is exactly the defect.
   // MUTATION: key the earnings by bot alone → red on the live row's dollars.
-  // MUTATION: leave departed bots out of the demo score → red on the demo score line.
   await mockAfterGoLive(page)
   await page.goto('/bots')
 
+  // ⚠ The LIVE account's own detail panel, not `section-live` — that groups the rail now, and a
+  // bot's row only ever lives in the detail column (see "rail order" in `notes/bots-page.md`).
   const liveRow = page
-    .getByTestId('section-live')
+    .getByTestId('account-detail')
+    .filter({ hasText: String(LIVE) })
     .getByTestId('bot-row')
     .filter({ hasText: 'SOS Fade' })
   await expect(liveRow).toContainText('$0.00')
   await expect(liveRow).not.toContainText('$1,500.00')
-  await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 
 test('the demo account the bots LEFT is still an account — its balance, an explicit "no bot" status, and a way to put the next bot on it', async ({
@@ -2765,7 +2719,7 @@ test('the demo account the bots LEFT is still an account — its balance, an exp
   // there's no bots on it right now"* — the only signals were a row buried in the table body and
   // a small "read <time>" note, neither a glance-level fact. And *"the history of the bots don't
   // really need to be there"* — the per-bot "moved to…" rows came off; the account's own equity
-  // and return did not, and neither did the departed bots' share of the side's score.
+  // and return did not.
   // MUTATION: drop departed-only accounts from the Trading list → red on the card count.
   // MUTATION: drop the "no bot" status pill → red on `idle-chip`.
   // MUTATION: show the read time beside the figure again once idle has its own pill → red on
@@ -2778,7 +2732,10 @@ test('the demo account the bots LEFT is still an account — its balance, an exp
   await mockAfterGoLive(page)
   await page.goto('/bots')
 
-  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  // ⚠ The DETAIL panel, filtered by account number — `section-demo` groups the rail now, and an
+  // idle account's own status pill / no-bot row / Add-a-bot control all live in the detail column,
+  // which the default-expand effect opens here since this is the only account in its section.
+  const card = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
   await expect(card).toHaveCount(1)
   await expect(card).toContainText(String(ACCOUNT))
   // The identity line says explicitly that no bot is on it — not left to a row further down.
@@ -2814,20 +2771,17 @@ test('the demo account the bots LEFT is still an account — its balance, an exp
   await expect(panel).not.toContainText('recorded by sos_fade')
 })
 
-test('a NEW bot on the demo account keeps the departed bots in its score, though not as rows on the card', async ({
+test('a NEW bot on the demo account replaces the idle view — no past-bot rows come back', async ({
   page,
 }) => {
-  // 🔴 It shouldn't matter: putting the next bot on demo used to DROP the departed bots' record —
-  // the page read it only off an account with no bot on it — taking the demo score with it. The
-  // per-bot rows that once carried that record on the card are gone since 2026-09-15 (Aaron:
-  // "the history of the bots don't really need to be there"), but the SCORE must still read it —
-  // that came off the account's own record (`scoreOf`), never off the rows.
-  // MUTATION: read the departed record into the score only with no bot on it → red on the score.
+  // 🔴 The per-bot rows that once carried a departed bot's record on the card are gone since
+  // 2026-09-15 (Aaron: "the history of the bots don't really need to be there"); putting a new
+  // bot on the account must not resurrect one.
   // MUTATION: bring back a past-bot row once a new bot is on the account → red on `past-row`.
   await mockAfterGoLive(page, [bot('b_leg', 'B-LEG', 770116, 10, 5)])
   await page.goto('/bots')
 
-  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  const card = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
   await expect(card).toHaveCount(1)
   await expect(card.getByTestId('bot-row')).toHaveCount(1)
   await expect(card.getByTestId('bot-row')).toContainText('B-LEG')
@@ -2836,7 +2790,6 @@ test('a NEW bot on the demo account keeps the departed bots in its score, though
   // A bot is on it now, so there is no "no bot" status and the balance is its live one.
   await expect(card.getByTestId('idle-chip')).toHaveCount(0)
   await expect(card.getByTestId('balance-read-at')).toHaveCount(0)
-  await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 
 test('the bot panel says only what its row does not — won/lost, and how far the record reaches', async ({
@@ -3227,11 +3180,10 @@ test('an account is named by its NICKNAME — the broker only when it has none',
     ]
   )
   await page.goto('/bots')
+  // ⚠ The RAIL row — identity text renders there regardless of which account happens to be open
+  // by default, unlike the detail panel (see "rail order" in `notes/bots-page.md`).
   const heading = (account: number) =>
-    page
-      .getByTestId('account-card')
-      .filter({ hasText: String(account) })
-      .getByTitle(/^Open this account/)
+    page.getByTestId('account-rail-row').filter({ hasText: String(account) })
   await expect(heading(ACCOUNT)).toContainText('Aaron Algo')
   // INSTEAD of the broker, not beside it — the form's own promise.
   await expect(heading(ACCOUNT)).not.toContainText('PU Prime Ltd')
@@ -3246,6 +3198,132 @@ test('an account is named by its NICKNAME — the broker only when it has none',
 
   await openBot(page, 'sos_fade')
   await expect(page.getByTestId('bot-account-name')).toHaveText('Aaron Algo')
+})
+
+// ── The pin — one per demo/live kind, reorders its own rail and opens by default (2026-09-15) ──
+
+test('a pinned account renders first in its section, ahead of a lower-numbered unpinned one', async ({
+  page,
+}) => {
+  // 🔴 WATCHED RED: with `withPinnedFirst` skipped (accounts left in fixture/array order), the
+  // rail draws ACCOUNT (listed first, lower number, unpinned) ahead of OTHER — this goes red on
+  // the first row's text.
+  await mock(
+    page,
+    [
+      // Listed FIRST and numerically LOWER, but unpinned — natural order would put this first.
+      group({ account: ACCOUNT, bots: [bot('sos_fade', 'SOS Fade', 770115, null)], pinned: false }),
+      // Listed SECOND and numerically HIGHER, but pinned — it must lead anyway.
+      group({ account: OTHER, bots: [bot('b_leg', 'B-LEG', 770116, null)], pinned: true }),
+    ],
+    [reg({ account: ACCOUNT }), reg({ account: OTHER, label: 'Other demo' })]
+  )
+  await page.goto('/bots')
+  const demoRail = page.getByTestId('section-demo').getByTestId('account-rail-row')
+  await expect(demoRail).toHaveCount(2)
+  await expect(demoRail.first()).toContainText(String(OTHER))
+  await expect(demoRail.nth(1)).toContainText(String(ACCOUNT))
+})
+
+test('the pinned account is the one open by default — untouched, no other account opened', async ({
+  page,
+}) => {
+  // 🔴 WATCHED RED: with the default-expand effect picking "first in the section" off the
+  // fixture/array order instead of the pinned-first list, ACCOUNT's detail panel renders instead
+  // of OTHER's, and the first assertion goes red.
+  await mock(
+    page,
+    [
+      group({ account: ACCOUNT, bots: [bot('sos_fade', 'SOS Fade', 770115, null)], pinned: false }),
+      group({ account: OTHER, bots: [bot('b_leg', 'B-LEG', 770116, null)], pinned: true }),
+    ],
+    [reg({ account: ACCOUNT }), reg({ account: OTHER, label: 'Other demo' })]
+  )
+  await page.goto('/bots')
+  await expect(page.getByTestId('account-detail').filter({ hasText: String(OTHER) })).toBeVisible()
+  await expect(page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })).toHaveCount(
+    0
+  )
+})
+
+test('pinning is scoped to its own KIND — a pinned live account never reorders or opens the demo side, and the reverse', async ({
+  page,
+}) => {
+  // The frontend's half of the backend's own "one per demo/live kind" guarantee: `withPinnedFirst`
+  // runs on each SIDE's own already-filtered list, so a pin on one side has no way to reach the
+  // other's order or its default-open pick.
+  // 🔴 WATCHED RED: reordering off ONE combined list before splitting by side (rather than after)
+  // would let the live account's pin win everywhere it sorts higher — both `nth(1)` assertions on
+  // the unpinned accounts below would fail with the pinned one leaking into the wrong side, or the
+  // wrong account left open.
+  const LIVE2 = 35710390
+  await mock(
+    page,
+    [
+      // Demo: pinned, listed AND numbered first — the "boring" case, so this test isolates the
+      // cross-side leak rather than re-proving ordering-by-array (the test above already does).
+      group({ account: ACCOUNT, bots: [bot('sos_fade', 'SOS Fade', 770115, null)], pinned: true }),
+      group({ account: OTHER, bots: [bot('b_leg', 'B-LEG', 770116, null)], pinned: false }),
+      // Live: pinned account is listed SECOND and numbered HIGHER, so it only leads if the live
+      // side's own reorder ran — never because the demo pin above "helped" it.
+      group({
+        account: LIVE,
+        server: 'PUPrime-Live',
+        bots: [bot('sos_live', 'SOS Fade live', 880115, null)],
+        pinned: false,
+      }),
+      group({
+        account: LIVE2,
+        server: 'PUPrime-Live',
+        bots: [bot('ext_live', 'Extreme Leg live', 880117, null)],
+        pinned: true,
+      }),
+    ],
+    [
+      reg({ account: ACCOUNT }),
+      reg({ account: OTHER, label: 'Other demo' }),
+      reg({ account: LIVE, kind: 'live', label: 'Aaron Live', server: 'PUPrime-Live' }),
+      reg({ account: LIVE2, kind: 'live', label: 'Other live', server: 'PUPrime-Live' }),
+    ]
+  )
+  await page.goto('/bots')
+
+  const demoRail = page.getByTestId('section-demo').getByTestId('account-rail-row')
+  await expect(demoRail.first()).toContainText(String(ACCOUNT))
+  const liveRail = page.getByTestId('section-live').getByTestId('account-rail-row')
+  await expect(liveRail.first()).toContainText(String(LIVE2))
+
+  // Each side's own pinned account is the one open by default — the other side's pin changed
+  // neither this side's order nor its default.
+  await expect(
+    page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
+  ).toBeVisible()
+  await expect(page.getByTestId('account-detail').filter({ hasText: String(LIVE2) })).toBeVisible()
+  await expect(page.getByTestId('account-detail').filter({ hasText: String(OTHER) })).toHaveCount(0)
+  await expect(page.getByTestId('account-detail').filter({ hasText: String(LIVE) })).toHaveCount(0)
+})
+
+test('clicking the pin star sends the account and the OPPOSITE of its current pinned state', async ({
+  page,
+}) => {
+  // 🔴 WATCHED RED: send `{ pinned: true }` unconditionally (never reading the account's current
+  // state) → this still passes on an unpinned account by coincidence, so the fixture starts
+  // PINNED here specifically to catch that: the click must send `false`.
+  await mock(
+    page,
+    [group({ account: ACCOUNT, bots: [bot('sos_fade', 'SOS Fade', 770115, null)], pinned: true })],
+    [reg({ account: ACCOUNT })]
+  )
+  let sent: { url: string; body: Record<string, unknown> } | null = null
+  await page.route(`**/api/bots/accounts/${ACCOUNT}/pin`, (route) => {
+    sent = { url: route.request().url(), body: route.request().postDataJSON() }
+    return route.fulfill({ json: reg({ account: ACCOUNT, pinned: false }) })
+  })
+  await page.goto('/bots')
+  await expect(page.getByTestId('pin-account')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('pin-account').click()
+  await expect.poll(() => sent?.body).toEqual({ pinned: false })
+  expect(sent?.url).toContain(`/api/bots/accounts/${ACCOUNT}/pin`)
 })
 
 // ── The page's own state, and the three-state rule on every row ───────────────
@@ -3322,9 +3400,10 @@ test('the accounts render while the VPS snapshot is still unanswered', async ({ 
   })
 
   await page.goto('/bots')
-  await expect(page.getByTestId('account-card')).toBeVisible()
-  // …and the bot is on it, named off the config rather than off a reading nobody took.
-  await expect(page.getByTestId('account-card').getByTestId('bot-row')).toContainText('SOS Fade')
+  await expect(page.getByTestId('account-rail-row')).toBeVisible()
+  // …and the bot is on it, named off the config rather than off a reading nobody took. This lone
+  // account is first in its section, so it is open by default and its detail panel renders too.
+  await expect(page.getByTestId('account-detail').getByTestId('bot-row')).toContainText('SOS Fade')
   release()
 })
 
@@ -3359,9 +3438,12 @@ test('a bot the box has not answered for reads UNKNOWN, never stopped', async ({
   })
 
   await page.goto('/bots')
-  // ⚠ Scoped to the CARD: the no-account list renders `bot-row` too, so a page-wide locator is
-  // a strict-mode violation that reads as a missing row rather than as two matches.
-  const row = page.getByTestId('account-card').getByTestId('bot-row')
+  // ⚠ Scoped to the DETAIL panel: the no-account list renders `bot-row` too, so a page-wide
+  // locator is a strict-mode violation that reads as a missing row rather than as two matches.
+  // This lone account is first in its section, so it is open (its detail panel renders) from the
+  // very first paint, independent of the VPS snapshot this test holds — see `notes/bots-page.md`
+  // → "Accounts collapse..." for the rule-1 regression this independence exists to prevent.
+  const row = page.getByTestId('account-detail').getByTestId('bot-row')
   const start = row.getByTitle('Start', { exact: true })
 
   // 🔴 **WHILE THE FIRST READ IS IN FLIGHT the row may not say `unknown` yet (repointed
@@ -3398,9 +3480,9 @@ test('a bot the box DID answer for still offers the control its state allows', a
   )
   await page.goto('/bots')
 
-  // ⚠ Scoped to the CARD: the no-account list renders `bot-row` too, so a page-wide locator is
-  // a strict-mode violation that reads as a missing row rather than as two matches.
-  const row = page.getByTestId('account-card').getByTestId('bot-row')
+  // ⚠ Scoped to the DETAIL panel: the no-account list renders `bot-row` too, so a page-wide
+  // locator is a strict-mode violation that reads as a missing row rather than as two matches.
+  const row = page.getByTestId('account-detail').getByTestId('bot-row')
   // The fixture's snapshot has this one RUNNING, so Stop is what it may offer — never Start.
   await expect(row.getByTitle('Stop', { exact: true })).toHaveCount(1)
   await expect(row).not.toContainText('unknown')
@@ -3585,7 +3667,7 @@ test('a bot on the account that has not REPORTED yet leaves the last balance up,
     { ...departedDemo([earn('b_leg')]), balance_read_at: READ_AT }
   )
   await page.goto('/bots')
-  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  const card = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
   await expect(card).toContainText('$15,844.46')
   await expect(card.getByTestId('balance-read-at')).toBeVisible()
   await expect(card).not.toContainText('balance unread')
@@ -3624,7 +3706,7 @@ test("a bot that CARRIES ON a strategy's record here says whose trades its row i
     }
   )
   await page.goto('/bots')
-  const card = page.getByTestId('section-demo').getByTestId('account-card')
+  const card = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
   const row = card.getByTestId('bot-row')
   await expect(row).toHaveCount(1)
   await expect(row).toContainText('$1,500.00')

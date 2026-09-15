@@ -73,6 +73,19 @@ export interface Condition {
 
 const RANK: Record<Tone, number> = { unknown: 0, idle: 1, ok: 2, warn: 3, bad: 4 }
 
+/**
+ * The worst of several bots' own conditions, by TONE — for anything that has to stand in for a
+ * GROUP of bots with one status, such as a collapsed account card's header. Ranked by the same
+ * `RANK` a single bot's own issues are ranked by, so a group's worst reads exactly like a bot's
+ * own worst. `null` with nothing to compare.
+ */
+export function worstCondition(conds: Condition[]): Condition | null {
+  return conds.reduce<Condition | null>(
+    (worst, c) => (!worst || RANK[c.tone] > RANK[worst.tone] ? c : worst),
+    null
+  )
+}
+
 /** "44m", "3h 12m", "1d 20h". */
 export function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`

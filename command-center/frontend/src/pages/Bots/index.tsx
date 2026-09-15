@@ -37,16 +37,20 @@
  * whatever happens: its balance (the last one a bot read, with the time), the bots on it now, an
  * Add-a-bot row when there are none, and the bots that left as rows saying where they went.
  *
- * 🔴 **On Trading, live and demo are two sections, and the side ahead reads "Leading"** (*"I want
- * live and demo split… easily identify the winner"*). The winner is judged in R per trade — see
- * `PerTrade` for why dollars, share of the account and total R all crown demo.
+ * 🔴 **On Trading, live and demo are two sections** (*"I want live and demo split"*) — but there is
+ * no SIDE-level "ahead" any more. A live-vs-demo pooled score was built and read three separate
+ * times (a pair of tiles, then a section-heading figure, then a bar-heading figure) and Aaron
+ * rejected all three, the third time in as many rounds: *"it does nothing for me... it looks kind
+ * of out of place."* Removed outright rather than reskinned a fourth time — see
+ * `notes/bots-page.md`'s three-strikes entry before ever re-adding one. The one winner this page
+ * still names is per BOT, not per side: `PerTrade`'s own trophy, judged in R per trade — see that
+ * component for why dollars, share of the account and total R would all crown the wrong one.
  *
  * 🔴 **Nothing on the page says a fact twice (2026-09-10, *"we don't need to be redundant on data
  * anywhere on this page"*).** A section heading names the kind, so no card repeats it; the net figure
- * carries the account's sign, so no edge colour repeats it; a side's pooled score shows only when it
- * pools two or more bots, because a pool of one is that bot's row.
+ * carries the account's sign, so no edge colour repeats it.
  */
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   FileText,
@@ -56,8 +60,9 @@ import {
   RefreshCw,
   Copy,
   Check,
+  MousePointerClick,
   SlidersHorizontal,
-  TrendingUp,
+  Star,
   Trophy,
   Plus,
 } from 'lucide-react'
@@ -72,9 +77,11 @@ import {
   useBotStartOne,
   useBotStopOne,
   useBotRestartOne,
+  useSetAccountPin,
 } from '@/hooks/useBots'
 import { VersionPill } from '@/components/VersionPill'
 import { Shimmer } from '@/components/Shimmer'
+import { EmptyState } from '@/components/EmptyState'
 import { openingRecorder } from '@/lib/accountEarnings'
 import { botLabel as labelOf } from '@/lib/botLabel'
 import type {
@@ -93,9 +100,9 @@ import { accountName, emptyGroup, nameOf } from './AccountForm'
 import { VpsSyncDrawer } from './VpsSyncDrawer'
 import { useStopFirst } from './stopFirst'
 import { KIND_NAME, KIND_TINT, KindChip, tintOf } from './kind'
-import { botCondition } from '@/lib/botCondition'
+import { botCondition, worstCondition } from '@/lib/botCondition'
 import { restartReason } from '@/lib/botVersion'
-import { StatusText } from '@/components/BotStatus'
+import { StatusText, TONE_DOT } from '@/components/BotStatus'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -205,6 +212,45 @@ function IconBtn({
       className={`w-[26px] h-[26px] grid place-items-center rounded-md border border-transparent text-text-tertiary transition-colors ${hover} hover:bg-bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed`}
     >
       <Icon size={12} />
+    </button>
+  )
+}
+
+/** The pin — one account per demo/live kind can hold it. A ★, gold only while held (root
+ *  CLAUDE.md's colour rule: gold is for ★ markers and limits), so an unpinned account reads as a
+ *  plain, unremarkable control rather than a second alarm shape beside the worst-status marker. */
+function PinToggle({
+  pinned,
+  onClick,
+  disabled,
+}: {
+  pinned: boolean
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      data-testid="pin-account"
+      aria-pressed={pinned}
+      disabled={disabled}
+      onClick={(e) => {
+        // A sibling of the row's own toggle button, not nested inside it — see the row markup.
+        // `stopPropagation` still guards it against a future wrapper click handler.
+        e.stopPropagation()
+        onClick()
+      }}
+      title={
+        pinned
+          ? 'Pinned — open by default and first in its Live/Demo section. Click to unpin.'
+          : 'Pin this account — open by default and first in its Live/Demo section.'
+      }
+      className={`w-[26px] h-[26px] shrink-0 grid place-items-center rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+        pinned
+          ? 'border-gold/40 bg-gold-muted text-gold-text'
+          : 'border-transparent text-text-tertiary hover:text-gold-text hover:border-gold/30 hover:bg-bg-surface-2'
+      }`}
+    >
+      <Star size={12} className={pinned ? 'fill-current' : ''} />
     </button>
   )
 }
@@ -379,101 +425,6 @@ function TradeCount({ e, asking }: { e: BotEarnings | undefined; asking: boolean
   )
 }
 
-/** One side's score in the live-vs-demo head-to-head. Summed from the bots' own records, so it
- *  is never the account's growth — `scored` counts the bots with a closed trade, `unread` the bots
- *  whose record could not be read, and a side carrying one is PARTIAL. */
-interface SideScore {
-  key: 'live' | 'demo'
-  r: number
-  trades: number
-  bots: number
-  scored: number
-  unread: number
-}
-
-/**
- * Which side is ahead on R per trade, or nobody.
- *
- * ⚠ **A leader is called only when BOTH sides have closed trades and every bot on both has been
- * read.** "Demo leads" against a live side that has not traded yet is a default, not a result, and
- * a side missing a bot's record is a partial score that could flip once it lands.
- */
-function leadOf(live: SideScore, demo: SideScore): 'live' | 'demo' | null {
-  const per = (s: SideScore) => (s.trades ? s.r / s.trades : null)
-  const pl = per(live)
-  const pd = per(demo)
-  if (pl == null || pd == null || live.unread || demo.unread || Math.abs(pl - pd) < TIE_R)
-    return null
-  return pl > pd ? 'live' : 'demo'
-}
-
-/**
- * One side's POOLED score, at the end of its own section heading — and only when it pools.
- *
- * 🔴 **It was a pair of tiles above the page, and they went (2026-09-10).** Aaron: *"what is the
- * purpose of this section? If I select demo only then it goes away."* A comparison block has to
- * vanish under a filter; a side's score on its own heading survives one.
- *
- * 🔴 **A pool of ONE scored bot is that bot's own number, so it is withheld** (Aaron, same day:
- * *"we don't need to be redundant on data anywhere on this page"*). A subtotal of one row is a copy
- * of the row, so the heading carries a number only when two or more bots on the side have closed
- * trades; otherwise the bot's own Per trade cell IS the side's score. ⚠ **Nothing is lost**: total R
- * and won/lost went too — the first is this figure times the trade count, the second is on the
- * bot's row tooltip — and the rows already say "no record yet" and "nothing closed", so the heading
- * no longer repeats them. ⚠ **The Leading chip stays either way** — who is ahead is the verdict.
- */
-function SideScoreLine({
-  side,
-  leading,
-  asking,
-}: {
-  side: SideScore
-  leading: boolean
-  asking: boolean
-}) {
-  const r = side.scored >= 2 ? side.r / side.trades : null
-  // Shimmer only where a pooled number could land — a side with one bot never shows one.
-  if (asking && side.bots >= 2 && !side.trades) return <Shimmer className="h-[12px] w-[150px]" />
-  return (
-    <span
-      data-testid={`score-${side.key}`}
-      data-leading={leading ? 'true' : undefined}
-      className="flex items-baseline gap-[8px] text-[11.5px] cursor-default"
-    >
-      {r != null && (
-        <span data-testid="side-pooled" className="flex items-baseline gap-[8px]">
-          <span
-            title="R per trade: what each closed trade made on average, in units of the risk it took — every bot on this side pooled."
-            className="text-[14px] font-mono tabular-nums font-semibold text-text-primary"
-          >
-            {fmtR(r)}
-          </span>
-          <span className="text-text-tertiary">
-            a trade · {side.trades} trades from {side.scored} bots
-          </span>
-          {side.unread > 0 && (
-            <span className="text-warn-text">
-              · {side.unread} {side.unread === 1 ? 'record' : 'records'} not read — partial
-            </span>
-          )}
-        </span>
-      )}
-      {leading && (
-        <span
-          data-testid="leading"
-          title="Ahead of the other side on R per trade — what each closed trade made in units of the risk it took, so account size, risk and how long a side has run cannot decide it."
-          className="self-center inline-flex items-center gap-[4px] ml-[4px] px-[7px] py-[2px] rounded-pill text-[10px] font-semibold uppercase tracking-[0.6px] bg-gold-muted text-gold-text border border-gold/40"
-        >
-          {/* ⚠ NOT the trophy. The trophy marks the one best BOT; this marks the SIDE ahead on
-              average — two questions, and the best bot can sit on the side that is behind.
-              The same icon for both would read as one winner in two places. */}
-          <TrendingUp size={11} /> Leading
-        </span>
-      )}
-    </span>
-  )
-}
-
 /**
  * Live / demo — TWO independent switches, both ON by default, each turning its side on or off.
  *
@@ -527,34 +478,75 @@ function KindFilter({ kind, onPick }: { kind: string | null; onPick: (k: string 
   )
 }
 
-/** A labelled group — one side's accounts, or one kind of unassigned thing — so nothing interleaves. */
+/**
+ * A labelled group — one side's accounts, or one kind of unassigned thing — so nothing interleaves.
+ *
+ * ⚠ **No `aside` slot any more (2026-09-15, third pass)** — it existed for exactly one caller
+ * (the rail's Live/Demo heading, to fold in a pooled side score), and that caller now uses the
+ * dedicated `RailGroupBar` instead (a full-width filled bar, not this component's small
+ * dot-plus-label) — which itself dropped the score a few hours later (see `RailGroupBar`'s own
+ * doc comment: three strikes on the same idea, removed rather than reskinned a fourth time).
+ * `pending`/`other` — the only remaining callers, on the rail and on the Unassigned tab — never
+ * had a score to show beside their label, so carrying the prop forward unused would be exactly
+ * the speculative slot this repo's own mandate rules out.
+ */
 function SideSection({
   side,
   label,
   hint,
-  aside,
   children,
 }: {
   side: string
   label: React.ReactNode
   hint?: React.ReactNode
-  aside?: React.ReactNode
   children: React.ReactNode
 }) {
   const t = tintOf(side)
   return (
-    <section data-testid={`section-${side}`} className="flex flex-col gap-[12px]">
-      <div className="flex items-center gap-[9px] px-[2px]">
+    <section data-testid={`section-${side}`} className="flex flex-col gap-[10px]">
+      <div className="flex items-center gap-[9px] flex-wrap px-[2px]">
         {KIND_TINT[side] && <span className={`w-[8px] h-[8px] rounded-full ${t.dot}`} />}
         <span className={`text-[11.5px] font-semibold uppercase tracking-[0.7px] ${t.text}`}>
           {label}
         </span>
         {hint && <span className="text-[11.5px] text-text-tertiary">{hint}</span>}
         <span className="h-px flex-1 bg-border-subtle" />
-        {aside}
       </div>
       {children}
     </section>
+  )
+}
+
+/**
+ * The Live / Demo group header inside the rail — a FULL-WIDTH FILLED COLOUR BAR, not a small text
+ * label (2026-09-15, exact spec — Aaron picked this over two more mockup rounds after the
+ * dot-plus-label version above). Live is GOLD, demo stays the page's usual accent cyan.
+ *
+ * 🔴 **A DELIBERATE, SCOPED exception to `KIND_TINT`** (`kind.tsx`), not a change to it — every
+ * filter pill, chip and badge on this page still reads amber for live exactly as before; this one
+ * bar, specifically, is the mockup Aaron approved. `KIND_TINT` is untouched.
+ *
+ * 🔴 **No pooled score in here — not any more, and not a fourth reskin (2026-09-15, same day).**
+ * A live/demo comparison figure lived here for one round, in the section heading before that, and
+ * as a pair of tiles above the page before THAT — three shapes, and Aaron read all three: *"what
+ * is the purpose of this section?"* (2026-09-10, the tiles), then, of this exact bar, *"I don't
+ * know what was the purpose of it, it looks kind of out of place and it does nothing for me."*
+ * Three strikes on the same idea is a signal to remove it, not find it a fourth home — see
+ * `notes/bots-page.md` for the full history. This bar is just the group's name now: a dot and a
+ * label, nothing pooled or compared.
+ */
+function RailGroupBar({ kind, label }: { kind: 'live' | 'demo'; label: React.ReactNode }) {
+  const fill = kind === 'live' ? 'bg-gold-muted' : 'bg-accent-muted'
+  const text = kind === 'live' ? 'text-gold-text' : 'text-accent-text'
+  const dot = kind === 'live' ? 'bg-gold' : 'bg-accent'
+  return (
+    <div
+      data-testid={`rail-bar-${kind}`}
+      className={`flex items-center gap-[8px] px-[8px] py-[7px] ${fill}`}
+    >
+      <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${dot}`} />
+      <span className={`text-[11px] font-bold uppercase tracking-[0.6px] ${text}`}>{label}</span>
+    </div>
   )
 }
 
@@ -616,7 +608,23 @@ function carriedNote(e: BotEarnings): string {
  *  the backtest page already recorded: *1439.7x of what*. Here it is worse — two bots on one
  *  balance state different anchors, so the number is only checkable if the page says which one
  *  it divided by and which bot stated it. */
-function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boolean }) {
+function AccountNet({
+  e,
+  asking,
+  compact,
+}: {
+  e: AccountEarnings | undefined
+  asking: boolean
+  /** The rail row's line 2 (2026-09-15) — the % only, no dollar amount beside it, and SMALLER
+   *  than the full stat-cluster figure (11px vs 13px). The detail panel's own stat cluster is the
+   *  full reading; a second figure crammed into a ~260px rail row would be the very duplication
+   *  this page keeps getting rebuilt to remove, and the full sentence — % and $ together — is
+   *  still one hover away via the same `title`. ⚠ **Deliberately quieter than line 1** (Aaron,
+   *  on the mockup: the number/name must read as the dominant element, not the return figure
+   *  beside it) — this is the one span on the row still allowed real colour (sign is a finding),
+   *  so it stays smaller than line 1 rather than also competing on size. */
+  compact?: boolean
+}) {
   // ⚠ `net unknown` is a FINDING and may only appear once the box has answered — while it is
   // still being asked, the same words would report a fault that has not happened.
   // Ghost content in the pill's own layout, so it lands on the same baseline as the real one.
@@ -625,7 +633,7 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
       <Shimmer>
         <span className="inline-flex items-baseline gap-[6px]">
           <span className="text-[13px] font-mono tabular-nums font-semibold">+00.0%</span>
-          <span className="text-[11px] font-mono tabular-nums">+$0,000.00</span>
+          {!compact && <span className="text-[11px] font-mono tabular-nums">+$0,000.00</span>}
         </span>
       </Shimmer>
     )
@@ -662,16 +670,18 @@ function AccountNet({ e, asking }: { e: AccountEarnings | undefined; asking: boo
       className="inline-flex items-baseline gap-[6px] cursor-default"
     >
       <span
-        className={`text-[13px] font-mono tabular-nums font-semibold ${up ? 'text-pos-text' : 'text-neg-text'}`}
+        className={`font-mono tabular-nums font-semibold ${compact ? 'text-[11px]' : 'text-[13px]'} ${up ? 'text-pos-text' : 'text-neg-text'}`}
       >
         {e.net_pct > 0 ? '+' : ''}
         {e.net_pct.toFixed(1)}%
       </span>
-      <span
-        className={`text-[11px] font-mono tabular-nums ${up ? 'text-pos-text/70' : 'text-neg-text/70'}`}
-      >
-        {money(e.net_usd)}
-      </span>
+      {!compact && (
+        <span
+          className={`text-[11px] font-mono tabular-nums ${up ? 'text-pos-text/70' : 'text-neg-text/70'}`}
+        >
+          {money(e.net_usd)}
+        </span>
+      )}
     </span>
   )
 }
@@ -879,6 +889,25 @@ function BotsPageSkeleton() {
   )
 }
 
+/** An account group's identity for expand/collapse and for the pin's reordering — the same value
+ *  the card is already keyed by (its account number), stringified so a Set can hold it.
+ *  ⚠ `bench`/`unknown` groups carry no account number and fall back to their `kind` — they never
+ *  render as a card on this page today, but a shared identity function has to survive being
+ *  handed one without crashing, since nothing stops a future caller doing exactly that. */
+function accountKey(group: BotAccountGroup): string {
+  return group.account != null ? String(group.account) : group.kind
+}
+
+/** The pinned account first, the rest in their existing order — never across sections, since a
+ *  pin only ever wins within its own Live/Demo side (root CLAUDE.md: one pin per kind). At most
+ *  one entry is ever pinned (the backend enforces it), but this reads fine even if more than one
+ *  claims it. */
+function withPinnedFirst<T extends { group: BotAccountGroup }>(accounts: T[]): T[] {
+  const pinned = accounts.filter((a) => a.group.pinned)
+  if (!pinned.length) return accounts
+  return [...pinned, ...accounts.filter((a) => !a.group.pinned)]
+}
+
 export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
   const { data: accountGroups, isPending: accountsPending } = useBotAccounts()
@@ -897,6 +926,28 @@ export function Bots() {
   const [syncOpen, setSyncOpen] = useState(false)
   // Which bot is mid start/stop/restart, and WHICH of the three — the pill names the action.
   const [pending, setPending] = useState<{ key: string; action: BotAction } | null>(null)
+
+  /**
+   * Which accounts show their bot table — the OPEN set, matching this app's `openLegs` idiom
+   * (`StackDetail.tsx`): tracked as what is SHOWN rather than what is hidden, because as the
+   * account count grows, opening everything by default is exactly the wall this feature exists
+   * to remove (the same reasoning `openLegs` gives for a stack's settings). Defaulted below, and
+   * kept live until the reader touches a toggle; never written to storage — a fresh page load is
+   * the only reset this state ever gets.
+   */
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
+  // Flips the moment a reader opens or closes anything by hand — see the effect below. Once true,
+  // nothing may overwrite `expandedAccounts` again for the rest of this page load.
+  const userTouchedExpand = useRef(false)
+  const toggleAccount = (key: string) => {
+    userTouchedExpand.current = true
+    setExpandedAccounts((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+  }
+  const setPin = useSetAccountPin()
 
   const startOne = useBotStartOne()
   const stopOne = useBotStopOne()
@@ -1162,39 +1213,64 @@ export function Bots() {
     { key: 'other', label: 'Not marked demo or live' },
   ]
 
-  /** One side's score, summed from its bots' OWN records — never from the account's growth, which
-   *  carries money no bot here made. A bot whose record could not be read makes the side PARTIAL. */
-  const scoreOf = (key: 'live' | 'demo'): SideScore => {
-    const s: SideScore = { key, r: 0, trades: 0, bots: 0, scored: 0, unread: 0 }
-    const add = (e: BotEarnings | undefined) => {
-      s.bots += 1
-      if (!e?.traded) {
-        s.unread += 1
-        return
-      }
-      if (e.closed_trades && e.realised_r != null) {
-        s.r += e.realised_r
-        s.trades += e.closed_trades
-        s.scored += 1
-      }
-    }
-    for (const a of trading) {
-      if (sideOf(typeOf(a.account, a.rows)) !== key) continue
-      for (const { cfg } of a.rows) add(earnOf(a.account, cfg.key))
-      // 🔴 The record of bots that have LEFT an account still belongs to its side — the demo trades
-      // a set was promoted on are what its live trades are compared against. ⚠ On EVERY account,
-      // including one a new bot has joined: it used to be read only off an account with no bot on
-      // it, so putting the next bot on demo dropped the whole departed record from the score.
-      for (const b of earnByAccount.get(a.account)?.bots ?? []) if (b.former) add(b)
-    }
-    return s
-  }
+  /**
+   * Each section's accounts, PINNED ONE FIRST — one list, read by both the render below and the
+   * expand default right after it, so "first in the section" can never mean two different things
+   * in the same load. ⚠ Built off `shownAccounts` (the live/demo pill already applied), because
+   * "first rendered" has to mean first among what is actually on screen, not among everything the
+   * box knows about. ⚠ **This runs on whatever classification is CURRENTLY best-available** —
+   * including the provisional `pending` bucket while the box or the registry has not answered —
+   * because the account list itself needs neither: it is read off the local instance configs, and
+   * a section built from it must never wait on the VPS to have something to show.
+   */
+  const sectionsWithAccounts = SECTIONS.map((s) => ({
+    ...s,
+    accounts: withPinnedFirst(
+      shownAccounts.filter((a) => sideOf(typeOf(a.account, a.rows)) === s.key)
+    ),
+  }))
 
-  // 🔴 From EVERY account, never the filtered ones: a filter changes what is on screen, and a side's
-  // score or who leads changing with it would be the filter talking.
-  const liveScore = scoreOf('live')
-  const demoScore = scoreOf('demo')
-  const lead = leadOf(liveScore, demoScore)
+  /** Which accounts `sectionsWithAccounts` would default-open RIGHT NOW — the first (pinned or
+   *  not) of each non-empty section. Recomputed every render; cheap, and its STRING form below is
+   *  what decides whether the effect actually has new work. */
+  const defaultExpandKeys = sectionsWithAccounts
+    .filter((s) => s.accounts.length)
+    .map((s) => accountKey(s.accounts[0].group))
+  const defaultExpandSignature = defaultExpandKeys.join('|')
+
+  /**
+   * Default expand — KEPT LIVE until the reader touches a toggle, never again after.
+   *
+   * 🔴 **Two properties this has to hold AT ONCE, and a single "fire once" effect cannot (MEASURED
+   * live, WATCHED RED in `bots-accounts.spec.ts`).** (1) Something must be open the instant the
+   * account list renders — including with the VPS snapshot genuinely still pending, or the box
+   * down — because the account list itself needs no VPS and a reader must never see every card
+   * collapsed just because the box hasn't answered (this repo's rule 1, one layer up: visibility
+   * of the row, not its status value). (2) Once Live/Demo classification actually resolves, the
+   * default has to settle onto the CORRECT per-section pick — the bug this effect was first built
+   * to fix, where firing the moment `accountGroups` landed (before `asking`/`registryPending`
+   * cleared) put every account in one `pending` bucket and defaulted a single one open across the
+   * WHOLE PAGE, forever, since a "fire once" ref never got a second chance once sections settled.
+   *
+   * The fix is to keep recomputing — `defaultExpandSignature` changes exactly when the pending
+   * bucket resolves into real sections (or a pin moves) — and to stop FOREVER the moment the
+   * reader has opened or closed anything by hand (`userTouchedExpand`, set inside `toggleAccount`).
+   * Before that: every fresh classification is applied. After: nothing here writes again, so a
+   * background 60s refetch or a pin write elsewhere can never silently override a manual choice.
+   *
+   * ⚠ **The pinned account IS "first" once `sectionsWithAccounts` reorders it** — rules 4 and 5
+   * collapse into the same read: open whichever account is first in a section's rendered order,
+   * pinned or not, provisional bucket or real one.
+   */
+  useEffect(() => {
+    if (userTouchedExpand.current) return
+    setExpandedAccounts(new Set(defaultExpandKeys))
+    // ⚠ Depends on the SIGNATURE, not the array — `defaultExpandKeys` is a fresh array every
+    // render, and depending on it would re-fire (and re-`setState`) every render forever, since a
+    // shallow-equal array is still a new reference. The signature is a primitive: this only fires
+    // again when the actual picks change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultExpandSignature])
 
   /** The bot holding the trophy: best R per trade among the bots shown. ⚠ Only when there is a
    *  CONTEST — two bots with a score, a clear gap between the first two, and every shown bot's
@@ -1220,9 +1296,15 @@ export function Bots() {
     fn()
   }
 
-  /** One account's card: its heading, then one row per bot. A function rather than inline JSX
-   *  because the live and demo sections both draw it — one card, never a copy per section. */
-  const renderAccount = ({ account, group, rows }: (typeof trading)[number]) => {
+  /**
+   * Everything about one account, computed ONCE — read by both its compact rail row and its full
+   * detail panel, so the two can never disagree about what an account IS (only about how much of
+   * it to show at a time). Replaces the single `renderAccount` the fold/unfold accordion used,
+   * split because a rail row and a detail panel are genuinely different views now, not one card
+   * that folds — see `renderRailRow` / `renderDetailPanel` just below, and the note in
+   * `notes/bots-page.md` for why the accordion was replaced the same day it shipped.
+   */
+  const prepareAccountView = ({ account, group, rows }: (typeof trading)[number]) => {
     const cap = group.cap_agrees ? group.risk_cap_pct : null
     const reg = regByAccount.get(account)
     const earn = earnByAccount.get(account)
@@ -1230,6 +1312,164 @@ export function Bots() {
     // never a live figure, and the card says so beside it. See `balanceAt`.
     const idle = rows.length === 0
     const { balance, readAt } = balanceAt(account, idle ? null : balanceOf(rows))
+    // Computed once, up front — every ROW below reads its own entry rather than re-asking
+    // `botCondition`, and the account's worst is the same reduce this page's own `worstCondition`
+    // export runs for a single bot's own issues, just one level up.
+    const rowConds = rows.map(({ cfg, live }) => ({
+      cfg,
+      live,
+      asked: live !== undefined,
+      cond: botCondition(live, { asked: live !== undefined, onAccount: true }),
+    }))
+    // 🔴 THE RAIL MAY NOT HIDE A PROBLEM. 'ok'/'idle'/'unknown' are not findings: a healthy or
+    // not-yet-answered bot earns no marker, only 'bad' (stopped, halted, error, an alert-level
+    // review) and 'warn' (trading off, no MT5 link, locked, a warn-level review) do — the same
+    // restraint the accordion's collapsed header used, just read by the rail row now instead.
+    const worst = worstCondition(rowConds.map((r) => r.cond))
+    return {
+      account,
+      group,
+      rows,
+      key: accountKey(group),
+      cap,
+      reg,
+      earn,
+      idle,
+      balance,
+      readAt,
+      rowConds,
+      worst,
+    }
+  }
+  type AccountView = ReturnType<typeof prepareAccountView>
+
+  /**
+   * One compact line per account — the RAIL (2026-09-15, replacing the fold/unfold accordion
+   * after Aaron reviewed three layout mockups and picked rail + detail). Pin, worst-status
+   * marker, identity, one headline figure, and the open/closed state itself — click toggles the
+   * account in the shared `expandedAccounts` set, same as the old chevron did. Any number from
+   * zero to all can be open; the open ones render in this same rail order in the detail column.
+   *
+   * ⚠ **Needs no VPS to render** — same rule the old card's identity line answered to: the
+   * account list is read off the local instance configs, so a rail row (and its worst-status
+   * marker, off whatever the box HAS answered for) must never wait on a slow or dead box.
+   */
+  const renderRailRow = (view: AccountView) => {
+    const { account, group, key, reg, earn, worst, balance, idle, readAt } = view
+    const isOpen = expandedAccounts.has(key)
+    const showWorst = !!worst && (worst.tone === 'bad' || worst.tone === 'warn')
+    return (
+      <div
+        key={key}
+        data-testid="account-rail-row"
+        className={`flex items-start transition-colors ${isOpen ? 'bg-accent-muted' : 'hover:bg-bg-hover'}`}
+      >
+        {/* 🔴 TWO LINES, DELIBERATELY (2026-09-15, third round — Aaron picked this over the
+         *  one-line version across two more mockup rounds). A `grid-cols-[auto_1fr]` rather than
+         *  two independent flex rows: line 2's content is placed in the SAME second column as the
+         *  name, so it aligns under the name regardless of how wide the account number is,
+         *  without a hand-guessed padding value. Line 1: number, name, (pin is a sibling, not a
+         *  grid child — see below). Line 2: return %, equity, the worst-status DOT. */}
+        <button
+          data-testid="account-rail-toggle"
+          onClick={() => toggleAccount(key)}
+          aria-pressed={isOpen}
+          title={
+            isOpen
+              ? `Hide account ${account} from the detail column`
+              : `Show account ${account} in the detail column`
+          }
+          className="flex-1 min-w-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-[6px] gap-y-[3px] px-[8px] py-[8px] text-left"
+        >
+          {/* 🔴 LINE 1 IS THE DOMINANT ELEMENT (2026-09-15, Aaron on the mockup: the number and
+           *  name are the row's identity and must read as such at a glance, more prominent than
+           *  the return/equity line under them — not just technically first in the markup). Bumped
+           *  a full step up from line 2's now-shrunk figures: 13px bold mono for the number (was
+           *  12px, matching the detail panel's OWN identity number), 12px semibold for the name
+           *  (was 11px regular/medium) — and the name stays full-strength primary text whether or
+           *  not the row is open, rather than only brightening on open, so the gap to line 2 holds
+           *  in both states. */}
+          <span className="col-start-1 row-start-1 text-[13px] font-mono font-bold tabular-nums text-text-primary">
+            {account}
+          </span>
+          {/* Nickname else broker — the same rule the detail panel's own identity line uses
+           *  (`nameOf`), off the same slow-to-answer registry, so it shimmers for the same
+           *  reason there rather than guessing "Account N" in the meantime. */}
+          {!reg && registryPending ? (
+            <Shimmer className="col-start-2 row-start-1 h-[12px] w-[56px]" />
+          ) : (
+            <span className="col-start-2 row-start-1 truncate text-[12px] font-semibold text-text-primary">
+              {nameOf(reg, group)}
+            </span>
+          )}
+          <span className="col-start-2 row-start-2 flex items-center gap-[6px] min-w-0">
+            {/* Return % — same figure the detail panel's own Return stat states in full; `compact`
+             *  hides only the dollar NET-CHANGE half (a different figure from the equity beside it
+             *  here), the % keeps its full tooltip. */}
+            <AccountNet e={earn} asking={asking} compact />
+            {/* Equity — the account's own balance, the same figure the detail panel's Equity stat
+             *  shows, muted and smaller here since the rail's headline is the % beside it. */}
+            {balance == null && asking ? (
+              <Shimmer className="h-[10px] w-[48px]" />
+            ) : balance == null && idle ? (
+              <span
+                title="No bot is on this account, and none that traded here left a reading of its balance."
+                className="text-[10px] text-text-tertiary truncate"
+              >
+                not read
+              </span>
+            ) : balance == null ? (
+              <span
+                title="Balance unread — see Equity in the detail panel."
+                className="text-[10px] text-warn-text truncate"
+              >
+                unread
+              </span>
+            ) : (
+              <span
+                title={readAt ? `Equity — last read ${readTime(readAt)}.` : 'Equity'}
+                className="text-[10.5px] text-text-tertiary tabular-nums truncate"
+              >
+                {money(balance, false)}
+              </span>
+            )}
+            {/* 🔴 A DOT, NEVER THE PILL (2026-09-15) — same restraint as before (only `bad`/`warn`
+             *  ever draw one; a healthy or not-yet-answered account earns no marker), but a fixed
+             *  6px circle can never wrap or grow a row, where the pill's word ("Stopped") plus its
+             *  "+1" badge could. The full pill still draws in the detail panel, where there is
+             *  room for it; the account's own worst-problem SENTENCE is one hover away (`title`). */}
+            {showWorst && worst && (
+              <span
+                data-testid="rail-worst-dot"
+                title={worst.title}
+                className={`w-[6px] h-[6px] rounded-full shrink-0 ${TONE_DOT[worst.tone]}`}
+              />
+            )}
+          </span>
+        </button>
+        {/* Pin — a sibling of the toggle button (never nested inside it), aligned to the TOP of
+         *  the row via the parent's `items-start` so it sits level with LINE 1, not centred
+         *  across both lines. */}
+        <PinToggle
+          pinned={!!group.pinned}
+          disabled={setPin.isPending && setPin.variables?.account === account}
+          onClick={() => setPin.mutate({ account, pinned: !group.pinned })}
+        />
+      </div>
+    )
+  }
+
+  /**
+   * One account's FULL content, in the detail column — every account currently in
+   * `expandedAccounts` gets one of these, stacked in rail order. Unchanged from the old
+   * accordion card's insides EXCEPT: no toggle button or chevron (the rail owns opening and
+   * closing now), no pin (moved into the rail row above), no worst-status marker (the rail
+   * states it — a second copy here open would be the exact duplication this page keeps getting
+   * rebuilt to remove), and the bot table is no longer gated on an `isExpanded` flag — being
+   * called at all IS the open state.
+   */
+  const renderDetailPanel = (view: AccountView) => {
+    const { account, group, rows, key, cap, reg, earn, idle, balance, readAt, rowConds } = view
     // The bots that TRADED here and left, as rows under the ones on it now.
     // 🔴 NO COLOURED EDGE, AND NO LIVE/DEMO CHIP (2026-09-10, Aaron: *"we don't need to be
     // redundant on data anywhere on this page"*). The edge was green when the account was up and
@@ -1238,266 +1478,276 @@ export function Bots() {
     // fact on screen. ⚠ Unknown-kind accounts lose nothing: they sit under their own heading.
     return (
       <div
-        key={account}
-        data-testid="account-card"
+        key={key}
+        data-testid="account-detail"
         className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
       >
-        <button
-          onClick={() => set('account', String(account))}
-          title="Open this account — balance, risk cap, and which bots are on it"
-          className="w-full flex items-center flex-wrap gap-y-2 gap-x-3 px-4 py-[13px] text-left hover:bg-bg-surface-2 transition-colors"
-        >
-          {/* 🔴 THE NUMBER LEADS (2026-09-06, Aaron: *"the account number should be the
-           *  thing prefix in the account"*). The login is what the broker, the terminal,
-           *  the instance config and every refusal message name it by; the label is a
-           *  nickname somebody typed here. When the two disagree the number is the one
-           *  that is right, so it is the one the eye lands on first.
-           *
-           *  ⚠ **Grouped in its own identity cluster (2026-09-14)**, so it can wrap onto its
-           *  own line at a narrow width without the stats beside it reflowing too — the two
-           *  clusters answer different questions (which account; how is it doing) and a
-           *  redesign that lets them compete for the same row is why the header read as one
-           *  flat strip of text rather than two things worth looking at separately. */}
-          <span className="flex items-center gap-3 min-w-0">
-            <span className="text-[14px] font-mono font-semibold tabular-nums shrink-0">
-              {account}
-            </span>
-            {/* The account's name (its nickname, else its broker) comes off the registry, which
-             *  asks the box whether a password is stored and so is slow — until it answers, the
-             *  fallback "Account N" would be a guess at a name, so the name shimmers instead. */}
-            {!reg && registryPending ? (
-              <Shimmer className="h-[13px] w-[64px]" />
-            ) : (
-              <span className="text-[13px] text-text-secondary truncate">{nameOf(reg, group)}</span>
-            )}
-
-            {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
-             *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
-             *  The rows below state both, and a number restating what is already on
-             *  screen is the duplication this page was rebuilt to remove.
+        <div className="flex items-center gap-1 px-4 py-[13px]">
+          <div className="flex-1 min-w-0 flex items-center flex-wrap gap-y-2 gap-x-3">
+            {/* 🔴 THE NUMBER LEADS (2026-09-06, Aaron: *"the account number should be the
+             *  thing prefix in the account"*). The login is what the broker, the terminal,
+             *  the instance config and every refusal message name it by; the label is a
+             *  nickname somebody typed here. When the two disagree the number is the one
+             *  that is right, so it is the one the eye lands on first.
              *
-             *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
-             *  number it read as another piece of identity — Aaron: *"the cap is missing.
-             *  Well, not missing. It's just not obvious."* It is the one number here that
-             *  can refuse a trade, so it gets a border and the gold the page reserves for
-             *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
-             *  is the condition worth noticing, and rendering it quieter than a set cap
-             *  is backwards. */}
-            {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
-             *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
-             *  *nothing here refuses a trade for being too large* — the opposite of what
-             *  is true. When the bots on one balance state different ceilings, NONE of
-             *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
-             *  a chip: *nobody set one* and *they cannot agree* are different facts and
-             *  only one of them is safe to read as quiet.**
-             *
-             *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
-             *  forced to null above, because printing one bot's number would name a
-             *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
-             *  fix beside it; this is the half a reader sees without opening anything.
-             *
-             *  ⚠ **No CAP chip while no bot is on the account** — the ceiling is stored on each
-             *  bot, so with none there is no cap to state, and "no cap" in warn would be an alarm
-             *  about nothing. It returns with the first bot.
-             *
-             *  🔴 **Only the two FAULT states stay a pill here (2026-09-14).** A pill is an
-             *  alarm shape — border, background, uppercase — and belongs beside the account's
-             *  name exactly because a disagreement or an unset ceiling is something wrong with
-             *  the ACCOUNT, not a performance figure. A cap that is simply SET has nothing wrong
-             *  with it, so once the header grew a real stat cluster (Equity / Return / Avg per
-             *  bot) a calm gold NUMBER moved there as one more of those — see below — rather
-             *  than staying a pill with nothing to warn about, dropped into a row of plain
-             *  identity text it no longer matched.
-             *
-             *  🔴 **An IDLE account earns the slot back, as a plain status pill (2026-09-15,
-             *  Aaron: *"we need some kind of indicator showing that there's no bots on it right
-             *  now"*).** The card already said so two ways — no bot ROW, and the equity figure's
-             *  own "read <time>" note — but both sit below the fold and neither is a glance-level
-             *  signal the way the account's identity line is. ⚠ **Grey, never warn/gold**: an
-             *  idle account (a demo a set was just promoted off) is a normal resting state, not a
-             *  fault like the two above, so it gets the neutral pill this page reserves for a
-             *  plain status rather than the alarm colours those two fault chips use. */}
-            {idle ? (
-              <span
-                data-testid="idle-chip"
-                title="No bot is on this account right now. Its equity and return below are what it grew to before its bots left — add a bot to trade it again."
-                className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary border border-border-default cursor-default"
-              >
-                no bot
+             *  ⚠ **Grouped in its own identity cluster (2026-09-14)**, so it can wrap onto its
+             *  own line at a narrow width without the stats beside it reflowing too — the two
+             *  clusters answer different questions (which account; how is it doing) and a
+             *  redesign that lets them compete for the same row is why the header read as one
+             *  flat strip of text rather than two things worth looking at separately. */}
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="text-[14px] font-mono font-semibold tabular-nums shrink-0">
+                {account}
               </span>
-            ) : !group.cap_agrees ? (
-              <span
-                data-testid="cap-chip"
-                title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
-                className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
-              >
-                cap disagreement
-              </span>
-            ) : cap == null ? (
-              <span
-                data-testid="cap-chip"
-                title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
-                className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
-              >
-                no cap
-              </span>
-            ) : null}
-          </span>
-
-          {/* 🔴 THE STAT CLUSTER (2026-09-14, redesigned off Aaron: *"it's just kinda boring"*).
-           *  Four questions, each with its own label over its own value, divided by a hairline —
-           *  the same "small word over a number" grammar `ColumnHeadings` already teaches the
-           *  reader two inches below, rather than a row of figures with nothing saying what any
-           *  one of them is. Right-aligned so every account's numbers land on the same edge.
-           *
-           *  ⚠ **Equity is the RIGHTMOST stat (Aaron's call, 2026-09-14)** — the outer edge is
-           *  where a row of figures conventionally puts its headline number (a table's total
-           *  column), and equity is the one every other figure here is read against. Cap → Return
-           *  → Avg per bot → Equity, so the eye lands on the biggest number last, not second.
-           *
-           *  🔴 **FOUR SLOTS, ALWAYS, EACH A FIXED WIDTH (Aaron, 2026-09-15: *"the header values
-           *  have to line up identical vertically between the demo and live account"*).** A slot
-           *  that only appears for the accounts where it applies was the reason two cards never
-           *  lined up: whichever account had no cap, or one bot instead of two, drew three columns
-           *  instead of four and every number after it landed under the wrong header. Cap and Avg
-           *  per bot now always draw their label and a fixed-width box; when the figure does not
-           *  apply (no cap set, a fault, fewer than two bots) the box holds a dash — the same
-           *  "nothing to measure here" mark the rest of this page already uses — never a narrower
-           *  column. The widths below are sized to the widest realistic value per field, not the
-           *  current one, so a bigger balance or return later does not push things out of line
-           *  again. */}
-          <span className="ml-auto flex items-stretch">
-            {/* ⚠ Only the SET-and-agreed cap draws a real figure here — a disagreement or an unset
-             *  ceiling is a fault about the account and stays a loud pill up in the identity
-             *  cluster (see the comment on the chip above); this box still holds its width. */}
-            <span className="w-[52px] flex flex-col items-end justify-center gap-[3px] pr-[14px]">
-              <StatLabel
-                title={
-                  !idle && group.cap_agrees && cap != null
-                    ? `Open risk across every bot on this account is capped at ${cap}% of its balance.`
-                    : undefined
-                }
-              >
-                Cap
-              </StatLabel>
-              {!idle && group.cap_agrees && cap != null ? (
-                <span className="text-[13px] font-mono tabular-nums font-semibold text-gold-text cursor-default">
-                  {cap}%
-                </span>
+              {/* The account's name (its nickname, else its broker) comes off the registry, which
+               *  asks the box whether a password is stored and so is slow — until it answers, the
+               *  fallback "Account N" would be a guess at a name, so the name shimmers instead. */}
+              {!reg && registryPending ? (
+                <Shimmer className="h-[13px] w-[64px]" />
               ) : (
-                <span
-                  title={
-                    idle
-                      ? 'No bot is on this account, so there is no cap to state.'
-                      : !group.cap_agrees
-                        ? 'The bots on this account do not agree on a ceiling — see the alert on the account.'
-                        : 'No risk ceiling is set on this account.'
-                  }
-                  className="text-[12px] text-text-tertiary cursor-default"
-                >
-                  —
+                <span className="text-[13px] text-text-secondary truncate">
+                  {nameOf(reg, group)}
                 </span>
               )}
-            </span>
 
-            <span className="w-px self-stretch bg-border-subtle" />
-
-            <span className="w-[148px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
-              <StatLabel>Return</StatLabel>
-              <AccountNet e={earn} asking={asking} />
-            </span>
-
-            <span className="w-px self-stretch bg-border-subtle" />
-
-            {/* ⚠ Only draws a real figure once at least two bots are ON the account — with one
-             *  bot, its mean is the same number the Return % column already states for that bot,
-             *  and a second label on an unchanged figure is the exact duplication this page keeps
-             *  getting rebuilt to remove. The box still holds its width either way. */}
-            <span className="w-[82px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
-              <StatLabel title="The mean Return % across the bots on this account — never a sum, since they share one balance.">
-                Avg / bot
-              </StatLabel>
-              {rows.length >= 2 ? (
-                <AvgBotReturn bots={earn?.bots} asking={asking} />
-              ) : (
+              {/* The cap is the ONLY count left here. `2 bots · 2 trading` went on
+               *  2026-09-05 — Aaron: "I could see two is trading… I could see two bots."
+               *  The rows below state both, and a number restating what is already on
+               *  screen is the duplication this page was rebuilt to remove.
+               *
+               *  🔴 It is a CHIP, not grey prose. As tertiary text beside the account
+               *  number it read as another piece of identity — Aaron: *"the cap is missing.
+               *  Well, not missing. It's just not obvious."* It is the one number here that
+               *  can refuse a trade, so it gets a border and the gold the page reserves for
+               *  a limit. ⚠ NO CAP is the LOUD state, in warn: an account with no ceiling
+               *  is the condition worth noticing, and rendering it quieter than a set cap
+               *  is backwards. */}
+              {/* 🔴 **THREE states, and collapsing two of them was a live defect (fixed
+               *  2026-09-06).** A DISAGREEMENT rendered as `no cap`, whose own tooltip said
+               *  *nothing here refuses a trade for being too large* — the opposite of what
+               *  is true. When the bots on one balance state different ceilings, NONE of
+               *  them will start, so the account is not uncapped, it is broken. **Rule 1 in
+               *  a chip: *nobody set one* and *they cannot agree* are different facts and
+               *  only one of them is safe to read as quiet.**
+               *
+               *  ⚠ **A figure is never quoted while they disagree** — `cap` is already
+               *  forced to null above, because printing one bot's number would name a
+               *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
+               *  fix beside it; this is the half a reader sees without opening anything.
+               *
+               *  ⚠ **No CAP chip while no bot is on the account** — the ceiling is stored on each
+               *  bot, so with none there is no cap to state, and "no cap" in warn would be an alarm
+               *  about nothing. It returns with the first bot.
+               *
+               *  🔴 **Only the two FAULT states stay a pill here (2026-09-14).** A pill is an
+               *  alarm shape — border, background, uppercase — and belongs beside the account's
+               *  name exactly because a disagreement or an unset ceiling is something wrong with
+               *  the ACCOUNT, not a performance figure. A cap that is simply SET has nothing wrong
+               *  with it, so once the header grew a real stat cluster (Equity / Return / Avg per
+               *  bot) a calm gold NUMBER moved there as one more of those — see below — rather
+               *  than staying a pill with nothing to warn about, dropped into a row of plain
+               *  identity text it no longer matched.
+               *
+               *  🔴 **An IDLE account earns the slot back, as a plain status pill (2026-09-15,
+               *  Aaron: *"we need some kind of indicator showing that there's no bots on it right
+               *  now"*).** The card already said so two ways — no bot ROW, and the equity figure's
+               *  own "read <time>" note — but both sit below the fold and neither is a glance-level
+               *  signal the way the account's identity line is. ⚠ **Grey, never warn/gold**: an
+               *  idle account (a demo a set was just promoted off) is a normal resting state, not a
+               *  fault like the two above, so it gets the neutral pill this page reserves for a
+               *  plain status rather than the alarm colours those two fault chips use. */}
+              {idle ? (
                 <span
-                  title={
-                    idle
-                      ? 'No bot is on this account.'
-                      : 'Only one bot is on this account — its mean is the Return % figure beside it.'
-                  }
-                  className="text-[12px] text-text-tertiary cursor-default"
+                  data-testid="idle-chip"
+                  title="No bot is on this account right now. Its equity and return below are what it grew to before its bots left — add a bot to trade it again."
+                  className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary border border-border-default cursor-default"
                 >
-                  —
+                  no bot
                 </span>
-              )}
+              ) : !group.cap_agrees ? (
+                <span
+                  data-testid="cap-chip"
+                  title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
+                  className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text border border-neg/40 cursor-default"
+                >
+                  cap disagreement
+                </span>
+              ) : cap == null ? (
+                <span
+                  data-testid="cap-chip"
+                  title="No risk ceiling is set on this account — nothing here refuses a trade for being too large."
+                  className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text border border-warn/40 cursor-default"
+                >
+                  no cap
+                </span>
+              ) : null}
             </span>
 
-            <span className="w-px self-stretch bg-border-subtle" />
-
-            {/* 🔴 **A FIXED WIDTH, like its three neighbours (2026-09-15) — it was `min-w`, the
-             *  one exception to "FOUR SLOTS, ALWAYS, EACH A FIXED WIDTH" above, and the one
-             *  case that broke it: a past reading appends "read <time>" BESIDE the figure, on
-             *  one line, and that pair is wider than any plain balance. A `min-w` box grows to
-             *  fit it — this whole cluster hangs off `ml-auto`, so growing the last slot pushes
-             *  every slot before it (Cap, Return, Avg / bot) left with it. That is why the demo
-             *  account Aaron's bots had just left drew its header a full column short of the
-             *  live one beside it. Fix is the stat itself, not the box: the read time now sits
-             *  UNDER the figure instead of beside it, so the box's content is the WIDER of the
-             *  two lines, not their sum, and 118px (already enough for either alone) holds. */}
-            <span className="w-[118px] flex flex-col items-end justify-center gap-[3px] pl-[14px]">
-              <StatLabel>Equity</StatLabel>
-              <span className="text-[17px] font-mono tabular-nums font-medium">
-                {/* ⚠ `balance unread` is a warning and is only true once the box has
-                 *  answered without one — while it is still being asked it shimmers. */}
-                {balance == null && asking ? (
-                  <Shimmer>$00,000.00</Shimmer>
-                ) : balance == null && idle ? (
-                  // Not a fault: nothing is on the account to read it, and no bot that left it
-                  // took a reading. Grey, never the warning a silent bot earns.
-                  <span
-                    title="No bot is on this account, and none that traded here left a reading of its balance."
-                    className="text-[12px] text-text-tertiary"
-                  >
-                    balance not read
-                  </span>
-                ) : balance == null ? (
-                  <span className="text-[12px] text-warn-text">balance unread</span>
-                ) : readAt && idle ? (
-                  // ⚠ No visible "read <time>" here (2026-09-15) — the identity line's own
-                  // "no bot" pill above already says this figure cannot be live; a second,
-                  // more granular say-so beside the number was the one Aaron read and asked
-                  // "why do I care about that." The time itself is not thrown away, only
-                  // folded into the hover, same as every other explanation on this card.
-                  <span
-                    title={`The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`}
-                    className="cursor-default"
-                  >
-                    {money(balance, false)}
-                  </span>
-                ) : readAt ? (
-                  // A bot IS on this account and simply has not reported a balance of its own
-                  // yet — nothing else on the card says this figure is old, so the time stays
-                  // on screen, not just on hover.
-                  <span
-                    title={`The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`}
-                    className="flex flex-col items-end gap-[1px] cursor-default"
-                  >
-                    {money(balance, false)}
-                    <span
-                      data-testid="balance-read-at"
-                      className="text-[10.5px] font-sans font-normal text-text-tertiary"
-                    >
-                      read {readTime(readAt)}
-                    </span>
+            {/* 🔴 THE STAT CLUSTER (2026-09-14, redesigned off Aaron: *"it's just kinda boring"*).
+             *  Four questions, each with its own label over its own value, divided by a hairline —
+             *  the same "small word over a number" grammar `ColumnHeadings` already teaches the
+             *  reader two inches below, rather than a row of figures with nothing saying what any
+             *  one of them is. Right-aligned so every account's numbers land on the same edge.
+             *
+             *  ⚠ **Equity is the RIGHTMOST stat (Aaron's call, 2026-09-14)** — the outer edge is
+             *  where a row of figures conventionally puts its headline number (a table's total
+             *  column), and equity is the one every other figure here is read against. Cap → Return
+             *  → Avg per bot → Equity, so the eye lands on the biggest number last, not second.
+             *
+             *  🔴 **FOUR SLOTS, ALWAYS, EACH A FIXED WIDTH (Aaron, 2026-09-15: *"the header values
+             *  have to line up identical vertically between the demo and live account"*).** A slot
+             *  that only appears for the accounts where it applies was the reason two cards never
+             *  lined up: whichever account had no cap, or one bot instead of two, drew three columns
+             *  instead of four and every number after it landed under the wrong header. Cap and Avg
+             *  per bot now always draw their label and a fixed-width box; when the figure does not
+             *  apply (no cap set, a fault, fewer than two bots) the box holds a dash — the same
+             *  "nothing to measure here" mark the rest of this page already uses — never a narrower
+             *  column. The widths below are sized to the widest realistic value per field, not the
+             *  current one, so a bigger balance or return later does not push things out of line
+             *  again. */}
+            <span className="ml-auto flex items-stretch">
+              {/* ⚠ Only the SET-and-agreed cap draws a real figure here — a disagreement or an unset
+               *  ceiling is a fault about the account and stays a loud pill up in the identity
+               *  cluster (see the comment on the chip above); this box still holds its width. */}
+              <span className="w-[52px] flex flex-col items-end justify-center gap-[3px] pr-[14px]">
+                <StatLabel
+                  title={
+                    !idle && group.cap_agrees && cap != null
+                      ? `Open risk across every bot on this account is capped at ${cap}% of its balance.`
+                      : undefined
+                  }
+                >
+                  Cap
+                </StatLabel>
+                {!idle && group.cap_agrees && cap != null ? (
+                  <span className="text-[13px] font-mono tabular-nums font-semibold text-gold-text cursor-default">
+                    {cap}%
                   </span>
                 ) : (
-                  money(balance, false)
+                  <span
+                    title={
+                      idle
+                        ? 'No bot is on this account, so there is no cap to state.'
+                        : !group.cap_agrees
+                          ? 'The bots on this account do not agree on a ceiling — see the alert on the account.'
+                          : 'No risk ceiling is set on this account.'
+                    }
+                    className="text-[12px] text-text-tertiary cursor-default"
+                  >
+                    —
+                  </span>
                 )}
               </span>
+
+              <span className="w-px self-stretch bg-border-subtle" />
+
+              <span className="w-[148px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+                <StatLabel>Return</StatLabel>
+                <AccountNet e={earn} asking={asking} />
+              </span>
+
+              <span className="w-px self-stretch bg-border-subtle" />
+
+              {/* ⚠ Only draws a real figure once at least two bots are ON the account — with one
+               *  bot, its mean is the same number the Return % column already states for that bot,
+               *  and a second label on an unchanged figure is the exact duplication this page keeps
+               *  getting rebuilt to remove. The box still holds its width either way. */}
+              <span className="w-[82px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+                <StatLabel title="The mean Return % across the bots on this account — never a sum, since they share one balance.">
+                  Avg / bot
+                </StatLabel>
+                {rows.length >= 2 ? (
+                  <AvgBotReturn bots={earn?.bots} asking={asking} />
+                ) : (
+                  <span
+                    title={
+                      idle
+                        ? 'No bot is on this account.'
+                        : 'Only one bot is on this account — its mean is the Return % figure beside it.'
+                    }
+                    className="text-[12px] text-text-tertiary cursor-default"
+                  >
+                    —
+                  </span>
+                )}
+              </span>
+
+              <span className="w-px self-stretch bg-border-subtle" />
+
+              {/* 🔴 **A FIXED WIDTH, like its three neighbours (2026-09-15) — it was `min-w`, the
+               *  one exception to "FOUR SLOTS, ALWAYS, EACH A FIXED WIDTH" above, and the one
+               *  case that broke it: a past reading appends "read <time>" BESIDE the figure, on
+               *  one line, and that pair is wider than any plain balance. A `min-w` box grows to
+               *  fit it — this whole cluster hangs off `ml-auto`, so growing the last slot pushes
+               *  every slot before it (Cap, Return, Avg / bot) left with it. That is why the demo
+               *  account Aaron's bots had just left drew its header a full column short of the
+               *  live one beside it. Fix is the stat itself, not the box: the read time now sits
+               *  UNDER the figure instead of beside it, so the box's content is the WIDER of the
+               *  two lines, not their sum, and 118px (already enough for either alone) holds. */}
+              <span className="w-[118px] flex flex-col items-end justify-center gap-[3px] pl-[14px]">
+                <StatLabel>Equity</StatLabel>
+                <span className="text-[17px] font-mono tabular-nums font-medium">
+                  {/* ⚠ `balance unread` is a warning and is only true once the box has
+                   *  answered without one — while it is still being asked it shimmers. */}
+                  {balance == null && asking ? (
+                    <Shimmer>$00,000.00</Shimmer>
+                  ) : balance == null && idle ? (
+                    // Not a fault: nothing is on the account to read it, and no bot that left it
+                    // took a reading. Grey, never the warning a silent bot earns.
+                    <span
+                      title="No bot is on this account, and none that traded here left a reading of its balance."
+                      className="text-[12px] text-text-tertiary"
+                    >
+                      balance not read
+                    </span>
+                  ) : balance == null ? (
+                    <span className="text-[12px] text-warn-text">balance unread</span>
+                  ) : readAt && idle ? (
+                    // ⚠ No visible "read <time>" here (2026-09-15) — the identity line's own
+                    // "no bot" pill above already says this figure cannot be live; a second,
+                    // more granular say-so beside the number was the one Aaron read and asked
+                    // "why do I care about that." The time itself is not thrown away, only
+                    // folded into the hover, same as every other explanation on this card.
+                    <span
+                      title={`The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`}
+                      className="cursor-default"
+                    >
+                      {money(balance, false)}
+                    </span>
+                  ) : readAt ? (
+                    // A bot IS on this account and simply has not reported a balance of its own
+                    // yet — nothing else on the card says this figure is old, so the time stays
+                    // on screen, not just on hover.
+                    <span
+                      title={`The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`}
+                      className="flex flex-col items-end gap-[1px] cursor-default"
+                    >
+                      {money(balance, false)}
+                      <span
+                        data-testid="balance-read-at"
+                        className="text-[10.5px] font-sans font-normal text-text-tertiary"
+                      >
+                        read {readTime(readAt)}
+                      </span>
+                    </span>
+                  ) : (
+                    money(balance, false)
+                  )}
+                </span>
+              </span>
             </span>
-          </span>
-        </button>
+          </div>
+
+          {/* 🔴 THE PIN MOVED TO THE RAIL ROW (2026-09-15) — one control, not a copy in each
+           *  detail panel. Configure stays: it is the door to settings this panel's own click
+           *  never was (that click now belongs to the rail's toggle). */}
+          <IconBtn
+            testId="configure-account"
+            icon={SlidersHorizontal}
+            title="Open this account — balance, risk cap, and which bots are on it"
+            onClick={() => set('account', String(account))}
+          />
+        </div>
 
         <div className="border-t border-border-subtle">
           {/* 🔴 The rows are a TABLE and were unlabelled — Aaron: *"since this is a kind
@@ -1509,21 +1759,20 @@ export function Bots() {
            *  ⚠ ONE grid template, shared with the rows below by a constant. A hand-copied
            *  column list is how a heading ends up over the wrong column — and a heading
            *  that is confidently over the wrong number is worse than none. The loading
-           *  placeholder renders the same component for the same reason. */}
+           *  placeholder renders the same component for the same reason.
+           *
+           *  🔴 **Always rendered now (2026-09-15)** — this whole panel only exists for an
+           *  account that is OPEN (`renderDetailPanel` is called for exactly the accounts in
+           *  `expandedAccounts`), so the old `{isExpanded && …}` gate around this table would
+           *  now always be true; the table is simply part of the panel's own content. */}
           <ColumnHeadings />
-          {rows.map(({ cfg, live }, i) => {
+          {rowConds.map(({ cfg, live, asked, cond }, i) => {
             const be = earnOf(account, cfg.key)
-            // ⚠ THREE states. `asked` is whether the box answered for this bot at all —
-            // an unanswered snapshot is not a stopped bot, and the controls below branch
-            // on it rather than on `running`, so nothing offers Start for a bot whose
-            // state nobody knows.
-            const asked = live !== undefined
             const running = live?.status === 'RUNNING'
             // The NAME comes from the config, which is always readable — a bot the box
             // has not answered for still has one, and falling back to its key would make
             // an unreachable box look like a page full of unknown bots.
             const name = live?.name ?? cfg.display
-            const cond = botCondition(live, { asked, onAccount: true })
             const acting = actionOf(cfg.key)
             return (
               <div
@@ -1704,18 +1953,34 @@ export function Bots() {
            *  don't really need to be there... I don't care where the bots will move to"*).**
            *  Their per-bot detail — where each one went, what it made here — used to render as
            *  its own row under the "no bot" row. The account's OWN equity and return above are
-           *  untouched (they read the whole account record, not this list), and the score a
-           *  departed bot earned still counts on its SIDE's pooled figure (`scoreOf`, which folds
-           *  `former` bots in on purpose) and still carries forward once a bot returns here
-           *  (`carried_from`) — neither of those reads this list either. This removed a VIEW, not
-           *  the record: the identity line's "no bot" pill now carries the one fact Aaron reads
-           *  at a glance, and the detail this replaced was never that. */}
+           *  untouched (they read the whole account record, not this list), and a departed bot's
+           *  record still carries forward once a bot returns here (`carried_from`) — that does
+           *  not read this list either. This removed a VIEW, not the record: the identity line's
+           *  "no bot" pill now carries the one fact Aaron reads at a glance, and the detail this
+           *  replaced was never that. */}
         </div>
 
         {earn && <Unattributed e={earn} />}
       </div>
     )
   }
+
+  /** Every account's view, computed ONCE and keyed by its identity — the rail and the detail
+   *  column both read the same entry, so a rail row and its detail panel (when open) can never
+   *  disagree about what an account IS. Built off `sectionsWithAccounts`, which already applies
+   *  the live/demo pill and the pinned-first order both surfaces render in. */
+  const accountViews = new Map(
+    sectionsWithAccounts
+      .flatMap((s) => s.accounts)
+      .map((a) => [accountKey(a.group), prepareAccountView(a)])
+  )
+  /** The accounts to draw in the detail column, in RAIL ORDER — Live section's pinned-first
+   *  order, then Demo's, then anything left (2026-09-15, Aaron's call via the coordinator: "in
+   *  rail order… so toggling accounts on/off never reshuffles panels that are already open"). */
+  const openAccountKeys = sectionsWithAccounts
+    .flatMap((s) => s.accounts)
+    .map((a) => accountKey(a.group))
+    .filter((k) => expandedAccounts.has(k))
 
   /** Accounts with nothing on them: one line each. The NUMBER leads, as it does on a card.
    *  ⚠ The kind chip stays HERE — this list mixes live and demo under one heading, so the chip is
@@ -1762,7 +2027,18 @@ export function Bots() {
   }
 
   return (
-    <div>
+    // 🔴 **A FLEX COLUMN SIZED TO THE PAGE, not plain block flow (2026-09-15)** — Aaron: "I want
+    // the accounts side panel to stretch the entire height of the page" / "when there's no
+    // accounts open... just fill the whole page, this cropping behaviour... I don't like it."
+    // `min-h-full`, not `h-full`: the app shell's `<main>` (`App.tsx`) is the scroll container
+    // with a genuinely definite height (`flex-1` inside `h-screen`), so this resolves against a
+    // real value — but `min-` rather than a hard height is what lets a tall Trading tab (many
+    // accounts open, long bot tables) grow PAST the viewport and let `main`'s own scroll take
+    // over, exactly the standard "sticky footer" flex pattern, instead of a fixed box that could
+    // clip or fight that content. Only the trading tab's own accounts section below actually
+    // stretches (`flex-1 min-h-0`, replacing a content-based `min-h-[420px]` floor) — the header
+    // and tab strip keep their natural height as ordinary flex children.
+    <div className="min-h-full flex flex-col">
       {/* ── one line, where three stat cards and a fleet strip used to be ──────── */}
       <div className="flex items-baseline gap-[14px] flex-wrap pb-[10px]">
         <h1 className="text-[19px] font-semibold">Bots</h1>
@@ -1913,29 +2189,106 @@ export function Bots() {
       {/* 🔴 **NOT GATED ON THE SNAPSHOT** — see the note above: the accounts come from the
        *  instance configs, and an unreachable box must never read as a page with no accounts. */}
       {(accountGroups || registry) && show === 'trading' && (
-        <div className="flex flex-col gap-[22px]">
-          {SECTIONS.map(({ key, label }) => {
-            const accounts = shownAccounts.filter((a) => sideOf(typeOf(a.account, a.rows)) === key)
-            if (!accounts.length) return null
-            return (
-              <SideSection
-                key={key}
-                side={key}
-                label={label}
-                aside={
-                  key === 'live' || key === 'demo' ? (
-                    <SideScoreLine
-                      side={key === 'live' ? liveScore : demoScore}
-                      leading={lead === key}
-                      asking={asking}
+        <div className="flex flex-col gap-[22px] flex-1 min-h-0">
+          {/* 🔴 RAIL + DETAIL (2026-09-15), replacing the fold/unfold accordion the SAME DAY it
+           *  shipped — Aaron reviewed three layout mockups and picked this one. A compact line per
+           *  account on the left; every account currently OPEN gets its full content stacked on
+           *  the right, in rail order. Not single-select: any number from zero to all can be open.
+           *  ⚠ **Only drawn once there is at least one account with a bot on it** — with none, the
+           *  "No account has a bot on it" message below stands alone rather than sitting beside an
+           *  empty rail and an empty detail column both saying the same thing a third way. */}
+          {trading.length > 0 && (
+            // 🔴 `items-stretch`, not `items-start` (2026-09-15, Aaron on the running page: "make
+            // the side vertical bar look better... have it show it's the height of the page").
+            // 🔴 **`flex-1 min-h-0`, not a `min-h-[420px]` floor (2026-09-15, third pass)** — Aaron,
+            // on the real page with nothing open: "I want the accounts side panel to stretch the
+            // entire height of the page," and a content-based floor is a GUESSED number that falls
+            // short on anything taller than 420px. This row is now the sole `flex-1` child of the
+            // page's own flex column (see the page root's own comment above this return), so its
+            // height is genuinely "whatever is left of the viewport" — `min-h-0` lets it shrink
+            // below its own content's natural size rather than refusing to (a flex item's default),
+            // so it actually SETTLES at the leftover space instead of only ever growing past it.
+            // The rail's own panel below is still `h-full` on its own inner child only — see that
+            // panel's comment for the CSS trap this row's own height must stay clear of: a flex
+            // item that stretches must never carry an explicit height itself (only `min-`/`flex-`),
+            // or a percentage resolving against it can compute to `auto` and silently cancel the
+            // stretch one level down, which is exactly what broke this same row in the second pass.
+            <div className="flex items-stretch gap-4 flex-1 min-h-0">
+              <div className="w-[248px] shrink-0">
+                {/* 🔴 ONE PANEL, ONE BORDER (2026-09-15, exact spec, replacing the divided-subsections
+                 *  version above). Live then Demo live INSIDE this single bordered panel now — not
+                 *  two panels, and not `SideSection`'s small dot-plus-label heading — each named by
+                 *  its own full-width `RailGroupBar` (gold/accent fill) instead. This is the panel
+                 *  that stretches full height; nothing about that changed. `overflow-hidden` so each
+                 *  bar's colour fill respects the panel's own rounded corners at the top. */}
+                <div className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col overflow-hidden">
+                  <div className="flex flex-col overflow-y-auto flex-1">
+                    {sectionsWithAccounts
+                      .filter((s) => s.accounts.length)
+                      .map(({ key, label, accounts }, i) => {
+                        const isKind = key === 'live' || key === 'demo'
+                        // Hairlines sit BETWEEN rows within a group only — never after the last row,
+                        // never between a group's own bar/label and its first row. `divide-y` gives
+                        // exactly that for free on the row list; groups butt directly against each
+                        // other with no extra divider of their own (the coloured bar, or the next
+                        // group's label, is the only separation between groups).
+                        const rowList = (
+                          <div className="flex flex-col divide-y divide-border-subtle">
+                            {accounts.map((a) =>
+                              renderRailRow(accountViews.get(accountKey(a.group))!)
+                            )}
+                          </div>
+                        )
+                        if (isKind) {
+                          return (
+                            <div key={key} data-testid={`section-${key}`}>
+                              <RailGroupBar kind={key} label={label} />
+                              {rowList}
+                            </div>
+                          )
+                        }
+                        // `pending` (still classifying) and `other` (kind nobody stated) are not
+                        // real live/demo groups, so they keep the page's existing subtle-label
+                        // treatment rather than borrowing the gold/accent bar built for a kind.
+                        return (
+                          <div
+                            key={key}
+                            className={`px-[8px] pb-[8px] ${i === 0 ? 'pt-[8px]' : 'pt-[16px]'}`}
+                          >
+                            <SideSection side={key} label={label}>
+                              {rowList}
+                            </SideSection>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0 flex flex-col gap-[14px]">
+                {openAccountKeys.length === 0 ? (
+                  // 🔴 **`flex-1` + its own centering, not a content-sized box (2026-09-15)** — Aaron:
+                  // *"when there's no accounts open... just fill the whole page, this cropping
+                  // behaviour... I don't like it."* `EmptyState` pads itself to a fixed height
+                  // (`py-[90px]`) and does not know how tall its parent is, so left alone this panel
+                  // stopped wherever that padding ended — a hard edge partway down the page, with the
+                  // rail (now genuinely full height) beside a shorter box. `flex-1` grows this panel
+                  // to the SAME height the rail gets from the row's own stretch; `items-center
+                  // justify-center` then centres `EmptyState`'s content inside that full height,
+                  // rather than leaving it pinned to the top with the extra space sitting unused below.
+                  <div className="bg-bg-surface border border-border-subtle rounded-lg flex-1 flex items-center justify-center">
+                    <EmptyState
+                      icon={<MousePointerClick size={20} />}
+                      title="No account open"
+                      description="Pick one or more accounts on the left to see their bots, risk and version."
                     />
-                  ) : undefined
-                }
-              >
-                {accounts.map(renderAccount)}
-              </SideSection>
-            )
-          })}
+                  </div>
+                ) : (
+                  openAccountKeys.map((k) => renderDetailPanel(accountViews.get(k)!))
+                )}
+              </div>
+            </div>
+          )}
 
           {/* An empty Trading tab says where everything went, rather than reading as a page with
            *  nothing on it. A FILTER that emptied it is said by the note below instead. */}
