@@ -52,11 +52,13 @@ from liquidity import LiquidityEngine  # noqa: E402
 
 from backtest.tools.killzone_profile import (  # noqa: E402
     CACHE,
+    DEFAULT_SERVER,
     FADE_EXIT,
     NY,
     UTC,
     _fade_trade,
     _pct,
+    _safe_token,
     load_days,
     parse_window,
     profile_days,
@@ -64,7 +66,7 @@ from backtest.tools.killzone_profile import (  # noqa: E402
 
 
 def sweeps_in_window(
-    symbol: str, tf: str, win_start: dt.time, win_end: dt.time
+    symbol: str, tf: str, win_start: dt.time, win_end: dt.time, server: str = DEFAULT_SERVER
 ) -> dict[dt.date, list[tuple[str, str]]]:
     """Replay the whole bar stream through the canonical liquidity engine and collect,
     per NY date, the (level name, side) pairs that price MITIGATED inside the window.
@@ -73,7 +75,7 @@ def sweeps_in_window(
     are built from completed prior periods, so skipping bars would silently corrupt the
     levels rather than fail loudly.
     """
-    path = CACHE / f"{symbol}__{tf}.csv"
+    path = CACHE / _safe_token(server) / f"{symbol}__{tf}.csv"
     liq = LiquidityEngine()
     hits: dict[dt.date, list[tuple[str, str]]] = defaultdict(list)
 
@@ -134,16 +136,17 @@ def build_rows(
     target_r: float,
     start=None,
     end=None,
+    server: str = DEFAULT_SERVER,
 ) -> tuple[list[dict], dict]:
     """Per-day rows with the real swept levels joined on and both baselines priced.
 
     Returns (rows, days) so a caller can re-slice without replaying anything.
     """
-    days = load_days(symbol, tf, start, end)
+    days = load_days(symbol, tf, start, end, server=server)
     rows = profile_days(days, win_start, win_end, target_r)
     if not rows:
         return [], days
-    hits = sweeps_in_window(symbol, tf, win_start, win_end)
+    hits = sweeps_in_window(symbol, tf, win_start, win_end, server=server)
 
     for r in rows:
         date = dt.date.fromisoformat(r["date"])
@@ -185,6 +188,7 @@ def main() -> int:
     )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="M15")
+    ap.add_argument("--server", default=DEFAULT_SERVER, help="broker cache partition")
     ap.add_argument("--window", default="10:00-11:00")
     ap.add_argument("--start")
     ap.add_argument("--end")
@@ -196,7 +200,9 @@ def main() -> int:
     end = dt.date.fromisoformat(args.end) if args.end else None
     win_start, win_end = parse_window(args.window)
 
-    rows, days = build_rows(args.symbol, args.tf, win_start, win_end, args.target_r, start, end)
+    rows, days = build_rows(
+        args.symbol, args.tf, win_start, win_end, args.target_r, start, end, server=args.server
+    )
     if not rows:
         raise SystemExit("no days survived the filters")
 

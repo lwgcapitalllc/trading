@@ -868,6 +868,18 @@ CLAUDE.md gets at most one index line.
   doc records. That is the evidence the bump was orthogonal to the clock. **Pin a floor when you
   mean a floor, and ask what a version bump actually CHANGED before refusing on it.**
 
+- ⚠ **`killzone_profile.py` and `killzone_sweep.py` could not find their bars AT ALL from
+  2026-08-24 until 2026-09-15.** The bar cache was partitioned by broker server on that date
+  (`backtest/data/cache.py::broker_cache_dir`) and neither tool was updated, so both kept
+  resolving `backtest/cache/XAUUSD__M15.csv` — a path that stopped existing. ✅ **It failed
+  LOUDLY** (`SystemExit: no cached bars at ...`), which is the only reason this is a footnote
+  and not an incident: a tool that had instead defaulted to *some* broker's folder would have
+  re-reported the KZ1 study against prices that were never involved, cleanly and confidently.
+  Both now take `--server` (default `VantageMarkets-Demo`, the backtest-only feed). ⚠ **No
+  documented number moves** — the 2026-08-13 KZ1 finding re-runs at **49.0% reversal at +2h,
+  −0.088R over 2,034 trades** against the recorded 49.0% / −0.087R / 2,026, the whole difference
+  being the ten days of bars the cache has picked up since.
+
 - **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/bos_strategy.pine`.
   It has moved TWICE and a path from before either date is stale: on 2026-08-13 the `.pine` sources
   were split by their DECLARATION into `indicators/strategies/` and `indicators/engines/`, and on
