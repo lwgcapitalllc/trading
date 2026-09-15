@@ -689,9 +689,17 @@ class LiveRunner:
             raw = float(info.balance) if info else None
             capital = self._sizing_basis(raw)
             if not capital:
+                # 🔴 Two refusals, and the message says which (2026-09-14): an account MT5 read as
+                # $0.00 was reported as "could not read the account balance". One is fixed by
+                # funding the account, the other at the terminal — `None` is could-not-ask.
+                said = (
+                    "Could not read the account balance"
+                    if raw is None
+                    else f"MT5 reports a balance of ${raw:,.2f} for this account"
+                )
                 raise RuntimeError(
-                    "Could not read the account balance, and initial_capital is "
-                    "0 — the strategy would size every trade off nothing."
+                    f"{said}, and initial_capital is 0 — the strategy would size every trade "
+                    f"off nothing."
                 )
         self.log.info(f"Sizing against account balance ${capital:,.2f}")
         strategy = cls(scfg, initial_capital=capital)
@@ -1181,6 +1189,50 @@ class LiveRunner:
         # and the sizing adjustment belongs to whoever sizes. Mixing them here made a link probe
         # depend on strategy configuration, which a test building a bare runner caught at once.
         return True, float(info.balance)
+
+    def _record_connect_reading(self) -> None:
+        """Put what MT5 says about this account into the bot's record the moment the terminal
+        answers — before anything in startup can refuse.
+
+        🔴 **A bot that stopped before its first heartbeat left the LAST account's balance in its
+        record (2026-09-14).** Both bots taken live to 35710389 read $0.00 there and refused to
+        start; their records still held demo 700152905's $15,844.46, and the starter re-stamps a
+        record's `account` from the config on every launch — so the Command Center showed the
+        demo's equity on the live account. The heartbeat is the only other writer of a balance,
+        and a refusal comes before the first one.
+
+        ⚠ **The balance and the account it is about come off ONE `account_info()` call**
+        (`probe_link`), the pair the heartbeat writes, so the record can always say whose balance
+        it holds. `None` for both is *could not ask* — never a zero.
+
+        ⚠ **What went in and the return are CLEARED, not kept.** They were worked out at the last
+        reading, on a move off another account's deal history, and a new balance beside an old
+        account's deposits reads as that whole deposit lost. A bot that starts has them back from
+        its first heartbeat, seconds later.
+
+        ⚠ **It decides nothing and cannot stop a start.** Which account the terminal is on is
+        `connect()`'s question, already answered by the time this runs; a record that cannot be
+        written is a warning, like the heartbeat's own.
+        """
+        try:
+            import bot_state
+
+            link_up, balance = self.probe_link()
+            bot_state.write_bot(
+                self.cfg.bot_key,
+                {
+                    "balance": balance,
+                    "observed_account": getattr(self, "_observed_account", None),
+                    "mt5_link": bool(link_up),
+                    "capital_in": None,
+                    "total_pnl_pct": None,
+                    "pnl_usd": None,
+                    "account": self.cfg.account,
+                    "last_updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                },
+            )
+        except Exception as e:
+            self.log.warning(f"Could not record MT5's reading at connect: {e}")
 
     def _sizing_basis(self, raw_balance):
         """The broker's balance with this bot's STATED adjustment applied. See
@@ -1792,6 +1844,8 @@ class LiveRunner:
         if not self.connect():
             self.log.error("Could not connect to MT5 — see the attempts above.")
             return 3, "could not connect to MT5"
+        # FIRST, before anything below can refuse — see `_record_connect_reading`.
+        self._record_connect_reading()
 
         try:
             self.strategy, scfg = self._build_strategy()

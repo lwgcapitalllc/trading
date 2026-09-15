@@ -1,0 +1,15 @@
+2026-09-15 03:48:03,996 [WARNING] UNPINNED: this bot has no strategy_source_hash, so nothing checks what it is running. Hash 18dc1991e01914d35f8cc6e3cdb84d74. Promote it to pin.
+2026-09-15 03:48:03,996 [WARNING] NOT FROZEN: importing from the repo working tree (C:\trading), so a `git pull` or a lab edit changes what this bot trades. Promote it with `python algos/tools/promote.py --bot extreme_leg_1`.
+2026-09-15 03:48:03,996 [INFO] Extreme Leg | ExtremeLegStrategy v0 | hash 18dc1991e019 | commit b2ebaa7b | REPO | LIVE
+2026-09-15 03:48:05,090 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-15 03:48:05,105 [INFO] MT5 connection lock released
+2026-09-15 03:48:05,751 [INFO] Sizing against account balance $15,844.46
+2026-09-15 03:48:05,751 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-15 03:48:05,751 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-15 03:48:09,939 [INFO] Warmed 15000 bars (2026-06-30 12:15:00+00:00 → 2026-09-15 03:40:00+00:00) in 3.7s
+2026-09-15 03:48:09,939 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-15 03:48:10,524 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-15 11:35:29,790 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-15 11:36:24,885 [INFO] Trading is allowed on this account again.
+2026-09-15 12:59:56,488 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-15 13:01:17,316 [INFO] Trading is allowed on this account again.

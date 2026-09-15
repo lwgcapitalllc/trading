@@ -176,8 +176,9 @@ the Bots page and its two drawers; **apply it to any page you touch that has a l
 🔴 **A shimmer means STILL ASKING, and never "could not ask".** Gate it on the query's FIRST read
 (`isLoading` / `isPending`), never on the data being absent — a FAILED read is also absent, and a
 shimmer over a dead link is a page that looks busy for ever while the thing behind it is down.
-Failed renders its words (`unknown`, `balance unread`, the error line); answered-with-nothing
-renders that. **Three states, three looks** — the repo's rule 1, applied to loading.
+Failed renders its words (`unknown`, the error line); answered-with-nothing renders that. ⚠ The
+Bots account card's equity is a dash in both of those since 2026-09-14 — the error line is what
+says the read failed. **Three states, three looks** — the repo's rule 1, applied to loading.
 
 🔴 **A finding may not be shown while its source is still being asked.** The Bots page printed
 `balance unread`, `net unknown`, `type unknown`, `No version` and **`No bots registered`** for the
@@ -406,6 +407,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - Accounts are a RAIL + DETAIL, and one per kind can be PINNED open (2026-09-15)
 - The detail column is ONE fleet table — headings once, five tracks, a needs-you line (2026-09-15)
 - The account header — a stat cluster instead of a boring row (2026-09-14)
+- The equity is what MT5 gave — a figure, its read time, or a dash (2026-09-14)
 - The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
 - The Equity slot's real fix, and an explicit "no bot" status (2026-09-15)
 - Every strategy is a standing placeholder — "Add a bot" offers ALL of them, forever (2026-09-14)

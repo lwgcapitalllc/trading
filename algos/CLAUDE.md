@@ -245,6 +245,7 @@ Most-cited code: `shared/bot_state.py`, `live/position_state.py`, `shared/accoun
 - 🔴 Whether the account may TRADE is read every poll, and said once (2026-09-12)
 - The heartbeat says what the bot holds at the broker, and why it halted (2026-09-12)
 - 🔴 The status file is REPLACED, never emptied and refilled (2026-08-24)
+- 🔴 What MT5 says at connect reaches the record before anything can refuse (2026-09-14)
 
 ### `notes/vps-tasks-and-ledger.md` — VPS scheduled tasks, ledger backup and the dead-man's switch
 

@@ -362,14 +362,17 @@ def test_HEALTH_is_not_something_a_live_account_owes():
 def test_the_COMMITTED_registry_gives_every_live_account_a_trade_and_signal_room():
     """The real file. A live account with no rooms is a bot that will not start, so this goes red
     the day one is added without them — which is the moment to enter them, not the morning
-    somebody wonders why a bot is down."""
+    somebody wonders why a bot is down.
+
+    ⚠ It pinned 35710389 as the one account still waiting for its rooms until its owner entered
+    both on 2026-09-14 — so it went red the day the rooms landed, and the pin is gone. Proved by
+    mutation (2026-09-15): blanking either room of either live account on a copy of the file turns
+    it red; the real file passes."""
     raw = json.loads((_ALGOS / "markets" / "fx" / "accounts.json").read_text(encoding="utf-8"))
     live = [r for r in raw["accounts"] if r.get("kind") == "live"]
     assert live, "the registry names no live account - this test would pass for free"
-    unnamed = [r["account"] for r in live if not r.get("telegram_trade_chat")]
-    # 🔴 An account may legitimately be waiting for its owner to enter them, so this does not fail
-    # on that — it fails on a room that is present and MALFORMED, which is the case nothing else
-    # would catch until a fill was refused by Telegram.
+    # 🔴 A room that is present and MALFORMED is the case nothing else would catch until a fill was
+    # refused by Telegram.
     for row in live:
         for field in ("telegram_trade_chat", "telegram_signal_chat", "telegram_health_chat"):
             value = row.get(field, "")
@@ -378,10 +381,13 @@ def test_the_COMMITTED_registry_gives_every_live_account_a_trade_and_signal_room
                 assert re.fullmatch(r"-?\d{5,20}|@[A-Za-z0-9_]{5,32}", value), (
                     f"{row['account']} {field}: {value!r}"
                 )
-    assert unnamed == [_OTHER_LIVE], (
-        "a live account has no trade channel and is not the one known to be waiting for its "
-        f"owner to enter one: {unnamed}"
-    )
+    unnamed = [
+        (r["account"], field)
+        for r in live
+        for field in ("telegram_trade_chat", "telegram_signal_chat")
+        if not r.get(field)
+    ]
+    assert unnamed == [], f"a live account names no room its bot needs to start: {unnamed}"
 
 
 def test_every_account_row_carries_all_three_channel_fields():

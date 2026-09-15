@@ -11,3 +11,18 @@
 2026-09-15 03:07:51,227 [INFO] Warmed 15000 bars (2026-06-30 11:35:00+00:00 → 2026-09-15 03:00:00+00:00) in 5.2s
 2026-09-15 03:07:51,227 [INFO] Equity re-anchored to the account after warm-up: 10,739.17 → 10,311.48
 2026-09-15 03:07:51,805 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-15 03:21:34,552 [ERROR] MT5 link lost — the terminal is not answering this process. No bars are arriving and the strategy is NOT seeing the market until it reconnects. The usual cause is the terminal restarting itself after an auto-update.
+2026-09-15 03:21:35,335 [INFO] Waiting for MT5 lock (held by sos_fade_demo_34957946, 6s)...
+2026-09-15 03:21:38,340 [INFO] Waiting for MT5 lock (held by sos_fade_demo_34957946, 9s)...
+2026-09-15 03:21:41,861 [INFO] Connected | #34957946 | $10,311.48 | PUPrime-Live
+2026-09-15 03:21:41,861 [INFO] MT5 connection lock released
+2026-09-15 03:21:41,861 [INFO] Sizing against account balance $10,311.48
+2026-09-15 03:21:46,763 [INFO] Warmed 15000 bars (2026-06-30 11:50:00+00:00 → 2026-09-15 03:15:00+00:00) in 4.6s
+2026-09-15 03:21:46,763 [INFO] Equity re-anchored to the account after warm-up: 10,739.17 → 10,311.48
+2026-09-15 03:21:46,763 [INFO] MT5 link restored after 0.0 min — engines re-warmed.
+2026-09-15 11:35:36,658 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-15 11:36:21,811 [INFO] Trading is allowed on this account again.
+2026-09-15 12:59:52,550 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-15 13:00:27,598 [INFO] Trading is allowed on this account again.
+2026-09-15 14:03:02,872 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json.6008.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json'
+2026-09-15 14:03:43,008 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json.6008.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json'

@@ -155,6 +155,26 @@ CLAUDE.md gets at most one index line.
   cell tested on those months is in-sample. ⚠ No Pine twin, no parity gate — lab findings. No
   documented baseline moves: it imports the study and edits nothing in it, and nothing consumed
   this tool before today.
+- **`tools/rso_realign_study.py`** (new 2026-09-14) — the user's own 1-minute sequence (trend BOS →
+  counter SOS → one or more counter BOS → realign SOS, stop beyond the counter push), detected on
+  the canonical structure engine on 1m / 5m / 15m and walked on raw PU Prime M1 bars whatever the
+  frame. 384 cells declared before any result: counter BOS × entry (realign close / fib 0.5 limit /
+  0.382 pullback then a next-frame-up close / half and half) × stop (structure / 2 × ATR) × 8 exits
+  including breakeven and two trails. `--recall` finds the user's trades; `--holdout` runs ONE cell.
+  **MEASURED 2026-09-14, PU Prime `XAUUSD.p` M1, 2,371,706 bars (2020-01-01 → 2026-09-11),
+  `puprime_ecn`: the user's rule on 1m loses in every exit (−0.002 to −0.082 R a trade); on 15m it
+  makes +0.04 to +0.13 R a trade but random entries at the same month and hour make the same.** The
+  pick, 15m c2+ fib50 atr2 t3 (122 trades, +61.9R, z +3.31, a ridge on three settings), then made
+  **−5.5R over 14 trades on its one holdout run, 2018-09-14 → 2019-12-31, z −0.65 — abandoned.**
+  Recall 4 of 5 on 1m within 0–10 minutes; the fifth is not a 1m realign. `--sl` (added after the
+  results, exploration only) tests the user's "$$" structural-liquidity ENTRY — a limit back at the
+  counter push's high, stop past the lower high before it: **0 of 96 cells qualify, and on 1m it
+  loses in all 16 of the user's rows.** Full write-up:
+  `docs/RSO_REALIGN_SPEC.md`. 🔴 **Its holdout is SPENT for this pattern.** ⚠ That is the SAME
+  window `structure_patterns.py` reserves as its test set (below) — its entries were not tested, but
+  the window is no longer untouched for structure-sequence ideas. ⚠ No Pine twin, no parity gate —
+  lab findings. No documented baseline moves: it imports four helpers from `loaded_level_study.py`
+  and edits nothing there, and nothing consumed this tool before today.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,
@@ -174,6 +194,9 @@ CLAUDE.md gets at most one index line.
   seeded run reproduced byte-for-byte when re-run by a second session (~15 s).
   🔴 **Its test set — gold 2018-09-14 → 2019-12-31 — is UNSPENT, because nothing earned it.** The
   `test` mode has never been run; run it once, only on a strategy that passes all three gates.
+  ⚠ **`rso_realign_study.py` ran ONE holdout on that same window the same day** (a 15m realign pick
+  — it lost). None of this tool's strategies was tested there, but the window has now been looked at
+  for a structure-sequence idea; say so beside any result it produces.
   ⚠ Same-bar token order moves results (only 4 of the top 20 survive reversing it) — a pattern
   that depends on it is an ordering artefact, not a finding. ⚠ Tuning the best pattern with a
   filter, stop or target is a NEW search and needs its own luck bar. ⚠ No Pine twin, no parity

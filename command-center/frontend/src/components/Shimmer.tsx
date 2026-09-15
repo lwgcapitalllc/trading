@@ -8,7 +8,7 @@
  * pattern*. The three that decide whether it is used correctly:
  *
  * 🔴 **A shimmer means "still asking". It is NEVER the answer to "could not ask".** A query that
- * has FAILED renders its words (`unknown`, `balance unread`, the error line); a query that
+ * has FAILED renders its words (`unknown`, the error line); a query that
  * answered with nothing renders that. Shimmering over a dead link is the repo's rule 1 in a new
  * costume — a page that looks busy for ever while the thing behind it is down.
  *

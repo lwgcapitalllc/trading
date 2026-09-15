@@ -1116,7 +1116,23 @@ def test_the_SNAPSHOT_hands_each_bots_deposit_figures_on_to_the_account_net(monk
     from routers import bots as router
 
     key = router._BOTS[0].key
-    state = {"balance": 10312.48, "capital_in": 10312.48, "total_pnl_pct": 0.0}
+    # ⚠ The reading names the account it was read ON and the config names the same one: since
+    # 2026-09-14 a balance is only passed on for the account it was read on (`_read_on`). This test
+    # is about the hand-off, and a reading with no account on a bot whose config names none is a
+    # record no current runner writes for a bot shown under an account.
+    state = {
+        "account": 700000001,
+        "observed_account": 700000001,
+        "balance": 10312.48,
+        "capital_in": 10312.48,
+        "total_pnl_pct": 0.0,
+    }
+    real = router._read_instance_config
+    monkeypatch.setattr(
+        router,
+        "_read_instance_config",
+        lambda k: {**real(k), "account": 700000001} if k == key else real(k),
+    )
     monkeypatch.setattr(router, "_fetch_vps_snapshot", lambda: {})
     monkeypatch.setattr(router, "_parse_bot_states", lambda _snap: {key: state})
     handed: list[dict] = []

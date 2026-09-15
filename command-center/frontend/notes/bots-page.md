@@ -1073,6 +1073,26 @@ nothing saying what any of the two numbers on the right were.
   The fixture never paired a live balance against a past-reading one, which is the one pairing
   where Equity actually grows past 118px.
 
+## The equity is what MT5 gave — a figure, its read time, or a dash (2026-09-14)
+
+Aaron: *"read exactly what's on the MT5. Don't create your own phrases."* The live card said
+`balance unread` in amber over two bots that had refused to start on an account MT5 reported as
+$0.00, and the account panel said `not reported — no bot here is answering`.
+
+- **No reading → `—`**, on the card and in the panel — on the card the same small grey dash the
+  header's other three slots hold. `balance unread`, `balance not read` and `not reported…` are gone.
+- 🔴 **A STOPPED bot's figure carries its read time** (`last_updated`) — it is what MT5 said then, and
+  shown as current it would read $0.00 on an account funded since. A running bot's reading wins;
+  else the newest a stopped one took. The time sits UNDER the figure, and on an account with no bot
+  only in the hover — see *The Equity slot's real fix* below, which landed alongside.
+- **The header's `N balances unread` count is gone.** A bot that cannot read MT5 says so on its own
+  row (`No MT5 link`) and the card shows a dash — the count was a third copy nobody could act on.
+- The equity figure carries `data-testid="account-equity"`.
+
+Test: *an account shows only what MT5 gave* in `tests/bots-accounts.spec.ts`. Two mutations — a
+stopped reading shown as live, the phrase back — each went red. The panel test's expected sentence
+moved with the panel's wording.
+
 ## The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
 
 Three of Aaron's asks the same day, all touching the same panel, so they land together.

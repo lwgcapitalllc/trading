@@ -1563,6 +1563,39 @@ def _position_payload(raw) -> Optional[dict]:
     }
 
 
+def _account_no(raw) -> Optional[int]:
+    """An account number as a record states it, or `None` when it states nothing readable. The
+    runner writes an int and an older writer a string; a bool is not an account."""
+    if isinstance(raw, bool) or raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_on(state: dict, field: str, account: Optional[int]) -> bool:
+    """Whether a reading in this bot's record was TAKEN on `account` — `field` names the record's
+    own statement of where it was read.
+
+    🔴 **A balance is an account's only if it was read ON that account (2026-09-14).** Measured the
+    night two bots were taken live: both stopped copies still held the demo account's $15,844.46,
+    and the starter re-stamps a record's `account` from the config on every launch
+    (`bot_state.set_started`) while leaving the last balance in place — so the record said "live
+    account, $15,844.46", the live card showed the demo's equity, and +$5,844.46 read as money "not
+    from these bots". The live terminal had in fact reported $0.00 and both bots refused to start.
+
+    ⚠ **`account` is the one the CONFIG names, never the record's own stamp.** The page lays a row
+    by its config, and between a move and the restart the record still names the old account
+    throughout — its stamp and its reading agree with each other, and neither is where the row is.
+
+    ⚠ **A reading that does not say where it was taken is refused**, never assumed to be here:
+    *cannot say* is not *this account's* (rule 1). Every runner since 2026-09-10 writes
+    `observed_account` beside the balance, off the same `account_info()` call.
+    """
+    return account is not None and _account_no(state.get(field)) == account
+
+
 @router.get("/snapshot", response_model=BotSnapshot)
 def get_snapshot():
     try:
@@ -1587,6 +1620,9 @@ def get_snapshot():
     # Read ONCE for the whole snapshot, not once per bot: it is a file read, and two rows in
     # one response may never disagree about what kind of account a number is.
     _kinds = _registered_kinds()
+    # Read ONCE too: the account each bot's CONFIG names — where the page lays its row, and so where
+    # a reading must have been taken to be shown there (`_read_on`). The earnings below reuse it.
+    configs = _all_instance_configs()
 
     bots: list[BotStatus] = []
     for task_name in _BOT_DISPLAY_ORDER:
@@ -1608,7 +1644,18 @@ def get_snapshot():
         # IS the question being asked.
         status = "RUNNING" if _bot_runner_running(snap, bot_key) else "STOPPED"
 
-        total_pnl = _as_float(state.get("total_pnl_pct"))
+        # The account this bot is on NOW, off its config — or, when that cannot be read, the one its
+        # record was stamped with. A benched bot's config names none, so nothing it read is shown.
+        cfg = configs.get(bot_key)
+        here = (
+            _account_no(cfg.get("account"))
+            if cfg is not None
+            else _account_no(state.get("account"))
+        )
+        # The balance, what went in and the return are ONE reading off one terminal call, so they
+        # stand or fall together. See `_read_on`.
+        read_here = _read_on(state, "observed_account", here)
+        total_pnl = _as_float(state.get("total_pnl_pct")) if read_here else None
 
         bots.append(
             BotStatus(
@@ -1630,7 +1677,8 @@ def get_snapshot():
                 account_type=_account_type_of(
                     bot_key, reported_account=state.get("account"), kinds=_kinds
                 ),
-                balance=state.get("balance"),
+                # Only a balance read on the account this row sits under — see `_read_on`.
+                balance=state.get("balance") if read_here else None,
                 # Read with a THREE-way result on purpose: True, False, or "the bot never said".
                 # `state.get("mt5_link")` on a bot that predates the field returns None, and
                 # coercing that to False would paint a healthy bot as disconnected — the same
@@ -1689,11 +1737,17 @@ def get_snapshot():
                 # Deposits less withdrawals, off the broker's deal history — what the account's
                 # net is measured from, so a deposit is never a return. Not gated on RUNNING, like
                 # the balance beside it: a stopped bot's last reading is still that account's.
-                capital_in=_as_float(state.get("capital_in")),
+                capital_in=_as_float(state.get("capital_in")) if read_here else None,
                 # NOT gated on RUNNING. The anchor is what the account held when this bot
                 # arrived — a fact about the past that a stopped bot does not stop having. The
                 # account's net falls back to it for a bot that has not read its deal history.
-                starting_balance=_as_float(state.get("starting_balance")),
+                # ⚠ Only for the account it names: an anchor for the account a bot LEFT is not
+                # this one's opening, the same defect as the balance one field over.
+                starting_balance=(
+                    _as_float(state.get("starting_balance"))
+                    if _read_on(state, "starting_balance_account", here)
+                    else None
+                ),
                 day_locked=bool(state.get("day_locked", False)),
                 lock_reason=state.get("lock_reason") or None,
                 last_updated=state.get("last_updated") or None,
@@ -1758,9 +1812,7 @@ def get_snapshot():
         # Which strategy each bot runs, off the configs in this repo (no SSH) — how a departed
         # bot's record on an account finds the bot now running the same strategy there.
         packages = {
-            k: str(c.get("strategy_package") or "") or None
-            for k, c in _all_instance_configs().items()
-            if c
+            k: str(c.get("strategy_package") or "") or None for k, c in configs.items() if c
         }
         earnings = [
             AccountEarnings(**e)
