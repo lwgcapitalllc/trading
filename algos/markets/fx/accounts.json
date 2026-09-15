@@ -90,8 +90,8 @@
       "mt5_path": "C:\\MT5_Richard\\terminal64.exe",
       "symbol_suffix": ".p",
       "account_profile": "puprime_ecn",
-      "telegram_trade_chat": "-1004314325555",
-      "telegram_signal_chat": "-1004335310666",
+      "telegram_trade_chat": "-1004335310666",
+      "telegram_signal_chat": "-1004314325555",
       "telegram_health_chat": "",
       "note": "Richard's live account. Added by Sync VPS on 2026-09-13, found logged in on the PU Prime installer's default folder under Program Files; that install was moved to C:\\MT5_Richard on 2026-09-14 so the folder names whose account it holds. Its owner enters his own Telegram channels; until both a trade and a signal channel are set, a bot on this account REFUSES TO START."
     }
