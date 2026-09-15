@@ -1,0 +1,14 @@
+2026-09-15 03:48:10,002 [WARNING] UNPINNED: this bot has no strategy_source_hash, so nothing checks what it is running. Hash f6cc3132c2b240df7202b4ce463fe655. Promote it to pin.
+2026-09-15 03:48:10,002 [WARNING] NOT FROZEN: importing from the repo working tree (C:\trading), so a `git pull` or a lab edit changes what this bot trades. Promote it with `python algos/tools/promote.py --bot sos_fade_1`.
+2026-09-15 03:48:10,002 [INFO] SOS Fade | SosFadeStrategy v0 | hash f6cc3132c2b2 | commit b2ebaa7b | REPO | LIVE
+2026-09-15 03:48:10,556 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-15 03:48:10,556 [INFO] MT5 connection lock released
+2026-09-15 03:48:10,712 [INFO] Sizing against account balance $15,844.46
+2026-09-15 03:48:10,727 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-15 03:48:10,727 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-15 03:48:10,727 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-15 03:48:13,644 [INFO] Warmed 5000 bars (2026-06-30 12:15:00+00:00 → 2026-09-15 03:30:00+00:00) in 2.8s
+2026-09-15 03:48:18,058 [INFO] Fast feed bookmarked at 2026-09-15 03:44:59.999000+00:00 — the 15m context is already past it.
+2026-09-15 03:48:18,058 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-30 12:15:00+00:00 → 2026-09-15 03:40:00+00:00).
+2026-09-15 03:48:18,074 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
+2026-09-15 03:48:19,008 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
