@@ -1143,3 +1143,45 @@ just moved to live).
   count 0 instead of 2, since the rows are gone, while `score-demo` still reads `+1.00R`
   unchanged). All 132 pass. tsc --noEmit clean on this file. Verified visually in a real browser
   against the live dev server (live + demo accounts side by side, one idle).
+
+## Every strategy is a standing placeholder — "Add a bot" offers ALL of them, forever (2026-09-14)
+
+Aaron: *"I could have infinite amount of demo or live accounts and I want my bots on all."* The
+2026-09-11 redesign above (**"Add a bot" lists FREE bots only**) was right as far as it went, but
+it had a ceiling nobody had hit yet: once both of a strategy's copies were on real accounts — one
+live, one demo — there was nothing free left to offer a third account, ever, for that strategy.
+The only route past it was a person hand-editing a new instance file on the VPS.
+
+- **A row is now the STRATEGY, never a specific running copy, and it is never used up by being
+  placed.** `lib/botTemplates.ts` derives one row per strategy from data the page already holds —
+  `useBotAccounts` (every bot, grouped by account) and `useRegisteredAccounts` (which account is
+  demo or live) — so the list needed no new fetch of its own. Picking the row either hands over a
+  real idle copy that happens to be sitting free (`existingBenchKey`, the ordinary case for a
+  strategy nobody has placed anywhere yet) or clones one first (`useCloneBot`, `POST
+  /bots/{key}/clone`) with no separate step the reader ever sees — the clone is invisible on
+  success, and cancelling a live confirmation after one leaves at most one idle spare bot behind,
+  the same harmless resting state benching a real bot already produces.
+- 🔴 **Which bot to clone from is picked HERE, client-side, not by the backend.** A strategy's live
+  copy outranks its demo copy, which outranks a benched one — "its live share" is the most current,
+  most deliberately tuned configuration, and a demo copy sometimes trials a change the live bot has
+  not taken yet. The backend endpoint needed no template concept of its own because of this: it
+  clones exactly the bot key it is called on.
+- ⚠ **A strategy already on the account being viewed is not offered again.** This panel fills a
+  gap; it does not suggest piling a second copy of one strategy onto a balance that already runs
+  it. The empty state now says which of two different things is true — "no strategy is built yet"
+  (nothing exists anywhere) versus "every strategy is already on this account" (they exist, this
+  account just has them all) — collapsing those into one "no bot is free" message would have hidden
+  which is true.
+- ⚠ **Only a real, already-idle bot gets the server's full room-fit plan** (`useJoinPlans`, and
+  every fix `JoinChoices` can offer — raising the cap, rescaling every share). A strategy with
+  nothing idle yet has no bot key for the server to plan a join for, so it gets the one fix
+  computable from what the panel already knows — join at the room still free (`SimpleMakeRoom`).
+  Raising the cap or rescaling every bot is still a click away on the account's own risk budget;
+  it is not invented here for a bot that does not exist yet.
+- Tests: `bots-accounts.spec.ts` — the two 2026-09-11 checks this superseded (`add-extreme` count
+  0 once elsewhere; "No bot is free") are replaced with four: a bench bot's row is still named by
+  its risk and never its symbol; a strategy with no free copy is still offered and placing it
+  clones its running bot (asserts the clone call fires, then the ordinary account move, in order);
+  an account already running every known strategy says so by name; a strategy not yet on that
+  account is still offered even once every other one is. All 134 pass. tsc --noEmit and eslint
+  clean on every changed file.

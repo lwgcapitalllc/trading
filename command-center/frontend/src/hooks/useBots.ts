@@ -24,6 +24,7 @@ import type {
   BotDeployedVersion,
   BotPromoteJob,
   BotSnapshot,
+  BotCloneResult,
 } from '@/types'
 
 /**
@@ -713,6 +714,20 @@ export function useSaveAccountRisk() {
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
+  })
+}
+
+/**
+ * Mint a fresh, unassigned, never-promoted copy of an existing bot's settings — the one new step
+ * in placing a strategy template that has no idle copy sitting free right now
+ * (`lib/botTemplates.ts` picks which bot to clone). No toast, no cache to invalidate: nothing
+ * about the fleet has changed yet, the bot is not on an account, and the caller's very next call
+ * is the ordinary move below. `api.post` already toasts a failure.
+ */
+export function useCloneBot() {
+  return useMutation({
+    mutationFn: (sourceKey: string) =>
+      api.post<BotCloneResult>(`/bots/${encodeURIComponent(sourceKey)}/clone`),
   })
 }
 

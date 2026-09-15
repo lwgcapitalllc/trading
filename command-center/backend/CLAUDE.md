@@ -247,6 +247,7 @@ Most-cited code: `services/stack_risk_budget.py`, `services/bot_account_registry
 - The account's net is measured off what went IN (2026-09-12)
 - A LIVE account names its own Telegram channels, and no door puts a bot on one that does not (2026-09-13)
 - An account's demo/live field is LOCKED on the page — and now on the save route too (2026-09-14)
+- `POST /{bot_name}/clone` — a fresh copy of a bot, for a strategy with nowhere free (2026-09-14)
 - What a BOT made, and why it may not be the account's growth (2026-09-05)
 
 ### `notes/bots-deploys.md` — Bots page, versions and deploys

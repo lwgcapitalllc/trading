@@ -1048,6 +1048,19 @@ class BotAccountAssign(BaseModel):
         return _sane_cap_pct(v)
 
 
+class BotCloneResult(BaseModel):
+    """A freshly minted, unassigned, never-promoted copy of an existing bot — its new key, to
+    hand straight to the ordinary account-move endpoint. Nothing about an account has happened
+    yet; this call writes no commit and reaches no VPS.
+
+    Which bot to clone is picked on the FRONTEND (`lib/botTemplates.ts`, from data the Bots page
+    already has — live copy over demo, demo over bench), so `POST /{bot_name}/clone` needs no
+    template concept of its own: it clones exactly the bot it is called on."""
+
+    bot_key: str
+    display_name: str
+
+
 class BotAccountRiskRequest(BaseModel):
     """One account's risk budget — its cap, any bot's share, or both — for a PLAN or a SAVE.
 
