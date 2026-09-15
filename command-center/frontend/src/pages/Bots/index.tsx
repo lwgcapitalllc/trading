@@ -468,20 +468,24 @@ function Performance({
 }
 
 /**
- * How much of the account's risk ceiling is handed out to its bots — "10% of 10% risk" and a thin
- * bar — on the account band (2026-09-15). It replaced the identical `5%` every row used to print:
- * the per-bot share is in the bot panel, and THIS is the number that decides whether another bot
- * fits.
+ * The account's risk cap, and whether there is room under it — "Cap 10% · full", "Cap 10% · 5%
+ * free", "Cap 10% · over by 2%" — on the account band (2026-09-15).
  *
- * 🔴 **Both figures come off the server; the page adds nothing up** (`notes/bots-page.md` → *The
- * page may NOT add the risk shares up itself*). `share_total_pct` of `null` means the shares CANNOT
- * be totalled and says so in words — never zero — and whether they FIT is the server's
- * `share_overflow_reason`, never a comparison made here. The bar's width is the one ratio drawn
- * locally, and it is display only: it decides nothing.
+ * 🔴 **It was "10% of 10% risk" with a filled bar for one pass, and Aaron did not like it** (*"only
+ * thing I don't like is the 10 of 10 risks display"*). It read like a typo, and the bar was FULL
+ * on every account — two bots at 5% under a 10% cap is the setup he chose (root CLAUDE.md → risk is
+ * budgeted per account), so the loudest mark in the band was drawn over the normal state. What the
+ * reader wants from this spot is two things: the ceiling, and whether another bot fits. So: the cap
+ * as a number, and the room as a WORD — quiet when full or free, red only when over.
  *
- * ⚠ **Nothing is drawn with no bot on the account, a cap disagreement, or no cap** — each of those
- * already has its own chip beside the account's name, and a budget line under a fault would state
- * a ceiling nothing is running.
+ * 🔴 **Every figure comes off the server; the page adds and subtracts nothing** (`notes/bots-page.md`
+ * → *The page may NOT add the risk shares up itself*). The room is the server's `room_pct`, whether
+ * it FITS is its `share_overflow_reason`, and an unreadable share (`share_total_pct` of `null`) says
+ * so rather than reading as zero. A payload without `room_pct` (cached before the field existed)
+ * shows the cap alone — never a room worked out here.
+ *
+ * ⚠ **Nothing is drawn with no bot on the account, a cap disagreement, or no cap** — each already
+ * has its own chip beside the account's name.
  */
 function RiskBudget({
   group,
@@ -494,33 +498,53 @@ function RiskBudget({
 }) {
   if (idle || cap == null) return null
   const used = group.share_total_pct
-  if (typeof used !== 'number')
-    return (
-      <span
-        data-testid="risk-budget"
-        title="At least one bot's risk share could not be read, so the shares cannot be totalled."
-        className="text-[11px] text-text-tertiary cursor-default"
-      >
-        {cap}% cap · shares cannot be totalled
-      </span>
-    )
+  const room = group.room_pct
   const over = group.share_overflow_reason
-  const fill = cap > 0 ? Math.min(100, Math.max(0, (used / cap) * 100)) : 0
+  const pct = (x: number) => `${Number(x.toFixed(2))}%`
+  const handedOut =
+    typeof used === 'number'
+      ? `${pct(used)} of the ${pct(cap)} cap is handed out to this account's bots`
+      : ''
+  const [state, tail, tone, title] =
+    typeof used !== 'number'
+      ? [
+          'unreadable',
+          'shares unreadable',
+          'text-text-tertiary',
+          "At least one bot's risk share could not be read, so nothing can say how much of the cap is in use.",
+        ]
+      : over
+        ? [
+            'over',
+            typeof room === 'number' ? `over by ${pct(-room)}` : 'over',
+            'text-neg-text',
+            over,
+          ]
+        : typeof room === 'number'
+          ? room <= 0
+            ? [
+                'full',
+                'full',
+                'text-text-tertiary',
+                `${handedOut} — the whole cap. Another bot would have to take turns, or the cap be raised.`,
+              ]
+            : ['free', `${pct(room)} free`, 'text-text-tertiary', `${handedOut}.`]
+          : ['set', null, '', `${handedOut}.`]
   return (
     <span
       data-testid="risk-budget"
-      title={over ?? `${used}% of this account's ${cap}% risk ceiling is handed out to its bots.`}
-      className="flex items-center gap-[7px] cursor-default"
+      data-state={state}
+      title={title}
+      className="flex items-baseline gap-[6px] text-[11.5px] cursor-default"
     >
-      <span className="text-[11px] font-mono tabular-nums text-text-tertiary">
-        <span className={over ? 'text-neg-text' : 'text-gold-text'}>{used}%</span> of {cap}% risk
-      </span>
-      <span className="w-[56px] h-[4px] rounded-pill bg-border-default overflow-hidden">
-        <span
-          className={`block h-full ${over ? 'bg-neg' : 'bg-gold'}`}
-          style={{ width: `${fill}%` }}
-        />
-      </span>
+      <span className="text-text-tertiary">Cap</span>
+      <span className="font-mono tabular-nums font-semibold text-gold-text">{pct(cap)}</span>
+      {tail && (
+        <>
+          <span className="text-text-tertiary">·</span>
+          <span className={tone}>{tail}</span>
+        </>
+      )}
     </span>
   )
 }

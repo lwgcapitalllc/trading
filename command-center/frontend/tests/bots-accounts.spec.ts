@@ -446,6 +446,57 @@ test('two bots on one account render as ONE card, not one card each', async ({ p
   await expect(page.getByText('Bots on this balance · 2')).toBeVisible()
 })
 
+// ── The cap on the account band: the ceiling, and whether another bot fits (2026-09-15) ────────
+//
+// Aaron: *"only thing I don't like is the 10 of 10 risks display."* It read like a typo and its bar
+// was full on every account, because two bots filling the cap is the setup he chose. The band now
+// says the cap and the ROOM, in words, and only "over" is coloured. Every figure is the server's —
+// `room_pct` and `share_overflow_reason` — so a fixture here states what the backend would serve.
+// MUTATION: read `room <= 0` as `room < 0` → the full case says "0% free" and goes red.
+// MUTATION: work the room out locally from cap − total → the no-`room_pct` case shows a room, red.
+for (const [name, over, state, words] of [
+  ['full', { share_total_pct: 10, room_pct: 0 }, 'full', 'full'],
+  ['room left', { share_total_pct: 5, room_pct: 5 }, 'free', '5% free'],
+  [
+    'over',
+    { share_total_pct: 13, room_pct: -3, share_overflow_reason: 'The shares add to 13%.' },
+    'over',
+    'over by 3%',
+  ],
+] as const) {
+  test(`the account band says its cap and the room under it — ${name}`, async ({ page }) => {
+    await mock(page, [
+      group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 5)], risk_cap_pct: 10, ...over }),
+    ])
+    await page.goto('/bots')
+    const budget = page.getByTestId('account-detail').getByTestId('risk-budget')
+    await expect(budget).toHaveAttribute('data-state', state)
+    await expect(budget).toContainText('Cap')
+    await expect(budget).toContainText('10%')
+    await expect(budget).toContainText(words)
+    await expect(budget).not.toContainText(' of 10%')
+  })
+}
+
+test('a payload with no room figure shows the cap alone — never a room worked out here', async ({
+  page,
+}) => {
+  // An older cached answer has no `room_pct`. The page may not subtract the total from the cap
+  // itself (notes/bots-page.md → *The page may NOT add the risk shares up itself*).
+  await mock(page, [
+    group({
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 5)],
+      risk_cap_pct: 10,
+      share_total_pct: 5,
+    }),
+  ])
+  await page.goto('/bots')
+  const budget = page.getByTestId('account-detail').getByTestId('risk-budget')
+  await expect(budget).toHaveAttribute('data-state', 'set')
+  await expect(budget).not.toContainText('free')
+  await expect(budget).not.toContainText('full')
+})
+
 test('a cap equal to the per-trade risk says the bots take turns', async ({ page }) => {
   // This is the fact neither number states on its own, and it is why 10% is not "both may hold
   // 10%". MUTATION: drop `cap_takes_turns` from the payload → red.

@@ -1649,3 +1649,22 @@ reads five headings off `fleet-table`; *"one value per cell"* became *"a bot's p
 one line"* (Return % assertion dropped, the idle bot's zero reads `data-count="0"` + "no trades
 yet"); the heading-alignment test lines Performance up with its cell; the live-rows-start-at-zero
 test reads "no trades yet" for `$0.00`.
+
+### The cap on the band says the ceiling and the ROOM, not "10% of 10%" (2026-09-15, same day)
+
+Aaron, on the fleet table: *"only thing I don't like is the 10 of 10 risks display — improve that."*
+It read like a typo, and its bar was FULL on both accounts — two bots at 5% under a 10% cap is the
+setup he chose, so the loudest mark on the band sat over the normal state. The two things a reader
+wants from that spot are the ceiling and whether another bot fits, so `RiskBudget` now says exactly
+that, with no bar: **"Cap 10% · full"**, **"Cap 10% · 5% free"**, **"Cap 10% · over by 3%"** (red,
+the server's overflow sentence on hover). Quiet grey for full and free — only over is coloured.
+
+🔴 **The room is the server's `room_pct`, never cap minus total worked out here** — verified
+assigned in `routers/bots.py` and pinned in `test_account_risk.py` before the page read it. A payload
+without it (cached before the field existed) shows the cap alone. An unreadable share still says
+so ("shares unreadable") rather than reading as zero.
+
+Four tests pin it: full / room left / over each state their `data-state` and words and never the
+old "of 10%"; a payload with no room figure shows no room. **Watched red by mutation**: reading
+`room <= 0` as `room < 0` turned the full case red ("Expected: full, Received: free"), then reverted.
+Live at 1600px: both accounts read "Cap 10% · full".
