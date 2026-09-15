@@ -137,6 +137,47 @@ CLAUDE.md gets at most one index line.
   structure count and every high/low liquidity count equals its mirror. ⚠ No Pine twin and no
   parity gate — every number is a lab finding. No documented baseline moves: nothing consumed
   this tool before today.
+- **`tools/loaded_level_scalp.py`** (new 2026-09-14) — `loaded_level_study.py`'s setup as a SCALP
+  on 5m / 15m / 30m / 1h (30m and 1h resampled UP from M15, time constants rescaled to mean the
+  same hours), adding a halfway-to-4 target and a half-off-at-+0.5R-then-breakeven exit. It replaces
+  the study's walk and target function **in its own process only**, so the study's figures cannot
+  move. Four modes, in a fixed order: `explore` (bars before 2025-09-01 only), `pick` (both halves
+  positive with ≥ 30 trades each → ranked by the worse half → most one-setting neighbours positive),
+  `check` (random entries matched on direction, stop, target and exit; z ≥ 2), `holdout` (one cell).
+  **MEASURED 2026-09-14, PU Prime `XAUUSD.p`, `puprime_ecn`:** 3,456 cells; 44 / 29 / 24 / 8 positive
+  in both halves on 5m / 15m / 30m / 1h. The pick — 5m, both directions, SOS after the sweep, 2-touch
+  level, stop ≥ 2 ATR, top-to-4 ≥ 10 ATR, named pool past 4, no floor — made +48.1R over 1,126 trades
+  in-sample at z +2.52 against random, then **−1.5R over 222 trades on the holdout, its entries no
+  better than random.** Full write-up: `docs/DAVINCI_MODEL_SPEC.md` → *Scalp sweet spot*.
+  ✅ **It reproduces the scratch run that made the choice exactly** — all 864 1h cells identical in
+  every column, and the pick, check and holdout figures to the printed digit.
+  🔴 **The holdout is SPENT** — the docstring says so and `holdout` prints it on every run; another
+  cell tested on those months is in-sample. ⚠ No Pine twin, no parity gate — lab findings. No
+  documented baseline moves: it imports the study and edits nothing in it, and nothing consumed
+  this tool before today.
+- **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
+  event sequence on gold has an edge that survives a correction for how many were tried. Twelve
+  tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,
+  internal breaks, named-level sweeps), each stamped at its confirmation bar; every 2- and 3-token
+  sequence, long and short, 1R and 2R, under ONE trade rule (stop past the last swing ± 0.25 ATR,
+  1–8 ATR wide, 48-hour time exit, the study's walk and ECN costs). Gates fixed before any result:
+  ≥ 25 trades and positive in each half; beat the 95th percentile of the best t from 200
+  random-entry re-runs of the WHOLE search (the luck bar); beat matched random entries at z ≥ 2.
+  **MEASURED 2026-09-14, PU Prime `XAUUSD.p` M5, 2020-01-01 → 2025-08-31 (401,787 bars),
+  `puprime_ecn`: 1,424 strategies, 38 pass the sample gate, 0 beat the luck bar (t > 3.29; a random
+  search's best has median t +2.35).** The best real one — a named low taken, then an internal
+  bullish break, long, 1R: 325 trades, +0.135R, t 2.48 — sits at the null's 63rd percentile and
+  falls to t 0.58 when same-bar events are ordered the other way. Random searches pass the sample
+  gate as often as the real one (median 37 against 38). The top 5 do not carry to 15m or 1h.
+  ✅ Its fast walk matches the study's on all 18,274 real walks; 8 trades priced through the study's
+  own simulation give identical net R; its control reproduces the study's to six decimals; the
+  seeded run reproduced byte-for-byte when re-run by a second session (~15 s).
+  🔴 **Its test set — gold 2018-09-14 → 2019-12-31 — is UNSPENT, because nothing earned it.** The
+  `test` mode has never been run; run it once, only on a strategy that passes all three gates.
+  ⚠ Same-bar token order moves results (only 4 of the top 20 survive reversing it) — a pattern
+  that depends on it is an ordering artefact, not a finding. ⚠ Tuning the best pattern with a
+  filter, stop or target is a NEW search and needs its own luck bar. ⚠ No Pine twin, no parity
+  gate — lab findings. No documented baseline moves: new standalone tool, nothing edited.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when

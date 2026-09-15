@@ -467,6 +467,69 @@ stab within 3 bars and $2.20 of each entry.
 12. **What separates the trades the user takes from the ones the detector takes?** Only the user's
     losing trades and skipped setups can answer it — seven winners cannot.
 
+### Follow-up 2026-09-14 — every lever tried to make it pay, on 2020-01 → 2025-08 only
+
+🔴 **The last 12 months (2025-09-01 → 2026-09-11) were a HOLDOUT, kept for one final test of whatever
+rule survived, and nothing in this section looked at them. That test has now been run and lost —
+*Scalp sweet spot* below — so the holdout is spent.** Scratch scripts, not committed; the tool above
+reproduces every setup they drew on.
+
+- **Exits do not create the edge.** Five pre-declared exits (breakeven at +1R and at +0.5R, the
+  deck's own "breakeven once a level on the way is taken", half off at +1R or +0.5R) on floors
+  0 / 1 / 2. The best took the user-style cell from −121.9R to −34.2R — and random entries under the
+  SAME exit improved just as much (−0.009R against the setup's −0.004R a trade). The gain belongs to
+  the exit, not the setup. No exit made any cell positive in both halves.
+- **Losers go into profit first** — 46% reach +0.5R and 15% reach +1R before stopping — which is why
+  exits were worth testing, and why the result above is informative rather than obvious.
+- **The 15-minute chart is no better.** Sized like the trades it loses −72R to −102R at floors 1–2;
+  2 of 192 cells are positive in both halves, the best at t +0.67 with a first half of +0.3R.
+- **Trading WITH the 4-hour trend is worse** (−0.096R a trade against −0.050R against it); no session
+  is positive; entries in the lower half of the top-to-4 range are the only positive bucket (+0.06R
+  net, 148 trades) — a hint, not a finding.
+- ⚠ **Stop searching parameters.** Over 4,000 cells across two timeframes, and every positive one is a
+  search winner near zero. The next input that can move this is the user's own judgement — their
+  losing and skipped trades (question 12) — not another axis.
+
+### Scalp sweet spot 2026-09-14 — one pick, one test on the holdout, and it lost
+
+`python backtest/tools/loaded_level_scalp.py` — procedure and usage in its docstring, tool record in
+`backtest/notes/tools.md`. Run despite the line above, because the user asked for it as a scalp, on
+more than the 5-minute chart, quality over quantity since trades are stacked — and run under a
+protocol that ends in ONE test. Same setup, fills, ECN costs and single slot as above; time limits
+mean the same hours on every chart (a 2-day max hold, where the study above holds 4 days on 5m).
+
+- **3,456 cells, picked by a rule written down before any result.** 5m / 15m / 30m / 1h × target
+  (4, halfway to 4, the named pool past 4) × floor 0 / 0.5 / 1 × touches × SOS × min stop × min
+  range × direction × exit (fixed, or half off at +0.5R and the rest at breakeven), all on
+  2020-01 → 2025-08. The rule: positive in both halves with ≥ 30 trades each → ranked by the worse
+  half → most one-setting neighbours positive → entries beat matched random ones at z ≥ 2.
+- **Slower charts do worse**: 44 / 29 / 24 / 8 of 864 cells positive in both halves on 5m / 15m /
+  30m / 1h.
+- **The pick** — 5m, both directions, an SOS after the sweep, a 2-touch level, stop ≥ 2 ATR,
+  top-to-4 ≥ 10 ATR, no reward floor, target the named pool past 4: 1,126 trades (16.6 a month),
+  61.2% wins at R:R 0.91, +0.043R a trade, +48.1R, halves +11.8 / +36.3, t +1.53, max drawdown
+  25.2R; entries +0.073R better than random (z +2.52). 2022 lost 8.8R. The cell ranked above it
+  (target 4, +37.4R) was dropped at z +1.53.
+- 🔴 **HOLDOUT, 2025-09-01 → 2026-09-11: 222 trades, 57.7% wins, −0.007R a trade, −1.5R, t −0.12,
+  and its entries no better than random (−0.003R gross against +0.002R).** The one thing the pick
+  had over random entries did not carry into new months.
+- ⚠ **One year cannot prove a thin edge is zero, and this does not claim to.** The total carries
+  ±12.7R of noise at one standard error; the in-sample edge predicted +9.5R, and a year this bad
+  would still happen about 1 time in 5 if that edge were real. A year of this setup can only show
+  an edge of about +0.11R a trade — nearly three times the pick's in-sample figure. **The reason to
+  stop is the combination**: the pick was the best of 3,456 tries, which shrinks its edge towards
+  zero before any test, and the new months gave it no support at all.
+- ⚠ **The holdout was not pristine, and that makes the loss count more, not less.** This family's
+  full-period figure (+45.9R, *MEASURED 2026-09-14* above) was read before the last 12 months were
+  set aside, so any leak favoured a pass.
+- **Hints for the user's eye, in-sample only:** a target past 4 beat 4 for the pick's own settings
+  (+48.1R against +37.4R), as it did in every row of the study above; long-only with a halfway
+  target turns up on 5m, 15m and 30m (+0.088R and +0.090R a trade on 5m and 15m, z +2.19 and +1.70
+  against random) but fails the neighbour test on 5m and 15m. Neither is a rule.
+- 🔴 **The holdout is SPENT.** Another cell tested on those months is in-sample. The next test needs
+  data nothing here has seen: the user's forward journal — every setup, taken or skipped — or their
+  losing and skipped trades (question 12).
+
 ---
 
 ## Build order (revised after video 1)
