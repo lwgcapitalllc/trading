@@ -12,3 +12,5 @@
 2026-09-15 03:48:18,058 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-30 12:15:00+00:00 → 2026-09-15 03:40:00+00:00).
 2026-09-15 03:48:18,074 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
 2026-09-15 03:48:19,008 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-15 11:35:32,631 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-15 11:36:28,524 [INFO] Trading is allowed on this account again.
