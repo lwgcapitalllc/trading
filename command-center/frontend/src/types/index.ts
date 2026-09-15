@@ -599,6 +599,14 @@ export interface BotAccountGroup {
   magic_clash: string[]
 }
 
+/** A freshly minted, unassigned, never-promoted copy of an existing bot — hand its key straight
+ *  to the ordinary account-move call. No commit, no VPS pull; nothing about an account yet. See
+ *  `lib/botTemplates.ts` for how the account panel picks which bot to clone. */
+export interface BotCloneResult {
+  bot_key: string
+  display_name: string
+}
+
 /** One bot on an account, as the leg of the stack that backtests it. */
 export interface AccountStackBasisLeg {
   bot: string

@@ -68,6 +68,7 @@ from models import (
     BotAccountRiskShare,
     BotChannelTest,
     BotChannelTestResult,
+    BotCloneResult,
     BotDeployedVersion,
     BotParamsView,
     BotPromoteJob,
@@ -100,6 +101,7 @@ from services import (
     account_sync,
     bot_account_registry,
     bot_accounts,
+    bot_clone,
     bot_earnings,
     bot_params,
     bot_settings_import,
@@ -440,7 +442,14 @@ def _write_instance_config(bot_key: str, data: dict) -> None:
     # the reasoning behind every value in it. Escaping those to — turns the one part a
     # human actually reads into noise, and this file is edited by hand far more often than
     # it is written from here.
+    #
+    # ⚠ THE ONE GUARDED CHOKEPOINT for every instance-config write, existing bot or brand new
+    # (`clone_bot`). `tests/conftest.py::_no_live_bot_config` patches this exact function to
+    # refuse in every test that does not explicitly stub it — folding a new bot's
+    # folder-creation into this call, rather than a separate `mkdir`, is what keeps that guard
+    # covering it too. `exist_ok=True` is a no-op for an existing bot's already-real folder.
     info = _BOT_INSTANCE_MAP[bot_key]
+    info["path"].parent.mkdir(parents=True, exist_ok=True)
     info["path"].write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -1898,6 +1907,51 @@ def list_bot_accounts():
         )
         for g in _account_groups()
     ]
+
+
+@router.post("/{bot_name}/clone", response_model=BotCloneResult)
+def clone_bot(bot_name: str):
+    """Mint a fresh, unassigned, never-promoted copy of this bot's strategy identity and
+    trading-logic settings.
+
+    **The only new step in placing a strategy on an account it has no idle copy on.** The account
+    panel's Add-bot list picks WHICH bot to clone client-side (`frontend/src/lib/botTemplates.ts`
+    — live copy over demo, demo over bench) from data it already has, so this endpoint needs no
+    template concept of its own: it clones exactly the bot it is called on. The caller's very next
+    call is the ordinary `PATCH /{bot_name}/account`, unchanged, with everything that already
+    protects a real move (the live confirm, the channel check, the share-overflow refusal)
+    applying to the new bot exactly as it would to any other.
+
+    ⚠ **Local write only — no commit, no push, no VPS pull.** The new bot is invisible to the box,
+    and to every other command-center clone, until the account move that follows commits it.
+    Cancelling before that move leaves an idle, harmless extra folder on this machine — the exact
+    resting state benching a real bot already produces, and it is picked up as an ordinary free
+    bot the next time anyone looks, never as a duplicate.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+    source = _read_instance_config(bot_key)
+    strategy_package = str(source.get("strategy_package") or bot_key)
+
+    configs = _all_instance_configs()
+    existing_magics = {c.get("magic") for c in configs.values() if c}
+    new_key = bot_clone.next_key(set(_BY_KEY), strategy_package)
+    magic = bot_clone.next_magic(existing_magics)
+    cloned = bot_clone.clone_config(source, new_key, magic, date.today().isoformat())
+
+    folder = _INSTANCES_ROOT / new_key
+    if folder.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"{new_key} already exists on disk — try again, a fresh key will be picked.",
+        )
+    # Seeded so `_write_instance_config` — the one guarded chokepoint every instance-config
+    # write goes through — can resolve a key `_refresh_bots` has not discovered yet. The refresh
+    # right after rebuilds this properly from the folder it just wrote.
+    _BOT_INSTANCE_MAP[new_key] = {"path": folder / "config.json", "section": "strategy_params"}
+    _write_instance_config(new_key, cloned)
+    _refresh_bots()
+
+    return BotCloneResult(bot_key=new_key, display_name=str(cloned.get("display_name") or new_key))
 
 
 @router.get("/accounts/{account}/stack-basis", response_model=AccountStackBasis)

@@ -744,3 +744,50 @@ the broker never called demo or live.
 **TESTED:** `tests/test_bot_account_registry.py` — six new checks, each watched RED by a named
 mutation, including one proving a guard placed back in `upsert_account` breaks sync's own
 correction. Full suite here plus `test_account_sync.py` and `test_go_live.py`: 141 passed.
+
+## `POST /{bot_name}/clone` — a fresh copy of a bot, for a strategy with nowhere free (2026-09-14)
+
+Aaron: *"I could have infinite amount of demo or live accounts and I want my bots on all"* — but a
+bot is one folder, one account, one process (`algos/CLAUDE.md` → "a bot IS its folder"), so once
+both of a strategy's copies are already on real accounts there was no free instance left to move
+onto a third one, and the only route was a person hand-editing a new `instances/` folder. This is
+the one new write that closes that gap. Nothing about live safety changes: the new bot is invisible
+to the box until it goes through the SAME account move every other bot already does — same live
+confirm, same channel check, same share-overflow refusal.
+
+**Which bot to clone is decided on the FRONTEND, not here.** `frontend/src/lib/botTemplates.ts`
+reads `useBotAccounts` and `useRegisteredAccounts` (both already fetched by the Bots page) to pick
+one strategy row per `strategy_package` — live copy over demo, demo over bench — with no fetch of
+its own. So this endpoint needs no "template" concept: it clones exactly the bot key it is called
+on, and `services/bot_clone.py` (`next_key`, `next_magic`, `clone_config`) is the whole of what a
+fresh copy carries.
+
+- **A fresh copy keeps the strategy's trading logic and drops everything about the account or the
+  history it came from.** `strategy_params`, `symbol`, `timeframe`, `warmup_bars` and anything a
+  future strategy adds are copied through unchanged; `account`, `mt5_path`, `server`, the promoted
+  commit/version, the Telegram overrides, the account risk cap and the sizing adjustment are all
+  reset to the same "never assigned, never promoted" state a benched bot already sits in.
+- 🔴 **Every underscore-prefixed prose key is DROPPED, never copied.** Those notes are measurements
+  taken FOR the bot they are written on — a broker's spread, an account's balance, a promote that
+  landed for that account's snapshot. Carrying them onto a bot they were never true for is exactly
+  the repo's own rule about a guessed number: a plausible claim nobody has checked for this file.
+  One new `_cloned_from` note replaces the lot and points back at the source for the real history.
+- ⚠ **Local write only** — no commit, no push, no VPS pull. The new folder is invisible to the box
+  and to every other clone of this repo until the account move that follows commits it. Cancelling
+  before that move leaves an idle, harmless extra folder on this one machine — the same resting
+  state benching a real bot already produces, picked up as an ordinary free bot next time, never a
+  duplicate.
+- ⚠ **Routed through `_write_instance_config`, the one guarded chokepoint every instance-config
+  write already goes through** (`tests/conftest.py::_no_live_bot_config`) — folding the new
+  folder's creation into that call, rather than a separate `mkdir`, is what keeps the guard
+  covering it. A test that forgets to stub the write is refused before anything touches disk.
+- ⚠ **The new order tag is picked globally, stricter than the runtime needs** — the live guard
+  (`live_config._assert_magic_is_unique`) only refuses a clash on one account, but picking the
+  smallest unused tag across every account means a fresh copy's first start never depends on
+  anyone first reasoning about which existing bot trades which account.
+
+**TESTED:** `services/bot_clone.py` — 10 tests on the pure functions, one watched RED by mutation
+(the account-reset step deleted, `git diff`-style, and the test caught it for the right reason).
+`routers/bots.py::clone_bot` — 4 tests: refused by the live-config guard by default, a 404 before
+any write for an unknown bot, and an end-to-end write against a throwaway instances root proving
+the real fleet is untouched afterward. Full backend suite: 2215 passed, 8 skipped.

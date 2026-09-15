@@ -1054,6 +1054,24 @@ nothing saying what any of the two numbers on the right were.
   `data-testid`s, not button text or DOM shape) — verified visually with four temporary Playwright
   screenshots (two-bot accounts, a 1280px width, a single-bot account, and a cap-disagreement
   account) that were removed before commit, never landed as fixtures.
+- 🔴 **FOUR FIXED-WIDTH SLOTS, ALWAYS DRAWN, EVEN WHEN THE FIGURE DOESN'T APPLY (2026-09-15, Aaron:
+  *"the header values have to line up identical vertically between the demo and live account"*).**
+  Letting Cap or Avg / bot disappear when an account had no cap, or fewer than two bots, was the
+  defect: whichever card was missing a slot drew one fewer column, and everything after it landed
+  under the wrong header on the card beside it. Cap and Avg / bot now always render their label and
+  a fixed-width box (`52px` / `82px`; Return `148px`; Equity `min-w-[118px]`, since its rare
+  "read at HH:MM" annotation needs room to grow past the common case without shrinking anything to
+  its left) — when the figure doesn't apply the box holds a dash, titled with why (no bot on the
+  account, a cap disagreement, only one bot), the same "nothing to measure" mark the rest of the
+  page already uses, never a narrower column. Verified with a throwaway fixture pairing a normal
+  two-bot account against a one-bot, no-cap account side by side — all four labels landed on the
+  same pixel between the two cards.
+  🔴 **That fixture did not cover the one pairing that actually broke — see the next entry
+  (2026-09-15).** Equity is the LAST slot in a cluster anchored by `ml-auto`; growing it has
+  nowhere to expand INTO, so it pushes the whole cluster's left edge, and everything before it,
+  further left instead of "growing past the common case without shrinking anything to its left."
+  The fixture never paired a live balance against a past-reading one, which is the one pairing
+  where Equity actually grows past 118px.
 
 ## The equity is what MT5 gave — a figure, its read time, or a dash (2026-09-14)
 
@@ -1061,11 +1079,12 @@ Aaron: *"read exactly what's on the MT5. Don't create your own phrases."* The li
 `balance unread` in amber over two bots that had refused to start on an account MT5 reported as
 $0.00, and the account panel said `not reported — no bot here is answering`.
 
-- **No reading → `—`**, on the card and in the panel. `balance unread`, `balance not read` and
-  `not reported…` are gone.
+- **No reading → `—`**, on the card and in the panel — on the card the same small grey dash the
+  header's other three slots hold. `balance unread`, `balance not read` and `not reported…` are gone.
 - 🔴 **A STOPPED bot's figure carries its read time** (`last_updated`) — it is what MT5 said then, and
   shown as current it would read $0.00 on an account funded since. A running bot's reading wins;
-  else the newest a stopped one took.
+  else the newest a stopped one took. The time sits UNDER the figure, and on an account with no bot
+  only in the hover — see *The Equity slot's real fix* below, which landed alongside.
 - **The header's `N balances unread` count is gone.** A bot that cannot read MT5 says so on its own
   row (`No MT5 link`) and the card shows a dash — the count was a third copy nobody could act on.
 - The equity figure carries `data-testid="account-equity"`.
@@ -1099,3 +1118,90 @@ Three of Aaron's asks the same day, all touching the same panel, so they land to
   old text, so `bots-accounts.spec.ts` was red on `main` between that commit and this one.
 - Tests: all 132 `bots-accounts.spec.ts` pass, five re-pointed to "Remove" (two test names, three
   in-body assertions); tsc --noEmit clean.
+
+## The Equity slot's real fix, and an explicit "no bot" status (2026-09-15)
+
+Aaron, from a screenshot of the account he had just promoted off demo: *"it added some new values
+which have them misaligned now"* and *"why is it still here"* (the demo account, with its bots
+just moved to live).
+
+- 🔴 **The Equity slot was never actually a fixed width — it was `min-w`, the one exception to
+  "FOUR FIXED-WIDTH SLOTS, ALWAYS" two entries up, and the one case that broke it.** A past-reading
+  balance appends "read `<time>`" BESIDE the figure, on one line — wider than any plain balance —
+  and a `min-w` box grows to fit it. Because the whole cluster hangs off `ml-auto`, growing the
+  LAST slot pushes every slot before it (Cap, Return, Avg / bot) left with it. That is exactly what
+  happened the moment Aaron's two bots left the PU Prime demo account for the live one beside it:
+  its header drew a full column short of the live card's. Measured in a real browser
+  (`getBoundingClientRect` on both cards' `Cap`/`Return`/`Avg / bot`/`Equity` labels): before the
+  fix the demo card's three left labels sat 105px left of the live cards'; after, all three cards'
+  four labels land at the same x on screen.
+- **Fix is the stat, not the box.** The "read `<time>`" note now sits UNDER the balance instead of
+  beside it, so the slot's content is the WIDER of the two lines, not their sum — 118px (already
+  enough for either line alone) holds, and `min-w-[118px]` became a true `w-[118px]`, matching its
+  three neighbours. `balance-read-at` is unchanged for the case that still needs it on screen (a
+  bot IS on the account, has just not reported a balance of its own yet — nothing else on the card
+  says that figure is stale, so the time stays visible there).
+- 🔴 **Added an explicit status pill for an idle account** (`idle-chip`, Aaron: *"we need some kind
+  of indicator showing that there's no bots on it right now"*) — grey, not warn/gold, since an idle
+  account (a demo a set was just promoted off) is a normal resting state, not a fault like the cap
+  pills beside it. It sits in the same identity-line slot the cap chip leaves empty while idle.
+- 🔴 **Removed the departed-bots' per-bot rows from the card** ("Moved to live account…", each
+  bot's own P&L / return / trades / per-trade — Aaron: *"the history of the bots don't really need
+  to be there… I don't care where the bots will move to"*). Once the idle pill says the one fact
+  that matters at a glance, the per-bot destination detail was never that.
+  ⚠ **The account's own equity and return above are untouched** — they read the whole account
+  record, not this list. ⚠ **The departed bots' share of the SIDE's pooled score is untouched
+  too** (`scoreOf` folds `former` bots in on purpose) — that is a different reader (the DEMO/LIVE
+  section heading), never this list. ⚠ **A returning bot still carries the score forward**
+  (`carried_from`) — also unrelated to this list, already covered by its own test.
+  ⚠ **The account still shows on Trading rather than dropping to Unassigned once its bots
+  leave** — that is the 2026-09-11 decision above, not revisited today. Aaron asked "why is it
+  still here" against that same decision; today's change is what he asked for once he saw the
+  trade-off spelled out — keep the card, drop the per-bot clutter, add the pill.
+- Tests: `bots-accounts.spec.ts` — two tests rewritten (`idle-chip` visible + `balance-read-at`
+  and `past-row` both absent on an idle account; the new-bot-returns test now asserts `past-row`
+  count 0 instead of 2, since the rows are gone, while `score-demo` still reads `+1.00R`
+  unchanged). All 132 pass. tsc --noEmit clean on this file. Verified visually in a real browser
+  against the live dev server (live + demo accounts side by side, one idle).
+
+## Every strategy is a standing placeholder — "Add a bot" offers ALL of them, forever (2026-09-14)
+
+Aaron: *"I could have infinite amount of demo or live accounts and I want my bots on all."* The
+2026-09-11 redesign above (**"Add a bot" lists FREE bots only**) was right as far as it went, but
+it had a ceiling nobody had hit yet: once both of a strategy's copies were on real accounts — one
+live, one demo — there was nothing free left to offer a third account, ever, for that strategy.
+The only route past it was a person hand-editing a new instance file on the VPS.
+
+- **A row is now the STRATEGY, never a specific running copy, and it is never used up by being
+  placed.** `lib/botTemplates.ts` derives one row per strategy from data the page already holds —
+  `useBotAccounts` (every bot, grouped by account) and `useRegisteredAccounts` (which account is
+  demo or live) — so the list needed no new fetch of its own. Picking the row either hands over a
+  real idle copy that happens to be sitting free (`existingBenchKey`, the ordinary case for a
+  strategy nobody has placed anywhere yet) or clones one first (`useCloneBot`, `POST
+  /bots/{key}/clone`) with no separate step the reader ever sees — the clone is invisible on
+  success, and cancelling a live confirmation after one leaves at most one idle spare bot behind,
+  the same harmless resting state benching a real bot already produces.
+- 🔴 **Which bot to clone from is picked HERE, client-side, not by the backend.** A strategy's live
+  copy outranks its demo copy, which outranks a benched one — "its live share" is the most current,
+  most deliberately tuned configuration, and a demo copy sometimes trials a change the live bot has
+  not taken yet. The backend endpoint needed no template concept of its own because of this: it
+  clones exactly the bot key it is called on.
+- ⚠ **A strategy already on the account being viewed is not offered again.** This panel fills a
+  gap; it does not suggest piling a second copy of one strategy onto a balance that already runs
+  it. The empty state now says which of two different things is true — "no strategy is built yet"
+  (nothing exists anywhere) versus "every strategy is already on this account" (they exist, this
+  account just has them all) — collapsing those into one "no bot is free" message would have hidden
+  which is true.
+- ⚠ **Only a real, already-idle bot gets the server's full room-fit plan** (`useJoinPlans`, and
+  every fix `JoinChoices` can offer — raising the cap, rescaling every share). A strategy with
+  nothing idle yet has no bot key for the server to plan a join for, so it gets the one fix
+  computable from what the panel already knows — join at the room still free (`SimpleMakeRoom`).
+  Raising the cap or rescaling every bot is still a click away on the account's own risk budget;
+  it is not invented here for a bot that does not exist yet.
+- Tests: `bots-accounts.spec.ts` — the two 2026-09-11 checks this superseded (`add-extreme` count
+  0 once elsewhere; "No bot is free") are replaced with four: a bench bot's row is still named by
+  its risk and never its symbol; a strategy with no free copy is still offered and placing it
+  clones its running bot (asserts the clone call fires, then the ordinary account move, in order);
+  an account already running every known strategy says so by name; a strategy not yet on that
+  account is still offered even once every other one is. All 134 pass. tsc --noEmit and eslint
+  clean on every changed file.

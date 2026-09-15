@@ -699,18 +699,12 @@ test('a benched bot IS told to be given an account', async ({ page }) => {
   await expect(benched).toContainText('B-LEG')
 })
 
-test('only a FREE bot is offered, named with its risk and never its symbol', async ({ page }) => {
+test('a bench bot is named with its risk and never its symbol', async ({ page }) => {
   // 🔴 2026-09-11: the list offered every bot not already here, so the demo account listed both
   // LIVE bots — greyed while running, one click from real money once stopped. Aaron: *"it should
   // just show available bots that is it"* — and the symbol went: *"the account doesn't care."*
-  // MUTATION: list every bot not on this account again → `add-extreme` renders and goes red.
   await mock(page, [
     group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
-    group({
-      account: 700152905,
-      bots: [bot('extreme', 'Extreme Leg', 770117, 10, 5)],
-      risk_cap_pct: 10,
-    }),
     BENCHED,
   ])
   await openAccount(page)
@@ -720,7 +714,60 @@ test('only a FREE bot is offered, named with its risk and never its symbol', asy
   await expect(free).toContainText('Risks 10% a trade')
   await expect(free).not.toContainText('XAUUSD')
   await expect(page.getByTestId('add-bot-row')).not.toContainText('not on an account')
-  await expect(page.getByTestId('add-extreme')).toHaveCount(0)
+})
+
+test('a strategy with no free copy is still offered, and placing it clones its running bot', async ({
+  page,
+}) => {
+  // 🔴 2026-09-14: every strategy is a STANDING placeholder, never used up by being placed —
+  // Aaron: *"I could have infinite amount of demo or live accounts and I want my bots on all."*
+  // `extreme` has no bench copy (both of its would-be copies are already on real accounts), so
+  // this account's row for it has to mint a fresh one rather than being hidden or greyed out.
+  // MUTATION: hide a strategy with nothing idle → `add-extreme` renders count 0 and goes red.
+  await mock(page, [
+    group({ bots: [bot('sos_fade', 'SOS Fade', 770115, 10)], risk_cap_pct: 10 }),
+    group({
+      account: 700152905,
+      bots: [bot('extreme', 'Extreme Leg', 770117, 10, 5)],
+      risk_cap_pct: 10,
+    }),
+    BENCHED,
+  ])
+  let cloned: string | null = null
+  let joined: Record<string, unknown> | null = null
+  await page.route('**/*', async (route) => {
+    const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/extreme/clone') {
+      cloned = 'extreme'
+      return route.fulfill({ json: { bot_key: 'extreme_1', display_name: 'Extreme Leg' } })
+    }
+    if (u.pathname === '/api/bots/extreme_1/account') {
+      joined = route.request().postDataJSON()
+      return route.fulfill({
+        json: {
+          status: 'ok',
+          changed: true,
+          deployed: true,
+          bot: 'extreme_1',
+          account: ACCOUNT,
+          restart_required: true,
+          detail: 'added',
+        },
+      })
+    }
+    return route.fallback()
+  })
+
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  const row = page.getByTestId('add-extreme')
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('Risks 5% a trade')
+  await row.click()
+  // The clone is invisible on success — one click, the strategy ends up on the account, and the
+  // reader is never shown a bot being "created" as a separate step.
+  await expect.poll(() => cloned).toBe('extreme')
+  await expect.poll(() => joined).toEqual({ account: ACCOUNT, deploy: true })
 })
 
 test('adding a bot sends its key and the account it is joining', async ({ page }) => {
@@ -1125,13 +1172,44 @@ test('a STOPPED bot may be moved — the positive control for the running guard'
   await expect(page.getByTestId('move-b_leg')).toBeEnabled()
 })
 
-test('an account with nothing left to add says so instead of an empty list', async ({ page }) => {
+test('an account already running every known strategy says so instead of an empty list', async ({
+  page,
+}) => {
+  // 🔴 2026-09-14: a strategy is a standing placeholder now, so "nothing left to add" no longer
+  // means "no bot is free anywhere" — STACKED's account already runs BOTH known strategies, and
+  // neither is offered a second time onto the same balance.
   // MUTATION: render the picker unconditionally → an empty box with no explanation, which reads
   // as a broken control rather than as an answer.
   await mock(page, STACKED)
   await openAccount(page)
   await page.getByTestId('add-bot').click()
-  await expect(page.getByTestId('no-candidates')).toContainText('No bot is free')
+  await expect(page.getByTestId('no-candidates')).toContainText(
+    'Every strategy is already on this account'
+  )
+})
+
+test('a strategy not yet on this account is still offered, even once every OTHER one is', async ({
+  page,
+}) => {
+  // The positive control for the check above: STACKED plus a third, unrelated strategy must not
+  // also read as "nothing left to add" just because sos_fade and b_leg are both already here.
+  await mock(page, [
+    group({
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 10), bot('b_leg', 'B-LEG', 770116, 10)],
+      risk_cap_pct: 30,
+    }),
+    group({
+      account: 700152905,
+      bots: [bot('extreme', 'Extreme Leg', 770117, 10, 5)],
+      risk_cap_pct: 10,
+    }),
+  ])
+  await openAccount(page)
+  await page.getByTestId('add-bot').click()
+  await expect(page.getByTestId('no-candidates')).toHaveCount(0)
+  await expect(page.getByTestId('add-extreme')).toBeVisible()
+  await expect(page.getByTestId('add-sos_fade')).toHaveCount(0)
+  await expect(page.getByTestId('add-b_leg')).toHaveCount(0)
 })
 
 test('the FIRST bot on an empty account carries the cap chosen with it', async ({ page }) => {
@@ -2676,16 +2754,24 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
   await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
 
-test('the demo account the bots LEFT is still an account — its balance, its record, and a way to put the next bot on it', async ({
+test('the demo account the bots LEFT is still an account — its balance, an explicit "no bot" status, and a way to put the next bot on it', async ({
   page,
 }) => {
   // 🔴 Aaron, 2026-09-11: *"moving bots to live doesn't mean we don't trade on the demo still…
   // what if I wanted to test out more bots on a demo account while the live bot is also trading…
   // it shouldn't matter."* It was a separate "history" card — no balance, no cap, headed *no bots on
   // it now* — which read as a closed account.
+  // 🔴 Aaron, 2026-09-15, on the next round: *"we need some kind of indicator showing that
+  // there's no bots on it right now"* — the only signals were a row buried in the table body and
+  // a small "read <time>" note, neither a glance-level fact. And *"the history of the bots don't
+  // really need to be there"* — the per-bot "moved to…" rows came off; the account's own equity
+  // and return did not, and neither did the departed bots' share of the side's score.
   // MUTATION: drop departed-only accounts from the Trading list → red on the card count.
-  // MUTATION: drop the read time beside a past balance → red on `balance-read-at`.
+  // MUTATION: drop the "no bot" status pill → red on `idle-chip`.
+  // MUTATION: show the read time beside the figure again once idle has its own pill → red on
+  //   `balance-read-at` (it should NOT be visible here any more).
   // MUTATION: draw the cap chip with no bot on the account → red on its count.
+  // MUTATION: bring back a per-bot "moved to" row → red on `past-row`.
   // MUTATION: drop the Add-a-bot row → red.
   // MUTATION: open the panel without the picker out → red on `add-bot-row`.
   // MUTATION: keep the account on Unassigned too → red on the empty-account count.
@@ -2695,18 +2781,20 @@ test('the demo account the bots LEFT is still an account — its balance, its re
   const card = page.getByTestId('section-demo').getByTestId('account-card')
   await expect(card).toHaveCount(1)
   await expect(card).toContainText(String(ACCOUNT))
-  // The balance is the last one a bot read — shown, and said to be a reading.
+  // The identity line says explicitly that no bot is on it — not left to a row further down.
+  await expect(card.getByTestId('idle-chip')).toBeVisible()
+  await expect(card.getByTestId('idle-chip')).toContainText('no bot')
+  // The balance is the last one a bot read — the figure stays, the account grew to it either way.
   await expect(card).toContainText('$15,844.46')
-  await expect(card.getByTestId('balance-read-at')).toBeVisible()
+  // The pill above already says this can't be live, so the granular time is a hover, not text.
+  await expect(card.getByTestId('balance-read-at')).toHaveCount(0)
   await expect(card).toContainText('+58.5%')
   // No bot on it, so no cap to state — "no cap" in warn would be an alarm about nothing.
   await expect(card.getByTestId('cap-chip')).toHaveCount(0)
-  // Its record: the two bots that left, each saying where it went, with their own figures.
-  const past = card.getByTestId('past-row')
-  await expect(past).toHaveCount(2)
-  await expect(past.first()).toContainText(`Moved to live account ${LIVE}`)
-  await expect(card).toContainText('$1,500.00')
-  await expect(card).toContainText('+16.7%')
+  // The departed bots' own "moved to…" detail no longer renders — Aaron doesn't need it on the
+  // card. Their share of the demo score is asserted separately, in the next test.
+  await expect(card.getByTestId('past-row')).toHaveCount(0)
+  await expect(card).not.toContainText('Moved to')
 
   // One place per account: it is not ALSO under Unassigned.
   await page.getByTestId('tab-unassigned').click()
@@ -2726,13 +2814,16 @@ test('the demo account the bots LEFT is still an account — its balance, its re
   await expect(panel).not.toContainText('recorded by sos_fade')
 })
 
-test('a NEW bot on the demo account keeps the departed bots on its card and in the score', async ({
+test('a NEW bot on the demo account keeps the departed bots in its score, though not as rows on the card', async ({
   page,
 }) => {
   // 🔴 It shouldn't matter: putting the next bot on demo used to DROP the departed bots' record —
-  // the page read it only off an account with no bot on it — taking the demo score with it.
-  // MUTATION: show the departed rows only on an account with no bot → red on the past-row count.
+  // the page read it only off an account with no bot on it — taking the demo score with it. The
+  // per-bot rows that once carried that record on the card are gone since 2026-09-15 (Aaron:
+  // "the history of the bots don't really need to be there"), but the SCORE must still read it —
+  // that came off the account's own record (`scoreOf`), never off the rows.
   // MUTATION: read the departed record into the score only with no bot on it → red on the score.
+  // MUTATION: bring back a past-bot row once a new bot is on the account → red on `past-row`.
   await mockAfterGoLive(page, [bot('b_leg', 'B-LEG', 770116, 10, 5)])
   await page.goto('/bots')
 
@@ -2740,9 +2831,10 @@ test('a NEW bot on the demo account keeps the departed bots on its card and in t
   await expect(card).toHaveCount(1)
   await expect(card.getByTestId('bot-row')).toHaveCount(1)
   await expect(card.getByTestId('bot-row')).toContainText('B-LEG')
-  await expect(card.getByTestId('past-row')).toHaveCount(2)
+  await expect(card.getByTestId('past-row')).toHaveCount(0)
   await expect(card.getByTestId('no-bot-row')).toHaveCount(0)
-  // A bot is on it now, so the balance is its live one — no read time.
+  // A bot is on it now, so there is no "no bot" status and the balance is its live one.
+  await expect(card.getByTestId('idle-chip')).toHaveCount(0)
   await expect(card.getByTestId('balance-read-at')).toHaveCount(0)
   await expect(page.getByTestId('score-demo')).toContainText('+1.00R')
 })
