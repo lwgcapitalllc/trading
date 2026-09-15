@@ -1,0 +1,41 @@
+2026-09-15 02:51:35,444 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-15 02:51:35,539 [INFO] Stop requested — shutting down.
+2026-09-15 02:51:35,555 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-15 02:51:37,647 [INFO] MT5 disconnected.
+2026-09-15 02:51:52,990 [INFO] Extreme Leg | ExtremeLegStrategy v181 | hash 18dc1991e019 | commit 6791c400 | frozen | LIVE
+2026-09-15 02:51:53,634 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-15 02:51:53,634 [INFO] MT5 connection lock released
+2026-09-15 02:51:53,872 [INFO] Sizing against account balance $15,844.46
+2026-09-15 02:51:53,872 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-15 02:51:53,881 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-15 02:51:58,678 [INFO] Warmed 15000 bars (2026-06-30 11:20:00+00:00 → 2026-09-15 02:45:00+00:00) in 4.3s
+2026-09-15 02:51:58,678 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-15 02:51:59,433 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-15 02:52:29,592 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-15 02:52:29,592 [INFO] Stop requested — shutting down.
+2026-09-15 02:52:29,592 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-15 02:52:30,192 [INFO] MT5 disconnected.
+2026-09-15 02:56:30,935 [INFO] Extreme Leg | ExtremeLegStrategy v181 | hash 18dc1991e019 | commit 74136767 | frozen | LIVE
+2026-09-15 02:56:31,855 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-15 02:56:31,855 [INFO] MT5 connection lock released
+2026-09-15 02:56:32,107 [ERROR] Startup failed: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1797, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 692, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+
+2026-09-15 02:57:22,949 [INFO] Extreme Leg | ExtremeLegStrategy v181 | hash 18dc1991e019 | commit 74136767 | frozen | LIVE
+2026-09-15 02:57:23,480 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-15 02:57:23,480 [INFO] MT5 connection lock released
+2026-09-15 02:57:23,652 [ERROR] Startup failed: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1797, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 692, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+

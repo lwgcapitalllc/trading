@@ -1,0 +1,31 @@
+2026-09-15 02:52:53,888 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-15 02:52:53,920 [INFO] Stop requested — shutting down.
+2026-09-15 02:52:53,920 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-15 02:52:55,186 [INFO] MT5 disconnected.
+2026-09-15 02:53:08,941 [INFO] SOS Fade | SosFadeStrategy v177 | hash f6cc3132c2b2 | commit 6791c400 | frozen | LIVE
+2026-09-15 02:53:09,465 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-15 02:53:09,465 [INFO] MT5 connection lock released
+2026-09-15 02:53:09,693 [INFO] Sizing against account balance $15,844.46
+2026-09-15 02:53:09,700 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-15 02:53:09,700 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-15 02:53:09,716 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-15 02:53:12,472 [INFO] Warmed 5000 bars (2026-06-30 11:15:00+00:00 → 2026-09-15 02:30:00+00:00) in 2.7s
+2026-09-15 02:53:15,191 [INFO] Warmed the fast feed on 15000 M5 bars (2026-06-30 11:20:00+00:00 → 2026-09-15 02:45:00+00:00).
+2026-09-15 02:53:15,203 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
+2026-09-15 02:53:15,928 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-15 02:55:06,329 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-15 02:55:06,329 [INFO] Stop requested — shutting down.
+2026-09-15 02:55:06,329 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-15 02:55:06,828 [INFO] MT5 disconnected.
+2026-09-15 02:56:47,138 [INFO] SOS Fade | SosFadeStrategy v177 | hash f6cc3132c2b2 | commit 74136767 | frozen | LIVE
+2026-09-15 02:56:47,671 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-15 02:56:47,671 [INFO] MT5 connection lock released
+2026-09-15 02:56:47,830 [ERROR] Startup failed: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\live\runner.py", line 1797, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\live\runner.py", line 692, in _build_strategy
+    raise RuntimeError(
+RuntimeError: Could not read the account balance, and initial_capital is 0 — the strategy would size every trade off nothing.
+
