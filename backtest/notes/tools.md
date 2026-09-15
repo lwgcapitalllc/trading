@@ -984,6 +984,40 @@ CLAUDE.md gets at most one index line.
   `news`/`trend` followups. `killzone_followups.py` reproduces the session's scratch figures
   exactly (ported 2026-09-15, every quoted number re-run).
 
+- **`tools/killzone_vwap_retest.py`** — **price retests the session VWAP inside a kill zone: does
+  it trade AWAY from it, does higher-timeframe trend help, and which target is best?** Added
+  2026-09-15 at Aaron's request. Entry is a resting limit AT the VWAP as it stood after the
+  previous bar closed (so no lookahead), direction is the side price came from, stop is `--stop`
+  xADR20 THROUGH the VWAP, and the target is swept 0.05-0.50xADR20 plus "no target, out at the
+  zone's end". Trend comes from the canonical structure engine on M15/H1/H4/D1, read only from
+  higher-timeframe candles that had already closed.
+  🔴 **THE BOUNCE ALONE IS A COIN FLIP.** In the 10:00 zone, 801 retests across 2,039 days:
+  **50.7%** at equal stop and target (−0.044R), 52.4% out at the zone's end. The 11:45 zone is
+  **45.5%**, 13:00 is 47.0%, 10:30-11:00 is 48.3% — against an all-day median near **47%** for the
+  same rule. ⚠ **The win% here is deliberately pessimistic** (inside the trigger bar only the stop
+  can count, because an excursion toward the target may predate the fill), which is exactly why a
+  zone is read against the all-day column and **never against 50%**.
+  🔴 **WIN RATE AND MONEY POINT IN OPPOSITE DIRECTIONS — THIS IS THE ROW TO REMEMBER.** Tightening
+  the target to 0.05xADR against a 0.10xADR stop wins **60.2%** and is the WORST cell on the board
+  (**−0.140R**): it needs 67% just to break even. Expectancy improves as the target widens, to
+  0.50xADR, and "out at the zone's end" scores the same. **A hit rate is not an edge — the pair
+  (hit rate, payoff) is, and a tight target buys the first by selling the second.**
+  ⚠ **Trend confluence does lift it, and the MIDDLE frames carry it.** H1+H4 agreement takes the
+  10:00 bounce from −0.040R to **+0.089R** (260 trades, 41.9% win); H1 alone +0.053R, H4 alone
+  +0.026R — while **D1 makes it worse (−0.047R)** and M15 adds nothing.
+  🔴 **It still fails the protocol.** H1+H4 wins **46.0%** in 2018-2023 and **31.5%** in 2024-2026;
+  "all four agree" goes 51.5% → **20.6%** on 131 trades. The all-day control holds hours that beat
+  the zone outright (**14:00-15:00 +0.214R** against the zone's +0.089R), and the other three kill
+  zones are all negative on the same rule (−0.068R, −0.138R, −0.112R). ⚠ **56 cells were searched
+  in one window**, so the best of them is what a search that wide produces by construction.
+  ⚠ **The stop is quoted in DOLLARS as well as in ADR, because the same rule is not the same stop:**
+  median **$2.31** over the sample, **$0.98 in 2018** and **$8.27 in 2026**. The $0.14 round trip is
+  ~14% of the 2018 stop and ~1.7% of the 2026 one — a cost that is negligible today was material at
+  the start of the sample, and an R figure averaged across both hides that.
+  ⚠ **It contradicts `killzone_edge_search.py`'s regime note in DIRECTION** — there the follow rules
+  paid only in 2024-2026, here the trend-aligned bounce paid only before it. **Two tests disagreeing
+  about the same years is a reason to trust neither.**
+
 - **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/bos_strategy.pine`.
   It has moved TWICE and a path from before either date is stale: on 2026-08-13 the `.pine` sources
   were split by their DECLARATION into `indicators/strategies/` and `indicators/engines/`, and on
