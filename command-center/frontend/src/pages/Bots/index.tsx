@@ -822,22 +822,22 @@ function BotsPageSkeleton() {
          *  one instead — a quiet gold figure in the stat row, same as every account settles to
          *  once its bots agree on a ceiling. */}
         <span className="ml-auto flex items-stretch">
-          <span className="flex flex-col items-end justify-center gap-[3px] pr-[14px]">
+          <span className="w-[52px] flex flex-col items-end justify-center gap-[3px] pr-[14px]">
             <StatLabel>Cap</StatLabel>
             <Shimmer className="h-[13px] w-[30px]" />
           </span>
           <span className="w-px self-stretch bg-border-subtle" />
-          <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+          <span className="w-[148px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
             <StatLabel>Return</StatLabel>
             <AccountNet e={undefined} asking />
           </span>
           <span className="w-px self-stretch bg-border-subtle" />
-          <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+          <span className="w-[82px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
             <StatLabel>Avg / bot</StatLabel>
             <AvgBotReturn bots={undefined} asking />
           </span>
           <span className="w-px self-stretch bg-border-subtle" />
-          <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px]">
+          <span className="min-w-[118px] flex flex-col items-end justify-center gap-[3px] pl-[14px]">
             <StatLabel>Equity</StatLabel>
             <span className="text-[17px] font-mono tabular-nums font-medium">
               <Shimmer>$00,000.00</Shimmer>
@@ -1337,55 +1337,89 @@ export function Bots() {
            *  ⚠ **Equity is the RIGHTMOST stat (Aaron's call, 2026-09-14)** — the outer edge is
            *  where a row of figures conventionally puts its headline number (a table's total
            *  column), and equity is the one every other figure here is read against. Cap → Return
-           *  → Avg per bot → Equity, so the eye lands on the biggest number last, not second. */}
+           *  → Avg per bot → Equity, so the eye lands on the biggest number last, not second.
+           *
+           *  🔴 **FOUR SLOTS, ALWAYS, EACH A FIXED WIDTH (Aaron, 2026-09-15: *"the header values
+           *  have to line up identical vertically between the demo and live account"*).** A slot
+           *  that only appears for the accounts where it applies was the reason two cards never
+           *  lined up: whichever account had no cap, or one bot instead of two, drew three columns
+           *  instead of four and every number after it landed under the wrong header. Cap and Avg
+           *  per bot now always draw their label and a fixed-width box; when the figure does not
+           *  apply (no cap set, a fault, fewer than two bots) the box holds a dash — the same
+           *  "nothing to measure here" mark the rest of this page already uses — never a narrower
+           *  column. The widths below are sized to the widest realistic value per field, not the
+           *  current one, so a bigger balance or return later does not push things out of line
+           *  again. */}
           <span className="ml-auto flex items-stretch">
-            {/* ⚠ Only the SET-and-agreed cap lands here — a disagreement or an unset ceiling is
-             *  a fault about the account and stays a loud pill up in the identity cluster,
-             *  never quieted into this row (see the comment on the chip above). */}
-            {!idle && group.cap_agrees && cap != null && (
-              <>
-                <span className="flex flex-col items-end justify-center gap-[3px] pr-[14px]">
-                  <StatLabel
-                    title={`Open risk across every bot on this account is capped at ${cap}% of its balance.`}
-                  >
-                    Cap
-                  </StatLabel>
-                  <span className="text-[13px] font-mono tabular-nums font-semibold text-gold-text cursor-default">
-                    {cap}%
-                  </span>
+            {/* ⚠ Only the SET-and-agreed cap draws a real figure here — a disagreement or an unset
+             *  ceiling is a fault about the account and stays a loud pill up in the identity
+             *  cluster (see the comment on the chip above); this box still holds its width. */}
+            <span className="w-[52px] flex flex-col items-end justify-center gap-[3px] pr-[14px]">
+              <StatLabel
+                title={
+                  !idle && group.cap_agrees && cap != null
+                    ? `Open risk across every bot on this account is capped at ${cap}% of its balance.`
+                    : undefined
+                }
+              >
+                Cap
+              </StatLabel>
+              {!idle && group.cap_agrees && cap != null ? (
+                <span className="text-[13px] font-mono tabular-nums font-semibold text-gold-text cursor-default">
+                  {cap}%
                 </span>
-                <span className="w-px self-stretch bg-border-subtle" />
-              </>
-            )}
+              ) : (
+                <span
+                  title={
+                    idle
+                      ? 'No bot is on this account, so there is no cap to state.'
+                      : !group.cap_agrees
+                        ? 'The bots on this account do not agree on a ceiling — see the alert on the account.'
+                        : 'No risk ceiling is set on this account.'
+                  }
+                  className="text-[12px] text-text-tertiary cursor-default"
+                >
+                  —
+                </span>
+              )}
+            </span>
 
-            <span
-              className={`flex flex-col items-end justify-center gap-[3px] pr-[14px] ${
-                !idle && group.cap_agrees && cap != null ? 'pl-[14px]' : ''
-              }`}
-            >
+            <span className="w-px self-stretch bg-border-subtle" />
+
+            <span className="w-[148px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
               <StatLabel>Return</StatLabel>
               <AccountNet e={earn} asking={asking} />
             </span>
 
-            {/* ⚠ Only when at least two bots are ON the account now — with one bot, its mean is
-             *  the same number the Return % column already states for that bot, and a second
-             *  label on an unchanged figure is the exact duplication this page keeps getting
-             *  rebuilt to remove. It returns the moment a second bot lands on the account. */}
-            {rows.length >= 2 && (
-              <>
-                <span className="w-px self-stretch bg-border-subtle" />
-                <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
-                  <StatLabel title="The mean Return % across the bots on this account — never a sum, since they share one balance.">
-                    Avg / bot
-                  </StatLabel>
-                  <AvgBotReturn bots={earn?.bots} asking={asking} />
+            <span className="w-px self-stretch bg-border-subtle" />
+
+            {/* ⚠ Only draws a real figure once at least two bots are ON the account — with one
+             *  bot, its mean is the same number the Return % column already states for that bot,
+             *  and a second label on an unchanged figure is the exact duplication this page keeps
+             *  getting rebuilt to remove. The box still holds its width either way. */}
+            <span className="w-[82px] flex flex-col items-end justify-center gap-[3px] pl-[14px] pr-[14px]">
+              <StatLabel title="The mean Return % across the bots on this account — never a sum, since they share one balance.">
+                Avg / bot
+              </StatLabel>
+              {rows.length >= 2 ? (
+                <AvgBotReturn bots={earn?.bots} asking={asking} />
+              ) : (
+                <span
+                  title={
+                    idle
+                      ? 'No bot is on this account.'
+                      : 'Only one bot is on this account — its mean is the Return % figure beside it.'
+                  }
+                  className="text-[12px] text-text-tertiary cursor-default"
+                >
+                  —
                 </span>
-              </>
-            )}
+              )}
+            </span>
 
             <span className="w-px self-stretch bg-border-subtle" />
 
-            <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px]">
+            <span className="min-w-[118px] flex flex-col items-end justify-center gap-[3px] pl-[14px]">
               <StatLabel>Equity</StatLabel>
               <span className="text-[17px] font-mono tabular-nums font-medium">
                 {/* ⚠ `balance unread` is a warning and is only true once the box has

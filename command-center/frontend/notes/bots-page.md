@@ -1054,6 +1054,18 @@ nothing saying what any of the two numbers on the right were.
   `data-testid`s, not button text or DOM shape) — verified visually with four temporary Playwright
   screenshots (two-bot accounts, a 1280px width, a single-bot account, and a cap-disagreement
   account) that were removed before commit, never landed as fixtures.
+- 🔴 **FOUR FIXED-WIDTH SLOTS, ALWAYS DRAWN, EVEN WHEN THE FIGURE DOESN'T APPLY (2026-09-15, Aaron:
+  *"the header values have to line up identical vertically between the demo and live account"*).**
+  Letting Cap or Avg / bot disappear when an account had no cap, or fewer than two bots, was the
+  defect: whichever card was missing a slot drew one fewer column, and everything after it landed
+  under the wrong header on the card beside it. Cap and Avg / bot now always render their label and
+  a fixed-width box (`52px` / `82px`; Return `148px`; Equity `min-w-[118px]`, since its rare
+  "read at HH:MM" annotation needs room to grow past the common case without shrinking anything to
+  its left) — when the figure doesn't apply the box holds a dash, titled with why (no bot on the
+  account, a cap disagreement, only one bot), the same "nothing to measure" mark the rest of the
+  page already uses, never a narrower column. Verified with a throwaway fixture pairing a normal
+  two-bot account against a one-bot, no-cap account side by side — all four labels landed on the
+  same pixel between the two cards.
 
 ## The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
 
