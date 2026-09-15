@@ -857,6 +857,133 @@ CLAUDE.md gets at most one index line.
   −0.088R over 2,034 trades** against the recorded 49.0% / −0.087R / 2,026, the whole difference
   being the ten days of bars the cache has picked up since.
 
+- **`tools/killzone_reversal.py`** — **does price TURN INSIDE a kill zone, and is the turn
+  special?** Added 2026-09-15 at Aaron's request: *"price is running in one direction, as soon as
+  those time zones come into play, price reverses... it's not directly the candle after, it could
+  be somewhere within the zone."*
+  🔴 **`killzone_profile.py` COULD NOT ANSWER THIS, and the reason is a lesson about where a
+  definition puts its boundary.** That tool measures the leg from 03:00 to the window's **CLOSE**
+  and then looks forward, so a turn inside the zone is averaged INTO the leg it fades —
+  structurally invisible rather than merely unmeasured. This tool ends the leg at the zone's
+  **OPEN** and measures what happened inside it. M5 by default, because the 11:45 zone is 30
+  minutes and on M15 that is two candles; the bar count per zone is printed on every run.
+  🔴 **THE TURN IS REAL AND IT IS NOT A KILL-ZONE PATTERN.** In the 10:00 hour the 2-hour leg
+  into the zone gives back half or more **74.6%** of the time (1,498 qualifying days,
+  2018-09-21 → 2026-08-21) — which reads as the pattern until the same measurement runs on every
+  other 60-minute window of the day: **08:00-09:00 does it 87.2%, 07:30-08:30 86.5%,
+  08:30-09:30 84.8%, 09:00-10:00 81.9%, 09:30-10:30 81.2%.** The kill zone ranks **sixth of 23**
+  and is beaten by the entire 07:30-10:30 block. ⚠ **The statistic tracks VOLATILITY, not a
+  clock**: the give-back rate peaks where the session is most active, the stop it implies widens
+  with it, and that is why the most reversal-prone hour on the board (08:00-09:00) is also the
+  **worst** to fade (−0.088R). "Price turns here" was true and load-bearing on nothing.
+  ⚠ **At equal distance the reversal is the LESS likely side in every window of the day.** Taking
+  the zone's extreme as the stop and asking whether the turn pays one unit of that same risk
+  first: **39.2%** in the 10:00 zone, and **no window clears 50%** (range 30.4-48.7%). Both
+  mechanical entries sit inside the all-day noise — fading at the zone's close **−0.011R** against
+  an all-window median of −0.023R, a reclaim inside the zone **+0.042R** against −0.016R — and the
+  reclaim's positive total is **2 of 9 years** (2022 +0.155R, 2025 +0.204R) with five negative. The
+  45-minute 13:00 zone is dead centre (−0.025R / −0.004R against medians −0.034R / −0.018R).
+  🔴 **ONE METRIC IN THIS TOOL WAS A RULER, AND IT READ 62% BEFORE IT WAS CAUGHT.** "Which came
+  first — the leg resumed, or the turn ran on" was first written as *retook the zone's extreme*
+  versus *ran past the in-zone counter-extreme*: two thresholds at **different distances** from
+  the zone's close. After a deep turn the counter side sits inches away and wins on geometry
+  alone, so it reported **62.2% "real reversal"** where the equal-distance version reports
+  **39.2%**. ⚠ **A "which happened first" test is a measurement only when both sides are the same
+  distance away** — otherwise it measures the ruler, and it will do it confidently.
+  ⚠ **No costs, and that is decisive here rather than a formality.** Every figure is gross, and
+  the largest of them is the same order as gold's round-trip spread plus commission, so nothing
+  in this study survives being charged. A study, never a backtest. Per-day CSVs:
+  `backtest/reports/kz_reversal/`.
+  🔴 **`--pivots` SETTLES WHY IT LOOKS CRYSTAL CLEAR, AND IT IS THE MOST USEFUL NUMBER HERE.** A
+  local swing extreme (6 M5 bars each side) forms inside the 10:00 hour on **85.0%** of days —
+  and inside **every** hour of the day at **82.0-87.7%**. Price makes a turn in essentially every
+  hour it trades. ⚠ **The claim "price turns at these times" is TRUE, reliable, and carries no
+  information**, which is a different and more slippery failure than a claim being false: eyes
+  confirm it every single day. ⚠ The 11:45 (55.9%) and 13:00 (76.1%) rows are LOWER only because
+  they are 30- and 45-minute windows with fewer bars to contain a pivot — do not read them
+  against the 60-minute rows.
+  ⚠ **`--grid` exists because a null resting on ONE lookback is weak, and checking Aaron's
+  2026-09-08 example by hand proved the point** — the 120-minute leg called the second zone an UP
+  move on a day trending plainly DOWN, having caught the first zone's bounce instead of the
+  trend. Re-priced at 30/60/120/240-minute legs, 12 cells: 🔴 **the 10:00 zone's reclaim entry is
+  the ONE survivor — it beats its own all-day median at every one of the four leg definitions
+  (+0.042, +0.022, +0.064, +0.063R above median)**, while the 11:45 zone, one of the two Aaron
+  watches hardest, is consistently **worse** than base rate (−0.036 to −0.065R) and 13:00 fades
+  as the leg lengthens (+0.045 → +0.004R). ⚠ **Four lookbacks are NOT four independent
+  confirmations** — they score largely the same days through the same entry and differ only in
+  how the leg is labelled, so read it as one observation that is insensitive to that parameter,
+  not as replication. ⚠ **And the absolute number is still ≤ +0.042R gross**, i.e. inside the
+  round trip, which is the whole reason this stayed a study: *beats the base rate* and *worth
+  trading* are different questions and only the second has a broker in it.
+  🔴 **`--scalp` PRICES A DIFFERENT TRADE AND IT MOVED THE ANSWER — the earlier null did not
+  apply to it.** Aaron's actual idea (2026-09-15) is a time exit: in at the zone's open, OUT at
+  its close, flat inside the hour. Everything above stops at the zone's extreme, targets 2R and
+  holds to 16:00. **A null on one exit says nothing about another**, and this one cannot be
+  stopped out, so the round-trip cost that was a third of the edge on a tight stop is a rounding
+  error against an $8 move. ⚠ **This is rule 11's shape in a study rather than a run**: change
+  what a trade is measured on and the number is answering a new question.
+  🔴 **THE MOVE IS REAL AND THE SIGN IS NOT KNOWABLE — THAT IS THE WHOLE RESULT.** In the 10:00
+  hour (2,039 days): range **median $8.37 / mean $11.93**, reach from the open **median $6.57**,
+  open-to-close **median $3.37**. **Knowing the direction is worth +$5.81 a day** ($11,847 over
+  the sample). The 2-hour leg predicts it at **±$0.27**. So the problem is 100% the sign.
+  ⚠ **"At least 100 pips, majority of the time" does not survive the unit being named** — at
+  $0.10/pip that is $10.00, reached by the RANGE on **39.9%** of days and by the open-to-close
+  move on **14.8%**. At $1.00 per 100 points it is nearly every day. **Ask which unit before
+  quoting this figure** (rule 15); the honest statement is the median range, $8.37.
+  🔴 **NINE DIRECTION RULES, ALL REPORTED, NONE WORKS.** Best is *follow* the day's range
+  position at **+$0.49/day** (+$0.52 against the same rule's median at every other hour) — which
+  captures **8% of the $5.81 on the table at a 50.0% win rate**. ⚠ **Every FADE rule loses and
+  every FOLLOW rule wins, monotonically**, so the reversal premise is not merely unprofitable, it
+  is **backwards**: at these times gold continues more often than it turns, and fading an
+  overextended leg is the single worst cell on the board (**−$0.74/day**). ⚠ The rules read clock
+  and price only — no engine — so a negative cannot be blamed on the structure stack, and
+  `killzone_sweep.py` has already shown real liquidity levels make KZ1 **worse**, not better.
+  ⚠ **What this cannot rule out, and it should be said rather than buried**: Aaron trades this by
+  eye in real time. A discretionary read of momentum and candle shape is not in an OHLC bar, so
+  bars cannot falsify it — and equally cannot be automated into a bot. That is a statement about
+  the limits of the measurement, not evidence for the pattern.
+
+- **`tools/killzone_features.py`** + **`tools/killzone_edge_search.py`** +
+  **`tools/killzone_followups.py`** — **does ANY engine, or any rule, know which way the 10:00
+  zone will go?** Added 2026-09-15 after Aaron: *"If the money is genuinely there, figure out a
+  way to capture it... use all the tools you have... don't come back until you find the pattern."*
+  The builder snapshots **12 engines** at 10:00 NY every day (2,038 days) — structure on
+  M5/M15/H1, order blocks, liquidity, VWAP, Asia POC, gaps, RSI and divergence, equal highs/lows,
+  candlesticks, news — beside the prices that followed. The search tests each as FOLLOW and as
+  FADE at six exits. Discovery 2018-2023, confirmation 2024-2026, **$0.14/oz round trip on every
+  trade** (ECN: $0.12 spread + $1/side/lot). Pass line fixed before any number was read:
+  discovery t ≥ 2.5 AND unseen t ≥ 2.0.
+  🔴 **THE ANSWER IS NO, FROM ~340 PRE-REGISTERED TESTS.** Engines: **0 of 240 cells reach the
+  bar** — the best discovery t in the whole table is +2.0 (fade the last candle pattern, out at
+  11:00), about what six cells clear by luck, and it goes **−0.6** on the unseen years. The
+  date-seeded coin flip ranks **#53 of 240**. Followups: **0 of 36** clock-and-price rules
+  (`dayturn`), **0 of 24** early-momentum cells (`news`), **0 of 18** daily-trend-filtered cells
+  (`trend`). ⚠ 10:00 prints **11.1%** of the day's highs and lows against 10.4% at 08:00 and
+  11.6% at 09:00 — **it is not the day's turning point.**
+  ✅ **No lookahead, PROVED rather than argued**: the price anchors re-computed from raw bars on
+  40 random days, **40 exact**. The snapshot is taken BEFORE the 10:00 bar reaches the M5 engines;
+  swapping those two lines is the one edit that would let every feature peek at the move it
+  predicts, and nothing else in the table would look wrong.
+  🔴 **THE ONE RECURRING SIGNATURE IS A REGIME, NOT AN EDGE.** Every positive cell anywhere in
+  this study is a FOLLOW rule that pays on 2024-2026 only — session VWAP followed into 13:00
+  (unseen t **+2.7**, discovery +0.5), the first 30 minutes followed with the daily trend into
+  11:00 (unseen **+3.2**, discovery **−0.9**). That is gold's trending years. Conditioning on a
+  daily trend learned on 2018-2023 — which holds both the 2019-20 trend and the 2021-22 chop —
+  **did not recover it.** ⚠ **Never select these off the unseen table**: that is choosing on the
+  answers, and it turns the one honest check in the protocol into a second discovery set. **The
+  only valid test of a regime hypothesis is FORWARD, on data that does not exist yet.**
+  ✅ **What IS real: 10:00 ET USD release days carry the zone's SIZE** — median range **$11.25
+  vs $8.85** on quiet days (37.4% vs 32.2% of ADR20; 520 release days, calendar covers
+  2021-01-04 on). Size, never sign.
+  ⚠ **A significant NEGATIVE on one side of a symmetric bet is usually reading the COST.** Fading
+  the first 30 minutes into 11:00 is t −2.5 / −3.3 in both periods while following it is −0.9 /
+  +2.1 — both sides pay $0.14 on a 30-minute hold, so the pair sums to two costs, not to a
+  momentum effect.
+  ⚠ **The feature table is git-ignored** (`backtest/reports/`): rebuild it with
+  `python3 backtest/tools/killzone_features.py` (~4 min) before `killzone_edge_search.py` or the
+  `news`/`trend` followups. `killzone_followups.py` reproduces the session's scratch figures
+  exactly (ported 2026-09-15, every quoted number re-run).
+
 - **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/bos_strategy.pine`.
   It has moved TWICE and a path from before either date is stale: on 2026-08-13 the `.pine` sources
   were split by their DECLARATION into `indicators/strategies/` and `indicators/engines/`, and on
