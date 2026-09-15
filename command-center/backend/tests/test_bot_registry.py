@@ -208,6 +208,105 @@ def _row_for(monkeypatch, state, *, running=True):
     return next(b for b in bots.get_snapshot().bots if b.key == key)
 
 
+# ── A balance is only an account's if it was READ on that account (2026-09-14) ──────────────────
+#
+# 🔴 Measured on the box the night two bots were taken live: both stopped copies' records still held
+# the DEMO account's $15,844.46, and the starter had re-stamped them with the LIVE account's number
+# when it tried to launch them — so the live account's card showed the demo's equity, and +$5,844.46
+# "not from these bots". The bot writes the account each balance was READ on beside it
+# (`observed_account`); a reading for another account is not this one's.
+
+_HERE, _THERE = 900000001, 700000001
+
+_DEMO_READING = {
+    "balance": 15844.46,
+    "capital_in": 10000.0,
+    "total_pnl_pct": 58.44,
+    "starting_balance": 15844.46,
+    "starting_balance_account": _THERE,
+}
+
+
+def _snapshot_on(monkeypatch, state, *, config_account=_HERE, running=False):
+    """The row, and the whole snapshot, for a bot whose CONFIG names `config_account` — the account
+    the page lays its row under."""
+    key = bots._BOTS[0].key
+    real = bots._read_instance_config
+    monkeypatch.setattr(
+        bots,
+        "_read_instance_config",
+        lambda k: {**real(k), "account": config_account} if k == key else real(k),
+    )
+    monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
+    monkeypatch.setattr(bots, "_parse_bot_states", lambda _snap: {key: state})
+    monkeypatch.setattr(bots, "_bot_runner_running", lambda _snap, _key: running)
+    snap = bots.get_snapshot()
+    return next(b for b in snap.bots if b.key == key), snap
+
+
+def _readings(row):
+    return (row.balance, row.capital_in, row.total_pnl_pct, row.starting_balance)
+
+
+def test_a_balance_read_on_the_account_a_bot_LEFT_is_not_the_new_accounts(monkeypatch):
+    """The take-live case as measured: the record names the new account (the starter re-stamps it
+    from the config on every launch) while its balance was read on the old one.
+
+    MUTATION: drop the gate on the balance → red, the row states $15,844.46. MUTATION: drop the
+    gate on the anchor alone → red. MUTATION: compare against the record's own account instead of
+    the config's → still green HERE; the next test is the one that catches it.
+    """
+    state = {"account": _HERE, "observed_account": _THERE, **_DEMO_READING}
+    row, snap = _snapshot_on(monkeypatch, state)
+    assert _readings(row) == (None, None, None, None)
+    # And so the account's card has no equity to show until a bot there reads one.
+    card = next((e for e in snap.earnings if e.account == _HERE), None)
+    assert card is not None, "the account the bot is on must still get a card"
+    assert card.balance is None
+
+
+def test_a_bot_moved_but_not_restarted_does_not_carry_its_old_balance_across(monkeypatch):
+    """Between the move and the restart the record still names the OLD account throughout — its
+    stamp and its reading agree with each other, and neither is where the page now lays the row.
+
+    MUTATION: compare the reading against the record's own account → red.
+    """
+    state = {"account": _THERE, "observed_account": _THERE, **_DEMO_READING}
+    row, _ = _snapshot_on(monkeypatch, state)
+    assert _readings(row) == (None, None, None, None)
+
+
+def test_a_stopped_bots_reading_of_its_OWN_account_still_stands(monkeypatch):
+    """The control: the gate refuses a reading for ANOTHER account, never a reading as such. A stopped
+    bot's last balance on the account it is on is still that account's latest measurement. The
+    record states its account as a string here on purpose — an older writer did.
+
+    MUTATION: blank the four fields unconditionally → red.
+    """
+    state = {
+        "account": str(_HERE),
+        "observed_account": _HERE,
+        **_DEMO_READING,
+        "starting_balance_account": _HERE,
+    }
+    row, _ = _snapshot_on(monkeypatch, state)
+    assert _readings(row) == (15844.46, 10000.0, 58.44, 15844.46)
+
+
+def test_a_balance_that_does_not_say_where_it_was_read_is_not_stated(monkeypatch):
+    """Every runner since 2026-09-10 writes the account beside the balance, off the same terminal
+    call, and both live bots' frozen code carries it. A reading without it cannot be placed, and
+    *cannot say* is not *this account's* (rule 1).
+
+    MUTATION: let a missing read-on account through → red.
+    """
+    state = {"account": _HERE, **_DEMO_READING, "starting_balance_account": _HERE}
+    row, _ = _snapshot_on(monkeypatch, state)
+    assert (row.balance, row.capital_in, row.total_pnl_pct) == (None, None, None)
+    # The anchor states its own account, so it stands on its own evidence.
+    assert row.starting_balance == 15844.46
+
+
 def test_the_snapshot_carries_the_open_trade_and_the_halt_only_while_running(monkeypatch):
     """The row's "trade open" and "halted" tags can only appear if the endpoint passes the bot's
     reading on — and only for a running bot: a stopped bot's last reading describes a process that

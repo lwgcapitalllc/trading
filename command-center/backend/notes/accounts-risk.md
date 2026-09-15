@@ -518,6 +518,45 @@ included. **16 bugs planted in memory, 16 caught** — one survived first: the o
 had an opening reading from before its trade, so it counted either way and could not tell the two
 bases apart. It has a case with no such reading now.
 
+## A balance is an account's only if it was READ on that account (2026-09-14)
+
+🔴 **Taking a set live showed the demo's equity on the live account.** Measured the night
+`extreme_leg_2` and `sos_fade_2` went from demo 700152905 to live 35710389: both connected to the
+live terminal, read **$0.00** and refused to start — yet the live card showed **$15,844.46**, the
+demo's balance, and **+$5,844.46 "not from these bots"**, that balance less the demo's $10,000 in.
+
+**The pairing is made on the box and refused here.** `bot_state.set_started` re-stamps a record's
+`account` from the config on every launch and leaves the last `balance`, `capital_in` and
+`total_pnl_pct` in place, so a stopped bot's record paired the NEW account's number with the OLD
+account's reading. The snapshot passed that pair on, and the page took it as the account's equity.
+
+- 🔴 **`get_snapshot` passes a bot's balance, `capital_in` and `total_pnl_pct` on only when its
+  `observed_account` — the account the terminal reported off the same `account_info()` call — equals
+  the account the bot's CONFIG names** (`_read_on`). One reading, so the three stand or fall together.
+- ⚠ **Against the CONFIG, never the record's own `account`.** The page lays a row by its config, and
+  between a move and the restart the record names the old account in both fields.
+- ⚠ **`starting_balance` is gated the same way on `starting_balance_account`** — an anchor for the
+  account a bot left is not this one's opening.
+- ⚠ **A reading that does not say where it was read is refused**, never assumed to be here. Every
+  runner since 70af8458 (2026-09-10) writes `observed_account`; both live bots' frozen code has it.
+- ⚠ **What the card shows instead:** only what MT5 gave — a running bot's balance; else the newest
+  reading a bot took THERE, with its time; with none, a dash. A move never carries a number across.
+  Since the same day the bot writes MT5's reading the moment it connects, so a bot that then
+  refuses to start still leaves the account's real figure (`algos/notes/account-accounting-and-status.md`).
+- ⚠ **Every door is covered** — take live, a single move, a hand edit — because it is checked where
+  the balance is READ, not where the move is made.
+
+Tests: 4 in `tests/test_bot_registry.py`. Three went red on the unfixed code with the demo's
+$15,844.46 on the row; the fourth is the control. Five in-memory mutants, each caught by at least one:
+the record's own account instead of the config's, the anchor ungated, the balance ungated, everything
+blanked, a missing read-on account let through. The deposit hand-off test in `test_bot_earnings.py`
+now states where its reading was taken — it had a balance on a benched bot that named no account.
+
+⚠ **Open on the box, not fixed here** (`algos/`, a promote to take effect): Telegram's `/balance`
+prints each record's `balance` beside a LIVE/demo label off its config, so it shows the same stale
+pairing. And the runner's startup refusal on a $0.00 balance says *Could not read the account
+balance* — it did read it; the balance is zero, which is rule 1 inside an error message.
+
 ## What a BOT made, and why it may not be the account's growth (2026-09-05)
 
 🔴 **A TRADE BELONGS TO THE ACCOUNT IT WAS MADE ON, NEVER THE ONE THE BOT IS ON NOW (2026-09-11).**

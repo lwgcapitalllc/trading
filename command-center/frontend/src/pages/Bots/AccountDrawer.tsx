@@ -566,9 +566,8 @@ export function AccountDrawer({
             {balance == null && asking ? (
               <Shimmer className="h-[24px] w-[160px]" />
             ) : balance == null ? (
-              <span className="text-[13px] text-text-tertiary">
-                not reported — no bot here is answering
-              </span>
+              // Nothing has read it off MT5 — a dash, never a made-up phrase (2026-09-14).
+              <span className="text-text-tertiary">—</span>
             ) : (
               money(balance)
             )}
@@ -587,7 +586,7 @@ export function AccountDrawer({
                 minute: '2-digit',
               })}{' '}
               {hasBots
-                ? '— no bot here has reported one since it started.'
+                ? '— no bot here is reading it live.'
                 : 'by a bot before it left — no bot is on this account now.'}
             </p>
           )}

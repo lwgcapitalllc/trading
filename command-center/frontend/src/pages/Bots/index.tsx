@@ -978,11 +978,22 @@ export function Bots() {
       .map((g) => [g.account as number, g])
   )
 
-  /** Every bot on one account reports the SAME balance — one pot of money, not one each. The
-   *  first that answers is the account's; a stopped neighbour reporting none does not change
-   *  what the account holds. */
-  const balanceOf = (rows: { live: BotStatus | undefined }[]) =>
-    rows.find((r) => r.live?.balance != null)?.live?.balance ?? null
+  /** Every bot on one account reports the SAME balance — one pot of money, not one each. A
+   *  running bot's reading wins, else the newest a stopped one took; a stopped neighbour reporting
+   *  none does not change what the account holds.
+   *  ⚠ A STOPPED bot's figure is what MT5 said when it last read it, so it carries that time —
+   *  shown as current it would read $0.00 on an account funded since (2026-09-14). */
+  const balanceOf = (
+    rows: { live: BotStatus | undefined }[]
+  ): { balance: number; readAt: string | null } | null => {
+    const read = rows
+      .map((r) => r.live)
+      .filter((b): b is BotStatus & { balance: number } => b?.balance != null)
+    const b =
+      read.find((x) => x.status === 'RUNNING') ??
+      [...read].sort((x, y) => (y.last_updated ?? '').localeCompare(x.last_updated ?? ''))[0]
+    return b ? { balance: b.balance, readAt: b.status === 'RUNNING' ? null : b.last_updated } : null
+  }
 
   /**
    * Accounts that have bots, then the unassigned, then the empty ones as one-liners.
@@ -1116,16 +1127,14 @@ export function Bots() {
    * back only for an account NO bot is on, so adding the first bot to the demo account blanked a
    * balance that had been on screen a minute earlier, until the new bot's first report.
    */
-  const balanceAt = (account: number, live: number | null) => {
-    if (live != null) return { balance: live, readAt: null as string | null }
+  const balanceAt = (
+    account: number,
+    live: { balance: number; readAt: string | null } | null
+  ): { balance: number | null; readAt: string | null } => {
+    if (live != null) return live
     const e = earnByAccount.get(account)
     return { balance: e?.balance ?? null, readAt: e?.balance_read_at ?? null }
   }
-  // ⚠ Only accounts a bot is ON can have an unread balance — one with no bot has nothing to read
-  // it, and counting it would raise a warning about a healthy fleet.
-  const unread = trading.filter(
-    (a) => a.rows.length && balanceAt(a.account, balanceOf(a.rows)).balance == null
-  ).length
 
   // The open account panel's balance, exactly as its card shows it.
   const selNum = selAccount ? Number(selAccount) : null
@@ -1387,28 +1396,23 @@ export function Bots() {
 
             <span className="flex flex-col items-end justify-center gap-[3px] pl-[14px]">
               <StatLabel>Equity</StatLabel>
-              <span className="text-[17px] font-mono tabular-nums font-medium">
-                {/* ⚠ `balance unread` is a warning and is only true once the box has
-                 *  answered without one — while it is still being asked it shimmers. */}
+              <span
+                data-testid="account-equity"
+                className="text-[17px] font-mono tabular-nums font-medium"
+              >
+                {/* Only what MT5 gave — the figure, and its read time when it is not live. With
+                 *  no reading at all it is a dash, never a made-up word (Aaron, 2026-09-14: "read
+                 *  exactly what's on the MT5"). While the box is still being asked it shimmers. */}
                 {balance == null && asking ? (
                   <Shimmer>$00,000.00</Shimmer>
-                ) : balance == null && idle ? (
-                  // Not a fault: nothing is on the account to read it, and no bot that left it
-                  // took a reading. Grey, never the warning a silent bot earns.
-                  <span
-                    title="No bot is on this account, and none that traded here left a reading of its balance."
-                    className="text-[12px] text-text-tertiary"
-                  >
-                    balance not read
-                  </span>
                 ) : balance == null ? (
-                  <span className="text-[12px] text-warn-text">balance unread</span>
+                  <span className="text-text-tertiary">—</span>
                 ) : readAt ? (
                   <span
                     title={
                       idle
                         ? `The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`
-                        : `The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`
+                        : `What MT5 showed on ${readTime(readAt)}. No bot on this account is reading it live now.`
                     }
                     className="inline-flex items-baseline gap-[7px] cursor-default"
                   >
@@ -1733,14 +1737,10 @@ export function Bots() {
               {running}
             </span>{' '}
             of <span className="text-text-primary font-medium">{bots.length}</span> running
-            {/* Never silently low: an account nobody could read is SAID, never counted as zero.
-             *  It survives the trim because it is a FAULT, and a fault has no other home. */}
-            {unread > 0 && (
-              <span className="text-warn-text">
-                {' · '}
-                {unread} balance{unread === 1 ? '' : 's'} unread
-              </span>
-            )}
+            {/* The "N balances unread" count is gone (2026-09-14). A bot that cannot read MT5
+             *  says so on its own row ("No MT5 link"), and an account nothing has read shows a
+             *  dash where its equity goes — the count said the same thing a third time, in words
+             *  nobody could act on. */}
           </p>
         )}
         <div className="ml-auto flex items-center gap-2">

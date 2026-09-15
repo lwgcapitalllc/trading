@@ -3502,8 +3502,61 @@ test('a bot on the account that has not REPORTED yet leaves the last balance up,
   await page.goto(`/bots?account=${ACCOUNT}`)
   const panel = page.getByRole('complementary', { name: 'Account settings' })
   await expect(panel.getByTestId('drawer-balance-read-at')).toContainText(
-    'no bot here has reported one since it started'
+    'no bot here is reading it live'
   )
+})
+
+test('an account shows only what MT5 gave — the figure and when it was read, or a dash', async ({
+  page,
+}) => {
+  // 🔴 Aaron, 2026-09-14: "read exactly what's on the MT5 … don't create your own phrases". Two bots
+  // taken live refused to start on an account MT5 reported as $0.00, and the card said "balance
+  // unread" in amber. A STOPPED bot's figure is what MT5 said then, so it carries that time.
+  // MUTATION: show a stopped bot's reading as live (no read time) → red on `balance-read-at`.
+  // MUTATION: bring back "balance unread", "balance not read" or the header count → red.
+  await mockAfterGoLive(page)
+  const snapshot = (bots: Record<string, unknown>[], liveEarn: Record<string, unknown>) =>
+    page.route('**/api/bots/snapshot', (route) =>
+      route.fulfill({
+        json: {
+          fetched_at: new Date().toISOString(),
+          bots,
+          scheduled_jobs: [],
+          telegram: { name: 'Telegram', status: 'RUNNING' },
+          earnings: [{ ...acctEarn(LIVE, [earn('sos_fade'), earn('ext_leg')]), ...liveEarn }],
+        },
+      })
+    )
+  const stopped = { status: 'STOPPED', account_type: 'live' }
+  await snapshot(
+    [
+      {
+        key: 'sos_fade',
+        name: 'SOS Fade',
+        ...stopped,
+        balance: 0,
+        last_updated: '2026-09-15T02:56:47+00:00',
+      },
+      { key: 'ext_leg', name: 'Extreme Leg', ...stopped, balance: null },
+    ],
+    { balance: 0, balance_read_at: null, net_usd: null, attributed_usd: 0 }
+  )
+  await page.goto('/bots')
+  const card = page.getByTestId('section-live').getByTestId('account-card')
+  await expect(card.getByTestId('account-equity')).toContainText('$0.00')
+  await expect(card.getByTestId('balance-read-at')).toBeVisible()
+
+  // Nothing has read it: a dash where the figure goes, and no words standing in for one.
+  await snapshot(
+    [
+      { key: 'sos_fade', name: 'SOS Fade', ...stopped, balance: null },
+      { key: 'ext_leg', name: 'Extreme Leg', ...stopped, balance: null },
+    ],
+    { balance: null, balance_read_at: null, net_usd: null, attributed_usd: null }
+  )
+  await page.reload()
+  await expect(card.getByTestId('account-equity')).toHaveText('—')
+  await expect(page.getByText(/balances? unread|balance not read/)).toHaveCount(0)
 })
 
 test("a bot that CARRIES ON a strategy's record here says whose trades its row includes", async ({

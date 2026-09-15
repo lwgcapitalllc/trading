@@ -404,6 +404,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - A running bot is stopped first, never locked (2026-09-13)
 - Take off is ONE button on both panels (2026-09-13)
 - The account header — a stat cluster instead of a boring row (2026-09-14)
+- The equity is what MT5 gave — a figure, its read time, or a dash (2026-09-14)
 - The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
 - The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 - Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
