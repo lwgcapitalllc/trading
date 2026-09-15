@@ -63,8 +63,12 @@ __all__ = [
     "apply_pinned",
     "cap_change_plan",
     "risk_pct_of",
+    "priority_of",
     "share_overflow",
+    "shares_exceed_cap",
+    "sharing_note",
     "assign_plan",
+    "priority_order_plan",
     "RiskPlan",
     "risk_plan",
 ]
@@ -80,11 +84,14 @@ class AccountBot:
     magic: int
     strategy_package: str
     # Per-TRADE risk, the layer BELOW the cap. Carried so the page can put the two numbers side
-    # by side: a cap at or under a bot's own risk % does not let the bots share, it makes them
-    # take turns, and that is invisible from the cap alone.
+    # by side, and so the shares can be checked against the cap.
     risk_pct: Optional[float] = None
     cap_pct: Optional[float] = None  # what THIS bot states; None = uncapped
     unreadable: bool = False  # its config could not be parsed — cap UNKNOWN
+    # Its place in the account's PRIORITY order (2026-09-15): 1 sizes first when two bots on the
+    # account close a bar together. `None` = no order set, which the live side reads as "never
+    # waits" (`algos/shared/account_priority.py`). Read through `priority_of`, the live side's rule.
+    priority: Optional[int] = None
 
 
 @dataclass
@@ -121,21 +128,6 @@ class AccountGroup:
         return self.kind == "account" and len(self.bots) > 1
 
     @property
-    def cap_takes_turns(self) -> bool:
-        """True when the cap is at or below the largest per-trade risk on the account.
-
-        Not a fault and not a warning — a fact the two numbers imply and neither states. At a 10%
-        cap against two bots each risking 10%, the account never holds both at once: whichever
-        fills first holds the entire budget until its stop moves. A cap that lets both hold has
-        to exceed the sum. Reported so the page can show it rather than leaving it to be
-        discovered by a bot that mysteriously never trades.
-        """
-        if self.risk_cap_pct is None or not self.cap_agrees or not self.stacked:
-            return False
-        risks = [b.risk_pct for b in self.bots if b.risk_pct is not None]
-        return bool(risks) and self.risk_cap_pct <= max(risks)
-
-    @property
     def share_total_pct(self) -> Optional[float]:
         """The per-trade shares handed out on this account, added up.
 
@@ -155,16 +147,28 @@ class AccountGroup:
 
     @property
     def share_overflow_reason(self) -> Optional[str]:
-        """Why the shares here do NOT fit under the ceiling — the sentence a save is refused with.
+        """Why the shares here cannot be accepted — the sentence a save is refused with.
 
-        `None` when they fit, when there is no cap, or when the caps disagree (there is no agreed
-        ceiling to check against, and inventing one is what `risk_cap_pct` already refuses to do).
+        Since 2026-09-15 that is only a share that cannot be READ, or ONE bot risking more than
+        the whole cap. Shares that merely ADD UP past the cap are not a fault any more — see
+        `share_note` and `share_overflow`.
+
+        `None` when they are acceptable, when there is no cap, or when the caps disagree (there is
+        no agreed ceiling to check against, and inventing one is what `risk_cap_pct` refuses to do).
 
         ⚠ **This is the SAME call the write path makes**, so what the page shows before you save
-        and what the save says are one function. It is served so an over-subscribed account is
-        VISIBLE, rather than being discovered by typing a number and being refused.
+        and what the save says are one function.
         """
         return share_overflow(self.bots, self.risk_cap_pct)
+
+    @property
+    def share_note(self) -> Optional[str]:
+        """The shares add up past the cap, so the bots SHARE the room — informational, never a
+        refusal (2026-09-15). `None` off a real account, with no agreed cap, when they fit, or when
+        the shares are refused outright — the refusal is then the one thing worth saying."""
+        if self.kind != "account" or not self.cap_agrees or self.share_overflow_reason:
+            return None
+        return sharing_note(self.bots, self.risk_cap_pct)
 
     @property
     def room_pct(self) -> Optional[float]:
@@ -269,6 +273,7 @@ def group_by_account(
                 strategy_package=raw.get("strategy_package") or "",
                 risk_pct=risk_pct_of(raw),
                 cap_pct=_num(raw.get("account_risk_cap_pct")),
+                priority=priority_of(raw),
             )
 
         g = groups.get((kind, account))
@@ -281,6 +286,9 @@ def group_by_account(
         g.bots.append(bot)
 
     for g in groups.values():
+        # In the account's PRIORITY order — ranked first, lowest rank first; unranked after, by
+        # key — so the list a reader sees is the order the bots size in when two signal together.
+        g.bots.sort(key=lambda b: (b.priority is None, b.priority or 0, b.key))
         readable = [b for b in g.bots if not b.unreadable]
         g.cap_unknown = len(readable) != len(g.bots)
         caps = {b.cap_pct for b in readable}
@@ -349,23 +357,39 @@ def risk_pct_of(raw: dict) -> Optional[float]:
 _SHARE_EPS = 1e-9
 
 
+def priority_of(raw: dict) -> Optional[int]:
+    """A bot's place in its account's priority order, read out of its instance config.
+
+    The live side's own rule (`algos/shared/account_priority._rank`), restated rather than imported
+    because the two subsystems may not import each other: a positive whole number, else `None` —
+    a bool, a string, zero or a negative is no order at all, never rank 0.
+    """
+    v = raw.get("account_priority")
+    return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else None
+
+
 def share_overflow(bots: list, cap_pct: Optional[float]) -> Optional[str]:
-    """Do the per-trade shares handed out on this account fit under its ceiling?
+    """Can these per-trade shares be accepted under this account's cap?
 
-    Returns `None` when they fit — or when there is nothing to check — and the reason to REFUSE
-    otherwise. Aaron, 2026-09-03: *"the risk per trade cannot add up to more than that cap"*.
+    Returns `None` when they can — or when there is nothing to check — and the reason to REFUSE
+    otherwise.
 
-    🔴 **WHY A SUM, when the cap is enforced live per order anyway.** The live cap already stops
-    an account exceeding its ceiling; it does that by making whoever asks LAST take less, or
-    nothing. So an over-subscribed account is not unsafe — it is a set of bots that quietly stop
-    being the bots that were backtested, because each one only gets its full size when it happens
-    to ask first. **This check is about the CONFIGURATION being coherent, not about safety**, and
-    that distinction belongs in the message: refusing here prevents a silent demotion, not a loss.
+    🔴 **THE SUM IS NO LONGER A REFUSAL (Aaron, 2026-09-15).** The cap limits the risk OPEN at any
+    moment, not the sum of the shares handed out, so any number of bots may sit on one account.
+    Live, a bot short of room trades what is left down to HALF its own share and is refused below
+    that; when two close a bar together the one higher in the priority order sizes first. Shares
+    that add up past the cap are reported by `sharing_note`, never refused. This refused them from
+    2026-09-03 until then (*"the risk per trade cannot add up to more than that cap"*).
 
-    ⚠ **An unreadable or unstated share REFUSES rather than counting as zero** (rule 1). A bot
-    whose risk cannot be read is not a bot risking nothing, and treating it as 0.0 would let an
-    account that is genuinely over its ceiling save cleanly — which is the one outcome this
-    function exists to prevent.
+    Two things are still refused:
+
+    ⚠ **An unreadable or unstated share** (rule 1). A bot whose risk cannot be read is not a bot
+    risking nothing, and treating it as 0.0 would let an account whose shares nobody knows save
+    cleanly.
+
+    ⚠ **ONE bot whose own share is ABOVE the cap.** It could never trade at its full size — even
+    on an empty account the cap would cut every trade it takes — so it is not the bot that was
+    measured, on any day.
 
     ⚠ **No cap means nothing to check.** Uncapped is a supported, deliberate state; it is not a
     cap of zero, and it is not an error.
@@ -381,19 +405,47 @@ def share_overflow(bots: list, cap_pct: Optional[float]) -> Optional[str]:
             f"An unreadable share is not a share of zero — fix the config first."
         )
 
-    total = sum(float(b.risk_pct) for b in bots)
-    if total <= float(cap_pct) + _SHARE_EPS:
+    above = [b for b in bots if float(b.risk_pct) > float(cap_pct) + _SHARE_EPS]
+    if not above:
         return None
-
-    shares = ", ".join(
-        f"{b.display} {float(b.risk_pct):g}%" for b in sorted(bots, key=lambda x: x.key)
+    names = ", ".join(
+        f"{b.display} {float(b.risk_pct):g}%" for b in sorted(above, key=lambda x: x.key)
     )
+    one = len(above) == 1
     return (
-        f"the risk shares on this account add up to {total:g}%, which is more than its "
-        f"{float(cap_pct):g}% ceiling ({shares}). Over the ceiling the bots do not share the "
-        f"budget, they take turns: whoever asks first gets its full size and the others are cut "
-        f"down or refused, so each one stops being the bot that was backtested. Lower a share, "
-        f"or raise the cap."
+        f"{names} {'risks' if one else 'risk'} more on one trade than this account's whole "
+        f"{float(cap_pct):g}% cap, so {'it' if one else 'they'} could never trade at full size. "
+        f"Lower {'that share' if one else 'those shares'} or raise the cap."
+    )
+
+
+def shares_exceed_cap(bots: list, cap_pct: Optional[float]) -> Optional[bool]:
+    """Do the per-trade shares ADD UP past the cap — so the bots compete for the room?
+
+    `False` with no cap (nothing to compete for) or when they fit, with the same tolerance the
+    refusal uses so an exact fit (5 + 5 under 10) is never read as over. ⚠ **`None` when any share
+    cannot be read** — whether they compete is then unknown, never "no" (rule 1).
+    """
+    if cap_pct is None:
+        return False
+    if any(b.unreadable or b.risk_pct is None for b in bots):
+        return None
+    return sum(float(b.risk_pct) for b in bots) > float(cap_pct) + _SHARE_EPS
+
+
+def sharing_note(bots: list, cap_pct: Optional[float]) -> Optional[str]:
+    """What it MEANS that the shares add up past the cap — a plain sentence, never a refusal.
+
+    `None` unless they add up past it (`shares_exceed_cap` is `True`).
+    """
+    if shares_exceed_cap(bots, cap_pct) is not True:
+        return None
+    total = sum(float(b.risk_pct) for b in bots)
+    return (
+        f"Shares add up to {total:g}% against a {float(cap_pct):g}% cap, so the bots share the "
+        f"room: a bot trades in full while there is room, the next trades what is left down to "
+        f"half its own size, and below that its trade is refused. When two signal together, the "
+        f"one higher in the priority order goes first."
     )
 
 
@@ -429,10 +481,12 @@ class RiskPlan:
     before: dict[str, Optional[float]]  # each bot's share BEFORE; a joining bot's is None
     joining: list[str]  # keys counted in but not on the account yet
     share_total_pct: Optional[float]  # AFTER; None when any share is unreadable or unstated
-    reason: Optional[str]  # why the result does not fit — the served sentence; None = it fits
+    reason: Optional[str]  # why the result cannot be accepted — the served sentence; None = it can
     adds_risk: bool
-    fit_cap: Optional[float]  # the smallest cap these shares fit under, rounded UP
-    fit_shares: Optional[dict[str, float]]  # these shares scaled to fit the cap, rounded DOWN
+    fit_cap: Optional[float]  # the smallest cap every share fits under, rounded UP
+    fit_shares: Optional[dict[str, float]]  # each share over the cap brought down to it
+    # The shares add up past the cap, so the bots share the room — informational, never a refusal.
+    note: Optional[str] = None
 
     @property
     def fits(self) -> bool:
@@ -538,17 +592,22 @@ def risk_plan(
         else sum(float(b.risk_pct) for b in everyone)
     )
 
+    # The two one-click fixes, for the one thing still refused on readable shares: a bot whose own
+    # share is above the cap. The cap comes UP to the largest share, or each share above the cap
+    # comes DOWN to it — every other share is left exactly as it is.
     fit_cap: Optional[float] = None
     fit_shares: Optional[dict[str, float]] = None
-    if reason and total is not None and new_cap is not None and total > 0:
+    if reason and total is not None and new_cap is not None and everyone:
         step = 10**_FIT_DECIMALS
-        up = math.ceil(total * step - 1e-9) / step
+        largest = max(float(b.risk_pct) for b in everyone)
+        up = math.ceil(largest * step - 1e-9) / step
         fit_cap = up if up <= 100 else None
-        scale = float(new_cap) / total
-        scaled = {
-            b.key: math.floor(float(b.risk_pct) * scale * step + 1e-9) / step for b in everyone
+        down = math.floor(float(new_cap) * step + 1e-9) / step
+        clamped = {
+            b.key: (down if float(b.risk_pct) > float(new_cap) + _SHARE_EPS else float(b.risk_pct))
+            for b in everyone
         }
-        fit_shares = scaled if all(v >= _MIN_SHARE for v in scaled.values()) else None
+        fit_shares = clamped if all(v >= _MIN_SHARE for v in clamped.values()) else None
 
     return RiskPlan(
         account=group.account,
@@ -562,6 +621,7 @@ def risk_plan(
         adds_risk=bool(cap_lowered or share_raised or joining),
         fit_cap=fit_cap,
         fit_shares=fit_shares,
+        note=None if reason else sharing_note(everyone, new_cap),
     )
 
 
@@ -643,6 +703,50 @@ def _only_declared(
     ]
 
 
+def priority_order_plan(group: AccountGroup, order: list[str]) -> dict[str, int]:
+    """The rank each bot on this account takes for `order` — first listed is 1.
+
+    Raises `ValueError` with a sentence when the order cannot be written:
+
+    ⚠ **It must name EXACTLY the bots on the account** — none missing, none extra, none twice. A
+    partial order leaves a bot with a rank from some older order, which is an order nobody chose.
+    ⚠ **An unreadable bot on the account refuses the whole write**, `cap_change_plan`'s reason: the
+    order would land on some of the bots and not the rest.
+    """
+    if group.kind != "account":
+        raise ValueError("only a real account has a priority order")
+    unreadable = sorted(b.key for b in group.bots if b.unreadable)
+    if unreadable:
+        raise ValueError(
+            f"{', '.join(unreadable)} cannot be read, so the priority order cannot be written to "
+            f"every bot on account {group.account}. Fix the config first."
+        )
+    on_it = [b.key for b in group.bots]
+    twice = sorted({k for k in order if order.count(k) > 1})
+    extra = sorted(set(order) - set(on_it))
+    missing = sorted(set(on_it) - set(order))
+    problems = []
+    if twice:
+        problems.append(f"{', '.join(twice)} {'is' if len(twice) == 1 else 'are'} listed twice")
+    if extra:
+        problems.append(
+            f"{', '.join(extra)} {'is' if len(extra) == 1 else 'are'} not on account "
+            f"{group.account}"
+        )
+    if missing:
+        problems.append(
+            f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} on account "
+            f"{group.account} and missing from the order"
+        )
+    if problems:
+        raise ValueError(
+            "the order has to list every bot on this account exactly once: "
+            + "; ".join(problems)
+            + "."
+        )
+    return {key: i + 1 for i, key in enumerate(order)}
+
+
 def _cap_words(cap: Optional[float]) -> str:
     return "none (uncapped)" if cap is None else f"{float(cap):g}%"
 
@@ -709,10 +813,16 @@ def assign_plan(
     ⚠ **A fact the registry does not carry is NOT guessed — it is reported in `notes`.** An
     account with no recorded suffix leaves the symbol alone and says so.
 
-    ⚠ **Benching writes ONLY `account: None`.** The server, the terminal, the symbol and the cap
-    are left exactly as they were, because the bench is a resting state and those are the settings
-    that make re-assignment cheap — and because a cap of `None` on a benched bot is not a claim
-    about any account (the guard exempts the bench for precisely that reason).
+    ⚠ **Benching writes ONLY `account: None` and clears `account_priority`.** The server, the
+    terminal, the symbol and the cap are left exactly as they were, because the bench is a resting
+    state and those are the settings that make re-assignment cheap — and because a cap of `None` on
+    a benched bot is not a claim about any account (the guard exempts the bench for precisely that
+    reason). The priority IS a claim about the account being left (its place in THAT account's
+    order), so it goes.
+
+    ⚠ **A bot JOINING an account takes the next rank** — the highest on the account plus one, so it
+    sizes after every bot already there until someone reorders them (2026-09-15). A move that keeps
+    the account keeps the rank it has.
 
     ⚠ **An unreadable bot in the target group is refused**, for `cap_change_plan`'s reason
     sharpened: we would be adopting a cap agreed by only the bots we could read, which is the
@@ -724,7 +834,7 @@ def assign_plan(
     could not be read; it means *unchecked*, not *nothing to check*, and it is reported as such.
     """
     if account is None:
-        return AssignPlan(fields={"account": None})
+        return AssignPlan(fields={"account": None, "account_priority": None})
 
     if target is not None and (target.kind != "account" or target.account != account):
         raise ValueError("the target group is not this account; pass None to bench a bot")
@@ -742,6 +852,14 @@ def assign_plan(
     fields: dict[str, Any] = {"account": account}
     param_fields: dict[str, Any] = {}
     adopt_from = ""
+
+    # Joining → the next rank, after every bot already on the account. A move that keeps the
+    # account writes nothing here, so a reordered account is never reshuffled by it.
+    if account != current_account:
+        peers_ranks = [
+            b.priority for b in (target.bots if target else []) if b.key != bot_key and b.priority
+        ]
+        fields["account_priority"] = max(peers_ranks, default=0) + 1
 
     if target is not None:
         unreadable = [b.key for b in target.bots if b.unreadable]

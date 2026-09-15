@@ -229,11 +229,11 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     strategies = _validate_stack_strategies(ids, extra_legs=1 if req.recovery_parent else 0)
     _validate_recovery_leg(req, ids)
 
-    # 🔴 A SHARED stack whose legs risk more per trade than its cap is REFUSED (Aaron, 2026-09-10:
-    # "they cannot add up to more than the risk cap"). Over the cap the legs take turns instead
-    # of sharing, which is an account the Bots page refuses to assign — so the stack would be a
-    # measurement of something nobody can deploy. Same function the form's total reads, so the
-    # page and this 400 cannot disagree. Checked BEFORE the history floor, which can reach the box.
+    # 🔴 A SHARED stack is refused when a leg's risk cannot be read, or ONE leg risks more than the
+    # whole cap. Legs that merely ADD UP past the cap are accepted since 2026-09-15 — the cap limits
+    # open risk, not the sum of the shares, and the Bots page accepts that account too. Same
+    # function the form's total reads, so the page and this 400 cannot disagree. Checked BEFORE the
+    # history floor, which can reach the box.
     if req.mode == "shared":
         verdict = _risk_budget(
             strategies,
@@ -634,6 +634,7 @@ def stack_risk_budget_check(req: StackRiskBudgetRequest) -> StackRiskBudgetRespo
         total_pct=verdict.total_pct,
         fits=verdict.fits,
         reason=verdict.reason,
+        note=verdict.note,
     )
 
 

@@ -469,28 +469,52 @@ def test_a_destination_carrying_an_UNREADABLE_bot_is_refused():
 
 
 def test_the_shares_are_checked_on_the_account_AFTER_the_arrival():
-    """🔴 Checking the live account as it stands passes every move that over-subscribes it and
-    refuses every move that would fix one — the arrivals are precisely what is not there yet.
+    """🔴 Checking the live account as it stands misses everything the arrivals bring.
 
-    Two 5% legs plus a 4% resident is 14% under a 12% ceiling.
-    ⚠ Watched RED by checking the destination's current bots only.
+    Two 5% legs plus a 4% resident is 14% under a 12% ceiling — since 2026-09-15 that is not a
+    refusal but a WARNING that the bots share the room, and it can only be said about the account
+    as it WOULD be. MUTATION: check the destination's current bots only → 4% fits, no warning → red.
     """
     plan = _plan(destination_group=_group(bots=[_resident(risk=4.0)], cap=12.0))
-    assert plan.blocked is not None and "over-subscribed" in plan.blocked
+    assert plan.blocked is None, plan.blocked
+    assert any("14%" in w and "share the room" in w for w in plan.warnings), plan.warnings
 
 
 def test_an_arriving_bot_keeps_its_OWN_share_rather_than_being_resized_to_fit():
     """A promotion moves an account, not a setting. Quietly re-sizing the strategies would
-    promote something other than what was proven — the refusal is the answer.
+    promote something other than what was proven — a share above the cap refuses the move.
 
-    ⚠ Watched RED by clamping each arrival's share to the room left under the cap.
+    ⚠ Watched RED by clamping each arrival's share to the cap.
     """
     bots = [
-        _bot("sos_fade_demo", pkg="sos_fade", risk=9.0),
-        _bot("extreme_leg_demo", pkg="extreme_leg", risk=9.0),
+        _bot("sos_fade_demo", pkg="sos_fade", risk=12.0),
+        _bot("extreme_leg_demo", pkg="extreme_leg", risk=5.0),
     ]
     plan = _plan(bots=bots)
-    assert plan.blocked is not None and "over-subscribed" in plan.blocked
+    assert plan.blocked is not None and "sos_fade_demo 12%" in plan.blocked
+
+
+def test_the_set_arrives_AFTER_the_live_accounts_bots_in_the_order_it_held_on_demo():
+    """Each move is planned alone, so without the renumbering every arrival would take the SAME
+    next rank. MUTATION: drop the renumbering → both read 2 → red. MUTATION: order by key → the
+    demo order (sos first) is lost → red.
+
+    ⚠ The demo order is deliberately the OPPOSITE of key order (sos_fade_demo sorts after
+    extreme_leg_demo). The first version had them agree, and the order-by-key mutation SURVIVED —
+    inputs that cannot tell the two behaviours apart do not test which one is used."""
+    bots = [
+        _bot("sos_fade_demo", pkg="sos_fade"),
+        _bot("extreme_leg_demo", pkg="extreme_leg"),
+    ]
+    bots[0].config["account_priority"] = 1
+    bots[1].config["account_priority"] = 2
+    assert sorted(b.key for b in bots) == ["extreme_leg_demo", "sos_fade_demo"], "the premise"
+    resident = _resident(risk=0.5)
+    resident.priority = 1
+    plan = _plan(bots=bots, destination_group=_group(bots=[resident]))
+    assert plan.blocked is None, plan.blocked
+    ranks = {m.bot_key: m.fields["account_priority"] for m in plan.moves}
+    assert ranks == {"sos_fade_demo": 2, "extreme_leg_demo": 3}
 
 
 def test_a_resident_whose_share_cannot_be_read_REFUSES_rather_than_counting_as_zero():

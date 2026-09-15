@@ -1,5 +1,10 @@
 """An account's risk budget — ONE planner for every write that can move it (2026-09-11).
 
+🔴 **2026-09-15: shares that ADD UP past the cap are no longer refused** — they share the room, and
+the plan carries a `note` saying so. The planner now refuses only an unreadable share or ONE bot
+above the whole cap, and every case below that used a sum as its refusal now uses a share above
+the cap. The same file also carries the account PRIORITY route.
+
 Aaron: *"I should be able to add bots to demo and live accounts … take bots off … increase or lower
 the percentage risk on the bot … increase or lower the max percentage traded on the account … all
 this stuff seamlessly."* Three writes each carried their own copy of the share-vs-cap check, and
@@ -47,77 +52,92 @@ def _group(*bots, cap=10.0, agrees=True):
 
 
 # ── the planner ────────────────────────────────────────────────────────────────
-def test_LOWERING_a_share_on_an_account_still_over_is_allowed():
-    """🔴 The defect this planner exists for. 5 + 5 + 5 under a 10% cap is over; lowering one to 4
-    leaves it over (14%) and is still the right direction. MUTATION: make `refusal` return `reason`
-    whether or not the write adds risk → red."""
-    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5), _bot("c", 5)), {"a": 4.0})
-    assert plan.reason is not None, "the premise: the result is still over the cap"
+def test_LOWERING_a_share_that_is_still_above_the_cap_is_allowed():
+    """🔴 The defect this planner exists for: a change that frees room is always allowed. A 15%
+    bot under a 10% cap, lowered to 12%, is still above it and still the right direction.
+    MUTATION: make `refusal` return `reason` whether or not the write adds risk → red."""
+    plan = ba.risk_plan(_group(_bot("a", 15), _bot("b", 5)), {"a": 12.0})
+    assert plan.reason is not None, "the premise: the result is still above the cap"
     assert plan.refusal is None
 
 
-def test_RAISING_a_share_past_the_room_is_refused():
+def test_RAISING_a_share_past_the_ROOM_is_allowed_and_SAYS_the_bots_share_it():
+    """🔴 2026-09-15: 6 + 5 under 10 shares the room — never refused, always said.
+    MUTATION: restore the sum refusal → red. MUTATION: drop the note → red."""
     plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), {"a": 6.0})
-    assert plan.refusal and "add up to" in plan.refusal
+    assert plan.refusal is None and plan.fits
+    assert plan.note and "11%" in plan.note and "share the room" in plan.note
 
 
-def test_RAISING_the_cap_on_an_account_still_over_is_allowed():
+def test_RAISING_a_share_ABOVE_the_cap_is_refused():
+    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), {"a": 11.0})
+    assert plan.refusal and "full size" in plan.refusal
+    assert plan.note is None, "a refused plan says the refusal, not the note"
+
+
+def test_RAISING_the_cap_while_a_share_is_still_above_it_is_allowed():
     """MUTATION: count every cap change as coming down → red."""
-    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5), _bot("c", 5)), cap_set=True, cap=12.0)
-    assert plan.reason is not None, "the premise: 15% is still over a 12% cap"
+    plan = ba.risk_plan(_group(_bot("a", 15), _bot("b", 5)), cap_set=True, cap=12.0)
+    assert plan.reason is not None, "the premise: 15% is still above a 12% cap"
     assert plan.refusal is None
     assert plan.cap_changed
 
 
-def test_LOWERING_the_cap_under_the_shares_is_refused():
-    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), cap_set=True, cap=8.0)
-    assert plan.refusal and "add up to" in plan.refusal
+def test_LOWERING_the_cap_under_ONE_share_is_refused_and_under_the_SUM_is_not():
+    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), cap_set=True, cap=4.0)
+    assert plan.refusal and "full size" in plan.refusal
+    shared = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), cap_set=True, cap=8.0)
+    assert shared.refusal is None and shared.note
 
 
 def test_a_cap_APPEARING_on_an_uncapped_account_counts_as_coming_down():
-    """Uncapped holds anything, so a first cap under the shares refuses trades that were allowed.
+    """Uncapped holds anything, so a first cap under a share refuses trades that were allowed.
     MUTATION: drop `old_cap is None` from `cap_lowered` → it saves → red."""
-    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5), cap=None), cap_set=True, cap=8.0)
+    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5), cap=None), cap_set=True, cap=4.0)
     assert plan.refusal
 
 
 def test_an_UNSTATED_share_becoming_a_number_counts_as_RAISED():
     """Nothing measured says an unstated share went DOWN. MUTATION: drop the `before is None`
-    branch → an overflowing first share saves → red."""
-    plan = ba.risk_plan(_group(_bot("a", None), _bot("b", 8)), {"a": 5.0})
+    branch → a first share above the cap saves → red."""
+    plan = ba.risk_plan(_group(_bot("a", None), _bot("b", 8)), {"a": 12.0})
     assert plan.refusal
 
 
 def test_a_JOINING_bot_always_adds_risk_and_is_never_written_by_a_budget_save():
-    """MUTATION: drop `joining` from `adds_risk` → a bot joining a full account plans as savable →
-    red."""
-    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), joining=[_bot("c", 5)])
+    """MUTATION: drop `joining` from `adds_risk` → a bot above the cap plans as savable → red."""
+    plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), joining=[_bot("c", 12)])
     assert plan.refusal and plan.joining == ["c"]
     assert plan.changed is False, "a joining bot is written by its own move, never by a save"
 
 
-def test_the_two_fixes_fit_and_never_land_a_hair_over():
-    """`fit_cap` rounds UP, `fit_shares` round DOWN: 5+5+5 → cap 15, shares 3.33 each (9.99 fits a
-    10% cap). MUTATION: round the shares UP → 3.34 × 3 = 10.02, over the cap → red."""
+def test_a_THIRD_bot_joining_a_FULL_account_fits_and_shares_the_room():
+    """🔴 The case Aaron asked about, allowed since 2026-09-15."""
     plan = ba.risk_plan(_group(_bot("a", 5), _bot("b", 5)), joining=[_bot("c", 5)])
-    assert plan.fit_cap == 15.0
-    assert plan.fit_shares == {"a": 3.33, "b": 3.33, "c": 3.33}
+    assert plan.fits and plan.refusal is None
+    assert "15%" in plan.note
+
+
+def test_the_two_fixes_bring_ONLY_the_share_above_the_cap_and_never_land_a_hair_over():
+    """`fit_cap` is the largest share rounded UP; `fit_shares` brings each share above the cap DOWN
+    to it and leaves the rest exactly as they are. MUTATION: scale every share → a changes → red."""
+    plan = ba.risk_plan(_group(_bot("a", 3.333), _bot("b", 5)), joining=[_bot("c", 12.5)])
+    assert plan.fit_cap == 12.5
+    assert plan.fit_shares == {"a": 3.333, "b": 5.0, "c": 10.0}
     fitted = [_bot(k, v) for k, v in plan.fit_shares.items()]
     assert ba.share_overflow(fitted, 10.0) is None
 
 
 def test_a_cap_fix_past_100_percent_is_not_offered():
     """A cap is a percentage of the balance, so a suggestion over 100 would be refused at the save."""
-    plan = ba.risk_plan(
-        _group(_bot("a", 30), _bot("b", 30), cap=50.0), joining=[_bot("c", 30), _bot("d", 30)]
-    )
+    plan = ba.risk_plan(_group(_bot("a", 30), cap=50.0), joining=[_bot("c", 120)])
     assert plan.reason and plan.fit_cap is None
 
 
 def test_a_share_fix_below_the_floor_is_not_offered():
-    """0.2% under a 0.15% cap scales to 0.075% a share, under the 0.1% the runtime editor accepts —
+    """A 0.05% cap would bring a 0.2% share to 0.05%, under the 0.1% the runtime editor accepts —
     so the suggestion is withheld rather than offered and refused. MUTATION: drop the floor → red."""
-    plan = ba.risk_plan(_group(_bot("a", 0.1), _bot("b", 0.1), cap=0.15))
+    plan = ba.risk_plan(_group(_bot("a", 0.2), cap=0.05))
     assert plan.reason and plan.fit_shares is None
 
 
@@ -223,10 +243,18 @@ def test_the_risk_alert_lands_in_THAT_accounts_room(client, budget):
     assert budget.routed == [ACCOUNT]
 
 
-def test_a_save_that_ADDS_risk_past_the_cap_is_refused_and_writes_NOTHING(client, budget):
-    r = client.patch(f"/bots/accounts/{ACCOUNT}/risk", json={"shares": {"sos_fade_demo": 8.0}})
-    assert r.status_code == 409 and "add up to" in r.json()["detail"]
+def test_a_save_that_puts_a_share_ABOVE_the_cap_is_refused_and_writes_NOTHING(client, budget):
+    r = client.patch(f"/bots/accounts/{ACCOUNT}/risk", json={"shares": {"sos_fade_demo": 12.0}})
+    assert r.status_code == 409 and "full size" in r.json()["detail"]
     assert budget.written == {} and budget.commits == []
+
+
+def test_a_save_that_only_makes_the_shares_ADD_UP_past_the_cap_is_written(client, budget):
+    """🔴 2026-09-15. MUTATION: restore the sum refusal → 409 → red."""
+    r = client.patch(f"/bots/accounts/{ACCOUNT}/risk", json={"shares": {"sos_fade_demo": 8.0}})
+    assert r.status_code == 200, r.text
+    assert budget.written["sos_fade_demo"]["strategy_params"]["exec_risk_pct"] == 8.0
+    assert "share the room" in r.json()["note"]
 
 
 def test_a_save_that_changes_nothing_commits_nothing(client, budget):
@@ -241,13 +269,21 @@ def test_a_save_that_changes_nothing_commits_nothing(client, budget):
 def test_the_PLAN_writes_nothing_and_serves_both_fixes_for_a_JOINING_bot(client, budget):
     """The Add bot preview. MUTATION: ignore `joining` in the plan endpoint → it answers "fits" for
     a bot that does not → red."""
-    r = client.post(f"/bots/accounts/{ACCOUNT}/risk-plan", json={"joining": {"b_leg_demo": 5.0}})
+    r = client.post(f"/bots/accounts/{ACCOUNT}/risk-plan", json={"joining": {"b_leg_demo": 12.0}})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["fits"] is False and body["refused"]
-    assert body["fit_cap"] == 15.0 and body["fit_shares"]["b_leg_demo"] == 3.33
+    assert body["fit_cap"] == 12.0 and body["fit_shares"]["b_leg_demo"] == 10.0
     assert [b["key"] for b in body["bots"] if b["joining"]] == ["b_leg_demo"]
     assert budget.written == {} and budget.commits == []
+
+
+def test_the_PLAN_serves_the_SHARING_note_for_a_bot_that_fills_a_full_account(client, budget):
+    """MUTATION: drop `note` from the plan view → red."""
+    r = client.post(f"/bots/accounts/{ACCOUNT}/risk-plan", json={"joining": {"b_leg_demo": 5.0}})
+    body = r.json()
+    assert body["fits"] is True and body["refused"] is None
+    assert "15%" in body["note"] and "priority" in body["note"]
 
 
 def test_the_SAVE_refuses_a_joining_bot(client, budget):
@@ -319,6 +355,79 @@ def test_the_no_restart_claim_is_PINNED_to_the_bot_side():
     assert '"account_risk_cap_pct"' in m.group(1)
 
 
+# ── the PRIORITY order (2026-09-15) ────────────────────────────────────────────
+def test_the_PRIORITY_save_writes_ranks_1_to_n_in_ONE_commit(client, budget):
+    """The order as listed, first = 1, through the risk save's own write → commit → pull path.
+    MUTATION: number from 0 → red. MUTATION: skip the commit → red. MUTATION: drop
+    `account=account` from the alert → the wrong room → red."""
+    r = client.put(
+        f"/bots/accounts/{ACCOUNT}/priority", json={"order": ["extreme_leg_demo", "sos_fade_demo"]}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["changed"] and body["deployed"] is True
+    assert body["order"] == ["extreme_leg_demo", "sos_fade_demo"]
+    assert budget.written["extreme_leg_demo"]["account_priority"] == 1
+    assert budget.written["sos_fade_demo"]["account_priority"] == 2
+    assert len(budget.commits) == 1 and len(budget.commits[0][0]) == 2
+    assert budget.routed == [ACCOUNT]
+    assert "no restart" in body["applies"]
+
+
+@pytest.mark.parametrize(
+    "order, words",
+    [
+        (["sos_fade_demo"], "missing"),
+        (["sos_fade_demo", "extreme_leg_demo", "b_leg_demo"], "not on account"),
+        (["sos_fade_demo", "sos_fade_demo", "extreme_leg_demo"], "twice"),
+    ],
+)
+def test_an_order_that_is_not_EXACTLY_the_accounts_bots_is_refused_and_writes_NOTHING(
+    client, budget, order, words
+):
+    """A partial order leaves a bot holding a rank nobody chose. MUTATION: drop each of the three
+    checks in `priority_order_plan` → its case goes 200 → red."""
+    r = client.put(f"/bots/accounts/{ACCOUNT}/priority", json={"order": order})
+    assert r.status_code == 400 and words in r.json()["detail"], r.text
+    assert budget.written == {} and budget.commits == []
+
+
+def test_an_UNREADABLE_config_anywhere_refuses_the_priority_write(client, budget, monkeypatch):
+    """It might be on this account, so the order could not be known to be complete (rule 1).
+    MUTATION: ignore the unreadable bucket → 200 and written → red."""
+    broken = ba.AccountGroup(account=None, server="", kind="unknown")
+    broken.bots = [_bot("broken", None, unreadable=True)]
+    monkeypatch.setattr(
+        budget.r,
+        "_account_groups",
+        lambda: [_group(_bot("sos_fade_demo", 5.0), _bot("extreme_leg_demo", 5.0)), broken],
+    )
+    r = client.put(
+        f"/bots/accounts/{ACCOUNT}/priority", json={"order": ["sos_fade_demo", "extreme_leg_demo"]}
+    )
+    assert r.status_code == 409 and "broken" in r.json()["detail"], r.text
+    assert budget.written == {} and budget.commits == []
+
+
+def test_an_order_the_bots_already_hold_commits_nothing(client, budget, monkeypatch):
+    """MUTATION: write every bot regardless → a commit and a pull for nothing → red."""
+    held = {
+        "sos_fade_demo": {"account": ACCOUNT, "account_priority": 1},
+        "extreme_leg_demo": {"account": ACCOUNT, "account_priority": 2},
+    }
+    monkeypatch.setattr(budget.r, "_read_instance_config", lambda k: copy.deepcopy(held[k]))
+    r = client.put(
+        f"/bots/accounts/{ACCOUNT}/priority", json={"order": ["sos_fade_demo", "extreme_leg_demo"]}
+    )
+    assert r.status_code == 200 and r.json()["changed"] is False
+    assert budget.written == {} and budget.commits == []
+
+
+def test_a_priority_order_for_an_account_with_no_bots_is_a_404(client, budget):
+    r = client.put("/bots/accounts/12345/priority", json={"order": []})
+    assert r.status_code == 404
+
+
 # ── the move, and start ────────────────────────────────────────────────────────
 def _stub_move(monkeypatch, *, kind="demo", running=False, groups=None):
     """Everything the move asks before it plans, answered without the box. The registered account
@@ -374,18 +483,18 @@ def test_a_move_onto_a_DEMO_account_needs_no_confirmation(client, monkeypatch):
 
 
 def test_a_move_WRITES_the_share_it_carries_and_COUNTS_it_in_the_join_check(client, monkeypatch):
-    """b_leg_demo states 10% of its own; joining a 5% bot under a 10% cap at that share is over, at
-    5% it fits exactly. MUTATION: ignore `risk_pct` in the joining hypothetical → the 5% move is
-    refused → red. MUTATION: drop the write → the stored share stays 10 → red."""
-    full = _group(_bot("sos_fade_demo", 5.0))
+    """b_leg_demo states 10% of its own; under a 4% cap that is above the whole cap, at 4% it fits
+    exactly. MUTATION: ignore `risk_pct` in the joining hypothetical → the 4% move is refused →
+    red. MUTATION: drop the write → the stored share stays 10 → red."""
+    full = _group(_bot("sos_fade_demo", 3.0), cap=4.0)
     _, written = _stub_move(monkeypatch, groups=[full])
     over = client.patch("/bots/b_leg_demo/account", json={"account": ACCOUNT, "deploy": False})
-    assert over.status_code == 409 and "add up to" in over.json()["detail"], over.text
+    assert over.status_code == 409 and "full size" in over.json()["detail"], over.text
     fits = client.patch(
-        "/bots/b_leg_demo/account", json={"account": ACCOUNT, "risk_pct": 5.0, "deploy": False}
+        "/bots/b_leg_demo/account", json={"account": ACCOUNT, "risk_pct": 4.0, "deploy": False}
     )
     assert fits.status_code == 200, fits.text
-    assert written["b_leg_demo"]["strategy_params"]["exec_risk_pct"] == 5.0
+    assert written["b_leg_demo"]["strategy_params"]["exec_risk_pct"] == 4.0
 
 
 def test_an_UNANSWERED_running_check_is_a_503_never_running(client, monkeypatch):

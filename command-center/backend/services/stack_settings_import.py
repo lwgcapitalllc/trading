@@ -13,8 +13,9 @@ re-implemented; what this module adds is the half a per-bot planner cannot see:
     two bots on two accounts is not the stack that was replayed;
   - the account's **risk budget** is part of the result and gets written too, because the
     stack's own numbers were produced under it;
-  - after everything is written the per-trade shares must still FIT under that budget, or the
-    bots quietly stop being the bots that were measured (`bot_accounts.share_overflow`).
+  - after everything is written no share may be unreadable and no one bot may risk more than the
+    whole budget (`bot_accounts.share_overflow`). Shares that ADD UP past it are a warning since
+    2026-09-15, not a refusal — the bots share the room.
 
 ⚠ **PURE.** No HTTP, no SSH, no file write — every input is read by the caller and every output
 is data. `routers/bots.py` does the edges, and the apply writes exactly what a plan holds.
@@ -29,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from services import bot_settings_import
-from services.bot_accounts import AccountBot, risk_pct_of, share_overflow
+from services.bot_accounts import AccountBot, risk_pct_of, share_overflow, sharing_note
 
 __all__ = [
     "BotTarget",
@@ -259,16 +260,22 @@ def plan_stack_import(
     on_account = [b for b in bots if b.config is not None and b.account == account]
     plan.cap = _cap_change(on_account, stack_risk_cap_pct)
 
-    # ── the shares must still fit, AFTER everything this would write ─────────────────────
+    # ── the shares must still be acceptable, AFTER everything this would write ───────────
+    # Since 2026-09-15 only an unreadable share or ONE bot above the whole cap refuses; shares that
+    # add up past the cap are said as a warning (`sharing_note`), never refused.
     proposed_cap = plan.cap.proposed if plan.cap else None
-    overflow = share_overflow(_hypothetical(on_account, plan), proposed_cap)
+    after = _hypothetical(on_account, plan)
+    overflow = share_overflow(after, proposed_cap)
     if overflow:
         return _blocked(
-            f"after this copy the account would be over-subscribed — {overflow} Nothing is "
-            f"written: the stack's own numbers were produced with these shares fitting."
+            f"after this copy the account's risk shares cannot be accepted — {overflow} Nothing "
+            f"is written."
         )
 
     plan.warnings.extend(_warnings(plan, on_account, stack_risk_cap_pct))
+    note = sharing_note(after, proposed_cap)
+    if note:
+        plan.warnings.append(note)
     return plan
 
 

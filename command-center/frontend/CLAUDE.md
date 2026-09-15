@@ -414,6 +414,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 - Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
 - 🔴 The page may NOT add the risk shares up itself (2026-09-04)
+- Shares past the cap SHARE the room, and the account panel has a PRIORITY list (2026-09-15)
 - A blank cell is not a diagnosis — the Bots page's `No MT5 link` chip
 - The affirmation ribbon, and why it holds still
 - Key UI decisions

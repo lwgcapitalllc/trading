@@ -223,6 +223,10 @@ export function BotRiskEditor({
               <span className="text-text-secondary">
                 {p.risk_cap_pct == null ? (
                   <>No cap on account {account} — nothing to fit under.</>
+                ) : p.note ? (
+                  // Past the cap is allowed since 2026-09-15 — the bots share the room. The
+                  // server's sentence says how, so nothing here restates it.
+                  <span data-testid="risk-sharing">{p.note}</span>
                 ) : (
                   <>
                     Fits — the bots on account {account} would risk{' '}
@@ -233,8 +237,8 @@ export function BotRiskEditor({
               </span>
             ) : (
               <span className="text-text-secondary">
-                Account {account} is still over its cap, but this lowers the risk, so it can be
-                saved.
+                A bot on account {account} still risks more than its whole cap, but this lowers the
+                risk, so it can be saved.
               </span>
             )
           ) : null}

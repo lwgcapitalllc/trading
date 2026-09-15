@@ -15,6 +15,8 @@ import type {
   AccountSyncPreview,
   BotAccountAssignResult,
   BotAccountGroup,
+  BotAccountPriorityRequest,
+  BotAccountPriorityResult,
   BotAccountRiskPlan,
   BotAccountRiskRequest,
   BotAccountRegistration,
@@ -732,6 +734,28 @@ export function useSaveAccountRisk() {
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+    },
+  })
+}
+
+/**
+ * Save an account's PRIORITY order — which bot sizes first when two close a bar together — in ONE
+ * commit (2026-09-15). `order` lists every bot on the account, first = 1; the server refuses a
+ * list that is not exactly the account's bots. The accounts list re-reads, so the panel shows the
+ * order as saved. ⚠ No `onError` toast: `api.put` already toasts the server's reason.
+ */
+export function useSaveAccountPriority() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ account, order }: { account: number; order: string[] }) => {
+      const body: BotAccountPriorityRequest = { order, deploy: true }
+      return api.put<BotAccountPriorityResult>(`/bots/accounts/${account}/priority`, body)
+    },
+    onSuccess: (data) => {
+      if (!data.changed) toast.info(data.detail || 'Nothing to change')
+      else
+        toast.success(data.detail || 'Priority saved', { description: data.applies || undefined })
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
     },
   })
 }

@@ -328,6 +328,32 @@ totalling a column, ask what the rows SHARE** — balance, account, terminal, ri
 caption says how many accounts it added and how many it could not. A total quietly missing a box's
 worth of money is the reassuring direction, which is the wrong one.
 
+## Shares past the cap SHARE the room, and the account panel has a PRIORITY list (2026-09-15)
+
+Aaron, 2026-09-15: the cap limits the risk open at any moment, not the sum of the shares — any
+number of bots may share an account. Backend rules: `backend/notes/accounts-risk.md` → *Shares may
+add up past the cap, and an account has a PRIORITY order*.
+
+- **The amber refusal line (`cap-overflow`) now appears only for a bot above the whole cap or a
+  share nobody can read.** Shares that add up past the cap show the server's `share_note` in grey
+  (`cap-sharing`). The old "take turns" line is gone — the note is its general case (*Say it once*).
+- **The account band** gained a `shared` state: grey "15% shared", the note on hover. Red
+  "a bot is over it" is kept for the refusal only — colour means a fault.
+- **The budget verdict and the bot risk editor** print the server's note in place of "Fits — …"
+  when the shares go past the cap. Nothing here decides it; `note` is served.
+- **Add a bot** judges "needs room" against the CAP, not the room: a bot that only fills the account
+  joins and shares; the server stays the gate.
+- **The stack form** prints the stack's note in grey under the total.
+- **The Priority section** (account panel, two or more bots): the bots in the served order, dragged
+  with native HTML5 drag events (no library) or moved with the up/down arrows for keyboard use.
+  ⚠ The draft is bound to the served order it was made against (`from`), like the budget edits —
+  a changed served order drops it. ⚠ Save order is offered when a bot has no saved rank even with no
+  edit, because the list is then only the by-name fallback. Save → `useSaveAccountPriority` → the
+  accounts list re-reads, so the panel shows the order as saved.
+- `tests/bots-accounts.spec.ts`: fixtures carry `share_note`, the take-turns check became the sharing
+  check, the over-cap banner check uses a bot above the cap, and a new check drags a row and asserts
+  the saved body.
+
 ## 🔴 The page may NOT add the risk shares up itself (2026-09-04)
 
 `AccountsTab` renders `group.share_total_pct` and `group.share_overflow_reason` straight off the

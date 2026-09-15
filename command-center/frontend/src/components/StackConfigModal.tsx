@@ -965,6 +965,15 @@ export function StackConfigModal({
                         {budget.reason}
                       </p>
                     )}
+                    {/* Past the cap is allowed since 2026-09-15 — said, in grey, never refused. */}
+                    {budget && budget.fits && budget.note && (
+                      <p
+                        data-testid="stack-risk-sharing"
+                        className="mt-1 px-3 text-[11px] text-text-tertiary leading-snug"
+                      >
+                        {budget.note}
+                      </p>
+                    )}
                     {budgetQuery.isError && budgetFresh && (
                       <p className="mt-1 px-3 text-[11px] text-warn-text leading-snug">
                         Could not check the legs against the cap —{' '}

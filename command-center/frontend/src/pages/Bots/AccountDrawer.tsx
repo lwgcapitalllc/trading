@@ -28,7 +28,10 @@
 import { useState, type ReactNode } from 'react'
 import {
   ArrowUp,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
+  GripVertical,
   Loader2,
   Play,
   Plus,
@@ -39,7 +42,12 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useAccountRiskPlan, useSaveAccountRisk, useUnregisterAccount } from '@/hooks/useBots'
+import {
+  useAccountRiskPlan,
+  useSaveAccountPriority,
+  useSaveAccountRisk,
+  useUnregisterAccount,
+} from '@/hooks/useBots'
 import type {
   AccountEarnings,
   BotAccountBot,
@@ -73,6 +81,8 @@ const actionCls =
   'flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
 const fixCls =
   'inline-flex items-center gap-[5px] px-[10px] py-[5px] rounded-md text-[11.5px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors'
+const arrowCls =
+  'w-[22px] h-[22px] grid place-items-center rounded-md border border-border-default text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed'
 /** One grid for the table's heading and every row under it — a hand-copied column list is how a
  *  heading ends up confidently over the wrong number. */
 // ⚠ The status track is FIXED, and wide enough for the widest pill ("Needs review +1"): each row is
@@ -211,6 +221,7 @@ export function AccountDrawer({
   const unregister = useUnregisterAccount()
   const join = useJoinAccount()
   const save = useSaveAccountRisk()
+  const savePriority = useSaveAccountPriority()
 
   const account = group.account
   // Taking a bot off is the SAME flow and button as the bot panel's (`takeOff.ts`, 2026-09-13):
@@ -266,6 +277,40 @@ export function AccountDrawer({
   }
   const setShare = (b: BotAccountBot, v: number | null) =>
     setShareEdits((s) => ({ ...s, [b.key]: { value: v, from: b.risk_pct } }))
+
+  // ── the draft priority order (2026-09-15) ────────────────────────────────────
+  //
+  // Which bot sizes first when two close a bar together. ⚠ The ORDER is the server's — the bots
+  // arrive already sorted by their saved rank, unranked last — and the draft is bound to the served
+  // order it was made against (`from`), like the budget edits above: when the served order moves,
+  // the draft is dropped rather than saved over a change nobody saw.
+  const servedOrder = group.bots.map((b) => b.key)
+  const servedSig = servedOrder.join('|')
+  const [orderEdit, setOrderEdit] = useState<{ keys: string[]; from: string } | null>(null)
+  const order = orderEdit && orderEdit.from === servedSig ? orderEdit.keys : servedOrder
+  const orderDirty = order.join('|') !== servedSig
+  // A bot with no rank saved: the list is only the fallback (by name), so Save is offered as-is.
+  const orderUnsaved = group.bots.some((b) => b.priority == null)
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const [overKey, setOverKey] = useState<string | null>(null)
+  const moveBot = (key: string, to: number) => {
+    const from = order.indexOf(key)
+    if (from < 0 || to < 0 || to >= order.length || from === to) return
+    const next = [...order]
+    next.splice(from, 1)
+    next.splice(to, 0, key)
+    setOrderEdit({ keys: next, from: servedSig })
+  }
+  const canSaveOrder =
+    account !== null &&
+    group.bots.length > 1 &&
+    (orderDirty || orderUnsaved) &&
+    !group.bots.some((b) => b.unreadable) &&
+    !savePriority.isPending
+  const saveOrder = () => {
+    if (account === null) return
+    savePriority.mutate({ account, order }, { onSuccess: () => setOrderEdit(null) })
+  }
 
   const changed: Record<string, number> = {}
   const shareChanges: { key: string; display: string; from: number | null; to: number }[] = []
@@ -409,12 +454,15 @@ export function AccountDrawer({
     </span>
   ) : p && !p.fits ? (
     <span className="text-text-secondary">
-      Still over the cap, but this lowers the risk, so it can be saved.
+      A bot still risks more than the whole cap, but this lowers the risk, so it can be saved.
     </span>
   ) : p ? (
     <span className="text-text-secondary">
       {p.risk_cap_pct == null ? (
         'No cap — nothing to fit under.'
+      ) : p.note ? (
+        // Past the cap is allowed since 2026-09-15 — the server's sentence says how they share.
+        <span data-testid="plan-sharing">{p.note}</span>
       ) : (
         <>
           Fits — the bots would risk <b className="text-text-primary">{pct(p.share_total_pct)}</b>{' '}
@@ -826,6 +874,109 @@ export function AccountDrawer({
           )}
         </section>
 
+        {/* ── who goes first ──────────────────────────────────────────────── */}
+        {/* 🔴 THE PRIORITY ORDER (2026-09-15). Only with two or more bots — one has nobody to go
+         *  ahead of. Drag a row (native drag events, no library) or use its arrows; Save writes
+         *  the order to every bot in ONE commit and the list then re-reads from the server. */}
+        {account !== null && group.bots.length > 1 && (
+          <section data-testid="priority" className="py-[16px] border-b border-border-subtle">
+            <SectionTitle
+              aside={
+                <div className="flex items-center gap-2">
+                  {orderDirty && (
+                    <button
+                      data-testid="priority-discard"
+                      onClick={() => setOrderEdit(null)}
+                      className="px-3 py-[5px] rounded-md text-[12px] border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+                    >
+                      Discard
+                    </button>
+                  )}
+                  <button
+                    data-testid="priority-save"
+                    disabled={!canSaveOrder}
+                    onClick={saveOrder}
+                    className="inline-flex items-center gap-[6px] px-3 py-[5px] rounded-md text-[12px] font-semibold bg-accent-muted text-accent-text border border-accent/50 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {savePriority.isPending && <Loader2 size={12} className="animate-spin" />}
+                    {savePriority.isPending ? 'Saving…' : 'Save order'}
+                  </button>
+                </div>
+              }
+            >
+              Priority
+            </SectionTitle>
+            <p className="text-[11.5px] text-text-tertiary mb-[8px] leading-[1.5]">
+              When two bots signal together, the higher one trades first.
+              {orderUnsaved && !orderDirty && ' No order is saved yet — Save keeps this one.'}
+            </p>
+            <ol className="rounded-md border border-border-subtle overflow-hidden">
+              {order.map((key, i) => {
+                const name = group.bots.find((b) => b.key === key)?.display ?? key
+                return (
+                  <li
+                    key={key}
+                    draggable
+                    data-testid="priority-row"
+                    data-bot={key}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move'
+                      e.dataTransfer.setData('text/plain', key)
+                      setDragKey(key)
+                    }}
+                    onDragOver={(e) => {
+                      if (!dragKey) return
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      setOverKey(key)
+                    }}
+                    onDragLeave={() => setOverKey((k) => (k === key ? null : k))}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (dragKey) moveBot(dragKey, i)
+                      setDragKey(null)
+                      setOverKey(null)
+                    }}
+                    onDragEnd={() => {
+                      setDragKey(null)
+                      setOverKey(null)
+                    }}
+                    className={`flex items-center gap-[10px] px-3 py-[7px] border-t first:border-t-0 border-border-subtle cursor-grab active:cursor-grabbing transition-colors ${
+                      dragKey === key ? 'opacity-40' : ''
+                    } ${overKey === key && dragKey !== key ? 'bg-accent/10' : ''}`}
+                  >
+                    <GripVertical size={12} className="shrink-0 text-text-tertiary" aria-hidden />
+                    <span className="w-[16px] shrink-0 text-right font-mono tabular-nums text-[12px] text-text-tertiary">
+                      {i + 1}
+                    </span>
+                    <span className="truncate text-[13px] text-text-primary">{name}</span>
+                    <span className="ml-auto flex items-center gap-[4px]">
+                      <button
+                        type="button"
+                        aria-label={`Move ${name} up`}
+                        disabled={i === 0}
+                        onClick={() => moveBot(key, i - 1)}
+                        className={arrowCls}
+                      >
+                        <ChevronUp size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move ${name} down`}
+                        disabled={i === order.length - 1}
+                        onClick={() => moveBot(key, i + 1)}
+                        className={arrowCls}
+                      >
+                        <ChevronDown size={12} />
+                      </button>
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </section>
+        )}
+
         {/* ── the ceiling ─────────────────────────────────────────────────── */}
         {/* 🔴 An account with NO bot has no cap and nothing to store one in — the cap lives in
          *  each bot's config, and saving here answered 404. The first bot added carries it. */}
@@ -885,13 +1036,24 @@ export function AccountDrawer({
             </p>
 
             {/* The save is refused for this reason too, so saying it here makes the refusal
-             *  predictable rather than a surprise at the moment you press Save. */}
+             *  predictable rather than a surprise at the moment you press Save. Since 2026-09-15
+             *  that is only a bot above the whole cap, or a share nobody can read. */}
             {group.share_overflow_reason && (
               <p
                 data-testid="cap-overflow"
                 className="text-[11px] text-warn-text bg-warn-muted border border-warn/40 rounded-md px-[10px] py-[7px] mt-[8px] leading-[1.5]"
               >
                 {group.share_overflow_reason}
+              </p>
+            )}
+            {/* Not a fault — shares past the cap SHARE the room (2026-09-15). The server's sentence,
+             *  in grey, and it replaced the old "take turns" line, which said the narrower case. */}
+            {group.share_note && (
+              <p
+                data-testid="cap-sharing"
+                className="text-[11px] text-text-tertiary mt-[8px] leading-[1.5]"
+              >
+                {group.share_note}
               </p>
             )}
             {!hasEdits && p?.reason && (
@@ -906,17 +1068,6 @@ export function AccountDrawer({
               >
                 The bots on this balance do not state the same ceiling, so none of them will start.
                 Saving here writes one figure to all of them.
-              </p>
-            )}
-
-            {/* Not a fault — a consequence worth knowing before a quiet week reads as broken. */}
-            {group.cap_takes_turns && (
-              <p
-                data-testid="cap-takes-turns"
-                className="text-[11px] text-text-tertiary mt-[8px] leading-[1.5]"
-              >
-                One full-size trade fills this ceiling, so the bots here take turns — whichever is
-                in first blocks the other until it is out.
               </p>
             )}
           </section>

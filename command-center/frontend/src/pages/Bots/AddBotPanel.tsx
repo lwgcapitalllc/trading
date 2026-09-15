@@ -189,7 +189,7 @@ export function AddBotPanel({
           ? null
           : room >= 0
             ? `${pct(room)} of its ${pct(agreedCap)} cap is free.`
-            : `Already ${pct(-room)} over its ${pct(agreedCap)} cap.`
+            : `Its bots' shares already add up past its ${pct(agreedCap)} cap — they share the room.`
 
   // The server applies the same rule; stating it here keeps Add from being a 422 after the click.
   const capProblem =
@@ -333,8 +333,11 @@ export function AddBotPanel({
               const plan = t.existingBenchKey ? planByKey.get(t.existingBenchKey) : undefined
               // Only a real answer can say "does not fit" — no answer yet is a plain Add.
               const needsRoomWithPlan = !!plan && !plan.fits
+              // ⚠ Against the CAP, not the room (2026-09-15): a bot that only makes the shares add
+              // up past the cap joins and shares the room; one whose own share is above the whole
+              // cap is what the server refuses. The server is still the gate.
               const simpleFits =
-                accountEmpty || t.riskPct == null || room == null || t.riskPct <= room
+                accountEmpty || t.riskPct == null || agreedCap == null || t.riskPct <= agreedCap
               const needsRoomNoPlan = !t.existingBenchKey && !simpleFits
               const needsRoom = t.existingBenchKey ? needsRoomWithPlan : needsRoomNoPlan
               const blocked = busy || running || !!capProblem || cloning

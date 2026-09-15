@@ -6,7 +6,59 @@ CLAUDE.md gets at most one index line.
 
 ---
 
+## Shares may add up past the cap, and an account has a PRIORITY order (2026-09-15)
+
+Aaron, 2026-09-15: the cap limits the risk OPEN at any moment, not the sum of the per-trade shares,
+so any number of bots may sit on one account. Live, a bot short of room trades what is left down to
+HALF its own share and is refused below that; when two close a bar together, the one higher in the
+account's priority order sizes first (`algos/shared/account_priority.py`). **This retires the
+2026-09-03 rule in the next section** — kept below as the history of why the sum was refused.
+
+- **`bot_accounts.share_overflow` no longer refuses a sum.** It refuses only a share that cannot be
+  read or is unstated (rule 1), and ONE bot whose own share is above the whole cap — it could never
+  trade at full size. Shares past the cap get a sentence instead (`sharing_note`), never a refusal.
+- **What each caller does now:**
+  - the budget save, the cap save, the runtime save and the move: refuse only those two; the plan
+    carries `note` when the shares add up past the cap.
+  - `GET /bots/accounts`: `share_note` (new) is the sentence, `share_overflow_reason` the refusal.
+    ⚠ `cap_takes_turns` is GONE — the note is its general case, and a field nobody reads is a claim.
+  - demo → live and the stack-settings copy: refuse only those two; a sum past the cap is a WARNING.
+  - the stack launch and `POST /backtests/stacks/risk-budget`: the same, with `note`. ⚠ The stack
+    sentence does NOT promise the half-size floor or the priority order — the backtest applies the
+    floor only to a live bot sharing an account.
+  - the stress tester's nudge skip asks the SUM question directly (`shares_exceed_cap`): bots compete
+    whenever the shares add up past the cap. ⚠ It answers `None` for an unreadable share, which the
+    skip reads as "cannot tell" — the full test runs.
+- **The one-click fixes answer the new refusal:** `fit_cap` is the largest share rounded UP;
+  `fit_shares` brings each share above the cap DOWN to it and leaves the rest exactly as they are.
+- **The priority order.** `AccountBot.priority`, read through `priority_of` — the live side's own
+  rule, restated because the subsystems may not import each other: a positive whole number, else no
+  order (a bool is not rank 1). `group_by_account` lists an account's bots in that order, unranked
+  last, then by key.
+  - `PUT /bots/accounts/{account}/priority` with `{"order": [...]}` writes `account_priority` 1..n
+    through the risk save's own write → commit → push → VPS pull, in ONE commit, alert to the
+    account's room. ⚠ 400 unless the list is EXACTLY the account's bots — none missing, extra or
+    twice (`priority_order_plan`). ⚠ 409 if ANY config is unreadable: one in the unknown bucket might
+    be on this account, so the order could not be known complete. ⚠ Every config is read before any
+    is written. ⚠ Running bots are fine — the order is re-read every bar.
+  - A bot JOINING through the move takes the highest rank on the account + 1 (not the count + 1);
+    a move that keeps the account keeps its rank; benching clears it (it described the account left).
+    Demo → live numbers the arriving set after the live account's bots, in the order it held on demo
+    — each move is planned alone, so without that every arrival took the same rank. A clone carries
+    none (`bot_clone._RESET_FIELDS`).
+
+**Tests:** every case that asserted the sum refusal now asserts the new behaviour, and the refusal
+cases use a share above the cap. New: the priority route (writes 1..n in one commit, exact-set
+refusals, unreadable refusal, no-op), next rank on join, keep on same account, clear on bench, the
+demo → live order, the served note. **26 mutations planted, 26 red** — each asserted to have applied
+before its result was read. ⚠ **One SURVIVED on the first run and the fixture was the defect**:
+numbering the arriving set by key instead of by its demo order passed, because the fixture's demo
+order happened to BE key order. The fixture now makes them disagree and says so; the re-run went
+red. The browser check for the drag was watched red by removing the drop's move.
+
 ## The shares may not add up to more than the ceiling (2026-09-03)
+
+⚠ **SUPERSEDED 2026-09-15** — the sum is no longer refused; see the section above.
 
 Aaron: *"the risk per trade cannot add up to more than that cap"*. `bot_accounts.share_overflow`
 is the rule; it returns the reason to refuse, or `None` when the shares fit.

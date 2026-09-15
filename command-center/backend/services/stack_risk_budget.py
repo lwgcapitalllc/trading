@@ -1,5 +1,10 @@
 """Do a shared stack's legs fit under its risk cap?
 
+🔴 **Since 2026-09-15 legs that ADD UP past the cap are accepted and NOTED, not refused** (Aaron: the
+cap limits the risk open at any moment, not the sum of the shares). Only an unreadable leg, or one
+leg whose own share is above the whole cap, is refused — `bot_accounts.share_overflow`. The rest of
+this docstring is the 2026-09-10 design; where it says the sum is refused, that is the old rule.
+
 Aaron, 2026-09-10: *"if I put ten percent cap, then the strategies that I choose cannot trade more
 than the cap … they cannot add up to more than the risk cap."*
 
@@ -35,7 +40,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Optional
 
-from services.bot_accounts import risk_pct_of, share_overflow
+from services.bot_accounts import risk_pct_of, share_overflow, shares_exceed_cap
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,8 @@ class RiskBudget:
     total_pct: Optional[float]
     fits: bool
     reason: Optional[str]
+    # The legs add up past the cap, so they share the room — informational, never a refusal.
+    note: Optional[str] = None
 
 
 def leg_share(strategy_id: str, name: str, params: Optional[dict]) -> LegShare:
@@ -112,7 +119,17 @@ def budget(legs: list[LegShare], cap_pct: float) -> RiskBudget:
     cap = float(cap_pct)
 
     if share_overflow(rows, cap) is None:
-        return RiskBudget(cap, legs, total, True, None)
+        note = None
+        if shares_exceed_cap(rows, cap):
+            shares = " + ".join(f"{leg.name} {float(leg.risk_pct):g}%" for leg in legs)
+            # ⚠ Deliberately NOT the Bots page's sentence: the half-size floor and the priority
+            # order are how LIVE bots share an account, and a backtest stack is not promised either.
+            note = (
+                f"These legs risk {total:g}% per trade together ({shares}) against a {cap:g}% "
+                f"cap, so they share the room: a leg trades in full while there is room, and one "
+                f"that signals when it is short trades smaller or is refused."
+            )
+        return RiskBudget(cap, legs, total, True, None, note)
 
     if unknown:
         verb = "does" if len(unknown) == 1 else "do"
@@ -121,11 +138,12 @@ def budget(legs: list[LegShare], cap_pct: float) -> RiskBudget:
             f"An unreadable risk is not a risk of zero."
         )
     else:
-        shares = " + ".join(f"{leg.name} {float(leg.risk_pct):g}%" for leg in legs)
+        above = [leg for leg in legs if float(leg.risk_pct) > cap + 1e-9]
+        names = ", ".join(f"{leg.name} {float(leg.risk_pct):g}%" for leg in above)
+        one = len(above) == 1
         reason = (
-            f"These legs risk {total:g}% per trade together ({shares}), more than the "
-            f"{cap:g}% cap. Over the cap they take turns instead of sharing — whoever enters "
-            f"first gets its full size and the rest are cut down — so this is not an account "
-            f"the Bots page would let you run. Lower a leg's risk or raise the cap."
+            f"{names} {'risks' if one else 'risk'} more on one trade than the whole {cap:g}% "
+            f"cap, so {'it' if one else 'they'} could never trade at full size. Lower "
+            f"{'that leg' if one else 'those legs'} or raise the cap."
         )
     return RiskBudget(cap, legs, total, False, reason)

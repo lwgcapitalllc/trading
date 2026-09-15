@@ -49,6 +49,9 @@ _RESET_FIELDS: dict[str, object] = {
     "telegram_chat_id": "",
     "telegram_token_key": "",
     "account_risk_cap_pct": None,
+    # Its place in the SOURCE's account's priority order — a claim about an account this copy is
+    # not on. The move that puts it on one gives it that account's next rank.
+    "account_priority": None,
     "sizing_basis_adjustment": 0.0,
     "initial_capital": 0,
 }

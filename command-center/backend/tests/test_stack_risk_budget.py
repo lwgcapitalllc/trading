@@ -1,7 +1,8 @@
-"""A shared stack's legs may not risk more per trade, together, than its cap (2026-09-10).
+"""A shared stack's legs against its cap (2026-09-10, rewritten 2026-09-15).
 
-Aaron: *"if I put ten percent cap, then the strategies that I choose cannot trade more than the
-cap … they cannot add up to more than the risk cap."*
+2026-09-10, Aaron: *"they cannot add up to more than the risk cap."* 🔴 **Since 2026-09-15 legs that
+ADD UP past the cap are accepted with a note** — the cap limits open risk, not the sum — and only an
+unreadable leg or ONE leg above the whole cap is refused.
 
 The rule is `bot_accounts.share_overflow` — the one the Bots page refuses a live account with —
 and `services/stack_risk_budget.py` asks it for two callers: the form's total and the launch. So
@@ -44,13 +45,22 @@ def test_shares_that_land_EXACTLY_on_the_cap_fit():
     assert fitted.fits and fitted.reason is None
 
 
-def test_shares_over_the_cap_are_refused_with_the_total_and_every_leg_named():
-    """MUTATION: return `fits=True` when the shared check refuses → red."""
+def test_legs_that_ADD_UP_past_the_cap_fit_and_SAY_they_share_the_room():
+    """🔴 2026-09-15. MUTATION: restore the sum refusal → red. MUTATION: drop the note → red."""
     verdict = budget([_leg("sos_fade", 10.0), _leg("extreme_leg", 5.0)], 10.0)
-    assert not verdict.fits
+    assert verdict.fits and verdict.reason is None
     assert verdict.total_pct == 15.0
-    assert "15%" in verdict.reason and "10% cap" in verdict.reason
-    assert "SOS_FADE 10%" in verdict.reason and "EXTREME_LEG 5%" in verdict.reason
+    assert "15%" in verdict.note and "10% cap" in verdict.note
+    assert "SOS_FADE 10%" in verdict.note and "EXTREME_LEG 5%" in verdict.note
+
+
+def test_ONE_leg_above_the_whole_cap_is_refused_and_NAMED():
+    """It could never trade at full size. MUTATION: return `fits=True` when the shared check
+    refuses → red."""
+    verdict = budget([_leg("sos_fade", 12.0), _leg("extreme_leg", 5.0)], 10.0)
+    assert not verdict.fits and verdict.note is None
+    assert "SOS_FADE 12%" in verdict.reason and "10% cap" in verdict.reason
+    assert "EXTREME_LEG" not in verdict.reason
 
 
 def test_an_unreadable_risk_REFUSES_and_is_never_counted_as_zero():
@@ -139,10 +149,11 @@ def _launch_body(**over):
     return body
 
 
-# A pair that does NOT fit: SOS Fade 10% and the extreme leg 5% — 15% against the 10% default
-# cap. It was the shipped defaults until SOS Fade's moved to 5% on 2026-09-13; the fixture states
-# its own risks, so the defaults moving does not move it.
+# A pair that ADDS UP past the 10% default cap: SOS Fade 10% and the extreme leg 5%. Refused until
+# 2026-09-15; accepted with a note since. The fixture states its own risks.
 _OVER_CAP = {"sos_fade": {"exec_risk_pct": 10.0}, "extreme_leg": {"exec_risk_pct": 5.0}}
+# A pair with ONE leg above the whole 10% cap — what is still refused.
+_ABOVE_CAP = {"sos_fade": {"exec_risk_pct": 12.0}, "extreme_leg": {"exec_risk_pct": 5.0}}
 
 
 def test_the_form_s_check_and_the_launch_refuse_with_the_SAME_sentence(
@@ -151,7 +162,7 @@ def test_the_form_s_check_and_the_launch_refuse_with_the_SAME_sentence(
     """One function, two callers — the page cannot show a reason the launch does not give.
 
     MUTATION: drop the refusal from `trigger_stack` → the launch answers 202 and this goes red."""
-    _seed(monkeypatch, tmp_path, _OVER_CAP)
+    _seed(monkeypatch, tmp_path, _ABOVE_CAP)
     check = client.post(
         "/backtests/stacks/risk-budget",
         json={"strategy_ids": ["sos_fade", "extreme_leg"], "risk_cap_pct": 10},
@@ -160,8 +171,8 @@ def test_the_form_s_check_and_the_launch_refuse_with_the_SAME_sentence(
     # working form look broken.
     assert check.status_code == 200, check.text
     body = check.json()
-    assert body["fits"] is False and body["total_pct"] == 15.0
-    assert [leg["risk_pct"] for leg in body["legs"]] == [10.0, 5.0]
+    assert body["fits"] is False and body["total_pct"] == 17.0
+    assert [leg["risk_pct"] for leg in body["legs"]] == [12.0, 5.0]
 
     with patch("services.portfolio_runner.launch") as launched:
         res = client.post("/backtests/stack", json=_launch_body())
@@ -170,12 +181,28 @@ def test_the_form_s_check_and_the_launch_refuse_with_the_SAME_sentence(
     assert not launched.called
 
 
+def test_legs_that_only_ADD_UP_past_the_cap_are_accepted_by_both(client, tmp_path, monkeypatch):
+    """🔴 2026-09-15. MUTATION: restore the sum refusal → the launch answers 400 → red. MUTATION:
+    drop `note` from the response → red."""
+    _seed(monkeypatch, tmp_path, _OVER_CAP)
+    check = client.post(
+        "/backtests/stacks/risk-budget",
+        json={"strategy_ids": ["sos_fade", "extreme_leg"], "risk_cap_pct": 10},
+    )
+    body = check.json()
+    assert body["fits"] is True and body["reason"] is None
+    assert "15%" in body["note"] and "share the room" in body["note"]
+    with patch("services.portfolio_runner.launch"):
+        res = client.post("/backtests/stack", json=_launch_body())
+    assert res.status_code == 202, res.text
+
+
 def test_a_leg_brought_down_to_fit_is_accepted_by_both(client, tmp_path, monkeypatch):
     """The per-leg risk box sends a leg's override; both callers must read it, or the page says
     it fits while the launch refuses on the stored default.
 
     MUTATION: resolve each leg off its stored defaults only → red."""
-    _seed(monkeypatch, tmp_path, _OVER_CAP)
+    _seed(monkeypatch, tmp_path, _ABOVE_CAP)
     lowered = {"sos_fade": {"exec_risk_pct": 5.0}}
     check = client.post(
         "/backtests/stacks/risk-budget",
@@ -196,7 +223,7 @@ def test_a_SCREEN_is_never_refused_on_the_cap(client, tmp_path, monkeypatch):
     """A screen gives every leg its own full account — there is no shared cap to exceed.
 
     MUTATION: apply the refusal regardless of mode → red."""
-    _seed(monkeypatch, tmp_path, _OVER_CAP)
+    _seed(monkeypatch, tmp_path, _ABOVE_CAP)
     # The screen path schedules its legs as a task, so the stand-in has to be awaitable.
     with patch("routers.stacks.run_sweep", new=AsyncMock()):
         res = client.post("/backtests/stack", json=_launch_body(mode="screen"))
@@ -205,9 +232,9 @@ def test_a_SCREEN_is_never_refused_on_the_cap(client, tmp_path, monkeypatch):
 
 def test_the_recovery_leg_COUNTS_against_the_cap(client, tmp_path, monkeypatch):
     """A recovery can hold a position while its parent opens the next one, so it spends the same
-    budget. SOS Fade 8% plus a half-size recovery (4%) is 12% — over a 10% cap.
+    budget. SOS Fade 8% plus a half-size recovery (4%) is 12% — past a 10% cap, so they share it.
 
-    MUTATION: leave the recovery leg out of the budget → it fits at 8% and this goes red."""
+    MUTATION: leave the recovery leg out of the budget → it totals 8% with no note → red."""
     _seed(
         monkeypatch,
         tmp_path,
@@ -223,7 +250,8 @@ def test_the_recovery_leg_COUNTS_against_the_cap(client, tmp_path, monkeypatch):
         },
     )
     body = check.json()
-    assert body["fits"] is False and body["total_pct"] == 12.0
+    assert body["fits"] is True and body["total_pct"] == 12.0
+    assert "12%" in body["note"]
     rec = body["legs"][-1]
     assert rec["recovery_of"] == "sos_fade" and rec["risk_pct"] == 4.0
     assert "(on Sos Fade)" in rec["name"]

@@ -23,7 +23,10 @@ undo it one layer up. The reader decides; this makes sure they cannot decide wit
   - every bot has to be on ONE demo account today, which is the set that was proven together;
   - nothing may be RUNNING — a bot reads its config at startup, so a moved config on a running
     bot means the page shows a live account while the process trades the demo one;
-  - the shares still have to fit under the budget the set arrives with.
+  - no share may be unreadable, and no one bot may risk more than the whole budget the set
+    arrives with. Since 2026-09-15 shares that merely ADD UP past it are a warning, not a refusal
+    — the bots share the room — and the set arrives ranked after the live account's own bots, in
+    the order it held on demo.
 
 🔴 **THE RISK BUDGET IS CARRIED, NOT RE-DERIVED, and this is the trap that made the module.**
 `bot_accounts.assign_plan` writes `account_risk_cap_pct = None` for the FIRST bot on an account,
@@ -43,8 +46,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from services import bot_accounts
 from services.bot_account_registry import RegisteredAccount
-from services.bot_accounts import AccountBot, AccountGroup, AssignPlan, risk_pct_of, share_overflow
+from services.bot_accounts import (
+    AccountBot,
+    AccountGroup,
+    AssignPlan,
+    risk_pct_of,
+    share_overflow,
+    sharing_note,
+)
 from services.stack_settings_import import BotTarget
 
 __all__ = [
@@ -305,16 +316,40 @@ def plan_go_live(
             )
         )
 
-    # ── the shares must still fit, AFTER everything this would write ─────────────────────
-    overflow = share_overflow(_hypothetical(plan, moving, destination_group), cap)
+    # ── the priority order the set arrives in ────────────────────────────────────────────
+    # Each move was planned alone, so every arrival was given the SAME next rank. They are numbered
+    # here instead: after every bot already on the live account, in the order they held on demo
+    # (unranked last, then by key) — the set keeps the order it was proven in.
+    base = max(
+        (b.priority for b in (destination_group.bots if destination_group else []) if b.priority),
+        default=0,
+    )
+    demo_order = sorted(
+        moving,
+        key=lambda b: (
+            bot_accounts.priority_of(b.config or {}) is None,
+            bot_accounts.priority_of(b.config or {}) or 0,
+            b.key,
+        ),
+    )
+    rank = {b.key: base + i + 1 for i, b in enumerate(demo_order)}
+    for m in plan.moves:
+        m.fields["account_priority"] = rank[m.bot_key]
+
+    # ── the shares must still be acceptable, AFTER everything this would write ───────────
+    # Since 2026-09-15 only an unreadable share or ONE bot above the whole cap refuses; shares that
+    # add up past the cap are said as a warning (`sharing_note`), never refused.
+    arrived = _hypothetical(plan, moving, destination_group)
+    overflow = share_overflow(arrived, cap)
     if overflow:
         return _blocked(
-            f"account {destination.account} would be over-subscribed once this set arrives — "
-            f"{overflow} Nothing is moved: the set's own numbers were produced with these shares "
-            f"fitting."
+            f"account {destination.account} cannot take this set — {overflow} Nothing is moved."
         )
 
     plan.warnings.extend(_warnings(plan, moving, destination_group, cap_note))
+    note = sharing_note(arrived, cap)
+    if note:
+        plan.warnings.append(note)
     return plan
 
 

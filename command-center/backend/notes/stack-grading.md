@@ -493,7 +493,9 @@ one that goes stale. What this module adds is the half a per-bot planner cannot 
   and the account's cap is whatever its bots agree on, so one left behind leaves the account with
   two of them — the state `bot_accounts` refuses to report a cap for at all;
 - after everything is written the per-trade shares must still FIT under that budget
-  (`share_overflow`), or the bots quietly stop being the bots that were measured.
+  (`share_overflow`), or the bots quietly stop being the bots that were measured. ⚠ Since
+  2026-09-15 that refuses only an unreadable share or ONE bot above the whole budget; shares that
+  add up past it are a warning (`accounts-risk.md` → *Shares may add up past the cap*).
 
 🔴 **THE SHARE CHECK READS THE PROPOSED SHARES, NEVER TODAY'S.** Checking the current state
 passes every write that CREATES the problem and refuses every write that FIXES it — the same rule
@@ -1190,8 +1192,10 @@ of these holds:**
 
 - a leg trades off another's results — a recorded parent, OR a strategy that needs one and has none
   recorded (the same two-sided test `gradable.rebuild_legs` makes);
-- the shares add up past the cap, via **`bot_accounts.share_overflow`, the check the Bots page and
-  the copy-to-demo button use** — never a private sum (it carries a tolerance a raw sum lacks);
+- the shares add up past the cap, via **`bot_accounts.shares_exceed_cap`, the check the Bots page
+  uses to say the bots share the room** — never a private sum (it carries a tolerance a raw sum
+  lacks). ⚠ It asked `share_overflow` until 2026-09-15, when that stopped refusing a sum;
+  `shares_exceed_cap` answers `None` for an unreadable share, which reads as needed;
 - the stack's own run BLOCKED an entry, or trimmed one by more than `_STACK_TRIM_IMMATERIAL` (1%);
 - anything is unreadable — cap, a share, the cap-record, or a record that disagrees with its own
   summary's count. **`portfolio_runner.read_contention` keeps `[]` (never bound) apart from `None`

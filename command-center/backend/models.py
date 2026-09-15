@@ -896,12 +896,13 @@ class BotAccountBot(BaseModel):
     symbol: str
     magic: int
     strategy_package: str
-    # Per-TRADE risk, the layer BELOW the cap. Served so the page can put the two side by side:
-    # a cap at or under a bot's own risk % makes the bots take turns rather than share, and that
-    # is invisible from the cap alone.
+    # Per-TRADE risk, the layer BELOW the cap. Served so the page can put the two side by side.
     risk_pct: Optional[float] = None
     cap_pct: Optional[float] = None
     unreadable: bool = False  # its config could not be parsed — its cap is UNKNOWN, not absent
+    # Its place in the account's priority order: 1 sizes first when two bots close a bar together.
+    # `None` = no order set. The group lists its bots in this order (unranked last).
+    priority: Optional[int] = None
 
 
 class BotAccountGroup(BaseModel):
@@ -924,14 +925,15 @@ class BotAccountGroup(BaseModel):
     cap_agrees: bool = True
     cap_unknown: bool = False  # at least one config unreadable, so the cap cannot be confirmed
     stacked: bool = False  # more than one bot on this BALANCE (never true off an account)
-    cap_takes_turns: bool = False  # the cap is at or below the largest per-trade risk here
     # The shares handed out here, added up. `None` when ANY bot's share is unreadable — never a
     # partial sum, because a total missing one bot's share reads as an account that fits.
     share_total_pct: Optional[float] = None
-    # Why those shares do NOT fit under the ceiling — the same sentence the save is refused with,
-    # served so an over-subscribed account is visible BEFORE somebody types a number. `None` when
-    # they fit, when there is no cap, or when the caps disagree.
+    # Why those shares cannot be accepted — the same sentence the save is refused with. Since
+    # 2026-09-15 only an unreadable share or ONE bot above the whole cap; `None` when acceptable,
+    # when there is no cap, or when the caps disagree.
     share_overflow_reason: Optional[str] = None
+    # The shares add up past the cap, so the bots share the room — a sentence, informational only.
+    share_note: Optional[str] = None
     # The share still free under the cap — negative when over, `None` with no cap or an unreadable
     # share. Served so the page never subtracts the two numbers above itself.
     room_pct: Optional[float] = None
@@ -1102,12 +1104,13 @@ class BotAccountRiskShare(BaseModel):
 class BotAccountRiskPlan(BaseModel):
     """An account's risk budget after a proposed change — see `BotAccountRiskRequest`.
 
-    ⚠ `reason` and `refused` are different answers. `reason` says the result does not fit under the
-    cap; `refused` says a SAVE would be refused, which happens only when the change also ADDS risk.
-    Lowering a share on an account that is still over afterwards has a `reason` and no `refused` —
-    it is the right direction, and refusing it made an over-subscribed account unfixable.
+    ⚠ `reason` and `refused` are different answers. `reason` says the result cannot be accepted (an
+    unreadable share, or one bot above the whole cap); `refused` says a SAVE would be refused, which
+    happens only when the change also ADDS risk. Lowering a share that is still above the cap has a
+    `reason` and no `refused` — it is the right direction.
+    ⚠ `note` is NOT a refusal: the shares add up past the cap, so the bots share the room (2026-09-15).
     ⚠ `fit_cap` / `fit_shares` are the two one-click fixes, computed here so the page never does
-    the arithmetic: the smallest cap the shares fit under, and the shares scaled to fit the cap.
+    the arithmetic: the cap raised to the largest share, and each share above the cap brought to it.
     """
 
     account: int
@@ -1122,12 +1125,34 @@ class BotAccountRiskPlan(BaseModel):
     changed: bool = False
     fit_cap: Optional[float] = None
     fit_shares: Optional[dict[str, float]] = None
+    note: Optional[str] = None
     # When a saved change reaches the running bots — a sentence, because it is the half a reader
     # most needs and the least visible.
     applies: str = ""
     # A save only: the bots whose configs were written, and whether it reached the VPS.
     written: list[str] = []
     deployed: Optional[bool] = None
+    detail: str = ""
+
+
+class BotAccountPriorityRequest(BaseModel):
+    """An account's priority order — `PUT /bots/accounts/{account}/priority` (2026-09-15).
+
+    `order` lists EVERY bot on the account exactly once, first = sizes first when two close a bar
+    together. Written as ranks 1..n into each bot's config. Rules: `bot_accounts.priority_order_plan`.
+    """
+
+    order: list[str]
+    deploy: bool = True  # commit + push + VPS pull; False writes locally only
+
+
+class BotAccountPriorityResult(BaseModel):
+    account: int
+    order: list[str]  # the order as saved
+    changed: bool
+    written: list[str] = []  # the bots whose configs were written
+    deployed: Optional[bool] = None
+    applies: str = ""
     detail: str = ""
 
 
@@ -2533,6 +2558,8 @@ class StackRiskBudgetResponse(BaseModel):
     total_pct: Optional[float] = None  # None when ANY leg is unreadable — never a partial sum
     fits: bool
     reason: Optional[str] = None  # the sentence the launch refuses with; None when it fits
+    # The legs add up past the cap, so they share the room — informational, never a refusal.
+    note: Optional[str] = None
 
 
 class StackResponse(BaseModel):

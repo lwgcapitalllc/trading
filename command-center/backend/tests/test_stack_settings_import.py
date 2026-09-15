@@ -279,20 +279,24 @@ def test_a_stack_that_recorded_NO_budget_leaves_the_ceiling_alone_and_says_so():
     assert any("no account risk budget" in w for w in plan.warnings)
 
 
-# ── The shares must still fit, AFTER the write ───────────────────────────────
+# ── The shares must still be acceptable, AFTER the write ─────────────────────
 
 
-def test_an_OVER_SUBSCRIBED_result_blocks_the_copy():
-    """Aaron's rule: the risk per trade cannot add up to more than the cap. Over the ceiling the
-    bots do not share the budget, they take turns — so each one stops being the bot that was
-    measured, silently.
-
-    ⚠ Watched RED by dropping the share check.
-    """
+def test_shares_that_ADD_UP_past_the_cap_are_WARNED_not_blocked():
+    """🔴 Since 2026-09-15 the cap limits open risk, not the sum — the bots share the room, and the
+    copy says so rather than refusing. MUTATION: restore the sum refusal → blocked → red.
+    MUTATION: drop the warning → red."""
     legs = [_leg("sos_fade", exec_risk_pct=6.0), _leg("extreme_leg", exec_risk_pct=6.0)]
     plan = _plan(legs, TWO_BOTS, cap=10.0)
-    assert plan.blocked
-    assert "over-subscribed" in plan.blocked
+    assert plan.blocked is None, plan.blocked
+    assert any("12%" in w and "share the room" in w for w in plan.warnings), plan.warnings
+
+
+def test_a_share_ABOVE_the_whole_cap_blocks_the_copy():
+    """It could never trade at full size. ⚠ Watched RED by dropping the share check."""
+    legs = [_leg("sos_fade", exec_risk_pct=12.0), _leg("extreme_leg", exec_risk_pct=5.0)]
+    plan = _plan(legs, TWO_BOTS, cap=10.0)
+    assert plan.blocked and "full size" in plan.blocked
 
 
 def test_the_share_check_reads_the_PROPOSED_shares_not_todays():
@@ -316,13 +320,12 @@ def test_a_bot_on_the_account_that_is_NOT_a_leg_still_counts_against_the_budget(
     """It shares the balance, so it spends the budget whether or not this stack mentions it.
     Leaving it out reports a set of shares that fits while the account's does not.
 
-    ⚠ Watched RED by summing the stack's legs alone.
+    ⚠ MUTATION: sum the stack's legs alone → 10% fits, no sharing warning → red.
     """
     bots = TWO_BOTS + [_bot("b_leg_demo", pkg="b_leg", risk=4.0)]
     plan = _plan(TWO_LEGS, bots, cap=10.0)
-    assert plan.blocked
-    assert "over-subscribed" in plan.blocked
-    assert "b_leg_demo" in plan.blocked
+    assert plan.blocked is None, plan.blocked
+    assert any("14%" in w and "share the room" in w for w in plan.warnings), plan.warnings
 
 
 def test_a_bot_on_the_account_that_is_not_a_leg_is_WARNED_about():

@@ -62,6 +62,8 @@ from models import (
     BotAccountGroup,
     BotAccountPassword,
     BotAccountPin,
+    BotAccountPriorityRequest,
+    BotAccountPriorityResult,
     BotAccountRegistration,
     BotAccountRegistrationWrite,
     BotAccountRiskPlan,
@@ -1913,9 +1915,9 @@ def list_bot_accounts():
             cap_agrees=g.cap_agrees,
             cap_unknown=g.cap_unknown,
             stacked=g.stacked,
-            cap_takes_turns=g.cap_takes_turns,
             share_total_pct=g.share_total_pct,
             share_overflow_reason=g.share_overflow_reason,
+            share_note=g.share_note,
             room_pct=g.room_pct,
             magic_clash=g.magic_clash,
             pinned=g.pinned,
@@ -2942,6 +2944,7 @@ def _risk_plan_view(plan, **extra) -> BotAccountRiskPlan:
         changed=plan.changed,
         fit_cap=plan.fit_cap,
         fit_shares=plan.fit_shares,
+        note=plan.note,
         applies=_RISK_APPLIES,
         **extra,
     )
@@ -3066,6 +3069,123 @@ def set_account_risk(account: int, body: BotAccountRiskRequest):
         account=account,
     )
     return _risk_plan_view(plan, written=written, deployed=True, detail=summary)
+
+
+# When a saved priority order reaches the running bots. A claim about algos code: each bot reads
+# its own and its peers' `account_priority` fresh off disk every bar (`algos/shared/account_priority.py`).
+_PRIORITY_APPLIES = "Each bot reads the new order at its next bar — no restart."
+
+
+@router.put("/accounts/{account}/priority", response_model=BotAccountPriorityResult)
+def set_account_priority(account: int, body: BotAccountPriorityRequest):
+    """Save one account's PRIORITY order — which bot sizes first when two close a bar together.
+
+    Aaron, 2026-09-15: any number of bots may share an account's cap; a bot short of room trades
+    what is left down to half its share, and when two signal at once the higher one goes first.
+    This writes that order as `account_priority` = 1..n into each bot's instance config, through the
+    SAME write → commit → push → VPS pull path the risk-budget save uses, in ONE commit.
+
+    ⚠ **The order must list EXACTLY the bots on the account** (400 otherwise) — a partial order
+    leaves a bot holding a rank from an older order nobody chose (`bot_accounts.priority_order_plan`).
+    ⚠ **Any config that cannot be read refuses the whole write (409)** — one on this account leaves
+    its rank unwritten, and one in the unreadable bucket might BE on this account, so the order
+    could not be known to be complete. Every config is read before any is written.
+    ⚠ **Running bots are fine** — the order is re-read every bar (`_PRIORITY_APPLIES`).
+    """
+    groups = _account_groups()
+    group = next((g for g in groups if g.kind == "account" and g.account == account), None)
+    if group is None or not group.bots:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No bot is on account {account}, so there is no order to set.",
+        )
+    unreadable = sorted(
+        b.key
+        for g in groups
+        for b in g.bots
+        if b.unreadable and (g.kind == "unknown" or g is group)
+    )
+    if unreadable:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{', '.join(unreadable)} cannot be read, so it cannot be told whether "
+            f"{'it is' if len(unreadable) == 1 else 'they are'} on account {account} — an order "
+            f"written now might leave a bot out. Fix the config first; nothing was written.",
+        )
+    try:
+        ranks = bot_accounts.priority_order_plan(group, body.order)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Read EVERY config before writing ANY — a read failing half-way must leave no bot changed.
+    datas: dict[str, dict] = {}
+    for key in body.order:
+        try:
+            datas[key] = _read_instance_config(key)
+        except Exception as e:  # noqa: BLE001 - a missing file and a malformed one both refuse
+            raise HTTPException(
+                status_code=409,
+                detail=f"{key}'s config could not be read ({e}), so the order was not written to "
+                f"any bot on account {account}.",
+            )
+
+    names = {b.key: b.display for b in group.bots}
+    order_words = " → ".join(names.get(k, k) for k in body.order)
+    targets = [k for k in body.order if datas[k].get("account_priority") != ranks[k]]
+    if not targets:
+        return BotAccountPriorityResult(
+            account=account,
+            order=body.order,
+            changed=False,
+            applies=_PRIORITY_APPLIES,
+            detail="Nothing to change — the bots already hold this order.",
+        )
+
+    paths = []
+    for key in targets:
+        datas[key]["account_priority"] = ranks[key]
+        _write_instance_config(key, datas[key])
+        paths.append(_BOT_INSTANCE_MAP[key]["path"])
+    summary = f"account {account} priority — {order_words}"
+
+    if not body.deploy:
+        return BotAccountPriorityResult(
+            account=account,
+            order=body.order,
+            changed=True,
+            written=targets,
+            deployed=False,
+            applies=_PRIORITY_APPLIES,
+            detail=summary,
+        )
+    try:
+        _git_commit_push(
+            paths,
+            f"priority: {summary} [command center]",
+            "an account's priority order written to its bots' instance configs from the Bots "
+            "page; an operational deployment, and the order is in the message",
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
+    try:
+        _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+    _notify_telegram(
+        alert("⚙️", "PRIORITY CHANGED", f"account {account}", order_words, _PRIORITY_APPLIES),
+        account=account,
+    )
+    return BotAccountPriorityResult(
+        account=account,
+        order=body.order,
+        changed=True,
+        written=targets,
+        deployed=True,
+        applies=_PRIORITY_APPLIES,
+        detail=summary,
+    )
 
 
 def _declared_strategy_params(strategy_package: str) -> "set[str] | None":
@@ -3259,9 +3379,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    # Aaron, 2026-09-03: the shares on an account may not add up to more than its ceiling.
-    # Checked on the account this bot is JOINING, with this bot counted in — benching is always
-    # allowed, since leaving an account can only ever free room.
+    # The shares on the account this bot is JOINING, with this bot counted in. Since 2026-09-15
+    # only an unreadable share or ONE bot above the whole cap is refused — shares that add up past
+    # the cap are accepted, and the bots share the room. Benching is always allowed.
     if update.account is not None:
         joining = [b for b in (target.bots if target is not None else []) if b.key != bot_key]
         joining.append(

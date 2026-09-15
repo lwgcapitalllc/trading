@@ -85,36 +85,60 @@ def test_every_bot_uncapped_is_coherent_and_not_a_disagreement():
     assert g.cap_agrees is True and g.risk_cap_pct is None
 
 
-# ── a cap at or under a bot's own risk % does not SHARE, it takes turns ───────
-def test_a_cap_equal_to_the_per_trade_risk_takes_turns():
-    """The two numbers together imply something neither states: at a 10% cap against two bots
-    each risking 10%, one full-size position or resting order fills the whole budget and the
-    other bot is refused until it comes back."""
+# ── shares that ADD UP past the cap SHARE the room — said, never refused (2026-09-15) ──
+#
+# Aaron: the cap limits the risk OPEN at any moment, not the sum of the shares. This replaced the
+# "take turns" flag, which said the same fact for the narrower case of a cap at or under one share.
+def test_shares_that_add_up_past_the_cap_are_NOTED_and_not_refused():
+    """Two bots at 10% under a 10% cap. MUTATION: refuse on the sum again → the reason is set and
+    this goes red; drop `share_note` → red on the note."""
     g = ba.group_by_account(
         {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=10.0, risk=10.0)}
     )[0]
-    assert g.cap_takes_turns is True
+    assert g.share_overflow_reason is None
+    assert "20%" in g.share_note and "10% cap" in g.share_note and "priority" in g.share_note
 
 
-def test_a_cap_above_the_summed_risk_does_not_take_turns():
+def test_shares_that_fit_carry_no_note():
     g = ba.group_by_account(
         {"a": _cfg("a", cap=25.0, risk=10.0), "b": _cfg("b", magic=2, cap=25.0, risk=10.0)}
     )[0]
-    assert g.cap_takes_turns is False
+    assert g.share_note is None
 
 
-def test_a_single_bot_never_takes_turns_with_itself():
-    """It has no one to contend with, and its own exposure is excluded from its own check."""
-    g = ba.group_by_account({"a": _cfg("a", cap=10.0, risk=10.0)})[0]
-    assert g.cap_takes_turns is False
-
-
-def test_turn_taking_is_not_claimed_when_the_caps_disagree():
+def test_the_note_is_not_claimed_when_the_caps_disagree():
     """There is no account cap to compare against, so the question cannot be answered."""
     g = ba.group_by_account(
         {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=50.0, risk=10.0)}
     )[0]
-    assert g.cap_takes_turns is False
+    assert g.share_note is None
+
+
+# ── the priority order (2026-09-15) ───────────────────────────────────────────
+def test_an_accounts_bots_are_listed_in_PRIORITY_order_unranked_last():
+    """The list IS the order the bots size in when two signal together. MUTATION: drop the sort →
+    they come back by key and this goes red."""
+    g = ba.group_by_account(
+        {
+            "a": {**_cfg("a"), "account_priority": 2},
+            "b": {**_cfg("b", magic=2), "account_priority": 1},
+            "c": _cfg("c", magic=3),
+            "d": {**_cfg("d", magic=4), "account_priority": 3},
+        }
+    )[0]
+    assert [b.key for b in g.bots] == ["b", "a", "d", "c"]
+    assert [b.priority for b in g.bots] == [1, 2, 3, None]
+
+
+@pytest.mark.parametrize("raw", [True, 0, -1, "1", 1.0, None])
+def test_a_priority_that_is_not_a_positive_whole_number_is_NO_order(raw):
+    """The live side's own reading (`algos/shared/account_priority._rank`): a bool is not rank 1."""
+    assert ba.priority_of({"account_priority": raw}) is None
+
+
+def test_the_priority_plan_numbers_the_order_1_to_n():
+    g = ba.group_by_account({"a": _cfg("a"), "b": _cfg("b", magic=2)})[0]
+    assert ba.priority_order_plan(g, ["b", "a"]) == {"b": 1, "a": 2}
 
 
 # ── writing the cap is all-or-nothing ─────────────────────────────────────────
@@ -175,26 +199,35 @@ def test_the_endpoint_SERVES_the_shares_it_computed(client, monkeypatch):
     a comparison. It is the scale-of-1 lesson in the root CLAUDE.md: check that a test's inputs can
     distinguish the behaviours it names.
 
-    So the grouping is STUBBED with an over-subscribed account, where the total is a distinctive
-    number and the reason is a sentence. MUTATION: drop either field from the endpoint and this
-    reddens on that field alone.
+    So the grouping is STUBBED with two accounts where each answer is a distinctive value: one
+    whose shares add up past the cap (a total and a NOTE), one with a bot above the whole cap (a
+    REASON). MUTATION: drop any of the three fields from the endpoint and this reddens on it alone.
     """
     from routers import bots as bots_router
 
-    group = ba.AccountGroup(
+    shared = ba.AccountGroup(
         account=700107749,
         server="PUPrime-Demo",
         kind="account",
         bots=[_bot("a", 10.0), _bot("b", 5.0)],
         risk_cap_pct=10.0,
     )
-    assert group.share_total_pct == 15.0
-    assert group.share_overflow_reason is not None, "the stub must be able to tell the two apart"
-    monkeypatch.setattr(bots_router, "_account_groups", lambda: [group])
+    above = ba.AccountGroup(
+        account=700152905,
+        server="PUPrime-Demo",
+        kind="account",
+        bots=[_bot("c", 12.0)],
+        risk_cap_pct=10.0,
+    )
+    assert shared.share_total_pct == 15.0
+    assert shared.share_note is not None, "the stub must be able to tell the note from its absence"
+    assert above.share_overflow_reason is not None, "and the reason from its absence"
+    monkeypatch.setattr(bots_router, "_account_groups", lambda: [shared, above])
 
-    row = client.get("/bots/accounts").json()[0]
-    assert row["share_total_pct"] == 15.0
-    assert row["share_overflow_reason"] == group.share_overflow_reason
+    rows = {g["account"]: g for g in client.get("/bots/accounts").json()}
+    assert rows[700107749]["share_total_pct"] == 15.0
+    assert rows[700107749]["share_note"] == shared.share_note
+    assert rows[700152905]["share_overflow_reason"] == above.share_overflow_reason
 
 
 # ── pinning (2026-09-14): one flag, scoped to demo/live, read off the registry ─
@@ -395,9 +428,10 @@ def test_a_move_back_to_the_SAME_account_keeps_the_adjustment():
 
 
 def test_benching_leaves_the_adjustment_alone():
-    """The bench writes only `account: None`; a later move off it clears the adjustment then."""
+    """The bench writes `account: None` and clears the priority; a later move off it clears the
+    adjustment then."""
     plan = ba.assign_plan("a", None, current_account=700107749, current_adjustment=-50.0)
-    assert plan.fields == {"account": None}
+    assert plan.fields == {"account": None, "account_priority": None}
 
 
 def test_joining_an_UNCAPPED_account_adopts_the_absence_of_a_cap():
@@ -409,12 +443,39 @@ def test_joining_an_UNCAPPED_account_adopts_the_absence_of_a_cap():
     assert plan.fields["account_risk_cap_pct"] is None
 
 
-def test_benching_writes_ONLY_the_account():
+def test_benching_writes_ONLY_the_account_and_CLEARS_the_priority():
     """The server, terminal and cap are what make re-assignment cheap, and a cap of None on a
-    benched bot is not a claim about any account — the startup guard exempts the bench."""
+    benched bot is not a claim about any account — the startup guard exempts the bench. The
+    priority IS a claim about the account left (2026-09-15). MUTATION: drop the clear → red."""
     plan = ba.assign_plan("a", None)
-    assert plan.fields == {"account": None}
+    assert plan.fields == {"account": None, "account_priority": None}
     assert plan.adopt_terminal_from == ""
+
+
+def test_a_bot_JOINING_an_account_takes_the_NEXT_rank():
+    """After every bot already there — the highest rank plus one, not the count plus one.
+    MUTATION: write `len(bots) + 1` → 3 instead of 4 → red. MUTATION: drop the write → red."""
+    target = ba.group_by_account(
+        {
+            "a": {**_cfg("a"), "account_priority": 1},
+            "b": {**_cfg("b", magic=2), "account_priority": 3},
+        }
+    )[0]
+    plan = ba.assign_plan("newbot", 700107749, target=target, current_account=None)
+    assert plan.fields["account_priority"] == 4
+
+
+def test_the_first_bot_on_an_account_takes_rank_ONE():
+    plan = ba.assign_plan("newbot", 700152905, registered=_Reg(), current_account=None)
+    assert plan.fields["account_priority"] == 1
+
+
+def test_a_move_that_KEEPS_the_account_keeps_its_rank():
+    """A re-save onto the same account must not push a reordered bot to the back.
+    MUTATION: write the next rank on every move → red."""
+    target = ba.group_by_account({"a": {**_cfg("a"), "account_priority": 1}})[0]
+    plan = ba.assign_plan("a", 700107749, target=target, current_account=700107749)
+    assert "account_priority" not in plan.fields
 
 
 def test_joining_an_account_whose_bots_DISAGREE_about_the_cap_is_refused():
@@ -517,11 +578,12 @@ def test_a_RUNNING_bot_refuses_to_be_moved(client, monkeypatch):
     assert "running" in r.json()["detail"]
 
 
-# ── the shares may not add up to more than the ceiling (2026-09-03) ───────────
+# ── what the shares may be under the ceiling (2026-09-03, rewritten 2026-09-15) ─
 #
-# Aaron: "the risk per trade cannot add up to more than that cap". `cap_takes_turns` already
-# stated the fact — a cap that lets both hold has to exceed the SUM — and nothing enforced it.
-def _bot(key, risk):
+# 2026-09-03 → 2026-09-15 the SUM was refused ("the risk per trade cannot add up to more than that
+# cap"). Since then the cap limits open risk, not the sum: shares that add up past it are NOTED
+# (`sharing_note`), and only an unreadable share or ONE bot above the whole cap is refused.
+def _bot(key, risk, priority=None):
     return ba.AccountBot(
         key=key,
         display=key.upper(),
@@ -529,6 +591,7 @@ def _bot(key, risk):
         magic=1,
         strategy_package="p",
         risk_pct=risk,
+        priority=priority,
     )
 
 
@@ -536,23 +599,35 @@ def test_two_five_percent_shares_FIT_a_ten_percent_cap():
     """🔴 The intended configuration, so it must not be a near miss. Binary floating point is
     what makes this worth a test rather than an assumption."""
     assert ba.share_overflow([_bot("a", 5.0), _bot("b", 5.0)], 10.0) is None
+    assert ba.shares_exceed_cap([_bot("a", 5.0), _bot("b", 5.0)], 10.0) is False
 
 
-def test_shares_that_EXCEED_the_cap_are_refused():
-    assert ba.share_overflow([_bot("a", 5.0), _bot("b", 10.0)], 10.0) is not None
+def test_shares_that_ADD_UP_past_the_cap_are_NOT_refused():
+    """🔴 The 2026-09-15 change. MUTATION: restore the sum refusal → red."""
+    bots = [_bot("a", 5.0), _bot("b", 10.0)]
+    assert ba.share_overflow(bots, 10.0) is None
+    assert ba.shares_exceed_cap(bots, 10.0) is True
 
 
-def test_a_THIRD_bot_is_what_tips_a_five_five_account_over():
-    """The case Aaron asked about outright. Two fit exactly; a third of any size does not."""
-    assert ba.share_overflow([_bot("a", 5.0), _bot("b", 5.0), _bot("c", 5.0)], 10.0) is not None
+def test_a_THIRD_bot_on_a_five_five_account_is_allowed_and_SAID():
+    """The case Aaron asked about outright, now allowed: the three share the room."""
+    bots = [_bot("a", 5.0), _bot("b", 5.0), _bot("c", 5.0)]
+    assert ba.share_overflow(bots, 10.0) is None
+    assert "15%" in ba.sharing_note(bots, 10.0)
 
 
-def test_the_refusal_NAMES_the_shares_and_the_total():
-    """A refusal a reader cannot act on is a wall. It has to say what is on the account and by
-    how much, or the only way forward is opening three config files."""
-    msg = ba.share_overflow([_bot("a", 5.0), _bot("b", 10.0)], 10.0)
-    assert "15%" in msg and "10%" in msg
-    assert "A" in msg and "B" in msg
+def test_ONE_bot_ABOVE_the_whole_cap_is_refused_and_NAMED():
+    """It could never trade at full size, even alone. The refusal names that bot and no other.
+    MUTATION: compare with `>=` → the 10% bot at a 10% cap is refused too → red."""
+    msg = ba.share_overflow([_bot("a", 10.0), _bot("b", 12.0)], 10.0)
+    assert msg is not None
+    assert "B 12%" in msg and "10%" in msg
+    assert "A 10%" not in msg
+
+
+def test_an_unreadable_share_makes_the_competition_question_UNKNOWN():
+    """Rule 1: `None`, never `False` — the stress test reads `False` as "they cannot compete"."""
+    assert ba.shares_exceed_cap([_bot("a", 5.0), _bot("b", None)], 10.0) is None
 
 
 def test_an_UNCAPPED_account_has_nothing_to_check():
@@ -644,11 +719,12 @@ def test_the_served_overflow_reason_is_the_SAME_call_the_save_makes():
     the float tolerance drifts away from the write path's, which is how the page ends up
     disagreeing with the save it is standing in front of."""
     g = ba.group_by_account(
-        {"a": _cfg("a", cap=10.0, risk=10.0), "b": _cfg("b", magic=2, cap=10.0, risk=5.0)}
+        {"a": _cfg("a", cap=10.0, risk=12.0), "b": _cfg("b", magic=2, cap=10.0, risk=5.0)}
     )[0]
     assert g.share_overflow_reason == ba.share_overflow(g.bots, g.risk_cap_pct)
     assert g.share_overflow_reason is not None
-    assert "15%" in g.share_overflow_reason
+    assert "12%" in g.share_overflow_reason
+    assert g.share_note is None, "a refused account says the refusal, not the note beside it"
 
 
 def test_the_intended_split_reports_NO_overflow():
@@ -684,10 +760,10 @@ def test_a_config_stating_no_risk_reads_as_UNKNOWN_not_zero():
     assert ba.risk_pct_of({}) is None
 
 
-# ── the three write points that can create an over-subscribed account ─────────
+# ── the three write points: lower the cap, add a bot, raise a share ───────────
 #
-# The rule is only real where it is ENFORCED. Each of these is a different way to arrive at the
-# same broken state: lower the ceiling under the shares, add a bot, or raise one bot's share.
+# The rule is only real where it is ENFORCED. Since 2026-09-15 each refuses only a share ABOVE the
+# whole cap (or unreadable); shares that merely add up past it go through.
 def _group(*bots, cap=10.0, account=700152905):
     g = ba.AccountGroup(account=account, server="PUPrime-Demo", kind="account")
     g.bots = list(bots)
@@ -696,9 +772,25 @@ def _group(*bots, cap=10.0, account=700152905):
     return g
 
 
-def test_LOWERING_the_cap_under_the_existing_shares_is_refused(client, monkeypatch):
-    """The shares do not move, so the ceiling coming down under them is the same broken state
-    arrived at from the other side."""
+def test_LOWERING_the_cap_under_ONE_share_is_refused(client, monkeypatch):
+    """The shares do not move, so the ceiling coming down under one of them is the same broken
+    state arrived at from the other side."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=10.0)],
+    )
+    r = client.patch("/bots/accounts/700152905/risk-cap", json={"risk_cap_pct": 4.0})
+    assert r.status_code == 409
+    assert "full size" in r.json()["detail"]
+
+
+def test_LOWERING_the_cap_under_the_SUM_is_not_refused(client, monkeypatch):
+    """🔴 The 2026-09-15 control: 5 + 5 under 8 shares the room. The request then stops at the
+    config read (the stub bots have no files) — past the check, which is all this asks.
+    MUTATION: restore the sum refusal → the detail names it → red."""
     from routers import bots as bots_router
 
     monkeypatch.setattr(
@@ -707,8 +799,9 @@ def test_LOWERING_the_cap_under_the_existing_shares_is_refused(client, monkeypat
         lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=10.0)],
     )
     r = client.patch("/bots/accounts/700152905/risk-cap", json={"risk_cap_pct": 8.0})
-    assert r.status_code == 409
-    assert "add up to" in r.json()["detail"]
+    detail = str(r.json().get("detail", ""))
+    assert "full size" not in detail and "add up to" not in detail
+    assert r.status_code != 409, r.text
 
 
 def test_a_cap_the_shares_FIT_is_not_refused_for_overflow(client, monkeypatch):
@@ -722,13 +815,12 @@ def test_a_cap_the_shares_FIT_is_not_refused_for_overflow(client, monkeypatch):
         lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=8.0)],
     )
     r = client.patch("/bots/accounts/700152905/risk-cap", json={"risk_cap_pct": 10.0})
-    assert "add up to" not in str(r.json().get("detail", ""))
+    assert "full size" not in str(r.json().get("detail", ""))
 
 
-def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeypatch):
-    """The case Aaron asked about: a third bot onto an account whose budget is fully allocated.
-    Refused at the MOVE, where it can still be reasoned about, rather than at 3am by whichever
-    bot happens to ask last."""
+def _join_stubs(monkeypatch, group, *, risk=5.0):
+    """The move's pre-checks answered without the box, b_leg_demo read as a benched bot at `risk`,
+    and every write captured — nothing touches the real config or the VPS."""
     from routers import bots as bots_router
 
     monkeypatch.setattr(bots_router, "_bot_running_state", lambda key: False)
@@ -737,14 +829,58 @@ def test_ADDING_a_bot_that_would_overflow_the_account_is_refused(client, monkeyp
     monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: {700152905})
     # So does the open-trade check (2026-09-13) — flat here, since this case is about the budget.
     monkeypatch.setattr(bots_router, "_holds_position", lambda key: False)
+    monkeypatch.setattr(bots_router, "_account_groups", lambda: [group])
     monkeypatch.setattr(
         bots_router,
-        "_account_groups",
-        lambda: [_group(_bot("a", 5.0), _bot("b", 5.0), cap=10.0)],
+        "_read_instance_config",
+        lambda key: {**_cfg(key, account=None, cap=None, risk=risk), "account_priority": 7},
+    )
+    written = {}
+    monkeypatch.setattr(
+        bots_router, "_write_instance_config", lambda k, d: written.__setitem__(k, d)
+    )
+    return written
+
+
+def test_ADDING_a_THIRD_bot_to_a_full_account_is_allowed_and_takes_the_NEXT_rank(
+    client, monkeypatch
+):
+    """🔴 The case Aaron asked about, now allowed (2026-09-15): a third bot onto an account whose
+    budget is fully allocated shares the room. It sizes after the two already there — rank 3,
+    whatever rank it held before. MUTATION: restore the sum refusal → 409 → red. MUTATION: drop
+    the rank write → it keeps the stale 7 → red."""
+    written = _join_stubs(
+        monkeypatch, _group(_bot("a", 5.0, priority=1), _bot("b", 5.0, priority=2), cap=10.0)
     )
     r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})
-    assert r.status_code == 409
-    assert "add up to" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert written["b_leg_demo"]["account"] == 700152905
+    assert written["b_leg_demo"]["account_priority"] == 3
+
+
+def test_ADDING_a_bot_whose_OWN_share_is_above_the_cap_is_refused(client, monkeypatch):
+    """It could never trade at full size here. MUTATION: drop the move's share check → written."""
+    written = _join_stubs(monkeypatch, _group(_bot("a", 5.0, priority=1), cap=10.0), risk=12.0)
+    r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})
+    assert r.status_code == 409 and "full size" in r.json()["detail"], r.text
+    assert written == {}
+
+
+def test_BENCHING_a_bot_CLEARS_its_priority(client, monkeypatch):
+    """Its rank described the account it left. MUTATION: drop the clear from the bench plan →
+    the stale 7 is written back → red."""
+    from routers import bots as bots_router
+
+    written = _join_stubs(monkeypatch, _group(_bot("a", 5.0), cap=10.0))
+    monkeypatch.setattr(
+        bots_router,
+        "_read_instance_config",
+        lambda key: {**_cfg(key, account=700152905, cap=10.0, risk=5.0), "account_priority": 7},
+    )
+    r = client.patch("/bots/b_leg_demo/account", json={"account": None, "deploy": False})
+    assert r.status_code == 200, r.text
+    assert written["b_leg_demo"]["account"] is None
+    assert written["b_leg_demo"]["account_priority"] is None
 
 
 def _stub_assign_route(monkeypatch, groups):
@@ -900,7 +1036,7 @@ def test_the_move_serves_its_bookkeeping_APART_from_its_warnings(client, monkeyp
 
 def test_a_first_cap_below_the_bots_own_risk_is_refused_before_the_write(client, monkeypatch):
     """The share check reads the cap the PLAN writes, so a chosen ceiling under the bot's own
-    per-trade risk is refused like any other over-subscribed account."""
+    per-trade risk is refused — the bot could never trade at full size under it."""
     bots_router = _stub_assign_route(monkeypatch, [])
     monkeypatch.setattr(
         bots_router,
@@ -913,7 +1049,7 @@ def test_a_first_cap_below_the_bots_own_risk_is_refused_before_the_write(client,
         "/bots/b_leg_demo/account",
         json={"account": 700152905, "risk_cap_pct": 3.0, "deploy": False},
     )
-    assert r.status_code == 409 and "add up to" in r.json()["detail"]
+    assert r.status_code == 409 and "full size" in r.json()["detail"]
     assert written == []
 
 
@@ -923,7 +1059,7 @@ def test_a_zero_first_cap_is_refused_like_any_cap(client):
     assert r.status_code == 422
 
 
-def test_RAISING_a_bots_own_risk_past_the_room_left_is_refused(client, monkeypatch):
+def test_RAISING_a_bots_own_risk_ABOVE_the_cap_is_refused(client, monkeypatch):
     """The third way in, and the easiest to reach — it is one number in a box on the Configure
     tab, and it is the one field that reaches a RUNNING bot."""
     from routers import bots as bots_router
@@ -933,12 +1069,39 @@ def test_RAISING_a_bots_own_risk_past_the_room_left_is_refused(client, monkeypat
         "_account_groups",
         lambda: [_group(_bot("sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
     )
+    written = []
+    monkeypatch.setattr(
+        bots_router, "_write_instance_config", lambda key, data: written.append(key)
+    )
+    r = client.patch(
+        "/bots/sos_fade_demo/runtime",
+        json={"values": {"exec_risk_pct": 12.0}, "deploy": False},
+    )
+    assert r.status_code == 409
+    assert "full size" in r.json()["detail"]
+    assert written == []
+
+
+def test_RAISING_a_bots_own_risk_past_the_ROOM_is_allowed(client, monkeypatch):
+    """🔴 The 2026-09-15 control: 9 + 5 under 10 shares the room. Stopped at the write, which is
+    the point it must reach. MUTATION: restore the sum refusal → 409 → red."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(
+        bots_router,
+        "_account_groups",
+        lambda: [_group(_bot("sos_fade_demo", 5.0), _bot("b", 5.0), cap=10.0)],
+    )
+    written = []
+    monkeypatch.setattr(
+        bots_router, "_write_instance_config", lambda key, data: written.append(key)
+    )
     r = client.patch(
         "/bots/sos_fade_demo/runtime",
         json={"values": {"exec_risk_pct": 9.0}, "deploy": False},
     )
-    assert r.status_code == 409
-    assert "add up to" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert written == ["sos_fade_demo"]
 
 
 def test_LOWERING_a_bots_own_risk_is_always_allowed(client, monkeypatch):

@@ -46,12 +46,12 @@ function group(over: Record<string, unknown> = {}) {
     cap_agrees: true,
     cap_unknown: false,
     stacked: false,
-    cap_takes_turns: false,
     // `null` = the shares could not be totalled, which is the safe default for a fixture: a
     // number here would be a second statement of the sum the backend computes, and it would go
     // stale the moment a check changed its bots. A check about the total states it.
     share_total_pct: null,
     share_overflow_reason: null,
+    share_note: null,
     magic_clash: [],
     ...over,
   }
@@ -417,18 +417,18 @@ async function openAccount(page: Page, account: number = ACCOUNT) {
   await expect(page.getByRole('complementary', { name: 'Account settings' })).toBeVisible()
 }
 
-// ⚠ Two bots at 10% under a 10% ceiling really IS over-subscribed, so this fixture carries the
-// refusal the backend would serve for it. Stating only the shares would describe an account the
-// backend cannot produce, which is a fixture more capable than production.
+// ⚠ Two bots at 10% under a 10% ceiling add up past it, so since 2026-09-15 this fixture carries
+// the SHARING note the backend serves for it — and no refusal, because neither share is above the
+// cap. Stating only the shares would describe an account the backend cannot produce.
 const STACKED = [
   group({
     bots: [bot('sos_fade', 'SOS Fade', 770115, 10), bot('b_leg', 'B-LEG', 770116, 10)],
     risk_cap_pct: 10,
     stacked: true,
-    cap_takes_turns: true,
     share_total_pct: 20,
-    share_overflow_reason:
-      'the risk shares on this account add up to 20%, which is more than its 10% ceiling',
+    room_pct: -10,
+    share_note:
+      'Shares add up to 20% against a 10% cap, so the bots share the room: a bot trades in full while there is room, the next trades what is left down to half its own size, and below that its trade is refused.',
   }),
 ]
 
@@ -451,17 +451,25 @@ test('two bots on one account render as ONE card, not one card each', async ({ p
 // Aaron: *"only thing I don't like is the 10 of 10 risks display."* It read like a typo and its bar
 // was full on every account, because two bots filling the cap is the setup he chose. The band now
 // says the cap and the ROOM, in words, and only "over" is coloured. Every figure is the server's —
-// `room_pct` and `share_overflow_reason` — so a fixture here states what the backend would serve.
-// MUTATION: read `room <= 0` as `room < 0` → the full case says "0% free" and goes red.
+// `room_pct`, `share_note` and `share_overflow_reason` — so a fixture states what it would serve.
+// 🔴 Since 2026-09-15 shares past the cap are a NORMAL state ("shared", grey); "over" is kept for
+// the one thing still refused, a bot whose own share is above the whole cap.
+// MUTATION: read `room === 0` as `room <= 0` → the shared case says "full" and goes red.
 // MUTATION: work the room out locally from cap − total → the no-`room_pct` case shows a room, red.
 for (const [name, over, state, words] of [
   ['full', { share_total_pct: 10, room_pct: 0 }, 'full', 'full'],
   ['room left', { share_total_pct: 5, room_pct: 5 }, 'free', '5% free'],
   [
+    'shared',
+    { share_total_pct: 13, room_pct: -3, share_note: 'Shares add up to 13% against a 10% cap.' },
+    'shared',
+    '13% shared',
+  ],
+  [
+    'a bot over the cap',
+    { share_total_pct: 12, room_pct: -2, share_overflow_reason: 'A 12% risks more than 10%.' },
     'over',
-    { share_total_pct: 13, room_pct: -3, share_overflow_reason: 'The shares add to 13%.' },
-    'over',
-    'over by 3%',
+    'a bot is over it',
   ],
 ] as const) {
   test(`the account band says its cap and the room under it — ${name}`, async ({ page }) => {
@@ -497,12 +505,58 @@ test('a payload with no room figure shows the cap alone — never a room worked 
   await expect(budget).not.toContainText('full')
 })
 
-test('a cap equal to the per-trade risk says the bots take turns', async ({ page }) => {
-  // This is the fact neither number states on its own, and it is why 10% is not "both may hold
-  // 10%". MUTATION: drop `cap_takes_turns` from the payload → red.
+test('shares past the cap say the bots SHARE the room, and nothing is refused', async ({
+  page,
+}) => {
+  // 🔴 2026-09-15: the cap limits open risk, not the sum, so this is a fact, not a fault. It
+  // replaced the "take turns" line. MUTATION: drop `share_note` from the payload → red.
   await mock(page, STACKED)
   await openAccount(page)
-  await expect(page.getByTestId('cap-takes-turns')).toContainText('take turns')
+  await expect(page.getByTestId('cap-sharing')).toContainText('share the room')
+  await expect(page.getByTestId('cap-overflow')).toHaveCount(0)
+})
+
+test('the priority list reorders by DRAG and saves the order it shows', async ({ page }) => {
+  // The order is the server's until touched; the drag makes a draft and Save sends exactly it.
+  // MUTATION: send the served order instead of the draft → the body is the old order → red.
+  // MUTATION: drop the `onDrop` move → the row stays put → red.
+  await mock(page, [
+    group({
+      bots: [
+        { ...bot('sos_fade', 'SOS Fade', 770115, 10, 5), priority: 1 },
+        { ...bot('b_leg', 'B-LEG', 770116, 10, 5), priority: 2 },
+      ],
+      risk_cap_pct: 10,
+      stacked: true,
+      share_total_pct: 10,
+      room_pct: 0,
+    }),
+  ])
+  const sent: unknown[] = []
+  await page.route('**/api/bots/accounts/*/priority', (route) => {
+    sent.push(route.request().postDataJSON())
+    return route.fulfill({
+      json: {
+        account: ACCOUNT,
+        order: ['b_leg', 'sos_fade'],
+        changed: true,
+        written: ['b_leg', 'sos_fade'],
+        deployed: true,
+        applies: 'Each bot reads the new order at its next bar — no restart.',
+        detail: 'saved',
+      },
+    })
+  })
+  await openAccount(page)
+  const rows = page.getByTestId('priority-row')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0)).toHaveAttribute('data-bot', 'sos_fade')
+  await expect(page.getByTestId('priority-save')).toBeDisabled()
+  await rows.nth(1).dragTo(rows.nth(0))
+  await expect(rows.nth(0)).toHaveAttribute('data-bot', 'b_leg')
+  await page.getByTestId('priority-save').click()
+  await expect.poll(() => sent.length).toBe(1)
+  expect(sent[0]).toMatchObject({ order: ['b_leg', 'sos_fade'] })
 })
 
 test('the running total of the shares is on screen beside the ceiling', async ({ page }) => {
@@ -517,13 +571,22 @@ test('the running total of the shares is on screen beside the ceiling', async ({
   await expect(page.getByTestId('cap-shares')).toContainText('against 10%')
 })
 
-test('an over-subscribed account says so BEFORE anybody saves', async ({ page }) => {
+test('a bot above the whole cap says so BEFORE anybody saves', async ({ page }) => {
   // The same sentence the write is refused with, served rather than re-derived here — so the
   // page cannot disagree with the save it is standing in front of.
   // MUTATION: drop `share_overflow_reason` from the payload → the banner disappears.
-  await mock(page, STACKED)
+  await mock(page, [
+    group({
+      bots: [bot('sos_fade', 'SOS Fade', 770115, 10, 12)],
+      risk_cap_pct: 10,
+      share_total_pct: 12,
+      room_pct: -2,
+      share_overflow_reason:
+        "SOS Fade 12% risks more on one trade than this account's whole 10% cap, so it could never trade at full size.",
+    }),
+  ])
   await openAccount(page)
-  await expect(page.getByTestId('cap-overflow')).toContainText('more than its 10% ceiling')
+  await expect(page.getByTestId('cap-overflow')).toContainText('could never trade at full size')
 })
 
 test('shares that cannot be totalled are NOT rendered as a number', async ({ page }) => {

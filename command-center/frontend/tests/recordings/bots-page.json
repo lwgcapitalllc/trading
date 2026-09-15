@@ -32,7 +32,6 @@
         "cap_agrees": true,
         "cap_unknown": false,
         "stacked": true,
-        "cap_takes_turns": false,
         "share_total_pct": 10,
         "share_overflow_reason": null,
         "magic_clash": []
@@ -57,7 +56,6 @@
         "cap_agrees": true,
         "cap_unknown": false,
         "stacked": false,
-        "cap_takes_turns": false,
         "share_total_pct": 10,
         "share_overflow_reason": null,
         "magic_clash": []

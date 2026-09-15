@@ -78,12 +78,12 @@ export function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
     cap_agrees: true,
     cap_unknown: false,
     stacked: false,
-    cap_takes_turns: false,
     // No bots, so nothing has been handed out and there is nothing that could overflow. `0`
     // rather than `null` on purpose: `null` here means "a share could not be read", and an
     // account with no bots on it has no unreadable share — it has none at all.
     share_total_pct: 0,
     share_overflow_reason: null,
+    share_note: null,
     // No cap yet, so nothing to measure room against — `null`, never a number.
     room_pct: null,
     magic_clash: [],

@@ -552,6 +552,10 @@ export interface BotAccountBot {
   cap_pct: number | null
   /** Its config could not be parsed, so its cap is UNKNOWN — a third state, not "no cap". */
   unreadable: boolean
+  /** Its place in the account's priority order: 1 sizes first when two bots close a bar together.
+   *  `null` = no order saved. The group's `bots` arrive already in this order, unranked last.
+   *  Optional because a response cached before the field existed has none. */
+  priority?: number | null
 }
 
 export interface BotAccountGroup {
@@ -575,8 +579,6 @@ export interface BotAccountGroup {
   /** More than one bot on this BALANCE. Never true off an account — two benched bots share
    *  nothing, and a Stacked chip on a bot that is not trading is a false alarm about risk. */
   stacked: boolean
-  /** The cap is at or below the largest per-trade risk here, so the bots take turns. */
-  cap_takes_turns: boolean
   /**
    * The per-trade shares handed out here, added up — `null` when ANY bot's share is unreadable.
    *
@@ -586,9 +588,13 @@ export interface BotAccountGroup {
    * The server never counts an unknown as zero, and `null` here means "cannot total", not "zero".
    */
   share_total_pct: number | null
-  /** Why those shares do NOT fit under the ceiling — the same sentence the save is refused with.
-   *  `null` when they fit, when there is no cap, or when the bots' caps disagree. */
+  /** Why those shares cannot be accepted — the same sentence the save is refused with. Since
+   *  2026-09-15 only an unreadable share or ONE bot above the whole cap. `null` when acceptable,
+   *  when there is no cap, or when the bots' caps disagree. */
   share_overflow_reason: string | null
+  /** The shares add up past the cap, so the bots SHARE the room — a sentence, never a refusal.
+   *  Optional because a response cached before the field existed has none. */
+  share_note?: string | null
   /** The share still free under the cap — NEGATIVE when over, `null` with no cap or an unreadable
    *  share. Served so the page never subtracts the two numbers above itself. Optional because a
    *  response cached before the field existed has none, and absent reads as "cannot say". */
@@ -911,10 +917,11 @@ export interface BotAccountRiskShare {
 /**
  * The account's budget after a proposed change.
  *
- * ⚠ **`reason` and `refused` are different answers.** `reason` says the result does not fit under
- * the cap; `refused` says a SAVE would be refused, which happens only when the change also ADDS
- * risk. Lowering a share on an account still over afterwards has a reason and no refusal — it is
- * the right direction, and refusing it made an over-subscribed account unfixable.
+ * ⚠ **`reason` and `refused` are different answers.** `reason` says the result cannot be accepted
+ * (an unreadable share, or one bot above the whole cap); `refused` says a SAVE would be refused,
+ * which happens only when the change also ADDS risk. Lowering a share that is still above the cap
+ * has a reason and no refusal — it is the right direction.
+ * ⚠ **`note` is NOT a refusal** — the shares add up past the cap, so the bots share the room.
  * ⚠ **`fit_cap` / `fit_shares` are the one-click fixes, computed by the server** — the page never
  * does that arithmetic.
  */
@@ -923,6 +930,8 @@ export interface BotAccountRiskPlan {
   fits: boolean
   reason: string | null
   refused: string | null
+  /** Optional because a response cached before the field existed has none. */
+  note?: string | null
   risk_cap_pct: number | null
   cap_changed: boolean
   share_total_pct: number | null
@@ -2130,6 +2139,27 @@ export interface StackRiskBudget {
   fits: boolean
   /** The sentence the launch refuses with; `null` when the legs fit. */
   reason: string | null
+  /** The legs add up past the cap, so they share the room — a sentence, never a refusal. */
+  note?: string | null
+}
+
+/** An account's priority order. Mirrors `models.BotAccountPriorityRequest`: `order` lists EVERY bot
+ *  on the account exactly once, first = sizes first when two close a bar together. */
+export interface BotAccountPriorityRequest {
+  order: string[]
+  deploy?: boolean
+}
+
+/** `PUT /bots/accounts/{a}/priority`'s answer. Mirrors `models.BotAccountPriorityResult`. */
+export interface BotAccountPriorityResult {
+  account: number
+  order: string[]
+  changed: boolean
+  written: string[]
+  deployed: boolean | null
+  /** When the running bots take the new order, in words. */
+  applies: string
+  detail: string
 }
 
 export interface StackSummary {

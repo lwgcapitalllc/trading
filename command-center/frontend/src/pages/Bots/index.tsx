@@ -469,7 +469,11 @@ function Performance({
 
 /**
  * The account's risk cap, and whether there is room under it — "Cap 10% · full", "Cap 10% · 5%
- * free", "Cap 10% · over by 2%" — on the account band (2026-09-15).
+ * free", "Cap 10% · 15% shared" — on the account band (2026-09-15).
+ *
+ * 🔴 **Shares that add up past the cap are a NORMAL state since 2026-09-15** (the bots share the
+ * room — the server's `share_note`), so they read grey as "shared", never red. Red is kept for the
+ * one thing still refused: a bot whose own share is above the whole cap (`share_overflow_reason`).
  *
  * 🔴 **It was "10% of 10% risk" with a filled bar for one pass, and Aaron did not like it** (*"only
  * thing I don't like is the 10 of 10 risks display"*). It read like a typo, and the bar was FULL
@@ -514,21 +518,23 @@ function RiskBudget({
           "At least one bot's risk share could not be read, so nothing can say how much of the cap is in use.",
         ]
       : over
-        ? [
-            'over',
-            typeof room === 'number' ? `over by ${pct(-room)}` : 'over',
-            'text-neg-text',
-            over,
-          ]
+        ? ['over', 'a bot is over it', 'text-neg-text', over]
         : typeof room === 'number'
-          ? room <= 0
+          ? room < 0
             ? [
-                'full',
-                'full',
+                'shared',
+                `${pct(used)} shared`,
                 'text-text-tertiary',
-                `${handedOut} — the whole cap. Another bot would have to take turns, or the cap be raised.`,
+                group.share_note ?? `${handedOut}.`,
               ]
-            : ['free', `${pct(room)} free`, 'text-text-tertiary', `${handedOut}.`]
+            : room === 0
+              ? [
+                  'full',
+                  'full',
+                  'text-text-tertiary',
+                  `${handedOut} — the whole cap. Another bot can still join; the bots then share the room.`,
+                ]
+              : ['free', `${pct(room)} free`, 'text-text-tertiary', `${handedOut}.`]
           : ['set', null, '', `${handedOut}.`]
   return (
     <span

@@ -237,7 +237,8 @@ Most-cited code: `services/stress_tester.py`, `services/grading.py`.
 **Read before touching:** accounts, risk shares or caps, assigning a bot, the terminal scan, account P&L.
 Most-cited code: `services/stack_risk_budget.py`, `services/bot_account_registry.py`, `services/account_stack_basis.py`, `services/terminal_scan.py`, `services/account_sync.py`, `services/bot_earnings.py`.
 
-- The shares may not add up to more than the ceiling (2026-09-03)
+- Shares may add up past the cap, and an account has a PRIORITY order (2026-09-15)
+- The shares may not add up to more than the ceiling (2026-09-03) — superseded 2026-09-15
 - An account's risk budget is ONE planner, and a change that frees room is always allowed (2026-09-11)
 - A shared stack's legs may not add up past its cap (2026-09-10)
 - The account REGISTRY — the gap that made moving a bot a manual afternoon (2026-08-12)

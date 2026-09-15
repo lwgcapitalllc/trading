@@ -1108,8 +1108,11 @@ def stack_nudges_needed(stack_id: str) -> tuple[bool, str]:
     - no leg arms off another leg's trades — a dependent leg moves when its parent's settings do,
       and no single-bot test can see that;
     - every bot's risk share is readable and together they fit under the cap, through the SAME
-      check the Bots page and the copy-to-demo button use (`bot_accounts.share_overflow`) — over
-      the cap the bots take turns, and which trades happen depends on all of them;
+      check the Bots page uses to say the bots share the room (`bot_accounts.shares_exceed_cap`,
+      tolerance included) — over the cap the bots compete for it, and which trades happen depends
+      on all of them. ⚠ Since 2026-09-15 an over-cap sum is no longer REFUSED anywhere, so this
+      asks the sum question directly rather than the refusal (`share_overflow`), which now only
+      refuses an unreadable share or one bot above the whole cap;
     - the stack's own run lost no trade to the cap, and trimmed none by more than
       `_STACK_TRIM_IMMATERIAL` — the arithmetic says they CAN fit, and the run says they DID.
 
@@ -1123,7 +1126,7 @@ def stack_nudges_needed(stack_id: str) -> tuple[bool, str]:
     describes an account nobody is running.
     """
     from services import portfolio_runner
-    from services.bot_accounts import risk_pct_of, share_overflow
+    from services.bot_accounts import risk_pct_of, shares_exceed_cap
 
     settings = lab_db.get_stack_settings(stack_id) or {}
     rows = lab_db.list_stack_runs(stack_id)
@@ -1165,7 +1168,9 @@ def stack_nudges_needed(stack_id: str) -> tuple[bool, str]:
             f"ruled out that the bots compete for risk"
         )
     shares = " + ".join(f"{b.risk_pct:g}%" for b in bots)
-    if share_overflow(bots, float(cap)) is not None:
+    # `is not False`: an unknown answer (None) is not "they fit" — unreadable shares are caught
+    # above, and this keeps the rule-1 reading if that guard ever moves.
+    if shares_exceed_cap(bots, float(cap)) is not False:
         return True, (
             f"the bots' risk shares ({shares}) add up to more than the {float(cap):g}% cap, so "
             f"they take turns and which trades happen depends on all of them"
