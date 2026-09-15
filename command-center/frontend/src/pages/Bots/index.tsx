@@ -886,9 +886,9 @@ export function Bots() {
   // 🔴 THE TRADING BOX HAS NOT ANSWERED YET — its FIRST read is in flight. This is the only thing
   // the snapshot shimmers decide on, and it is deliberately NOT `!snapshot`: a snapshot that
   // FAILED is also absent, and shimmering over a dead link would make a page that looks busy for
-  // ever while the box is down. Once the read fails, the words (`unknown`, `balance unread`) and
-  // the error line take over; once it answers, the numbers do. A 60s background refetch keeps the
-  // numbers on screen and never shimmers.
+  // ever while the box is down. Once the read fails, the words (`unknown`) and the error line take
+  // over, and the equity is a dash; once it answers, the numbers do. A 60s background refetch
+  // keeps the numbers on screen and never shimmers.
   const asking = isLoading
   const { data: users } = useUsers()
   const [params, setParams] = useSearchParams()

@@ -176,8 +176,9 @@ the Bots page and its two drawers; **apply it to any page you touch that has a l
 🔴 **A shimmer means STILL ASKING, and never "could not ask".** Gate it on the query's FIRST read
 (`isLoading` / `isPending`), never on the data being absent — a FAILED read is also absent, and a
 shimmer over a dead link is a page that looks busy for ever while the thing behind it is down.
-Failed renders its words (`unknown`, `balance unread`, the error line); answered-with-nothing
-renders that. **Three states, three looks** — the repo's rule 1, applied to loading.
+Failed renders its words (`unknown`, the error line); answered-with-nothing renders that. ⚠ The
+Bots account card's equity is a dash in both of those since 2026-09-14 — the error line is what
+says the read failed. **Three states, three looks** — the repo's rule 1, applied to loading.
 
 🔴 **A finding may not be shown while its source is still being asked.** The Bots page printed
 `balance unread`, `net unknown`, `type unknown`, `No version` and **`No bots registered`** for the
