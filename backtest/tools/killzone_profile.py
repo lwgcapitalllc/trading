@@ -45,6 +45,7 @@ import argparse
 import csv
 import datetime as dt
 import json
+import re
 import statistics
 from collections import defaultdict
 from pathlib import Path
@@ -56,6 +57,20 @@ _ROOT = Path(__file__).resolve().parents[2]
 NY = ZoneInfo("America/New_York")
 UTC = dt.timezone.utc
 CACHE = _ROOT / "backtest" / "cache"
+
+# The broker whose bars this study reads by default — the backtest-only feed per
+# backtest/CLAUDE.md, not the live PU Prime account.
+DEFAULT_SERVER = "VantageMarkets-Demo"
+
+
+def _safe_token(token: str) -> str:
+    """Filesystem-safe token — mirrors `backtest/data/cache.py::_safe` exactly.
+
+    Reimplemented rather than imported: that module pulls in pandas at import
+    time, and this tool is deliberately stdlib-only (see module docstring).
+    """
+    return re.sub(r"[^A-Za-z0-9]+", "_", token).strip("_")
+
 
 # The oldest cache feed_version whose TIMESTAMPS this study can trust. A FLOOR, never an
 # equality — a newer cache is newer for reasons that have nothing to do with the clock.
@@ -89,7 +104,13 @@ class Bar(NamedTuple):
 # data
 
 
-def load_days(symbol: str, tf: str, start: dt.date | None, end: dt.date | None):
+def load_days(
+    symbol: str,
+    tf: str,
+    start: dt.date | None,
+    end: dt.date | None,
+    server: str = DEFAULT_SERVER,
+):
     """Read the cached bars once and bucket them by NY calendar date.
 
     The cache stamps bars in true UTC from feed_version 2 onward. Anything older is the
@@ -103,9 +124,16 @@ def load_days(symbol: str, tf: str, start: dt.date | None, end: dt.date | None):
     input than the v2 it demanded. Worse than the refusal was its MESSAGE: it blamed
     broker-local timestamps, sending the reader off to re-pull 186k bars to fix a bug in
     this line. Pin a floor when you mean a floor.
+
+    ⚠ `server` selects the broker partition (`backtest/cache/<server>/`, see
+    `backtest/data/cache.py::broker_cache_dir`). This tool predates that partition
+    (added 2026-08-24) and was never updated for it, so every path here was silently
+    wrong until this fix — a `SystemExit("no cached bars ...")` on every run, never a
+    quiet wrong answer.
     """
-    path = CACHE / f"{symbol}__{tf}.csv"
-    meta = CACHE / f"{symbol}__{tf}.meta.json"
+    server_dir = CACHE / _safe_token(server)
+    path = server_dir / f"{symbol}__{tf}.csv"
+    meta = server_dir / f"{symbol}__{tf}.meta.json"
     if not path.exists():
         raise SystemExit(f"no cached bars at {path} — pull them with the MT5 agent first")
     if meta.exists():
@@ -485,6 +513,7 @@ def main() -> int:
     )
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--tf", default="M15")
+    ap.add_argument("--server", default=DEFAULT_SERVER, help="broker cache partition")
     ap.add_argument("--window", default="10:00-11:00", help="NY window under test")
     ap.add_argument("--start", help="YYYY-MM-DD, default = all cached history")
     ap.add_argument("--end", help="YYYY-MM-DD")
@@ -501,7 +530,7 @@ def main() -> int:
 
     start = dt.date.fromisoformat(args.start) if args.start else None
     end = dt.date.fromisoformat(args.end) if args.end else None
-    days = load_days(args.symbol, args.tf, start, end)
+    days = load_days(args.symbol, args.tf, start, end, server=args.server)
 
     win_start, win_end = parse_window(args.window)
     rows = profile_days(days, win_start, win_end, args.target_r)
