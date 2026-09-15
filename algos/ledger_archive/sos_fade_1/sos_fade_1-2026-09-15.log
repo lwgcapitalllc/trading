@@ -16,3 +16,12 @@
 2026-09-15 11:36:28,524 [INFO] Trading is allowed on this account again.
 2026-09-15 12:59:49,931 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
 2026-09-15 13:01:10,958 [INFO] Trading is allowed on this account again.
+2026-09-15 22:05:12,422 [WARNING] 13 M5 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-15 22:05:15,126 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-01 06:35:00+00:00 → 2026-09-15 22:00:00+00:00).
+2026-09-15 22:05:26,031 [INFO] The re-entry's feed is delivering again.
+2026-09-15 22:15:07,737 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-15 22:15:07,747 [INFO] Sizing against account balance $15,844.46
+2026-09-15 22:15:10,437 [INFO] Warmed 5000 bars (2026-07-01 06:45:00+00:00 → 2026-09-15 22:00:00+00:00) in 2.6s
+2026-09-15 22:15:15,453 [INFO] Fast feed bookmarked at 2026-09-15 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-15 22:15:15,453 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-01 06:45:00+00:00 → 2026-09-15 22:10:00+00:00).
+2026-09-15 22:15:15,453 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
