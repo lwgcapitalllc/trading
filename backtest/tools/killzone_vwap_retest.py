@@ -168,29 +168,31 @@ def touch(bars: list, ws: dt.time, we: dt.time):
     return None
 
 
-def price(tc: dict, adr: float, stop_k: float, target_k: float | None) -> float:
-    """Dollars, after costs. target_k None = no target, out at the window's end."""
+def price(tc: dict, adr: float, stop_k: float | None, target_k: float | None) -> float:
+    """Dollars, after costs. target_k None = no target; stop_k None = no stop. Both None is
+    the pure time exit: in at the VWAP, out at the window's end, nothing in between."""
     side, v = tc["side"], tc["v"]
+    timed = side * (tc["exit"] - v) - COST
+    tgt = None if target_k is None else v + side * target_k * adr
+
+    if stop_k is None:
+        if tgt is None:
+            return timed
+        for h, l in tc["path"]:  # trigger bar cannot count a target (see docstring)
+            if (h >= tgt) if side > 0 else (l <= tgt):
+                return target_k * adr - COST
+        return timed
+
     stop = v - side * stop_k * adr
     hit = lambda h, l: (l <= stop) if side > 0 else (h >= stop)  # noqa: E731
-    if target_k is None:
-        # Still stopped out if price runs through the VWAP that far.
-        if hit(*tc["trigger"]):
-            return -stop_k * adr - COST
-        for h, l in tc["path"]:
-            if hit(h, l):
-                return -stop_k * adr - COST
-        return side * (tc["exit"] - v) - COST
-
-    tgt = v + side * target_k * adr
     if hit(*tc["trigger"]):  # trigger bar: only the stop can count
         return -stop_k * adr - COST
     for h, l in tc["path"]:
         if hit(h, l):
             return -stop_k * adr - COST
-        if (h >= tgt) if side > 0 else (l <= tgt):
+        if tgt is not None and ((h >= tgt) if side > 0 else (l <= tgt)):
             return target_k * adr - COST
-    return side * (tc["exit"] - v) - COST
+    return timed
 
 
 def cells(days, adrs, ws, we, keys, stop_k):
@@ -209,24 +211,96 @@ def stats(rows, stop_k, target_k):
     pnl = [(d, price(tc, adr, stop_k, target_k)) for d, tc, adr in rows]
     if not pnl:
         return None
-    r = stop_k
     wins = [x for _, x in pnl if x > 0]
-    dis = [x for d, x in pnl if d <= SPLIT]
-    oos = [x for d, x in pnl if d > SPLIT]
+    dis = [(d, x) for d, x in pnl if d <= SPLIT]
+    oos = [(d, x) for d, x in pnl if d > SPLIT]
     adrs = [adr for _, _, adr in rows]
+    per_adr = [x / a for (_, x), a in zip(pnl, adrs)]
     return {
         "n": len(pnl),
         "win": 100 * len(wins) / len(pnl),
         "usd": statistics.fmean(x for _, x in pnl),
-        # R in ADR terms: one R is the stop distance, so dollars / (stop_k * ADR).
-        "r": statistics.fmean(x / (r * a) for (_, x), a in zip(pnl, adrs)),
-        "win_dis": 100 * sum(1 for x in dis if x > 0) / len(dis) if dis else float("nan"),
-        "win_oos": 100 * sum(1 for x in oos if x > 0) / len(oos) if oos else float("nan"),
+        # 🔴 The comparable unit ACROSS stop sizes. R cannot be: one R *is* the stop, so a
+        # wider stop silently inflates every R it reports. A share of the day's range is the
+        # same unit in every cell and in every year of a sample where gold tripled.
+        "adr": statistics.fmean(per_adr),
+        # R stays for reading one stop size against its own targets; undefined without a stop.
+        # `is not None`, never falsy (rule 1): a 0.0 stop is a degenerate MEASUREMENT and must
+        # raise, where None is the question never asked. Collapsing them hides one behind the other.
+        "r": (
+            statistics.fmean(x / (stop_k * a) for (_, x), a in zip(pnl, adrs))
+            if stop_k is not None
+            else None
+        ),
+        "win_dis": 100 * sum(1 for _, x in dis if x > 0) / len(dis) if dis else float("nan"),
+        "win_oos": 100 * sum(1 for _, x in oos if x > 0) / len(oos) if oos else float("nan"),
+        "adr_dis": statistics.fmean(x / a for (d, x), a in zip(pnl, adrs) if d <= SPLIT)
+        if dis
+        else float("nan"),
+        "adr_oos": statistics.fmean(x / a for (d, x), a in zip(pnl, adrs) if d > SPLIT)
+        if oos
+        else float("nan"),
     }
 
 
 def _tname(k):
     return "zone end" if k is None else f"{k:g}xADR"
+
+
+def _sname(k):
+    return "no stop" if k is None else f"{k:g}xADR"
+
+
+def sweep_stops(days, adrs, ws, we, labels, stops, targets) -> tuple | None:
+    """The stop x target grid, scored as a share of ADR20.
+
+    ⚠ **Scored in ADR, not in R, and that is the whole reason this function exists.** One R is
+    the stop, so reading R down a column of different stops compares different units and makes
+    the widest stop look best for free. A share of the day's range is one unit everywhere.
+    """
+    grids = {}
+    for label in labels:
+        rows = cells(days, adrs, ws, we, VARIANTS[label], None)
+        grids[label] = {(s, t): stats(rows, s, t) for s in stops for t in targets}
+        n = next((v["n"] for v in grids[label].values() if v), 0)
+        print(f"\n  {label.upper()} — {n} retests, expectancy as % of a day's range")
+        print(f"    {'stop':<10}" + "".join(f"{_tname(t):>11}" for t in targets))
+        for s in stops:
+            line = "".join(
+                f"{100 * grids[label][(s, t)]['adr']:>+10.2f}%"
+                if grids[label][(s, t)]
+                else f"{'-':>11}"
+                for t in targets
+            )
+            print(f"    {_sname(s):<10}{line}")
+        print(f"    {'':<10}" + "".join(f"{'':>11}" for _ in targets))
+        print(f"    {'stop':<10}" + "".join(f"{_tname(t):>11}" for t in targets) + "   win %")
+        for s in stops:
+            line = "".join(
+                f"{grids[label][(s, t)]['win']:>10.1f}%" if grids[label][(s, t)] else f"{'-':>11}"
+                for t in targets
+            )
+            print(f"    {_sname(s):<10}{line}")
+
+    flat = [
+        (label, s, t, v)
+        for label, g in grids.items()
+        for (s, t), v in g.items()
+        if v and v["n"] >= 100
+    ]
+    flat.sort(key=lambda x: -x[3]["adr"])
+    print("\n  TOP 8 CELLS, and whether each held in both halves of the sample")
+    print(
+        f"    {'filter':<18}{'stop':>10}{'target':>11}{'days':>6}{'win%':>8}"
+        f"{'%ADR':>8}{'$/trade':>9}{'2018-23':>10}{'2024-26':>10}"
+    )
+    for label, s, t, v in flat[:8]:
+        print(
+            f"    {label:<18}{_sname(s):>10}{_tname(t):>11}{v['n']:>6}{v['win']:>7.1f}%"
+            f"{100 * v['adr']:>+7.2f}%{v['usd']:>+9.2f}"
+            f"{100 * v['adr_dis']:>+9.2f}%{100 * v['adr_oos']:>+9.2f}%"
+        )
+    return flat[0] if flat else None
 
 
 def main() -> int:
@@ -238,6 +312,11 @@ def main() -> int:
     ap.add_argument("--server", default=DEFAULT_SERVER)
     ap.add_argument("--search-window", default="10:00-11:00")
     ap.add_argument("--stop", type=float, default=0.10, help="stop = k x ADR20 through the VWAP")
+    ap.add_argument(
+        "--sweep-stops",
+        action="store_true",
+        help="also sweep the STOP against the target, scored as a share of ADR20",
+    )
     args = ap.parse_args()
 
     days = load(args.symbol, args.tf, args.server)
@@ -340,8 +419,53 @@ def main() -> int:
                 print(
                     f"    {w:<14}{cs['n']:>6}{cs['win']:>7.1f}%{cs['r']:>+8.3f}{cs['usd']:>+9.2f}"
                 )
+    searched = len(VARIANTS) * len(exits)
+    if args.sweep_stops:
+        stops = (None, *TARGETS)  # the same ladder as the targets, plus no stop at all
+        labels = ["no trend filter", "H1 + H4 agree"]
+        print(f"\n\nSTOP x TARGET SWEEP — {args.search_window} NY")
+        searched += len(labels) * len(stops) * len(exits)
+        best = sweep_stops(days, adrs, sw[0], sw[1], labels, stops, exits)
+        if best:
+            label, s, t, v = best
+            length = (sw[1].hour * 60 + sw[1].minute) - (sw[0].hour * 60 + sw[0].minute)
+            print(
+                f"\n  BEST SWEEP CELL — {label}, stop {_sname(s)}, target {_tname(t)}: "
+                f"{v['win']:.1f}% win, {100 * v['adr']:+.2f}% of a day's range, {v['usd']:+.2f}$/trade"
+            )
+            ctrl = []
+            m = 4 * 60
+            while m + length <= 16 * 60:
+                ca = T(m // 60, m % 60)
+                cb = T((m + length) // 60, (m + length) % 60)
+                m += 30
+                if (ca, cb) == sw:
+                    continue
+                cs = stats(cells(days, adrs, ca, cb, VARIANTS[label], None), s, t)
+                if cs and cs["n"] >= 100:
+                    ctrl.append(cs)
+            if ctrl:
+                print(
+                    f"  the SAME cell on every other same-length window: median win "
+                    f"{statistics.median(c['win'] for c in ctrl):.1f}%, "
+                    f"{100 * statistics.median(c['adr'] for c in ctrl):+.2f}% of a day's range "
+                    f"({len(ctrl)} windows); best of them "
+                    f"{100 * max(c['adr'] for c in ctrl):+.2f}%"
+                )
+            print("  the same cell in the OTHER kill zones")
+            for w in WINDOWS:
+                if w == args.search_window:
+                    continue
+                a, b = (dt.datetime.strptime(x.strip(), "%H:%M").time() for x in w.split("-"))
+                cs = stats(cells(days, adrs, a, b, VARIANTS[label], None), s, t)
+                if cs:
+                    print(
+                        f"    {w:<14}{cs['n']:>6}{cs['win']:>7.1f}%"
+                        f"{100 * cs['adr']:>+8.2f}%{cs['usd']:>+9.2f}"
+                    )
+
     print(
-        f"\n  {len(VARIANTS) * len(exits)} cells searched in {args.search_window}."
+        f"\n  {searched} cells searched in {args.search_window}."
         " Believe a cell only if it beats the all-day control AND holds in both halves."
     )
     return 0

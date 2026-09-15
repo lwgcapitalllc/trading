@@ -1017,6 +1017,40 @@ CLAUDE.md gets at most one index line.
   ⚠ **It contradicts `killzone_edge_search.py`'s regime note in DIRECTION** — there the follow rules
   paid only in 2024-2026, here the trend-aligned bounce paid only before it. **Two tests disagreeing
   about the same years is a reason to trust neither.**
+  🔴 **`--sweep-stops` SWEEPS THE STOP TOO, AND IT IS SCORED IN ADR RATHER THAN IN R — that unit
+  change IS the reason the flag exists.** Added 2026-09-15 because everything above assumed ONE stop
+  size, which made the whole table a claim about a stop nobody had tested. **One R *is* the stop, so
+  reading R down a column of seven different stops compares seven different units and hands the
+  widest stop a better number for free.** A share of the day's range is one unit in every cell and
+  in every year of a sample where gold tripled. ⚠ **No figure recorded above moves** — every
+  committed number re-ran identically (801 retests, 38.6%/60.2%/50.7%, −0.044R, H1+H4 +0.089R), and
+  the flag only adds a grid. R is still reported for a single stop against its own targets, and is
+  **`None` without a stop** rather than 0.0.
+  ⚠ **THE 0.10xADR STOP THIS STUDY USED THROUGHOUT WAS TOO TIGHT, AND THAT IS THE ONE ACTIONABLE
+  RESULT.** Win% rises monotonically with stop width and the extremes are far apart: at a 0.5xADR
+  target the 0.05xADR stop wins **24.6%**, 0.10 wins 38.6%, 0.20 wins 47.9%, 0.50 wins **52.3%** —
+  and no stop at all wins 52.4%. A 0.05xADR stop is ~**$1.16** at the sample's median ADR (median
+  scales linearly off the measured $2.31 at 0.10xADR), which is inside gold's 5-minute noise, so it
+  is not risk control — it is a coin flip charged $0.14 a go.
+  🔴 **WITHOUT A TREND FILTER ALL 49 STOP x TARGET COMBINATIONS LOSE**, from −0.31% to −1.47% of a
+  day's range. It is the cleanest negative this study produced: the bounce does not become tradeable
+  at any stop, at any target.
+  ⚠ **With H1+H4 agreement the widest corner goes positive — and it fails both protocol checks.**
+  Best cell is stop 0.5xADR + target 0.5xADR: **57.7% win, +1.30% of a day's range, +$0.25/trade**
+  on 260 trades. It scores **+2.81% in 2018-23 and −2.56% in 2024-26**, and all EIGHT top cells flip
+  the same way without exception. The all-day control on that same cell is median 51.2% / +0.04%
+  over 22 windows, **but its BEST window scores +1.57% — beating the zone's +1.30%.** The other
+  three kill zones are −0.52%, −1.03% and −0.36%.
+  ⚠ **Those top cells are also the SAME TRADE wearing different labels, and the table says so
+  itself:** the 0.5xADR stop column reads within 0.4pp of the no-stop column and the 0.5xADR target
+  column equals the zone-end column, because a half-ADR excursion is rarely reached inside a
+  one-hour window. Four of the top eight are therefore one strategy — in at the VWAP, out at the
+  zone's end — counted four times. **A leaderboard whose top rows are aliases of each other looks
+  like corroboration and is not.**
+  🔴 **THE ROW TO SHOW SOMEONE SELLING A WIN RATE: no stop + a 0.05xADR target wins 79.2% and
+  LOSES money (−0.22%).** Same window, same trades, same filter as the +1.30% cell. **154 cells were
+  searched in this one window**, ~550 across the whole kill zone study, so the best of them is what
+  a search that wide produces by construction. **Recorded NEGATIVE — nothing here is tradeable.**
 
 - **`tools/bos_sweep.py`** — ⚠ The Pine it is measured against is `strategies/tradingview/bos_strategy.pine`.
   It has moved TWICE and a path from before either date is stale: on 2026-08-13 the `.pine` sources
