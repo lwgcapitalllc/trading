@@ -13,10 +13,22 @@ they demanded. Three studies sat unrunnable, and their refusal message blamed br
 timestamps — pointing the reader at a 186k-bar re-pull to fix one character.
 
 ⚠ These tests were watched RED before being committed. Mutating `<` back to `!=` in either
-tool turns exactly the v3 case red and leaves v1, v2 and the missing-key case green, which
-is the failure the bug actually produced. Mutating the guard away entirely turns the v1 and
-missing-key cases red. Neither case can pass vacuously: each asserts a specific verdict, so
-a guard that always refused and a guard that never refused both fail.
+tool turns the v3 AND v4 cases red and leaves v1, v2 and the missing-key case green, which is
+the failure the bug actually produced. *(This line said "exactly the v3 case" until 2026-09-15;
+the mutation was re-run that day and v4 reddens too, which it must — `!= 2` refuses every
+version above the floor, not just the next one.)* Mutating the guard away entirely turns the
+v1 and missing-key cases red. Neither case can pass vacuously: each asserts a specific
+verdict, so a guard that always refused and a guard that never refused both fail.
+
+🔴 **AND IT WENT RED FOR A SECOND REASON ON 2026-09-15, WHICH IS WORTH MORE THAN THE FIRST.**
+`killzone_profile` gained a `--server` and started reading `CACHE/<safe server>/` (the broker
+partition of 2026-08-24) while this fixture still wrote its bars FLAT into `CACHE/`. The tool
+then could not find them and refused — with "no cached bars", not a version message. ⚠ **The
+two failures are one sentence apart and only three of eight cases can tell them apart**: the
+v1 case expects a refusal and passed throughout, and the missing-file case expects a refusal
+and passed throughout, so a stub pointed at the wrong folder is INVISIBLE to five of the eight
+assertions here. The fixture now asks the module where it looks (`_bars_dir`) instead of
+assuming, so the next tool to be partitioned is followed rather than silently mis-stubbed.
 """
 
 from __future__ import annotations
@@ -46,17 +58,43 @@ def _load(name: str):
     return mod
 
 
-def _stub_cache(tmp_path: Path, tf: str, meta: dict | None) -> Path:
-    """A cache dir holding one syntactically valid bar file and the sidecar under test.
+def _bars_dir(mod, root: Path) -> Path:
+    """Where THIS tool will actually look for its bars, asked of the tool itself.
+
+    🔴 The two tools here disagree about the layout ON PURPOSE, and a fixture that picks one
+    tests a system we do not have (rule 13). Since the 2026-08-24 partition the kill zone
+    studies take a `--server` and read `CACHE/<safe server>/`, while `h4_sweep_profile` still
+    reads `CACHE/` flat. ⚠ **Writing to the wrong folder does not fail loudly — it makes the
+    tool refuse with "no cached bars", which is indistinguishable here from the version guard
+    firing**, so every case would read as a refusal and the v1 case would still pass. That is
+    exactly how this file went red when the partition landed.
+
+    Deriving the folder from the module's own `DEFAULT_SERVER` means a tool that gets
+    partitioned later is followed automatically rather than silently mis-stubbed.
+    """
+    server = getattr(mod, "DEFAULT_SERVER", None)
+    if server is None:
+        return root
+    d = root / mod._safe_token(server)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _stub_cache(tmp_path: Path, tf: str, meta: dict | None, mod=None) -> Path:
+    """A cache ROOT holding one syntactically valid bar file and the sidecar under test.
 
     The bars are deliberately minimal: the guard must fire before any of them is parsed,
     so a tool that reached the CSV at all would fail on the content rather than pass.
+
+    Returns the value to assign to the tool's `CACHE` — the root, never the bars folder,
+    because the tool appends its own broker partition to it.
     """
-    (tmp_path / f"XAUUSD__{tf}.csv").write_text(
+    bars = tmp_path if mod is None else _bars_dir(mod, tmp_path)
+    (bars / f"XAUUSD__{tf}.csv").write_text(
         "time,open,high,low,close\n2026-01-02 10:00:00,2000,2001,1999,2000.5\n"
     )
     if meta is not None:
-        (tmp_path / f"XAUUSD__{tf}.meta.json").write_text(json.dumps(meta))
+        (bars / f"XAUUSD__{tf}.meta.json").write_text(json.dumps(meta))
     return tmp_path
 
 
@@ -79,7 +117,9 @@ _CASES = [
 @pytest.mark.parametrize("version,must_refuse,why", _CASES)
 def test_the_version_guard_is_a_floor(tmp_path, tool, fn, tf, version, must_refuse, why):
     mod = _load(tool)
-    mod.CACHE = _stub_cache(tmp_path, tf, {"feed_version": version, "has_volume": version >= 3})
+    mod.CACHE = _stub_cache(
+        tmp_path, tf, {"feed_version": version, "has_volume": version >= 3}, mod
+    )
 
     kwargs = {"start": None, "end": None} if tool == "killzone_profile" else {}
     try:
@@ -108,7 +148,7 @@ def test_a_sidecar_with_no_version_is_treated_as_the_version_1_era(tmp_path, too
     a TypeError instead of refusing — a crash where a diagnostic belongs.
     """
     mod = _load(tool)
-    mod.CACHE = _stub_cache(tmp_path, tf, {"has_volume": False})
+    mod.CACHE = _stub_cache(tmp_path, tf, {"has_volume": False}, mod)
 
     kwargs = {"start": None, "end": None} if tool == "killzone_profile" else {}
     with pytest.raises(SystemExit):
@@ -129,7 +169,7 @@ def test_a_missing_bar_file_says_so_rather_than_blaming_the_version(tmp_path, to
     fixes (pull bars vs re-pull bars), so they must never share one sentence.
     """
     mod = _load(tool)
-    mod.CACHE = tmp_path  # empty
+    mod.CACHE = tmp_path  # empty — and for a partitioned tool the broker folder is absent too
 
     kwargs = {"start": None, "end": None} if tool == "killzone_profile" else {}
     with pytest.raises(SystemExit) as exc:
