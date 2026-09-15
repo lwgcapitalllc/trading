@@ -2371,13 +2371,16 @@ test('the number columns share the spare width — no blank track before Actions
   await page.goto('/bots')
   // ⚠ The REAL card's headings, never `.first()` on the page: the loading placeholder draws the same
   // headings and is swapped out, so a width read off it comes back null.
+  // 🔴 **Five tracks, drawn ONCE for the whole fleet table (2026-09-15)** — the headings left the
+  // account panels, so they are read off the table itself. Performance's floor is 230px; the
+  // property this guards is that it gets a SHARE of the spare width on top, not just its floor.
   const heads = page
-    .getByTestId('account-detail')
+    .getByTestId('fleet-table')
     .getByTestId('column-headings')
     .locator(':scope > span')
-  await expect(heads).toHaveCount(9)
-  await expect(heads.nth(2)).toHaveText('P&L')
-  await expect.poll(async () => (await heads.nth(2).boundingBox())?.width ?? 0).toBeGreaterThan(100)
+  await expect(heads).toHaveCount(5)
+  await expect(heads.nth(2)).toHaveText('Performance')
+  await expect.poll(async () => (await heads.nth(2).boundingBox())?.width ?? 0).toBeGreaterThan(230)
 })
 
 test('a trade whose opening risk is unknown shows no R rather than a guess', async ({ page }) => {
@@ -2563,7 +2566,7 @@ test('the best bot on R per trade holds the one trophy, with its sample beside i
   await expect(ext.getByTestId('trades')).toHaveText('1')
 })
 
-test('one value per cell — return % and the trade count each have their own column', async ({
+test("a bot's performance reads as one line — money, trades and R, nothing stacked", async ({
   page,
 }) => {
   // Aaron, 2026-09-10: *"I don't want anything stacked on top of each other in columns like
@@ -2576,20 +2579,36 @@ test('one value per cell — return % and the trade count each have their own co
   await mockBothSides(page, SCORED)
   // ⚠ Filtered by account number, not `section-demo` — the detail column is a sibling of the
   // rail now, not nested under either section's heading (see "rail order" in `notes/bots-page.md`).
-  const heads = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
-  await expect(heads).toContainText('Return %')
-  await expect(heads).toContainText('Trades')
+  // 🔴 **Repointed 2026-09-15.** P&L, Trades and Per trade became ONE Performance cell on one line
+  // ("+$1,305.58 · 1 trade · +2.10R"), and Return % left the row for the bot panel — Aaron picked
+  // that layout off a mockup. What still holds from 2026-09-10 is the part he asked for: nothing is
+  // STACKED, and each figure keeps its own element.
+  await expect(page.getByTestId('column-headings').first()).toContainText('Performance')
   const ext = page
     .getByTestId('bot-row')
     .filter({ hasText: 'Extreme Leg' })
     .filter({ hasNotText: 'live' })
   await expect(ext.getByTestId('bot-pnl')).toHaveText('+$1,305.58')
-  await expect(ext.getByTestId('return-pct')).toHaveText('+14.5%')
+  // One LINE: every piece of the cell overlaps the same horizontal band. Stacked, the lower
+  // piece's top would sit at or below the upper one's bottom. ⚠ Not "equal bottoms" — figures of
+  // different sizes on one line never share a bottom edge, and that version failed a correct page.
+  // MUTATION: make the cell a column (`flex-col`) → red here.
+  const perf = ext.getByTestId('performance')
+  const band = await perf.evaluate((el) => {
+    const r = [...el.children].map((c) => c.getBoundingClientRect())
+    return {
+      maxTop: Math.max(...r.map((x) => x.top)),
+      minBottom: Math.min(...r.map((x) => x.bottom)),
+    }
+  })
+  expect(band.maxTop).toBeLessThan(band.minBottom)
   await expect(ext.getByTestId('trades')).toHaveText('1')
   await expect(ext.getByTestId('per-trade')).toHaveText('+2.10R')
-  // A record that was read and holds no closed trade: a measured 0, never a dash.
+  // A record that was read and holds no closed trade: a measured 0, said once in words — never
+  // a dash (that is "no record"), and never four zeros across four cells.
   const idle = page.getByTestId('bot-row').filter({ hasText: 'Extreme Leg live' })
-  await expect(idle.getByTestId('trades')).toHaveText('0')
+  await expect(idle.getByTestId('trades')).toHaveAttribute('data-count', '0')
+  await expect(idle.getByTestId('trades')).toHaveText('no trades yet')
 })
 
 test('every value sits under its own heading — on a 1280px screen too', async ({ page }) => {
@@ -2599,11 +2618,21 @@ test('every value sits under its own heading — on a 1280px screen too', async 
   // MUTATION: size the actions column to its content again → red on the offset.
   await page.setViewportSize({ width: 1280, height: 900 })
   await mockBothSides(page, SCORED)
-  const card = page.getByTestId('account-detail').filter({ hasText: String(ACCOUNT) })
+  // The headings are the FLEET TABLE's since 2026-09-15, drawn once above every account.
+  const table = page.getByTestId('fleet-table')
   const left = (l: ReturnType<Page['getByTestId']>) =>
     l.evaluate((e) => e.getBoundingClientRect().left)
-  const head = await left(card.getByText('Trades', { exact: true }))
-  const cell = await left(card.getByTestId('bot-row').first().getByTestId('trades'))
+  const head = await left(
+    table.getByTestId('column-headings').getByText('Performance', { exact: true })
+  )
+  const cell = await left(
+    table
+      .getByTestId('account-detail')
+      .filter({ hasText: String(ACCOUNT) })
+      .getByTestId('bot-row')
+      .first()
+      .getByTestId('performance')
+  )
   expect(Math.abs(head - cell)).toBeLessThan(2)
 })
 
@@ -2704,7 +2733,8 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
     .filter({ hasText: String(LIVE) })
     .getByTestId('bot-row')
     .filter({ hasText: 'SOS Fade' })
-  await expect(liveRow).toContainText('$0.00')
+  // Starts at zero — said in words since the one-line Performance cell (2026-09-15).
+  await expect(liveRow).toContainText('no trades yet')
   await expect(liveRow).not.toContainText('$1,500.00')
 })
 

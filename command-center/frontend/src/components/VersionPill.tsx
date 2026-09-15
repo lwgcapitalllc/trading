@@ -1,7 +1,7 @@
 import { AlertTriangle, HelpCircle, Loader2, RotateCcw, Upload, WifiOff } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
 import { Shimmer } from '@/components/Shimmer'
-import { deployableVersion, deployWouldAdvance, versionReadFailure } from '@/lib/botVersion'
+import { deployableVersion, versionNeed, versionReadFailure } from '@/lib/botVersion'
 
 /**
  * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed — so the
@@ -114,8 +114,10 @@ export function VersionPill({
 
   const behind = c.versions_behind ?? 0
   const label = `v${c.deployed_version}`
+  // The amber states come off the ONE rule the page's "needs you" line also counts by.
+  const need = versionNeed(version, restart)
 
-  if (behind > 0 && deployWouldAdvance(c)) {
+  if (need === 'behind') {
     return (
       <span
         data-testid="version-pill"
@@ -133,7 +135,7 @@ export function VersionPill({
     )
   }
 
-  if (restart) {
+  if (need === 'restart') {
     return (
       <span
         data-testid="version-pill"
@@ -147,7 +149,7 @@ export function VersionPill({
     )
   }
 
-  if (behind > 0) {
+  if (need === 'unpushed') {
     const n = c.unpushed_commits?.length ?? 0
     return (
       <span

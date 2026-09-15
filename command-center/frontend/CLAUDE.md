@@ -404,6 +404,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - A running bot is stopped first, never locked (2026-09-13)
 - Take off is ONE button on both panels (2026-09-13)
 - Accounts are a RAIL + DETAIL, and one per kind can be PINNED open (2026-09-15)
+- The detail column is ONE fleet table — headings once, five tracks, a needs-you line (2026-09-15)
 - The account header — a stat cluster instead of a boring row (2026-09-14)
 - The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
 - The Equity slot's real fix, and an explicit "no bot" status (2026-09-15)

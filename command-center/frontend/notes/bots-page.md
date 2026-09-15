@@ -1580,3 +1580,52 @@ be wider, the detail table's own thresholds have to be re-measured in the same p
 Verified: `tsc --noEmit` clean; `bots-accounts.spec.ts` 135/135 against the offline build; loaded
 in a real browser against the live backend at 1600×1000 — both groups, three accounts, one open per
 kind, the hover-revealed pin, and the red worst-status dot on the account whose bot is troubled.
+
+### The detail column is ONE fleet table (2026-09-15, fifth pass)
+
+Aaron, on the running page: *"does it feel too busy? How would you improve the UX for simplicity
+yet effectiveness to manage these bots?"* Two mockups followed. He found the first *"still busy"*,
+rejected the second (no rail, no headings, hover-only buttons) outright, and said *"build the design
+from before"* — so this is the FIRST mockup, built. The rail is untouched.
+
+What the page did wrong, each measured off his screenshot with three accounts open:
+
+- **Nine column headings drawn three times.** Each open account was its own card with its own
+  heading row. → One `fleet-table` container, `ColumnHeadings` drawn once, each account a BAND
+  section inside it (`renderDetailPanel(view, index)` — no card, no headings of its own).
+- **Nine tracks, most of them nothing.** Four of six bots printed `$0.00`, `0.0%`, `0` and `—`
+  across four cells. → FIVE tracks: Bot, Status, Performance, Version, Actions. `Performance` is
+  one LINE — money · trades · R per trade, the trophy still on the R, the count still beside it —
+  and a record holding no closed trade says **"no trades yet"** once (a measured zero, distinct
+  from `Contribution`'s "no record yet"). ⚠ Aaron's 2026-09-10 rule *"nothing stacked on top of
+  each other"* still holds and a test pins it: the cell is one line, never a column.
+- **Return % per bot and Risk per bot left the row.** The bot panel states both. The band shows
+  the risk BUDGET instead (`RiskBudget`: "10% of 10% risk" and a thin gold bar, red with the
+  server's overflow reason) — the number that decides whether another bot fits. 🔴 Both figures
+  come off the server (`share_total_pct`, `share_overflow_reason`); the page adds nothing up, per
+  *The page may NOT add the risk shares up itself* above. Only the bar's width is a local ratio,
+  and it decides nothing. **Avg per bot went** — a mean of per-bot returns the rows no longer show.
+- **Four unlabelled icons per bot — 24 on screen.** → One primary action in WORDS (`PrimaryBtn`,
+  Start or Stop, neutral until hovered), Configure's icon, and a "···" (`components/OverflowMenu.tsx`,
+  new, reusable) holding Restart and Logs. ⚠ **Configure deliberately stayed OUT of the menu** —
+  it was lost twice as something you had to find, and the mockup that put it in the menu was
+  overruled on that history.
+- **Nothing said what needed you.** → A "needs you" line over the table, AMBER (the colour rule's
+  "needs your attention" — the mockup drew it gold, which is limits). 🔴 **It invents no rule**:
+  a bot counts when its own Status is `bad`/`warn` (`botCondition`) or its version pill is amber —
+  and the pill's amber states now come off one function, `versionNeed` in `lib/botVersion.ts`, read
+  by the pill AND this line, so they can never disagree. Grouped by the row's own word. Empty while
+  the box is still being asked.
+- **The equity shows MT5's figure or a dash** — the rail row's "not read"/"unread" words went too,
+  matching origin's 2026-09-14 rule (*"read exactly what's on the MT5"*).
+
+⚠ **No `overflow-hidden` on the fleet table** — the last row's "···" menu opens past its edge.
+
+MEASURED at 1600px on the live backend: Bot 205px, Status 189px, Performance 316px (floor 230),
+Version 158px, Actions 150px. The column-sharing test now asserts Performance > 230px.
+
+Test fallout, each watched red first against the old nine-column shape: the column-sharing test
+reads five headings off `fleet-table`; *"one value per cell"* became *"a bot's performance reads as
+one line"* (Return % assertion dropped, the idle bot's zero reads `data-count="0"` + "no trades
+yet"); the heading-alignment test lines Performance up with its cell; the live-rows-start-at-zero
+test reads "no trades yet" for `$0.00`.

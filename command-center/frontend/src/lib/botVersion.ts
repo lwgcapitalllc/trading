@@ -40,6 +40,33 @@ export function deployWouldAdvance(c: BotVersionCompare | null | undefined): boo
   return to != null && c?.deployed_version != null && to > c.deployed_version
 }
 
+/** What a bot's version needs from a person. See `versionNeed`. */
+export type VersionNeed = 'behind' | 'restart' | 'unpushed'
+
+/**
+ * What, if anything, this bot's version needs from a person — the three AMBER states of the
+ * version pill, in the pill's own order: `behind` (a deploy would move it forward), `restart` (it
+ * runs older code than the box holds — `restart` is `restartReason`'s sentence), `unpushed` (the
+ * newer commits exist only on this machine). `null` for every calm state: current, unknown, unread,
+ * or not read yet.
+ *
+ * ⚠ ONE definition, read by the pill that DRAWS the state and by the Bots page's "needs you" line
+ * that COUNTS it (2026-09-15), so the line can never count a bot the pill draws calm, or miss one
+ * it draws amber. Before this the order lived only inside the pill's branches.
+ */
+export function versionNeed(
+  v: BotDeployedVersion | null | undefined,
+  restart: string | null | undefined
+): VersionNeed | null {
+  const c = v?.compare ?? null
+  if (!c || !c.comparable || c.deployed_version === null) return null
+  const behind = c.versions_behind ?? 0
+  if (behind > 0 && deployWouldAdvance(c)) return 'behind'
+  if (restart) return 'restart'
+  if (behind > 0) return 'unpushed'
+  return null
+}
+
 /**
  * Is the NEW code on disk while the OLD code is still trading?
  *
