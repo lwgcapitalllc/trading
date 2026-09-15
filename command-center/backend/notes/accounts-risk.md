@@ -752,3 +752,46 @@ fresh copy carries.
 `routers/bots.py::clone_bot` — 4 tests: refused by the live-config guard by default, a 404 before
 any write for an unknown bot, and an end-to-end write against a throwaway instances root proving
 the real fleet is untouched afterward. Full backend suite: 2215 passed, 8 skipped.
+
+## A pinned account is unique per KIND — `PATCH /bots/accounts/{account}/pin` (2026-09-14)
+
+**A display fact, nothing more:** `RegisteredAccount.pinned` (`services/bot_account_registry.py`)
+lets the Bots page default-open and reorder-to-top whichever account is pinned, within its own
+Live or Demo section — done client-side, never here. Shared and durable rather than a per-browser
+preference, because this app has no login: two people reading the same page need the same account
+pinned. No bot reads it and no live-safety gate touches it.
+
+`set_pinned_account` is the uniqueness rule: setting `pinned=True` unpins whichever OTHER account
+of the SAME `kind` (demo/live) currently holds it, then pins the target — both writes go through
+`upsert_account` **directly, never `check_entry`**, for the exact reason `apply_sync`'s own direct
+writes already do (`check_entry` refuses a demo/live flip on a PERSON's typed Save; pinning is
+neither that route nor that change). ⚠ **Scoped to `kind`, never global** — pinning a live account
+must never touch whichever demo account is pinned, and the reverse.
+
+🔴 **The unpin write carries the FULL row it read (`dataclasses.replace`), never a bare `pinned`
+patch** — `upsert_account` replaces a row wholesale, so writing anything narrower would blank the
+label, terminal and every other field on the account that loses its pin.
+
+🔴 **`register_account`'s full-replace Save would otherwise have reset this on every unrelated
+edit.** `pinned` is not a field the account-settings form writes — it has its own endpoint — but
+`register_account` builds a fresh `RegisteredAccount` from the form body and REPLACES the stored
+row, so renaming a label would have silently unpinned the account with nothing on screen to say
+so. It now reads the existing row first and carries `pinned` forward untouched.
+
+⚠ **An old row with no `pinned` key loads as `False`** through the same dataclass default every
+other optional field here already relies on — no migration, no special-casing.
+
+⚠ **`GET /bots/accounts` joins this in, never derives it.** `services/bot_accounts.py` touches no
+filesystem, so `AccountGroup.pinned` stays `False` from `group_by_account` and is set afterward by
+`apply_pinned(groups, pinned_map)` — a pure function taking a plain `{account: bool}` map the
+router already read off the registry. ⚠ **Only ever true for a real `account` group** — `bench` and
+`unknown` groups have no account number to look one up by. ⚠ **Never reorders** — that stays a
+frontend concern, and a broken registry file degrades this endpoint's `pinned` to `False`
+everywhere rather than failing the whole Bots page over a display fact.
+
+**TESTED:** 9 new checks in `tests/test_bot_account_registry.py` (the same-kind unpin, the
+per-kind scoping, the full-row-preserving unpin, the old-row default, the 404, the settings-Save
+carry-forward — each named for its own mutation) and 3 in `tests/test_bot_accounts.py`
+(`apply_pinned`'s own guard and order, and the endpoint join) — 12 new tests, every one watched RED
+by reverting its line and rerunning before restoring it. Full backend suite: `pytest tests/`
+— 2227 passed, 8 skipped, 5 deselected (up from 2215 passed before this entry).

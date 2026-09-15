@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -57,6 +57,7 @@ __all__ = [
     "upsert_account",
     "remove_account",
     "rebase_symbol",
+    "set_pinned_account",
 ]
 
 # Keys carrying prose rather than data. They are round-tripped untouched so a hand-written
@@ -90,6 +91,11 @@ class RegisteredAccount:
     broker: str = ""
     tier: str = ""  # "ECN" / "Standard" / … — the broker's own word
     kind: str = "demo"  # "demo" | "live"
+    # At most one account of a given KIND is pinned at once — enforced by `set_pinned_account`,
+    # never by this dataclass or by `upsert_account`. A plain display fact: no bot reads it, and
+    # an old row with no key at all deserializes as `False` through the same default every other
+    # field here already relies on.
+    pinned: bool = False
     server: str = ""
     mt5_path: str = ""  # "" = no terminal serves it ⇒ not assignable
     symbol_suffix: Optional[str] = None  # None = unrecorded; "" = bare symbols
@@ -407,6 +413,44 @@ def remove_account(path: Path, account: int) -> bool:
     raw["accounts"] = keep
     _atomic_write(path, raw)
     return True
+
+
+def set_pinned_account(
+    path: Path, account: int, pinned: bool, known_profiles: Optional[set[str]]
+) -> RegisteredAccount:
+    """Pin (or unpin) one account. At most one DEMO and one LIVE account are pinned at once.
+
+    `GET /bots/accounts` reads this so the Bots page can default-open and reorder-to-top whichever
+    account is pinned, within its own Live or Demo section — a shared, durable fact rather than a
+    per-browser preference, because this app has no login.
+
+    ⚠ **Scoped to `kind`, never global.** Pinning a live account must never touch whichever demo
+    account happens to be pinned, and the reverse — one login page section, one pin.
+
+    ⚠ **Written through `upsert_account` directly, never `check_entry`.** `check_entry` exists for
+    a PERSON's typed Save on the account-settings form — it is what refuses a demo/live flip there
+    — and pinning is neither that route nor that kind of change, the same reasoning
+    `account_sync.apply_sync` already relies on for its own direct writes.
+
+    Raises `RegistryError` when `account` is not registered — there is nothing here to pin. Most
+    callers should check `account_by_number` first and answer 404 themselves; this guard is the
+    backstop for a caller that does not.
+    """
+    target = account_by_number(path, account)
+    if target is None:
+        raise RegistryError(f"account {account} is not registered")
+
+    if pinned:
+        # Unpin whichever OTHER account of the same kind currently holds it, one full read +
+        # write per row so every other field survives untouched — `upsert_account` replaces a
+        # row wholesale, so this must carry the row it read, never a bare `pinned` patch.
+        for other in load_accounts(path):
+            if other.account != account and other.kind == target.kind and other.pinned:
+                upsert_account(path, replace(other, pinned=False), known_profiles)
+        stored, _ = upsert_account(path, replace(target, pinned=True), known_profiles)
+    else:
+        stored, _ = upsert_account(path, replace(target, pinned=False), known_profiles)
+    return stored
 
 
 def rebase_symbol(symbol: str, suffix: Optional[str]) -> Optional[str]:

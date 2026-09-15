@@ -938,6 +938,10 @@ class BotAccountGroup(BaseModel):
     # Bots here sharing an order tag. Empty is healthy, and the page shows the fact only when it
     # is true rather than printing a raw magic number nobody can interpret.
     magic_clash: list[str] = []
+    # At most one account of a given kind (demo/live) is pinned at once — a shared, durable fact
+    # from the registry (`PATCH /bots/accounts/{account}/pin`), never a per-browser preference.
+    # Always `False` off a real account: `bench`/`unknown` groups have no account number to pin.
+    pinned: bool = False
 
 
 class AccountStackBasisLeg(BaseModel):
@@ -1173,6 +1177,9 @@ class BotAccountRegistration(BaseModel):
     channels_reason: str = ""
     has_password: Optional[bool] = None  # None = the VPS could not be asked, never "no password"
     bot_keys: list[str] = []  # bots currently naming this account
+    # At most one demo and one live account are pinned at once — set by `PATCH
+    # /accounts/{account}/pin`, never by this row's own Save. See `BotAccountPin`.
+    pinned: bool = False
 
 
 class BotAccountRegistrationWrite(BaseModel):
@@ -1227,6 +1234,17 @@ class BotAccountPassword(BaseModel):
             # configured account whose login fails. Deleting is a different action.
             raise ValueError("password must not be empty; use the delete action to remove one")
         return v
+
+
+class BotAccountPin(BaseModel):
+    """Pin (or unpin) one account — `PATCH /bots/accounts/{account}/pin`.
+
+    Setting `pinned: true` unpins whichever OTHER account of the same demo/live kind currently
+    holds it; setting `false` only ever clears this account's own pin. See
+    `services.bot_account_registry.set_pinned_account`.
+    """
+
+    pinned: bool
 
 
 class BotChannelTest(BaseModel):

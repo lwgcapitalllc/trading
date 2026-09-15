@@ -691,3 +691,151 @@ def test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED(
     r = client.patch("/bots/b_leg_demo/account", json={"account": 700152905, "deploy": False})
     assert r.status_code == 409
     assert "password" in r.json()["detail"].lower()
+
+
+# ── pinning (2026-09-14): at most one DEMO and one LIVE account, ever ─────────
+#
+# `pinned` is a display fact only — no bot reads it, and it is never checked by `check_entry` or
+# any live-safety gate. The one rule that matters: pinning ADDS a pin, it never leaves two of a
+# kind. Two distinct terminals per live account below, or `upsert_account`'s own one-terminal-one-
+# account rule refuses the second registration before pinning is even reached.
+_LIVE_A = 35710389
+_LIVE_B = 34957946
+_LIVE_PATH_A = r"C:\MT5_Aaron\terminal64.exe"
+_LIVE_PATH_B = r"C:\MT5_Aaron2\terminal64.exe"
+
+
+def test_pinning_one_LIVE_account_unpins_the_OTHER_live_account(tmp_path):
+    """MUTATION: drop the same-kind unpin loop → both end up pinned and this goes red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _new_live(account=_LIVE_A, mt5_path=_LIVE_PATH_A), _PROFILES)
+    reg.upsert_account(p, _new_live(account=_LIVE_B, mt5_path=_LIVE_PATH_B), _PROFILES)
+
+    reg.set_pinned_account(p, _LIVE_A, True, _PROFILES)
+    assert reg.account_by_number(p, _LIVE_A).pinned is True
+
+    reg.set_pinned_account(p, _LIVE_B, True, _PROFILES)
+    assert reg.account_by_number(p, _LIVE_B).pinned is True
+    assert reg.account_by_number(p, _LIVE_A).pinned is False, "A must be unpinned once B is pinned"
+
+
+def test_pinning_a_DEMO_account_leaves_a_pinned_LIVE_account_ALONE(tmp_path):
+    """Uniqueness is scoped PER KIND — pinning is never one global slot shared by demo and live.
+
+    MUTATION: drop the `other.kind == target.kind` guard → the live account is unpinned by a demo
+    pin and this goes red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _new_live(account=_LIVE_A, mt5_path=_LIVE_PATH_A), _PROFILES)
+    reg.upsert_account(p, _acct(), _PROFILES)  # 700152905, demo, its own terminal
+
+    reg.set_pinned_account(p, _LIVE_A, True, _PROFILES)
+    reg.set_pinned_account(p, 700152905, True, _PROFILES)
+
+    assert reg.account_by_number(p, _LIVE_A).pinned is True
+    assert reg.account_by_number(p, 700152905).pinned is True
+
+
+def test_unpinning_touches_ONLY_the_target(tmp_path):
+    """MUTATION: run the same-kind unpin loop on `pinned=False` too → clearing an
+    already-unpinned account unpins its currently-pinned sibling as a side effect, and this goes
+    red."""
+    p = _file(tmp_path)
+    reg.upsert_account(p, _new_live(account=_LIVE_A, mt5_path=_LIVE_PATH_A), _PROFILES)
+    reg.upsert_account(p, _new_live(account=_LIVE_B, mt5_path=_LIVE_PATH_B), _PROFILES)
+    reg.set_pinned_account(p, _LIVE_A, True, _PROFILES)
+
+    reg.set_pinned_account(p, _LIVE_B, False, _PROFILES)  # was never pinned — a no-op on itself
+
+    assert reg.account_by_number(p, _LIVE_A).pinned is True
+    assert reg.account_by_number(p, _LIVE_B).pinned is False
+
+
+def test_pinning_PRESERVES_every_other_field_on_the_account_it_unpins(tmp_path):
+    """`upsert_account` REPLACES a row — the unpin write must carry the FULL row it read, not a
+    bare `pinned: False` patch, or every other field on the account that loses its pin is wiped.
+
+    MUTATION: write a fresh `RegisteredAccount(account=other.account, pinned=False)` instead of
+    `replace(other, pinned=False)` → the label and terminal are dropped and this goes red."""
+    p = _file(tmp_path)
+    reg.upsert_account(
+        p, _new_live(account=_LIVE_A, mt5_path=_LIVE_PATH_A, label="Aaron live"), _PROFILES
+    )
+    reg.upsert_account(p, _new_live(account=_LIVE_B, mt5_path=_LIVE_PATH_B), _PROFILES)
+    reg.set_pinned_account(p, _LIVE_A, True, _PROFILES)
+
+    reg.set_pinned_account(p, _LIVE_B, True, _PROFILES)  # unpins A as a side effect
+
+    unpinned = reg.account_by_number(p, _LIVE_A)
+    assert unpinned.pinned is False
+    assert unpinned.label == "Aaron live"
+    assert unpinned.mt5_path == _LIVE_PATH_A
+
+
+def test_an_old_row_with_no_pinned_key_loads_as_pinned_FALSE(tmp_path):
+    """A field a stored row predates deserializes through the same dataclass default every other
+    optional field here already relies on (`tier`, `label`, …) — no special-casing needed.
+
+    MUTATION: give `pinned` no default (a required field) → this raises instead of defaulting."""
+    p = _file(tmp_path, [{"account": 1, "server": "S"}])
+    assert reg.load_accounts(p)[0].pinned is False
+
+
+def test_pinning_an_UNREGISTERED_account_is_refused(tmp_path):
+    """MUTATION: drop the `account_by_number` guard → this raises `AttributeError` on `None`
+    instead of a clear `RegistryError` naming the account, and the `match` below stops matching."""
+    p = _file(tmp_path)
+    with pytest.raises(reg.RegistryError, match="not registered"):
+        reg.set_pinned_account(p, 424242, True, _PROFILES)
+
+
+# ── the pin endpoint ───────────────────────────────────────────────────────────
+def test_the_pin_endpoint_404s_for_an_account_that_is_not_registered(client, registry):
+    r = client.patch("/bots/accounts/424242/pin", json={"pinned": True})
+    assert r.status_code == 404
+
+
+def test_the_pin_endpoint_pins_and_reports_the_updated_row(client, registry, monkeypatch):
+    """End to end: the route writes through the service and hands back the same registration
+    shape every other registry endpoint does.
+
+    MUTATION: return the entry the request carried instead of `stored` → `pinned` reads False on
+    the response even though the file was written correctly, and this goes red."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: set())
+    reg.upsert_account(registry, _acct(), _PROFILES)
+
+    r = client.patch("/bots/accounts/700152905/pin", json={"pinned": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["pinned"] is True
+    assert reg.account_by_number(registry, 700152905).pinned is True
+
+
+def test_an_ordinary_settings_SAVE_does_not_reset_an_existing_pin(client, registry, monkeypatch):
+    """`pinned` is not a field the account-settings form writes — it has its own endpoint — so an
+    unrelated Save (renaming the label, say) must carry the CURRENT pin forward. `register_account`
+    REPLACES the row, so anything it does not read off the existing entry is lost.
+
+    MUTATION: drop the `existing.pinned if existing else False` carry-forward in `register_account`
+    → the rename below silently unpins the account and this goes red."""
+    from routers import bots as bots_router
+
+    monkeypatch.setattr(bots_router, "_accounts_with_a_password", lambda: set())
+    reg.upsert_account(registry, _acct(), _PROFILES)
+    reg.set_pinned_account(registry, 700152905, True, _PROFILES)
+
+    r = client.put(
+        "/bots/accounts/registry/700152905",
+        json={
+            "account": 700152905,
+            "label": "renamed",
+            "server": "PUPrime-Demo",
+            "mt5_path": r"C:\MT5_FFT\terminal64.exe",
+            "symbol_suffix": ".p",
+            "account_profile": "puprime_ecn",
+            "deploy": False,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["pinned"] is True
+    assert reg.account_by_number(registry, 700152905).pinned is True

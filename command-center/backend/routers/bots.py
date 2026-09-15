@@ -61,6 +61,7 @@ from models import (
     BotAccountCapUpdate,
     BotAccountGroup,
     BotAccountPassword,
+    BotAccountPin,
     BotAccountRegistration,
     BotAccountRegistrationWrite,
     BotAccountRiskPlan,
@@ -1830,6 +1831,18 @@ def _account_groups() -> list:
     return bot_accounts.group_by_account(_all_instance_configs(), {b.key: b.display for b in _BOTS})
 
 
+def _pinned_accounts() -> dict[int, bool]:
+    """Which registered accounts are pinned, for `GET /bots/accounts` to serve alongside the
+    derived bot grouping. A registry that cannot be read degrades to "nothing pinned" rather than
+    failing the whole endpoint — this page's job is the live bot grouping, and a broken registry
+    file must not take it down over a display fact (the same reasoning `has_password` degrading
+    to `None` rather than a 502 already follows one endpoint over)."""
+    try:
+        return {a.account: a.pinned for a in bot_account_registry.load_accounts(_registry_path())}
+    except bot_account_registry.RegistryError:
+        return {}
+
+
 @router.get("/accounts", response_model=list[BotAccountGroup])
 def list_bot_accounts():
     """Which bots share a trading account, and what ceiling that account is under.
@@ -1837,6 +1850,7 @@ def list_bot_accounts():
     A stack on the live side is READ, not configured: two bots naming the same `account` are
     trading one balance whether or not anybody grouped them. See `services/bot_accounts.py`.
     """
+    groups = bot_accounts.apply_pinned(_account_groups(), _pinned_accounts())
     return [
         BotAccountGroup(
             account=g.account,
@@ -1852,8 +1866,9 @@ def list_bot_accounts():
             share_overflow_reason=g.share_overflow_reason,
             room_pct=g.room_pct,
             magic_clash=g.magic_clash,
+            pinned=g.pinned,
         )
-        for g in _account_groups()
+        for g in groups
     ]
 
 
@@ -2452,12 +2467,18 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
             status_code=400, detail=f"path account {account} does not match body {body.account}"
         )
 
+    # `pinned` is not a field this form writes — it has its own endpoint (`PATCH
+    # /accounts/{account}/pin`) — so an ordinary settings Save must carry the account's CURRENT
+    # pin forward rather than resetting it to the dataclass default. This row REPLACES the whole
+    # entry (see the docstring below), so anything not read from the existing row here is lost.
+    existing = bot_account_registry.account_by_number(_registry_path(), account)
     entry = bot_account_registry.RegisteredAccount(
         account=body.account,
         label=body.label,
         broker=body.broker,
         tier=body.tier,
         kind=body.kind,
+        pinned=existing.pinned if existing else False,
         server=body.server,
         mt5_path=body.mt5_path,
         symbol_suffix=body.symbol_suffix,
@@ -2571,6 +2592,36 @@ def set_account_password(account: int, body: BotAccountPassword):
         )
     _write_account_password(account, body.password)
     return {"status": "ok", "account": account, "has_password": True}
+
+
+@router.patch("/accounts/{account}/pin", response_model=BotAccountRegistration)
+def set_account_pin(account: int, body: BotAccountPin):
+    """Pin (or unpin) one account. At most one DEMO and one LIVE account are pinned at once.
+
+    A shared, durable fact rather than a per-browser preference — this app has no login —
+    read by `GET /bots/accounts` so the Bots page can default-open and reorder-to-top whichever
+    account is pinned, within its own Live or Demo section (done client-side; this endpoint never
+    reorders anything).
+
+    ⚠ **Scoped to `kind`, never global.** Pinning a live account leaves whichever demo account is
+    currently pinned alone, and the reverse.
+    """
+    if bot_account_registry.account_by_number(_registry_path(), account) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"account {account} is not registered. Register it first — there is nothing "
+            f"here to pin.",
+        )
+    stored = bot_account_registry.set_pinned_account(
+        _registry_path(), account, body.pinned, _known_profiles()
+    )
+    bots_here = [
+        b.key
+        for g in _account_groups()
+        if g.kind == "account" and g.account == account
+        for b in g.bots
+    ]
+    return _registration(stored, bots_here, _accounts_with_a_password())
 
 
 _VERIFY_CHANNEL = "algos/tools/verify_channel.py"

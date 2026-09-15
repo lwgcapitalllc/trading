@@ -197,6 +197,54 @@ def test_the_endpoint_SERVES_the_shares_it_computed(client, monkeypatch):
     assert row["share_overflow_reason"] == group.share_overflow_reason
 
 
+# ── pinning (2026-09-14): one flag, scoped to demo/live, read off the registry ─
+#
+# `pinned` lives in the registry (`services/bot_account_registry.py`), not an instance config, so
+# this module never derives it — it is only ever set from a plain map the caller already read off
+# disk. See `services/bot_account_registry.py` for the uniqueness rule itself.
+def test_apply_pinned_marks_only_the_matching_ACCOUNT_group():
+    """MUTATION: drop the `kind == "account"` guard → a bench/unknown group (account=None) reads
+    pinned too whenever the map happens to hold an entry for `None`, and this goes red."""
+    account = ba.AccountGroup(account=1, server="S", kind="account", bots=[_bot("a", 5.0)])
+    bench = ba.AccountGroup(account=None, server="", kind="bench", bots=[_bot("b", 5.0)])
+    ba.apply_pinned([account, bench], {1: True, None: True})
+    assert account.pinned is True
+    assert bench.pinned is False
+
+
+def test_apply_pinned_does_not_reorder_the_groups():
+    """The Live/Demo reorder-to-top is a FRONTEND concern — this only sets the flag.
+
+    MUTATION: sort the returned list by `pinned` → the order changes and this goes red."""
+    a = ba.AccountGroup(account=1, server="S", kind="account")
+    b = ba.AccountGroup(account=2, server="S", kind="account")
+    out = ba.apply_pinned([a, b], {2: True})
+    assert [g.account for g in out] == [1, 2]
+    assert (a.pinned, b.pinned) == (False, True)
+
+
+def test_the_endpoint_SERVES_the_pinned_flag_from_the_registry(client, monkeypatch):
+    """`pinned` lives in the registry, not an instance config, so this endpoint has to JOIN the
+    two — a bare read of `_account_groups()` would never see it.
+
+    MUTATION: drop `apply_pinned` from the endpoint (serve the raw groups) → every row reads
+    `pinned: False` regardless of the registry and this goes red.
+    """
+    from routers import bots as bots_router
+
+    pinned_group = ba.AccountGroup(
+        account=700107749, server="PUPrime-Demo", kind="account", bots=[_bot("a", 10.0)]
+    )
+    other_group = ba.AccountGroup(
+        account=700152905, server="PUPrime-Demo", kind="account", bots=[_bot("b", 5.0)]
+    )
+    monkeypatch.setattr(bots_router, "_account_groups", lambda: [pinned_group, other_group])
+    monkeypatch.setattr(bots_router, "_pinned_accounts", lambda: {700107749: True})
+
+    by_account = {g["account"]: g["pinned"] for g in client.get("/bots/accounts").json()}
+    assert by_account == {700107749: True, 700152905: False}
+
+
 def test_setting_a_cap_on_an_unknown_account_is_a_404(client):
     r = client.patch("/bots/accounts/12345/risk-cap", json={"risk_cap_pct": 10.0})
     assert r.status_code == 404

@@ -60,6 +60,7 @@ __all__ = [
     "AccountGroup",
     "AssignPlan",
     "group_by_account",
+    "apply_pinned",
     "cap_change_plan",
     "risk_pct_of",
     "share_overflow",
@@ -100,6 +101,11 @@ class AccountGroup:
     risk_cap_pct: Optional[float] = None
     cap_agrees: bool = True
     cap_unknown: bool = False  # at least one config is unreadable
+    # Whether the registry marks this account pinned. This module reads no filesystem (see the
+    # module docstring), so `group_by_account` never sets it — it is always `False` here until
+    # `apply_pinned` marks it from a map the caller already read off the registry. Meaningless off
+    # a real account: `bench` and `unknown` groups have no account number to look up.
+    pinned: bool = False
 
     @property
     def stacked(self) -> bool:
@@ -286,6 +292,22 @@ def group_by_account(
     # the list reads as though it were one.
     order = {"account": 0, "bench": 1, "unknown": 2}
     return sorted(groups.values(), key=lambda g: (order[g.kind], g.account or 0))
+
+
+def apply_pinned(groups: list[AccountGroup], pinned: dict[int, bool]) -> list[AccountGroup]:
+    """Mark which of these groups the registry has pinned, from a plain account→pinned map the
+    caller already read off disk — this module touches no filesystem itself (see the module
+    docstring), so the lookup happens outside and lands here as data.
+
+    ⚠ **Never changes the ORDER** — reordering to the top of a Live/Demo section is a frontend
+    concern; this only sets the flag a page reads to do that.
+
+    ⚠ **Only an `account` group can be pinned.** `bench` and `unknown` groups have no account
+    number to look one up by, so they read `False` regardless of what the map holds for `None`.
+    """
+    for g in groups:
+        g.pinned = bool(g.kind == "account" and g.account is not None and pinned.get(g.account))
+    return groups
 
 
 def cap_change_plan(group: AccountGroup, new_cap: Optional[float]) -> list[str]:
