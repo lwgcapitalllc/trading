@@ -1231,7 +1231,6 @@ export function Bots() {
     const idle = rows.length === 0
     const { balance, readAt } = balanceAt(account, idle ? null : balanceOf(rows))
     // The bots that TRADED here and left, as rows under the ones on it now.
-    const past = (earn?.bots ?? []).filter((b) => b.former)
     // 🔴 NO COLOURED EDGE, AND NO LIVE/DEMO CHIP (2026-09-10, Aaron: *"we don't need to be
     // redundant on data anywhere on this page"*). The edge was green when the account was up and
     // red when down — the sign the net figure beside the balance already carries in the same colours.
@@ -1297,9 +1296,9 @@ export function Bots() {
              *  ceiling nothing is running. ⚠ The drawer carries the same finding with the
              *  fix beside it; this is the half a reader sees without opening anything.
              *
-             *  ⚠ **No chip at all while no bot is on the account.** The ceiling is stored on each
-             *  bot, so with none there is no cap to state — and "no cap" in warn over an account
-             *  nothing is trading is an alarm about nothing. It returns with the first bot.
+             *  ⚠ **No CAP chip while no bot is on the account** — the ceiling is stored on each
+             *  bot, so with none there is no cap to state, and "no cap" in warn would be an alarm
+             *  about nothing. It returns with the first bot.
              *
              *  🔴 **Only the two FAULT states stay a pill here (2026-09-14).** A pill is an
              *  alarm shape — border, background, uppercase — and belongs beside the account's
@@ -1308,8 +1307,25 @@ export function Bots() {
              *  with it, so once the header grew a real stat cluster (Equity / Return / Avg per
              *  bot) a calm gold NUMBER moved there as one more of those — see below — rather
              *  than staying a pill with nothing to warn about, dropped into a row of plain
-             *  identity text it no longer matched. */}
-            {idle ? null : !group.cap_agrees ? (
+             *  identity text it no longer matched.
+             *
+             *  🔴 **An IDLE account earns the slot back, as a plain status pill (2026-09-15,
+             *  Aaron: *"we need some kind of indicator showing that there's no bots on it right
+             *  now"*).** The card already said so two ways — no bot ROW, and the equity figure's
+             *  own "read <time>" note — but both sit below the fold and neither is a glance-level
+             *  signal the way the account's identity line is. ⚠ **Grey, never warn/gold**: an
+             *  idle account (a demo a set was just promoted off) is a normal resting state, not a
+             *  fault like the two above, so it gets the neutral pill this page reserves for a
+             *  plain status rather than the alarm colours those two fault chips use. */}
+            {idle ? (
+              <span
+                data-testid="idle-chip"
+                title="No bot is on this account right now. Its equity and return below are what it grew to before its bots left — add a bot to trade it again."
+                className="inline-flex items-center text-[10.5px] font-semibold px-[7px] py-[3px] rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary border border-border-default cursor-default"
+              >
+                no bot
+              </span>
+            ) : !group.cap_agrees ? (
               <span
                 data-testid="cap-chip"
                 title="The bots on this account do not state the same risk ceiling, so none of them will start. Open the account to set one figure for all of them."
@@ -1419,7 +1435,17 @@ export function Bots() {
 
             <span className="w-px self-stretch bg-border-subtle" />
 
-            <span className="min-w-[118px] flex flex-col items-end justify-center gap-[3px] pl-[14px]">
+            {/* 🔴 **A FIXED WIDTH, like its three neighbours (2026-09-15) — it was `min-w`, the
+             *  one exception to "FOUR SLOTS, ALWAYS, EACH A FIXED WIDTH" above, and the one
+             *  case that broke it: a past reading appends "read <time>" BESIDE the figure, on
+             *  one line, and that pair is wider than any plain balance. A `min-w` box grows to
+             *  fit it — this whole cluster hangs off `ml-auto`, so growing the last slot pushes
+             *  every slot before it (Cap, Return, Avg / bot) left with it. That is why the demo
+             *  account Aaron's bots had just left drew its header a full column short of the
+             *  live one beside it. Fix is the stat itself, not the box: the read time now sits
+             *  UNDER the figure instead of beside it, so the box's content is the WIDER of the
+             *  two lines, not their sum, and 118px (already enough for either alone) holds. */}
+            <span className="w-[118px] flex flex-col items-end justify-center gap-[3px] pl-[14px]">
               <StatLabel>Equity</StatLabel>
               <span className="text-[17px] font-mono tabular-nums font-medium">
                 {/* ⚠ `balance unread` is a warning and is only true once the box has
@@ -1437,14 +1463,25 @@ export function Bots() {
                   </span>
                 ) : balance == null ? (
                   <span className="text-[12px] text-warn-text">balance unread</span>
-                ) : readAt ? (
+                ) : readAt && idle ? (
+                  // ⚠ No visible "read <time>" here (2026-09-15) — the identity line's own
+                  // "no bot" pill above already says this figure cannot be live; a second,
+                  // more granular say-so beside the number was the one Aaron read and asked
+                  // "why do I care about that." The time itself is not thrown away, only
+                  // folded into the hover, same as every other explanation on this card.
                   <span
-                    title={
-                      idle
-                        ? `The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`
-                        : `The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`
-                    }
-                    className="inline-flex items-baseline gap-[7px] cursor-default"
+                    title={`The last balance a bot read here, on ${readTime(readAt)}, before it left. No bot is on this account now, so nothing reads it live.`}
+                    className="cursor-default"
+                  >
+                    {money(balance, false)}
+                  </span>
+                ) : readAt ? (
+                  // A bot IS on this account and simply has not reported a balance of its own
+                  // yet — nothing else on the card says this figure is old, so the time stays
+                  // on screen, not just on hover.
+                  <span
+                    title={`The last balance a bot read here, on ${readTime(readAt)}. No bot on this account has reported one since it started, so this is not a live figure yet.`}
+                    className="flex flex-col items-end gap-[1px] cursor-default"
                   >
                     {money(balance, false)}
                     <span
@@ -1663,40 +1700,16 @@ export function Bots() {
             </div>
           )}
 
-          {/* The bots that TRADED here and left. Their record is the account's own — it is what
-           *  the live-against-demo score reads — so it stays under the bots on it now, whether
-           *  that is none or a new set. ⚠ No controls: the bot is run from its new account's
-           *  card, and a Stop here would read as stopping it on THIS account. */}
-          {past.map((b) => {
-            const where = b.moved_to != null ? regByAccount.get(b.moved_to)?.kind : undefined
-            const moved =
-              b.moved_to != null
-                ? `Moved to ${where ? `${where} account` : 'account'} ${b.moved_to}`
-                : 'Moved off this account'
-            return (
-              <div
-                key={`past-${b.bot_key}`}
-                data-testid="past-row"
-                data-bot={b.bot_key}
-                className={`grid ${GRID} items-center gap-3 pr-4 py-[10px] border-t border-border-subtle`}
-              >
-                {/* ⚠ No dot-wide spacer before the name any more — the rows above lost their dot
-                 *  on 2026-09-12, and the spacer left this name 16px to the right of theirs. */}
-                <span className="flex items-center font-medium text-[13px] min-w-0 pl-4 text-text-secondary">
-                  <span className="truncate">{b.name}</span>
-                </span>
-                {/* Where it went IS its status on this account. */}
-                <span title={moved} className="truncate text-[12px] text-text-tertiary">
-                  {moved}
-                </span>
-                <Contribution e={b} asking={false} />
-                <ReturnPct e={b} asking={false} />
-                <TradeCount e={b} asking={false} />
-                <PerTrade e={b} asking={false} top={false} />
-                <span className="col-span-3" />
-              </div>
-            )
-          })}
+          {/* 🔴 **THE DEPARTED-BOT ROWS ARE GONE (2026-09-15, Aaron: *"the history of the bots
+           *  don't really need to be there... I don't care where the bots will move to"*).**
+           *  Their per-bot detail — where each one went, what it made here — used to render as
+           *  its own row under the "no bot" row. The account's OWN equity and return above are
+           *  untouched (they read the whole account record, not this list), and the score a
+           *  departed bot earned still counts on its SIDE's pooled figure (`scoreOf`, which folds
+           *  `former` bots in on purpose) and still carries forward once a bot returns here
+           *  (`carried_from`) — neither of those reads this list either. This removed a VIEW, not
+           *  the record: the identity line's "no bot" pill now carries the one fact Aaron reads
+           *  at a glance, and the detail this replaced was never that. */}
         </div>
 
         {earn && <Unattributed e={earn} />}

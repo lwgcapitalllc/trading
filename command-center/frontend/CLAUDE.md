@@ -405,6 +405,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - Take off is ONE button on both panels (2026-09-13)
 - The account header — a stat cluster instead of a boring row (2026-09-14)
 - The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
+- The Equity slot's real fix, and an explicit "no bot" status (2026-09-15)
 - The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
 - Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
 - 🔴 The page may NOT add the risk shares up itself (2026-09-04)
