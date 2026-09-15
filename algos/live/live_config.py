@@ -155,6 +155,12 @@ class LiveConfig:
     # the strategy. Until then a cap-only change was consumed as COSMETIC — the file said one cap and
     # the bot ran another, with nothing reporting it until the next restart.
     account_risk_cap_pct: Optional[float] = None
+    # Where this bot sits in its ACCOUNT's priority order (1 = first), set on Bots → Accounts.
+    # When two bots on one account close a bar together, the lower one waits for the higher to
+    # reach the broker first, so it sizes into what is left — `shared/account_priority.py`.
+    # `None` = no order set: this bot never waits. ⚠ Read FRESH off disk every bar by that module,
+    # so a re-order applies without a restart; this field only lets the file carry the key.
+    account_priority: Optional[int] = None
 
     # ── the balance the strategy may size against ───────────────────────────
     #

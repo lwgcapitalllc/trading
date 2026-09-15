@@ -2579,6 +2579,9 @@ class LiveRunner:
         # would size this bar's fill against last bar's budget, which is exactly the window
         # another bot fills. ⚠ It never raises: a budget refresh that broke the bar stream would
         # trade a sizing question for a bot that stops trading altogether.
+        # ⚠ The PRIORITY wait comes first: a bot below another on its account lets the higher one
+        # reach the broker before it reads the room, so it sizes into what is left.
+        self._wait_for_priority(bar.timestamp_ms + self.feed.bar_seconds * 1000)
         self._refresh_account_room()
         # BEFORE the push. Every fast bar opening before this bar CLOSES belongs in front of it,
         # and `flush_fast_before` says why that question is asked instead of the cheaper one.
@@ -2587,6 +2590,43 @@ class LiveRunner:
         self.clock.push_primary(bar)
         for ps in self.clock.drain_primary():
             self._settle_primary(ps)
+
+    def _wait_for_priority(self, bar_close_ms: int) -> None:
+        """Wait for every bot above this one on its account to size the bar that just closed.
+
+        Aaron, 2026-09-15: when two bots signal together and there is room for one, the higher
+        one in the account's priority order trades in full. The room is read off the broker, so
+        waiting until the higher bot's order is THERE is the whole mechanism — see
+        `shared/account_priority.py` for why it is time rather than a shared file or a lock.
+
+        ⚠ **A failure here waits for nothing and says so.** The broker-side cap check still stands
+        behind every order; a raise would break the bar stream and stop the bot managing a trade.
+        """
+        key = getattr(self.cfg, "bot_key", None)
+        if self.bridge is None or not key:
+            return  # no bridge, or no bot identity — there is no account order to take a place in
+        log = getattr(self, "log", None)
+        try:
+            from account_priority import peers, wait_seconds
+
+            my_rank, others = peers(key)
+            secs = wait_seconds(
+                my_rank=my_rank,
+                others=others,
+                bar_close_ms=int(bar_close_ms),
+                now_ms=time.time() * 1000.0,
+                poll_seconds=self.cfg.poll_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001 — see the docstring
+            if log is not None:
+                log.warning(f"could not work out this bot's place in the account's order: {exc}")
+            return
+        if secs > 0:
+            if log is not None:
+                log.info(
+                    f"Priority {my_rank} on this account: waiting {secs:.0f}s for the bots above"
+                )
+            time.sleep(secs)
 
     def _refresh_account_room(self) -> None:
         """Hand the strategy's account seam the dollars still free under the account cap.

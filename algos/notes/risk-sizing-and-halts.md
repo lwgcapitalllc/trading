@@ -347,3 +347,46 @@ third pinning that an orphan under our own magic is still COUNTED.
 ⚠ **And deduplicating them briefly collapsed two refusal codes into one** — *the terminal would not
 answer* and *the book carries something unmeasurable* call for different work, and a pre-existing
 test caught it. Two failures must never share one message.
+
+### 🔴 The shrink above could NEVER reach a broker — and the pool, the half-share minimum and the priority order (2026-09-15)
+
+**Aaron's rule:** the cap bounds the risk OPEN at any moment, not the sum of the bots' shares, so
+any number of bots may share an account. A bot short of room trades what is left, down to HALF its
+own size; below that it is refused. When two signal together, the one higher in the account's
+priority order goes first.
+
+🔴 **FOUND: every shrunk entry was refused at the order check.** `order_sizing.plan_order` compared
+the strategy's risk against `balance x exec_risk_pct` in BOTH directions, so an entry the strategy
+had deliberately fitted to the room failed as `risk_not_authorised` — *"sizing off a balance the
+account does not have"*. From 2026-09-03 to today a bot short of room was refused exactly as before
+the shrink existed, under a reason that sent the reader to the warm-up equity. **That is the
+paragraph above saying "nothing here has run against a broker", arriving.** ✅ The bridge now hands
+the check the room the strategy was sized against; below a full share only MORE than the share is
+refused, and with room for a full share the check stays two-sided.
+
+🔴 **FOUND: a MARKET bot could never shrink at all.** A stated room refused every shrink at the FILL
+(the resting-order rule above), and a market bot's fill IS its placement — so the extreme leg could
+only ever be refused. ✅ The bridge now tells the account whether this bot's fill is its placement,
+from the strategy's declared entry style (`SoloAccount.fills_at_placement`).
+
+✅ **The half minimum** is `SHARED_MIN_GRANT_FRAC` in `backtest/portfolio/account.py`, applied only
+once a room is STATED — a solo replay and every parity gate are untouched. ⚠ **Aaron's own example
+(3% + 5% open, a 5% bot, 2% left) is REFUSED under it** — his call, made knowing that.
+
+✅ **The priority order** is `account_priority` in each instance config (1 = first), written from
+Bots → Accounts, read FRESH off disk every bar by `shared/account_priority.py`, so a re-order needs
+no restart. A lower bot waits one poll plus 10s per tier ahead, **timed from the bar's close**, and
+only on closes a higher bot also has. No shared file and no lock — a crashed bot can hold nothing.
+⚠ An unreadable roster waits as if every better rank were there (rule 1). ⚠ Capped at 120s.
+⚠ **"Share the room" between same-bar signals was NOT built** — it needs every strategy to announce
+a trade before sizing it. Priority only.
+
+🔴 **ROLLOUT ORDER MATTERS.** The order-check fix is in `algos/` and arrives by `git pull`; the half
+minimum and the market shrink are in `backtest/` and arrive only by `promote.py`. Pulled BEFORE the
+promote, a live bot could place a shrunk entry of ANY size above dust. **Promote first, then pull.**
+
+⚠ **NOTHING HERE HAS RUN AGAINST A BROKER — rule 9.** Watch the first SHRUNK entry on demo 700152905.
+
+**Tests:** `algos/tests/test_live_bridge.py` (shrunk entry placed — RED before the fix; oversized
+and undersized still refused; market flag), `algos/tests/test_account_priority.py` (16),
+`backtest/tests/test_account_share_floor.py` (8). Every guard watched RED by mutation.

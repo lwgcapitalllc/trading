@@ -2965,6 +2965,76 @@ def test_running_OUT_of_room_says_so_ONCE_and_the_RECOVERY_speaks(monkeypatch):
     assert kinds.count("event:account_room_restored") == 1
 
 
+# ── a SHRUNK entry must survive the order check (2026-09-15) ─────────────────────────────
+#
+# 🔴 The strategy shrinks an entry to the account's room at PLACEMENT (2026-09-03), and the order
+# check then compared that smaller risk against the bot's FULL share and refused it as sizing off
+# a balance the account does not have. So the shrink could never reach the broker: a bot short of
+# room was refused exactly as it was before the shrink existed, under a reason that sent the
+# reader to the warm-up equity instead.
+class _ExSized:
+    """A strategy that states its per-trade risk %, as a real one does — the order check reads it."""
+
+    def __init__(self, account, risk_pct=10.0):
+        self._account = account
+        self.cfg = types.SimpleNamespace(exec_risk_pct=risk_pct, point_value=1.0)
+
+
+def _sized_room_bridge(external_lots, balance=10_000.0):
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExSized(SoloAccount(balance=balance))
+    b, m, ledger, notes = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: balance
+    m.external = [_other_bot_lots(volume=external_lots)] if external_lots else []
+    b.refresh_account_room()
+    return b, ex._account
+
+
+def test_an_entry_the_strategy_SHRANK_to_the_room_is_PLACED_not_refused():
+    """$500 held elsewhere against a $1,000 cap. The strategy asks for its full $1,000, the
+    account fits it to the $500 left, and that order must pass.
+
+    RED before the fix: refused `risk_not_authorised` — $500 against a $1,000 share."""
+    b, acct = _sized_room_bridge(external_lots=0.5)
+    qty = acct.affordable_qty("bot", 3300.0, 3290.0, 1.0, 100.0)  # full size = 100 oz = $1,000
+    assert qty == pytest.approx(50.0), "the account must hand the strategy half its size"
+
+    plan = b._plan(1, _Pend(dir=1, edge=3300.0, qty=qty, sl=3290.0))
+    assert plan.ok, f"a shrunk entry was refused: {getattr(plan, 'detail', plan)}"
+    assert plan.risk_ccy == pytest.approx(500.0)
+
+
+def test_an_OVERSIZED_entry_is_still_refused_when_the_room_is_short():
+    """The guard this check exists for is the 2026-08-07 order — a strategy sizing off money the
+    account does not have. Allowing a shrink must not open the OTHER direction."""
+    b, _ = _sized_room_bridge(external_lots=0.5)
+    plan = b._plan(1, _Pend(dir=1, edge=3300.0, qty=150.0, sl=3290.0))  # $1,500 on a $1,000 share
+    assert not plan.ok and plan.code == "risk_not_authorised"
+
+
+def test_an_UNDERSIZED_entry_is_still_refused_when_nothing_shrank_it():
+    """With the whole cap free nothing had any reason to size small, so a small order still means
+    the strategy is sizing off the wrong balance — and is still refused."""
+    b, _ = _sized_room_bridge(external_lots=0.0)
+    plan = b._plan(1, _Pend(dir=1, edge=3300.0, qty=50.0, sl=3290.0))  # $500 on a $1,000 share
+    assert not plan.ok and plan.code == "risk_not_authorised"
+
+
+@pytest.mark.parametrize("style,expected", [("market", True), ("resting", False)])
+def test_the_account_is_told_whether_this_bots_FILL_is_its_PLACEMENT(style, expected):
+    """A market bot fills in its emulator before any order exists, so the account may shrink it
+    at the fill; a resting bot's order is already at the broker by then, so it may not."""
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExWithAccount(SoloAccount(balance=10_000.0))
+    ex.entry_style = style
+    b, _, _, _ = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: 10_000.0
+    b.refresh_account_room()
+    assert ex._account.fills_at_placement is expected
+
+
 # ── the MARKET entry route (added 2026-09-03) ─────────────────────────────────
 #
 # 🔴 Until this route existed, `_place` called `place_pending_limit` and nothing else, while the

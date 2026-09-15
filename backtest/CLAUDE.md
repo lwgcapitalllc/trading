@@ -309,6 +309,7 @@ listed below under the notes file that now holds it.
 - `tools/recovery_stack.py` — the loss-recovery rule as a LEG of a shared account (2026-08-20)
 - `portfolio/account.py` — the entry floor carries `_GRANT_EPS` (2026-08-20)
 - `portfolio/account.py` — the VENUE CEILING, and why a clamp is allowed here (2026-09-02)
+- `portfolio/account.py` — the half-share minimum and the market-bot shrink; no stored run moves (2026-09-15)
 - Three tools for asking whether a SECOND leg is worth having (2026-08-24)
 
 ### `notes/broker-data.md` — Broker identity, symbols and the bar cache

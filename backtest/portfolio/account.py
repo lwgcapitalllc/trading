@@ -33,6 +33,7 @@ __all__ = [
     "SoloAccount",
     "DEFAULT_MAX_LOTS",
     "DEFAULT_CONTRACT_SIZE",
+    "SHARED_MIN_GRANT_FRAC",
 ]
 
 # A grant within this much of the desired risk IS the desired risk.
@@ -74,6 +75,11 @@ _GRANT_EPS = 1e-9
 # grant of $0.003 was logged as `granted_risk: 0.0, blocked: False` — a state that branch cannot
 # produce, so the log itself read as impossible while being perfectly accurate.
 _MIN_GRANT_USD = 0.01
+
+# The smallest share of its own size a LIVE bot may be shrunk to when it shares an account with
+# bots in other processes — half, Aaron's call 2026-09-15. See `PortfolioAccount.min_grant_frac`.
+# A lab stack states its own (default off), so no stored run moves.
+SHARED_MIN_GRANT_FRAC = 0.5
 
 # The largest position any leg may hold, in LOTS, unless a caller says otherwise.
 #
@@ -130,10 +136,18 @@ class PortfolioAccount:
         leg_risk_pct: Optional[dict] = None,
         max_lots: Optional[float] = DEFAULT_MAX_LOTS,
         contract_size: float = DEFAULT_CONTRACT_SIZE,
+        min_grant_frac: float = 0.0,
     ) -> None:
         self.balance = float(balance)
         self.risk_cap_pct = float(risk_cap_pct)
         self.entry_floor_pct = float(entry_floor_pct)
+        # THE SMALLEST SHARE OF ITS OWN SIZE A LEG MAY BE SHRUNK TO (2026-09-15, Aaron: half).
+        # A fraction of the leg's OWN desired risk, never of the balance — so it holds for legs of
+        # any size, which is exactly what the balance-based `entry_floor_pct` could not do (see
+        # `all_or_nothing` below). Below it the entry is refused rather than trickled in: a leg
+        # holds ONE position, so a sliver occupies the slot its next full-size setup needs.
+        # ⚠ Defaults 0.0 — off — so every stored run is untouched.
+        self.min_grant_frac = float(min_grant_frac)
         # THE VENUE CEILING — the largest position any leg may hold, in LOTS, whatever its risk
         # % says it wants. `None` switches it off entirely.
         #
@@ -325,7 +339,11 @@ class PortfolioAccount:
         # a zero grant (no room) is a block, not a zero-size fill — even when the floor is 0.
         # `_MIN_GRANT_USD` makes "essentially zero" a block too: see its note, one dust fill
         # silently retired a leg for five and a half years.
-        if granted_risk < _MIN_GRANT_USD or self._below_floor(granted_risk):
+        if (
+            granted_risk < _MIN_GRANT_USD
+            or self._below_floor(granted_risk)
+            or self._below_share(desired_risk, granted_risk)
+        ):
             self._log_contention(leg, dir, desired_risk, 0.0, blocked=True)
             return 0.0
         if self._is_shrunk(desired_risk, granted_risk):
@@ -370,7 +388,11 @@ class PortfolioAccount:
             return desired_qty
         # Not enough for a trade worth placing. Same two tests `request_fill` blocks on, so a
         # size this refuses to place could not have been granted at the fill either.
-        if room < _MIN_GRANT_USD or self._below_floor(room):
+        if (
+            room < _MIN_GRANT_USD
+            or self._below_floor(room)
+            or self._below_share(desired_risk, room)
+        ):
             return 0.0
         per_unit = abs(float(entry) - float(stop)) * float(point_value)
         if per_unit <= 0:
@@ -409,7 +431,11 @@ class PortfolioAccount:
         out: dict[str, float] = {}
         for r, desired_risk in zip(requests, risks):
             granted_risk = desired_risk * factor
-            if granted_risk < _MIN_GRANT_USD or self._below_floor(granted_risk):
+            if (
+                granted_risk < _MIN_GRANT_USD
+                or self._below_floor(granted_risk)
+                or self._below_share(desired_risk, granted_risk)
+            ):
                 self._log_contention(r["leg"], r["dir"], desired_risk, 0.0, blocked=True)
                 out[r["leg"]] = 0.0
                 continue
@@ -473,6 +499,13 @@ class PortfolioAccount:
         """
         floor = self._floor()
         return floor > 0.0 and granted_risk < floor * (1.0 - _GRANT_EPS)
+
+    def _below_share(self, desired_risk: float, granted_risk: float) -> bool:
+        """Is this grant under the smallest share of its OWN size the leg may be shrunk to?
+        Carries `_GRANT_EPS` for `_below_floor`'s reason: a grant landing exactly on the line must
+        not be refused by the last bit of a float."""
+        frac = self.min_grant_frac
+        return frac > 0.0 and granted_risk < frac * desired_risk * (1.0 - _GRANT_EPS)
 
     def _log_contention(
         self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool
@@ -610,6 +643,13 @@ class SoloAccount(PortfolioAccount):
         # blocks the fill. Collapsing them would make an unset field refuse every trade, or a
         # measured zero grant every one.
         self.external_room: Optional[float] = None
+        # True when this bot's FILL is its PLACEMENT — a market entry, filled in the emulator on
+        # the bar's close with no order at the broker yet. Set by the live bridge from the
+        # strategy's declared entry style. For such a bot a shrink at `request_fill` IS a shrink at
+        # placement, so the refusal below — which exists because a RESTING order is already at the
+        # broker by the fill — does not apply. Before this (2026-09-15) a market bot sharing an
+        # account could never be shrunk, only refused.
+        self.fills_at_placement = False
         # 🔴 A STATED ROOM REFUSES RATHER THAN SHRINKING, AND THAT IS NOT THE PREFERENCE IT LOOKS
         # LIKE — a shrink here is INCOHERENT for the live caller (found by audit, 2026-09-03).
         #
@@ -639,13 +679,24 @@ class SoloAccount(PortfolioAccount):
         and no stored run moves — pinned by `test_all_or_nothing_defaults_OFF_so_no_stored_run_moves`,
         which caught the first version of this setting it unconditionally.
         """
-        return self.external_room is not None
+        return self.external_room is not None and not getattr(self, "fills_at_placement", False)
 
     @all_or_nothing.setter
     def all_or_nothing(self, _value) -> None:
         # `PortfolioAccount.__init__` assigns this; a SoloAccount derives it from the stated room
         # instead. Silently ignored rather than raising, because the base class is entitled to
         # set its own field and this subclass is entitled to have a different answer.
+        pass
+
+    @property
+    def min_grant_frac(self) -> float:
+        """Half its own size (`SHARED_MIN_GRANT_FRAC`) once a room is STATED — a live bot sharing
+        an account — and off otherwise, so a solo replay and every parity gate are unchanged."""
+        return SHARED_MIN_GRANT_FRAC if self.external_room is not None else 0.0
+
+    @min_grant_frac.setter
+    def min_grant_frac(self, _value) -> None:
+        # Derived, like `all_or_nothing` — the base class's assignment is ignored.
         pass
 
     def room(self) -> float:

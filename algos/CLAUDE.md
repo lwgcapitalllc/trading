@@ -227,6 +227,7 @@ Most-cited code: `tools/recovery_stack.py`, `shared/account_risk.py`, `shared/si
 
 - 🔴 THE HALT DID NOT HOLD — a reconnect, a bar gap or a settings edit put a halted bot back to trading (2026-09-02)
 - ⚠ Before splitting the 10% cap between two strategies — three live-side facts the lab cannot show you (2026-08-20)
+- 🔴 A shrunk entry could never reach a broker; the pooled cap, the half-share minimum and the priority order — promote BEFORE pull (2026-09-15)
 
 ### `notes/account-anchor-scale-in-and-targets.md` — Account anchor, scale-in add path and the travelling target
 

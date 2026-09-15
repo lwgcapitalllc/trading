@@ -511,6 +511,25 @@ from the emulator that actually knows about them. Counting them in both places h
 so a fill of essentially no size occupies its only slot — the defect that silently retired a leg
 for five and a half years, and `_MIN_GRANT_USD` is what stops it here.
 
+### The half-share minimum and the market-bot shrink (2026-09-15)
+
+**`PortfolioAccount(min_grant_frac=...)`** — the smallest share of its OWN desired risk a leg may be
+shrunk to; below it the entry is refused (Aaron: half). A fraction of the leg's own size, not of the
+balance, so it holds for legs of any size — the thing `entry_floor_pct` could not do. One helper,
+`_below_share`, checked in `affordable_qty`, `request_fill` and `request_fills`, carrying
+`_GRANT_EPS`. ⚠ **Defaults 0.0, so no stored run moves.** `SoloAccount` derives it:
+`SHARED_MIN_GRANT_FRAC` (0.5) once a room is stated, 0.0 otherwise — solo replays and parity gates
+unchanged.
+
+**`SoloAccount.fills_at_placement`** — set by the live bridge for a MARKET bot, whose fill IS its
+placement. It switches off the stated-room refusal at the fill, which exists only because a resting
+order is already at the broker by then. Before this a market bot sharing an account was only ever
+refused. Nothing in the lab sets it.
+
+⚠ Two cases in `tests/test_account.py` moved from a 250-of-1,000 room to 600: a quarter is now
+refused, and at 250 the anti-drift test would have passed with nothing shrunk.
+Live side, and the order-check defect found with it: `algos/notes/risk-sizing-and-halts.md`.
+
 ### `output.py` — the clamp's own record, and the state that must not vanish (2026-09-03)
 
 **`build_results` carries `lot_capped` on every run.** `None` means nothing recorded it; `[]` means

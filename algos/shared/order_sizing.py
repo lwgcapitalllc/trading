@@ -233,6 +233,7 @@ def plan_order(
     margin_for: Optional[Callable[[float], Optional[float]]] = None,
     margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT,
     unit_tolerance: float = UNIT_MISMATCH_TOLERANCE,
+    room_ccy: Optional[float] = None,
 ) -> OrderPlan:
     """Size one order, or refuse it with a reason.
 
@@ -268,9 +269,22 @@ def plan_order(
     # ── check 3: does the intent match the risk the account actually authorised? ──
     # This is the guard on the compounded-warm-up-equity fault. It runs first because when it
     # fires, every number below it is derived from a balance that does not exist.
+    #
+    # 🔴 `room_ccy` is the ACCOUNT room the strategy was sized against (2026-09-15). When it is
+    # below the bot's full share the strategy SHRANK the entry to fit, on purpose, so a smaller
+    # risk is the correct answer and only the dangerous direction — MORE than the share — is
+    # refused. Before this the check was two-sided always, and refused every shrunk entry as
+    # "sizing off a balance the account does not have": the shrink could never reach a broker.
+    # ⚠ With room for a full share, nothing had a reason to size small, so it stays two-sided.
     if account_equity and risk_pct:
         authorised = float(account_equity) * float(risk_pct) / 100.0
-        if authorised > 0 and _disagree(intended_risk, authorised, unit_tolerance):
+        shrunk = room_ccy is not None and float(room_ccy) < authorised * (1.0 - unit_tolerance)
+        wrong = (
+            intended_risk > authorised * (1.0 + unit_tolerance)
+            if shrunk
+            else _disagree(intended_risk, authorised, unit_tolerance)
+        )
+        if authorised > 0 and wrong:
             return SizingRefusal(
                 "risk_not_authorised",
                 f"the order would risk {intended_risk:,.2f} but {risk_pct}% of the account's "

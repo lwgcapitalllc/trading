@@ -2231,6 +2231,9 @@ class OrderBridge:
         account = getattr(self._ex, "_account", None)
         if account is None or not hasattr(account, "external_room"):
             return  # a strategy whose sizing does not go through the account seam
+        # A market bot's fill IS its placement, so the account may shrink it at the fill — see
+        # `SoloAccount.fills_at_placement`. Without this a market bot could only ever be refused.
+        account.fills_at_placement = self._entry_style() == "market"
         if self._risk_cap_pct is None:
             account.external_room = None  # uncapped, and that is a supported state
             return
@@ -2443,6 +2446,14 @@ class OrderBridge:
             free_margin=self._mt5.free_margin(),
             margin_for=lambda lots: self._mt5.margin_for(side, lots, pend.edge),
             margin_safety_pct=self._margin_safety_pct,
+            # The room the strategy was sized against THIS bar, so a deliberately shrunk entry is
+            # not refused as mis-sized. `external_room`, never `room()`: a market strategy has
+            # already booked its fill by now, and `room()` would subtract that fill from itself.
+            room_ccy=(
+                getattr(getattr(self._ex, "_account", None), "external_room", None)
+                if risk_authorised
+                else None
+            ),
         )
         # The ACCOUNT-level cap runs LAST, on a plan that already passed every per-order check.
         # Order matters: a refusal should name the first thing wrong with the order itself

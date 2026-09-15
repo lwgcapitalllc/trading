@@ -941,11 +941,15 @@ def test_a_size_that_FITS_the_budget_is_returned_untouched():
 
 def test_a_size_that_does_NOT_fit_is_SHRUNK_to_exactly_the_room():
     """Aaron's rule, 2026-09-03: a bot occupying more than its share makes the others shrink.
-    RED if this refuses instead of shrinking, which is what it did before this date."""
+    RED if this refuses instead of shrinking, which is what it did before this date.
+
+    ⚠ The room was 250 of 1,000 until 2026-09-15, when Aaron set the smallest shrink at HALF a
+    bot's own size — a quarter is now refused (`test_account_share_floor.py`), so this case
+    uses a room above half to keep testing the shrink itself."""
     s = SoloAccount(balance=10_000.0)
-    s.external_room = 250.0
-    # 1 point of stop distance at point value 1 → risk == qty. 1000 wanted, 250 affordable.
-    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0) == 250.0
+    s.external_room = 600.0
+    # 1 point of stop distance at point value 1 → risk == qty. 1000 wanted, 600 affordable.
+    assert s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0) == 600.0
 
 
 def test_the_shrunk_size_is_then_GRANTED_IN_FULL_at_the_fill():
@@ -953,8 +957,11 @@ def test_the_shrunk_size_is_then_GRANTED_IN_FULL_at_the_fill():
     the strategy. A placement sized by one rule and a fill judged by another is two answers to
     one question. RED if either side's thresholds move independently of the other's."""
     s = SoloAccount(balance=10_000.0)
-    s.external_room = 250.0
+    # ⚠ 600, not 250: a quarter-size room is refused since 2026-09-15, so at 250 `fitted` is 0
+    # and this would pass without testing anything.
+    s.external_room = 600.0
     fitted = s.affordable_qty("A", 100.0, 99.0, 1.0, 1_000.0)
+    assert fitted > 0.0, "the case must actually shrink, or it proves nothing"
     assert s.request_fill("A", +1, 100.0, 99.0, fitted, 1.0) == fitted, (
         "the fill must not shrink a size the placement already fitted"
     )
