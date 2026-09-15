@@ -1054,3 +1054,29 @@ nothing saying what any of the two numbers on the right were.
   `data-testid`s, not button text or DOM shape) — verified visually with four temporary Playwright
   screenshots (two-bot accounts, a 1280px width, a single-bot account, and a cap-disagreement
   account) that were removed before commit, never landed as fixtures.
+
+## The bot panel: one action row, Remove instead of Take off, issues that stand out (2026-09-14)
+
+Three of Aaron's asks the same day, all touching the same panel, so they land together.
+
+- 🔴 **"Take off" is "Remove" everywhere** — the button, its tooltips, and the account-panel row's
+  control (`TakeOffButton`, shared by both). The word predates the account panel gaining the same
+  control (2026-09-13); once both panels said it, "take off" read as jargon "remove" does not.
+- 🔴 **Every action on the bot panel is now ONE ROW** (Aaron: *"figure out all the action buttons
+  should be together … it just seems a little bit all over the place"*). Start / Stop / Restart on
+  the left; Logs, Move, and Remove — each previously stranded in its own section — grouped on the
+  right. The Account section below is now INFORMATION ONLY: which account, its name, the link to
+  open it; the paragraph explaining what a move or a removal does to a running bot stays put.
+- 🔴 **Move is now a labelled button, not a select that shows the CURRENT account** (Aaron: *"I
+  don't understand what that dropdown is for … maybe that should be like a move button"*). It
+  always reads "Move to…" (or "Put on account…" with none), never the account it is already on, so
+  picking an option is the only thing the control can mean. Same destinations, same plan fetch —
+  only the trigger changed.
+- 🔴 **A live issue is tinted and full-bleed, not plain text** (Aaron: *"the issues should stand out
+  a little bit more"*) — red for a `bad`-toned issue, amber for `warn`, following the same tone
+  `botCondition` already assigned rather than inventing a new one.
+- Also fixes a gap left by the VPS sync drawer redesign above: that commit shipped the drawer's new
+  "Your list now matches N accounts the scan could check" wording but not the test asserting the
+  old text, so `bots-accounts.spec.ts` was red on `main` between that commit and this one.
+- Tests: all 132 `bots-accounts.spec.ts` pass, five re-pointed to "Remove" (two test names, three
+  in-body assertions); tsc --noEmit clean.

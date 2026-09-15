@@ -26,3 +26,7 @@
 2026-09-14 03:49:23,527 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-14 04:49:05,716 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
 2026-09-14 04:49:24,849 [INFO] Trading is allowed on this account again.
+2026-09-14 22:05:08,092 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-14 22:05:08,259 [INFO] Sizing against account balance $15,844.46
+2026-09-14 22:05:16,575 [INFO] Warmed 15000 bars (2026-06-30 06:35:00+00:00 → 2026-09-14 22:00:00+00:00) in 7.6s
+2026-09-14 22:05:16,577 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46

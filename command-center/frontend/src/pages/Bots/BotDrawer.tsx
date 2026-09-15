@@ -25,7 +25,7 @@
  * that was backtested, and the risk note is the measured reasoning behind a live number.
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { ChevronRight, FileText, Play, RotateCcw, Square } from 'lucide-react'
+import { ArrowRightLeft, ChevronRight, FileText, Play, RotateCcw, Square } from 'lucide-react'
 import {
   useBotAccounts,
   useBotParams,
@@ -108,14 +108,36 @@ const upper = (s: string) => (s ? `${s[0].toUpperCase()}${s.slice(1)}` : s)
  * ⚠ **Nothing is decided here** — which problems exist, and their words, are `botCondition`'s.
  * Nothing renders for a bot with none. ⚠ What the platform found OVER goes under them as one grey
  * line (`ResolvedOnItsOwn`) — never counted, never a status.
+ *
+ * 🔴 **Tinted and full-bleed, not plain text (2026-09-14, Aaron: *"the [issues] should stand out a
+ * little bit more"*)** — a live problem now reads on sight rather than blending into the settings
+ * below it. The tint follows the worst issue's own tone (`bad` red, `warn` amber); nothing here
+ * invents a colour `botCondition` did not already assign.
  */
 function Attention({ cond, resolved }: { cond: Condition; resolved: BotReviewFinding[] }) {
   if (!cond.issues.length && !resolved.length) return null
+  const worst = cond.issues.some((i) => i.tone === 'bad')
+    ? 'bad'
+    : cond.issues.length
+      ? 'warn'
+      : null
   return (
     <section
       data-testid="bot-attention"
-      className="py-[14px] border-b border-border-subtle flex flex-col gap-[12px]"
+      data-tone={worst ?? undefined}
+      className={`-mx-5 px-5 py-[14px] border-b flex flex-col gap-[12px] ${
+        worst === 'bad'
+          ? 'bg-neg-muted border-neg/30'
+          : worst === 'warn'
+            ? 'bg-warn-muted border-warn/30'
+            : 'border-border-subtle'
+      }`}
     >
+      {worst && (
+        <p className={`text-[9.5px] font-semibold uppercase tracking-[0.8px] ${TONE_TEXT[worst]}`}>
+          Needs attention
+        </p>
+      )}
       {cond.issues.map((i) =>
         i.findings ? (
           <div key={i.key} data-testid={`attention-${i.key}`} className="flex flex-col gap-[8px]">
@@ -410,8 +432,13 @@ export function BotDrawer({
       {/* ── what is wrong, before what you can do about it ──────────────────── */}
       <Attention cond={cond} resolved={bot?.review?.resolved ?? []} />
 
-      <div className="flex items-center gap-2 py-[14px] border-b border-border-subtle">
-        {/* ⚠ While it is being taken off, its Take off button is the one thing saying so
+      {/* 🔴 EVERY ACTION ON THIS BOT, ONE ROW (2026-09-14, Aaron: *"figure out all the action
+       *  buttons should be together … it just seems a little bit all over the place"*). Start /
+       *  Stop / Restart on the left; Logs, Move and Remove — the three that were each stranded in
+       *  their own section — grouped on the right. The Account section below keeps only what you
+       *  READ: which account, its name, the link to open it. */}
+      <div className="flex items-center gap-2 py-[14px] border-b border-border-subtle flex-wrap">
+        {/* ⚠ While it is being taken off, its Remove button is the one thing saying so
          *  (2026-09-13, Aaron: "there should just be one button") — no Stopping pill here, and
          *  these stay put, not pressable. */}
         {pendingAction && !removing ? (
@@ -443,12 +470,74 @@ export function BotDrawer({
             <Play size={12} className="text-pos" /> Start
           </button>
         )}
-        <button
-          onClick={onLogs}
-          className={`${btnCls} border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary ml-auto`}
-        >
-          <FileText size={12} /> Logs
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={onLogs}
+            className={`${btnCls} border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary`}
+          >
+            <FileText size={12} /> Logs
+          </button>
+          {/* 🔴 A BUTTON THAT SAYS WHAT IT DOES, NOT A BARE SELECT SHOWING THE CURRENT ACCOUNT
+           *  (2026-09-14, Aaron: *"I don't understand what that dropdown is for … maybe that
+           *  should be like a move button"*). It always reads "Move to…" — never the account it is
+           *  already on — so picking one is the only thing it can mean. The destination it needs
+           *  and the plan it fetches are unchanged; only the trigger moved and got a label. */}
+          <div className="relative inline-flex items-center" title="Move it to another account">
+            <ArrowRightLeft
+              size={11}
+              className="absolute left-[9px] text-text-tertiary pointer-events-none"
+            />
+            <select
+              data-testid={`move-${bot.key}`}
+              value=""
+              disabled={selectBusy || holding}
+              aria-label="Move to another account"
+              onChange={(e) => {
+                if (e.target.value === '') return
+                const dest = Number(e.target.value)
+                if (dest !== configAccount) void pickDestination(dest)
+              }}
+              // A native select sizes its CLOSED box to its widest option unless given one — without
+              // this, the unassignable options' long reasons ran the control off the panel's edge.
+              className={`${btnCls} w-[108px] truncate appearance-none pl-[26px] pr-[10px] border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary bg-bg-sunken`}
+            >
+              <option value="" disabled>
+                {selected === '' ? 'Put on account…' : 'Move to…'}
+              </option>
+              {destinations
+                .filter((d) => d.account !== configAccount)
+                .map((d) => (
+                  <option key={d.account} value={d.account} disabled={!d.assignable}>
+                    {d.account}
+                    {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
+                  </option>
+                ))}
+            </select>
+          </div>
+          {/* 🔴 **Taking it off, as its own button (2026-09-11).** It BENCHES the bot (still
+           *  registered, never started by the watchdog). ⚠ The SAME control as each account-panel
+           *  row (2026-09-13, `TakeOffButton`): Remove → Stop and remove → Removing…, then this
+           *  panel closes. A RUNNING bot is stopped first. ⚠ Offered only once the CONFIG says the
+           *  bot is on an account. */}
+          {configAccount != null && (
+            <TakeOffButton
+              testId={`remove-${bot.key}`}
+              state={takeOffState}
+              display={labelOf(bot)}
+              account={configAccount}
+              running={running}
+              holding={holding}
+              blocked={selectBusy}
+              onPress={() =>
+                takeOff.press(
+                  bot.key,
+                  labelOf(bot),
+                  running && onStopThen ? (then) => onStopThen('taken off the account', then) : null
+                )
+              }
+            />
+          )}
+        </div>
       </div>
 
       {error && (
@@ -504,6 +593,10 @@ export function BotDrawer({
       )}
 
       {/* ── account ─────────────────────────────────────────────────────────── */}
+      {/* 🔴 **INFORMATION ONLY (2026-09-14).** Move and Remove moved to the action row above, next
+       *  to Logs — Aaron: *"figure out all the action buttons should be together."* This section
+       *  now only says which account it is on and lets you open it; the paragraph at the bottom
+       *  still explains what a move or a removal does to a running bot. */}
       <section data-testid="bot-account" className="py-[16px] border-b border-border-subtle">
         {/* 🔴 **The account's link lives HERE, not beside the status (2026-09-12)** — in the header
          *  it read as the answer to what needed review. It is a verb, open that account's own
@@ -531,71 +624,21 @@ export function BotDrawer({
          *  server refuses the write while it runs (409), and a page that moved it anyway would show
          *  it under the new account while it traded the old one. What changed is who carries it
          *  out — the confirm says it will be stopped, the PAGE stops it, waits for the box to say
-         *  so, then writes (`stopFirst.ts`), and it is left stopped.
-         *  ⚠ **An account with no terminal is LISTED and DISABLED, with the reason in the option.**
-         *  Hiding it makes an account that exists look like one that does not. */}
+         *  so, then writes (`stopFirst.ts`), and it is left stopped. */}
         <div className="flex items-center gap-2 flex-wrap">
-          <select
-            data-testid={`move-${bot.key}`}
-            value={selected}
-            disabled={selectBusy || holding}
-            title={
-              holding
-                ? `${bot.name} holds a trade, so it stays on this account until that trade closes.`
-                : `Move ${bot.name} to another account.`
-            }
-            onChange={(e) => {
-              if (e.target.value === '') return
-              const dest = Number(e.target.value)
-              if (dest !== configAccount) void pickDestination(dest)
-            }}
-            // A native select sizes itself to its WIDEST option, and an unassignable account's
-            // option carries its reason — so without a width it ran to the panel edge.
-            className="w-[240px] max-w-full text-[12.5px] bg-bg-sunken border border-border-default rounded-md px-2 py-[6px] text-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {destinations.map((d) => (
-              <option key={d.account} value={d.account} disabled={!d.assignable}>
-                {d.account}
-                {d.assignable ? '' : ` — ${d.reason || 'cannot be assigned'}`}
-              </option>
-            ))}
-            {/* Only what a bot on NO account shows as its value. Taking a bot OFF an account is
-             *  the Remove button beside this — the one place it happens (2026-09-11). */}
-            {selected === '' && (
-              <option value="" disabled>
-                Not on an account
-              </option>
-            )}
-          </select>
-          {/* The account's name, as its card's heading gives it — the selector shows the number. */}
+          {typeof configAccount === 'number' ? (
+            <span className="font-mono tabular-nums text-[13px] text-text-primary">
+              {configAccount}
+            </span>
+          ) : (
+            <span className="text-[12.5px] text-text-tertiary">Not on an account</span>
+          )}
+          {/* The account's name, as its card's heading gives it. */}
           {myAccountName && (
             <span data-testid="bot-account-name" className="text-[12px] text-text-secondary">
               {myAccountName}
             </span>
           )}
-          {/* 🔴 **Taking it off, as its own button (2026-09-11)** — Aaron: *"we can stop but we
-           *  can't remove"*. It BENCHES the bot (still registered, never started by the watchdog).
-           *  ⚠ The SAME control as each account-panel row (2026-09-13, `TakeOffButton`): Take off →
-           *  Stop and take off → Removing…, then this panel closes. A RUNNING bot is stopped first.
-           *  ⚠ Offered only once the CONFIG says the bot is on an account. */}
-          {configAccount != null ? (
-            <TakeOffButton
-              testId={`remove-${bot.key}`}
-              state={takeOffState}
-              display={labelOf(bot)}
-              account={configAccount}
-              running={running}
-              holding={holding}
-              blocked={selectBusy}
-              onPress={() =>
-                takeOff.press(
-                  bot.key,
-                  labelOf(bot),
-                  running && onStopThen ? (then) => onStopThen('taken off the account', then) : null
-                )
-              }
-            />
-          ) : null}
           {busyText && (
             <span data-testid="account-busy" className="text-[11.5px] text-accent animate-pulse">
               {busyText}

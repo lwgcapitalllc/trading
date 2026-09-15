@@ -889,7 +889,7 @@ async function stopsWhenAsked(
   return log
 }
 
-test('Take off takes a SECOND click — the first only arms it', async ({ page }) => {
+test('Remove takes a SECOND click — the first only arms it', async ({ page }) => {
   // It is one press from taking a bot off the account it trades, so it works like the live
   // deploy: the first click re-labels the button, only the second sends.
   // MUTATION: drop the arming branch → the first click sends and this goes red.
@@ -914,11 +914,11 @@ test('an armed Remove disarms itself, so a stray click later is not the second o
   const remove = page.getByTestId('remove-b_leg')
   await remove.click()
   await expect(remove).toHaveText('Confirm remove')
-  await expect(remove).toHaveText('Take off', { timeout: 5_000 })
+  await expect(remove).toHaveText('Remove', { timeout: 5_000 })
   expect(sent).toHaveLength(0)
 })
 
-test('Take off reads "Removing…" itself until it is written, then the panel CLOSES', async ({
+test('Remove reads "Removing…" itself until it is written, then the panel CLOSES', async ({
   page,
 }) => {
   // Aaron, 2026-09-13: "after a bot is removed I need the drawer to auto close; keeping it open
@@ -1729,7 +1729,7 @@ test('after a sync: what was saved, and the list as it now is — without asking
   await expect(saved).toHaveCount(1)
   await expect(saved.getByTestId('diff-before')).toHaveText('MT5_FFT')
   await expect(page.getByTestId('sync-change')).toHaveCount(0)
-  await expect(page.getByText(/Your list now: 1 matches the VPS/)).toBeVisible()
+  await expect(page.getByText(/Your list now matches 1 account the scan could check/)).toBeVisible()
   await expect(page.getByTestId('sync-done')).toBeVisible()
   await expect(page.getByTestId('sync-apply')).toHaveCount(0)
   await page.waitForTimeout(500)
@@ -2896,7 +2896,7 @@ test('a bot HOLDING A TRADE is not moved or taken off, and each control says why
   // 🔴 Stopped, its trade would stay open on the account it left with nothing managing it, and on
   // a new account it halts at its next start. The server refuses the write; the page says so
   // before the click. MUTATION: drop `holding` from the selector → red on it; likewise Remove, and
-  // the account panel's Take off. MUTATION: drop the line → red on it. MUTATION: keep the running
+  // the account panel's Remove. MUTATION: drop the line → red on it. MUTATION: keep the running
   // line ("stops it first") beside it → red on that.
   await mock(
     page,
@@ -3933,7 +3933,7 @@ test('the ACCOUNT panel takes a bot off with the bot panel’s one button, and S
   // -> removing … keep it consistent whether I am on the account removing a bot or I clicked on the
   // bot." Same control, same words — and, asked the same day, the account panel STAYS OPEN so a
   // second bot is one more click. The button holds Removing… until the list re-reads and the bot
-  // leaves its row, so it never flashes Take off on a bot that is already off.
+  // leaves its row, so it never flashes Remove on a bot that is already off.
   // MUTATION: send on the first click → red on the empty list. MUTATION: close this panel → red on
   // the panel. MUTATION: let go of Removing… before the list re-reads → red on the label. MUTATION:
   // keep the panel busy once it lands → red on the other bot's button.
@@ -3964,10 +3964,10 @@ test('the ACCOUNT panel takes a bot off with the bot panel’s one button, and S
   await expect(page.getByTestId('take-off-sos_fade')).toBeEnabled()
 })
 
-test('a RUNNING bot on the account panel: ONE button from Take off to Removing…, nothing beside it', async ({
+test('a RUNNING bot on the account panel: ONE button from Remove to Removing…, nothing beside it', async ({
   page,
 }) => {
-  // The row showed a Stopping pill beside a greyed Take off while the box caught up — two controls
+  // The row showed a Stopping pill beside a greyed Remove while the box caught up — two controls
   // saying one thing (Aaron's screenshot, 2026-09-13). From the first press the button is the row's
   // only control: Stop and take off, then Removing…, and the bot leaves its row, the panel open.
   // MUTATION: keep Stop beside the armed button → red on its count. MUTATION: show the pill while
