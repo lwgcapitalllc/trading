@@ -713,12 +713,99 @@ chose only the risk %, which measures sizing, not the setup. ⚠ **No grade** wa
 half-account drawdown; 2.5% keeps the 1-in-100 case under 50%. The demo exists to prove the live
 wiring and collect the forward data Run 2 already spent — it does not argue the edge is proven.
 
+### Run 12 — smoothing the 2020-2023 flat stretch: time, weekday, market condition, 20-day momentum (2026-09-16)
+
+**Ask (Aaron):** this bot is meant to add steady money to the others, so the long flat-to-losing
+stretch (Nov 2020 → Aug 2023) is the problem — look at time of day, weekday, and whether the market
+is trending or transitioning.
+
+**Basis:** shipped settings, 5% risk, `puprime_ecn`, PU Prime `XAUUSD.p` 5m. Every filter was
+**replayed** (the order layer refuses the setup, so the slot is free for another trade), never
+applied by deleting rows. Scratch `filters.py` patches the entry placement in-process; nothing in
+the package changed. The unpatched replay reproduced Run 11 exactly (163 trades, +54.09R).
+Test for every filter: better in BOTH halves (split 2023-08-10) and still better with the best
+trade removed.
+
+**Step 1 — tag and bucket** (scratch `tag.py`, `buckets.py`): each trade tagged with what was
+knowable at entry — New York hour, weekday, the market-condition label the extreme leg bot reads
+(last 120 5m + 15m bars), the 1h/4h label, and the daily trend three ways (close vs 20- and 50-day
+average, and the 20-day return). Hour blocks flip between halves. The 1h/4h label is almost always
+"trending" and says nothing. Tuesday was the only bucket negative in both halves (≈1.25σ).
+
+**Step 2 — replay, 2020-01-01 → 2026-09-16:**
+
+| filter | trades | R | before split | after | ex-best | maxDD R |
+|---|---|---|---|---|---|---|
+| none (shipped) | 163 | +54.09 | +6.22 | +47.87 | +35.62 | 14.48 |
+| refuse Tuesdays (NY day) | 123 | +62.04 | +11.47 | +50.57 | +43.56 | 7.58 |
+| refuse "transitioning" (5m/15m label) | 140 | +40.21 | +10.29 | +29.91 | +21.73 | 11.38 |
+| **refuse trades WITH the 20-day move** | 94 | +48.50 | **+18.45** | +30.05 | +30.02 | **5.07** |
+| only trades with the 20-day move | 74 | +3.45 | −11.71 | +15.16 | −14.53 | 13.12 |
+
+**Step 3 — the 20-day momentum filter's neighbours** (same filter, other lookbacks), and the history
+back to the measured 5m floor, **2018-09-14**. 2018-09 → 2019-12 was never looked at when the filter
+was chosen, so it is the only out-of-sample stretch — and it is 15 trades.
+
+| lookback | trades | R 2018-26 | 2018-19 (fresh) | 2020-26 | maxDD R |
+|---|---|---|---|---|---|
+| none | 178 | +59.67 | +5.57 | +54.09 | 14.48 |
+| 5 days | — | — | not run | +29.41 | 8.66 |
+| 10 days | 91 | +46.49 | +9.56 | +36.93 | 4.96 |
+| **20 days** | 102 | +51.70 | +3.20 | +48.50 | 5.07 |
+| 40 days | 95 | +35.72 | +5.35 | +30.36 | 5.06 |
+| 60 days | — | — | not run | +20.59 | 5.67 |
+
+R by year, from 2018: shipped 2.61 / 2.96 / 17.68 / **−8.18 / −4.00** / 32.86 / 3.92 / 14.07 / −2.25;
+20-day filter 2.61 / 0.59 / 17.58 / **−4.44 / +3.66** / 16.79 / 4.23 / 10.83 / −0.15.
+
+**Findings:**
+- **Time of day: no filter.** Nothing is consistent across halves.
+- **Tuesday: rejected despite passing.** It was picked as the worst of five days after looking and
+  has no mechanism; a weekday effect found that way is expected to vanish.
+- **Market-condition label: rejected.** It fixes the first half and costs 18R in the second.
+- **The 20-day momentum filter smooths but fails the both-halves test (see Step 4).** The drawdown cut (14.5R → ~5R) holds
+  at every lookback from 10 to 60 days — that is a plateau. **The profit does not**: total R falls
+  at every lookback and 20 is the best of them, so the +48.5R is partly a pick. In the fresh
+  2018-19 stretch it made 2.4R *less* than shipped on 8 trades — too few to confirm or refute.
+- **What it says about the bot:** the setup itself is a 15m trend-continuation entry after a false
+  break. It works best when that 15m trend runs AGAINST gold's 20-day move — a pullback-within-the-
+  bigger-move trade — and those trades earned in both halves. Trades aligned with the 20-day move
+  only paid in the 2023+ trend and lost in the 2020-23 chop.
+- If it is ever built: Pine input, export twin and a green gate first. It needs only daily closes,
+  so unlike the market-condition label it CAN be gated.
+  Reusable write-up: `docs/MOMENTUM_FILTER.md`.
+
+**Step 4 — the combined account** (scratch `stack3.py` via `backtest.portfolio.run_stack`): SOS
+Fade and the extreme leg at their live-instance settings, realign at 5%, one $10,000 account, 10%
+risk cap, the live half-share minimum, `puprime_ecn`, 2020-01-01 → 2026-09-16. Each leg's shared
+trades reproduced its solo figure (realign 163 / +54.09R unfiltered, 94 / +48.50R filtered). The
+stack's own default share rule gave the same book to the cent.
+
+| | trades | combined R | maxDD R | 2021 | 2022 | 2023 | before split | after |
+|---|---|---|---|---|---|---|---|---|
+| unfiltered | 526 | +338.92 | 14.46 | −4.22 | +1.20 | +80.61 | +131.75 | +207.17 |
+| realign filtered | 457 | +332.24 | **12.02** | −0.47 | +8.85 | +64.54 | +142.89 | +189.35 |
+
+- **On the account the filter costs 2% of R and cuts the worst drawdown 17%**, and 2021-22 moves
+  from −3.0R to +8.4R. SOS Fade lost 1.08R to the changed slot contention.
+- ⚠ **The flat stretch was already mostly covered by the other two bots** — the unfiltered account
+  made +131.75R before the split. The filter smooths an account that was not in trouble, which is
+  why the gain is modest.
+- 🔴 **Verdict: NOT recommended to ship.** It fails this repo's own bar — better in BOTH halves:
+  the recent half loses 17.8R on the account (18R on realign alone), so its gain sits in the past,
+  the wrong way round for a filter meant to run forward. On the account it trades 6.7R of profit
+  for 2.4R less drawdown. Build it only if Aaron explicitly wants that trade.
+- The 10% cap refused 3-6 SOS Fade setups per run, but the shared and solo trade counts match, so
+  no trade was lost; open risk peaked at 10.07-10.15% (not investigated).
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must
 not be re-litigated:** the pattern beats matched random entry (z +2.36 shipped on a clean basis,
 random timing LOSES through the same exits), and no entry filter exists (winners and losers are
 indistinguishable, and every bucketed "signal" was one trade). Runs 5 and 6 are the answers.
+⚠ **Run 12 (2026-09-16) tested one filter against that on the 15m trail** — refusing trades aligned
+with the 20-day move. It smooths the curve but fails the both-halves test, so the line still stands.
 
 | | question | status |
 |---|---|---|
