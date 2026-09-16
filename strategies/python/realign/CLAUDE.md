@@ -37,8 +37,9 @@ Full record, commands and tables: `realign_optimization.md` → **Run 7**. The r
 - ⚠ **The gate compares a latched field only while both sides are armed**, skips the still-forming
   last bar, and excuses the market entry's one-bar position offset only when the Pine opens on the
   very next bar.
-**Last reviewed:** 2026-09-11 — a 5-minute-only arm researched, measured negative and parked off
-main (last section). Earlier: 2026-09-10 — swing length and adding to winners pinned to the Pine;
+**Last reviewed:** 2026-09-16 — the slower-frame gate measured on PU Prime bars: a lead, OFF, and
+measured on the old 5m trail (`realign_optimization.md` Run 14). Earlier: 2026-09-11 — a
+5-minute-only arm researched, measured negative and parked off main (last section). 2026-09-10 — swing length and adding to winners pinned to the Pine;
 the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
 
@@ -389,6 +390,14 @@ a different trade with a different expectancy.
 A SECOND OVERFIT HAPPENS AFTER THE FIRST ONE IS CAUGHT.** `realign_min_rr` looked excellent on the
 full history and was then shown to be a fit to one half. Any value here has to clear the same bar:
 **it must help in BOTH halves separately, not in the total.** Until it does, the default is `None`.
+
+✅ **MEASURED 2026-09-16 on PU Prime bars (a NEW basis, same 162-trade book): 60 passes that bar,
+240 fails it.** At 60: 84 trades, +27.02R, +0.322 avg, PF 1.71, maxDD 9.62R, halves +12.35 / +14.67,
+against the shipped 162 / +38.08R / +0.235 / 15.28R / +9.38 / +28.70 on the same bars; and it beats
+random timing by +0.407R a trade (z +2.53, a value picked after the sweep, so not Run 5's clean
+kind). 1.1 standard errors, no holdout — **a lead, still OFF.** `realign_optimization.md` Run 14.
+⚠ **Measured on the 5m trail, before Run 7 made the 15m the default** — like Runs 2-6, it has not
+been re-checked on the trail the bot now runs.
 
 ⚠ **A positive `realign_min_rr` is a NEW filter that neither implementation has, and it must be
 measured by REPLAY — never by dropping rows from a finished trade list.** With one position slot a

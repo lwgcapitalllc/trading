@@ -846,6 +846,69 @@ maxDD 6.07R; from 2018-09-14: 126 trades, +90.28R. A plain replay at the new def
 and the ratchet. **Aaron's decision: ship both.** Built as the new defaults on both sides, and
 `realign_1`'s config moved with them. Parity green the same day on an export at the new defaults.
 
+### Run 14 — the slower-frame agreement gate, on PU Prime bars (2026-09-16)
+
+⚠ **Numbered 14 on merge: it was written as "Run 6" in a parallel session, before Runs 6-13
+above existed.** 🔴 **It was measured on the 5m trail**, the default until Run 7, so it carries
+the same caveat Run 10 put on Runs 2-6 — three of their findings were overturned on the 15m
+trail, and this one has not been re-checked there.
+
+**Why now.** Aaron asked what can be inferred when a lower frame realigns with a higher one. This
+bot's `realign_trend_minutes` was built for exactly that question on 2026-08-13 — refuse a trade
+against a SLOWER frame's structure — shipped OFF and never measured beyond construction. Its bar
+was written in the CLAUDE.md before today: **it must help in BOTH halves separately.**
+
+**Basis — a NEW one, labelled as such.** The Vantage bars this log's basis uses are not cached on
+this machine and the lab terminal is on PU Prime, so `axis_sweep.py` ran on `PUPrime_Demo`
+`XAUUSD.p`, 5m from M1 (467,947 bars), 2020-01-02 → 2026-08-06, split 2023-05-01, charged
+`puprime_standard`. The shipped control on these bars: **162 trades, +38.08R, +0.235 avg, PF 1.55,
+maxDD 15.28R, halves +9.38 / +28.70** — against 162 / +35.81R / 15.52R on Vantage: the same book
+within noise, the same trade count exactly.
+
+| `realign_trend_minutes` | trades | sum R | avg R | ±se | PF | maxDD | win | 1st half | 2nd half | ex-best |
+|---|---|---|---|---|---|---|---|---|---|---|
+| None (shipped) | 162 | +38.08 | +0.235 | 0.167 | 1.55 | 15.28 | 29.0% | +9.38 | +28.70 | +19.34 |
+| **60** | 84 | +27.02 | **+0.322** | 0.281 | **1.71** | **9.62** | 26.2% | **+12.35** | +14.67 | +8.28 |
+| 240 | 78 | +15.63 | +0.200 | 0.211 | 1.43 | 11.41 | 30.8% | **−11.01** | +26.64 | +5.89 |
+
+- **The 1H gate passes the pre-declared bar; the 4H gate fails it.** At 60 both halves are
+  positive, and the first half — the flat-gold years, where the direction flip above lives — makes
+  MORE money from half the trades (+12.35R against +9.38R). The second half falls roughly in
+  proportion to the count: when gold trends every setup is already with the trend and the gate only
+  thins them. At 240 the gate is stale — it refuses the first half's winners outright.
+- **It halves the trades and lowers total R** (+27.02R over 84 against +38.08R over 162), with a
+  drawdown under two thirds of the shipped one (9.62R against 15.28R) — 2.81R of return per R of
+  drawdown against 2.49.
+- ⚠ **+0.322 against ±0.281 is 1.1 standard errors.** The improvement is the size the hypothesis
+  predicted, in the half it predicted, and not by itself significant.
+
+**The random-moment control** (`realign_control.py`, Run 5's method, `--set realign_trend_minutes=60`,
+2020-01-02 → 2025-08-05, PU Prime, charged `puprime_standard`, 20 reps):
+
+| arm | trades | sum R | avg R | control avg R | beats random by | z |
+|---|---|---|---|---|---|---|
+| shipped, Run 5 (Vantage bars) | 140 | — | +0.205 | −0.053 | +0.258R | +2.36 |
+| **1H gate, 60** (PU Prime bars) | 72 | +24.26 | **+0.337** | **−0.070** | **+0.407R** | **+2.53** |
+
+- **Random timing through the gated machinery still LOSES** (−0.070R a trade, 71.6 trades a rep),
+  and the gated setups beat it by more than the shipped ones did — +0.41R against +0.26R a trade.
+  The gate is not selecting easy months; matched on side, month and New York hour, its moments
+  are worth more than the shipped book's.
+- ⚠ **+2.53 is NOT the clean kind of number Run 5's +2.36 was.** 60 was one of two values and was
+  chosen after the sweep table was seen, on the same window the control runs on. It clears the
+  plain bar of 2.0 and not the family-wise 2.99. The hypothesis was read off these same trades
+  (CLAUDE.md, *realign_trend_minutes*); the bar it passes was written before the run; that is the
+  whole of its evidence.
+- 144 triggers fired and 72 became trades — the other 72 found the one position slot busy, so a
+  gated setup is not rare; the slot is.
+
+**Verdict: a lead consistent with its pre-declared hypothesis, not a validated setting. It ships
+OFF.** No holdout exists for it — the held-back year is spent (Run 2) — and the next evidence is
+forward trades or the parity gate (open question 1), never another replay on these bars.
+
+Commands: `axis_sweep.py --strategy realign --symbol XAUUSD.p --tf 5 --server PUPrime_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 --axis realign_trend_minutes=60,240 --profile puprime_standard` ·
+`realign_control.py --symbol XAUUSD.p --tf 5 --server PUPrime_Demo --start 2020-01-02 --end 2025-08-05 --profile puprime_standard --set realign_trend_minutes=60`
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must

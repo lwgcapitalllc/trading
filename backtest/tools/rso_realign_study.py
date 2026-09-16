@@ -90,11 +90,47 @@ high) loses in all 16 counter x exit rows, best -0.003 R a trade, best cell t +0
 trades, best t +0.81. 15m: 14 trades a cell, under the 30-trade floor. The declared grid above
 reproduces exactly after this mode was added.
 
+THE HIGHER-FRAME GATE (`--gates`, `--free`; added 2026-09-16, declared BEFORE any result). The
+user's own words for the pattern are a REALIGNMENT with the higher frame — "the 15m might be
+bullish and the 1m bearish, and when the 1m goes bullish" — and the grid above never asked the
+higher frame anything. Two gates, read off the canonical engine on the gate frame (1m and 5m
+charts gate on the 15m, the 15m chart on the 1H), resampled from the same 1m bars, each gate bar
+published only once closed:
+    htf     the gate frame's external direction agrees with the trade at the realign close
+    intact  ...and it agreed on every gate bar from the one before the counter shift through the
+            realign close — the counter push was a pullback INSIDE the higher frame's leg, never
+            a break of it (the break-then-realign case is the Realign bot's and is measured there)
+A refused setup does not hold the position slot. `--free` zeroes spread, commission and swap —
+the user asked to see the raw pattern before costs. READOUT, fixed first: (1) the rule as drawn
+(market at the realign close, structure stop), every exit, per gate, WITH its matched random
+control and z whether or not the cell is a candidate; (2) cells positive in both halves per
+gate. A gate has done something only if the as-drawn rows clear z >= 2 on MOST exits, free AND
+charged, and the both-halves count rises across the grid — one good cell after a gate is the
+search finding its own noise. 🔴 2020-2026 has been searched for this pattern twice already and
+the holdout is spent, so anything here is a LEAD for forward or another instrument, never a pick.
+
+🔴 MEASURED 2026-09-16, same bars, 1,152 cells, raw and `puprime_ecn`: THE GATE DOES NOT HELP.
+    1m   the raw pattern IS its control — t1 makes +0.009R a trade, random timing +0.009R; mean z
+         over the 16 as-drawn rows -0.65 ungated, -0.63 with the 15m agreeing (trades 24 -> 14 a
+         month). intact = htf on 1m (1,247 of 1,249 short setups). Charged, every as-drawn row is
+         negative either way.
+    5m   mean z -0.15 -> -0.97 gated (raw); 15m: +0.90 -> -0.36. The gate SUBTRACTS direction.
+    No gated cell clears z 2 charged; the 19 that do are the ungated 15m c2+ fib50 family above.
+    Four 1m cells clear z 2 raw (fib50 limit, $1.39 atr2 stop): 4 of 1,152 at z 2.0-2.2 is a null
+    search's yield, and charged they read +0.02-0.07R.
+    Sign proven: 313 setups May-Sep 2026, flag == engine direction on the real 15m bars on all,
+    flipped sign mismatches all. Report: backtest/reports/rso_realign_gate/. Record:
+    docs/RSO_REALIGN_SPEC.md.
+
 Usage:
   python backtest/tools/rso_realign_study.py --recall          # find the user's 5 trades first
   python backtest/tools/rso_realign_study.py                   # the grid, 2020-01 -> 2026-09
   python backtest/tools/rso_realign_study.py --sl              # the $$ entry, exploration only
-  python backtest/tools/rso_realign_study.py --holdout "1m c1 close struct t2"   # ONCE
+  python backtest/tools/rso_realign_study.py --holdout "1m c1 close struct t2"   # ONCE (spent)
+  python backtest/tools/rso_realign_study.py --gates none,htf,intact --free \
+      --out backtest/reports/rso_realign_gate                # the higher-frame gate, raw
+  python backtest/tools/rso_realign_study.py --gates none,htf,intact \
+      --out backtest/reports/rso_realign_gate                # ...and charged (ECN)
 """
 
 from __future__ import annotations
@@ -133,6 +169,8 @@ MAX_HOLD = 500  # chart bars, then out at market
 REPS = 20  # random entries per real trade
 SEED = 7
 UP = {1: 5, 5: 15, 15: 60}
+HTF_GATE = {1: 15, 5: 15, 15: 60}  # the frame a gated setup must agree with (--gates)
+GATES = ("none", "htf", "intact")
 FRAMES = (1, 5, 15)
 COUNTERS = ("1", "2+")
 ENTRIES = ("close", "fib50", "pb382", "split")
@@ -198,6 +236,8 @@ class Setup:
     top_k: int  # ...and its minute
     atr: float
     lh_old: float = math.nan  # the lower high before the one the counter shift broke, side space
+    htf_ok: bool = False  # gate frame's external direction agrees at the realign close
+    intact: bool = False  # ...and never disagreed, from the bar before the counter shift on
 
 
 @dataclass
@@ -263,9 +303,20 @@ def detect(o, h, lo, c) -> tuple[list, list]:
     return setups, bos
 
 
+def htf_dir(o, h, lo, c) -> np.ndarray:
+    """The engine's external direction after each closed bar of the gate frame: 1 bullish, -1
+    bearish, 0 not yet known. Read in SIDE space, so a with-trend setup needs -1 on either side."""
+    eng = StructureEngine()
+    out = np.zeros(len(c), dtype=np.int8)
+    for i in range(len(c)):
+        eng.update(Bar(index=i, open=o[i], high=h[i], low=lo[i], close=c[i]))
+        out[i] = eng.dir
+    return out
+
+
 def _detect_task(job):
-    key, o, h, lo, c = job
-    return key, detect(o, h, lo, c)
+    key, kind, o, h, lo, c = job
+    return key, (detect(o, h, lo, c) if kind == "detect" else htf_dir(o, h, lo, c))
 
 
 def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers: int):
@@ -286,7 +337,16 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
             cs = ch if side == "short" else mirror(ch)
             o, h, lo, c = (cs[k].to_numpy() for k in ("open", "high", "low", "close"))
             meta[(F, side)] = (first, last, wilder_atr(h, lo, c, 14), u_first, u_last, len(c))
-            jobs.append(((F, side), o, h, lo, c))
+            jobs.append(((F, side), "detect", o, h, lo, c))
+    gmeta = {}
+    for G in sorted({HTF_GATE[F] for F in frames}):
+        gh = resample_up(clean, G, 1)
+        g_last = np.searchsorted(t1m, gh.index.to_numpy() + np.timedelta64(G, "m"), "left") - 1
+        for side in ("short", "long"):
+            gs = gh if side == "short" else mirror(gh)
+            o, h, lo, c = (gs[k].to_numpy() for k in ("open", "high", "low", "close"))
+            gmeta[(G, side)] = g_last
+            jobs.append(((G, side, "gate"), "dir", o, h, lo, c))
     t0 = time.time()
     with ProcessPoolExecutor(max_workers=workers) as pool:
         found = dict(pool.map(_detect_task, jobs))
@@ -295,12 +355,20 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
     for (F, side), (first, last, atr, u_first, u_last, n) in meta.items():
         tp = tapes[side]
         raw_setups, bos = found[(F, side)]
+        g_last, gdir = gmeta[(HTF_GATE[F], side)], found[(HTF_GATE[F], side, "gate")]
         setups = []
         for j, counter, origin, trend_at, push_n, lh_old in raw_setups:
             if j < WARMUP:
                 continue
             m, a = int(last[j]), int(first[counter])
             k = a + int(np.argmax(tp.H[a : m + 1]))
+            # Gate bars closed at or before the realign close (im) and before the counter shift
+            # began (ia). A gate bar closing on minute m is known at the same instant as the
+            # realign bar itself; nothing later is read.
+            im = int(np.searchsorted(g_last, m, "right")) - 1
+            ia = int(np.searchsorted(g_last, a, "left")) - 1
+            htf_ok = im >= 0 and int(gdir[im]) == -1
+            intact = htf_ok and ia >= 0 and bool(np.all(gdir[ia : im + 1] == -1))
             setups.append(
                 Setup(
                     side,
@@ -315,6 +383,8 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
                     k,
                     float(atr[j]),
                     lh_old,
+                    htf_ok=htf_ok,
+                    intact=intact,
                 )
             )
         frs[(F, side)] = Frame(
@@ -575,7 +645,9 @@ def evaluate(
                             else (s.m if how == "close" else (kf if kf is not None else pend))
                         )
                         legs[how] = (tr, busy)
-                        rows.setdefault((how, st, ex), []).append((s.m, busy, tr, s.push_n))
+                        rows.setdefault((how, st, ex), []).append(
+                            (s.m, busy, tr, s.push_n, s.htf_ok, s.intact)
+                        )
                     if "close" not in legs or "fib50" not in legs:
                         continue
                     (t1, b1), (t2, b2) = legs["close"], legs["fib50"]
@@ -586,18 +658,21 @@ def evaluate(
                         sp["rg"] = 0.5 * t1["rg"] + (0.5 * t2["rg"] if t2 else 0.0)
                         sp["kx"] = max(t1["kx"], t2["kx"] if t2 else -1)
                     rows.setdefault(("split", st, ex), []).append(
-                        (s.m, max(b1, b2) if t1 else s.m, sp, s.push_n)
+                        (s.m, max(b1, b2) if t1 else s.m, sp, s.push_n, s.htf_ok, s.intact)
                     )
     for v in rows.values():
         v.sort(key=lambda r: r[0])
     return rows
 
 
-def book(rows: list, counter: str) -> list:
-    """One position at a time across both sides; a pending entry holds the slot."""
+def book(rows: list, counter: str, gate: str = "none") -> list:
+    """One position at a time across both sides; a pending entry holds the slot. A setup the
+    gate refuses never takes the slot, so a gated book is not a subset of the ungated one."""
     out, free = [], -1
-    for m, busy, tr, push_n in rows:
+    for m, busy, tr, push_n, htf_ok, intact in rows:
         if (push_n == 1) != (counter == "1") or m <= free:
+            continue
+        if (gate == "htf" and not htf_ok) or (gate == "intact" and not intact):
             continue
         free = busy
         if tr is not None:
@@ -667,7 +742,8 @@ def zscore(trades: list, ctl: dict) -> float:
 
 
 def label(c: tuple) -> str:
-    return f"{c[0]}m c{c[1]} {c[2]} {c[3]} {c[4]}"
+    g = f" {c[5]}" if len(c) > 5 and c[5] != "none" else ""
+    return f"{c[0]}m c{c[1]} {c[2]} {c[3]} {c[4]}{g}"
 
 
 def parse(lbl: str) -> tuple:
@@ -756,6 +832,12 @@ def main() -> None:
         "--sl", action="store_true", help="the $$ structural-liquidity entry — exploration only"
     )
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument(
+        "--free", action="store_true", help="no spread, commission or swap — the raw pattern"
+    )
+    ap.add_argument(
+        "--gates", default="none", help="comma list of none|htf|intact — see the docstring"
+    )
     ap.add_argument("--out", default="backtest/reports/rso_realign_study")
     args = ap.parse_args()
 
@@ -765,6 +847,13 @@ def main() -> None:
         comm_rt=2 * prof.commission_per_side_per_lot, contract=prof.contract_size,
         swap_long=sw.swap_long_points, swap_short=sw.swap_short_points,
     )  # fmt: skip
+    spread, plabel = prof.spread, args.profile
+    if args.free:
+        spread, plabel = 0.0, "free"
+        costs.update(comm_rt=0.0, swap_long=0.0, swap_short=0.0)
+    gates = tuple(args.gates.split(","))
+    if any(g not in GATES for g in gates):
+        sys.exit(f"--gates must be from {GATES}, got {args.gates!r}")
     cell = parse(args.holdout) if args.holdout else None
     if args.recall:
         window, frames = ("2026-07-01", "2026-09-15"), FRAMES
@@ -775,19 +864,21 @@ def main() -> None:
     raw = load_1m(*window)
     clean, fixed = clean_reopens(raw)
     print(
-        f"{len(raw):,} PU Prime M1 bars {raw.index[0]:%Y-%m-%d} -> {raw.index[-1]:%Y-%m-%d}; profile {args.profile}: "
-        f"spread {prof.spread}, commission {prof.commission_per_side_per_lot}/side/lot, swap "
-        f"{sw.swap_long_points}/{sw.swap_short_points} pts; {len(fixed)} reopen spikes clipped for structure"
+        f"{len(raw):,} PU Prime M1 bars {raw.index[0]:%Y-%m-%d} -> {raw.index[-1]:%Y-%m-%d}; profile {plabel}: "
+        f"spread {spread}, commission {costs['comm_rt'] / 2}/side/lot, swap "
+        f"{costs['swap_long']}/{costs['swap_short']} pts; {len(fixed)} reopen spikes clipped for structure"
     )
     costs["t"] = raw.index.to_numpy()
     costs["roll"], costs["cum"] = rollovers(raw.index, sw.triple_weekday)
-    tapes, frs = build(raw, clean, frames, prof.spread, args.workers)
+    tapes, frs = build(raw, clean, frames, spread, args.workers)
     for F in frames:
         for side in ("short", "long"):
             ss = frs[(F, side)].setups
             p1 = sum(s.push_n == 1 for s in ss)
             print(
-                f"  {F:>2}m {side:>5}: {len(ss):,} realign setups ({p1:,} with 1 counter BOS, {len(ss) - p1:,} with 2+)"
+                f"  {F:>2}m {side:>5}: {len(ss):,} realign setups ({p1:,} with 1 counter BOS, {len(ss) - p1:,} with 2+); "
+                f"{HTF_GATE[F]}m agrees on {sum(s.htf_ok for s in ss):,}, intact through the counter on "
+                f"{sum(s.intact for s in ss):,}"
             )
     if args.recall:
         recall(raw, tapes, frs, frames)
@@ -827,17 +918,18 @@ def main() -> None:
         rows = evaluate(frs, tapes, F, costs, hows=hows, stops=stops)
         for (en, st, ex), rr in rows.items():
             for c in COUNTERS:
-                k = (F, c, en, st, ex)
-                trades[k] = book(rr, c)
-                grid[k] = stats(trades[k], t1m, months)
+                for g in gates:
+                    k = (F, c, en, st, ex, g)
+                    trades[k] = book(rr, c, g)
+                    grid[k] = stats(trades[k], t1m, months)
     print(f"{len(grid)} cells in {time.time() - t0:.0f}s")
 
     def neighbours(k):
-        F, c, en, st, ex = k
-        out = [(F, x, en, st, ex) for x in COUNTERS if x != c]
-        out += [(F, c, x, st, ex) for x in ents if x != en]
-        out += [(F, c, en, x, ex) for x in stops if x != st]
-        out += [(F, c, en, st, x) for x in EXITS if x != ex]
+        F, c, en, st, ex, g = k
+        out = [(F, x, en, st, ex, g) for x in COUNTERS if x != c]
+        out += [(F, c, x, st, ex, g) for x in ents if x != en]
+        out += [(F, c, en, x, ex, g) for x in stops if x != st]
+        out += [(F, c, en, st, x, g) for x in EXITS if x != ex]
         return [n for n in out if n in grid]
 
     cands = []
@@ -850,17 +942,33 @@ def main() -> None:
             continue
         cands.append(k)
     ctls = {k: control(trades[k], frs, k[0], tapes, pools, costs, rng) for k in cands}
+    # The rule as drawn always gets its control, whether or not it is a candidate: the
+    # question is what HIS rule does against random timing, not only what the best cell does.
+    for F in frames:
+        for g in gates:
+            for c in COUNTERS:
+                for ex in EXITS:
+                    k = (F, c, *drawn, ex, g)
+                    if k not in ctls and trades[k]:
+                        ctls[k] = control(trades[k], frs, F, tapes, pools, costs, rng)
     qual = sorted(
         (k for k in cands if zscore(trades[k], ctls[k]) >= 2.0), key=lambda k: -grid[k]["worse"]
     )
 
     out = ROOT / (args.out + ("_sl" if args.sl else ""))
     out.mkdir(parents=True, exist_ok=True)
-    with (out / f"grid_{args.profile}.csv").open("w", newline="") as f:
+    with (out / f"grid_{plabel}.csv").open("w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["frame", "counter", "entry", "stop", "exit"] + list(next(iter(grid.values()))))
+        w.writerow(
+            ["frame", "counter", "entry", "stop", "exit", "gate"]
+            + list(next(iter(grid.values())))
+            + ["control", "z"]
+        )
         for k, s in grid.items():
-            w.writerow(list(k) + list(s.values()))
+            extra = (
+                [ctls[k]["avg"], zscore(trades[k], ctls[k])] if k in ctls else [math.nan, math.nan]
+            )
+            w.writerow(list(k) + list(s.values()) + extra)
 
     how_drawn = (
         "the $$ entry, stop past the older lower high"
@@ -868,16 +976,31 @@ def main() -> None:
         else "market at the realign close, structure stop"
     )
     for F in frames:
-        print(f"\n{F}m — THE USER'S RULE AS DRAWN ({how_drawn}), every exit")
-        print(HEAD)
-        for c in COUNTERS:
-            for ex in EXITS:
-                k = (F, c, *drawn, ex)
-                print(row(label(k), grid[k]))
+        for g in gates:
+            both = sum(
+                1
+                for k in grid
+                if k[0] == F and k[5] == g and grid[k]["h1"] > 0 and grid[k]["h2"] > 0
+            )
+            tot = sum(1 for k in grid if k[0] == F and k[5] == g)
+            print(
+                f"\n{F}m gate={g} — THE USER'S RULE AS DRAWN ({how_drawn}), every exit; "
+                f"{both} of {tot} cells positive in both halves"
+            )
+            print(HEAD + "  control      z")
+            for c in COUNTERS:
+                for ex in EXITS:
+                    k = (F, c, *drawn, ex, g)
+                    ex_ = (
+                        f"  {ctls[k]['avg']:>+7.3f} {zscore(trades[k], ctls[k]):>+6.2f}"
+                        if k in ctls
+                        else ""
+                    )
+                    print(row(label(k), grid[k], ex_))
         best = sorted(
             (k for k in grid if k[0] == F and grid[k]["n"] >= 30), key=lambda k: -grid[k]["worse"]
         )[:12]
-        print(f"\n{F}m — best 12 by the worse half's average R (>= 30 trades)")
+        print(f"\n{F}m — best 12 by the worse half's average R (>= 30 trades), all gates")
         print(HEAD)
         for k in best:
             print(row(label(k), grid[k]))
@@ -894,20 +1017,18 @@ def main() -> None:
                 f"  {ctls[k]['avg']:>+7.3f} {z:>+6.2f}{'  QUALIFIES' if z >= 2 else ''}",
             )
         )
-    if qual and args.sl:
+    if qual:
         print(
             f"\nLEAD (searched data): {label(qual[0])} — confirm on EURUSD or forward; "
-            "--holdout is SPENT for this pattern"
+            "--holdout is SPENT for this pattern (2026-09-14) and is never re-run"
         )
-    elif qual:
-        print(f'\nTHE PICK: {label(qual[0])} — run it ONCE with --holdout "{label(qual[0])}"')
     elif args.sl:
         print("\nNO CELL QUALIFIES — the $$ entry shows no edge even on the searched data.")
     else:
         print(
             "\nNO CELL QUALIFIES — no mechanical edge at these settings; the holdout stays unspent."
         )
-    print(f"wrote {(out / f'grid_{args.profile}.csv').relative_to(ROOT)}")
+    print(f"wrote {out / f'grid_{plabel}.csv'}")
 
 
 if __name__ == "__main__":

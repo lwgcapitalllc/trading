@@ -202,6 +202,32 @@ CLAUDE.md gets at most one index line.
   the window is no longer untouched for structure-sequence ideas. ⚠ No Pine twin, no parity gate —
   lab findings. No documented baseline moves: it imports four helpers from `loaded_level_study.py`
   and edits nothing there, and nothing consumed this tool before today.
+  **The higher-frame gate — MEASURED 2026-09-16, and it does not help.** The user's own name for
+  the pattern is a realignment WITH the higher frame ("the 15m might be bullish and the 1m
+  bearish, and when the 1m goes bullish"), and the grid had never asked the higher frame anything.
+  `--gates none,htf,intact` reads the canonical engine's external direction on the gate frame (1m
+  and 5m charts on the 15m, the 15m chart on the 1H, resampled from the same bars, a gate bar
+  counted only once closed): `htf` = it agrees at the realign close; `intact` = it agreed on every
+  gate bar from before the counter shift through the realign (a pullback inside the higher frame's
+  leg, never a break of it). `--free` zeroes spread, commission and swap — the user asked to see
+  the raw pattern first. Same bars, 1,152 cells, the rule as drawn with its matched random control
+  on every row whether or not it is a candidate. **On 1m the raw pattern IS its control: at a 1R
+  target it makes +0.009R a trade and random timing at the same month and hour makes +0.009R;
+  mean z −0.65 over the 16 as-drawn rows, −0.63 once the 15m must agree, with trades cut from 24
+  to 14 a month. On 5m and 15m the gate makes the pattern WORSE (mean z −0.15 → −0.97 and
+  +0.90 → −0.36, raw).** Charged, every 1m as-drawn row is negative with or without the gate. No
+  gated cell clears z 2 charged; the 19 that do are the ungated 15m c2+ fib50 family that already
+  lost its holdout. Four 1m cells clear z 2 uncosted (a fib-0.5 limit with a $1.39 2 × ATR stop on
+  gold, +0.13–0.15R): 4 of 1,152 at z 2.0–2.2 is what a null search returns, and charged they
+  read +0.02–0.07R. ✅ The gate's SIGN is proven, not assumed: on 313 setups (May–Sep 2026) the
+  flag equals the engine's direction on the real, unmirrored 15m bars on every one, and the flipped
+  sign mismatches every one. ⚠ The saved 2026-09-14 grid does NOT reproduce from HEAD to the cent
+  on the same 2,371,706 bars — 15m rows differ by up to 1 trade / 1.34R; the cause is not found
+  (the tool's own edits after the print and the helpers it imports are the candidates, neither
+  measured), the verdict does not move, and the gated run's ungated rows are now the reproducing
+  set. The patched tool reproduces the pre-patch code exactly (max diff 0.0 on the 15m grid).
+  Report: `backtest/reports/rso_realign_gate/grid_{free,puprime_ecn}.csv`; write-up in
+  `docs/RSO_REALIGN_SPEC.md`.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,

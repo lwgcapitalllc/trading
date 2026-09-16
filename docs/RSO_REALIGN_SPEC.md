@@ -1,6 +1,8 @@
 # RSO Realign — the user's 1-minute retail shake-out, measured
 
 **Status:** 🔴 **MEASURED 2026-09-14 — NO MECHANICAL EDGE. The one clean check is SPENT.**
+**2026-09-16:** the higher-frame gate the user's own name for the pattern implies — measured raw
+and charged, on every frame: **it does not help, and on 5m and 15m it hurts** (section below).
 Tool: `backtest/tools/rso_realign_study.py` (its docstring carries the same record).
 Tool note: `backtest/notes/tools.md`. Nothing here is a strategy, a bot or a Pine file.
 
@@ -134,6 +136,57 @@ never came back, so this is a second-chance entry, not a replacement for the rea
 - **0 cells qualify.** This was searched data, so even a positive result would only have been a lead.
 - ✅ The declared grid above still reproduces exactly after these additions (diffed line for line).
 
+## The higher-frame gate — 2026-09-16, and it does not help
+
+The user's own name for the pattern is a realignment WITH the higher frame — *"the 15m might be
+bullish and the 1m bearish, and when the 1m goes bullish"* — and the grid above never asked the
+higher frame anything. Two gates, declared in the tool's docstring before any result, read off the
+canonical engine on the gate frame (1m and 5m charts gate on the 15m, the 15m chart on the 1H; a
+gate bar counts only once it has closed):
+
+- **htf** — the gate frame's structure points the trade's way at the realign close.
+- **intact** — ...and did on every gate bar from before the counter shift through the realign: the
+  counter push was a pullback inside the higher frame's leg, never a break of it. (The
+  break-then-realign case is the Realign bot's, measured in `strategies/python/realign/`.)
+
+The user also asked to see the pattern **before costs** — `--free` zeroes spread, commission and
+swap. Same bars, the same 384 cells per gate, the rule as drawn (market at the realign close,
+structure stop) with its matched random control on every row whether or not it is a candidate:
+
+| frame | gate | trades / month | as-drawn rows at z ≥ 2 (of 16) | mean z, raw | mean z, ECN | cells positive in both halves, ECN |
+|---|---|---|---|---|---|---|
+| 1m | none | 24 | 0 | −0.65 | −0.55 | 5 of 128 |
+| 1m | 15m agrees | 14 | 0 | −0.63 | −0.41 | 7 of 128 |
+| 1m | 15m intact | 14 | 0 | −0.61 | −0.52 | 7 of 128 |
+| 5m | none | 4.7 | 0 | −0.15 | −0.19 | 3 of 128 |
+| 5m | 15m agrees | 1.9 | 0 | −0.97 | −1.16 | 5 of 128 |
+| 5m | 15m intact | 1.6 | 0 | −1.26 | −1.28 | 5 of 128 |
+| 15m | none | 1.7 | 1 | +0.90 | +0.74 | 47 of 128 |
+| 15m | 1H agrees | 0.8 | 0 | −0.36 | −0.64 | 37 of 128 |
+| 15m | 1H intact | 0.8 | 0 | −0.37 | −0.53 | 33 of 128 |
+
+- **On 1m the raw pattern IS its control.** At a 1R target it wins 50.2% and makes +0.009R a
+  trade; random timing at the same month and hour makes +0.009R (z −0.03). The best of the eight
+  exits, the structure trail, makes +0.058R against +0.021R random (z +0.91). There is nothing for
+  costs to take — the pattern as drawn carries no direction on the 1m before a cent is charged.
+- **The gate adds direction nowhere, and on 5m and 15m it subtracts it.** On the 15m the as-drawn
+  rows average +0.089R a trade raw and +0.002R once the 1H must agree.
+- **On 1m the two gates are the same gate:** 1,247 of the 1,249 short setups the 15m agrees with
+  are also intact. A 1m counter push almost never breaks 15m structure, so "pullback inside the
+  15m leg" is not a filter there.
+- **Charged, every 1m as-drawn row is negative with or without the gate** (−0.001 to −0.059R).
+- **No gated cell clears z 2 charged.** The 19 cells that do are the ungated 15m 2+ counter BOS,
+  fib-0.5 limit, 2 × ATR family — the ridge that already lost its holdout above. Four 1m cells
+  clear z 2 **uncosted** (a fib-0.5 limit with a **$1.39** 2 × ATR stop, +0.13–0.15R a trade):
+  4 of 1,152 at z 2.0–2.2 is what a null search returns, and charged they read +0.02–0.07R.
+- ✅ **The gate's sign is proven, not assumed.** On 313 setups (May–Sep 2026) the flag equals the
+  engine's direction on the real, unmirrored 15m bars on every one, and the flipped sign mismatches
+  every one. The user's 25 Aug long had the 15m BEARISH at entry — the gate refuses it; the 11 Aug
+  long had it bullish.
+
+Report: `backtest/reports/rso_realign_gate/grid_free.csv` and `grid_puprime_ecn.csv`. ⚠ Both runs
+are on the searched 2020–2026 bars, so even a positive here would have been a lead, never a pick.
+
 ## What this leaves
 
 - 🔴 **Both periods are spent for this pattern.** Never test another cell on 2018-09-14 →
@@ -147,3 +200,5 @@ never came back, so this is a second-chance entry, not a replacement for the rea
   their discretion is.** The next input is their losing and skipped setups, compared against the
   tool's candidates, or a forward journal of every realign they take or pass on and why.
 - A revived rule needs new data: that journal, or forward results on the demo account.
+- **The higher-frame gate is not the missing filter** (2026-09-16, above). The 15m agreeing —
+  or holding intact through the pullback — removes half the setups and none of the noise.
