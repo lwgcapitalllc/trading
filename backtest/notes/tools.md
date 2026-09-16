@@ -237,6 +237,15 @@ CLAUDE.md gets at most one index line.
   `killzone_sweep.py` (2026-08-04, further down) had already found no clock or level edge at 10:00.
   This one agrees, and adds real costs, the other two zones, sweep and break entries, and a
   random-clock luck bar. Search this file before building the next study.
+  ⚠ **Five more kill-zone tools landed the SAME DAY from the other machine and were pulled in on
+  2026-09-16** — `killzone_reversal.py`, `killzone_features.py`, `killzone_edge_search.py`,
+  `killzone_followups.py`, `killzone_vwap_retest.py`, all further down. **Two independent searches,
+  one answer**: the turn at 10:00 is real and is not a kill-zone property (their all-window control
+  ranks it sixth of 23 and the whole 07:30-10:30 block beats it — this tool's 08:00-09:25 finding
+  from the other side), and ~340 more pre-registered tests there find nothing that knows the
+  direction. Neither search moves the other's numbers; they were run on the same broker feed from
+  different code. ⚠ **That makes the clock question ANSWERED, not open** — a third kill-zone search
+  on 2020-2025 would be the same data for the third time.
 - **`tools/ny_open_scalp_study.py`** (new 2026-09-15) — a New York-morning scalping search on the
   MPC-JARVIS indicator's own levels: the 09:30–09:35 opening range (`engines/sessions/`), the
   08:00–09:30 pre-open range and the session VWAP (`engines/vwap/`), each traded as a break, a
@@ -258,6 +267,11 @@ CLAUDE.md gets at most one index line.
   the power beforehand (a real effect would have shown z ~1.2), so read it as a screen that
   returned a clear no. ✅ SessionEngine's opening range equals the grid's on all 1,462 usable days;
   `FastWalk` matches `Book.walk` on all 70,164 real walks; the seeded run reproduced exactly.
+  ⚠ **`killzone_vwap_retest.py` (further down, pulled in 2026-09-16) asked the VWAP half of this
+  question inside the kill zones and got the same answer** — the bounce off VWAP is a coin flip
+  (50.7% at equal stop and target in the 10:00 zone against an all-day median near 47%), and its
+  one lift, higher-timeframe trend agreement, falls apart out of sample. This tool's VWAP-side
+  effect reversed on the test set. **Two tools, two windows, no VWAP edge.**
   🔴 **The test set is SPENT for opening-range, pre-open-range and VWAP-side ideas.** ⚠ No Pine
   twin, no parity gate — lab findings. No documented baseline moves: new standalone tool.
 - **`tools/bot_confluence_study.py`** (new 2026-09-15) — would a kill-zone, 08:00–09:30, VWAP-side
