@@ -92,3 +92,45 @@
 2026-09-16 13:57:37,520 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-01 23:25:00+00:00 → 2026-09-16 13:50:00+00:00).
 2026-09-16 13:57:37,520 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
 2026-09-16 13:57:38,282 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 18:40:58,269 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 18:40:58,269 [INFO] Stop requested — shutting down.
+2026-09-16 18:40:58,269 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 18:40:59,344 [INFO] MT5 disconnected.
+2026-09-16 18:41:15,553 [INFO] SOS Fade | SosFadeStrategy v195 | hash 8cf9e3591ea4 | commit 22d48b75 | frozen | LIVE
+2026-09-16 18:41:16,672 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-16 18:41:16,672 [INFO] MT5 connection lock released
+2026-09-16 18:41:17,079 [INFO] Sizing against account balance $15,844.46
+2026-09-16 18:41:17,112 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-16 18:41:17,112 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 18:41:17,112 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-16 18:41:20,876 [INFO] Warmed 5000 bars (2026-07-02 04:00:00+00:00 → 2026-09-16 18:15:00+00:00) in 3.3s
+2026-09-16 18:41:24,829 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 04:10:00+00:00 → 2026-09-16 18:35:00+00:00).
+2026-09-16 18:41:24,829 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
+2026-09-16 18:41:26,046 [INFO] Setup threads carried across the restart: 1 — 1 closed, 0 still open.
+2026-09-16 18:41:27,051 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 18:45:09,401 [INFO] place bearish primary limit 0.25L @ 4324.14 SL 4355.5477200000005 TP none
+2026-09-16 18:45:09,856 [INFO] PENDING PLACED | ticket=379230392 | bearish 0.25L @ 4324.14 | SL=4355.55 TP=none
+2026-09-16 19:00:04,697 [INFO] move bearish primary limit T379230392 → 4324.14 SL 4354.96518
+2026-09-16 19:00:05,075 [INFO] PENDING MOVED | T379230392 → 4324.14 SL=4354.97
+2026-09-16 19:13:37,851 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 19:13:37,851 [INFO] Stop requested — shutting down.
+2026-09-16 19:13:37,851 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 19:13:39,056 [INFO] MT5 disconnected.
+2026-09-16 19:13:55,819 [INFO] SOS Fade | SosFadeStrategy v195 | hash 8cf9e3591ea4 | commit a2faf7ca | frozen | LIVE
+2026-09-16 19:13:55,834 [INFO] Waiting for MT5 lock (held by extreme_leg_1_700152905, 1s)...
+2026-09-16 19:13:59,495 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-16 19:13:59,495 [INFO] MT5 connection lock released
+2026-09-16 19:14:00,418 [INFO] Sizing against account balance $15,844.46
+2026-09-16 19:14:00,434 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-16 19:14:00,434 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 19:14:00,449 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-16 19:14:00,481 [INFO] Cancelling stale pending order T379230392 from a previous run
+2026-09-16 19:14:00,481 [INFO] cancel stale pending T379230392
+2026-09-16 19:14:02,849 [INFO] PENDING CANCELLED | T379230392
+2026-09-16 19:14:11,420 [INFO] Warmed 5000 bars (2026-07-02 04:30:00+00:00 → 2026-09-16 18:45:00+00:00) in 4.1s
+2026-09-16 19:14:16,942 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 04:40:00+00:00 → 2026-09-16 19:05:00+00:00).
+2026-09-16 19:14:16,942 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
+2026-09-16 19:14:17,017 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-16 19:14:18,609 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 19:15:09,797 [INFO] place bearish primary limit 0.22L @ 4316.981400000001 SL 4352.437800000001 TP none
+2026-09-16 19:15:09,891 [INFO] PENDING PLACED | ticket=379375089 | bearish 0.22L @ 4316.98 | SL=4352.44 TP=none
