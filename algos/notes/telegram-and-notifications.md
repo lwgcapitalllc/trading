@@ -296,6 +296,17 @@ finished or still live, `format_resolved` refuses an unfinished setup, and a `NO
 strategy sentence says so rather than going blank. ⚠ The older "still live" test passed an empty
 drain, which the runner never sends — that is why it never caught this.
 
+🔴 **The thread follows the order the BROKER holds (2026-09-16).** After the first `🎯 RESTING`,
+any change visible to the reader — price, stop, or lots, compared at display precision — gets one
+`🔁 LIMIT MOVED` reply showing old → new, and an order that disappears while the setup lives gets
+one `✖️ LIMIT CANCELLED`. The numbers come from the bridge's record of what was SENT
+(`resting_order`), never recomputed. The last-described order is persisted with the thread, so a
+promote that cancels and re-places is reported too. Aaron's reason: a fill must never land under
+a message quoting a price and size the account is not trading. ⚠ This reverses the 2026-08-13
+"announce once" call. **MEASURED** (`backtest/tools/alert_rate.py --symbol XAUUSD.p`, sos_fade,
+2020-01 → 2026-09, no broker so lots not compared): 769 moved + 401 cancelled, total volume
+19.6 → 34.1 a month. Live compares lots as well, so it can run slightly higher.
+
 🔴 **`live_keys=None` means *could not ask* and closes nothing; `[]` means *watching nothing* and
 closes everything.** Root `CLAUDE.md` rule 1, in the signals channel — collapsing them would post
 "no longer being watched" onto setups the bot is watching right now. ⚠ An early version of that test

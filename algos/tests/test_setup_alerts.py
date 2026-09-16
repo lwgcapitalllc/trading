@@ -660,3 +660,116 @@ def test_the_SAME_chat_still_carries_its_threads(tmp_path):
     assert again.open_keys() == ["K1"]
     again.on_bar(FakeStrategy([[_snap()]]))
     assert rec2.sent == []
+
+
+# ── the thread follows the order the broker ACTUALLY holds (Aaron, 2026-09-16) ────────────────
+class Broker:
+    """What `bridge.resting_order` answers: the order held per side, or None."""
+
+    def __init__(self):
+        self.held = {}
+
+    def __call__(self, side):
+        return self.held.get(side)
+
+
+def _resting(**kw):
+    base = dict(state=RESTING, entry=100.0, stop=89.5, side=-1)
+    base.update(kw)
+    return _snap(**base)
+
+
+def _texts(rec):
+    return [m["text"] for m in rec.sent]
+
+
+def test_a_RE_PLACED_order_is_reported_with_the_BROKERS_new_price_and_lots():
+    """MEASURED 2026-09-16: the demo short was cancelled and re-placed 4,324.14 → 4,316.98 at a
+    new size, and the thread still showed the first order. RED before `_follow_order`: no reply.
+    """
+    rec, broker = Recorder(), Broker()
+    a = _alerts(rec, order_for=broker)
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.25)
+    a._handle(_resting())
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.22)
+    a._handle(_resting(entry=4316.98))
+    assert [h.split("\n")[0] for h in _texts(rec)][-1] == "🔁 SELL LIMIT MOVED"
+    moved = _texts(rec)[-1]
+    assert "0.25 → 0.22 lots" in moved
+    assert "4,324.14 → 4,316.98" in moved
+    assert "4,355.55 → 4,352.44" in moved
+    assert all(m["reply_to"] == 1 for m in rec.sent[1:])
+
+
+def test_an_UNCHANGED_order_posts_nothing_however_many_bars_it_rests():
+    """The volume guard. Drift below display precision is not a change. RED on comparing raw
+    floats."""
+    rec, broker = Recorder(), Broker()
+    a = _alerts(rec, order_for=broker)
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.25)
+    a._handle(_resting())
+    for i in range(10):
+        broker.held[-1] = alerts.RestingOrder(4324.14 + i * 1e-4, 4355.5477, 0.25)
+        a._handle(_resting())
+    assert len(rec.sent) == 2  # root + the one resting message
+
+
+def test_a_PULLED_order_is_said_and_its_replacement_reads_as_a_move():
+    """MEASURED 2026-09-16 on the live bot: a re-size cancelled the order, the new one was
+    rejected, and nothing rested for 15 minutes. The thread must say so, then show the new one.
+    """
+    rec, broker = Recorder(), Broker()
+    a = _alerts(rec, order_for=broker)
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.16)
+    a._handle(_resting())
+    broker.held.pop(-1)
+    a._handle(_resting())
+    a._handle(_resting())  # still nothing — said once only
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
+    a._handle(_resting(entry=4316.98))
+    heads = [t.split("\n")[0] for t in _texts(rec)]
+    assert heads[1:] == [
+        "🎯 0.16 lots · SELL LIMIT RESTING",
+        "✖️ SELL LIMIT CANCELLED",
+        "🔁 SELL LIMIT MOVED",
+    ]
+    assert "0.14 lots" in _texts(rec)[-1]
+
+
+def test_the_strategy_dropping_its_order_is_a_cancellation_too():
+    """A setup back to WATCHING has no order; the broker's will have been cancelled."""
+    rec, broker = Recorder(), Broker()
+    a = _alerts(rec, order_for=broker)
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.16)
+    a._handle(_resting())
+    a._handle(_resting(state=WATCHING, entry=None))
+    assert _texts(rec)[-1].startswith("✖️ SELL LIMIT CANCELLED")
+
+
+def test_the_last_DESCRIBED_order_survives_a_restart(tmp_path):
+    """A promote cancels the order and the new process re-places it. Without persisting what the
+    thread last said, the new price is never reported. RED if `order` is not saved."""
+    state = tmp_path / "setup_threads.json"
+    broker = Broker()
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.25)
+    _alerts(Recorder(), order_for=broker, state_path=state)._handle(_resting())
+
+    rec2 = Recorder()
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.22)
+    _alerts(rec2, order_for=broker, state_path=state)._handle(_resting(entry=4316.98))
+    assert len(rec2.sent) == 1
+    assert "0.25 → 0.22 lots" in rec2.sent[0]["text"]
+
+
+def test_a_fill_after_a_move_closes_the_thread_with_no_stale_numbers():
+    """The ENTERED reply names no price or size, so it cannot contradict the order that filled."""
+    rec, broker = Recorder(), Broker()
+    a = _alerts(rec, order_for=broker)
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.25)
+    a._handle(_resting())
+    broker.held.pop(-1)
+    a._handle(_resting(state=FILLED, reason="Entered."))
+    last = _texts(rec)[-1]
+    assert last.startswith("✅ ENTERED")
+    assert "4,324" not in last and "0.25" not in last
+    assert a.open_keys() == []

@@ -1420,6 +1420,9 @@ class LiveRunner:
                 # broker-free: it never learns what a lot is, it is handed one. A bot with no
                 # bridge passes nothing, and the message renders exactly as it always did.
                 lots_for=self.bridge.resting_lots,
+                # The WHOLE order, so the thread follows a re-placed price, stop or size
+                # instead of describing the first one for the life of the setup.
+                order_for=self.bridge.resting_order,
                 # 🔴 **What makes a Telegram thread outlive the process.** Without it the record
                 # of which setups have been announced — and the message id each one must reply to
                 # — lives only in memory, so a stop, a start, a redeploy or a mid-session re-warm

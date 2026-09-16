@@ -1025,6 +1025,17 @@ class OrderBridge:
         held = self._rest.get(primary_slot(direction))
         return None if held is None else float(held.lots)
 
+    def resting_order(self, direction: int):
+        """The whole primary order resting on one side — price, stop, lots — or `None`.
+
+        Same source and same rule as `resting_lots`: read from `_rest`, the record of what was
+        SENT, never recomputed. Lets the signals thread follow an order that is re-placed.
+        """
+        held = self._rest.get(primary_slot(direction))
+        if held is None:
+            return None
+        return alerts.RestingOrder(float(held.price), float(held.sl), float(held.lots))
+
     def sync(self, dec, sig) -> None:
         """Reconcile once, for the bar that just closed. Order matters: observe what the broker
         did during the bar, THEN compare, THEN act."""

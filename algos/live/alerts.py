@@ -26,7 +26,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 _SHARED = Path(__file__).resolve().parent.parent / "shared"
 if str(_SHARED) not in sys.path:
@@ -174,9 +174,10 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
 def format_entry_zone(snap, digits: int = 2, lots: Optional[float] = None) -> str:
     """A limit order is RESTING at a price, unfilled. Replies to `format_watching`.
 
-    Sent ONCE per setup. The resting price is recomputed every bar and can shift when a new gap
-    forms, and re-announcing each shift was measured at double the volume for no new decision —
-    Aaron's call, 2026-08-13. The fill message carries the price that was actually got.
+    Sent ONCE per setup. Later changes to the order go out as `format_order_moved` /
+    `format_order_cancelled` — reversed 2026-09-16 (Aaron: the thread must never describe an order
+    the account is not holding). MEASURED with `alert_rate.py`, sos_fade 2020-01 → 2026-09: +14.5
+    messages a month, 19.6 → 34.1.
 
     🔴 **An order can rest at 2 of 3, and the message must NOT imply otherwise.** The entry edge
     comes from a gap overlapping the 0.5-0.886 band, and a gap can be there before PRICE is — so
@@ -226,6 +227,66 @@ def format_entry_zone(snap, digits: int = 2, lots: Optional[float] = None) -> st
     side = "BUY" if snap.side > 0 else "SELL"
     size = f"{lots:.2f} lots · " if lots is not None else ""
     return alert("🎯", f"{size}{side} LIMIT RESTING", "", *lines)
+
+
+class RestingOrder(NamedTuple):
+    """The pending order the BROKER is holding for one side — price, stop and lots as sent.
+
+    Built by `bridge.resting_order` from its own record of the placed order, never recomputed.
+    Lives here because both the bridge and the setup thread import this file, and neither may
+    import the other.
+    """
+
+    price: float
+    stop: float
+    lots: float
+
+
+def _moved(old: Optional[float], new: Optional[float], fmt) -> str:
+    if new is None:
+        return ""
+    if old is None or fmt(old) == fmt(new):
+        return fmt(new)
+    return f"{fmt(old)} → {fmt(new)}"
+
+
+def format_order_moved(snap, digits: int = 2, now=None, before=None) -> str:
+    """The resting order CHANGED — price, stop or size. Replies to the root.
+
+    🔴 **Why this exists (Aaron, 2026-09-16):** the order is re-placed as the retrace levels move,
+    and a thread that only ever showed the FIRST price and size was describing an order the broker
+    no longer held. The fill would then land under a message quoting the wrong price and lots.
+    `now` / `before` are what the broker holds and what the thread last said; either may be None
+    when there is no broker to ask, and the strategy's own prices are shown instead.
+    """
+    side = "BUY" if snap.side > 0 else "SELL"
+    p = lambda v: _price(v, digits)  # noqa: E731
+    new_px = now.price if now else snap.entry
+    new_sl = now.stop if now else snap.stop
+    old_px = before.price if before else None
+    old_sl = before.stop if before else None
+    order = [f"Limit {_moved(old_px, new_px, p)}", f"stop {_moved(old_sl, new_sl, p)}"]
+    lines = [" · ".join(x for x in order if not x.endswith(" "))]
+    if now is not None:
+        lots = _moved(before.lots if before else None, now.lots, lambda v: f"{v:.2f}")
+        lines.insert(0, f"{lots} lots")
+    lines.append(_outstanding(snap))
+    return alert("🔁", f"{side} LIMIT MOVED", "", *lines)
+
+
+def format_order_cancelled(snap, digits: int = 2) -> str:
+    """The resting order is GONE and the setup is still open. Replies to the root.
+
+    Said so a later fill is never read against an order the reader thinks is still there, and so
+    a re-placement that follows reads as a new order rather than as the old one.
+    """
+    side = "BUY" if snap.side > 0 else "SELL"
+    return alert(
+        "✖️",
+        f"{side} LIMIT CANCELLED",
+        "",
+        "No order is resting now. The setup is still being watched.",
+    )
 
 
 def format_blocked(snap, digits: int = 2) -> str:

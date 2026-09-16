@@ -215,6 +215,15 @@ def test_the_bridge_reports_the_lots_it_actually_placed():
     b._rest[live_bridge.PRIMARY_LONG] = live_bridge._Rest(ticket=1, price=95.0, lots=0.37, sl=89.5)
     assert b.resting_lots(1) == 0.37
     assert b.resting_lots(-1) is None  # the other side is untouched
+    # The whole order, for the thread that follows a re-placed limit — same record, same rule.
+    assert b.resting_order(1) == (95.0, 89.5, 0.37)
+    assert b.resting_order(-1) is None
+
+
+def test_the_runner_hands_the_alert_layer_the_WHOLE_order():
+    """Rule 7: a new parameter nobody passes is a dead feature. RED if the runner stops wiring it."""
+    src = (_ROOT / "algos" / "live" / "runner.py").read_text()
+    assert "order_for=self.bridge.resting_order" in src
 
 
 # ── the bar ordering that makes the size knowable at all ─────────────────────────────────────

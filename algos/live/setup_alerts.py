@@ -92,6 +92,7 @@ class SetupAlerts:
         digits: int = 2,
         display: str = "",
         lots_for: Optional[Callable[[int], Optional[float]]] = None,
+        order_for: Optional[Callable[[int], Optional["alerts.RestingOrder"]]] = None,
         state_path=None,
         channel: str = "",
     ) -> None:
@@ -114,6 +115,14 @@ class SetupAlerts:
         #: **"No order" and "no broker" must not render the same message**, which is rule 1
         #: arriving in the signals channel.
         self._lots_for = lots_for
+        #: side -> the whole order the BROKER holds (price, stop, lots), or None when nothing is.
+        #: Same three states as `lots_for`, and it supersedes it when given. It is what lets the
+        #: thread follow an order that is re-placed at a new price or size.
+        self._order_for = order_for
+        #: setup key -> the order the thread last DESCRIBED, as a `RestingOrder` (or the
+        #: strategy's prices with `lots=None` when there is no broker), or None once the thread
+        #: has said it was cancelled. Absent means no resting message has been sent yet.
+        self._order: Dict[str, Optional[alerts.RestingOrder]] = {}
         self._categories = tuple(c for c in categories if c in CATEGORIES)
         #: setup key -> the Telegram message id of its root, so every outcome replies to it.
         self._threads: Dict[str, Optional[int]] = {}
@@ -238,39 +247,98 @@ class SetupAlerts:
         # ⚠ **The STRATEGY decides when a resting order is worth announcing** (`backtest/setups.py`
         # → `announce_resting`). This layer must never learn what a fib is; it only respects the
         # answer. A strategy that does not implement it defaults True and behaves as before.
-        if snap.state == RESTING and snap.announce_resting and ENTRY_ZONE_MSG not in sent:
-            # 🔴 **ASKED BEFORE `sent` IS MARKED, for the same reason `announce_resting` is.** A
-            # setup whose order was refused on THIS bar can rest on the next one; consuming its
-            # one resting-message slot here would mean the announcement never arrives — the
-            # bookkeeping-before-the-guard mistake this method is written twice to avoid.
-            asked = self._lots_for is not None
-            lots = self._lots_for(snap.side) if asked else None
-            # Asked, and nothing is resting => the order was refused or cancelled. Saying
-            # "LIMIT RESTING" would name an order the broker does not hold, which is the exact
-            # misreading this message was reworded to end. Skipped WITHOUT marking it sent.
-            # ⚠ Written as a condition rather than an early `return`: a terminal setup is
-            # handled below, and today a RESTING snapshot can never also be terminal — a guard
-            # that is only correct because of an invariant somewhere else is one that breaks
-            # silently the day that invariant moves.
-            if not (asked and lots is None):
-                sent.add(ENTRY_ZONE_MSG)
-                if self._on(ENTRY_ZONE_MSG):
-                    self._post(alerts.format_entry_zone(snap, self._digits, lots), reply_to=root)
+        if not snap.is_terminal:
+            self._follow_order(snap, sent, root)
 
         if snap.is_terminal:
             if RESOLVED_MSG not in sent and self._on(RESOLVED_MSG):
                 self._post(alerts.format_resolved(snap, self._digits), reply_to=root)
             # Drop the bookkeeping. A process meant to run for months cannot keep a dict entry
             # per setup it has ever seen — ~11 a month forever is a slow leak with no symptom.
-            self._threads.pop(snap.key, None)
-            self._sent.pop(snap.key, None)
-            self._about.pop(snap.key, None)
+            self._forget(snap.key)
             self._save()
             return
         # Saved only when something CHANGED, so a setup that lives for days does not rewrite the
         # file every 15 minutes for the whole of it.
         if before != (len(sent), snap.key in self._threads):
             self._save()
+
+    def _order_now(self, snap: SetupSnapshot):
+        """What is resting for this setup right now: `(asked, order)`.
+
+        `asked` False means there is no broker (a backtest), and `order` is then the strategy's
+        own prices with `lots=None`. `asked` True and `order` None means NOTHING is resting.
+        """
+        resting = snap.state == RESTING
+        if self._order_for is not None:
+            return True, (self._order_for(snap.side) if resting else None)
+        if self._lots_for is not None:
+            lots = self._lots_for(snap.side) if resting else None
+            if lots is None:
+                return True, None
+            return True, alerts.RestingOrder(snap.entry, snap.stop, lots)
+        if not resting or snap.entry is None:
+            return False, None
+        return False, alerts.RestingOrder(snap.entry, snap.stop, None)
+
+    def _same(self, a, b) -> bool:
+        """Equal as the READER sees them — prices at the symbol's digits, lots at 2 places."""
+        if a is None or b is None:
+            return a is b
+        r = lambda v, n: None if v is None else round(float(v), n)  # noqa: E731
+        return (r(a.price, self._digits), r(a.stop, self._digits), r(a.lots, 2)) == (
+            r(b.price, self._digits),
+            r(b.stop, self._digits),
+            r(b.lots, 2),
+        )
+
+    def _follow_order(self, snap: SetupSnapshot, sent: Set[str], root) -> None:
+        """Keep the thread describing the order the broker ACTUALLY holds.
+
+        🔴 **The first resting message is still gated by `announce_resting`, and marked sent only
+        once an order exists** — the two bookkeeping-before-the-guard mistakes this class is
+        written to avoid. After that, every change the reader could see (price, stop, lots) gets
+        one `MOVED` reply, and an order that disappears gets one `CANCELLED` reply. Aaron,
+        2026-09-16: the thread must never describe an order the account is not holding.
+
+        ⚠ **Compared at display precision**, so a stop that drifts in the fifth decimal does not
+        post. ⚠ **A strategy with no resting state at all never reaches the follow-up path**,
+        because nothing was announced.
+        """
+        asked, now = self._order_now(snap)
+        if ENTRY_ZONE_MSG not in sent:
+            if snap.state != RESTING or not snap.announce_resting:
+                return
+            if asked and now is None:
+                return  # refused or cancelled — never announce an order the broker lacks
+            sent.add(ENTRY_ZONE_MSG)
+            self._order[snap.key] = now
+            if self._on(ENTRY_ZONE_MSG):
+                lots = now.lots if now is not None else None
+                self._post(alerts.format_entry_zone(snap, self._digits, lots), reply_to=root)
+            self._save()
+            return
+        if not asked and snap.state != RESTING:
+            # No broker, and the strategy has no order this bar — nothing to compare against.
+            now = None
+        before = self._order.get(snap.key)
+        if self._same(before, now):
+            return
+        self._order[snap.key] = now
+        if self._on(ENTRY_ZONE_MSG):
+            if now is None:
+                self._post(alerts.format_order_cancelled(snap, self._digits), reply_to=root)
+            else:
+                self._post(
+                    alerts.format_order_moved(
+                        snap,
+                        self._digits,
+                        now if asked else None,
+                        before if asked else None,
+                    ),
+                    reply_to=root,
+                )
+        self._save()
 
     # ── surviving a restart ──────────────────────────────────────────────────────────────────
     def _load(self) -> None:
@@ -310,10 +378,14 @@ class SetupAlerts:
                 self._threads[key] = row.get("root")
                 self._sent[key] = set(row.get("sent") or ())
                 self._about[key] = {"side": row.get("side"), "symbol": row.get("symbol") or ""}
+                if "order" in row:
+                    o = row["order"]
+                    self._order[key] = None if o is None else alerts.RestingOrder(*o)
         except Exception as e:  # noqa: BLE001 — see the module docstring
             self._threads.clear()
             self._sent.clear()
             self._about.clear()
+            self._order.clear()
             self._warn(f"could not read the setup-alert state ({e}) — open setups may repeat once.")
 
     def _save(self) -> None:
@@ -336,6 +408,9 @@ class SetupAlerts:
                     "side": about.get("side"),
                     "symbol": about.get("symbol") or "",
                 }
+                if key in self._order:
+                    o = self._order[key]
+                    rows[key]["order"] = None if o is None else list(o)
             tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
@@ -392,9 +467,14 @@ class SetupAlerts:
         """Post a closing message onto one stored thread and forget it. Never raises."""
         if RESOLVED_MSG not in (self._sent.get(key) or ()) and self._on(RESOLVED_MSG):
             self._post(text, reply_to=self._threads.get(key))
+        self._forget(key)
+
+    def _forget(self, key: str) -> None:
+        # A process meant to run for months cannot keep an entry per setup it has ever seen.
         self._threads.pop(key, None)
         self._sent.pop(key, None)
         self._about.pop(key, None)
+        self._order.pop(key, None)
 
     def open_keys(self) -> List[str]:
         """Which setups this bot has already announced and not yet closed — for the start banner."""
