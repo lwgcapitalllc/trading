@@ -228,11 +228,19 @@ class LiveConfig:
 
     @property
     def code_root(self) -> Path:
-        """The tree this bot's imports resolve against: its snapshot, or the repo if unpromoted.
+        """The tree this bot's imports resolve against: its snapshot, or the repo if undeployed.
 
-        An UNPROMOTED bot falling back to the repo is deliberate — it is the state you pass
-        through while building a new bot, and refusing to run at all would make the first
-        promotion impossible. `runner.py` says loudly which of the two it is using.
+        🔴 **The repo fallback is now only reachable by a TOOL, never by a running bot
+        (2026-09-16).** `runner.py` refuses to start an undeployed bot outright, because
+        importing from the box's working tree means a `git pull` there changes what the bot
+        trades with nobody deploying anything.
+
+        🔴 **This docstring used to say the fallback was deliberate, because "refusing to run at
+        all would make the first promotion impossible". THAT WAS FALSE.** A deploy reads nothing
+        a prior run produces — `deployed_record` answers `{}` when there is none, and
+        `promote.check_position_fields` answers `None` when there is no position record — and it
+        was proved by deploying a bot from a cold instance folder holding only its config. A
+        doc-comment justifying a hazard with an untested claim is how that hazard survives.
         """
         return self.deployed_dir if self.is_frozen else _REPO_ROOT
 

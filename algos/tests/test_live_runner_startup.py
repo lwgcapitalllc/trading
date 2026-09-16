@@ -42,7 +42,17 @@ def _fresh_logger():
         log.removeHandler(h)
 
 
-def _cfg(tmp_path, monkeypatch, **overrides):
+def _cfg(tmp_path, monkeypatch, *, deployed=False, **overrides):
+    """A bot's config, and optionally the SNAPSHOT that makes it a deployed one.
+
+    🔴 **`deployed` exists because an undeployed bot now REFUSES to start (2026-09-16)**, ahead
+    of the version pin. Every case about what a bot does once it is trying to trade has to be a
+    deployed bot, or it is describing a state production cannot reach — a fixture LESS capable
+    than production, which is the same trap from the other end.
+
+    ⚠ It makes the directory `live_config.is_frozen` actually looks at, rather than stubbing the
+    property. A stubbed answer would keep passing if the definition of *deployed* moved.
+    """
     body = {
         "bot_key": "smoke",
         "mt5_path": "C:/MT5/terminal64.exe",
@@ -55,7 +65,11 @@ def _cfg(tmp_path, monkeypatch, **overrides):
     (tmp_path / "smoke").mkdir(parents=True, exist_ok=True)
     (tmp_path / "smoke" / "config.json").write_text(json.dumps(body))
     monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
-    return live_config.load("smoke")
+    cfg = live_config.load("smoke")
+    if deployed:
+        (cfg.deployed_dir / "strategies" / "python" / cfg.strategy_package).mkdir(parents=True)
+        assert cfg.is_frozen
+    return cfg
 
 
 def test_the_runner_can_be_constructed(tmp_path, monkeypatch):
@@ -116,7 +130,7 @@ def test_the_version_pin_is_checked_before_anything_connects(tmp_path, monkeypat
     """`run()` must refuse on a bad pin WITHOUT touching MT5. If connect() ran first, a bot
     running unpromoted code would already be attached to a live account by the time anyone
     found out."""
-    cfg = _cfg(tmp_path, monkeypatch, strategy_source_hash="deadbeef" * 4)
+    cfg = _cfg(tmp_path, monkeypatch, deployed=True, strategy_source_hash="deadbeef" * 4)
     r = runner.LiveRunner(cfg)
 
     def _boom():
@@ -129,7 +143,7 @@ def test_the_version_pin_is_checked_before_anything_connects(tmp_path, monkeypat
 
 def test_a_version_mismatch_is_recorded_and_announced(tmp_path, monkeypatch):
     """Refusing silently would look identical to a crash. It has to say which hash it wanted."""
-    cfg = _cfg(tmp_path, monkeypatch, strategy_source_hash="deadbeef" * 4)
+    cfg = _cfg(tmp_path, monkeypatch, deployed=True, strategy_source_hash="deadbeef" * 4)
     r = runner.LiveRunner(cfg)
     sent = []
     monkeypatch.setattr(r, "connect", lambda: pytest.fail("unreachable"))
@@ -189,6 +203,88 @@ def test_being_on_the_bench_is_an_ORDINARY_ending_not_a_fault(tmp_path, monkeypa
         row.get("event") == "shutdown" and row.get("reason") == "not assigned to an account"
         for row in rows
     )
+
+
+# ── never deployed: a bot with no snapshot of its own must not trade ──────────
+#
+# 🔴 **Added 2026-09-16, and it was a WARNING nobody read for months.** A bot with no snapshot
+# imports from the repo working tree on the box, so a `git pull` there changes what it trades with
+# nobody deploying anything. Two bots ran that way for a day; their code fingerprint moved between
+# two boots with nobody touching them, and both printed the warning at every startup.
+
+
+def test_a_bot_that_was_never_deployed_REFUSES_before_anything_connects(tmp_path, monkeypatch):
+    """MUTATION: put the old `self.log.warning(...)` back in place of the refusal -> the start
+    continues, `connect` is reached and the exit code is not 7 -> red.
+
+    The fixture builds NO snapshot, which is exactly the production state: `is_frozen` asks
+    whether the deployed directory exists and nothing else, so there is no flag to switch off."""
+    cfg = _cfg(tmp_path, monkeypatch)
+    assert cfg.is_frozen is False
+    r = runner.LiveRunner(cfg)
+    monkeypatch.setattr(
+        r, "connect", lambda: pytest.fail("connect() must not be reached by an undeployed bot")
+    )
+    monkeypatch.setattr(
+        r, "_bind_code", lambda: pytest.fail("no repo code may be imported for a bot that refuses")
+    )
+    monkeypatch.setattr(r, "_notify_health", lambda text: None)
+    assert r.run() == 7
+
+
+def test_the_undeployed_refusal_is_ANNOUNCED_and_RECORDED_and_names_the_fix(tmp_path, monkeypatch):
+    """Refusing silently would look exactly like a crash, and the box's monitor would relaunch it
+    three times and go quiet with nobody told why.
+
+    MUTATION: drop the `_notify_health` call -> red on the alert. MUTATION: drop the ledger event
+    -> red on the record. MUTATION: remove the deploy command from the log line -> red on the fix
+    being named, which is the half that turns an alert into an action."""
+    cfg = _cfg(tmp_path, monkeypatch)
+    r = runner.LiveRunner(cfg)
+    sent = []
+    monkeypatch.setattr(r, "connect", lambda: pytest.fail("unreachable"))
+    monkeypatch.setattr(r, "_notify_health", sent.append)
+    r.run()
+
+    assert sent and "never been deployed" in sent[0]
+    rows = [
+        json.loads(line)
+        for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
+        for line in f.read_text().splitlines()
+    ]
+    assert any(
+        row.get("event") == "startup_failed" and "never deployed" in (row.get("error") or "")
+        for row in rows
+    )
+    # The invariant the exit record exists for: a deliberate ending always writes one, so no
+    # shutdown record still means killed or crashed.
+    assert any(row.get("event") == "shutdown" and row.get("exit_code") == 7 for row in rows)
+
+
+def test_the_BENCH_still_wins_over_the_undeployed_refusal(tmp_path, monkeypatch):
+    """A benched bot is not trying to trade, so it ends ordinarily (exit 0, no alert) even though
+    it has no snapshot either — which is `b_leg_demo`'s exact state on the box today.
+
+    MUTATION: move the undeployed refusal above the bench check -> a benched bot starts alerting
+    CRITICAL on every watchdog pass for as long as it stays benched -> red."""
+    cfg = _cfg(tmp_path, monkeypatch, account=None)
+    assert cfg.is_frozen is False
+    r = runner.LiveRunner(cfg)
+    monkeypatch.setattr(r, "_notify_health", lambda text: pytest.fail("no alert for a bench"))
+    assert r.run() == 0
+
+
+def test_the_undeployed_refusal_comes_BEFORE_the_version_pin(tmp_path, monkeypatch):
+    """Both refuse, and the reason has to be the true one. An undeployed bot has nothing to pin
+    against, so reporting *wrong version* would send the reader to re-deploy a version that was
+    never deployed — the bench check's own argument, one guard along.
+
+    MUTATION: move the refusal below the pin check -> this returns 2 -> red."""
+    cfg = _cfg(tmp_path, monkeypatch, strategy_source_hash="deadbeef" * 4)
+    r = runner.LiveRunner(cfg)
+    monkeypatch.setattr(r, "connect", lambda: pytest.fail("unreachable"))
+    monkeypatch.setattr(r, "_notify_health", lambda text: None)
+    assert r.run() == 7
 
 
 # ── the startup contract check ───────────────────────────────────────────────────────────────
@@ -445,7 +541,7 @@ def _run_to_the_build(tmp_path, monkeypatch, *, balance, login):
     record, and how many had arrived when the build began."""
     import bot_state
 
-    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch, account=900000001))
+    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch, deployed=True, account=900000001))
     writes: list[dict] = []
     at_build: list[int] = []
     monkeypatch.setattr(

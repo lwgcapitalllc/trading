@@ -131,6 +131,10 @@ def _runner(account, name="SOS Fade"):
         telegram_health_chat="",
         telegram_token_key="",
         repo_root=Path("."),
+        # ⚠ A DEPLOYED bot, because that is the only kind that reaches the channel gate: an
+        # undeployed one refuses before it (2026-09-16). A stub without this describes a bot
+        # production cannot produce, which is rule 13 from the other end.
+        is_frozen=True,
     )
     r.log = SimpleNamespace(
         warning=lambda *a, **k: None, info=lambda *a, **k: None, error=lambda *a, **k: None

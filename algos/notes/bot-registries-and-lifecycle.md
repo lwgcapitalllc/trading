@@ -244,3 +244,50 @@ renamed yet, so the two records an hour apart are the whole story.
 ✅ Both XMLs fixed, both tasks re-registered from them and verified by reading back what Windows
 holds, both watchers dry-run clean under the new key, and the phantom folder deleted. The 00:23
 record — written before the rename and stamped with the old name — was left exactly as it was.
+
+---
+
+## A bot that was never deployed REFUSES to start (2026-09-16)
+
+🔴 **This was a warning at every startup for months and nobody read it.** A bot with no snapshot of
+its own imports from the repo working tree on the trading box, so a `git pull` there changes what it
+trades with nobody deploying anything. Two bots ran that way for a day, and their code fingerprint
+had already moved between two boots with nobody touching them.
+
+It is now a refusal in the same shape as the version-pin and missing-channel ones: CRITICAL in the
+log, a health alert naming the fix, a `startup_failed` ledger record, and **exit 7** — a code of its
+own, so the ending is distinguishable from the pin mismatch (2) and the channel refusal (5).
+
+🔴 **The warning was justified by "a bot has to run unfrozen once to be promotable". THAT WAS
+FALSE, and it was proved false rather than argued about.** A whole deploy was run against
+`extreme_leg_1` from a cold instance folder holding nothing but its config — 171 files staged, the
+import-and-build check passed, version counted as 187. Nothing in the deploy path reads an artefact
+a prior run leaves: the deployment record answers `{}` when there is none and the open-position
+check answers `None` when there is no record, both fail-open by their own design. **A comment
+justifying a hazard with an untested claim is how that hazard survives** — the same claim was in
+`live_config.code_root`'s docstring and is corrected there too.
+
+⚠ **Order: the BENCH wins, then this, then the version pin.** A benched bot is not trying to trade,
+so it still ends ordinarily (exit 0, no alert) even though it has no snapshot either — which is
+`b_leg_demo`'s exact state on the box. And an undeployed bot has nothing to pin against, so
+reporting *wrong version* would send the reader to re-deploy a version that was never deployed.
+
+⚠ **There is no setting to switch it off.** Being deployed is derived purely from whether the
+snapshot directory exists, so the only way past it is to deploy the bot.
+
+⚠ **The monitor relaunches it three times and then latches a WILL NOT START alert**, exactly as it
+does for the version-pin refusal — there is no refusal-aware latch on the box and this change does
+not add one. The refusal exits before any code is imported, well inside the monitor's 8-second
+confirmation window, so it cannot be mistaken for a start that took.
+
+⚠ **Blast radius when this shipped:** all six assigned bots on the box were frozen (checked
+per-bot, not from a doc line), the seventh was benched, so nothing stopped. The runner itself is
+loaded from the box's checkout rather than any snapshot, so this reaches a bot at its next restart
+whatever version it is pinned to.
+
+Checks: `algos/tests/test_live_runner_startup.py` — refuses before anything connects or imports,
+announces and records it and names the fix, the bench still wins, and it comes before the pin. Each
+mutation named in its docstring and run red on 2026-09-16. Three fixtures were building bots with no
+snapshot while testing guards further down the start; they now build the snapshot directory the
+check actually looks at, because a fixture describing a state production cannot reach is rule 13
+from the other end.

@@ -61,7 +61,14 @@ def _cfg(tmp_path, monkeypatch, **overrides):
     (tmp_path / "smoke").mkdir(parents=True, exist_ok=True)
     (tmp_path / "smoke" / "config.json").write_text(json.dumps(body))
     monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
-    return live_config.load("smoke")
+    cfg = live_config.load("smoke")
+    # ⚠ A DEPLOYED bot, always — every case in this file is about a run that gets PAST startup,
+    # and since 2026-09-16 an undeployed bot refuses before it reaches any of them. Building the
+    # snapshot directory `live_config.is_frozen` actually looks at, rather than stubbing the
+    # property, so the fixture keeps following the definition if it moves.
+    (cfg.deployed_dir / "strategies" / "python" / cfg.strategy_package).mkdir(parents=True)
+    assert cfg.is_frozen
+    return cfg
 
 
 def _health(cfg) -> list[dict]:

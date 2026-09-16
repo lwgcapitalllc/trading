@@ -1847,6 +1847,52 @@ class LiveRunner:
                 )
             )
             return 5, reason
+        # ── has anyone ever DEPLOYED this bot? ────────────────────────────────
+        # 🔴 **REFUSED SINCE 2026-09-16, and it used to be a warning nobody read.** A bot with no
+        # snapshot of its own imports from the repo working tree on the box, so a `git pull` there
+        # changes what it trades with nobody deploying anything. Two bots ran that way for a day
+        # and their code fingerprint moved between two boots with nobody touching them; both
+        # printed this at every startup and nothing else in the system said a word.
+        #
+        # 🔴 **The warning was justified by "a bot has to run unfrozen once to be promotable".
+        # THAT WAS FALSE, and it was proved false rather than reasoned about**: every step of a
+        # deploy was run against `extreme_leg_1` from a cold instance folder holding nothing but
+        # its config — 171 files staged, the import-and-build check passed, version counted as
+        # 187. Nothing in the deploy path reads any artefact a prior run produces: the deployment
+        # record answers `{}` when there is none (`live_config.deployed_record`) and the open
+        # position check returns `None` when there is no record (`promote.check_position_fields`).
+        # Both fail open, by their own design.
+        #
+        # ⚠ Checked BEFORE the version pin, because an unfrozen bot has nothing to pin against —
+        # a stale hash here would report "wrong version" for a bot whose actual state is "nobody
+        # deployed it". The bench check above still wins: a benched bot is not trying to trade.
+        # ⚠ `is_frozen` is derived purely from whether the snapshot directory exists
+        # (`live_config.is_frozen`). There is no config flag, so there is nothing to switch off —
+        # the only way past this is to deploy the bot.
+        # ⚠ The monitor relaunches it three times and then latches a WILL NOT START alert, exactly
+        # as it does for the version-pin refusal; this refusal exits in the same breath, before
+        # any code is imported, so it cannot be mistaken for a start that took.
+        if not self.cfg.is_frozen:
+            reason = "never deployed — no frozen snapshot"
+            self.log.error(
+                f"WILL NOT START: {self.cfg.bot_key} has never been deployed, so it would import "
+                f"from the repo working tree ({self.cfg.repo_root}) and a `git pull` on this box "
+                f"would change what it trades. Deploy it with "
+                f"`python algos/tools/promote.py --bot {self.cfg.bot_key}`, then start it."
+            )
+            self.ledger.event("startup_failed", error=reason)
+            self._notify_health(
+                alert(
+                    CRITICAL,
+                    "WILL NOT START",
+                    self._label,
+                    "It has never been deployed, so it has no pinned code of its own — it would "
+                    "trade whatever the repo on this box happens to hold.",
+                    "It is down and will stay down. Deploy it from the command center's Configure "
+                    "tab, then start it.",
+                )
+            )
+            return 7, reason
         commit = current_commit(self.cfg.repo_root)
         try:
             self._bind_code()
@@ -1875,15 +1921,6 @@ class LiveRunner:
                 f"UNPINNED: this bot has no strategy_source_hash, so nothing checks what it is "
                 f"running. Hash {self.source_hash}. Promote it to pin."
             )
-        if not self.cfg.is_frozen:
-            # Not fatal — a bot has to run unfrozen once to be promotable. But it is the state
-            # that let a `git pull` kill the live bot for three days, so it is never silent.
-            self.log.warning(
-                f"NOT FROZEN: importing from the repo working tree ({self.cfg.repo_root}), so a "
-                f"`git pull` or a lab edit changes what this bot trades. Promote it with "
-                f"`python algos/tools/promote.py --bot {self.cfg.bot_key}`."
-            )
-
         self.log.info(
             f"{self.cfg.display_name} | {self.cfg.strategy_class} {self.cfg.version_label} "
             f"| hash {self.source_hash[:12]} | commit {commit or '?'} "
