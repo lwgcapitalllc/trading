@@ -1,6 +1,6 @@
 //@version=6
 // [doc 1] Realign — internal-structure realignment after an external false bre  -> docs/realign_strategy.md
-strategy("Realign", overlay = true, initial_capital = 10000,
+strategy("Realign Export", overlay = true, initial_capital = 10000,
          default_qty_type = strategy.fixed, default_qty_value = 1,
          pyramiding = 0, calc_on_every_tick = false,
          margin_long = 0.2, margin_short = 0.2,
@@ -788,3 +788,125 @@ plotshape(showMarks and markFalseUp, title = "False break up",
           style = shape.xcross, location = location.belowbar, color = color.new(color.orange, 0), size = size.tiny)
 plot(inPos ? posStop : na, title = "Stop", color = color.new(color.red, 0), style = plot.style_linebr)
 plot(inPos and posStage < 2 ? posTp2 : na, title = "Target", color = color.new(color.teal, 0), style = plot.style_linebr)
+
+// ── THE EXPORT BLOCK ─────────────────────────────────────────────────────────────
+// Appended to `realign_strategy.pine` by `tools/build_export_twins.py`. NEVER edit the twin.
+//
+// It plots what the strategy DECIDED on every bar, plus every input as a number, so
+// `compare_realign.py` can replay the same candles through the Python port configured from
+// this CSV's own `cfg_*` columns. A run that does not describe its own configuration is how a
+// green gate ends up proving parity against settings nobody used.
+//
+// ⚠ AGES, NEVER RAW BAR INDICES. `bar_index` in the CSV is meaningless to a replay that
+//   starts somewhere else; the age of a thing is the same number on both sides.
+// ⚠ AN `int` COMPARED AGAINST `na` IS A TRAP — Pine's int has no na, so an int expression
+//   inside a ternary silently becomes 0 rather than blank. Every int that must be able to
+//   read "nothing here" goes through a `float` temp first.
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// ── STRUCTURE, both frames ───────────────────────────────────────────────────────
+plot((cst.bull_bos ? 1 : 0) + (cst.bear_bos ? 2 : 0) + (cst.bull_sos ? 4 : 0) + (cst.bear_sos ? 8 : 0)
+   + (hBullBos ? 16 : 0) + (hBearBos ? 32 : 0) + (hBullSos ? 64 : 0) + (hBearSos ? 128 : 0)
+   + (htfClosed ? 256 : 0), "px_struct", _INV, editable = false)
+
+// ── THE SETUP TRACKER ────────────────────────────────────────────────────────────
+plot((armLong ? 1 : 0) + (armShort ? 2 : 0) + (stepLong == 1 ? 4 : 0) + (stepShort == 1 ? 8 : 0)
+   + (trigLong ? 16 : 0) + (trigShort ? 32 : 0)
+   + (strategy.position_size > 0 ? 64 : 0) + (strategy.position_size < 0 ? 128 : 0)
+   + (strategy.position_size != 0 and strategy.position_size[1] == 0 ? 256 : 0)
+   + (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 512 : 0)
+   + (htfTrend > 0 ? 1024 : 0) + (htfTrend < 0 ? 2048 : 0), "px_arm", _INV, editable = false)
+
+plot(tgtLong,  "px_tgt_l", _INV, editable = false)   // the latched pre-deviation external high
+plot(tgtShort, "px_tgt_s", _INV, editable = false)
+plot(ctrLowL,  "px_ctr_l", _INV, editable = false)   // the counter-move extreme — the stop anchor
+plot(ctrHighS, "px_ctr_s", _INV, editable = false)
+plot(trigLvlL, "px_lvl_l", _INV, editable = false)   // the level the realignment broke — the retest price
+plot(trigLvlS, "px_lvl_s", _INV, editable = false)
+
+// How long each setup has been armed, in BARS. The window is enforced in milliseconds, so
+// this is reporting — but it is the one number that shows a setup dying of old age.
+float _ageL = na
+if armLong
+    _ageL := (time - armLongMs) / 60000.0
+float _ageS = na
+if armShort
+    _ageS := (time - armShortMs) / 60000.0
+plot(_ageL, "px_arm_min_l", _INV, editable = false)
+plot(_ageS, "px_arm_min_s", _INV, editable = false)
+
+// ── THE TRAIL ANCHORS — BOTH FRAMES, DELIBERATELY ────────────────────────────────
+// 🔴 The parent trails ONE of these, chosen by `trailFrame`. Both are exported because the
+//    Pine and the Python port disagreed about which (found 2026-09-16, worth tens of R), and
+//    a CSV carrying only the chosen one cannot tell the gate WHICH disagreement it is looking
+//    at. With both here, the comparison can say "wrong frame" instead of "numbers differ".
+plot(hConfHi,           "px_htf_confhi", _INV, editable = false)
+plot(hConfLo,           "px_htf_conflo", _INV, editable = false)
+plot(cst.last_conf_high, "px_cht_confhi", _INV, editable = false)
+plot(cst.last_conf_low,  "px_cht_conflo", _INV, editable = false)
+
+// ── THE RESTING RETEST LIMIT ─────────────────────────────────────────────────────
+plot(pendPx, "px_pend_px", _INV, editable = false)
+plot(pendSl, "px_pend_sl", _INV, editable = false)
+float _pendAge = na
+if not na(pendBar)
+    _pendAge := bar_index - pendBar
+plot(_pendAge, "px_pend_age", _INV, editable = false)
+float _pendDir = na
+if not na(pendBar)
+    _pendDir := pendDir
+plot(_pendDir, "px_pend_dir", _INV, editable = false)
+
+// ── THE OPEN TRADE ───────────────────────────────────────────────────────────────
+plot(strategy.position_size != 0 ? posEntry : na, "px_fill",       _INV, editable = false)
+plot(strategy.position_size != 0 ? posStop  : na, "px_stop_live",  _INV, editable = false)
+plot(strategy.position_size != 0 ? posTp1   : na, "px_tp1",        _INV, editable = false)
+plot(strategy.position_size != 0 ? posTp2   : na, "px_tp2",        _INV, editable = false)
+float _stg = na
+if strategy.position_size != 0
+    _stg := posStage
+plot(_stg, "px_stage", _INV, editable = false)
+float _heldH = na
+if strategy.position_size != 0
+    _heldH := (time - posMs) / 3600000.0
+plot(_heldH, "px_held_hrs", _INV, editable = false)
+plot(strategy.position_size, "px_qty", _INV, editable = false)
+plot(strategy.equity,        "px_equity", _INV, editable = false)
+
+// The two clock-driven exits, as the parent computes them — so a disagreement about WHEN a
+// trade was closed can be told apart from a disagreement about the trade itself.
+plot((timeStopMode != "Off" ? 1 : 0) + (flatMode != "Off" ? 2 : 0)
+   + (hour(time, "America/New_York") * 4)
+   + (dayofweek(time, "America/New_York") == dayofweek.friday ? 128 : 0), "px_clock", _INV, editable = false)
+
+// ── CONFIG — the run describes ITSELF ────────────────────────────────────────────
+plot((tradeLongs ? 1 : 0) + (tradeShorts ? 2 : 0) + (showMarks ? 4 : 0) + (showDiag ? 8 : 0),
+     "cfg_bits", _INV, editable = false)
+
+// Enums packed as DECIMAL DIGITS, each field < 10, so decoding is division and modulo.
+plot((minStopMode == "Off" ? 0 : minStopMode == "% of price" ? 1 : 2)
+   + 10 * (tp2StopMode == "TP1 price" ? 0 : tp2StopMode == "Breakeven" ? 1 : 2)
+   + 100 * (runnerTrail == "Fixed step" ? 0 : runnerTrail == "Structure (swing)" ? 1 : 2)
+   + 1000 * (timeStopMode == "Off" ? 0 : timeStopMode == "Before TP1 only" ? 1 : 2)
+   + 10000 * (entryMode == "Market" ? 0 : 1)
+   + 100000 * (retestAt == "Level" ? 0 : 1)
+   + 1000000 * (flatMode == "Off" ? 0 : flatMode == "Friday only" ? 1 : 2)
+   + 10000000 * (trailFrame == "External" ? 0 : 1), "cfg_enum1", _INV, editable = false)
+
+plot(timeframe.in_seconds(htfTf) / 60, "cfg_htf_min",    _INV, editable = false)
+plot(majorLength,                      "cfg_major_len",  _INV, editable = false)
+plot(windowHrs,                        "cfg_window_hrs", _INV, editable = false)
+plot(riskPct,                          "cfg_risk_pct",   _INV, editable = false)
+plot(slBufTk,                          "cfg_sl_buf",     _INV, editable = false)
+plot(minStopVal,                       "cfg_min_stop",   _INV, editable = false)
+plot(tp1Pct,                           "cfg_tp1_pct",    _INV, editable = false)
+plot(tp2Pct,                           "cfg_tp2_pct",    _INV, editable = false)
+plot(beBufTk,                          "cfg_be_buf",     _INV, editable = false)
+plot(trailPct,                         "cfg_trail_pct",  _INV, editable = false)
+plot(trailStep,                        "cfg_trail_step", _INV, editable = false)
+plot(structTrailBuf,                   "cfg_struct_buf", _INV, editable = false)
+plot(timeStopHrs,                      "cfg_time_hrs",   _INV, editable = false)
+plot(retestBars,                       "cfg_retest_bars", _INV, editable = false)
+plot(flatMin,                          "cfg_flat_min",   _INV, editable = false)
+plot(closeHrNy,                        "cfg_close_hr",   _INV, editable = false)
