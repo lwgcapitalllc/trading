@@ -201,6 +201,42 @@ CLAUDE.md gets at most one index line.
   that depends on it is an ordering artefact, not a finding. ⚠ Tuning the best pattern with a
   filter, stop or target is a NEW search and needs its own luck bar. ⚠ No Pine twin, no parity
   gate — lab findings. No documented baseline moves: new standalone tool, nothing edited.
+- **`tools/killzone_study.py`** (new 2026-09-15) — asks whether gold's three MPC-JARVIS kill
+  zones (10:00–10:59, 11:45–12:14, 13:00–13:30 New York, read off `engines/sessions/` and checked
+  against every bar) carry a tradeable edge once the rules tried AND the time of day are paid for.
+  The user's claim was "the market always reverses or continues around those times" — that is every
+  outcome there is, so the test is whether the move INTO a zone is faded or followed better than at
+  any other clock. Part 1 describes each zone against every other clock of its length (busy =
+  range / ATR, follow% = same sign as the prior 60 minutes, turn% = the New York session's high or
+  low prints inside). Part 2 is 648 rules declared before any result: 3 zones × fade / follow /
+  sweep-and-close-back / break × lookback 30 / 60 / 120 × size 0 / 0.5 / 1 ATR × stop 0.5 / 1
+  ATR(14, 1-hour) × 1R / 2R / no target, out after 120 M1 bars, the studies' walk and ECN costs.
+  Gates: both halves positive with ≥ 25 trades each; beat the 95th percentile of the best t from
+  200 re-runs with every zone moved to a random clock (the luck bar); beat 95% of clocks for that
+  same rule.
+  **MEASURED 2026-09-15, PU Prime `XAUUSD.p` M1, 2,005,828 bars 2020-01-01 → 2025-08-31,
+  `puprime_ecn`: 0 rules pass. 42 of 648 pass the sample gate (random clocks: median 29); the best
+  real t is +1.84 against a luck bar of +2.57 — 41% of random-clock runs beat it.** Part 1: the
+  prior hour does not predict any zone's direction (follow% 48.7 / 50.0 / 49.0; other clocks
+  41–54). The 10:00 zone is busy (range 1.74 ATR, 87th percentile) and holds the New York session's
+  high or low on 27.9% of days (a typical hour 11.4%) — but 08:00–09:25 starts beat it on both
+  (2.1 ATR; the 08:00 hour 60.5%). 11:45 and 13:00 are ordinary on all three. Across the rulebook
+  the 10:00 clock is better than usual (40 of 216 rules beat 95% of clocks; a random clock scores
+  8, its 95th percentile 35), but no single rule is strong enough; 11:45 and 13:00 score 3 each.
+  The best rule (10:00, follow the last 30 minutes' move if ≥ 0.5 ATR, stop 0.5 ATR, no target:
+  777 trades, +0.146R net) is longs (+96.9R against +16.6R short) in 2022–23; 2021 and 2024 lose,
+  and the same rule at 08:30 does better (t +2.35).
+  ✅ SessionEngine's zones match the tool's minute windows on all 2,005,828 bars; `FastWalk`
+  matches `Book.walk` on all 252,654 real walks; one trade hand-traced (2020-01-02 short, −1.016R
+  net). Seeded, ~20 s.
+  🔴 **The test set (2018-09-14 → 2019-12-31) is UNSPENT for kill-zone rules — nothing earned it.**
+  ⚠ More rules, filters or other clocks is a NEW search and needs its own luck bar. ⚠ No Pine twin,
+  no parity gate — lab findings. No documented baseline moves: new standalone tool; it imports
+  helpers from `loaded_level_study.py` and `structure_patterns.py` and edits nothing there.
+  ⚠ **It was built without checking for prior art, and there was some**: `killzone_profile.py` and
+  `killzone_sweep.py` (2026-08-04, further down) had already found no clock or level edge at 10:00.
+  This one agrees, and adds real costs, the other two zones, sweep and break entries, and a
+  random-clock luck bar. Search this file before building the next study.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when
