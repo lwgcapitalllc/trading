@@ -288,6 +288,14 @@ told about to close"*, which stopped being true the moment threads outlived the 
    `NO TRADE`: the bot does not know whether it filled or died, and a confident outcome on a setup
    that might have traded is a label with no code behind it.
 
+🔴 **Only a FINISHED setup counts as an outcome, and never one that is still live (fixed
+2026-09-16).** The warm-up drain holds every setup the strategy reports, open ones included.
+Reconcile read an open short as "resolved" and posted `👋 NO TRADE · SHORT` with no reason on the
+demo bot's 18:41 UTC restart; the bot placed that short at 18:45. Reconcile now skips anything not
+finished or still live, `format_resolved` refuses an unfinished setup, and a `NO TRADE` with no
+strategy sentence says so rather than going blank. ⚠ The older "still live" test passed an empty
+drain, which the runner never sends — that is why it never caught this.
+
 🔴 **`live_keys=None` means *could not ask* and closes nothing; `[]` means *watching nothing* and
 closes everything.** Root `CLAUDE.md` rule 1, in the signals channel — collapsing them would post
 "no longer being watched" onto setups the bot is watching right now. ⚠ An early version of that test

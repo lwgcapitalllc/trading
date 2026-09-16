@@ -17,6 +17,7 @@ for _p in (_ROOT, _ROOT / "algos" / "live", _ROOT / "algos" / "shared"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+import alerts  # noqa: E402
 from setup_alerts import (
     BLOCKED_MSG,
     CATEGORIES,
@@ -539,6 +540,56 @@ def test_a_still_live_setup_is_NOT_closed_by_the_reconcile(tmp_path):
     a.reconcile([], live_keys=["K1"])
     assert rec2.sent == []
     assert a.open_keys() == ["K1"]
+
+
+def test_a_still_live_setup_IN_THE_WARM_UP_DRAIN_is_NOT_answered_NO_TRADE(tmp_path):
+    """🔴 The real shape of a restart. The warm-up drain is `live_setups()` in full, so a setup
+    still being watched arrives in `resolved` as a WATCHING snapshot AND in `live_keys`.
+
+    MEASURED 2026-09-16: the demo bot restarted at 18:41 UTC with a short open, posted
+    `👋 NO TRADE · SHORT` with no reason, then placed that short at 18:45. The test above passes
+    `resolved=[]`, which the runner never sends — a fixture kinder than production (rule 13).
+
+    RED against the pre-fix `reconcile`: one `NO TRADE` is sent and the thread is dropped.
+    """
+    state = tmp_path / "setup_threads.json"
+    _alerts(Recorder(), state_path=state).on_bar(FakeStrategy([[_snap()]]))
+
+    rec2 = Recorder()
+    a = _alerts(rec2, state_path=state)
+    a.reconcile([_snap()], live_keys=["K1"])
+    assert rec2.sent == []
+    assert a.open_keys() == ["K1"]
+
+
+def test_a_NON_TERMINAL_snapshot_is_never_read_as_an_outcome_even_if_not_live(tmp_path):
+    """A watching snapshot is not an outcome whatever `live_keys` says. With nothing live the
+    thread is closed as LOST — never as a refusal the strategy did not make.
+
+    RED against the pre-fix `reconcile`: the message reads `👋 NO TRADE`.
+    """
+    state = tmp_path / "setup_threads.json"
+    _alerts(Recorder(), state_path=state).on_bar(FakeStrategy([[_snap()]]))
+
+    rec2 = Recorder()
+    a = _alerts(rec2, state_path=state)
+    a.reconcile([_snap()], live_keys=[])
+    assert [m["text"].split(" · ")[0] for m in rec2.sent] == ["🧹 THREAD CLOSED"]
+
+
+def test_NO_TRADE_always_says_why():
+    """A refusal with no sentence is what the reader got on 2026-09-16. RED without the fallback."""
+    text = alerts.format_resolved(_snap(state=DEAD, reason=""))
+    assert text.startswith("👋 NO TRADE")
+    assert len(text.splitlines()) == 2
+
+
+def test_format_resolved_REFUSES_a_setup_that_has_not_ended():
+    """RED if a watching setup can be rendered as NO TRADE."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        alerts.format_resolved(_snap())
 
 
 def test_a_corrupt_state_file_costs_the_dedupe_and_NOTHING_ELSE(tmp_path):

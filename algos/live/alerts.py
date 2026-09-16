@@ -249,13 +249,20 @@ def format_resolved(snap, digits: int = 2) -> str:
     # Imported HERE, not at module level — see the block at the top of this file. By the time any
     # message is formatted the deployed snapshot is bound, so this resolves against the code the
     # bot was promoted with rather than against the working tree.
-    from backtest.setups import FILLED
+    from backtest.setups import DEAD, FILLED
 
     if snap.state == FILLED:
         # The trade alert lands seconds later with the price, the size and the risk, so this one
         # only has to close the thread.
         return alert("✅", "ENTERED", snap.direction, "Size and risk are in the trade alert.")
-    return alert("👋", "NO TRADE", snap.direction, snap.reason)
+    if snap.state != DEAD:
+        # Not an outcome at all. A caller that got here has a bug; saying NO TRADE would tell the
+        # reader to stop watching a setup that may still trade.
+        raise ValueError(f"format_resolved called on a {snap.state!r} setup — not an outcome")
+    # A NO TRADE is a claim that the bot refused this setup, and it must always say why.
+    return alert(
+        "👋", "NO TRADE", snap.direction, snap.reason or "The strategy did not record a reason."
+    )
 
 
 def format_lost(side=None, symbol: str = "") -> str:

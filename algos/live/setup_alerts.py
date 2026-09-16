@@ -367,8 +367,14 @@ class SetupAlerts:
         on a setup that might have traded is a label with no code behind it.
         """
         try:
+            # 🔴 **Only a TERMINAL snapshot is an outcome, and never for a setup still alive.**
+            # The warm-up drain is `live_setups()` in full, so it also carries every setup still
+            # being watched. Treating those as resolved posted `👋 NO TRADE` with no reason onto a
+            # live short on 2026-09-16 (demo, 18:41 UTC restart) — the bot placed that same order
+            # four minutes later. A key in `live_keys` is still open whatever the drain says.
+            still_live = set(live_keys or ())
             for snap in resolved:
-                if snap.key not in self._sent:
+                if not snap.is_terminal or snap.key not in self._sent or snap.key in still_live:
                     continue
                 self._close(snap.key, alerts.format_resolved(snap, self._digits))
             if live_keys is None:
