@@ -1295,19 +1295,22 @@ export function PerformancePanel({
     // The row the win rate needed. A trade that made a sixth of a losing trade counts as a full
     // win above; on the shipped run that is 45 of 111 "winners", every one exiting at the
     // breakeven-stop buffer. Shown as the honest three-way split so the reader gets the shape,
-    // not just a count. Exception colour past a quarter of the book — at that point the headline
-    // win rate is describing something other than winning.
+    // not just a count. Each figure carries its own colour (won green, scratched amber, lost red).
     {
       key: 'scr',
       label: 'Won / scratched / lost',
       value:
-        scratches != null && wins != null && losses != null && run.trade_count
-          ? `${wins - scratches} / ${scratches} / ${losses}`
-          : '—',
-      cls:
-        scratches != null && run.trade_count && scratches / run.trade_count >= 0.25
-          ? 'text-warn-text'
-          : undefined,
+        scratches != null && wins != null && losses != null && run.trade_count ? (
+          <>
+            <span className="text-pos-text">{wins - scratches}</span>
+            {' / '}
+            <span className="text-warn-text">{scratches}</span>
+            {' / '}
+            <span className="text-neg-text">{losses}</span>
+          </>
+        ) : (
+          '—'
+        ),
       tip: `The win rate above counts any trade that closed a cent up as a win. A SCRATCH is one whose result came to less than ${Math.round(SCRATCH_FRACTION * 100)}% of this run's median losing trade — usually a stop moved to breakeven doing exactly its job, which is real risk control and is not an edge.${
         scratches != null && wins != null && run.trade_count
           ? ` Here ${pct((wins - scratches) / run.trade_count)} genuinely won, ${pct(scratches / run.trade_count)} scratched.`
