@@ -136,8 +136,10 @@ export function BotRiskEditor({
        *  already saying *Risk per trade* sat the setting's own name, the value in large type, then
        *  "Change to" and the same value again in a box. Aaron: *"Risk % per trade it is shown twice
        *  … a lot of redundancy."* Save, and what it was, appear once there is something to save. */}
-      {showLabel && <p className="text-[11px] text-text-tertiary mb-[6px]">{name}</p>}
       <div className="flex items-center gap-3 flex-wrap">
+        {showLabel && (
+          <span className="w-[150px] shrink-0 text-[12px] text-text-secondary">{name}</span>
+        )}
         <DecimalInput
           value={draft}
           onChange={(v) => {

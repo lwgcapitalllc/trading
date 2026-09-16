@@ -51,9 +51,14 @@ export function BotSwitchEditor({
     )
 
   return (
-    <div data-testid="bot-switch" data-name={row.name} data-on={on ? 'yes' : 'no'}>
+    <div
+      data-testid="bot-switch"
+      data-name={row.name}
+      data-on={on ? 'yes' : 'no'}
+      className="mt-[12px] pt-[12px] border-t border-border-subtle/60 first:mt-0 first:pt-0 first:border-t-0"
+    >
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-[11px] text-text-tertiary">{name}</span>
+        <span className="w-[150px] shrink-0 text-[12px] text-text-secondary">{name}</span>
         <button
           role="switch"
           aria-checked={on}
@@ -81,7 +86,7 @@ export function BotSwitchEditor({
        *  mean the reader meets the claim only after deciding to act on it. */}
       <p
         data-testid="switch-warn"
-        className="flex gap-[6px] text-[11px] text-text-tertiary mt-[6px] leading-[1.5]"
+        className="flex gap-[6px] text-[11px] text-text-tertiary mt-[8px] leading-[1.5] rounded-md bg-warn-muted/20 border border-warn/20 px-[10px] py-[7px]"
       >
         <AlertTriangle size={11} className="shrink-0 mt-[2px] text-warn-text" />
         {spec.warn}

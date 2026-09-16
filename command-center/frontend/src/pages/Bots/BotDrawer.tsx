@@ -57,6 +57,51 @@ import { describeChoice, useJoinAccount, type JoinChoice } from './joinAccount'
 import { useTakeOff } from './takeOff'
 import { TakeOffButton } from './TakeOffButton'
 
+const usd = (x: number) =>
+  `$${x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const pctTxt = (x: number) => `${Number(x.toFixed(2))}%`
+
+/** A bot's record as four tiles. A bot with nothing closed shows dashes, never a measured zero. */
+function RecordTiles({ e }: { e: BotEarnings }) {
+  const closed = e.closed_trades ?? (e.wins ?? 0) + (e.losses ?? 0)
+  const none = closed === 0
+  const tone = (x: number | null) =>
+    none || x == null || x === 0 ? 'text-text-primary' : x > 0 ? 'text-pos-text' : 'text-neg-text'
+  const sign = (x: number) => (x > 0 ? '+' : x < 0 ? '−' : '')
+  const usdR = e.realised_usd
+  const r = e.realised_r
+  const tiles: [string, ReactNode, string][] = [
+    ['Trades', closed, 'text-text-primary'],
+    ['Won · lost', none ? '—' : `${e.wins ?? 0} · ${e.losses ?? 0}`, 'text-text-primary'],
+    ['Net', none || usdR == null ? '—' : `${sign(usdR)}${usd(Math.abs(usdR))}`, tone(usdR)],
+    ['Net R', none || r == null ? '—' : `${sign(r)}${Math.abs(r).toFixed(2)}R`, tone(r)],
+  ]
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {tiles.map(([label, value, cls]) => (
+          <div
+            key={label}
+            className="rounded-md border border-border-subtle bg-bg-sunken/60 px-[10px] py-[8px] min-w-0"
+          >
+            <p className="text-[9.5px] uppercase tracking-[0.6px] text-text-tertiary">{label}</p>
+            <p
+              className={`mt-[3px] font-mono tabular-nums text-[15px] font-semibold truncate ${cls}`}
+            >
+              {value}
+            </p>
+          </div>
+        ))}
+      </div>
+      {none && (
+        <p className="mt-2 text-[11px] text-text-tertiary">
+          No closed trades yet — the figures fill in when it closes one.
+        </p>
+      )}
+    </>
+  )
+}
+
 function Fold({ label, children }: { label: string; children: ReactNode }) {
   return (
     <details className="border-t border-border-subtle pt-[14px] mt-[2px]">
@@ -552,7 +597,11 @@ export function BotDrawer({
        *  (2026-09-10) — Version and Account read their own sources. */}
       {(v || isLoading) && (
         <section className="py-[16px] border-b border-border-subtle">
-          <SectionTitle>Risk per trade</SectionTitle>
+          {/* 🔴 "Risk & exits" (2026-09-16) — the heading used to repeat the risk row's own label.
+           *  Aaron: *"the risk per trade section seems repetitive"*. The rows now carry the names. */}
+          <SectionTitle hint="What this bot picks up while it runs, the next time it has no open trade.">
+            Risk &amp; exits
+          </SectionTitle>
           {!v ? (
             // The editor's shape, so nothing moves when the real one lands.
             <div aria-busy="true" className="flex items-end gap-3">
@@ -592,7 +641,7 @@ export function BotDrawer({
                   botKey={bot.key}
                   botLabel={labelOf(bot)}
                   row={r}
-                  showLabel={v.runtime.length > 1}
+                  showLabel
                   balance={bot.balance}
                   account={configAccount}
                   // Only the risk share is part of the account's budget.
@@ -616,17 +665,12 @@ export function BotDrawer({
          *  it read as the answer to what needed review. It is a verb, open that account's own
          *  panel, on the section about the account. */}
         <SectionTitle
-          aside={
-            typeof configAccount === 'number' && onOpenAccount ? (
-              <button
-                data-testid="bot-account-link"
-                onClick={() => onOpenAccount(configAccount)}
-                title={`Open account ${configAccount} — its balance, its budget and its bots`}
-                className="inline-flex items-center gap-[2px] text-[11.5px] text-text-secondary hover:text-accent transition-colors"
-              >
-                Open account <ChevronRight size={12} />
-              </button>
-            ) : undefined
+          hint={
+            holding
+              ? undefined
+              : running
+                ? 'It is running: a move or a removal stops it first, since it reads its account when it starts. A move onto a demo account starts it again there.'
+                : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."
           }
         >
           Account
@@ -639,26 +683,76 @@ export function BotDrawer({
          *  it under the new account while it traded the old one. What changed is who carries it
          *  out — the confirm says it will be stopped, the PAGE stops it, waits for the box to say
          *  so, then writes (`stopFirst.ts`), and it is left stopped. */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {typeof configAccount === 'number' ? (
-            <span className="font-mono tabular-nums text-[13px] text-text-primary">
-              {configAccount}
+        {/* 🔴 A CARD, and the whole card opens the account (2026-09-16) — Aaron: *"the account
+         *  section seems boring"*. It carries what a reader wants from the bot's side: which
+         *  account, live or demo, its balance, and this bot's share of the cap. All server figures. */}
+        {typeof configAccount === 'number' ? (
+          <button
+            type="button"
+            data-testid="bot-account-link"
+            disabled={!onOpenAccount}
+            onClick={() => onOpenAccount?.(configAccount)}
+            title={`Open account ${configAccount} — its balance, its budget and its bots`}
+            className={`group w-full flex items-center gap-3 rounded-lg border px-[14px] py-[11px] text-left transition-colors disabled:cursor-default ${
+              onLive
+                ? 'border-warn/30 bg-warn-muted/20 hover:border-warn/60'
+                : 'border-border-default bg-bg-sunken/60 hover:border-accent/50'
+            }`}
+          >
+            <span className="flex flex-col gap-[3px] min-w-0">
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="font-mono tabular-nums text-[13.5px] font-semibold text-text-primary">
+                  {configAccount}
+                </span>
+                <span
+                  className={`text-[9.5px] font-semibold uppercase tracking-[0.5px] px-[6px] py-[1px] rounded-pill border ${
+                    onLive
+                      ? 'text-warn-text border-warn/40 bg-warn-muted'
+                      : 'text-text-tertiary border-border-default'
+                  }`}
+                >
+                  {onLive ? 'live' : 'demo'}
+                </span>
+              </span>
+              {myAccountName && (
+                <span
+                  data-testid="bot-account-name"
+                  className="text-[12px] text-text-secondary truncate"
+                >
+                  {myAccountName}
+                </span>
+              )}
             </span>
-          ) : (
-            <span className="text-[12.5px] text-text-tertiary">Not on an account</span>
-          )}
-          {/* The account's name, as its card's heading gives it. */}
-          {myAccountName && (
-            <span data-testid="bot-account-name" className="text-[12px] text-text-secondary">
-              {myAccountName}
+            <span className="ml-auto flex flex-col items-end gap-[3px] shrink-0">
+              {bot.balance != null && (
+                <span className="font-mono tabular-nums text-[14px] font-semibold text-text-primary">
+                  {usd(bot.balance)}
+                </span>
+              )}
+              {myRisk != null && (
+                <span className="text-[11px] text-text-tertiary">
+                  <span className="font-mono tabular-nums text-gold-text">{pctTxt(myRisk)}</span>
+                  {myGroup?.cap_agrees && myGroup.risk_cap_pct != null
+                    ? ` of the ${pctTxt(myGroup.risk_cap_pct)} cap`
+                    : ' a trade'}
+                </span>
+              )}
             </span>
-          )}
-          {busyText && (
-            <span data-testid="account-busy" className="text-[11.5px] text-accent animate-pulse">
-              {busyText}
-            </span>
-          )}
-        </div>
+            {onOpenAccount && (
+              <ChevronRight
+                size={14}
+                className="shrink-0 text-text-tertiary group-hover:text-text-primary transition-colors"
+              />
+            )}
+          </button>
+        ) : (
+          <p className="text-[12.5px] text-text-tertiary">Not on an account</p>
+        )}
+        {busyText && (
+          <p data-testid="account-busy" className="mt-2 text-[11.5px] text-accent animate-pulse">
+            {busyText}
+          </p>
+        )}
         {holding && (
           <p data-testid="account-holding" className="mt-2 text-[11.5px] text-text-secondary">
             It holds a trade, so it stays on this account until that trade closes — moved or taken
@@ -743,15 +837,6 @@ export function BotDrawer({
             )}
           </div>
         )}
-
-        {/* ⚠ Not while it holds a trade: the line above says why it cannot move at all. */}
-        {!holding && (
-          <p className="text-[11px] text-text-tertiary leading-[1.5] mt-[8px]">
-            {running
-              ? 'It is running: a move or a removal stops it first, since it reads its account when it starts. A move onto a demo account starts it again there.'
-              : "A move rewrites the server, terminal and symbol to match. It takes effect at this bot's next start."}
-          </p>
-        )}
       </section>
 
       {/* ── version, and the only Deploy control ────────────────────────────── */}
@@ -772,29 +857,30 @@ export function BotDrawer({
         />
       </section>
 
-      {/* ── its record: only what the row does not already say ─────────────── */}
-      {/* ⚠ A bot with no record still SAYS so, in the server's own words.
-       *  ⚠ ONE line since 2026-09-12: a two-row table read "0 / 0" beside "2026-09-11 → 2026-09-11"
-       *  for a bot that had closed nothing on the one day its record covered. */}
+      {/* ── its record ─────────────────────────────────────────────────────── */}
       <section data-testid="bot-record" className="py-[16px]">
-        <SectionTitle>Record</SectionTitle>
+        {/* 🔴 Stat tiles (2026-09-16) — Aaron: *"the record section seems boring"*. The period is
+         *  the heading's aside; a bot with no record still says so in the server's own words. */}
+        <SectionTitle
+          aside={
+            earnings?.traded && earnings.records_from ? (
+              <span className="text-[11px] font-mono tabular-nums text-text-tertiary">
+                {earnings.records_from === earnings.records_to
+                  ? earnings.records_from
+                  : `${earnings.records_from} → ${earnings.records_to}`}
+              </span>
+            ) : undefined
+          }
+        >
+          Record
+        </SectionTitle>
         {!earnings || !earnings.traded ? (
           <p className="text-[12px] text-text-tertiary leading-[1.5]">
             {earnings?.reason ??
               'No decision record has been read for this bot, so nothing here has been measured.'}
           </p>
         ) : (
-          <p className="text-[12px] text-text-secondary leading-[1.5]">
-            {(earnings.closed_trades ?? (earnings.wins ?? 0) + (earnings.losses ?? 0)) === 0
-              ? 'No closed trades yet'
-              : `${earnings.wins ?? 0} won · ${earnings.losses ?? 0} lost`}
-            <span className="text-text-tertiary">
-              {' · record '}
-              {earnings.records_from === earnings.records_to
-                ? earnings.records_from
-                : `${earnings.records_from} → ${earnings.records_to}`}
-            </span>
-          </p>
+          <RecordTiles e={earnings} />
         )}
       </section>
 

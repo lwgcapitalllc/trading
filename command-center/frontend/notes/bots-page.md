@@ -1761,3 +1761,13 @@ cap under Version, the equity under Actions. ⚠ **The band's configure icon is 
 band opens the account** — a bot row hides its "···" while a deploy pill shows, so its configure
 icon moves and nothing could line up with it. **Stop is red at rest** (his call); Start stays
 neutral until hover.
+
+## The bot panel: risk as setting rows, the account as a card, the record as tiles (2026-09-16)
+
+Aaron: risk read repetitive, account and record read boring. **Risk & exits** replaces the heading
+that repeated the risk row's own label; each setting is a row with its name on the left, and the
+breakeven measurement sits in a tinted box under its switch (still on screen in both states).
+**The account is one clickable card** — number, live/demo, name, balance, and this bot's share of
+the cap, all server figures; what a move does went to the heading's hover. **The record is four
+tiles** (trades, won · lost, net dollars, net R) with its period beside the heading; nothing closed
+shows dashes, never a measured zero.
