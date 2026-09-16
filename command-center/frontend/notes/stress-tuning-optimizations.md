@@ -18,6 +18,16 @@ looks like from the browser.
 as a loss, a null drawn as 0%, a dollar figure drawn under a grade decided in percent — each renders
 a confident number.
 
+### Both stress test windows pick the 55% ruleset first (2026-09-16)
+
+Aaron: *"we should always default to the 55% one"* (`src/lib/stressRuleset.ts`). The single-run
+window offers it on a FOREX run even when the run was never evaluated against it; a futures run
+keeps the strictest of its own evaluations. The stack window puts it ahead of the ruleset the stack
+was last graded against, and warns (`stack-ruleset-differs`) when the two differ, because the
+grades will not compare. ⚠ **An explicit "No ruleset" is sent as `null`** — an omitted field gets
+the server's 55% default (`backend/notes/stress-tests.md`). Test: `tests/stress.spec.ts`, the last
+check, which intercepts the start and never launches a test.
+
 ### The drawdown was shown in a unit the grade did not read
 
 🔴 **The engine picks its basis per run** — `dd_basis` is `percent` on a compounding run (the

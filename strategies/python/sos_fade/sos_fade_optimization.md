@@ -4266,9 +4266,6 @@ broken level for bear internal shifts about 22 times in 25; that is an engine fi
 
 # Run 28 — 2026-09-16 — **THE SAME NO-GAP SETUPS, ENTERED ON THE FIRST 1M SHIFT OF EITHER KIND, STOP AT THE 1.0. Positive at 2-5R and it survives dropping the best three trades. A screen, not yet the bot.**
 
-> 🔴 **OVERTURNED BY RUN 29.** The screen started each setup's 1m walk at the first bar of its
-> DEEPEST zone visit, which is only known afterwards. Replayed through the bot, the same rule loses.
-
 Built from Aaron's walk-through the same day. On 1m wicks, of the 178: **74** turned between the 0.5
 and 0.886 and took out the leg's 0.0 before touching the 1.0 (83 including turns below the 0.886;
 104 of 178 touched the 0.886 first). **67 of those 74** printed a 1m shift (internal or main) in the
@@ -4297,35 +4294,3 @@ None overlapped a shipped trade.
 edge is the search itself. The 1m feed has no Pine gate. Each setup is walked alone, so trades
 overlapping EACH OTHER were not checked. Before anything goes live it needs a replay through the
 bot's own order layer and a demo run.
-
----
-
-# Run 29 — 2026-09-16 — **RUN 28'S ENTRY BUILT INTO THE BOT AND REPLAYED: −15.3R. The screen's edge came from hindsight in when it started looking. No edge. The switch stays off.**
-
-Built as an off-by-default entry on the fast clock (1m), market order at the shift bar's close,
-stop at the live 1.0, whole position off at 3R, one trade per setup. Replayed by
-`backtest/tools/nogap_ngs_replay.py`, Vantage 1m + 15m, 2020-01-01 → 2026-08-06, PU Prime ECN costs.
-⚠ The build is NOT committed: adding its settings means adding them to the live bots' configs,
-which their deployed snapshot would refuse at restart (Aaron, 2026-09-16: hold until the next promote).
-
-| variant | trades | total |
-|---|---|---|
-| shipped | 155 | +202.05R |
-| shipped + no-gap entry | 263 | +187.20R (no-gap 127 trades, **−15.28R**, 24% wins) |
-| shipped + re-entry | 243 | +263.09R |
-| shipped + re-entry + no-gap | 335 | +254.32R |
-
-No-gap by year: 2020 −4.4 · 2021 −3.1 · 2022 +1.0 · 2023 −0.2 · 2024 −3.8 · 2025 +4.3 · 2026 −9.1.
-
-**Why it disagrees with Run 28**, setup by setup (bot fills matched to the screen by direction and stop):
-- 60 entries in the same minute as the screen: bot +16.0R, screen +18.1R. The order layer, target and costs agree.
-- 30 entries BEFORE the screen's start: bot −4.5R, screen +3.1R on those setups. The screen began at
-  the first bar of the setup's DEEPEST zone visit (the miss record's zone time), which is hindsight —
-  every earlier, shallower visit whose shift failed was skipped. The bot cannot skip them.
-- 26 bot trades on setups outside the 178: −9.2R. The pool itself is hindsight (setups that ended
-  with no gap ever forming); live, a setup that gets a gap later looks the same until it does.
-- 21 screen trades the bot never took: +13.3R, displaced by the above in the one position slot.
-- 45 bot trades were held past 48h; the screen forced them out at 48h. Not the main gap.
-
-**Verdict:** the honest number is the bot's. Runs 27–29 together say this no-gap pool has no
-tradeable 1m entry found yet.

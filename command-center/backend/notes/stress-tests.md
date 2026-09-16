@@ -314,6 +314,22 @@ Adding a kind means adding its credential key on both sides (`test_the_keys_matc
 
 ---
 
+### A forex test that names no ruleset is graded against the 55% one (2026-09-16)
+
+Aaron: *"we should always default to the 55% one"* — "Personal Forex — 55% Drawdown"
+(`personal_forex_risk`). `routers/stress_tests.py` applies it when the request OMITS the ruleset
+and the subject is forex. Stress test `89987e5088a045f2` is why: started from outside the page
+with no ruleset, it completed with no letter.
+
+- ⚠ **Omitted and null are different requests.** An explicit null is the reader choosing Monte
+  Carlo only, and it stays ungraded — read off `model_fields_set`, never off a falsy value.
+- ⚠ **Futures tests are untouched** — they keep whatever the request names.
+- ⚠ **Both stress test windows pick the 55% ruleset first** (`frontend/src/lib/stressRuleset.ts`).
+  The stack window warns when that differs from the ruleset the stack was last graded against,
+  because the two grades will not compare.
+- Tests: `tests/test_gradable_resolver.py` (both watched RED by mutation) and
+  `frontend/tests/stress.spec.ts` (watched RED by restoring the strictest-evaluation default).
+
 ## How stress tests work
 
 **Monte Carlo** — pure Python (numpy), no NT8 involved. Takes the trade P&L list from a completed backtest and runs two simulations:

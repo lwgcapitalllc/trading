@@ -331,6 +331,31 @@ def test_a_STACK_can_be_stress_tested_and_the_row_says_so(stack_client):
     assert st["run_id"] is None
 
 
+def test_a_forex_test_naming_no_ruleset_is_graded_against_the_55_percent_one(stack_client):
+    """Aaron, 2026-09-16: always default to the 55% ruleset. Without it a test started from outside
+    the page completed with no letter (stress test 89987e5088a045f2).
+
+    ⚠ Watched RED by removing the default: the row records no ruleset.
+    """
+    r = stack_client.post("/stress-tests/run", json={"stack_id": "stk_1"})
+    assert r.status_code == 202, r.text
+    st = lab_db.get_stress_test(r.json()["stress_test_id"])
+    _finish(st["stress_test_id"])
+    assert st["ruleset_id"] == "personal_forex_risk"
+
+
+def test_an_EXPLICIT_null_ruleset_stays_ungraded(stack_client):
+    """Omitted and null are different requests: null is the reader choosing Monte Carlo only.
+
+    ⚠ Watched RED by defaulting on a falsy value instead of on an omitted field.
+    """
+    r = stack_client.post("/stress-tests/run", json={"stack_id": "stk_1", "ruleset_id": None})
+    assert r.status_code == 202, r.text
+    st = lab_db.get_stress_test(r.json()["stress_test_id"])
+    _finish(st["stress_test_id"])
+    assert st["ruleset_id"] is None
+
+
 def _finish(stress_test_id: str) -> None:
     """Mark a started stress test complete, releasing its market lock.
 

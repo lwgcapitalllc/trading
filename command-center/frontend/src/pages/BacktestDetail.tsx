@@ -75,6 +75,7 @@ import { brokerName } from '@/lib/brokerName'
 import { COST_LAYER_LABEL } from '@/lib/costLayers'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
+import { DEFAULT_FOREX_RULESET_ID } from '@/lib/stressRuleset'
 import type {
   BacktestDetail as Run,
   EvaluationDetail,
@@ -4379,7 +4380,7 @@ function RunStressTestModal({
   // "smallest" comparison outright), and the manual path took whichever evaluation happened to sort
   // first — so the same run could be graded against two different rulesets depending on how the
   // test was started. Selectable, so the choice is visible rather than merely consistent.
-  const evals = run.evaluations ?? []
+  const evals = useMemo(() => run.evaluations ?? [], [run.evaluations])
   const limitOf = (rulesetId: string): number => {
     const rs = rulesets?.find((r) => r.id === rulesetId)
     if (!rs) return Infinity
@@ -4400,10 +4401,25 @@ function RunStressTestModal({
     return [...pool].sort((a, b) => limitOf(a.ruleset_id) - limitOf(b.ruleset_id))[0]
   }, [evals, rulesets])
 
-  const [rulesetId, setRulesetId] = useState<string | undefined>(strictest?.ruleset_id)
+  // 🔴 A FOREX run is offered the 55% ruleset whether or not the run was evaluated against it, and
+  // it is picked first (Aaron, 2026-09-16: "we should always default to the 55% one"). A futures
+  // run keeps the strictest of its own evaluations.
+  const forex55 =
+    runnerMarket(run.runner) === 'forex'
+      ? rulesets?.find((r) => r.id === DEFAULT_FOREX_RULESET_ID)
+      : undefined
+  const choices = useMemo(() => {
+    const list = evals.map((ev) => ({ id: ev.ruleset_id, name: ev.ruleset_name }))
+    if (forex55 && !list.some((c) => c.id === forex55.id)) {
+      list.unshift({ id: forex55.id, name: forex55.name })
+    }
+    return list
+  }, [evals, forex55])
+  const defaultId = forex55?.id ?? strictest?.ruleset_id
+  const [rulesetId, setRulesetId] = useState<string | undefined>(defaultId)
   useEffect(() => {
-    setRulesetId(strictest?.ruleset_id)
-  }, [strictest?.ruleset_id])
+    setRulesetId(defaultId)
+  }, [defaultId])
 
   const [windows, setWindows] = useState(5)
   const trades = run.trade_count ?? 0
@@ -4426,7 +4442,7 @@ function RunStressTestModal({
       >
         <h2 className="text-base font-semibold text-text-primary">Run Stress Test</h2>
 
-        {evals.length ? (
+        {choices.length ? (
           <div className="space-y-1.5">
             <p className="text-xs text-text-secondary">
               Grade against
@@ -4440,10 +4456,10 @@ function RunStressTestModal({
               onChange={(e) => setRulesetId(e.target.value || undefined)}
               className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1.5 text-xs text-text-primary"
             >
-              {evals.map((ev) => (
-                <option key={ev.ruleset_id} value={ev.ruleset_id}>
-                  {ev.ruleset_name}
-                  {ev.ruleset_id === strictest?.ruleset_id ? ' — strictest' : ''}
+              {choices.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.id === strictest?.ruleset_id ? ' — strictest' : ''}
                 </option>
               ))}
             </select>

@@ -22,6 +22,7 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useRunStressTest, useStressTests } from '@/hooks/useStressTests'
 import { useRulesets } from '@/hooks/useLab'
+import { DEFAULT_FOREX_RULESET_ID } from '@/lib/stressRuleset'
 
 /** Mirrors the backend's own floor (`routers/stress_tests.MIN_TRADES_FOR_STRESS`). Below it the
  *  WHOLE test is refused, not just a phase — the grade leans on Monte Carlo tail percentiles small
@@ -52,7 +53,9 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
   // python stack can be graded by. Every leg here is a python strategy by construction.
   const options = useMemo(() => (rulesets ?? []).filter((r) => r.market === 'forex'), [rulesets])
 
-  // 🔴 The default is the ruleset this stack was LAST stress tested against, not the first one in
+  // ⚠ Since 2026-09-16 the 55% ruleset outranks this (see `defaultId`). This is kept as the
+  // fallback, and to warn when the default differs from the last test's limit.
+  // The ruleset this stack was LAST stress tested against, not the first one in
   // the list. The first forex ruleset is the 15% prop-firm figure, so every re-test of a stack
   // graded on the 55% ruleset silently switched limits unless the reader caught it — and a grade
   // against a different limit is not comparable to the last one (rule 11). The newest test that
@@ -71,7 +74,12 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
   //
   // ⚠ DERIVED rather than filled by an effect, so nothing can overwrite a choice already made.
   const [chosen, setChosen] = useState<string | null | undefined>(undefined)
-  const rulesetId = chosen === undefined ? (lastRulesetId ?? options[0]?.id) : (chosen ?? undefined)
+  // 🔴 The 55% ruleset first, always (Aaron, 2026-09-16). Then the last one this stack was graded
+  // against, then the list's first — only reached if the 55% row is not on offer.
+  const defaultId = options.some((r) => r.id === DEFAULT_FOREX_RULESET_ID)
+    ? DEFAULT_FOREX_RULESET_ID
+    : (lastRulesetId ?? options[0]?.id)
+  const rulesetId = chosen === undefined ? defaultId : (chosen ?? undefined)
   // ⚠ Run waits for the history. Clicking before it lands would grade against the list's first
   // ruleset while the select was about to change to the one this stack was last graded against.
   const historyPending = history.isPending
@@ -137,6 +145,13 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
                 The ruleset this account was last stress tested against, so the two grades compare.
               </p>
             )}
+            {chosen === undefined && lastRulesetId && rulesetId !== lastRulesetId && (
+              <p data-testid="stack-ruleset-differs" className="text-[11px] text-warn-text">
+                This account was last graded against{' '}
+                {options.find((r) => r.id === lastRulesetId)?.name ?? lastRulesetId}, so the two
+                grades will not compare.
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-xs text-text-tertiary">
@@ -198,7 +213,7 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
               runTest.mutate(
                 {
                   stack_id: stackId,
-                  ruleset_id: rulesetId,
+                  ruleset_id: chosen === null ? null : rulesetId,
                   include_walk_forward: true,
                   include_sensitivity: true,
                   num_simulations: 10_000,

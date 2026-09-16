@@ -28,6 +28,10 @@ from services.stress_tester import (
     walk_forward_feasibility,
 )
 
+#: The ruleset a FOREX stress test is graded against when the request names none (Aaron,
+#: 2026-09-16). "Personal Forex — 55% Drawdown" — see `notes/runs.md` for why 55.
+DEFAULT_FOREX_RULESET_ID = "personal_forex_risk"
+
 router = APIRouter(prefix="/stress-tests", tags=["stress-tests"])
 
 
@@ -217,11 +221,6 @@ async def trigger_stress_test(body: StressTestCreate):
             f"period, more instruments, or a smaller timeframe) before stress testing.",
         )
 
-    if body.ruleset_id:
-        rs = lab_db.get_ruleset(body.ruleset_id)
-        if not rs:
-            raise HTTPException(404, "Ruleset not found")
-
     run = lab_db.get_run(body.run_id) if body.run_id else None
     # ⚠ Off the RESOLVED target, never looked up again here — the resolver already read it, and
     # two reads of one fact is what this module's own defects have been made of.
@@ -237,6 +236,20 @@ async def trigger_stress_test(body: StressTestCreate):
     # by the frontend's `runnerMarket`. Inline, a python run was filed under futures here and read
     # as forex on the page, so its own button never knew it was blocked.
     market = lab_db.stress_market_for_runner(runner)
+
+    # 🔴 A FOREX test that names NO ruleset is graded against the 55% one (Aaron, 2026-09-16:
+    # "we should always default to the 55% one"). Without one the test completes with no letter,
+    # which is what stress test 89987e5088a045f2 did when it was started from outside the page.
+    # ⚠ OMITTED and NULL are different requests: an explicit null is the reader choosing Monte
+    #   Carlo only, and it stays ungraded. Only a field the request never sent gets the default.
+    ruleset_id = body.ruleset_id
+    if "ruleset_id" not in body.model_fields_set and market == "forex":
+        ruleset_id = DEFAULT_FOREX_RULESET_ID
+    if ruleset_id:
+        rs = lab_db.get_ruleset(ruleset_id)
+        if not rs:
+            raise HTTPException(404, "Ruleset not found")
+
     locks = lab_db.running_stress_test_markets()
     if locks[market]:
         raise HTTPException(409, f"A {market} stress test is already running")
@@ -257,7 +270,7 @@ async def trigger_stress_test(body: StressTestCreate):
             # bless either.
             "run_id": target.target_id if not target.is_stack else None,
             "stack_id": target.target_id if target.is_stack else None,
-            "ruleset_id": body.ruleset_id,
+            "ruleset_id": ruleset_id,
             # ⚠ The platform this test HOLDS and what it is grading, in words — both off the
             # resolved target, both written here at creation. The market lock and the list used
             # to join for these through `run_id`, which a stack does not have: a running stack

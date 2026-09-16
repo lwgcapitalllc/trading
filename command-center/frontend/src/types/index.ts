@@ -1400,6 +1400,8 @@ export interface ParamSchemaEntry {
   // still testing rather than every lever that exists.
   // ⚠ A hidden param sitting AWAY from its default is SHOWN anyway — see `settled` in ParamEditor.
   hidden?: boolean
+  // 'risk_pct' = this is the strategy's own risk per trade. The run form lifts it to the top.
+  role?: 'risk_pct'
   // For a dropdown carrying a "Custom" escape hatch: the sibling param holding the typed value.
   // The sibling's own `show_if` is what decides WHEN it applies, so there is no second copy of
   // the trigger to drift. Everything that reads a value for display or gating resolves through

@@ -308,3 +308,41 @@ test('the equity fan carries no drawdown-limit line', async ({ page }) => {
   // The histogram, which DOES measure drawdown, still carries its limit line.
   await expect(page.getByText('Max Drawdown Distribution')).toBeVisible()
 })
+
+// ── The ruleset a stress test is graded against ───────────────────────────────
+
+test('a forex run grades against the 55% ruleset by default, and sends it', async ({ page }) => {
+  // Aaron, 2026-09-16: "we should always default to the 55% one". Stress test 89987e5088a045f2
+  // completed with no letter because nothing named a ruleset. The start is INTERCEPTED, so this
+  // never launches a real test. ⚠ Watched RED by defaulting the picker to the strictest evaluation.
+  const res = await fetch(`${API}/backtests/runs`)
+  const runs: { run_id: string; runner?: string; status: string; trade_count: number | null }[] =
+    await res.json()
+  const run = runs.find(
+    (r) => r.runner === 'python' && r.status === 'complete' && (r.trade_count ?? 0) >= 100
+  )
+  if (!run) throw new Error('NO FIXTURE: the lab holds no complete python run with 100+ trades')
+
+  let sent: Record<string, unknown> | null = null
+  await page.route('**/api/stress-tests/run', async (route) => {
+    sent = route.request().postDataJSON()
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ stress_test_id: 'intercepted', status: 'running', warnings: [] }),
+    })
+  })
+  // An open test on this run would replace the button with "In progress".
+  await page.route('**/api/stress-tests?*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  )
+  await page.goto(`http://localhost:5173/backtests/runs/${run.run_id}`)
+  await page
+    .getByRole('button', { name: /Stress Test/ })
+    .first()
+    .click()
+  const dialog = page.getByRole('heading', { name: 'Run Stress Test' }).locator('..')
+  await expect(dialog.getByRole('combobox').first()).toHaveValue('personal_forex_risk')
+  await page.getByRole('button', { name: 'Run Stress Test' }).click()
+  await expect.poll(() => sent?.ruleset_id).toBe('personal_forex_risk')
+})
