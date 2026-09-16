@@ -285,7 +285,17 @@ CLAUDE.md gets at most one index line.
   stops of $2+ reach it ~30% and break even raw. The 15m agreeing moves it −0.066 → +0.005R raw and
   −0.162 → −0.237R charged. The 4-hour window: no breaker cell at z ≥ 2 on gold, silver or NAS100;
   EURUSD 5m has a handful at z 2.2–2.5 among hundreds of searched cells (noise-level, not the declared cell).
-  ✅ Every pre-existing cell reproduces exactly after the patch (max diff 0.0 on the 15m grid).
+  ⚠ **That target was a misreading, corrected the same day.** The user's target is the trend
+  leg's extreme (for a long, the higher high before the bearish shift — the engine's leg origin,
+  exit `tS`: 4106.02 on 27 Jul where the post-shift high read 4100.41), and "at least" that — both
+  15 Sep trades aimed at the post-shift high because it was higher. Exit `tU` = the further of the
+  two, re-declared under the same cell and PASS rule before any `tU` result existed. **Still FAILED:
+  gold ECN 1,089 trades, 20.4% win, −0.102R, z −0.03, both halves negative; raw gold +0.039R (first
+  half −13.4R), silver −0.119R, EURUSD +0.051R (second half −42.6R), NAS100 −0.044R — 0 of 3.**
+  ⚠ The control is a random draw, so a row's z moves a few tenths between runs when the grid
+  changes (gold ECN `tH`: z −0.56, then −0.98 on identical trades) — never quote a z to two places
+  as if it were fixed.
+  ✅ Every pre-existing cell reproduces exactly after each patch (max diff 0.0 on the 15m grid).
   Reports: `backtest/reports/rso_realign_breaker/<symbol>[_24h]/`; the four weeks of setups for the
   user to mark TAKE / SKIP, outcomes left out: `.../candidates_2026-08-17_to_09-16.csv` (32 setups).
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure

@@ -174,6 +174,18 @@ positive in both halves and z >= 2 against its matched control, AND raw it is po
 halves on at least 2 of silver, EURUSD and NAS100. The 5m and 15m versions, `tS` and `swing` are
 reported for information only. ⚠ Gold 2020-2026 has been searched for this pattern four times
 before this; a pass here is a lead for forward trading, never a validated edge.
+⚠ THAT TARGET WAS A MISREADING (the user, 2026-09-16, on the 27 Jul loser): the target is the
+    trend leg's extreme — for a long, the higher high after the first bullish BOS and before the
+    bearish SOS (`tS`, the engine's leg origin: 4106.02 on 27 Jul, where `tH` read 4100.41) — and
+    "at least" that: both 15 Sep trades aimed at the post-realign high because it was higher
+    (4300.54 over 4286.77; 4310.71 over 4300.54). `tU` = the further of the two. RE-DECLARED
+    before any `tU` result existed: the same cell and the same PASS rule with `tU` in place of
+    `tH`. ⚠ `tS` rows were already printed in the 4-hour tables, so the trend-leg high alone is
+    reported, never judged.
+🔴 MEASURED 2026-09-16 with `tU`: STILL FAILED. Gold ECN 1,089 trades, 20.4% win, -0.102R, z -0.03,
+    both halves negative; raw gold +0.039R (first half -13.4R), silver -0.119R, EURUSD +0.051R
+    (second half -42.6R), NAS100 -0.044R. The control is a fresh draw each run: z moves a few
+    tenths on identical trades when the grid changes.
 🔴 MEASURED 2026-09-16: FAILED. Gold ECN 1,109 trades, 23.9% win, -0.162R, z -0.56, both halves
     negative; raw gold -0.066R, silver -0.081R, NAS100 -0.054R, EURUSD +0.125R with its second half
     -40.1R. The high is 4.4R away at the median fill and is reached 11% of the time at 5-10R, 4% past
@@ -239,7 +251,7 @@ DISP_ATR = 1.0  # --disp-atr: a realign close within this many ATR of the shift 
 DISP_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))
 RR_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))  # last high / stop, at entry
 STOPS = ("struct", "atr2")
-EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing", "tH")
+EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing", "tH", "tU")
 FIXED_R = {"t1": 1.0, "t1.5": 1.5, "t2": 2.0, "t3": 3.0}
 # How far price must trade THROUGH a resting limit before it counts as filled. 0.0 = a touch fills,
 # the optimistic reading a bar walk always makes (a touch says nothing about queue position). A
@@ -659,6 +671,9 @@ def exit_rule(exit_: str, e: float, R0: float, origin: float, post: float = math
     """-> (walk kind, target price) or None when the target sits at or behind the entry."""
     if exit_ == "tH":  # the extreme price made between the realign close and the fill
         return ("fixed", post) if post < e else None
+    if exit_ == "tU":  # the user's target: the FURTHER of the trend-leg extreme and `tH`
+        T = min(origin, post)
+        return ("fixed", T) if T < e else None
     if exit_ in FIXED_R:
         return "fixed", e - FIXED_R[exit_] * R0
     if exit_ == "tS":

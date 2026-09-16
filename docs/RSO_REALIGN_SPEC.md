@@ -8,7 +8,8 @@ at entry — **the far close is a bad entry as he said; nothing else in it clear
 **2026-09-16, third pass:** the gold family on silver, EURUSD and NAS100 — bars nothing had looked
 at — **failed 0 of 3** (below). The pattern is measured out on this repo's data.
 **2026-09-16, fourth pass:** the user's breaker entry (a limit back at the counter push's BOS level)
-— **both of the user's trades found to the cent, and the rule loses on all four instruments** (below).
+— **both of the user's trades found to the cent, and the rule loses on all four instruments** (below). The target was
+misread and corrected the same day; it still loses.
 Tool: `backtest/tools/rso_realign_study.py` (its docstring carries the same record).
 Tool note: `backtest/notes/tools.md`. Nothing here is a strategy, a bot or a Pine file.
 
@@ -334,6 +335,27 @@ finds 13 losers a month for every one like them, so **the filter is the user's, 
 chart structure this tool reads.** Four weeks of the detector's setups, outcomes left out, for
 the user to mark TAKE or SKIP: `backtest/reports/rso_realign_breaker/candidates_2026-08-17_to_09-16.csv`
 (32 setups, 26 filled within a day).
+
+### The target was misread — corrected the same day, and the rule still fails
+
+The user, on the 27 Jul loser: the target is the **higher high of the trend leg** — after the first
+bullish BOS and before the bearish shift — not the high made after the shift back, and "at least"
+that. The engine agrees to the cent: its leg origin on 27 Jul is **4106.02**, where the table above
+aimed at 4100.41. Both 15 Sep trades aimed higher than their trend-leg highs (4300.54 over 4286.77;
+4310.71 over 4300.54), at the post-shift high, so the user's target is **the further of the two**.
+Re-declared under the same cell and pass rule before any result with it existed:
+
+| instrument | trades | win | avg R | 1st half | 2nd half | random | z |
+|---|---|---|---|---|---|---|---|
+| gold, ECN | 1,089 | 20.4% | **−0.102** | −71.8R | −39.6R | −0.099 | −0.03 |
+| gold, raw | 1,102 | 19.8% | +0.039 | −13.4R | +56.5R | +0.025 | +0.14 |
+| silver, raw | 1,126 | 16.8% | −0.119 | −33.4R | −100.9R | −0.050 | −0.78 |
+| EURUSD, raw | 1,266 | 18.2% | +0.051 | +106.9R | **−42.6R** | +0.002 | +0.33 |
+| NAS100, raw | 1,111 | 18.9% | −0.044 | −70.0R | +21.5R | +0.039 | −1.01 |
+
+**Still a fail on every part of the rule.** The trend-leg high on its own reads −0.126R charged and
++0.028R raw on gold. ⚠ The random control is a fresh draw each run, so z moves a few tenths between
+runs on identical trades.
 
 Reports: `backtest/reports/rso_realign_breaker/<symbol>/` (four hours) and `<symbol>_24h/`.
 
