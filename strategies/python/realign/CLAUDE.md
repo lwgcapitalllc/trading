@@ -151,123 +151,36 @@ better book and the default (*The first parity export*, above; history in the co
 - ⚠ **The drawdown disagreement with the Strategy Tester (open question 2) predates the fix** and
   was measured on the 5m book; it needs re-checking on the default before anyone diagnoses it.
 
-## What Runs 5 and 6 settled — the rules, not the tables (2026-09-16)
+## What the exit and entry studies settled — on the 15m trail (Run 10, 2026-09-16)
 
-**Full tables live in `realign_optimization.md` Runs 5-6 and are NOT copied here.**
+**Tables: `realign_optimization.md` Runs 2-6 (5m trail) and Run 10 (today's default). Nothing here
+moves a default — the shipped configuration is the best tested.** Fitting window 2020-01-02 →
+2025-08-05, charged: **139 trades, +49.49R, avg +0.356, PF 1.81, maxDD 11.38R.**
 
-- 🔴 **The pattern BEATS matched random entry, and random LOSES.** z **+2.36** shipped, +4.21 on the
-  stacked retest config; random timing through the SAME exits makes −0.053R a trade.
-  **The control column is the finding, not the z** — the ladder, the stop geometry and gold's
-  2020-2025 drift are measurably not what pays. ⚠ Quote **+2.36**: the shipped config predates the
-  test and was not chosen against it, so it is the clean number; it clears the plain bar of 2.0 and
-  NOT the family-wise 2.99. The stacked +4.21 is inflated by selection. ⚠ **This supersedes the old
-  "z 1.85, does not clear the bar" figure**, which came from a TRIGGER SCAN — and a trigger prior is
-  not a strategy result, a rule this package already learned when that same scan got the short
-  side's SIGN wrong.
-- 🔴 **THREE TO FIVE TRADES CARRY 5.5 YEARS.** The single best trade is ~60% of the result and the
-  top five EXCEED the total. Shipped goes negative after 3 removals, the stacked config after 5.
-  **This caveat belongs beside any figure from Runs 2-6 that gets quoted.** ⚠ It is NOT evidence the
-  edge is fake — the random control does not depend on the big winners. ⚠ Today's changes measurably
-  REDUCED the concentration, which is a point in their favour no other table shows.
-- 🔴 **NO ENTRY FILTER EXISTS. Winners and losers are indistinguishable** on every feature knowable
-  at entry — median reward:risk is 2.20 for winners and **2.25 for losers**; stop size, stop % and
-  retest depth do not separate them either.
-- 🔴 **AND EVERY BUCKETED "SIGNAL" WAS ONE TRADE.** Shorts, Mondays, the 3-5 R:R bucket and sub-$5
-  stops all looked strong and were all the same +22.56R trade; without it shorts fall behind longs
-  and Monday goes from the best day to the WORST. **On a book this concentrated, no bucketed claim
-  is believable until it survives removing the top trade** — `backtest/tools/realign_trade_profile.py`
-  does that automatically, and the rule generalises past this strategy.
-- ⚠ **Do not resurrect `realign_min_rr` off this.** The 1-2 bucket is worst but the pattern is
-  non-monotone (under 1 is GOOD), which is noise, and that lever was already shown to be a fit to one
-  calendar half.
-- ⚠ **The one live thread: scratches enter at a median 1.46 R:R against ~2.2 for everything else.**
-  A hypothesis, needing a REPLAY and its own pre-declared window — never row-dropping.
-
-## The retest entry — built 2026-09-15, shipped OFF, and it beats the market entry everywhere
-
-`realign_entry_mode` ("market" | "retest"), with `realign_retest_at` and `realign_retest_bars`.
-The retest rests a LIMIT at the structure level the realignment broke instead of buying the close.
-It is Aaron's brother's actual trade — *"price retests that shift of structure area and then
-goes"* — was listed under *Open* in the spec, and had never been measured anywhere here.
-
-Charged `puprime_standard`, 15m/5m, 2020-01-02 → 2025-08-05 (the held-back year excluded), expiry
-swept 2→24 bars: a smooth HILL peaking on a 4–6 bar plateau, not a spike. At the plateau centre
-(5 bars) against the shipped market entry, and then on the holdout year run ONCE:
-
-| | trades | sum R | avg R | PF | maxDD |
-|---|---|---|---|---|---|
-| fit, market | 140 | +28.75 | +0.205 | 1.47 | 15.52 |
-| fit, **retest @ 5** | 97 | **+35.85** | **+0.370** | **1.83** | **13.66** |
-| holdout, market | 21 | +6.92 | +0.330 | 1.62 | 5.08 |
-| holdout, **retest @ 5** | 17 | **+9.49** | **+0.558** | **2.04** | **3.04** |
-
-Better on **every** axis in both windows — more total R from fewer trades, ~1.7x the average, a
-better profit factor and a shallower drawdown — and it survived a year that had no say in choosing
-it, which is the test the Loaded Level scalp pick failed.
-
-🔴 **QUOTE THE TWO CAVEATS WITH THE TABLE, ALWAYS.** The holdout is 17 trades (+0.558 against ±0.684,
-under ONE standard error), and **stripping each row's single best trade turns BOTH holdout rows
-negative** — one trade carries that year either way. The holdout could have REFUTED the pick and
-did not; that is the entire claim.
-
-🔴 **THE CANCEL RUNS AFTER THE FILL PHASE, AND THAT ORDER IS LOAD-BEARING.** A resting limit dies on
-its expiry or when price reaches the stop unfilled. Checking that BEFORE the bar is offered to the
-fill path would delete exactly the trades that lost — a dip to the limit that carries on to the
-stop is a real losing trade — and flatter the row invisibly. Pinned by test.
-
-⚠ **It ships OFF and must, until this bot has a parity gate** (open question 1 below): the retest
-exists in Python and nowhere else, so adopting it means the Pine side and the export twin first.
-It has also never faced a matched random control, and the half-split direction flip below has not
-been re-checked with it on.
-
-## 🔴 A fixed take-profit LOSES here — cap the CLOCK, not the target (2026-09-15)
-
-Asked for by Aaron (*"an average take profit I could just close the trades off of"*), built as
-`realign_tp_r`, measured by replay, and **refused by its own numbers**. Charged, at the retest
-entry over 2020-01 → 2025-08: the trailing ladder makes **+35.85R**; the best fixed target (5R)
-makes **+16.26R**; 1R makes **−3.93R**. The trend is monotone outward — the further the cap, the
-better — which is the table saying *do not cap*. Only 43% / 27% / 18% of trades ever reach
-1R / 2R / 3R against a best of **24.6R**: the tail pays for the strategy and a fixed target sells it
-while keeping every loser whole.
-
-🔴 **The 1R row is the one to quote at anyone proposing a tight target: 50% win rate, and it loses
-money.** A rule can feel right on every single trade and still be the worst line in the table.
-
-**The complaint underneath it was valid and has a different fix.** Nothing in this bot ever banks
-at a target — both rungs sit at 0% and only stage the stop — so every trade rides to a trailing
-stop or times out, and 28 of 97 held past 24h (longest 209h). The inherited time stop is 36h and
-applies *before the first rung only*, so a trade that has moved is never timed out. Making it apply
-ALWAYS and sweeping: a hill peaking at **12 hours**, which beats the inherited rule on every axis —
-**+37.76R vs +35.85R, PF 2.01 vs 1.83, drawdown 12.12R vs 13.66R** — while capping the hold at half
-a day. 8h trades 3R for the table's best profit factor (2.04) and a 10.64R drawdown.
-
-🔴 **THE 12-HOUR PICK HAS NO HOLDOUT AND MAY NOT BORROW THE RETEST'S.** Run 2 pre-declared one
-holdout run and spent it; a second draw on the same year is how a holdout stops meaning anything.
-Its only evidence is the fitting window and the hill's shape. Validation needs data that does not
-exist yet. Full record: `realign_optimization.md` Run 3.
-
-## The inherited trail stays — MEASURED, not inherited (2026-09-15)
-
-Aaron asked not to take SOS Fade's trail blindly. It was tested; it wins. Bucketing the stacked
-config's trades by how far they ever ran: **the trail keeps 91% of the 5R+ runners** (the 24.60R
-peak banked +22.56R) and 64–70% of the 2–5R band. The only real bleed is the **1–2R band at 39%
-kept**. ⚠ The "69% of peak given back" headline is an artefact — 63 of 99 trades peaked under 1R
-and are losers that ticked green, which no exit rule recovers. **Never quote that number alone.**
-
-Three alternatives, all worse: banking 25 / 50 / 75% at the first rung gives **+30.12 / +22.20 /
-+14.29R against +38.03R** — monotone, and the fixed-target result in another costume. It raises
-the win rate to 48.5% and cuts drawdown to 7.27R, so the trade is real and bad: **2.1R of drawdown
-bought for 23.7R of return.** Tightening the ratchet costs 13–17R. The trail buffer is flat across
-a 16x range (5 → 80 ticks moves the total 0.11R) — **not a lever.**
-
-🔴 **`exec_trail_pct` at 1.0, 2.0 and 3.0 return BYTE-IDENTICAL books, so the ratchet half of
-`"Structure + % ratchet"` is INERT at the shipped setting.** It only ever tightens past the
-structure anchor, so at ≥1.0 the anchor always binds first. This bot runs a plain structure trail
-under a name that claims two mechanisms — and tightening it until the second one fires loses money.
-
-⚠ The 1–2R band is the one place worth another idea, and nothing tested addresses it. A
-band-specific rule would be a hypothesis read off this table on a window already used for three
-picks — it needs its own pre-declared study. Full record: `realign_optimization.md` Run 4.
+- 🔴 **The pattern beats matched random entry: z +3.58** (real +0.356R a trade, random −0.011R) —
+  past the family-wise bar. ⚠ Random timing now roughly BREAKS EVEN on this trail rather than
+  losing, so the pattern is the whole edge and the exit is no safety net. Supersedes the 5m-trail
+  +2.36, and the trigger scan's older 1.85.
+- 🔴 **THREE TO FIVE TRADES CARRY THE BOOK.** Top five = 123% of the total; it goes negative after
+  4-5 removals. **Quote this beside any figure.** It is not evidence the edge is fake — the random
+  control does not depend on the big winners.
+- 🔴 **Three 5m-trail findings DID NOT SURVIVE the move to the 15m trail** — the retest entry
+  "beating market everywhere", the 12-hour always-on clock, and flat-before-the-close. On this
+  trail the retest is better per trade but worse in total, drawdown and without its best trade; any
+  always-on clock (6-48h) and either flat rule LOSES, because the winners run past a day and a half.
+  **A hold-time cap on this strategy costs ~20R.** Aaron's hold-time concern is real, and this is
+  its price.
+- 🔴 **A fixed take-profit loses, and so does banking part early** — monotone, on both trails. The
+  1R row is the one to remember (5m trail): **50% win rate and it loses money.**
+- ⚠ **The ratchet is no longer inert** on the 15m trail, and 3% looks best — as a SPIKE (2% is below
+  1%), carried by one half. Not adopted. The trail buffer is still not a lever.
+- 🔴 **NO ENTRY FILTER EXISTS, and every bucketed "signal" was one trade** (5m trail) — winners and
+  losers are indistinguishable at entry. No bucketed claim is believable until it survives removing
+  the top trade; `backtest/tools/realign_trade_profile.py` does that. ⚠ Not re-run on the 15m trail.
+- 🔴 **The retest's cancel runs AFTER the fill phase** — a dip to the limit that carries on to the
+  stop is a real losing trade. Pinned by test. Its parity is green (Run 9).
+- ⚠ **The held-back year (2025-08-06 → 2026-08-06) is SPENT** — Run 2 used it once. Nothing may be
+  validated on it again. Forward data is the only clean test left.
 
 ## 🔴 The pattern rule — the ranking INVERTS with costs, and this file had it wrong
 
@@ -576,9 +489,9 @@ which version is worth entering? An arm reading the whole sequence on one frame 
   basis (ECN, 1% risk, full window), and this repo's own standing rule is that a trigger prior is
   not a strategy result. Replayed through the real strategy and the real exit ladder
   (`backtest/tools/realign_control.py`, 20 reps, `puprime_standard`, 2020-01-02 → 2025-08-05):
-  **z +2.36 shipped, z +4.21 on the stacked retest configuration** — and random timing through the
-  same machinery LOSES money (−0.053R a trade). The higher frame setting the trap is the version
-  worth proving, and it is now the version that has been proven. See the next section.
+  **z +3.58 on the shipped setup with the 15m trail** (Run 10; +2.36 on the old 5m trail). The
+  higher frame setting the trap is the version worth proving, and it is now the version that has
+  been proven.
 - **The code is on branch `research/realign-chart-frame`, not here** — five settings with no
   TradingView inputs, for an arm with no edge. Check it out to re-run the study; do not merge it.
 - ⚠ **Two facts it measured about the engine stream hold on main too** (467,352 5m bars, 5,265

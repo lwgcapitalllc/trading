@@ -143,8 +143,10 @@ class RealignConfig(SosFadeConfig):
     dominates SOS Fade's trade-list stability. Expect a SMALLER book, and judge the two on
     total R and drawdown rather than on trade count.
 
-    ⚠ The spec listed this under *Open* and it was never built on either side. There is no
-    measurement of it anywhere in this repo, and no Pine input for it.
+    ⚠ Measured in `realign_optimization.md`: on the 5m trail it beat market on every axis (Run
+    2); on the 15m trail — today's default — it is better per trade but WORSE in total, drawdown
+    and without its best trade (Run 10), so "market" stays. The Pine has it and its parity is
+    green (Run 9).
     """
 
     realign_retest_at: str = "level"
@@ -224,6 +226,9 @@ class RealignConfig(SosFadeConfig):
     carried to the Sunday open instead — which is the one case this rule exists to prevent.
     `flat_by_close_min` must therefore stay comfortably larger than one bar. Measured at the
     shipped 15 minutes on the 5m frame (3 bars of room), and NOT measured at any other value.
+
+    ⚠ **Off, and it costs money on the 15m trail** (Run 10): 139 trades +40.36R against +49.49R
+    without it, and a DEEPER drawdown (17.45R vs 11.38R). It was free on the 5m trail.
     """
 
     realign_trail_frame: str = "external"
@@ -243,9 +248,9 @@ class RealignConfig(SosFadeConfig):
     the file he trades has always run it. "chart" was never chosen; the port was written against
     a wrong comment. ⚠ **The table is NOT the reason, and it is not a clean test**: the window has
     been used for every pick in this package. It is evidence the design was not a mistake.
-    ⚠ **Everything measured in `realign_optimization.md` Runs 2-6 used the 5m trail** — the
-    retest entry, the 12-hour clock, the random control, the kept-trail study. None of those
-    conclusions has been re-checked on this default.
+    ⚠ **Runs 2-6 used the 5m trail; Run 10 re-checked them on this default** and three did not
+    survive — the retest "beating market", the 12-hour clock and the flat rules. The random
+    control strengthened (z +3.58).
 
     The history of how the two sides came apart, kept because it is the transferable part:
 

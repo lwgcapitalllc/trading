@@ -16,8 +16,8 @@ bars the gate has never seen.
 `CLAUDE.md` → *Never Do*, rule 22.
 
 🔴 **THE BASELINE MOVED ON 2026-09-16 — Run 7.** Runs 1-6 were all measured on the 5m trail
-anchor, the old target rule and a port whose 15m anchor was empty. Their conclusions have NOT
-been re-checked on today's default.
+anchor, the old target rule and a port whose 15m anchor was empty. **Run 10 re-checked them: the
+retest, the 12h clock and the flat rules no longer win.** Read Run 10 before quoting any of them.
 
 Standing rules for anything recorded here:
 
@@ -642,6 +642,46 @@ stop first, and a trigger with no level to rest at.
 ⚠ **This is PARITY of the retest path, not validation of Run 2's retest result** — that was
 measured on the 5m trail, which is no longer the default.
 
+### Run 10 — Runs 2-6 re-checked on the 15m trail: three findings overturned (2026-09-16)
+
+**Why:** Run 7 moved the default trail from the 5m swings to the 15m, and every Run 2-6 finding
+was measured on the 5m. **Pre-declared:** same fitting window (2020-01-02 → 2025-08-05), charged
+`puprime_standard`, split 2023-05-01, picks by plateau centre, **the held-back year NOT touched**
+(Run 2 spent it). Each cell below is one `axis_sweep.py` / `realign_control.py` run:
+
+    python3 backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
+        --server VantageMarkets_Demo --start 2020-01-02 --end 2025-08-05 --split 2023-05-01 \
+        --profile puprime_standard [--pin F=V ...] --axis F=v1,v2,...
+    python3 backtest/tools/realign_control.py --start 2020-01-02 --end 2025-08-05 \
+        --server VantageMarkets_Demo --profile puprime_standard --reps 20
+
+**The new baseline (shipped: market entry, 15m trail, time stop before TP1 at 36h):**
+139 trades, **+49.49R**, avg +0.356 ±0.234, PF 1.81, maxDD 11.38R, halves +9.70 / +39.79,
+without the best trade +31.25R.
+
+| earlier finding (5m trail) | on the 15m trail | verdict |
+|---|---|---|
+| **retest beats market on every axis** (Run 2) | retest @ 5 (still the plateau centre of {4,5,6}): 97 tr, +42.79R, avg +0.441, PF 1.97, maxDD 13.50, ex-best +23.06. Better per trade, **worse in total, in drawdown and without its best trade** | 🔴 **OVERTURNED** — a trade-off now, and market is the more robust |
+| **a 12h always-on clock beats the inherited one** (Run 3) | market: every always-on limit 6-48h LOSES (best +30.40R at 36h; 12h +26.70R). Retest: 12h +36.34R against +42.79R | 🔴 **OVERTURNED** — the 15m trail's winners run past a day and a half, and a clock sells them |
+| **flat before the close is free or better** (Run 3) | weekend-only +40.36R (maxDD 17.45); every day +30.85R | 🔴 **OVERTURNED** — both lose, the weekend rule deepens the drawdown |
+| **don't bank early** (Run 4) | 25 / 50 / 75% at TP1: +36.91 / +24.32 / +11.73R | ✅ holds, monotone |
+| **the ratchet is inert** (Run 4) | 0.25% +9.36 · 0.5% +14.18 · **1% +49.49** · 2% +44.55 · 3% +66.01 | ⚠ **no longer inert** — and 3% is a SPIKE (2% sits below 1%), carried by one half (+28.28 IS) and weaker without its best trade (+29.81). Not adopted |
+| **the trail buffer is not a lever** (Run 4) | 5 → 80 ticks: +49.62 → +49.02R | ✅ holds |
+| **the pattern beats random, z +2.36** (Run 5) | real +0.356R vs random −0.011R (sd 0.102, 20 reps, 134.2 trades avg) | ✅ **stronger: z +3.58** — clears the family-wise 2.99 too |
+| **3-5 trades carry the book** (Run 6) | top five 18.24, 18.02, 9.22, 8.80, 6.77 = **123%** of the total; drop 1/2/3/5/10 → +31.25 / +13.23 / +4.01 / −11.56 / −32.98R | ✅ holds — breaks at 4-5 removals rather than 3 |
+
+**What this settles.** The shipped configuration is the best tested on the new trail — nothing
+here moves a default. The stacked configuration from Runs 2-3 (retest + 12h clock + nightly flat)
+was a good fit to a trail the strategy no longer uses.
+
+⚠ **The z +3.58 is cleaner than the old +2.36 but not pristine**: the 15m trail was chosen as the
+DESIGN (Run 7), not off this control — yet it was chosen the same day a table showed it winning.
+⚠ **Random timing no longer LOSES on this trail** (−0.011R, and single reps reach +21.88R): the 15m
+trail makes almost any entry roughly break even. That makes the pattern's +0.356R the whole edge,
+which is the right shape — but it means the exit alone is no longer a safety net.
+🔴 **Concentration is still the largest practical risk.** A year without two or three runners is
+flat-to-losing and has to be sat through.
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must
@@ -652,7 +692,7 @@ indistinguishable, and every bucketed "signal" was one trade). Runs 5 and 6 are 
 | | question | status |
 |---|---|---|
 | 1 | **The parity gate is green but NARROW** (Runs 8-9). | ⚠ **OPEN.** A stop-cancelled retest limit, a second same-side setup and the refusal codes have never been compared. |
-| 1c | **Runs 2-6 were measured on the 5m trail**, which is no longer the default. | ⚠ **OPEN.** The retest entry, the 12h clock, the random control and the kept-trail study have not been re-run on the 15m trail. |
+| 1c | **Runs 2-6 were measured on the 5m trail.** | ✅ **RE-CHECKED in Run 10** — three findings overturned (retest, 12h clock, flat rules), the rest hold. |
 | 1a | **Profit concentration: 3-5 trades carry 5.5 years** (Run 6). | ⚠ **OPEN, and not fixable by tuning.** It is a sizing and expectations question, not a defect. It is also why Run 6's top-trade-removal check now runs on every bucketed claim. |
 | 1b | **Three of the four Run 2-4 picks have no holdout** (the 12h clock, nightly flat, keeping the trail). | ⚠ **OPEN.** Run 2's pre-declaration spent the only holdout year on the retest, and a second draw on it would make it meaningless. **The clean validation is forward data — it does not exist yet.** |
 | 2 | **The drawdown disagrees with the chart and is undiagnosed by measurement** — 17.79% (≈19.5R) in the Strategy Tester against 15.52R here. | 🔴 **OPEN.** The candidate is that the chart fills a gapped stop at the next bar's open while the bar-replay model fills at the stop price, which would make the Python **optimistic** — the direction that matters. Same total R with a deeper drawdown is that signature, but a signature is not a measurement. |
