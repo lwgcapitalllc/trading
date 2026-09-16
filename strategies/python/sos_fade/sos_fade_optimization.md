@@ -4329,3 +4329,30 @@ No-gap by year: 2020 −4.4 · 2021 −3.1 · 2022 +1.0 · 2023 −0.2 · 2024 �
 
 **Verdict:** the honest number is the bot's. Runs 27–29 together say this no-gap pool has no
 tradeable 1m entry found yet.
+
+## Run 30 — 2026-09-16: a 1m structure SEQUENCE inside the no-gap zone (pattern search)
+
+**Question (Aaron):** is there a realign-style sequence of 1m main/internal breaks inside the
+0.5–0.886 zone that makes the no-gap setup tradeable?
+
+**Method:** the bot's own replay (15m + 1m, Vantage cache, 2020-01 → 2026-08) recorded every 1m bar
+while a live no-gap context existed, with the no-gap trigger disabled so nothing traded off it.
+210 setups. Every sequence of 1–3 breaks (main/internal x continuation/shift x with/against)
+ending on a with-trade break was tried, first occurrence per setup only, entry next 1m open,
+stop at the 15m 1.0, target 3R, flat $0.20 cost per trade, no slot contention. Searched on
+2020–2023, checked on 2024–2026. Scratch tooling, not committed.
+
+| Sequence | 2020–23 | 2024–26 |
+|---|---|---|
+| first internal shift (baseline) | n64 −2.0R | n38 −6.5R |
+| first main shift (baseline) | n70 −11.7R | n45 +6.4R |
+| internal break against > internal shift > internal break with (best in search) | n28 +10.8R | n14 −2.2R |
+| internal shift > internal break with (2nd) | n33 +9.7R | n18 −6.2R |
+| main shift against > main break with (3rd) | n16 +5.9R | n11 −7.1R |
+
+- 39 sequences had 15+ search trades; 12 were positive in the search, 2 positive in both halves.
+- The best search result had t = 1.07 — noise before any correction for 39 tries.
+- The top three all lost in 2024–26.
+
+**Verdict:** no 1m structure sequence gives these setups an edge. Runs 27–30 close the no-gap
+entry line; the switch stays off.
