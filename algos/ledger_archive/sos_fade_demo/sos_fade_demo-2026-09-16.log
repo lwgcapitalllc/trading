@@ -554,3 +554,24 @@
 2026-09-16 19:15:04,400 [INFO] re-size bearish primary limit T364023187
 2026-09-16 19:15:04,609 [INFO] place bearish primary limit 0.14L @ 4316.981400000001 SL 4352.437800000001 TP none
 2026-09-16 19:15:04,628 [ERROR] Pending failed (XAUUSD.p bearish 0.14L @ 4316.98): retcode=10031 'Request rejected due to absence of network connection' last_error=(1, 'Success')
+2026-09-16 19:30:05,210 [INFO] place bearish primary limit 0.14L @ 4316.981400000001 SL 4352.437800000001 TP none
+2026-09-16 19:30:05,294 [INFO] PENDING PLACED | ticket=364071713 | bearish 0.14L @ 4316.98 | SL=4352.44 TP=none
+2026-09-16 20:15:09,331 [INFO] cancel bearish primary limit T364071713
+2026-09-16 20:15:09,411 [INFO] PENDING CANCELLED | T364071713
+2026-09-16 20:17:29,869 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 20:17:29,869 [INFO] Stop requested — shutting down.
+2026-09-16 20:17:29,869 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 20:17:30,537 [INFO] MT5 disconnected.
+2026-09-16 20:17:40,357 [INFO] SOS Fade | SosFadeStrategy v195 | hash 8cf9e3591ea4 | commit 71eb6a15 | frozen | LIVE
+2026-09-16 20:17:40,892 [INFO] Connected | #34957946 | $10,311.48 | PUPrime-Live
+2026-09-16 20:17:40,892 [INFO] MT5 connection lock released
+2026-09-16 20:17:41,061 [INFO] Sizing against account balance $10,311.48
+2026-09-16 20:17:41,077 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-16 20:17:41,077 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 20:17:41,077 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-16 20:17:43,545 [INFO] Warmed 5000 bars (2026-07-02 05:45:00+00:00 → 2026-09-16 20:00:00+00:00) in 2.4s
+2026-09-16 20:17:45,870 [INFO] Fast feed bookmarked at 2026-09-16 20:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-16 20:17:45,870 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 05:45:00+00:00 → 2026-09-16 20:10:00+00:00).
+2026-09-16 20:17:45,870 [INFO] Equity re-anchored to the account after warm-up: 9,366.10 → 10,311.48
+2026-09-16 20:17:46,623 [INFO] Setup threads carried across the restart: 1 — 1 closed, 0 still open.
+2026-09-16 20:17:47,383 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.

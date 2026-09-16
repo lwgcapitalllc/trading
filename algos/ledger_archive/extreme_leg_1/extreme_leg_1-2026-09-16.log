@@ -148,3 +148,20 @@
 2026-09-16 19:14:07,490 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
 2026-09-16 19:14:08,802 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-16 19:15:09,692 [INFO] Priority 2 on this account: waiting 10s for the bots above
+2026-09-16 19:30:07,819 [INFO] Priority 2 on this account: waiting 12s for the bots above
+2026-09-16 19:45:09,286 [INFO] Priority 2 on this account: waiting 11s for the bots above
+2026-09-16 20:00:06,203 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-16 20:07:54,902 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 20:07:54,902 [INFO] Stop requested — shutting down.
+2026-09-16 20:07:54,902 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 20:07:55,439 [INFO] MT5 disconnected.
+2026-09-16 20:08:10,221 [INFO] Extreme Leg | ExtremeLegStrategy v199 | hash c75671a2873b | commit 71eb6a15 | frozen | LIVE
+2026-09-16 20:08:10,766 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-16 20:08:10,766 [INFO] MT5 connection lock released
+2026-09-16 20:08:11,138 [INFO] Sizing against account balance $15,844.46
+2026-09-16 20:08:11,138 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 20:08:11,159 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-16 20:08:15,952 [INFO] Warmed 15000 bars (2026-07-02 05:35:00+00:00 → 2026-09-16 20:00:00+00:00) in 4.2s
+2026-09-16 20:08:15,952 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-16 20:08:16,600 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 20:15:07,737 [INFO] Priority 2 on this account: waiting 12s for the bots above

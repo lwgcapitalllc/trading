@@ -134,3 +134,22 @@
 2026-09-16 19:14:18,609 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-16 19:15:09,797 [INFO] place bearish primary limit 0.22L @ 4316.981400000001 SL 4352.437800000001 TP none
 2026-09-16 19:15:09,891 [INFO] PENDING PLACED | ticket=379375089 | bearish 0.22L @ 4316.98 | SL=4352.44 TP=none
+2026-09-16 20:07:45,532 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 20:07:45,532 [INFO] Stop requested — shutting down.
+2026-09-16 20:07:45,532 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 20:07:46,375 [INFO] MT5 disconnected.
+2026-09-16 20:07:58,228 [INFO] SOS Fade | SosFadeStrategy v195 | hash 8cf9e3591ea4 | commit 71eb6a15 | frozen | LIVE
+2026-09-16 20:07:58,887 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-16 20:07:58,887 [INFO] MT5 connection lock released
+2026-09-16 20:07:59,095 [INFO] Sizing against account balance $15,844.46
+2026-09-16 20:07:59,126 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-16 20:07:59,126 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 20:07:59,141 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-16 20:07:59,141 [INFO] Cancelling stale pending order T379375089 from a previous run
+2026-09-16 20:07:59,141 [INFO] cancel stale pending T379375089
+2026-09-16 20:07:59,266 [INFO] PENDING CANCELLED | T379375089
+2026-09-16 20:08:01,953 [INFO] Warmed 5000 bars (2026-07-02 05:30:00+00:00 → 2026-09-16 19:45:00+00:00) in 2.6s
+2026-09-16 20:08:05,512 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 05:35:00+00:00 → 2026-09-16 20:00:00+00:00).
+2026-09-16 20:08:05,512 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
+2026-09-16 20:08:05,544 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-16 20:08:06,265 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
