@@ -34,6 +34,31 @@ ssh forexvps "wmic process where \"name='python.exe'\" get commandline"
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ```
 
+🔴 **STARTING ONE BOT OVER SSH DIRECTLY DOES NOT WORK, AND IT REPORTS SUCCESS (2026-09-15).**
+`ssh forexvps "python ... startup_coordinator.py --bot <key>"` prints `OK <name> launched` and the
+bot is dead seconds later — **nothing reaches its log at all**, not even the version banner, so the
+only symptom is a bot that is simply absent. SSH tears its children down by job object when the
+session closes, which `CREATE_NEW_PROCESS_GROUP` does not prevent. ✅ **Launch it the way the
+Command Center's Start button does — through WMI, which is not under the SSH job object:**
+
+```bash
+ssh forexvps "wmic process call create \"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\bots\startup_coordinator.py --bot sos_fade_1\""
+```
+
+⚠ **`ReturnValue = 0` is a statement about the WMI CALL, never about a running bot** (rule 5). Confirm
+with the process list, and confirm again in the bot's own log — its banner names the commit it loaded.
+⚠ **`schtasks /run /tn SYS_STARTUP` is BOX-WIDE**: it starts every bot assigned to an account,
+including ones on another live account that were deliberately left stopped. It is the wrong tool for
+restarting one bot.
+⚠ **A graceful stop does NOT come back on its own.** The monitor revives a bot that DIED; a bot that
+was asked to stop stays stopped until something starts it.
+
+🔴 **A DRY-RUN DEPLOY PULLS THE BOX (2026-09-15).** `promote.py`'s preview runs `git pull` before it
+stages anything, so "changes nothing" is true of the DEPLOYMENT and false of the repo. Everything
+under `algos/` — the runner, the bridge, order sizing — is then one restart away from being live for
+every bot on the box, while `strategies/`, `engines/` and `backtest/` stay frozen until a real
+promote. **Never preview a deploy while a pull would be unsafe to take.**
+
 🔴 **Ask, do not kill — and it is not politeness.** A hard kill gives the bot no chance to
 write its `shutdown` record, so the next startup reports *"the previous run ended without
 shutting down."* That sentence is the **silent-death detector**, and while this workflow said
