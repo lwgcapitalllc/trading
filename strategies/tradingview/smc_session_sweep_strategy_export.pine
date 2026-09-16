@@ -981,8 +981,6 @@ if pbShowSess and timeframe.isintraday
     f_sessDraw(sbLdn,  inLdn,  SESS_LDN)
     f_sessDraw(sbNy,   inNy,   SESS_NY)
 
-plot(newLeg or rawSess == 0 ? na : poolHi, "Pool high", color = POS_REDB,   style = plot.style_linebr, linewidth = 1)
-plot(newLeg or rawSess == 0 ? na : poolLo, "Pool low",  color = POS_GREENB, style = plot.style_linebr, linewidth = 1)
 
 var box   curBox = na
 var line  curEnt = na

@@ -1516,12 +1516,9 @@ if logTrades and not na(closedR)
       str.tostring(bar_index - tBar) + " bars · equity $" + str.tostring(strategy.equity, "#.##"))
 
 // [doc 49] Entry markers, so a trade is never invisible even when the boxes are swi  -> docs/h4_sweep_strategy.md
-plotshape(tookShort, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB, size = size.small)
-plotshape(tookLong,  title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
 
 // The EMA, drawn only when it is actually filtering. A line on the chart that nothing
 // reads is the same class of lie as a label describing code that does not run.
-plot(useEma ? emaVal : na, title = "Trend EMA", color = POS_OPENL, linewidth = 2)
 
 // [doc 50] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
 

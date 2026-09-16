@@ -914,10 +914,6 @@ if strategy.position_size == 0 and strategy.position_size[1] != 0 and pbx.dir !=
 // [doc 16] Entry triangles. plotshape is GLOBAL SCOPE, so the test is written out here  -> docs/realign_strategy.md
 // ⚠ NOT redundant with the box: a scratch paints a band a few pixels tall and reads as no
 //   trade at all, which is exactly when you need to see where it opened.
-plotshape(showPosBox and strategy.position_size > 0 and strategy.position_size[1] <= 0, title = "Long entry",
-          style = shape.triangleup, location = location.belowbar, color = POS_GREENB, size = size.small)
-plotshape(showPosBox and strategy.position_size < 0 and strategy.position_size[1] >= 0, title = "Short entry",
-          style = shape.triangledown, location = location.abovebar, color = POS_REDB, size = size.small)
 
 // [doc 17] ── REFUSED SETUPS — the only record of a trade the strategy chose not to take  -> docs/realign_strategy.md
 // 🔴 THE SIDE AND THE REASON ARE RECORDED AT DECISION TIME, NEVER RE-DERIVED. `d_strategy.pine`
@@ -972,28 +968,8 @@ if trigLong or trigShort
 if inPos and not inPos[1]
     nEntry += 1
 
-plot(showDiag ? nHtfClose : na, "1 HTF bars closed",  display = display.data_window)
-plot(showDiag ? nHtfBreak : na, "2 HTF breaks seen",  display = display.data_window)
-plot(showDiag ? nBullSos  : na, "3 HTF bull SOS",     display = display.data_window)
-plot(showDiag ? nBearSos  : na, "4 HTF bear SOS",     display = display.data_window)
-plot(showDiag ? nArmLong  : na, "5 armed LONG",       display = display.data_window)
-plot(showDiag ? nArmShort : na, "6 armed SHORT",      display = display.data_window)
-plot(showDiag ? nCtrBreak : na, "7 chart breaks while armed", display = display.data_window)
-plot(showDiag ? nTrig     : na, "8 TRIGGERS",         display = display.data_window)
-plot(showDiag ? nEntry    : na, "9 ENTRIES",          display = display.data_window)
-plot(showDiag ? htfTrend  : na, "  htfTrend now",     display = display.data_window)
 
 // [doc 13] MARKS  -> docs/realign_strategy.md
-plotshape(showMarks and trigLong,  title = "Realign long",  style = shape.triangleup,
-          location = location.belowbar, color = color.new(color.teal, 0), size = size.tiny)
-plotshape(showMarks and trigShort, title = "Realign short", style = shape.triangledown,
-          location = location.abovebar, color = color.new(color.red, 0),  size = size.tiny)
-plotshape(showMarks and markFalseDown, title = "False break down",
-          style = shape.xcross, location = location.abovebar, color = color.new(color.orange, 0), size = size.tiny)
-plotshape(showMarks and markFalseUp, title = "False break up",
-          style = shape.xcross, location = location.belowbar, color = color.new(color.orange, 0), size = size.tiny)
-plot(inPos ? posStop : na, title = "Stop", color = color.new(color.red, 0), style = plot.style_linebr)
-plot(inPos and posStage < 2 ? posTp2 : na, title = "Target", color = color.new(color.teal, 0), style = plot.style_linebr)
 
 // ── THE EXPORT BLOCK ─────────────────────────────────────────────────────────────
 // Appended to `realign_strategy.pine` by `tools/build_export_twins.py`. NEVER edit the twin.

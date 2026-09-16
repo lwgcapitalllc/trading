@@ -20,7 +20,8 @@ the filename** — this is the same mistake the declaration rule already exists 
 
 ## 🔴 The export twins are GENERATED — edit the parent or its block, never the twin (2026-09-10)
 
-`<name>_export.pine` = `<name>.pine` with " Export" on its title + `export_blocks/<name>.pine`, all
+`<name>_export.pine` = `<name>.pine` with " Export" on its title, **minus its chart drawings** (see
+the plot cap below) + `export_blocks/<name>.pine`, all
 six built by `tools/build_export_twins.py` and checked by **step 18** of `scripts/run_all_tests.sh`
 (`--check` regenerates and diffs). 🔴 **Five of the six were kept BY HAND until then**, and a twin
 that drifts proves parity against a file nobody trades while its gate stays green. ⚠ The first
@@ -28,6 +29,33 @@ build was byte-identical on five; the session sweep's twin had kept its parent's
 follows the one rule (one line, no column moves). ⚠ A `_export.pine` with no block file is REFUSED
 as a hand-kept copy, and a twin over Pine's 64-plot cap is refused before it can fail on paste.
 ⚠ `tools/build_extreme_leg.py` still writes the extreme leg's parent, then calls the shared builder.
+
+### 🔴 The 64-plot cap, and why a twin no longer draws anything (2026-09-16)
+
+**The cap guard existed and still let a broken twin through.** It counted lines starting `plot(`
+and the cap is on the whole PLOT FAMILY — `plotshape`, `plotchar`, `plotarrow`, `plotcandle` and
+`plotbar` each take a slot too. The realign twin built green at a counted 62 and TradingView
+refused it at a real 68 the moment Aaron pasted it: *"the script creates too many plots (68). The
+limit is 64"*. **A guard that misses the thing it guards against is worse than none**, because the
+build reports the file as fine. It counts the whole family now, and a wrapped call once.
+
+**A twin no longer carries the parent's chart drawings.** Its entry triangles, its setup marks and
+its Data Window diagnostic counters exist for a human reading the parent; on the twin they were
+spending 10 to 16 of the 64 slots the export columns need. Every top-level plot-family call is now
+stripped from the parent half, and the export block is appended after, untouched.
+
+- **It cannot change a trade, and that is the language's guarantee rather than a judgement call.**
+  These calls are output-only — they cannot assign to a variable and nothing reads them back.
+  Checked at the time: no parent uses `fill()` and none binds a plot to a name, which are the two
+  ways a plot could be referenced later. Each stripped span was also proved bracket-balanced and
+  the remainder proved to reassemble the parent exactly.
+- **No gate reads a parent's plot column.** Every column in a `compare_*.py` compared list is a
+  `px_*` from the export block.
+- **What it bought:** realign 68 → 50. Three twins were within two slots of the cap; the extreme
+  leg's was at 62 with its parent drawing nothing at all, so the annotation layer it still owes
+  would have hit the wall on arrival.
+- ⚠ **Open the twin on a chart and you will see no marks. That is correct.** The twin's one job is
+  the CSV; the parent is the file you look at.
 
 ⚠ **Every `../` link in this file was repointed in that move and each was checked to resolve.** The
 one exception is `m15_playbook.pine`, which is dead on purpose — the file was deleted on
