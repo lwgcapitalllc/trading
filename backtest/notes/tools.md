@@ -1133,3 +1133,25 @@ CLAUDE.md gets at most one index line.
   `BUG_exit_fill_price_mismatch`.
   ⚠ **It is a MODEL of the Pine, not the Pine.** No `compare_bos.py` exists yet, so nothing here has
   been diffed against the strategy's own decision stream. Read its results as a strong prior.
+
+- **`tools/realign_control.py`** (2026-09-15) — is the Realign SETUP better than entering at a
+  random moment? Every other Realign figure says what the strategy made; none of them says whether
+  the PATTERN did it. A ladder, a stop geometry and a drifting instrument can make money from almost
+  any entry — Run 1 of `realign_optimization.md` found exactly that on the 5-minute-only arm, where
+  random entries at the same months and hours BEAT the pattern's own.
+  🔴 **It replays the REAL `RealignStrategy` through the REAL `RealignExecution` and swaps only the
+  TRIGGER**, via a scripted tracker injected at `strategy.tracker`. Entry placement, %-risk sizing,
+  the three-stage stop, the runner trail, the time stop, flat-by-close, the cost profile and the one
+  position slot are all the shipped code, so the two arms differ in exactly one thing. **The obvious
+  build — walk the finished trade list and re-simulate random entries — has to re-derive the exit
+  ladder, and then the arms differ in TWO things and the comparison is worthless.**
+  ⚠ **Each control trigger keeps the real one's side, calendar month, New York hour, stop distance,
+  target distance and retest offset. Only the MOMENT is random.**
+  ⚠ **Geometry is captured from the run's own state stream, not from its trades** — a control
+  matched only on TAKEN trades never faces the triggers the position slot was busy for, which is an
+  easier problem than the strategy solves.
+  ⚠ **Control trade counts are REPORTED, never assumed equal**: with one slot a randomly-timed setup
+  displaces whatever real setup came next, so the counts legitimately differ.
+  ⚠ **`z` here measures distance from the spread of the CONTROL REPS** (does the pattern beat random
+  timing), which is NOT the strategy's own standard error (is the edge distinguishable from zero).
+  Both are printed so they cannot be confused. Read-only: it writes nothing and moves no baseline.
