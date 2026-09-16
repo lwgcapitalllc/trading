@@ -76,6 +76,72 @@ def test_a_gap_does_not_publish_the_buckets_it_skipped():
     assert sum(p is not None for p in published) == 1
 
 
+def _wave(h, n=6000):
+    """A widening, drifting sine on 5m bars — enough 15m swings for the REAL engine to confirm
+    some. No stub: a double answering what the engine cannot is how this bug stayed hidden."""
+    import math
+    for i in range(n):
+        p = 100 + 10 * math.sin(i / 90.0) * (1 + i / 3000) + i * 0.002
+        h.update(i * 5 * MIN, p, p + 0.3, p - 0.3, p)
+
+
+def test_the_external_trail_anchor_is_read_off_the_engine():
+    """🔴 Both anchors read `None` on every bar the port ever replayed until 2026-09-16.
+
+    They were read with `getattr(ev, "last_conf_high", None)` off the event record, which has
+    no such field, so every "external trail frame" figure was a trail with no structure anchor
+    at all. The first real parity export showed it: 20,316 of 20,316 bars blank on this side.
+    Watched RED by restoring that line: `conf_high` stays None through the whole wave.
+    """
+    h = HtfStructure(15)
+    _wave(h)
+    hi, lo = h._engine.last_confirmed_high, h._engine.last_confirmed_low
+    assert hi is not None and lo is not None, "the wave no longer makes the engine confirm swings"
+    assert (h.conf_high, h.conf_low) == (hi.price, lo.price)
+
+
+def test_the_target_is_the_swing_standing_when_the_break_closed():
+    """The Pine arms on `hAsh` — the external swing high the false break leaves standing — and
+    the spec calls it "the external high that stood before the break".
+
+    🔴 The port read the event's broken level and, when the engine left that blank, fell back to
+    a high REMEMBERED from an earlier break. The first parity export disagreed on the target of
+    552 armed bars; reading the engine's standing swing removed every one. Watched RED by
+    restoring the old latch: the two differ on this wave.
+    """
+    h = HtfStructure(15)
+    _wave(h)
+    a, s = h._engine.active_swing_high, h._engine.active_swing_low
+    assert h.standing_high == (a.price if a is not None else None)
+    assert h.standing_low == (s.price if s is not None else None)
+
+
+def test_the_tracker_arms_on_the_standing_swing_and_not_the_events_own_level():
+    t = RealignTracker(RealignConfig())
+    t.on_htf(_Ev(bull_bos=True), 0, None, None)
+    t.on_htf(_Ev(bear_sos=True, bear_bos=True, broken_high_price=100.0), MIN, 105.0, None)
+    assert [a.target for a in t._armed] == [105.0]
+
+
+def test_a_newer_false_break_replaces_the_live_setup_on_its_side():
+    """The Pine has ONE slot per side. The port kept a list and held two live longs 13 times in
+    2020-2026. Watched RED by removing the replace: two setups, the stale target first."""
+    t = RealignTracker(RealignConfig())
+    t.on_htf(_Ev(bull_bos=True), 0, None, None)
+    t.on_htf(_Ev(bear_sos=True, bear_bos=True), MIN, 105.0, None)
+    t.on_htf(_Ev(bull_bos=True), 2 * MIN, None, None)          # trend back up; the long lives on
+    t.on_htf(_Ev(bear_sos=True, bear_bos=True), 3 * MIN, 110.0, None)
+    assert [(a.dir, a.target, a.armed_ms) for a in t._armed] == [(1, 110.0, 3 * MIN)]
+
+
+def test_no_standing_swing_arms_nothing_even_when_the_event_names_a_level():
+    """The Pine requires `not na(hAsh)`. A level off the event is not a substitute for it."""
+    t = RealignTracker(RealignConfig())
+    t.on_htf(_Ev(bull_bos=True), 0, None, None)
+    t.on_htf(_Ev(bear_sos=True, bear_bos=True, broken_high_price=100.0), MIN, None, None)
+    assert t._armed == []
+
+
 # ── config: the inherited-default trap ───────────────────────────────────────────
 
 def test_exec_secondary_is_pinned_off():

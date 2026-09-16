@@ -11,11 +11,31 @@ optimises a Python program against itself. Its one run is research on a separate
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
-**Status:** 🔴 **THE GATE EXISTS AND HAS NEVER BEEN RUN — stages 2, 3 and 6 landed 2026-09-16 and stage 4 is waiting on a human.** `tools/compare_realign.py` + `strategies/tradingview/realign_strategy_export.pine` are built; what is missing is one TradingView CSV export, which only Aaron can take. Until it exits 0, every number here is still a LAB finding — and there are now six runs of them. Built + unit-tested (count them with pytest) + **cross-checked against the TradingView Strategy
-Tester**. 🔴 **NOT PARITY-VALIDATED — there is no export twin, no real CSV and no
-`tools/compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are all outstanding.**
-Every number below is a LAB finding. Read `docs/REALIGN_SPEC.md` for the setup and the full
-measurement record.
+**Status:** 🔴 **THE GATE HAS RUN ONCE AND IS RED — every disagreement is diagnosed, the port-side
+ones are fixed, and the Pine-side ones need a second export** (see *The first parity export*,
+below). Until the gate exits 0 every number here is still a LAB finding. Built + unit-tested
+(count them with pytest). Read `docs/REALIGN_SPEC.md` for the setup and the full measurement record.
+
+## 🔴 The first parity export (2026-09-16) — read before quoting ANY figure below
+
+Full record, commands and tables: `realign_optimization.md` → **Run 7**. The rules it leaves:
+
+- 🔴 **The 15m trail anchor was EMPTY on every bar this port ever replayed.** `htf.py` read it off
+  the event record, which has no such field. Every "external frame" figure before today measured a
+  trail with no anchor, including the −15.68R the section below was built on.
+- 🔴 **The default trail is now the 15m (`realign_trail_frame="external"`)** — the design, and what
+  the Pine runs. Charged, 2020-2026: **160 trades, +56.39R, PF 1.78, maxDD 11.38R**, against the 5m's
+  161 / +36.31R / 1.50 / 15.36R. ⚠ Not a clean test (this window picked everything in Runs 2-4) and
+  the lead is mostly second-half. ⚠ **Every Run 2-6 conclusion was measured on the 5m trail.**
+- **The target is the swing the false break leaves STANDING** (the engine's own read), never a
+  level remembered from an earlier break. **One setup per side** — a newer false break replaces
+  the live one. Both match the Pine.
+- ⚠ **Three changes are on the Pine side and unverified until the next export**: reading the 15m
+  close on the first 5m bar of the next 15m bar (it was ten minutes late), disarming on every
+  trigger, and the reference ratchet. Plus the stop now goes in with the market order.
+- ⚠ **The gate compares a latched field only while both sides are armed**, skips the still-forming
+  last bar, and excuses the market entry's one-bar position offset only when the Pine opens on the
+  very next bar.
 **Last reviewed:** 2026-09-11 — a 5-minute-only arm researched, measured negative and parked off
 main (last section). Earlier: 2026-09-10 — swing length and adding to winners pinned to the Pine;
 the book re-measured and reproduced exactly. 2026-08-13 — first commit.
@@ -114,50 +134,19 @@ rescuable. Do not re-open it without a new mechanism. Full record: `realign_opti
 iBOS/iSOS across Aaron's own window. The two-frame build is not a refinement; without it there is no
 strategy to measure.
 
-## 🔴🔴 THE PINE AND THIS PORT TRAIL ON DIFFERENT FRAMES, AND IT IS WORTH ±60R (2026-09-16)
+## The trail frame — the 15m, and the −15.68R that said otherwise was a bug (2026-09-16)
 
-Found while starting the export twin, BEFORE any gate existed. Read off both files:
+The Pine always trailed the **15m** swings; this port trailed the **5m** because it was written
+against a Pine comment that described the wrong frame. A morning measurement put the 15m at
+**−15.68R** and kept the port on the 5m — and the evening's parity export showed the port's 15m
+anchor had never been filled, so that number measured no anchor at all. Fixed, the 15m is the
+better book and the default (*The first parity export*, above; history in the config docstring).
 
-- `realign_strategy.pine` anchors its runner trail on **`hConfLo` / `hConfHi`**, which come out of
-  its `request.security` call on the **EXTERNAL (15m)** frame.
-- This port inherits SOS Fade's `_trail_swing_lo = sig.last_conf_low`, where `sig` is the **CHART
-  (5m)** frame. Nothing here overrides it.
-- 🔴 **The Pine's own comment on that line reads "the chart frame's last CONFIRMED swing" — which
-  describes what the PYTHON does, not what the Pine does.** The comment contradicts the code beside
-  it, and that is almost certainly how the port diverged: it was written against the comment.
-  `strategies/tradingview/CLAUDE.md` has had the code right the whole time.
-
-**This is not cosmetic. It is the most consequential setting found in this strategy.** The trail IS
-the exit here — nothing banks at a target — so switching frames rewrites the book. Free, 2020-01-02
-→ 2026-08-06, everything else at the shipped defaults:
-
-| trail anchor | trades | sum R | PF | maxDD |
-|---|---|---|---|---|
-| chart / 5m (every figure in this repo) | 162 | **+45.14** | 1.66 | 12.15 |
-| external / 15m (`realign_trail_frame="external"`) | 99 | **−15.68** | 0.62 | 18.90 |
-
-The trade COUNT moves because a looser trail holds positions longer and the single slot refuses
-more setups — the displacement effect, again.
-
-🔴 **AND THE TWO ARMS ABOVE DO NOT ADD UP TO A VERDICT, WHICH IS THE POINT.** The Pine's own
-Strategy Tester run was **profitable** (143 trades, +41.35%, PF 1.617). If the Pine trailed the 15m
-the way `realign_trail_frame="external"` does, it could not have produced that. **So there are
-likely TWO divergences here, not one** — the frame, and something in how the Pine's
-`f_frameStructPrev` `[1]` shift and `lookahead_on` idiom actually deliver those swings, which this
-emulation does not reproduce. **Do NOT quote the −15.68R as "what the Pine does".** It is what THIS
-PORT does when pointed at the external frame, and the gap to the tester's +41.35% is itself the
-measurement saying the emulation is not yet faithful.
-
-⚠ **`"chart"` is the default so no published figure moves. That is record-keeping, not a finding
-that the chart frame is right** — which side is correct is precisely what the parity gate settles,
-and it cannot be settled by preferring whichever is already written down.
-
-⚠ **It is also a live candidate for open question 2**, the undiagnosed drawdown disagreement
-(Strategy Tester 17.79% against 15.52R here), which has been open since the Pine was first run.
-
-⚠ **Run 4's conclusion may not transfer to the Pine.** "The ratchet is inert because the structure
-anchor always binds first" was measured on the 5m anchor. A 15m anchor sits further from price, so
-the ratchet could well bind there — that conclusion is scoped to this port until the gate is green.
+- **The trail IS the exit here** — nothing banks at a target — so the frame rewrites the book.
+- ⚠ **Run 4's "the ratchet is inert" was measured on the 5m anchor** and is not known to hold on
+  the 15m, which sits further from price.
+- ⚠ **The drawdown disagreement with the Strategy Tester (open question 2) predates the fix** and
+  was measured on the 5m book; it needs re-checking on the default before anyone diagnoses it.
 
 ## What Runs 5 and 6 settled — the rules, not the tables (2026-09-16)
 
@@ -486,14 +475,16 @@ not a measurement, and **the parity gate is what settles it.**
 .venv/bin/python -m pytest strategies/python/realign/tests/ -q     # 15 tests
 ```
 
-The book, asserted — both exit 0 on 2026-09-10:
+The book, asserted — 🔴 **the baseline moved on 2026-09-16** (Run 7); these are today's values:
 
 ```
 python backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
     --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
-    --expect-trades 162 --expect-r 45.14                              # free
-    ... --profile puprime_standard --expect-trades 162 --expect-r 35.81  # charged
+    --expect-trades 160 --expect-r 66.52                              # free
+    ... --profile puprime_standard --expect-trades 160 --expect-r 56.39  # charged
 ```
+
+⚠ **The two tables above this section are the OLD 5m-trail book** and are kept for the record.
 
 ⚠ **Charged it is +0.221R a trade against a standard error of ±0.168R — 1.3 errors, NOT an
 established edge.** The halves split +8.35R / +27.46R at 2023-05, which is the direction flip above.
@@ -501,16 +492,16 @@ established edge.** The halves split +8.35R / +27.46R at 2023-05, which is the d
 now equals the 1m resample bar for bar over this window (467,352 bars, measured 2026-09-10).
 
 **Neither is a reason to trust one side over the other yet. They are the two things the parity gate
-exists to settle, and the parity gate does not exist.**
+exists to settle.** It has now run once (Run 7) and is red pending a second export.
 
 ---
 
 ## Rules
 
-- **Do not quote a number from this bot without saying it is unvalidated.** No export twin, no real
-  CSV, no `compare_realign.py` — the Pine and the Python have never been diffed bar for bar, only
-  compared on totals. `docs/STRATEGY_WORKFLOW.md` stages 3, 4 and 6 are the outstanding work, and
-  stage 4 is the one only a human can do.
+- **Do not quote a number from this bot without saying it is unvalidated.** The gate has run once
+  and is RED (Run 7); until it exits 0 the Pine and the Python are not proven to agree, only
+  compared on totals. The next step is a SECOND export off the rebuilt twin — the one step only a
+  human can do.
 - **Take counts from `internal_realign_scan.py`; take the direction of anything exit-sensitive from
   a replay.** The scan had the short side's sign wrong. See above.
 - **Never publish a forming HTF bar** from `htf.py`. It is lookahead, it improves every result, and
@@ -529,7 +520,8 @@ exists to settle, and the parity gate does not exist.**
 | `execution.py` | `RealignExecution` — the market and retest entries, sizing, the stop |
 | `strategy.py` | `RealignStrategy` — wiring, `engine_config()`, `run_dual` refusal |
 | `tests/test_realign.py` | 32 tests, weighted toward the silent failures |
-| `tools/compare_realign.py` | the parity gate — **built 2026-09-16, never yet RUN** (stage 4, a real CSV, is Aaron's) |
+| `tools/compare_realign.py` | the parity gate — **run once 2026-09-16, RED, diagnosed** (Run 7) |
+| `exports/` | real TradingView exports of the twin — git-ignored |
 | `strategies/tradingview/realign_strategy.pine` | the TradingView side |
 | `docs/REALIGN_SPEC.md` | the stage-1 spec and the full measurement record |
 | `backtest/tools/internal_realign_scan.py` | the counting/geometry scan |
@@ -540,8 +532,8 @@ The parent gained a dead-market entry floor
 (`strategies/python/sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*). This fork pins it to 0.0
 rather than inheriting.
 
-⚠ **It matters more here than on the other forks, because this one has NO PARITY GATE AT ALL** — no
-export twin, no CSV, no comparator. Nothing on this bot would ever report having silently acquired
+⚠ **It matters more here than on the other forks, because this one's parity gate is not yet
+green** (Run 7). Nothing on this bot would ever report having silently acquired
 an entry filter, so an inherited default is not something a run could tell you about afterwards.
 
 ---

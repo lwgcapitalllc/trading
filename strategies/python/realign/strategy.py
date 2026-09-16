@@ -86,7 +86,7 @@ class RealignStrategy(SosFadeStrategy):
         closed = self.htf.update(bar_time_ms, b.open, b.high, b.low, b.close)
         if closed is not None:
             self.tracker.on_htf(closed, bar_time_ms,
-                                self.htf.broken_high, self.htf.broken_low)
+                                self.htf.standing_high, self.htf.standing_low)
         if self.trend is not None:
             # Same no-lookahead contract as the false-break frame: a slow bar is published
             # only once its last chart bar has closed. ⚠ `None` here means the frame has

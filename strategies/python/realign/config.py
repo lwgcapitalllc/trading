@@ -226,8 +226,28 @@ class RealignConfig(SosFadeConfig):
     shipped 15 minutes on the 5m frame (3 bars of room), and NOT measured at any other value.
     """
 
-    realign_trail_frame: str = "chart"
-    """WHICH FRAME'S CONFIRMED SWINGS THE RUNNER TRAIL ANCHORS ON — and the two sides DISAGREE.
+    realign_trail_frame: str = "external"
+    """WHICH FRAME'S CONFIRMED SWINGS THE RUNNER TRAIL ANCHORS ON. **"external" — the 15m.**
+
+    🔴🔴 **SHIPPED "chart" UNTIL THE EVENING OF 2026-09-16, AND THE ONE NUMBER HOLDING IT THERE WAS
+    A BUG.** The first parity export showed this port's external anchor was `None` on every bar
+    it had ever replayed (`htf.py` read a field the event record does not carry), so the
+    "−15.68R on the external frame" below measured a trail with NO structure anchor. Fixed and
+    re-measured, 2020-01-02 → 2026-08-06, `puprime_standard`:
+
+        chart      162 trades  +36.17R  avg +0.223  PF 1.50  maxDD 15.36R  halves  +8.51 / +27.66
+        external   161 trades  +56.25R  avg +0.349  PF 1.78  maxDD 11.38R  halves  +9.56 / +46.69
+
+    The default moved because the 15m is the DESIGN — Aaron's call, recorded in
+    `strategies/tradingview/docs/realign_strategy.md` [10]: enter off the 5m, ride the 15m — and
+    the file he trades has always run it. "chart" was never chosen; the port was written against
+    a wrong comment. ⚠ **The table is NOT the reason, and it is not a clean test**: the window has
+    been used for every pick in this package. It is evidence the design was not a mistake.
+    ⚠ **Everything measured in `realign_optimization.md` Runs 2-6 used the 5m trail** — the
+    retest entry, the 12-hour clock, the random control, the kept-trail study. None of those
+    conclusions has been re-checked on this default.
+
+    The history of how the two sides came apart, kept because it is the transferable part:
 
     🔴 **FOUND 2026-09-16, BEFORE THE PARITY GATE EXISTED, AND IT IS A REAL DIVERGENCE.**
     `realign_strategy.pine` anchors on `hConfLo` / `hConfHi`, which come out of its
@@ -248,10 +268,8 @@ class RealignConfig(SosFadeConfig):
     drawdown disagreement (Strategy Tester 17.79% against 15.52R here), which has been open
     since the Pine was first run.
 
-    ⚠ **"chart" is the DEFAULT so that no figure measured before today moves.** That is a
-    decision to keep the record stable, NOT a finding that the chart frame is correct — which
-    side is right is exactly what the parity gate exists to settle, and it cannot be settled by
-    preferring the one that is already written down.
+    ⚠ The morning's reasoning for keeping "chart" read: *a decision to keep the record stable, NOT
+    a finding that the chart frame is correct.* The gate settled it the same day.
     """
 
     realign_longs: bool = True

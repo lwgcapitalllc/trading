@@ -100,21 +100,28 @@ class RealignTracker:
         self._htf_trend = 0
 
     # ── the 15m side ─────────────────────────────────────────────────────────────
-    def on_htf(self, ev, time_ms: int, broken_high, broken_low) -> None:
-        """Fold one CLOSED 15m bar's external events in. Called only on an HTF close."""
+    def on_htf(self, ev, time_ms: int, standing_high, standing_low) -> None:
+        """Fold one CLOSED 15m bar's external events in. Called only on an HTF close.
+
+        `standing_high` / `standing_low` are the external swings standing after that bar —
+        the target, exactly as the Pine's `hAsh` / `hAsl`. ⚠ Nothing on `ev` substitutes for
+        a missing one: the Pine refuses to arm on `na`, and so does this.
+        """
         cfg = self._cfg
         bull = ev.bull_bos or ev.bull_sos
         bear = ev.bear_bos or ev.bear_sos
 
         # A LONG setup arms on a bearish SOS that is the first bearish break in an uptrend.
-        if ev.bear_sos and self._htf_trend > 0 and cfg.realign_longs:
-            tgt = broken_high if broken_high is not None else ev.broken_high_price
-            if tgt is not None:
-                self._armed.append(Armed(dir=+1, armed_ms=time_ms, target=tgt))
-        if ev.bull_sos and self._htf_trend < 0 and cfg.realign_shorts:
-            tgt = broken_low if broken_low is not None else ev.broken_low_price
-            if tgt is not None:
-                self._armed.append(Armed(dir=-1, armed_ms=time_ms, target=tgt))
+        # 🔴 ONE SETUP PER SIDE — a newer false break REPLACES a live one, as the Pine's single
+        #    `armLong` slot does. This list held both until 2026-09-16, 18 times in 2020-2026
+        #    (13 long, 5 short), and the older setup walked the same chart breaks toward a
+        #    target the market had already left behind.
+        if ev.bear_sos and self._htf_trend > 0 and cfg.realign_longs and standing_high is not None:
+            self._armed = [a for a in self._armed if a.dir != +1]
+            self._armed.append(Armed(dir=+1, armed_ms=time_ms, target=standing_high))
+        if ev.bull_sos and self._htf_trend < 0 and cfg.realign_shorts and standing_low is not None:
+            self._armed = [a for a in self._armed if a.dir != -1]
+            self._armed.append(Armed(dir=-1, armed_ms=time_ms, target=standing_low))
 
         # The trend read updates AFTER arming — an SOS both ends the old trend and starts
         # the new one, and the setup is about the trend it ended.

@@ -9,10 +9,15 @@ a separate chart-frame arm and tunes nothing the shipped setup reads. ⚠ **That
 tool are NOT on main** — they are parked on branch `research/realign-chart-frame`, and Run 1's
 command only runs from a checkout of it.
 
-🔴 **AND THIS BOT HAS NO PARITY GATE AT ALL — no export twin, no CSV, no `compare_realign.py`.**
-Every number it has produced is a lab finding, not a validated result. **Tuning an ungated
-strategy optimises a Python program against itself.** Building the gate comes before the first
-sweep, not after it. See the root `CLAUDE.md` → *Never Do*, rule 22.
+🔴 **THE PARITY GATE HAS RUN ONCE (Run 7, 2026-09-16) AND IS RED, WITH EVERY DISAGREEMENT
+DIAGNOSED.** The port was fixed the same day; the remaining causes are in the Pine and need a
+second export to confirm. Until that export exits 0, every number here is still a lab finding.
+**Tuning an ungated strategy optimises a Python program against itself.** See the root
+`CLAUDE.md` → *Never Do*, rule 22.
+
+🔴 **THE BASELINE MOVED ON 2026-09-16 — Run 7.** Runs 1-6 were all measured on the 5m trail
+anchor, the old target rule and a port whose 15m anchor was empty. Their conclusions have NOT
+been re-checked on today's default.
 
 Standing rules for anything recorded here:
 
@@ -37,8 +42,13 @@ Standing rules for anything recorded here:
 |---|---|
 | data | 5m XAUUSD, 2020-01-02 → 2026-08-06, warmup 1000 |
 | frame | 🔴 **the 5m frame RESAMPLED FROM M1** — reading the M5 cache is a trap, see the bot's CLAUDE.md |
-| baseline, free | 162 trades (77L/85S), **+45.14R**, +0.279 avg, 44.4% win, PF 1.658, max drawdown 12.15R |
-| baseline, charged (`puprime_standard`) | 162 trades, **+35.81R**, +0.221 avg, 33.3% win, PF 1.496, max drawdown 15.52R |
+| baseline, free — **since Run 7** (15m trail) | 160 trades, **+66.52R**, +0.416 avg, PF 1.97, max drawdown 9.85R |
+| baseline, charged — **since Run 7** | 160 trades, **+56.39R**, +0.352 avg, PF 1.78, max drawdown 11.38R |
+| ~~baseline before Run 7~~, free | 162 trades (77L/85S), +45.14R, +0.279 avg, 44.4% win, PF 1.658, max drawdown 12.15R |
+| ~~baseline before Run 7~~, charged | 162 trades, +35.81R, +0.221 avg, 33.3% win, PF 1.496, max drawdown 15.52R |
+
+⚠ The Run 7 rows count a scratch inside ±0.25R separately, so their win rate (26.9% charged) is
+not comparable with the older 44.4% / 33.3%.
 
 ## Runs
 
@@ -521,6 +531,76 @@ and its drawdown holds flat at 9.38R through the first three removals while the 
 stays at 15.52R throughout. That is a point in favour of Run 2-3's changes that no other table
 here shows.
 
+---
+
+### Run 7 — the first parity export, and what it found (2026-09-16)
+
+**Export:** `exports/VANTAGE_XAUUSD, 5_ae0aa.csv` — `realign_strategy_export.pine` on Vantage
+XAUUSD 5m, 21,317 bars, 2026-05-31 → 2026-09-16, shipped Pine inputs (15m external, market entry,
+**external trail**, time stop before TP1 at 36h). 9 triggers, 8 trades.
+
+    python3 strategies/python/realign/tools/compare_realign.py \
+        "strategies/python/realign/exports/VANTAGE_XAUUSD, 5_ae0aa.csv"
+
+**First run: red on 19 of 25 fields.** Most of it was two things, neither a strategy rule:
+
+- **The gate compared stale values.** The Pine keeps its target, stop anchor and step in variables
+  it never clears, so they read the last setup's values for ever; the port reports them only
+  while armed. That was ~88,000 of the red rows. They are now compared only while BOTH sides are
+  armed on that side; whether a side is armed at all is still its own row.
+- 🔴 **The port's 15m trail anchor had NEVER been populated.** `htf.py` read the confirmed swing
+  off the event record, which has no such field — `getattr` answered `None` on 20,316 of 20,316
+  bars. **So every "external trail" figure in this repo measured a trail with no anchor at all**,
+  including the −15.68R that kept the default on the 5m. Fixed: the engine's own read. The two
+  anchors then agreed on every compared bar.
+
+**What was left, each proven by making the port IMITATE the Pine's behaviour and watching that
+disagreement disappear** (a throwaway script that subclassed the strategy and delayed or rewired
+one step at a time; not kept — once each side is changed there is nothing left for it to imitate):
+
+| # | disagreement | size on this export | proof | fixed on |
+|---|---|---|---|---|
+| 1 | the Pine read each closed 15m bar **ten minutes late** — on the LAST 5m bar of the next 15m bar | 156 trend bars, 439 armed bars, **one whole trade** | imitating the delay removed all of them | Pine ([18]) |
+| 2 | the **target**: the port fell back to a high remembered from an EARLIER break when the engine left the break's level blank | 552 armed bars | reading the engine's standing swing removed all | port |
+| 3 | the Pine **stayed armed after a refused trigger**; the port consumes a setup on its trigger | 60 bars (2026-08-07 08:30 — both refused, the Pine then waited five hours) | read off the export | Pine ([19]) |
+| 4 | the **ratchet** step: the Pine used this bar's close and high; the port and the SOS Fade Pine use the best price since the fill | 56 bars, all past TP2, largest gap $0.17 | the only field left once 1 was imitated | Pine ([21]) |
+| 5 | the market order **fills a bar later** in the Pine, so its position reads flat on the trigger bar | one row per trade (8) | by construction | gate — excused, and only when the Pine opens on the very next bar |
+| 6 | the Pine's **fill bar had no stop** at all | not reached on this export | read off the code | Pine ([20]) |
+| 7 | the port could hold **two setups on one side**; the Pine has one slot, and a newer false break replaces the older | not reached here; **18 times in 2020-2026** (13 long, 5 short) | counted by replay | port |
+
+`[N]` = section of `strategies/tradingview/docs/realign_strategy.md`.
+
+**The book, re-measured with every port fix** (2 and 7, plus the anchor), same basis as above:
+
+    python3 backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
+        --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
+        [--profile puprime_standard] --axis realign_trail_frame=external,chart
+
+| charged | trades | sum R | avg R | ±se | PF | maxDD | IS R | OOS R | ex-best |
+|---|---|---|---|---|---|---|---|---|---|
+| **external (15m) — now the default** | 160 | **+56.39** | **+0.352** | 0.214 | **1.78** | **11.38** | +9.70 | +46.69 | +38.15 |
+| chart (5m) | 161 | +36.31 | +0.226 | 0.169 | 1.50 | 15.36 | +8.65 | +27.66 | +17.77 |
+
+| free | trades | sum R | avg R | ±se | PF | maxDD | IS R | OOS R | ex-best |
+|---|---|---|---|---|---|---|---|---|---|
+| **external (15m)** | 160 | **+66.52** | **+0.416** | 0.216 | **1.97** | **9.85** | +14.27 | +52.24 | +48.27 |
+| chart (5m) | 161 | +45.45 | +0.282 | 0.173 | 1.67 | 12.15 | +12.99 | +32.46 | +26.91 |
+
+Fixes 2 and 7 alone barely moved the 5m book (+35.81R → +36.31R charged). The frame is the change.
+
+🔴 **The default moved to the 15m because it is the DESIGN, not because of this table.** Aaron's
+recorded call is to enter off the 5m and ride the 15m, the file he trades has always done so, and
+the port's 5m default came from a wrong comment. The −15.68R that argued against it was a bug. ⚠
+**The table is not a clean test** — this window chose every pick in Runs 2-4 — and the 15m's lead
+lives mostly in the second half (+9.70 vs +8.65 in the first). It is evidence the design was
+right, not a validated edge. ⚠ avg R is 1.6 standard errors from zero.
+
+🔴 **The Pine's own Strategy Tester said +41.35% on this setup when the port's 15m trail said
+−15.68R, and this file called that gap unexplained.** It is explained: the port had no anchor.
+
+**Status: RED, pending a second export.** With the port fixed, the gate is red only on 1, 3 and 4 —
+all Pine-side, all changed, none verifiable without TradingView. `retest` is still never exercised.
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must
@@ -530,7 +610,8 @@ indistinguishable, and every bucketed "signal" was one trade). Runs 5 and 6 are 
 
 | | question | status |
 |---|---|---|
-| 1 | **There is no parity gate.** | 🔴 **BLOCKS EVERYTHING BELOW, and the gap GREW on 2026-09-15.** The Pine had no input for `strict` before; it now also lacks the retest entry, the always-on time stop and flat-by-close — the three levers every Run 2-6 number is measured with. Stage 3 (the export twin) and stage 6 (`compare_realign.py`) are mine; **stage 4, the real CSV export, is the one step only Aaron can do.** |
+| 1 | **The parity gate is RED** (Run 7). | 🔴 **BLOCKS EVERYTHING BELOW.** Every disagreement is diagnosed and changed on one side or the other; the three Pine-side changes need a **second export** from Aaron to confirm. The retest entry has still never been exercised by any export. |
+| 1c | **Runs 2-6 were measured on the 5m trail**, which is no longer the default. | ⚠ **OPEN.** The retest entry, the 12h clock, the random control and the kept-trail study have not been re-run on the 15m trail. |
 | 1a | **Profit concentration: 3-5 trades carry 5.5 years** (Run 6). | ⚠ **OPEN, and not fixable by tuning.** It is a sizing and expectations question, not a defect. It is also why Run 6's top-trade-removal check now runs on every bucketed claim. |
 | 1b | **Three of the four Run 2-4 picks have no holdout** (the 12h clock, nightly flat, keeping the trail). | ⚠ **OPEN.** Run 2's pre-declaration spent the only holdout year on the retest, and a second draw on it would make it meaningless. **The clean validation is forward data — it does not exist yet.** |
 | 2 | **The drawdown disagrees with the chart and is undiagnosed by measurement** — 17.79% (≈19.5R) in the Strategy Tester against 15.52R here. | 🔴 **OPEN.** The candidate is that the chart fills a gapped stop at the next bar's open while the bar-replay model fills at the stop price, which would make the Python **optimistic** — the direction that matters. Same total R with a deeper drawdown is that signature, but a signature is not a measurement. |

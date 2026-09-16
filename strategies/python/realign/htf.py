@@ -58,9 +58,13 @@ class HtfStructure:
         self._o = self._h = self._l = self._c = 0.0
         self._filling = False            # is a bucket open? NEVER infer this from a price
         self._n = 0                      # HTF bars published so far — the engine's bar index
-        # The external high/low that stood at the last HTF break, latched for the target.
-        self.broken_high: Optional[float] = None
-        self.broken_low: Optional[float] = None
+        # The external swing high/low STANDING after the last closed HTF bar — the setup's
+        # target, and the Pine's `hAsh` / `hAsl`. 🔴 This was a latch of the event's broken
+        # level until 2026-09-16, which the engine leaves blank on some breaks, so the target
+        # silently fell back to a high remembered from an EARLIER break. The first parity
+        # export disagreed on 552 armed bars; the engine's own standing swing removed all.
+        self.standing_high: Optional[float] = None
+        self.standing_low: Optional[float] = None
         # The HTF's last CONFIRMED swings — what `realign_strategy.pine` anchors its runner
         # trail on (`hConfHi` / `hConfLo`). Latched here so the trail can read the same frame
         # the Pine does; see `RealignConfig.realign_trail_frame` for why the two disagree.
@@ -84,14 +88,20 @@ class HtfStructure:
             ev = self._engine.update(Bar(index=self._n, open=self._o, high=self._h,
                                          low=self._l, close=self._c)).external
             self._n += 1
-            if ev.broken_high_price is not None:
-                self.broken_high = ev.broken_high_price
-            if ev.broken_low_price is not None:
-                self.broken_low = ev.broken_low_price
-            if getattr(ev, "last_conf_high", None) is not None:
-                self.conf_high = ev.last_conf_high
-            if getattr(ev, "last_conf_low", None) is not None:
-                self.conf_low = ev.last_conf_low
+            ash, asl = self._engine.active_swing_high, self._engine.active_swing_low
+            self.standing_high = ash.price if ash is not None else None
+            self.standing_low = asl.price if asl is not None else None
+            # 🔴 READ OFF THE ENGINE, NEVER OFF `ev`. This read `getattr(ev, "last_conf_high",
+            #    None)` until 2026-09-16, and `ExternalEvents` has no such field — so both
+            #    anchors were None on every bar the port ever replayed, `getattr` hid it, and
+            #    every "external trail frame" figure (the −15.68R) was a trail with NO structure
+            #    anchor at all. Found by the first real parity export: `px_htf_conf*` differed
+            #    on 20,316 of 20,316 bars with this side blank. The engine's public read is the
+            #    same latched value the Pine plots as `hConfHi` / `hConfLo`.
+            lch = self._engine.last_confirmed_high
+            lcl = self._engine.last_confirmed_low
+            self.conf_high = lch.price if lch is not None else None
+            self.conf_low = lcl.price if lcl is not None else None
             closed = ev
             self._bucket = b
             self._filling = False

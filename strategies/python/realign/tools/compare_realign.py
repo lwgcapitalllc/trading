@@ -335,15 +335,56 @@ def main(argv=None) -> int:
         ("px_stage", lambda st: float(st.pos_stage) if st.pos_dir != 0 else float("nan"), 0.0),
     ]
 
+    # 🔴 A LATCHED FIELD IS COMPARED ONLY WHILE ITS SETUP IS ARMED ON BOTH SIDES. The Pine keeps
+    #    its target, counter extreme and step in `var`s that are never cleared on disarm, so
+    #    they read the LAST setup's values for ever; this port reports them only while a setup
+    #    is live. Compared on every bar, that difference is 18,000 red rows about a value no
+    #    decision reads once the setup is gone — and it buried the real disagreements under
+    #    them on the first export (2026-09-16). Whether a side is armed at all is its own row,
+    #    so nothing is hidden by the scope: an arming disagreement still goes red, once.
+    def _armed(side):
+        return lambda row, st: bool(row[f"_{side}_armed"]) and bool(getattr(st, f"{side}_armed"))
+
+    scope = {
+        "_step_long": _armed("long"), "px_tgt_l": _armed("long"), "px_ctr_l": _armed("long"),
+        "_step_short": _armed("short"), "px_tgt_s": _armed("short"), "px_ctr_s": _armed("short"),
+    }
+
+    # ⚠ THE LAST ROW IS NOT COMPARED. An export taken while the market is open ends on the bar
+    #   that is still FORMING, and the Pine blanks some plots on it (the chart frame's confirmed
+    #   swings read `na` there on the first export). It is one bar; comparing it reports the
+    #   export's timing as a logic bug.
+    last = len(df) - 1
+
+    # ⚠ THE MARKET ENTRY BAR IS ONE BAR APART BY CONSTRUCTION, NOT BY DISAGREEMENT. This port
+    #   opens at the close of the bar the realignment confirms on; the Pine's market order
+    #   fills at the NEXT bar's open, so its position reads flat on the trigger bar. Every
+    #   market trade therefore showed as one red row on each position field (8 on the first
+    #   export, one per trade). A bar is excused ONLY when this port opened on it AND the Pine
+    #   opened on the very next bar — a trade the Pine never takes stays red.
+    pos_fields = {"_pos_long", "_pos_short", "px_stop_live", "px_stage"}
+
+    def _entry_offset(i: int) -> bool:
+        st, prev = states[i], states[i - 1] if i > 0 else None
+        opened_here = st.pos_dir != 0 and (prev is None or prev.pos_dir == 0)
+        return opened_here and i + 1 < len(df) and bool(df["_opened"].iloc[i + 1])
+
     bad: dict = {}
     seen: dict = {}
+    excused = 0
     compared = 0
-    for i in range(a.warmup, len(df)):
+    for i in range(a.warmup, last):
         row = df.iloc[i]
         st = states[i]
         compared += 1
+        offset = cfg.realign_entry_mode == "market" and _entry_offset(i)
+        excused += offset
         for col, read, tol in checks:
             if col not in df.columns:
+                continue
+            if col in scope and not scope[col](row, st):
+                continue
+            if offset and col in pos_fields:
                 continue
             pine = _f(row[col])
             py = read(st)
@@ -354,7 +395,8 @@ def main(argv=None) -> int:
             if not _same(pine, py, tol):
                 bad.setdefault(col, []).append((df.index[i], pine, py))
 
-    print(f"\ncompared {compared:,} bars after warm-up")
+    print(f"\ncompared {compared:,} bars after warm-up "
+          f"({excused} market-entry bars excused on the position fields — one per trade)")
     print(f"{'field':<16} {'exercised':>10}   verdict")
     print("-" * 56)
     ok = True
