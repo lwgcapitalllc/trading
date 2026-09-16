@@ -56,8 +56,8 @@ name until that twin was deleted on 2026-08-15.
 ⚠ **Every file here is half of a parity gate.** The `_export` twin is the instrumented copy a
 `compare_*.py` diffs against its Python port, and it has to move with its parent — a change to
 `sos_fade_strategy.pine` that does not land in `sos_fade_strategy_export.pine` makes the gate green about
-a file nobody trades. `realign_strategy.pine` has **no twin at all**, which is why every
-REALIGN number in this repo is a lab finding.
+a file nobody trades. `realign_strategy.pine` gained its twin on 2026-09-16; its
+`compare_realign.py` exists and has never been RUN, so every REALIGN number is still a lab finding.
 
 ---
 
@@ -192,6 +192,45 @@ the day a refusal is reported from anywhere but those two blocks. `hTrigDir` is 
 (`firedWindow`), so one refusal is already one bar. SOS Fade needs its `sosBar + code` key because a
 setup there can stay refused for twenty consecutive bars. ⚠ **`hTrigBar == bar_index` is what
 scopes it** — the four `hTrig*` fields are `var` and keep the last trigger's values for ever.
+
+## 🔴 THE CONVENTIONS ARE CHECKED NOW, BECAUSE WRITING THEM DOWN DID NOT HOLD (2026-09-16)
+
+**Aaron, 2026-09-16:** *"all pine strategies and export must have these conventions. I believe I
+stated this before and I did an audit and now we back to here."* He had. He did. And `realign`
+was still built, measured six times and taken to the edge of a parity gate with **no position
+box, no result callout, no entry triangles, no refusal tag and ad-hoc input groups.**
+
+**A convention enforced by remembering to read this file is not enforced.** `scripts/check_pine_conventions.py`
+now audits every `*_strategy.pine` here for the numbered panel, the six annotations and the three
+standard RESULT colours, and it is **step 15 of `scripts/run_all_tests.sh`** — it fails the build,
+the same way `check_pine_blocks.py` does for the engine copies.
+
+What the first credible run found, beyond realign:
+
+| file | what was missing |
+|---|---|
+| `extreme_leg_strategy.pine` | **no trade drawing of any kind** — it draws structure and never draws a trade |
+| `smc_session_sweep_strategy.pine` | a position box, but **no BREAKEVEN grading** (a scratch drew as a win or a loss) and no entry triangles |
+
+⚠ **The palette rule is checked by PRESENCE of the three result colours, never by absence of
+others.** "No hex outside the palette" cannot be decided by text — these files legitimately colour
+sessions, gaps, the confirmation panel and the B-LEG overlay — and the first version of the script
+reported **all seven files as broken**. A check with false positives gets ignored, which is the
+exact failure it exists to prevent. Same reason it resolves `G1`-style group CONSTANTS instead of
+reading literal `group = "…"` strings: matching only literals called a compliant panel "no
+numbered groups at all".
+
+⚠ **An exemption is a decision with a name on it** (`_EXEMPT` in the script), never a quiet skip.
+`recovery_strategy.pine` is the only one: it is a sizing rule, draws no trade of its own, and has
+no twin by design.
+
+⚠ **Bringing a file onto the panel contract REORDERS its inputs, which resets saved values on any
+chart already running it.** Do it BEFORE an export is taken, not after, and say that *"Reset
+settings to defaults"* is needed once. `realign` was brought on this way on 2026-09-16, deliberately
+ahead of its first CSV.
+
+⚠ **Nothing here compiles Pine.** The check proves a layer is PRESENT, not that it draws correctly.
+A file can satisfy every rule and still be wrong on a chart.
 
 ## THE ANNOTATION PALETTE — one result, one colour, `sos_fade_strategy.pine` is the standard
 

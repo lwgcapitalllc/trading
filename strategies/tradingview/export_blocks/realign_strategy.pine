@@ -90,9 +90,35 @@ plot((timeStopMode != "Off" ? 1 : 0) + (flatMode != "Off" ? 2 : 0)
    + (hour(time, "America/New_York") * 4)
    + (dayofweek(time, "America/New_York") == dayofweek.friday ? 128 : 0), "px_clock", _INV, editable = false)
 
+// ── REFUSED SETUPS ───────────────────────────────────────────────────────────────
+// The refusal the chart tags, as a number. 🔴 A setup the strategy chose NOT to take leaves no
+// other trace anywhere — not in the trade list, not in the equity curve — so without this the
+// gate cannot tell "both sides refused it" from "one side never saw it", which are opposite
+// bugs. Scoped to the bar it happened on, because refBar/refDir/refCode are `var` and keep the
+// last refusal's values for ever.
+float _refCode = na
+float _refDir  = na
+if refBar == bar_index
+    _refCode := refCode
+    _refDir  := refDir
+plot(_refCode, "px_ref_code", _INV, editable = false)
+plot(_refDir,  "px_ref_dir",  _INV, editable = false)
+
+// ── THE TRADE'S EXCURSIONS — how far it ran either way ───────────────────────────
+// What the position box paints, as numbers. Reporting only; nothing reads them.
+float _best  = na
+float _worst = na
+if strategy.position_size != 0 and pbx.dir != 0
+    _best  := pbx.best
+    _worst := pbx.worst
+plot(_best,  "px_best",  _INV, editable = false)
+plot(_worst, "px_worst", _INV, editable = false)
+
 // ── CONFIG — the run describes ITSELF ────────────────────────────────────────────
-plot((tradeLongs ? 1 : 0) + (tradeShorts ? 2 : 0) + (showMarks ? 4 : 0) + (showDiag ? 8 : 0),
-     "cfg_bits", _INV, editable = false)
+plot((tradeLongs ? 1 : 0) + (tradeShorts ? 2 : 0) + (showMarks ? 4 : 0) + (showDiag ? 8 : 0)
+   + (showPosBox ? 16 : 0) + (showExcursion ? 32 : 0) + (showConfLabel ? 64 : 0)
+   + (showBlocked ? 128 : 0), "cfg_bits", _INV, editable = false)
+plot(beBandR, "cfg_be_band_r", _INV, editable = false)
 
 // Enums packed as DECIMAL DIGITS, each field < 10, so decoding is division and modulo.
 plot((minStopMode == "Off" ? 0 : minStopMode == "% of price" ? 1 : 2)

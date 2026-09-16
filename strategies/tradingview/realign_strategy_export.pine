@@ -6,46 +6,65 @@ strategy("Realign Export", overlay = true, initial_capital = 10000,
          margin_long = 0.2, margin_short = 0.2,
          commission_type = strategy.commission.cash_per_contract, commission_value = 0.0)
 
-// ── the setup ────────────────────────────────────────────────────────────────────
-htfTf       = input.timeframe("15",  "External timeframe",                group = "Setup", tooltip = "The timeframe the false break is read on. The chart frame is the trigger.")
-majorLength = input.int(10,          "Structure pivot length",  minval = 2, group = "Setup", tooltip = "Swing detection lookback, on both frames.")
-windowHrs   = input.float(24.0,      "Hours the setup stays armed", minval = 0.5, group = "Setup", tooltip = "How long the setup stays armed after the false break. Chosen, not measured.")
-tradeLongs  = input.bool(true,       "Trade longs",  group = "Setup")
-tradeShorts = input.bool(true,       "Trade shorts", group = "Setup")
+// ── THE INPUT PANEL — the repo's numbered contract ───────────────────────────────
+// 🔴 BROUGHT ONTO THE CONTRACT 2026-09-16, AND THAT IS A REORDER. TradingView keys a saved
+//    chart's input values off DECLARATION ORDER within each type, so moving them RESETS every
+//    saved value on any chart already running this script. **Open it and use "Reset settings
+//    to defaults" once** — the same treatment every other strategy here needed when it was
+//    brought on. Done deliberately BEFORE the first CSV export rather than after, so the
+//    export is taken at settings somebody chose rather than at whatever survived the move.
+// ⚠ The numbering does not close up. A group this strategy has no use for is simply absent —
+//    the NUMBER is the address, so section 6 is Stop & targets in whichever file you open.
+var string G2  = "2 · Market structure"
+var string G3  = "3 · What trades"
+var string G4  = "4 · What arms it"
+var string G5  = "5 · Entry"
+var string G6  = "6 · Stop & targets"
+var string G7  = "7 · Filters"
+var string G8  = "8 · Chart annotations"
+var string G12 = "12 · Debug"
 
-// ── risk / entry ─────────────────────────────────────────────────────────────────
-riskPct     = input.float(1.0, "Risk % per trade", minval = 0.01, maxval = 100, group = "Risk", tooltip = "Percent of equity risked to the stop. Test at 1 - R is scale-free, so the R results come out identical.")
-slBufTk     = input.int(20,     "Stop buffer (ticks)", minval = 0, group = "Risk", tooltip = "How many ticks beyond the structural low or high the stop sits.")
-minStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $"], group = "Risk", tooltip = "Refuse a setup whose stop is too close to the entry, which would balloon the position.")
-minStopVal  = input.float(0.08, "Minimum stop value", minval = 0.0, group = "Risk", tooltip = "The floor itself - a percent of price or dollars, depending on the mode.")
+majorLength = input.int(10, "Structure pivot length", minval = 2, group = G2, tooltip = "Swing detection lookback, on both frames.")
 
-// ── the exit ladder (inherited from the SOS Fade bot) ──────────────────────────────────
-tp1Pct        = input.float(0,   "TP1 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at the first target but still stages the stop to breakeven when price touches it.")
-tp2Pct        = input.float(0,   "TP2 size %", minval = 0, maxval = 100, group = "Exit", tooltip = "0 banks nothing at the second target but still installs the floor and hands the rest to the trail.")
-beBufTk       = input.int(0,     "Breakeven buffer (ticks)", group = "Exit", tooltip = "Where the stop sits after the first target. Negative gives the trade room below the entry.")
-tp2StopMode   = input.string("TP1 price", "Stop floor after TP2", options = ["TP1 price", "Breakeven", "One trail step behind"], group = "Exit")
-runnerTrail   = input.string("Structure + % ratchet", "Runner trail", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = "Exit")
-trailPct      = input.float(1.0, "Ratchet step (% of price)", minval = 0.01, group = "Exit", tooltip = "Read only in Structure + % ratchet mode.")
-trailStep     = input.float(1.0, "Fixed trail step ($)", minval = 0.01, group = "Exit", tooltip = "Read only in Fixed step mode.")
-structTrailBuf= input.int(20,    "Structure trail buffer (ticks)", group = "Exit")
-timeStopMode  = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = "Exit", tooltip = "Closes a position open this long. Before TP1 never touches a trade that has reached the first target.")
-timeStopHrs   = input.float(36.0, "Time stop (hours)", minval = 0.5, group = "Exit")
+tradeLongs  = input.bool(true,  "Trade longs",  group = G3)
+tradeShorts = input.bool(true,  "Trade shorts", group = G3)
+riskPct     = input.float(1.0,  "Risk % per trade", minval = 0.01, maxval = 100, group = G3, tooltip = "Percent of equity risked to the stop. Test at 1 - R is scale-free, so the R results come out identical.")
 
-showMarks   = input.bool(true, "Mark setups on the chart", group = "Display")
-showDiag    = input.bool(true, "Diagnostics in the Data Window", group = "Display", tooltip = "Running counts of every stage of the setup. Open the Data Window and hover a bar - the first counter reading 0 is where the chain breaks.")
+htfTf       = input.timeframe("15", "External timeframe", group = G4, tooltip = "The timeframe the false break is read on. The chart frame is the trigger.")
+windowHrs   = input.float(24.0, "Hours the setup stays armed", minval = 0.5, group = G4, tooltip = "How long the setup stays armed after the false break. Chosen, not measured.")
 
-// ── added 2026-09-16 ─────────────────────────────────────────────────────────────
-// 🔴 EVERY INPUT BELOW IS APPENDED AFTER THE LAST EXISTING INPUT OF ITS OWN TYPE, AND THAT
-//    IS NOT A STYLE CHOICE. TradingView keys a saved chart's input values off DECLARATION
-//    ORDER within each type, so INSERTING one higher up silently resets every later input of
-//    that type on every chart already using this script. New inputs go at the bottom, always.
-retestBars  = input.int(12, "Retest expiry (bars)", minval = 1, group = "Risk", tooltip = "Cancel an unfilled retest limit after this many bars. It is also cancelled if price reaches the stop first. Read only in Retest mode.")
-flatMin     = input.int(15, "Flat N minutes before the close", minval = 1, group = "Exit", tooltip = "How long before the session close the position is flattened. Read only when Flat before the close is on.")
-closeHrNy   = input.int(17, "Daily close hour (New York)", minval = 0, maxval = 23, group = "Exit", tooltip = "Gold closes 17:00 New York. Changing this moves what Flat before the close means.")
-entryMode   = input.string("Market", "Entry", options = ["Market", "Retest"], group = "Risk", tooltip = "Market takes the close of the bar the realignment confirms on. Retest rests a limit at the level the realignment broke and waits for price to come back to it - a smaller book, entered nearer the stop, paying no entry spread on the way in.")
-retestAt    = input.string("Level", "Retest price", options = ["Level", "Mid"], group = "Risk", tooltip = "Level rests at the structure level the realignment broke. Mid rests halfway between the stop and the confirming close. Read only in Retest mode.")
-flatMode    = input.string("Off", "Flat before the close", options = ["Off", "Friday only", "Every day"], group = "Exit", tooltip = "Close any open trade before the session close. Friday only avoids carrying over the weekend; Every day avoids carrying overnight at all.")
-trailFrame  = input.string("External", "Trail anchor frame", options = ["External", "Chart"], group = "Exit", tooltip = "Which frame's confirmed swings the runner trail sits behind. WARNING: this file has always used External and the Python port has always used Chart, which is a real divergence found 2026-09-16 and worth tens of R. The input exists so a CSV export can state which one it ran, and the parity gate can settle which is right.")
+entryMode   = input.string("Market", "Entry", options = ["Market", "Retest"], group = G5, tooltip = "Market takes the close of the bar the realignment confirms on. Retest rests a limit at the level the realignment broke and waits for price to come back to it - a smaller book, entered nearer the stop, paying no entry spread on the way in.")
+retestAt    = input.string("Level", "   ↳ Retest price", options = ["Level", "Mid"], group = G5, tooltip = "Level rests at the structure level the realignment broke. Mid rests halfway between the stop and the confirming close. Read only in Retest mode.")
+retestBars  = input.int(12, "   ↳ Retest expiry (bars)", minval = 1, group = G5, tooltip = "Cancel an unfilled retest limit after this many bars. It is also cancelled if price reaches the stop first. Read only in Retest mode.")
+
+slBufTk       = input.int(20,    "Stop buffer (ticks)", minval = 0, group = G6, tooltip = "How many ticks beyond the structural low or high the stop sits.")
+tp1Pct        = input.float(0,   "TP1 size %", minval = 0, maxval = 100, group = G6, tooltip = "0 banks nothing at the first target but still stages the stop to breakeven when price touches it.")
+tp2Pct        = input.float(0,   "TP2 size %", minval = 0, maxval = 100, group = G6, tooltip = "0 banks nothing at the second target but still installs the floor and hands the rest to the trail.")
+beBufTk       = input.int(0,     "Breakeven buffer (ticks)", group = G6, tooltip = "Where the stop sits after the first target. Negative gives the trade room below the entry.")
+tp2StopMode   = input.string("TP1 price", "Stop floor after TP2", options = ["TP1 price", "Breakeven", "One trail step behind"], group = G6)
+runnerTrail   = input.string("Structure + % ratchet", "Runner trail", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = G6)
+trailFrame    = input.string("External", "   ↳ Trail anchor frame", options = ["External", "Chart"], group = G6, tooltip = "Which frame's confirmed swings the runner trail sits behind. WARNING: this file has always used External and the Python port has always used Chart, which is a real divergence found 2026-09-16 and worth tens of R. The input exists so a CSV export can state which one it ran, and the parity gate can settle which is right.")
+trailPct      = input.float(1.0, "   ↳ Ratchet step (% of price)", minval = 0.01, group = G6, tooltip = "Read only in Structure + % ratchet mode.")
+trailStep     = input.float(1.0, "   ↳ Fixed trail step ($)", minval = 0.01, group = G6, tooltip = "Read only in Fixed step mode.")
+structTrailBuf= input.int(20,    "   ↳ Structure trail buffer (ticks)", group = G6)
+timeStopMode  = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = G6, tooltip = "Closes a position open this long. Before TP1 never touches a trade that has reached the first target.")
+timeStopHrs   = input.float(36.0, "   ↳ Time stop (hours)", minval = 0.5, group = G6)
+flatMode      = input.string("Off", "Flat before the close", options = ["Off", "Friday only", "Every day"], group = G6, tooltip = "Close any open trade before the session close. Friday only avoids carrying over the weekend; Every day avoids carrying overnight at all.")
+flatMin       = input.int(15, "   ↳ Flat N minutes before the close", minval = 1, group = G6, tooltip = "How long before the session close the position is flattened. Read only when Flat before the close is on.")
+closeHrNy     = input.int(17, "   ↳ Daily close hour (New York)", minval = 0, maxval = 23, group = G6, tooltip = "Gold closes 17:00 New York. Changing this moves what Flat before the close means.")
+
+minStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $"], group = G7, tooltip = "Refuse a setup whose stop is too close to the entry, which would balloon the position.")
+minStopVal  = input.float(0.08, "   ↳ Minimum stop value", minval = 0.0, group = G7, tooltip = "The floor itself - a percent of price or dollars, depending on the mode.")
+
+showMarks     = input.bool(true,  "Mark setups on the chart", group = G8, tooltip = "The trigger triangles and the false-break crosses - the SETUP, not the trade.")
+showPosBox    = input.bool(true,  "Show position box (result)", group = G8, tooltip = "One box per trade: how far it ran in your favour, how far it went against you, and where it ended.")
+showExcursion = input.bool(true,  "   ↳ Band the excursions (best / worst)", group = G8, tooltip = "Paints the furthest price the trade ever reached either way. Off leaves only the result band.")
+showConfLabel = input.bool(true,  "Entry callout, recoloured on close", group = G8, tooltip = "A tag at the fill that turns green, red or orange when the trade closes, with its R.")
+labelWhich    = input.string("All", "   ↳ Which callouts to keep", options = ["All", "Wins only", "Losses only", "Losses + breakevens"], group = G8)
+beBandR       = input.float(0.1, "   ↳ Breakeven band (R)", minval = 0.0, group = G8, tooltip = "A result inside plus or minus this many R is drawn as BREAKEVEN rather than a win or a loss.")
+showBlocked   = input.bool(true,  "Tag refused setups", group = G8, tooltip = "Marks a realignment that fired and was REFUSED, with the reason. This is the only record of a trade the strategy chose not to take.")
+
+showDiag    = input.bool(true, "Diagnostics in the Data Window", group = G12, tooltip = "Running counts of every stage of the setup. Open the Data Window and hover a bar - the first counter reading 0 is where the chain breaks.")
 
 float pbBuffer = 0.0
 
@@ -577,6 +596,16 @@ var float pendSl    = na
 var float pendTp1   = na
 var float pendTp2   = na
 
+// The refusal record, written where the refusal HAPPENS. See [doc 17].
+//   1 stop on the wrong side · 2 minimum stop · 3 target behind entry
+//   4 no retest level · 5 retest expired · 6 invalidated before the fill
+// ⚠ WRITTEN INLINE, NOT THROUGH A HELPER. A Pine function CANNOT assign to a global, so the
+//   obvious `f_refuse(dir, code)` compiles nowhere — it has to be three assignments at the
+//   point of refusal. Caught before this reached a chart; left stated so it is not re-tried.
+var int refBar  = na
+var int refDir  = 0
+var int refCode = 0
+
 // The retest price, or `na` when this setup cannot rest one. Long and short mirror exactly.
 f_retestPx(int d, float lvl, float ctrExt) =>
     float px = retestAt == "Level" ? lvl : (ctrExt + close) / 2.0
@@ -588,6 +617,19 @@ if flat and trigLong and tradeLongs
     float px   = entryMode == "Retest" ? f_retestPx(1, trigLvlL, ctrLowL) : close
     float sl   = ctrLowL - slBufTk * syminfo.mintick
     float dist = px - sl
+    int rcL = 0
+    if na(px)
+        rcL := entryMode == "Retest" ? 4 : 1
+    else if dist <= 0
+        rcL := 1
+    else if not f_minStopOk(dist, px)
+        rcL := 2
+    else if na(tgtLong) or tgtLong <= px
+        rcL := 3
+    if rcL != 0
+        refBar  := bar_index
+        refDir  := 1
+        refCode := rcL
     if not na(px) and dist > 0 and f_minStopOk(dist, px) and not na(tgtLong) and tgtLong > px
         float qty = (strategy.equity * riskPct / 100.0) / dist
         float t1  = px + (tgtLong - px) * 0.5
@@ -614,6 +656,19 @@ if flat and trigShort and tradeShorts
     float px   = entryMode == "Retest" ? f_retestPx(-1, trigLvlS, ctrHighS) : close
     float sl   = ctrHighS + slBufTk * syminfo.mintick
     float dist = sl - px
+    int rcS = 0
+    if na(px)
+        rcS := entryMode == "Retest" ? 4 : 1
+    else if dist <= 0
+        rcS := 1
+    else if not f_minStopOk(dist, px)
+        rcS := 2
+    else if na(tgtShort) or tgtShort >= px
+        rcS := 3
+    if rcS != 0
+        refBar  := bar_index
+        refDir  := -1
+        refCode := rcS
     if not na(px) and dist > 0 and f_minStopOk(dist, px) and not na(tgtShort) and tgtShort < px
         float qty = (strategy.equity * riskPct / 100.0) / dist
         float t1  = px - (px - tgtShort) * 0.5
@@ -654,6 +709,9 @@ if not na(pendBar)
         pendBar  := na
     else if bar_index - pendBar >= retestBars or
              (pendDir > 0 ? low <= pendSl : high >= pendSl)
+        refBar  := bar_index
+        refDir  := pendDir
+        refCode := bar_index - pendBar >= retestBars ? 5 : 6
         strategy.cancel("REALIGN L")
         strategy.cancel("REALIGN S")
         pendBar := na
@@ -735,6 +793,149 @@ if inPos
         if tp2Pct > 0
             strategy.exit("X2", limit = p2, stop = posStop, qty_percent = tp2Pct)
         strategy.exit("XR", stop = posStop)
+
+// ── TRADE ANNOTATIONS ────────────────────────────────────────────────────────────
+// The repo-standard layer, and it was MISSING from this file entirely until 2026-09-16 —
+// six runs of measurements existed before anything drew a trade on the chart. Every colour
+// is copied from `sos_fade_strategy.pine`, which is the standard; none is re-picked here.
+// Contract: `strategies/tradingview/CLAUDE.md` -> PHASE 1 and THE ANNOTATION PALETTE.
+color POS_RED    = color.new(#EF5350, 62)
+color POS_OPEN   = color.new(#787B86, 80)
+color POS_ORANGE = color.new(#FF9800, 0)
+color POS_GREENB = color.new(#26A69A, 0)   // solid borders so even a thin box is visible
+color POS_REDB   = color.new(#EF5350, 0)
+color POS_G3     = color.new(#26A69A, 82)  // faintest reward green — the favourable excursion
+color POS_DD     = color.new(#EF5350, 88)  // drawdown: behind everything, barely there
+
+type PosBox
+    box   bx        = na
+    int   dir       = 0
+    int   entryBar  = na
+    float entry     = na
+    float sl        = na
+    float worst     = na
+    float best      = na
+    float openNet   = na
+    line  ln        = na
+    label lb        = na
+    string head     = ""
+
+var PosBox pbx = PosBox.new()
+
+// The trade's own risk in dollars, frozen at the fill — the denominator of its R. Without it
+// the callout can only report a dollar amount, which says nothing on a compounding account.
+var float openRiskUsd = na
+
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    pbx.dir      := strategy.position_size > 0 ? 1 : -1
+    pbx.entryBar := bar_index
+    pbx.entry    := posEntry
+    pbx.sl       := posStop
+    pbx.worst    := pbx.dir > 0 ? low : high
+    pbx.best     := pbx.dir > 0 ? high : low
+    pbx.openNet  := strategy.netprofit
+    openRiskUsd  := math.abs(posEntry - posStop) * math.abs(strategy.position_size) * syminfo.pointvalue
+    // [doc 14] The callout opens GREY — the result is not known yet, and colouring it now  -> docs/realign_strategy.md
+    if showConfLabel
+        float off = ta.atr(14) * 0.6
+        float ly  = pbx.dir > 0 ? low - off : high + off
+        pbx.head  := pbx.dir > 0 ? "▲ LONG" : "▼ SHORT"
+        pbx.ln    := line.new(bar_index, posEntry, bar_index, ly, color = color.new(#787B86, 0), width = 1)
+        pbx.lb    := label.new(bar_index, ly, pbx.head, color = color.new(#787B86, 12),
+                               textcolor = color.new(#101014, 0),
+                               style = pbx.dir > 0 ? label.style_label_up : label.style_label_down,
+                               size = size.small)
+    if showPosBox
+        pbx.bx := box.new(bar_index, math.max(posEntry, close), bar_index, math.min(posEntry, close),
+                          bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
+
+// While open: grow the box and track BOTH extremes. `best` is the answer to "how far did it
+// actually go", which no other drawing on this chart carries.
+if strategy.position_size != 0 and pbx.dir != 0
+    pbx.worst := pbx.dir > 0 ? math.min(pbx.worst, low)  : math.max(pbx.worst, high)
+    pbx.best  := pbx.dir > 0 ? math.max(pbx.best, high) : math.min(pbx.best, low)
+    if not na(pbx.bx)
+        box.set_right(pbx.bx, bar_index)
+        box.set_top(pbx.bx, math.max(pbx.entry, close))
+        box.set_bottom(pbx.bx, math.min(pbx.entry, close))
+
+// [doc 15] Closed this bar: grade it in R, recolour the callout, paint the bands.  -> docs/realign_strategy.md
+if strategy.position_size == 0 and strategy.position_size[1] != 0 and pbx.dir != 0
+    float net = strategy.netprofit - pbx.openNet
+    float tradeR = na(openRiskUsd) or openRiskUsd <= 0 ? na : net / openRiskUsd
+    int   xr  = bar_index
+    if not na(pbx.bx)
+        box.delete(pbx.bx)
+        pbx.bx := na
+    if showPosBox
+        // Excursions first, so the result band sits on top of them.
+        if showExcursion
+            if pbx.dir > 0 ? pbx.worst < pbx.entry : pbx.worst > pbx.entry
+                box.new(pbx.entryBar, math.max(pbx.entry, pbx.worst), xr, math.min(pbx.entry, pbx.worst),
+                        bgcolor = POS_DD, border_color = color(na))
+            if pbx.dir > 0 ? pbx.best > pbx.entry : pbx.best < pbx.entry
+                box.new(pbx.entryBar, math.max(pbx.entry, pbx.best), xr, math.min(pbx.entry, pbx.best),
+                        bgcolor = POS_G3, border_color = color(na))
+        // The RESULT itself. ⚠ This fork banks nothing at its rungs (TP1/TP2 default 0%), so
+        //   there are no partial fills to band — every trade ends on the trail, the time stop
+        //   or the flat. The result is therefore one band, not a stack.
+        bool beRes = not na(tradeR) and math.abs(tradeR) <= beBandR
+        if beRes
+            line.new(pbx.entryBar, pbx.entry, xr, pbx.entry, color = POS_ORANGE, width = 2)
+        else if net < 0
+            box.new(pbx.entryBar, math.max(pbx.entry, close), xr, math.min(pbx.entry, close),
+                    bgcolor = POS_RED, border_color = POS_REDB)
+        else
+            box.new(pbx.entryBar, math.max(pbx.entry, close), xr, math.min(pbx.entry, close),
+                    bgcolor = color.new(#26A69A, 62), border_color = POS_GREENB)
+    if not na(pbx.lb)
+        bool   be   = not na(tradeR) and math.abs(tradeR) <= beBandR
+        bool   won  = not be and net > 0
+        string res  = be ? "BREAKEVEN" : won ? "WIN" : "LOSS"
+        bool   keep = labelWhich == "All" or (labelWhich == "Wins only" and won)
+                       or (labelWhich == "Losses only" and not won and not be)
+                       or (labelWhich == "Losses + breakevens" and not won)
+        if keep
+            string txt = pbx.head + "  ·  " + res
+                          + (na(tradeR) ? "" : "  " + (tradeR >= 0 ? "+" : "") + str.tostring(tradeR, "#.##") + "R")
+            label.set_text(pbx.lb, txt)
+            label.set_tooltip(pbx.lb, txt + "\nbest " + str.tostring(pbx.best, format.mintick)
+                              + "  ·  worst " + str.tostring(pbx.worst, format.mintick))
+            label.set_color(pbx.lb, be ? color.new(#FF9800, 12) : won ? color.new(#26A69A, 12) : color.new(#EF5350, 12))
+            line.set_color(pbx.ln, be ? color.new(#FF9800, 0) : won ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
+        else
+            label.delete(pbx.lb)
+            line.delete(pbx.ln)
+        pbx.lb := na
+        pbx.ln := na
+    pbx.dir     := 0
+    openRiskUsd := na
+
+// [doc 16] Entry triangles. plotshape is GLOBAL SCOPE, so the test is written out here  -> docs/realign_strategy.md
+// ⚠ NOT redundant with the box: a scratch paints a band a few pixels tall and reads as no
+//   trade at all, which is exactly when you need to see where it opened.
+plotshape(showPosBox and strategy.position_size > 0 and strategy.position_size[1] <= 0, title = "Long entry",
+          style = shape.triangleup, location = location.belowbar, color = POS_GREENB, size = size.small)
+plotshape(showPosBox and strategy.position_size < 0 and strategy.position_size[1] >= 0, title = "Short entry",
+          style = shape.triangledown, location = location.abovebar, color = POS_REDB, size = size.small)
+
+// [doc 17] ── REFUSED SETUPS — the only record of a trade the strategy chose not to take  -> docs/realign_strategy.md
+// 🔴 THE SIDE AND THE REASON ARE RECORDED AT DECISION TIME, NEVER RE-DERIVED. `d_strategy.pine`
+//    already paid for that lesson: its tag read direction off the SOS on the same bar, which
+//    was correct only while every candidate arrived on one, and the day a second entry mode
+//    existed every candidate drew as a SHORT. `refCode`/`refDir` are written where the refusal
+//    happens, so the tag and the reason can never tell different stories.
+if showBlocked and refBar == bar_index and refDir != 0
+    string why = refCode == 1 ? "stop on the wrong side"
+                : refCode == 2 ? "stop too tight (minimum stop)"
+                : refCode == 3 ? "target already behind the entry"
+                : refCode == 4 ? "no retest level to rest at"
+                : refCode == 5 ? "retest limit expired unfilled"
+                : "invalidated before the fill"
+    label.new(bar_index, refDir > 0 ? low : high,
+              "REFUSED", tooltip = (refDir > 0 ? "▲ LONG" : "▼ SHORT") + " refused · " + why,
+              color = color.new(#E040FB, 12), textcolor = color.new(#101014, 0),
+              style = refDir > 0 ? label.style_label_up : label.style_label_down, size = size.tiny)
 
 // [doc 12] DIAGNOSTICS  -> docs/realign_strategy.md
 var int nHtfClose = 0
@@ -880,9 +1081,35 @@ plot((timeStopMode != "Off" ? 1 : 0) + (flatMode != "Off" ? 2 : 0)
    + (hour(time, "America/New_York") * 4)
    + (dayofweek(time, "America/New_York") == dayofweek.friday ? 128 : 0), "px_clock", _INV, editable = false)
 
+// ── REFUSED SETUPS ───────────────────────────────────────────────────────────────
+// The refusal the chart tags, as a number. 🔴 A setup the strategy chose NOT to take leaves no
+// other trace anywhere — not in the trade list, not in the equity curve — so without this the
+// gate cannot tell "both sides refused it" from "one side never saw it", which are opposite
+// bugs. Scoped to the bar it happened on, because refBar/refDir/refCode are `var` and keep the
+// last refusal's values for ever.
+float _refCode = na
+float _refDir  = na
+if refBar == bar_index
+    _refCode := refCode
+    _refDir  := refDir
+plot(_refCode, "px_ref_code", _INV, editable = false)
+plot(_refDir,  "px_ref_dir",  _INV, editable = false)
+
+// ── THE TRADE'S EXCURSIONS — how far it ran either way ───────────────────────────
+// What the position box paints, as numbers. Reporting only; nothing reads them.
+float _best  = na
+float _worst = na
+if strategy.position_size != 0 and pbx.dir != 0
+    _best  := pbx.best
+    _worst := pbx.worst
+plot(_best,  "px_best",  _INV, editable = false)
+plot(_worst, "px_worst", _INV, editable = false)
+
 // ── CONFIG — the run describes ITSELF ────────────────────────────────────────────
-plot((tradeLongs ? 1 : 0) + (tradeShorts ? 2 : 0) + (showMarks ? 4 : 0) + (showDiag ? 8 : 0),
-     "cfg_bits", _INV, editable = false)
+plot((tradeLongs ? 1 : 0) + (tradeShorts ? 2 : 0) + (showMarks ? 4 : 0) + (showDiag ? 8 : 0)
+   + (showPosBox ? 16 : 0) + (showExcursion ? 32 : 0) + (showConfLabel ? 64 : 0)
+   + (showBlocked ? 128 : 0), "cfg_bits", _INV, editable = false)
+plot(beBandR, "cfg_be_band_r", _INV, editable = false)
 
 // Enums packed as DECIMAL DIGITS, each field < 10, so decoding is division and modulo.
 plot((minStopMode == "Off" ? 0 : minStopMode == "% of price" ? 1 : 2)
