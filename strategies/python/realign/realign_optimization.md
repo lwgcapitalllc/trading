@@ -523,8 +523,15 @@ here shows.
 
 ## Open questions — blocking, and they are not tuning questions
 
+⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must
+not be re-litigated:** the pattern beats matched random entry (z +2.36 shipped on a clean basis,
+random timing LOSES through the same exits), and no entry filter exists (winners and losers are
+indistinguishable, and every bucketed "signal" was one trade). Runs 5 and 6 are the answers.
+
 | | question | status |
 |---|---|---|
-| 1 | **There is no parity gate.** | 🔴 **BLOCKS EVERYTHING BELOW.** Build the export twin and the comparison before any sweep. |
+| 1 | **There is no parity gate.** | 🔴 **BLOCKS EVERYTHING BELOW, and the gap GREW on 2026-09-15.** The Pine had no input for `strict` before; it now also lacks the retest entry, the always-on time stop and flat-by-close — the three levers every Run 2-6 number is measured with. Stage 3 (the export twin) and stage 6 (`compare_realign.py`) are mine; **stage 4, the real CSV export, is the one step only Aaron can do.** |
+| 1a | **Profit concentration: 3-5 trades carry 5.5 years** (Run 6). | ⚠ **OPEN, and not fixable by tuning.** It is a sizing and expectations question, not a defect. It is also why Run 6's top-trade-removal check now runs on every bucketed claim. |
+| 1b | **Three of the four Run 2-4 picks have no holdout** (the 12h clock, nightly flat, keeping the trail). | ⚠ **OPEN.** Run 2's pre-declaration spent the only holdout year on the retest, and a second draw on it would make it meaningless. **The clean validation is forward data — it does not exist yet.** |
 | 2 | **The drawdown disagrees with the chart and is undiagnosed by measurement** — 17.79% (≈19.5R) in the Strategy Tester against 15.52R here. | 🔴 **OPEN.** The candidate is that the chart fills a gapped stop at the next bar's open while the bar-replay model fills at the stop price, which would make the Python **optimistic** — the direction that matters. Same total R with a deeper drawdown is that signature, but a signature is not a measurement. |
 | 3 | **~2.5 points of win-rate gap remain** after the costed/free mix-up was corrected. | ⚠ **OPEN and small.** Scratch classification is the candidate — 11 of 162 counted separately at \|r\| ≤ 0.02, against a tester that asks only whether P&L > 0. **Not measured.** |
