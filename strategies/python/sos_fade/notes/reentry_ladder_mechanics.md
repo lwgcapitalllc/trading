@@ -101,6 +101,76 @@ exactly that (best price 1.016R, nearest rung 1.25R, full loss) and survived in 
 configuration only because the flipped ladder put a rung at 0.757R. **A ladder defect was
 load-bearing for a stop with no other trigger.**
 
+### 🔁 RE-MEASURED ON TODAY'S STRATEGY (2026-09-16) — SAME ANSWER, AND THE PRIZE HAS SHRUNK TO ALMOST NOTHING
+
+🔴 **THE 2026-08-25 TABLE ABOVE NO LONGER DESCRIBES THIS STRATEGY AND MUST NOT BE QUOTED AS IF IT
+DID.** 26 commits have touched `strategies/python/sos_fade/` since it was taken, several of them
+behaviour changes (`0586ae46` the fast-frame internal CHoCH feed, `f59e0f6b` a missed setup
+carrying its retrace leg, `4b35de8d` the gap re-entry banking nothing). Replaying the SAME basis
+today returns a different book: **239 trades / +237.33R / 26.85% max DD / PF 4.987**, against the
+August control's 246 / +139.09R / 53.68% / 2.439. The control moved, so every row under it moved.
+⚠ **Run `32f82feae4ee` is GONE from the lab DB** — a documented control is only re-checkable while
+its run still exists, and this one was not.
+
+**Basis, and it is the August one field for field:** XAUUSD.p 15m, 2020-01-01 → 2026-08-23,
+PU Prime demo cache, `puprime_ecn` (bid/ask fills + commission 1.0/side + swap), consistent sizing,
+157,004 bars. Split **2023-05-01, declared before the grid ran**. Shipped defaults everywhere
+except the arm.
+
+| setting | run | trades | total R | IS | OOS | max DD % | PF | sharpe |
+|---|---|---|---|---|---|---|---|---|
+| **control (off)** | `41b033183213` | 239 | **237.33** | 100.59 | 136.74 | **26.85** | 4.987 | **1.114** |
+| 1.0R → breakeven | `7f17c1bfaf36` | 237 | 225.35 | 90.99 | 134.36 | 21.05 | 4.714 | 1.086 |
+| 2.0R → breakeven | `080d6b557655` | 238 | 225.79 | 91.06 | 134.74 | 22.43 | 4.707 | 1.087 |
+| 1.0R → keep 0.5R | `ba6ece2dce09` | 237 | 219.12 | 86.27 | 132.85 | 24.92 | 4.319 | 1.085 |
+
+**Not one arm beat the control, and BOTH calendar halves agree** — the cost is ~9.6R in-sample and
+~2.4R out-of-sample, so it is not one period's accident.
+
+🔴 **THE ONE DIRECTION THE AUGUST SWEEP NEVER TRIED WAS *LATER*, AND IT DOES NOT RESCUE THE IDEA.**
+That sweep offered 0.50 / 0.75 / 1.00R only — every value EARLIER than the last — and root
+`CLAUDE.md` already records why that is a defect in a search (`extreme_leg_optimization.md` Run 6:
+*"a search that can only move a setting one way has decided the answer before it runs"*). Arming at
+2.0R was run here for the first time. It touches **five trades in 6.6 years** and is still net
+negative: 3 destroyed for −6.13R against 2 rescued for +1.64R.
+
+🔴 **THE PRIZE IS BOUNDED AT 16R OF 237R AND FALLS OFF A CLIFF.** Counted directly off the control's
+own trade list (MFE in R = `favorable` ÷ the trade's own risk), trades that reached a given
+excursion and STILL finished as losers:
+
+| reached | trades in the group | group's total R | of those, finished losers | R they cost |
+|---|---|---|---|---|
+| ≥ 1.0R | 126 | +315.85 | 17 | **−16.03** |
+| ≥ 1.5R | 96 | +321.84 | 8 | −7.18 |
+| ≥ 2.0R | 83 | +317.93 | 7 | −6.17 |
+| ≥ 2.5R | 67 | +311.42 | 3 | −2.14 |
+| ≥ 3.0R | 58 | +305.33 | 2 | −1.14 |
+| ≥ 4.0R | 28 | +230.48 | 0 | 0 |
+
+**The entire defect is worth at most 16R out of 237R — under 7% — and it lives inside the 126
+trades that carry +316R.** Waiting for a later arm shrinks the prize faster than it shrinks the
+damage, because a trade that gets to 3R almost always wins anyway. ⚠ **MFE is booked on the
+ENTRY quantity** (`execution._finalise_trade` reads `_ext_high`/`_ext_low` against `self._qty`), so
+a scale-in trade's realised R can exceed its MFE in R and these counts are a FLOOR on the group,
+never an overstatement of the prize.
+
+⚠ **SHARPE FALLS IN EVERY VARIANT (1.114 → 1.085–1.087), WHICH IS THE FINDING THE DRAWDOWN COLUMN
+HIDES.** Arming at 1.0R does take the worst drawdown 26.85% → 21.05%, and read alone that looks
+like a good trade for 5% of the return. It is not buying risk-adjusted quality — it is making the
+book smaller in both directions. **The cheaper, linear, reversible way to hold less drawdown is the
+risk-per-trade dial, which cuts no winners and needs no rule.** ⚠ And the drawdown figure is ONE
+path statistic off a book where the top 5 trades are 62% of all profit, so treat the 5.8-point
+improvement as having wide error bars — 11 trades moved out of 237.
+
+⚠ **KEEPING HALF THE RISK INSTEAD OF GOING TO BREAKEVEN IS THE WORST OF THE THREE, AND IT IS THE
+ONE THE MECHANISM PREDICTED WOULD WIN.** Leaving room below entry is supposed to be what these
+trades need; it lost MORE (−18.21R) and bought LESS drawdown (24.92%) than the flat breakeven. So
+the give-back is not a shallow dip that a wider stop sits through — it is a full round trip.
+
+✅ **THE STANDING ANSWER IS UNCHANGED: SHIP OFF, AND THE HOLE STAYS OPEN DELIBERATELY.** It is now
+a 16R hole in a 237R book, inside the most valuable group of trades there is. Anything that reaches
+into that group to collect it has been measured three ways and has lost every time.
+
 ## 🔴 THE MERGE MOVED OUT OF `run_dual` INTO `dual_clock.DualClock` (2026-09-01)
 
 Story, the five defects it cost and the proof: `docs/LIVE_TRADING_PIPELINE.md` → G18.

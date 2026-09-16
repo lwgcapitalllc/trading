@@ -407,6 +407,15 @@ Design points that are decisions rather than details:
 
 ### 🔴 AND THE SWEEP SAYS DO NOT SWITCH IT ON
 
+⚠ **STALE AS OF 2026-09-16 — THE CONTROL BELOW NO LONGER EXISTS AND NEITHER DOES ITS BOOK.** 26
+commits have touched this strategy since, and the same basis replayed today gives 239 trades /
++237.33R / 26.85% DD rather than 246 / +139.09R / 53.68%. The verdict (ship OFF) survived the
+re-measurement; the NUMBERS here did not, and run `32f82feae4ee` has been pruned from the lab so
+they cannot be re-checked. Quote the current table instead:
+`strategies/python/sos_fade/notes/reentry_ladder_mechanics.md` → *RE-MEASURED ON TODAY'S STRATEGY
+(2026-09-16)*, which also carries the first measurement of arming LATER than 1R and of how small
+the defect actually is (16R of 237R).
+
 Six arms, one basis (XAUUSD.p M15, 2020-01-01 → 2026-08-23, PU Prime ECN with bid/ask fills,
 commission and swap, commission 1.0/side, consistent sizing). Control is run `32f82feae4ee`.
 
