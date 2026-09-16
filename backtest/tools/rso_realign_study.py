@@ -609,7 +609,7 @@ def fill_rsoc(fr: Frame, tp: Tape, s: Setup):
     if not (s.top - L) / s.atr > BIG_ATR:
         s.user["rsoc"] = (s.top, False)
         return fill(fr, tp, s, "rso")
-    return fill_cons(fr, tp, s, "rsoc")
+    return fill_cons(fr, tp, s, "rsoc", s.top - L)
 
 
 def fill_rsol(fr: Frame, tp: Tape, s: Setup):
@@ -626,7 +626,7 @@ def fill_rsol(fr: Frame, tp: Tape, s: Setup):
     if (s.top - L) / abs(L) * 100 <= MAX_STOP_PCT:
         s.user["rsol"] = (s.top, False)
         return fill(fr, tp, s, "rso")
-    return fill_cons(fr, tp, s, "rsol")
+    return fill_cons(fr, tp, s, "rsol", MAX_STOP_PCT / 100 * abs(L))
 
 
 def fill_rso2(fr: Frame, tp: Tape, s: Setup, how: str):
@@ -664,11 +664,15 @@ def fill_rso2(fr: Frame, tp: Tape, s: Setup, how: str):
     return None, math.nan, False, kend
 
 
-def fill_cons(fr: Frame, tp: Tape, s: Setup, how: str):
+def fill_cons(fr: Frame, tp: Tape, s: Setup, how: str, limit: float):
     """The conservative entry: skip the first return; once price has traded beyond the breaker level
     (below it, for a long), buy when it comes BACK to the level (a stop order, live from any close
     beyond it), stop behind the latest intact PIVOT_N swing low beyond the level known before the
-    entry. Only the window kills it — the user's 27 Jul trade came after the shakeout low broke."""
+    entry. Only the window kills it — the user's 27 Jul trade came after the shakeout low broke.
+    A swing counts only if it sits within `limit` of the level: the conservative stop exists to be
+    TIGHTER — inside the zone it replaces (`rsoc`), inside the max stop (`rsol`). Until 2026-09-16
+    any intact swing counted, and 41 of 168 conservative stops ran wider than the rule allows
+    (one $44)."""
     L = s.cb_last
     s.user[how] = (math.nan, True)
     bars = RSO_PENDING if RSO_PENDING_MIN is None else max(1, RSO_PENDING_MIN // fr.minutes)
@@ -690,7 +694,7 @@ def fill_cons(fr: Frame, tp: Tape, s: Setup, how: str):
             cur = math.nan  # traded through: that swing no longer holds
         while pi < len(P) and P[pi] + PIVOT_N <= k:
             q = int(P[pi])
-            if tp.H[q] > L and tp.H[q + 1 : k + 1].max() < tp.H[q]:
+            if 0 < tp.H[q] - L <= limit and tp.H[q + 1 : k + 1].max() < tp.H[q]:
                 cur = float(tp.H[q])
             pi += 1
         armed = tp.C[k] > L

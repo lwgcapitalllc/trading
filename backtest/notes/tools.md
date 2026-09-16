@@ -316,6 +316,14 @@ CLAUDE.md gets at most one index line.
   vs +0.033R). ✅ Every older cell reproduces exactly after each patch (15m grid, max diff 0.0).
   ⚠ The tool's summary print crashed on an exit only one entry has (results files were already
   written) — fixed; a `%` in a help string crashed the parser — escaped.
+  🔴 **Corrected the same day: the conservative stop could be ANY intact swing** — 41 of 168 ran
+  wider than the rule allows (one $44). A swing now counts only inside the zone it replaces (`rsoc`)
+  or inside the max stop (`rsol`). Only conservative-entry rows moved (15m grid: 364 others, max
+  diff 0.0). Corrected, gold: `rsol` ECN −0.042R (z +0.61), raw +0.070R vs random +0.024R; `rsoc`
+  ECN −0.136R. Still FAIL on the pass rule. Time and sessions (before costs, descriptive, noise-
+  sized buckets): the 500-minute limit closes 3% of the full rule's trades and 34% of the second
+  realign's (it props that rule's 37% win rate up from 27%); one weekend hold with an 82-cent stop
+  cost −40.4R; write-up in `docs/RSO_REALIGN_SPEC.md`.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,

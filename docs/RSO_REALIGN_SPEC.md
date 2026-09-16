@@ -388,15 +388,21 @@ pass rule as above):
 
 | rule | gold, ECN | gold, raw | random, raw | silver | EURUSD | NAS100 |
 |---|---|---|---|---|---|---|
-| conservative only | −0.133R (z −0.09) | +0.000R | +0.038R | −0.059R | +0.042R | −0.039R |
-| the ladder | **−0.050R** (z +0.08) | +0.059R | +0.033R | −0.072R | −0.090R | −0.008R |
+| conservative only | −0.136R (z +0.04) | +0.003R | +0.002R | −0.062R | +0.047R | −0.029R |
+| the ladder | **−0.042R** (z +0.61) | +0.070R | +0.024R | −0.055R | −0.091R | −0.022R |
+
+⚠ **Corrected the same day.** The first runs let the conservative entry use ANY intact swing low,
+and 41 of 168 conservative stops ran wider than the rule allows (one $44 on 5 Apr 2026). The
+user's conservative stop exists to be tight, so a swing now counts only inside the zone it replaces
+(conservative only) or inside the 0.16% maximum (the ladder). The table is the corrected run; the
+first read −0.133R / −0.050R after costs. Only the conservative rows moved.
 
 The raw figures for silver, EURUSD and NAS100 are before costs.
 
 - **Both fail.** After costs both lose in both halves, and neither beats random timing.
-- **The ladder is the best version so far** — 33% win, 14.6 trades a month on gold — and before
+- **The ladder is the best version so far** — 33% win, 14.3 trades a month on gold — and before
   costs it is positive in both halves. But random entries with the same stops and targets make
-  +0.033R against its +0.059R, so the setup adds almost nothing to where the stop and target sit.
+  +0.024R against its +0.070R, so the setup adds little to where the stop and target sit.
 - ⚠ Found after the ladder's run: both 28 Jul entries sit on the shift LEVEL on the user's feed
   (4046.36 against a 4046.60 level and a 4046.38 close; 4046.15 against 4046.16 and 4045.54), so the
   ladder's "sell at the close" is an approximation of a limit at the level. Not re-run — its one test
@@ -430,6 +436,43 @@ The raw figures for silver, EURUSD and NAS100 are before costs.
 **The pattern across every pass: each version lands on its own random control.** Wherever the stop
 and target are placed, random moments with the same stop and target make about the same. The
 structure decides WHERE the stop and target sit; on these bars it does not decide WHEN price moves.
+
+### Time of day, the time limit and weekends — before costs, same day
+
+The user asked whether the time limit is cutting winners, and which sessions lose. Gold 1m, before
+costs, by the time the order FILLED (New York), with the time limit the tests used (500 minutes).
+
+| the time limit | full rule | second realign 1:3 | second realign, lower low |
+|---|---|---|---|
+| trades it closes | 3% (97% of them green) | 34% (71% green) | 22% (70% green) |
+| win rate, 500 min / 24 h / 3 days | 33.7% / 32.2% / 32.2% | 37.1% / 28.3% / 27.0% | 46.3% / 41.2% / 40.5% |
+| avg R, 500 min / 24 h / 3 days | +0.070 / +0.090 / +0.103 | +0.039 / +0.003 / +0.027 | +0.052 / +0.000 / +0.026 |
+
+- **The limit barely touches the full rule**, and letting its few open trades run adds a little.
+- **For the second realign the limit PROPS UP the win rate**: most trades it closes green would have
+  gone on to the stop. Its 37% at 3R is 27% without the limit.
+- **Weekends:** the full rule held 9 trades over a weekend for −35.4R, almost all from ONE trade —
+  25 Feb 2022, a short with an 82-cent stop that reopened $33 through it (−40.4R). Without weekend
+  holds it averages +0.101R. The second realign's weekend holds made money (worst −1.0R).
+
+| full rule by session, no weekend holds | trades | win | avg R |
+|---|---|---|---|
+| Asia | 392 | 35.7% | −0.017 |
+| London, before New York | 274 | 35.4% | +0.095 |
+| London and New York together | 284 | 26.4% | +0.227 |
+| New York, after London | 150 | 32.7% | −0.035 |
+| between the New York close and Asia | 56 | 50.0% | +0.688 |
+
+- The full rule's worst hours: 01:00 (−22.8R over 59 trades), 03:00 (−16.3R), 23:00 (−13.7R);
+  its worst days Tuesday (−26.0R) and Friday (−16.2R).
+- The second realign at 1:3 loses in **London before New York** (206 trades, 27.2% win, −0.100R),
+  worst at 04:00 and 05:00.
+- ⚠ **None of these differences is past noise.** A session holds 150–400 trades and an hour 20–100,
+  so a bucket's average moves ±0.2 to ±0.4R by chance. They are places to look on a chart, not
+  filters — adopting one would be a new search on bars already used eight times.
+
+Every trade, with its session and result (nothing on or after 17 Aug 2026, so the marking list stays
+blind): `backtest/reports/rso_realign_breaker/trades_by_session_2020-01_to_2026-08-16.csv`.
 
 ## What this leaves
 
