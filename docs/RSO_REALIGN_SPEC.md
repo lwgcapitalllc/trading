@@ -7,6 +7,8 @@ and charged, on every frame: **it does not help, and on 5m and 15m it hurts** (s
 at entry — **the far close is a bad entry as he said; nothing else in it clears the bar** (below).
 **2026-09-16, third pass:** the gold family on silver, EURUSD and NAS100 — bars nothing had looked
 at — **failed 0 of 3** (below). The pattern is measured out on this repo's data.
+**2026-09-16, fourth pass:** the user's breaker entry (a limit back at the counter push's BOS level)
+— **both of the user's trades found to the cent, and the rule loses on all four instruments** (below).
 Tool: `backtest/tools/rso_realign_study.py` (its docstring carries the same record).
 Tool note: `backtest/notes/tools.md`. Nothing here is a strategy, a bot or a Pine file.
 
@@ -279,6 +281,62 @@ z ≥ 2 against its matched control on 2 of its 3 cells, on 2 of the 3 instrumen
 Reports: `backtest/reports/rso_realign_xsym/<symbol>/grid_free.csv`. ⚠ The three new caches are
 now looked-at data for this pattern.
 
+## The breaker entry — 2026-09-16, fourth pass, failed
+
+Two more of the user's 1m trades, both longs on 15 Sep 2026, and a different entry from everything
+above. Long (a short mirrors):
+
+1. A bullish BOS — the trend.
+2. A bearish SOS, then **one bearish BOS** — the shakeout. That broken level is the future entry.
+3. A bullish SOS — the realign. Price leaves.
+4. **A limit back AT the level the bearish BOS broke.** Stop at the shakeout low. Target the high
+   price made after the realign.
+
+| | realign | breaker vs the user's entry | stop vs the user's | filled (NY) | result on PU Prime |
+|---|---|---|---|---|---|
+| trade 1 | 08:34 | −$0.45 | −$0.04 | 10:39, 2 hours later | +5.27R to the high |
+| trade 2 | 11:06 | $0.00 | +$0.05 | **20:56, 10 hours later** | +20.47R to the high |
+
+The detector finds both. Trade 2 only fills if the level stays valid for a day, so a 24-hour window
+was declared, with the pass rule, before any 24-hour result was read: **1m, one counter BOS, the
+breaker limit, structure stop, target the post-realign high. PASS = gold charged positive in both
+halves at z ≥ 2, AND raw positive in both halves on 2 of silver, EURUSD and NAS100.**
+
+| instrument | trades | a month | win | avg R | 1st half | 2nd half | random | z |
+|---|---|---|---|---|---|---|---|---|
+| gold, ECN | 1,109 | 13.8 | 23.9% | **−0.162** | −127.2R | −52.6R | −0.123 | −0.56 |
+| gold, raw | 1,122 | 14.0 | 23.4% | −0.066 | −75.6R | +1.6R | +0.037 | −1.23 |
+| silver, raw | 1,141 | 14.2 | 21.5% | −0.081 | −17.9R | −74.6R | +0.035 | −1.40 |
+| EURUSD, raw | 1,286 | 16.0 | 23.4% | +0.125 | +200.8R | **−40.1R** | +0.011 | +0.79 |
+| NAS100, raw | 1,134 | 14.1 | 23.9% | −0.054 | −55.5R | −6.1R | +0.040 | −1.34 |
+
+**It fails every part of the rule.** Why, from gold's 1m trades before costs:
+
+| the high sits, at the fill | trades | reached | avg R |
+|---|---|---|---|
+| under 1R | 80 | 45% | −0.098 |
+| 1–2R | 176 | 39% | −0.016 |
+| 2–3R | 161 | 30% | +0.083 |
+| 3–5R | 194 | 23% | +0.201 |
+| 5–10R | 245 | 11% | −0.080 |
+| 10R and more | 266 | 4% | −0.360 |
+
+- **His two examples, 5.3R and 20.5R, come from the two buckets where the high is reached 11%
+  and 4% of the time.** Half of all fills sit 4.4R or more from the high.
+- **The stop is the other half of it.** The median is $1.40. Stops under $2 reach the high 12–18%
+  of the time and lose; stops of $2 and more reach it about 30% and break even before costs.
+- **The 15m agreeing does not rescue it**: −0.066 → +0.005R raw, −0.162 → −0.237R charged.
+- A four-hour window (read first, not declared): no breaker cell past z 2 on gold, silver or
+  NAS100. EURUSD's 5m shows a handful at z 2.2–2.5 among hundreds of searched cells.
+
+⚠ Both of the user's trades are real and both win on PU Prime's bars. The rule that finds them also
+finds 13 losers a month for every one like them, so **the filter is the user's, and it is not in the
+chart structure this tool reads.** Four weeks of the detector's setups, outcomes left out, for
+the user to mark TAKE or SKIP: `backtest/reports/rso_realign_breaker/candidates_2026-08-17_to_09-16.csv`
+(32 setups, 26 filled within a day).
+
+Reports: `backtest/reports/rso_realign_breaker/<symbol>/` (four hours) and `<symbol>_24h/`.
+
 ## What this leaves
 
 - 🔴 **Both periods are spent for this pattern.** Never test another cell on 2018-09-14 →
@@ -300,3 +358,5 @@ now looked-at data for this pattern.
   realignment that pays on this repo's data is the Realign bot's — the higher frame FALSE-BROKEN
   and the lower frame realigning — `strategies/python/realign/`, and its next step is the parity
   gate, not another pass on this pattern.
+- **The breaker entry is not it either** (2026-09-16, above). The detector finds the user's trades to
+  the cent; the user's marks on the four weeks of candidates are the only input left that can find the filter.

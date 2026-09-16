@@ -268,6 +268,26 @@ CLAUDE.md gets at most one index line.
   z +1.23). ⚠ The fetch pin is the terminal's own name, `PUPrime-Demo`, not the cache folder's
   `PUPrime_Demo` — the folder spelling is refused as a different broker. Reports:
   `backtest/reports/rso_realign_xsym/<symbol>/grid_free.csv`.
+  **The breaker entry — MEASURED 2026-09-16 (fourth pass): FAILED.** From two more of the user's 1m
+  trades (15 Sep 2026 longs): after the realign, a limit back AT the level the counter push's BOS
+  broke, stop at the shakeout extreme, target the high made between the realign and the fill.
+  Entries `rso` / `rso1` (last / first counter-BOS level), exit `tH`, `--rso-pending-min`. Recall on
+  agent bars: both trades found — trade 1 breaker $0.45 from the user's entry, stop $0.04 from theirs, +5.27R;
+  trade 2 to the cent, but filled 10 hours later, so only a 24-hour window catches it (+20.47R).
+  Declared before the 24-hour results were read: 1m, one counter BOS, `rso`, structure stop, `tH`,
+  24 hours — PASS = gold charged positive in both halves at z ≥ 2, AND raw positive in both halves
+  on 2 of silver / EURUSD / NAS100. **Gold ECN: 1,109 trades, 23.9% win, −0.162R, z −0.56, both
+  halves negative. Raw: gold −0.066R, silver −0.081R, NAS100 −0.054R, EURUSD +0.125R with its
+  second half −40.1R — 0 of 3.** Why (gold 1m, descriptive): the median target sits 4.4R away at
+  the fill; it is reached 45% of the time under 1R, 23% at 3–5R, 11% at 5–10R and 4% past 10R, and
+  the past-10R trades lose −0.36R raw — the user's two examples (5.3R, 20.5R) are from the last two
+  buckets. The median stop is $1.40; stops under $2 reach the target 12–18% of the time and lose,
+  stops of $2+ reach it ~30% and break even raw. The 15m agreeing moves it −0.066 → +0.005R raw and
+  −0.162 → −0.237R charged. The 4-hour window: no breaker cell at z ≥ 2 on gold, silver or NAS100;
+  EURUSD 5m has a handful at z 2.2–2.5 among hundreds of searched cells (noise-level, not the declared cell).
+  ✅ Every pre-existing cell reproduces exactly after the patch (max diff 0.0 on the 15m grid).
+  Reports: `backtest/reports/rso_realign_breaker/<symbol>[_24h]/`; the four weeks of setups for the
+  user to mark TAKE / SKIP, outcomes left out: `.../candidates_2026-08-17_to_09-16.csv` (32 setups).
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,

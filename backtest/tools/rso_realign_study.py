@@ -158,6 +158,28 @@ t3 — failed its gold holdout, so bars nothing has looked at are its only remai
     in all 8 exits on silver and EURUSD, 7 of 8 positive on NAS100 with none past z 1.3. Reports:
     backtest/reports/rso_realign_xsym/<symbol>/. ⚠ Fetch pin = the terminal's name, PUPrime-Demo.
 
+THE BREAKER ENTRY (added 2026-09-16, fourth pass, from two more of the user's 1m trades, both
+15 Sep 2026 longs). His rule: the counter push leaves a BOS behind (a bearish break, for a long);
+after the realign SOS price leaves, and the trade is a limit BACK AT that broken level, stop at the
+shakeout extreme, target the high made after the realign.
+    rso / rso1  a limit at the level the LAST / FIRST counter-trend BOS broke; dies on a close through
+                the shakeout extreme or after 240 chart bars (--rso-pending-min: a window in minutes)
+    tH          a fixed target at the extreme made between the realign close and the fill
+RECALL (bars straight from the agent, cache untouched): both trades found. Trade 1 — breaker
+4275.94 vs the user's 4276.39, stop 4271.39 vs 4271.43, filled 10:39 NY, +5.27R to the high. Trade 2 —
+breaker and stop to the cent, filled 20:56 NY (theirs 21:00) ONLY with a 24-hour window, +20.47R.
+DECLARED before any 24-hour result was read (the 4-hour grids had been read): the user's cell is
+1m, one counter BOS, `rso`, structure stop, `tH`, 1440-minute window. PASS = on gold CHARGED it is
+positive in both halves and z >= 2 against its matched control, AND raw it is positive in both
+halves on at least 2 of silver, EURUSD and NAS100. The 5m and 15m versions, `tS` and `swing` are
+reported for information only. ⚠ Gold 2020-2026 has been searched for this pattern four times
+before this; a pass here is a lead for forward trading, never a validated edge.
+🔴 MEASURED 2026-09-16: FAILED. Gold ECN 1,109 trades, 23.9% win, -0.162R, z -0.56, both halves
+    negative; raw gold -0.066R, silver -0.081R, NAS100 -0.054R, EURUSD +0.125R with its second half
+    -40.1R. The high is 4.4R away at the median fill and is reached 11% of the time at 5-10R, 4% past
+    10R (the user's two trades: 5.3R, 20.5R). Stops under $2 (median $1.40) reach it 12-18% and lose. The
+    15m gate: -0.066 -> +0.005R raw, -0.162 -> -0.237R charged. Record: docs/RSO_REALIGN_SPEC.md.
+
 Usage:
   python backtest/tools/rso_realign_study.py --recall          # find the user's 5 trades first
   python backtest/tools/rso_realign_study.py                   # the grid, 2020-01 -> 2026-09
@@ -210,12 +232,14 @@ HTF_GATE = {1: 15, 5: 15, 15: 60}  # the frame a gated setup must agree with (--
 GATES = ("none", "htf", "intact")
 FRAMES = (1, 5, 15)
 COUNTERS = ("1", "2+")
-ENTRIES = ("close", "fib50", "pb382", "split", "retest", "disp")
+ENTRIES = ("close", "fib50", "pb382", "split", "retest", "disp", "rso", "rso1")
+RSO_PENDING = 240  # chart bars the breaker limit may wait — first reading (example 1: 2.5h on 1m)
+RSO_PENDING_MIN = None  # --rso-pending-min: a window in MINUTES on any frame (example 2: 10h on 1m)
 DISP_ATR = 1.0  # --disp-atr: a realign close within this many ATR of the shift level is "near"
 DISP_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))
 RR_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))  # last high / stop, at entry
 STOPS = ("struct", "atr2")
-EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing")
+EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing", "tH")
 FIXED_R = {"t1": 1.0, "t1.5": 1.5, "t2": 2.0, "t3": 3.0}
 # How far price must trade THROUGH a resting limit before it counts as filled. 0.0 = a touch fills,
 # the optimistic reading a bar walk always makes (a touch says nothing about queue position). A
@@ -277,6 +301,10 @@ class Setup:
     atr: float
     lh_old: float = math.nan  # the lower high before the one the counter shift broke, side space
     lvl: float = math.nan  # the swing the realign SOS broke — the shift level, side space
+    cb_last: float = (
+        math.nan
+    )  # the swing the LAST counter-trend BOS broke — the breaker, side space
+    cb_first: float = math.nan  # ...and the FIRST, when the counter push broke more than one
     disp_atr: float = math.nan  # how far past it the realign bar closed, in chart ATR(14)
     htf_ok: bool = False  # gate frame's external direction agrees at the realign close
     intact: bool = False  # ...and never disagreed, from the bar before the counter shift on
@@ -310,12 +338,14 @@ def detect(o, h, lo, c) -> tuple[list, list]:
     state, trend_n, push_n, counter, origin, trend_at = "none", 0, 0, -1, math.nan, 0
     lhs: list = []  # the lower highs of the current bear run, oldest first
     lh_old = math.nan
+    cbs: list = []  # the swings the counter push's BOS broke, in order
     for i in range(len(c)):
         ext = eng.update(Bar(index=i, open=o[i], high=h[i], low=lo[i], close=c[i])).external
         if ext.bear_sos:
             if state == "push":
                 lvl = float(ext.bear_bos_price) if ext.bear_bos_price is not None else math.nan
-                setups.append((i, counter, origin, trend_at, push_n, lh_old, lvl))
+                cb = (cbs[-1], cbs[0]) if cbs else (math.nan, math.nan)
+                setups.append((i, counter, origin, trend_at, push_n, lh_old, lvl, cb))
             state, trend_n = "trend", 0
             lhs = [float(ext.bear_bos_high)] if ext.bear_bos_high is not None else []
         elif ext.bear_bos:
@@ -339,10 +369,13 @@ def detect(o, h, lo, c) -> tuple[list, list]:
                     trend_n,
                     0,
                 )
+                cbs = []
             else:
                 state = "void"  # a bull run with no qualifying trend before it
         elif ext.bull_bos and state in ("counter", "push"):
             state, push_n = "push", push_n + 1
+            if ext.bull_bos_price is not None:
+                cbs.append(float(ext.bull_bos_price))
     return setups, bos
 
 
@@ -400,7 +433,7 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
         raw_setups, bos = found[(F, side)]
         g_last, gdir = gmeta[(HTF_GATE[F], side)], found[(HTF_GATE[F], side, "gate")]
         setups = []
-        for j, counter, origin, trend_at, push_n, lh_old, lvl in raw_setups:
+        for j, counter, origin, trend_at, push_n, lh_old, lvl, cb in raw_setups:
             if j < WARMUP:
                 continue
             m, a = int(last[j]), int(first[counter])
@@ -427,6 +460,8 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
                     float(atr[j]),
                     lh_old,
                     lvl=lvl,
+                    cb_last=cb[0],
+                    cb_first=cb[1],
                     disp_atr=(lvl - float(tp.C[m])) / float(atr[j]) if atr[j] > 0 else math.nan,
                     htf_ok=htf_ok,
                     intact=intact,
@@ -470,6 +505,22 @@ def fill(fr: Frame, tp: Tape, s: Setup, how: str):
         return fill_sl(fr, tp, s)
     if how == "disp":  # the user's rule: near the shift level -> take the close; far -> wait for it
         return fill(fr, tp, s, "close" if s.disp_atr <= DISP_ATR else "retest")
+    if how in ("rso", "rso1"):  # the user's breaker: a limit back AT the counter-trend BOS level
+        lv = s.cb_last if how == "rso" else s.cb_first
+        if not math.isfinite(lv):
+            return None, math.nan, False, s.m
+        bars = RSO_PENDING if RSO_PENDING_MIN is None else max(1, RSO_PENDING_MIN // fr.minutes)
+        jend = min(s.j + bars, fr.n - 1)
+        if jend <= s.j:
+            return None, math.nan, False, s.m
+        js = np.arange(s.j + 1, jend + 1)
+        dead = np.flatnonzero(tp.C[fr.last[js]] > s.top)  # through the shakeout extreme: dead
+        jstop = int(js[dead[0]]) if len(dead) else jend
+        a, b = int(fr.first[s.j + 1]), int(fr.last[jstop])
+        hit = np.flatnonzero(tp.H[a : b + 1] >= lv + tp.en + LIMIT_THROUGH)
+        if not len(hit):
+            return None, math.nan, False, b
+        return a + int(hit[0]), lv, True, b
     if how == "retest":  # a limit back AT the shift level; dies like the fib entries
         if not math.isfinite(s.lvl):
             return None, math.nan, False, s.m
@@ -604,8 +655,10 @@ def walk(
     return at_time()
 
 
-def exit_rule(exit_: str, e: float, R0: float, origin: float):
+def exit_rule(exit_: str, e: float, R0: float, origin: float, post: float = math.nan):
     """-> (walk kind, target price) or None when the target sits at or behind the entry."""
+    if exit_ == "tH":  # the extreme price made between the realign close and the fill
+        return ("fixed", post) if post < e else None
     if exit_ in FIXED_R:
         return "fixed", e - FIXED_R[exit_] * R0
     if exit_ == "tS":
@@ -650,7 +703,8 @@ def trade(
     R0 = S0 - e
     if not R0 > 0:
         return None
-    rule = exit_rule(exit_, e, R0, s.origin)
+    post = float(tp.L[s.m : kf + 1].min()) if kf >= s.m else math.nan
+    rule = exit_rule(exit_, e, R0, s.origin, post)
     if rule is None:
         return None
     kind, T = rule
@@ -678,7 +732,7 @@ def evaluate(
     F: int,
     costs: dict,
     cells=None,
-    hows=("close", "fib50", "pb382", "retest", "disp"),
+    hows=("close", "fib50", "pb382", "retest", "disp", "rso", "rso1"),
     stops=STOPS,
 ) -> dict:
     """Every setup through every (entry, stop, exit) on frame F. -> {(entry, stop, exit): rows},
@@ -881,7 +935,7 @@ def recall(raw: pd.DataFrame, tapes: dict, frs: dict, frames) -> None:
 
 
 def main() -> None:
-    global DISP_ATR
+    global DISP_ATR, RSO_PENDING_MIN
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="puprime_ecn")
     ap.add_argument("--frames", default="1,5,15")
@@ -903,6 +957,12 @@ def main() -> None:
     )
     ap.add_argument("--disp-atr", type=float, default=DISP_ATR, help="the near/far line for `disp`")
     ap.add_argument(
+        "--rso-pending-min",
+        type=int,
+        default=None,
+        help="how long the breaker limit waits, in MINUTES on any frame (default: 240 chart bars)",
+    )
+    ap.add_argument(
         "--symbol",
         default="XAUUSD.p",
         help="another PU Prime symbol's cached M1 bars — a TEST of a gold-built rule, run --free: "
@@ -922,6 +982,7 @@ def main() -> None:
         spread, plabel = 0.0, "free"
         costs.update(comm_rt=0.0, swap_long=0.0, swap_short=0.0)
     DISP_ATR = args.disp_atr
+    RSO_PENDING_MIN = args.rso_pending_min
     gates = tuple(args.gates.split(","))
     if any(g not in GATES for g in gates):
         sys.exit(f"--gates must be from {GATES}, got {args.gates!r}")
@@ -988,7 +1049,7 @@ def main() -> None:
         hows, stops, ents, drawn = ("sl",), ("lh", "atr2"), ("sl",), ("sl", "lh")
     else:
         hows, stops, ents, drawn = (
-            ("close", "fib50", "pb382", "retest", "disp"),
+            ("close", "fib50", "pb382", "retest", "disp", "rso", "rso1"),
             STOPS,
             ENTRIES,
             ("close", "struct"),
@@ -1023,7 +1084,17 @@ def main() -> None:
     ctls = {k: control(trades[k], frs, k[0], tapes, pools, costs, rng) for k in cands}
     # The rule as drawn always gets its control, whether or not it is a candidate: the
     # question is what HIS rule does against random timing, not only what the best cell does.
-    users = [drawn] if args.sl else [drawn, ("retest", "struct"), ("disp", "struct")]
+    users = (
+        [drawn]
+        if args.sl
+        else [
+            drawn,
+            ("retest", "struct"),
+            ("disp", "struct"),
+            ("rso", "struct"),
+            ("rso1", "struct"),
+        ]
+    )
     for F in frames:
         for g in gates:
             for c in COUNTERS:
@@ -1079,10 +1150,13 @@ def main() -> None:
                     )
                     print(row(label(k), grid[k], ex_))
         if not args.sl:
+            wait = f"{RSO_PENDING} bars" if RSO_PENDING_MIN is None else f"{RSO_PENDING_MIN} min"
             for en_st in users[1:]:
                 print(
                     f"\n{F}m gate=none — entry `{en_st[0]}` (retest = a limit back at the shift level; "
-                    f"disp = the close when it sits within {DISP_ATR:g} ATR of it, else the retest), structure stop"
+                    f"disp = the close when it sits within {DISP_ATR:g} ATR of it, else the retest; "
+                    f"rso / rso1 = the breaker: a limit at the last / first counter-BOS level, {wait}), "
+                    "structure stop"
                 )
                 print(HEAD + "  control      z")
                 for c in COUNTERS:
