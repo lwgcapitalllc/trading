@@ -232,7 +232,9 @@ class SosFadeStrategy:
         values — `algos/live/feed.timeframe_for_minutes`. Rule 1: off and cannot-have must not
         arrive as the same answer.
         """
-        if not self.config.exec_secondary:
+        # The no-gap shift entry (`exec_ngs`) runs on the same fast clock as the re-entry, so
+        # either one asks for it.
+        if not (self.config.exec_secondary or getattr(self.config, "exec_ngs", False)):
             return None
         from .dual_clock import fast_tf_minutes
 

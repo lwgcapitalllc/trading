@@ -32,7 +32,7 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 # repo-root on path so `backtest.fills` imports standalone, matching strategy.py's shim.
 _ROOT = Path(__file__).resolve().parents[3]
@@ -49,6 +49,7 @@ from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSn
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
 from engines.fibonacci.geometry import fib_level
 
+from .secondary import NGS_SRC
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
 
 
@@ -177,6 +178,9 @@ class Trade:
     # is that a scratch and a stop-out are different situations, and one `secondary` tag cannot
     # tell you which one you are looking at. ⚠ NOT the trigger — see `SecArm.l_after`.
     after: Optional[str] = None
+    # For a SECONDARY, which trigger opened it ("Structure shift" | "gap" | "reclaim" |
+    # "nogap shift"). Reporting only — the open trade's ladder reads its own copy, never this.
+    src: Optional[str] = None
     # Reporting-only excursion (no decision weight): the most this trade was ever showing in
     # profit (`mfe_usd` ≥ 0, favorable) and the deepest it sat against us (`mae_usd` ≤ 0, adverse)
     # before it closed — measured across the full hold on bar high/low, the same intrabar
@@ -824,6 +828,10 @@ class Execution:
         # the secondary sniper limit, placed/filled on the fill-clock stream (step_secondary). Its own slot
         # so the 15m `_place_entries` can never clobber it. At most one side arms (fibo_dir is one).
         self._pend_sec: Optional[_Pending] = None
+        # The no-gap shift entry (`exec_ngs`): the live no-gap setup per side, rebuilt on every 15m
+        # step, and the setups it has already taken (by SOS time). Read by the fast clock only.
+        self.ngs_ctx: Tuple[Optional[Any], Optional[Any]] = (None, None)
+        self._ngs_done: set = set()
 
         # one-trade-per-leg latches (Pine tradedSosL / tradedSosS)
         # "Order block (no FVG)" only: has a QUALIFYING gap ever been in the band on this setup?
@@ -1176,6 +1184,8 @@ class Execution:
         to return. MEASURED 2026-08-23: 29 of 90 re-entry orders waited over 30 minutes for that
         return and 8 waited over 12 hours, and Aaron's 2025-08-19 reclaim is one of the 8. A market
         entry buys a worse price and a wider stop in exchange for never missing the move."""
+        if src == NGS_SRC:
+            return True    # the no-gap shift always enters at the next open (`exec_ngs`)
         return (src == "reclaim"
                 and getattr(self._cfg, "exec_rec_entry_mode", "Retest") == "Market")
 
@@ -1202,6 +1212,8 @@ class Execution:
         # stop floor below still reads the raw stop distance, which is the right question (a leg
         # too short to trade is too short whatever size you put on it).
         risk_pct = cfg.exec_risk_pct * getattr(cfg, "exec_sec_risk_pct", 100.0) / 100.0
+        if NGS_SRC in (getattr(arm, "l_src", None), getattr(arm, "s_src", None)):
+            risk_pct = cfg.exec_risk_pct * getattr(cfg, "exec_ngs_risk_pct", 100.0) / 100.0
         if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
@@ -1301,6 +1313,7 @@ class Execution:
         # accumulating state while a position from the other side is open, and that path never
         # runs then.
         self._record_misses(sig, seq, dec, long_edge, short_edge)
+        self.ngs_ctx = self._ngs_context(sig, seq, long_edge, short_edge)
 
         # ── Phase B: at close, (re)place orders for the next bar ──
         if self._pos_dir != 0 and self._entry_kind != "secondary":
@@ -1463,6 +1476,42 @@ class Execution:
         return (lo <= sig.ny_hour < hi) if lo < hi else (sig.ny_hour >= lo or sig.ny_hour < hi)
 
     # ── missed-setup watch (Pine f_w23Arm / f_w23, 3116-3194 + 4022-4023) ────────
+    def _ngs_context(self, sig, seq, long_edge, short_edge):
+        """The live NO-GAP setup on each side, for the fast clock's `NoGapShiftArm` (`exec_ngs`).
+
+        A DECISION input, so it is computed here from the sequence rather than read off the miss
+        watch, which is reporting-only. The conditions are the miss watch's code 3 while the setup
+        is still alive: armed by an ENABLED source, SOS'd, 0.5 tagged, no gap edge, not traded.
+        """
+        if not getattr(self._cfg, "exec_ngs", False):
+            return (None, None)
+        from .secondary import NoGapCtx
+
+        cfg = self._cfg
+        out = []
+        for d, stage, sos_bar, swp, div, tagged, edge, t_bar, t_ms in (
+            (1, seq.l_stage, seq.l_sos_bar, seq.sos_l_swp, seq.sos_l_div,
+             seq.l_half or seq.l_618, long_edge, self._traded_sos_l, self._traded_sos_l_ms),
+            (-1, seq.s_stage, seq.s_sos_bar, seq.sos_s_swp, seq.sos_s_div,
+             seq.s_half or seq.s_618, short_edge, self._traded_sos_s, self._traded_sos_s_ms),
+        ):
+            ctx = None
+            sos_ms = self._bar_ms.get(sos_bar) if sos_bar is not None else None
+            if (stage >= 2 and sos_ms is not None and tagged and edge is None
+                    and ((cfg.exec_arm_sweep and swp) or (cfg.exec_arm_div and div))
+                    and sig.fibo_dir == d
+                    and sig.fibo_p10 is not None and sig.fibo_p7 is not None
+                    and not self._same_leg(t_bar, t_ms, sos_bar)
+                    and (d, sos_ms) not in self._ngs_done):
+                ctx = NoGapCtx(dir=d, sos_ms=sos_ms, stop=float(sig.fibo_p10),
+                               extreme=float(sig.fibo_p7))
+            out.append(ctx)
+        return (out[0], out[1])
+
+    def ngs_mark_traded(self, direction: int, sos_ms) -> None:
+        """One trade per no-gap setup. Called by the fast clock on the fill."""
+        self._ngs_done.add((direction, sos_ms))
+
     def _record_misses(self, sig, seq, dec, long_edge, short_edge) -> None:
         """Track each side's live setup and book a MISS when it dies without trading.
 
@@ -3148,6 +3197,7 @@ class Execution:
             stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason,
             kind=self._entry_kind,
             after=self._entry_after,
+            src=self._entry_src,
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
             mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
             adds=[self._add_record(lot) for lot in self._add_lots],
@@ -3715,7 +3765,9 @@ class Execution:
             # a stop a median 0.43R away, so a rung that suits the gap entry is the wrong distance
             # here. MEASURED 2026-08-21: all-out at 3x made 6,740x over 7.9 years where the shipped
             # bank-half-at-1.25x ladder made 3,111x — worse than taking no re-entry at all.
-            if src == "reclaim":
+            if src == NGS_SRC:
+                tp_r = getattr(self._cfg, "exec_ngs_tp_r", 3.0)
+            elif src == "reclaim":
                 # ⚠ The fallback MIRRORS the config default and must move with it. It is
                 # unreachable through a real config (the field always exists), but a duck-typed
                 # stand-in that fell back to a stale number would price the rung differently from
@@ -3742,7 +3794,9 @@ class Execution:
             # The RECLAIM half banks its own percentage — see the note on the first-target rung in
             # `_open_position`. Its default is 100 (the whole position off at its target, no
             # runner), which is the configuration that measured 6,740x.
-            if src == "reclaim":
+            if src == NGS_SRC:
+                own = 100.0    # the whole position off at the target — no runner (`exec_ngs`)
+            elif src == "reclaim":
                 own = getattr(self._cfg, "exec_rec_tp1_pct", 100.0)
             else:
                 own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)

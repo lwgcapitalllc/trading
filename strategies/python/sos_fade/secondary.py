@@ -865,3 +865,77 @@ class SecondaryArm:
         else:
             self._s_dead = seq.s_sos_bar
             self._s_rest = None
+
+
+# ── the NO-GAP SHIFT entry (exec_ngs) ────────────────────────────────────────────
+NGS_SRC = "nogap shift"
+
+
+@dataclass(frozen=True)
+class NoGapCtx:
+    """What the 15m side knows about one live no-gap setup — built by `Execution.step`.
+
+    Only built while the setup has armed, SOS'd and tagged the 0.5 with NO gap to rest a limit
+    on, and has not been traded. `stop` is the 15m 1.0 fib, `extreme` the 0.0.
+    """
+
+    dir: int
+    sos_ms: int
+    stop: float
+    extreme: float
+
+
+class NoGapShiftArm:
+    """Arms the no-gap setup on the first fast-bar shift in its direction. Aaron, 2026-09-15.
+
+    A shift is a change of character on EITHER the main or the internal fast-frame structure.
+    The bar must close strictly between the 1.0 stop and the 0.0 extreme. A fast bar whose wick
+    reaches either one retires the setup for good: past the 1.0 the setup is lost, past the 0.0
+    the move has already happened without us. Run 28 applied the same two rules.
+
+    The armed record is a `SecArm` with `src = "nogap shift"`, so the execution sizes, fills and
+    manages it through the re-entry path, at market, on its own exit ladder.
+
+    ⚠ The tag is only KNOWN at the 15m close that reported it, so a shift inside that 15m bar is
+    not seen. The screen could see it; this cannot, and the difference is part of what Run 29
+    measures.
+    ⚠ Holds no warm state of its own beyond the retired setups — the two structure feeds are the
+    caller's, stepped on every fast bar whether or not this is on.
+    """
+
+    def __init__(self, tp_r: float) -> None:
+        self._tp_r = float(tp_r)
+        self._dead: set = set()      # (dir, sos_ms) retired by a wick or a fill
+
+    def retire_key(self, key) -> None:
+        """Retire a setup by `(dir, sos_ms)` — called on the fill."""
+        self._dead.add(tuple(key))
+
+    def update(self, ctxs, shifted_bull: bool, shifted_bear: bool,
+               h: float, l: float, c: float) -> SecArm:
+        kw: dict = {}
+        for ctx in ctxs:
+            if ctx is None or (ctx.dir, ctx.sos_ms) in self._dead:
+                continue
+            d = ctx.dir
+            touched = (l <= ctx.stop or h >= ctx.extreme) if d > 0 else (
+                h >= ctx.stop or l <= ctx.extreme)
+            if touched:
+                self._dead.add((d, ctx.sos_ms))
+                continue
+            if not (shifted_bull if d > 0 else shifted_bear):
+                continue
+            dist = (c - ctx.stop) * d
+            if dist <= 0:
+                continue
+            tp = c + d * self._tp_r * dist
+            # The second rung is parked twice as far out. With the whole position banked at the
+            # first, nothing reaches it; it only has to stay BEYOND the first so the stop ladder,
+            # which climbs rungs in distance order, never stages off it. The first rung itself is
+            # re-priced off the real fill by `Execution._first_rung`.
+            far = c + d * 2 * self._tp_r * dist
+            p = "l_" if d > 0 else "s_"
+            kw.update({p + "armed": True, p + "edge": c, p + "sl": ctx.stop,
+                       p + "tp1": tp, p + "tp2": far, p + "leg": ctx.sos_ms,
+                       p + "src": NGS_SRC})
+        return SecArm(**kw)

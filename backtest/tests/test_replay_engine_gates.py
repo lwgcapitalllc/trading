@@ -136,6 +136,28 @@ def _reads_of(field: str, sources) -> list[str]:
     return hits
 
 
+# Reads this guard cannot tell apart from a stack read, stated one by one with their COUNT so a
+# second read in the same file still fails. Each is a strategy reading the base structure engine's
+# OWN events on an engine it built privately — not the stack's gated engine of the same name.
+_NOT_THE_STACK = {
+    # The fast-frame internal change-of-character feed (`InternalShift1m`, used by the no-gap
+    # shift entry). It runs its own `StructureEngine` on 1-minute bars; the 15m stack's switch
+    # does not reach it. Added 2026-09-16.
+    ("internal", "strategies/python/sos_fade/secondary.py"): 1,
+}
+
+
+def _stack_reads(gate: str, hits: list[str]) -> list[str]:
+    by_file: dict = {}
+    for h in hits:
+        by_file.setdefault(h.rsplit(":", 1)[0], []).append(h)
+    out = []
+    for path, file_hits in by_file.items():
+        if len(file_hits) != _NOT_THE_STACK.get((gate, path), 0):
+            out.extend(file_hits)
+    return out
+
+
 @pytest.mark.parametrize("pkg", sorted(_PACKAGES))
 def test_no_strategy_READS_an_engine_it_has_switched_OFF(pkg):
     """The one that would cost money. A gated engine hands back `None`, and `None` read as
@@ -149,7 +171,7 @@ def test_no_strategy_READS_an_engine_it_has_switched_OFF(pkg):
     broken = {}
     for gate in _GATED:
         if getattr(cfg, gate) is False:
-            hits = _reads_of(gate, sources)
+            hits = _stack_reads(gate, _reads_of(gate, sources))
             if hits:
                 broken[gate] = hits
     assert not broken, (

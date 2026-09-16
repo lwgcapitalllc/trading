@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 from zoneinfo import ZoneInfo
 
-from .secondary import SecondaryArm, Structure1m
+from .secondary import NGS_SRC, InternalShift1m, NoGapShiftArm, SecondaryArm, Structure1m
 
 _NY = ZoneInfo("America/New_York")
 
@@ -116,6 +116,12 @@ class DualClock:
         self._major_length = int(major_length)
         self.struct_fast = Structure1m(major_length=major_length)
         self.arm_sm = SecondaryArm(strategy.config)
+        # The no-gap shift entry (`exec_ngs`). Its internal-structure feed is built only when the
+        # entry is on — a second engine on every fast bar is not free.
+        self._ngs_on = bool(getattr(strategy.config, "exec_ngs", False))
+        self.struct_fast_int = InternalShift1m(major_length) if self._ngs_on else None
+        self.ngs_arm = NoGapShiftArm(strategy.config.exec_ngs_tp_r) if self._ngs_on else None
+        self._ngs_open = None    # the NoGapCtx of the no-gap trade currently open, if any
 
         # The last-CLOSED 15m context. `None` until the first 15m bar has been stepped, and the
         # secondary refuses to run until then — a fast bar with no 15m context behind it has
@@ -223,27 +229,59 @@ class DualClock:
         # machine, so skipping a bar because the secondary is switched off would leave it
         # computing over a history that never happened the moment it was switched on.
         m1 = self.struct_fast.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+        mi = (self.struct_fast_int.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+              if self.struct_fast_int is not None else None)
 
-        if not self._st.config.exec_secondary or self.last_sig is None:
+        sec_on = bool(self._st.config.exec_secondary)
+        if not (sec_on or self._ngs_on) or self.last_sig is None:
             return out
 
         ex = self._st.execution
+        ngs = None
+        if self._ngs_on:
+            ngs = self.ngs_arm.update(
+                ex.ngs_ctx,
+                shifted_bull=m1.new_bull_sos or mi.new_bull,
+                shifted_bear=m1.new_bear_sos or mi.new_bear,
+                h=bar.high, l=bar.low, c=bar.close,
+            )
         ny_hour = datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc).astimezone(_NY).hour
-        arm = self.arm_sm.update(
-            m1, self.last_sig, self.last_seq, self.last_close_primary, ny_hour,
-            ex.is_flat, ex.be_sos_l, ex.be_sos_s,
-            ex.prim_closed_sos_l, ex.prim_closed_sos_s,
-            ex.prim_lost_sos_l, ex.prim_lost_sos_s,
-            ex._poi_edge_l, ex._poi_edge_s,
-            bar.high, bar.low,
-        )
+        arm = None
+        if sec_on:
+            arm = self.arm_sm.update(
+                m1, self.last_sig, self.last_seq, self.last_close_primary, ny_hour,
+                ex.is_flat, ex.be_sos_l, ex.be_sos_s,
+                ex.prim_closed_sos_l, ex.prim_closed_sos_s,
+                ex.prim_lost_sos_l, ex.prim_lost_sos_s,
+                ex._poi_edge_l, ex._poi_edge_s,
+                bar.high, bar.low,
+            )
+        # A no-gap shift outranks a re-entry: it is a FIRST trade on a setup nobody has taken.
+        # Only one side can be armed, and only while flat with no re-entry order resting.
+        took_ngs = (ngs is not None and (ngs.l_armed or ngs.s_armed) and ex.is_flat
+                    and ex._pend_sec is None)
+        if took_ngs:
+            arm = ngs
+        elif arm is None:
+            from .secondary import SecArm
+            arm = SecArm()
         out.arm = arm
         sig_fast = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,
                            self.last_sig.last_conf_high, self.last_sig.last_conf_low)
         filled = ex.step_secondary(sig_fast, arm)
-        if filled is not None:
+        if filled is not None and ex._entry_src == NGS_SRC:
+            # Keyed off the ORDER's own setup (its SOS time rides in the leg slot), never the
+            # latest 15m context — a 15m bar may have stepped between the arm and the fill.
+            key = (filled, ex._sos_bar_open)
+            ex.ngs_mark_traded(*key)
+            self.ngs_arm.retire_key(key)
+            self._ngs_open = key
+            out.filled_dir = filled
+        elif filled is not None:
             self.arm_sm.mark_traded(filled)     # retire the just-filled leg
             out.filled_dir = filled
+        elif ex.sec_stop_dir is not None and self._ngs_open is not None:
+            self._ngs_open = None   # a no-gap trade stopped out — no re-entry leg to kill
         elif ex.sec_stop_dir is not None:
             # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
             self.arm_sm.mark_dead(ex.sec_stop_dir, self.last_seq)
@@ -261,6 +299,8 @@ class DualClock:
         builds. It is also why the live warm-up cannot simply call `step_fast`.
         """
         self.struct_fast.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+        if self.struct_fast_int is not None:
+            self.struct_fast_int.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 
     def reset_fast(self) -> None:
         """Throw the fast side away so it can be rebuilt from history.
@@ -273,6 +313,10 @@ class DualClock:
         """
         self.struct_fast = Structure1m(major_length=self._major_length)
         self.arm_sm = SecondaryArm(self._st.config)
+        if self._ngs_on:
+            # Only the feed is rebuilt. The retired setups are keyed on TIME, which a re-warm does
+            # not renumber, so dropping them would let a taken setup be taken twice.
+            self.struct_fast_int = InternalShift1m(self._major_length)
 
     def drain_primary(self) -> List[PrimaryStep]:
         """Step every queued 15m bar regardless of the fast clock. The window tail — and, live,

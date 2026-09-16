@@ -1082,6 +1082,30 @@ class SosFadeConfig:
     #   taking re-entries is `exec_secondary = False`, which also stops the arm doing the work.
     #   ⚠ Read ONLY when exec_secondary is on.
 
+    exec_ngs: bool = False             # "No-gap shift entry"
+    #   THE NO-GAP SETUP, TAKEN ON A 1-MINUTE SHIFT. Aaron, 2026-09-15: when the 15m setup has
+    #   armed, SOS'd and tagged the 0.5 but there is no fair-value gap to rest a limit on, the last
+    #   confirmation left is a 1-minute change of character in the trade's direction — internal OR
+    #   main structure. It enters at MARKET (the next 1m open) with the stop at the 15m 1.0 fib and
+    #   the whole position off at `exec_ngs_tp_r`. One trade per setup; a primary always wins the
+    #   slot. Runs on the re-entry's fast clock as its own trigger ("nogap shift") with its own
+    #   exit ladder and NO stop movement before the target.
+    #   ⚠ SCREENED, NOT YET REPLAYED when this was written: Run 28 in sos_fade_optimization.md
+    #   (114 trades, +0.28R each at 3R, stop 1.0). The replay through this code is Run 29.
+    #   ⚠ **Needs the fast clock at 1 minute** (`exec_sec_fill_tf_min = 1`), refused otherwise —
+    #   a shift read off 5-minute bars is a different signal from the one that was measured.
+    #   ⚠ No Pine counterpart. The parity gate is blind to it; every number is a lab finding.
+    #   ⚠ No veto, final-hour or HTF gate is applied, matching the screen.
+
+    exec_ngs_tp_r: float = 3.0         # "No-gap shift target (R)"
+    #   Where the whole position comes off, in multiples of the trade's own risk to the 1.0 stop.
+    #   3.0 is Run 28's best cell (2R +25.8R, 3R +32.3R, 5R +32.4R — 3R held up best without its
+    #   top three trades). ⚠ Read ONLY when exec_ngs is on.
+
+    exec_ngs_risk_pct: float = 100.0   # "No-gap shift risk (% of the primary's)"
+    #   Sizes the lot only, exactly as `exec_sec_risk_pct` does for a re-entry. 100 = the
+    #   primary's risk. ⚠ Read ONLY when exec_ngs is on.
+
     exec_sec_trigger: str = "FVG in zone + Reclaim Entry"   # "What triggers a re-entry"
     #   ∈ {Structure shift, Reclaim Entry, FVG in zone, FVG in zone + Reclaim Entry}
     #   WHAT HAS TO HAPPEN before a re-entry rests its order. Four values:
@@ -1585,6 +1609,16 @@ class SosFadeConfig:
         the time stop is Off; every combo is then identical and inert, which is a wasted sweep
         but not an error, and raising on it would kill an otherwise valid grid.
         """
+        if self.exec_ngs:
+            if int(self.exec_sec_fill_tf_min) != 1:
+                raise ValueError(
+                    "exec_ngs (No-gap shift entry) reads a 1-minute shift and needs the fast "
+                    f"clock at 1 minute; exec_sec_fill_tf_min is {self.exec_sec_fill_tf_min}."
+                )
+            if not self.exec_ngs_tp_r > 0:
+                raise ValueError(f"exec_ngs_tp_r must be > 0, got {self.exec_ngs_tp_r}")
+            if not self.exec_ngs_risk_pct > 0:
+                raise ValueError(f"exec_ngs_risk_pct must be > 0, got {self.exec_ngs_risk_pct}")
         if self.exec_short_hold:
             # Validated ONLY when the variant is on, the same way the re-entry and recovery knobs
             # are: an optimizer may sweep one of these while the toggle is fixed off, and every

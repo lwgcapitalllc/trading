@@ -210,6 +210,46 @@
         "on": "SOS Fade stands the B leg down"
       },
       "desc": "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own."
+    },
+    {
+      "name": "exec_ngs",
+      "group": "No-gap shift entry",
+      "widget": "toggle",
+      "label": "No-gap shift entry",
+      "short": "No-gap shift",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Takes a setup that reached the 0.5-0.886 zone with every confluence but no fair-value gap to rest an order on. It enters at market on the first 1-minute change of character in the trade's direction (main or internal structure), stop at the 1.0 fib, whole position off at the target below. One trade per setup; needs the re-entry fill clock at 1 minute. A lab finding with no TradingView counterpart."
+    },
+    {
+      "name": "exec_ngs_tp_r",
+      "group": "No-gap shift entry",
+      "widget": "number",
+      "label": "No-gap shift target (R)",
+      "short": "Target",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.25,
+      "show_if": {
+        "exec_ngs": true
+      },
+      "desc": "Where the whole no-gap shift trade comes off, in multiples of its own risk to the 1.0 stop. 3 is the screen's best cell."
+    },
+    {
+      "name": "exec_ngs_risk_pct",
+      "group": "No-gap shift entry",
+      "widget": "number",
+      "label": "No-gap shift risk (% of the first trade's)",
+      "short": "Risk",
+      "min": 1,
+      "max": 300,
+      "step": 1,
+      "show_if": {
+        "exec_ngs": true
+      },
+      "desc": "How much a no-gap shift trade risks, as a percentage of what a first trade risks. 100 is the same. It changes the size only."
     }
   ]
 }
