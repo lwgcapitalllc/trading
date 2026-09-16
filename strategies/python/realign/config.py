@@ -226,6 +226,34 @@ class RealignConfig(SosFadeConfig):
     shipped 15 minutes on the 5m frame (3 bars of room), and NOT measured at any other value.
     """
 
+    realign_trail_frame: str = "chart"
+    """WHICH FRAME'S CONFIRMED SWINGS THE RUNNER TRAIL ANCHORS ON — and the two sides DISAGREE.
+
+    🔴 **FOUND 2026-09-16, BEFORE THE PARITY GATE EXISTED, AND IT IS A REAL DIVERGENCE.**
+    `realign_strategy.pine` anchors on `hConfLo` / `hConfHi`, which come out of its
+    `request.security` call on the EXTERNAL frame — 15m swings. This Python inherits SOS Fade's
+    `_trail_swing_lo = sig.last_conf_low`, where `sig` is the CHART frame — 5m swings.
+    **Every Realign figure in this repo was measured on the 5m anchor; the file Aaron reads on
+    a chart trails the 15m one.**
+
+    ⚠ **The Pine's own comment on that line says "the chart frame's last CONFIRMED swing",
+    which is what the Python does and NOT what the Pine does.** The comment contradicts the
+    code beside it, and that is almost certainly how the two diverged — the port was written
+    against the comment. `strategies/tradingview/CLAUDE.md` had the code right the whole time.
+
+    **Why it is not cosmetic.** This strategy has no take-profit: every trade exits on the
+    trail, the time stop or the flat-by-close, so the trail IS the exit. A 15m anchor sits
+    further from price than a 5m one, so the Pine's trail is LOOSER — it gives runners more
+    room and hands back more on a reversal. It is also a live candidate for the undiagnosed
+    drawdown disagreement (Strategy Tester 17.79% against 15.52R here), which has been open
+    since the Pine was first run.
+
+    ⚠ **"chart" is the DEFAULT so that no figure measured before today moves.** That is a
+    decision to keep the record stable, NOT a finding that the chart frame is correct — which
+    side is right is exactly what the parity gate exists to settle, and it cannot be settled by
+    preferring the one that is already written down.
+    """
+
     realign_longs: bool = True
     realign_shorts: bool = True
 
@@ -315,6 +343,9 @@ class RealignConfig(SosFadeConfig):
         parent = getattr(super(), "__post_init__", None)
         if parent is not None:
             parent()
+        if self.realign_trail_frame not in ("chart", "external"):
+            raise ValueError(f"realign_trail_frame must be chart|external, "
+                             f"got {self.realign_trail_frame!r}")
         if self.realign_entry_mode not in ("market", "retest"):
             raise ValueError(f"realign_entry_mode must be market|retest, "
                              f"got {self.realign_entry_mode!r}")

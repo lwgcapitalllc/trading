@@ -104,6 +104,14 @@ class RealignStrategy(SosFadeStrategy):
         sig = self.signals.update(state)
         seq = self.sequence.update(sig)
         dec = self.execution.step(sig, seq, rs)
+        # ⚠ AFTER the step, and that is deliberate. The parent sets its trail anchors from the
+        # CHART frame inside `step`; overwriting them before it runs would simply be undone.
+        # See `RealignConfig.realign_trail_frame` — the Pine anchors this trail on the EXTERNAL
+        # frame and this port has always anchored it on the chart frame, which is a real
+        # divergence found before the parity gate existed.
+        if self.config.realign_trail_frame == "external":
+            self.execution._trail_swing_hi = self.htf.conf_high
+            self.execution._trail_swing_lo = self.htf.conf_low
         self._last_state = rs
         return dec
 

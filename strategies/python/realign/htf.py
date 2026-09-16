@@ -61,6 +61,13 @@ class HtfStructure:
         # The external high/low that stood at the last HTF break, latched for the target.
         self.broken_high: Optional[float] = None
         self.broken_low: Optional[float] = None
+        # The HTF's last CONFIRMED swings — what `realign_strategy.pine` anchors its runner
+        # trail on (`hConfHi` / `hConfLo`). Latched here so the trail can read the same frame
+        # the Pine does; see `RealignConfig.realign_trail_frame` for why the two disagree.
+        # ⚠ Updated only on an HTF CLOSE, which is the same no-lookahead contract the rest of
+        # this class enforces: a swing confirmed by a still-forming 15m bar is not yet a fact.
+        self.conf_high: Optional[float] = None
+        self.conf_low: Optional[float] = None
 
     def _bucket_of(self, time_ms: int) -> int:
         return time_ms - (time_ms % self._ms)
@@ -81,6 +88,10 @@ class HtfStructure:
                 self.broken_high = ev.broken_high_price
             if ev.broken_low_price is not None:
                 self.broken_low = ev.broken_low_price
+            if getattr(ev, "last_conf_high", None) is not None:
+                self.conf_high = ev.last_conf_high
+            if getattr(ev, "last_conf_low", None) is not None:
+                self.conf_low = ev.last_conf_low
             closed = ev
             self._bucket = b
             self._filling = False

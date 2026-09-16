@@ -114,102 +114,82 @@ rescuable. Do not re-open it without a new mechanism. Full record: `realign_opti
 iBOS/iSOS across Aaron's own window. The two-frame build is not a refinement; without it there is no
 strategy to measure.
 
-## 🔴 THERE IS NO ENTRY FILTER HERE — winners and losers are indistinguishable (2026-09-16)
+## 🔴🔴 THE PINE AND THIS PORT TRAIL ON DIFFERENT FRAMES, AND IT IS WORTH ±60R (2026-09-16)
 
-Aaron asked whether the losers have anything in common that could rule them out. **They do not**, on
-every feature knowable at entry. Stacked config, 99 trades (39W / 37L / 23 scratch), medians:
+Found while starting the export twin, BEFORE any gate existed. Read off both files:
 
-| | winners | losers | scratches |
-|---|---|---|---|
-| reward:risk at entry | 2.20 | **2.25** | 1.46 |
-| stop size ($) | 8.99 | 7.40 | 8.73 |
-| stop (% of price) | 0.47 | 0.36 | 0.45 |
-| retest depth (R) | 0.07 | 0.05 | 0.07 |
+- `realign_strategy.pine` anchors its runner trail on **`hConfLo` / `hConfHi`**, which come out of
+  its `request.security` call on the **EXTERNAL (15m)** frame.
+- This port inherits SOS Fade's `_trail_swing_lo = sig.last_conf_low`, where `sig` is the **CHART
+  (5m)** frame. Nothing here overrides it.
+- 🔴 **The Pine's own comment on that line reads "the chart frame's last CONFIRMED swing" — which
+  describes what the PYTHON does, not what the Pine does.** The comment contradicts the code beside
+  it, and that is almost certainly how the port diverged: it was written against the comment.
+  `strategies/tradingview/CLAUDE.md` has had the code right the whole time.
 
-**Losers have a very slightly BETTER reward:risk than winners.** Nothing separates them.
+**This is not cosmetic. It is the most consequential setting found in this strategy.** The trail IS
+the exit here — nothing banks at a target — so switching frames rewrites the book. Free, 2020-01-02
+→ 2026-08-06, everything else at the shipped defaults:
 
-🔴 **AND EVERY APPARENT SIGNAL IN THE BUCKETED TABLES WAS ONE TRADE.** The first pass looked rich —
-shorts +28.36R against longs +9.67R; Monday the best day at +1.076 avg; the 3–5 R:R bucket best at
-+1.206 avg; stops under $5 best at +1.538 avg. **All four were the same single +22.56R trade, which
-was a Monday 01:00 NY short with a 4.66 R:R and a $4.50 stop.** Removing that ONE trade:
-
-| | with it | without it |
-|---|---|---|
-| shorts | +28.36R (best) | +5.79R (**worse than longs**) |
-| Monday | +20.43R (best day) | **−2.13R (worst day)** |
-| R:R 3–5 | +22.92R (best) | +0.35R (fourth) |
-
-⚠ **This is the concentration finding below turning into a false-discovery machine, and it is why
-no filter may be read off a bucketed table on this book.** With 3–5 trades carrying 5.5 years, ONE
-trade lands in one bucket of every table and makes that bucket look like a rule. **Any future
-"realign does better on X" claim must be re-checked with the top trade removed before it is
-believed.**
-
-⚠ The only thing that survives is that the 1–2 R:R bucket is worst in both passes (−2.02R over 29
-trades) — and it is non-monotone (under 1 is GOOD, 1–2 bad, 2–3 good), which is the shape of noise
-rather than structure. `realign_min_rr` has already been shown here to be a fit to one calendar
-half. **Do not resurrect it on this.**
-
-⚠ Scratches do differ mildly — 1.46 median R:R against ~2.2 for both winners and losers — so the
-"save the breakevens" idea has the only real thread in this analysis. It is a HYPOTHESIS: it must
-be replayed rather than estimated by dropping rows (one position slot), and it needs its own
-pre-declared window.
-
-## 🔴 THREE TO FIVE TRADES CARRY 5.5 YEARS — the biggest weakness in this strategy (2026-09-16)
-
-Aaron asked whether it still makes money without the biggest winner. It does, barely, and the
-answer is the most important caveat attached to every other number in this file. Charged
-`puprime_standard`, 2020-01-02 → 2025-08-05, dropping the largest trades in order:
-
-| dropped | 0 | 1 | 2 | 3 | 5 | 10 |
-|---|---|---|---|---|---|---|
-| shipped (market entry, 140 tr) | +28.75 | +10.21 | +3.72 | **−1.67** | −10.24 | −25.75 |
-| stacked (retest + 12h + nightly flat, 99 tr) | +38.03 | +15.46 | +9.82 | +4.40 | **−2.48** | −13.09 |
-
-**The single best trade is ~60% of the result on both** (+18.54R of +28.75R; +22.56R of +38.03R),
-and **the top five exceed the entire profit** — 136% and 107% — so everything outside them nets to
-roughly nothing. Shipped turns negative after 3 removals; stacked survives to 5.
-
-⚠ **This is a bigger practical risk than the missing holdouts.** A year in which those trades do
-not appear is flat-to-losing, and it has to be sat through. Size accordingly, and expect the
-equity curve to arrive in bursts nobody can predict or skip.
-
-⚠ **It is NOT evidence the edge is fake, and the two must not be conflated.** The random-entry
-control below does not depend on the big winners: random timing through the same exits LOSES money,
-and that comparison holds across all 20 reps. Fat tails are also this repo's stated design intent
-(root `CLAUDE.md` → *Trading Philosophy*): few high-quality setups, not many mediocre ones.
-
-**The one good sign: today's changes REDUCED the concentration.** Stacked needs 5 removals to break
-instead of 3, and its drawdown holds flat at 9.38R through the first three removals while the
-shipped book's sits at 15.52R throughout.
-
-## 🔴 The pattern BEATS random entry — measured 2026-09-16, and random LOSES
-
-The question every other number here rested on and nobody had asked of the real strategy: is it the
-SETUP making the money, or the exit ladder and gold's drift? `backtest/tools/realign_control.py`
-replays the real strategy through the real execution and swaps only the TRIGGER — same side, month,
-New York hour, stop distance, target distance and retest offset, random MOMENT. 20 reps, charged
-`puprime_standard`, 2020-01-02 → 2025-08-05:
-
-| | trades | avg R | control | **z** |
+| trail anchor | trades | sum R | PF | maxDD |
 |---|---|---|---|---|
-| shipped (market entry) | 140 | +0.205 | −0.053 | **+2.36** |
-| stacked (retest @ 5 + 12h clock + nightly flat) | 99 | +0.384 | −0.057 | **+4.21** |
+| chart / 5m (every figure in this repo) | 162 | **+45.14** | 1.66 | 12.15 |
+| external / 15m (`realign_trail_frame="external"`) | 99 | **−15.68** | 0.62 | 18.90 |
 
-**The control column is the load-bearing result, not the z.** Random timing through this exact
-machinery loses money. The ladder, the stop geometry and the 2020-2025 drift are NOT what pays —
-handed a random moment they hand money back. That was the most likely innocent explanation for this
-strategy's whole record, and it is now measured and rejected. The test can return the other answer:
-it is what killed the 5-minute-only arm.
+The trade COUNT moves because a looser trail holds positions longer and the single slot refuses
+more setups — the displacement effect, again.
 
-⚠ **THE TWO ROWS ARE NOT THE SAME KIND OF EVIDENCE.** The shipped row predates today and was not
-chosen against this control, so **+2.36 is the clean number** — it clears the plain bar of 2.0 and
-NOT the family-wise 2.99. The stacked +4.21 is inflated by selection: three of its four settings
-were picked on this same window, and only the retest has faced a holdout. **The pattern is real; the
-stacked improvements are part real and part fitted, in an unknown proportion.**
+🔴 **AND THE TWO ARMS ABOVE DO NOT ADD UP TO A VERDICT, WHICH IS THE POINT.** The Pine's own
+Strategy Tester run was **profitable** (143 trades, +41.35%, PF 1.617). If the Pine trailed the 15m
+the way `realign_trail_frame="external"` does, it could not have produced that. **So there are
+likely TWO divergences here, not one** — the frame, and something in how the Pine's
+`f_frameStructPrev` `[1]` shift and `lookahead_on` idiom actually deliver those swings, which this
+emulation does not reproduce. **Do NOT quote the −15.68R as "what the Pine does".** It is what THIS
+PORT does when pointed at the external frame, and the gap to the tester's +41.35% is itself the
+measurement saying the emulation is not yet faithful.
 
-⚠ This validates nothing about the 12h clock, the nightly flat or the trail, and does not touch the
-missing parity gate. Full record: `realign_optimization.md` Run 5.
+⚠ **`"chart"` is the default so no published figure moves. That is record-keeping, not a finding
+that the chart frame is right** — which side is correct is precisely what the parity gate settles,
+and it cannot be settled by preferring whichever is already written down.
+
+⚠ **It is also a live candidate for open question 2**, the undiagnosed drawdown disagreement
+(Strategy Tester 17.79% against 15.52R here), which has been open since the Pine was first run.
+
+⚠ **Run 4's conclusion may not transfer to the Pine.** "The ratchet is inert because the structure
+anchor always binds first" was measured on the 5m anchor. A 15m anchor sits further from price, so
+the ratchet could well bind there — that conclusion is scoped to this port until the gate is green.
+
+## What Runs 5 and 6 settled — the rules, not the tables (2026-09-16)
+
+**Full tables live in `realign_optimization.md` Runs 5-6 and are NOT copied here.**
+
+- 🔴 **The pattern BEATS matched random entry, and random LOSES.** z **+2.36** shipped, +4.21 on the
+  stacked retest config; random timing through the SAME exits makes −0.053R a trade.
+  **The control column is the finding, not the z** — the ladder, the stop geometry and gold's
+  2020-2025 drift are measurably not what pays. ⚠ Quote **+2.36**: the shipped config predates the
+  test and was not chosen against it, so it is the clean number; it clears the plain bar of 2.0 and
+  NOT the family-wise 2.99. The stacked +4.21 is inflated by selection. ⚠ **This supersedes the old
+  "z 1.85, does not clear the bar" figure**, which came from a TRIGGER SCAN — and a trigger prior is
+  not a strategy result, a rule this package already learned when that same scan got the short
+  side's SIGN wrong.
+- 🔴 **THREE TO FIVE TRADES CARRY 5.5 YEARS.** The single best trade is ~60% of the result and the
+  top five EXCEED the total. Shipped goes negative after 3 removals, the stacked config after 5.
+  **This caveat belongs beside any figure from Runs 2-6 that gets quoted.** ⚠ It is NOT evidence the
+  edge is fake — the random control does not depend on the big winners. ⚠ Today's changes measurably
+  REDUCED the concentration, which is a point in their favour no other table shows.
+- 🔴 **NO ENTRY FILTER EXISTS. Winners and losers are indistinguishable** on every feature knowable
+  at entry — median reward:risk is 2.20 for winners and **2.25 for losers**; stop size, stop % and
+  retest depth do not separate them either.
+- 🔴 **AND EVERY BUCKETED "SIGNAL" WAS ONE TRADE.** Shorts, Mondays, the 3-5 R:R bucket and sub-$5
+  stops all looked strong and were all the same +22.56R trade; without it shorts fall behind longs
+  and Monday goes from the best day to the WORST. **On a book this concentrated, no bucketed claim
+  is believable until it survives removing the top trade** — `backtest/tools/realign_trade_profile.py`
+  does that automatically, and the rule generalises past this strategy.
+- ⚠ **Do not resurrect `realign_min_rr` off this.** The 1-2 bucket is worst but the pattern is
+  non-monotone (under 1 is GOOD), which is noise, and that lever was already shown to be a fit to one
+  calendar half.
+- ⚠ **The one live thread: scratches enter at a median 1.46 R:R against ~2.2 for everything else.**
+  A hypothesis, needing a REPLAY and its own pre-declared window — never row-dropping.
 
 ## The retest entry — built 2026-09-15, shipped OFF, and it beats the market entry everywhere
 
