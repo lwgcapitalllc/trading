@@ -4728,3 +4728,134 @@ test('a symbol ending nobody recorded can be set by hand, and is sent', async ({
   await expect.poll(() => body).not.toBeNull()
   expect(body!.symbol_suffix).toBe('.p')
 })
+
+/**
+ * ── The bot ROWS on the page are the priority order, and you drag them there (2026-09-16) ──
+ *
+ * Aaron: *"after I click an account… it shows the account on the right with the bots listed, I
+ * should be able to drag those bots either up or down under the account, and the highest bot on
+ * the account is the highest prioritized bot."* The same order has been draggable in the account
+ * panel since 2026-09-15 (`the priority list reorders by DRAG` above, which still stands — its
+ * arrows are the only keyboard route). These checks are about the ROWS.
+ *
+ * ⚠ The first account of a section opens by default, so `/bots` alone renders the detail panel.
+ */
+
+/** The rows under the open account, in the order they render. */
+function botRows(page: Page) {
+  return page.getByTestId('account-detail').getByTestId('bot-row')
+}
+
+/** Two bots on one account, ranked unless a check says otherwise. */
+function ranked(first: number | null = 1, second: number | null = 2) {
+  return [
+    group({
+      bots: [
+        { ...bot('sos_fade', 'SOS Fade', 770115, 10, 5), priority: first },
+        { ...bot('ext_leg', 'Extreme Leg', 770117, 10, 5), priority: second },
+      ],
+      risk_cap_pct: 10,
+    }),
+  ]
+}
+
+test('dragging a bot row up SAVES that order, not the one the server sent', async ({ page }) => {
+  // MUTATION: send `servedOrder` instead of `order` → the body is the old order → red.
+  // MUTATION: drop the row's `onDrop` → the rows do not move → red.
+  await mock(page, ranked())
+  const sent: unknown[] = []
+  await page.route('**/api/bots/accounts/*/priority', (route) => {
+    sent.push(route.request().postDataJSON())
+    return route.fulfill({
+      json: {
+        account: ACCOUNT,
+        order: ['ext_leg', 'sos_fade'],
+        changed: true,
+        written: ['ext_leg', 'sos_fade'],
+        deployed: true,
+        applies: 'Each bot reads the new order at its next bar — no restart.',
+        detail: 'saved',
+      },
+    })
+  })
+  await page.goto('/bots')
+  await expect(botRows(page)).toHaveCount(2)
+  await expect(botRows(page).nth(0)).toHaveAttribute('data-bot', 'sos_fade')
+  // Untouched and already ranked, so the page says nothing under the rows.
+  await expect(page.getByTestId('priority-bar')).toHaveCount(0)
+
+  await botRows(page).nth(1).dragTo(botRows(page).nth(0))
+  await expect(botRows(page).nth(0)).toHaveAttribute('data-bot', 'ext_leg')
+  await expect(page.getByTestId('priority-bar')).toHaveAttribute('data-state', 'dirty')
+
+  await page.getByTestId('priority-save').click()
+  await expect.poll(() => sent.length).toBe(1)
+  expect(sent[0]).toMatchObject({ order: ['ext_leg', 'sos_fade'] })
+})
+
+test('an account with NO saved order says the rows are not a ranking yet', async ({ page }) => {
+  // 🔴 Rule 1 on screen: "no order" and "this order" may not look the same. With nothing saved the
+  // rows are only the by-name fallback and NOBODY waits — a ranked-looking list that says nothing
+  // is the page asserting a ranking it does not have.
+  // MUTATION: drop `orderUnsaved` from the bar's condition → the bar never shows → red.
+  await mock(page, ranked(null, null))
+  await page.goto('/bots')
+  await expect(botRows(page)).toHaveCount(2)
+  const bar = page.getByTestId('priority-bar')
+  await expect(bar).toHaveAttribute('data-state', 'unsaved')
+  await expect(bar).toContainText('no order is saved here yet')
+  await expect(bar).toContainText('none of them waits')
+})
+
+test('Discard puts the served order back and leaves nothing saved', async ({ page }) => {
+  // MUTATION: make Discard a no-op → the rows stay swapped → red.
+  const sent: unknown[] = []
+  await mock(page, ranked())
+  await page.route('**/api/bots/accounts/*/priority', (route) => {
+    sent.push(route.request().postDataJSON())
+    return route.fulfill({ json: { account: ACCOUNT, order: [], changed: false, detail: '' } })
+  })
+  await page.goto('/bots')
+  await botRows(page).nth(1).dragTo(botRows(page).nth(0))
+  await expect(botRows(page).nth(0)).toHaveAttribute('data-bot', 'ext_leg')
+  await page.getByTestId('priority-discard').click()
+  await expect(botRows(page).nth(0)).toHaveAttribute('data-bot', 'sos_fade')
+  await expect(page.getByTestId('priority-bar')).toHaveCount(0)
+  expect(sent).toHaveLength(0)
+})
+
+test('one bot on an account is not draggable — there is nobody to go ahead of', async ({
+  page,
+}) => {
+  // MUTATION: drop `rows.length > 1` from `canReorder` → the row goes draggable → red.
+  await mock(page, [
+    group({
+      bots: [{ ...bot('sos_fade', 'SOS Fade', 770115, 10, 5), priority: null }],
+      risk_cap_pct: 10,
+    }),
+  ])
+  await page.goto('/bots')
+  await expect(botRows(page)).toHaveCount(1)
+  await expect(botRows(page).nth(0)).not.toHaveAttribute('draggable', 'true')
+  await expect(page.getByTestId('priority-bar')).toHaveCount(0)
+})
+
+test('a bot whose config will not read blocks the reorder rather than sending a short list', async ({
+  page,
+}) => {
+  // The server refuses an order that is not exactly the account's bots, so offering the drag here
+  // would build a request it will reject.
+  // MUTATION: drop the `unreadable` term from `canReorder` → the rows go draggable → red.
+  await mock(page, [
+    group({
+      bots: [
+        { ...bot('sos_fade', 'SOS Fade', 770115, 10, 5), priority: null },
+        { ...bot('ext_leg', 'Extreme Leg', 770117, 10, 5), priority: null, unreadable: true },
+      ],
+      risk_cap_pct: 10,
+    }),
+  ])
+  await page.goto('/bots')
+  await expect(botRows(page).nth(0)).not.toHaveAttribute('draggable', 'true')
+  await expect(page.getByTestId('priority-bar')).toHaveCount(0)
+})

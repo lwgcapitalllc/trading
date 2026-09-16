@@ -64,6 +64,8 @@ import {
   Star,
   Trophy,
   Plus,
+  GripVertical,
+  Loader2,
 } from 'lucide-react'
 import {
   useBotSnapshot,
@@ -77,6 +79,7 @@ import {
   useBotStopOne,
   useBotRestartOne,
   useSetAccountPin,
+  useSaveAccountPriority,
 } from '@/hooks/useBots'
 import { VersionPill } from '@/components/VersionPill'
 import { OverflowMenu } from '@/components/OverflowMenu'
@@ -1052,6 +1055,39 @@ export function Bots() {
   }
   const setPin = useSetAccountPin()
 
+  /**
+   * 🔴 **THE BOT ROWS THEMSELVES ARE THE PRIORITY ORDER, AND YOU DRAG THEM HERE (2026-09-16).**
+   * Aaron: *"after I click an account… it shows the account on the right with the bots listed, I
+   * should be able to drag those bots either up or down under the account, and the highest bot on
+   * the account is the highest prioritized bot."* The same order was already draggable one click
+   * away in the account panel, and it stays there (its arrows are the only keyboard route) — but
+   * these rows were ALREADY being rendered in the saved order and gave no way to change it, which
+   * is a list that looks like a ranking and does not act like one.
+   *
+   * ⚠ **One account is dragged at a time**, so one draft is enough — several detail panels may be
+   * open, and the draft names the account it belongs to.
+   *
+   * ⚠ **The draft is bound to the SERVED order it was made against (`from`)**, the same guard the
+   * account panel's list uses: this page refetches in the background, so a draft made against an
+   * order that has since moved is DROPPED rather than saved over a change nobody saw.
+   */
+  const savePriority = useSaveAccountPriority()
+  const [orderEdit, setOrderEdit] = useState<{
+    account: number
+    keys: string[]
+    from: string
+  } | null>(null)
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const [overKey, setOverKey] = useState<string | null>(null)
+  const moveBot = (account: number, order: string[], from: string, key: string, to: number) => {
+    const at = order.indexOf(key)
+    if (at < 0 || to < 0 || to >= order.length || at === to) return
+    const keys = [...order]
+    keys.splice(at, 1)
+    keys.splice(to, 0, key)
+    setOrderEdit({ account, keys, from })
+  }
+
   const startOne = useBotStartOne()
   const stopOne = useBotStopOne()
   const restartOne = useBotRestartOne()
@@ -1427,12 +1463,36 @@ export function Bots() {
     // Computed once, up front — every ROW below reads its own entry rather than re-asking
     // `botCondition`, and the account's worst is the same reduce this page's own `worstCondition`
     // export runs for a single bot's own issues, just one level up.
-    const rowConds = rows.map(({ cfg, live }) => ({
-      cfg,
-      live,
-      asked: live !== undefined,
-      cond: botCondition(live, { asked: live !== undefined, onAccount: true }),
-    }))
+    // ── the priority order ────────────────────────────────────────────────────
+    // The rows arrive in the account's SAVED order already (the server sorts them: ranked first,
+    // then anything unranked by name). A draft made by dragging replaces it until saved.
+    //
+    // ⚠ **`orderUnsaved` is the third state and it MATTERS** — with no rank saved, this list is
+    // only the by-name fallback, so the top row is NOT the first to trade and nobody waits for
+    // anybody. The bar below says exactly that rather than letting a ranked-looking list imply a
+    // ranking that does not exist (rule 1: "no order" and "this order" may not look the same).
+    const servedOrder = rows.map((r) => r.cfg.key)
+    const servedSig = servedOrder.join('|')
+    const draft =
+      orderEdit && orderEdit.account === account && orderEdit.from === servedSig
+        ? orderEdit.keys
+        : null
+    const order = draft ?? servedOrder
+    const orderDirty = order.join('|') !== servedSig
+    const orderUnsaved = rows.some((r) => r.cfg.priority == null)
+    // One bot has nobody to go ahead of, and an unreadable config cannot be ranked — the server
+    // refuses an order that is not exactly the account's bots, so it may not be offered here.
+    const canReorder = rows.length > 1 && !rows.some((r) => r.cfg.unreadable)
+    const byKey = new Map(rows.map((r) => [r.cfg.key, r]))
+    const rowConds = order
+      .map((k) => byKey.get(k))
+      .filter((r): r is (typeof rows)[number] => r !== undefined)
+      .map(({ cfg, live }) => ({
+        cfg,
+        live,
+        asked: live !== undefined,
+        cond: botCondition(live, { asked: live !== undefined, onAccount: true }),
+      }))
     // 🔴 THE RAIL MAY NOT HIDE A PROBLEM. 'ok'/'idle'/'unknown' are not findings: a healthy or
     // not-yet-answered bot earns no marker, only 'bad' (stopped, halted, error, an alert-level
     // review) and 'warn' (trading off, no MT5 link, locked, a warn-level review) do — the same
@@ -1451,6 +1511,11 @@ export function Bots() {
       readAt,
       rowConds,
       worst,
+      order,
+      servedSig,
+      orderDirty,
+      orderUnsaved,
+      canReorder,
     }
   }
   type AccountView = ReturnType<typeof prepareAccountView>
@@ -1613,7 +1678,23 @@ export function Bots() {
    * *"read exactly what's on the MT5"*). While the box is still being asked it shimmers.
    */
   const renderDetailPanel = (view: AccountView, index: number) => {
-    const { account, group, key, cap, reg, earn, idle, balance, readAt, rowConds } = view
+    const {
+      account,
+      group,
+      key,
+      cap,
+      reg,
+      earn,
+      idle,
+      balance,
+      readAt,
+      rowConds,
+      order,
+      servedSig,
+      orderDirty,
+      orderUnsaved,
+      canReorder,
+    } = view
     return (
       <section
         key={key}
@@ -1727,19 +1808,63 @@ export function Bots() {
               key={cfg.key}
               data-testid="bot-row"
               data-bot={cfg.key}
+              draggable={canReorder}
+              onDragStart={(e) => {
+                if (!canReorder) return
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', cfg.key)
+                setDragKey(cfg.key)
+              }}
+              onDragOver={(e) => {
+                if (!dragKey) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                setOverKey(cfg.key)
+              }}
+              onDragLeave={() => setOverKey((k) => (k === cfg.key ? null : k))}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (dragKey) moveBot(account, order, servedSig, dragKey, i)
+                setDragKey(null)
+                setOverKey(null)
+              }}
+              onDragEnd={() => {
+                setDragKey(null)
+                setOverKey(null)
+              }}
               className={`group grid ${GRID} items-center gap-3 pr-3 py-[10px] transition-colors hover:bg-bg-surface-2 ${
                 i > 0 ? 'border-t border-border-subtle' : ''
+              } ${dragKey === cfg.key ? 'opacity-40' : ''} ${
+                overKey === cfg.key && dragKey !== cfg.key ? 'bg-accent/10' : ''
               }`}
             >
               {/* The NAME is the button, not the whole row — a row-wide click behind the controls
                *  would make every miss open a drawer over the thing you were aiming at. */}
-              <button
-                onClick={() => set('bot', cfg.key)}
-                title={`Open ${name} — risk, return, version, account and its settings`}
-                className="flex items-center font-medium text-[13px] text-left min-w-0 pl-4"
-              >
-                <span className="truncate group-hover:text-accent transition-colors">{name}</span>
-              </button>
+              <span className="flex items-center min-w-0 pl-[2px]">
+                {/* ⚠ **The grip KEEPS ITS SPACE on every row and is only REVEALED on hover** — the
+                 *  rail's pin idiom, for the rail's reason: a box that collapses would twitch every
+                 *  bot name sideways as the pointer crosses the list. An account with ONE bot gets
+                 *  the space and no grip: there is nobody to go ahead of. */}
+                <span
+                  data-testid="bot-grip"
+                  aria-hidden
+                  title="Drag to set which bot trades first"
+                  className={`w-[14px] shrink-0 flex justify-center text-text-tertiary ${
+                    canReorder
+                      ? 'opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing'
+                      : 'invisible'
+                  }`}
+                >
+                  <GripVertical size={12} />
+                </span>
+                <button
+                  onClick={() => set('bot', cfg.key)}
+                  title={`Open ${name} — risk, return, version, account and its settings`}
+                  className="flex items-center font-medium text-[13px] text-left min-w-0"
+                >
+                  <span className="truncate group-hover:text-accent transition-colors">{name}</span>
+                </button>
+              </span>
 
               {/* 🔴 ONE status per row (2026-09-12) — the worst problem or what the bot is doing,
                *  a count of anything else, and the whole story on hover. */}
@@ -1838,6 +1963,49 @@ export function Bots() {
             </div>
           )
         })}
+
+        {/* ── who goes first ──────────────────────────────────────────────────
+         *  Shown only when there is something to say: an order that has been DRAGGED and not yet
+         *  saved, or an account whose bots have no saved order at all. An account already ranked
+         *  and untouched says nothing — the row order IS the answer, and a permanent bar under
+         *  every account repeating it is the redundancy this page has a rule against. */}
+        {canReorder && (orderDirty || orderUnsaved) && (
+          <div
+            data-testid="priority-bar"
+            data-state={orderDirty ? 'dirty' : 'unsaved'}
+            className={`flex items-center gap-3 pl-4 pr-3 py-[8px] border-t border-border-subtle ${
+              orderDirty ? 'bg-accent-muted/50' : ''
+            }`}
+          >
+            <span className="text-[11.5px] text-text-tertiary leading-[1.5]">
+              {orderDirty
+                ? 'Top of the list trades first when two of these signal together. Save to keep this order.'
+                : 'Drag a bot up or down to set which one trades first when two signal together — no order is saved here yet, so none of them waits for the others.'}
+            </span>
+            <span className="ml-auto flex items-center gap-2 shrink-0">
+              {orderDirty && (
+                <button
+                  data-testid="priority-discard"
+                  onClick={() => setOrderEdit(null)}
+                  className="px-3 py-[5px] rounded-md text-[12px] border border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+                >
+                  Discard
+                </button>
+              )}
+              <button
+                data-testid="priority-save"
+                disabled={savePriority.isPending}
+                onClick={() =>
+                  savePriority.mutate({ account, order }, { onSuccess: () => setOrderEdit(null) })
+                }
+                className="inline-flex items-center gap-[6px] px-3 py-[5px] rounded-md text-[12px] font-semibold bg-accent-muted text-accent-text border border-accent/50 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {savePriority.isPending && <Loader2 size={12} className="animate-spin" />}
+                {savePriority.isPending ? 'Saving…' : 'Save order'}
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* No bot on it now — an invitation, not a tombstone. ⚠ Disabled with the reason, never
          *  hidden, when the account cannot take a bot (no terminal logged into it). */}

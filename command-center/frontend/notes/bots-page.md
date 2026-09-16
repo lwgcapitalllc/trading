@@ -354,6 +354,42 @@ add up past the cap, and an account has a PRIORITY order*.
   check, the over-cap banner check uses a bot above the cap, and a new check drags a row and asserts
   the saved body.
 
+## The bot ROWS are the priority order, and you drag them there (2026-09-16)
+
+Aaron, 2026-09-16: *"after I click an account… it shows the account on the right with the bots
+listed, I should be able to drag those bots either up or down under the account, and the highest
+bot on the account is the highest prioritized bot."*
+
+🔴 **The rows were ALREADY rendering in the saved order and gave no way to change it.** The
+backend sorts an account's bots by rank (`services/bot_accounts.py::group_by_account`), so the
+detail column has always been a ranking on screen — with the only control for it one click away in
+the account panel. A list that looks like a ranking and does not act like one is the defect.
+
+- **Every bot row in the detail panel is draggable**, native HTML5 drag events, no library — the
+  same mechanism the account panel's list uses. A grip appears in the row's left gutter on hover.
+- ⚠ **The grip KEEPS ITS SPACE on every row and is only revealed on hover** — the rail pin's idiom,
+  for the rail pin's reason: a box that collapses would twitch every bot name sideways as the
+  pointer crosses the list. An account with one bot gets the space and no grip.
+- **One draft, and it names its account.** Several detail panels may be open; only one can be
+  dragged at a time. ⚠ Bound to the served order it was made against (`from`), like the account
+  panel's list and the budget edits — this page refetches in the background, so a draft made
+  against an order that has since moved is DROPPED rather than saved over a change nobody saw.
+- **The bar under the rows appears only when it has something to say**: an order dragged and not
+  saved (`data-state="dirty"`, Discard + Save order), or an account with no saved rank at all
+  (`data-state="unsaved"`). An account already ranked and untouched says nothing — the row order IS
+  the answer, and a permanent bar repeating it is the redundancy this page has a rule against.
+- 🔴 **`orderUnsaved` is rule 1 on screen.** With no rank saved the rows are only the by-name
+  fallback and NOBODY waits for anybody, so the bar says exactly that. A ranked-looking list that
+  said nothing would be the page asserting a ranking it does not have.
+- **The drag is refused, not attempted, when it would build a request the server rejects**: one bot
+  (nobody to go ahead of), or any bot whose config will not read (the server refuses an order that
+  is not exactly the account's bots).
+- ⚠ **The account panel's Priority list STAYS** — its up/down arrows are the only keyboard route to
+  this order. The two read and write the same served order and the same hook.
+- `tests/bots-accounts.spec.ts`: five checks, each naming its own mutation — the saved body is the
+  draft not the served order, the drop actually moves the row, the unsaved bar, Discard, a lone bot,
+  an unreadable config.
+
 ## 🔴 The page may NOT add the risk shares up itself (2026-09-04)
 
 `AccountsTab` renders `group.share_total_pct` and `group.share_overflow_reason` straight off the
