@@ -251,6 +251,34 @@ as before. `rso2c` and the other exits are reported, never picked.
     half -45.6R; raw gold +0.039R (random +0.033R, first half -13.4R); silver -0.065R, EURUSD
     -0.050R, NAS100 -0.086R. Every exit and the close entry sit on their controls too.
 
+THE USER'S TWO DECISIONS (2026-09-16, declared BEFORE any run):
+    --flat-weekend    no trade is held through a market closure longer than CLOSURE_H = 12 hours
+                      (weekends, holidays; the daily 1-hour break is not one): it closes at the last
+                      bar before it, a pending order dies there, and a fill ON that bar is no trade.
+                      Applies to every trade's exit and to the pending windows of `retest`, `rso`,
+                      `rso1`, `rsoc`, `rsol`, `rso2`; the fib and pullback entries' windows are not cut.
+                      Why: one Friday short with an 82-cent stop reopened $33 through it (-40.4R).
+    --max-stop2-pct   the second realign skips a stop wider than this share of its entry price. The
+                      user's own 28 Jul second-realign trade had 0.225% ($9.10) and a refused one 2%
+                      ($80); the full rule's 0.16% would skip the user's own trade. DECLARED 0.30
+                      (about $13 at $4,300); 0.16 and 0.50 are reported, never picked.
+THE CELLS: 1m, one counter BOS, 24h, --flat-weekend: `rsol` `user` `tX` (the full rule), and `rso2`
+`user` `t3` with --max-stop2-pct 0.30 (the second realign). Before costs FIRST — the user asked for
+win rates, not costs — then the same PASS rule as before.
+🔴 MEASURED 2026-09-16, before costs (win / win the payout needs / avg R / halves / random, z):
+    full rule   gold    1,161  33.9% / 31.0%  +0.096R  +0.080 +0.110  random +0.035, z +0.82
+                silver    963  18.0% / 19.4%  -0.075R  -0.230 +0.068
+                EURUSD  1,675  48.4% / 53.8%  -0.098R  -0.177 -0.029
+                NAS100  1,047  29.1% / 30.5%  -0.046R  -0.164 +0.056
+    second 1:3  gold      497  29.6% / 32.2%  -0.080R  -0.101 -0.060  random +0.016, z -1.37
+                silver    219  23.3% / 27.9%  -0.171R;  EURUSD 854, -0.054R (+0.062 -0.165);
+                NAS100    399  25.3% / 30.0%  -0.154R
+    Charged (ECN) gold: full rule 1,144, -0.012R (halves -0.018 -0.007), z +0.53; second realign
+    488, -0.137R, z -1.21. BOTH FAILED, 0 of 3 other instruments. Flat weekends lifted the full
+    rule (+0.070R -> +0.096R raw) but not past random timing. Both decisions HURT the second
+    realign: its weekend holds had made +19R, and the stops the cap skips were its better trades
+    (no cap -0.010R; cap 0.50 -0.010R; cap 0.16 -0.041R at 1:3).
+
 Usage:
   python backtest/tools/rso_realign_study.py --recall          # find the user's 5 trades first
   python backtest/tools/rso_realign_study.py                   # the grid, 2020-01 -> 2026-09
@@ -310,6 +338,9 @@ ENTRIES = (
 ENTRIES_FILLED = tuple(e for e in ENTRIES if e != "split")  # `split` is built from two fills
 USER_ENTRIES = ("rsoc", "rsol", "rso2", "rso2c")  # entries that choose their own stop and target
 MAX_STOP_PCT = 0.16  # --max-stop-pct: `rsol`'s largest acceptable stop, % of the entry price
+MAX_STOP2_PCT = None  # --max-stop2-pct: `rso2`/`rso2c` skip a wider stop, % of price (None = off)
+FLAT_WEEKEND = False  # --flat-weekend: out before any market closure longer than CLOSURE_H
+CLOSURE_H = 12  # the daily break is 1 hour; weekends and holidays are far longer
 BIG_ATR = (
     4.0  # --big-atr: a breaker zone wider than this many chart ATR gets the conservative entry
 )
@@ -418,6 +449,7 @@ class Frame:
     n: int
     sos_j: np.ndarray = None  # every with-trend SOS chart bar (bearish, in side space)
     sos_lvl: np.ndarray = None  # ...and the swing each one broke
+    wk: np.ndarray = None  # each minute's last minute before the next market closure
 
 
 # ─────────────────────────────── detection ───────────────────────────────
@@ -525,6 +557,9 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
     with ProcessPoolExecutor(max_workers=workers) as pool:
         found = dict(pool.map(_detect_task, jobs))
     print(f"structure replayed on {len(jobs)} streams in {time.time() - t0:.0f}s")
+    shut = np.flatnonzero(np.diff(t1m) > np.timedelta64(CLOSURE_H, "h"))  # last minute before each
+    pos = np.searchsorted(shut, np.arange(len(t1m)), "left")
+    wk = np.where(pos < len(shut), shut[np.minimum(pos, max(len(shut) - 1, 0))], len(t1m) - 1)
     frs = {}
     for (F, side), (first, last, atr, u_first, u_last, n) in meta.items():
         tp = tapes[side]
@@ -571,6 +606,7 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
             np.array([last[b] + 1 for b, _ in bos], dtype=np.int64),
             np.array([lv + spread + tp.ex for _, lv in bos]), n,
             np.array([j for j, _ in sos], dtype=np.int64), np.array([v for _, v in sos], dtype=float),
+            wk,
         )  # fmt: skip
     return tapes, frs
 
@@ -640,20 +676,25 @@ def fill_rso2(fr: Frame, tp: Tape, s: Setup, how: str):
     if jend <= s.j:
         return None, math.nan, False, s.m
     a, b = int(fr.first[s.j + 1]), int(fr.last[jend])
+    b = wk_cap(fr, a, b)
     brk = np.flatnonzero(tp.H[a : b + 1] > s.top)
     if not len(brk):
         return None, math.nan, False, s.m
     kb = a + int(brk[0])
-    ok = np.flatnonzero((fr.last[fr.sos_j] > kb) & (fr.sos_j <= jend))
+    ok = np.flatnonzero((fr.last[fr.sos_j] > kb) & (fr.last[fr.sos_j] <= b))
     if not len(ok):
         return None, math.nan, False, b
     jj, lvl = int(fr.sos_j[ok[0]]), float(fr.sos_lvl[ok[0]])
     ks = int(fr.last[jj])
     stop = float(tp.H[kb : ks + 1].max())
     s.user[how] = (stop, False)
+    if MAX_STOP2_PCT is not None:  # the user, 2026-09-16: skip a stop that is too big
+        e0 = float(tp.C[ks]) - tp.en if how == "rso2c" else lvl
+        if not math.isfinite(e0) or (stop - e0) / abs(e0) * 100 > MAX_STOP2_PCT:
+            return None, math.nan, False, ks
     if how == "rso2c":
         return ks, float(tp.C[ks]) - tp.en, False, ks
-    kend = int(fr.last[min(jj + PENDING, fr.n - 1)])
+    kend = wk_cap(fr, ks, int(fr.last[min(jj + PENDING, fr.n - 1)]))
     if not (math.isfinite(lvl) and lvl < stop) or kend <= ks:
         return None, math.nan, False, ks
     H = tp.H[ks + 1 : kend + 1]
@@ -680,6 +721,7 @@ def fill_cons(fr: Frame, tp: Tape, s: Setup, how: str, limit: float):
     if jend <= s.j:
         return None, math.nan, False, s.m
     a, b = int(fr.first[s.j + 1]), int(fr.last[jend])
+    b = wk_cap(fr, a, b)
     over = np.flatnonzero(tp.H[a : b + 1] > L)
     if not len(over):
         return None, math.nan, False, b
@@ -727,6 +769,7 @@ def fill(fr: Frame, tp: Tape, s: Setup, how: str):
         dead = np.flatnonzero(tp.C[fr.last[js]] > s.top)  # through the shakeout extreme: dead
         jstop = int(js[dead[0]]) if len(dead) else jend
         a, b = int(fr.first[s.j + 1]), int(fr.last[jstop])
+        b = wk_cap(fr, a, b)
         hit = np.flatnonzero(tp.H[a : b + 1] >= lv + tp.en + LIMIT_THROUGH)
         if not len(hit):
             return None, math.nan, False, b
@@ -741,6 +784,7 @@ def fill(fr: Frame, tp: Tape, s: Setup, how: str):
         dead = np.flatnonzero(tp.C[fr.last[js]] > s.top)
         jstop = int(js[dead[0]]) if len(dead) else jend
         a, b = int(fr.first[s.j + 1]), int(fr.last[jstop])
+        b = wk_cap(fr, a, b)
         hit = np.flatnonzero(tp.H[a : b + 1] >= s.lvl + tp.en + LIMIT_THROUGH)
         if not len(hit):
             return None, math.nan, False, b
@@ -781,9 +825,14 @@ def fill(fr: Frame, tp: Tape, s: Setup, how: str):
 # ─────────────────────────────── the walk ───────────────────────────────
 
 
+def wk_cap(fr: Frame, a: int, b: int) -> int:
+    """With FLAT_WEEKEND a window that opens on minute `a` ends at the next market closure."""
+    return min(b, int(fr.wk[a])) if FLAT_WEEKEND and fr.wk is not None else b
+
+
 def end_for(fr: Frame, k: int) -> int:
     jk = int(np.searchsorted(fr.last, k, "left"))
-    return int(fr.last[min(jk + MAX_HOLD, fr.n - 1)])
+    return wk_cap(fr, k, int(fr.last[min(jk + MAX_HOLD, fr.n - 1)]))
 
 
 def walk(
@@ -926,6 +975,8 @@ def trade(
     if rule is None:
         return None
     kind, T = rule
+    if FLAT_WEEKEND and end_for(fr, kf) < (kf if inside else kf + 1):
+        return None  # the fill is the last bar before a closure: no trade
     xk, rg, outcome, kp = walk(
         tp,
         kf if inside else kf + 1,
@@ -1063,6 +1114,8 @@ def control(trades: list, frs: dict, F: int, tapes: dict, pools: dict, costs: di
         pool = pools["pools"][int(pools["key"][t["kf"]])]
         for k in rng.choice(pool, size=REPS):
             k = int(k)
+            if FLAT_WEEKEND and end_for(fr, k) < k + 1:
+                continue
             e = tp.C[k] - tp.en
             S0 = e + t["R0"]
             T = e - t["tdist"] if t["kind"] in ("fixed", "be") else math.nan
@@ -1158,7 +1211,7 @@ def recall(raw: pd.DataFrame, tapes: dict, frs: dict, frames) -> None:
 
 
 def main() -> None:
-    global DISP_ATR, RSO_PENDING_MIN, BIG_ATR, MAX_STOP_PCT
+    global DISP_ATR, RSO_PENDING_MIN, BIG_ATR, MAX_STOP_PCT, MAX_STOP2_PCT, FLAT_WEEKEND
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="puprime_ecn")
     ap.add_argument("--frames", default="1,5,15")
@@ -1181,6 +1234,10 @@ def main() -> None:
     ap.add_argument("--disp-atr", type=float, default=DISP_ATR, help="the near/far line for `disp`")
     ap.add_argument(
         "--big-atr", type=float, default=BIG_ATR, help="`rsoc`: a big zone, in chart ATR"
+    )
+    ap.add_argument("--flat-weekend", action="store_true", help="out before every market closure")
+    ap.add_argument(
+        "--max-stop2-pct", type=float, default=None, help="`rso2`: skip a wider stop, %% of price"
     )
     ap.add_argument(
         "--max-stop-pct", type=float, default=MAX_STOP_PCT, help="`rsol`: widest stop, %% of price"
@@ -1214,6 +1271,8 @@ def main() -> None:
     RSO_PENDING_MIN = args.rso_pending_min
     BIG_ATR = args.big_atr
     MAX_STOP_PCT = args.max_stop_pct
+    MAX_STOP2_PCT = args.max_stop2_pct
+    FLAT_WEEKEND = args.flat_weekend
     gates = tuple(args.gates.split(","))
     if any(g not in GATES for g in gates):
         sys.exit(f"--gates must be from {GATES}, got {args.gates!r}")

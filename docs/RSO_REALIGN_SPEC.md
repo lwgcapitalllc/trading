@@ -474,6 +474,34 @@ costs, by the time the order FILLED (New York), with the time limit the tests us
 Every trade, with its session and result (nothing on or after 17 Aug 2026, so the marking list stays
 blind): `backtest/reports/rso_realign_breaker/trades_by_session_2020-01_to_2026-08-16.csv`.
 
+### Flat over weekends, and a stop cap on the second realign — the user's two decisions, same day, both fail
+
+The user decided: nothing is held over a weekend, and the second realign skips a stop that is too
+big. A trade now closes at the last bar before any market closure longer than 12 hours (the daily
+break is not one), and an unfilled order dies there. The second realign's cap was declared at
+0.30% of price before any run (their own 28 Jul trade had 0.225%); 0.16% and 0.50% are reported,
+never picked. Both switches are off by default and change nothing when off.
+
+| before costs, 1m, 24h, flat over weekends | trades | a month | win | win needed | avg R | 1st half | 2nd half |
+|---|---|---|---|---|---|---|---|
+| full rule, gold | 1,161 | 14.5 | 33.9% | 31.0% | +0.096 | +0.080 | +0.110 |
+| full rule, silver | 963 | 12.0 | 18.0% | 19.4% | −0.075 | −0.230 | +0.068 |
+| full rule, EURUSD | 1,675 | 20.9 | 48.4% | 53.8% | −0.098 | −0.177 | −0.029 |
+| full rule, NAS100 | 1,047 | 13.0 | 29.1% | 30.5% | −0.046 | −0.164 | +0.056 |
+| second realign 1:3, gold | 497 | 6.2 | 29.6% | 32.2% | −0.080 | −0.101 | −0.060 |
+| second realign 1:3, silver | 219 | 2.7 | 23.3% | 27.9% | −0.171 | −0.071 | −0.264 |
+| second realign 1:3, EURUSD | 854 | 10.6 | 33.0% | 35.0% | −0.054 | +0.062 | −0.165 |
+| second realign 1:3, NAS100 | 399 | 5.0 | 25.3% | 30.0% | −0.154 | −0.288 | −0.052 |
+
+- **Flat weekends lift the full rule on gold** from +0.070R to +0.096R a trade, but random entries
+  at the same month and hour, with the same stop and target, make +0.035R (z +0.82). Charged (ECN)
+  it is −0.012R, both halves negative. It fails on the other three instruments.
+- **Both decisions make the second realign worse.** Its weekend holds were making money (+19R),
+  and the stops the cap removes were its better trades. On gold at 3R: no cap −0.010R, cap 0.50
+  −0.010R, cap 0.30 −0.080R, cap 0.16 −0.041R. Charged at cap 0.30: −0.137R, z −1.21.
+- **FAIL on the pass rule for both**: gold charged is not positive in both halves at z ≥ 2, and
+  no other instrument is positive in both halves before costs.
+
 ## What this leaves
 
 - 🔴 **Both periods are spent for this pattern.** Never test another cell on 2018-09-14 →

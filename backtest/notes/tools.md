@@ -324,6 +324,16 @@ CLAUDE.md gets at most one index line.
   sized buckets): the 500-minute limit closes 3% of the full rule's trades and 34% of the second
   realign's (it props that rule's 37% win rate up from 27%); one weekend hold with an 82-cent stop
   cost −40.4R; write-up in `docs/RSO_REALIGN_SPEC.md`.
+  **The user's two decisions — MEASURED 2026-09-16, both FAIL.** `--flat-weekend` closes every
+  trade and kills every pending order at the last bar before a market closure over 12 hours (the
+  daily break is not one); `--max-stop2-pct` (declared 0.30) makes the second realign skip a wider
+  stop. Both OFF by default, and with both off the 15m grid is identical (408 rows, max diff 0.0),
+  so no stored result moves. Before costs, 1m, one counter BOS, 24h: full rule gold 33.9% win vs
+  31.0% needed, +0.096R (halves +0.080 / +0.110) but random timing makes +0.035R (z +0.82); silver
+  −0.075R, EURUSD −0.098R, NAS100 −0.046R. Second realign at 3R: gold 29.6% vs 32.2% needed,
+  −0.080R; silver −0.171R, EURUSD −0.054R, NAS100 −0.154R. Gold ECN: −0.012R (z +0.53) and −0.137R
+  (z −1.21). Both decisions hurt the second realign — its weekend holds had made +19R and the
+  skipped wide stops were its better trades.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,
