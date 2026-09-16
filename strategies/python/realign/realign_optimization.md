@@ -682,6 +682,37 @@ which is the right shape — but it means the exit alone is no longer a safety n
 🔴 **Concentration is still the largest practical risk.** A year without two or three runners is
 flat-to-losing and has to be sat through.
 
+### Run 11 — the lab stress test, and what risk per trade the account can carry (2026-09-16)
+
+**Basis:** lab runs `cc05cc85954c` (risk 10) and `164d1360901c` (risk 2.5) — shipped settings,
+PU Prime `XAUUSD.p` 5m, 2020-01-01 → 2026-09-16, `puprime_ecn`, bid/ask fills + commission + swap.
+Stress test `89987e5088a045f2` on the 2.5 run (10,000 shuffles, 2 walk-forward windows —
+5 windows leaves ~10 out-of-sample trades each). A local replay on the same bars and profile
+(scratch `full_r.py`) reproduces both runs: **163 trades, +54.09R, profit factor 1.78 in R,
+max drawdown 14.48R, longest losing streak 6.**
+
+| risk per trade | growth | worst drawdown (compounded, this path) |
+|---|---|---|
+| 10% | x8.31 | **81.6%** (lab 81.75%) |
+| 5% | x5.45 | 54.4% |
+| 2.5% | x2.89 | 31.4% (lab 31.53%) |
+
+Shuffled order at 2.5%: median worst drawdown 27.3%, 1-in-20 40.5%, 1-in-100 47.0%; 1-in-20
+orderings end below break-even.
+
+🔴 **Both walk-forward out-of-sample windows LOST** (−$1,192 on 32 trades, −$1,049 on 18). Nothing
+is re-tuned between windows, so this says the edge did not hold in those periods — not overfit.
+**R by half-year says why: the edge is two bursts.** 2020 H2 +19.33R and 2023 H2 +30.07R are
++49.4R of +54.09R; the other 149 trades make +4.7R. 2021-2022 lost 9.6R; **the last 12 months
+lost 4.27R over 18 trades.**
+
+⚠ **The sensitivity phase is VOID** — all four shifts failed ("sweep returned no result") and it
+chose only the risk %, which measures sizing, not the setup. ⚠ **No grade** was produced.
+
+**Decision (agent's, per the mandate): demo at 2.5%, not 5%.** At 5% one bad ordering is a
+half-account drawdown; 2.5% keeps the 1-in-100 case under 50%. The demo exists to prove the live
+wiring and collect the forward data Run 2 already spent — it does not argue the edge is proven.
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must
