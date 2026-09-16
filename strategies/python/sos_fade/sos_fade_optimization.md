@@ -4261,3 +4261,36 @@ earns a live test.
 
 **Not measured, and blocked:** the tight stop under the 1m shift leg. The engine reports the wrong
 broken level for bear internal shifts about 22 times in 25; that is an engine fix first.
+
+---
+
+# Run 28 — 2026-09-16 — **THE SAME NO-GAP SETUPS, ENTERED ON THE FIRST 1M SHIFT OF EITHER KIND, STOP AT THE 1.0. Positive at 2-5R and it survives dropping the best three trades. A screen, not yet the bot.**
+
+Built from Aaron's walk-through the same day. On 1m wicks, of the 178: **74** turned between the 0.5
+and 0.886 and took out the leg's 0.0 before touching the 1.0 (83 including turns below the 0.886;
+104 of 178 touched the 0.886 first). **67 of those 74** printed a 1m shift (internal or main) in the
+trade's direction first, against 40 of the 95 that touched the 1.0 — partly built in, since a
+rally breaks 1m structure on its way up. So the entry was priced:
+
+Rule: after the 0.5 is tagged, the first 1m shift of either kind, entered at its close; stop 1.0;
+no trade if the 1.0 or the 0.0 is touched first or nothing prints in 48h. Tool:
+`backtest/tools/nogap_anyshift_audit.py`, Vantage cache, costs and swap on.
+178 setups -> 114 trades (55 stopped first, 9 broke out first). Median entry sits at the 0.47,
+just above the zone: the shift prints after the bounce.
+
+| exit | total | per trade | win rate | without best 3 |
+|---|---|---|---|---|
+| at the 0.0 (new high/low) | +11.8R | +0.10 | 64% | +5.0R |
+| 1R | +11.4R | +0.10 | 57% | +8.2R |
+| 2R | +25.8R | +0.23 | 46% | +19.6R |
+| **3R** | **+32.3R** | **+0.28** | 44% | **+23.0R** |
+| 5R | +32.4R | +0.28 | 39% | +17.2R |
+| 48h mark | +29.7R | +0.26 | 38% | +7.1R |
+
+3R by year: 2020 −1.2 · 2021 +9.5 · 2022 +12.9 · 2023 +6.3 · 2024 +4.5 · 2025 +6.1 · 2026 (7 trades) −5.9.
+None overlapped a shipped trade.
+
+**Read with care.** This is the fourth way of entering this pool tried in two days, so part of any
+edge is the search itself. The 1m feed has no Pine gate. Each setup is walked alone, so trades
+overlapping EACH OTHER were not checked. Before anything goes live it needs a replay through the
+bot's own order layer and a demo run.

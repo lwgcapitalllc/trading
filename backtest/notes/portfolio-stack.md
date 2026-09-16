@@ -562,6 +562,7 @@ fixed R?* — and each is reusable for the next leg somebody proposes.
 |---|---|
 | `tools/nogap_scalp_audit.py` | what a whole grid of stop × target × breakeven × ladder rules would have made, without one replay per cell |
 | `tools/nogap_ishift_audit.py` | whether a 1-minute INTERNAL change of character inside the band selects the no-gap setups that pay — against the 0.618 limit on the same tape and exit code (Run 27 in the SOS Fade record) |
+| `tools/nogap_anyshift_audit.py` | the same setups entered on the FIRST 1m shift of either kind after the 0.5 tag, stop at the 1.0, across a target grid (Run 28) |
 | `tools/ob_leg_replay.py` | what the ORDER LAYER makes of the winning cell, against the shipped bot on a basis identical by construction |
 | `tools/drawdown_fill.py` | does a second leg put equity on the board while the FIRST one is bleeding — which total R cannot answer |
 
