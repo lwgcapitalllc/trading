@@ -1427,6 +1427,11 @@ class LiveRunner:
                 # Measured on `sos_fade_1`, 2026-09-15: four identical roots for one setup in 24
                 # hours, none of them closable.
                 state_path=self.cfg.instance_dir / self.SETUP_THREAD_FILE,
+                # Which chat those stored message ids belong to. A bot MOVED to another account
+                # writes to that account's signals channel, so every stored id would point into a
+                # chat it no longer sends to — `sos_fade_2` was moved exactly that way on
+                # 2026-09-15. Threads are dropped, loudly, when this changes.
+                channel=self._signal_room(),
             )
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(

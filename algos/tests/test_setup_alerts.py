@@ -566,3 +566,46 @@ def test_a_caller_with_NO_state_path_behaves_exactly_as_before(tmp_path):
     # thread exactly as it would with a file. Persistence changes what survives a RESTART; it
     # changes nothing inside one process.
     assert [m["text"].split(" · ")[0] for m in rec.sent] == ["👀 SETUP FORMING", "🧹 THREAD CLOSED"]
+
+
+def test_threads_are_DROPPED_when_the_bot_moves_to_another_TELEGRAM_CHAT(tmp_path):
+    """🔴 A Telegram message id means something only inside ONE chat. A bot moved to another
+    account sends its signals to that account's channel — `sos_fade_2` was moved exactly that way
+    on 2026-09-15 — so every stored id would then point at a message in a chat this bot no longer
+    writes to, and the reader would get a resolution with no setup attached.
+
+    RED without the channel fingerprint: the thread is carried into the new room and the reply
+    targets a foreign message id.
+    """
+    warnings = []
+
+    class Log:
+        def warning(self, m):
+            warnings.append(m)
+
+    state = tmp_path / "setup_threads.json"
+    SetupAlerts(send=Recorder(), log=None, state_path=state, channel="room-A").on_bar(
+        FakeStrategy([[_snap()]])
+    )
+
+    rec2 = Recorder()
+    moved = SetupAlerts(send=rec2, log=Log(), state_path=state, channel="room-B")
+    assert moved.open_keys() == []
+    assert warnings and "signals channel changed" in warnings[0]
+    moved.on_bar(FakeStrategy([[_snap()]]))
+    assert [m["text"].split(" · ")[0] for m in rec2.sent] == ["👀 SETUP FORMING"]
+    assert rec2.sent[0]["reply_to"] is None
+
+
+def test_the_SAME_chat_still_carries_its_threads(tmp_path):
+    """The control for the test above — the fingerprint must not throw threads away on every
+    ordinary restart, which would silently restore the bug it was added to prevent."""
+    state = tmp_path / "setup_threads.json"
+    SetupAlerts(send=Recorder(), log=None, state_path=state, channel="room-A").on_bar(
+        FakeStrategy([[_snap()]])
+    )
+    rec2 = Recorder()
+    again = SetupAlerts(send=rec2, log=None, state_path=state, channel="room-A")
+    assert again.open_keys() == ["K1"]
+    again.on_bar(FakeStrategy([[_snap()]]))
+    assert rec2.sent == []

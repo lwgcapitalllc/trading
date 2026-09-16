@@ -93,6 +93,7 @@ class SetupAlerts:
         display: str = "",
         lots_for: Optional[Callable[[int], Optional[float]]] = None,
         state_path=None,
+        channel: str = "",
     ) -> None:
         self._send = send
         self._log = log
@@ -128,6 +129,15 @@ class SetupAlerts:
         #: caller with nowhere to put them (a backtest, `alert_rate.py`) — which behaves exactly
         #: as this class did before persistence existed.
         self._state_path = Path(state_path) if state_path else None
+        #: Which Telegram chat the stored threads belong to.
+        #:
+        #: 🔴 **A message id is meaningful only inside ONE chat.** Move a bot to another account
+        #: and its signals go to that account's channel — which happened to `sos_fade_2` on
+        #: 2026-09-15 — so every stored id would then point at a message in a chat this bot no
+        #: longer writes to. Telegram answers a reply to a foreign id by dropping the reply link
+        #: or refusing the send, and either way the reader would get a resolution with no setup
+        #: attached and never see the setup re-announced. Threads are dropped when this changes.
+        self._channel = channel
         self._load()
 
     # ── the one entry point ──────────────────────────────────────────────────────────────────
@@ -283,6 +293,19 @@ class SetupAlerts:
         try:
             with open(self._state_path, encoding="utf-8") as f:
                 blob = json.load(f)
+            stored_channel = blob.get("channel", "")
+            if stored_channel != self._channel:
+                # SAID, not swallowed. The consequence is visible to the reader — open setups are
+                # announced once more, in the new room — and a silent drop would look exactly like
+                # the bug this whole file fixes.
+                self._warn(
+                    f"the signals channel changed since these threads were opened "
+                    f"({stored_channel!r} -> {self._channel!r}); dropping "
+                    f"{len(blob.get('setups') or {})} stored thread(s). A message id only means "
+                    f"anything in its own chat, so any still-open setup is announced once more "
+                    f"in the new room."
+                )
+                return
             for key, row in (blob.get("setups") or {}).items():
                 self._threads[key] = row.get("root")
                 self._sent[key] = set(row.get("sent") or ())
@@ -316,7 +339,7 @@ class SetupAlerts:
             tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"setups": rows}, f)
+                json.dump({"channel": self._channel, "setups": rows}, f)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self._state_path)

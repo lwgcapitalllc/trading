@@ -301,6 +301,16 @@ setups" — which would close every thread it is still watching. Putting it in `
 mid-session re-warm gets it for free; at a call site, the one that got forgotten would silently stop
 closing threads.
 
+⚠ **The stored threads are BOUND to their Telegram chat.** A message id means something only
+inside one chat, and a bot moved to another account writes to that account's signals channel —
+`sos_fade_2` was moved exactly that way on 2026-09-15. The state file records which room it was
+written for; when that changes, every stored thread is dropped and the change is LOGGED, because a
+silent drop looks identical to the bug this whole file fixes. Any still-open setup is then announced
+once more, in the new room, which is the only honest option available.
+
+⚠ **A redeploy does NOT lose the threads.** `promote.py` replaces `deployed/` and never the instance
+folder, so `setup_threads.json` sits beside `bot_state.json` and survives.
+
 ⚠ **Nothing here can move a trade**, and the parity gate cannot prove that for you: `compare_strategy.py`
 on the golden export is RED on `px_s_stage` at bar 16 and was RED identically before this change.
 What it rests on is that `_setup_key` and `_MissWatch.sos_ms` are read only by `_setup_context`, and
