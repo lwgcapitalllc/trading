@@ -544,3 +544,6 @@
 2026-09-16 13:40:09,772 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-01 23:10:00+00:00 → 2026-09-16 13:35:00+00:00).
 2026-09-16 13:40:09,772 [INFO] Equity re-anchored to the account after warm-up: 9,366.10 → 10,311.48
 2026-09-16 13:40:11,174 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 17:00:10,315 [WARNING] fast bar opening at 1789577700000 arrived after the 15m context had advanced to 1789578000000. Stepping it would read a context from its own future. Re-warm the fast feed instead. — re-warming the fast feed.
+2026-09-16 17:00:14,637 [INFO] Fast feed bookmarked at 2026-09-16 16:59:59.999000+00:00 — the 15m context is already past it.
+2026-09-16 17:00:14,637 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 02:30:00+00:00 → 2026-09-16 16:55:00+00:00).
