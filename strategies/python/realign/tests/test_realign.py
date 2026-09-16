@@ -85,6 +85,27 @@ def _wave(h, n=6000):
         h.update(i * 5 * MIN, p, p + 0.3, p - 0.3, p)
 
 
+def _frame(minutes, n=40):
+    import pandas as pd
+    idx = pd.date_range("2024-01-02", periods=n, freq=f"{minutes}min", tz="UTC")
+    return pd.DataFrame({"open": 100.0, "high": 100.5, "low": 99.5, "close": 100.0,
+                         "volume": 1.0}, index=idx)
+
+
+@pytest.mark.parametrize("minutes", [15, 30])
+def test_a_chart_frame_not_faster_than_the_trend_frame_is_refused(minutes):
+    """🔴 Run 57514f2bb21c replayed this bot on 15m bars and completed GREEN with ZERO trades:
+    the 15m aggregator is 1:1 with a 15m chart, so the false break and the chart-frame break are
+    one read and the setup cannot form. A zero is an answer; this must be a refusal.
+    Watched RED by removing the guard: both frames ran to completion without raising."""
+    with pytest.raises(ValueError, match="5-minute bars"):
+        RealignStrategy(RealignConfig()).run(_frame(minutes))
+
+
+def test_the_5m_frame_it_was_measured_on_still_runs():
+    RealignStrategy(RealignConfig()).run(_frame(5))
+
+
 def test_the_external_trail_anchor_is_read_off_the_engine():
     """🔴 Both anchors read `None` on every bar the port ever replayed until 2026-09-16.
 

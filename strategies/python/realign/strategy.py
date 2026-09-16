@@ -166,6 +166,16 @@ class RealignStrategy(SosFadeStrategy):
         if len(df.index) > 1:
             tf_seconds = int(df.index.to_series().diff().min().total_seconds())
             self.execution.bar_ms = tf_seconds * 1000
+            # 🔴 REFUSE a chart frame that is not FASTER than the false-break frame. The setup is a
+            # 15m break read against the chart frame's own breaks; on 15m bars the aggregator is
+            # 1:1 with the chart and the two reads collapse into one, so the run completed GREEN
+            # with ZERO trades (run 57514f2bb21c, 2026-09-16) — an answer, not a refusal.
+            htf_seconds = self.config.realign_htf_minutes * 60
+            if tf_seconds >= htf_seconds:
+                raise ValueError(
+                    f"Realign needs bars faster than its {self.config.realign_htf_minutes}-minute "
+                    f"trend frame, and these are {tf_seconds // 60}-minute bars — it would never "
+                    f"find a setup. Run it on 5-minute bars.")
 
         stack = EngineStack(engine_config or self.engine_config())
         for bar in iter_bars(df):

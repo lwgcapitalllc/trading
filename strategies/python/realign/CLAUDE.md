@@ -487,9 +487,11 @@ entry price. Why it exists, what it does on a STACK, and why rule 22 is silent f
 `LAB_STRATEGY["suggested_bar_value"] = 5` — it trades the 5m and reads the 15m through its own aggregator; a single-frame M15 run gives 9 setups in 5.6 years, i.e. no strategy to measure. The lab reads it and every form fills a leg's
 timeframe box from it, so nobody has to remember which bot runs on which frame.
 
-⚠ **It is a DEFAULT, never a refusal.** Nothing rejects a run on another frame — sweeping a bot
-across frames is a real question — so a figure quoted off a different frame is a DIFFERENT
-EXPERIMENT from every number in this file, and has to say so.
+⚠ **It is a DEFAULT, never a refusal** — a faster frame (1m, 2m) still runs, and a figure quoted
+off one is a DIFFERENT EXPERIMENT from every number in this file, and has to say so.
+🔴 **But a frame as slow as the false-break frame IS refused (2026-09-16)**: on 15m bars the 15m
+aggregator is 1:1 with the chart, the two reads collapse, and run 57514f2bb21c completed green with
+ZERO trades. `run()` now raises instead (`tests/test_realign.py`, watched red without it).
 
 🔴 **Why it had to be declared: the stack page had ONE timeframe for the whole stack**, so a 5m
 bot and a 15m bot on one account meant one of the two was replayed on a frame nobody has ever
