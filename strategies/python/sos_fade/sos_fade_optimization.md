@@ -4232,3 +4232,32 @@ Harness: `backtest/tools/` untouched. Ten runs driven through the lab's own HTTP
 scripts in the session scratchpad (`queue3b.py` with bounded retry on `failed_crashed` only,
 `analyse3.py` recomputing every column from the trade lists plus two integrity checks). **No repo
 file was modified to take these numbers.**
+
+---
+
+# Run 27 — 2026-09-16 — **A 1-MINUTE INTERNAL SHIFT AS THE ENTRY ON THE NO-GAP SETUPS. It does not select winners; one trade is the whole positive total.**
+
+Aaron's idea after the live 2026-09-15 LONG died as "No FVG in zone": when the band is tagged and
+there is no gap, take the trade on a 1m internal change of character in the trade's direction,
+closing inside the 0.5-0.886 band. Stop at the 0.886. Costs on. Tool:
+`backtest/tools/nogap_ishift_audit.py`, Vantage cache, 2020-01-01 -> 2026-08-06, 1m density 1.00
+every year. Same 178 setups and same 146 baseline fills as Run 12 / the short-hold audit.
+
+| | trades | median reach before stop | >=1R | 3R | 5R | 48h mark |
+|---|---|---|---|---|---|---|
+| 1m internal shift entry | 23 | 0.48R | 34.8% | +0.6R | +9.7R | +9.4R |
+| baseline, limit at 0.618 | 146 | 0.59R | 38.4% | +4.6R | +12.5R | +14.3R |
+
+Fire rate: printed 23 (12.9%), price closed through the stop first 85 (47.8%), never printed 70
+(39.3%). None landed while a shipped trade was open.
+
+**Verdict: no edge.** 6 winners in 23. The 48h total is **+11.56R from one trade**
+(2022-04-22 short) — without it the row is −2.2R. Four of the six winners sit in the first five
+months of 2022; since 2024 it is 1 winner in 7. The shift picks moves that go LESS far than the
+plain limit (0.48R vs 0.59R median), so it is filtering at random, not selecting.
+The 5R and 48h columns look positive on both rows for the same reason Run 12 found: a thin tail
+of big runners on a pool that mostly loses. 23 trades cannot prove absence, but nothing here
+earns a live test.
+
+**Not measured, and blocked:** the tight stop under the 1m shift leg. The engine reports the wrong
+broken level for bear internal shifts about 22 times in 25; that is an engine fix first.
