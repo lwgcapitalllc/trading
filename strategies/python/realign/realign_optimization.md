@@ -444,6 +444,54 @@ banking hits every band at once, which is why it pays for the 1–2R improvement
 ⚠ A band-specific rule would be a NEW hypothesis chosen by looking at this table, on a fitting
 window already used for three picks. It needs its own pre-declared study, not a fifth draw here.
 
+---
+
+### Run 5 — is the SETUP better than a random moment? (2026-09-16)
+
+**The question everything else rested on and nobody had asked of the real strategy.** Every figure
+in Runs 1-4 says what the strategy made; none says whether the PATTERN made it. An exit ladder, a
+stop geometry and a hard-drifting instrument can make money from almost any entry — and Run 1 found
+exactly that on the 5-minute-only arm, where **random entries beat the pattern's own**. The shipped
+setup's only prior score, z 1.85, came from a TRIGGER SCAN on a different basis (ECN, 1% risk, full
+window) and never cleared the bar.
+
+**Method.** `backtest/tools/realign_control.py`. The control replays the REAL strategy through the
+REAL execution and swaps only the TRIGGER, via a scripted tracker injected at `strategy.tracker`.
+Sizing, the three-stage stop, the trail, the time stop, flat-by-close, the cost profile and the
+single position slot are all shipped code, so the two arms differ in exactly one thing. Each
+control trigger keeps the real one's side, calendar month, New York hour, stop distance, target
+distance and retest offset — **only the moment is random.** 20 reps, charged
+`puprime_standard`, 2020-01-02 → 2025-08-05.
+
+| arm | trades | avg R | control avg R | beats random by | **z** |
+|---|---|---|---|---|---|
+| shipped (market entry, 36h before-TP1) | 140 | +0.205 | −0.053 | +0.258R | **+2.36** |
+| stacked (retest @ 5 + 12h clock + nightly flat) | 99 | +0.384 | −0.057 | +0.441R | **+4.21** |
+
+🔴 **THE LOAD-BEARING RESULT IS THE CONTROL COLUMN, NOT THE z.** Random timing through this exact
+machinery **LOSES money** — −0.053R and −0.057R a trade, and the shipped arm's controls averaged
+−7.19R over 136 trades. So the exit ladder, the stop geometry and gold's 2020-2025 drift are NOT
+what pays: handed a random moment they hand money back. **That was the single most likely
+explanation for this strategy's results and it is now measured and rejected.** It is also the exact
+failure the 5-minute-only arm died of, so the test has demonstrated it can return the other answer.
+
+⚠ **READ THE TWO ROWS DIFFERENTLY — THEIR EVIDENCE IS NOT THE SAME KIND.** The shipped row's
+configuration predates today and was in no way chosen against this control, so **+2.36 is the clean
+number**; it clears the plain bar of 2.0 and NOT the family-wise 2.99 this repo uses when several
+things are tested at once. The stacked row's +4.21 is inflated by selection: three of its four
+settings were picked on this very window in Runs 2-4, and only the retest has ever faced a holdout.
+**The honest reading is that the pattern is real, and that the stacked improvements are part real
+and part fitted in an unknown proportion.**
+
+⚠ Control trade counts differ from the real arm's (135.8 and 93.9 against 140 and 99) and that is
+correct rather than a flaw: with one position slot a randomly-timed setup displaces whatever real
+setup came next. The counts are reported, never assumed equal.
+
+**Verdict: the 15m/5m Realign pattern carries a real edge over random entry, and the retest entry
+roughly doubles the distance from random.** This is the first result in the strategy's history that
+clears its own bar on a clean basis. It does NOT make any of Run 3's or Run 4's picks validated,
+and it does not touch open question 1 below.
+
 ## Open questions — blocking, and they are not tuning questions
 
 | | question | status |
