@@ -264,6 +264,7 @@ import dataclasses  # noqa: E402
 
 from realign.execution import RealignExecution  # noqa: E402
 from realign.tracker import RealignState  # noqa: E402
+from sos_fade.execution import Decision  # noqa: E402
 
 
 class _Sig:
@@ -289,7 +290,7 @@ def _fire(ex, sig, level=99.0, stop=98.0, target=110.0, d=+1):
     st = RealignState(trigger_dir=d, trigger_stop=stop, trigger_target=target,
                       trigger_level=level)
     ex._state = st
-    ex._place_entries(_Sig(sig.index, sig.close), None, object(), None, None)
+    ex._place_entries(_Sig(sig.index, sig.close), None, Decision(index=sig.index), None, None)
 
 
 def test_a_limit_resting_exactly_on_the_target_is_refused():

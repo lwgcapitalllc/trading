@@ -5,9 +5,7 @@ trend on the 15m (SOS → BOS → BOS) is broken by a **bearish shift of structu
 BREAK** — a structural liquidity grab. On the 5m the internal structure then turns bearish and back
 bullish to **realign** with the original external direction, and the trade is taken on that
 realignment, **before** the external bullish SOS that later confirms it. Shorts are the exact mirror.
-**Sweeps:** `realign_optimization.md`, next to this file — **no sweep of the shipped setup, on
-purpose**, and it names what blocks the first one: this bot has NO parity gate, so tuning it
-optimises a Python program against itself. Its one run is research on a separate arm (below).
+**Sweeps:** `realign_optimization.md`, next to this file — Runs 1-10, and the open questions.
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
@@ -218,6 +216,29 @@ per pattern), and it is deliberately left as a hypothesis rather than written up
 of drawdown (2.31 vs 1.66). But `strict` is a real rule with the best per-trade quality in the book,
 and it is the one worth revisiting if the cost model or the entry ever gets cheaper — which is
 exactly the conclusion the old wording would have prevented anyone from reaching.
+
+---
+
+## Live-capable wiring (2026-09-16) — NOT yet run on the box
+
+🔴 **The live runner never calls `RealignStrategy.step`.** It drives `signals` → `sequence` →
+`execution.step(sig, seq)`, and until today the public stages were the real SOS Fade ones — a live
+bot would have skipped the 15m frame and the tracker and crashed on the first bar. Now:
+
+- **The public stages are the empty pass-through seams** and `execution.step(sig, seq)` hands the
+  bar back to the strategy — the extreme leg bot's pattern. The real stages are private, and the
+  strategy's own path calls `step_bar`.
+- **`entry_style = "market"`.** Inheriting SOS Fade's "resting" halts the bot on its first trade.
+- **The market entry states its stop on the bar it opens.** The parent states it only on bars that
+  start in a position, and the bridge refuses a market order with no stop.
+- **The live step refuses the retest entry** — a resting limit under a market declaration is a
+  state the bridge cannot tell from a divergence.
+- ✅ **Proof, `tests/test_live_seams.py`:** the golden export replayed through the runner's three
+  calls books the same trades as `run()`, bar for bar. The runner's call shape is parsed from its
+  source so the imitation cannot drift. Every test was watched RED by mutation.
+- ⚠ **Rule 9 still stands:** nothing has driven it on the box. Instance folder, promote, dry run and
+  the shadow diff are the steps left. **The parity gate is unaffected** — the replay path is the
+  same calls in the same order, and the golden gate was re-run green.
 
 ---
 

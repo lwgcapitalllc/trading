@@ -38,6 +38,7 @@ from sos_fade.execution import Decision  # noqa: E402
 from sos_fade.sequence import SosFadeSequence  # noqa: E402
 from sos_fade.signals import SignalAdapter  # noqa: E402
 from sos_fade.strategy import SosFadeStrategy  # noqa: E402
+from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
 
 from .config import RealignConfig  # noqa: E402
 from .execution import RealignExecution  # noqa: E402
@@ -50,12 +51,24 @@ class RealignStrategy(SosFadeStrategy):
                  initial_capital: float = 1_000_000.0, tick_source=None,
                  cost_profile=None, account=None, leg: str = "strat") -> None:
         self.config = config or RealignConfig()
-        self.signals = SignalAdapter(self.config)
-        self.sequence = SosFadeSequence(self.config)
+        # The two SOS Fade stages this bot really runs, under PRIVATE names. `_step_core` calls them
+        # in an order that is part of the strategy (the 15m frame and the tracker go first).
+        self._signals = SignalAdapter(self.config)
+        self._sequence = SosFadeSequence(self.config)
         resolver, profile = self._fill_model(tick_source, cost_profile)
         self.execution = RealignExecution(self.config, initial_capital=initial_capital,
                                           resolver=resolver, profile=profile,
                                           account=account, leg=leg)
+        # ── the LIVE contract ────────────────────────────────────────────────
+        # 🔴 `algos/live/runner.py` drives `signals` → `sequence` → `execution.step(sig, seq)` and
+        # never calls `step` here. Exposing the two real stages under the public names (as this
+        # class did until 2026-09-16) meant a live run would skip the 15m frame and the tracker
+        # entirely and crash on the execution's third argument. So the public stages are the
+        # honest empty seams, and `execution.step(sig, seq)` hands the bar back to `step` — the
+        # extreme leg bot's pattern. See `strategies/python/live_contract.py`.
+        self.signals = PassThroughSignals()
+        self.sequence = PassThroughSequence()
+        self.execution._strategy = self
         self.tracker = RealignTracker(self.config)
         self.htf = HtfStructure(self.config.realign_htf_minutes)
         # The optional SLOWER trend context. Its own aggregator, because the false-break
@@ -101,9 +114,9 @@ class RealignStrategy(SosFadeStrategy):
                     self.execution.trend_dir = -1
         rs = self.tracker.update(bar_time_ms, b.high, b.low,
                                  state.structure.external, state.structure.internal)
-        sig = self.signals.update(state)
-        seq = self.sequence.update(sig)
-        dec = self.execution.step(sig, seq, rs)
+        sig = self._signals.update(state)
+        seq = self._sequence.update(sig)
+        dec = self.execution.step_bar(sig, seq, rs)
         # ⚠ AFTER the step, and that is deliberate. The parent sets its trail anchors from the
         # CHART frame inside `step`; overwriting them before it runs would simply be undone.
         # See `RealignConfig.realign_trail_frame` — the Pine anchors this trail on the EXTERNAL

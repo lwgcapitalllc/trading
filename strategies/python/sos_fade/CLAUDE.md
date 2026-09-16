@@ -108,9 +108,10 @@ state is one instant of latency and the bridge must place the order. Nothing obs
 the two, so the bridge asks rather than guessing. Rules: `strategies/CLAUDE.md` → *Every order
 layer DECLARES how it opens a position*.
 
-⚠ **`b_leg`, `bos` and `realign` inherit it**, which is correct — all three rest a fib-priced
-limit. ⚠ **`realign` enters at MARKET in the LAB and is not a live bot**; if it is ever made one,
-this is the line it has to override, and inheriting quietly is what would halt it on trade one.
+⚠ **`b_leg` and `bos` inherit it**, which is correct — both rest a fib-priced limit.
+✅ **`realign` enters at MARKET and OVERRIDES it (2026-09-16)** — see its CLAUDE.md → *Live-capable
+wiring*. ⚠ **`b_leg`'s order layer takes a THIRD argument the live runner never passes**, so it
+cannot run live as wired either — the same gap realign had; unfixed, and its demo bot is benched.
 
 ⚠ **It needs a PROMOTE to reach the running bot**, like everything else in this package.
 

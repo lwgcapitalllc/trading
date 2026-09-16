@@ -50,8 +50,40 @@ class RealignExecution(Execution):
     #: Triggers refused because the retest had no level to rest at. REPORTING — but it is
     #: the number that tells "the retest works" apart from "the lookup dropped trades".
     retest_no_level = 0
+    #: The strategy that owns this order layer — set by `RealignStrategy.__init__`. The live
+    #: `step` hands the bar back to it.
+    _strategy = None
 
-    def step(self, sig, seq, state):  # type: ignore[override]
+    #: 🔴 **HOW THIS ORDER LAYER OPENS A POSITION, read by `algos/live/` and nothing else.** The
+    #: shipped entry fills inside the emulator at the bar's close, so *emulator in a position,
+    #: broker flat* is latency the bridge must catch up, not the resting-limit divergence it must
+    #: halt on. Inheriting SOS Fade's "resting" would halt the bot on its first trade.
+    #: ⚠ **The retest mode rests a limit and is NOT live-capable under this declaration** — the
+    #: live `step` below refuses it.
+    entry_style = "market"
+
+    def step(self, sig, seq):  # type: ignore[override]
+        """One bar, through the live contract. See `strategies/python/live_contract.py`.
+
+        🔴 **It DELEGATES to the strategy's own `step` and adds nothing.** The 15m frame, the
+        tracker and this order layer run there in an order that is part of the strategy; running
+        them again here would be a second implementation of what the parity gate checks.
+        ⚠ `sig` IS the bar state (`PassThroughSignals`); `seq` is always None.
+        """
+        if self._strategy is None:
+            raise RuntimeError(
+                "RealignExecution.step() needs the strategy that owns it; build the strategy "
+                "rather than the execution on its own.")
+        if self._cfg.realign_entry_mode != "market":
+            # A resting retest limit under a "market" declaration is the one state the bridge
+            # cannot tell from a divergence — it would place a market order for a limit.
+            raise RuntimeError(
+                f"realign's entry mode is {self._cfg.realign_entry_mode!r}; only the market "
+                "entry is live-capable. Set it to 'market' for a live bot.")
+        return self._strategy.step(sig)
+
+    def step_bar(self, sig, seq, state):
+        """One bar of the SOS Fade order layer, with this fork's setup state. Called by the strategy."""
         self._state = state
         dec = super().step(sig, seq)
         # 🔴 AFTER the parent's Phase A, and the order is the whole correctness argument.
@@ -193,7 +225,12 @@ class RealignExecution(Execution):
                         sos_bar=None, fib=None)
         if cfg.realign_entry_mode == "market":
             # Market fill: open immediately at this bar's close rather than resting the order.
-            self._open_position(pend, entry, sig, dec)
+            if self._open_position(pend, entry, sig, dec):
+                # 🔴 The stop goes out WITH a market order, so the live bridge reads it off this
+                # bar's decision — and the parent states the stop only on bars that START in a
+                # position. Left unset, the bridge refuses the order for having no stop and the
+                # bot halts. Reporting only on a replay: nothing reads `dec.stop` back.
+                dec.stop = self._current_stop()
             return
         # Rest the limit and let the INHERITED fill path take it — `_try_entry_fill` already
         # prices a limit against the bar, pays the ask on a long, and gives a gap the better
