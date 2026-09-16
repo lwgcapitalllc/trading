@@ -583,3 +583,21 @@
 2026-09-16 20:17:49,601 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-16 20:30:01,777 [INFO] Priority 2 on this account: waiting 18s for the bots above
 2026-09-16 20:45:02,599 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-16 21:59:46,022 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 21:59:46,022 [INFO] Stop requested — shutting down.
+2026-09-16 21:59:46,023 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 21:59:46,623 [INFO] MT5 disconnected.
+2026-09-16 21:59:56,664 [INFO] Extreme Leg | ExtremeLegStrategy v200 | hash 811d2035fdd9 | commit a6481ce3 | frozen | LIVE
+2026-09-16 21:59:57,193 [INFO] Connected | #34957946 | $10,311.48 | PUPrime-Live
+2026-09-16 21:59:57,193 [INFO] MT5 connection lock released
+2026-09-16 21:59:57,332 [INFO] Sizing against account balance $10,311.48
+2026-09-16 21:59:57,334 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 21:59:57,337 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-16 22:00:00,527 [INFO] Warmed 15000 bars (2026-07-02 06:25:00+00:00 → 2026-09-16 20:50:00+00:00) in 3.0s
+2026-09-16 22:00:00,530 [INFO] Equity re-anchored to the account after warm-up: 10,739.17 → 10,311.48
+2026-09-16 22:00:01,594 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 22:05:02,295 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-16 22:05:02,298 [INFO] Sizing against account balance $10,311.48
+2026-09-16 22:05:06,842 [INFO] Warmed 15000 bars (2026-07-02 06:35:00+00:00 → 2026-09-16 22:00:00+00:00) in 4.3s
+2026-09-16 22:05:06,843 [INFO] Equity re-anchored to the account after warm-up: 10,739.17 → 10,311.48
+2026-09-16 22:15:08,026 [INFO] Priority 2 on this account: waiting 12s for the bots above

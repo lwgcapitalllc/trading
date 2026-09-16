@@ -575,3 +575,29 @@
 2026-09-16 20:17:45,870 [INFO] Equity re-anchored to the account after warm-up: 9,366.10 → 10,311.48
 2026-09-16 20:17:46,623 [INFO] Setup threads carried across the restart: 1 — 1 closed, 0 still open.
 2026-09-16 20:17:47,383 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 21:59:43,732 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 21:59:43,732 [INFO] Stop requested — shutting down.
+2026-09-16 21:59:43,733 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 21:59:44,143 [INFO] MT5 disconnected.
+2026-09-16 21:59:51,932 [INFO] SOS Fade | SosFadeStrategy v196 | hash 36ed16c3e22d | commit a6481ce3 | frozen | LIVE
+2026-09-16 21:59:52,456 [INFO] Connected | #34957946 | $10,311.48 | PUPrime-Live
+2026-09-16 21:59:52,456 [INFO] MT5 connection lock released
+2026-09-16 21:59:52,578 [INFO] Sizing against account balance $10,311.48
+2026-09-16 21:59:52,589 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-16 21:59:52,590 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 21:59:52,593 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-16 21:59:54,248 [INFO] Warmed 5000 bars (2026-07-02 06:15:00+00:00 → 2026-09-16 20:30:00+00:00) in 1.6s
+2026-09-16 21:59:56,088 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 06:25:00+00:00 → 2026-09-16 20:50:00+00:00).
+2026-09-16 21:59:56,090 [INFO] Equity re-anchored to the account after warm-up: 9,366.10 → 10,311.48
+2026-09-16 21:59:56,093 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-16 21:59:56,523 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 22:05:07,466 [WARNING] 13 M5 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-16 22:05:10,569 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 06:35:00+00:00 → 2026-09-16 22:00:00+00:00).
+2026-09-16 22:05:21,315 [INFO] The re-entry's feed is delivering again.
+2026-09-16 22:15:03,089 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-16 22:15:03,090 [INFO] Sizing against account balance $10,311.48
+2026-09-16 22:15:04,999 [INFO] Warmed 5000 bars (2026-07-02 06:45:00+00:00 → 2026-09-16 22:00:00+00:00) in 1.8s
+2026-09-16 22:15:06,817 [INFO] Fast feed bookmarked at 2026-09-16 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-16 22:15:06,817 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 06:45:00+00:00 → 2026-09-16 22:10:00+00:00).
+2026-09-16 22:15:06,818 [INFO] Equity re-anchored to the account after warm-up: 9,366.10 → 10,311.48
+2026-09-16 22:15:06,821 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.

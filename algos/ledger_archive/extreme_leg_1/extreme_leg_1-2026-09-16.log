@@ -167,3 +167,22 @@
 2026-09-16 20:15:07,737 [INFO] Priority 2 on this account: waiting 12s for the bots above
 2026-09-16 20:30:02,758 [INFO] Priority 2 on this account: waiting 17s for the bots above
 2026-09-16 20:45:02,709 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-16 21:59:46,116 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-16 21:59:46,116 [INFO] Stop requested — shutting down.
+2026-09-16 21:59:46,117 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-16 21:59:46,646 [INFO] MT5 disconnected.
+2026-09-16 21:59:58,471 [INFO] Extreme Leg | ExtremeLegStrategy v200 | hash 811d2035fdd9 | commit a6481ce3 | frozen | LIVE
+2026-09-16 21:59:59,010 [INFO] Connected | #700152905 | $15,844.46 | PUPrime-Demo
+2026-09-16 21:59:59,010 [INFO] MT5 connection lock released
+2026-09-16 21:59:59,142 [INFO] Sizing against account balance $15,844.46
+2026-09-16 21:59:59,144 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-16 21:59:59,147 [WARNING] Setup alerts: OFF — ExtremeLegStrategy does not implement live_setups(). It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-16 22:00:04,970 [INFO] Warmed 15000 bars (2026-07-02 06:25:00+00:00 → 2026-09-16 20:50:00+00:00) in 5.7s
+2026-09-16 22:00:04,973 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-16 22:00:05,849 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-16 22:00:26,073 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_1\\bot_state.json.2220.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_1\\bot_state.json'
+2026-09-16 22:05:06,621 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-16 22:05:06,623 [INFO] Sizing against account balance $15,844.46
+2026-09-16 22:05:11,488 [INFO] Warmed 15000 bars (2026-07-02 06:35:00+00:00 → 2026-09-16 22:00:00+00:00) in 4.5s
+2026-09-16 22:05:11,490 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
+2026-09-16 22:15:02,850 [INFO] Priority 2 on this account: waiting 17s for the bots above
