@@ -114,6 +114,34 @@ rescuable. Do not re-open it without a new mechanism. Full record: `realign_opti
 iBOS/iSOS across Aaron's own window. The two-frame build is not a refinement; without it there is no
 strategy to measure.
 
+## 🔴 THREE TO FIVE TRADES CARRY 5.5 YEARS — the biggest weakness in this strategy (2026-09-16)
+
+Aaron asked whether it still makes money without the biggest winner. It does, barely, and the
+answer is the most important caveat attached to every other number in this file. Charged
+`puprime_standard`, 2020-01-02 → 2025-08-05, dropping the largest trades in order:
+
+| dropped | 0 | 1 | 2 | 3 | 5 | 10 |
+|---|---|---|---|---|---|---|
+| shipped (market entry, 140 tr) | +28.75 | +10.21 | +3.72 | **−1.67** | −10.24 | −25.75 |
+| stacked (retest + 12h + nightly flat, 99 tr) | +38.03 | +15.46 | +9.82 | +4.40 | **−2.48** | −13.09 |
+
+**The single best trade is ~60% of the result on both** (+18.54R of +28.75R; +22.56R of +38.03R),
+and **the top five exceed the entire profit** — 136% and 107% — so everything outside them nets to
+roughly nothing. Shipped turns negative after 3 removals; stacked survives to 5.
+
+⚠ **This is a bigger practical risk than the missing holdouts.** A year in which those trades do
+not appear is flat-to-losing, and it has to be sat through. Size accordingly, and expect the
+equity curve to arrive in bursts nobody can predict or skip.
+
+⚠ **It is NOT evidence the edge is fake, and the two must not be conflated.** The random-entry
+control below does not depend on the big winners: random timing through the same exits LOSES money,
+and that comparison holds across all 20 reps. Fat tails are also this repo's stated design intent
+(root `CLAUDE.md` → *Trading Philosophy*): few high-quality setups, not many mediocre ones.
+
+**The one good sign: today's changes REDUCED the concentration.** Stacked needs 5 removals to break
+instead of 3, and its drawdown holds flat at 9.38R through the first three removals while the
+shipped book's sits at 15.52R throughout.
+
 ## 🔴 The pattern BEATS random entry — measured 2026-09-16, and random LOSES
 
 The question every other number here rested on and nobody had asked of the real strategy: is it the

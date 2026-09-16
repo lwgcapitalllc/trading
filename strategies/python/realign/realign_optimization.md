@@ -492,6 +492,35 @@ roughly doubles the distance from random.** This is the first result in the stra
 clears its own bar on a clean basis. It does NOT make any of Run 3's or Run 4's picks validated,
 and it does not touch open question 1 below.
 
+---
+
+### Run 6 — how concentrated is the profit? (2026-09-16)
+
+Aaron: *"take out the biggest winning trade, do we still make money?"* Yes, and barely. Charged
+`puprime_standard`, 2020-01-02 → 2025-08-05, dropping the largest trades in order:
+
+| dropped | 0 | 1 | 2 | 3 | 5 | 10 |
+|---|---|---|---|---|---|---|
+| shipped (140 tr) | +28.75 | +10.21 | +3.72 | **−1.67** | −10.24 | −25.75 |
+| stacked (99 tr) | +38.03 | +15.46 | +9.82 | +4.40 | **−2.48** | −13.09 |
+
+Five biggest, shipped: +18.54, +6.49, +5.39, +4.55, +4.03 — **136% of the total.**
+Five biggest, stacked: +22.56, +5.64, +5.43, +3.92, +2.96 — **107% of the total.**
+
+🔴 **THE SINGLE BEST TRADE IS ~60% OF THE RESULT IN BOTH BOOKS, AND EVERYTHING OUTSIDE THE TOP FIVE
+NETS TO ROUGHLY ZERO.** This is the most important caveat attached to every figure in Runs 2-5 and
+belongs beside any of them that get quoted. Practically it is a larger risk than the missing
+holdouts: a year without those trades is flat-to-losing and has to be sat through.
+
+⚠ **It is not evidence the edge is fake.** Run 5's control does not depend on the big winners —
+random timing through the same exits loses money across all 20 reps. Fat tails are also the stated
+design intent (root `CLAUDE.md` → *Trading Philosophy*).
+
+**The stacked configuration is measurably LESS concentrated**: 5 removals to break rather than 3,
+and its drawdown holds flat at 9.38R through the first three removals while the shipped book's
+stays at 15.52R throughout. That is a point in favour of Run 2-3's changes that no other table
+here shows.
+
 ## Open questions — blocking, and they are not tuning questions
 
 | | question | status |
