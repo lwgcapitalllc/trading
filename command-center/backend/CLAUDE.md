@@ -371,3 +371,4 @@ Most-cited code: `services/news_filter.py`, `routers/backtests.py`, `services/br
 - The cost account FOLLOWS the attached terminal (2026-08-24)
 - The broker's own instrument universe — `GET /backtests/broker-symbols` (2026-09-07)
 - 🔴 A stored symbol beat the instrument the run LOADS (2026-09-09)
+- What may be changed on a RUNNING bot, and why a switch is not a number - `services/bot_params.py`

@@ -3982,6 +3982,39 @@ function paramsWithRisk(key: string, risk: number) {
   }
 }
 
+/** The stop-protection switch as the server sends it, with the measured sentence attached. */
+function switchRow(over: Record<string, unknown> = {}) {
+  return {
+    name: 'exec_be_arm_r',
+    value: -1,
+    label: 'Any trade moves to breakeven at (R)',
+    group: 'Exit',
+    desc: null,
+    unit: null,
+    type: 'float',
+    options: null,
+    choices: null,
+    core: false,
+    editable: true,
+    min: null,
+    max: null,
+    note: null,
+    switch: {
+      off: -1,
+      on: 1,
+      on_label: 'Protect at 1R',
+      warn: 'Measured over 6.6 years on gold: this costs about 12R of 237R.',
+    },
+    ...over,
+  }
+}
+
+/** One bot whose runtime rows are the risk share AND the stop-protection switch. */
+function paramsWithSwitch(key: string, over: Record<string, unknown> = {}) {
+  const base = paramsWithRisk(key, 5)
+  return { ...base, runtime: [...base.runtime, switchRow(over)] }
+}
+
 /** Answers the move of `b_leg` and records every body, so a check can COUNT the writes. */
 async function recordMoves(page: Page, account: number | null, order?: string[]) {
   const sent: Record<string, unknown>[] = []
@@ -4858,4 +4891,113 @@ test('a bot whose config will not read blocks the reorder rather than sending a 
   await page.goto('/bots')
   await expect(botRows(page).nth(0)).not.toHaveAttribute('draggable', 'true')
   await expect(page.getByTestId('priority-bar')).toHaveCount(0)
+})
+
+/* ── the stop-protection switch ──────────────────────────────────────────────────────────────
+ *
+ * 🔴 Aaron asked for this on 2026-09-16 — an on/off for the 1R breakeven, per bot, from this page.
+ * Every check below exists because the setting it exposes has been MEASURED and LOSES MONEY, so
+ * the failure mode is not a broken control, it is a working one that reads as prudent.
+ */
+
+test('the switch shows what turning it on COSTS, while it is still off', async ({ page }) => {
+  // 🔴 The whole reason this control is not a bare toggle. "Protect the stop" is a sentence nobody
+  // argues with, so a reader meets the measurement only after deciding to act unless it is on
+  // screen in BOTH states. The number is the server's, never a second copy in the page.
+  // MUTATION: render the warning only while the switch is on → red, it is off here.
+  // MUTATION: drop `warn` from the row and still render the switch → red on the switch's count.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/b_leg/params', (route) =>
+    route.fulfill({ json: paramsWithSwitch('b_leg') })
+  )
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) =>
+    route.fulfill({ json: plan({ share_total_pct: 9 }) })
+  )
+  await openBot(page, 'b_leg')
+  const sw = page.getByTestId('bot-switch')
+  await expect(sw).toHaveAttribute('data-on', 'no')
+  await expect(page.getByTestId('switch-warn')).toContainText('12R of 237R')
+  await expect(page.getByTestId('switch-state')).toContainText('Off')
+})
+
+test('turning it ON asks first, and writes the value the SERVER declared', async ({ page }) => {
+  // 🔴 The write must carry the server's own `on` value. A switch that posts `true` — or `1` —
+  // writes a bool into a field the strategy declares as a number and the bot refuses to start.
+  // MUTATION: post `true` instead of `spec.on` → red on the body.
+  // MUTATION: save on the first click → red, the body arrives before the confirm.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/b_leg/params', (route) =>
+    route.fulfill({ json: paramsWithSwitch('b_leg') })
+  )
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) =>
+    route.fulfill({ json: plan({ share_total_pct: 9 }) })
+  )
+  let sent: Record<string, unknown> | null = null
+  await page.route('**/api/bots/b_leg/runtime', (route) => {
+    sent = route.request().postDataJSON()
+    return route.fulfill({ json: { status: 'ok', changed: true, detail: 'on' } })
+  })
+
+  await openBot(page, 'b_leg')
+  await page.getByTestId('switch-toggle').click()
+  await expect(page.getByTestId('switch-confirm')).toBeVisible()
+  expect(sent).toBeNull()
+
+  await page.getByTestId('switch-confirm-go').click()
+  await expect.poll(() => sent).toEqual({ values: { exec_be_arm_r: 1 }, deploy: true })
+})
+
+test('turning it OFF does not ask — off is the measured answer', async ({ page }) => {
+  // 🔴 A confirmation on the SAFE direction trains a yes on the unsafe one. Off is where the
+  // measurement points, so it costs one click and no dialog.
+  // MUTATION: confirm on both directions → red, the body never arrives on one click.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/b_leg/params', (route) =>
+    route.fulfill({ json: paramsWithSwitch('b_leg', { value: 1 }) })
+  )
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) =>
+    route.fulfill({ json: plan({ share_total_pct: 9 }) })
+  )
+  let sent: Record<string, unknown> | null = null
+  await page.route('**/api/bots/b_leg/runtime', (route) => {
+    sent = route.request().postDataJSON()
+    return route.fulfill({ json: { status: 'ok', changed: true, detail: 'off' } })
+  })
+
+  await openBot(page, 'b_leg')
+  await expect(page.getByTestId('bot-switch')).toHaveAttribute('data-on', 'yes')
+  await page.getByTestId('switch-toggle').click()
+  await expect.poll(() => sent).toEqual({ values: { exec_be_arm_r: -1 }, deploy: true })
+  await expect(page.getByTestId('switch-confirm')).toHaveCount(0)
+})
+
+test('a switch row is NOT drawn as a number box, and the risk row still is', async ({ page }) => {
+  // 🔴 Both are runtime rows and both used to go through the risk editor, which would render a
+  // two-state setting as a decimal box with a % suffix and an account-cap plan under it.
+  // The shape is the SERVER'S (`row.switch`), never a name matched in the page.
+  // MUTATION: route on `r.name === 'exec_be_arm_r'` → still passes here, so the check below
+  // also pins that a switch the server sends under ANY name is drawn as one.
+  // MUTATION: drop the branch and send every row to the risk editor → red on the input count.
+  await mock(page, [FULL], [reg()])
+  await page.route('**/api/bots/b_leg/params', (route) =>
+    route.fulfill({
+      json: paramsWithSwitch('b_leg', {
+        name: 'use_breakeven',
+        value: false,
+        switch: {
+          off: false,
+          on: true,
+          on_label: 'Protect the stop',
+          warn: 'Measured and rejected.',
+        },
+      }),
+    })
+  )
+  await page.route('**/api/bots/accounts/*/risk-plan', (route) =>
+    route.fulfill({ json: plan({ share_total_pct: 9 }) })
+  )
+  await openBot(page, 'b_leg')
+  await expect(page.getByTestId('bot-switch')).toHaveAttribute('data-name', 'use_breakeven')
+  await expect(page.getByTestId('risk-input')).toHaveCount(1)
+  await expect(page.getByTestId('bot-risk')).toHaveCount(1)
 })

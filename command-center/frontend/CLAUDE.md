@@ -521,3 +521,4 @@ Most-cited code: `components/ChartPanel/tradeGeometry.ts`, `components/paramCond
 Most-cited code: `components/InstrumentPicker.tsx`, `lib/instrumentSearch.ts`, `lib/instrumentRecents.ts`.
 
 - The instrument picker — the broker's OWN list, searchable, with recents (2026-09-07)
+- The stop-protection switch on a bot, with its measured cost beside it - `notes/bots-page.md`

@@ -157,5 +157,15 @@ def test_arming_is_not_editable_from_here():
 
 
 def test_every_editable_field_declares_bounds():
-    """An editable field with no range is an unbounded text box pointed at a live account."""
-    assert set(bot_params.RUNTIME_BOUNDS) == bot_params.RUNTIME_EDITABLE
+    """An editable field with no range is an unbounded text box pointed at a live account.
+
+    ⚠ **A SWITCH states its range as its two STATES, not as a min and a max (2026-09-16).** The
+    rule is unchanged — every editable field must say what it may be — and this asserts the
+    partition rather than relaxing it: a field must be in EXACTLY one of the two declarations, so
+    a new editable field with neither still fails here, and one with both (a bounded range AND a
+    pair of states, which are two different answers to the same question) fails too.
+    """
+    numbers = set(bot_params.RUNTIME_BOUNDS)
+    switches = set(bot_params.RUNTIME_SWITCHES)
+    assert not (numbers & switches)
+    assert numbers | switches == bot_params.RUNTIME_EDITABLE

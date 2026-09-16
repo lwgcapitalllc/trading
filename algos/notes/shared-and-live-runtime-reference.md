@@ -349,3 +349,41 @@ Standalone MT5 lab tooling (not imported by any bot) lives in `tools/`: `downloa
 ⚠ **BOTH AGENT TASKS ARE NOW FIRED AUTOMATICALLY.** `command-center/backend/services/agent_supervisor.py` runs a 60s loop on Aaron's Mac that rebuilds the SSH tunnel and fires `MT5AgentRDP` / `NT8Agent` for whichever agent is not answering. Two consequences for VPS work: **(1)** killing an agent by hand to pick up a code change may see it restarted within a minute — stop the command-center backend first if you need it to stay down; **(2)** the loop **re-probes after every `schtasks /run`**, because that command reports SUCCESS for a task Windows refuses to launch (the stored-password trap below), so an agent that will not start is now reported rather than assumed healthy. It deliberately will **not** restart an agent whose lab job is still marked `running` — from the Mac, "dead" and "too loaded to answer `/health`" are indistinguishable, and the NT8 agent genuinely stops answering while driving a backtest under pywinauto.
 
 Multi-instrument architecture (Phases 1–5) explained in `docs/ARCHITECTURE.md`.
+
+## The stop-protection switch is runtime-reloadable, and that WIDENED the rule (2026-09-16)
+
+`RUNTIME_RELOADABLE` held one name for its whole life — the risk share — on a stated principle:
+only knobs that change HOW MUCH a bot risks may move under a running bot, never which trades it
+takes, so the running bot stays comparable to the backtest that justified it. It now holds three.
+The two new ones are the stop-protection switch (`exec_be_arm_r` on SOS Fade and B-Leg,
+`use_breakeven` on the extreme-leg bot), and they change how a trade ENDS.
+
+🔴 **THE EXCEPTION RESTS ON WHAT `_maybe_reload_runtime` ALREADY GUARANTEES, NOT ON THE CHANGE
+BEING SMALL.** A reloadable change is applied ONLY while the bot is FLAT, by rebuilding the whole
+strategy and replaying history into it, and it writes a ledger event. So no open position is ever
+handed to rules that would not have opened it, and every trade still belongs to exactly one
+configuration — which is the property the original sentence was protecting. A restart would add
+only a re-check of `strategy_source_hash`, and that pins CODE; a value inside `strategy_params`
+sits outside the pin whichever way it is written.
+
+⚠ **They are two-state SWITCHES, not free numbers.** The Bots page offers off or on and nothing
+else (`command-center/backend/services/bot_params.RUNTIME_SWITCHES` declares the exact pair). A
+reader who wants some other arm multiple edits the instance config and restarts — the honest cost
+of a value nothing has measured.
+
+⚠ **THE TYPE IS LOAD-BEARING AND `True == 1` IS THE TRAP.** `runner._build_strategy` hands
+`strategy_params` straight to the strategy's config class, so a bool written into the float arm —
+or `1.0` written into the extreme-leg bot's boolean — is a bot that refuses to start, on a path
+nobody exercises until the switch is flipped. The command center compares against the DECLARED
+value's type, not a number cast out of it; `command-center/backend/tests/test_bot_switches.py`
+pins it.
+
+⚠ **A name a given bot's config does not carry is simply never seen for that bot.** This set is a
+FILTER over what changed on disk, not a list of fields every bot must have.
+
+⚠ **Both switches ship OFF and both are MEASURED LOSERS** — the numbers are in
+`strategies/python/sos_fade/notes/reentry_ladder_mechanics.md` and
+`strategies/python/extreme_leg/extreme_leg_optimization.md` (Run 2), and the page renders the
+measurement beside the control. **Do not read this widening as the line moving.** A free-form
+strategy number still goes lab → backtest → promote. What earned the exception is a two-state
+switch whose both states are measured.

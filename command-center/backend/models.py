@@ -529,6 +529,9 @@ class BotParamRow(BaseModel):
     min: Optional[float] = None
     max: Optional[float] = None
     note: Optional[str] = None
+    # Present when the row is a two-state switch — `bot_params.RUNTIME_SWITCHES`. Carries the
+    # MEASURED result of turning it on, which the page is expected to render beside it.
+    switch: Optional[dict] = None
 
 
 class BotParamsView(BaseModel):

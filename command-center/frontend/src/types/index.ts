@@ -1009,6 +1009,18 @@ export interface BotParamRow {
   /** The `_`-prefixed prose from the instance config explaining why the value is what
    *  it is — written when the decision was made, which is when it was accurate. */
   note: string | null
+  /** Present when this row is a two-state SWITCH rather than a number. Decided by the
+   *  BACKEND (`bot_params.RUNTIME_SWITCHES`) — never inferred from the name here.
+   *  `warn` is the MEASURED result of turning it on and the page must show it: both
+   *  switches lose money, so one offered bare reads as prudent and is a trap. */
+  switch: {
+    /** A number for a numeric setting, a boolean where the strategy declares one — the two
+     *  are NOT interchangeable on the wire, so the exact value is carried, never a cast. */
+    off: number | boolean
+    on: number | boolean
+    on_label: string
+    warn: string
+  } | null
 }
 
 export interface BotParamsView {

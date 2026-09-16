@@ -1730,3 +1730,25 @@ Four tests pin it: full / room left / over each state their `data-state` and wor
 old "of 10%"; a payload with no room figure shows no room. **Watched red by mutation**: reading
 `room <= 0` as `room < 0` turned the full case red ("Expected: full, Received: free"), then reverted.
 Live at 1600px: both accounts read "Cap 10% · full".
+
+## The stop-protection switch, with what it COSTS beside it (2026-09-16)
+
+Aaron asked for an on/off for the 1R breakeven, per bot, from this page. It is a runtime row like
+the risk share, so it saves the same way and the bot picks it up while flat, with no restart.
+
+🔴 **THE MEASUREMENT IS RENDERED BESIDE THE CONTROL, IN BOTH STATES, AND THAT IS THE WHOLE POINT
+OF `BotSwitchEditor.tsx`.** Both switches this surface offers have been measured and both lose
+money. *"Protect the stop"* is a sentence nobody argues with, so a bare toggle would be turned on
+for exactly the reason the measurement says not to. The sentence comes from the SERVER
+(`bot_params.RUNTIME_SWITCHES`) and the page refuses to draw a switch without one — a second copy
+here would drift, and the on-screen copy is the one nobody re-measures.
+
+⚠ **Turning it ON confirms; turning it OFF does not.** Off is where the measurement points, and a
+confirmation on the safe direction trains a yes on the unsafe one.
+⚠ **Off is stated as a CHOICE, not as blank** — "Off — the stop stays where the trade started".
+A reader who cannot tell "off" from "unset" flips it to make the row look configured.
+⚠ **The row's SHAPE is the server's, never a name matched in the page.** `row.switch` decides
+whether a runtime row is a switch or a number box; the two live bots' switches are different
+fields with different types, and a page that matched on either name would be wrong on the other.
+⚠ **The value written is the server's declared `on`/`off`, never `true` or `1`** — see the type
+trap in `algos/notes/shared-and-live-runtime-reference.md`.

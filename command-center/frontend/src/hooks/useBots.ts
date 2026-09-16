@@ -339,7 +339,10 @@ export function useSaveBotRuntime() {
       values,
     }: {
       botName: string
-      values: Record<string, number>
+      /** A number for a numeric setting, a boolean for a switch whose strategy declares it as
+       *  one. The server checks the type against its own declaration and refuses a mismatch —
+       *  a bool written as 1.0 is a value the strategy's config class would reject at startup. */
+      values: Record<string, number | boolean>
       /** What the toast calls the bot — the key is not a name. */
       display?: string
     }) =>

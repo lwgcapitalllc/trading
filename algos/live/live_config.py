@@ -43,7 +43,21 @@ _INSTANCES = _REPO_ROOT / "algos" / "markets" / "fx" / "instances"
 # what the Bots page will let you edit. The two cannot import each other (the subsystems
 # are independent by rule), so the command center pins the agreement with a test that
 # READS this file — see tests/test_bot_params_agreement.py. Change one, change both.
-RUNTIME_RELOADABLE = frozenset({"exec_risk_pct"})
+RUNTIME_RELOADABLE = frozenset({"exec_risk_pct", "exec_be_arm_r", "use_breakeven"})
+
+# 🔴 THE LAST TWO ARE THE STOP-PROTECTION SWITCH AND THEY DO CHANGE HOW A TRADE ENDS, WHICH THE
+# PARAGRAPH ABOVE OTHERWISE FORBIDS (2026-09-16, Aaron asked for them on the Bots page). The
+# exception is narrow and it rests on what `_maybe_reload_runtime` already guarantees rather than
+# on the change being harmless: applied ONLY while FLAT, by rebuilding the strategy and replaying
+# history, with a ledger event written — so no open position is ever handed to rules that would not
+# have opened it, and every trade still belongs to exactly one configuration. A restart would add
+# only a re-check of `strategy_source_hash`, and that pins CODE; a value in `strategy_params` sits
+# outside it whichever way it is written.
+# ⚠ Both are two-state SWITCHES on the Bots page (`bot_params.RUNTIME_SWITCHES`), not free numbers,
+# and both are MEASURED LOSERS shipped OFF. The page shows the number beside the switch.
+# ⚠ `exec_be_arm_r` exists on SOS Fade and B-Leg; `use_breakeven` on the extreme-leg bot. A name a
+# given bot's config does not carry is simply never seen for that bot — this set is a filter, not a
+# requirement.
 
 # 🔴 The ACCOUNT-level field a running bot picks up too (2026-09-11) — applied only while FLAT, like
 # the risk above, but handed to the BRIDGE rather than rebuilt into the strategy (see

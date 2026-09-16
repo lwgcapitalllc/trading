@@ -50,6 +50,7 @@ import { accountName } from './AccountForm'
 import { ParamGroup, VersionBanner } from './ConfigureTab'
 import { BotActionPill, type BotAction } from './BotStatusPill'
 import { BotRiskEditor } from './BotRiskEditor'
+import { BotSwitchEditor } from './BotSwitchEditor'
 import { SectionTitle } from './drawerParts'
 import { JoinChoices, LiveConfirm } from './JoinChoices'
 import { describeChoice, useJoinAccount, type JoinChoice } from './joinAccount'
@@ -573,21 +574,34 @@ export function BotDrawer({
               Nothing here can be changed while it runs.
             </p>
           ) : (
-            v.runtime.map((r) => (
-              <BotRiskEditor
-                key={r.name}
-                botKey={bot.key}
-                botLabel={labelOf(bot)}
-                row={r}
-                showLabel={v.runtime.length > 1}
-                balance={bot.balance}
-                account={configAccount}
-                // Only the risk share is part of the account's budget.
-                group={r.name === 'exec_risk_pct' ? myGroup : undefined}
-                live={onLive}
-                onOpenAccount={onOpenAccount}
-              />
-            ))
+            // A SWITCH gets the switch control; everything else is a number. The shape is the
+            // server's (`row.switch`), never a name matched here — one list decides what a
+            // running bot picks up and the same list decides how it is drawn.
+            v.runtime.map((r) =>
+              r.switch ? (
+                <BotSwitchEditor
+                  key={r.name}
+                  botKey={bot.key}
+                  botLabel={labelOf(bot)}
+                  row={r}
+                  live={onLive}
+                />
+              ) : (
+                <BotRiskEditor
+                  key={r.name}
+                  botKey={bot.key}
+                  botLabel={labelOf(bot)}
+                  row={r}
+                  showLabel={v.runtime.length > 1}
+                  balance={bot.balance}
+                  account={configAccount}
+                  // Only the risk share is part of the account's budget.
+                  group={r.name === 'exec_risk_pct' ? myGroup : undefined}
+                  live={onLive}
+                  onOpenAccount={onOpenAccount}
+                />
+              )
+            )
           )}
         </section>
       )}
