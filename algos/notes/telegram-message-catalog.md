@@ -19,7 +19,7 @@ that still reads as current is worse than no catalog.
 | Room | Carries | Who sends it |
 |---|---|---|
 | **Trades** | The two messages you actually act on — a fill opening, a fill closing | `live/alerts.py`'s `format_entry` / `format_exit`, via the bridge only |
-| **Signals** | A setup forming, before you know if it becomes a trade | `live/alerts.py`'s `format_watching` / `format_entry_zone` / `format_order_moved` / `format_order_cancelled` / `format_blocked` / `format_resolved`, via `live/setup_alerts.py` |
+| **Signals** | A setup forming, before you know if it becomes a trade | `live/alerts.py`'s `format_watching` / `format_entry_zone` / `format_order_moved` / `format_blocked` / `format_resolved`, via `live/setup_alerts.py` |
 | **Health** | Everything about the machinery — starts, stops, halts, link outages, review findings, the two watcher tools | every other sender in the repo, through `shared/alert_format.py`'s `alert()` |
 
 An account with its own rooms gets its trades/signals there; health falls back to the shared
@@ -398,9 +398,6 @@ Still missing: Momentum shift
 0.25 → 0.22 lots
 Limit 3,410.00 → 3,407.20 · stop 3,418.60 → 3,417.90
 Still missing: Momentum shift
-
-✖️ BUY LIMIT CANCELLED
-No order is resting now. The setup is still being watched.
 
 🚫 BLOCKED · SHORT
 news blackout · final-hour cutoff

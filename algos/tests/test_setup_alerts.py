@@ -714,9 +714,11 @@ def test_an_UNCHANGED_order_posts_nothing_however_many_bars_it_rests():
     assert len(rec.sent) == 2  # root + the one resting message
 
 
-def test_a_PULLED_order_is_said_and_its_replacement_reads_as_a_move():
+def test_a_PULLED_order_is_SILENT_and_its_replacement_reads_as_a_move():
     """MEASURED 2026-09-16 on the live bot: a re-size cancelled the order, the new one was
-    rejected, and nothing rested for 15 minutes. The thread must say so, then show the new one.
+    rejected, and nothing rested for 15 minutes. Aaron wants no cancel message — only the new
+    price once it is placed, compared against the order the thread last showed.
+    RED if a cancel is posted, or if the replacement is compared against nothing.
     """
     rec, broker = Recorder(), Broker()
     a = _alerts(rec, order_for=broker)
@@ -724,26 +726,26 @@ def test_a_PULLED_order_is_said_and_its_replacement_reads_as_a_move():
     a._handle(_resting())
     broker.held.pop(-1)
     a._handle(_resting())
-    a._handle(_resting())  # still nothing — said once only
+    a._handle(_resting(state=WATCHING, entry=None))
+    assert len(rec.sent) == 2
     broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
     a._handle(_resting(entry=4316.98))
     heads = [t.split("\n")[0] for t in _texts(rec)]
-    assert heads[1:] == [
-        "🎯 0.16 lots · SELL LIMIT RESTING",
-        "✖️ SELL LIMIT CANCELLED",
-        "🔁 SELL LIMIT MOVED",
-    ]
-    assert "0.14 lots" in _texts(rec)[-1]
+    assert heads[1:] == ["🎯 0.16 lots · SELL LIMIT RESTING", "🔁 SELL LIMIT MOVED"]
+    assert "0.16 → 0.14 lots" in _texts(rec)[-1]
 
 
-def test_the_strategy_dropping_its_order_is_a_cancellation_too():
-    """A setup back to WATCHING has no order; the broker's will have been cancelled."""
+def test_a_replacement_at_the_SAME_price_and_size_says_nothing():
+    """A promote cancels and re-places the identical order. Nothing changed for the reader."""
     rec, broker = Recorder(), Broker()
     a = _alerts(rec, order_for=broker)
     broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.16)
     a._handle(_resting())
-    a._handle(_resting(state=WATCHING, entry=None))
-    assert _texts(rec)[-1].startswith("✖️ SELL LIMIT CANCELLED")
+    broker.held.pop(-1)
+    a._handle(_resting())
+    broker.held[-1] = alerts.RestingOrder(4324.14, 4355.55, 0.16)
+    a._handle(_resting())
+    assert len(rec.sent) == 2
 
 
 def test_the_last_DESCRIBED_order_survives_a_restart(tmp_path):

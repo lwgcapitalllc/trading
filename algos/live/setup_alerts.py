@@ -121,7 +121,7 @@ class SetupAlerts:
         self._order_for = order_for
         #: setup key -> the order the thread last DESCRIBED, as a `RestingOrder` (or the
         #: strategy's prices with `lots=None` when there is no broker), or None once the thread
-        #: has said it was cancelled. Absent means no resting message has been sent yet.
+        #: — unused since cancellations went silent. Absent means no resting message has been sent yet.
         self._order: Dict[str, Optional[alerts.RestingOrder]] = {}
         self._categories = tuple(c for c in categories if c in CATEGORIES)
         #: setup key -> the Telegram message id of its root, so every outcome replies to it.
@@ -298,7 +298,7 @@ class SetupAlerts:
         🔴 **The first resting message is still gated by `announce_resting`, and marked sent only
         once an order exists** — the two bookkeeping-before-the-guard mistakes this class is
         written to avoid. After that, every change the reader could see (price, stop, lots) gets
-        one `MOVED` reply, and an order that disappears gets one `CANCELLED` reply. Aaron,
+        one `MOVED` reply. An order that disappears says nothing. Aaron,
         2026-09-16: the thread must never describe an order the account is not holding.
 
         ⚠ **Compared at display precision**, so a stop that drifts in the fifth decimal does not
@@ -318,26 +318,22 @@ class SetupAlerts:
                 self._post(alerts.format_entry_zone(snap, self._digits, lots), reply_to=root)
             self._save()
             return
-        if not asked and snap.state != RESTING:
-            # No broker, and the strategy has no order this bar — nothing to compare against.
-            now = None
+        if now is None:
+            # 🔴 **Silent, by Aaron's call (2026-09-16): "I don't need the cancel messages."** The
+            # last DESCRIBED order is kept, so the replacement is compared against what the reader
+            # last saw — a re-placement at the same price says nothing, a new price says MOVED.
+            return
         before = self._order.get(snap.key)
         if self._same(before, now):
             return
         self._order[snap.key] = now
         if self._on(ENTRY_ZONE_MSG):
-            if now is None:
-                self._post(alerts.format_order_cancelled(snap, self._digits), reply_to=root)
-            else:
-                self._post(
-                    alerts.format_order_moved(
-                        snap,
-                        self._digits,
-                        now if asked else None,
-                        before if asked else None,
-                    ),
-                    reply_to=root,
-                )
+            self._post(
+                alerts.format_order_moved(
+                    snap, self._digits, now if asked else None, before if asked else None
+                ),
+                reply_to=root,
+            )
         self._save()
 
     # ── surviving a restart ──────────────────────────────────────────────────────────────────

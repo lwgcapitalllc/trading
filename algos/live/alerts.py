@@ -174,10 +174,10 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
 def format_entry_zone(snap, digits: int = 2, lots: Optional[float] = None) -> str:
     """A limit order is RESTING at a price, unfilled. Replies to `format_watching`.
 
-    Sent ONCE per setup. Later changes to the order go out as `format_order_moved` /
-    `format_order_cancelled` — reversed 2026-09-16 (Aaron: the thread must never describe an order
-    the account is not holding). MEASURED with `alert_rate.py`, sos_fade 2020-01 → 2026-09: +14.5
-    messages a month, 19.6 → 34.1.
+    Sent ONCE per setup. Later changes to the order go out as `format_order_moved` — reversed
+    2026-09-16 (Aaron: the thread must never describe an order the account is not holding). A
+    cancellation is silent, by his call. MEASURED with `alert_rate.py`, sos_fade 2020-01 →
+    2026-09: +5.4 messages a month, 19.6 → 25.0.
 
     🔴 **An order can rest at 2 of 3, and the message must NOT imply otherwise.** The entry edge
     comes from a gap overlapping the 0.5-0.886 band, and a gap can be there before PRICE is — so
@@ -272,21 +272,6 @@ def format_order_moved(snap, digits: int = 2, now=None, before=None) -> str:
         lines.insert(0, f"{lots} lots")
     lines.append(_outstanding(snap))
     return alert("🔁", f"{side} LIMIT MOVED", "", *lines)
-
-
-def format_order_cancelled(snap, digits: int = 2) -> str:
-    """The resting order is GONE and the setup is still open. Replies to the root.
-
-    Said so a later fill is never read against an order the reader thinks is still there, and so
-    a re-placement that follows reads as a new order rather than as the old one.
-    """
-    side = "BUY" if snap.side > 0 else "SELL"
-    return alert(
-        "✖️",
-        f"{side} LIMIT CANCELLED",
-        "",
-        "No order is resting now. The setup is still being watched.",
-    )
 
 
 def format_blocked(snap, digits: int = 2) -> str:
