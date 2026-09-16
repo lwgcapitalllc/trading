@@ -173,17 +173,27 @@ by what actually depends on what: the parity gates that consume these files live
    what makes a Python port checkable, and the top level is where a reader is entitled to assume
    one exists. ⚠ **A twin moves, lands and changes in the SAME commit as its parent** — a gate
    whose two halves arrive separately was red in between.
-5. **Run the three panel checks** — they take seconds and each catches a defect that only shows up
+5. **Run the four panel checks** — they take seconds and each catches a defect that only shows up
    when Aaron pastes the file into TradingView:
 
    ```bash
    python3 indicators/tools/check_active_order.py strategies/tradingview/*.pine
    python3 indicators/tools/check_scope.py        strategies/tradingview/*.pine
    python3 indicators/tools/check_flat_reset.py   strategies/tradingview/*.pine
+   python3 indicators/tools/check_continuation.py strategies/tradingview/*.pine
    ```
 
    ⚠ **The tools stayed in `indicators/tools/` when the strategies left** — they read Pine as
    Pine, so they are about the language rather than about this folder.
+
+   🔴 **The fourth is new on 2026-09-16 and it exists because the defect reached Aaron's chart.**
+   A wrapped expression indented a MULTIPLE OF FOUR is read by Pine as the start of a new block,
+   so the line above it is reported as ending unfinished — `realign_strategy.pine` refused to
+   compile on exactly this, and because a twin is generated from its parent the identical break
+   landed in both halves of the parity gate. Any non-multiple of four works; the other files here
+   already sit on 5, 14, 23 and 26, which was convention rather than anything checked. It is now
+   **part of step 14 of `scripts/run_all_tests.sh`** — sharing that step rather than taking a new
+   number, because a new step renumbers nineteen of them and every doc line quoting one.
 6. **Do NOT run the scanner for it.** Nothing here is registered in the lab or deployed anywhere;
    a Pine strategy reaches the lab only by being PORTED to `python/`, and that route is
    `docs/STRATEGY_WORKFLOW.md`, gate and all.

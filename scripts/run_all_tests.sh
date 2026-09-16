@@ -364,6 +364,24 @@ else
   fail "pine block drift (7 rules across 11 Pine copies)"
 fi
 
+# ⚠ SAME STEP, SECOND CHECK, AND THE ALTERNATIVE WAS RENUMBERING NINETEEN OF THEM. Both are
+# "read the Pine as text and refuse a source defect", so they share a step rather than each
+# shifting every later number and every doc line that quotes one.
+# 🔴 A wrapped expression indented a multiple of four is a COMPILE ERROR that only TradingView
+# can report, which means it is found by Aaron pasting the file in - it happened on
+# realign_strategy.pine on 2026-09-16, and the generated twin carried the identical break.
+# Green on all 43 Pine files in the repo when it landed, and mutation-tested against the real
+# defect rather than trusted.
+# ⚠ stdout is dropped (43 "ok" lines drown the summary); FAULTS GO TO STDERR and are not, so a
+#   red step still names the file and the line without a second run.
+echo "  [14/19] pine line continuations ..."
+_pine_srcs=$(find strategies/tradingview indicators -name '*.pine')
+if "$PYTHON" indicators/tools/check_continuation.py $_pine_srcs >/dev/null; then
+  pass "pine line continuations (no wrapped expression indented a multiple of 4)"
+else
+  fail "pine line continuations (no wrapped expression indented a multiple of 4)"
+fi
+
 # ── 15. Engine parity gates, against COMMITTED golden exports ────────────────
 # 🔴 RULE 22 WAS UNSATISFIABLE FOR MOST OF THIS REPO AND THAT IS WHY THIS EXISTS.
 # "No engine change without a green compare_*.py on a real export" is the right rule, but

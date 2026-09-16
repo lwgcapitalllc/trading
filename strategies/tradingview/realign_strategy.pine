@@ -926,12 +926,17 @@ plotshape(showPosBox and strategy.position_size < 0 and strategy.position_size[1
 //    existed every candidate drew as a SHORT. `refCode`/`refDir` are written where the refusal
 //    happens, so the tag and the reason can never tell different stories.
 if showBlocked and refBar == bar_index and refDir != 0
+    // ⚠ THE CONTINUATION LINES ARE INDENTED 17, NOT 16, AND THAT IS NOT A TYPO. Pine treats an
+    //   indent that is a MULTIPLE OF FOUR as the start of a new block, so a wrapped expression
+    //   lined up on 16 is read as a statement and the compiler reports the previous line as
+    //   ending without a continuation. Any non-multiple of four works; every other wrapped
+    //   expression in this file already sits on 5, 14, 23 or 26 for the same reason.
     string why = refCode == 1 ? "stop on the wrong side"
-                : refCode == 2 ? "stop too tight (minimum stop)"
-                : refCode == 3 ? "target already behind the entry"
-                : refCode == 4 ? "no retest level to rest at"
-                : refCode == 5 ? "retest limit expired unfilled"
-                : "invalidated before the fill"
+                 : refCode == 2 ? "stop too tight (minimum stop)"
+                 : refCode == 3 ? "target already behind the entry"
+                 : refCode == 4 ? "no retest level to rest at"
+                 : refCode == 5 ? "retest limit expired unfilled"
+                 : "invalidated before the fill"
     label.new(bar_index, refDir > 0 ? low : high,
               "REFUSED", tooltip = (refDir > 0 ? "▲ LONG" : "▼ SHORT") + " refused · " + why,
               color = color.new(#E040FB, 12), textcolor = color.new(#101014, 0),

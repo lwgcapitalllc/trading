@@ -47,7 +47,7 @@ the commit hook finds a changed file's OWNING doc by walking up from its folder,
 to sit above `engines/` to be the thing it falls back to. ⚠ **It kept that job when the strategy
 half left**, because `docs/` and `tools/` still sit here and both need an owner.
 
-## `tools/` — the panel checks, run by hand
+## `tools/` — the panel checks (three by hand, one in the suite)
 
 **`check_active_order.py` (2026-08-15).** An input's `active =` may only name inputs declared
 ABOVE it; Pine resolves top-down and a violation is `CE10272`, which **only appears on the paste**.
@@ -110,6 +110,30 @@ nothing else — it cannot tell you a bracket is correct**, only that this speci
 one is absent. ⚠ **Nothing else in this repo tests whether a position is protected.** A Python
 study measures in R with the stop assumed live, so an absent stop is not a shape it can express;
 that lives only in the Pine file. ⚠ **It is a PROMPT, not enforcement.**
+
+🔴 **`check_continuation.py` (2026-09-16). This one is here because a file would not compile and
+only TradingView could say so.** A line that CONTINUES the expression above it must be indented by
+a number of spaces that is NOT a multiple of four — four, eight and sixteen all mean "start a new
+block", so Pine reports the line above as ending unfinished. `realign_strategy.pine` was refused on
+exactly that, with its refusal-reason ternary lined up neatly on 16, and because an export twin is
+GENERATED from its parent the identical break landed in both halves of a parity gate. Every other
+wrapped expression in these files already sits on 5, 14, 23 or 26 — which was habit, not a rule
+anyone was keeping.
+
+```bash
+python3 indicators/tools/check_continuation.py strategies/tradingview/*.pine
+```
+
+**All 43 Pine files in the repo pass as of 2026-09-16**, which is why it could be wired straight
+into **step 14 of `scripts/run_all_tests.sh`** without reddening anyone's build — it shares that
+step with the block-drift check rather than taking a new number, because a new step renumbers
+nineteen of them and every doc line quoting one. ✅ Watched RED by re-introducing the exact defect
+in a copy: it named the right file and the right line. ⚠ **It only looks OUTSIDE brackets** — an
+expression inside an unclosed `(` may wrap at any indent, and flagging those would light up every
+multi-line `plot(` and `label.new(` here; a check with false positives gets ignored, which is the
+trap `scripts/check_pine_conventions.py` had to be rescued from the same day. ⚠ **It catches the
+operator-first shape and claims nothing more** — it is not a Pine parser and cannot tell you a file
+compiles.
 
 **Everything else that is prose lives in [`docs/`](docs/):** `PINE_INPUT_DEFAULTS.md`,
 `BUG_exit_fill_price_mismatch.md`, `MARKET_STRUCTURE_GLOSSARY.md`, `STRUCTURE_OS_BUILD.md` and

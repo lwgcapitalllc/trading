@@ -101,7 +101,7 @@ Type these rather than trying to remember the list. They are in `.claude/command
 | `/live-safety` | before anything under `algos/live/` | 1, 15, 16, 17, 18 |
 | `/port` | new strategy from Pine to Python | 14, 22 |
 
-⚠ **A Pine `strategy()` file is not finished until `scripts/check_pine_conventions.py` passes on it** — the numbered input panel, the six trade annotations and the standard result colours. Added 2026-09-16 after the convention was written down, audited once, and drifted anyway; it is step 15 of `scripts/run_all_tests.sh`. Detail: `strategies/tradingview/CLAUDE.md`.
+⚠ **A Pine `strategy()` file is not finished until `scripts/check_pine_conventions.py` passes on it** — the numbered input panel, the six trade annotations and the standard result colours. Added 2026-09-16 after the convention was written down, audited once, and drifted anyway. ⚠ **It is NOT yet in `scripts/run_all_tests.sh`, and this line claimed it was for a day** — two files still fail it (the extreme leg and the session sweep), so wiring it would land a red build on everyone; run it by hand until they are fixed. What IS wired, inside step 14, is `indicators/tools/check_continuation.py`. Detail: `strategies/tradingview/CLAUDE.md`.
 | `/run-audit` | after any lab run you are about to believe | 3, 6, 9, 11 |
 
 ---

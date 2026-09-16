@@ -202,8 +202,22 @@ box, no result callout, no entry triangles, no refusal tag and ad-hoc input grou
 
 **A convention enforced by remembering to read this file is not enforced.** `scripts/check_pine_conventions.py`
 now audits every `*_strategy.pine` here for the numbered panel, the six annotations and the three
-standard RESULT colours, and it is **step 15 of `scripts/run_all_tests.sh`** — it fails the build,
-the same way `check_pine_blocks.py` does for the engine copies.
+standard RESULT colours, and it is **meant to fail the build the same way `check_pine_blocks.py`
+does for the engine copies.**
+
+🔴 **IT IS NOT WIRED INTO `scripts/run_all_tests.sh` YET, AND THIS SECTION SAID IT WAS FOR A DAY.**
+The two files in the table below still fail it, so wiring it would land a red build on everyone —
+run it by hand (`python3 scripts/check_pine_conventions.py`) until they are fixed, and wire it
+then. ⚠ **A doc claiming a check runs when it does not is worse than no doc**: it is exactly the
+"a label is a CLAIM about code somewhere else" failure in rule 7, committed by the very file
+written to stop a convention from drifting.
+
+⚠ **A DIFFERENT Pine check DID land, inside step 14** — `indicators/tools/check_continuation.py`,
+green on all 43 Pine files, so it cost nobody a red build. A wrapped expression indented a
+multiple of four is read by Pine as a new block and the line above it is reported as ending
+unfinished; `realign_strategy.pine` refused to compile on exactly that on 2026-09-16, and because
+a twin is GENERATED the identical break arrived in both halves of the parity gate. Any
+non-multiple of four works.
 
 What the first credible run found, beyond realign:
 
