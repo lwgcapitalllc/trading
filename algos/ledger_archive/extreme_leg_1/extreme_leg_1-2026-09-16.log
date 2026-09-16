@@ -165,3 +165,5 @@
 2026-09-16 20:08:15,952 [INFO] Equity re-anchored to the account after warm-up: 16,501.64 → 15,844.46
 2026-09-16 20:08:16,600 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-16 20:15:07,737 [INFO] Priority 2 on this account: waiting 12s for the bots above
+2026-09-16 20:30:02,758 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-16 20:45:02,709 [INFO] Priority 2 on this account: waiting 17s for the bots above
