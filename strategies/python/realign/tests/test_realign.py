@@ -186,3 +186,125 @@ def test_an_armed_setup_dies_after_the_window():
     past = int(cfg.realign_window_hrs * 3_600_000) + MIN * 2
     t.update(past, 100.0, 99.0, _Ev(), _Ev())
     assert t._armed == [], "a setup outlived its arming window"
+
+
+# ── the retest entry ─────────────────────────────────────────────────────────────
+# Aaron's brother's actual sequence ends "...retest, go". The market entry is the one
+# every figure before 2026-09-15 used, so every test here is about the NEW path being
+# distinguishable from it — a retest that quietly degrades into a market order is the
+# silent failure, and it would show up as a flattering number nobody could trace.
+
+import dataclasses  # noqa: E402
+
+from realign.execution import RealignExecution  # noqa: E402
+from realign.tracker import RealignState  # noqa: E402
+
+
+class _Sig:
+    """The handful of bar fields the entry path reads."""
+    def __init__(self, index=100, close=100.0, low=None, high=None):
+        self.index = index
+        self.open = self.close = close
+        self.low = close if low is None else low
+        self.high = close if high is None else high
+
+
+def _exec(**over):
+    cfg = dataclasses.replace(RealignConfig(symbol="XAUUSD"),
+                              realign_entry_mode="retest", **over)
+    ex = RealignExecution(cfg, initial_capital=10_000.0)
+    ex._opened = []
+    ex._open_position = lambda pend, px, sig, dec, **kw: (  # type: ignore[assignment]
+        ex._opened.append((pend, px)) or True)
+    return ex
+
+
+def _fire(ex, sig, level=99.0, stop=98.0, target=110.0, d=+1):
+    st = RealignState(trigger_dir=d, trigger_stop=stop, trigger_target=target,
+                      trigger_level=level)
+    ex._state = st
+    ex._place_entries(_Sig(sig.index, sig.close), None, object(), None, None)
+
+
+def test_the_retest_rests_a_limit_instead_of_opening_at_the_close():
+    """The whole point. If this opens a position the row is a market entry wearing the
+    retest's name, and its numbers would be compared against itself."""
+    ex = _exec()
+    _fire(ex, _Sig(close=100.0), level=99.0)
+    assert ex._opened == [], "the retest opened at market"
+    assert ex._pend_long is not None and ex._pend_long.edge == 99.0
+
+
+def test_a_missing_level_refuses_rather_than_entering_at_the_close():
+    """`trigger_level=None` is a real state — the engine cannot always attribute a break to
+    a stored swing. Falling back to the close would make part of a retest book a MARKET
+    book, so the row would measure a blend of the two things it exists to separate."""
+    ex = _exec()
+    _fire(ex, _Sig(close=100.0), level=None)
+    assert ex._opened == [] and ex._pend_long is None
+    assert ex.retest_no_level == 1, "a refused setup must be counted, not just dropped"
+
+
+def test_a_level_already_through_the_market_does_not_rest():
+    """A long limit ABOVE the close fills at the next bar's open — a market entry at a worse
+    price under another name. Price has to come BACK to a retest."""
+    ex = _exec()
+    _fire(ex, _Sig(close=100.0), level=100.5)
+    assert ex._pend_long is None and ex._opened == []
+
+
+def test_the_market_entry_still_opens_at_the_close():
+    """The shipped path, which 162 trades and every published figure depend on."""
+    cfg = RealignConfig(symbol="XAUUSD")
+    assert cfg.realign_entry_mode == "market", "the shipped default moved"
+    ex = RealignExecution(cfg, initial_capital=10_000.0)
+    ex._opened = []
+    ex._open_position = lambda pend, px, sig, dec, **kw: (
+        ex._opened.append((pend, px)) or True)
+    _fire(ex, _Sig(close=100.0))
+    assert [px for _, px in ex._opened] == [100.0]
+    assert ex._pend_long is None
+
+
+def test_a_resting_limit_is_cancelled_once_its_expiry_passes():
+    """Without this the order rests forever: this fork places ONCE, so nothing overwrites a
+    stale one, and it could fill days later against a stop and target frozen in a market
+    that no longer exists."""
+    ex = _exec(realign_retest_bars=3)
+    _fire(ex, _Sig(index=100, close=100.0), level=99.0)
+    ex._expire_retest(_Sig(index=102, close=100.0))
+    assert ex._pend_long is not None, "cancelled one bar early"
+    ex._expire_retest(_Sig(index=103, close=100.0))
+    assert ex._pend_long is None
+
+
+def test_a_bar_that_reaches_the_stop_kills_the_unfilled_order():
+    """The setup invalidated before it was ever entered."""
+    ex = _exec()
+    _fire(ex, _Sig(index=100, close=100.0), level=99.0, stop=98.0)
+    ex._expire_retest(_Sig(index=101, close=99.5, low=97.0))
+    assert ex._pend_long is None
+
+
+@pytest.mark.parametrize("day,is_friday", [
+    ("2025-08-08", True), ("2025-08-07", False), ("2025-08-11", False), ("2025-08-09", False),
+])
+def test_the_weekend_flat_fires_on_friday_and_no_other_day(day, is_friday):
+    """🔴 The epoch began on a THURSDAY. The obvious `+4` shift reads one day early and
+    flattens on Thursday — a rule that still looks like it works, closes trades, and changes
+    the result. Watched red with `+4`: the Thursday and Friday cases swap."""
+    import datetime as _dt
+
+    ms = int(_dt.datetime.strptime(day, "%Y-%m-%d")
+             .replace(tzinfo=_dt.timezone.utc).timestamp() * 1000)
+    assert (((ms // 86_400_000 + 3) % 7) == 4) is is_friday
+
+
+def test_the_order_is_never_cancelled_on_the_bar_it_was_placed():
+    """`_expire_retest` runs on the placement bar too (it is called every bar). Ageing the
+    order there would cancel it before the fill path had ever seen it, and the retest row
+    would take no trades at all while looking like a legitimate result."""
+    ex = _exec(realign_retest_bars=1)
+    _fire(ex, _Sig(index=100, close=100.0), level=99.0, stop=98.0)
+    ex._expire_retest(_Sig(index=100, close=100.0, low=97.0))
+    assert ex._pend_long is not None

@@ -163,6 +163,230 @@ share every exit and cost with the cells, make money.
 
 **Verdict: the 5-minute realignment, on its own, is not an entry. Nothing here moves a default.**
 
+---
+
+### Run 2 — the retest entry, and the frame pairing Aaron asked for (2026-09-15)
+
+**What prompted it.** Aaron relayed his brother's actual trades: *"there's always a break of
+structure followed by a shift of structure followed by another shift of structure ... and then
+price retests that shift of structure area and then goes ... if we get it on the retest that's
+even better"*. Two of those three things already existed here — the stop he described is the
+shipped stop, and his three-break sequence is `realign_pattern="strict"`. **The retest was not
+built on either side**, was listed under *Open* in `docs/REALIGN_SPEC.md`, and had never been
+measured anywhere in this repo. He also asked which frame pairing makes more money, and proposed
+a 5m-direction / 1m-entry build by analogy with the shipped 15m/5m.
+
+**What was built.** `realign_entry_mode` ("market" | "retest"), `realign_retest_at`
+("level" | "mid") and `realign_retest_bars`. The retest rests a limit at the structure level the
+realignment broke and reuses the INHERITED `_try_entry_fill` — the placement differs and nothing
+else does. Defaults are unchanged, and the shipped control reproduces exactly on both bases
+(free 162 / +45.14R; charged 162 / +35.81R), so no figure published before today moves.
+
+🔴 **THE ORDER OF THE CANCEL AND THE FILL IS THE CORRECTNESS ARGUMENT IN THIS RUN.** A resting
+limit is cancelled when its expiry passes or when price reaches the stop without it having
+filled. Doing that check BEFORE the bar is offered to the fill path deletes exactly the trades
+that would have lost — price dipping to the limit and carrying on to the stop is a real losing
+trade — and the row would be flattered in the one direction nobody audits. The cancel therefore
+runs after the parent's fill phase, and a test pins it.
+
+**Result 1 — the frame pairing. 5m/1m is dead, and it is not close.** Charged
+`puprime_standard`, 1m bars, `realign_htf_minutes=5`, 2020-01-02 → 2026-08-06:
+
+| pairing | entry | trades | sum R | avg R | PF | maxDD |
+|---|---|---|---|---|---|---|
+| 15m / 5m | market (shipped) | 162 | **+35.81** | +0.221 | 1.50 | 15.52 |
+| 5m / 1m | market | 483 | **−67.28** | −0.139 | 0.74 | 89.77 |
+| 5m / 1m | retest | 313 | **−87.97** | −0.281 | 0.54 | 88.25 |
+
+⚠ **Both 1m rows destroyed the account, so their totals are floors rather than clean figures** —
+an 88-90R drawdown at 10% risk per trade is ruin, and the retest row books its entire loss in the
+first half with exactly +0.00R after it, which is what a dead account looks like, not a second
+half that broke even. The SIGN is the finding; the magnitude is not quotable. This is the third
+independent confirmation of the cascade in `docs/REALIGN_SPEC.md` (5m carries the edge, 3m
+break-even, 1m negative) and it holds with the retest entry on, which was the one remaining
+reason to think the 1m arm might be rescuable. **Aaron's 5m/1m idea is measured and refused.**
+
+**Result 2 — the retest entry is worth real money on the shipped pairing, and it is a HILL.**
+Charged, 15m/5m, retest at the broken level, sweeping only the expiry:
+
+| expiry (5m bars) | 2 | 3 | **4** | **5** | **6** | 8 | 12 | 16 | 24 | 48 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| trades | 99 | 105 | 111 | 114 | 121 | 127 | 134 | 135 | 136 | 142 |
+| sum R | +31.25 | +38.15 | +44.98 | +45.34 | +45.42 | +40.26 | +36.09 | +35.66 | +37.75 | +40.18 |
+| avg R | +0.316 | +0.363 | **+0.405** | +0.398 | +0.375 | +0.317 | +0.269 | +0.264 | +0.278 | +0.283 |
+| PF | 1.64 | 1.77 | 1.88 | 1.87 | 1.85 | 1.69 | 1.57 | 1.56 | 1.59 | 1.60 |
+| maxDD | 13.52 | 13.52 | 13.52 | 13.66 | 13.52 | 17.68 | 21.38 | 21.80 | 19.71 | 21.83 |
+
+Against the shipped market entry (+35.81R, +0.221 avg, PF 1.50, 15.52R drawdown) the 4–6 bar
+plateau is better on **every** axis at once — more total R from FEWER trades, ~1.8x the average R,
+a better profit factor and a shallower drawdown — and it is a smooth rise and fall rather than a
+spike, with the drawdown flat across the whole plateau. It also rebalances the calendar halves
+(shipped: +8.35 / +27.46; retest at 4 bars: +18.36 / +26.62), which matters because the
+half-split direction flip is this strategy's one known structural weakness.
+
+⚠ **The mechanism is consistent with what was already suspected and is still NOT measured.** The
+retest does not pay the entry-side spread and enters nearer the stop, so the same structural
+target is a larger multiple of a smaller R — which is the candidate `realign_pattern`'s docstring
+names for why charging costs hurts the tighter patterns most. Consistent is not measured.
+
+⚠ **avg R is +0.405 against a standard error of ±0.250 — 1.6 errors, still short of the bar of 2**,
+same as everything else in this strategy. The table above was also run on the FULL window
+including the year Aaron agreed to hold back, so **it is a fit, not a result.**
+
+**Pre-declared before the refit was run, and recorded here before its output was read:** the hill
+is re-fitted on 2020-01-02 → 2025-08-05 alone; the expiry is taken as the CENTRE of the
+contiguous best-avg-R plateau on that window, never its argmax (a plateau centre is robust to the
+noise that moves an argmax one cell); the pick is then run ONCE on 2025-08-06 → 2026-08-06
+against the shipped market entry, and that single run is the verdict. **No second holdout run,
+whatever the first one says.**
+
+**Result 3 — the refit, 2020-01-02 → 2025-08-05 (the held-back year excluded).** The hill is the
+same shape on the fitting window alone:
+
+| expiry | 2 | 3 | **4** | **5** | **6** | 8 | 12 | 24 |
+|---|---|---|---|---|---|---|---|---|
+| trades | 86 | 91 | 95 | 97 | 102 | 108 | 115 | 117 |
+| sum R | +21.21 | +29.16 | +37.02 | +35.85 | +35.79 | +30.63 | +26.46 | +28.12 |
+| avg R | +0.247 | +0.320 | **+0.390** | +0.370 | +0.351 | +0.284 | +0.230 | +0.240 |
+| maxDD | 13.52 | 13.52 | 13.52 | 13.66 | 13.52 | 17.68 | 21.38 | 19.71 |
+
+Contiguous best-avg-R plateau is {4, 5, 6}; **its centre is 5, and 5 is the pick** — taken by the
+rule declared above, not by the argmax, which was 4.
+
+The market entry over the same fitting window, for the comparison the table above does not carry
+(its control row is the pinned retest): **140 trades, +28.75R, +0.205 avg, PF 1.47, maxDD 15.52R.**
+The retest at the pick is +35.85R from 97 trades at +0.370 avg, PF 1.83, maxDD 13.66R.
+
+**Result 4 — the holdout, 2025-08-06 → 2026-08-06, run once.** Charged, 15m/5m, expiry 5:
+
+| entry | trades | sum R | avg R | ±se | PF | maxDD |
+|---|---|---|---|---|---|---|
+| market (shipped) | 21 | +6.92 | +0.330 | 0.533 | 1.62 | 5.08 |
+| **retest @ level, 5 bars** | 17 | **+9.49** | **+0.558** | 0.684 | **2.04** | **3.04** |
+
+**The retest beat the shipped market entry on every axis in a year that had no say in choosing
+it** — more total R from fewer trades, 1.7x the average, a better profit factor and a shallower
+drawdown. That is the test the Loaded Level scalp pick FAILED (z +2.52 in-sample, −1.5R on its
+holdout year), and it is the reason this one is worth continuing with.
+
+🔴 **AND IT PROVES ALMOST NOTHING ON ITS OWN, FOR TWO SEPARATE REASONS — SAY BOTH WHENEVER THIS
+TABLE IS QUOTED.** First, 17 trades: avg R +0.558 against a standard error of ±0.684 is under ONE
+error, so this year cannot distinguish the retest from luck. Second and worse, **stripping each
+row's single best trade turns BOTH rows negative** (−0.76R retest, −2.82R market): one trade
+carries the entire holdout year in each configuration. A year like this can REFUTE a pick and
+this one did not — that is the whole claim, and "did not refute" is not "confirmed". The evidence
+for the retest is the 5.5-year fitting window and the hill's shape; the holdout's job was only to
+try to kill it.
+
+**What this run does NOT license.** Nothing here moves a default. `realign_entry_mode` ships
+"market", because open question 1 below still blocks everything: **this bot has no parity gate**,
+so the retest exists in Python and nowhere else, and adopting it means building the Pine side and
+the export twin first. It has also never been scored against a matched random control the way the
+5-minute-only arm was, and the half-split direction flip has not been re-checked with it on.
+
+---
+
+### Run 3 — a fixed take-profit, and the hold-time question underneath it (2026-09-15)
+
+**What prompted it.** Aaron: *"I like to have an average take profit that I could just close the
+trades off of and bank the money. That way I'm not holding over days or sessions."* Two separate
+asks — bank at a fixed multiple, and stop holding so long — and they turn out to have opposite
+answers.
+
+**The complaint is factually correct.** At the Run 2 pick (retest, 5-bar expiry), over
+2020-01 → 2025-08: **every one of the 97 trades exits on a trailing stop or the time stop. Nothing
+ever banks at a target** — `exec_tp1_pct` and `exec_tp2_pct` are both 0.0, so the two rungs only
+stage the stop. Median hold 11.2h, **28 of 97 run past 24 hours, longest 209 hours (8.7 days)**.
+
+**Built:** `realign_tp_r` — close the whole position at N x its own risk. It re-prices the FIRST
+rung and the config refuses unless `exec_tp1_pct = 100`, so it reuses the existing ladder rather
+than adding a second exit path. Default `None`; no shipped figure moves.
+
+⚠ **Measured by REPLAY, not by recomputing R off the trade list's excursions.** With one position
+slot, closing earlier frees the slot and a different later set of trades gets taken — the effect
+that got the minimum-stop guard's sign wrong (+1.84R estimated, −1.84R replayed).
+
+**Result 1 — a fixed take-profit loses, at every level tested.** Charged, retest @ 5:
+
+| exit rule | trades | sum R | avg R | PF | maxDD | win% |
+|---|---|---|---|---|---|---|
+| **trail (shipped ladder)** | 97 | **+35.85** | **+0.370** | 1.83 | 13.66 | 28.9% |
+| bank all at structural TP1 | 99 | +11.73 | +0.118 | 1.27 | 8.54 | 50.5% |
+| bank all at 1.0R | 100 | **−3.93** | −0.039 | 0.92 | 13.15 | 50.0% |
+| bank all at 1.5R | 98 | +4.39 | +0.045 | 1.08 | 10.93 | 43.9% |
+| bank all at 2.0R | 98 | +8.86 | +0.090 | 1.16 | 13.53 | 38.8% |
+| bank all at 2.5R | 98 | +10.88 | +0.111 | 1.19 | 16.25 | 35.7% |
+| bank all at 3.0R | 96 | +7.59 | +0.079 | 1.13 | 16.94 | 33.3% |
+| bank all at 4.0R | 96 | +15.31 | +0.159 | 1.25 | 18.09 | 32.3% |
+| bank all at 5.0R | 95 | +16.26 | +0.171 | 1.27 | 18.09 | 32.6% |
+
+**The best fixed target is worth less than half the trail, and the trend is monotone outward** —
+the further the cap, the better it does, which is the table saying *do not cap at all*. The reason
+is in Run 2's own excursion profile: only 43% / 27% / 18% of trades ever reach 1R / 2R / 3R, against
+a best of 24.6R. **The tail pays for the strategy, and a fixed target sells the tail while keeping
+every loser whole.** 🔴 **The 1R row is the one to remember: 50% win rate and it LOSES MONEY.** A
+rule can feel good on every individual trade and still be the worst row in the table.
+
+**Result 2 — the hold-time complaint has a real fix, and it is the CLOCK, not the target.** The
+existing time stop is 36h and applies *before the first rung only*, so a trade that has moved is
+never timed out. Switching it to apply ALWAYS and sweeping the limit, same basis:
+
+| limit (h) | 6 | 8 | **12** | 18 | 24 | 36 | 48 |
+|---|---|---|---|---|---|---|---|
+| sum R | +27.26 | +34.52 | **+37.76** | +32.02 | +32.43 | +31.33 | +31.20 |
+| avg R | +0.275 | +0.349 | **+0.389** | +0.330 | +0.334 | +0.323 | +0.322 |
+| PF | 1.90 | **2.04** | 2.01 | 1.80 | 1.79 | 1.73 | 1.71 |
+| maxDD | **7.78** | 10.64 | 12.12 | 14.93 | 15.98 | 14.26 | 14.85 |
+| win% | 38.4% | 38.4% | 36.1% | 32.0% | 28.9% | 29.9% | 28.9% |
+
+A hill peaking at 12h. **A hard 12-hour limit beats the 36-hour before-first-rung rule on every
+axis at once** — +37.76R vs +35.85R, avg +0.389 vs +0.370, PF 2.01 vs 1.83, drawdown 12.12R vs
+13.66R — *and* it caps the hold at half a day, which is what was asked for. Both calendar halves
+positive (+21.69 / +16.07). 8h gives up 3R for the best profit factor in the table and a 10.64R
+drawdown, and is the choice if shallower drawdown is worth more than total R.
+
+🔴 **THIS PICK HAS NO HOLDOUT AND MUST NOT BORROW RUN 2's.** Run 2 pre-declared *"no second holdout
+run, whatever the first one says"*, and that year has been spent. Testing this pick on it now is a
+second draw on the same data — the mechanism by which a holdout stops meaning anything. The
+evidence for 12h is the fitting window and the hill's shape only. **The clean validation is data
+that does not exist yet: forward, or a broker cache with history this one lacks.**
+
+⚠ Nothing here moves a default. `realign_tp_r` ships `None` and the time stop stays as inherited.
+
+**Result 3 — not holding over the weekend is free, and not holding OVERNIGHT is better than
+free.** Aaron: *"what if we don't hold to weekends? ... fifteen minutes before the market close we
+close the trade."* The parent already had the DAILY version (`flat_by_close`, off by default) and
+the DST-aware New-York-hour plumbing behind it; only the Friday-only variant was missing, and it
+is added as `realign_flat_before_weekend` reusing the parent's `_in_flat_window` rather than
+re-deriving when the close is. Charged, on retest @ 5 + the 12h clock:
+
+| | trades | sum R | avg R | PF | maxDD | win% |
+|---|---|---|---|---|---|---|
+| no flat rule | 97 | +37.76 | +0.389 | 2.01 | 12.12 | 36.1% |
+| flat before the WEEKEND (Fri only) | 97 | +37.66 | +0.388 | 2.01 | **11.06** | 36.1% |
+| flat before EVERY daily close | 99 | **+38.03** | +0.384 | **2.11** | **9.38** | **39.4%** |
+
+**Flattening on Friday costs 0.1R and takes a full R off the drawdown — it is free.** Flattening
+every day is better still: slightly more total R, the best profit factor and **a 23% shallower
+drawdown (9.38R vs 12.12R)**, and it removes overnight gap risk entirely, which is exposure this
+backtest models only as a bar gap and a live account feels as slippage. ⚠ Its calendar halves are
+more lopsided than the baseline's (+26.61 / +11.42 against +21.69 / +16.07) — worth re-checking
+before it is ever adopted, and NOT a reason to prefer the weaker rule.
+
+🔴 **Same holdout status as Run 3's clock: none, and it may not borrow Run 2's.** These are the
+third and fourth picks made on the same fitting window.
+
+⚠ **The weekday is read off the UTC timestamp and the epoch began on a THURSDAY.** The obvious
+`+4` shift flattens on Thursday — a rule that still closes trades and still looks like it works.
+Caught before it ran, and pinned by a test.
+
+**Tooling fixed on the way (`backtest/tools/axis_sweep.py`).** `--axis` on any field whose current
+value is `None` passed the RAW STRING through — every `Optional` lever in the repo was unsweepable,
+and a config without a validator would have replayed `"2"` as a string while the table labelled the
+row `2`. It now reads the declared annotation and REFUSES a field it cannot type. ⚠ **No stored
+result moves:** the old path could only produce a crash or a string-valued config, so no published
+figure was ever produced through it.
+
 ## Open questions — blocking, and they are not tuning questions
 
 | | question | status |

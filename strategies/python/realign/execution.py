@@ -5,10 +5,10 @@ everything from the fill onward — the TP ladder, the three-phase stop staging,
 trail, %-risk sizing, R grading, the shared-account seam, the cost model — is inherited
 unchanged. Only ENTRY placement differs.
 
-🔴 **THE ENTRY IS A MARKET ORDER, WHICH IS NEW IN THIS REPO.** SOS Fade and B-LEG both rest a
-LIMIT at a named price; this fork enters at the close of the bar the realignment confirms
-on. The consequences are worth stating because two of them cut the other way from every
-existing measurement here:
+🔴 **THE SHIPPED ENTRY IS A MARKET ORDER, WHICH IS NEW IN THIS REPO.** SOS Fade and B-LEG both
+rest a LIMIT at a named price; this fork enters at the close of the bar the realignment
+confirms on. The consequences are worth stating because two of them cut the other way from
+every existing measurement here:
 
   * There is no fill uncertainty. A resting limit fills or does not, which is what the
     jitter audit found dominates SOS Fade's trade-list stability (~6% of trades change on five
@@ -17,6 +17,12 @@ existing measurement here:
     flat spread charge costs SOS Fade 5.7R while the bid/ask fill model costs it nothing, since
     the burden lands only on the exit side. That does NOT transfer here. Cost on this
     fork is a real entry-side charge and must never be assumed away from SOS Fade's numbers.
+
+⚠ **`realign_entry_mode="retest"` rests a limit instead, and it is OFF by default.** It is the
+structural answer to the second bullet, it is what Aaron's brother's real trades do, and it
+takes the first bullet's fill uncertainty back on in exchange. It reuses the INHERITED fill
+path (`_try_entry_fill`) — the placement differs and nothing else does. See the config for
+what is measured about it and what is not.
 
 ⚠ The SOS Fade diagnostic markers are off, same call `b_leg` makes: BLOCKED codes and MISSED
 confluences both answer "how far did this **SOS Fade** setup get", and SOS Fade never places an order
@@ -39,9 +45,66 @@ class RealignExecution(Execution):
     _state = None          # set by step() before the parent calls _place_entries
     _records_misses = False
 
+    #: Bar index the resting retest limit was placed on. None = nothing resting.
+    _retest_bar = None
+    #: Triggers refused because the retest had no level to rest at. REPORTING — but it is
+    #: the number that tells "the retest works" apart from "the lookup dropped trades".
+    retest_no_level = 0
+
     def step(self, sig, seq, state):  # type: ignore[override]
         self._state = state
-        return super().step(sig, seq)
+        dec = super().step(sig, seq)
+        # 🔴 AFTER the parent's Phase A, and the order is the whole correctness argument.
+        # Cancelling a resting limit on the bar its stop was breached, BEFORE that bar has
+        # been offered to the fill path, deletes exactly the trades that would have lost —
+        # price dipped to the limit and carried on to the stop is a real, losing trade, and
+        # erasing it flatters the row in the one direction nobody audits. The limit gets its
+        # fill attempt first; only a bar that did NOT fill can kill the setup.
+        self._expire_retest(sig)
+        self._arm_weekend_flat(sig)
+        return dec
+
+    def _arm_weekend_flat(self, sig) -> None:
+        """Request a close before the weekend, if the lever is on and we are in the window.
+
+        Set AFTER the parent's step, so it lands in `_pending_close` for the NEXT bar's open —
+        the same one-bar market-order delay the parent's own daily flat-by-close uses. Setting
+        it earlier would have this bar's Phase A close a position on the bar the window was
+        only just entered, which is a fill a live bot could not have made.
+        """
+        cfg = self._cfg
+        if not cfg.realign_flat_before_weekend or self._pos_dir == 0:
+            return
+        if self._pending_close is not None:
+            return                      # something already decided this bar; do not override it
+        # Friday in UTC. See the config for why UTC is the right clock for THIS window.
+        # ⚠ The epoch began on a THURSDAY, so the shift is +3 to put Monday at 0 — `+4` reads
+        # one day early and flattens on Thursday, which is a rule that looks like it works.
+        if (sig.time_ms // 86_400_000 + 3) % 7 != 4:
+            return
+        if self._in_flat_window(sig):
+            self._pending_close = ("weekend-flat", "TIME")
+
+    def _expire_retest(self, sig) -> None:
+        """Age out or invalidate a resting retest limit. No-op for the market entry."""
+        if self._retest_bar is None:
+            return
+        pend = self._pend_long if self._pend_long is not None else self._pend_short
+        if pend is None:                      # filled (or refused) — nothing left to manage
+            self._retest_bar = None
+            return
+        age = sig.index - self._retest_bar
+        if age < 1:
+            return                            # placed this bar; it has not been offered yet
+        dead = age >= self._cfg.realign_retest_bars
+        if not dead:
+            # The setup invalidated before it was ever entered: price reached the stop
+            # without ever trading the limit. Filling after this books a trade the rule
+            # refuses — the structure it was resting on is gone.
+            dead = (sig.low <= pend.sl) if pend.dir > 0 else (sig.high >= pend.sl)
+        if dead:
+            self._pend_long = self._pend_short = None
+            self._retest_bar = None
 
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
         cfg = self._cfg
@@ -63,8 +126,28 @@ class RealignExecution(Execution):
             if getattr(self, "trend_dir", 0) != d:
                 return
 
-        # The entry is THIS bar's close — the bar the realignment confirmed on.
-        entry = sig.close
+        # ── where the order goes ─────────────────────────────────────────────────
+        if cfg.realign_entry_mode == "market":
+            # The entry is THIS bar's close — the bar the realignment confirmed on.
+            entry = sig.close
+        else:
+            if cfg.realign_retest_at == "level":
+                if st.trigger_level is None:
+                    # No attributable structure level, so no price to rest at. Counted and
+                    # refused rather than substituted with the close: a silent fallback
+                    # would make this a market entry on part of the book and the row would
+                    # be measuring a blend of the two things it exists to tell apart.
+                    self.retest_no_level += 1
+                    return
+                entry = st.trigger_level
+            else:
+                entry = (st.trigger_stop + sig.close) / 2.0
+            # A limit only rests if price still has to come BACK to it. One already at or
+            # through the market is not a retest — it would fill at the next bar's open and
+            # quietly re-become the market entry, at a worse price and under another name.
+            if (entry - sig.close) * d >= 0:
+                return
+
         sl = st.trigger_stop - d * cfg.realign_sl_buf_tk * cfg.mintick
         dist = (entry - sl) * d
         if dist <= 0:
@@ -82,8 +165,14 @@ class RealignExecution(Execution):
         # stop side is the near end. TP2 = the extreme itself (the setup's own claim),
         # TP1 = the midpoint. The runner rides past TP2 on the inherited trail.
         target = st.trigger_target
-        tp2 = target
-        tp1 = entry + (target - entry) * 0.5
+        if cfg.realign_tp_r is not None:
+            # A FIXED take-profit: bank the whole trade at N x its own risk. The config
+            # refuses unless `exec_tp1_pct` is 100, so nothing survives the first rung —
+            # tp2 is set equal so no stage is priced off a target that no longer applies.
+            tp1 = tp2 = entry + d * cfg.realign_tp_r * dist
+        else:
+            tp2 = target
+            tp1 = entry + (target - entry) * 0.5
 
         # ── the reward-to-risk floor ─────────────────────────────────────────────
         # Stop and target are set INDEPENDENTLY here — the stop is the counter-move
@@ -98,8 +187,21 @@ class RealignExecution(Execution):
 
         pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,
                         sos_bar=None, fib=None)
-        # Market fill: open immediately at this bar's close rather than resting the order.
-        self._open_position(pend, entry, sig, dec)
+        if cfg.realign_entry_mode == "market":
+            # Market fill: open immediately at this bar's close rather than resting the order.
+            self._open_position(pend, entry, sig, dec)
+            return
+        # Rest the limit and let the INHERITED fill path take it — `_try_entry_fill` already
+        # prices a limit against the bar, pays the ask on a long, and gives a gap the better
+        # fill. A second fill path here would be a second implementation of the one thing in
+        # this file that is already right.
+        # ⚠ A newer trigger deliberately REPLACES an older resting order: the setup it was
+        # waiting on has been overtaken by a fresher one on the same structure.
+        if d > 0:
+            self._pend_long, self._pend_short = pend, None
+        else:
+            self._pend_short, self._pend_long = pend, None
+        self._retest_bar = sig.index
 
     def _min_stop_ok(self, dist: float, price: float) -> bool:
         """The inherited minimum-stop floor, read through this fork's own entry path.

@@ -120,6 +120,112 @@ class RealignConfig(SosFadeConfig):
     one level further down than a chart draws.
     """
 
+    realign_entry_mode: str = "market"
+    """WHEN the order goes in once the realignment has fired.
+
+    "market" — at the close of the bar the realignment confirmed on. What every realign
+               figure measured before 2026-09-15 used, and what the Pine twin does.
+    "retest"  — rest a LIMIT at the level the realignment broke and wait for price to come
+               back to it. Aaron's brother's actual trades, relayed 2026-09-15:
+               *"price retests that shift of structure area and then goes ... if we get it
+               on the retest that's even better"*.
+
+    🔴 **THIS IS THE ONE STRUCTURAL ANSWER TO THIS FORK'S COST PROBLEM, WHICH IS WHY IT IS
+    BUILT BEFORE ANY OTHER IDEA ON THE LIST.** A market entry pays the spread on the way in;
+    `execution.py`'s header records that this is the ONE thing that does not transfer from
+    SOS Fade, whose limit entries avoid it. Charging costs takes 21% of this book's average R
+    at the shipped pattern and 40% at `strict`, and the mechanism was never measured. A
+    resting limit removes the entry-side charge AND enters nearer the stop, so the same
+    structural target is a larger multiple of a smaller R.
+
+    ⚠ It also introduces the fill uncertainty a market entry does not have — a limit that is
+    never touched is a trade that never happens, and the jitter audit found exactly that
+    dominates SOS Fade's trade-list stability. Expect a SMALLER book, and judge the two on
+    total R and drawdown rather than on trade count.
+
+    ⚠ The spec listed this under *Open* and it was never built on either side. There is no
+    measurement of it anywhere in this repo, and no Pine input for it.
+    """
+
+    realign_retest_at: str = "level"
+    """WHERE the retest limit rests. Read only when the entry mode is "retest".
+
+    "level" — the structure level the realignment broke, from the tracker. Aaron's own
+              description, and the only one of the two that names a price the market itself
+              marked. ⚠ The engine cannot always attribute a break to a stored swing, and a
+              setup with no level is REFUSED rather than quietly entered at market — see
+              `RealignState.trigger_level`.
+    "mid"   — halfway between the stop anchor and the confirming close. Always available, so
+              it keeps the book comparable with the market row; use it to tell "the retest
+              idea works" apart from "the level lookup dropped the bad trades".
+
+    Neither is a default anyone has measured. They exist so the question is answered by two
+    independent prices rather than one, because a single retest price that wins is
+    indistinguishable from a lucky offset.
+    """
+
+    realign_retest_bars: int = 12
+    """How many chart bars the retest limit rests before it is cancelled. Chosen, not measured.
+
+    🔴 **AN EXPIRY IS NOT OPTIONAL HERE, AND ITS ABSENCE WOULD BE A SILENT LOOKAHEAD-SHAPED
+    BUG.** The parent re-places its resting order every bar off a live setup, so a stale one
+    cannot survive. This fork places ONCE, on the trigger bar, so an order with no expiry
+    rests until something fills it — which could be days later, at a price whose structure
+    has been gone for a week, and the trade would be booked against a target and stop frozen
+    in a market that no longer exists. 12 bars is one hour on the 5m frame.
+
+    ⚠ The order is ALSO cancelled if price reaches the stop first: the setup is invalidated
+    before it was ever entered, and filling after that books a trade the rule refuses.
+    """
+
+    realign_tp_r: Optional[float] = None
+    """Close the WHOLE trade at this multiple of its own risk. `None` = the structural ladder.
+
+    Aaron, 2026-09-15: *"I like to have an average take profit that I could just close the
+    trades off of and bank the money. That way I'm not holding over days or sessions."*
+
+    The complaint it answers is real and measured: at the retest entry over 2020-01 → 2025-08,
+    **every one of the 97 trades exits on a trailing stop or the 36-hour time stop — nothing
+    ever banks at a target** (`exec_tp1_pct` and `exec_tp2_pct` are both 0.0, so the two rungs
+    only STAGE the stop). Median hold 11.2h, but **28 of 97 run past 24 hours and the longest
+    is 209 hours (8.7 days)**.
+
+    🔴 **THIS CAPS THE TAIL, AND THE TAIL IS WHERE THIS STRATEGY'S MONEY IS.** Same 97 trades,
+    how far they ever ran: median 0.73R, and only 43% / 27% / 18% ever reach 1R / 2R / 3R —
+    against a best of **24.6R**. A fixed target sells the 24.6R trade at N and keeps every
+    loser whole. ⚠ It does NOT follow that a fixed target must lose: closing earlier FREES THE
+    POSITION SLOT, and a strategy with one slot takes a different, later set of trades as a
+    result. That effect is the one that got the minimum-stop guard's SIGN wrong (+1.84R
+    estimated from a finished trade list, −1.84R when actually replayed). **Measure this by
+    REPLAY. Never by recomputing R off a trade list's excursions.**
+
+    ⚠ It re-prices the FIRST rung and requires `exec_tp1_pct = 100` so the trade actually
+    closes there — refused otherwise rather than silently half-banking into a ladder whose
+    remaining stages were priced off a structural target that is no longer the target.
+    """
+
+    realign_flat_before_weekend: bool = False
+    """Close any open trade `flat_by_close_min` before the FRIDAY close (gold 17:00 New York).
+
+    Aaron, 2026-09-15: *"what if we don't hold to weekends? ... fifteen minutes before the
+    market close, we close the trade."*
+
+    The parent already has the DAILY version (`flat_by_close`, off) and the New-York-hour
+    plumbing behind it, including DST — `_in_flat_window` is reused here rather than
+    re-derived, so the two rules cannot drift into two opinions about when the close is.
+    This one differs from it in exactly one way: it fires on Friday only.
+
+    ⚠ The weekday is read off the UTC timestamp, which is correct HERE and would not be in
+    general: 16:45 New York on a Friday is 20:45 or 21:45 UTC depending on DST, and both are
+    still Friday. A window closer to midnight NY would need the converted date.
+
+    ⚠ The close is a MARKET order filled at the next bar's open, the same one-bar delay every
+    other exit here uses. On the last bar of the week there IS no next bar, so the position is
+    carried to the Sunday open instead — which is the one case this rule exists to prevent.
+    `flat_by_close_min` must therefore stay comfortably larger than one bar. Measured at the
+    shipped 15 minutes on the 5m frame (3 bars of room), and NOT measured at any other value.
+    """
+
     realign_longs: bool = True
     realign_shorts: bool = True
 
@@ -209,6 +315,28 @@ class RealignConfig(SosFadeConfig):
         parent = getattr(super(), "__post_init__", None)
         if parent is not None:
             parent()
+        if self.realign_entry_mode not in ("market", "retest"):
+            raise ValueError(f"realign_entry_mode must be market|retest, "
+                             f"got {self.realign_entry_mode!r}")
+        if self.realign_retest_at not in ("level", "mid"):
+            raise ValueError(f"realign_retest_at must be level|mid, "
+                             f"got {self.realign_retest_at!r}")
+        if self.realign_retest_bars <= 0:
+            # A zero or negative expiry is not "rest forever", it is an order cancelled
+            # before it can fill — a retest row that silently takes no trades at all.
+            raise ValueError(
+                f"realign_retest_bars must be > 0, got {self.realign_retest_bars!r}")
+        if self.realign_tp_r is not None:
+            if self.realign_tp_r <= 0:
+                raise ValueError(
+                    f"realign_tp_r must be > 0 or None, got {self.realign_tp_r!r}")
+            if self.exec_tp1_pct != 100.0:
+                # Banking less than everything at a fixed-R rung leaves a remainder running
+                # against stages that were priced off the structural target this lever just
+                # replaced — a ladder describing a trade plan nobody chose.
+                raise ValueError(
+                    f"realign_tp_r needs exec_tp1_pct=100 so the trade actually closes at the "
+                    f"target; got exec_tp1_pct={self.exec_tp1_pct!r}")
         if self.realign_pattern not in ("any", "opposing", "strict"):
             raise ValueError(f"realign_pattern must be any|opposing|strict, "
                              f"got {self.realign_pattern!r}")

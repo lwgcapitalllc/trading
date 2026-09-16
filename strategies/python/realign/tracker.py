@@ -47,6 +47,19 @@ class RealignState:
     trigger_dir: int = 0          # 0 = nothing fired this bar
     trigger_stop: float = 0.0
     trigger_target: float = 0.0
+    trigger_level: Optional[float] = None
+    """The structure level the REALIGNMENT break took out, on the bar it fired.
+
+    This is the price Aaron's "price retests that shift-of-structure area and then goes"
+    names: a bullish realignment breaks a swing high, and the retest is price coming back
+    down to that same high. Read only by the retest entry; the market entry ignores it.
+
+    ⚠ `None` is a real state, not a default — the engine leaves `broken_*_price` unset on a
+    break it cannot attribute to a stored swing, and a retest entry has no price to rest at
+    when that happens. It must NOT be read as "no retest available, use the close": that
+    would silently turn a retest row into a market row on some fraction of its book and the
+    comparison would be measuring a blend. `RealignExecution` refuses and counts instead.
+    """
     long_armed: bool = False
     short_armed: bool = False
 
@@ -128,6 +141,12 @@ class RealignTracker:
                 out.trigger_dir = a.dir
                 out.trigger_stop = a.counter_ext
                 out.trigger_target = a.target
+                # The level the realignment itself broke. The final pattern step is always a
+                # WITH-TREND break, so a long's realignment is bullish and took out a high.
+                # Read off the same `stream` the trigger was detected on, so a side reading
+                # internal structure gets the internal level rather than the swing one.
+                out.trigger_level = (getattr(stream, "broken_high_price", None) if a.dir > 0
+                                     else getattr(stream, "broken_low_price", None))
                 continue    # consumed — a setup fires once
             alive.append(a)
 

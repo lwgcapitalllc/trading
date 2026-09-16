@@ -102,9 +102,80 @@ The internal frame was swept rather than assumed:
 - **1m** — negative, **and its stops sit inside gold's spread floor**, so a positive result there
   would have been unbankable anyway.
 
+🔴 **THE 5m-DIRECTION / 1m-ENTRY PAIRING IS MEASURED AND REFUSED (2026-09-15).** Aaron proposed it
+by analogy with the shipped 15m/5m. Charged `puprime_standard`, 1m bars, 2020-01-02 → 2026-08-06:
+**483 trades, −67.28R, PF 0.74** at market and **313 trades, −87.97R, PF 0.54** on the retest entry.
+⚠ Both **destroyed the account** (88–90R drawdown at 10% risk), so those totals are floors, not
+quotable figures — the SIGN is the finding. This is the cascade confirmed a third time, and it now
+holds with the retest entry ON, which was the one remaining reason to think the 1m arm might be
+rescuable. Do not re-open it without a new mechanism. Full record: `realign_optimization.md` Run 2.
+
 ⚠ A single-engine M15 run gives only **9 setups in 5.6 years** — the M15 engine emits 3 iSL and zero
 iBOS/iSOS across Aaron's own window. The two-frame build is not a refinement; without it there is no
 strategy to measure.
+
+## The retest entry — built 2026-09-15, shipped OFF, and it beats the market entry everywhere
+
+`realign_entry_mode` ("market" | "retest"), with `realign_retest_at` and `realign_retest_bars`.
+The retest rests a LIMIT at the structure level the realignment broke instead of buying the close.
+It is Aaron's brother's actual trade — *"price retests that shift of structure area and then
+goes"* — was listed under *Open* in the spec, and had never been measured anywhere here.
+
+Charged `puprime_standard`, 15m/5m, 2020-01-02 → 2025-08-05 (the held-back year excluded), expiry
+swept 2→24 bars: a smooth HILL peaking on a 4–6 bar plateau, not a spike. At the plateau centre
+(5 bars) against the shipped market entry, and then on the holdout year run ONCE:
+
+| | trades | sum R | avg R | PF | maxDD |
+|---|---|---|---|---|---|
+| fit, market | 140 | +28.75 | +0.205 | 1.47 | 15.52 |
+| fit, **retest @ 5** | 97 | **+35.85** | **+0.370** | **1.83** | **13.66** |
+| holdout, market | 21 | +6.92 | +0.330 | 1.62 | 5.08 |
+| holdout, **retest @ 5** | 17 | **+9.49** | **+0.558** | **2.04** | **3.04** |
+
+Better on **every** axis in both windows — more total R from fewer trades, ~1.7x the average, a
+better profit factor and a shallower drawdown — and it survived a year that had no say in choosing
+it, which is the test the Loaded Level scalp pick failed.
+
+🔴 **QUOTE THE TWO CAVEATS WITH THE TABLE, ALWAYS.** The holdout is 17 trades (+0.558 against ±0.684,
+under ONE standard error), and **stripping each row's single best trade turns BOTH holdout rows
+negative** — one trade carries that year either way. The holdout could have REFUTED the pick and
+did not; that is the entire claim.
+
+🔴 **THE CANCEL RUNS AFTER THE FILL PHASE, AND THAT ORDER IS LOAD-BEARING.** A resting limit dies on
+its expiry or when price reaches the stop unfilled. Checking that BEFORE the bar is offered to the
+fill path would delete exactly the trades that lost — a dip to the limit that carries on to the
+stop is a real losing trade — and flatter the row invisibly. Pinned by test.
+
+⚠ **It ships OFF and must, until this bot has a parity gate** (open question 1 below): the retest
+exists in Python and nowhere else, so adopting it means the Pine side and the export twin first.
+It has also never faced a matched random control, and the half-split direction flip below has not
+been re-checked with it on.
+
+## 🔴 A fixed take-profit LOSES here — cap the CLOCK, not the target (2026-09-15)
+
+Asked for by Aaron (*"an average take profit I could just close the trades off of"*), built as
+`realign_tp_r`, measured by replay, and **refused by its own numbers**. Charged, at the retest
+entry over 2020-01 → 2025-08: the trailing ladder makes **+35.85R**; the best fixed target (5R)
+makes **+16.26R**; 1R makes **−3.93R**. The trend is monotone outward — the further the cap, the
+better — which is the table saying *do not cap*. Only 43% / 27% / 18% of trades ever reach
+1R / 2R / 3R against a best of **24.6R**: the tail pays for the strategy and a fixed target sells it
+while keeping every loser whole.
+
+🔴 **The 1R row is the one to quote at anyone proposing a tight target: 50% win rate, and it loses
+money.** A rule can feel right on every single trade and still be the worst line in the table.
+
+**The complaint underneath it was valid and has a different fix.** Nothing in this bot ever banks
+at a target — both rungs sit at 0% and only stage the stop — so every trade rides to a trailing
+stop or times out, and 28 of 97 held past 24h (longest 209h). The inherited time stop is 36h and
+applies *before the first rung only*, so a trade that has moved is never timed out. Making it apply
+ALWAYS and sweeping: a hill peaking at **12 hours**, which beats the inherited rule on every axis —
+**+37.76R vs +35.85R, PF 2.01 vs 1.83, drawdown 12.12R vs 13.66R** — while capping the hold at half
+a day. 8h trades 3R for the table's best profit factor (2.04) and a 10.64R drawdown.
+
+🔴 **THE 12-HOUR PICK HAS NO HOLDOUT AND MAY NOT BORROW THE RETEST'S.** Run 2 pre-declared one
+holdout run and spent it; a second draw on the same year is how a holdout stops meaning anything.
+Its only evidence is the fitting window and the hill's shape. Validation needs data that does not
+exist yet. Full record: `realign_optimization.md` Run 3.
 
 ## 🔴 The pattern rule — the ranking INVERTS with costs, and this file had it wrong
 
@@ -355,9 +426,9 @@ exists to settle, and the parity gate does not exist.**
 | `config.py` | `RealignConfig` — the levers, and every pin with its reason |
 | `htf.py` | `HtfStructure` — the 15m aggregator, and the no-lookahead argument |
 | `tracker.py` | `RealignTracker` — arming on the false break, walking the realignment |
-| `execution.py` | `RealignExecution` — the market entry, sizing, the stop |
+| `execution.py` | `RealignExecution` — the market and retest entries, sizing, the stop |
 | `strategy.py` | `RealignStrategy` — wiring, `engine_config()`, `run_dual` refusal |
-| `tests/test_realign.py` | 15 tests, weighted toward the silent failures |
+| `tests/test_realign.py` | 24 tests, weighted toward the silent failures |
 | `strategies/tradingview/realign_strategy.pine` | the TradingView side |
 | `docs/REALIGN_SPEC.md` | the stage-1 spec and the full measurement record |
 | `backtest/tools/internal_realign_scan.py` | the counting/geometry scan |
