@@ -177,6 +177,29 @@ holdout run and spent it; a second draw on the same year is how a holdout stops 
 Its only evidence is the fitting window and the hill's shape. Validation needs data that does not
 exist yet. Full record: `realign_optimization.md` Run 3.
 
+## The inherited trail stays — MEASURED, not inherited (2026-09-15)
+
+Aaron asked not to take SOS Fade's trail blindly. It was tested; it wins. Bucketing the stacked
+config's trades by how far they ever ran: **the trail keeps 91% of the 5R+ runners** (the 24.60R
+peak banked +22.56R) and 64–70% of the 2–5R band. The only real bleed is the **1–2R band at 39%
+kept**. ⚠ The "69% of peak given back" headline is an artefact — 63 of 99 trades peaked under 1R
+and are losers that ticked green, which no exit rule recovers. **Never quote that number alone.**
+
+Three alternatives, all worse: banking 25 / 50 / 75% at the first rung gives **+30.12 / +22.20 /
++14.29R against +38.03R** — monotone, and the fixed-target result in another costume. It raises
+the win rate to 48.5% and cuts drawdown to 7.27R, so the trade is real and bad: **2.1R of drawdown
+bought for 23.7R of return.** Tightening the ratchet costs 13–17R. The trail buffer is flat across
+a 16x range (5 → 80 ticks moves the total 0.11R) — **not a lever.**
+
+🔴 **`exec_trail_pct` at 1.0, 2.0 and 3.0 return BYTE-IDENTICAL books, so the ratchet half of
+`"Structure + % ratchet"` is INERT at the shipped setting.** It only ever tightens past the
+structure anchor, so at ≥1.0 the anchor always binds first. This bot runs a plain structure trail
+under a name that claims two mechanisms — and tightening it until the second one fires loses money.
+
+⚠ The 1–2R band is the one place worth another idea, and nothing tested addresses it. A
+band-specific rule would be a hypothesis read off this table on a window already used for three
+picks — it needs its own pre-declared study. Full record: `realign_optimization.md` Run 4.
+
 ## 🔴 The pattern rule — the ranking INVERTS with costs, and this file had it wrong
 
 `realign_pattern` takes `any` | `opposing` | `strict`. **Default is `any`, the loosest.**

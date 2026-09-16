@@ -387,6 +387,63 @@ row `2`. It now reads the declared annotation and REFUSES a field it cannot type
 result moves:** the old path could only produce a crash or a string-valued config, so no published
 figure was ever produced through it.
 
+---
+
+### Run 4 — "don't take the SOS Fade trail blindly" (2026-09-15)
+
+**What prompted it.** Aaron: *"I know if we're doing a trailing stop we're going to be giving back
+returns ... maybe we take off the majority of the position and leave a runner, or trail tighter
+after a certain amount of equity is built. I just don't want to take the SOS Fade trailing stop
+blindly."* Correct instinct, and the answer is that the inherited trail is already the best thing
+tested — but only because of WHERE it leaks, which is not where it looks like it leaks.
+
+**How much it actually hands back.** At the Run 3 stack (retest @ 5 + 12h clock + nightly flat),
+banked +38.03R against +121.75R of summed peak excursion — "69% given back" as a headline, **and
+that headline is misleading and must not be quoted alone.** Bucketed by how far each trade ever ran:
+
+| peak reached | trades | sum of peaks | banked | kept |
+|---|---|---|---|---|
+| 0–1R | 63 | +21.26 | **−30.40** | — |
+| 1–2R | 19 | +26.00 | +10.17 | 39% |
+| 2–3R | 11 | +25.74 | +16.47 | 64% |
+| 3–5R | 3 | +11.58 | +8.16 | 70% |
+| 5R+ | 3 | +37.16 | +33.63 | **91%** |
+
+🔴 **THE TRAIL IS NOT LEAKING ON THE RUNNERS — IT KEEPS 91% OF THEM** (the 24.60R peak banked
++22.56R). The 0–1R row is not giveback at all: those are losers that ticked green before stopping
+out, and no exit rule recovers them. The only real bleed is the 1–2R band at 39% kept.
+
+**Result — all three proposed fixes lose, and two of them lose badly.** Same basis:
+
+| | trades | sum R | avg R | PF | maxDD | win% |
+|---|---|---|---|---|---|---|
+| **shipped trail** | 99 | **+38.03** | **+0.384** | **2.11** | 9.38 | 39.4% |
+| bank 25% at the first rung | 99 | +30.12 | +0.304 | 1.88 | 8.49 | 42.4% |
+| bank 50% | 99 | +22.20 | +0.224 | 1.65 | 7.60 | 45.5% |
+| bank 75% | 99 | +14.29 | +0.144 | 1.42 | **7.27** | **48.5%** |
+| ratchet 0.25% | 99 | +20.87 | +0.211 | 1.61 | 9.38 | 39.4% |
+| ratchet 0.5% | 99 | +24.95 | +0.252 | 1.73 | 9.38 | 39.4% |
+| ratchet 2.0% / 3.0% | 99 | +38.03 | +0.384 | 2.11 | 9.38 | 39.4% |
+| trail buffer 5 / 10 / 40 / 80 ticks | 99 | +38.05 … +37.94 | +0.384 | 2.11 | 9.38 | 39.4% |
+
+**Partial banking is the fixed-target result again in another costume** — monotone: the more you
+bank early, the higher the win rate (39.4% → 48.5%), the shallower the drawdown (9.38 → 7.27R) and
+the less money you make (+38.03R → +14.29R). **You buy 2.1R of drawdown for 23.7R of return.**
+A real risk/return trade is available here and it is a bad one.
+
+🔴 **AND THE SECOND HALF OF THE INHERITED TRAIL IS INERT AT ITS SHIPPED SETTING.** `exec_trail_pct`
+at 1.0, 2.0 and 3.0 return **byte-identical books** — same total, same halves, same drawdown —
+while 0.5 and 0.25 differ. The ratchet only ever TIGHTENS past the structure anchor, so at ≥1.0 the
+anchor is always the binding constraint and the ratchet never fires. **`"Structure + % ratchet"` is
+running as a plain structure trail**, and tightening it until it does fire costs 13–17R. The buffer
+width is likewise flat across a 16x range (5 → 80 ticks moves the total by 0.11R): **not a lever.**
+
+**Verdict: the inherited trail stays, now for a measured reason rather than by inheritance.** The
+one place worth another idea is the 1–2R band, and nothing tested here addresses it — partial
+banking hits every band at once, which is why it pays for the 1–2R improvement with the 5R+ tail.
+⚠ A band-specific rule would be a NEW hypothesis chosen by looking at this table, on a fitting
+window already used for three picks. It needs its own pre-declared study, not a fifth draw here.
+
 ## Open questions — blocking, and they are not tuning questions
 
 | | question | status |
