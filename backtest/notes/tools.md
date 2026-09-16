@@ -237,6 +237,50 @@ CLAUDE.md gets at most one index line.
   `killzone_sweep.py` (2026-08-04, further down) had already found no clock or level edge at 10:00.
   This one agrees, and adds real costs, the other two zones, sweep and break entries, and a
   random-clock luck bar. Search this file before building the next study.
+- **`tools/ny_open_scalp_study.py`** (new 2026-09-15) — a New York-morning scalping search on the
+  MPC-JARVIS indicator's own levels: the 09:30–09:35 opening range (`engines/sessions/`), the
+  08:00–09:30 pre-open range and the session VWAP (`engines/vwap/`), each traded as a break, a
+  break-and-retest or a failed break, with and without a VWAP-side filter. 84 rules declared first
+  (14 entries × 0.5 / 1 ATR(14, 1-hour) stop × 1R / 2R / no target, out after 60 M1 bars), the
+  kill-zone study's walk and ECN costs. Gates: both halves positive; a luck bar that moves every
+  trade to a random bar inside its own rule's window (200 runs); matched random entries at z ≥ 2.
+  **MEASURED 2026-09-15, PU Prime `XAUUSD.p` M1, 2020-01-01 → 2025-08-31: 0 rules pass all three.**
+  The best — fade a failed opening-range break when VWAP sits on the fade side, 0.5 ATR stop, no
+  target: 529 trades, +0.203R net, t +2.25, every year positive — sat under the luck bar (+2.45;
+  9.5% of random runs beat it), and its ten best trades made 84% of its profit. As a FAMILY it
+  looked real — 26 rules through gate 1 against a maximum of 14 in 200 random runs — and trades on
+  VWAP's side beat trades against it by +0.179R (z +2.57, clustered by day).
+  🔴 **Both leads FAILED on the test set, 2018-09-14 → 2019-12-31, spent ONCE on a plan written
+  into the tool before any test bar was loaded:** the VWAP-side difference REVERSED (−0.121R,
+  z −0.95 — an explore-sized real effect lands that far the wrong way about 1 time in 100) and the
+  best rule lost −22.5R over 125 trades (t −1.30). The set was spent without a gate survivor
+  because the family result was the strongest lead any study here had produced; the plan states
+  the power beforehand (a real effect would have shown z ~1.2), so read it as a screen that
+  returned a clear no. ✅ SessionEngine's opening range equals the grid's on all 1,462 usable days;
+  `FastWalk` matches `Book.walk` on all 70,164 real walks; the seeded run reproduced exactly.
+  🔴 **The test set is SPENT for opening-range, pre-open-range and VWAP-side ideas.** ⚠ No Pine
+  twin, no parity gate — lab findings. No documented baseline moves: new standalone tool.
+- **`tools/bot_confluence_study.py`** (new 2026-09-15) — would a kill-zone, 08:00–09:30, VWAP-side
+  or opening-range filter have improved the two LIVE bots? Replays `sos_fade_demo` (M15 + its M5
+  re-entry feed) and `extreme_leg_demo` (M5) with their live instance configs through
+  `build_strategy`, PU Prime bars with the server pinned (no MT5 needed) and `puprime_ecn` costs.
+  11 filters per bot declared first; gates: the removed trades lose in both halves, then a
+  5,000-shuffle luck bar.
+  **MEASURED 2026-09-15, 2020-01-01 → 2025-08-31: no filter passes even the first gate — every
+  window and both VWAP sides hold net-winning trades for both bots, so cutting any of them loses
+  money.** SOS Fade 203 trades / +178.5R; extreme leg 97 / +38.1R. ⚠ **A VWAP-side filter would
+  gut SOS Fade**: 189 of its 203 trades enter against VWAP, and those made +171.3R — the scalp
+  study's VWAP effect does not transfer to a fade bot.
+  The one lead was a SIZING idea found by looking: SOS Fade trades entered 08:00–10:59 NY averaged
+  +1.85R (71) against +0.36R (132), z +1.64. 🔴 **It failed its one test-set check** (declared
+  first as C3): on 2018-09-14 → 2019-12-31 the morning trades made −0.74R each (10) against −0.33R
+  (17). ⚠ **On that window the live SOS Fade config LOST −13.0R over 27 trades** (M15/M5 rebuilt
+  from M1 — identical to the broker's own on all 535,720 bars checked in 2020–25 — ECN costs).
+  Not new: 2018 is one of its two documented losing years (`sos_fade_optimization.md`).
+  ✅ The replays land near the documented figures — 246 / +232.1R against 244 / +248.6R for SOS
+  Fade, 115 / +53.6R against 113 / +58.5R for the extreme leg — not exactly, because the documented
+  runs used other windows or cost settings. No documented baseline moves: a standalone tool that
+  changes neither bot.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when
