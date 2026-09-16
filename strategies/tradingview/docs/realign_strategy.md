@@ -170,10 +170,20 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // =====================================================================================
 // Three phases, always on: (0) the structural stop -> (1) after TP1, breakeven -> (2)
 // after TP2, a floor, then the trail. The floor and the trail COMPOSE: past TP2 the stop
-// is the floor and the trail may only ever tighten it, never loosen it.
+// is the floor, or the trail wherever the trail is tighter.
 ```
 
-## [10] Structure anchor: the chart frame's last CONFIRMED swing, buffered.
+🔴 **"The trail may only ever tighten it, never loosen it" was this section's wording until
+2026-09-16, and it described neither this file's code nor the port's.** Past TP2 the stop is now
+rebuilt each bar — see [21].
+
+## [10] Structure anchor: a frame's last CONFIRMED swing, buffered.
+
+⚠ **The heading said "the chart frame's" and the code has always used the EXTERNAL frame**, which is
+Aaron's call recorded below. The Python port was written against the wrong heading and trailed the
+chart frame. The frame is an input now (`trailFrame`), and the first parity export (2026-09-16)
+found the port's external anchor had never been populated at all — see
+`strategies/python/realign/CLAUDE.md` → *The first parity export*.
 
 ```
             // Structure anchor: the chart frame's last CONFIRMED swing, buffered.
@@ -212,4 +222,97 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // MARKS
 // =====================================================================================
 ```
+
+⚠ **Sections [14]–[17] were anchored from the Pine on 2026-09-16 and not written until the same
+evening** — four pointers to nothing, which is the one thing an anchor must never be. Written below.
+
+## [14] The callout opens GREY — the result is not known yet
+
+The entry callout is drawn at the fill in neutral grey and recoloured only when the trade closes.
+Colouring it at entry would paint a guess. It carries "▲ LONG" / "▼ SHORT" until then.
+
+## [15] Closed this bar: grade it in R, recolour the callout, paint the bands
+
+The trade's R is its net P&L over the dollar risk frozen at the fill (entry to stop, times size).
+A result inside ±`beBandR` is **BREAKEVEN** (orange line), otherwise a red or green result box.
+The best and worst prices are banded underneath first, so the result sits on top of them. The
+colours are copied from `sos_fade_strategy.pine`, never re-picked.
+
+⚠ **This fork banks nothing at its rungs** (both default 0%), so every trade ends on the trail, the
+time stop or the flat, and the result is one band rather than a stack of partials.
+
+## [16] Entry triangles
+
+`plotshape` only runs at global scope, so the "position just opened" test is written out inline.
+⚠ **Not redundant with the box**: a scratch paints a band a few pixels tall and reads as no trade.
+⚠ **The export twin does not carry them** — `tools/build_export_twins.py` strips every plot-family
+call from the twin to stay under Pine's 64-plot cap. The file you trade still draws them.
+
+## [17] REFUSED SETUPS — the only record of a trade the strategy chose not to take
+
+A trigger that fired and was not entered leaves no trace in the trade list or the equity curve, so
+it is tagged on the chart with its reason. **The side and the reason are recorded where the refusal
+happens, never re-derived** — `d_strategy.pine` paid for that: its tag read direction off the same
+bar's SOS and drew every candidate as a SHORT once a second entry mode existed.
+
+Codes: 1 stop on the wrong side · 2 minimum stop · 3 target behind entry · 4 no retest level ·
+5 retest expired · 6 invalidated before the fill. ⚠ Written inline, not through a helper — a Pine
+function cannot assign to a global.
+
+## [18] The 15m close is read on the FIRST chart bar of the next 15m bar
+
+🔴 **Until 2026-09-16 this read the close on the LAST chart bar of the next 15m bar — ten minutes
+late — and the first parity export measured it.** The old line compared a `request.security` of
+`time` with `lookahead_off` against its previous value. Off lookahead, that value only changes on
+the final chart bar of each HTF bar, so the stamp moved on minute 10 of every quarter hour (all
+7,104 closes in the export). But the structure read in [4] shows the closed bar from minute 0.
+
+So every false break was acted on two 5m bars after it was known. That disagreed with the Python
+port on 156 trend bars, 439 armed bars and one whole trade. Making the port imitate the delay
+removed every one of them, which is the proof. `timeframe.change(htfTf)` is true on the first
+chart bar of a new HTF bar — the same bar the port publishes on, and the earliest bar that is
+still free of lookahead.
+
+## [19] A setup fires ONCE
+
+🔴 **The Pine disarmed a setup only when it placed an order.** A trigger that was refused (target
+already behind the entry, stop too tight) or that fired while a trade was open left the setup
+armed, with its old stop anchor, waiting for a LATER realignment to enter on. The port consumes a
+setup on its trigger whatever happens next, and the port's rule is the documented one ("a setup
+fires once"). The first export showed it on 2026-08-07 08:30: both sides refused the trigger, and
+the Pine then stayed armed for another five hours. Now the trigger disarms, taken or not.
+
+## [20] The stop goes in WITH the market order
+
+🔴 **The Pine placed its stop only once a position existed.** A market order fills at the next bar's
+open, and the script runs at that bar's CLOSE — so the fill bar had no stop at all, and a trade
+that hit its stop there closed a bar late. A live bot sends the stop with the order, and the port's
+stop is live from the fill bar. The exit is now placed on the entry bar, tied to the entry's id,
+and TradingView holds it until the entry fills.
+
+⚠ **Not changed for the retest entry**, which is shipped off and has never been exercised by an
+export. Its fill-bar handling is a separate question.
+
+⚠ **The fill PRICE still differs and is left alone**: this file's order fills at the next open, the
+port fills at the trigger bar's close. On a continuous 5m gold feed those are nearly always the same
+price; the gate excuses the one-bar position offset this causes and nothing else.
+
+## [21] Past TP2 the stop is REBUILT each bar — the floor, or the trail when tighter
+
+🔴 **This block had its own versions of three rules, and each differed from the port and from
+`sos_fade_strategy.pine`**, whose parity gate is green and whose ladder the port inherits:
+
+| rule | this file, before | now — the reference |
+|---|---|---|
+| ratchet step | this bar's close × pct, measured from this bar's high | the **best price since the fill** × pct, measured from that best price |
+| fixed-step trail | this bar's high minus one step | one step per step of best price past TP2, from TP2 |
+| "one trail step behind" floor | TP1 minus one step | the best price minus one step, never below breakeven |
+| combining | ratcheted — `max(stop, candidate)` for ever | rebuilt — `max(floor, candidate)` each bar |
+
+The first export showed the ratchet as 304 bars of stops a few cents apart.
+
+⚠ **"Rebuilt" means the stop can step back** — by less than one ratchet step, when the structure
+anchor rises and the step count drops with it. It is what the port and the live SOS Fade bot both
+do today. A never-loosen rule is arguably safer, but it lives in the ladder those bots SHARE, so it
+is its own change with its own measurement — never slipped in here to make one gate agree.
 

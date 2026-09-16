@@ -470,8 +470,8 @@ f_frameStructPrev(int len) =>
                       lookahead = barmerge.lookahead_on)
 
 // [doc 5] A security call REPEATS its value across every chart bar inside one HTF   -> docs/realign_strategy.md
-htfStamp  = request.security(syminfo.tickerid, htfTf, time, lookahead = barmerge.lookahead_off)
-htfClosed = htfStamp != htfStamp[1]
+// [doc 18] The FIRST chart bar of a new HTF bar, where the [1] read above first shows the one that closed  -> docs/realign_strategy.md
+htfClosed = timeframe.change(htfTf)
 
 // ── the CHART frame — the trigger ────────────────────────────────────────────────
 var MTFStruct cst = MTFStruct.new(length = majorLength)
@@ -558,6 +558,7 @@ if armLong
     if stepLong == 1 and cst.bull_sos and not na(ctrLowL)
         trigLong := true
         trigLvlL := cst.bull_bos_high
+        armLong  := false   // [doc 19] a setup fires ONCE — taken, refused or blocked by an open trade  -> docs/realign_strategy.md
 
 if armShort
     if cBullBreak
@@ -567,7 +568,8 @@ if armShort
         ctrHighS := na(ctrHighS) ? high : math.max(ctrHighS, high)
     if stepShort == 1 and cst.bear_sos and not na(ctrHighS)
         trigShort := true
-        trigLvlS := cst.bear_bos_low
+        trigLvlS  := cst.bear_bos_low
+        armShort  := false   // [doc 19]
 
 // [doc 8] ENTRY — at MARKET, on the bar the realignment confirms  -> docs/realign_strategy.md
 
@@ -582,7 +584,7 @@ var float posTp2   = na
 var int   posStage = 0
 var int   posMs    = 0
 var float posEntry = na
-var float trailAnc = na
+var float posBest  = na   // best price since the fill, seeded AT the fill — the ratchet's basis
 
 flat = strategy.position_size == 0
 
@@ -643,14 +645,15 @@ if flat and trigLong and tradeLongs
             pendTp2 := tgtLong
         else
             strategy.entry("REALIGN L", strategy.long, qty = qty)
+            // [doc 20] The stop goes in WITH the order, so the fill bar is protected  -> docs/realign_strategy.md
+            strategy.exit("XR", "REALIGN L", stop = sl)
             posStop  := sl
             posTp2   := tgtLong
             posTp1   := t1
             posStage := 0
             posMs    := time
             posEntry := px
-            trailAnc := na
-        armLong  := false
+            posBest  := px
 
 if flat and trigShort and tradeShorts
     float px   = entryMode == "Retest" ? f_retestPx(-1, trigLvlS, ctrHighS) : close
@@ -682,14 +685,14 @@ if flat and trigShort and tradeShorts
             pendTp2 := tgtShort
         else
             strategy.entry("REALIGN S", strategy.short, qty = qty)
+            strategy.exit("XR", "REALIGN S", stop = sl)   // [doc 20]
             posStop  := sl
             posTp2   := tgtShort
             posTp1   := t1
             posStage := 0
             posMs    := time
             posEntry := px
-            trailAnc := na
-        armShort := false
+            posBest  := px
 
 // ── the resting retest limit: adopt it on fill, or cancel it ─────────────────────
 // 🔴 THE CANCEL IS CHECKED AFTER THE FILL, AND THAT ORDER IS THE CORRECTNESS ARGUMENT.
@@ -705,7 +708,7 @@ if not na(pendBar)
         posStage := 0
         posMs    := time
         posEntry := pendPx
-        trailAnc := na
+        posBest  := pendPx
         pendBar  := na
     else if bar_index - pendBar >= retestBars or
              (pendDir > 0 ? low <= pendSl : high >= pendSl)
@@ -722,46 +725,39 @@ isShort = strategy.position_size < 0
 inPos   = isLong or isShort
 
 if inPos
+    int   dir   = isLong ? 1 : -1
+    float beBuf = beBufTk * syminfo.mintick
     // ── stage advance ────────────────────────────────────────────────────────────
+    posBest := isLong ? math.max(posBest, high) : math.min(posBest, low)
     if posStage == 0 and ((isLong and high >= posTp1) or (isShort and low <= posTp1))
         posStage := 1
-        posStop  := isLong ? posEntry + beBufTk * syminfo.mintick
-                           : posEntry - beBufTk * syminfo.mintick
+        posStop  := posEntry + dir * beBuf
     if posStage == 1 and ((isLong and high >= posTp2) or (isShort and low <= posTp2))
         posStage := 2
-        float floorPx = tp2StopMode == "TP1 price" ? posTp1 :
-                         tp2StopMode == "Breakeven" ? posEntry :
-                         (isLong ? posTp1 - trailStep : posTp1 + trailStep)
-        posStop := isLong ? math.max(posStop, floorPx) : math.min(posStop, floorPx)
 
-    // ── the runner trail, past TP2 only ──────────────────────────────────────────
+    // [doc 21] Past TP2 the stop is REBUILT each bar — the floor, or the trail when tighter  -> docs/realign_strategy.md
     if posStage == 2
+        float be      = posEntry + dir * beBuf
+        float floorPx = tp2StopMode == "TP1 price" ? posTp1 :
+                         tp2StopMode == "Breakeven" ? be :
+                         (isLong ? math.max(be, posBest - trailStep) : math.min(be, posBest + trailStep))
         float cand = na
         if runnerTrail == "Fixed step"
-            cand := isLong ? high - trailStep : low + trailStep
+            float run = (posBest - posTp2) * dir
+            if run >= trailStep
+                cand := posTp2 + dir * math.floor((run - trailStep) / trailStep) * trailStep
         else
             // [doc 10] Structure anchor: a frame's last CONFIRMED swing, buffered.  -> docs/realign_strategy.md
-            // 🔴 THE COMMENT HERE READ "the chart frame's" UNTIL 2026-09-16 AND THE CODE HAS
-            //    ALWAYS USED THE EXTERNAL FRAME. The Python port was written against the
-            //    comment and has always trailed the CHART frame — a real divergence worth
-            //    tens of R, found before this file had a parity gate. The frame is now an
-            //    input so an export states which one it ran and the gate can settle it.
-            float swLo = trailFrame == "Chart" ? cst.last_conf_low  : hConfLo
-            float swHi = trailFrame == "Chart" ? cst.last_conf_high : hConfHi
-            float anc = isLong ? swLo - structTrailBuf * syminfo.mintick
-                               : swHi + structTrailBuf * syminfo.mintick
+            float sw  = isLong ? (trailFrame == "Chart" ? cst.last_conf_low  : hConfLo)
+                               : (trailFrame == "Chart" ? cst.last_conf_high : hConfHi)
+            float anc = sw - dir * structTrailBuf * syminfo.mintick
             cand := anc
             if runnerTrail == "Structure + % ratchet" and not na(anc)
-                // Climb one %-of-price step per step of favourable move past the anchor.
-                float stepSz = close * trailPct / 100.0
-                if stepSz > 0
-                    float moved = isLong ? high - anc : anc - low
-                    if moved > stepSz
-                        float steps = math.floor(moved / stepSz)
-                        cand := isLong ? anc + (steps - 1) * stepSz
-                                       : anc - (steps - 1) * stepSz
-        if not na(cand)
-            posStop := isLong ? math.max(posStop, cand) : math.min(posStop, cand)
+                float stepSz = posBest * trailPct / 100.0
+                float run    = (posBest - anc) * dir
+                if stepSz > 0 and run >= stepSz
+                    cand := anc + dir * math.floor((run - stepSz) / stepSz) * stepSz
+        posStop := na(cand) ? floorPx : isLong ? math.max(floorPx, cand) : math.min(floorPx, cand)
 
     // [doc 11] ── the time stop ───────────────────────────────────────────────────────  -> docs/realign_strategy.md
     bool timeOn  = timeStopMode != "Off"
@@ -792,7 +788,7 @@ if inPos
             strategy.exit("X1", limit = p1, stop = posStop, qty_percent = tp1Pct)
         if tp2Pct > 0
             strategy.exit("X2", limit = p2, stop = posStop, qty_percent = tp2Pct)
-        strategy.exit("XR", stop = posStop)
+        strategy.exit("XR", isLong ? "REALIGN L" : "REALIGN S", stop = posStop)
 
 // ── TRADE ANNOTATIONS ────────────────────────────────────────────────────────────
 // The repo-standard layer, and it was MISSING from this file entirely until 2026-09-16 —
