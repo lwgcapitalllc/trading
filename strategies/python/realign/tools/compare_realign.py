@@ -73,9 +73,10 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from sos_fade.tools.compare_strategy import load_export, missing_columns_refusal  # noqa: E402
+
 from realign.config import RealignConfig  # noqa: E402
 from realign.strategy import RealignStrategy  # noqa: E402
-from sos_fade.tools.compare_strategy import load_export, missing_columns_refusal  # noqa: E402
 
 # ⚠ These MUST match the export block's own bit scheme in
 #   `strategies/tradingview/export_blocks/realign_strategy.pine`. A test holds them to it.
