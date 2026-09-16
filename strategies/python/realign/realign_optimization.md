@@ -9,9 +9,9 @@ a separate chart-frame arm and tunes nothing the shipped setup reads. ⚠ **That
 tool are NOT on main** — they are parked on branch `research/realign-chart-frame`, and Run 1's
 command only runs from a checkout of it.
 
-🔴 **THE PARITY GATE HAS RUN ONCE (Run 7, 2026-09-16) AND IS RED, WITH EVERY DISAGREEMENT
-DIAGNOSED.** The port was fixed the same day; the remaining causes are in the Pine and need a
-second export to confirm. Until that export exits 0, every number here is still a lab finding.
+✅ **THE PARITY GATE IS GREEN (Run 8, 2026-09-16) — NARROWLY.** 3.5 months and 9 trades; the
+retest entry has never been compared. Sweeping is now allowed, and every result still sits on
+bars the gate has never seen.
 **Tuning an ungated strategy optimises a Python program against itself.** See the root
 `CLAUDE.md` → *Never Do*, rule 22.
 
@@ -598,8 +598,27 @@ right, not a validated edge. ⚠ avg R is 1.6 standard errors from zero.
 🔴 **The Pine's own Strategy Tester said +41.35% on this setup when the port's 15m trail said
 −15.68R, and this file called that gap unexplained.** It is explained: the port had no anchor.
 
-**Status: RED, pending a second export.** With the port fixed, the gate is red only on 1, 3 and 4 —
-all Pine-side, all changed, none verifiable without TradingView. `retest` is still never exercised.
+**Status after this run: red only on 1, 3 and 4** — all Pine-side, all changed. See Run 8.
+
+---
+
+### Run 8 — the second export: GREEN (2026-09-16)
+
+**Export:** `exports/golden/VANTAGE_XAUUSD_M5_21327bars.csv` (taken as `VANTAGE_XAUUSD, 5_0cc0b.csv`)
+off the rebuilt twin, same settings as Run 7, 21,327 bars to 2026-09-16 14:40.
+
+**Every exercised field agrees on all 20,326 compared bars.** 10 triggers (7 long, 3 short), 9
+trades, 1,189 bars with a live stop. The three Pine-side fixes are therefore confirmed on a chart.
+
+**Proved it can fail:** reverting the target fix turns it red (159 bars). The Run 7 export stays
+red against today's code, as it should — the Pine it was taken from no longer exists.
+
+⚠ **What the green does NOT cover:**
+- **the retest entry** — all three resting-limit columns blank; it needs its own export at Retest.
+- **one setup per side** — reverting that rule leaves this export green; it happened 18 times in
+  2020-2026 and never in these 3.5 months.
+- **refusal codes** — exported, not yet compared by the gate.
+- **shorts: three triggers.**
 
 ## Open questions — blocking, and they are not tuning questions
 
@@ -610,7 +629,7 @@ indistinguishable, and every bucketed "signal" was one trade). Runs 5 and 6 are 
 
 | | question | status |
 |---|---|---|
-| 1 | **The parity gate is RED** (Run 7). | 🔴 **BLOCKS EVERYTHING BELOW.** Every disagreement is diagnosed and changed on one side or the other; the three Pine-side changes need a **second export** from Aaron to confirm. The retest entry has still never been exercised by any export. |
+| 1 | **The parity gate is green but NARROW** (Run 8). | ⚠ **OPEN.** The retest entry, a second same-side setup and the refusal codes have never been compared. The retest needs its own export before any Run 2-3 retest figure is trusted. |
 | 1c | **Runs 2-6 were measured on the 5m trail**, which is no longer the default. | ⚠ **OPEN.** The retest entry, the 12h clock, the random control and the kept-trail study have not been re-run on the 15m trail. |
 | 1a | **Profit concentration: 3-5 trades carry 5.5 years** (Run 6). | ⚠ **OPEN, and not fixable by tuning.** It is a sizing and expectations question, not a defect. It is also why Run 6's top-trade-removal check now runs on every bucketed claim. |
 | 1b | **Three of the four Run 2-4 picks have no holdout** (the 12h clock, nightly flat, keeping the trail). | ⚠ **OPEN.** Run 2's pre-declaration spent the only holdout year on the retest, and a second draw on it would make it meaningless. **The clean validation is forward data — it does not exist yet.** |

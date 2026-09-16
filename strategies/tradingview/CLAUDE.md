@@ -86,8 +86,8 @@ name until that twin was deleted on 2026-08-15.
 `sos_fade_strategy.pine` that does not land in `sos_fade_strategy_export.pine` makes the gate green about
 a file nobody trades. `realign_strategy.pine` gained its twin on 2026-09-16 and its
 first export the same day came back RED — four Pine-side rules changed as a result
-(`docs/realign_strategy.md` [18]-[21]), so every REALIGN number is still a lab finding until a
-second export is green.
+(`docs/realign_strategy.md` [18]-[21]) — and the second export was GREEN. Narrow: the retest
+entry has never been compared.
 
 ---
 

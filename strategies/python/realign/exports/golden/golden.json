@@ -1,0 +1,14 @@
+{
+  "csv": ["VANTAGE_XAUUSD_M5_21327bars.csv"],
+  "gate": "tools/compare_realign.py",
+  "warmup": 0,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M5",
+  "bars": 21327,
+  "harness": "strategies/tradingview/realign_strategy_export.pine",
+  "taken": "2026-09-16",
+  "_why_warmup": "0 means the GATE's own: it derives 1,000 bars (the 15m frame is aggregated from the 5m, so it needs its own swings before anything is compared) and compares the 20,326 after it.",
+  "_what_it_ran": "Shipped Pine inputs: 15m external, market entry, trail on the EXTERNAL frame, time stop before TP1 at 36h. The gate configures the port from the export's own cfg columns and pins the reward-to-risk floor at 0.0 to match the Pine's guard.",
+  "_exercise_check": "10 triggers (7 long, 3 short), 9 trades. NEVER reached: the retest entry (all three resting-limit columns blank), and a second false break on the same side while one is live (18 times in 2020-2026, none here; mutating that rule leaves this export green). Refusal codes are exported but not compared."
+}

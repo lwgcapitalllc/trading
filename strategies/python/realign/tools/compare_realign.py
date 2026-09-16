@@ -69,10 +69,11 @@ from typing import List, Optional, Tuple
 import pandas as pd
 
 _ROOT = Path(__file__).resolve().parents[4]
-for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
+for _p in (str(_ROOT), str(_ROOT / "strategies" / "python"), str(_ROOT / "engines")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from gate_common import drop_live_final_bar  # noqa: E402
 from sos_fade.tools.compare_strategy import load_export, missing_columns_refusal  # noqa: E402
 
 from realign.config import RealignConfig  # noqa: E402
@@ -260,7 +261,9 @@ def main(argv=None) -> int:
         print(wrong)
         return 2
 
-    df = load_export(a.csv)
+    # The shared export-format rule: the final row is TradingView's live bar. Dropped BEFORE the
+    # replay, so neither side is handed a bar that was still forming when the file was taken.
+    df = drop_live_final_bar(load_export(a.csv))
     cfg, missing = config_from_export(df)
 
     # Unpack the two packed decision columns into the flat names the loop reads.
@@ -350,11 +353,6 @@ def main(argv=None) -> int:
         "_step_short": _armed("short"), "px_tgt_s": _armed("short"), "px_ctr_s": _armed("short"),
     }
 
-    # ⚠ THE LAST ROW IS NOT COMPARED. An export taken while the market is open ends on the bar
-    #   that is still FORMING, and the Pine blanks some plots on it (the chart frame's confirmed
-    #   swings read `na` there on the first export). It is one bar; comparing it reports the
-    #   export's timing as a logic bug.
-    last = len(df) - 1
 
     # ⚠ THE MARKET ENTRY BAR IS ONE BAR APART BY CONSTRUCTION, NOT BY DISAGREEMENT. This port
     #   opens at the close of the bar the realignment confirms on; the Pine's market order
@@ -373,7 +371,7 @@ def main(argv=None) -> int:
     seen: dict = {}
     excused = 0
     compared = 0
-    for i in range(a.warmup, last):
+    for i in range(a.warmup, len(df)):
         row = df.iloc[i]
         st = states[i]
         compared += 1

@@ -107,6 +107,9 @@ with no edit. ⚠ **Finding zero golden exports is a FAILURE**, not a quiet pass
 and WHEN, never how** — same command per gate, same pass rule, results in discovery order. The
 self-test still counts every export first, and an unknown `--only` name is refused.
 
+✅ **REALIGN JOINED ON 2026-09-16 — five of five.** Its manifest names what the export never
+reached (the retest entry; a second same-side setup, whose rule this export cannot turn red).
+
 ✅ **STRATEGIES JOINED ON 2026-09-10 — all four**, from `strategies/python/*/exports/golden/`, so
 every strategy's parity gate, both LIVE bots' included, runs on every clone. 🔴 **BOS's was RED on
 arrival**: every fork had inherited SOS Fade's 2026-09-06 adding-to-winners default, which no

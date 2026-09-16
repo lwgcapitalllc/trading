@@ -11,9 +11,11 @@ optimises a Python program against itself. Its one run is research on a separate
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
-**Status:** 🔴 **THE GATE HAS RUN ONCE AND IS RED — every disagreement is diagnosed, the port-side
-ones are fixed, and the Pine-side ones need a second export** (see *The first parity export*,
-below). Until the gate exits 0 every number here is still a LAB finding. Built + unit-tested
+**Status:** ✅ **PARITY GREEN on 2026-09-16, on the second export — and NARROW.** 3.5 months, 10
+triggers, 9 trades; the retest entry and the one-setup-per-side rule were never reached, so a green
+says nothing about either. The first export was red and every cause was fixed (see *The first parity
+export*, below). The golden copy runs on every clone. The 2020-2026 figures sit on bars the gate has
+never seen. Built + unit-tested
 (count them with pytest). Read `docs/REALIGN_SPEC.md` for the setup and the full measurement record.
 
 ## 🔴 The first parity export (2026-09-16) — read before quoting ANY figure below
@@ -492,16 +494,15 @@ established edge.** The halves split +8.35R / +27.46R at 2023-05, which is the d
 now equals the 1m resample bar for bar over this window (467,352 bars, measured 2026-09-10).
 
 **Neither is a reason to trust one side over the other yet. They are the two things the parity gate
-exists to settle.** It has now run once (Run 7) and is red pending a second export.
+exists to settle.** It is green as of Run 8, narrowly.
 
 ---
 
 ## Rules
 
-- **Do not quote a number from this bot without saying it is unvalidated.** The gate has run once
-  and is RED (Run 7); until it exits 0 the Pine and the Python are not proven to agree, only
-  compared on totals. The next step is a SECOND export off the rebuilt twin — the one step only a
-  human can do.
+- **Quote a number from this bot with the gate's scope beside it.** Green on 3.5 months (Run 8);
+  the retest entry and a second same-side setup have never been compared. Any Pine change needs a
+  FRESH export — the golden copy is regression only.
 - **Take counts from `internal_realign_scan.py`; take the direction of anything exit-sensitive from
   a replay.** The scan had the short side's sign wrong. See above.
 - **Never publish a forming HTF bar** from `htf.py`. It is lookahead, it improves every result, and
@@ -520,8 +521,9 @@ exists to settle.** It has now run once (Run 7) and is red pending a second expo
 | `execution.py` | `RealignExecution` — the market and retest entries, sizing, the stop |
 | `strategy.py` | `RealignStrategy` — wiring, `engine_config()`, `run_dual` refusal |
 | `tests/test_realign.py` | 32 tests, weighted toward the silent failures |
-| `tools/compare_realign.py` | the parity gate — **run once 2026-09-16, RED, diagnosed** (Run 7) |
-| `exports/` | real TradingView exports of the twin — git-ignored |
+| `tools/compare_realign.py` | the parity gate — **green 2026-09-16, narrow** (Runs 7-8) |
+| `exports/golden/` | the committed passing export + `golden.json`; step 15 of the full test run replays it |
+| `exports/` | every other real export — git-ignored |
 | `strategies/tradingview/realign_strategy.pine` | the TradingView side |
 | `docs/REALIGN_SPEC.md` | the stage-1 spec and the full measurement record |
 | `backtest/tools/internal_realign_scan.py` | the counting/geometry scan |
@@ -532,8 +534,8 @@ The parent gained a dead-market entry floor
 (`strategies/python/sos_fade/CLAUDE.md` → *The DEAD-MARKET floor*). This fork pins it to 0.0
 rather than inheriting.
 
-⚠ **It matters more here than on the other forks, because this one's parity gate is not yet
-green** (Run 7). Nothing on this bot would ever report having silently acquired
+⚠ **It matters more here than on the other forks, because this one's parity gate is the
+narrowest** (Run 8). Nothing on this bot would ever report having silently acquired
 an entry filter, so an inherited default is not something a run could tell you about afterwards.
 
 ---
