@@ -139,5 +139,6 @@
   "account_risk_cap_pct": 10.0,
   "broker_tz_offsets": "2,3",
   "sizing_basis_adjustment": 0.0,
-  "_cloned_from": "Created 2026-09-14 as a fresh copy of sos_fade_demo's trading-logic settings, copied byte-for-byte as of that date. Not yet on any account, not yet promoted, not yet started. Every measurement and every broker fact behind these settings lives on sos_fade_demo's own config — this file states none of it, because none of it has been checked for this account."
+  "_cloned_from": "Created 2026-09-14 as a fresh copy of sos_fade_demo's trading-logic settings, copied byte-for-byte as of that date. Not yet on any account, not yet promoted, not yet started. Every measurement and every broker fact behind these settings lives on sos_fade_demo's own config — this file states none of it, because none of it has been checked for this account.",
+  "account_priority": 1
 }
