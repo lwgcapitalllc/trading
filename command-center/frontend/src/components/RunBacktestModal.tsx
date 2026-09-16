@@ -11,8 +11,16 @@ import {
   useBrokerSymbols,
 } from '@/hooks/useLab'
 import { ParamEditor, isChanged, visibleParams, type ParamValue } from '@/components/ParamEditor'
-import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
-import { Divider, InfoTooltip, SectionHead, inputCls, labelCls } from '@/components/ModalKit'
+import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
+import {
+  Divider,
+  FormSection,
+  InfoTooltip,
+  SectionHead,
+  inputCls,
+  labelCls,
+} from '@/components/ModalKit'
+import { MultiSelect } from '@/components/MultiSelect'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
 import { InstrumentPicker } from '@/components/InstrumentPicker'
 import { isQuotedVerbatim } from '@/lib/instrumentSearch'
@@ -703,476 +711,560 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
 
         {/* ── Scrollable body ─────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
-          {/* ── Broker account — FIRST, because everything under it depends on it ─────
-              🔴 Moved to the top 2026-08-26 (Aaron's call). It used to sit inside the Costs
-              block, which read as though it only decided what a run was CHARGED. It also decides
-              which broker's bars are replayed and — since the same day — how the instrument below
-              is SPELLED, and a control that silently rewrites the field above it makes no sense
-              to anybody. Put the cause before the effect and the rewrite explains itself. */}
-          {isPython && (
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-text-secondary flex-shrink-0">
-                Broker account
-              </label>
-              <select
-                value={brokerProfile ?? ''}
-                onChange={(e) => setBrokerProfile(e.target.value)}
-                className={`${inputCls} max-w-[240px]`}
-              >
-                {(brokerProfiles ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {brokerName(b.id)}
-                    {b.attached ? ' — connected now' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {/* ── Setup — instrument, bar size and period on ONE row ─────────────────
               These were four stacked sections with four uppercase headings, and between them
               they cost ~340px before the first strategy setting appeared. Nothing was dropped:
               the instrument's ten preset chips became the input's own dropdown list (so a
               broker symbol can still be TYPED), the bar presets became a select, and the period
               keeps its quick ranges beside the dates. */}
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(140px,200px)_110px_minmax(360px,1fr)] gap-x-4 gap-y-3 items-start">
-            {/* Instrument */}
-            <div className="min-w-0">
-              {!isNt8 ? (
-                /* The broker's OWN list, searchable, with a recents row. ⚠ Still an input rather
+          <FormSection n={1} title="Market" first>
+            <div
+              className={`grid grid-cols-1 gap-x-3 gap-y-3 items-start ${
+                isPython
+                  ? 'md:grid-cols-[minmax(170px,210px)_minmax(140px,190px)_96px_minmax(340px,1fr)]'
+                  : 'md:grid-cols-[minmax(230px,300px)_110px_minmax(360px,1fr)]'
+              }`}
+            >
+              {/* Broker account — first: it decides which bars are replayed, what the run is
+                charged and how the instrument beside it is spelled (Aaron, 2026-08-26). */}
+              {isPython && (
+                <div className="min-w-0">
+                  <label className={labelCls}>Broker account</label>
+                  <select
+                    value={brokerProfile ?? ''}
+                    onChange={(e) => setBrokerProfile(e.target.value)}
+                    className={inputCls}
+                  >
+                    {(brokerProfiles ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {brokerName(b.id)}
+                        {b.attached ? ' (connected)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {/* Instrument */}
+              <div className="min-w-0">
+                {!isNt8 ? (
+                  /* The broker's OWN list, searchable, with a recents row. ⚠ Still an input rather
                    than a select: a dropdown is the right way to browse 1,085 instruments and the
                    wrong way to enter the one you already know. */
-                <InstrumentPicker
-                  value={instrumentSymbol}
-                  onChange={setInstrumentSymbol}
-                  universe={universe}
-                  loading={universeLoading}
-                  placeholder="Type a symbol or a name"
-                  note={
-                    /* No caption saying what the broker "would" call it — the box itself now
+                  <InstrumentPicker
+                    value={instrumentSymbol}
+                    onChange={setInstrumentSymbol}
+                    universe={universe}
+                    loading={universeLoading}
+                    placeholder="Type a symbol or a name"
+                    note={
+                      /* No caption saying what the broker "would" call it — the box itself now
                        carries the resolved name. Three states, not two, so an UNRECORDED suffix
                        still has to speak: silence here would read as "bare", which is a guess. */
-                    instrumentSymbol && brokerNamingUnknown ? (
-                      <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
-                        Nobody has recorded how {brokerName(brokerProfile)} spells its symbols, so
-                        this is sent exactly as typed.
-                      </div>
-                    ) : null
-                  }
-                />
-              ) : (
-                <>
-                  <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
-                    <div>
-                      <label className={labelCls}>Symbol</label>
-                      {firmsLoading ? (
-                        <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
-                      ) : allowedSymbols.length === 0 ? (
-                        <div className={`${inputCls} text-text-tertiary`}>
-                          No rulesets configured
+                      instrumentSymbol && brokerNamingUnknown ? (
+                        <div className="mt-[4px] text-[10px] text-warn-text leading-snug">
+                          Nobody has recorded how {brokerName(brokerProfile)} spells its symbols, so
+                          this is sent exactly as typed.
                         </div>
-                      ) : (
-                        <select
-                          value={instrumentSymbol}
-                          onChange={(e) => setInstrumentSymbol(e.target.value)}
-                          className={inputCls}
-                        >
-                          {allowedSymbols.map((sym) => {
-                            const name = lookupInstrumentName(sym)
-                            return (
-                              <option key={sym} value={sym}>
-                                {name ? `${sym} — ${name}` : sym}
-                              </option>
-                            )
-                          })}
-                        </select>
-                      )}
-                    </div>
-                    <div className="w-[90px]">
-                      <div className="flex items-center mb-1">
-                        <label className={labelCls.replace(' mb-1', '')}>Contract</label>
-                        <InfoTooltip
-                          content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry."
-                          side="left"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={contractMonth}
-                        onChange={(e) => setContractMonth(e.target.value)}
-                        placeholder="06-26"
-                        className={inputCls}
-                      />
-                    </div>
-                  </div>
-                  {instrumentSymbol && (
-                    <div className="flex items-center justify-between mt-[4px]">
-                      {lookupInstrumentName(instrumentSymbol) && (
-                        <span className="text-[10px] text-text-tertiary">
-                          {lookupInstrumentName(instrumentSymbol)}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-text-tertiary ml-auto">
-                        Submits as:{' '}
-                        <span className="font-mono text-text-secondary">{instrument}</span>
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Bar size */}
-            <div className="min-w-0">
-              <div className="flex items-center mb-1">
-                <label className={labelCls.replace(' mb-1', '')}>Bar size</label>
-                <InfoTooltip
-                  content={
-                    !isNt8
-                      ? 'Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size.'
-                      : 'Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size.'
-                  }
-                />
-              </div>
-              <select
-                value={barValue}
-                onChange={(e) => setBarValue(Number(e.target.value))}
-                className={inputCls}
-              >
-                {BAR_PRESETS.map((v) => (
-                  <option key={v} value={v}>
-                    {barLabel(v)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Period */}
-            <div className="min-w-0">
-              <div className="flex items-center mb-1">
-                <label className={labelCls.replace(' mb-1', '')}>Period</label>
-                {/* NinjaTrader contract advice, so NinjaTrader only (2026-09-13) — on a Python or
-                    MT5 run it described contracts the form never offers. */}
-                {isNt8 && (
-                  <InfoTooltip content="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above." />
-                )}
-              </div>
-              <PeriodPicker
-                compact
-                start={startDate}
-                end={endDate}
-                onChange={(s, e) => {
-                  setStartDate(s)
-                  setEndDate(e)
-                }}
-                limit={historyLimit}
-              />
-            </div>
-          </div>
-
-          {/* Risk per trade — a self-sizing strategy's own risk setting, at the top. */}
-          {selfSizing && (
-            <>
-              <div data-testid="run-risk-pct">
-                <SectionHead
-                  label="Risk Per Trade"
-                  tooltip="How much of the balance each trade risks. The strategy sizes the position from this and its stop distance."
-                />
-                {!riskParam ? (
-                  <p className="text-[11px] text-warn-text">
-                    This strategy has not marked which setting is its risk per trade, so it can only
-                    be changed in Strategy Settings below.
-                  </p>
+                      ) : null
+                    }
+                  />
                 ) : (
                   <>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        step={riskParam.step ?? 0.5}
-                        min="0.1"
-                        max="100"
-                        disabled={!riskActive}
-                        value={String(params[riskParam.name] ?? '')}
-                        onChange={(e) =>
-                          setParams((p) => ({
-                            ...p,
-                            [riskParam.name]:
-                              e.target.value === '' ? ('' as string) : parseFloat(e.target.value),
-                          }))
-                        }
-                        className={`${inputCls} max-w-[120px] disabled:opacity-50`}
-                      />
-                      <span className="text-[12px] text-text-tertiary">
-                        % of balance · default {String(riskParam.default)}%
-                      </span>
-                      {riskActive && riskValue !== Number(riskParam.default) && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setParams((p) => ({
-                              ...p,
-                              [riskParam.name]: riskParam.default as number,
-                            }))
-                          }
-                          className="text-[11px] text-accent hover:underline"
-                        >
-                          Reset
-                        </button>
-                      )}
+                    <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
+                      <div>
+                        <label className={labelCls}>Symbol</label>
+                        {firmsLoading ? (
+                          <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
+                        ) : allowedSymbols.length === 0 ? (
+                          <div className={`${inputCls} text-text-tertiary`}>
+                            No rulesets configured
+                          </div>
+                        ) : (
+                          <select
+                            value={instrumentSymbol}
+                            onChange={(e) => setInstrumentSymbol(e.target.value)}
+                            className={inputCls}
+                          >
+                            {allowedSymbols.map((sym) => {
+                              const name = lookupInstrumentName(sym)
+                              return (
+                                <option key={sym} value={sym}>
+                                  {name ? `${sym} — ${name}` : sym}
+                                </option>
+                              )
+                            })}
+                          </select>
+                        )}
+                      </div>
+                      <div className="w-[90px]">
+                        <div className="flex items-center mb-1">
+                          <label className={labelCls.replace(' mb-1', '')}>Contract</label>
+                          <InfoTooltip
+                            content="NinjaTrader contract month in MM-YY format. Defaults to the current front-month quarterly contract. Contract-specific data typically begins 3–6 months before expiry."
+                            side="left"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={contractMonth}
+                          onChange={(e) => setContractMonth(e.target.value)}
+                          placeholder="06-26"
+                          className={inputCls}
+                        />
+                      </div>
                     </div>
-                    {!riskActive && (
-                      <p className="text-[11px] text-text-tertiary mt-1.5">
-                        Not used — this run sizes by a fixed quantity (see Strategy Settings).
-                      </p>
-                    )}
-                    {!riskValid && (
-                      <p className="text-[11px] text-neg-text mt-1.5">
-                        Enter a risk % between 0 and 100.
-                      </p>
+                    {instrumentSymbol && (
+                      <div className="flex items-center justify-between mt-[4px]">
+                        {lookupInstrumentName(instrumentSymbol) && (
+                          <span className="text-[10px] text-text-tertiary">
+                            {lookupInstrumentName(instrumentSymbol)}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-text-tertiary ml-auto">
+                          Submits as:{' '}
+                          <span className="font-mono text-text-secondary">{instrument}</span>
+                        </span>
+                      </div>
                     )}
                   </>
                 )}
               </div>
-              <Divider />
-            </>
-          )}
 
-          {/* Sizing Mode — who decides the size. Hidden when the strategy decides. */}
-          {!selfSizing && (
-            <div>
-              <SectionHead
-                label="Sizing Mode"
-                tooltip="Who decides how big each trade is. Automatic = the ruleset's rules decide. Manual = you set the risk % and it doesn't move. Applies to strategies that trade unit size and let the engine size them (e.g. ORB)."
-              />
-              <div className="flex gap-2">
-                <PresetBtn
-                  label="Automatic"
-                  active={sizingMode !== 'manual'}
-                  onClick={() => setSizingMode('consistent')}
-                />
-                <PresetBtn
-                  label="Manual"
-                  active={sizingMode === 'manual'}
-                  onClick={() => setSizingMode('manual')}
-                />
-              </div>
-
-              {sizingMode === 'manual' ? (
-                <div className="mt-2.5">
-                  <label className={labelCls}>Risk % per trade</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      max="100"
-                      value={manualPct}
-                      onChange={(e) => setManualPct(e.target.value)}
-                      className={`${inputCls} max-w-[120px]`}
-                    />
-                    <span className="text-[12px] text-text-tertiary">
-                      % of balance, every trade
-                    </span>
-                  </div>
-                  {!manualPctValid && (
-                    <p className="text-[11px] text-neg-text mt-1.5">
-                      Enter a risk % between 0 and 100.
-                    </p>
-                  )}
-                  <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                    Risks exactly this much of the balance on every trade. The account's hard rules
-                    still clamp it — on a ruleset with a drawdown floor or contract ladder you may
-                    get less. Pair with{' '}
-                    <span className="text-text-secondary">Unconstrained (No Limits)</span> for no
-                    clamps at all.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="flex gap-2 mt-2.5">
-                    <PresetBtn
-                      label="Consistent"
-                      active={sizingMode === 'consistent'}
-                      onClick={() => setSizingMode('consistent')}
-                    />
-                    <PresetBtn
-                      label="Bullet"
-                      active={sizingMode === 'bullet'}
-                      onClick={() => setSizingMode('bullet')}
-                    />
-                  </div>
-                  <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                    {sizingMode === 'consistent'
-                      ? 'Sizes each trade off room ÷ 7 — steady, spreads risk across trades. Best for clearing a consistency rule.'
-                      : 'Sizes each trade to the most the firm’s contract ladder allows — fastest to target, higher variance.'}
-                  </p>
-                </>
-              )}
-            </div>
-          )}
-
-          {!selfSizing && <Divider />}
-
-          {/* Lot ceiling — the largest single position, in lots. Python only: the other runners
-              size inside their own platforms and never reach this account. */}
-          {isPython && (
-            <>
-              <div>
-                <SectionHead
-                  label="Max Lot Size"
-                  // "the run page shows where it bit" came off (2026-09-13): nothing on the run
-                  // page reads a run's lot ceiling, so the sentence pointed at a display that
-                  // does not exist. What the ceiling COSTS is said once, in the note below.
-                  tooltip="The biggest single position this run may take, in lots. A larger setup is taken at this size, never skipped."
-                />
-                <div className="flex gap-2">
-                  <PresetBtn label="Cap at" active={capLots} onClick={() => setCapLots(true)} />
-                  <PresetBtn
-                    label="No ceiling"
-                    active={!capLots}
-                    onClick={() => setCapLots(false)}
+              {/* Bar size */}
+              <div className="min-w-0">
+                <div className="flex items-center mb-1">
+                  <label className={labelCls.replace(' mb-1', '')}>Bar size</label>
+                  <InfoTooltip
+                    content={
+                      !isNt8
+                        ? 'Candle interval the strategy is replayed on. Strategy parameters (e.g. lookback periods) are in bar-counts — retune them when changing bar size.'
+                        : 'Candle interval fed to the strategy. Smaller bars = more trades, more noise, higher commission drag. Larger bars = fewer, cleaner signals. Strategy parameters (e.g. lookback periods) are in bar-counts, not minutes — retune them when changing bar size.'
+                    }
                   />
                 </div>
-                {capLots ? (
-                  <div className="mt-2.5">
-                    <div className="flex items-center gap-2">
+                <select
+                  value={barValue}
+                  onChange={(e) => setBarValue(Number(e.target.value))}
+                  className={inputCls}
+                >
+                  {BAR_PRESETS.map((v) => (
+                    <option key={v} value={v}>
+                      {barLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Period */}
+              <div className="min-w-0">
+                <div className="flex items-center mb-1">
+                  <label className={labelCls.replace(' mb-1', '')}>Period</label>
+                  {/* NinjaTrader contract advice, so NinjaTrader only (2026-09-13) — on a Python or
+                    MT5 run it described contracts the form never offers. */}
+                  {isNt8 && (
+                    <InfoTooltip content="Data availability varies by contract. Specific contracts (e.g. MNQ 06-26) only have data from when that contract opened — typically 3–6 months before expiry. For multi-year backtests, use a NinjaTrader continuous contract (e.g. @MNQ #C) and adjust the symbol above." />
+                  )}
+                </div>
+                <PeriodPicker
+                  compact
+                  start={startDate}
+                  end={endDate}
+                  onChange={(s, e) => {
+                    setStartDate(s)
+                    setEndDate(e)
+                  }}
+                  limit={historyLimit}
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection n={2} title="Risk & grading">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 items-start">
+              {/* Risk per trade — a self-sizing strategy's own risk setting (Aaron, 2026-09-16). */}
+              {selfSizing ? (
+                <div data-testid="run-risk-pct" className="min-w-0">
+                  <div className="flex items-center mb-1">
+                    <label className={labelCls.replace(' mb-1', '')}>Risk per trade</label>
+                    <InfoTooltip content="How much of the balance each trade risks. The strategy sizes the position from this and its stop distance." />
+                  </div>
+                  {!riskParam ? (
+                    <p className="text-[11px] text-warn-text leading-snug">
+                      This strategy has not marked its risk setting — change it under Strategy
+                      logic.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-[110px] flex-shrink-0">
+                          <input
+                            type="number"
+                            step={riskParam.step ?? 0.5}
+                            min="0.1"
+                            max="100"
+                            disabled={!riskActive}
+                            value={String(params[riskParam.name] ?? '')}
+                            onChange={(e) =>
+                              setParams((p) => ({
+                                ...p,
+                                [riskParam.name]:
+                                  e.target.value === '' ? '' : parseFloat(e.target.value),
+                              }))
+                            }
+                            className={`${inputCls} pr-7 disabled:opacity-50`}
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-text-tertiary pointer-events-none">
+                            %
+                          </span>
+                        </div>
+                        {riskActive && riskValue !== Number(riskParam.default) ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setParams((p) => ({
+                                ...p,
+                                [riskParam.name]: riskParam.default as number,
+                              }))
+                            }
+                            className="text-[11px] text-accent hover:underline whitespace-nowrap"
+                          >
+                            Reset to {String(riskParam.default)}%
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-text-tertiary whitespace-nowrap">
+                            default
+                          </span>
+                        )}
+                      </div>
+                      {!riskActive && (
+                        <p className="text-[11px] text-text-tertiary mt-1">
+                          Not used — sizing is a fixed quantity.
+                        </p>
+                      )}
+                      {!riskValid && <p className="text-[11px] text-neg-text mt-1">Enter 0–100.</p>}
+                    </>
+                  )}
+                </div>
+              ) : (
+                /* Sizing — who decides the size, as ONE select. */
+                <div className="min-w-0">
+                  <div className="flex items-center mb-1">
+                    <label className={labelCls.replace(' mb-1', '')}>Sizing</label>
+                    <InfoTooltip content="Consistent: sizes each trade off room ÷ 7 — steady, best for a consistency rule. Bullet: the most the firm's contract ladder allows — fastest, higher variance. Manual: a fixed risk % every trade; the account's hard rules can still clamp it." />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={sizingMode}
+                      onChange={(e) => setSizingMode(e.target.value as SizingMode)}
+                      className={inputCls}
+                    >
+                      <option value="consistent">Auto · Consistent</option>
+                      <option value="bullet">Auto · Bullet</option>
+                      <option value="manual">Manual risk %</option>
+                    </select>
+                    {sizingMode === 'manual' && (
+                      <div className="relative w-[90px] flex-shrink-0">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          max="100"
+                          value={manualPct}
+                          onChange={(e) => setManualPct(e.target.value)}
+                          className={`${inputCls} pr-6`}
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[12px] text-text-tertiary pointer-events-none">
+                          %
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {!manualPctValid && (
+                    <p className="text-[11px] text-neg-text mt-1">Enter 0–100.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Lot ceiling — Python only: the other runners size inside their own platforms. */}
+              {isPython && (
+                <div className="min-w-0">
+                  <div className="flex items-center mb-1">
+                    <label className={labelCls.replace(' mb-1', '')}>Max lot size</label>
+                    <InfoTooltip content="The biggest single position, in lots. A larger setup is taken at this size, never skipped. Past the ceiling, risk per trade falls as the balance grows and compounding turns linear — read a long run as a floor. No ceiling reproduces runs made before 2026-09-02." />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-[110px] flex-shrink-0">
                       <input
                         type="number"
                         step="1"
                         min="0.01"
-                        value={maxLots}
+                        disabled={!capLots}
+                        value={capLots ? maxLots : ''}
+                        placeholder="none"
                         onChange={(e) => setMaxLots(e.target.value)}
-                        className={`${inputCls} max-w-[120px]`}
+                        className={`${inputCls} disabled:opacity-50`}
                       />
-                      <span className="text-[12px] text-text-tertiary">lots, per position</span>
                     </div>
-                    {!maxLotsValid && (
-                      <p className="text-[11px] text-neg-text mt-1.5">
-                        Enter a lot ceiling greater than 0.
-                      </p>
-                    )}
-                    <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                      Past the ceiling, risk per trade falls as the balance grows and compounding
-                      turns linear — read a long run past it as a floor, not a forecast.
+                    <label className="flex items-center gap-1.5 text-[12px] text-text-secondary cursor-pointer whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={!capLots}
+                        onChange={(e) => setCapLots(!e.target.checked)}
+                        className="w-3.5 h-3.5 rounded accent-accent"
+                      />
+                      No ceiling
+                    </label>
+                  </div>
+                  {!maxLotsValid && (
+                    <p className="text-[11px] text-neg-text mt-1">Enter more than 0.</p>
+                  )}
+                  {!capLots && (
+                    <p className="text-[11px] text-warn-text mt-1 leading-snug">
+                      Unclamped — sizes no venue would fill.
                     </p>
+                  )}
+                </div>
+              )}
+
+              {/* Evaluate against — one multi-select dropdown. Spans the lot column's place when
+                  the runner has no lot ceiling. */}
+              <div className={`min-w-0 ${isPython ? '' : 'md:col-span-2'}`}>
+                <div className="flex items-center mb-1">
+                  <label className={labelCls.replace(' mb-1', '')}>
+                    {isNt8 ? 'Prop firm challenges' : 'Evaluate against'}
+                  </label>
+                  <InfoTooltip
+                    side="left"
+                    content="The rulesets this run is graded against. Pick one or more."
+                  />
+                </div>
+                {firmsLoading ? (
+                  <div className={`${inputCls} text-text-tertiary`}>Loading…</div>
+                ) : !isNt8 ? (
+                  forexFirms.length === 0 ? (
+                    <div className="text-[12px] text-text-tertiary">
+                      No forex rulesets configured.
+                    </div>
+                  ) : (
+                    <MultiSelect
+                      testId="run-evaluate-against"
+                      options={forexFirms.map((f) => ({
+                        value: f.id,
+                        label: f.name,
+                        tag: f.account_tier,
+                      }))}
+                      selected={selectedFirms}
+                      onToggle={toggleFirm}
+                      onSetAll={(all) =>
+                        setSelectedFirms(all ? new Set(forexFirms.map((f) => f.id)) : new Set())
+                      }
+                      placeholder="Pick rulesets…"
+                      invalid={selectedFirms.size === 0}
+                    />
+                  )
+                ) : futuresFirms.length === 0 ? (
+                  <div className="text-[12px] text-text-tertiary">
+                    No prop firm challenges configured.
                   </div>
                 ) : (
-                  <p className="text-[10px] text-text-tertiary mt-2 leading-relaxed">
-                    No clamp: sizes can reach levels no venue would fill, so read the result as the
-                    strategy's arithmetic, not a tradeable account. This is how a run made before
-                    2026-09-02 is reproduced.
-                  </p>
-                )}
-              </div>
-              <Divider />
-            </>
-          )}
-
-          {/* Evaluate Against — prop firm challenges for futures, personal ruleset(s) for forex */}
-          <div>
-            <SectionHead label="Evaluate Against" />
-            {!isNt8 ? (
-              firmsLoading ? (
-                <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
-              ) : forexFirms.length === 0 ? (
-                <div className="text-[12px] text-text-tertiary">No forex rulesets configured.</div>
-              ) : (
-                <div className="space-y-2">
-                  {forexFirms.map((f) => (
-                    <label key={f.id} className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedFirms.has(f.id)}
-                        onChange={() => toggleFirm(f.id)}
-                        className="w-4 h-4 rounded accent-accent flex-shrink-0"
+                  <div className="flex items-center gap-2">
+                    {brandNames.length > 1 && (
+                      <select
+                        value={selectedBrand}
+                        onChange={(e) => {
+                          setSelectedBrand(e.target.value)
+                          setSelectedFirms(new Set())
+                        }}
+                        className={`${inputCls} max-w-[200px]`}
+                      >
+                        {brandNames.map((brand) => (
+                          <option key={brand} value={brand}>
+                            {brand}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <MultiSelect
+                        testId="run-evaluate-against"
+                        options={brandFirms.map((f) => ({
+                          value: f.id,
+                          label: firmChallengeName(f.name),
+                          tag: f.account_tier,
+                        }))}
+                        selected={selectedFirms}
+                        onToggle={toggleFirm}
+                        onSetAll={(all) => {
+                          if (all !== allBrandSelected) toggleAllBrand()
+                        }}
+                        placeholder="Pick challenges…"
+                        invalid={selectedFirms.size === 0}
                       />
-                      <span className="text-[13px] text-text-primary flex-1">{f.name}</span>
-                      <span className="text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 bg-bg-hover text-text-secondary">
-                        {f.account_tier}
-                      </span>
-                    </label>
-                  ))}
-                  {selectedFirms.size === 0 && (
-                    <p className="text-[11px] text-neg-text mt-2">Select at least one ruleset.</p>
-                  )}
-                </div>
-              )
-            ) : firmsLoading ? (
-              <div className="text-[12px] text-text-tertiary">Loading rulesets…</div>
-            ) : futuresFirms.length === 0 ? (
-              <div className="text-[12px] text-text-tertiary">
-                No prop firm challenges configured.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Prop firm selector — dropdown scales to any number of brands */}
-                {brandNames.length > 1 ? (
-                  <select
-                    value={selectedBrand}
-                    onChange={(e) => {
-                      setSelectedBrand(e.target.value)
-                      setSelectedFirms(new Set())
-                    }}
-                    className={inputCls}
-                  >
-                    {brandNames.map((brand) => (
-                      <option key={brand} value={brand}>
-                        {brand}
-                      </option>
-                    ))}
-                  </select>
-                ) : brandNames.length === 1 ? (
-                  <div className="text-[13px] font-medium text-text-primary">{brandNames[0]}</div>
-                ) : null}
-
-                {/* Challenge checkboxes */}
-                <div>
-                  {brandNames.length > 1 && (
-                    <div className="text-[11px] text-text-tertiary mb-2">Challenge</div>
-                  )}
-                  <div className="space-y-2">
-                    {brandFirms.map((f) => (
-                      <label key={f.id} className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedFirms.has(f.id)}
-                          onChange={() => toggleFirm(f.id)}
-                          className="w-4 h-4 rounded accent-accent flex-shrink-0"
-                        />
-                        <span className="text-[13px] text-text-primary flex-1">
-                          {firmChallengeName(f.name)}
-                        </span>
-                        {/* Neutral (2026-09-13): the tier names the account, it is not a warning
-                            or a pass — amber "eval" and green "funded" said both. */}
-                        <span className="text-[10px] px-[5px] py-[2px] rounded-pill font-semibold uppercase tracking-[0.3px] flex-shrink-0 bg-bg-hover text-text-secondary">
-                          {f.account_tier}
-                        </span>
-                      </label>
-                    ))}
+                    </div>
                   </div>
-
-                  {/* "Both" convenience — only when 2+ challenges */}
-                  {brandFirms.length >= 2 && (
-                    <label className="flex items-center gap-3 cursor-pointer mt-3 pt-3 border-t border-border-subtle">
-                      <input
-                        type="checkbox"
-                        checked={allBrandSelected}
-                        onChange={toggleAllBrand}
-                        className="w-4 h-4 rounded accent-accent flex-shrink-0"
-                      />
-                      <span className="text-[12px] text-text-secondary">
-                        Both Evaluation and Funded{' '}
-                        <span className="text-text-tertiary">(recommended)</span>
-                      </span>
-                    </label>
+                )}
+                {!firmsLoading &&
+                  selectedFirms.size === 0 &&
+                  (isNt8 ? futuresFirms : forexFirms).length > 0 && (
+                    <p className="text-[11px] text-neg-text mt-1">Pick at least one.</p>
                   )}
-                </div>
               </div>
-            )}
-            {isNt8 && !firmsLoading && selectedFirms.size === 0 && (
-              <p className="text-[11px] text-neg-text mt-2">Select at least one challenge.</p>
-            )}
-          </div>
+            </div>
+
+            <div className="mt-4">
+              {isPython && (
+                <>
+                  {/* Costs — ONE switch, on by default (2026-08-24) */}
+                  <div>
+                    <SectionHead
+                      label="Costs"
+                      // "below" was wrong: the broker picker is the FIRST control on this form.
+                      tooltip="A charged run is what you can trade; a free run shows how much of the edge is friction. Every figure is measured on the broker account picked at the top of this form — facts, not settings."
+                      open={costsOpen}
+                      onToggle={() => setCostsOpen((o) => !o)}
+                      summary={
+                        chargeCosts
+                          ? `charged · ${brokerName(brokerProfile)}`
+                          : 'GROSS — no costs charged'
+                      }
+                    />
+
+                    {/* 🔴 The switch sits OUTSIDE the fold. Everything below it is explanation, and a
+                    run's single most important physical fact must not be one click away behind a
+                    collapsed heading — that is how the old design let every run ship frictionless
+                    without anybody deciding to. */}
+                    <div className="flex items-start gap-2.5 mb-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={chargeCosts}
+                        onClick={() => setChargeCosts((v) => !v)}
+                        className={`mt-[2px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
+                          chargeCosts ? 'bg-accent' : 'bg-border-default'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-bg-base transition-all ${
+                            chargeCosts ? 'left-[16px]' : 'left-[2px]'
+                          }`}
+                        />
+                      </button>
+                      <span className="min-w-0">
+                        <span className="block text-[12px] text-text-primary">
+                          {chargeCosts
+                            ? "Charge this account's real costs"
+                            : 'Run gross — charge nothing'}
+                        </span>
+                        <span className="block text-[11px] text-text-tertiary leading-snug">
+                          {chargeCosts
+                            ? 'The result is net of friction — the number you can actually trade.'
+                            : 'A diagnostic only — never evidence that the strategy works.'}
+                        </span>
+                      </span>
+                    </div>
+
+                    {!chargeCosts && (
+                      <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                        This run will report a gross figure. It is not comparable to a charged run —
+                        real fills change which setups exist, not just what they pay.
+                      </p>
+                    )}
+
+                    {/* 🔴 The costs and the BARS must come from the same broker, and nothing else on
+                    this page can say whether they do. A run charged here replays whatever terminal
+                    the lab is attached to; picking a different account charges that account's
+                    spread over those bars, and the two gold spreads are $0.12 and $0.22 an ounce.
+                    ⚠ It WARNS and never blocks — measuring a strategy against a broker you are not
+                    pointed at is a legitimate thing to do deliberately. */}
+                    {chargeCosts && brokerMatches === false && (
+                      <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                        This charges {brokerName(brokerProfile)}&apos;s costs over bars from{' '}
+                        {brokerName(attachedProfile?.id)}, which is the terminal actually connected.
+                        Same run, two brokers — pick {brokerName(attachedProfile?.id)} unless you
+                        mean to compare.
+                      </p>
+                    )}
+                    {/* `!!`: a bare `.length &&` renders the number 0 when the list is empty. */}
+                    {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
+                      <p className="mb-2 text-[11px] text-text-tertiary leading-snug">
+                        Can&apos;t tell which terminal is connected, so nothing here confirms these
+                        costs match the bars this run will replay.
+                      </p>
+                    )}
+
+                    {/* A tier nobody has measured refuses rather than borrowing a sibling's figure —
+                    PU Prime's tiers measured 2.7x apart. Said here, before the button. */}
+                    {chargeCosts && brokerUnpriced && (
+                      <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
+                        This account&apos;s spread has never been measured, so it cannot be run
+                        charged. Measure it first, or pick an account that has been.
+                      </p>
+                    )}
+
+                    {costsOpen && chargeCosts && !brokerUnpriced && (
+                      <div className="space-y-1">
+                        {chargedRows.map((row) => (
+                          <div
+                            key={row.label}
+                            className="flex items-start gap-2.5 px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken"
+                          >
+                            <span className="min-w-0">
+                              <span className="flex items-center gap-1.5">
+                                <span className="text-[12px] text-text-primary">{row.label}</span>
+                                {row.tag && (
+                                  <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                                    {row.tag}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="block text-[11px] text-text-tertiary leading-snug">
+                                {row.detail}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+
+                        {/* 🔴 Slippage is the ONE cost that stays a separate, typed opt-in, and the
+                        tag says why. Every other figure above is measured; this one is a guess,
+                        and folding a guess in beside three measurements would make them
+                        indistinguishable on the page. 0 means it is not charged at all. */}
+                        <div className="px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken">
+                          <span className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[12px] text-text-primary">Slippage</span>
+                            <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                              a guess
+                            </span>
+                          </span>
+                          <span className="block text-[11px] text-text-tertiary leading-snug mb-1.5">
+                            Nobody has measured this. Leave it at 0 unless you mean to charge an
+                            assumption; it is charged on market exits only.
+                          </span>
+                          <div className="max-w-[220px]">{slippageInput}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* 🔴 "Advanced" was these two fields and NOTHING ELSE, and both are costs — so on the
+              python runner they now live inside the Costs section, under the layer that charges
+              them. NT8 and MT5 have no layers at all (their tester charges these two directly, and
+              `cost_layers` is sent as null), so there is nowhere else for them to go and the
+              section stays exactly as it was for those runners. */}
+              {!isPython && (
+                <>
+                  <div>
+                    <SectionHead label="Costs" />
+                    <div className="grid grid-cols-2 gap-3 max-w-[520px]">
+                      <div>{commissionInput}</div>
+                      <div>{slippageInput}</div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </FormSection>
 
           {/* ── Strategy settings — READ them by default, EDIT on request ──────────
               Aaron, 2026-08-15: *"I hate going through all these settings to figure out what is
@@ -1183,19 +1275,20 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               the thing a reader trusts to tell them nothing unusual is set. */}
           {strategy.param_schema.length > 0 && (
             <>
-              <Divider />
-              <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <SectionHead label="Strategy Settings" />
-                  {changedCount > 0 && (
+              <FormSection
+                n={3}
+                title="Strategy logic"
+                right={
+                  changedCount > 0 ? (
                     <span
                       data-testid="run-params-changed"
                       className="text-[11px] text-accent font-medium"
                     >
                       {changedCount} changed from default
                     </span>
-                  )}
-                </div>
+                  ) : null
+                }
+              >
                 <ParamEditor
                   schema={settingsSchema}
                   mode="run"
@@ -1203,7 +1296,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   values={params}
                   onChange={(name, val) => setParams((p) => ({ ...p, [name]: val }))}
                 />
-              </div>
+              </FormSection>
             </>
           )}
 
@@ -1288,161 +1381,6 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                       </span>
                     </div>
                   ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {isPython && (
-            <>
-              <Divider />
-
-              {/* Costs — ONE switch, on by default (2026-08-24) */}
-              <div>
-                <SectionHead
-                  label="Costs"
-                  // "below" was wrong: the broker picker is the FIRST control on this form.
-                  tooltip="A charged run is what you can trade; a free run shows how much of the edge is friction. Every figure is measured on the broker account picked at the top of this form — facts, not settings."
-                  open={costsOpen}
-                  onToggle={() => setCostsOpen((o) => !o)}
-                  summary={
-                    chargeCosts
-                      ? `charged · ${brokerName(brokerProfile)}`
-                      : 'GROSS — no costs charged'
-                  }
-                />
-
-                {/* 🔴 The switch sits OUTSIDE the fold. Everything below it is explanation, and a
-                    run's single most important physical fact must not be one click away behind a
-                    collapsed heading — that is how the old design let every run ship frictionless
-                    without anybody deciding to. */}
-                <div className="flex items-start gap-2.5 mb-2">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={chargeCosts}
-                    onClick={() => setChargeCosts((v) => !v)}
-                    className={`mt-[2px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
-                      chargeCosts ? 'bg-accent' : 'bg-border-default'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-bg-base transition-all ${
-                        chargeCosts ? 'left-[16px]' : 'left-[2px]'
-                      }`}
-                    />
-                  </button>
-                  <span className="min-w-0">
-                    <span className="block text-[12px] text-text-primary">
-                      {chargeCosts
-                        ? "Charge this account's real costs"
-                        : 'Run gross — charge nothing'}
-                    </span>
-                    <span className="block text-[11px] text-text-tertiary leading-snug">
-                      {chargeCosts
-                        ? 'The result is net of friction — the number you can actually trade.'
-                        : 'A diagnostic only — never evidence that the strategy works.'}
-                    </span>
-                  </span>
-                </div>
-
-                {!chargeCosts && (
-                  <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                    This run will report a gross figure. It is not comparable to a charged run —
-                    real fills change which setups exist, not just what they pay.
-                  </p>
-                )}
-
-                {/* 🔴 The costs and the BARS must come from the same broker, and nothing else on
-                    this page can say whether they do. A run charged here replays whatever terminal
-                    the lab is attached to; picking a different account charges that account's
-                    spread over those bars, and the two gold spreads are $0.12 and $0.22 an ounce.
-                    ⚠ It WARNS and never blocks — measuring a strategy against a broker you are not
-                    pointed at is a legitimate thing to do deliberately. */}
-                {chargeCosts && brokerMatches === false && (
-                  <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                    This charges {brokerName(brokerProfile)}&apos;s costs over bars from{' '}
-                    {brokerName(attachedProfile?.id)}, which is the terminal actually connected.
-                    Same run, two brokers — pick {brokerName(attachedProfile?.id)} unless you mean
-                    to compare.
-                  </p>
-                )}
-                {/* `!!`: a bare `.length &&` renders the number 0 when the list is empty. */}
-                {chargeCosts && brokerMatches === null && !!brokerProfiles?.length && (
-                  <p className="mb-2 text-[11px] text-text-tertiary leading-snug">
-                    Can&apos;t tell which terminal is connected, so nothing here confirms these
-                    costs match the bars this run will replay.
-                  </p>
-                )}
-
-                {/* A tier nobody has measured refuses rather than borrowing a sibling's figure —
-                    PU Prime's tiers measured 2.7x apart. Said here, before the button. */}
-                {chargeCosts && brokerUnpriced && (
-                  <p className="mb-2 text-[11px] text-warn-text bg-warn-muted rounded px-2 py-1.5 leading-snug">
-                    This account&apos;s spread has never been measured, so it cannot be run charged.
-                    Measure it first, or pick an account that has been.
-                  </p>
-                )}
-
-                {costsOpen && chargeCosts && !brokerUnpriced && (
-                  <div className="space-y-1">
-                    {chargedRows.map((row) => (
-                      <div
-                        key={row.label}
-                        className="flex items-start gap-2.5 px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken"
-                      >
-                        <span className="min-w-0">
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-[12px] text-text-primary">{row.label}</span>
-                            {row.tag && (
-                              <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
-                                {row.tag}
-                              </span>
-                            )}
-                          </span>
-                          <span className="block text-[11px] text-text-tertiary leading-snug">
-                            {row.detail}
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-
-                    {/* 🔴 Slippage is the ONE cost that stays a separate, typed opt-in, and the
-                        tag says why. Every other figure above is measured; this one is a guess,
-                        and folding a guess in beside three measurements would make them
-                        indistinguishable on the page. 0 means it is not charged at all. */}
-                    <div className="px-2.5 py-2 rounded border border-border-subtle/50 bg-bg-sunken">
-                      <span className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[12px] text-text-primary">Slippage</span>
-                        <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
-                          a guess
-                        </span>
-                      </span>
-                      <span className="block text-[11px] text-text-tertiary leading-snug mb-1.5">
-                        Nobody has measured this. Leave it at 0 unless you mean to charge an
-                        assumption; it is charged on market exits only.
-                      </span>
-                      <div className="max-w-[220px]">{slippageInput}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* 🔴 "Advanced" was these two fields and NOTHING ELSE, and both are costs — so on the
-              python runner they now live inside the Costs section, under the layer that charges
-              them. NT8 and MT5 have no layers at all (their tester charges these two directly, and
-              `cost_layers` is sent as null), so there is nowhere else for them to go and the
-              section stays exactly as it was for those runners. */}
-          {!isPython && (
-            <>
-              <Divider />
-              <div>
-                <SectionHead label="Costs" />
-                <div className="grid grid-cols-2 gap-3">
-                  <div>{commissionInput}</div>
-                  <div>{slippageInput}</div>
                 </div>
               </div>
             </>

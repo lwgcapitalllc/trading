@@ -255,3 +255,18 @@ Settings grid, so it is edited in one place. It writes the same `params` entry, 
 default" and the submitted run see it unchanged. Greyed when the setting's `show_if` hides it
 (extreme leg on fixed contracts); a warning when the strategy marked nothing. Engine-sized
 strategies keep Sizing Mode → Manual in the same spot. Backend side: `backend/notes/strategies.md`.
+
+## The Run modal is three numbered sections (2026-09-16)
+
+Aaron, from the screen: too much wasted space. The form is now **1 Market** (broker, instrument,
+bar size, period on one row), **2 Risk & grading** (risk per trade — or the Sizing select for an
+engine-sized strategy — max lot size and the rulesets on one row, costs under it) and **3 Strategy
+logic** (the settings grid, last because it is the longest). Section headings are `FormSection` in
+`ModalKit`.
+
+- **The rulesets are a multi-select dropdown** — `components/MultiSelect.tsx`, reusable, with
+  Select all / Clear all. Nothing is pre-selected (the lab rule stands). Futures keep the firm
+  select beside it.
+- **Explanations moved behind the ⓘ** (*Say it once*). Warnings stay on screen: an unclamped lot
+  size, gross costs, an unpriced broker, a missing ruleset.
+- ⚠ Costs sit ABOVE the strategy settings now; below 128 settings nobody saw the switch.

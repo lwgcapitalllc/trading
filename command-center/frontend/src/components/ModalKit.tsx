@@ -13,6 +13,7 @@
  */
 
 import { ChevronDown, ChevronRight, Info } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 /** The form input, and its label. Every field on both modals uses these two, so a field that
  *  looks different from its neighbour is a mistake rather than a decision. */
@@ -98,4 +99,35 @@ export function SectionHead({
 
 export function Divider() {
   return <div className="border-t border-border-subtle" />
+}
+
+/**
+ * A numbered block of the form — "1 Market", "2 Risk & grading" — so a long form reads as a few
+ * steps. The first one has no rule above it.
+ */
+export function FormSection({
+  n,
+  title,
+  right,
+  first = false,
+  children,
+}: {
+  n: number
+  title: string
+  right?: ReactNode
+  first?: boolean
+  children: ReactNode
+}) {
+  return (
+    <section className={first ? '' : 'pt-4 border-t border-border-subtle'}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="w-[18px] h-[18px] rounded-full bg-accent/15 text-accent text-[10px] font-semibold flex items-center justify-center">
+          {n}
+        </span>
+        <span className="text-[12px] font-semibold text-text-primary">{title}</span>
+        {right && <span className="ml-auto">{right}</span>}
+      </div>
+      {children}
+    </section>
+  )
 }
