@@ -11,7 +11,7 @@ optimises a Python program against itself. Its one run is research on a separate
 **Scope:** This bot only — its 15m aggregator, tracker, order layer, config, tests. It does NOT own
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
-**Status:** Built + unit-tested (count them with pytest) + **cross-checked against the TradingView Strategy
+**Status:** 🔴 **THE GATE EXISTS AND HAS NEVER BEEN RUN — stages 2, 3 and 6 landed 2026-09-16 and stage 4 is waiting on a human.** `tools/compare_realign.py` + `strategies/tradingview/realign_strategy_export.pine` are built; what is missing is one TradingView CSV export, which only Aaron can take. Until it exits 0, every number here is still a LAB finding — and there are now six runs of them. Built + unit-tested (count them with pytest) + **cross-checked against the TradingView Strategy
 Tester**. 🔴 **NOT PARITY-VALIDATED — there is no export twin, no real CSV and no
 `tools/compare_realign.py`, so stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are all outstanding.**
 Every number below is a LAB finding. Read `docs/REALIGN_SPEC.md` for the setup and the full
@@ -528,7 +528,8 @@ exists to settle, and the parity gate does not exist.**
 | `tracker.py` | `RealignTracker` — arming on the false break, walking the realignment |
 | `execution.py` | `RealignExecution` — the market and retest entries, sizing, the stop |
 | `strategy.py` | `RealignStrategy` — wiring, `engine_config()`, `run_dual` refusal |
-| `tests/test_realign.py` | 24 tests, weighted toward the silent failures |
+| `tests/test_realign.py` | 32 tests, weighted toward the silent failures |
+| `tools/compare_realign.py` | the parity gate — **built 2026-09-16, never yet RUN** (stage 4, a real CSV, is Aaron's) |
 | `strategies/tradingview/realign_strategy.pine` | the TradingView side |
 | `docs/REALIGN_SPEC.md` | the stage-1 spec and the full measurement record |
 | `backtest/tools/internal_realign_scan.py` | the counting/geometry scan |

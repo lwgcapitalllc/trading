@@ -112,8 +112,34 @@ class RealignStrategy(SosFadeStrategy):
         if self.config.realign_trail_frame == "external":
             self.execution._trail_swing_hi = self.htf.conf_high
             self.execution._trail_swing_lo = self.htf.conf_low
+        self._report(rs, sig)
         self._last_state = rs
         return dec
+
+    def _report(self, rs, sig) -> None:
+        """Fill the state's REPORTING half — the parity gate's decision stream.
+
+        Reads nothing and decides nothing. Every field has a `px_*` plot in
+        `export_blocks/realign_strategy.pine`, so `compare_realign.py` can say WHICH step
+        diverged rather than only that the trades differ.
+
+        ⚠ BOTH trail anchors are recorded whatever `realign_trail_frame` says, because the
+        Pine and this port disagree about which one to use and a gate carrying only the
+        chosen one would report "wrong frame" as "numbers differ".
+        """
+        ex = self.execution
+        rs.htf_conf_high = self.htf.conf_high
+        rs.htf_conf_low = self.htf.conf_low
+        rs.cht_conf_high = getattr(sig, "last_conf_high", None)
+        rs.cht_conf_low = getattr(sig, "last_conf_low", None)
+        rs.pos_dir = ex._pos_dir
+        rs.pos_stage = getattr(ex, "_stage", 0)
+        rs.pos_stop = ex._current_stop() if ex._pos_dir != 0 else None
+        pend = ex._pend_long if ex._pend_long is not None else ex._pend_short
+        if pend is not None:
+            rs.pend_px, rs.pend_sl = pend.edge, pend.sl
+            rs.pend_age = (None if ex._retest_bar is None
+                           else int(sig.index) - int(ex._retest_bar))
 
     def step(self, bar_state) -> Decision:
         dec = self._step_core(bar_state, bar_state.bar.timestamp_ms)

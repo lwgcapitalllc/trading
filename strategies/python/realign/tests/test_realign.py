@@ -308,3 +308,67 @@ def test_the_order_is_never_cancelled_on_the_bar_it_was_placed():
     _fire(ex, _Sig(index=100, close=100.0), level=99.0, stop=98.0)
     ex._expire_retest(_Sig(index=100, close=100.0, low=97.0))
     assert ex._pend_long is not None
+
+
+# ── the parity gate's decoder must not drift from the export block ───────────────
+# 🔴 The gate reads packed columns by a bit scheme written down in TWO files. If the Pine's
+# packing and the Python's decoding drift apart, the gate compares the wrong bits and can go
+# GREEN on a disagreement — a parity gate lying is strictly worse than no gate, because it is
+# believed. These read the block file and hold the decoder to it.
+
+_BLOCK = _ROOT / "strategies" / "tradingview" / "export_blocks" / "realign_strategy.pine"
+
+
+def _plot_titles() -> set:
+    import re
+
+    return set(re.findall(r'"((?:px|cfg)_[a-z0-9_]+)"', _BLOCK.read_text(encoding="utf-8")))
+
+
+def test_every_column_the_gate_compares_is_actually_plotted_by_the_twin():
+    """An export cannot carry a column its twin does not plot, so a gate reading one would
+    refuse every real export — or, worse, silently skip it. Watched red by renaming a plot."""
+    from realign.tools.compare_realign import _COMPARED
+
+    titles = _plot_titles()
+    packed = {"px_struct", "px_arm"}
+    missing = [c for c in _COMPARED if c not in titles and c not in packed]
+    assert not missing, f"the gate compares columns the export block never plots: {missing}"
+
+
+def test_every_config_column_the_gate_reads_is_plotted():
+    """A cfg_* column the twin does not plot means the port is configured from THIS side's
+    defaults while claiming it came from the export — the one thing the decoder forbids."""
+    from realign.tools.compare_realign import _CFG_NUM
+
+    titles = _plot_titles()
+    missing = [c for c in _CFG_NUM if c not in titles]
+    assert not missing, f"the gate reads cfg columns the export block never plots: {missing}"
+
+
+def test_the_gate_pins_the_pines_reward_to_risk_guard():
+    """The Pine guards entry with `tgtLong > close` and has no input for it, so no cfg_*
+    column can carry it. 0.0 reproduces that guard; None — this side's default — does not.
+    A config must describe the EXPORT. Goes red if the pin is dropped."""
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    cfg, _missing = config_from_export(pd.DataFrame({"cfg_bits": [3.0]}))
+    assert cfg.realign_min_rr == 0.0
+
+
+def test_the_enum_decoder_covers_every_digit_the_block_packs():
+    """`cfg_enum1` packs one dropdown per decimal place. A decoder listing fewer fields than
+    the block packs reads a later digit into the wrong setting and configures a different
+    strategy — silently, because every value still looks legal."""
+    import re
+
+    from realign.tools.compare_realign import _ENUM_ORDER
+
+    txt = _BLOCK.read_text(encoding="utf-8")
+    block = txt[txt.index('"cfg_enum1"') - 1400:txt.index('"cfg_enum1"')]
+    places = {0} | {len(m) for m in re.findall(r"\+ 1(0+) \* \(", block)}
+    assert len(_ENUM_ORDER) == len(places), (
+        f"the block packs {len(places)} enum digits and the decoder names "
+        f"{len(_ENUM_ORDER)}")

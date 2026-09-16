@@ -63,6 +63,34 @@ class RealignState:
     long_armed: bool = False
     short_armed: bool = False
 
+    # ── REPORTING ONLY — the parity gate's decision stream ───────────────────────
+    # 🔴 NOTHING BELOW IS READ BY ANY DECISION. They exist so `compare_realign.py` can diff
+    # this port against `realign_strategy_export.pine` bar by bar. A gate that can only see
+    # the final trade can say "the numbers differ"; one that sees the tracker's own state
+    # says WHICH step diverged, which is the difference between a readable red gate and a day
+    # in the debugger. Every field here has a `px_*` plot in the export block.
+    htf_trend: int = 0
+    step_long: int = 0
+    step_short: int = 0
+    ctr_low: Optional[float] = None
+    ctr_high: Optional[float] = None
+    tgt_long: Optional[float] = None
+    tgt_short: Optional[float] = None
+    # The two candidate trail anchors, BOTH of them, always. The Pine anchors on the external
+    # frame and this port on the chart frame (found 2026-09-16); carrying only the one in use
+    # would let the gate report "numbers differ" for what is actually "wrong frame".
+    htf_conf_high: Optional[float] = None
+    htf_conf_low: Optional[float] = None
+    cht_conf_high: Optional[float] = None
+    cht_conf_low: Optional[float] = None
+    # The open position and any resting retest limit, filled by the strategy after the step.
+    pos_dir: int = 0
+    pos_stop: Optional[float] = None
+    pos_stage: int = 0
+    pend_px: Optional[float] = None
+    pend_sl: Optional[float] = None
+    pend_age: Optional[int] = None
+
 
 class RealignTracker:
     def __init__(self, cfg) -> None:
@@ -108,6 +136,10 @@ class RealignTracker:
         cfg = self._cfg
         out = RealignState()
         if not self._armed:
+            # ⚠ The reporting half is filled on THIS path too. A gate that sees blank state
+            # on every unarmed bar cannot tell "nothing armed" from "the port stopped
+            # reporting", and the HTF trend is live whether or not a setup is armed.
+            self._report(out)
             return out
 
         window_ms = int(cfg.realign_window_hrs * 3_600_000)
@@ -153,7 +185,17 @@ class RealignTracker:
         self._armed = alive
         out.long_armed = any(a.dir > 0 for a in self._armed)
         out.short_armed = any(a.dir < 0 for a in self._armed)
+        self._report(out)
         return out
+
+    def _report(self, out: RealignState) -> None:
+        """Fill the reporting half of the state. Reads nothing, decides nothing."""
+        out.htf_trend = self._htf_trend
+        for a in self._armed:
+            if a.dir > 0:
+                out.step_long, out.ctr_low, out.tgt_long = a.step, a.counter_ext, a.target
+            else:
+                out.step_short, out.ctr_high, out.tgt_short = a.step, a.counter_ext, a.target
 
 
 def _breaks(ev) -> List[Tuple[str, int]]:
