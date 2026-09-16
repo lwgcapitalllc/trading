@@ -74,6 +74,7 @@
     },
     {
       "name": "exec_risk_pct",
+      "role": "risk_pct",
       "group": "Sizing",
       "core": true,
       "unit": "%",

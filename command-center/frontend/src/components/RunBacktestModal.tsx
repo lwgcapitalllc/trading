@@ -445,6 +445,31 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     [strategy.param_schema, params]
   )
 
+  // ── Risk per trade for a SELF-SIZING strategy — lifted out of the settings list ─────
+  // Aaron, 2026-09-16: every strategy's risk % must be changeable at the top of this form, not
+  // hunted for in a settings group. The strategy's meta.json marks WHICH setting it is
+  // (`role: "risk_pct"`); the value is still the ordinary param in `params`, so it is sent,
+  // counted as changed and recorded exactly as before. `null` = the strategy never declared one,
+  // which the form says out loud rather than silently showing nothing.
+  const riskParam = selfSizing
+    ? (strategy.param_schema.find((p) => p.role === 'risk_pct') ?? null)
+    : null
+  const riskActive =
+    riskParam != null &&
+    visibleParams(strategy.param_schema, params as Record<string, ParamValue>).some(
+      (p) => p.name === riskParam.name
+    )
+  const riskValue = riskParam ? Number(params[riskParam.name]) : NaN
+  const riskValid = !riskActive || (!isNaN(riskValue) && riskValue > 0 && riskValue <= 100)
+  // The settings list below leaves it out, so it is never edited in two places.
+  const settingsSchema = useMemo(
+    () =>
+      riskParam
+        ? strategy.param_schema.filter((p) => p.name !== riskParam.name)
+        : strategy.param_schema,
+    [strategy.param_schema, riskParam]
+  )
+
   // What "costs on" actually charges, for THIS broker. Every figure is derived from the SERVED
   // profile and never retyped — see `useBrokerProfiles`. This mirrors `python_runner.CHARGED_LAYERS`
   // and exists so the page states what the run will be billed rather than implying it.
@@ -551,6 +576,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
     startDate < endDate &&
     evalRequiredMet &&
     manualPctValid &&
+    riskValid &&
     maxLotsValid &&
     // A tier with no measured spread cannot be run charged, and the backend refuses it. Blocking
     // the button is the same refusal in the place the reader is looking.
@@ -844,6 +870,73 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
             </div>
           </div>
 
+          {/* Risk per trade — a self-sizing strategy's own risk setting, at the top. */}
+          {selfSizing && (
+            <>
+              <div data-testid="run-risk-pct">
+                <SectionHead
+                  label="Risk Per Trade"
+                  tooltip="How much of the balance each trade risks. The strategy sizes the position from this and its stop distance."
+                />
+                {!riskParam ? (
+                  <p className="text-[11px] text-warn-text">
+                    This strategy has not marked which setting is its risk per trade, so it can only
+                    be changed in Strategy Settings below.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step={riskParam.step ?? 0.5}
+                        min="0.1"
+                        max="100"
+                        disabled={!riskActive}
+                        value={String(params[riskParam.name] ?? '')}
+                        onChange={(e) =>
+                          setParams((p) => ({
+                            ...p,
+                            [riskParam.name]:
+                              e.target.value === '' ? ('' as string) : parseFloat(e.target.value),
+                          }))
+                        }
+                        className={`${inputCls} max-w-[120px] disabled:opacity-50`}
+                      />
+                      <span className="text-[12px] text-text-tertiary">
+                        % of balance · default {String(riskParam.default)}%
+                      </span>
+                      {riskActive && riskValue !== Number(riskParam.default) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setParams((p) => ({
+                              ...p,
+                              [riskParam.name]: riskParam.default as number,
+                            }))
+                          }
+                          className="text-[11px] text-accent hover:underline"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    {!riskActive && (
+                      <p className="text-[11px] text-text-tertiary mt-1.5">
+                        Not used — this run sizes by a fixed quantity (see Strategy Settings).
+                      </p>
+                    )}
+                    {!riskValid && (
+                      <p className="text-[11px] text-neg-text mt-1.5">
+                        Enter a risk % between 0 and 100.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+              <Divider />
+            </>
+          )}
+
           {/* Sizing Mode — who decides the size. Hidden when the strategy decides. */}
           {!selfSizing && (
             <div>
@@ -1104,7 +1197,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   )}
                 </div>
                 <ParamEditor
-                  schema={strategy.param_schema}
+                  schema={settingsSchema}
                   mode="run"
                   layout="compact"
                   values={params}

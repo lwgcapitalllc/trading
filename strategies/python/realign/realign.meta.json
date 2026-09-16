@@ -37,5 +37,15 @@
     {
       "text": "Each trade risks {exec_risk_pct}% of the account, sized off its stop distance, and it holds one trade at a time."
     }
+  ],
+  "params": [
+    {
+      "name": "exec_risk_pct",
+      "role": "risk_pct",
+      "group": "Size",
+      "label": "Risk % per trade",
+      "unit": "% of balance",
+      "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk."
+    }
   ]
 }

@@ -411,6 +411,10 @@ _PARAM_META_KEYS = (
     # dropdown. Strategies match enums exactly and no-op on anything else,
     # so a free-text typo silently disables the setting.
     "choices",
+    # `role: "risk_pct"` marks the ONE setting that is a self-sizing strategy's risk per trade,
+    # so the run form can lift it to the top. Display only — the value still travels as an
+    # ordinary param. Pinned by tests/test_risk_param_role.py.
+    "role",
 )
 
 

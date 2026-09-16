@@ -245,3 +245,13 @@ not there. 🔴 **The stale check first released its held answer before the requ
 picker. It now finds the picker's own placeholder and asserts a PREFIX (`/^XAUUSD/`), because in
 the fixture the broker's suffix is not re-applied when the default instrument arrives after the
 broker — the backend binds the suffix, per *the broker's own symbol* above.
+
+## Risk Per Trade — a self-sizing strategy's risk %, at the top (2026-09-16)
+
+Aaron: every strategy's risk % must be overridable at the top of the run form. A self-sizing
+strategy's meta.json marks its risk setting with `role: "risk_pct"`; `RunBacktestModal` shows that
+setting as a "Risk Per Trade" box directly under the setup row and filters it out of the Strategy
+Settings grid, so it is edited in one place. It writes the same `params` entry, so "changed from
+default" and the submitted run see it unchanged. Greyed when the setting's `show_if` hides it
+(extreme leg on fixed contracts); a warning when the strategy marked nothing. Engine-sized
+strategies keep Sizing Mode → Manual in the same spot. Backend side: `backend/notes/strategies.md`.

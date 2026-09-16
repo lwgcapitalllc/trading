@@ -327,3 +327,16 @@ find-and-replace into a no-op — `docs/DEBRAND_RENAME_PLAN.md` §4.2 records it
 
 Tests: `tests/test_migrate_debrand_ids.py` (8), on the real schema; 9 mutations planted in memory, 9
 killed.
+
+## A strategy marks its risk-per-trade setting — `role: "risk_pct"` (2026-09-16)
+
+Aaron: every strategy's risk % must be changeable at the top of the run form. A self-sizing
+strategy owns that value as an ordinary setting, so its meta.json marks it with
+`"role": "risk_pct"`; the scanner passes the key through and the run form lifts that one setting
+into a "Risk Per Trade" box under the setup row (and drops it from Strategy Settings, so it is
+edited in one place). The value still travels in `params` exactly as before. Engine-sized
+strategies keep Sizing Mode → Manual in the same spot.
+
+- ⚠ A self-sizing package with no mark still runs; the form shows a warning instead of the box.
+- Tests: `tests/test_risk_param_role.py` scans the REAL packages — every runnable self-sizing
+  strategy must mark exactly one numeric setting. Watched red by deleting realign's mark.
