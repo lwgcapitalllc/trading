@@ -298,6 +298,24 @@ CLAUDE.md gets at most one index line.
   ✅ Every pre-existing cell reproduces exactly after each patch (max diff 0.0 on the 15m grid).
   Reports: `backtest/reports/rso_realign_breaker/<symbol>[_24h]/`; the four weeks of setups for the
   user to mark TAKE / SKIP, outcomes left out: `.../candidates_2026-08-17_to_09-16.csv` (32 setups).
+  **Fifth pass, same day — the user's full rule and an alternative: all FAIL.** Built from four of
+  the user's trades, each reproduced on PU Prime bars. Entries `rsoc` (a zone over `--big-atr` 4
+  chart ATR gets the conservative entry: skip the first return, buy the climb back to the breaker,
+  stop behind the latest intact 3-minute swing low, 1:2), `rsol` (the LADDER: the most aggressive
+  of shift close → breaker limit → conservative whose stop is at most `--max-stop-pct` 0.16% of
+  price — the only measure that separates every stop the user accepted, ≤ 0.118%, from every one
+  refused, ≥ 0.215%; chart ATR and candle displacement do not), and `rso2` / `rso2c` (the
+  SECOND REALIGN: after price breaks back through the shakeout extreme, the next with-trend SOS —
+  a limit at its level / its close — stop beyond the extreme since the break), stop `user`, exit
+  `tX` (1:2 on the conservative entry, else `tU`). Each own-stop entry keeps its stop per entry
+  (`Setup.user`), so two entries on one setup never overwrite each other. Each declared before its
+  run, 1m, one counter BOS, 24h, same PASS rule. **Gold ECN: `rsoc` −0.133R (z −0.09), `rsol`
+  −0.050R (z +0.08, 33% win, 14.6 a month), `rso2` at 3R −0.010R (z +0.26, 36% win, 10 a month);
+  every one loses its first half after costs, and 0 of 3 other instruments pass any of them.**
+  Before costs on gold each sits on its random control (`rsol` +0.059R vs +0.033R, `rso2` +0.039R
+  vs +0.033R). ✅ Every older cell reproduces exactly after each patch (15m grid, max diff 0.0).
+  ⚠ The tool's summary print crashed on an exit only one entry has (results files were already
+  written) — fixed; a `%` in a help string crashed the parser — escaped.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,

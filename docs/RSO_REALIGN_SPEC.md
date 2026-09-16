@@ -10,6 +10,8 @@ at — **failed 0 of 3** (below). The pattern is measured out on this repo's dat
 **2026-09-16, fourth pass:** the user's breaker entry (a limit back at the counter push's BOS level)
 — **both of the user's trades found to the cent, and the rule loses on all four instruments** (below). The target was
 misread and corrected the same day; it still loses.
+**2026-09-16, fifth pass:** the user's full rule from four trades (a stop-size ladder) and their
+second-realign alternative — **every trade reproduces, both rules fail** (below).
 Tool: `backtest/tools/rso_realign_study.py` (its docstring carries the same record).
 Tool note: `backtest/notes/tools.md`. Nothing here is a strategy, a bot or a Pine file.
 
@@ -359,6 +361,76 @@ runs on identical trades.
 
 Reports: `backtest/reports/rso_realign_breaker/<symbol>/` (four hours) and `<symbol>_24h/`.
 
+## The user's full rule, built from four trades — 2026-09-16, fifth pass
+
+After the target correction the user explained two more of their trades, and each explanation added
+a branch. Every trade below reproduces on PU Prime's bars under the rule that followed it.
+
+| trade | how the user took it | on these bars |
+|---|---|---|
+| 15 Sep long 1 | breaker limit, full stop ($4.55) | +5.41R to the post-shift high |
+| 15 Sep long 2 | breaker limit 10 hours later, full stop ($1.59) | +22.01R |
+| 27 Jul long | zone too big ($8.80): skip the first return, buy when price climbs back to the level, stop behind the little swing low (4092.41), 1:2 | +2.00R at 07:09 |
+| 28 Jul short | sell at the shift itself, stop $4.79 above, target the trend-leg low 4040.36 | +1.26R at 01:00 |
+
+**What decides the entry is the stop size in DOLLARS, not volatility.** Measured as a share of
+price, every stop the user accepted is 0.118% or less and every one they refused is 0.215% or more.
+In chart ATR the same stops do not separate (the 28 Jul close stop is 4.24 ATR and accepted; the
+15 Sep trade 2 close stop is 3.54 and refused), and how far the shift candle closed past its level
+does not separate them either (0.20 ATR taken at the close, 0.27 ATR waited).
+
+**Two rules, each declared in the tool before its run** (1m, one counter BOS, 24-hour window, same
+pass rule as above):
+
+- **Conservative only** — a zone over 4 ATR gets the conservative entry, otherwise the breaker limit.
+- **The ladder** — take the most aggressive entry whose stop is at most **0.16% of price** (about
+  $7 at today's gold): the shift's close, else the breaker limit, else the conservative entry.
+
+| rule | gold, ECN | gold, raw | random, raw | silver | EURUSD | NAS100 |
+|---|---|---|---|---|---|---|
+| conservative only | −0.133R (z −0.09) | +0.000R | +0.038R | −0.059R | +0.042R | −0.039R |
+| the ladder | **−0.050R** (z +0.08) | +0.059R | +0.033R | −0.072R | −0.090R | −0.008R |
+
+The raw figures for silver, EURUSD and NAS100 are before costs.
+
+- **Both fail.** After costs both lose in both halves, and neither beats random timing.
+- **The ladder is the best version so far** — 33% win, 14.6 trades a month on gold — and before
+  costs it is positive in both halves. But random entries with the same stops and targets make
+  +0.033R against its +0.059R, so the setup adds almost nothing to where the stop and target sit.
+- ⚠ Found after the ladder's run: both 28 Jul entries sit on the shift LEVEL on the user's feed
+  (4046.36 against a 4046.60 level and a 4046.38 close; 4046.15 against 4046.16 and 4045.54), so the
+  ladder's "sell at the close" is an approximation of a limit at the level. Not re-run — its one test
+  on these bars is spent.
+
+### The second realign — the user's alternative strategy, same day, fails
+
+On the 28 Jul short the user proposed another strategy on the same setup: **wait for price to break
+back through it** (above the shakeout high 4051.17, first at 02:40), **then sell the next bearish
+shift** (04:10, level 4046.16), stop above the high made since the break (4055.26), target 3R.
+Declared before the run: a limit at the new shift's level (where both 28 Jul entries were drawn),
+dying after an hour or on price through the stop, 3R. It reproduces the example: filled 04:11 at
+4046.16, 3R (4018.86) at 06:23.
+
+| 1m, one counter BOS | gold, ECN | gold, raw | random, raw | silver | EURUSD | NAS100 |
+|---|---|---|---|---|---|---|
+| **3R (declared)** | **−0.010R** (808, 36% win, z +0.26) | +0.039R | +0.033R | −0.065R | −0.050R | −0.086R |
+| 2R | −0.009R | +0.033R | +0.022R | −0.038R | −0.063R | −0.079R |
+| 1R | −0.020R | +0.003R | +0.029R | −0.025R | −0.032R | −0.044R |
+| the lower low or further | +0.013R (z +0.95) | +0.052R | +0.004R | −0.096R | −0.046R | −0.061R |
+| sell at the shift's close, 3R | −0.030R | +0.008R | +0.011R | −0.046R | −0.066R | −0.086R |
+
+The raw figures for silver, EURUSD and NAS100 are before costs.
+
+- **It fails:** gold's first half loses (−45.6R after costs, −13.4R before), no instrument beyond
+  gold is positive, and every row sits on its random control.
+- **It is the nearest to breakeven of anything tried**, about 10 trades a month. The lower-low target
+  is the one row positive after costs on gold (+0.013R) — reported, not picked; its first half loses.
+- On 5m and 15m it fires about once a month or less, too few to read.
+
+**The pattern across every pass: each version lands on its own random control.** Wherever the stop
+and target are placed, random moments with the same stop and target make about the same. The
+structure decides WHERE the stop and target sit; on these bars it does not decide WHEN price moves.
+
 ## What this leaves
 
 - 🔴 **Both periods are spent for this pattern.** Never test another cell on 2018-09-14 →
@@ -382,3 +454,5 @@ Reports: `backtest/reports/rso_realign_breaker/<symbol>/` (four hours) and `<sym
   gate, not another pass on this pattern.
 - **The breaker entry is not it either** (2026-09-16, above). The detector finds the user's trades to
   the cent; the user's marks on the four weeks of candidates are the only input left that can find the filter.
+- **Nor the stop-size ladder or the second realign** (2026-09-16, fifth pass). Every version
+  lands on its random control. Eight passes on 2020–2026 gold: the bars are exhausted for this pattern.

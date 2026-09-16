@@ -192,6 +192,65 @@ before this; a pass here is a lead for forward trading, never a validated edge.
     10R (the user's two trades: 5.3R, 20.5R). Stops under $2 (median $1.40) reach it 12-18% and lose. The
     15m gate: -0.066 -> +0.005R raw, -0.162 -> -0.237R charged. Record: docs/RSO_REALIGN_SPEC.md.
 
+THE USER'S FULL BREAKER RULE — `rsoc`, stop `user`, exit `tX` (declared 2026-09-16 BEFORE any run).
+The user, on the 27 Jul loser: a zone that big (breaker to shakeout low, $8.80) is not bought on the
+first return. Instead price must come back UP to the level after trading below it, the stop goes
+behind the little structure just below (4092.18, under the 06:25 swing low 4092.41), and the
+target is 1:2. A normal zone keeps the plain breaker trade and the further-high target.
+    big         zone > BIG_ATR (4.0) chart ATR(14) at the realign. Measured on the user's own
+                trades: 15 Sep trade 1, kept the full stop, 2.05 ATR; 15 Sep trade 2, 0.59; 27 Jul,
+                "too big", 6.66. 4 sits between; --big-atr 3 and 5 are reported, never picked.
+    little      the latest PIVOT_N = 3 swing low (strictly under the 3 minutes each side), beyond the
+    structure   level, not yet traded through, known before the entry. The canonical engine marks
+                no swing there (only the external low 4086.56); a 3-minute pivot gives 4092.41
+                exactly, a 2-minute one 4092.72. Stop exactly at it raw, one spread through charged.
+    entry       a stop order at the level, live from any close beyond it, once price has traded
+                beyond it. Only the 24-hour window kills it.
+    target      2R on the conservative entry; `tU` on the normal one.
+THE CELL: 1m, one counter BOS, `rsoc`, `user`, `tX`, --rso-pending-min 1440. PASS as before: gold
+charged positive in both halves at z >= 2, AND raw positive in both halves on 2 of silver, EURUSD,
+NAS100. ⚠ Built on the same 2020-2026 bars already searched five times for this pattern.
+
+🔴 MEASURED 2026-09-16, `rsoc`: FAILED. Gold ECN 1,055 trades, 19.0% win, -0.133R, z -0.09, both
+    halves negative; raw gold +0.000R, silver -0.059R, EURUSD +0.042R (second half -20.3R), NAS100
+    -0.039R.
+
+THE LADDER — `rsol`, stop `user`, exit `tX` (declared 2026-09-16 BEFORE any run). A fourth trade
+(28 Jul short, entered AT the realign close, stop 4051.17, target the trend-leg low 4040.36, +1.26R
+on these bars) broke the displacement reading: its close sat 0.20 ATR past the shift level, the
+user's 15 Sep trade 2 — where they WAITED for the breaker — 0.27. What separates all four trades is
+the STOP SIZE as a share of price: accepted 0.106% (15 Sep 1, breaker), 0.118% (28 Jul, close),
+0.037% (15 Sep 2, breaker); refused 0.215% (27 Jul, breaker), 0.224% (15 Sep 2, close), 0.269%
+(15 Sep 1, close), 0.305% (27 Jul, close). In chart ATR they do not separate (28 Jul close 4.24
+accepted, 15 Sep 2 close 3.54 refused). So: take the most aggressive entry whose stop to the
+shakeout extreme is at most MAX_STOP_PCT = 0.16% of price (0.13 and 0.20 reported, never picked):
+    1  market at the realign close                      target `tU`
+    2  the `rso` limit at the breaker level             target `tU`
+    3  the conservative entry (`fill_cons`)             target 2R
+THE CELL: 1m, one counter BOS, `rsol`, `user`, `tX`, --rso-pending-min 1440. PASS as before. All
+four trades reproduce under it. ⚠ The rule has gained a branch per example on searched bars; this
+is its last test on them. Whatever it says, the next evidence is forward.
+
+🔴 MEASURED 2026-09-16, `rsol`: FAILED. Gold ECN 1,169 trades, 33.1% win, -0.050R, z +0.08, both
+    halves negative; raw gold +0.059R (both halves positive, but random timing makes +0.033R, z
+    +0.32); silver -0.072R, EURUSD -0.090R, NAS100 -0.008R. ⚠ Found after the run: both of the
+    user's 28 Jul entries sit at the SOS LEVEL on their feed (4046.36 vs level 4046.60 / close
+    4046.38; 4046.15 vs level 4046.16 / close 4045.54), so the ladder's "market at the close" branch
+    is a close approximation of a limit at the level. Not re-run: the ladder's one test is spent.
+
+THE SECOND REALIGN — `rso2` / `rso2c`, stop `user` (declared 2026-09-16 BEFORE any run). The user,
+on the 28 Jul short, as ANOTHER strategy: when a setup exists, wait for price to break back through
+it (above the shakeout high, 4051.17 at 02:40), then for the next bearish SOS (04:10, level
+4046.16); sell there, stop above the high made since the break (4055.26 at 04:06), target 3R (the
+drawn box: 4018.73 from 4046.15). On these bars the limit at the level fills 04:11 and reaches 3R
+(4018.86) at 06:23; the close entry (4045.54) reaches its 3R (4016.38) only at 10:21.
+THE CELL: 1m, one counter BOS, `rso2` (limit at the SOS level, dies after PENDING = 60 chart bars
+or on price through the stop), `user`, `t3`, --rso-pending-min 1440 for the break and the SOS. PASS
+as before. `rso2c` and the other exits are reported, never picked.
+🔴 MEASURED 2026-09-16, `rso2` t3: FAILED. Gold ECN 808 trades, 35.9% win, -0.010R, z +0.26, first
+    half -45.6R; raw gold +0.039R (random +0.033R, first half -13.4R); silver -0.065R, EURUSD
+    -0.050R, NAS100 -0.086R. Every exit and the close entry sit on their controls too.
+
 Usage:
   python backtest/tools/rso_realign_study.py --recall          # find the user's 5 trades first
   python backtest/tools/rso_realign_study.py                   # the grid, 2020-01 -> 2026-09
@@ -211,7 +270,7 @@ import math
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -244,14 +303,24 @@ HTF_GATE = {1: 15, 5: 15, 15: 60}  # the frame a gated setup must agree with (--
 GATES = ("none", "htf", "intact")
 FRAMES = (1, 5, 15)
 COUNTERS = ("1", "2+")
-ENTRIES = ("close", "fib50", "pb382", "split", "retest", "disp", "rso", "rso1")
+ENTRIES = (
+    "close", "fib50", "pb382", "split", "retest", "disp", "rso", "rso1", "rsoc", "rsol", "rso2",
+    "rso2c",
+)  # fmt: skip
+ENTRIES_FILLED = tuple(e for e in ENTRIES if e != "split")  # `split` is built from two fills
+USER_ENTRIES = ("rsoc", "rsol", "rso2", "rso2c")  # entries that choose their own stop and target
+MAX_STOP_PCT = 0.16  # --max-stop-pct: `rsol`'s largest acceptable stop, % of the entry price
+BIG_ATR = (
+    4.0  # --big-atr: a breaker zone wider than this many chart ATR gets the conservative entry
+)
+PIVOT_N = 3  # the conservative stop sits behind a swing low (long) this many minutes each side
 RSO_PENDING = 240  # chart bars the breaker limit may wait — first reading (example 1: 2.5h on 1m)
 RSO_PENDING_MIN = None  # --rso-pending-min: a window in MINUTES on any frame (example 2: 10h on 1m)
 DISP_ATR = 1.0  # --disp-atr: a realign close within this many ATR of the shift level is "near"
 DISP_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))
 RR_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))  # last high / stop, at entry
 STOPS = ("struct", "atr2")
-EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing", "tH", "tU")
+EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing", "tH", "tU", "tX")
 FIXED_R = {"t1": 1.0, "t1.5": 1.5, "t2": 2.0, "t3": 3.0}
 # How far price must trade THROUGH a resting limit before it counts as filled. 0.0 = a touch fills,
 # the optimistic reading a bar walk always makes (a touch says nothing about queue position). A
@@ -296,6 +365,17 @@ class Tape:
         self.ex = spread if side == "short" else 0.0
         self.spread = spread
         self.n = len(self.C)
+        # Swing highs of THIS side's space (a long's are the real swing lows): strictly above the
+        # PIVOT_N minutes either side, known at the close of the PIVOT_N-th minute after.
+        n, H = PIVOT_N, self.H
+        piv = np.zeros(len(H), dtype=bool)
+        if len(H) > 2 * n:
+            w = np.lib.stride_tricks.sliding_window_view(H, n)
+            mid = H[n : len(H) - n]
+            piv[n : len(H) - n] = (mid > w[: len(H) - 2 * n].max(axis=1)) & (
+                mid > w[n + 1 :].max(axis=1)
+            )
+        self.piv = np.flatnonzero(piv)
 
 
 @dataclass
@@ -318,6 +398,7 @@ class Setup:
     )  # the swing the LAST counter-trend BOS broke — the breaker, side space
     cb_first: float = math.nan  # ...and the FIRST, when the counter push broke more than one
     disp_atr: float = math.nan  # how far past it the realign bar closed, in chart ATR(14)
+    user: dict = field(default_factory=dict)  # USER_ENTRIES: {entry: (stop, conservative?)}
     htf_ok: bool = False  # gate frame's external direction agrees at the realign close
     intact: bool = False  # ...and never disagreed, from the bar before the counter shift on
 
@@ -335,6 +416,8 @@ class Frame:
     ev_eff: np.ndarray  # with-trend BOS: the first minute its swing is known on
     ev_lvl: np.ndarray  # ...and that swing, one spread through, as a stop level
     n: int
+    sos_j: np.ndarray = None  # every with-trend SOS chart bar (bearish, in side space)
+    sos_lvl: np.ndarray = None  # ...and the swing each one broke
 
 
 # ─────────────────────────────── detection ───────────────────────────────
@@ -346,7 +429,7 @@ def detect(o, h, lo, c) -> tuple[list, list]:
     corrupt structure rather than fail. SOS is tested before BOS: the engine may raise both on a
     shift bar, and a shift bar is a shift."""
     eng = StructureEngine()
-    setups, bos = [], []
+    setups, bos, sos = [], [], []
     state, trend_n, push_n, counter, origin, trend_at = "none", 0, 0, -1, math.nan, 0
     lhs: list = []  # the lower highs of the current bear run, oldest first
     lh_old = math.nan
@@ -354,6 +437,9 @@ def detect(o, h, lo, c) -> tuple[list, list]:
     for i in range(len(c)):
         ext = eng.update(Bar(index=i, open=o[i], high=h[i], low=lo[i], close=c[i])).external
         if ext.bear_sos:
+            sos.append(
+                (i, float(ext.bear_bos_price) if ext.bear_bos_price is not None else math.nan)
+            )
             if state == "push":
                 lvl = float(ext.bear_bos_price) if ext.bear_bos_price is not None else math.nan
                 cb = (cbs[-1], cbs[0]) if cbs else (math.nan, math.nan)
@@ -388,7 +474,7 @@ def detect(o, h, lo, c) -> tuple[list, list]:
             state, push_n = "push", push_n + 1
             if ext.bull_bos_price is not None:
                 cbs.append(float(ext.bull_bos_price))
-    return setups, bos
+    return setups, bos, sos
 
 
 def htf_dir(o, h, lo, c) -> np.ndarray:
@@ -442,7 +528,7 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
     frs = {}
     for (F, side), (first, last, atr, u_first, u_last, n) in meta.items():
         tp = tapes[side]
-        raw_setups, bos = found[(F, side)]
+        raw_setups, bos, sos = found[(F, side)]
         g_last, gdir = gmeta[(HTF_GATE[F], side)], found[(HTF_GATE[F], side, "gate")]
         setups = []
         for j, counter, origin, trend_at, push_n, lh_old, lvl, cb in raw_setups:
@@ -484,6 +570,7 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
             tp.C[u_last] < tp.O[u_first], setups,
             np.array([last[b] + 1 for b, _ in bos], dtype=np.int64),
             np.array([lv + spread + tp.ex for _, lv in bos]), n,
+            np.array([j for j, _ in sos], dtype=np.int64), np.array([v for _, v in sos], dtype=float),
         )  # fmt: skip
     return tapes, frs
 
@@ -509,6 +596,107 @@ def fill_sl(fr: Frame, tp: Tape, s: Setup):
     return a + int(hit[0]), s.top, True, b
 
 
+def fill_rsoc(fr: Frame, tp: Tape, s: Setup):
+    """The user's full breaker rule (2026-09-16). A zone (breaker level to shakeout extreme) up to
+    BIG_ATR chart ATR: the `rso` limit, stop at the shakeout extreme. A BIGGER zone: skip the first
+    return; once price has traded beyond the level (below it, for a long), buy when it comes BACK to
+    the level (a stop order, live from any close beyond it), stop behind the latest intact PIVOT_N
+    swing low beyond the level that is known before the entry. Nothing but time kills it — the
+    user's 27 Jul trade came after the shakeout low broke."""
+    L = s.cb_last
+    if not math.isfinite(L):
+        return None, math.nan, False, s.m
+    if not (s.top - L) / s.atr > BIG_ATR:
+        s.user["rsoc"] = (s.top, False)
+        return fill(fr, tp, s, "rso")
+    return fill_cons(fr, tp, s, "rsoc")
+
+
+def fill_rsol(fr: Frame, tp: Tape, s: Setup):
+    """The user's LADDER (2026-09-16, from four of their trades): take the most aggressive entry whose
+    stop — to the shakeout extreme — is no wider than MAX_STOP_PCT of price. 1) market at the realign
+    close; 2) the `rso` limit at the breaker level; 3) the conservative entry (`fill_cons`, 1:2)."""
+    L = s.cb_last
+    if not math.isfinite(L):
+        return None, math.nan, False, s.m
+    e = float(tp.C[s.m]) - tp.en
+    if (s.top - e) / abs(e) * 100 <= MAX_STOP_PCT:
+        s.user["rsol"] = (s.top, False)
+        return s.m, e, False, s.m
+    if (s.top - L) / abs(L) * 100 <= MAX_STOP_PCT:
+        s.user["rsol"] = (s.top, False)
+        return fill(fr, tp, s, "rso")
+    return fill_cons(fr, tp, s, "rsol")
+
+
+def fill_rso2(fr: Frame, tp: Tape, s: Setup, how: str):
+    """The user's SECOND-REALIGN idea (2026-09-16, 28 Jul short): after the realign, price trades back
+    through the shakeout extreme (above it, for a short); the next with-trend SOS is the trade. Stop
+    beyond the extreme made since that break. `rso2` rests a limit at the swing that SOS broke (where
+    the user drew both 28 Jul entries), dying after PENDING chart bars or on price through the stop;
+    `rso2c` takes the SOS close. Break and SOS must both fall inside the window from the realign."""
+    bars = RSO_PENDING if RSO_PENDING_MIN is None else max(1, RSO_PENDING_MIN // fr.minutes)
+    jend = min(s.j + bars, fr.n - 1)
+    if jend <= s.j:
+        return None, math.nan, False, s.m
+    a, b = int(fr.first[s.j + 1]), int(fr.last[jend])
+    brk = np.flatnonzero(tp.H[a : b + 1] > s.top)
+    if not len(brk):
+        return None, math.nan, False, s.m
+    kb = a + int(brk[0])
+    ok = np.flatnonzero((fr.last[fr.sos_j] > kb) & (fr.sos_j <= jend))
+    if not len(ok):
+        return None, math.nan, False, b
+    jj, lvl = int(fr.sos_j[ok[0]]), float(fr.sos_lvl[ok[0]])
+    ks = int(fr.last[jj])
+    stop = float(tp.H[kb : ks + 1].max())
+    s.user[how] = (stop, False)
+    if how == "rso2c":
+        return ks, float(tp.C[ks]) - tp.en, False, ks
+    kend = int(fr.last[min(jj + PENDING, fr.n - 1)])
+    if not (math.isfinite(lvl) and lvl < stop) or kend <= ks:
+        return None, math.nan, False, ks
+    H = tp.H[ks + 1 : kend + 1]
+    hit = np.flatnonzero(H >= lvl + tp.en + LIMIT_THROUGH)
+    dead = np.flatnonzero(H > stop)
+    if len(hit) and (not len(dead) or hit[0] <= dead[0]):
+        return ks + 1 + int(hit[0]), lvl, True, kend
+    return None, math.nan, False, kend
+
+
+def fill_cons(fr: Frame, tp: Tape, s: Setup, how: str):
+    """The conservative entry: skip the first return; once price has traded beyond the breaker level
+    (below it, for a long), buy when it comes BACK to the level (a stop order, live from any close
+    beyond it), stop behind the latest intact PIVOT_N swing low beyond the level known before the
+    entry. Only the window kills it — the user's 27 Jul trade came after the shakeout low broke."""
+    L = s.cb_last
+    s.user[how] = (math.nan, True)
+    bars = RSO_PENDING if RSO_PENDING_MIN is None else max(1, RSO_PENDING_MIN // fr.minutes)
+    jend = min(s.j + bars, fr.n - 1)
+    if jend <= s.j:
+        return None, math.nan, False, s.m
+    a, b = int(fr.first[s.j + 1]), int(fr.last[jend])
+    over = np.flatnonzero(tp.H[a : b + 1] > L)
+    if not len(over):
+        return None, math.nan, False, b
+    k1 = a + int(over[0])
+    P = tp.piv[(tp.piv >= k1) & (tp.piv + PIVOT_N <= b)]
+    cur, pi, armed = math.nan, 0, False
+    for k in range(k1, b + 1):
+        if armed and math.isfinite(cur) and tp.L[k] <= L + tp.en:
+            s.user[how] = (cur, True)
+            return k, min(L, float(tp.O[k]) - tp.en), True, b
+        if tp.H[k] > cur:
+            cur = math.nan  # traded through: that swing no longer holds
+        while pi < len(P) and P[pi] + PIVOT_N <= k:
+            q = int(P[pi])
+            if tp.H[q] > L and tp.H[q + 1 : k + 1].max() < tp.H[q]:
+                cur = float(tp.H[q])
+            pi += 1
+        armed = tp.C[k] > L
+    return None, math.nan, False, b
+
+
 def fill(fr: Frame, tp: Tape, s: Setup, how: str):
     """-> (fill minute or None, price, filled INSIDE the minute, minute the slot frees if unfilled)"""
     if how == "close":
@@ -517,6 +705,12 @@ def fill(fr: Frame, tp: Tape, s: Setup, how: str):
         return fill_sl(fr, tp, s)
     if how == "disp":  # the user's rule: near the shift level -> take the close; far -> wait for it
         return fill(fr, tp, s, "close" if s.disp_atr <= DISP_ATR else "retest")
+    if how == "rsoc":
+        return fill_rsoc(fr, tp, s)
+    if how == "rsol":
+        return fill_rsol(fr, tp, s)
+    if how in ("rso2", "rso2c"):
+        return fill_rso2(fr, tp, s, how)
     if how in ("rso", "rso1"):  # the user's breaker: a limit back AT the counter-trend BOS level
         lv = s.cb_last if how == "rso" else s.cb_first
         if not math.isfinite(lv):
@@ -708,9 +902,12 @@ def trade(
     stop: str,
     exit_: str,
     costs: dict,
+    how: str | None = None,
 ):
     if stop == "struct":
         S0 = s.top + tp.spread + tp.ex
+    elif stop == "user":  # whatever `rsoc` chose
+        S0 = s.user[how][0] + tp.spread + tp.ex
     elif stop == "lh":  # beyond the older lower high — the $$ band's upper edge
         S0 = s.lh_old + tp.spread + tp.ex
     else:
@@ -719,6 +916,8 @@ def trade(
     if not R0 > 0:
         return None
     post = float(tp.L[s.m : kf + 1].min()) if kf >= s.m else math.nan
+    if exit_ == "tX":  # the user's: 1:2 on the conservative entry, else the further high
+        exit_ = "t2" if s.user[how][1] else "tU"
     rule = exit_rule(exit_, e, R0, s.origin, post)
     if rule is None:
         return None
@@ -738,6 +937,7 @@ def trade(
         side=s.side, kf=kf, kx=xk, e=e, R0=R0, rg=rg, r=net_r(rg, R0, kf, xk, kp, s.side, costs),
         outcome=outcome, kind=kind, tdist=(e - T) if kind in ("fixed", "be") else math.nan, push_n=s.push_n,
         disp=s.disp_atr,
+        cons=s.user[how][1] if how in s.user else False,
     )  # fmt: skip
 
 
@@ -747,7 +947,7 @@ def evaluate(
     F: int,
     costs: dict,
     cells=None,
-    hows=("close", "fib50", "pb382", "retest", "disp", "rso", "rso1"),
+    hows=ENTRIES_FILLED,
     stops=STOPS,
 ) -> dict:
     """Every setup through every (entry, stop, exit) on frame F. -> {(entry, stop, exit): rows},
@@ -765,8 +965,12 @@ def evaluate(
                         continue
                     legs = {}
                     for how, (kf, e, inside, pend) in fills.items():
+                        if (st == "user") != (how in USER_ENTRIES) or (
+                            ex == "tX" and how not in USER_ENTRIES
+                        ):
+                            continue
                         tr = (
-                            trade(fr, tp, s, kf, e, inside, st, ex, costs)
+                            trade(fr, tp, s, kf, e, inside, st, ex, costs, how)
                             if kf is not None
                             else None
                         )
@@ -950,7 +1154,7 @@ def recall(raw: pd.DataFrame, tapes: dict, frs: dict, frames) -> None:
 
 
 def main() -> None:
-    global DISP_ATR, RSO_PENDING_MIN
+    global DISP_ATR, RSO_PENDING_MIN, BIG_ATR, MAX_STOP_PCT
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="puprime_ecn")
     ap.add_argument("--frames", default="1,5,15")
@@ -971,6 +1175,12 @@ def main() -> None:
         "--gates", default="none", help="comma list of none|htf|intact — see the docstring"
     )
     ap.add_argument("--disp-atr", type=float, default=DISP_ATR, help="the near/far line for `disp`")
+    ap.add_argument(
+        "--big-atr", type=float, default=BIG_ATR, help="`rsoc`: a big zone, in chart ATR"
+    )
+    ap.add_argument(
+        "--max-stop-pct", type=float, default=MAX_STOP_PCT, help="`rsol`: widest stop, %% of price"
+    )
     ap.add_argument(
         "--rso-pending-min",
         type=int,
@@ -998,6 +1208,8 @@ def main() -> None:
         costs.update(comm_rt=0.0, swap_long=0.0, swap_short=0.0)
     DISP_ATR = args.disp_atr
     RSO_PENDING_MIN = args.rso_pending_min
+    BIG_ATR = args.big_atr
+    MAX_STOP_PCT = args.max_stop_pct
     gates = tuple(args.gates.split(","))
     if any(g not in GATES for g in gates):
         sys.exit(f"--gates must be from {GATES}, got {args.gates!r}")
@@ -1064,8 +1276,8 @@ def main() -> None:
         hows, stops, ents, drawn = ("sl",), ("lh", "atr2"), ("sl",), ("sl", "lh")
     else:
         hows, stops, ents, drawn = (
-            ("close", "fib50", "pb382", "retest", "disp", "rso", "rso1"),
-            STOPS,
+            ENTRIES_FILLED,
+            STOPS + ("user",),
             ENTRIES,
             ("close", "struct"),
         )
@@ -1108,6 +1320,10 @@ def main() -> None:
             ("disp", "struct"),
             ("rso", "struct"),
             ("rso1", "struct"),
+            ("rsoc", "user"),
+            ("rsol", "user"),
+            ("rso2", "user"),
+            ("rso2c", "user"),
         ]
     )
     for F in frames:
@@ -1158,6 +1374,8 @@ def main() -> None:
             for c in COUNTERS:
                 for ex in EXITS:
                     k = (F, c, *drawn, ex, g)
+                    if k not in grid:  # an exit that exists for one entry only
+                        continue
                     ex_ = (
                         f"  {ctls[k]['avg']:>+7.3f} {zscore(trades[k], ctls[k]):>+6.2f}"
                         if k in ctls
