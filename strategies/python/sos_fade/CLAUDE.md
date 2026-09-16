@@ -186,6 +186,44 @@ non-vacuous — a pair of `None`s would otherwise read to every consumer as "thi
 the miss record published where the limit would have rested and nothing else. Rule 11 — anything
 recreating a run for comparison must carry forward everything that decides what it is measured on.
 
+## The fast-frame INTERNAL shift feed — `InternalShift1m` (2026-09-15)
+
+⚠ **NOTHING IN THE BOT READS IT YET, and no live bot may run it.** It was built for the no-gap
+study: when price reaches the band and no gap is there to rest on, Aaron's rule is that a
+fast-frame internal change of character in the trade direction is the last confirmation
+available. Whether that is an edge is being MEASURED. It has no Pine counterpart either, so the
+parity gate is structurally blind to it — a result taken with it is a lab finding.
+
+🔴 **IT IS NOT `Structure1m` WITH A FLAG.** That class latches the EXTERNAL change of character
+and the break leg the re-entry sniper rests a limit on; this one watches the INTERNAL event on
+the same bars. Two classes rather than one with a switch, because reading one where the other was
+meant produces an ordinary-looking trade at the wrong moment and nothing downstream shows you.
+
+✅ **MEASURED that they are genuinely different populations, and the direction was a surprise:**
+over 82,074 real 1m gold bars (2026-06-01 → 2026-08-21) the external feed fired **416** times and
+the internal one **317** — the internal event is RARER here, not more frequent. That is what makes
+it a candidate filter rather than a rubber stamp. On the seeded walk the two test streams use,
+17 external against 12 internal with **no bar in common**.
+
+🔴 **`*_price` and `*_loc` are REPORTING ONLY and one of them is KNOWN WRONG.** The engine's bear
+iSOS bar lands on the level that actually broke **3 times in 25** (measured over 169 internal
+breaks), off by up to \$18.47. The bools are unaffected and are the whole of what this study
+needs, because the entry is the PRINT and the stop is the 15m 0.886. ⚠ **The later tight-stop
+variant — stopping under the fast-frame shift leg — CANNOT use these fields**: it would place
+roughly one short stop in eight at a price nothing broke at. That is a fix owed in
+`engines/market_structure/` before that variant is measured, not something to work around here.
+
+⚠ **It does not latch, unlike `Structure1m`** — the study asks whether a shift printed on THIS
+bar, so a stale flag from an earlier bar would be a different question silently answered.
+
+⚠ **The frame is the caller's choice and nothing in it assumes a minute.** The name follows
+`Structure1m`'s, which `dual_clock.py` already documents as untrustworthy.
+
+**Tests:** `tests/test_internal_shift.py`, on a SEEDED random walk rather than a hand-built
+fixture — a fixture shaped to make one event fire proves only that it can. Watched RED by
+mutation: pointing the feed at the external events makes the two streams identical and fails the
+disagreement assertion on exactly that line.
+
 ## Engine-construction pins (`SosFadeStrategy.engine_config`)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Engine-construction pins (`SosFadeStrategy.engine_config`)*.

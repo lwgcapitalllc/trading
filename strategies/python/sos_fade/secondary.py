@@ -110,6 +110,66 @@ class Structure1m:
         )
 
 
+
+@dataclass(frozen=True)
+class InternalShiftState:
+    """One fast-frame bar's INTERNAL change-of-character read.
+
+    `new_bull` / `new_bear` are the only fields a decision may key off: an internal iSOS in
+    that direction fired on THIS bar. The bar and price beside them are REPORTING — see the
+    warning on `InternalShift1m`."""
+
+    new_bull: bool = False
+    new_bear: bool = False
+    bull_price: Optional[float] = None   # the level that broke — reporting only
+    bear_price: Optional[float] = None   # the level that broke — reporting only
+    bull_loc: Optional[int] = None       # the bar that level sits on — reporting only
+    bear_loc: Optional[int] = None       # the bar that level sits on — reporting only
+
+
+class InternalShift1m:
+    """The fast-frame INTERNAL change-of-character feed — a second reader of the same engine
+    `Structure1m` runs, asking a different question of it.
+
+    🔴 **IT IS NOT `Structure1m` WITH A FLAG, AND THE TWO ARE NOT INTERCHANGEABLE.**
+    `Structure1m` latches the EXTERNAL change of character and the break leg behind it, which is
+    what the re-entry sniper rests a limit on. This watches the INTERNAL one, which is a
+    different and far more frequent event on the same bars. Reading one where the other was
+    meant is the shape of mistake that produces an ordinary-looking trade at the wrong moment,
+    so they are two classes rather than one with a switch.
+
+    ⚠ **NOTHING IN THE BOT READS THIS YET.** It exists for the no-gap study (2026-09-15):
+    Aaron's rule is that when price reaches the zone and no gap is there to rest on, a fast-frame
+    internal shift in the trade direction is the last confirmation available. Whether that is an
+    edge is being MEASURED; until it is, no execution path may consume this and no live bot may
+    run it. It also has no Pine counterpart, so the parity gate is structurally blind to it.
+
+    🔴 **`*_price` AND `*_loc` ARE REPORTING ONLY AND ONE OF THEM IS KNOWN WRONG.** MEASURED over
+    169 internal breaks on real bars, the bear iSOS bar lands on the level that actually broke
+    **3 times in 25** — off by up to $18.47. The bools are unaffected and are the whole of what
+    this study needs, because the entry is the PRINT and the stop is the 15m 0.886. ⚠ **A later
+    version that stops under the fast-frame shift leg CANNOT use these fields** — it would place
+    roughly one short stop in eight at a price nothing broke at. That is a fix owed in the engine
+    before the tight-stop variant is measured, not a thing to work around here.
+
+    Stateful streaming like every engine: build once, feed one bar per `update()` in time order.
+    ⚠ **The frame is the CALLER's choice and nothing here assumes a minute** — the name follows
+    `Structure1m`'s, and that name is already documented as untrustworthy in `dual_clock.py`.
+    """
+
+    def __init__(self, major_length: int = 15) -> None:
+        self._engine = StructureEngine(major_length=major_length)
+
+    def update(self, index: int, o: float, h: float, l: float, c: float) -> InternalShiftState:
+        st = self._engine.update(Bar(index=index, open=o, high=h, low=l, close=c))
+        i = st.internal
+        return InternalShiftState(
+            new_bull=bool(i.bull_sos), new_bear=bool(i.bear_sos),
+            bull_price=i.bull_sos_price, bear_price=i.bear_sos_price,
+            bull_loc=i.bull_sos_loc, bear_loc=i.bear_sos_loc,
+        )
+
+
 @dataclass(frozen=True)
 class SecArm:
     """One 1m bar's secondary-arm result — what `Execution.step_secondary` needs to rest
