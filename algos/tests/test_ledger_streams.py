@@ -267,6 +267,11 @@ def test_every_event_written_in_algos_live_is_classified():
         # report, not a setup. Note it is the reporting layer's state and never a setup's — an
         # actual setup never reaches the ledger through this event, it reaches Telegram.
         "setup_alerts",
+        # How many Telegram threads a RESTART carried in, and how many of them it closed.
+        # HEALTH by the same subject test as `setup_alerts` directly above: it counts the
+        # reporting layer's own bookkeeping across a process boundary and names no setup,
+        # no confluence and no order.
+        "setup_threads",
         # ── the re-entry's SECOND BAR FEED (G18 stage 1, 2026-09-01). All four describe the
         # FEED, never a setup, so they are health by the subject test — the same call that puts
         # `warmed` and `rewarm` here and `order_refused` in the other stream. The re-entry's own

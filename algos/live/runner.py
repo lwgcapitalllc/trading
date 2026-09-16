@@ -338,6 +338,10 @@ class LiveRunner:
         # strategy implements the setup contract. None until then — never an object that quietly
         # sends nothing.
         self.setup_alerts = None
+        #: What `warm()` replayed through the outage, held only until `_start_setup_alerts` has
+        #: reconciled the stored threads against it. Not state — a handover between two steps of
+        #: one start.
+        self._warm_snapshots = []
         self.source_hash = ""
         # Set before anything can fail, because `run()`'s exit record reads it on EVERY path —
         # including the ones that never reach the loop.
@@ -594,6 +598,11 @@ class LiveRunner:
     # enough — the EXPIRY covers a restart that never completed (nobody is left to delete it),
     # and the DELETE covers a bot that restarts twice inside the window.
     ALERT_THREAD_FILE = "alert_thread.json"
+
+    #: Where the signals channel's open threads are kept across a restart. ⚠ **Deliberately NOT
+    #: the file above.** That one is a single deploy id that must EXPIRE; this one is a set of
+    #: setups that must survive until each is closed, and the two have opposite staleness rules.
+    SETUP_THREAD_FILE = "setup_threads.json"
 
     def alert_thread_path(self) -> Path:
         return self.cfg.instance_dir / self.ALERT_THREAD_FILE
@@ -1411,6 +1420,13 @@ class LiveRunner:
                 # broker-free: it never learns what a lot is, it is handed one. A bot with no
                 # bridge passes nothing, and the message renders exactly as it always did.
                 lots_for=self.bridge.resting_lots,
+                # 🔴 **What makes a Telegram thread outlive the process.** Without it the record
+                # of which setups have been announced — and the message id each one must reply to
+                # — lives only in memory, so a stop, a start, a redeploy or a mid-session re-warm
+                # re-announces every open setup and orphans the thread the reader is looking at.
+                # Measured on `sos_fade_1`, 2026-09-15: four identical roots for one setup in 24
+                # hours, none of them closable.
+                state_path=self.cfg.instance_dir / self.SETUP_THREAD_FILE,
             )
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(
@@ -1430,12 +1446,55 @@ class LiveRunner:
                 f"Setup alerts: ON — {', '.join(cats) or 'nothing'} → {self._signal_room()}"
             )
             self.ledger.event("setup_alerts", enabled=True, categories=list(cats))
+            # ⚠ **Reconciling does NOT happen here.** This runs BEFORE `warm()`, so the strategy
+            # has replayed nothing and would answer "watching no setups" — which would close
+            # every thread this bot is still watching. `warm()` calls it on its own last line,
+            # which is the first moment the answer is true and the only place that is true of
+            # every warm, the mid-session re-warm included.
         except Exception as e:
             self.log.warning(
                 f"Setup alerts could not be started ({e}) — the bot trades on "
                 f"regardless; only the signals channel is affected."
             )
             self.ledger.event("setup_alerts", enabled=False, reason=str(e))
+
+    def _reconcile_setup_threads(self, alerts_obj) -> None:
+        """Close every announced setup this bot can no longer be watching, and SAY how many.
+
+        🔴 **`live_keys` stays `None` unless the strategy actually answered.** An exception here,
+        or a strategy that cannot report setups, must leave every stored thread open — closing
+        them would post a "no longer being watched" onto setups the bot is watching right now,
+        turning a reporting failure into a false statement about live trades. *No open setups* and
+        *could not ask which setups are open* are different facts (root `CLAUDE.md` rule 1).
+
+        ⚠ **Never raises.** Same contract as `_start_setup_alerts` around it: the signals channel
+        may cost itself, never the start.
+        """
+        carried = alerts_obj.open_keys()
+        try:
+            live_keys = None
+            ex = getattr(self.strategy, "execution", self.strategy)
+            live = getattr(ex, "live_setups", None)
+            if callable(live):
+                live_keys = [s.key for s in live()]
+            alerts_obj.reconcile(self._warm_snapshots, live_keys)
+        except Exception as e:  # noqa: BLE001 — a notifier may not stop a start
+            self.log.warning(
+                f"Open setup threads could not be reconciled ({e}) — any setup that "
+                f"resolved while this bot was down stays open in the signals channel."
+            )
+        finally:
+            self._warm_snapshots = []
+        if carried:
+            # COUNTED both sides, because the interesting number is the one that vanished: a
+            # carried count that always equals the still-open count means nothing is ever being
+            # closed, which is the silent half of this whole fix.
+            still = len(alerts_obj.open_keys())
+            self.log.info(
+                f"Setup threads carried across the restart: {len(carried)} — "
+                f"{len(carried) - still} closed, {still} still open."
+            )
+            self.ledger.event("setup_threads", carried=len(carried), still_open=still)
 
     def warm(self):
         """Replay history through the strategy WITHOUT acting on any of it."""
@@ -1503,7 +1562,14 @@ class LiveRunner:
         replayed = 0
         drain = getattr(ex, "drain_setups", None)
         if callable(drain):
-            replayed = len(drain())
+            # 🔴 **Kept, not dropped — but still not SENT.** Everything here is history and goes
+            # in the bin exactly as before; `SetupAlerts.reconcile` then picks out only the
+            # handful whose thread this bot actually announced before it stopped, so a setup that
+            # resolved during a restart or a redeploy is closed with the STRATEGY's own sentence
+            # rather than with a guess. Without this, a thread the reader is still looking at can
+            # never be answered — the outage swallowed the only bar that knew the reason.
+            self._warm_snapshots = list(drain())
+            replayed = len(self._warm_snapshots)
 
         self.log.info(
             f"Warmed {len(df)} bars ({df.index[0]} → {df.index[-1]}) in {time.time() - t0:.1f}s"
@@ -1525,6 +1591,16 @@ class LiveRunner:
             self._fast_pending.clear()
 
         self.reanchor_equity("after warm-up")
+        # 🔴 **LAST, and in `warm()` rather than at the call sites.** This is the first moment the
+        # strategy can truthfully say which setups it is watching, and every path that re-warms —
+        # the start, and the mid-session re-warm after a bar gap — reaches it. Put at a call site
+        # instead, the one that got forgotten would silently stop closing threads.
+        # ⚠ `getattr`, matching the defensive clear a few lines above: `warm()` is reached by
+        # test doubles and by tools that build a runner without running `__init__`, and an
+        # AttributeError here would take out the warm-up rather than the notifier.
+        _alerts = getattr(self, "setup_alerts", None)
+        if _alerts is not None:
+            self._reconcile_setup_threads(_alerts)
         return df
 
     def reanchor_equity(self, why: str) -> None:

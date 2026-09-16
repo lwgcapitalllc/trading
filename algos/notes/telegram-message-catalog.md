@@ -402,7 +402,18 @@ Size and risk are in the trade alert.
 
 👋 NO TRADE · SHORT
 Price closed back inside the range before the retrace tagged.
+
+🧹 THREAD CLOSED · LONG
+XAUUSD.p · no longer being watched
+The bot restarted while this setup was open, so its outcome was not recorded. It is not a trade and not a refusal — it is an answer this bot no longer has.
 ```
+
+⚠ **`🧹 THREAD CLOSED` is deliberately NOT `👋 NO TRADE`** (2026-09-16). `NO TRADE` is a
+CLAIM — it says the bot looked at this setup and refused it, and it carries the strategy's own
+sentence for why. This one is sent on a start, for a setup announced before the bot stopped that it
+is no longer watching: the outage swallowed the bar that knew the reason, so the bot does not know
+whether it filled, died or aged out. Wording it as a refusal would tell a reader a live trade was
+declined. See `notes/telegram-and-notifications.md` → *A SETUP THREAD DID NOT SURVIVE A RESTART*.
 
 ## Trades room
 

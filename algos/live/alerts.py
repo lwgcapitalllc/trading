@@ -258,6 +258,34 @@ def format_resolved(snap, digits: int = 2) -> str:
     return alert("👋", "NO TRADE", snap.direction, snap.reason)
 
 
+def format_lost(side=None, symbol: str = "") -> str:
+    """Close a thread whose OUTCOME was never recorded, and say exactly that.
+
+    Sent once, on a start, for a setup this bot announced before it stopped and is no longer
+    watching now — the bot was down or re-warmed while the setup resolved, so the strategy's own
+    sentence for it does not exist any more.
+
+    🔴 **It must NOT borrow the wording of a real death.** `NO TRADE` is a claim: it says the bot
+    looked at this setup and refused it. Here the bot does not know whether it filled, died or
+    simply aged out, and a confident outcome on a setup that might have traded is a label with no
+    code behind it — the reader would stop watching a trade that was live. Say the honest thing:
+    the thread is being closed, and why the answer is missing.
+
+    ⚠ **The direction is printed when it is known and simply absent when it is not.** A thread
+    stored before this field existed has no side, and guessing one would name a trade direction
+    nobody measured.
+    """
+    direction = {1: "LONG", -1: "SHORT"}.get(side, "")
+    return alert(
+        "🧹",
+        "THREAD CLOSED",
+        direction,
+        joined([symbol, "no longer being watched"]),
+        "The bot restarted while this setup was open, so its outcome was not recorded. "
+        "It is not a trade and not a refusal — it is an answer this bot no longer has.",
+    )
+
+
 def format_entry(
     *,
     strategy: str,

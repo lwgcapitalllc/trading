@@ -413,3 +413,156 @@ def test_every_message_goes_out_as_SIGNAL_kind():
     a._handle(_snap(state=DEAD, reason="died"))
     assert {m["kind"] for m in rec.sent} == {SIGNAL}
     assert SIGNAL not in ("trade", "health")
+
+
+# ── surviving a restart — the 2026-09-15 four-identical-alerts defect ────────────────────────
+#
+# MEASURED on `sos_fade_1`: one long setup produced four identical `SETUP FORMING` roots inside
+# 24 hours, and none of the first three could ever be closed. Two independent causes, one symptom,
+# and each test below pins one of them.
+
+
+def test_a_restart_does_NOT_re_announce_a_setup_the_reader_was_already_told_about(tmp_path):
+    """The whole point. Before persistence, `_sent` lived in memory only, so every stop, start,
+    redeploy or mid-session re-warm announced every open setup again from scratch.
+
+    RED without the state file: the second instance posts a second SETUP FORMING.
+    """
+    state = tmp_path / "setup_threads.json"
+    rec = Recorder()
+    first = _alerts(rec, state_path=state)
+    first.on_bar(FakeStrategy([[_snap()]]))
+    assert [h.split(" · ")[0] for h in rec.heads()] == ["👀 SETUP FORMING"]
+
+    rec2 = Recorder()
+    second = _alerts(rec2, state_path=state)
+    second.on_bar(FakeStrategy([[_snap()]]))
+    assert rec2.sent == [], "the setup was announced a second time across a restart"
+
+
+def test_the_outcome_after_a_restart_REPLIES_TO_THE_ORIGINAL_message(tmp_path):
+    """A resolution that does not reply to the root is a message with no setup attached — the
+    reader sees `NO TRADE` in a channel and has to guess which of five setups it closed.
+
+    RED without persisting the message id: `reply_to` comes back None.
+    """
+    state = tmp_path / "setup_threads.json"
+    rec = Recorder()
+    _alerts(rec, state_path=state).on_bar(FakeStrategy([[_snap()]]))
+    root_id = 1  # Recorder returns ascending ids, and the root was the first message sent
+
+    rec2 = Recorder()
+    _alerts(rec2, state_path=state).on_bar(
+        FakeStrategy(
+            [[_snap(state=DEAD, reason="The setup died before reaching two confluences.")]]
+        )
+    )
+    assert len(rec2.sent) == 1
+    assert rec2.sent[0]["reply_to"] == root_id
+
+
+def test_a_thread_whose_outcome_was_LOST_is_closed_WITHOUT_claiming_an_outcome(tmp_path):
+    """The bot was down while the setup resolved, so the strategy's own sentence for it no longer
+    exists. The thread must still be closed — but it must NOT say NO TRADE, which is a claim that
+    the bot looked at this setup and refused it. It might have traded.
+
+    RED if `reconcile` reuses `format_resolved`: the message reads `👋 NO TRADE`.
+    """
+    state = tmp_path / "setup_threads.json"
+    _alerts(Recorder(), state_path=state).on_bar(FakeStrategy([[_snap()]]))
+
+    rec2 = Recorder()
+    a = _alerts(rec2, state_path=state)
+    a.reconcile([], live_keys=[])  # warmed, watching nothing, and it CAN say so
+    assert len(rec2.sent) == 1
+    text = rec2.sent[0]["text"]
+    assert "NO TRADE" not in text
+    assert "not recorded" in text
+    assert a.open_keys() == []
+
+
+def test_a_thread_whose_outcome_WAS_replayed_carries_the_strategys_OWN_reason(tmp_path):
+    """When the warm-up did replay the death, the reader gets the real reason rather than the
+    "outcome not recorded" fallback.
+
+    RED if `reconcile` ignores the replayed snapshots and closes everything as lost.
+    """
+    state = tmp_path / "setup_threads.json"
+    _alerts(Recorder(), state_path=state).on_bar(FakeStrategy([[_snap()]]))
+
+    rec2 = Recorder()
+    a = _alerts(rec2, state_path=state)
+    a.reconcile([_snap(state=DEAD, reason="Nothing came to the limit.")], live_keys=[])
+    assert len(rec2.sent) == 1
+    assert "Nothing came to the limit." in rec2.sent[0]["text"]
+    assert a.open_keys() == []
+
+
+def test_CANNOT_ASK_leaves_every_thread_open_where_WATCHING_NOTHING_closes_them(tmp_path):
+    """🔴 Root `CLAUDE.md` rule 1, in the signals channel. `None` means the strategy could not be
+    asked which setups are open; `[]` means it was asked and is watching none. Collapsing them
+    posts "no longer being watched" onto setups the bot is watching right now.
+
+    RED on `live_keys = live_keys or []`, and on any other collapse of the two.
+
+    ⚠ **Silence is asserted to be DELIBERATE, not incidental.** An early version of this test
+    passed against a mutation that fed `None` straight into `set()`: the resulting TypeError was
+    swallowed by the never-raises guard, so nothing was sent and the test went green for a reason
+    that had nothing to do with the rule it names. The log is checked for exactly that.
+    """
+    warnings = []
+
+    class Log:
+        def warning(self, m):
+            warnings.append(m)
+
+    state = tmp_path / "setup_threads.json"
+    _alerts(Recorder(), state_path=state).on_bar(FakeStrategy([[_snap()]]))
+
+    rec2 = Recorder()
+    a = SetupAlerts(send=rec2, log=Log(), state_path=state)
+    a.reconcile([], live_keys=None)
+    assert rec2.sent == []
+    assert a.open_keys() == ["K1"]
+    assert warnings == [], f"the thread survived by accident, not by rule: {warnings}"
+
+
+def test_a_still_live_setup_is_NOT_closed_by_the_reconcile(tmp_path):
+    """The common case on every restart: the setup is still forming. It keeps its thread and says
+    nothing, so the reader is not told about it twice or told it is over.
+    """
+    state = tmp_path / "setup_threads.json"
+    _alerts(Recorder(), state_path=state).on_bar(FakeStrategy([[_snap()]]))
+
+    rec2 = Recorder()
+    a = _alerts(rec2, state_path=state)
+    a.reconcile([], live_keys=["K1"])
+    assert rec2.sent == []
+    assert a.open_keys() == ["K1"]
+
+
+def test_a_corrupt_state_file_costs_the_dedupe_and_NOTHING_ELSE(tmp_path):
+    """A process killed mid-write leaves truncated JSON. That must degrade to the old behaviour —
+    announce once more — never raise into the bar loop.
+    """
+    state = tmp_path / "setup_threads.json"
+    state.write_text('{"setups": {"K1": {"root": 1, "se')
+    rec = Recorder()
+    a = _alerts(rec, state_path=state)
+    a.on_bar(FakeStrategy([[_snap()]]))
+    assert [h.split(" · ")[0] for h in rec.heads()] == ["👀 SETUP FORMING"]
+
+
+def test_a_caller_with_NO_state_path_behaves_exactly_as_before(tmp_path):
+    """`alert_rate.py` and every backtest construct this with nowhere to write. They must not
+    acquire a file, and must not fail for the want of one.
+    """
+    rec = Recorder()
+    a = _alerts(rec)
+    a.on_bar(FakeStrategy([[_snap()]]))
+    a.reconcile([], live_keys=[])
+    assert list(tmp_path.iterdir()) == [], "a stateless caller must not acquire a file"
+    # The in-memory bookkeeping is still there and still correct, so the reconcile closes the
+    # thread exactly as it would with a file. Persistence changes what survives a RESTART; it
+    # changes nothing inside one process.
+    assert [m["text"].split(" · ")[0] for m in rec.sent] == ["👀 SETUP FORMING", "🧹 THREAD CLOSED"]

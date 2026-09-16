@@ -19,6 +19,16 @@ measured at 665 transitions across 332 setups over 6.5 years. A level-triggered 
 announces the same setup two or three times. `_sent` records WHICH messages a setup has already
 had, so each is sent once and only once.
 
+🔴 **AND IT SURVIVES A RESTART, since 2026-09-16.** Both halves of the bookkeeping — which
+messages a setup has had, and the Telegram id its outcome must reply to — are written to the
+bot's instance folder and read back on start. Without that they lived in memory only, so
+stopping, starting, redeploying or re-warming a bot re-announced every open setup and orphaned
+the thread the reader was looking at: measured at four identical `SETUP FORMING` roots for one
+setup inside 24 hours on `sos_fade_1`, none of the first three closable. The second half of that
+defect was in the STRATEGY — the setup's id was a bar POSITION, which a re-warm renumbers — and
+is fixed in `sos_fade/execution.py::_setup_key`. **Either one alone still duplicates the alert.**
+A setup that resolved while the bot was down is closed on the next start by `reconcile`.
+
 ⚠ **NEVER RAISES.** `notify.py`'s standing rule, and it binds harder here than anywhere else in
 this package: this runs inside `_on_bar`, between the strategy stepping and the broker being
 reconciled. A notifier that can take down a trading loop is worse than a missed message. Every
@@ -34,7 +44,10 @@ See `docs/LIVE_SETUP_ALERTS.md` for the message wording, the measured volume and
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional, Sequence, Set
+import json
+import os
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence, Set
 
 import alerts  # noqa: E402  (same package; `runner` puts this dir on the path)
 
@@ -79,6 +92,7 @@ class SetupAlerts:
         digits: int = 2,
         display: str = "",
         lots_for: Optional[Callable[[int], Optional[float]]] = None,
+        state_path=None,
     ) -> None:
         self._send = send
         self._log = log
@@ -105,7 +119,16 @@ class SetupAlerts:
         #: setup key -> which categories it has already been sent. This is what makes the alert
         #: per-SETUP rather than per-transition; see the module docstring.
         self._sent: Dict[str, Set[str]] = {}
+        #: setup key -> the side and symbol it was announced with, kept ONLY so a thread whose
+        #: outcome was lost across a restart can still be closed with a message that names what
+        #: it was about. Nothing reads it while a setup is alive.
+        self._about: Dict[str, dict] = {}
         self._unsupported_reported = False
+        #: Where the three dicts above are written so they survive a restart, or `None` for a
+        #: caller with nowhere to put them (a backtest, `alert_rate.py`) — which behaves exactly
+        #: as this class did before persistence existed.
+        self._state_path = Path(state_path) if state_path else None
+        self._load()
 
     # ── the one entry point ──────────────────────────────────────────────────────────────────
     def on_bar(self, strategy) -> None:
@@ -174,6 +197,10 @@ class SetupAlerts:
         if not snap.tradeable:
             return
         sent = self._sent.setdefault(snap.key, set())
+        # Refreshed every bar rather than only on the root, so a state file written before this
+        # setup's first announcement still names what the thread is about.
+        self._about[snap.key] = {"side": snap.side, "symbol": snap.symbol}
+        before = (len(sent), snap.key in self._threads)
 
         # The root FIRST, always, whatever state the setup arrives in. A setup that reaches its
         # entry zone on the same bar it arms would otherwise have its reply sent with nothing to
@@ -227,6 +254,122 @@ class SetupAlerts:
             # per setup it has ever seen — ~11 a month forever is a slow leak with no symptom.
             self._threads.pop(snap.key, None)
             self._sent.pop(snap.key, None)
+            self._about.pop(snap.key, None)
+            self._save()
+            return
+        # Saved only when something CHANGED, so a setup that lives for days does not rewrite the
+        # file every 15 minutes for the whole of it.
+        if before != (len(sent), snap.key in self._threads):
+            self._save()
+
+    # ── surviving a restart ──────────────────────────────────────────────────────────────────
+    def _load(self) -> None:
+        """Read back what was already announced, so a restart does not re-announce it.
+
+        🔴 **This is the half that makes the thread real.** Before it existed the record of what
+        a setup had been told lived only in memory, so stopping, restarting, redeploying or
+        re-warming a bot wiped it: every live setup was announced again from scratch, and the
+        Telegram message id of its first announcement was lost, so its outcome could never be
+        posted as a reply to the message the reader was actually looking at. Measured on
+        `sos_fade_1`, 2026-09-15: four identical `SETUP FORMING` roots for one setup in 24 hours,
+        three of them permanently unclosable.
+
+        ⚠ **NEVER raises**, like everything else here. An unreadable or half-written state file
+        costs the de-duplication for one restart, which is the old behaviour — it may not cost
+        the bot its start.
+        """
+        if self._state_path is None or not self._state_path.exists():
+            return
+        try:
+            with open(self._state_path, encoding="utf-8") as f:
+                blob = json.load(f)
+            for key, row in (blob.get("setups") or {}).items():
+                self._threads[key] = row.get("root")
+                self._sent[key] = set(row.get("sent") or ())
+                self._about[key] = {"side": row.get("side"), "symbol": row.get("symbol") or ""}
+        except Exception as e:  # noqa: BLE001 — see the module docstring
+            self._threads.clear()
+            self._sent.clear()
+            self._about.clear()
+            self._warn(f"could not read the setup-alert state ({e}) — open setups may repeat once.")
+
+    def _save(self) -> None:
+        """Write the three dicts, atomically. Never raises.
+
+        ⚠ **Atomic because the alternative is silent.** This is written from inside the bar loop;
+        a process stopped mid-write would leave truncated JSON, and `_load` would then throw away
+        every open thread on the next start — the exact failure this file exists to end, arriving
+        through the fix for it.
+        """
+        if self._state_path is None:
+            return
+        try:
+            rows = {}
+            for key, sent in self._sent.items():
+                about = self._about.get(key) or {}
+                rows[key] = {
+                    "root": self._threads.get(key),
+                    "sent": sorted(sent),
+                    "side": about.get("side"),
+                    "symbol": about.get("symbol") or "",
+                }
+            tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"setups": rows}, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self._state_path)
+        except Exception as e:  # noqa: BLE001 — see the module docstring
+            self._warn(f"could not save the setup-alert state ({e}) — open setups may repeat once.")
+
+    def reconcile(self, resolved: Sequence[SetupSnapshot], live_keys) -> None:
+        """Close every thread this bot announced before it stopped and can no longer be watching.
+
+        🔴 **`live_keys` must be `None` when the strategy could not be asked, and a collection —
+        possibly empty — when it could.** `None` leaves every thread open; an empty collection
+        means the bot is genuinely watching nothing and closes them all. Collapsing the two would
+        close every open thread on a bar the strategy merely failed to answer, which is root
+        `CLAUDE.md` rule 1 arriving in the signals channel.
+
+        `resolved` is what the strategy replayed through the OUTAGE — the warm-up drain the runner
+        used to throw away wholesale. Only the snapshots matching a thread this bot actually
+        announced are used, so nothing else about that behaviour changes: years of replayed
+        history still go in the bin, and the handful that close a real thread carry the
+        strategy's OWN reason rather than one composed here.
+
+        A thread with no matching snapshot and no live setup is closed with a message that says
+        the outcome was not recorded. ⚠ **It must not borrow the wording of a real death.** The
+        bot does not know whether that setup filled, died or expired, and a confident `NO TRADE`
+        on a setup that might have traded is a label with no code behind it.
+        """
+        try:
+            for snap in resolved:
+                if snap.key not in self._sent:
+                    continue
+                self._close(snap.key, alerts.format_resolved(snap, self._digits))
+            if live_keys is None:
+                self._save()
+                return
+            live = set(live_keys)
+            for key in [k for k in self._sent if k not in live]:
+                about = self._about.get(key) or {}
+                self._close(key, alerts.format_lost(about.get("side"), about.get("symbol") or ""))
+            self._save()
+        except Exception as e:  # noqa: BLE001 — see the module docstring
+            self._warn(f"could not reconcile the open setup threads: {e}")
+
+    def _close(self, key: str, text: str) -> None:
+        """Post a closing message onto one stored thread and forget it. Never raises."""
+        if RESOLVED_MSG not in (self._sent.get(key) or ()) and self._on(RESOLVED_MSG):
+            self._post(text, reply_to=self._threads.get(key))
+        self._threads.pop(key, None)
+        self._sent.pop(key, None)
+        self._about.pop(key, None)
+
+    def open_keys(self) -> List[str]:
+        """Which setups this bot has already announced and not yet closed — for the start banner."""
+        return sorted(self._sent)
 
     def _on(self, category: str) -> bool:
         return category in self._categories

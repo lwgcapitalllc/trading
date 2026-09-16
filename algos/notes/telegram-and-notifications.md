@@ -235,6 +235,79 @@ to a supergroup** (which happens on its own when enough members join, or it is m
 the sends then fail into the log rather than erroring anywhere visible. A signals channel that has
 gone quiet for days is that, until proven otherwise.
 
+### 🔴 A SETUP THREAD DID NOT SURVIVE A RESTART — four identical alerts for one setup (2026-09-16)
+
+**Aaron, 2026-09-15:** *"I have got the same alert 4 times about the same entry over the past 24 hrs
+… why not just get it once and why did it not ever invalidate?"*
+
+**MEASURED on `sos_fade_1`** (demo, 700152905). One long setup, alive from 08:00 on 2026-09-15 and
+still alive when this was found, produced **four `SETUP FORMING` roots inside 24 hours** and **not
+one of the first three could ever be closed**. Two independent causes, one symptom — and fixing
+either alone still leaves the alert duplicating.
+
+**Cause 1 — the bookkeeping lived in memory.** `SetupAlerts` held which messages a setup had been
+sent, and the Telegram message id its outcome must reply to, in two plain dicts on the instance. A
+stop, a start, a redeploy or a mid-session re-warm therefore wiped both: every open setup was
+announced again from scratch, and the id of the message the reader was actually looking at was
+gone, so the outcome could never be posted as a reply to it. That bot restarted or re-warmed three
+times in the window (03:48, 22:15, 01:48) — plus the original start, which is the four.
+
+**Cause 2 — the setup's IDENTITY was a bar POSITION.** `_setup_key` was
+`f"{name}:{side}:{sos_bar}"`, and `sos_bar` is an offset into the warm-up window, which slides every
+time the engines re-warm. Measured: the same live setup's number slid **4958 → 4888** on
+`sos_fade_1` and **5050 → 4980** on `sos_fade_2`, both by exactly **70 bars**, which is the window
+moving rather than new structure. Each slide RENAMED a setup that had not changed, so even a
+persisted record would have re-announced it. ⚠ **The old docstring said the key was keyed on the SOS
+bar "rather than on anything that moves".** `_same_leg`, forty lines above it in the same file,
+already carried a time fallback for exactly this — the two answers to one question disagreed for the
+life of the feature.
+
+**Why it never invalidated, which is the second half of the question.** It never invalidated because
+the setup was genuinely still alive: a setup resolves when it fills, when another position takes the
+slot, or when its structure leg dies, and none had happened. The three ORPHANS, though, could never
+resolve on any future bar, by construction — `_book_setup_end` drops a death whose context this
+process never built, and its docstring justified that with *"there is no setup the reader was ever
+told about to close"*, which stopped being true the moment threads outlived the process.
+
+**The fix, 2026-09-16 — three parts, and the third is the one that is easy to leave out.**
+
+1. **`_setup_key` keys on the SOS bar's TIME**, snapshotted onto `_MissWatch.sos_ms` when the watch
+   opens, with the bar number as a prefixed (`t` / `b`) fallback for a bar older than the
+   20,000-entry time map. ⚠ The prefixes are load-bearing: a timestamp and a bar index are both bare
+   integers and an unprefixed key could call two different setups one thread.
+2. **`SetupAlerts` persists** both dicts plus each thread's side and symbol to
+   `<instance>/setup_threads.json`, written atomically (`os.replace`) because this runs inside the
+   bar loop and a truncated file would throw away every open thread on the next start — the very
+   failure, arriving through its own fix. An unreadable file costs the de-duplication for one
+   restart and never the start.
+3. **`SetupAlerts.reconcile`, at the end of every `warm()`**, closes what can no longer be open.
+   `warm()` already drained the strategy's replayed setups and binned them wholesale; it now keeps
+   them, and reconcile picks out only the ones matching a thread this bot actually announced, so a
+   setup that died during the outage is closed with the **strategy's own sentence**. One with no
+   replayed death and no live setup gets `🧹 THREAD CLOSED`, which deliberately does **not** say
+   `NO TRADE`: the bot does not know whether it filled or died, and a confident outcome on a setup
+   that might have traded is a label with no code behind it.
+
+🔴 **`live_keys=None` means *could not ask* and closes nothing; `[]` means *watching nothing* and
+closes everything.** Root `CLAUDE.md` rule 1, in the signals channel — collapsing them would post
+"no longer being watched" onto setups the bot is watching right now. ⚠ An early version of that test
+went green against the collapse by accident: `None` fed into `set()` raised, the never-raises guard
+swallowed it, nothing was sent, and the assertion passed for a reason unrelated to the rule. The
+test now asserts the log is silent too, so silence has to be deliberate.
+
+⚠ **Reconcile runs at the end of `warm()`, not next to the alert construction.** `_start_setup_alerts`
+runs BEFORE the warm-up, where the strategy has replayed nothing and would answer "watching no
+setups" — which would close every thread it is still watching. Putting it in `warm()` also means the
+mid-session re-warm gets it for free; at a call site, the one that got forgotten would silently stop
+closing threads.
+
+⚠ **Nothing here can move a trade**, and the parity gate cannot prove that for you: `compare_strategy.py`
+on the golden export is RED on `px_s_stage` at bar 16 and was RED identically before this change.
+What it rests on is that `_setup_key` and `_MissWatch.sos_ms` are read only by `_setup_context`, and
+no method in that block is called from `step`, `step_secondary` or `_manage_open`.
+
+---
+
 ### A deploy is ONE event — its three messages are now a THREAD (2026-08-14)
 
 Aaron: *"Look at the messages every time I promote also; can this be a thread instead of
