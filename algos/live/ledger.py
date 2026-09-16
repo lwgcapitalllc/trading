@@ -102,6 +102,15 @@ _DECISION_EVENTS = {
     # strategy wanted a trade and none exists", and splitting them by ONE of the eight reasons
     # meant the other seven had no home — `order_refused` now carries a `code` naming which.
     "order_refused",
+    # ── the shared account cut this bot's size, or refused it outright, for lack of room
+    # (2026-09-15). Decisions, not health: both answer "why was there no trade on that setup, or
+    # why was that trade small", which is this stream's question, and nothing is wrong with the
+    # machinery — the budget being spent by another bot is the system working.
+    # ⚠ They are the ONLY record either event leaves. The strategy asks the account for a size and
+    # gets a number back: a shrink arrives as a smaller quantity and a refusal as no order at all,
+    # so `order_refused` never runs — no order ever reached the broker to be refused.
+    "budget_cut",
+    "budget_shrunk",
     # A resting order the BROKER removed without filling it (margin, expiry, a hand delete).
     # A decision, not health: it is the answer to "why was there no trade on that setup".
     "order_vanished",

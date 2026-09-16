@@ -592,3 +592,32 @@ asks for something other than gaps, so at shipped settings the block list is emp
 155,807 bars. The first version of that audit reported *"no order block in the zone on any of the
 146 setups"* off exactly that, and it read as a finding. A registry nobody populated answers
 confidently and wrongly.
+
+## The contention log under-reports, and it is a stated gap (2026-09-15)
+
+`PortfolioAccount.contention` is documented as every shrink and refusal. It is not, and has never
+been: it records only what `request_fill` decided, at the FILL. The placement-time twin,
+`affordable_qty`, has never logged one — so every entry a stack shrank or refused **before** the
+order existed is missing from the run's evidence.
+
+This matters because placement is where the live path decides, and where a stack run's strategies
+decide too: `Execution._fit_to_budget` calls `affordable_qty` on every armed bar.
+
+**It was deliberately NOT closed while adding the live alerts.** `contention` is a finished run's
+evidence — quoted in the stack report, compared between runs, and already reasoned about. Starting
+to append placement-time rows would move figures in runs Aaron has already drawn conclusions from,
+and that is a measured decision of his, not a side effect of a Telegram message. Pinned by
+`test_the_PLACEMENT_gate_does_not_touch_the_runs_own_contention_log`.
+
+**What closing it needs:** a stack replay before and after, reporting whether trades and R are
+unchanged (they must be — logging decides nothing) and by how much the contention count moves.
+
+## The live tap — `on_contention`
+
+The account carries an optional observer, `None` everywhere except a live bridge. It is handed the
+same row the log holds, plus a `reason` naming which of the three rules refused the entry (that
+extra key is added only on the tap, so the shape of a LOGGED row — which stored runs are compared
+on — does not change). See `algos/notes/telegram-message-catalog.md` for what is sent.
+
+⚠ An observer that throws is swallowed. It reports; it never decides. A Telegram outage that
+refused entries would be the safety feature causing the incident.

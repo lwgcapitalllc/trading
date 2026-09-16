@@ -998,3 +998,88 @@ def test_an_account_does_NOT_claim_the_clock_by_default():
     — the state that left every venue-ceiling record with a null time."""
     assert SoloAccount(balance=10_000.0).clock_external is False
     assert PortfolioAccount(balance=10_000.0, risk_cap_pct=0.10).clock_external is False
+
+
+# ── the live tap ──────────────────────────────────────────────────────────────────────────────
+#
+# The account is the only object that knows both the size a leg asked for and the size it was
+# granted, so it is the only place a live shrink or refusal can be announced FROM. What these
+# pin is that giving it a voice cost the lab nothing.
+#
+# ⚠ They use `SoloAccount` with a STATED room, which is the live shape (rule 13). A
+# `PortfolioAccount` has no minimum share by default, so it shrinks where a live account refuses —
+# testing the refusal on it would describe a system nobody runs.
+def _live_account(room, balance=10_000.0):
+    acct = SoloAccount(balance=balance)
+    acct.external_room = float(room)
+    return acct
+
+
+def test_the_tap_is_OFF_unless_somebody_installs_one():
+    """Every backtest, every parity gate and every stored run. A watcher that defaulted to
+    anything but nobody would make this a behaviour change rather than an addition."""
+    assert PortfolioAccount(balance=10_000.0, risk_cap_pct=0.1).on_contention is None
+    assert SoloAccount(balance=10_000.0).on_contention is None
+
+
+def test_the_PLACEMENT_gate_does_not_touch_the_runs_own_contention_log():
+    """🔴 The stated gap, pinned so it cannot close by accident. `contention` is a finished run's
+    evidence, quoted in the stack report and compared between runs; appending placement-time
+    events to it would silently move figures already recorded and reasoned about. That is a
+    MEASURED decision for Aaron, not a side effect of adding a Telegram message.
+
+    Mutation run RED 2026-09-15: pointing the placement gate at `_log_contention` instead left
+    one row in the log.
+    """
+    acct = _live_account(100.0)
+    seen: list = []
+    acct.on_contention = seen.append
+    assert acct.affordable_qty("a", 100.0, 99.0, 1.0, 500.0) == 0.0
+    assert seen, "the live tap still hears it"
+    assert acct.contention == [], "and the run's own log does not"
+
+
+def test_a_watcher_that_THROWS_cannot_cost_a_trade():
+    """It reports, it never decides. Sizing and telling somebody must not share a failure —
+    a Telegram outage that refused entries would be the feature causing the incident.
+
+    Mutation run RED 2026-09-15: letting the exception out failed the call with the watcher's own
+    error before any size was returned.
+    """
+
+    def _broken(_row):
+        raise RuntimeError("telegram is down")
+
+    acct = _live_account(100.0)
+    acct.on_contention = _broken
+    assert acct.affordable_qty("a", 100.0, 99.0, 1.0, 500.0) == 0.0
+
+
+def test_the_tap_is_told_WHICH_WAY_the_refused_trade_faced():
+    """Read off the trade itself — a stop below the entry is a long. The one reader of it names
+    the setup in an alert and has no other way to know, and a 0 would collide with "flat"."""
+    acct = _live_account(100.0)
+    seen: list = []
+    acct.on_contention = seen.append
+    acct.affordable_qty("a", 100.0, 99.0, 1.0, 500.0)
+    acct.affordable_qty("a", 100.0, 101.0, 1.0, 500.0)
+    assert [r["dir"] for r in seen] == [1, -1]
+
+
+def test_the_tap_names_WHICH_RULE_refused_it():
+    """Three different rules produce a refusal and they call for different work, so "blocked" on
+    its own is the half of the sentence Aaron already had."""
+    acct = _live_account(100.0)
+    seen: list = []
+    acct.on_contention = seen.append
+    acct.affordable_qty("a", 100.0, 99.0, 1.0, 500.0)  # $100 free, under half of $500
+    assert seen[0]["reason"] == "share"
+
+
+def test_an_UNBUDGETED_account_says_nothing_however_big_the_ask():
+    """No room stated is the lab, and the lab must not be able to reach the tap at all."""
+    acct = SoloAccount(balance=10_000.0)
+    seen: list = []
+    acct.on_contention = seen.append
+    assert acct.affordable_qty("a", 100.0, 99.0, 1.0, 1_000_000.0) == 1_000_000.0
+    assert seen == []

@@ -212,6 +212,20 @@ def add_slot(direction: int):
 #: standing rule that a refusal naming the wrong thing is worse than a vague one.
 _SLOT_NAMES = {"primary": "primary", "secondary": "re-entry", "add": "scale-in"}
 
+# WHY the account refused, in the reader's words. The three are genuinely different situations
+# and they call for different work, which is the whole reason the reason is carried at all —
+# "refused" alone is the half of the sentence Aaron already has.
+# ⚠ Read with a default. A rule added on the account side must never cost the message; an
+# unrecognised reason loses the detail and keeps the alert.
+_BUDGET_WHY = {
+    "share": (
+        "less than half that free, and a trade at under half its intended size is not the "
+        "trade the strategy was measured on"
+    ),
+    "floor": "less than this account's minimum size for an entry free",
+    "dust": "essentially nothing free",
+}
+
 
 def slot_label(slot) -> str:
     """How a slot is named in a log line or an alert a person reads."""
@@ -596,6 +610,15 @@ class OrderBridge:
         # ⚠ Starts False, meaning "not blocked as far as we know". The first refresh that finds
         # no room announces it; a bot that starts with a full account says so on its first bar.
         self._room_blocked: bool = False
+        # WHAT WAS LAST SAID about each side's budget, keyed by direction (+1 / -1). One alert per
+        # episode, for `_refusal_alerted`'s reason one field up: a setup that cannot be afforded
+        # is re-offered on EVERY bar it lives, so a message per occurrence is a muted channel.
+        self._budget_alerted: dict[int, str] = {}
+        # Which sides hit the budget while the strategy was stepping the bar just gone. It is what
+        # ENDS an episode: a side that asked and was not cut is a side whose story is over, so the
+        # next cut on it speaks again. Without it the first refusal would be the only one this bot
+        # ever reported.
+        self._budget_seen: set[int] = set()
         # The same idea for the PARTIAL path, keyed on the cause rather than on a side: a
         # position that cannot be banked re-offers the identical problem on every 15m bar, and
         # an alert per bar is one nobody reads by the third. Cleared when a bank succeeds and
@@ -2234,6 +2257,18 @@ class OrderBridge:
         # A market bot's fill IS its placement, so the account may shrink it at the fill — see
         # `SoloAccount.fills_at_placement`. Without this a market bot could only ever be refused.
         account.fills_at_placement = self._entry_style() == "market"
+        # 🔴 THE ONLY PLACE A LIVE SHRINK OR REFUSAL BECOMES VISIBLE TO ANYONE. The strategy sizes
+        # against the account and gets back a number: a shrink arrives as a smaller quantity and a
+        # refusal as no order at all, so neither leaves a trace the log, the ledger, the page or
+        # Telegram could read afterwards. Aaron asked for the message this feeds in the original
+        # requirements — *"Telegram would tell us hey, this bot trade got rejected because of
+        # XYZ"* — and it is the one worth having while the demo soak runs, because a bot refusing
+        # every setup and a bot seeing no setups look identical from outside.
+        # ⚠ Re-assigned every bar rather than once at startup: the emulator's account object is
+        # rebuilt on a re-warm, and a tap installed on the object that was replaced is silence
+        # that looks exactly like calm.
+        account.on_contention = self._on_contention
+        self._end_budget_episodes()
         if self._risk_cap_pct is None:
             account.external_room = None  # uncapped, and that is a supported state
             return
@@ -2241,6 +2276,81 @@ class OrderBridge:
         room, why = self._account_room()
         account.external_room = room
         self._announce_room(room, why)
+
+    def _end_budget_episodes(self) -> None:
+        """A side that went a whole bar without being cut has finished its episode, so the next
+        cut on that side is news again.
+
+        ⚠ Called from `refresh_account_room`, which runs BEFORE the strategy steps — so the set
+        being read describes the bar just gone, which is the bar the alerts were about.
+        """
+        for direction in [d for d in self._budget_alerted if d not in self._budget_seen]:
+            self._budget_alerted.pop(direction, None)
+        self._budget_seen.clear()
+
+    def _on_contention(self, row: dict) -> None:
+        """The account has just cut this bot's size, or refused it outright, for lack of room.
+
+        ⚠ **It reports, it never decides.** The size is already settled by the time this runs —
+        that is deliberate, and it is why this may safely be quiet, slow or broken without
+        changing a single trade.
+        """
+        direction = int(row.get("dir") or 0)
+        blocked = bool(row.get("blocked"))
+        reason = str(row.get("reason") or "")
+        wanted = float(row.get("desired_risk") or 0.0)
+        granted = float(row.get("granted_risk") or 0.0)
+        self._budget_seen.add(direction)
+        # ⚠ Two literal calls rather than one with the name chosen inline. `test_ledger_streams`
+        # greps this folder for the event names it must route, so a name built by an expression is
+        # a name the guard cannot see — it caught exactly that here, and half of this pair went
+        # unrouted while reading as classified.
+        fields = dict(
+            dir=direction,
+            reason=reason,
+            wanted_risk_usd=round(wanted, 2),
+            granted_risk_usd=round(granted, 2),
+        )
+        if blocked:
+            self._ledger.event("budget_cut", **fields)
+        else:
+            self._ledger.event("budget_shrunk", **fields)
+        signature = f"{'blocked' if blocked else 'shrunk'}:{reason}"
+        if self._budget_alerted.get(direction) == signature:
+            return
+        self._budget_alerted[direction] = signature
+        side = "bullish" if direction > 0 else "bearish"
+        if blocked:
+            self._notify(
+                alert(
+                    WARNING,
+                    "SETUP REFUSED — NO ROOM",
+                    self._message_name(),
+                    f"A {side} setup was ready and no order was placed. It wanted "
+                    f"${wanted:,.2f} of risk and the account had "
+                    f"{_BUDGET_WHY.get(reason, 'too little risk budget left')}.",
+                    "No position was opened and nothing is wrong with this bot — the budget "
+                    "comes back as another bot's stop moves up or its trade closes. This will "
+                    "not repeat while the same setup keeps being refused.",
+                ),
+                notify.HEALTH,
+            )
+            return
+        kept = (granted / wanted * 100.0) if wanted else 0.0
+        self._notify(
+            alert(
+                WARNING,
+                "TRADE SHRUNK — SHARED ACCOUNT",
+                self._message_name(),
+                f"A {side} setup went on SMALLER than this bot wanted. It asked for "
+                f"${wanted:,.2f} of risk and the account had ${granted:,.2f} free, "
+                f"so it took {kept:,.0f}% of its intended size.",
+                "The trade is on at the reduced size, so its dollars will be smaller than "
+                "usual while its R is unchanged. This will not repeat while the same setup "
+                "keeps being trimmed.",
+            ),
+            notify.HEALTH,
+        )
 
     def _others_risk(self, spec):
         """What everybody ELSE has on, as `(risk, code, why)`.

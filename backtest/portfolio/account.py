@@ -25,7 +25,7 @@ Pure, offline, no app imports.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 __all__ = [
     "Position",
@@ -235,6 +235,20 @@ class PortfolioAccount:
         # gone. Found by running the feature, not by reading it.
         self.clock_external = False
         self.contention: list[dict] = []
+        # WHO TO TELL, THE MOMENT A LEG IS SHRUNK OR REFUSED FOR LACK OF ROOM. `None` = nobody,
+        # which is every backtest, every parity gate and every stored run — so this cannot move a
+        # number. The LIVE bridge sets it, and is the only caller that does.
+        #
+        # 🔴 It exists because the contention log is a RESULT, read when a finished run is graded,
+        # and a live bot never finishes. Aaron asked for the opposite of a log: *"Telegram would
+        # tell us hey, this bot trade got rejected because of XYZ"* — which needs the fact at the
+        # moment it is decided, from the one object that knows both the size asked for and the
+        # size granted. Nothing downstream can reconstruct it: a shrink arrives as a smaller
+        # number and a refusal as no order at all.
+        #
+        # ⚠ It is a TAP, never a second record. It is handed the same row the log holds, so the
+        # two can never disagree about what happened.
+        self.on_contention: Optional[Callable[[dict], None]] = None
         # What the account actually CARRIED, sampled by the simulator once per tick. The
         # contention log answers "was anything refused"; this answers the question underneath
         # it — how close the legs ever came to the cap — and the two can disagree completely.
@@ -386,19 +400,27 @@ class PortfolioAccount:
         desired_risk = self._risk_of(desired_qty, entry, stop, point_value)
         if desired_risk <= room:
             return desired_qty
+        # Which way the trade faces, read off the trade itself: a stop BELOW the entry is a long.
+        # It is not a parameter here and inventing a 0 would collide with "flat" (rule 1), while
+        # the one reader of it — a live alert naming the setup — has no other way to know.
+        dir = 1 if float(stop) < float(entry) else -1
         # Not enough for a trade worth placing. Same two tests `request_fill` blocks on, so a
         # size this refuses to place could not have been granted at the fill either.
-        if (
-            room < _MIN_GRANT_USD
-            or self._below_floor(room)
-            or self._below_share(desired_risk, room)
-        ):
+        if room < _MIN_GRANT_USD:
+            self._note_contention(leg, dir, desired_risk, 0.0, blocked=True, reason="dust")
+            return 0.0
+        if self._below_floor(room):
+            self._note_contention(leg, dir, desired_risk, 0.0, blocked=True, reason="floor")
+            return 0.0
+        if self._below_share(desired_risk, room):
+            self._note_contention(leg, dir, desired_risk, 0.0, blocked=True, reason="share")
             return 0.0
         per_unit = abs(float(entry) - float(stop)) * float(point_value)
         if per_unit <= 0:
             # An unpriceable trade is not an unaffordable one. Refusing here would turn a missing
             # tick value into a silent no-trade, which is the shape that reads as a broken engine.
             return desired_qty
+        self._note_contention(leg, dir, desired_risk, room, blocked=False, reason="shrunk")
         return room / per_unit
 
     def request_fills(self, requests: Sequence[dict]) -> dict[str, float]:
@@ -507,19 +529,68 @@ class PortfolioAccount:
         frac = self.min_grant_frac
         return frac > 0.0 and granted_risk < frac * desired_risk * (1.0 - _GRANT_EPS)
 
+    def _contention_row(
+        self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool
+    ) -> dict:
+        return {
+            "time": self.now,
+            "leg": leg,
+            "dir": dir,
+            "desired_risk": round(desired_risk, 2),
+            "granted_risk": round(granted_risk, 2),
+            "blocked": blocked,
+        }
+
     def _log_contention(
         self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool
     ) -> None:
-        self.contention.append(
-            {
-                "time": self.now,
-                "leg": leg,
-                "dir": dir,
-                "desired_risk": round(desired_risk, 2),
-                "granted_risk": round(granted_risk, 2),
-                "blocked": blocked,
-            }
-        )
+        """Record it in the run's log AND tell whoever is watching live."""
+        row = self._contention_row(leg, dir, desired_risk, granted_risk, blocked=blocked)
+        self.contention.append(row)
+        self._tell(row)
+
+    def _note_contention(
+        self,
+        leg: str,
+        dir: int,
+        desired_risk: float,
+        granted_risk: float,
+        *,
+        blocked: bool,
+        reason: str,
+    ) -> None:
+        """Tell whoever is watching, WITHOUT adding to the run's log.
+
+        🔴 **The placement-time twin deliberately does not append, and that is a stated gap rather
+        than an oversight.** `contention` is a finished run's evidence, quoted in the stack report
+        and compared between runs. Every placement-time shrink and refusal is missing from it
+        today — `affordable_qty` has never logged one — so starting to append here would silently
+        move the contention figures of runs already recorded and already reasoned about, which is
+        a MEASURED decision for Aaron, not a side effect of adding a Telegram message.
+
+        ⚠ So what this fixes is the live blind spot only: a live refusal left no trace anywhere,
+        in any system, and the bot simply placed nothing. The lab's under-reporting is written up
+        in `backtest/notes/` and stays open.
+        """
+        row = self._contention_row(leg, dir, desired_risk, granted_risk, blocked=blocked)
+        # ⚠ WHICH rule refused it, carried only on the live tap. Aaron's ask was *"rejected
+        # because of XYZ"*, and "blocked" on its own is the X with no YZ — three different rules
+        # can produce it and they call for different work. It is added HERE rather than in
+        # `_contention_row` so the shape of a logged row, which stored runs are compared on, does
+        # not change.
+        row["reason"] = reason
+        self._tell(row)
+
+    def _tell(self, row: dict) -> None:
+        """⚠ A watcher that throws must never cost a trade. This decides SIZE; the observer only
+        decides whether somebody hears about it, and the two must not share a failure."""
+        watcher = self.on_contention
+        if watcher is None:
+            return
+        try:
+            watcher(dict(row))
+        except Exception:  # noqa: BLE001 - see the docstring; sizing outranks telling anyone
+            pass
 
     def _open(
         self,

@@ -4207,3 +4207,116 @@ def test_a_strategy_that_cannot_say_what_a_PLANNED_order_closes_at_HALTS(monkeyp
     assert b.state is live_bridge.BridgeState.HALTED
     assert ops.actions == [], "a halted bot places nothing"
     assert "promote.py" in b.halt_reason, b.halt_reason
+
+
+# ── the account cut this bot's size, and somebody is told ─────────────────────────────────────
+#
+# 🔴 Before these, a live shrink and a live refusal left NO TRACE ANYWHERE. The strategy asks the
+# account for a size and gets a number back: a shrink arrives as a smaller quantity and a refusal
+# as no order at all, so nothing downstream — log, ledger, page or Telegram — could tell "refused
+# for lack of room" from "no setup today". Aaron asked for exactly this message in the original
+# requirements: *"Telegram would tell us hey, this bot trade got rejected because of XYZ."*
+#
+# ⚠ These drive the REAL `SoloAccount` through the real sizing call rather than invoking the
+# bridge's handler directly, for `_room_bridge`'s stated reason (rule 13): a hand-made row proves
+# the message formats, never that the account ever produces one.
+def _armed_bridge(balance=10_000.0, cap_pct=10.0, market=False):
+    """A bridge whose account tap is installed, ready for the strategy to ask for a size."""
+    b, m, ledger, notes, acct = _room_bridge(cap_pct=cap_pct, balance=balance)
+    b._entry_style = lambda: "market" if market else "limit"
+    b.refresh_account_room()
+    return b, m, ledger, notes, acct
+
+
+def _ask(acct, desired_risk, *, room, dir=1):
+    """Ask the account to fund `desired_risk` dollars with `room` dollars free.
+
+    One unit of quantity per dollar of risk: a $1 stop distance at point value 1.0 makes the
+    arithmetic the identity, so a test states the RISK it means and never a lot size.
+    """
+    acct.external_room = float(room)
+    entry, stop = (100.0, 99.0) if dir > 0 else (100.0, 101.0)
+    return acct.affordable_qty("primary", entry, stop, 1.0, float(desired_risk))
+
+
+def test_a_setup_REFUSED_for_lack_of_room_is_reported_and_says_WHY():
+    """Mutation run RED 2026-09-15: dropping `reason` from the account's tap row left the message
+    saying only that it was refused, and the assertion on the half-share sentence failed."""
+    b, _, ledger, notes, acct = _armed_bridge()
+    assert _ask(acct, 500.0, room=100.0) == 0.0  # $100 is under half of $500
+    body = "\n".join(notes)
+    assert "SETUP REFUSED" in body
+    assert "bullish" in body
+    assert "$500.00" in body
+    assert "half" in body, "which rule refused it is the half of the sentence Aaron asked for"
+    assert "event:budget_cut" in ledger.kinds()
+
+
+def test_the_SAME_refusal_every_bar_is_ONE_message():
+    """A resting setup is re-offered on every bar it lives — one alert per bar is a muted channel.
+
+    Mutation run RED 2026-09-15: removing the `_budget_alerted` check sent three.
+    """
+    b, _, _, notes, acct = _armed_bridge()
+    for _ in range(3):
+        b.refresh_account_room()
+        assert _ask(acct, 500.0, room=100.0) == 0.0
+    assert len([n for n in notes if "SETUP REFUSED" in n]) == 1
+
+
+def test_a_QUIET_bar_ends_the_episode_so_the_NEXT_refusal_speaks_again():
+    """Otherwise the first refusal a bot ever hits is the only one it ever reports.
+
+    Mutation run RED 2026-09-15: skipping `_end_budget_episodes` left the count at 1.
+    """
+    b, _, _, notes, acct = _armed_bridge()
+    b.refresh_account_room()
+    assert _ask(acct, 500.0, room=100.0) == 0.0
+    b.refresh_account_room()  # a bar in which nothing was cut
+    b.refresh_account_room()  # ...and the episode is over
+    assert _ask(acct, 500.0, room=100.0) == 0.0
+    assert len([n for n in notes if "SETUP REFUSED" in n]) == 2
+
+
+def test_the_OTHER_SIDE_being_refused_is_its_own_message():
+    """Two sides are two setups. Collapsing them would hide one behind the other's silence."""
+    b, _, _, notes, acct = _armed_bridge()
+    assert _ask(acct, 500.0, room=100.0, dir=1) == 0.0
+    assert _ask(acct, 500.0, room=100.0, dir=-1) == 0.0
+    refusals = [n for n in notes if "SETUP REFUSED" in n]
+    assert len(refusals) == 2
+    assert any("bullish" in n for n in refusals) and any("bearish" in n for n in refusals)
+
+
+def test_a_trade_SHRUNK_to_fit_says_how_much_of_its_size_it_took():
+    """A shrink is the quieter half: the trade DOES appear, at a size nobody asked for, and its
+    dollars read wrong against every other trade in the account.
+
+    Mutation run RED 2026-09-15: returning the shrunk size without telling the tap sent nothing.
+    """
+    b, _, ledger, notes, acct = _armed_bridge(market=True)
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    body = "\n".join(notes)
+    assert "TRADE SHRUNK" in body
+    assert "$300.00" in body
+    assert "60%" in body, "300 of the 500 it wanted"
+    assert "event:budget_shrunk" in ledger.kinds()
+
+
+def test_a_size_that_FITS_says_nothing_at_all():
+    """The alert must fire on the cut, never on the asking — or every bar is an alert."""
+    b, _, _, notes, acct = _armed_bridge()
+    assert _ask(acct, 100.0, room=1_000.0) == 100.0
+    assert notes == []
+
+
+def test_the_tap_is_REINSTALLED_every_bar_because_a_REWARM_replaces_the_account():
+    """A tap on the object that was swapped out is silence that looks exactly like calm."""
+    from backtest.portfolio.account import SoloAccount
+
+    b, _, _, notes, _ = _armed_bridge()
+    fresh = SoloAccount(balance=10_000.0)
+    b._ex._account = fresh
+    b.refresh_account_room()
+    assert _ask(fresh, 500.0, room=100.0) == 0.0
+    assert any("SETUP REFUSED" in n for n in notes)

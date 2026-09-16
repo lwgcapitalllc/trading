@@ -458,3 +458,50 @@ riding a reply thread, so a bare "LOSS" never floats with no trade attached)
   this catalog and was not touched — it answers a command a person just typed, in the same chat
   they typed it in, and deliberately uses bold/italic for that interactive reply. It is not one
   of the three broadcast rooms.
+
+## SETUP REFUSED — NO ROOM, and TRADE SHRUNK — SHARED ACCOUNT (2026-09-15)
+
+**Aaron asked for these in the original shared-account requirements** — *"Telegram would tell us
+hey, this bot trade got rejected because of XYZ"* — and until now they did not exist.
+
+**What was silent.** A bot sharing an account sizes every entry against the room left under the
+account cap. The account answers with a number, and that is the whole conversation: a shrink comes
+back as a smaller quantity, a refusal as `0.0` and no order at all. Nothing downstream could tell
+the difference between *refused for lack of room* and *no setup today* — not the text log, not the
+ledger, not the Bots page, not Telegram. `ORDER REFUSED` never fires for these, because no order
+ever reaches the broker to be refused.
+
+**Where they come from.** `backtest/portfolio/account.py` is the only object that knows both the
+size asked for and the size granted, so it carries an optional observer (`on_contention`) that the
+live bridge installs and nothing else ever sets. `OrderBridge._on_contention` writes the ledger
+record and sends the message. The observer is a TAP on the same row the contention log holds, never
+a second record, and an observer that throws is swallowed — sizing must not share a failure with
+telling somebody about it.
+
+**What they say.**
+
+- *SETUP REFUSED — NO ROOM* — the setup was ready and no order was placed. Names the side, the
+  risk dollars it wanted, and WHICH of the three rules refused it: under half its own size, under
+  the account's entry floor, or essentially nothing free. The reason is the "XYZ" half of the ask;
+  "refused" alone is what Aaron already had.
+- *TRADE SHRUNK — SHARED ACCOUNT* — the trade went on at a reduced size, with the percentage of
+  its intended size it took. This is the quieter half: the trade appears as normal, and only its
+  dollars are wrong against every other trade on the account. ⚠ It can only happen to a
+  MARKET-entry bot; a resting-order bot is refused instead, because its order is already at the
+  broker.
+
+**How often they speak.** One message per side per EPISODE. A setup that cannot be afforded is
+re-offered on every bar it lives, so a message per occurrence mutes the channel before the day it
+matters — the same reasoning as `ORDER REFUSED`. A side that goes a whole bar without being cut
+ends its episode, and the next cut on that side speaks again.
+
+⚠ **There is no "room is back" message here, deliberately.** `NO ACCOUNT RISK LEFT` /
+`ACCOUNT RISK AVAILABLE` already cover the account running dry and recovering. These two are about
+one specific setup, and the follow-up is visible either way: the trade appears, or the next
+episode speaks.
+
+**Ledger:** `budget_cut` and `budget_shrunk`, both in the DECISION stream — they answer "why was
+there no trade, or why was that trade small", and nothing is wrong with the machinery.
+⚠ Both names are written as literals in two separate calls. `test_ledger_streams` greps this
+folder for the names it must route, and a name built inline is a name the guard cannot see — it
+caught exactly that here.
