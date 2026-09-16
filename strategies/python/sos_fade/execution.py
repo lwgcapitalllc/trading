@@ -475,6 +475,11 @@ class _MissWatch:
 
     watch: bool = False
     sos_bar: Optional[int] = None
+    # The SOS bar's TIMESTAMP, snapshotted when the watch opens. `sos_bar` is a POSITION in the
+    # warm-up window and that position slides every time the engines re-warm — measured shifting
+    # by exactly 70 on two bots on 2026-09-15, which renamed a live setup mid-life and started a
+    # second Telegram thread for it. Time does not slide, so `_setup_key` reads this.
+    sos_ms: Optional[int] = None
     arm_src: str = ""                 # "SWP" / "DIV" — which source actually armed it
     swp_nm: str = ""                  # the swept level's name, e.g. "Day Low"
     zone: bool = False
@@ -497,8 +502,10 @@ class _MissWatch:
     blk_t: bool = False               # the stop floor refused it while in the zone
     blk_q: bool = False               # the market was too quiet while in the zone
 
-    def open(self, sos_bar: Optional[int], arm_src: str, swp_nm: str) -> None:
+    def open(self, sos_bar: Optional[int], sos_ms: Optional[int],
+             arm_src: str, swp_nm: str) -> None:
         self.watch, self.sos_bar, self.arm_src, self.swp_nm = True, sos_bar, arm_src, swp_nm
+        self.sos_ms = sos_ms
         self.zone = self.fvg = self.blk_v = self.blk_l = self.blk_h = False
         self.blk_t = self.blk_q = False
         self.edge = self.fib = self.zone_ms = None
@@ -1494,7 +1501,8 @@ class Execution:
             # open the watch for it. The arm source and swept level are snapshotted here because
             # the sequence clears them the instant the setup dies.
             if stage >= 2 and self._prev_stage[slot] < 2:
-                m.open(sos_bar, arm_src, swp_nm)
+                m.open(sos_bar, self._bar_ms.get(sos_bar) if sos_bar is not None else None,
+                       arm_src, swp_nm)
             self._prev_stage[slot] = stage
 
             if not m.watch:
@@ -1692,16 +1700,38 @@ class Execution:
                 return current_ms == traded_ms
         return traded_bar is not None and current_bar == traded_bar
 
-    def _setup_key(self, is_long: bool, sos_bar: Optional[int]) -> str:
-        """The thread id, stable for this setup's whole life.
+    def _setup_key(self, is_long: bool, sos_bar: Optional[int],
+                   sos_ms: Optional[int]) -> str:
+        """The thread id, stable for this setup's whole life AND across a restart.
 
         Keyed on the SOS bar rather than on anything that moves: the arm, the zone state and the
         entry price all change while a setup is alive, and a key built from any of them would
         start a new Telegram thread on the bar it changed. `_MissWatch` already treats
         `(side, sos_bar)` as this setup's identity — reusing it is what keeps the alert's notion
         of "the same setup" identical to the strategy's.
+
+        🔴 **By TIME, with the bar number only as a fallback — the number is not stable and the
+        old docstring claimed it was.** `sos_bar` is an offset into the warm-up window, so every
+        restart and every mid-session re-warm renumbers it: measured on 2026-09-15, one live
+        setup's number slid from 4958 to 4888 on `sos_fade_1` and from 5050 to 4980 on
+        `sos_fade_2`, both by exactly 70 bars, which is the window sliding rather than new
+        structure. Each slide renamed a setup that was still alive, so the alert layer saw a new
+        setup, posted a second `SETUP FORMING` root, and permanently orphaned the first — four
+        identical alerts for one setup inside 24 hours, none of which could ever be closed.
+        This is the same defect `_same_leg` directly above already carries a time fallback for.
+
+        ⚠ **The two forms are PREFIXED (`t` / `b`) so they cannot collide.** A timestamp and a
+        bar index are both bare integers, and an unprefixed key could in principle name one
+        setup by time and a different one by number and call them the same thread.
+
+        ⚠ **The fallback still moves across a restart, and that is accepted rather than hidden.**
+        It is only reached when the SOS bar fell off the tail of `_bar_ms` (20,000 bars), which
+        is far older than any live setup; refusing to key it at all would silence the setup
+        entirely, which is the same failure with fewer clues.
         """
-        return f"{self.strategy_name}:{'L' if is_long else 'S'}:{sos_bar}"
+        side = 'L' if is_long else 'S'
+        anchor = f"t{sos_ms}" if sos_ms is not None else f"b{sos_bar}"
+        return f"{self.strategy_name}:{side}:{anchor}"
 
     def _announce_ready(self, sig, sos_bar: Optional[int], is_long: bool) -> bool:
         """Has price retraced far enough for this setup's RESTING ORDER to be worth announcing?
@@ -1837,7 +1867,7 @@ class Execution:
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
         return {
-            "key": self._setup_key(is_long, m.sos_bar),
+            "key": self._setup_key(is_long, m.sos_bar, m.sos_ms),
             # Can this setup still reach a fill under the config this bot is running? `_armed`
             # requires `arm_ok_*`, which is these same enable-filtered flags — and the arm source
             # is SNAPSHOTTED at the SOS bar (`seq.sos_l_swp` / `.sos_l_div`), so a setup armed by
@@ -1874,7 +1904,15 @@ class Execution:
 
         A missing `ctx` is dropped in silence and that is deliberate: it means the watch was
         opened before this bar's context was captured (a warm-up boundary, or a restart), so
-        there is no setup the reader was ever told about to close.
+        this PROCESS never built a snapshot for it.
+
+        ⚠ **"This process was never told" stopped meaning "the reader was never told" on
+        2026-09-16.** The alert layer now keeps its open threads on disk, so a setup announced
+        before a restart still has a live Telegram thread when its death lands here with no ctx.
+        That case is closed by `SetupAlerts.reconcile` at the end of the next warm-up instead —
+        with a message that says the outcome was not recorded, because here there is genuinely
+        nothing to report. Do not "fix" it by inventing a snapshot: a composed reason is a second
+        explanation for one death, which is what this class is written to avoid.
         """
         if ctx is None:
             return

@@ -203,7 +203,7 @@ def test_opening_a_watch_CLEARS_both_new_latches():
     """
     m = _MissWatch()
     m.blk_t = m.blk_q = True
-    m.open(sos_bar=1, arm_src="SWP", swp_nm="Day Low")
+    m.open(sos_bar=1, sos_ms=1_000, arm_src="SWP", swp_nm="Day Low")
     assert m.blk_t is False
     assert m.blk_q is False
 
@@ -211,7 +211,7 @@ def test_opening_a_watch_CLEARS_both_new_latches():
 # ── the Telegram snapshot ────────────────────────────────────────────────────────────────────
 def _ctx(ex, tight=False, quiet=False, ready=True):
     m = _MissWatch()
-    m.open(sos_bar=7, arm_src="SWP", swp_nm="Day Low")
+    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
     if ready:
         m.zone = True
         m.fvg = True
@@ -278,7 +278,7 @@ def test_a_caller_that_FORGETS_the_price_flags_fails_loudly():
     import pytest
 
     m = _MissWatch()
-    m.open(sos_bar=7, arm_src="SWP", swp_nm="Day Low")
+    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
     with pytest.raises(TypeError):
         _ex()._setup_context(_sig(), m, True, arm_swp=True, arm_div=False,
                              veto=False, late=False, htf_any=False)

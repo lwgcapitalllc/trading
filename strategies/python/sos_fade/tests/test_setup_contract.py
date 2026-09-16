@@ -72,7 +72,7 @@ def _real_context(ex, is_long=True):
                           low=102.5 if is_long else 91.0,
                           high=104.0 if is_long else 93.5)
     m = _MissWatch()
-    m.open(sos_bar=7, arm_src="SWP", swp_nm="Day Low")
+    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
     return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
                              veto=False, late=False, htf_any=False,
                              tight=False, quiet=False)
@@ -190,7 +190,7 @@ def _ctx_at(ex, low, high, is_long=True, sos_bar=7):
                           fibo_p6=95.0, fibo_p10=94.0, fibo_dir=1 if is_long else -1,
                           fibo_ash=105.0, fibo_asl=90.0, low=low, high=high)
     m = _MissWatch()
-    m.open(sos_bar=sos_bar, arm_src="SWP", swp_nm="Day Low")
+    m.open(sos_bar=sos_bar, sos_ms=None, arm_src="SWP", swp_nm="Day Low")
     return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
                              veto=False, late=False, htf_any=False,
                              tight=False, quiet=False)
@@ -250,3 +250,61 @@ def test_the_gate_fib_must_stay_SHALLOWER_than_the_entry_band():
         with pytest.raises(ValueError, match="alert_resting_fib"):
             LAB_STRATEGY["config"](fill_model="bar", symbol="XAUUSD", alert_resting_fib=bad)
     LAB_STRATEGY["config"](fill_model="bar", symbol="XAUUSD", alert_resting_fib=0.382)
+
+
+# ── the setup's IDENTITY must outlive a re-warm ──────────────────────────────────────────────
+def test_the_setup_key_does_NOT_move_when_the_bar_NUMBERS_shift_under_it():
+    """🔴 MEASURED, 2026-09-15: a mid-session re-warm slid one live setup's SOS bar number from
+    4958 to 4888 on `sos_fade_1` and from 5050 to 4980 on `sos_fade_2`, both by exactly 70 bars.
+    The bar number is an offset into the warm-up window, and the window slides; the setup did not
+    change at all. Keyed on that number, the alert layer saw a NEW setup, posted a second
+    `SETUP FORMING` and orphaned the first — four identical alerts for one setup in 24 hours.
+
+    RED against the old `f"{name}:{side}:{sos_bar}"`.
+    """
+    ex = _strategy().execution
+    before = ex._setup_key(True, 4958, 1_789_400_000_000)
+    after = ex._setup_key(True, 4888, 1_789_400_000_000)
+    assert before == after, "the same setup was renamed by a re-warm"
+
+
+def test_two_DIFFERENT_setups_that_share_a_bar_number_are_still_two_setups():
+    """The other half, and the one a naive "just use the time" fix gets wrong in reverse: the
+    number is reused across re-warms, so two genuinely different legs can carry the same one.
+    Their TIMES differ, so their threads must.
+    """
+    ex = _strategy().execution
+    a = ex._setup_key(True, 4958, 1_789_400_000_000)
+    b = ex._setup_key(True, 4958, 1_789_600_000_000)
+    assert a != b
+
+
+def test_a_setup_whose_TIME_is_unknown_falls_back_WITHOUT_colliding_with_a_timed_one():
+    """The fallback is reached only for an SOS bar older than the 20,000-bar tail. It still moves
+    across a restart — accepted, and stated in the docstring — but it must never be mistaken for
+    a setup keyed by time. ⚠ RED against an unprefixed key: `:4958` would equal `:4958`.
+    """
+    ex = _strategy().execution
+    untimed = ex._setup_key(True, 4958, None)
+    timed = ex._setup_key(True, 1, 4958)
+    assert untimed != timed
+
+
+def test_the_two_SIDES_never_share_a_thread_even_at_the_same_SOS_bar():
+    """A long and a short can both be watching off one bar. Sharing a key would file one side's
+    outcome onto the other's thread."""
+    ex = _strategy().execution
+    assert ex._setup_key(True, 7, 7_000) != ex._setup_key(False, 7, 7_000)
+
+
+def test_opening_a_watch_SNAPSHOTS_the_SOS_time_so_it_cannot_be_looked_up_later_and_missed():
+    """The time must be captured at OPEN, not read at render: by the time a setup dies, its SOS
+    bar may have fallen off the tail of the bar-time map, and the key would change on the very
+    message that closes the thread."""
+    from strategies.python.sos_fade.execution import _MissWatch
+
+    m = _MissWatch()
+    m.open(sos_bar=4958, sos_ms=1_789_400_000_000, arm_src="SWP", swp_nm="Day Low")
+    assert m.sos_ms == 1_789_400_000_000
+    m.open(sos_bar=4959, sos_ms=None, arm_src="DIV", swp_nm="")
+    assert m.sos_ms is None, "a re-open must not keep the previous setup's time"

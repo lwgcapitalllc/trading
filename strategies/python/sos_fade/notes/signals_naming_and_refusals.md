@@ -246,3 +246,37 @@ counterfactual entry price (+13.0R at fib 0.618, **−6.7R at 0.5**), which is t
 rather than an edge. Deepening the entry and loosening which gaps qualify are both worse still.
 **Read the layer as "why didn't this trade", never as "here is missed money"** — full record and the
 three other routes in `sos_fade_optimization.md` → Run 12 / 12b.
+
+---
+
+## 🔴 The setup's IDENTITY was a bar POSITION, and a re-warm renumbers it (2026-09-16)
+
+`_setup_key` is the Telegram thread id AND the alert layer's dedupe key, and it was
+`f"{name}:{side}:{sos_bar}"`. **`sos_bar` is an offset into the warm-up window, so it slides every
+time the engines re-warm.** MEASURED 2026-09-15: one live setup's number slid **4958 → 4888** on
+`sos_fade_1` and **5050 → 4980** on `sos_fade_2`, both by exactly **70 bars** — the window moving,
+not new structure. Each slide RENAMED a setup that had not changed, so the reader got a second
+`SETUP FORMING` for it and the first thread was orphaned for good.
+
+⚠ **The old docstring claimed the opposite** — "keyed on the SOS bar rather than on anything that
+moves" — while `_same_leg`, forty lines above it in the same file, already carried a TIME fallback
+for exactly this. Two answers to one question, disagreeing for the life of the feature.
+
+**Now:** `_MissWatch.open` snapshots the SOS bar's timestamp (`sos_ms`) off `_bar_ms`, and
+`_setup_key` anchors on it. The bar number survives only as a **prefixed** fallback (`t…` / `b…`)
+for a bar older than the 20,000-entry time map. ⚠ The prefixes are load-bearing: a timestamp and a
+bar index are both bare integers, and an unprefixed key could call two different setups one thread.
+⚠ The time is captured at OPEN, never looked up at render — by the time a setup dies its SOS bar may
+have fallen off the map, and the key would then change on the very message that closes the thread.
+
+⚠ **`sos_ms` has NO DEFAULT on `open()`**, same stance as `tight`/`quiet` on `_setup_context`: a
+caller that forgets it must fail at the call rather than silently key every setup by a number again.
+
+**REPORTING ONLY, and the parity gate cannot prove it for you** — `compare_strategy.py` on the
+golden export is RED on `px_s_stage` at bar 16 and was RED identically before this change. What it
+rests on is that `sos_ms` and `_setup_key` are read only by `_setup_context`, and nothing in that
+block is called from `step`, `step_secondary` or `_manage_open`.
+
+**The other half of this defect was in the alert layer** — its bookkeeping lived in memory, so a
+restart re-announced every open setup regardless of the key. Either one alone still duplicates.
+Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID NOT SURVIVE A RESTART*.
