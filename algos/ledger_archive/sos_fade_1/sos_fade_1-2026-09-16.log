@@ -179,3 +179,5 @@
 2026-09-16 22:15:05,367 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 06:45:00+00:00 → 2026-09-16 22:10:00+00:00).
 2026-09-16 22:15:05,369 [INFO] Equity re-anchored to the account after warm-up: 14,391.80 → 15,844.46
 2026-09-16 22:15:05,373 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-16 22:30:07,879 [INFO] place bearish primary limit 0.22L @ 4316.981400000001 SL 4352.437800000001 TP none
+2026-09-16 22:30:07,992 [INFO] PENDING PLACED | ticket=379558872 | bearish 0.22L @ 4316.98 | SL=4352.44 TP=none
