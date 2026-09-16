@@ -131,9 +131,17 @@ _HEAD = (
 
 
 # ── the config axis ──────────────────────────────────────────────────────────────
-def _coerce(current: Any, raw: str) -> Any:
+def _coerce(current: Any, raw: str, annotation: Any = None) -> Any:
     """Coerce a command-line value to the field's EXISTING type, so `--axis flag=False` cannot
-    quietly become the truthy string 'False'."""
+    quietly become the truthy string 'False'.
+
+    🔴 **A FIELD WHOSE CURRENT VALUE IS `None` HAS NO TYPE TO READ OFF, AND THIS SILENTLY
+    RETURNED THE RAW STRING UNTIL 2026-09-15.** Every `Optional` lever in the repo was therefore
+    unsweepable — `--axis realign_tp_r=2` handed the config the string `"2"`, and a config
+    without a validator would have REPLAYED it, comparing a row against a value it never held.
+    That is rule 1's shape: "unset" and "set to this" must not collapse into one value. So when
+    the current value cannot answer, the declared ANNOTATION is asked instead, and a field that
+    answers neither is refused rather than guessed at."""
     raw = raw.strip()
     if isinstance(current, bool):
         return raw.lower() in ("1", "true", "yes", "on")
@@ -141,6 +149,21 @@ def _coerce(current: Any, raw: str) -> Any:
         return int(float(raw))
     if isinstance(current, float):
         return float(raw)
+    if current is None:
+        if raw.lower() in ("none", "off", "null"):
+            return None
+        inner = {t for t in getattr(annotation, "__args__", ()) if t is not type(None)}
+        if inner == {int}:
+            return int(float(raw))
+        if inner == {float}:
+            return float(raw)
+        if inner == {str}:
+            return raw
+        raise SystemExit(
+            f"cannot sweep a field that is currently None and whose type is {annotation!r}: "
+            f"{raw!r} would be passed through as a string and replayed as one. Give the field "
+            f"a concrete Optional[int|float|str] annotation, or pin it to a value first."
+        )
     return raw
 
 
@@ -250,13 +273,20 @@ def main(argv=None) -> int:
         raise SystemExit("no bars returned for that window")
 
     base = ConfigCls(symbol=args.symbol)
+    # Declared types, so a lever whose current value is None can still be coerced — see `_coerce`.
+    try:
+        import typing
+
+        _hints = typing.get_type_hints(ConfigCls)
+    except Exception:
+        _hints = {}
     pins: dict = {}
     for p in args.pins:
         field, raw = p.split("=", 1)
         field = field.strip()
         if not hasattr(base, field):
             raise SystemExit(f"--pin {field!r}: no such field on {ConfigCls.__name__}")
-        pins[field] = _coerce(getattr(base, field), raw)
+        pins[field] = _coerce(getattr(base, field), raw, _hints.get(field))
     if pins:
         base = dataclasses.replace(base, **pins)
 
@@ -279,8 +309,9 @@ def main(argv=None) -> int:
         if not hasattr(base, field):
             raise SystemExit(f"--axis {field!r}: no such field on {ConfigCls.__name__}")
         cur = getattr(base, field)
+        ann = _hints.get(field)
         for raw in raws.split(","):
-            val = _coerce(cur, raw)
+            val = _coerce(cur, raw, ann)
             combos.append(
                 Combo(
                     params={"__row": f"{field}={val!r}", "__axis": field},

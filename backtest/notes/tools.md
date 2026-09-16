@@ -378,6 +378,16 @@ CLAUDE.md gets at most one index line.
   LENGTH and a re-run on the other cache disagrees with every figure while looking healthy.
   ⚠ **An UNASSERTED control prints a loud line saying so** — a control nobody can check is
   decoration, and staying silent about it would let the next reader take it for a verified one.
+  🔴 **`--axis` / `--pin` on a field whose current value is `None` passed the RAW STRING through
+  until 2026-09-15, so EVERY `Optional` lever in the repo was unsweepable** — `_coerce` reads the
+  type off the CURRENT value and `None` has none, so `--axis realign_tp_r=2` handed the config the
+  string `"2"` while the table labelled the row `2`. A config with a validator crashes (which is
+  how it was found); one without would have REPLAYED the string and scored a row against a value
+  it never held. Rule 1's shape exactly: *unset* and *set to this* collapsing into one value. It
+  now falls back to the field's declared ANNOTATION (`Optional[int|float|str]`), accepts
+  `none`/`off`/`null` as `None`, and REFUSES a field it cannot type rather than guessing.
+  ⚠ **No stored result moves** — the old path could only produce a crash or a string-valued
+  config, so no published figure was ever produced through it.
   ⚠ **One axis at a time, never a cartesian product, and that is the point rather than a
   limitation.** A grid over a ~100-trade book returns a winner whether or not one exists; sweeping
   an axis puts every winner's NEIGHBOURS in the table by construction, which is the only thing
