@@ -593,24 +593,74 @@ asks for something other than gaps, so at shipped settings the block list is emp
 146 setups"* off exactly that, and it read as a finding. A registry nobody populated answers
 confidently and wrongly.
 
-## The contention log under-reports, and it is a stated gap (2026-09-15)
+## The contention log records the PLACEMENT gate too, and a row is an EPISODE (2026-09-16)
 
-`PortfolioAccount.contention` is documented as every shrink and refusal. It is not, and has never
-been: it records only what `request_fill` decided, at the FILL. The placement-time twin,
-`affordable_qty`, has never logged one — so every entry a stack shrank or refused **before** the
-order existed is missing from the run's evidence.
+**Closed on Aaron's word, 2026-09-16** — it had been open since 2026-09-15 as a stated gap and is
+kept here because the reasoning is what a reader of an older run needs.
 
-This matters because placement is where the live path decides, and where a stack run's strategies
-decide too: `Execution._fit_to_budget` calls `affordable_qty` on every armed bar.
+**What was wrong.** `PortfolioAccount.contention` was documented as every shrink and refusal. It
+was not: it held only what `request_fill` decided, at the FILL. The placement-time twin,
+`affordable_qty`, had never logged one — so every entry a stack shrank or refused **before** the
+order existed was missing from the run's evidence, which is where the live path and every stack
+leg actually decide (`Execution._fit_to_budget` calls it on every armed bar).
 
-**It was deliberately NOT closed while adding the live alerts.** `contention` is a finished run's
-evidence — quoted in the stack report, compared between runs, and already reasoned about. Starting
-to append placement-time rows would move figures in runs Aaron has already drawn conclusions from,
-and that is a measured decision of his, not a side effect of a Telegram message. Pinned by
-`test_the_PLACEMENT_gate_does_not_touch_the_runs_own_contention_log`.
+**Why it waited.** `contention` is a finished run's evidence, quoted in the stack report and
+compared between runs. Appending to it moves figures in runs already reasoned about, so it was
+Aaron's call rather than a side effect of adding the Telegram alerts.
 
-**What closing it needs:** a stack replay before and after, reporting whether trades and R are
-unchanged (they must be — logging decides nothing) and by how much the contention count moves.
+### `at` says which moment decided it
+
+Every row now carries `at`: `"placement"` (no order was ever sent) or `"fill"` (an order was
+resting and got cut when it filled). They are different events about different things and a
+reader counting a mixed list cannot tell which happened. **It is also how anyone comparing
+against a run recorded before 2026-09-16 gets the old figure back** — those are the `fill` rows.
+
+⚠ `reason` (which of the three rules refused it) is on placement rows only. The fill gate tests
+its rules together and does not know which bit, so the key is ABSENT rather than filled with a
+guess — rule 1.
+
+### 🔴 A row is one EPISODE, not one bar, and the difference was 20x
+
+The placement gate is asked again on every bar a setup stays armed, so one setup answers hundreds
+of times. **Measured: appending each one put 976 rows in a stack log holding 42 real occasions**,
+and the summary's dollars summed one setup's refused risk once per bar — $18.5M of it. A reader of
+"977 contention events" concludes 977 trades were cut. The arithmetic was right and every number
+it produced was misleading, which is this repo's standing warning about a verified metric.
+
+So a run of bars deciding the same thing about the same leg — same direction, same outcome, same
+rule — extends the row already open (`bars`, `last_time`) instead of adding one. An episode ends
+on:
+
+- **a clean pass** — the leg asked and was not cut; and
+- **a gap longer than the spacing that episode has already shown.** ⚠ The clean pass alone is not
+  enough and taking it as the only ending HALVES the count: a leg that goes idle stops asking
+  altogether, so two setups months apart are never separated by a pass that fits (measured: 21
+  rows for 42 occasions). The boundary calibrates off the episode's own first gap — the account is
+  handed no bar size and a guessed one would be a number nobody measured (rule 4).
+
+⚠ **The live WATCHER is still told every time; only the log dedups.** The bridge keeps its own
+episode state and needs each call to maintain it, and it is deployed — a change in what it hears
+would be a live behaviour change smuggled in under a logging fix.
+
+⚠ **`now` is None until a clock is pushed and a LIVE account may never get one.** An unmeasurable
+gap is not a zero one (rule 1) and may not end an episode. Subtracting straight through raised
+TypeError on the first repeat — **a crash in a live bot's sizing path**, caught by the bridge
+suite before it landed.
+
+### MEASURED before landing (2026-09-16)
+
+`sos_fade` 15m + `extreme_leg` 5m on XAUUSD.p, PU Prime demo bars, 2018-09-14 → 2026-09-15,
+$10,000 opening, 5% a side:
+
+| cap | contention before | contention after | trades | R | closing |
+|---|---|---|---|---|---|
+| 10% (the live shape) | none | none | 318 | +263.53 | $25,147,617.03 |
+| 7% (made to bind) | 1 | 39 (1 fill, 38 placement) | 318 | +263.53 | $25,292,292.21 |
+
+**At the live cap nothing changes at all** — two 5% shares fit a 10% cap exactly, so it never
+binds. At a binding cap the log gains 38 placement episodes covering 976 bar-evaluations, and
+trades, R and the closing balance are identical. **Logging decides nothing**, which is the
+property that had to be shown.
 
 ## The live tap — `on_contention`
 

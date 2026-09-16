@@ -1022,21 +1022,151 @@ def test_the_tap_is_OFF_unless_somebody_installs_one():
     assert SoloAccount(balance=10_000.0).on_contention is None
 
 
-def test_the_PLACEMENT_gate_does_not_touch_the_runs_own_contention_log():
-    """🔴 The stated gap, pinned so it cannot close by accident. `contention` is a finished run's
-    evidence, quoted in the stack report and compared between runs; appending placement-time
-    events to it would silently move figures already recorded and reasoned about. That is a
-    MEASURED decision for Aaron, not a side effect of adding a Telegram message.
+# ── the placement gate joins the run's own log (2026-09-16) ──────────────────────────────────
+#
+# 🔴 It did not until 2026-09-16, and the previous check here PINNED THE GAP OPEN on purpose —
+# `contention` was documented as every shrink and refusal while holding only what the FILL gate
+# decided. Closing it moves the contention count of runs already reasoned about, so it waited for
+# Aaron's word. Measured before landing: at the live 10% cap nothing changes (the cap never
+# binds); at a binding 7% cap the log goes 1 → 39 with trades and R byte-identical.
+#
+# ⚠ These drive the REAL `SoloAccount` with a stated room — the live shape — rather than a double
+# that answers something the real one cannot (rule 13).
 
-    Mutation run RED 2026-09-15: pointing the placement gate at `_log_contention` instead left
-    one row in the log.
+
+def _cut(acct, *, room, desired=500.0, dir=1, now=None):
+    """One placement-time ask that does not fit, at an optional clock time."""
+    if now is not None:
+        acct.now = now
+    acct.external_room = float(room)
+    entry, stop = (100.0, 99.0) if dir > 0 else (100.0, 101.0)
+    return acct.affordable_qty("a", entry, stop, 1.0, desired)
+
+
+def test_the_PLACEMENT_gate_RECORDS_in_the_runs_own_log_and_says_it_was_placement():
+    """The gap this closed. A stack leg refused before its order existed left no trace in the
+    run's own evidence, while the report called that log every shrink and refusal.
+
+    Mutation run RED 2026-09-16: dropping the append left the log empty.
+    """
+    acct = _live_account(100.0)
+    assert _cut(acct, room=100.0) == 0.0
+    assert len(acct.contention) == 1
+    row = acct.contention[0]
+    assert row["at"] == "placement", "which MOMENT decided it"
+    assert row["reason"] == "share", "and which of the three rules"
+    assert row["blocked"] is True
+
+
+def test_a_FILL_row_says_fill_and_invents_no_reason():
+    """`at` is what gives anyone comparing against a run recorded before 2026-09-16 the old
+    figure back. ⚠ The fill gate tests its three rules together and does not know which bit, so
+    the key is ABSENT rather than filled with a guess — rule 1.
+
+    Mutation run RED 2026-09-16: defaulting `reason` to "share" on a fill row.
+    """
+    acct = _live_account(100.0)
+    acct.request_fill("a", 1, 100.0, 99.0, 500.0, 1.0)
+    assert len(acct.contention) == 1
+    row = acct.contention[0]
+    assert row["at"] == "fill"
+    assert "reason" not in row
+
+
+def test_the_SAME_setup_cut_bar_after_bar_is_ONE_row_that_counts_the_bars():
+    """🔴 The placement gate is asked again every bar a setup stays armed, so appending each one
+    put 976 rows in a stack log holding 42 real occasions — and "977 contention events" tells a
+    reader 977 trades were cut. The row keeps the FIRST bar's figures and counts the rest.
+
+    Mutation run RED 2026-09-16: appending unconditionally left 4 rows.
+    """
+    acct = _live_account(100.0)
+    for i in range(4):
+        assert _cut(acct, room=100.0, now=i * 900_000) == 0.0
+    assert len(acct.contention) == 1, "one setup, one row"
+    assert acct.contention[0]["bars"] == 4
+    assert acct.contention[0]["last_time"] == 3 * 900_000
+
+
+def test_a_CLEAN_pass_ends_the_episode_so_the_next_cut_is_its_own_row():
+    """The leg asked and was not cut, so whatever was being refused is over."""
+    acct = _live_account(100.0)
+    _cut(acct, room=100.0, now=0)
+    assert _cut(acct, room=10_000.0, now=900_000) == 500.0, "it fits — nothing is cut"
+    _cut(acct, room=100.0, now=1_800_000)
+    assert len(acct.contention) == 2
+
+
+def test_a_LONG_gap_ends_the_episode_even_though_nothing_ever_fit():
+    """🔴 A clean pass is not the only ending, and taking it as the only one HALVES the count: a
+    leg that goes idle stops asking at all, so two setups months apart are never separated by a
+    pass that fits. Measured on the 2026-09-16 stack: 21 rows for 42 occasions. The boundary is
+    the spacing the episode has already shown — the account is handed no bar size, and a guessed
+    one would be a number nobody measured (rule 4).
+
+    Mutation run RED 2026-09-16: extending on any gap left 1 row.
+    """
+    acct = _live_account(100.0)
+    _cut(acct, room=100.0, now=0)
+    _cut(acct, room=100.0, now=900_000)  # one bar on — this is what reveals the spacing
+    assert len(acct.contention) == 1
+    _cut(acct, room=100.0, now=900_000 + 90 * 86_400_000)  # three months later
+    assert len(acct.contention) == 2, "a different occasion, not the same one going on"
+    assert acct.contention[0]["bars"] == 2
+
+
+def test_the_OTHER_SIDE_being_cut_is_its_own_row():
+    """A bullish setup cut and a bearish one cut are two occasions, not one going on."""
+    acct = _live_account(100.0)
+    _cut(acct, room=100.0, dir=1, now=0)
+    _cut(acct, room=100.0, dir=-1, now=900_000)
+    assert len(acct.contention) == 2
+    assert [r["dir"] for r in acct.contention] == [1, -1]
+
+
+def test_a_DIFFERENT_rule_refusing_it_is_its_own_row():
+    """Three rules can refuse an entry and they call for different work, so a setup whose
+    refusal changes rule is a new fact, not the same one continuing."""
+    acct = _live_account(100.0)
+    _cut(acct, room=100.0, now=0)
+    assert acct.contention[0]["reason"] == "share"
+    _cut(acct, room=0.0, now=900_000)
+    assert len(acct.contention) == 2
+    assert acct.contention[1]["reason"] == "dust"
+
+
+def test_an_account_with_NO_CLOCK_can_be_cut_twice_without_crashing():
+    """🔴 A LIVE account may never get a clock pushed — its emulator is driven by the bridge, not
+    by a replay — so `now` is None. Subtracting straight through raised TypeError on the SECOND
+    cut, which is a crash in a live bot's sizing path, and it reached the full suite before the
+    bridge tests caught it. An unmeasurable gap may not end an episode either (rule 1): with the
+    signature unchanged it is the same occasion until a clean pass says otherwise.
+
+    Mutation run RED 2026-09-16: subtracting without the None guard → TypeError.
+    """
+    acct = _live_account(100.0)
+    assert acct.now is None
+    acct.external_room = 100.0
+    for _ in range(3):
+        assert acct.affordable_qty("a", 100.0, 99.0, 1.0, 500.0) == 0.0
+    assert len(acct.contention) == 1
+    assert acct.contention[0]["bars"] == 3
+
+
+def test_the_WATCHER_is_still_told_every_bar_even_though_the_log_dedups():
+    """🔴 The live bridge keeps its OWN episode state and needs every call to maintain it, and it
+    is DEPLOYED. A change in what it hears would be a live behaviour change smuggled in under a
+    logging fix — only the log dedups.
+
+    Mutation run RED 2026-09-16: returning before `_tell` on an extended episode left 1 call.
     """
     acct = _live_account(100.0)
     seen: list = []
     acct.on_contention = seen.append
-    assert acct.affordable_qty("a", 100.0, 99.0, 1.0, 500.0) == 0.0
-    assert seen, "the live tap still hears it"
-    assert acct.contention == [], "and the run's own log does not"
+    for i in range(4):
+        _cut(acct, room=100.0, now=i * 900_000)
+    assert len(acct.contention) == 1, "the log holds the episode"
+    assert len(seen) == 4, "the watcher hears every bar"
 
 
 def test_a_watcher_that_THROWS_cannot_cost_a_trade():

@@ -235,6 +235,11 @@ class PortfolioAccount:
         # gone. Found by running the feature, not by reading it.
         self.clock_external = False
         self.contention: list[dict] = []
+        # The placement-time row currently OPEN per leg, as `(signature, row)` — see
+        # `_log_contention`. A setup that stays armed is re-judged every bar, so this is what
+        # keeps one cut setup to one row instead of one row per bar. Never serialised: it holds a
+        # reference to a row that is already in `contention`, not a second copy of it.
+        self._placement_episode: dict[str, tuple] = {}
         # WHO TO TELL, THE MOMENT A LEG IS SHRUNK OR REFUSED FOR LACK OF ROOM. `None` = nobody,
         # which is every backtest, every parity gate and every stored run — so this cannot move a
         # number. The LIVE bridge sets it, and is the only caller that does.
@@ -393,12 +398,34 @@ class PortfolioAccount:
         ⚠ **An unbudgeted account returns the desired size UNCHANGED, including infinite room.**
         That is what keeps every solo run and every parity gate byte-identical: with no budget
         stated there is nothing to shrink to, so this cannot move a stored result.
+
+        🔴 **Every decision here lands in the run's contention log, tagged `at="placement"`
+        (2026-09-16).** It did not until then, and the log was documented as every shrink and
+        refusal while holding only what the FILL gate decided — so a stack's own evidence was
+        missing the entries it refused before an order existed, which is where the live path and
+        every stack leg actually decide. Aaron's call, after it was put to him as a measured one:
+        closing it moves the contention COUNT of runs already reasoned about, so `at` is what
+        gives an old figure back (`fill` rows alone) rather than leaving the gap open.
+
+        **MEASURED 2026-09-16**, `sos_fade` 15m + `extreme_leg` 5m on XAUUSD.p, PU Prime demo
+        bars, 2018-09-14 → 2026-09-15, $10,000 opening, 5% a side:
+
+        * **At the live 10% cap nothing moves at all** — no contention before or after, because
+          two 5% shares fit the cap exactly and it never binds.
+        * **At a deliberately binding 7% cap the log goes 1 event → 39** (1 fill, 38 placement),
+          and the run is otherwise byte-identical: 318 trades, +263.53R, closing $25,292,292.21,
+          the same before and after. **Logging decides nothing**, which is the property that had
+          to be shown before this could land.
+        * The 38 placement rows cover **976 bar-evaluations** — see `_log_contention` for why a
+          row is an episode rather than a bar, and what the raw count would have told a reader.
         """
         room = self.room_for(leg)
         if room == float("inf") or desired_qty <= 0:
+            self._end_placement_episode(leg)
             return desired_qty
         desired_risk = self._risk_of(desired_qty, entry, stop, point_value)
         if desired_risk <= room:
+            self._end_placement_episode(leg)
             return desired_qty
         # Which way the trade faces, read off the trade itself: a stop BELOW the entry is a long.
         # It is not a parameter here and inventing a 0 would collide with "flat" (rule 1), while
@@ -407,20 +434,29 @@ class PortfolioAccount:
         # Not enough for a trade worth placing. Same two tests `request_fill` blocks on, so a
         # size this refuses to place could not have been granted at the fill either.
         if room < _MIN_GRANT_USD:
-            self._note_contention(leg, dir, desired_risk, 0.0, blocked=True, reason="dust")
+            self._log_contention(
+                leg, dir, desired_risk, 0.0, blocked=True, at="placement", reason="dust"
+            )
             return 0.0
         if self._below_floor(room):
-            self._note_contention(leg, dir, desired_risk, 0.0, blocked=True, reason="floor")
+            self._log_contention(
+                leg, dir, desired_risk, 0.0, blocked=True, at="placement", reason="floor"
+            )
             return 0.0
         if self._below_share(desired_risk, room):
-            self._note_contention(leg, dir, desired_risk, 0.0, blocked=True, reason="share")
+            self._log_contention(
+                leg, dir, desired_risk, 0.0, blocked=True, at="placement", reason="share"
+            )
             return 0.0
         per_unit = abs(float(entry) - float(stop)) * float(point_value)
         if per_unit <= 0:
             # An unpriceable trade is not an unaffordable one. Refusing here would turn a missing
             # tick value into a silent no-trade, which is the shape that reads as a broken engine.
+            self._end_placement_episode(leg)
             return desired_qty
-        self._note_contention(leg, dir, desired_risk, room, blocked=False, reason="shrunk")
+        self._log_contention(
+            leg, dir, desired_risk, room, blocked=False, at="placement", reason="shrunk"
+        )
         return room / per_unit
 
     def request_fills(self, requests: Sequence[dict]) -> dict[str, float]:
@@ -530,26 +566,6 @@ class PortfolioAccount:
         return frac > 0.0 and granted_risk < frac * desired_risk * (1.0 - _GRANT_EPS)
 
     def _contention_row(
-        self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool
-    ) -> dict:
-        return {
-            "time": self.now,
-            "leg": leg,
-            "dir": dir,
-            "desired_risk": round(desired_risk, 2),
-            "granted_risk": round(granted_risk, 2),
-            "blocked": blocked,
-        }
-
-    def _log_contention(
-        self, leg: str, dir: int, desired_risk: float, granted_risk: float, *, blocked: bool
-    ) -> None:
-        """Record it in the run's log AND tell whoever is watching live."""
-        row = self._contention_row(leg, dir, desired_risk, granted_risk, blocked=blocked)
-        self.contention.append(row)
-        self._tell(row)
-
-    def _note_contention(
         self,
         leg: str,
         dir: int,
@@ -557,29 +573,111 @@ class PortfolioAccount:
         granted_risk: float,
         *,
         blocked: bool,
-        reason: str,
-    ) -> None:
-        """Tell whoever is watching, WITHOUT adding to the run's log.
+        at: str,
+        reason: Optional[str] = None,
+    ) -> dict:
+        """One row of the run's contention log.
 
-        🔴 **The placement-time twin deliberately does not append, and that is a stated gap rather
-        than an oversight.** `contention` is a finished run's evidence, quoted in the stack report
-        and compared between runs. Every placement-time shrink and refusal is missing from it
-        today — `affordable_qty` has never logged one — so starting to append here would silently
-        move the contention figures of runs already recorded and already reasoned about, which is
-        a MEASURED decision for Aaron, not a side effect of adding a Telegram message.
+        🔴 **`at` says WHICH MOMENT decided it, and the log is ambiguous without it** — a
+        placement refusal means no order was ever sent, a fill refusal means an order was resting
+        and got cut when it filled. They are different events about different things, and a
+        reader counting a mixed list cannot tell which happened. It also gives anyone comparing
+        against a run recorded before 2026-09-16 the old figure back: those are the `fill` rows.
 
-        ⚠ So what this fixes is the live blind spot only: a live refusal left no trace anywhere,
-        in any system, and the bot simply placed nothing. The lab's under-reporting is written up
-        in `backtest/notes/` and stays open.
+        ⚠ **`reason` is ABSENT rather than invented on a fill row.** The placement gate knows
+        which of its three rules refused an entry; the fill gate tests them together and does not.
+        A made-up value there would be a measurement nobody took (rule 1).
         """
-        row = self._contention_row(leg, dir, desired_risk, granted_risk, blocked=blocked)
-        # ⚠ WHICH rule refused it, carried only on the live tap. Aaron's ask was *"rejected
-        # because of XYZ"*, and "blocked" on its own is the X with no YZ — three different rules
-        # can produce it and they call for different work. It is added HERE rather than in
-        # `_contention_row` so the shape of a logged row, which stored runs are compared on, does
-        # not change.
-        row["reason"] = reason
+        row = {
+            "time": self.now,
+            "leg": leg,
+            "dir": dir,
+            "desired_risk": round(desired_risk, 2),
+            "granted_risk": round(granted_risk, 2),
+            "blocked": blocked,
+            "at": at,
+        }
+        if reason is not None:
+            row["reason"] = reason
+        return row
+
+    def _log_contention(
+        self,
+        leg: str,
+        dir: int,
+        desired_risk: float,
+        granted_risk: float,
+        *,
+        blocked: bool,
+        at: str = "fill",
+        reason: Optional[str] = None,
+    ) -> None:
+        """Record it in the run's log AND tell whoever is watching live.
+
+        🔴 **A PLACEMENT row is one EPISODE, not one bar, and the difference is 20x
+        (MEASURED 2026-09-16).** The placement gate is asked again on every bar a setup stays
+        armed, so a setup that sits cut for a day answers hundreds of times about the SAME trade.
+        Appending each one put 976 rows in a stack log that held **42 actual setups** — and a
+        reader of "977 contention events" concludes 977 trades were cut, while the summary's
+        dollars sum one setup's refused risk once per bar ($18.5M of it). The arithmetic was
+        right and every number it produced was misleading, which is this repo's own standing
+        warning about a verified metric.
+
+        So a run of bars deciding the same thing about the same leg — same direction, same
+        outcome, same rule — extends the row already open (`bars`, `last_time`) instead of
+        adding one. It ends the moment that leg is NOT cut (`_end_placement_episode`, called on
+        every clean pass through `affordable_qty`), which is the same episode shape the live
+        alerts already use.
+
+        ⚠ **The WATCHER is still told every time.** Only the log dedups. The live bridge keeps
+        its own episode state and needs each call to maintain it, and it is deployed — a change
+        in what it hears would be a live behaviour change smuggled in under a logging fix.
+        """
+        row = self._contention_row(
+            leg, dir, desired_risk, granted_risk, blocked=blocked, at=at, reason=reason
+        )
+        if at == "placement":
+            signature = (dir, blocked, reason)
+            open_episode = self._placement_episode.get(leg)
+            if open_episode is not None and open_episode[0] == signature:
+                held, step, last = open_episode[1], open_episode[2], open_episode[3]
+                # ⚠ **`now` is None until a clock is pushed, and a LIVE account may never get
+                # one** — the emulator is driven by the bridge, not by a replay. So the gap is
+                # UNMEASURABLE rather than zero (rule 1), and an unmeasurable gap may not end an
+                # episode: with the signature unchanged and a clean pass still closing it, live
+                # gets exactly the episode shape the bridge's own alert dedup already uses.
+                # Subtracting straight through here raised TypeError on the first repeat, which
+                # is a crash in a live bot's sizing path — caught by the bridge suite.
+                gap = None if (self.now is None or last is None) else self.now - last
+                # 🔴 **A CLEAN PASS IS NOT THE ONLY END OF AN EPISODE, and taking it as the only
+                # one halves the count.** A leg that goes idle stops asking altogether, so two
+                # setups MONTHS apart are never separated by a pass that fits and would merge
+                # into one row — measured on the 2026-09-16 stack: 21 rows for 42 occasions.
+                # So the gap between bars ends one too, against the spacing this episode has
+                # ALREADY shown rather than a cadence passed in: the account is handed no bar
+                # size, and a guessed one would be a number nobody measured (rule 4).
+                if gap is None or step is None or gap <= step * 1.5:
+                    held["bars"] += 1
+                    held["last_time"] = self.now
+                    # The first repeat is what reveals the spacing; it cannot be known before.
+                    self._placement_episode[leg] = (
+                        signature,
+                        held,
+                        step if step is not None else gap,
+                        self.now if self.now is not None else last,
+                    )
+                    self._tell(row)
+                    return
+            row["bars"] = 1
+            row["last_time"] = self.now
+            self._placement_episode[leg] = (signature, row, None, self.now)
+        self.contention.append(row)
         self._tell(row)
+
+    def _end_placement_episode(self, leg: str) -> None:
+        """This leg asked and was NOT cut, so whatever was being refused is over. The next cut
+        starts a new row rather than extending a stale one."""
+        self._placement_episode.pop(leg, None)
 
     def _tell(self, row: dict) -> None:
         """⚠ A watcher that throws must never cost a trade. This decides SIZE; the observer only
