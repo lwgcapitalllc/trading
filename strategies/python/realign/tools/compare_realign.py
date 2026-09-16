@@ -348,9 +348,17 @@ def main(argv=None) -> int:
     def _armed(side):
         return lambda row, st: bool(row[f"_{side}_armed"]) and bool(getattr(st, f"{side}_armed"))
 
+    # The resting limit's price and stop are latched the same way — the Pine never clears them —
+    # so they are compared only while EITHER side has an order resting. `px_pend_age` is blank
+    # whenever nothing rests and is compared everywhere, so a limit one side placed and the other
+    # did not still goes red. Found on the first Retest export: 20,296 stale rows.
+    def _resting(row, st):
+        return not math.isnan(_f(row["px_pend_age"])) or st.pend_px is not None
+
     scope = {
         "_step_long": _armed("long"), "px_tgt_l": _armed("long"), "px_ctr_l": _armed("long"),
         "_step_short": _armed("short"), "px_tgt_s": _armed("short"), "px_ctr_s": _armed("short"),
+        "px_pend_px": _resting, "px_pend_sl": _resting,
     }
 
 

@@ -10,7 +10,7 @@ tool are NOT on main** — they are parked on branch `research/realign-chart-fra
 command only runs from a checkout of it.
 
 ✅ **THE PARITY GATE IS GREEN (Run 8, 2026-09-16) — NARROWLY.** 3.5 months and 9 trades; the
-retest entry has never been compared. Sweeping is now allowed, and every result still sits on
+retest entry went green too (Run 9). Sweeping is now allowed, and every result still sits on
 bars the gate has never seen.
 **Tuning an ungated strategy optimises a Python program against itself.** See the root
 `CLAUDE.md` → *Never Do*, rule 22.
@@ -620,6 +620,28 @@ red against today's code, as it should — the Pine it was taken from no longer 
 - **refusal codes** — exported, not yet compared by the gate.
 - **shorts: three triggers.**
 
+### Run 9 — the retest entry: GREEN (2026-09-16)
+
+**Export:** `exports/golden/VANTAGE_XAUUSD_M5_21328bars_retest.csv` (taken as
+`VANTAGE_XAUUSD, 5_fb616.csv`) — Run 8's settings with **Entry = Retest** at the Level, expiry 12.
+
+**First pass: red on two things.**
+- **Stale resting-order prices** — the Pine never clears them, so 20,296 rows compared an old
+  order. Now compared only while either side has an order resting; the order's age, which the Pine
+  does blank, is still compared on every bar.
+- 🔴 **A zero-reward trade.** 2026-08-07 08:30: the retest limit sat EXACTLY on the target
+  (4304.13). The Pine refuses a target at the entry; the port, with the gate's floor at 0.0,
+  refused only one behind it, rested the order, filled it and staged straight to the trail. **No
+  reward, no trade** — the port now refuses `reward <= 0` whenever the floor is on. ⚠ The shipped
+  port has the floor OFF, so no book figure moves.
+
+**Then green on every field**, market export still green, Run 7's export still red. 9 fills, 1
+limit expired unfilled, 1 refusal. ⚠ **Never reached:** a limit cancelled because price hit its
+stop first, and a trigger with no level to rest at.
+
+⚠ **This is PARITY of the retest path, not validation of Run 2's retest result** — that was
+measured on the 5m trail, which is no longer the default.
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must
@@ -629,7 +651,7 @@ indistinguishable, and every bucketed "signal" was one trade). Runs 5 and 6 are 
 
 | | question | status |
 |---|---|---|
-| 1 | **The parity gate is green but NARROW** (Run 8). | ⚠ **OPEN.** The retest entry, a second same-side setup and the refusal codes have never been compared. The retest needs its own export before any Run 2-3 retest figure is trusted. |
+| 1 | **The parity gate is green but NARROW** (Runs 8-9). | ⚠ **OPEN.** A stop-cancelled retest limit, a second same-side setup and the refusal codes have never been compared. |
 | 1c | **Runs 2-6 were measured on the 5m trail**, which is no longer the default. | ⚠ **OPEN.** The retest entry, the 12h clock, the random control and the kept-trail study have not been re-run on the 15m trail. |
 | 1a | **Profit concentration: 3-5 trades carry 5.5 years** (Run 6). | ⚠ **OPEN, and not fixable by tuning.** It is a sizing and expectations question, not a defect. It is also why Run 6's top-trade-removal check now runs on every bucketed claim. |
 | 1b | **Three of the four Run 2-4 picks have no holdout** (the 12h clock, nightly flat, keeping the trail). | ⚠ **OPEN.** Run 2's pre-declaration spent the only holdout year on the retest, and a second draw on it would make it meaningless. **The clean validation is forward data — it does not exist yet.** |

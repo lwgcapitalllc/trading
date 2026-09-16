@@ -108,7 +108,8 @@ and WHEN, never how** — same command per gate, same pass rule, results in disc
 self-test still counts every export first, and an unknown `--only` name is refused.
 
 ✅ **REALIGN JOINED ON 2026-09-16 — five of five.** Its manifest names what the export never
-reached (the retest entry; a second same-side setup, whose rule this export cannot turn red).
+reached (a stop-cancelled retest limit; a second same-side setup, whose rule neither export can
+turn red). Two exports: the market entry and the retest entry.
 
 ✅ **STRATEGIES JOINED ON 2026-09-10 — all four**, from `strategies/python/*/exports/golden/`, so
 every strategy's parity gate, both LIVE bots' included, runs on every clone. 🔴 **BOS's was RED on

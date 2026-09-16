@@ -182,7 +182,11 @@ class RealignExecution(Execution):
         #   `tgtLong > close` guard, which this Python has never had. See the config.
         if cfg.realign_min_rr is not None:
             reward = (target - entry) * d
-            if reward < cfg.realign_min_rr * dist:
+            # 🔴 `reward <= 0` is refused whatever the floor, as the Pine's strict `tgtLong > px`
+            #    does. With the floor at 0.0 this read `reward < 0` until 2026-09-16 and took a
+            #    retest whose limit sat EXACTLY on the target — a trade with no reward, which the
+            #    third parity export caught on 2026-08-07 08:30 (limit and target both 4304.13).
+            if reward <= 0 or reward < cfg.realign_min_rr * dist:
                 return
 
         pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,

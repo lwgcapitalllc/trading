@@ -12,8 +12,9 @@ optimises a Python program against itself. Its one run is research on a separate
 the engines (`engines/`), the replay runner (`backtest/`), or the SOS Fade machinery it reuses
 (`strategies/python/sos_fade/`).
 **Status:** ✅ **PARITY GREEN on 2026-09-16, on the second export — and NARROW.** 3.5 months, 10
-triggers, 9 trades; the retest entry and the one-setup-per-side rule were never reached, so a green
-says nothing about either. The first export was red and every cause was fixed (see *The first parity
+triggers, 9 trades — and a third export at the RETEST entry is green too (9 fills, 1 expired).
+Never reached: a limit cancelled by its stop, and a second same-side setup, so a green says nothing
+about either. The first export was red and every cause was fixed (see *The first parity
 export*, below). The golden copy runs on every clone. The 2020-2026 figures sit on bars the gate has
 never seen. Built + unit-tested
 (count them with pytest). Read `docs/REALIGN_SPEC.md` for the setup and the full measurement record.
@@ -501,7 +502,7 @@ exists to settle.** It is green as of Run 8, narrowly.
 ## Rules
 
 - **Quote a number from this bot with the gate's scope beside it.** Green on 3.5 months (Run 8);
-  the retest entry and a second same-side setup have never been compared. Any Pine change needs a
+  a stop-cancelled retest limit and a second same-side setup have never been compared. Any Pine change needs a
   FRESH export — the golden copy is regression only.
 - **Take counts from `internal_realign_scan.py`; take the direction of anything exit-sensitive from
   a replay.** The scan had the short side's sign wrong. See above.

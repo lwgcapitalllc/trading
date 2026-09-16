@@ -292,6 +292,17 @@ def _fire(ex, sig, level=99.0, stop=98.0, target=110.0, d=+1):
     ex._place_entries(_Sig(sig.index, sig.close), None, object(), None, None)
 
 
+def test_a_limit_resting_exactly_on_the_target_is_refused():
+    """No reward, no trade — the Pine's strict `tgtLong > px`. With the floor at 0.0 the port read
+    `reward < 0` and rested this order; the Retest export caught it on 2026-08-07 08:30, limit
+    and target both 4304.13. Watched RED by restoring `<`: the order rests."""
+    ex = _exec(realign_min_rr=0.0)
+    _fire(ex, _Sig(close=100.0), level=99.0, stop=98.0, target=99.0)
+    assert ex._pend_long is None
+    _fire(ex, _Sig(close=100.0), level=99.0, stop=98.0, target=99.01)
+    assert ex._pend_long is not None, "a target one cent past the limit is a real trade"
+
+
 def test_the_retest_rests_a_limit_instead_of_opening_at_the_close():
     """The whole point. If this opens a position the row is a market entry wearing the
     retest's name, and its numbers would be compared against itself."""
