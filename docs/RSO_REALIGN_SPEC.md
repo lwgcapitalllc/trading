@@ -5,6 +5,8 @@
 and charged, on every frame: **it does not help, and on 5m and 15m it hurts** (section below).
 **2026-09-16, second pass:** the user's displacement rule, the shift-level retest and reward-to-risk
 at entry — **the far close is a bad entry as he said; nothing else in it clears the bar** (below).
+**2026-09-16, third pass:** the gold family on silver, EURUSD and NAS100 — bars nothing had looked
+at — **failed 0 of 3** (below). The pattern is measured out on this repo's data.
 Tool: `backtest/tools/rso_realign_study.py` (its docstring carries the same record).
 Tool note: `backtest/notes/tools.md`. Nothing here is a strategy, a bot or a Pine file.
 
@@ -247,6 +249,36 @@ tool, declared before the run:
 twice). Report: `backtest/reports/rso_realign_disp/grid_free.csv`, `grid_puprime_ecn.csv`. ⚠ Same
 searched bars as everything above — a lead at most, never a pick.
 
+## The cross-instrument test — 2026-09-16, failed 0 of 3
+
+The user asked for the most effective way to trade the pattern and for more trades. Buying trade
+count by loosening a rule has been measured to lose here (root CLAUDE.md, Run 12), so the honest
+route to frequency is the SAME rule on more instruments. The one family that cleared z 2 on gold —
+15m, 2+ counter BOS, fib-0.5 limit, 2 × ATR stop, 1.5R / 2R / 3R targets — had already failed its
+gold holdout, so bars nothing had looked at were its only remaining test.
+
+**Declared before a single bar was fetched** (tool docstring): PU Prime M1 for XAGUSD.p, EURUSD.p
+and NAS100, 2020-01-01 onward, fetched through the lab's bar source with the floor measured per
+symbol; run `--free` (costs are unmeasured off gold); PASS = that family positive in both halves and
+z ≥ 2 against its matched control on 2 of its 3 cells, on 2 of the 3 instruments.
+
+| instrument | M1 bars | t1.5 | t2 | t3 | both halves | z | verdict |
+|---|---|---|---|---|---|---|---|
+| gold (the build) | 2,371,706 | +0.315 | +0.406 | +0.533 | yes | +3.2 / +3.2 / +3.4 | in-sample; lost its holdout |
+| silver | 2,371,703 | +0.072 | −0.006 | +0.072 | no cell | — | **fail** |
+| EURUSD | 2,497,753 | +0.158 | +0.168 | +0.280 | all three | +1.47 / +1.69 / +1.87 | **fail** (under the bar) |
+| NAS100 | 2,363,731 | −0.094 | −0.092 | −0.114 | no cell | — | **fail** |
+
+- **0 of 3.** Silver's second half is negative on every cell; EURUSD shows the shape and never
+  clears the bar; NAS100 is the opposite sign.
+- Across each instrument's whole 576-cell grid: silver and EURUSD have **no** cell at z ≥ 2,
+  NAS100 has three (z 2.13–2.18, three unrelated cells) — what a null search returns.
+- **The user's 1m rule as drawn** is negative in all eight exits on silver (mean z −1.49) and
+  EURUSD (−1.40); on NAS100 seven of eight are positive and none is past z 1.3.
+
+Reports: `backtest/reports/rso_realign_xsym/<symbol>/grid_free.csv`. ⚠ The three new caches are
+now looked-at data for this pattern.
+
 ## What this leaves
 
 - 🔴 **Both periods are spent for this pattern.** Never test another cell on 2018-09-14 →
@@ -264,3 +296,7 @@ searched bars as everything above — a lead at most, never a pick.
   or holding intact through the pullback — removes half the setups and none of the noise.
 - **Neither is the displacement of the realign candle, nor a retest of the shift level** (2026-09-16,
   above). A far close is a bad entry, a near close is a coin flip, and the retest adds nothing.
+- **The gold family does not carry to silver, EURUSD or NAS100** (2026-09-16, above). The only
+  realignment that pays on this repo's data is the Realign bot's — the higher frame FALSE-BROKEN
+  and the lower frame realigning — `strategies/python/realign/`, and its next step is the parity
+  gate, not another pass on this pattern.

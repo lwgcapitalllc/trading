@@ -139,6 +139,25 @@ the last high; one that closes FAR needs a retracement back to the level first.
     z +1.5 / +1.4); 2+ stops away reached 28% of the time, -0.078 / -0.172R. Nothing new clears
     z 2 charged. Report: backtest/reports/rso_realign_disp/. Record: docs/RSO_REALIGN_SPEC.md.
 
+THE CROSS-INSTRUMENT TEST (`--symbol`, declared 2026-09-16 BEFORE any other symbol's bars were
+fetched). The user wants more trades from the pattern. The honest route to frequency in this repo
+is another instrument under the SAME rule, never a looser rule (root CLAUDE.md, Run 12). The one
+family that cleared z 2 on gold — 15m, 2+ counter BOS, fib-0.5 limit, 2 x ATR stop, t1.5 / t2 /
+t3 — failed its gold holdout, so bars nothing has looked at are its only remaining test.
+    instruments  XAGUSD.p, EURUSD.p, NAS100 (PU Prime M1, 2020-01-01 -> 2026-09-12 or the
+                 measured floor), fetched through the lab's bar source AFTER this text was written
+    run          --free (costs unmeasured off gold), the full grid, nothing re-tuned
+    PASS         that family positive in BOTH halves and z >= 2 against its matched control on at
+                 least 2 of its 3 target cells, on at least 2 of the 3 instruments
+    FAIL         anything less. The as-drawn rows and the 1m rows are reported for information;
+                 a different cell winning on a new instrument is a new search, not a pass.
+🔴 MEASURED 2026-09-16: FAILED 0 of 3. Silver (2,371,703 bars): no cell positive in both halves
+    (t2 -0.006R). EURUSD (2,497,753): all three positive in both halves, +0.158 / +0.168 / +0.280R,
+    z +1.47 / +1.69 / +1.87 — under the bar. NAS100 (2,363,731): -0.09 to -0.11R. Whole grids: 0, 0
+    and 3 cells at z >= 2 (NAS100's three unrelated, z 2.13-2.18). The 1m rule as drawn: negative
+    in all 8 exits on silver and EURUSD, 7 of 8 positive on NAS100 with none past z 1.3. Reports:
+    backtest/reports/rso_realign_xsym/<symbol>/. ⚠ Fetch pin = the terminal's name, PUPrime-Demo.
+
 Usage:
   python backtest/tools/rso_realign_study.py --recall          # find the user's 5 trades first
   python backtest/tools/rso_realign_study.py                   # the grid, 2020-01 -> 2026-09
@@ -176,7 +195,8 @@ from market_structure import Bar, StructureEngine  # noqa: E402
 from backtest.data.resample import resample_up  # noqa: E402
 from backtest.fills import PROFILES  # noqa: E402
 
-CACHE = ROOT / "backtest" / "cache" / "PUPrime_Demo" / "XAUUSD_p__M1.csv"
+CACHE_DIR = ROOT / "backtest" / "cache" / "PUPrime_Demo"
+CACHE = CACHE_DIR / "XAUUSD_p__M1.csv"  # --symbol swaps it; the study was built on gold
 BUILD = ("2020-01-01", "2026-09-12")
 SPLIT = np.datetime64("2023-05-01")
 HOLDOUT = ("2018-09-14", "2020-01-01")
@@ -217,10 +237,10 @@ EXAMPLES = [
 # ─────────────────────────────── bars ───────────────────────────────
 
 
-def load_1m(start: str, end: str) -> pd.DataFrame:
-    if not CACHE.exists():
-        sys.exit(f"no cached 1-minute bars at {CACHE}")
-    df = pd.read_csv(CACHE, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
+def load_1m(start: str, end: str, path: Path = CACHE) -> pd.DataFrame:
+    if not path.exists():
+        sys.exit(f"no cached 1-minute bars at {path}")
+    df = pd.read_csv(path, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
     df = df[(df["time"] >= start) & (df["time"] < end)].set_index("time")
     return df.astype(float)
 
@@ -882,6 +902,12 @@ def main() -> None:
         "--gates", default="none", help="comma list of none|htf|intact — see the docstring"
     )
     ap.add_argument("--disp-atr", type=float, default=DISP_ATR, help="the near/far line for `disp`")
+    ap.add_argument(
+        "--symbol",
+        default="XAUUSD.p",
+        help="another PU Prime symbol's cached M1 bars — a TEST of a gold-built rule, run --free: "
+        "the cost profile, the reopen clip and the swap point are gold's",
+    )
     ap.add_argument("--out", default="backtest/reports/rso_realign_study")
     args = ap.parse_args()
 
@@ -906,10 +932,13 @@ def main() -> None:
         window, frames = HOLDOUT, (cell[0],)
     else:
         window, frames = BUILD, tuple(int(x) for x in args.frames.split(","))
-    raw = load_1m(*window)
+    path = CACHE_DIR / f"{args.symbol.replace('.', '_')}__M1.csv"
+    if args.symbol != "XAUUSD.p" and not args.free:
+        sys.exit("another symbol carries gold's costs — run it --free (costs unmeasured there)")
+    raw = load_1m(*window, path=path)
     clean, fixed = clean_reopens(raw)
     print(
-        f"{len(raw):,} PU Prime M1 bars {raw.index[0]:%Y-%m-%d} -> {raw.index[-1]:%Y-%m-%d}; profile {plabel}: "
+        f"{len(raw):,} PU Prime {args.symbol} M1 bars {raw.index[0]:%Y-%m-%d} -> {raw.index[-1]:%Y-%m-%d}; profile {plabel}: "
         f"spread {spread}, commission {costs['comm_rt'] / 2}/side/lot, swap "
         f"{costs['swap_long']}/{costs['swap_short']} pts; {len(fixed)} reopen spikes clipped for structure"
     )

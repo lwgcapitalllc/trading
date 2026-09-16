@@ -251,6 +251,23 @@ CLAUDE.md gets at most one index line.
   (35 trades, 91% win, +0.195R, z +3.79 charged) — 0.4 trades a month for 1R a year, and the
   opposite of the trade asked about. ✅ Every pre-existing cell reproduces exactly after each
   patch (max diff 0.0 on the 15m grid, twice). Report: `backtest/reports/rso_realign_disp/`.
+  **The cross-instrument test — MEASURED 2026-09-16 (third pass): FAILED 0 of 3.** The user wanted
+  more trades; the honest route is the SAME rule on more instruments, never a looser one. `--symbol`
+  reads another PU Prime M1 cache, `--free` only (costs, the reopen clip and the swap point are
+  gold's). Declared in the docstring BEFORE any bar was fetched: the one family that cleared z 2 on
+  gold (15m, 2+ counter BOS, fib-0.5 limit, 2 × ATR stop, t1.5/t2/t3) must be positive in both
+  halves and beat its matched control at z ≥ 2 on 2 of its 3 cells, on 2 of 3 instruments. Bars
+  fetched through `BarSource` (floor measured per symbol; 2020-01-01 → 2026-09-11): XAGUSD.p
+  2,371,703, EURUSD.p 2,497,753, NAS100 2,363,731 M1 bars. **Silver: not positive in both halves on
+  any cell (t2 −0.006R; t3 +0.072 with the second half −12.4R). EURUSD: positive in both halves on
+  all three (+0.158 / +0.168 / +0.280R, ~150 trades) and under the bar on all three (z +1.47 /
+  +1.69 / +1.87). NAS100: negative on all three (−0.09 to −0.11R).** Across the whole 576-cell
+  grid, silver and EURUSD have 0 cells at z ≥ 2 and NAS100 has 3 (z 2.13–2.18, unrelated cells —
+  a null search's yield). The user's 1m rule as drawn: negative in all 8 exits on silver (mean z
+  −1.49) and EURUSD (−1.40), 7 of 8 positive on NAS100 (mean z +0.60, best the trail at +0.086R,
+  z +1.23). ⚠ The fetch pin is the terminal's own name, `PUPrime-Demo`, not the cache folder's
+  `PUPrime_Demo` — the folder spelling is refused as a different broker. Reports:
+  `backtest/reports/rso_realign_xsym/<symbol>/grid_free.csv`.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,
