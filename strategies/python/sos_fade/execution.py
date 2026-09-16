@@ -439,6 +439,17 @@ class MissedSetup:
     fvg: bool             # ...and a gap was live while it was there
     edge: float           # where the limit would have rested
     near: bool
+    # ── capture-only, added 2026-09-15. NOTHING reads these back inside the strategy. ──
+    # The retrace leg this setup was priced off: 0.0 (the extreme) and 1.0 (the origin).
+    # They are captured rather than a handful of finished levels because every ratio a later
+    # reader might want — the 0.5 and 0.886 band edges, the 0.886 stop, any entry fib — is
+    # `extreme + (origin - extreme) * ratio` off this pair, and a tool that derives them all
+    # from one anchor cannot disagree with itself about where the zone was.
+    # They come straight off the same signal fields the re-entry's own zone edges use, so a
+    # consumer can never be describing a different leg from the one the setup actually had.
+    # `None` when the signal published no leg, which is a setup nothing can be priced off.
+    leg_extreme: Optional[float] = None   # fib 0.0
+    leg_origin: Optional[float] = None    # fib 1.0
 
     @property
     def labels(self) -> List[str]:
@@ -1588,6 +1599,7 @@ class Execution:
                 zone=m.zone, zone_time_ms=m.zone_ms, zone_turn_ms=m.zone_turn_ms,
                 fvg=m.fvg, edge=float(price),
                 near=met_n == 3 or (m.zone and not zone_met),
+                leg_extreme=sig.fibo_p7, leg_origin=sig.fibo_p10,
             )
             self.misses.append(miss)
             # The alert reuses the miss's OWN sentence rather than composing a second one. Two

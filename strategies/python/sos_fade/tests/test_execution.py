@@ -446,6 +446,26 @@ def test_a_setup_that_had_everything_and_never_filled_is_a_3_of_3_miss():
                            "Zone — 0.5-0.886 tagged, FVG live"]
 
 
+def test_a_miss_carries_the_retrace_leg_it_was_priced_off():
+    """The leg anchors are capture-only, and this pins that they are REAL rather than a pair
+    of `None`s that every consumer would silently read as "no leg".
+
+    It asserts the derivation rather than the two numbers: every level a later reader wants is
+    `extreme + (origin - extreme) * ratio`, so reproducing the signal's OWN published 0.886
+    (`fibo_p6`) off the captured pair is what proves the anchors describe the same leg the
+    setup actually had. Assigning either anchor from the wrong signal field fails here.
+
+    Watched RED by mutation: swapping the two anchors at the record site puts the derived
+    0.886 at 108.86 against the signal's 101.14."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    m = ex.misses[0]
+    assert (m.leg_extreme, m.leg_origin) == (110.0, 100.0)
+    derived = m.leg_extreme + (m.leg_origin - m.leg_extreme) * 0.886
+    assert abs(derived - 101.14) < 1e-9          # == the signal's own fibo_p6, the 0.886 stop
+
+
 def test_a_setup_that_never_retraced_is_a_2_of_3_and_is_NOT_a_near_miss():
     """The ordinary way most setups die. It is still recorded — the lab has no label cap and a
     count nobody kept is a count nobody can get back — but `near` is False, which is what the

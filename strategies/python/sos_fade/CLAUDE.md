@@ -161,6 +161,31 @@ Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The five mod
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *The missed-setup watch (2026-07-27) — the setups that died, not the ones that were refused*.
 
+## A miss carries the RETRACE LEG it was priced off (2026-09-15)
+
+⚠ **Capture-only. Nothing in the strategy reads `leg_extreme` / `leg_origin` back**, so no
+decision can depend on them and no stored result moves — the same additive pattern the structure
+engine's own break-location fields use. 651 tests green before and after.
+
+🔴 **The LEG is captured, not a handful of finished levels, and that is the rule.** Every price a
+later reader wants — the 0.5 and 0.886 band edges, the 0.886 stop, any entry fib — is
+`extreme + (origin - extreme) * ratio` off this one pair. Capturing three or four cooked levels
+instead would let a consumer derive a fifth its own way and disagree with the record about where
+the zone was, which is the defect `_zone_edges` already exists to prevent one level up.
+
+⚠ **They come off the signal's own `fibo_p7` / `fibo_p10`** — the identical anchor pair the
+re-entry's zone edges read — so a consumer can never be describing a different leg from the one
+the setup actually had. `None` when the signal published no leg.
+
+⚠ **The test asserts the DERIVATION, never the two numbers**: it reproduces the signal's own
+published 0.886 off the captured pair. Watched RED by mutation (the two anchors swapped at the
+record site puts the derived 0.886 at 108.86 against the signal's 101.14), which is what makes it
+non-vacuous — a pair of `None`s would otherwise read to every consumer as "this setup had no leg".
+
+**Why it was added:** the no-gap study (2026-09-15) needs the band each dead setup actually had, and
+the miss record published where the limit would have rested and nothing else. Rule 11 — anything
+recreating a run for comparison must carry forward everything that decides what it is measured on.
+
 ## Engine-construction pins (`SosFadeStrategy.engine_config`)
 
 Detail, tables and run numbers: `docs/SOS_FADE_BUILD_NOTES.md` → *Engine-construction pins (`SosFadeStrategy.engine_config`)*.
