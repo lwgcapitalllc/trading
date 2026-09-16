@@ -114,6 +114,47 @@ rescuable. Do not re-open it without a new mechanism. Full record: `realign_opti
 iBOS/iSOS across Aaron's own window. The two-frame build is not a refinement; without it there is no
 strategy to measure.
 
+## 🔴 THERE IS NO ENTRY FILTER HERE — winners and losers are indistinguishable (2026-09-16)
+
+Aaron asked whether the losers have anything in common that could rule them out. **They do not**, on
+every feature knowable at entry. Stacked config, 99 trades (39W / 37L / 23 scratch), medians:
+
+| | winners | losers | scratches |
+|---|---|---|---|
+| reward:risk at entry | 2.20 | **2.25** | 1.46 |
+| stop size ($) | 8.99 | 7.40 | 8.73 |
+| stop (% of price) | 0.47 | 0.36 | 0.45 |
+| retest depth (R) | 0.07 | 0.05 | 0.07 |
+
+**Losers have a very slightly BETTER reward:risk than winners.** Nothing separates them.
+
+🔴 **AND EVERY APPARENT SIGNAL IN THE BUCKETED TABLES WAS ONE TRADE.** The first pass looked rich —
+shorts +28.36R against longs +9.67R; Monday the best day at +1.076 avg; the 3–5 R:R bucket best at
++1.206 avg; stops under $5 best at +1.538 avg. **All four were the same single +22.56R trade, which
+was a Monday 01:00 NY short with a 4.66 R:R and a $4.50 stop.** Removing that ONE trade:
+
+| | with it | without it |
+|---|---|---|
+| shorts | +28.36R (best) | +5.79R (**worse than longs**) |
+| Monday | +20.43R (best day) | **−2.13R (worst day)** |
+| R:R 3–5 | +22.92R (best) | +0.35R (fourth) |
+
+⚠ **This is the concentration finding below turning into a false-discovery machine, and it is why
+no filter may be read off a bucketed table on this book.** With 3–5 trades carrying 5.5 years, ONE
+trade lands in one bucket of every table and makes that bucket look like a rule. **Any future
+"realign does better on X" claim must be re-checked with the top trade removed before it is
+believed.**
+
+⚠ The only thing that survives is that the 1–2 R:R bucket is worst in both passes (−2.02R over 29
+trades) — and it is non-monotone (under 1 is GOOD, 1–2 bad, 2–3 good), which is the shape of noise
+rather than structure. `realign_min_rr` has already been shown here to be a fit to one calendar
+half. **Do not resurrect it on this.**
+
+⚠ Scratches do differ mildly — 1.46 median R:R against ~2.2 for both winners and losers — so the
+"save the breakevens" idea has the only real thread in this analysis. It is a HYPOTHESIS: it must
+be replayed rather than estimated by dropping rows (one position slot), and it needs its own
+pre-declared window.
+
 ## 🔴 THREE TO FIVE TRADES CARRY 5.5 YEARS — the biggest weakness in this strategy (2026-09-16)
 
 Aaron asked whether it still makes money without the biggest winner. It does, barely, and the

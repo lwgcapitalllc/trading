@@ -1249,3 +1249,19 @@ CLAUDE.md gets at most one index line.
   ⚠ **`z` here measures distance from the spread of the CONTROL REPS** (does the pattern beat random
   timing), which is NOT the strategy's own standard error (is the edge distinguishable from zero).
   Both are printed so they cannot be confused. Read-only: it writes nothing and moves no baseline.
+
+- **`tools/realign_trade_profile.py`** (2026-09-16) — do the Realign losers have anything in common?
+  Buckets the trades by every feature knowable AT ENTRY (side, New York hour, weekday, reward:risk,
+  stop size, retest depth) and by exit reason, with win/loss/scratch counts. **Answered: no.** Median
+  reward:risk is 2.20 for winners and **2.25 for losers**; stop size, stop %, and retest depth do not
+  separate them either.
+  🔴 **It reprints every table with the SINGLE BIGGEST TRADE REMOVED, and that half is the point.**
+  This book has 3-5 trades carrying 5.5 years, so one trade lands in one bucket of every table and
+  makes that bucket look like a rule. MEASURED: shorts (+28.36R vs longs +9.67R), Mondays (best day,
+  avg +1.076), the 3-5 R:R bucket (best, +1.206) and sub-$5 stops (best, +1.538) ALL looked like
+  strong signals and were **all the same +22.56R trade** — a Monday 01:00 NY short, 4.66 R:R, $4.50
+  stop. Without it, shorts fall behind longs and Monday goes from best day to WORST (-2.13R).
+  ⚠ **A bucketed claim on any fat-tailed book here is not believable until it survives that
+  removal** — the generalisation, not a Realign quirk.
+  ⚠ Read-only; writes nothing and moves no baseline. Anything it surfaces is a hypothesis needing a
+  REPLAY and its own pre-declared window, never a filter applied by dropping rows.
