@@ -282,3 +282,30 @@ def test_a_caller_that_FORGETS_the_price_flags_fails_loudly():
     with pytest.raises(TypeError):
         _ex()._setup_context(_sig(), m, True, arm_swp=True, arm_div=False,
                              veto=False, late=False, htf_any=False)
+
+
+# ── an order the strategy PULLED while the setup lives on (2026-09-16) ───────────────────────
+def test_the_final_hour_is_reported_as_WHY_an_order_is_off_the_book_before_the_zone_is_tagged():
+    """🔴 sos_fade_demo, 20:15 UTC: the final-hour rule pulled a resting sell limit on a setup
+    whose zone was not yet tagged, so `blocked_by` (ready setups only) was empty and the thread
+    had no reason to give. `paused_by` carries it regardless of readiness.
+
+    RED without `paused_by`: the key is absent. MUTATION: gate it on `zone_met` and it reddens.
+    """
+    m = _MissWatch()
+    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
+    ctx = _ex()._setup_context(_sig(), m, True, arm_swp=True, arm_div=False,
+                               veto=False, late=True, htf_any=False, tight=False, quiet=False)
+    assert ctx["blocked_by"] == ()
+    assert ctx["paused_by"] == ("Final hour (16:00-18:00 New York)",)
+
+
+def test_nothing_is_reported_as_withholding_an_order_when_no_rule_is():
+    assert _ctx(_ex())["paused_by"] == ()
+
+
+def test_the_key_scheme_is_declared_so_a_promote_that_renames_setups_is_noticed():
+    """`algos/live/setup_alerts.py` compares this against the scheme the stored threads were
+    written in. RED if the attribute is removed: the live side would read "" for both."""
+    assert Execution.setup_key_scheme == "time-v1"
+    assert _ex()._setup_key(False, 7, 7_000).endswith(":S:t7000")

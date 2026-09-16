@@ -73,3 +73,11 @@ narrative is in `docs/BACKTEST_BUILD_NOTES.md`.
   contract rather than printing a rate of zero, and it accepts EVERY Python strategy including
   those — an honest refusal naming why beats argparse rejecting the name as though the strategy
   did not exist.
+
+## `paused_by` — the rules keeping a live setup's order off the book (2026-09-16)
+
+A tuple of rule names, empty by default. It is not `blocked_by`: that one is reported only for a
+fully ready setup, and a resting limit can be pulled from a setup whose zone is still untagged.
+The live alert layer uses it to post one `LIMIT WITHDRAWN` reply. **Reporting only; no stored run
+moves** — `replay_fingerprint.py` 2024-01 → 2026-08 on sos_fade: 62,468 bars and 66 trades
+identical. Detail: `algos/notes/telegram-and-notifications.md`.

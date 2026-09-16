@@ -72,6 +72,11 @@ RESOLVED_MSG = "resolved"
 
 CATEGORIES = (WATCHING_MSG, ENTRY_ZONE_MSG, BLOCKED_MSG, RESOLVED_MSG)
 
+#: Not a category — a marker kept in a setup's `sent` set while one of the strategy's rules has
+#: WITHDRAWN its order. It rides the persisted set, so after a restart the returning order is
+#: still reported, even at the same price.
+PAUSED_MARK = "paused"
+
 #: What a bot sends when its config says nothing. All four: Aaron asked for the full story of a
 #: setup (2026-08-13), and a category defaulting OFF is a message nobody knows they are missing.
 DEFAULT_CATEGORIES = CATEGORIES
@@ -95,6 +100,7 @@ class SetupAlerts:
         order_for: Optional[Callable[[int], Optional["alerts.RestingOrder"]]] = None,
         state_path=None,
         channel: str = "",
+        key_scheme: str = "",
     ) -> None:
         self._send = send
         self._log = log
@@ -147,6 +153,17 @@ class SetupAlerts:
         #: or refusing the send, and either way the reader would get a resolution with no setup
         #: attached and never see the setup re-announced. Threads are dropped when this changes.
         self._channel = channel
+        #: How the strategy spells a setup's key NOW, and how the stored threads were spelled.
+        #:
+        #: 🔴 **A promote can rename every live setup, and that closed a live short on
+        #: 2026-09-16.** `sos_fade_demo` ran a snapshot that keyed setups by bar POSITION
+        #: (`...:S:5018`); the promote at 20:17 UTC brought keys by TIME (`...:S:t1789581600000`).
+        #: The warm-up still watched the setup, no stored key matched, and `reconcile` posted
+        #: THREAD CLOSED. Keys from two schemes cannot be compared, so when these differ
+        #: `reconcile` carries an unmatched thread onto the one live setup it must be.
+        #: Empty is "a strategy that never declared one" — every file written before this existed.
+        self._key_scheme = key_scheme or ""
+        self._stored_scheme = self._key_scheme
         self._load()
 
     # ── the one entry point ──────────────────────────────────────────────────────────────────
@@ -322,9 +339,18 @@ class SetupAlerts:
             # 🔴 **Silent, by Aaron's call (2026-09-16): "I don't need the cancel messages."** The
             # last DESCRIBED order is kept, so the replacement is compared against what the reader
             # last saw — a re-placement at the same price says nothing, a new price says MOVED.
+            # ⚠ The one exception is a pull the STRATEGY names a rule for (`paused_by`): said
+            # once, and marked in `sent` so a restart remembers the reader was told it is gone.
+            if snap.paused_by and snap.state != RESTING and PAUSED_MARK not in sent:
+                sent.add(PAUSED_MARK)
+                if self._on(ENTRY_ZONE_MSG):
+                    self._post(alerts.format_order_withdrawn(snap), reply_to=root)
+                self._save()
             return
         before = self._order.get(snap.key)
-        if self._same(before, now):
+        paused = PAUSED_MARK in sent
+        sent.discard(PAUSED_MARK)
+        if self._same(before, now) and not paused:
             return
         self._order[snap.key] = now
         if self._on(ENTRY_ZONE_MSG):
@@ -370,6 +396,9 @@ class SetupAlerts:
                     f"in the new room."
                 )
                 return
+            # A file written before the scheme was recorded reads as "" — which is exactly what
+            # the old strategy would have declared, so it compares correctly with no special case.
+            self._stored_scheme = blob.get("key_scheme", "")
             for key, row in (blob.get("setups") or {}).items():
                 self._threads[key] = row.get("root")
                 self._sent[key] = set(row.get("sent") or ())
@@ -410,14 +439,21 @@ class SetupAlerts:
             tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"channel": self._channel, "setups": rows}, f)
+                # The scheme the stored keys are spelled in. It moves to the current one only once
+                # `reconcile` has carried the old threads across — never on a bare save.
+                json.dump(
+                    {"channel": self._channel, "key_scheme": self._stored_scheme, "setups": rows},
+                    f,
+                )
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self._state_path)
         except Exception as e:  # noqa: BLE001 — see the module docstring
             self._warn(f"could not save the setup-alert state ({e}) — open setups may repeat once.")
 
-    def reconcile(self, resolved: Sequence[SetupSnapshot], live_keys) -> None:
+    def reconcile(
+        self, resolved: Sequence[SetupSnapshot], live_keys, live: Sequence[SetupSnapshot] = ()
+    ) -> None:
         """Close every thread this bot announced before it stopped and can no longer be watching.
 
         🔴 **`live_keys` must be `None` when the strategy could not be asked, and a collection —
@@ -451,13 +487,57 @@ class SetupAlerts:
             if live_keys is None:
                 self._save()
                 return
-            live = set(live_keys)
-            for key in [k for k in self._sent if k not in live]:
+            live_set = set(live_keys)
+            unmatched = [k for k in self._sent if k not in live_set]
+            if unmatched and self._stored_scheme != self._key_scheme:
+                unmatched = self._adopt(unmatched, live)
+            for key in unmatched:
                 about = self._about.get(key) or {}
                 self._close(key, alerts.format_lost(about.get("side"), about.get("symbol") or ""))
+            self._stored_scheme = self._key_scheme
             self._save()
         except Exception as e:  # noqa: BLE001 — see the module docstring
             self._warn(f"could not reconcile the open setup threads: {e}")
+
+    def _adopt(self, unmatched: List[str], live: Sequence[SetupSnapshot]) -> List[str]:
+        """Carry threads named under an OLDER key scheme onto the live setup each one must be.
+
+        Returns the keys still unmatched. Only reached when the scheme changed — see
+        `_key_scheme`. A stored thread is adopted when exactly ONE unmatched old thread and
+        exactly ONE unannounced live setup share its side and symbol; anything else is
+        ambiguous and is closed as lost rather than pinned on the wrong setup.
+
+        ⚠ **The residual risk, stated:** if the old setup died during the outage AND a new one
+        formed on the same side before the restart, the old thread carries the new setup. For a
+        restart measured in seconds that needs a whole new shift of structure inside the gap.
+        """
+
+        def same(about, snap):
+            sym = about.get("symbol") or ""
+            return about.get("side") == snap.side and (not sym or sym == snap.symbol)
+
+        free = [s for s in live if s.key not in self._sent]
+        left = []
+        for key in unmatched:
+            about = self._about.get(key) or {}
+            cands = [s for s in free if same(about, s)]
+            if len(cands) != 1:
+                left.append(key)
+                continue
+            rivals = [k for k in unmatched if same(self._about.get(k) or {}, cands[0])]
+            if len(rivals) != 1:
+                left.append(key)
+                continue
+            new = cands[0].key
+            free.remove(cands[0])
+            self._threads[new] = self._threads.pop(key, None)
+            self._sent[new] = self._sent.pop(key)
+            self._about[new] = self._about.pop(key, about)
+            if key in self._order:
+                self._order[new] = self._order.pop(key)
+            if self._log is not None:
+                self._log.info(f"Setup thread {key} renamed {new} — the bot's key scheme changed.")
+        return left
 
     def _close(self, key: str, text: str) -> None:
         """Post a closing message onto one stored thread and forget it. Never raises."""

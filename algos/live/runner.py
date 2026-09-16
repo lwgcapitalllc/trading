@@ -1435,6 +1435,11 @@ class LiveRunner:
                 # chat it no longer sends to — `sos_fade_2` was moved exactly that way on
                 # 2026-09-15. Threads are dropped, loudly, when this changes.
                 channel=self._signal_room(),
+                # How the strategy spells a setup's key. A promote that changes it would otherwise
+                # make every live setup look gone — 2026-09-16, `sos_fade_demo`, see `_key_scheme`.
+                key_scheme=getattr(
+                    getattr(self.strategy, "execution", self.strategy), "setup_key_scheme", ""
+                ),
             )
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(
@@ -1481,11 +1486,15 @@ class LiveRunner:
         carried = alerts_obj.open_keys()
         try:
             live_keys = None
+            snaps = []
             ex = getattr(self.strategy, "execution", self.strategy)
             live = getattr(ex, "live_setups", None)
             if callable(live):
-                live_keys = [s.key for s in live()]
-            alerts_obj.reconcile(self._warm_snapshots, live_keys)
+                snaps = list(live())
+                live_keys = [s.key for s in snaps]
+            # The snapshots as well as the keys: a thread named under an older key scheme is
+            # matched to its live setup by side and symbol, which a bare key cannot answer.
+            alerts_obj.reconcile(self._warm_snapshots, live_keys, live=snaps)
         except Exception as e:  # noqa: BLE001 — a notifier may not stop a start
             self.log.warning(
                 f"Open setup threads could not be reconciled ({e}) — any setup that "

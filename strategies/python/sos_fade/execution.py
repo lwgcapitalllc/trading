@@ -1712,6 +1712,12 @@ class Execution:
                 return current_ms == traded_ms
         return traded_bar is not None and current_bar == traded_bar
 
+    #: How `_setup_key` spells a key — read by the live alert layer, which cannot compare keys
+    #: across a promote that changed the spelling. 🔴 **Change this string whenever the key format
+    #: changes**; a promote from bar-number keys to these closed a live short's thread as lost on
+    #: 2026-09-16 (`algos/live/setup_alerts.py::_key_scheme`).
+    setup_key_scheme = "time-v1"
+
     def _setup_key(self, is_long: bool, sos_bar: Optional[int],
                    sos_ms: Optional[int]) -> str:
         """The thread id, stable for this setup's whole life AND across a restart.
@@ -1878,6 +1884,18 @@ class Execution:
 
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
+        # The rules keeping an order off the book RIGHT NOW, whether or not the zone is tagged —
+        # a resting limit is placed before price reaches the band, so `blocked` above (ready
+        # setups only) cannot say why one was pulled. Reporting only; see `SetupSnapshot.paused_by`.
+        paused = []
+        if arm_met:
+            if veto:
+                paused.append("Divergence / extreme-RSI veto")
+            if late:
+                paused.append("Final hour (16:00-18:00 New York)")
+            if htf_any:
+                paused.append("HTF breakout / bias filter")
+
         return {
             "key": self._setup_key(is_long, m.sos_bar, m.sos_ms),
             # Can this setup still reach a fill under the config this bot is running? `_armed`
@@ -1908,6 +1926,7 @@ class Execution:
             "zone": zone,
             "stop": proj_stop,
             "blocked_by": tuple(blocked),
+            "paused_by": tuple(paused),
         }
 
     def _book_setup_end(self, ctx: Optional[dict], state: str, reason: str,
@@ -1966,6 +1985,7 @@ class Execution:
                 blocked_by=ctx["blocked_by"],
                 tradeable=ctx["tradeable"],
                 announce_resting=ctx["announce_resting"],
+                paused_by=() if resting else ctx.get("paused_by", ()),
             ))
         return out
 

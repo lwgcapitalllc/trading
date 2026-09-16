@@ -130,6 +130,18 @@ class SetupSnapshot:
     #: `backtest/tools/alert_rate.py` is what checks that end to end; re-run it after changing
     #: how a strategy computes this.
     announce_resting: bool = True
+    #: The strategy's own rules that are keeping this setup's order OFF the book right now,
+    #: while the setup itself stays alive — the final hour, a veto, a filter. Empty means none.
+    #:
+    #: 🔴 **Why it exists (2026-09-16, sos_fade_demo):** the final-hour rule pulled a resting sell
+    #: limit and the setup went back to watching, but the thread's last word was still "SELL
+    #: LIMIT RESTING" — an order the account no longer held. The alert layer uses this to say
+    #: the order was WITHDRAWN and why, once. It is not `blocked_by`: that one is reported only
+    #: for a setup that was fully ready, and a pulled order can belong to one that is not.
+    #:
+    #: ⚠ **Reporting only**, like every field here. A broker cancel-and-replace carries no
+    #: reason and stays silent — Aaron, 2026-09-16: no cancel messages.
+    paused_by: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # A bad state would route a message to the wrong formatter and, worse, would leave a

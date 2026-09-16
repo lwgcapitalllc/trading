@@ -280,3 +280,14 @@ block is called from `step`, `step_secondary` or `_manage_open`.
 **The other half of this defect was in the alert layer** — its bookkeeping lived in memory, so a
 restart re-announced every open setup regardless of the key. Either one alone still duplicates.
 Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID NOT SURVIVE A RESTART*.
+
+## The key SCHEME is declared, and a pulled order names its rule (2026-09-16)
+
+- `Execution.setup_key_scheme = "time-v1"` tells the live alert layer how `_setup_key` spells a key.
+  🔴 **Change it whenever the key format changes.** The promote from bar-number keys to time keys
+  closed a live short's Telegram thread on `sos_fade_demo` because the two could not be compared.
+- `_setup_context` now also returns `paused_by`: veto, final hour and HTF filter whenever the arm is
+  met, whether or not the zone is tagged. `live_setups()` passes it only while nothing rests.
+  ⚠ Tight-stop and quiet-market refusals are not in it yet.
+- Reporting only: `replay_fingerprint.py` 2024-01 → 2026-08 — bars and 66 trades IDENTICAL.
+  Detail: `algos/notes/telegram-and-notifications.md`.

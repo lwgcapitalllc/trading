@@ -308,6 +308,35 @@ account is not trading. ⚠ This reverses the 2026-08-13 "announce once" call. *
 (`backtest/tools/alert_rate.py --symbol XAUUSD.p`, sos_fade, 2020-01 → 2026-09, no broker so lots
 not compared): 439 moved, total volume 19.6 → 25.0 a month. Live compares lots as well, so it can run slightly higher.
 
+🔴 **A PROMOTE THAT RENAMES SETUPS CLOSED A LIVE SHORT'S THREAD (2026-09-16, fixed same day).**
+`sos_fade_demo` ran snapshot v182 (hash `11351a74e708`, tree of `4f87809d`), which keyed setups by
+bar POSITION — the 18:00 UTC short was stored as `SosFadeStrategy:S:5018`. The 20:17 UTC promote to
+v195 keys by TIME (`…:S:t1789581600000`). The warm-up still watched the setup (the next ledger bar
+shows stage 2 on the same shift bar), but no stored key matched, so reconcile posted `🧹 THREAD
+CLOSED` — and the setup would be announced again as new on the next bar. **MEASURED** by replaying
+the old snapshot 13:30 → 20:00, then the new code's real `warm()` on the state it wrote: 1 closed
+before the fix, 0 after. ⚠ The version line said `commit c8cdd64e`, but the snapshot hash matched
+`4f87809d` — **the label is not the code; hash the tree** (`version.deployment_hash`).
+The fix: a strategy declares `setup_key_scheme` (sos_fade: `time-v1`), the state file records the
+scheme its keys were written in, and when the two differ reconcile **carries** an unmatched thread
+onto the one unannounced live setup with the same side and symbol — root, messages sent and last
+order move with it. Two old threads on a side, or none live there, is ambiguous and still closes.
+⚠ Residual risk: an old setup that died AND a new same-side one that formed inside the restart gap
+would inherit the old thread. ⚠ **Change the scheme string whenever the key format changes.**
+
+🔴 **An order the STRATEGY withdraws says so, once (2026-09-16).** The final-hour rule pulled that
+same sell limit at 20:15 UTC while the setup stayed open, and the thread's last word was still
+`🎯 SELL LIMIT RESTING`. The setup's zone was untagged, so `BLOCKED` (ready setups only) had nothing
+to say. A snapshot now carries `paused_by` — the rules keeping its order off the book (veto, final
+hour, HTF filter) — and the thread posts `⏸ LIMIT WITHDRAWN` with the rule, once. The next order
+is always reported as `🔁 LIMIT MOVED`, even at the same price, because the reader was told it was
+gone; the marker rides the saved `sent` set, so a restart keeps it. ⚠ **A pull with no named rule
+stays silent** — the cancel-and-replace churn Aaron asked to hear nothing about. ⚠ The two price
+refusals (tight stop, quiet market) do not fill `paused_by` yet. ⚠ **Reaches a bot only on promote**
+(the field lives in `backtest/` and the strategy); the runner half reaches it by pull and is inert
+until then. **MEASURED** trades unchanged: `replay_fingerprint.py` 2024-01 → 2026-08, 66 trades
+identical.
+
 🔴 **`live_keys=None` means *could not ask* and closes nothing; `[]` means *watching nothing* and
 closes everything.** Root `CLAUDE.md` rule 1, in the signals channel — collapsing them would post
 "no longer being watched" onto setups the bot is watching right now. ⚠ An early version of that test

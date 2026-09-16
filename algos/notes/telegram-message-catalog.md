@@ -399,6 +399,10 @@ Still missing: Momentum shift
 Limit 3,410.00 → 3,407.20 · stop 3,418.60 → 3,417.90
 Still missing: Momentum shift
 
+⏸ SELL LIMIT WITHDRAWN
+Final hour (16:00-18:00 New York)
+No order is resting. The setup is still watched, and the order returns if the rule lifts in time.
+
 🚫 BLOCKED · SHORT
 news blackout · final-hour cutoff
 

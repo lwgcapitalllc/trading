@@ -775,3 +775,133 @@ def test_a_fill_after_a_move_closes_the_thread_with_no_stale_numbers():
     assert last.startswith("✅ ENTERED")
     assert "4,324" not in last and "0.25" not in last
     assert a.open_keys() == []
+
+
+# ── a promote that changes how setups are NAMED (2026-09-16, sos_fade_demo, 20:17 UTC) ────────
+def _legacy_state(state, key="Strat:S:5018", side=-1):
+    """What a bot on the OLD naming wrote: a thread keyed by bar POSITION, and no scheme."""
+    old = _alerts(Recorder(), state_path=state)
+    old.on_bar(FakeStrategy([[_snap(key=key, side=side)]]))
+    return old
+
+
+def test_a_thread_named_under_an_OLDER_key_scheme_is_CARRIED_onto_the_setup_still_being_watched(
+    tmp_path,
+):
+    """🔴 The incident. The running bot keyed the short by bar number (`...:S:5018`); the promote
+    renamed setups by time (`...:S:t1789581600000`). The restart warm-up still watched the setup,
+    but no stored key matched, so it posted THREAD CLOSED on a live short — and would announce it
+    again as a brand-new setup on the next bar.
+
+    RED without the scheme check: a THREAD CLOSED is sent and the thread is gone.
+    """
+    state = tmp_path / "setup_threads.json"
+    _legacy_state(state)
+
+    rec = Recorder()
+    a = _alerts(rec, state_path=state, key_scheme="time-v1")
+    live = [_snap(key="Strat:S:t1789581600000", side=-1)]
+    a.reconcile([], live_keys=[s.key for s in live], live=live)
+    assert rec.sent == [], "a setup the strategy still watches was announced as lost"
+    assert a.open_keys() == ["Strat:S:t1789581600000"]
+
+    # ...and the thread is the SAME thread: no second root on the next bar, the outcome replies
+    # to the original message, and the adoption survives another restart.
+    again = _alerts(rec, state_path=state, key_scheme="time-v1")
+    again.on_bar(FakeStrategy([live]))
+    assert rec.sent == []
+    again.on_bar(FakeStrategy([[_snap(key=live[0].key, side=-1, state=DEAD, reason="Aged out.")]]))
+    assert len(rec.sent) == 1 and rec.sent[0]["reply_to"] == 1
+
+
+def test_under_the_SAME_scheme_an_unmatched_thread_is_never_adopted(tmp_path):
+    """Adoption is a migration, not a guess made on every start. With the naming unchanged, a
+    stored key the strategy no longer reports really is gone. RED if adoption ignores the scheme.
+    """
+    state = tmp_path / "setup_threads.json"
+    old = _alerts(Recorder(), state_path=state, key_scheme="time-v1")
+    old.on_bar(FakeStrategy([[_snap(key="Strat:S:t1", side=-1)]]))
+
+    rec = Recorder()
+    a = _alerts(rec, state_path=state, key_scheme="time-v1")
+    live = [_snap(key="Strat:S:t2", side=-1)]
+    a.reconcile([], live_keys=[live[0].key], live=live)
+    assert [h.split(" · ")[0] for h in rec.heads()] == ["🧹 THREAD CLOSED"]
+    assert a.open_keys() == []
+
+
+def test_an_AMBIGUOUS_old_thread_is_closed_rather_than_pinned_on_the_wrong_setup(tmp_path):
+    """Two old threads on one side and one live setup: which is it? Nobody can say, so neither
+    is adopted. RED if the first match wins."""
+    state = tmp_path / "setup_threads.json"
+    old = _alerts(Recorder(), state_path=state)
+    old.on_bar(FakeStrategy([[_snap(key="Strat:S:1", side=-1), _snap(key="Strat:S:2", side=-1)]]))
+
+    rec = Recorder()
+    a = _alerts(rec, state_path=state, key_scheme="time-v1")
+    live = [_snap(key="Strat:S:t9", side=-1)]
+    a.reconcile([], live_keys=[live[0].key], live=live)
+    assert len(rec.sent) == 2
+    assert a.open_keys() == []
+
+
+def test_an_old_thread_is_not_adopted_by_a_setup_on_the_OTHER_side(tmp_path):
+    state = tmp_path / "setup_threads.json"
+    _legacy_state(state, side=-1)
+    rec = Recorder()
+    a = _alerts(rec, state_path=state, key_scheme="time-v1")
+    live = [_snap(key="Strat:L:t9", side=1)]
+    a.reconcile([], live_keys=[live[0].key], live=live)
+    assert len(rec.sent) == 1 and a.open_keys() == []
+
+
+# ── an order the STRATEGY withdrew while the setup lives on ─────────────────────────────────
+def test_an_order_WITHDRAWN_by_a_rule_says_so_ONCE_with_the_rule():
+    """🔴 2026-09-16 20:15 UTC: the final-hour rule pulled the resting sell limit and the setup
+    went back to watching. The thread still read "SELL LIMIT RESTING" — an order the account no
+    longer held. A pull the strategy gives a reason for is not the silent cancel-and-replace
+    churn; it is one message. RED without the pause path: nothing is posted.
+    """
+    rec, broker = Recorder(), Broker()
+    a = _alerts(rec, order_for=broker)
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
+    a._handle(_resting())
+    broker.held.pop(-1)
+    held = ("Final hour (16:00-18:00 New York)",)
+    for _ in range(3):
+        a._handle(_resting(state=WATCHING, entry=None, paused_by=held))
+    heads = [t.split("\n")[0] for t in _texts(rec)]
+    assert heads[2:] == ["⏸ SELL LIMIT WITHDRAWN"]
+    assert "Final hour" in _texts(rec)[2]
+    assert rec.sent[2]["reply_to"] == 1
+
+    # It comes back at the SAME price: the reader was told it is gone, so they are told it is back.
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
+    a._handle(_resting(entry=4316.98))
+    assert len(rec.sent) == 4
+    assert _texts(rec)[3].startswith("🔁 SELL LIMIT MOVED")
+
+
+def test_a_withdrawal_state_survives_a_restart(tmp_path):
+    """RED if the pause is kept in memory only: the restarted bot would say nothing when the
+    identical order returns, leaving WITHDRAWN as the thread's last word on a live order."""
+    state = tmp_path / "setup_threads.json"
+    broker = Broker()
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
+    a = _alerts(Recorder(), order_for=broker, state_path=state)
+    a._handle(_resting())
+    broker.held.pop(-1)
+    a._handle(_resting(state=WATCHING, entry=None, paused_by=("Final hour",)))
+
+    rec = Recorder()
+    broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
+    _alerts(rec, order_for=broker, state_path=state)._handle(_resting(entry=4316.98))
+    assert len(rec.sent) == 1 and rec.sent[0]["text"].startswith("🔁 SELL LIMIT MOVED")
+
+
+def test_a_withdrawal_before_any_order_was_announced_says_nothing():
+    """No resting message was ever sent, so there is nothing to take back."""
+    rec = Recorder()
+    a = _alerts(rec, order_for=Broker())
+    a._handle(_snap(side=-1, paused_by=("Final hour",)))
+    assert len(rec.sent) == 1

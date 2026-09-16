@@ -274,6 +274,24 @@ def format_order_moved(snap, digits: int = 2, now=None, before=None) -> str:
     return alert("🔁", f"{side} LIMIT MOVED", "", *lines)
 
 
+def format_order_withdrawn(snap) -> str:
+    """The strategy pulled the resting order but still watches the setup. Replies to the root.
+
+    🔴 **Why (2026-09-16, sos_fade_demo 20:15 UTC):** the final-hour rule cancelled the sell
+    limit and the thread's last word was still "SELL LIMIT RESTING". Sent only when the strategy
+    NAMES the rule (`paused_by`); a broker cancel-and-replace stays silent, as Aaron asked.
+    """
+    side = "BUY" if snap.side > 0 else "SELL"
+    return alert(
+        "⏸",
+        f"{side} LIMIT WITHDRAWN",
+        "",
+        " · ".join(snap.paused_by),
+        "No order is resting. The setup is still watched, and the order returns if the rule "
+        "lifts in time.",
+    )
+
+
 def format_blocked(snap, digits: int = 2) -> str:
     """One of your own rules refused a setup that was otherwise ready. Replies to the root.
 
