@@ -534,3 +534,77 @@ def test_START_and_RESTART_refuse_a_bot_on_NO_account(client, monkeypatch, actio
     ok = client.post(f"/bots/b_leg_demo/{action}")
     assert ok.status_code == 200, ok.text
     assert launched == ["b_leg_demo"]
+
+
+# ── putting a bot on an account DEPLOYS it, and leaves it stopped (2026-09-16) ──
+#
+# 🔴 Aaron, 2026-09-16: *"If I put bots on an account, shouldn't they be deployed immediately? But
+# just remains off until I start them?"* A bot on an account with no frozen snapshot imports from
+# the trading box's WORKING TREE, so a pull there changes what it trades with nobody deploying
+# anything — the state two bots were left in for a day, behind a grey badge on every screen.
+
+
+def _stub_deploy(monkeypatch, *, fails=False):
+    """The box half of a real (deploying) move: the push, the pull, Telegram, and the deploy job.
+
+    Returns the list every deploy this move starts is recorded in, as `(bot, request)`.
+    """
+    from routers import bots as r
+
+    started: list[tuple] = []
+
+    def begin(bot_key, req):
+        if fails:
+            raise ValueError(f"A deploy of {bot_key} is already running — wait for it to finish.")
+        started.append((bot_key, req))
+        return {"job_id": f"pj_test_{bot_key}"}
+
+    monkeypatch.setattr(r, "_git_commit_push", lambda *a, **k: None)
+    monkeypatch.setattr(r, "_ssh", lambda *a, **k: "Already up to date.")
+    monkeypatch.setattr(r, "_notify_telegram", lambda *a, **k: None)
+    monkeypatch.setattr(r, "_begin_promote_job", begin)
+    return started
+
+
+def test_putting_a_bot_ON_an_account_deploys_it_and_does_NOT_restart_it(client, monkeypatch):
+    """MUTATION: drop the `_begin_promote_job` call from the move → nothing is deployed, the bot
+    sits on the account importing the box's working tree, and `deploy_job` is empty → red.
+    MUTATION: send `restart=True` → the move would START a bot nobody started → red."""
+    _stub_move(monkeypatch)
+    started = _stub_deploy(monkeypatch)
+    ok = client.patch("/bots/b_leg_demo/account", json={"account": ACCOUNT})
+    assert ok.status_code == 200, ok.text
+    assert [b for b, _ in started] == ["b_leg_demo"]
+    req = started[0][1]
+    # 🔴 The half that matters: deployed, and left exactly as stopped as it was found.
+    assert req.restart is False
+    # The pull that put this config on the box already ran; a second is a step this did not need.
+    assert req.pull is False
+    assert ok.json()["deploy_job"] == "pj_test_b_leg_demo"
+
+
+def test_taking_a_bot_OFF_an_account_deploys_nothing(client, monkeypatch):
+    """The control. A benched bot trades nothing, so there is nothing to pin a version of — and a
+    deploy here would be a box action nobody asked for. MUTATION: deploy unconditionally → red."""
+    _stub_move(monkeypatch)
+    started = _stub_deploy(monkeypatch)
+    ok = client.patch("/bots/b_leg_demo/account", json={"account": None})
+    assert ok.status_code == 200, ok.text
+    assert started == []
+    assert ok.json()["deploy_job"] == ""
+
+
+def test_a_deploy_that_cannot_START_is_reported_and_the_move_still_stands(client, monkeypatch):
+    """The move is already written when the deploy is asked for, so a failure may not be raised as
+    if nothing had happened — it is NAMED instead, and the bot sits on the account undeployed.
+
+    MUTATION: let the exception escape → a 500 over a move that is on disk, pushed and pulled →
+    red. MUTATION: swallow it silently → the move reads clean while the bot cannot be started
+    → red on the note."""
+    _stub_move(monkeypatch)
+    started = _stub_deploy(monkeypatch, fails=True)
+    ok = client.patch("/bots/b_leg_demo/account", json={"account": ACCOUNT})
+    assert ok.status_code == 200, ok.text
+    assert started == []
+    assert ok.json()["deploy_job"] == ""
+    assert any("no pinned version" in n for n in ok.json()["notes"])

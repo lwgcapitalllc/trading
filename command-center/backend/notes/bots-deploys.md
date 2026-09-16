@@ -772,3 +772,42 @@ on RUNNING**: a stopped bot's trade may have closed since its last heartbeat.
   NaN and infinity) and DROPPED when unreadable — a 500 here blanks every bot on the page.
 - ⚠ Declared on the model, or Pydantic drops them. Tests: 3 in `test_bot_registry.py`; 7 mutations
   run, 7 killed.
+
+---
+
+## Putting a bot on an account DEPLOYS it, and leaves it stopped (2026-09-16)
+
+Aaron, 2026-09-16: *"If I put bots on an account, shouldn't they be deployed immediately? But just
+remains off until I start them?"*
+
+🔴 **A bot could sit on an account with no frozen snapshot of its own.** It then imports from the
+trading box's WORKING TREE, so a `git pull` there changes what it trades with nobody deploying
+anything. Two bots ran that way for a day, and their code fingerprint had already moved between two
+boots with nobody touching them.
+
+`PATCH /bots/{bot}/account` now starts a deploy after it has pushed the config and pulled the box.
+
+- **`restart=False`, and that is the whole point.** A running bot is refused by this endpoint
+  already, so the bot is stopped when it is moved and it stays stopped until somebody starts it.
+  Nothing in this path starts a bot.
+- **`pull=False`** — the pull that put the new config on the box is the endpoint's own, one line
+  above. A second would claim a step this deploy did not need, and the job renders it `skipped`,
+  which is what that state means.
+- **Benching deploys nothing.** A benched bot trades nothing, so there is no version to pin, and a
+  box action nobody asked for is not a convenience.
+- **A deploy that cannot START is reported, never rolled back.** The move is already on disk,
+  pushed and pulled by then. The reason goes in `notes` (which the page raises as a warning) and
+  the bot sits on the account undeployed — which the Bots page draws amber and, from the runner's
+  side, is a start it refuses. On the account and undeployed is an honest state; a silent one is
+  not.
+- The response names the job in `deploy_job` (`""` = none started), and the page watches it through
+  the same readout the Deploy button uses.
+
+⚠ **ONE way to start a deploy, because there are now TWO doors to it.** `_begin_promote_job` was
+split out of `start_promote_job` so the button and the assignment register, spawn and poll the same
+job. A private copy for the second door is a second answer about what a deploy does — on the one
+action in this router that changes what a live account trades.
+
+Checks: `tests/test_account_risk.py` — deployed with the restart off, benching deploys nothing, and
+a deploy that cannot start leaves the move standing and says so. Mutations named per test and run
+red on 2026-09-16.

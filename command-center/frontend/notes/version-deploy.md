@@ -359,3 +359,20 @@ machine unable to count one, *Not deployed* is a bot trading unfrozen code. Only
 
 Checks: `tests/bots-version.spec.ts` — the row's pill, the "needs you" line, and the panel's deploy
 button, each with its mutation named and run red on 2026-09-16.
+
+---
+
+## A move onto an account DEPLOYS the bot, and the page has to notice (2026-09-16)
+
+The server starts that deploy itself (`backend/notes/bots-deploys.md`), so no button was pressed
+here and nothing on the page knows a job exists. `usePromoteJobs` stops polling the moment a bot's
+job is not running — so without a nudge the row would sit on its last answer: no progress, no
+version re-read when it landed, and the bot still drawn as never deployed.
+
+- `BotAccountAssignResult.deploy_job` names the job the move started. `''` means none was started
+  — benching, or one that could not start, whose reason arrives in `notes` as a warning. It never
+  means one finished.
+- The move's `onSuccess` invalidates that bot's promote-job and version reads when the field is
+  set, which restarts the poll; the row's pill then draws the deploy like any other.
+- The success toast says *deploying it now* only when a job was actually started. What was ASKED
+  for, never what finished — the deploy runs in the background and a failed one warns separately.

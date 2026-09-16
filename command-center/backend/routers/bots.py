@@ -3240,6 +3240,14 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     ⚠ **It never reports the move as in effect**, for the cap endpoint's reason: `account` is not
     in `live_config.RUNTIME_RELOADABLE` and could not be, so the response says `restart_required`
     and the bot has to be started before any of this is true on the box.
+
+    🔴 **PUTTING A BOT ON AN ACCOUNT NOW DEPLOYS IT TOO, AND LEAVES IT STOPPED (2026-09-16).** A
+    bot on an account with no frozen snapshot imports from the trading box's working tree, so a
+    pull there changes what it trades with nobody deploying anything — the state two bots were
+    left in for a day. The deploy runs as the same background job the Deploy button starts, with
+    its restart switched off, and the response names it in `deploy_job`. A deploy that FAILS is
+    reported in `notes` and never rolled back: on the account and undeployed is an honest state
+    the page draws amber and the runner refuses to start on. Benching deploys nothing.
     """
     _, bot_key = _resolve_bot(bot_name)
 
@@ -3447,6 +3455,8 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             # Beside `notes`, never inside it — see the deployed return below.
             "notes": plan.notes,
             "info": plan.info,
+            # Nothing reached the box at all, so nothing was deployed either.
+            "deploy_job": "",
         }
 
     path = _BOT_INSTANCE_MAP[bot_key]["path"]
@@ -3465,6 +3475,34 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         out = _ssh("cd C:\\trading && git pull origin main")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+    # 🔴 **PUTTING A BOT ON AN ACCOUNT DEPLOYS IT, AND LEAVES IT STOPPED (Aaron, 2026-09-16:
+    # *"If I put bots on an account, shouldn't they be deployed immediately? But just remains off
+    # until I start them?"*).** Until this, a bot could sit on an account with no frozen snapshot
+    # of its own — so it imported from the trading box's WORKING TREE and a pull there changed
+    # what it traded with nobody deploying anything. Two bots ran that way for a day.
+    #
+    # ⚠ **`restart=False`, and it is the whole point.** The bot is stopped already (a running bot
+    # is refused above) and it stays stopped until somebody starts it. Nothing here starts a bot.
+    #
+    # ⚠ **`pull=False`** — the pull that put this config on the box is the one above; a second one
+    # here would claim a step this deploy did not need.
+    #
+    # ⚠ **The deploy can FAIL, and the move has already been written.** It is reported, never
+    # rolled back: the bot then sits on the account with no snapshot, which the Bots page draws
+    # amber and the runner refuses to start on. That is the honest state — on the account,
+    # undeployed, and saying so — and it is the one thing that must never be silent.
+    deploy_job = ""
+    if update.account is not None:
+        try:
+            deploy_job = _begin_promote_job(
+                bot_key, BotPromoteRequest(pull=False, restart=False, allow_dirty=False)
+            )["job_id"]
+        except Exception as e:  # noqa: BLE001 - a failed deploy may not undo a written move
+            plan.notes.append(
+                f"{bot_key} was moved, but its deploy could not be started ({e}). It is on the "
+                f"account with no pinned version of its own, so it trades whatever the trading "
+                f"box's checkout holds — deploy it from Configure before starting it."
+            )
 
     _notify_telegram(
         alert(
@@ -3481,7 +3519,14 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
                 else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."
             )
             + (f" Risks {new_risk:g}% a trade." if new_risk is not None else ""),
-            "It is not trading it yet — start the bot to apply."
+            (
+                # ⚠ What was ASKED for, never what finished — the deploy runs in the background
+                # and this message is written before it answers. The page watches it; a failed one
+                # leaves the bot amber there and refusing to start on the box.
+                "Being deployed now, and it stays stopped — start the bot to trade it."
+                if deploy_job
+                else "It has NO pinned version, so it cannot be started until one is deployed."
+            )
             if update.account is not None
             else "It will not start until it is on an account again.",
         ),
@@ -3505,6 +3550,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         "detail": changed,
         "notes": plan.notes,
         "info": plan.info,
+        # The deploy this move started, for the page to watch through the SAME job readout the
+        # Deploy button uses. `""` = none was started — benching, or a failure named in `notes`.
+        "deploy_job": deploy_job,
         "output": out,
     }
 
@@ -5266,21 +5314,21 @@ def _evict_promote_jobs() -> None:
         _PROMOTE_JOBS.pop(finished.pop(0)["job_id"], None)
 
 
-@router.post("/{bot_name}/promote/job", response_model=BotPromoteJob, status_code=202)
-def start_promote_job(bot_name: str, req: BotPromoteRequest):
-    """Start a promote in the background and return at once; poll
-    `GET /bots/{bot}/promote/job` for which step it is on.
+def _begin_promote_job(bot_key: str, req: BotPromoteRequest) -> dict:
+    """Register a promote job for `bot_key` and set it running in the background.
 
-    ⚠ **A second promote of the same bot while one is running is REFUSED (409).** Two runs of
-    promote.py over one instance directory, and two stop/start pairs on one process, is not a
-    state anybody meant — and the page can be reopened mid-deploy."""
-    _, bot_key = _resolve_bot(bot_name)
+    Raises `ValueError` when one is already running — two runs of promote.py over one instance
+    directory, and two stop/start pairs on one process, is not a state anybody meant.
+
+    🔴 **ONE way to start a deploy, because there are now TWO doors to it (2026-09-16).** The
+    panel's Deploy button and the assignment that deploys a bot onto its account run the same
+    steps, watched through the same job the same page polls. A private copy for the second door
+    is a second answer about what a deploy does — on the one action here that changes what a live
+    account trades.
+    """
     with _PROMOTE_JOBS_LOCK:
         if any(j["bot"] == bot_key and j["status"] == "running" for j in _PROMOTE_JOBS.values()):
-            raise HTTPException(
-                status_code=409,
-                detail=f"A deploy of {bot_key} is already running — wait for it to finish.",
-            )
+            raise ValueError(f"A deploy of {bot_key} is already running — wait for it to finish.")
         job = {
             "job_id": f"pj_{int(_time.time() * 1000)}_{bot_key}",
             "bot": bot_key,
@@ -5296,6 +5344,22 @@ def start_promote_job(bot_name: str, req: BotPromoteRequest):
         _PROMOTE_JOBS[job["job_id"]] = job
         _evict_promote_jobs()
     _spawn(lambda: _run_promote_job(job, bot_key, req))
+    return job
+
+
+@router.post("/{bot_name}/promote/job", response_model=BotPromoteJob, status_code=202)
+def start_promote_job(bot_name: str, req: BotPromoteRequest):
+    """Start a promote in the background and return at once; poll
+    `GET /bots/{bot}/promote/job` for which step it is on.
+
+    ⚠ **A second promote of the same bot while one is running is REFUSED (409).** Two runs of
+    promote.py over one instance directory, and two stop/start pairs on one process, is not a
+    state anybody meant — and the page can be reopened mid-deploy."""
+    _, bot_key = _resolve_bot(bot_name)
+    try:
+        job = _begin_promote_job(bot_key, req)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     with _PROMOTE_JOBS_LOCK:  # the thread is already writing to it
         return _job_view(job)
 

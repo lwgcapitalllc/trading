@@ -821,12 +821,16 @@ export function useAssignBotAccount() {
       // what was written plus what still has to happen.
       const who = vars.display ?? 'The bot'
       const at = vars.riskPct !== undefined ? ` at ${+vars.riskPct.toFixed(2)}% a trade` : ''
+      // ⚠ The deploy is ASKED for here, not finished — it runs as a job the row's pill draws. A
+      // move whose deploy could not start says so as a warning below, off `notes`.
       toast.success(
         data.account === null
           ? `${who} taken off the account — it will not start until it is on one again`
           : vars.restarting
             ? `${who} moved to account ${data.account}${at} — starting it there`
-            : `${who} added to account ${data.account}${at} — start it to trade`
+            : data.deploy_job
+              ? `${who} added to account ${data.account}${at} — deploying it now, start it to trade`
+              : `${who} added to account ${data.account}${at} — start it to trade`
       )
       // ⚠ A note is what the move could NOT carry — an unregistered account, or one with no
       // recorded symbol suffix. It is raised as a WARNING rather than folded into the success
@@ -838,6 +842,14 @@ export function useAssignBotAccount() {
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
+      // 🔴 The move DEPLOYS the bot now (2026-09-16), and that deploy is a job the server started.
+      // `usePromoteJobs` stops polling once a bot's job is not running, so without this the page
+      // would sit on its last answer — no progress, no version re-read when it lands — and the row
+      // would go on showing the bot as never deployed until something else refetched.
+      if (data.deploy_job) {
+        qc.invalidateQueries({ queryKey: ['bots', 'promote-job', vars.botKey] })
+        qc.invalidateQueries({ queryKey: ['bots', 'version', vars.botKey] })
+      }
     },
     // ⚠ No `onError` toast: `api.patch` already toasts the server's reason (a running bot, a live
     // account not confirmed, a share that does not fit), and a second one on top buried it.

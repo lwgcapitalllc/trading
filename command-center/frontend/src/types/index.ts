@@ -974,6 +974,16 @@ export interface BotAccountAssignResult {
    * into `notes` it arrived as a yellow warning naming a config field on every move.
    */
   info?: string[]
+  /**
+   * The deploy this move STARTED, to watch through the same job readout the Deploy button uses
+   * (2026-09-16). Putting a bot on an account deploys it and leaves it stopped — without a frozen
+   * snapshot of its own a bot imports from the trading box's working tree, so a pull there changes
+   * what it trades with nobody deploying anything.
+   *
+   * ⚠ `''` means NO deploy was started — benching, or one that could not start, whose reason is in
+   * `notes`. It never means one finished.
+   */
+  deploy_job?: string
 }
 
 // `BotConfigSections` / `BotConfigUpdate` deleted 2026-08-04 with the endpoints they typed —
