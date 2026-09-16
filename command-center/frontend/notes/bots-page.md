@@ -1752,3 +1752,12 @@ whether a runtime row is a switch or a number box; the two live bots' switches a
 fields with different types, and a page that matched on either name would be wrong on the other.
 ⚠ **The value written is the server's declared `on`/`off`, never `true` or `1`** — see the type
 trap in `algos/notes/shared-and-live-runtime-reference.md`.
+
+## The account band sits on the bots' grid (2026-09-16)
+
+Aaron: the band's figures staggered with their lengths, and its configure icon did not line up
+with the bots'. The band now uses the rows' own five columns: the return under Performance, the
+cap under Version, the equity under Actions. ⚠ **The band's configure icon is GONE and the whole
+band opens the account** — a bot row hides its "···" while a deploy pill shows, so its configure
+icon moves and nothing could line up with it. **Stop is red at rest** (his call); Start stays
+neutral until hover.

@@ -564,8 +564,9 @@ function RiskBudget({
  * one of them stops real money. Restart and Logs moved behind the row's "···" (`OverflowMenu`);
  * Configure stays on the row as its icon — see that button's own note.
  *
- * ⚠ Neutral at rest, its tone only on hover — the same restraint `IconBtn` already uses. A red
- * Stop on every running bot would be six alarms on a healthy fleet.
+ * 🔴 **Stop is red at rest** (Aaron, 2026-09-16: *"just leave them all red by default"*). It was
+ * neutral until hover so a healthy fleet would not read as six alarms; he preferred the control
+ * that stops real money to always look like it. Start stays neutral until hover.
  */
 function PrimaryBtn({
   label,
@@ -587,10 +588,10 @@ function PrimaryBtn({
         e.stopPropagation()
         onClick()
       }}
-      className={`h-[26px] min-w-[52px] px-[10px] rounded-md border border-border-default text-[11.5px] font-semibold text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+      className={`h-[26px] min-w-[52px] px-[10px] rounded-md border text-[11.5px] font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
         tone === 'neg'
-          ? 'hover:text-neg-text hover:border-neg/40 hover:bg-neg-muted'
-          : 'hover:text-pos-text hover:border-pos/40 hover:bg-pos-muted'
+          ? 'text-neg-text border-neg/40 bg-neg-muted hover:border-neg/70'
+          : 'border-border-default text-text-secondary hover:text-pos-text hover:border-pos/40 hover:bg-pos-muted'
       }`}
     >
       {label}
@@ -1702,13 +1703,26 @@ export function Bots() {
         data-account={account}
         className={index > 0 ? 'border-t border-border-default' : ''}
       >
+        {/* 🔴 The whole band opens the account (Aaron, 2026-09-16). Its own configure icon went: it
+         *  could not sit under the bots' configure icons, because a bot row hides its "···" while a
+         *  deploy pill shows, so their icon moves. */}
         <div
           data-testid="account-band"
-          className="flex items-center gap-x-3 gap-y-2 flex-wrap pl-4 pr-3 py-[10px] bg-bg-sunken/60 border-b border-border-subtle"
+          role="button"
+          tabIndex={0}
+          title="Open this account — balance, risk cap, and which bots are on it"
+          onClick={() => set('account', String(account))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              set('account', String(account))
+            }
+          }}
+          className={`grid ${GRID} items-center gap-3 pr-3 py-[10px] bg-bg-sunken/60 border-b border-border-subtle cursor-pointer transition-colors hover:bg-bg-surface-2`}
         >
           {/* 🔴 THE NUMBER LEADS (2026-09-06) — the login is what the broker, the terminal and every
            *  refusal message name the account by; the nickname is something somebody typed here. */}
-          <span className="flex items-center gap-3 min-w-0">
+          <span className="col-span-2 flex items-center gap-3 min-w-0 pl-4">
             <span className="text-[13.5px] font-mono font-semibold tabular-nums shrink-0">
               {account}
             </span>
@@ -1747,53 +1761,51 @@ export function Bots() {
             ) : null}
           </span>
 
-          <span className="ml-auto flex items-center gap-[18px]">
-            <RiskBudget group={group} cap={cap} idle={idle} />
+          {/* 🔴 The band sits on the bots' own grid (Aaron, 2026-09-16), so each figure lines up
+           *  with a column on every account: the return under Performance, the cap under Version,
+           *  the equity under Actions. */}
+          <span className="min-w-0">
             <AccountNet e={earn} asking={asking} />
-            <span
-              data-testid="account-equity"
-              className="min-w-[112px] flex justify-end text-[16px] font-mono tabular-nums font-semibold"
-            >
-              {balance == null && asking ? (
-                <Shimmer>$00,000.00</Shimmer>
-              ) : balance == null ? (
-                <span className="text-[12px] text-text-tertiary cursor-default">—</span>
-              ) : readAt && idle ? (
-                // No bot here, so the "no bot" pill already says this figure cannot be live; the
-                // read time is a hover, not a second say-so beside the number.
-                <span
-                  title={`What MT5 showed on ${readTime(readAt)}, before its bots left. No bot is on this account now, so nothing reads it live.`}
-                  className="cursor-default"
-                >
-                  {money(balance, false)}
-                </span>
-              ) : readAt ? (
-                // A bot IS here but none is reading it live — nothing else on the band says this
-                // figure is old, so the time stays on screen.
-                <span
-                  title={`What MT5 showed on ${readTime(readAt)}. No bot on this account is reading it live now.`}
-                  className="flex flex-col items-end gap-[1px] cursor-default"
-                >
-                  {money(balance, false)}
-                  <span
-                    data-testid="balance-read-at"
-                    className="text-[10.5px] font-sans font-normal text-text-tertiary"
-                  >
-                    read {readTime(readAt)}
-                  </span>
-                </span>
-              ) : (
-                money(balance, false)
-              )}
-            </span>
           </span>
-
-          <IconBtn
-            testId="configure-account"
-            icon={SlidersHorizontal}
-            title="Open this account — balance, risk cap, and which bots are on it"
-            onClick={() => set('account', String(account))}
-          />
+          <span className="min-w-0">
+            <RiskBudget group={group} cap={cap} idle={idle} />
+          </span>
+          <span
+            data-testid="account-equity"
+            className="flex justify-end text-[16px] font-mono tabular-nums font-semibold"
+          >
+            {balance == null && asking ? (
+              <Shimmer>$00,000.00</Shimmer>
+            ) : balance == null ? (
+              <span className="text-[12px] text-text-tertiary cursor-default">—</span>
+            ) : readAt && idle ? (
+              // No bot here, so the "no bot" pill already says this figure cannot be live; the
+              // read time is a hover, not a second say-so beside the number.
+              <span
+                title={`What MT5 showed on ${readTime(readAt)}, before its bots left. No bot is on this account now, so nothing reads it live.`}
+                className="cursor-default"
+              >
+                {money(balance, false)}
+              </span>
+            ) : readAt ? (
+              // A bot IS here but none is reading it live — nothing else on the band says this
+              // figure is old, so the time stays on screen.
+              <span
+                title={`What MT5 showed on ${readTime(readAt)}. No bot on this account is reading it live now.`}
+                className="flex flex-col items-end gap-[1px] cursor-default"
+              >
+                {money(balance, false)}
+                <span
+                  data-testid="balance-read-at"
+                  className="text-[10.5px] font-sans font-normal text-text-tertiary"
+                >
+                  read {readTime(readAt)}
+                </span>
+              </span>
+            ) : (
+              money(balance, false)
+            )}
+          </span>
         </div>
 
         {rowConds.map(({ cfg, live, asked, cond }, i) => {
