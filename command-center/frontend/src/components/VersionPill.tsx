@@ -13,7 +13,8 @@ import { deployableVersion, versionNeed, versionReadFailure } from '@/lib/botVer
  * ⚠ **A version nobody could work out is never drawn as a number.** Never promoted, the deployed
  * commit not fetched here, no git: `v0` would be the reassuring answer to a question nobody could
  * answer. And a read that FAILED is "Unread", never "No version" — one is the box not answering,
- * the other is an answer.
+ * the other is an answer. And a bot that was never DEPLOYED is "Not deployed" in amber, never
+ * either of those — that one is a bot trading unfrozen code, which is a problem with a fix.
  *
  * 🔴 **CALM WHEN CURRENT, AMBER WHEN IT NEEDS YOU (2026-09-12).** Up to date was a green pill with
  * a tick on every row, which is most of why the demo account read as "everything is green" (Aaron:
@@ -25,7 +26,9 @@ import { deployableVersion, versionNeed, versionReadFailure } from '@/lib/botVer
  * page reads) moves only when the bot restarts — so the page said "up to date" over a live bot
  * eight fixes behind. `restart` is `restartReason`'s sentence; the caller decides, this draws.
  *
- * ⚠ **Order: deploying, loading, unread, unknown, behind, restart, not pushed, current.** Behind
+ * ⚠ **Order: deploying, loading, unread, not deployed, unknown, behind, restart, not pushed,
+ * current.** Not deployed comes before unknown because it is the one unanswerable version that is
+ * a finding rather than a failure to work one out. Behind
  * wins over restart because a deploy restarts too; restart wins over not pushed because it is
  * something the bot needs, where not pushed is something this machine needs.
  *
@@ -95,6 +98,26 @@ export function VersionPill({
         className={`${BASE} ${TONE.dim}`}
       >
         <WifiOff size={10} /> Unread
+      </span>
+    )
+  }
+
+  // 🔴 **NEVER DEPLOYED IS A PROBLEM, NOT A BLANK (2026-09-16).** It used to draw the same dim
+  // grey "No version" as a version nobody could work out, and two bots traded the box's working
+  // tree for a day with nobody noticing. A bot with no snapshot of its own imports whatever the
+  // box's checkout holds, so a pull there changes what it trades without anyone deploying.
+  // ⚠ It reads the deployment record's own frozen flag — the box's answer to "is there a
+  // snapshot", which is the very thing the runner decides by — never the comparison's prose
+  // reason for being unanswerable.
+  if (version && !version.frozen) {
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="undeployed"
+        title="This bot has never been deployed. It trades whatever code the trading box's checkout holds, so a pull there changes what it does with nobody deploying anything. Deploy it from Configure."
+        className={`${BASE} ${TONE.warn}`}
+      >
+        <AlertTriangle size={10} /> Not deployed
       </span>
     )
   }

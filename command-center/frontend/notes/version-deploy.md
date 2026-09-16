@@ -320,3 +320,42 @@ next trigger"* dot with the same tooltip — which was already the correct thing
 still counts only `RUNNING`, so the summary tile is unchanged too. **The type learned a value the
 UI already handled correctly**; rendering armed differently from unrecognised is a separate decision
 nobody has made.
+
+---
+
+## Never deployed is a PROBLEM, not a blank (2026-09-16)
+
+🔴 **Two bots traded the trading box's own working tree for a day and every screen was calm about
+it.** A bot with no frozen snapshot imports its code from the box's checkout, so a pull there
+changes what it trades with nobody deploying anything — and it had already happened once, the
+fingerprint moving between two boots. Both bots warned about it at every startup. Nobody reads a
+log.
+
+**What the page did.** The row's pill drew a dim grey *No version* — the SAME badge it draws when a
+version simply cannot be worked out — and the panel drew the grey *Version unknown* box, which
+offers no deploy button. So the one bot that most needed deploying was the one bot the page would
+not deploy, with its own *Never deployed* warning sitting below, unreachable.
+
+**Three things changed, and they all read one flag.**
+
+- The pill has its own amber **Not deployed** state (`components/VersionPill.tsx`), ahead of the
+  unknown branch. Order is now deploying → loading → unread → not deployed → unknown → behind →
+  restart → not pushed → current.
+- `versionNeed` (`lib/botVersion.ts`) returns it FIRST, before the comparable check, so the
+  "needs you" line over the table counts it — the line and the pill can never disagree, which is
+  the whole reason that function exists.
+- The panel's unanswerable guard lets it FALL THROUGH to the real banner
+  (`pages/Bots/ConfigureTab.tsx`), which now tolerates a missing deployed version: amber, a
+  *Deploy & restart* button, and *Deployed **never*** rather than a `v0` for a deployment that does
+  not exist.
+
+⚠ **The flag is the deployment record's own `frozen`, never the comparison's `reason` wording.**
+The box's answer to *does this bot have a snapshot* is the very thing the runner decides by; the
+comparison only knows it has nothing to compare against, which is the calm state. Matching on a
+sentence would make that sentence load-bearing — reword it and the warning silently stops.
+
+⚠ **Three states, three looks, still.** *Unread* is the box not answering, *No version* is this
+machine unable to count one, *Not deployed* is a bot trading unfrozen code. Only the last is amber.
+
+Checks: `tests/bots-version.spec.ts` — the row's pill, the "needs you" line, and the panel's deploy
+button, each with its mutation named and run red on 2026-09-16.

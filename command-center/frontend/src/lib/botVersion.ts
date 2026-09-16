@@ -41,14 +41,19 @@ export function deployWouldAdvance(c: BotVersionCompare | null | undefined): boo
 }
 
 /** What a bot's version needs from a person. See `versionNeed`. */
-export type VersionNeed = 'behind' | 'restart' | 'unpushed'
+export type VersionNeed = 'undeployed' | 'behind' | 'restart' | 'unpushed'
 
 /**
- * What, if anything, this bot's version needs from a person — the three AMBER states of the
- * version pill, in the pill's own order: `behind` (a deploy would move it forward), `restart` (it
- * runs older code than the box holds — `restart` is `restartReason`'s sentence), `unpushed` (the
- * newer commits exist only on this machine). `null` for every calm state: current, unknown, unread,
- * or not read yet.
+ * What, if anything, this bot's version needs from a person — the four AMBER states of the
+ * version pill, in the pill's own order: `undeployed` (never deployed, so it trades whatever the
+ * box's checkout holds), `behind` (a deploy would move it forward), `restart` (it runs older code
+ * than the box holds — `restart` is `restartReason`'s sentence), `unpushed` (the newer commits
+ * exist only on this machine). `null` for every calm state: current, unknown, unread, or not read
+ * yet.
+ *
+ * 🔴 **`undeployed` comes FIRST and before the comparable check (2026-09-16)** — it has no
+ * version number to compare, so the old "cannot compare, therefore calm" line swallowed it and
+ * two bots traded the repo working tree for a day behind a dim grey badge.
  *
  * ⚠ ONE definition, read by the pill that DRAWS the state and by the Bots page's "needs you" line
  * that COUNTS it (2026-09-15), so the line can never count a bot the pill draws calm, or miss one
@@ -59,6 +64,10 @@ export function versionNeed(
   restart: string | null | undefined
 ): VersionNeed | null {
   const c = v?.compare ?? null
+  // ⚠ Off the deployment record's OWN flag — the box's answer to "does this bot have a snapshot",
+  // which is the very thing the runner decides by. The comparison cannot say it: with no deployed
+  // commit it is simply unanswerable, and that is the calm state below.
+  if (v && !v.frozen) return 'undeployed'
   if (!c || !c.comparable || c.deployed_version === null) return null
   const behind = c.versions_behind ?? 0
   if (behind > 0 && deployWouldAdvance(c)) return 'behind'

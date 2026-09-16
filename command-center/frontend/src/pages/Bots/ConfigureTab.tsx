@@ -264,10 +264,18 @@ export function VersionBanner({
     )
   }
 
-  // Every state that makes this unanswerable has its own fix and none of them is "deploy", so
-  // the reason is rendered and no button is offered. A `0` here would read as UP TO DATE,
+  // 🔴 **NEVER DEPLOYED FALLS THROUGH TO THE BANNER BELOW (2026-09-16).** It is unanswerable for
+  // the same mechanical reason as the rest — there is no deployed commit to compare against — and
+  // it was landing in the grey "Version unknown" box, which offers no button. So the one bot that
+  // most needs deploying was the one bot this page would not deploy, while its own "Never
+  // deployed" warning sat below, unreachable. Off the record's own frozen flag, which is what the
+  // runner decides by; the comparison only knows it has nothing to compare.
+  const undeployed = !!v && !v.frozen
+
+  // Every OTHER state that makes this unanswerable has its own fix and none of them is "deploy",
+  // so the reason is rendered and no button is offered. A `0` here would read as UP TO DATE,
   // which is the most reassuring answer available and the one most likely to be wrong.
-  if (!c || !c.comparable) {
+  if (!c || (!c.comparable && !undeployed)) {
     return (
       <div
         data-testid="version-banner"
@@ -305,7 +313,7 @@ export function VersionBanner({
   // that would advance already says it, and a deploy on disk the process has not picked up is the
   // restart-pending warning below — this is the third case, and a re-deploy is its fix.
   const restart =
-    running || start.isPending || isRestartPending(v) || (behind > 0 && advance)
+    undeployed || running || start.isPending || isRestartPending(v) || (behind > 0 && advance)
       ? null
       : restartReason(v, liveBot, fetchedAt)
 
@@ -339,7 +347,7 @@ export function VersionBanner({
                   disabled:opacity-40 ${
                     armed
                       ? 'text-[12px] bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 border border-amber-400/50'
-                      : advance || failed || restart
+                      : undeployed || advance || failed || restart
                         ? 'text-[12px] bg-gold-text/20 text-gold-text hover:bg-gold-text/30 border border-gold-text/40'
                         : 'text-[10px] text-text-tertiary hover:text-text-secondary'
                   }`}
@@ -347,17 +355,19 @@ export function VersionBanner({
       {armed ? (
         <AlertTriangle size={13} />
       ) : (
-        <Upload size={advance || failed || restart ? 13 : 10} />
+        <Upload size={undeployed || advance || failed || restart ? 13 : 10} />
       )}
       {armed
         ? 'Click again — this bot trades real money'
         : failed
           ? 'Try again'
-          : advance
-            ? `Deploy & restart v${c.deployed_version} → v${heading}`
-            : restart
-              ? 'Re-deploy & restart'
-              : 'Re-deploy'}
+          : undeployed
+            ? `Deploy & restart${heading != null ? ` v${heading}` : ''}`
+            : advance
+              ? `Deploy & restart v${c.deployed_version} → v${heading}`
+              : restart
+                ? 'Re-deploy & restart'
+                : 'Re-deploy'}
     </button>
   )
 
@@ -393,7 +403,9 @@ export function VersionBanner({
     // step it hit. Without one the build REFUSED, and a refused promote touches nothing.
     caption =
       finished.error ??
-      `Deploy refused — ${botLabel} is untouched and still on v${c.deployed_version}. The reason is in the output below.`
+      (undeployed
+        ? `Deploy refused — ${botLabel} is untouched and still has no pinned version. The reason is in the output below.`
+        : `Deploy refused — ${botLabel} is untouched and still on v${c.deployed_version}. The reason is in the output below.`)
     captionTone = 'text-neg-text font-semibold'
   }
 
@@ -410,7 +422,7 @@ export function VersionBanner({
           ? 'bg-accent/[0.05] border-accent/40'
           : failed
             ? 'bg-neg-muted/30 border-neg-text/40'
-            : behind > 0 || restart
+            : undeployed || behind > 0 || restart
               ? 'bg-amber-400/[0.07] border-amber-400/30'
               : 'bg-pos-muted/40 border-pos-text/25'
       }`}
@@ -420,11 +432,17 @@ export function VersionBanner({
           <p
             data-testid="version-heading"
             className={`flex items-center gap-[7px] text-[13px] font-semibold ${
-              deploying ? 'text-accent' : behind > 0 || restart ? 'text-amber-300' : 'text-pos-text'
+              deploying
+                ? 'text-accent'
+                : undeployed || behind > 0 || restart
+                  ? 'text-amber-300'
+                  : 'text-pos-text'
             }`}
           >
             {deploying ? (
               <Loader2 size={14} className="animate-spin" />
+            ) : undeployed ? (
+              <AlertTriangle size={14} />
             ) : restart ? (
               <RotateCcw size={14} />
             ) : behind > 0 && !advance ? (
@@ -436,19 +454,25 @@ export function VersionBanner({
             )}
             {deploying
               ? `Deploying ${botLabel}${(target ?? heading) != null ? ` → v${target ?? heading}` : ''}`
-              : restart
-                ? `${botLabel} is running older code`
-                : behind > 0 && !advance
-                  ? `${botLabel} has everything that is pushed`
-                  : behind > 0
-                    ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
-                    : `${botLabel} is up to date`}
+              : undeployed
+                ? `${botLabel} has never been deployed`
+                : restart
+                  ? `${botLabel} is running older code`
+                  : behind > 0 && !advance
+                    ? `${botLabel} has everything that is pushed`
+                    : behind > 0
+                      ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
+                      : `${botLabel} is up to date`}
           </p>
           <div className="flex items-center gap-[22px] mt-[9px] text-[11px]">
             <span className="text-text-tertiary">
               Deployed{' '}
-              <span className="text-text-primary font-mono text-[13px]">v{c.deployed_version}</span>
-              {v?.promoted_at ? (
+              {/* ⚠ Never `v0` for a bot that was never deployed — that is a version number for a
+                  deployment that does not exist, and the most reassuring wrong answer available. */}
+              <span className="text-text-primary font-mono text-[13px]">
+                {undeployed ? 'never' : `v${c.deployed_version}`}
+              </span>
+              {!undeployed && v?.promoted_at ? (
                 <span className="text-text-tertiary"> · {v.promoted_at}</span>
               ) : null}
             </span>
@@ -561,8 +585,12 @@ export function VersionBanner({
                 data-testid="banner-never-deployed"
                 className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
               >
-                <strong>Never deployed.</strong> There is no pinned version, so it runs whatever is
-                in the repo when it starts — a pull on the box changes what it trades.
+                {/* ⚠ The bold lead goes when the HEADING above already says it (2026-09-16) — the
+                    banner's own state names it now, and the page says each thing once. What stays
+                    is the half the heading does not carry: what being unpinned COSTS. */}
+                {!undeployed && <strong>Never deployed. </strong>}
+                There is no pinned version, so it runs whatever is in the repo when it starts — a
+                pull on the box changes what it trades.
               </p>
             )}
             {f.driftCount > 0 && (

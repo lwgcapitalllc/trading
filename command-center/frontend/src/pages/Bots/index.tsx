@@ -1907,6 +1907,7 @@ export function Bots() {
    * this line may claim.
    */
   const VERSION_WORD: Record<VersionNeed, string> = {
+    undeployed: 'Not deployed',
     behind: 'Behind',
     restart: 'Needs a restart',
     unpushed: 'Not pushed',

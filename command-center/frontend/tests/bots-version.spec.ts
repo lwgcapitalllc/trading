@@ -94,11 +94,12 @@ function compare(over: Partial<BotVersionCompare> = {}): BotVersionCompare {
 
 function version(
   cmp: BotVersionCompare | null,
-  runningCode: BotRunningCode | null = null
+  runningCode: BotRunningCode | null = null,
+  frozen = true
 ): BotDeployedVersion {
   return {
     running_code: runningCode,
-    frozen: true,
+    frozen,
     hash: 'fbf3b94bebf0b96e1d9f238b982dcb9c',
     commit: '4e97565',
     promoted_at: '2026-08-05',
@@ -227,6 +228,9 @@ async function mockBot(
     bot?: Partial<BotStatus>
     /** What the bot's current run started on, against what a restart would load. */
     runningCode?: BotRunningCode
+    /** The bot has NEVER been deployed — no frozen snapshot, so it imports from the box's own
+     *  checkout and a pull there changes what it trades. */
+    unfrozen?: boolean
   } = {}
 ) {
   await pinSnapshot(page, !!opts.live, opts.bot)
@@ -250,7 +254,9 @@ async function mockBot(
   await page.route('**/api/bots/*/version', async (r) => {
     if (promoted && opts.reReadDelayMs)
       await new Promise((ok) => setTimeout(ok, opts.reReadDelayMs))
-    return r.fulfill({ json: version(after(), opts.runningCode ?? null) })
+    return r.fulfill({
+      json: version(after(), opts.runningCode ?? null, !opts.unfrozen || promoted),
+    })
   })
   await page.route('**/api/bots/*/promote/job', (r) => {
     if (!r.request().url().includes('/bots/sos_fade_demo/')) {
@@ -392,6 +398,75 @@ test('an up-to-date bot offers no prominent deploy, only a quiet re-deploy', asy
   await expect(banner(page).getByText(/is up to date/)).toBeVisible()
   await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: /Re-deploy/ })).toBeVisible()
+})
+
+// ── never deployed — the one unanswerable version that is a PROBLEM (2026-09-16) ─
+//
+// 🔴 Two bots traded the trading box's own working tree for a day and every screen was calm about
+// it. The row's pill drew the same dim grey "No version" it draws when a version simply cannot be
+// worked out, and the panel drew the grey "Version unknown" box, which offers no deploy button —
+// so the one bot that most needed deploying was the one bot the page would not deploy.
+
+test('a bot that has never been deployed is AMBER on its row, not a grey blank', async ({
+  page,
+}) => {
+  // MUTATION (run 2026-09-16, RED): drop the pill's frozen branch. It falls through to the grey
+  // "No version" pill — which is the defect itself, a bot trading unfrozen code wearing the look
+  // of one whose version this machine merely could not count.
+  await mockBot(
+    page,
+    compare({ comparable: false, deployed_version: null, versions_behind: null }),
+    {
+      unfrozen: true,
+    }
+  )
+  await page.goto('/bots?tab=setup')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'undeployed')
+  await expect(rowPill(page)).toHaveText(/Not deployed/)
+  // The grey blank and the unread state are the two it must NOT be confused with.
+  await expect(rowPill(page)).not.toHaveText(/No version|Unread/)
+})
+
+test('the "needs you" line counts a never-deployed bot', async ({ page }) => {
+  // MUTATION (run 2026-09-16, RED): drop the undeployed branch from `versionNeed`. The pill still
+  // draws amber and the line above the table goes on saying nothing needs you — the two readings
+  // of one rule disagreeing, which is exactly what that function exists to stop.
+  await mockBot(
+    page,
+    compare({ comparable: false, deployed_version: null, versions_behind: null }),
+    {
+      unfrozen: true,
+    }
+  )
+  await page.goto('/bots?tab=setup')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'undeployed')
+  // ⚠ The LINE, by its own test seam — not the page's first "Not deployed", which is the pill
+  // this check is supposed to be measured against.
+  await expect(page.getByTestId('needs-you').getByTestId('needs-item')).toContainText(
+    /Not deployed/
+  )
+})
+
+test('a never-deployed bot CAN be deployed from the panel, and says never rather than v0', async ({
+  page,
+}) => {
+  // MUTATION (run 2026-09-16, RED): restore the old guard, which caught every unanswerable
+  // comparison. The panel returns the grey "Version unknown" box, the deploy button vanishes, and
+  // the bot cannot be fixed from the page that reports it broken.
+  await mockBot(
+    page,
+    compare({ comparable: false, deployed_version: null, versions_behind: null }),
+    {
+      unfrozen: true,
+    }
+  )
+  await openConfigure(page)
+  await expect(banner(page).getByText(/has never been deployed/)).toBeVisible()
+  await expect(banner(page).getByTestId('deploy-button')).toBeVisible()
+  // ⚠ `v0` would be a version number for a deployment that does not exist.
+  await expect(banner(page)).not.toContainText('v0')
+  await expect(banner(page).getByText(/Version unknown/)).toHaveCount(0)
+  await expect(banner(page).getByText(/is up to date/)).toHaveCount(0)
 })
 
 // ── refusing to answer ──────────────────────────────────────────────────────────
@@ -992,13 +1067,21 @@ test('it says NEVER DEPLOYED, never "not frozen"', async ({ page }) => {
   // MECHANISM (a deployed bot runs a frozen snapshot) and says nothing about the bot. What is true
   // is that nobody ever deployed it, so there is no pinned version and a pull on the box changes
   // what it trades.
-  // MUTATION: put the old label back — the first assertion goes red on the absent warning and the
-  // second on the resurrected wording.
+  // ⚠ Since 2026-09-16 the banner's own HEADING carries the words and the warning below carries
+  // only what being unpinned costs — the page says each thing once. So this reads the BANNER, not
+  // one paragraph of it, and pins that it is said exactly once.
+  // MUTATION: put the old label back — the first assertion holds, the count goes to 2 and the
+  // third goes red on the resurrected wording.
   await mockRestartSettling(page, 999_000, { frozen: false })
   await openConfigure(page)
 
-  await expect(banner(page).getByTestId('banner-never-deployed')).toContainText(/Never deployed/)
+  await expect(banner(page)).toContainText(/never been deployed/i)
+  await expect(banner(page).getByText(/never deployed|never been deployed/i)).toHaveCount(1)
   await expect(banner(page).getByText(/not frozen/i)).toHaveCount(0)
+  // The consequence is still on screen — the half the heading does not carry.
+  await expect(banner(page).getByTestId('banner-never-deployed')).toContainText(
+    /pull on the box changes what it trades/
+  )
 })
 
 test('a version the box would not give is UNREAD on the row and the panel — and nothing toasts', async ({
