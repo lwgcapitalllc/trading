@@ -228,6 +228,29 @@ CLAUDE.md gets at most one index line.
   set. The patched tool reproduces the pre-patch code exactly (max diff 0.0 on the 15m grid).
   Report: `backtest/reports/rso_realign_gate/grid_{free,puprime_ecn}.csv`; write-up in
   `docs/RSO_REALIGN_SPEC.md`.
+  **The displacement rule, the shift-level retest and reward-to-risk at entry — MEASURED
+  2026-09-16 (same day, second pass).** The user's refinement: when the realign candle closes NEAR
+  the level it broke, buy the close and it runs to the last high; when it closes FAR, wait for
+  price to come back to the level. Added: entry `retest` (a limit AT the swing the realign SOS
+  broke, read off the engine's break price, dying like the fib entries), entry `disp` (the close
+  when it sits within `--disp-atr` = 1 chart ATR of that level, else the retest), a split of the
+  as-drawn trades by that displacement, and a split of the last-high-target trades by
+  reward-to-risk AT ENTRY. Both splits carry their own matched random control per bucket.
+  **1m, raw: the far close is a bad market entry, as the user said** — over 1 ATR every exit is
+  negative and over 2 ATR the last-high target reads −0.45R (11 trades, z −2.3) — **but the near
+  close is a coin flip** (1,036 trades, +0.004R at 1R, z −0.07), the best band is 0.5–1 ATR
+  (372 trades, structure trail +0.174R, z +1.49; charged +0.133R, z +1.69), **the retest does not
+  rescue the far ones** (every retest row within ±0.03R of zero raw, all negative charged), and the
+  combined rule equals the plain close (z ≤ +1.0). **Reward-to-risk at entry, 1m: the last high
+  sits inside one stop on 62% of the fires** (1,011 of 1,634), and the trades the user means —
+  the high 1–2 stops away — make +0.078R raw / +0.034R charged (398 trades, z +1.5 / +1.4); two
+  or more stops away they reach it 28% of the time and lose (−0.078 raw, −0.172 charged). 5m: the
+  near close +0.13R at 2R (189 trades, z +0.7–0.8), the rest negative, retest negative. 15m: the
+  near close +0.26R at 2R (61 trades, z +1.6); three c2+ retest cells clear z 2 raw (2.11–2.15)
+  and none charged; the only bucket past the family bar is the last high UNDER half a stop away
+  (35 trades, 91% win, +0.195R, z +3.79 charged) — 0.4 trades a month for 1R a year, and the
+  opposite of the trade asked about. ✅ Every pre-existing cell reproduces exactly after each
+  patch (max diff 0.0 on the 15m grid, twice). Report: `backtest/reports/rso_realign_disp/`.
 - **`tools/structure_patterns.py`** (new 2026-09-14) — asks whether ANY specific market-structure
   event sequence on gold has an edge that survives a correction for how many were tried. Twelve
   tokens from the canonical structure and liquidity engines only (swing labels, external BOS/CHoCH,

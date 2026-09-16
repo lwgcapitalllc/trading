@@ -122,6 +122,23 @@ the holdout is spent, so anything here is a LEAD for forward or another instrume
     flipped sign mismatches all. Report: backtest/reports/rso_realign_gate/. Record:
     docs/RSO_REALIGN_SPEC.md.
 
+THE DISPLACEMENT RULE AND THE SHIFT-LEVEL RETEST (added 2026-09-16, second pass, declared first).
+The user: a realign candle that closes NEAR the level it broke is bought at the close and runs to
+the last high; one that closes FAR needs a retracement back to the level first.
+    retest   a limit AT the swing the realign SOS broke (the engine's break price); structure stop;
+             dies after PENDING chart bars or on a close through the counter extreme
+    disp     the close when it sits within --disp-atr (1.0) chart ATR of that level, else `retest`
+    splits   the rule as drawn by displacement (chart ATR) and, for the tS exit, by reward-to-risk
+             AT ENTRY (last high distance / stop distance) — each bucket against its own control
+🔴 MEASURED 2026-09-16, same bars, raw and `puprime_ecn`: the FAR close is a bad market entry as
+    the user said (1m: over 1 ATR every exit negative, over 2 ATR tS -0.45R, z -2.3) — but the
+    NEAR close is a coin flip (1,036 trades, +0.004R at 1R, z -0.07); the best band is 0.5-1 ATR
+    (372, trail +0.174R, z +1.49); the retest rescues nothing (1m rows within +-0.03R of zero raw,
+    all negative charged); `disp` == `close` (z <= 1.0). Reward-to-risk at entry, 1m: the last
+    high sits inside one stop on 62% of fires; 1-2 stops away +0.078R raw / +0.034R charged (398,
+    z +1.5 / +1.4); 2+ stops away reached 28% of the time, -0.078 / -0.172R. Nothing new clears
+    z 2 charged. Report: backtest/reports/rso_realign_disp/. Record: docs/RSO_REALIGN_SPEC.md.
+
 Usage:
   python backtest/tools/rso_realign_study.py --recall          # find the user's 5 trades first
   python backtest/tools/rso_realign_study.py                   # the grid, 2020-01 -> 2026-09
@@ -173,7 +190,10 @@ HTF_GATE = {1: 15, 5: 15, 15: 60}  # the frame a gated setup must agree with (--
 GATES = ("none", "htf", "intact")
 FRAMES = (1, 5, 15)
 COUNTERS = ("1", "2+")
-ENTRIES = ("close", "fib50", "pb382", "split")
+ENTRIES = ("close", "fib50", "pb382", "split", "retest", "disp")
+DISP_ATR = 1.0  # --disp-atr: a realign close within this many ATR of the shift level is "near"
+DISP_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))
+RR_BUCKETS = ((0.0, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, math.inf))  # last high / stop, at entry
 STOPS = ("struct", "atr2")
 EXITS = ("t1", "t1.5", "t2", "t3", "tS", "t2be", "half", "swing")
 FIXED_R = {"t1": 1.0, "t1.5": 1.5, "t2": 2.0, "t3": 3.0}
@@ -236,6 +256,8 @@ class Setup:
     top_k: int  # ...and its minute
     atr: float
     lh_old: float = math.nan  # the lower high before the one the counter shift broke, side space
+    lvl: float = math.nan  # the swing the realign SOS broke — the shift level, side space
+    disp_atr: float = math.nan  # how far past it the realign bar closed, in chart ATR(14)
     htf_ok: bool = False  # gate frame's external direction agrees at the realign close
     intact: bool = False  # ...and never disagreed, from the bar before the counter shift on
 
@@ -272,7 +294,8 @@ def detect(o, h, lo, c) -> tuple[list, list]:
         ext = eng.update(Bar(index=i, open=o[i], high=h[i], low=lo[i], close=c[i])).external
         if ext.bear_sos:
             if state == "push":
-                setups.append((i, counter, origin, trend_at, push_n, lh_old))
+                lvl = float(ext.bear_bos_price) if ext.bear_bos_price is not None else math.nan
+                setups.append((i, counter, origin, trend_at, push_n, lh_old, lvl))
             state, trend_n = "trend", 0
             lhs = [float(ext.bear_bos_high)] if ext.bear_bos_high is not None else []
         elif ext.bear_bos:
@@ -357,7 +380,7 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
         raw_setups, bos = found[(F, side)]
         g_last, gdir = gmeta[(HTF_GATE[F], side)], found[(HTF_GATE[F], side, "gate")]
         setups = []
-        for j, counter, origin, trend_at, push_n, lh_old in raw_setups:
+        for j, counter, origin, trend_at, push_n, lh_old, lvl in raw_setups:
             if j < WARMUP:
                 continue
             m, a = int(last[j]), int(first[counter])
@@ -383,6 +406,8 @@ def build(raw: pd.DataFrame, clean: pd.DataFrame, frames, spread: float, workers
                     k,
                     float(atr[j]),
                     lh_old,
+                    lvl=lvl,
+                    disp_atr=(lvl - float(tp.C[m])) / float(atr[j]) if atr[j] > 0 else math.nan,
                     htf_ok=htf_ok,
                     intact=intact,
                 )
@@ -423,6 +448,22 @@ def fill(fr: Frame, tp: Tape, s: Setup, how: str):
         return s.m, tp.C[s.m] - tp.en, False, s.m
     if how == "sl":
         return fill_sl(fr, tp, s)
+    if how == "disp":  # the user's rule: near the shift level -> take the close; far -> wait for it
+        return fill(fr, tp, s, "close" if s.disp_atr <= DISP_ATR else "retest")
+    if how == "retest":  # a limit back AT the shift level; dies like the fib entries
+        if not math.isfinite(s.lvl):
+            return None, math.nan, False, s.m
+        jend = min(s.j + PENDING, fr.n - 1)
+        if jend <= s.j:
+            return None, math.nan, False, s.m
+        js = np.arange(s.j + 1, jend + 1)
+        dead = np.flatnonzero(tp.C[fr.last[js]] > s.top)
+        jstop = int(js[dead[0]]) if len(dead) else jend
+        a, b = int(fr.first[s.j + 1]), int(fr.last[jstop])
+        hit = np.flatnonzero(tp.H[a : b + 1] >= s.lvl + tp.en + LIMIT_THROUGH)
+        if not len(hit):
+            return None, math.nan, False, b
+        return a + int(hit[0]), s.lvl, True, b
     jend = min(s.j + PENDING, fr.n - 1)
     if jend <= s.j:
         return None, math.nan, False, s.m
@@ -607,6 +648,7 @@ def trade(
     return dict(
         side=s.side, kf=kf, kx=xk, e=e, R0=R0, rg=rg, r=net_r(rg, R0, kf, xk, kp, s.side, costs),
         outcome=outcome, kind=kind, tdist=(e - T) if kind in ("fixed", "be") else math.nan, push_n=s.push_n,
+        disp=s.disp_atr,
     )  # fmt: skip
 
 
@@ -616,7 +658,7 @@ def evaluate(
     F: int,
     costs: dict,
     cells=None,
-    hows=("close", "fib50", "pb382"),
+    hows=("close", "fib50", "pb382", "retest", "disp"),
     stops=STOPS,
 ) -> dict:
     """Every setup through every (entry, stop, exit) on frame F. -> {(entry, stop, exit): rows},
@@ -819,6 +861,7 @@ def recall(raw: pd.DataFrame, tapes: dict, frs: dict, frames) -> None:
 
 
 def main() -> None:
+    global DISP_ATR
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="puprime_ecn")
     ap.add_argument("--frames", default="1,5,15")
@@ -838,6 +881,7 @@ def main() -> None:
     ap.add_argument(
         "--gates", default="none", help="comma list of none|htf|intact — see the docstring"
     )
+    ap.add_argument("--disp-atr", type=float, default=DISP_ATR, help="the near/far line for `disp`")
     ap.add_argument("--out", default="backtest/reports/rso_realign_study")
     args = ap.parse_args()
 
@@ -851,6 +895,7 @@ def main() -> None:
     if args.free:
         spread, plabel = 0.0, "free"
         costs.update(comm_rt=0.0, swap_long=0.0, swap_short=0.0)
+    DISP_ATR = args.disp_atr
     gates = tuple(args.gates.split(","))
     if any(g not in GATES for g in gates):
         sys.exit(f"--gates must be from {GATES}, got {args.gates!r}")
@@ -913,7 +958,12 @@ def main() -> None:
     if args.sl:
         hows, stops, ents, drawn = ("sl",), ("lh", "atr2"), ("sl",), ("sl", "lh")
     else:
-        hows, stops, ents, drawn = ("close", "fib50", "pb382"), STOPS, ENTRIES, ("close", "struct")
+        hows, stops, ents, drawn = (
+            ("close", "fib50", "pb382", "retest", "disp"),
+            STOPS,
+            ENTRIES,
+            ("close", "struct"),
+        )
     for F in frames:
         rows = evaluate(frs, tapes, F, costs, hows=hows, stops=stops)
         for (en, st, ex), rr in rows.items():
@@ -944,13 +994,15 @@ def main() -> None:
     ctls = {k: control(trades[k], frs, k[0], tapes, pools, costs, rng) for k in cands}
     # The rule as drawn always gets its control, whether or not it is a candidate: the
     # question is what HIS rule does against random timing, not only what the best cell does.
+    users = [drawn] if args.sl else [drawn, ("retest", "struct"), ("disp", "struct")]
     for F in frames:
         for g in gates:
             for c in COUNTERS:
                 for ex in EXITS:
-                    k = (F, c, *drawn, ex, g)
-                    if k not in ctls and trades[k]:
-                        ctls[k] = control(trades[k], frs, F, tapes, pools, costs, rng)
+                    for en_st in users:
+                        k = (F, c, *en_st, ex, g)
+                        if k in trades and k not in ctls and trades[k]:
+                            ctls[k] = control(trades[k], frs, F, tapes, pools, costs, rng)
     qual = sorted(
         (k for k in cands if zscore(trades[k], ctls[k]) >= 2.0), key=lambda k: -grid[k]["worse"]
     )
@@ -997,6 +1049,65 @@ def main() -> None:
                         else ""
                     )
                     print(row(label(k), grid[k], ex_))
+        if not args.sl:
+            for en_st in users[1:]:
+                print(
+                    f"\n{F}m gate=none — entry `{en_st[0]}` (retest = a limit back at the shift level; "
+                    f"disp = the close when it sits within {DISP_ATR:g} ATR of it, else the retest), structure stop"
+                )
+                print(HEAD + "  control      z")
+                for c in COUNTERS:
+                    for ex in EXITS:
+                        k = (F, c, *en_st, ex, "none")
+                        if k not in grid:
+                            continue
+                        ex_ = (
+                            f"  {ctls[k]['avg']:>+7.3f} {zscore(trades[k], ctls[k]):>+6.2f}"
+                            if k in ctls
+                            else ""
+                        )
+                        print(row(label(k), grid[k], ex_))
+            print(
+                f"\n{F}m gate=none — THE RULE AS DRAWN, split by how far the realign bar closed past the "
+                "shift level (chart ATR); each bucket against its own matched random control"
+            )
+            print(HEAD + "  control      z")
+            for c in COUNTERS:
+                for ex in ("t1", "t2", "tS", "swing"):
+                    k = (F, c, *drawn, ex, "none")
+                    for lo_, hi_ in DISP_BUCKETS:
+                        sub = [t for t in trades[k] if lo_ <= t["disp"] < hi_]
+                        if len(sub) < 10:
+                            continue
+                        st_ = stats(sub, t1m, months)
+                        ct_ = control(sub, frs, F, tapes, pools, costs, rng)
+                        print(
+                            row(
+                                f"{label(k)} [{lo_:g},{hi_:g})",
+                                st_,
+                                f"  {ct_['avg']:>+7.3f} {zscore(sub, ct_):>+6.2f}",
+                            )
+                        )
+            print(
+                f"\n{F}m gate=none — THE RULE AS DRAWN, target the last high, split by reward-to-risk AT "
+                "ENTRY (distance to the last high / stop distance); each bucket against its own control"
+            )
+            print(HEAD + "  control      z")
+            for c in COUNTERS:
+                k = (F, c, *drawn, "tS", "none")
+                for lo_, hi_ in RR_BUCKETS:
+                    sub = [t for t in trades[k] if lo_ <= t["tdist"] / t["R0"] < hi_]
+                    if len(sub) < 10:
+                        continue
+                    st_ = stats(sub, t1m, months)
+                    ct_ = control(sub, frs, F, tapes, pools, costs, rng)
+                    print(
+                        row(
+                            f"{label(k)} rr[{lo_:g},{hi_:g})",
+                            st_,
+                            f"  {ct_['avg']:>+7.3f} {zscore(sub, ct_):>+6.2f}",
+                        )
+                    )
         best = sorted(
             (k for k in grid if k[0] == F and grid[k]["n"] >= 30), key=lambda k: -grid[k]["worse"]
         )[:12]

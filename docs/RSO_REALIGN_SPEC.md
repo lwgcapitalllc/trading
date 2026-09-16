@@ -3,6 +3,8 @@
 **Status:** 🔴 **MEASURED 2026-09-14 — NO MECHANICAL EDGE. The one clean check is SPENT.**
 **2026-09-16:** the higher-frame gate the user's own name for the pattern implies — measured raw
 and charged, on every frame: **it does not help, and on 5m and 15m it hurts** (section below).
+**2026-09-16, second pass:** the user's displacement rule, the shift-level retest and reward-to-risk
+at entry — **the far close is a bad entry as he said; nothing else in it clears the bar** (below).
 Tool: `backtest/tools/rso_realign_study.py` (its docstring carries the same record).
 Tool note: `backtest/notes/tools.md`. Nothing here is a strategy, a bot or a Pine file.
 
@@ -187,6 +189,64 @@ structure stop) with its matched random control on every row whether or not it i
 Report: `backtest/reports/rso_realign_gate/grid_free.csv` and `grid_puprime_ecn.csv`. ⚠ Both runs
 are on the searched 2020–2026 bars, so even a positive here would have been a lead, never a pick.
 
+## The displacement rule, the shift-level retest and reward-to-risk at entry — 2026-09-16
+
+The user's second image (two longs, 15 Sep 08:55 and 11:07 NY) and his refinement: *"if the candle
+that closes for the realignment is not very far away it makes it a profitable trade and it has to
+go all the way to the last high; if the candle closes extremely far from where the shift printed you
+have to wait on some type of retracement back to the shift of structure."* Three things added to the
+tool, declared before the run:
+
+- **`retest`** — a limit AT the swing the realign SOS broke (the engine's own break price), structure
+  stop, dying after 60 chart bars or on a close through the counter extreme, like the fib entries.
+- **`disp`** — his rule as one entry: the close when it sits within 1 chart ATR of that level, else
+  the retest (`--disp-atr`).
+- **Two splits of the rule as drawn**, each bucket against its own matched random control: by how
+  far the realign bar closed past the level (chart ATR), and — for the last-high target — by
+  reward-to-risk AT ENTRY (distance to the last high ÷ stop distance).
+
+**1m, his frame, one counter BOS, market at the close, raw:**
+
+| realign close past the level | trades | at 1R | at 2R | last high | structure trail |
+|---|---|---|---|---|---|
+| under 0.5 ATR | 1,036 (63%) | +0.004 (z −0.07) | +0.026 (z +0.72) | +0.009 | +0.028 (z +0.59) |
+| 0.5–1 ATR | 372 | +0.060 (z +1.26) | +0.103 (z +1.39) | +0.043 | **+0.174 (z +1.49)** |
+| 1–2 ATR | 197 | −0.046 | −0.091 | −0.084 | +0.031 |
+| 2 ATR and more | 31 | −0.107 | −0.087 | **−0.447 (z −2.32, 11)** | −0.171 |
+
+| the last high at entry sits… | trades | win | raw avg R | charged avg R |
+|---|---|---|---|---|
+| under half a stop away | 564 (35%) | 78% | −0.023 (z −1.42) | −0.060 |
+| half to one stop | 447 (27%) | 58% | +0.012 | −0.002 |
+| one to two stops | 398 (24%) | 46% | **+0.078 (z +1.52)** | +0.034 (z +1.40) |
+| two stops and more | 225 (14%) | 28% | −0.078 | −0.172 (z −1.26) |
+
+- **The far close is a bad market entry, exactly as he said.** Over 1 ATR every exit is negative;
+  over 2 ATR, aiming at the last high is the worst cell in the study.
+- **But the near close is a coin flip**, not a profitable trade: 1,036 of them, +0.004R at 1R, the
+  same as random timing. The best band is the MIDDLE one — a candle that shows some displacement
+  — and it does not clear the bar (z +1.49 raw, +1.69 charged on the trail).
+- **The retest does not rescue the far setups.** Every 1m retest row sits within ±0.03R of zero
+  raw and every one is negative charged; the combined rule reads the same as the plain close
+  (z ≤ +1.0 raw, all negative charged).
+- **"The previous high is closer than the stop" is true of 62% of the mechanical fires**, and
+  those are the ones he does not take. The ones he does — the high one to two stops away — make
+  +0.08R raw and +0.03R charged a trade, 5 a month, and are not past the bar; two or more stops
+  away, price reaches the high 28% of the time and the trade loses. **"It has to go all the way
+  to the last high" is the claim the data refuses**: the further the high, the less often it is
+  reached, and a fixed target there loses.
+- **5m:** the near close makes +0.13R at 2R (189 trades, z +0.7–0.8); every other bucket and the
+  retest are negative. **15m:** the near close +0.26R at 2R (61 trades, z +1.6); three 2+-counter
+  retest cells clear z 2 raw (2.11–2.15) and none charged. The one bucket anywhere past the family
+  bar is the last high UNDER half a stop away on the 15m — 35 trades, 91% win, +0.195R, z +3.79
+  charged — 0.4 trades a month for about 1R a year, and the opposite of the trade asked about.
+- The realign bar's displacement and the reward-to-risk at entry are the same lever seen from two
+  sides: a far close is a bigger stop and a nearer target, which is why both splits agree.
+
+✅ Every pre-existing cell reproduces exactly after each patch (max diff 0.0 on the 15m grid,
+twice). Report: `backtest/reports/rso_realign_disp/grid_free.csv`, `grid_puprime_ecn.csv`. ⚠ Same
+searched bars as everything above — a lead at most, never a pick.
+
 ## What this leaves
 
 - 🔴 **Both periods are spent for this pattern.** Never test another cell on 2018-09-14 →
@@ -202,3 +262,5 @@ are on the searched 2020–2026 bars, so even a positive here would have been a 
 - A revived rule needs new data: that journal, or forward results on the demo account.
 - **The higher-frame gate is not the missing filter** (2026-09-16, above). The 15m agreeing —
   or holding intact through the pullback — removes half the setups and none of the noise.
+- **Neither is the displacement of the realign candle, nor a retest of the shift level** (2026-09-16,
+  above). A far close is a bad entry, a near close is a coin flip, and the retest adds nothing.
