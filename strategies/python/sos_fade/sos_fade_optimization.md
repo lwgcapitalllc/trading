@@ -4556,7 +4556,12 @@ not on the pattern — and that is a smaller claim than the one this line starte
 
 ---
 
-## Run 35 — 2026-09-17: the REALIGN trigger as the no-gap entry — the first positive on this line
+## Run 35 — 2026-09-17: the REALIGN trigger as the no-gap entry — 🔴 RETRACTED, see Run 36
+
+🔴 **EVERY NUMBER IN THIS SECTION IS WRONG AND MUST NOT BE QUOTED.** The +50.21R and the 77.9%
+win rate came from a defect in this run's own code, found the same day by Run 36's target sweep.
+The section is kept because the method below is sound and Run 36 reuses it. **Read Run 36 for the
+result.**
 
 **Question (Aaron):** build the Realign pattern as the no-gap confirmation, with Realign's own
 stop, and measure it.
@@ -4601,3 +4606,55 @@ screen — no slot contention, no broker cost profile, no interaction with the p
 Runs 29 and 31 cost 24 primaries. **The next step, and the only one that decides it, is the same
 bot replay Runs 29/31 used:** wire this trigger and the extreme target into the fast clock and
 run `base` against it on one clock.
+
+---
+
+## Run 36 — 2026-09-17: the target sweep — and it RETRACTS Run 35
+
+**Question (Aaron):** test both versions of the first event, and find the ideal target.
+
+**The sweep found a defect in Run 35 before it found anything about targets.**
+
+🔴 **Run 35's exit loop took the first bar where price TOUCHED the target, and never checked the
+target was ahead of the entry.** A no-gap setup stays alive until the 15m 1.0 is touched — up to
+five days — so the 5m trigger can print *after* price has already run past the 0.0 extreme. When
+it did, the extreme sat BEHIND the entry, the loop matched on the very first bar, and the trade
+booked a positive payoff computed from `|target − entry|`. A guaranteed instant win, invented by
+the code.
+
+**It hit 49 of the 77 trades.** Those 49 are the whole of the +50.21R and the whole of the 77.9%
+win rate. This is rule 3 in a new costume — *recording a target TOUCHED as a target REACHED* —
+and it is the third time in this session's work that a measurement recorded the wrong question
+(see Run 32's window and Run 34's ceiling). ⚠ **The tell was visible and was missed: a 78% win
+rate on a setup whose own ceiling is 25% at 3R should never have been reported without asking
+where the extra wins came from.**
+
+**The corrected sweep.** `backtest/tools/nogap_realign_entry.py` (commit 84f1432b) now refuses a
+target behind the entry, and runs three trigger variants against ten targets — six fib-based
+(0.5, 0.382, 0.236, the extreme, and 0.27 / 0.618 past it) and four fixed (1R–4R). Split
+2020–2023 / 2024–2026.
+
+| Trigger variant | Fired on | Best target | Total | 2020–23 | 2024–26 |
+|---|---|---|---|---|---|
+| any counter event | 77 (39%) | fib 0.382 (n17) | −5.0R | −3.5 | −1.6 |
+| counter BREAK only | 77 (39%) | fib 0.382 (n17) | −5.0R | −3.5 | −1.6 |
+| counter SHIFT only | 72 (37%) | 0.27 past the extreme (n37) | −1.0R | −5.6 | **+4.6** |
+
+- **All 30 variant × target combinations are negative overall.**
+- **ZERO are positive in both halves.** The two cells that make money on 2024–26 both lose on
+  2020–23, and by more.
+- **"Any counter event" and "counter BREAK only" are identical** — in this window every
+  qualifying counter event was a break, so the distinction Aaron asked about does not exist here.
+- The fixed-R targets get monotonically worse with distance (1R −8.7R → 4R −28.5R), which is what
+  a setup with no directional edge looks like.
+
+**Verdict: the Realign trigger does not rescue the no-gap entry either.** Runs 27–36 close this
+line. The honest summary of the whole sequence: the tradable zone with no gap is a coin flip
+(Run 34's corrected ceiling), no lower-frame structure separates the winners (Run 34), and no
+entry rule tried on top of it — single break, paired break-then-shift, nine exits — beats the
+coin flip out of sample.
+
+**What is genuinely untried, and is where this should go next if it goes anywhere:** a second
+instrument. Every run 27–36 sits on one symbol on one timeframe, and the whole line has now been
+searched hard enough on that record that another pass over it will find noise before it finds
+anything else.
