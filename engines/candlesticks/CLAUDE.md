@@ -363,3 +363,10 @@ step 15 must never stand in for one.
 ⚠ **Provenance is recorded (Vantage XAUUSD M15, 20154 bars) because a
 cross-cutting run on 2026-09-01 recorded NEITHER broker nor symbol and cost three replays** — two
 brokers disagree on the bar count for the same window while both look perfectly healthy.
+
+## Speed — the price readers index the window directly (2026-09-16)
+
+The four price readers no longer go through `_bar`: they were ~27 million calls on a 6.7-year M5
+chart build. MEASURED by CPU time over 31,095 bars: 2.4 s → 2.0 s, event output identical, golden
+gate green. Behaviour is unchanged — the window never holds more bars than have been seen, so its
+length is the only bound needed.

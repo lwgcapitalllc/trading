@@ -146,7 +146,12 @@ class FairValueGapEngine:
             # it protected cost it the gaps it would have traded. The live total is therefore
             # UNBOUNDED by `max_count`; it is bounded by the EQ engine instead (`max_levels` per
             # side, each dying on a close through it).
-            non_eq = sum(1 for gap in self._active if not self._exempt(gap))
+            # Nothing can be over the cap while the WHOLE list fits under it, so skip the exemption
+            # scan then — it is pure, and it was 19 s of a 6.7-year M5 chart build (2026-09-16).
+            if len(self._active) <= self._max_count:
+                non_eq = 0
+            else:
+                non_eq = sum(1 for gap in self._active if not self._exempt(gap))
             while non_eq > self._max_count:
                 drop_idx = None
                 for idx, gap in enumerate(self._active):

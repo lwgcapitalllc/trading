@@ -148,26 +148,30 @@ class CandlestickEngine:
     # window access — Pine's `x[k]`, returning None where Pine would return `na`
     # ------------------------------------------------------------------
     def _bar(self, k: int) -> Optional[Tuple[float, float, float, float]]:
-        """The bar `k` back (`k = 0` is this bar). None when that bar is not in history yet."""
-        if k >= self._bars_seen or k >= len(self._window):
-            return None
-        return self._window[-1 - k]
+        """The bar `k` back (`k = 0` is this bar). None when that bar is not in history yet.
 
+        The window never holds more bars than have been seen, so its length is the only bound."""
+        w = self._window
+        return w[-1 - k] if k < len(w) else None
+
+    # ⚠ The four readers below index the window DIRECTLY rather than going through `_bar`. They are
+    # called ~27 million times on a 6.7-year M5 chart build, and the extra call was a third of this
+    # engine's time (MEASURED 2026-09-16). Same bound, same None.
     def _o(self, k: int = 0) -> Optional[float]:
-        b = self._bar(k)
-        return None if b is None else b[0]
+        w = self._window
+        return w[-1 - k][0] if k < len(w) else None
 
     def _h(self, k: int = 0) -> Optional[float]:
-        b = self._bar(k)
-        return None if b is None else b[1]
+        w = self._window
+        return w[-1 - k][1] if k < len(w) else None
 
     def _l(self, k: int = 0) -> Optional[float]:
-        b = self._bar(k)
-        return None if b is None else b[2]
+        w = self._window
+        return w[-1 - k][2] if k < len(w) else None
 
     def _c(self, k: int = 0) -> Optional[float]:
-        b = self._bar(k)
-        return None if b is None else b[3]
+        w = self._window
+        return w[-1 - k][3] if k < len(w) else None
 
     def _has_history(self, spec: PatternSpec) -> bool:
         """Is there enough history for this rule to be true at all? (Pine: `na` compares false.)"""
