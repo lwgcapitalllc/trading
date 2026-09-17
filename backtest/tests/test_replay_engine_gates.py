@@ -111,6 +111,86 @@ def _package_sources(pkg: str):
     return [p for p in root.rglob("*.py") if "tests" not in p.parts]
 
 
+# Engine classes a strategy may build for ITSELF. One of these owns its own bars and its own
+# output, so the stack's switch for the same-named field does not reach it.
+_PRIVATE_ENGINE_CLASSES = {"StructureEngine"}
+
+
+def _private_engine_states(tree) -> set:
+    """`(name, line)` pairs where `name` can only hold the output of an engine this module built.
+
+    A name qualifies inside one function only when EVERY assignment to it there is
+    `<name> = self.<attr>.update(...)`, and `<attr>` is assigned somewhere in the module ONLY as
+    `self.<attr> = <private engine class>(...)`. Anything else bound to the name, or to the
+    attribute, and the reads stay counted — a shared bar state can never be laundered through it.
+
+    MUTATION (run 2026-09-16, both went red in the SOS Fade case): add
+    `self._engine = bar_state` to `secondary.py`'s shift class; add `st = bar` before the read.
+    """
+    attr_sources: dict = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if (
+                    isinstance(t, ast.Attribute)
+                    and isinstance(t.value, ast.Name)
+                    and t.value.id == "self"
+                ):
+                    v = node.value
+                    ok = (
+                        isinstance(v, ast.Call)
+                        and isinstance(v.func, ast.Name)
+                        and v.func.id in _PRIVATE_ENGINE_CLASSES
+                    )
+                    attr_sources.setdefault(t.attr, set()).add(ok)
+    private_attrs = {a for a, oks in attr_sources.items() if oks == {True}}
+
+    out = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        binds: dict = {}
+        for node in ast.walk(fn):
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = [(t, node.value) for t in node.targets]
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+                targets = [(node.target, node.value)]
+            elif isinstance(node, (ast.For, ast.With, ast.AsyncFor)):
+                for sub in ast.walk(
+                    node.target
+                    if isinstance(node, (ast.For, ast.AsyncFor))
+                    else ast.Tuple(
+                        elts=[i.optional_vars for i in node.items if i.optional_vars],
+                        ctx=ast.Load(),
+                    )
+                ):
+                    if isinstance(sub, ast.Name):
+                        binds.setdefault(sub.id, set()).add(False)
+            for t, v in targets:
+                if not isinstance(t, ast.Name):
+                    for sub in ast.walk(t):
+                        if isinstance(sub, ast.Name):
+                            binds.setdefault(sub.id, set()).add(False)
+                    continue
+                ok = (
+                    isinstance(v, ast.Call)
+                    and isinstance(v.func, ast.Attribute)
+                    and v.func.attr == "update"
+                    and isinstance(v.func.value, ast.Attribute)
+                    and isinstance(v.func.value.value, ast.Name)
+                    and v.func.value.value.id == "self"
+                    and v.func.value.attr in private_attrs
+                )
+                binds.setdefault(t.id, set()).add(ok)
+        params = {a.arg for a in fn.args.args + fn.args.kwonlyargs + fn.args.posonlyargs}
+        names = {n for n, oks in binds.items() if oks == {True} and n not in params}
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Name) and node.id in names:
+                out.add((node.id, node.lineno))
+    return out
+
+
 def _reads_of(field: str, sources) -> list[str]:
     """Every textual read of `<something>.<field>` in these files, comments and strings aside.
 
@@ -123,9 +203,12 @@ def _reads_of(field: str, sources) -> list[str]:
     hits = []
     for path in sources:
         tree = ast.parse(path.read_text())
+        private = _private_engine_states(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == field:
                 base = node.value
+                if isinstance(base, ast.Name) and (base.id, node.lineno) in private:
+                    continue
                 # `self.fib` is the strategy's own attribute, never the bar state's.
                 if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
                     if base.value.id == "self":

@@ -365,3 +365,12 @@ the gate compared nothing** (such a file is refused since 2026-09-10:
 `strategies/python/sos_fade/CLAUDE.md`). No SOS Fade or extreme-leg strategy export is on this
 machine. `scripts/run_all_tests.sh` all green, 11 of 11 golden engine gates included. **The 6.6-year
 A/B above is the evidence for both bots, and it is a different claim from a parity pass.**
+
+### The engine-gate read check knows a PRIVATE engine (2026-09-16)
+
+SOS Fade's secondary shift builds its OWN structure engine and reads that engine's internal
+breaks. The stack's switch for internal structure does not govern it, but the check flagged it.
+A read is now exempt only when, inside one function, every binding of the name is an update on a
+`self` attribute that the module ONLY ever assigns a freshly built structure engine. Any other
+binding of the name or the attribute and the read counts again. **Mutations run, both red:** the
+attribute also assigned the shared bar state; the name rebound to the shared bar before the read.

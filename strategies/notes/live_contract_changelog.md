@@ -107,3 +107,11 @@ a re-entry — but `src` is `None` on every primary AND on a re-entry whose trig
 itself, so the two were genuinely one value. The fill path was never exposed to this (it is TOLD
 the kind by its caller); the planned answer is asked before the fill and has only the order to go
 on. **Pinned by a pair of tests on one config where only the kind differs and it flips the answer.**
+
+## The stop check follows the value through one helper (2026-09-16)
+
+The bridge now passes the strategy's stop through the owner's hand-stop helper before moving the
+broker's stop. The structural test lost the trail and went red on a correct bridge. It now follows
+ONE wrapping helper on the bridge, and accepts it only if the helper can return its argument
+unchanged. **Mutations run, all red:** the stop read replaced by the bridge's own value; the
+helper's pass-through return replaced; the stop-move call handed the old stop instead.

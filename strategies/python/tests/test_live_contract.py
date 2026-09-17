@@ -146,12 +146,29 @@ def test_the_stop_value_reaches_a_broker_call():
 
     This is the one half of the split that can be checked structurally: the value bound from
     `getattr(dec, "stop", ...)` is passed to the terminal's stop-move call in the same method.
-    MUTATION: change `_sync_stop` to move a stop it computed itself and this goes red.
+    The read may be wrapped in ONE pass-through helper on the bridge (today the owner's
+    hand-tightened stop, `want = self._effective_stop(getattr(dec, "stop", None))`). The helper
+    is followed, and it counts only if it can hand its argument back unchanged
+    (`return <its first parameter>`); a helper that always substitutes its own value does not.
+
+    MUTATION (run 2026-09-16, all three went red): make `_sync_stop` move a stop it computed
+    itself; make `_effective_stop` end in `return self._hand_stop` instead of `return want`;
+    pass `self._pos_stop` to `move_sl` instead of `want`.
     """
-    body = _method_body(_BRIDGE.read_text(encoding="utf-8"), "_sync_stop")
+    text = _BRIDGE.read_text(encoding="utf-8")
+    body = _method_body(text, "_sync_stop")
     assert 'getattr(dec, "stop"' in body, "_sync_stop no longer reads the decision's stop"
-    m = re.search(r'(\w+)\s*=\s*getattr\(\s*dec\s*,\s*"stop"', body)
+    m = re.search(
+        r'(\w+)\s*=\s*(?:self\.(\w+)\(\s*)?getattr\(\s*dec\s*,\s*"stop"', body)
     assert m, "could not find what the stop is bound to"
+    if m.group(2):
+        helper = _method_body(text, m.group(2))
+        param = re.search(rf"def {m.group(2)}\(\s*self\s*,\s*(\w+)", helper)
+        assert param, f"could not read the parameter of {m.group(2)!r}"
+        assert re.search(rf"^\s*return\s+{param.group(1)}\s*$", helper, re.M), (
+            f"{m.group(2)!r} never hands the strategy's stop back — the broker's stop would "
+            f"always be something the bridge chose"
+        )
     assert re.search(rf"move_sl\([^)]*\b{m.group(1)}\b", body), (
         f"_sync_stop reads the decision's stop into {m.group(1)!r} but does not hand that value "
         f"to move_sl — the broker's stop would be moved to something else"
