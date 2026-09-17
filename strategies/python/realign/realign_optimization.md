@@ -802,6 +802,48 @@ stack's own default share rule gave the same book to the cent.
 - The 10% cap refused 3-6 SOS Fade setups per run, but the shared and solo trade counts match, so
   no trade was lost; open risk peaked at 10.07-10.15% (not investigated).
 
+### Run 13 — a 72-hour setup window and a structure-only trail, both from Aaron's chart (2026-09-16)
+
+**Ask (Aaron):** each change made more money on his TradingView chart (about three months). Test them.
+**Basis:** as Run 12, with the 20-day momentum filter ON; scratch `win_sweep.py`, `win_diff.py`,
+`trail_sweep.py`, `combo.py`. Split 2023-08-10.
+
+**Setup window (hours armed after the false break):**
+
+| hours | trades | R | before split | after | maxDD R |
+|---|---|---|---|---|---|
+| 12 | 67 | +39.94 | +14.66 | +25.29 | 6.11 |
+| **24 (was shipped)** | 94 | +48.50 | +18.45 | +30.05 | 5.07 |
+| 36 | 101 | +50.43 | +20.44 | +29.99 | 5.20 |
+| 48 | 104 | +52.83 | +19.68 | +33.15 | 5.20 |
+| 60 | 109 | +54.37 | +20.27 | +34.10 | 5.07 |
+| 66 | 113 | +70.50 | +20.27 | +50.23 | 6.07 |
+| **72** | 115 | +69.32 | +19.09 | +50.23 | 6.07 |
+| 84 / 96 / 120 | 117 / 118 / 122 | +68.05 / +68.02 / +66.78 | ~+18 | ~+49 | 6.07-6.11 |
+
+- **The 60 → 66 jump is ONE trade:** 66h adds four, the 2023-09-25 short (+19.2R) and three −1R losses.
+- **24 → 72 adds 21 trades for +20.81R, and +19.2R of it is that short;** the other 20 net +1.61R.
+- 2018-09-14 → 2019-12 (never used to choose): 72h +1.6R against 24h +3.2R.
+
+**Runner trail (external frame both ways):**
+
+| trail | trades | R | before split | after | maxDD R |
+|---|---|---|---|---|---|
+| **structure + 1% ratchet (was shipped)** | 94 | +48.50 | +18.45 | +30.05 | 5.07 |
+| structure + 2% ratchet | 93 | +46.20 | +15.28 | +30.92 | 5.07 |
+| structure + 3% / 5% ratchet | 93 | +67.88 | +36.96 | +30.92 | 5.07 |
+| **structure only** | 93 | +67.88 | +36.96 | +30.92 | 5.07 |
+
+- A 3% step never fires, so it IS structure-only. **Five trades differ in 6.5 years; +18.1R of the
+  +19.4R is 2020-11-09** (+18.5R ratcheted, +36.6R not). The rest: +2.7, +0.6, −0.3, −1.8.
+
+**Both together (the new defaults):** 114 trades, **+88.70R**, before split +37.61, after +51.10,
+maxDD 6.07R; from 2018-09-14: 126 trades, +90.28R. A plain replay at the new defaults reproduces it.
+
+**Verdict (agent):** neither change is supported beyond one trade each; recommended keeping 24h
+and the ratchet. **Aaron's decision: ship both.** Built as the new defaults on both sides, and
+`realign_1`'s config moved with them. Parity green the same day on an export at the new defaults.
+
 ## Open questions — blocking, and they are not tuning questions
 
 ⚠ **Read this table together with the two findings Runs 5-6 settled, which are NOT open and must

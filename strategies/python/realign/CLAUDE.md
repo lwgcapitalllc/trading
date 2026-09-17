@@ -51,7 +51,7 @@ Five steps, and the false break is the whole idea:
 2. **The false break** — a `bear_sos` against that trend. This is the deviation: price grabs the
    liquidity under the last confirmed low and the external structure flips bearish.
 3. **The arm** — the pre-deviation external high (`broken_high_price`) is latched as the TARGET, and
-   the setup stays armed for `realign_window_hrs` (24.0, chosen not measured).
+   the setup stays armed for `realign_window_hrs` (72.0 since 2026-09-16; swept in Run 13).
 4. **The realignment** — on the 5m, a counter-direction break followed by a with-trend SOS. That
    second break is the trigger.
 5. **The entry** — MARKET, immediately, on the trigger bar's close. Stop behind the last counter
@@ -295,11 +295,23 @@ broke a new fork.
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
 
+## 🔴 The shipped baseline moved THREE times on 2026-09-16 — read before quoting a figure
+
+**Now: 114 trades, +88.70R, worst drawdown 6.07R** (PU Prime `XAUUSD.p` 5m, 2020-01-01 →
+2026-09-16, `puprime_ecn`, 5% risk) = the 20-day momentum filter ON + the setup armed **72h**
+(was 24) + the runner trail **structure only** (was structure + 1% ratchet). Aaron's calls, taken
+against the agent's advice on the last two. Every figure above this section predates all three.
+
+- ⚠ **About 37R of the +40R those two added is TWO trades**: 2023-09-25 short (+19.2R, exists only
+  at ≥66h) and 2020-11-09 long (+36.6R unratcheted against +18.5R). Without them the two changes
+  are roughly +3R. Expect a thinner book than the headline. Record: `realign_optimization.md` → Run 13.
+- ✅ **Parity GREEN at the new defaults** (golden `VANTAGE_XAUUSD_M5_20086bars_shipped.csv`, taken
+  2026-09-16): 8 momentum refusals, 2 trades, one trailed for 22 bars on the structure-only stop.
+
 ## 🔴 The N-day momentum filter — SHIPPED ON at 20 (`realign_mom_days`, 2026-09-16)
 
-- 🔴 **Every realign figure above this section was measured with it OFF.** The shipped baseline
-  is now **94 trades, +48.50R, worst drawdown 5.07R** (PU Prime `XAUUSD.p` 5m, 2020-01-01 →
-  2026-09-16, `puprime_ecn`, 5% risk). Pass `realign_mom_days=None` to reproduce an older figure.
+- Filter alone (24h, ratchet): **94 trades, +48.50R, worst drawdown 5.07R**, against 163 /
+  +54.09R / 14.48R off. Pass `realign_mom_days=None` to reproduce an older figure.
 - **Parity GREEN on its own export** (golden `VANTAGE_XAUUSD_M5_20069bars_mom20.csv`, filter at
   20): the momentum sign agreed on 14,368 bars and 8 setups were refused on both sides. The two
   older goldens predate the filter and the gate replays them with it OFF — never at the default.

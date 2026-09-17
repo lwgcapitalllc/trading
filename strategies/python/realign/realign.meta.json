@@ -28,6 +28,21 @@
       }
     },
     {
+      "text": "Nothing is banked early: at the target the stop lifts, then trails each new 15-minute swing.",
+      "show_if": {
+        "exec_tp1_pct": 0,
+        "exec_tp2_pct": 0,
+        "exec_tp2_stop_mode": "TP1 price",
+        "exec_runner_trail": "Structure (swing)"
+      }
+    },
+    {
+      "text": "It skips a trade that points the same way as gold's last {realign_mom_days} trading days.",
+      "show_if": {
+        "realign_mom_days": 20
+      }
+    },
+    {
       "text": "A trade short of halfway after {exec_time_stop_hrs} hours is closed; a setup whose stop is under {exec_min_stop_val}% of price is skipped.",
       "show_if": {
         "exec_time_stop_mode": "Before TP1 only",

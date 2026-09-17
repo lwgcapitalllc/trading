@@ -303,3 +303,14 @@ goes into the ledger's startup row. ⚠ A promote with `--allow-dirty` still rec
 does not fully describe the files — `promote.py` already warns about that at promote time.
 
 Tests: `tests/test_running_commit_label.py` (4; red at HEAD — no such function, and the line read HEAD).
+
+## 🔴 `realign_1` carried three settings its code does not have (found 2026-09-16)
+
+The benched realign bot's config held `exec_ngs`, `exec_ngs_tp_r` and `exec_ngs_risk_pct` — the
+parked no-gap SOS Fade settings that live only on `research/nogap-shift-entry`. The strategy config
+refuses an unknown key, so **this bot would have failed on its first start**, and nothing flagged it
+because a benched bot is never loaded. Found by loading its `strategy_params` into `RealignConfig`
+while moving its defaults; removed. ⚠ **Before assigning any benched bot, load its settings into its
+strategy's config once** — a folder created from a session on another branch can carry that
+branch's settings. The same pass moved its window to 72h, its trail to structure-only and stated the
+20-day momentum filter (`strategies/python/realign/realign_optimization.md` → Runs 12-13).

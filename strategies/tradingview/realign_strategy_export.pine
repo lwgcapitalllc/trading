@@ -31,7 +31,7 @@ tradeShorts = input.bool(true,  "Trade shorts", group = G3)
 riskPct     = input.float(1.0,  "Risk % per trade", minval = 0.01, maxval = 100, group = G3, tooltip = "Percent of equity risked to the stop. Test at 1 - R is scale-free, so the R results come out identical.")
 
 htfTf       = input.timeframe("15", "External timeframe", group = G4, tooltip = "The timeframe the false break is read on. The chart frame is the trigger.")
-windowHrs   = input.float(24.0, "Hours the setup stays armed", minval = 0.5, group = G4, tooltip = "How long the setup stays armed after the false break. Chosen, not measured.")
+windowHrs   = input.float(72.0, "Hours the setup stays armed", minval = 0.5, group = G4, tooltip = "How long the setup stays armed after the false break.")
 
 entryMode   = input.string("Market", "Entry", options = ["Market", "Retest"], group = G5, tooltip = "Market takes the close of the bar the realignment confirms on. Retest rests a limit at the level the realignment broke and waits for price to come back to it - a smaller book, entered nearer the stop, paying no entry spread on the way in.")
 retestAt    = input.string("Level", "   ↳ Retest price", options = ["Level", "Mid"], group = G5, tooltip = "Level rests at the structure level the realignment broke. Mid rests halfway between the stop and the confirming close. Read only in Retest mode.")
@@ -42,7 +42,7 @@ tp1Pct        = input.float(0,   "TP1 size %", minval = 0, maxval = 100, group =
 tp2Pct        = input.float(0,   "TP2 size %", minval = 0, maxval = 100, group = G6, tooltip = "0 banks nothing at the second target but still installs the floor and hands the rest to the trail.")
 beBufTk       = input.int(0,     "Breakeven buffer (ticks)", group = G6, tooltip = "Where the stop sits after the first target. Negative gives the trade room below the entry.")
 tp2StopMode   = input.string("TP1 price", "Stop floor after TP2", options = ["TP1 price", "Breakeven", "One trail step behind"], group = G6)
-runnerTrail   = input.string("Structure + % ratchet", "Runner trail", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = G6)
+runnerTrail   = input.string("Structure (swing)", "Runner trail", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = G6)
 trailFrame    = input.string("External", "   ↳ Trail anchor frame", options = ["External", "Chart"], group = G6, tooltip = "Which frame's confirmed swings the runner trail sits behind. WARNING: this file has always used External and the Python port has always used Chart, which is a real divergence found 2026-09-16 and worth tens of R. The input exists so a CSV export can state which one it ran, and the parity gate can settle which is right.")
 trailPct      = input.float(1.0, "   ↳ Ratchet step (% of price)", minval = 0.01, group = G6, tooltip = "Read only in Structure + % ratchet mode.")
 trailStep     = input.float(1.0, "   ↳ Fixed trail step ($)", minval = 0.01, group = G6, tooltip = "Read only in Fixed step mode.")

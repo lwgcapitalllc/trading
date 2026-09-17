@@ -84,3 +84,12 @@ completed New York days exist (refusal code 7, tagged on the chart). The twin ex
 `docs/realign_strategy.md`. **Parity green the same day on an export taken at 20** (now the third
 realign golden); the default moved 0 → 20 after it. ⚠ A chart already running the script keeps its
 saved 0 until "Reset settings to defaults".
+
+## `realign_strategy.pine` — 72-hour setup window and a structure-only trail by default (2026-09-16)
+
+"Hours the setup stays armed" 24 → **72** and "Runner trail" "Structure + % ratchet" →
+**"Structure (swing)"**, matching the Python defaults (Aaron's call; evidence and the agent's
+objection in `strategies/python/realign/realign_optimization.md` → Run 13). The window tooltip
+lost "Chosen, not measured." — it has now been swept. Only default VALUES moved, so no saved input
+shifts, but a chart already running the script keeps its old values until "Reset settings to
+defaults". Parity green the same day on an export at these defaults (the fourth realign golden).

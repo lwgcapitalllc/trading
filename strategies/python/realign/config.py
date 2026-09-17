@@ -55,8 +55,14 @@ class RealignConfig(SosFadeConfig):
     locked out of the optimizer, the sweeps and the stress test.
     """
 
-    realign_window_hrs: float = 24.0
-    """How long a setup stays armed after the external false break. Chosen, not measured."""
+    realign_window_hrs: float = 72.0
+    """How long a setup stays armed after the external false break.
+
+    72 since 2026-09-16 (Aaron's call; `realign_optimization.md` → Run 13). ⚠ Measured with the
+    20-day momentum filter on: 24h 94 trades / +48.50R → 72h 115 / +69.32R, and **+19.2R of the
+    +20.8R gain is ONE trade** (2023-09-25 short); the other 20 added trades net +1.6R. 72-120
+    is a plateau only because every one of them contains that trade.
+    """
 
     realign_pattern: str = "any"
     """Which internal sequence counts as the realignment.
@@ -369,6 +375,15 @@ class RealignConfig(SosFadeConfig):
     inherited adds lifted this book +35.81R → +49.29R charged. That is a CANDIDATE, not a
     result — nobody chose it for this setup and no chart can confirm it. Turn it on only in a
     run that says so, and only after this bot has a parity gate.
+    """
+
+    exec_runner_trail: str = "Structure (swing)"
+    """PINNED here, no longer inherited: the runner trails the external frame's confirmed swing
+    with no % ratchet (Aaron's call, 2026-09-16; `realign_optimization.md` → Run 13).
+
+    ⚠ The parent's "Structure + % ratchet" at 1% touched only 5 trades in 2020-2026, and
+    **+18.1R of the +19.4R difference is ONE trade** (2020-11-09: +18.5R ratcheted, +36.6R here).
+    Worst drawdown is unchanged. It gives back more on a reversal in exchange for that tail.
     """
 
     exec_risk_pct: float = 10.0
