@@ -4451,3 +4451,49 @@ Runs 27–31 measured three rules (1m main shift, 1m internal shift, 5m shift) a
 of the zone. The Realign bot's trigger stops behind the **last counter shift on the 5m**, which is
 far tighter — so its 3R is a much shorter distance and a different trade from anything measured
 here. That is the one version of Aaron's idea still genuinely open.
+
+---
+
+## Run 33 — 2026-09-17: WHEN does the with-trend break print? — the mechanism, settled
+
+**Aaron's argument, and it is correct:** a no-gap setup that goes on to make 1R has by
+definition broken structure in the trade direction. So the break of structure is real, it is
+there, and it is what separates the winners from the losers.
+
+**The question that follows, and it is the one that decides everything:** how much of the move
+is already gone by the time it prints?
+
+**Method:** `backtest/tools/nogap_bos_timing.py` (branch `research/nogap-shift-5m`, commit
+a03f0337). For each of Run 32's 195 no-gap setups, from arrival in the zone, the FIRST with-trend
+external break (`bull_bos`/`bull_sos`, or the bear mirror) on the 15m, 5m and 1m, and how far
+price had already travelled at that moment — entry basis the 0.5, R the distance to the 15m 1.0,
+so +1.0R is the swing extreme. Then the result of entering AT that break, stop unchanged, 3R
+target. XAUUSD, 2020-01 → 2026-08, no costs.
+
+| Frame | Breaks found | Never broke before the 1.0 | Median R already gone | Printed at or past +1.0R | Entering at the break, 3R target |
+|---|---|---|---|---|---|
+| 15m | 85 | 110 | **+1.20R** | **100%** | **−37.9R** |
+| 5m | 105 | 90 | **+1.05R** | 78.1% | **−30.9R** |
+| 1m | 143 | 52 | **+0.23R** | 23.8% | **−13.7R** |
+
+**What it says, and it is two different things on the slow and fast frames.**
+
+On the **15m and 5m the break is a report, not a signal.** Every single 15m break printed at or
+beyond +1.0R — the swing extreme — so by the time the chart confirms the reversal the whole first
+leg is spent, and what is left has to cover a stop measured from the 0.5. That is not a timing
+problem to be tuned; it is what a swing-structure break IS on those frames.
+
+On the **1m the break is early — median +0.23R, three quarters of them before the extreme — and
+it still loses.** So earliness was never the binding constraint on the fast frame. The 1m break
+simply does not separate the 34 winners from the 152 losers: it fires on 143 of the 195, which is
+73% of everything, and a confirmation that fires on nearly everything confirms nothing.
+
+**Verdict.** The mechanism Aaron described is real and the measurement supports it. The trade
+built on it is not: the frames where the break means something print it too late, and the frame
+that prints it in time has no selectivity. Runs 27–33 close the single-break entry on XAUUSD 15m.
+
+**Still open, and now the only thing left on this line:** the Realign trigger is not a single
+break — it is a counter-direction break followed by a with-trend shift, and it stops behind that
+counter shift rather than at the 15m 1.0. The pair should fire far less often than 73%, and the
+tight stop makes 3R a much shorter distance. That is a different trade from anything in Runs
+27–33 and it has not been measured.
