@@ -357,6 +357,13 @@ class _FakeMt5Ops:
     def get_deal_result(self, ticket):
         return self.deal
 
+    #: What `close_origin` answers. `None` is the real method's CANNOT-READ answer, so it is the
+    #: default: a fake that knew who closed every trade would test a terminal we do not have.
+    origin = None
+
+    def close_origin(self, ticket):
+        return self.origin
+
     def disconnect(self):
         pass
 
@@ -498,6 +505,16 @@ class _FakeExecution:
         a second implementation of the strategy inside its own test fake.
         """
         return self._planned_exit
+
+    close_requested = None
+
+    def request_close(self, reason="commanded") -> bool:
+        """The real one refuses when flat and closes nothing itself — the exit comes on a later
+        bar, which a test drives by setting `_pos_dir` back to 0."""
+        if self._pos_dir == 0:
+            return False
+        self.close_requested = reason
+        return True
 
     def snapshot_position(self) -> dict:
         # 🔴 The real `Execution` REFUSES while flat (2026-09-17). This fake answered anyway, so no
@@ -4473,3 +4490,112 @@ def test_any_difference_from_the_replay_HALTS_and_says_which(tmp_path, replay, n
 def test_a_one_point_rounding_difference_is_still_the_same_trade(tmp_path):
     b, ok, _l, _n = _replay_restart(tmp_path, entry=4316.981400000001, stop=4352.437800000001)
     assert ok, b.halt_reason
+
+
+# ── a trade the OWNER closed by hand (2026-09-17) ─────────────────────────────
+
+
+def _held_short(tmp_path=None):
+    """A live short this bot opened and is managing, 0.14 lots, risking $496.44."""
+    ex = _FakeExecution(pend_short=_Pend(-1, 4316.98, 14.0, 4352.44))
+    b, ops, ledger, notes = _bridge(ex, instance_dir=tmp_path)
+    b.sync(_Dec(), _Sig())
+    ticket = ops.orders[0].ticket
+    ops.positions = [_Pos(ticket, 1, 4316.98, 0.14, 4352.44)]
+    ex._pos_dir, ex._pend_short = -1, None
+    ex.snapshot = {"_stage": 0}
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b._pos_ticket == ticket
+    return b, ops, ex, ledger, notes, ticket
+
+
+def _closed_by_hand(ops, lots=0.14, reason=0, price=4291.98, net=348.6):
+    ops.positions = []
+    ops.deal = (price, net)
+    ops.origin = {"opened": 0.14, "closed": {reason: lots}}
+
+
+def test_a_FULL_hand_close_is_booked_as_yours_and_the_bot_keeps_trading(tmp_path):
+    """RED before: the bot booked an ordinary exit and HALTED ("MT5 has none").
+    MUTATION: make `_why_not_manual` always return a reason -> red."""
+    b, ops, ex, ledger, notes, ticket = _held_short(tmp_path)
+    _closed_by_hand(ops)
+    b.sync(_Dec(stop=4352.44), _Sig())  # the strategy still holds it on this bar
+
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    closed = [kw for k, kw in ledger.rows if k == "closed"][0]
+    assert closed["reason"] == live_bridge.MANUAL_CLOSE_REASON
+    assert closed["price"] == 4291.98 and closed["ticket"] == ticket
+    assert closed["r_multiple"] == pytest.approx(348.6 / (35.46 * 0.14 * 100), rel=1e-3)
+    assert ex.close_requested == live_bridge.MANUAL_CLOSE_REASON
+    assert notes[-1].splitlines()[0] == "✋ CLOSED BY YOU · +0.7R"
+    from position_state import read as read_record
+
+    assert read_record(tmp_path) is None
+
+    ops.actions.clear()
+    b.sync(_Dec(stop=4352.44), _Sig())  # still catching up: nothing placed, no halt
+    assert b.state is live_bridge.BridgeState.LIVE and ops.actions == []
+
+    ex._pos_dir = 0  # the strategy closes its own record
+    ex._pend_long = _Pend(1, 4200.0, 14.0, 4180.0)
+    b.sync(_Dec(), _Sig())
+    assert b.state is live_bridge.BridgeState.LIVE
+    assert any(a[0] == "place" for a in ops.actions), "it trades again"
+
+
+def test_a_hand_close_cancels_the_orders_tied_to_the_trade(tmp_path):
+    b, ops, ex, _l, _n, _t = _held_short(tmp_path)
+    b._rest[live_bridge.secondary_slot(-1)] = live_bridge._Rest(555, 4320.0, 0.07, 4352.44)
+    _closed_by_hand(ops)
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert ("cancel", 555) in ops.actions
+
+
+def test_a_strategy_that_never_flattens_after_a_hand_close_halts(tmp_path):
+    b, ops, ex, _l, _n, _t = _held_short(tmp_path)
+    _closed_by_hand(ops)
+    for _ in range(live_bridge._MANUAL_FLATTEN_BARS + 1):
+        b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "closed" in b.halt_reason and "by hand" in b.halt_reason
+
+
+@pytest.mark.parametrize(
+    "setup, named",
+    [
+        (dict(origin=None), "could not be read"),
+        (dict(origin={"opened": 0.14, "closed": {}}), "no closing deal"),
+        (dict(origin={"opened": 0.14, "closed": {4: 0.14}}), "its stop"),
+        (dict(origin={"opened": 0.14, "closed": {5: 0.14}}), "its target"),
+        (dict(origin={"opened": 0.14, "closed": {6: 0.14}}), "stop-out"),
+        (dict(origin={"opened": 0.14, "closed": {3: 0.14}}), "another program"),
+        (dict(origin={"opened": 0.14, "closed": {0: 0.07, 4: 0.0}}), "PARTIAL"),
+        (dict(origin={"opened": 0.20, "closed": {0: 0.14}}), "do not add up"),
+    ],
+)
+def test_anything_but_a_proven_full_hand_close_still_HALTS_and_says_why(tmp_path, setup, named):
+    b, ops, ex, ledger, _n, _t = _held_short(tmp_path)
+    ops.positions, ops.deal = [], (4300.0, 100.0)
+    ops.origin = setup["origin"]
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "MT5 has none" in b.halt_reason
+    assert named in b.halt_reason
+    assert [kw for k, kw in ledger.rows if k == "closed"][0]["reason"] != (
+        live_bridge.MANUAL_CLOSE_REASON
+    )
+    assert ex.close_requested is None
+
+
+def test_a_hand_close_with_another_of_our_positions_still_open_is_NOT_booked_as_yours(tmp_path):
+    """⚠ What happens NEXT is pre-existing and not this change's: the other position is adopted
+    as the trade on the same bar. Pinned here only that the hand-close path stays out of it."""
+    b, ops, ex, ledger, _n, _t = _held_short(tmp_path)
+    ops.positions = [_Pos(9999, 1, 4320.0, 0.07, 4352.44)]
+    ops.origin = {"opened": 0.14, "closed": {0: 0.14}}
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert [kw for k, kw in ledger.rows if k == "closed"][0]["reason"] != (
+        live_bridge.MANUAL_CLOSE_REASON
+    )
+    assert ex.close_requested is None

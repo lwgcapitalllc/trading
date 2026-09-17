@@ -782,3 +782,34 @@ counts bars the broker actually printed (the re-warm still runs; cannot-ask stil
 hourly review reads the PROCESS list before calling a missing health record a fault, so a bot
 stopped with a stale `running` status no longer raises it daily (`log_review.running_keys`).
 Extreme Leg has no second bar stream, so it never reaches the fill clock.
+
+## ✋ A trade the OWNER closes by hand is booked as his, and the bot keeps trading (2026-09-17)
+
+**Before:** closing the bot's trade in the terminal booked an ordinary exit and HALTED the bot on
+the same bar ("the strategy believes it is in a position but MT5 has none").
+
+**Now (`bridge._why_not_manual`, `_begin_manual_flatten`).** When the tracked ticket vanishes while
+the strategy still holds it, the bridge reads the position's own deals (`mt5_ops.close_origin`,
+per `DEAL_REASON_*`). A close by desktop, mobile or web terminal for the FULL size the bot held, with
+no stop/target/stop-out deal and deals that add up, is booked with reason `closed_by_you` (real
+exit price, net P&L, R), replied into the trade's thread as `✋ CLOSED BY YOU · +x.xR`, every resting
+order is pulled, and the strategy is told through the generic commanded close. Until the strategy
+is flat nothing is placed or moved; if it is still holding after 3 primary bars the bot halts.
+Anything else — history unreadable, no closing deal yet, broker stop/target/stop-out, another
+program, a partial, deals that do not add up, another of our positions still open — halts as
+before, and the halt now says which.
+
+⚠ **Backtest comparison:** exclude or split `closed_by_you` rows — they are the owner's exit, not
+the strategy's. Inside the emulator the same trade ends under its own `CMD` tag a bar later, at
+that bar's open, which is NOT the live exit price.
+⚠ **Pre-existing, found while testing and NOT changed:** if the tracked ticket vanishes while
+ANOTHER position under this magic is open, the bridge adopts that other position as the trade on
+the same bar without a halt.
+
+**A stop moved by hand at the broker (measured by reading `_sync_stop`, not changed):** the bot
+compares the strategy's stop with the stop IT LAST SENT, never with the broker's. So a hand-moved
+base stop is left alone until the strategy's own stop next changes, and is then overwritten with
+the strategy's value — which can LOOSEN a stop you tightened. A target change re-sends the stop
+too. Scale-in lots are compared with the broker every bar, so a hand move on one is undone on the
+next bar. No halt while running; a RESTART halts, because the record's stop disagrees with the
+broker's.

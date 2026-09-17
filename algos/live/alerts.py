@@ -439,3 +439,32 @@ def format_exit(
         price += f" ({exit_reason})"
 
     return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol, amount + r, price)
+
+
+def format_manual_close(
+    *,
+    symbol: str,
+    exit_price: float,
+    pnl_usd: float,
+    r_multiple: Optional[float] = None,
+    digits: int = 2,
+    threaded: bool = True,
+) -> str:
+    """The reply when the OWNER closed the trade by hand (2026-09-17).
+
+    Its own label rather than WIN/LOSS, so a hand close is never read as the strategy's exit —
+    the same line the ledger draws with its `closed_by_you` reason. The R leads because it is
+    the header a lock screen shows; `None` (risk unknown) prints no R rather than a zero.
+    """
+    head = f"{r_multiple:+.1f}R" if r_multiple is not None else ""
+    if not threaded:
+        head = f"{head} · {symbol}" if head else symbol
+    verb = "Made" if pnl_usd >= 0 else "Lost"
+    return alert(
+        "✋",
+        "CLOSED BY YOU",
+        head,
+        f"{verb} ${abs(pnl_usd):,.2f}",
+        f"Exit {_price(exit_price, digits)}",
+        "The bot has flattened its own record and keeps trading.",
+    )

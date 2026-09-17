@@ -514,3 +514,14 @@ there no trade, or why was that trade small", and nothing is wrong with the mach
 ⚠ Both names are written as literals in two separate calls. `test_ledger_streams` greps this
 folder for the names it must route, and a name built inline is a name the guard cannot see — it
 caught exactly that here.
+
+### Trades room — a hand close of the bot's own trade (2026-09-17)
+
+Replied under the trade's ENTRY message:
+
+```
+✋ CLOSED BY YOU · +0.7R
+Made $348.60
+Exit 4291.98
+The bot has flattened its own record and keeps trading.
+```

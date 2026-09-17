@@ -82,7 +82,10 @@ class _Deal:
         commission=0.0,
         volume=0.01,
         when=None,
+        reason=3,
     ):
+        # A real deal always carries its `DEAL_REASON_*`; 3 is EXPERT, a bot's own order.
+        self.reason = reason
         self.position_id = position_id
         self.entry = entry  # 0 = entry deal, 1 = exit deal
         self.price = price
@@ -1159,3 +1162,37 @@ def test_the_success_line_reports_the_target_that_was_SENT_not_the_one_asked_for
     _bot(mt5_ops, log).place_pending_limit("bullish", 0.42, 3290.00, 3280.00, tp=3292.00)
     assert log.saw("TP=none")
     assert not log.saw("TP=3292.00")
+
+
+# ── who closed a position (2026-09-17) ───────────────────────────────────────
+def test_close_origin_sums_exit_lots_by_WHO_closed_them(mt5ops):
+    mt5_ops, fake = mt5ops
+    when = _server_stamp()
+    fake._deals = [
+        _Deal(404, entry=0, volume=0.14, when=when),
+        _Deal(404, entry=1, volume=0.04, when=when, reason=3),
+        _Deal(404, entry=1, volume=0.10, when=when, reason=0),
+        _Deal(405, entry=1, volume=0.50, when=when, reason=4),  # another position
+    ]
+    got = _bot(mt5_ops).close_origin(404)
+    assert got["opened"] == pytest.approx(0.14)
+    assert got["closed"] == {3: pytest.approx(0.04), 0: pytest.approx(0.10)}
+
+
+def test_close_origin_with_nothing_closed_yet_is_EMPTY_not_None(mt5ops):
+    mt5_ops, fake = mt5ops
+    fake._deals = [_Deal(404, entry=0, volume=0.14, when=_server_stamp())]
+    assert _bot(mt5_ops).close_origin(404) == {"opened": pytest.approx(0.14), "closed": {}}
+
+
+def test_close_origin_that_cannot_read_is_None(mt5ops):
+    """Red under: reading `None` as no deals, or letting the exception out."""
+    mt5_ops, fake = mt5ops
+    fake.history_deals_get = lambda *a, **k: None
+    assert _bot(mt5_ops).close_origin(404) is None
+
+    def _boom(*a, **k):
+        raise RuntimeError("IPC recv failed")
+
+    fake.history_deals_get = _boom
+    assert _bot(mt5_ops).close_origin(404) is None

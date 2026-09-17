@@ -117,6 +117,8 @@ _DECISION_EVENTS = {
     # The primary's own limit filled before its 15-minute bar closed; the fill clock left it for
     # that bar (2026-09-17). About an ORDER, so a decision.
     "primary_fill_deferred",
+    # The OWNER closed the trade by hand and it was booked as his (2026-09-17). About a TRADE.
+    "manual_close",
     "stop_moved",
     "dry_run_action",
     # a position that existed before this process did, so the strategy never chose it

@@ -220,6 +220,7 @@ listed below under the notes file that now holds it.
 - 🔴 `partial_close` had never run once, and it CLAMPED UP to the broker minimum (2026-09-01)
 - The live runner's SECOND bar feed — G18 stage 1 (2026-09-01). Stages 2-4 still open
 - 🔴 The fill clock halted both SOS Fade bots on their OWN limit; the fix, re-adopt by replay, and the daily-break alert (2026-09-17)
+- ✋ A hand close of the bot's own trade is booked as yours and the bot keeps trading; what a hand-moved stop does (2026-09-17)
 
 ### `notes/risk-sizing-and-halts.md` — Risk sizing, account budget and halts
 

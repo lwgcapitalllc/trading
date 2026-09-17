@@ -160,6 +160,20 @@ class _FastDec:
 #: allow-list is the safe direction, but it is still a halt somebody has to come and read.
 BRIDGE_OWNED_EXITS = ("-CMD", "-TIME", "-TP1", "-TP2")
 
+#: The exit reason a trade the OWNER closed by hand is booked under (2026-09-17). Its own value, so
+#: a backtest comparison can drop or split these rather than grade them as the strategy's exits.
+MANUAL_CLOSE_REASON = "closed_by_you"
+
+#: MT5 `DEAL_REASON_*` codes for a close made by a person: desktop, mobile, web terminal.
+_MANUAL_CLOSE_REASONS = (0, 1, 2)
+
+#: MT5 `DEAL_REASON_*` codes for a close the BROKER made. Any of these on a vanished trade halts.
+_BROKER_CLOSE_REASONS = {4: "its stop", 5: "its target", 6: "a margin stop-out"}
+
+#: Primary bars the strategy gets to close its own record after a hand close before the bot halts.
+#: The commanded close fills on the bar AFTER the one that reads it, so two is the ordinary case.
+_MANUAL_FLATTEN_BARS = 3
+
 
 #: Every place an order can rest, as (INTENT, side).
 #:
@@ -631,6 +645,11 @@ class OrderBridge:
         # A broker position found at startup with no record — checked against the warm-up replay
         # by `_adopt_by_replay`, never adopted before that.
         self._replay_candidate = None
+        # A hand close the strategy has been told about and has not yet flattened — see
+        # `_begin_manual_flatten`. `_vanished_because` is why a vanished trade was NOT one.
+        self._manual_ticket: Optional[int] = None
+        self._manual_flatten_bars = 0
+        self._vanished_because = ""
         # Set when a scale-in lot refuses to close, read by `_why_not_scaled` so the halt that
         # follows names the real cause instead of the generic duplicate-orders one. Deliberately
         # NOT cleared on a later bar: the lot is still open until somebody closes it by hand.
@@ -676,7 +695,11 @@ class OrderBridge:
         what keeps every trade attributable to exactly one configuration — otherwise the
         ledger records a trade at 5% risk that was actually sized at 10%.
         """
-        return self._pos_ticket is None and not any(self._rest.values())
+        return (
+            self._pos_ticket is None
+            and getattr(self, "_manual_ticket", None) is None
+            and not any(self._rest.values())
+        )
 
     # ── startup ──────────────────────────────────────────────────────────────
     def begin_live(self) -> None:
@@ -1210,6 +1233,16 @@ class OrderBridge:
         positions = self._sync_add_size(positions)
         if not self._agrees(positions):
             return
+        if self._manual_ticket is not None:
+            # A hand close the strategy has not caught up with: place and move nothing.
+            self._manual_flatten_bars += 1
+            if self._manual_flatten_bars > _MANUAL_FLATTEN_BARS:
+                self._halt(
+                    f"You closed T{self._manual_ticket} by hand and the strategy still holds it "
+                    f"after {_MANUAL_FLATTEN_BARS} bars. Every later decision would be computed "
+                    f"against a trade that does not exist."
+                )
+            return
 
         if self._ex._pos_dir != 0:
             self._cancel_all_rest("a position is open")
@@ -1295,6 +1328,8 @@ class OrderBridge:
 
         if not self._agrees(positions):
             return
+        if self._manual_ticket is not None:
+            return  # a hand close being caught up with — the 15-minute path owns the count
 
         if self._ex._pos_dir != 0:
             self._cancel_all_rest("a position is open")
@@ -1418,6 +1453,16 @@ class OrderBridge:
             price, pnl = self._mt5.get_deal_result(self._pos_ticket)
         r = (pnl / self._pos_risk_usd) if self._pos_risk_usd else None
         reason = getattr(dec, "exit_reason", "") or self._infer_exit_reason(price)
+        # The strategy still holds the trade, so the BROKER ended it. Ask who. See
+        # `_why_not_manual`.
+        manual = False
+        if self._ex._pos_dir != 0:
+            why = self._why_not_manual(positions)
+            if why:
+                self._vanished_because = why
+            else:
+                manual = True
+                reason = MANUAL_CLOSE_REASON
         held = None
         if self._pos_opened_bar is not None and getattr(sig, "index", None) is not None:
             held = sig.index - self._pos_opened_bar
@@ -1448,6 +1493,111 @@ class OrderBridge:
             entry_price=self._pos_entry,
             intended_price=self._pos_intended,
         )
+        if manual:
+            self._notify(
+                alerts.format_manual_close(
+                    symbol=self._mt5.symbol,
+                    exit_price=price,
+                    pnl_usd=pnl,
+                    r_multiple=r,
+                    digits=self._digits(),
+                    threaded=self._pos_alert_id is not None,
+                ),
+                notify.TRADE,
+                reply_to=self._pos_alert_id,
+            )
+            self._begin_manual_flatten()
+        else:
+            self._notify_exit(price, pnl, r, reason, sig)
+        self._pos_ticket = None
+        self._pos_dir = 0
+        self._pos_risk_usd = 0.0
+        self._pos_opened_bar = None
+        self._pos_alert_id = None
+        # The trade is over, so the restart record describes a ticket that no longer exists. It
+        # could not restore anything (the ticket cannot match a position that is not there), but
+        # leaving it would put a dead trade in front of the next person reading the instance
+        # directory. `_restored` is cleared too: the NEXT position is an ordinary live fill.
+        self._restored = False
+        if self._instance_dir is not None:
+            position_state.clear(self._instance_dir)
+
+    # ── a trade the OWNER closed by hand (2026-09-17) ────────────────────────
+    def _why_not_manual(self, positions) -> str:
+        """Why this vanished position is NOT a full hand close. Empty = it is one.
+
+        🔴 **Only a proven hand close keeps the bot trading.** Each refusal is its own sentence,
+        because each sends the reader somewhere different (rule: two failures never share one
+        message). The halt that follows quotes it.
+        """
+        if positions:
+            return (
+                f"{len(positions)} other position(s) under this bot's magic are still open, so "
+                f"this is not a whole-trade close"
+            )
+        ask = getattr(self._mt5, "close_origin", None)
+        origin = ask(self._pos_ticket) if callable(ask) else None
+        if origin is None:
+            return "the broker's deal history could not be read, so who closed it is unknown"
+        closed = origin.get("closed") or {}
+        if not closed:
+            return "the deal history holds no closing deal for it yet"
+        broker = {c: v for c, v in closed.items() if c in _BROKER_CLOSE_REASONS and v > 0}
+        if broker:
+            names = ", ".join(_BROKER_CLOSE_REASONS[c] for c in sorted(broker))
+            return f"the broker closed it ({names}) and the strategy did not"
+        by_hand = sum(v for c, v in closed.items() if c in _MANUAL_CLOSE_REASONS)
+        if by_hand <= 0:
+            return "it was closed by another program, not by hand"
+        if abs(by_hand - float(self._pos_lots)) >= 0.005:
+            return (
+                f"a PARTIAL hand close: {by_hand:.2f} lots closed by hand against the "
+                f"{float(self._pos_lots):.2f} this bot was holding"
+            )
+        if abs(sum(closed.values()) - float(origin.get("opened") or 0.0)) >= 0.005:
+            return (
+                f"the deals do not add up: {origin.get('opened')} lots opened, "
+                f"{sum(closed.values()):.2f} closed"
+            )
+        return ""
+
+    def _begin_manual_flatten(self) -> None:
+        """Tell the STRATEGY the trade is over, and stand down until it agrees.
+
+        The strategy's own close is the generic commanded close (`request_close`), which fills on
+        a later bar and books under its own `CMD` tag inside the emulator — the bridge never
+        writes into the strategy's book. Until it is flat, `_agrees` accepts *strategy holds,
+        broker empty* for this one reason, nothing is placed or moved, and a strategy that does
+        not flatten within `_MANUAL_FLATTEN_BARS` primary bars halts the bot.
+        """
+        took = False
+        try:
+            took = bool(self._ex.request_close(MANUAL_CLOSE_REASON))
+        except Exception as e:
+            self._log.error(f"The strategy refused the close request: {e}")
+        self._cancel_all_rest("the trade was closed by hand")
+        if not took:
+            self._vanished_because = "the strategy would not accept the close request"
+            return
+        self._manual_flatten_bars = 0
+        self._manual_ticket = self._pos_ticket
+        self._log.info(
+            f"CLOSED BY YOU | T{self._pos_ticket} — booked as a hand close; the strategy closes its "
+            f"own record on its next bar and the bot keeps trading."
+        )
+        self._ledger.event("manual_close", ticket=self._pos_ticket)
+
+    def _manual_flatten_waiting(self) -> bool:
+        """Is the strategy still catching up with a hand close? Clears itself once it is flat."""
+        if self._manual_ticket is None:
+            return False
+        if self._ex._pos_dir == 0:
+            self._log.info(f"The strategy is flat after the hand close of T{self._manual_ticket}.")
+            self._manual_ticket = None
+            return False
+        return True
+
+    def _notify_exit(self, price, pnl, r, reason, sig) -> None:
         self._notify(
             alerts.format_exit(
                 strategy=self._message_name(),
@@ -1469,18 +1619,6 @@ class OrderBridge:
             notify.TRADE,
             reply_to=self._pos_alert_id,
         )
-        self._pos_ticket = None
-        self._pos_dir = 0
-        self._pos_risk_usd = 0.0
-        self._pos_opened_bar = None
-        self._pos_alert_id = None
-        # The trade is over, so the restart record describes a ticket that no longer exists. It
-        # could not restore anything (the ticket cannot match a position that is not there), but
-        # leaving it would put a dead trade in front of the next person reading the instance
-        # directory. `_restored` is cleared too: the NEXT position is an ordinary live fill.
-        self._restored = False
-        if self._instance_dir is not None:
-            position_state.clear(self._instance_dir)
 
     def _mirror_strategy_exit(self, positions, dec):
         """Close the broker position when the STRATEGY has exited a trade the broker cannot.
@@ -1973,6 +2111,7 @@ class OrderBridge:
         # A new trade is a new chance to bank. Whatever the LAST position could not bank must not
         # silence this one — a latch that outlives its cause is a guard that has stopped guarding.
         self._partial_alerted = ""
+        self._vanished_because = ""
         # ONE balance read, shared by the record and the message below. Two reads of a moving
         # number would let the ledger and the Telegram alert disagree about the same trade.
         realised = self._realised_risk_pct()
@@ -2211,6 +2350,14 @@ class OrderBridge:
         docstring for why this is not 'log and continue'."""
         emu = self._ex._pos_dir != 0
         broker = bool(positions)
+        if self._manual_flatten_waiting():
+            if broker:
+                self._halt(
+                    "A position appeared at the broker while the strategy was still closing its "
+                    "record of a trade you closed by hand. It will not be managed."
+                )
+                return False
+            return True
         if len(positions) > 1:
             # 🔴 **THIS ACCOUNT IS HEDGING (`margin_mode 2`, MEASURED 2026-09-07), so an add is
             # a SEPARATE position with its own ticket — it does not merge into the one already
@@ -2246,6 +2393,11 @@ class OrderBridge:
                 "closed outside the bot). Every later decision would be computed against "
                 "a trade that does not exist."
                 + (f"\nThe last order on this side was REFUSED: {because}" if because else "")
+                + (
+                    f"\nNot booked as a hand close because {self._vanished_because}."
+                    if self._vanished_because
+                    else ""
+                )
             )
             return False
         if broker and not emu:

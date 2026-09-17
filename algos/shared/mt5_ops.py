@@ -1465,6 +1465,36 @@ class BotMT5:
             "deals": len(mine),
         }
 
+    def close_origin(self, ticket: int) -> Optional[dict]:
+        """WHO closed a position, read off its own deals. `None` = the history could not be read.
+
+        Returns `{"opened": lots in, "closed": {reason_code: lots out, ...}}`, summed per MT5
+        `DEAL_REASON_*` code over the position's exit deals (`entry` 1 OUT or 3 OUT_BY). Codes:
+        0 CLIENT (desktop), 1 MOBILE, 2 WEB, 3 EXPERT (a bot), 4 SL, 5 TP, 6 SO (stop-out).
+
+        Built 2026-09-17 so a trade the owner closes by hand in the terminal can be booked as
+        his, instead of halting the bot. ⚠ `None` and "no exit deal yet" are different answers:
+        an empty `closed` means the history was read and holds no exit for this position —
+        which is what a close that has not reached the history yet looks like too, so the
+        caller must treat it as NOT a manual close.
+        """
+        to = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
+        from_ = datetime.utcnow() - timedelta(days=30)
+        try:
+            deals = mt5.history_deals_get(from_, to, position=ticket)
+        except Exception:
+            return None
+        if deals is None:
+            return None
+        mine = [d for d in deals if d.position_id == ticket]
+        opened = sum(float(d.volume) for d in mine if d.entry == 0)
+        closed: dict = {}
+        for d in mine:
+            if d.entry in (1, 3):
+                code = int(getattr(d, "reason", -1))
+                closed[code] = closed.get(code, 0.0) + float(d.volume)
+        return {"opened": opened, "closed": closed}
+
     def close_position(
         self, ticket: int, direction: str, reason: str = ""
     ) -> tuple[bool, float, float]:
