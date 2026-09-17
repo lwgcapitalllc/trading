@@ -473,3 +473,24 @@ def test_the_rebuilt_balance_is_checked_against_the_broker_only_on_this_account(
     assert check(states, 9, 1000.0)["broker_balance_matches"] is None
     assert check(None, 7, 1000.0)["broker_balance_matches"] is None
     assert check({"x": {"observed_account": 7, "balance": None}}, 7, 1.0)["broker_balance"] is None
+
+
+def test_a_trade_the_record_marks_as_not_the_strategys_stays_in_the_balance_only():
+    """RED when `attach_plans` ignored the marker: the 2026-08-25 duplicate-order incident's four
+    positions ($3,344.80) scored as manual trades in the account's strategy figures."""
+    from services.account_history import attach_plans, parse_rows
+
+    raw = "\n".join(
+        [
+            'x:{"kind": "event", "event": "unmanaged_positions_incident",'
+            ' "counts_as_strategy_performance": false, "tickets": [11, 12], "why": "dupes"}',
+            'x:{"kind": "event", "event": "trade_not_strategy_performance",'
+            ' "counts_as_strategy_performance": false, "ticket": 13, "why": "hand"}',
+            'x:{"kind": "event", "event": "order_placed", "ticket": 14}',
+        ]
+    )
+    _, opens = parse_rows(raw)
+    positions = [{"ticket": t, "entry_ms": 0} for t in (11, 12, 13, 14)]
+    attach_plans(positions, opens)
+    assert [p["excluded"] for p in positions] == ["dupes", "dupes", "hand", None]
+    assert all(p["bot"] is None and p["stop"] is None for p in positions)

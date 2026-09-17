@@ -1004,6 +1004,8 @@ class AccountEquityPoint(EquityPoint):
     """
 
     twr_equity: Optional[float] = None
+    # Why the record says this is NOT the strategy's trade; None for an ordinary trade.
+    excluded: Optional[str] = None
 
 
 class AccountHistory(BaseModel):
@@ -1040,6 +1042,8 @@ class AccountHistory(BaseModel):
     flows: list[AccountFlow] = []
     equity: list[AccountEquityPoint] = []
     manual_trades: Optional[int] = None
+    excluded_trades: Optional[int] = None
+    excluded_pnl: Optional[float] = None
     unmatched_plans: Optional[int] = None
     bars_server: Optional[str] = None
     bars_note: Optional[str] = None

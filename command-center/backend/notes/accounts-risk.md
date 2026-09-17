@@ -922,3 +922,8 @@ both tests were fixed. The import-path test was watched red against the unfixed 
 - ⚠ **The rebuilt balance is checked against MT5's live balance (2026-09-17)** — taken from a bot
   heartbeat that read it on THIS account. Three answers: matches, does not match (the page warns;
   expected for one poll after a trade closes), or could not check (box down, no bot on the account).
+- ⚠ **A trade the bots' record marks as not the strategy's is kept out of the strategy figures
+  (2026-09-17)** — the duplicate-order incident and hand marks (`close_orphans.py`,
+  `mark_trade.py`). It stays in the balance and on the chart, because the money was real; the page
+  names how many and what they made. Measured on demo 700152905: 5 trades, +$4,518.23, which the
+  panels had been counting as manual trades.

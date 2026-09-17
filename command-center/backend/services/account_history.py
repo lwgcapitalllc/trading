@@ -105,6 +105,9 @@ def box_command(instance_dirs: Iterable[str]) -> str:
     for d in instance_dirs:
         parts.append(rf"findstr /c:position_id {d}\ledger\deals-*.jsonl 2>nul")
         parts.append(rf"findstr /c:opened {d}\ledger\decisions-*.jsonl 2>nul")
+        parts.append(
+            rf"findstr /c:counts_as_strategy_performance {d}\ledger\decisions-*.jsonl 2>nul"
+        )
     return " & ".join(parts)
 
 
@@ -130,6 +133,10 @@ def parse_rows(raw: str) -> tuple[list[dict], list[dict]]:
             deals.append(row)
         elif row.get("kind") == "trade" and row.get("event") == "opened":
             opens.append(row)
+        elif row.get("counts_as_strategy_performance") is False:
+            # A trade the record says is NOT the strategy's (a duplicate-order incident, a hand
+            # mark). Carried with the opened rows; `attach_plans` reads it by ticket.
+            opens.append(row)
     return deals, opens
 
 
@@ -153,7 +160,11 @@ def read_archive(root: Path = ARCHIVE) -> tuple[list[dict], list[dict], bool]:
         except OSError:
             continue
         # The cheap reject first — a decisions file is almost all bar rows.
-        lines = "\n".join(line for line in text.splitlines() if '"opened"' in line)
+        lines = "\n".join(
+            line
+            for line in text.splitlines()
+            if '"opened"' in line or "counts_as_strategy_performance" in line
+        )
         _, o = parse_rows(lines)
         opens.extend(o)
     return deals, opens, any_file
@@ -420,7 +431,17 @@ def attach_plans(positions: list[dict], opens: Iterable[dict]) -> int:
     reached — and its stop and R stay `None`.
     """
     by_ticket: dict[int, list[dict]] = {}
+    excluded: dict[int, str] = {}
+    plans = []
     for o in opens:
+        if o.get("counts_as_strategy_performance") is False:
+            why = str(o.get("why") or "marked as not the strategy's trade")
+            for t in [o.get("ticket"), *(o.get("tickets") or [])]:
+                if _int(t) is not None:
+                    excluded.setdefault(_int(t), why)
+            continue
+        plans.append(o)
+    for o in plans:
         t = _int(o.get("ticket"))
         if t is not None:
             by_ticket.setdefault(t, []).append(o)
@@ -430,6 +451,8 @@ def attach_plans(positions: list[dict], opens: Iterable[dict]) -> int:
         p.setdefault("stop", None)
         p.setdefault("targets", [])
         p.setdefault("risk_usd", None)
+        # ⚠ Excluded from the STRATEGY's figures only — the money is real and stays in the balance.
+        p["excluded"] = excluded.get(p["ticket"])
         cands = by_ticket.get(p["ticket"]) or []
         best = None
         best_gap = None
@@ -551,7 +574,8 @@ def _equity_point(
         "exit_ms": p["exit_ms"],
         "direction": "Long" if p["dir"] == "long" else "Short",
         "profit": p["pnl"],
-        "exit_name": p.get("bot") or "Manual",
+        "exit_name": "Excluded" if p.get("excluded") else (p.get("bot") or "Manual"),
+        "excluded": p.get("excluded"),
         "favorable": round(fav, 2) if fav is not None else None,
         "adverse": round(adv, 2) if adv is not None else None,
         "costs_usd": p["costs"],
@@ -692,7 +716,9 @@ def build_history(
         "opening_balance": opening,
         "flows": book["flows"],
         "equity": equity,
-        "manual_trades": sum(1 for p in positions if not p.get("bot")),
+        "manual_trades": sum(1 for p in positions if not p.get("bot") and not p.get("excluded")),
+        "excluded_trades": sum(1 for p in positions if p.get("excluded")),
+        "excluded_pnl": round(sum(p["pnl"] for p in positions if p.get("excluded")), 2),
         "unmatched_plans": mismatched,
         "bars_server": bars_server,
         "bars_note": bars_note,

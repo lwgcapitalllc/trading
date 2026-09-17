@@ -670,6 +670,8 @@ export interface AccountFlow {
  *  deposit's scale (`null` when that return cannot be measured). */
 export interface AccountEquityPoint extends EquityPoint {
   twr_equity?: number | null
+  /** Why the record says this is NOT the strategy's trade; null for an ordinary trade. */
+  excluded?: string | null
 }
 
 /**
@@ -697,6 +699,8 @@ export interface AccountHistory {
   open_position_costs: number | null
   reconciled: boolean | null
   broker_balance: number | null
+  excluded_trades: number | null
+  excluded_pnl: number | null
   /** null = could not check, never "matches" */
   broker_balance_matches: boolean | null
   twr_pct: number | null

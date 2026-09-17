@@ -149,8 +149,11 @@ export function AccountResults() {
 
   const points = useMemo(() => h?.equity ?? [], [h])
   const base = h?.capital_in ?? 0
-  const book = useMemo(() => tradingEquity(points, base), [points, base])
-  const { run, fallback } = useMemo(() => runFromBook(points), [points])
+  // The panels grade the STRATEGY: a trade the record marks as not its own (a duplicate-order
+  // incident, a hand mark) stays on the balance curve and the chart, and out of every figure here.
+  const scored = useMemo(() => points.filter((p) => !p.excluded), [points])
+  const book = useMemo(() => tradingEquity(scored, base), [scored, base])
+  const { run, fallback } = useMemo(() => runFromBook(scored), [scored])
   const markers = useMemo(() => {
     if (!h) return []
     return h.flows.map((f) => {
@@ -251,6 +254,7 @@ export function AccountResults() {
           </div>
 
           {(h.reconciled === false ||
+            (h.excluded_trades ?? 0) > 0 ||
             h.broker_balance_matches !== true ||
             (h.open_positions ?? 0) > 0 ||
             (h.adjustments_total ?? 0) !== 0 ||
@@ -260,6 +264,13 @@ export function AccountResults() {
               {h.reconciled === false && (
                 <div>
                   The deals do not add up to their own balance — a figure on this page is wrong.
+                </div>
+              )}
+              {(h.excluded_trades ?? 0) > 0 && (
+                <div>
+                  {h.excluded_trades} trade(s) worth {money(h.excluded_pnl, true)} are marked in the
+                  bots&apos; record as not strategy trades. They are in the balance and on the
+                  chart, and left out of the figures below.
                 </div>
               )}
               {h.broker_balance_matches === false && (
@@ -384,7 +395,7 @@ export function AccountResults() {
                 </div>
                 <div>
                   <div className={headCls}>R distribution</div>
-                  <RDistribution points={points} height={220} />
+                  <RDistribution points={scored} height={220} />
                 </div>
               </div>
               <div>
