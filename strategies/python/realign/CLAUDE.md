@@ -445,14 +445,20 @@ not a measurement, and **the parity gate is what settles it.**
 .venv/bin/python -m pytest strategies/python/realign/tests/ -q     # 15 tests
 ```
 
-The book, asserted — 🔴 **the baseline moved on 2026-09-16** (Run 7); these are today's values:
+The book, asserted — 🔴 **the baseline moved AGAIN on 2026-09-16** (Runs 12 and 13 shipped the 72h
+window, the momentum filter ON and the structure-only trail, and this block still read the Run 7
+numbers until 2026-09-17). These are today's values:
 
 ```
 python backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
     --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
-    --expect-trades 160 --expect-r 66.52                              # free
-    ... --profile puprime_standard --expect-trades 160 --expect-r 56.39  # charged
+    --expect-trades 113 --expect-r 88.02                              # free
+    ... --profile puprime_standard --expect-trades 113 --expect-r 82.41  # charged
 ```
+
+⚠ **A number quoted from this bot goes stale the moment a default ships, and that has now happened
+twice.** The Run 7 book (160 trades, +56.39R charged) is reproducible to the cent by pinning the
+three settings back — the command is in `realign_optimization.md` → Run 14.
 
 ⚠ **The two tables above this section are the OLD 5m-trail book** and are kept for the record.
 

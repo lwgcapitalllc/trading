@@ -42,8 +42,10 @@ Standing rules for anything recorded here:
 |---|---|
 | data | 5m XAUUSD, 2020-01-02 → 2026-08-06, warmup 1000 |
 | frame | 🔴 **the 5m frame RESAMPLED FROM M1** — reading the M5 cache is a trap, see the bot's CLAUDE.md |
-| baseline, free — **since Run 7** (15m trail) | 160 trades, **+66.52R**, +0.416 avg, PF 1.97, max drawdown 9.85R |
-| baseline, charged — **since Run 7** | 160 trades, **+56.39R**, +0.352 avg, PF 1.78, max drawdown 11.38R |
+| baseline, free — **since Run 13** | 113 trades, **+88.02R**, +0.779 avg, PF 3.00, max drawdown 6.00R |
+| baseline, charged — **since Run 13** | 113 trades, **+82.41R**, +0.729 avg, PF 2.80, max drawdown 6.19R |
+| ~~baseline, free — Run 7 to Run 13~~ (15m trail) | 160 trades, +66.52R, +0.416 avg, PF 1.97, max drawdown 9.85R |
+| ~~baseline, charged — Run 7 to Run 13~~ | 160 trades, +56.39R, +0.352 avg, PF 1.78, max drawdown 11.38R |
 | ~~baseline before Run 7~~, free | 162 trades (77L/85S), +45.14R, +0.279 avg, 44.4% win, PF 1.658, max drawdown 12.15R |
 | ~~baseline before Run 7~~, charged | 162 trades, +35.81R, +0.221 avg, 33.3% win, PF 1.496, max drawdown 15.52R |
 
@@ -915,6 +917,22 @@ price on the other side), so the tool REFUSES a retest config rather than invent
 
 ⚠ **This is a measurement, not a strategy. Nothing is wired to a bot.**
 
-🔴 **The baseline rows in *The basis* above are STALE against today's code** — they say 160 trades /
-+56.39R charged; `axis_sweep.py` on that exact documented command returns 113 / +82.41R today. Not
-diagnosed here, and it is the next thing to chase before anyone quotes a Realign number.
+✅ **DIAGNOSED, same day — the baseline rows in *The basis* were STALE, not wrong**, and they are
+corrected above. Three shipped defaults moved on 2026-09-16 (Runs 12 and 13) and nobody re-wrote the
+basis table: the setup window 24h → 72h, the N-day momentum filter OFF → ON at 20, and the runner
+trail pinned from the parent's percentage ratchet to structure-only. **Pinning all three back
+reproduces the old row to the cent** — 160 trades, +56.39R, PF 1.78, maxDD 11.38R, win 26.9%:
+
+```
+python backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
+    --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
+    --profile puprime_standard --pin realign_window_hrs=24.0 --pin realign_mom_days=none \
+    --pin "exec_runner_trail=Structure + % ratchet"
+```
+
+🔴 **That command did not RUN until today**, and the reason is worth keeping: an optional setting
+that has shipped ON cannot be pinned back OFF — `axis_sweep.py` read the type off the value it
+currently holds, so `=none` hit the integer branch and died. **The moment a filter ships on, turning
+it off stops being sweepable**, which is the one comparison anyone would want. Fixed in `_coerce`.
+**Nothing in the inverse measurement above changes** — it was always run on shipped defaults, and
+the REAL arm still matches the control exactly.

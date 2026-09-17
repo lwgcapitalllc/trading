@@ -480,8 +480,15 @@ CLAUDE.md gets at most one index line.
   it never held. Rule 1's shape exactly: *unset* and *set to this* collapsing into one value. It
   now falls back to the field's declared ANNOTATION (`Optional[int|float|str]`), accepts
   `none`/`off`/`null` as `None`, and REFUSES a field it cannot type rather than guessing.
-  ⚠ **No stored result moves** — the old path could only produce a crash or a string-valued
-  config, so no published figure was ever produced through it.
+  🔴 **THAT FIX WAS HALF OF THE PROBLEM AND THE OTHER HALF SURVIVED UNTIL 2026-09-17: an optional
+  lever that has shipped ON could not be pinned back OFF.** `_coerce` asked the CURRENT value
+  first, so once the Realign momentum filter shipped at 20 its field answered "integer" and `=none`
+  died on `could not convert string to float: 'none'`. **The moment a filter ships on, turning it
+  off stops being sweepable — which is the one comparison anybody would want**, and it is what
+  blocked reproducing that bot's previous book for a day. The `None` branch now runs FIRST, keyed
+  on the declared annotation rather than the held value.
+  ⚠ **No stored result moves** — the old paths could only produce a crash or a string-valued
+  config, so no published figure was ever produced through them.
   ⚠ **One axis at a time, never a cartesian product, and that is the point rather than a
   limitation.** A grid over a ~100-trade book returns a winner whether or not one exists; sweeping
   an axis puts every winner's NEIGHBOURS in the table by construction, which is the only thing

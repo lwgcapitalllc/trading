@@ -143,6 +143,13 @@ def _coerce(current: Any, raw: str, annotation: Any = None) -> Any:
     the current value cannot answer, the declared ANNOTATION is asked instead, and a field that
     answers neither is refused rather than guessed at."""
     raw = raw.strip()
+    # 🔴 **An OPTIONAL field whose current value is NOT None still has to be settable back to
+    # None**, and this branch has to come FIRST or the isinstance checks below claim it. The
+    # momentum filter shipped ON (`realign_mom_days = 20`) on 2026-09-16 and `=none` then died
+    # with "could not convert string to float: 'none'" — i.e. the moment a filter ships on,
+    # turning it OFF becomes unsweepable, which is exactly the comparison anyone would want.
+    if type(None) in getattr(annotation, "__args__", ()) and raw.lower() in ("none", "off", "null"):
+        return None
     if isinstance(current, bool):
         return raw.lower() in ("1", "true", "yes", "on")
     if isinstance(current, int) and not isinstance(current, bool):
