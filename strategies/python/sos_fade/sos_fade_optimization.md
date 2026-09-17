@@ -4396,36 +4396,56 @@ untried routes are unchanged: a second instrument, or a resting limit at 0.618.
 
 ## Run 32 — 2026-09-17: the CEILING on the no-gap zone — how much is actually on the table
 
-**Question (Aaron):** how many setups came into the tradable zone, did NOT hit the 1.0 fib,
-reversed, and made at least 1R / 2R / 3R?
+**Question (Aaron):** how many setups came into the tradable zone with no fair-value gap, did
+NOT hit the 1.0 fib, reversed, and made at least 1R / 2R / 3R?
 
-**Method:** `backtest/tools/nogap_zone_ceiling.py` on branch `research/nogap-shift-5m`
-(commit fef08412). Every no-gap setup the bot builds (0.5 tagged, no fair-value gap, not traded)
-is entered BLIND at the 0.5 level with the stop at the 15m 1.0, so R = half the zone. Price is
-then walked bar-by-bar on 1m until the 1.0 is touched or 5 trading days pass. A bar holding both
-the stop and the target counts as STOPPED. No entry rule, no costs — this is an upper bound, not
-a strategy.
+🔴 **The first answer said 216 setups and Aaron rejected it on sight. He was right.** Two
+defects, both rule 3 — recording what was EVER true instead of what was true at the moment the
+question is asked:
 
-XAUUSD, Vantage cache, 2020-01 → 2026-08.
+1. **The gap flag was latched across every bar of a setup's life.** A setup with no gap on
+   arrival that formed one two days later was counted in BOTH piles — 194 with a gap and 277
+   without, against 374 arrivals in total. The giveaway was that the two did not sum to the
+   whole, and nothing in the first script checked that they should.
+2. **The "already traded" test was re-derived** from the sequence rather than read off the
+   execution's own latch.
+
+The funnel below reconciles: the two piles sum to the arrivals exactly, and every leg the
+execution reports trading falls inside the arrival set. **Any future count here must print that
+check.**
+
+**Method:** `backtest/tools/nogap_zone_funnel.py` classifies each setup once, keyed by direction
+and SOS timestamp, reading the gap on the FIRST bar price is in the zone — when a trader would
+look for one. `backtest/tools/nogap_zone_ceiling.py` then enters each blind at the 0.5 with the
+stop at the 15m 1.0 (so R = half the zone) and walks 1m bars forward from arrival until the 1.0
+is touched or 5 trading days pass. A bar holding both the stop and the target counts as STOPPED.
+No entry rule, no costs — an upper bound, not a strategy. Branch `research/nogap-shift-5m`,
+commit db3c4ce3. XAUUSD, Vantage cache, 2020-01 → 2026-08.
+
+### The funnel
+
+| | Setups |
+|---|---|
+| armed SOS setups with fibs | 612 |
+| price came back into the tradable zone | **374** |
+| — a fair-value gap WAS there on arrival | 170 |
+| — **NO fair-value gap on arrival** | **204** |
+| — and the primary never traded that leg | **195** |
+
+### What those 195 did
 
 | | Setups | Share |
 |---|---|---|
-| reached the tradable zone | **216** | — |
-| hit the 1.0 before anything | 170 | 79% |
-| never hit the 1.0 | 46 | 21% |
-| reversed and made **1R** | 46 | 21.3% |
-| reversed and made **2R** | 42 | 19.4% |
-| reversed and made **3R** | **36** | **16.7%** |
+| hit the 1.0 first | 152 | 77.9% |
+| never hit the 1.0 | 43 | 22.1% |
+| reversed and made **1R** | 43 | 22.1% |
+| reversed and made **2R** | 39 | 20.0% |
+| reversed and made **3R** | **34** | **17.4%** |
 
-**What it means.** Blind entry at the 0.5 targeting 3R loses 72R over the 216. **Break-even at
-3R needs a 25% win rate, and the raw zone gives 16.7%.** So a confirmation rule has to throw away
-about 40% of the 170 losers while keeping essentially all 36 winners just to reach flat. Runs
-27–31 measured three rules (1m main shift, 1m internal shift, 5m shift) and none came close.
-
-⚠ **A first cut of this measured 6.5% at 1R and is WRONG — do not quote it.** It stopped watching
-each setup when the setup stopped being a live untraded no-gap one (a gap forming, the primary
-taking it, the SOS being replaced), which is not price resolving. Rule 3: it recorded the window
-it asked about, not the question it meant. The numbers above walk forward on price alone.
+**What it means.** Blind entry at the 0.5 loses 78R at a 2R target and 59R at 3R. Break-even
+needs 33% at 2R and 25% at 3R; the raw zone gives 20.0% and 17.4%. So a confirmation rule must
+discard roughly a third of the 152 losers while keeping nearly all 34 winners just to reach flat.
+Runs 27–31 measured three rules (1m main shift, 1m internal shift, 5m shift) and none came close.
 
 **What this does NOT close.** Every run so far stops at the 15m 1.0, which makes R the whole half
 of the zone. The Realign bot's trigger stops behind the **last counter shift on the 5m**, which is
