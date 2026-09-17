@@ -4391,3 +4391,43 @@ answer it is a second instrument, not a tighter filter on this one.
 **Verdict:** the 5m confirmation does not rescue the no-gap setup — it loses on its own trades
 and costs primaries on top. Runs 27–31 close the no-gap entry line on XAUUSD 15m. The remaining
 untried routes are unchanged: a second instrument, or a resting limit at 0.618.
+
+---
+
+## Run 32 — 2026-09-17: the CEILING on the no-gap zone — how much is actually on the table
+
+**Question (Aaron):** how many setups came into the tradable zone, did NOT hit the 1.0 fib,
+reversed, and made at least 1R / 2R / 3R?
+
+**Method:** `backtest/tools/nogap_zone_ceiling.py` on branch `research/nogap-shift-5m`
+(commit fef08412). Every no-gap setup the bot builds (0.5 tagged, no fair-value gap, not traded)
+is entered BLIND at the 0.5 level with the stop at the 15m 1.0, so R = half the zone. Price is
+then walked bar-by-bar on 1m until the 1.0 is touched or 5 trading days pass. A bar holding both
+the stop and the target counts as STOPPED. No entry rule, no costs — this is an upper bound, not
+a strategy.
+
+XAUUSD, Vantage cache, 2020-01 → 2026-08.
+
+| | Setups | Share |
+|---|---|---|
+| reached the tradable zone | **216** | — |
+| hit the 1.0 before anything | 170 | 79% |
+| never hit the 1.0 | 46 | 21% |
+| reversed and made **1R** | 46 | 21.3% |
+| reversed and made **2R** | 42 | 19.4% |
+| reversed and made **3R** | **36** | **16.7%** |
+
+**What it means.** Blind entry at the 0.5 targeting 3R loses 72R over the 216. **Break-even at
+3R needs a 25% win rate, and the raw zone gives 16.7%.** So a confirmation rule has to throw away
+about 40% of the 170 losers while keeping essentially all 36 winners just to reach flat. Runs
+27–31 measured three rules (1m main shift, 1m internal shift, 5m shift) and none came close.
+
+⚠ **A first cut of this measured 6.5% at 1R and is WRONG — do not quote it.** It stopped watching
+each setup when the setup stopped being a live untraded no-gap one (a gap forming, the primary
+taking it, the SOS being replaced), which is not price resolving. Rule 3: it recorded the window
+it asked about, not the question it meant. The numbers above walk forward on price alone.
+
+**What this does NOT close.** Every run so far stops at the 15m 1.0, which makes R the whole half
+of the zone. The Realign bot's trigger stops behind the **last counter shift on the 5m**, which is
+far tighter — so its 3R is a much shorter distance and a different trade from anything measured
+here. That is the one version of Aaron's idea still genuinely open.
