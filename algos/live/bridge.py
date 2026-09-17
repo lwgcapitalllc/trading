@@ -625,6 +625,12 @@ class OrderBridge:
         # when a position opens, so a later genuine problem still speaks.
         self._partial_alerted: str = ""
         self._pos_ticket: Optional[int] = None
+        # The primary fill the fill clock is leaving for the 15-minute bar (logged once per
+        # ticket). See `_primary_fill_awaiting_its_bar`.
+        self._deferred_fill: Optional[int] = None
+        # A broker position found at startup with no record — checked against the warm-up replay
+        # by `_adopt_by_replay`, never adopted before that.
+        self._replay_candidate = None
         # Set when a scale-in lot refuses to close, read by `_why_not_scaled` so the halt that
         # follows names the real cause instead of the generic duplicate-orders one. Deliberately
         # NOT cleared on a later bar: the lot is still open until somebody closes it by hand.
@@ -784,14 +790,15 @@ class OrderBridge:
 
         record = position_state.read(self._instance_dir)
         if record is None:
-            self._halt(
-                f"MT5 already holds position T{p.ticket} under magic {magic} at startup, and "
-                f"there is no usable record of it in "
-                f"{position_state.path_for(self._instance_dir)}. The bot will NOT take it over — "
-                f"it would size its next entry with no idea it is already exposed. The position "
-                f"keeps its broker-side stop. Close it by hand, or clear it, before restarting."
+            # 🔴 NOT a halt yet (2026-09-17) — the warm-up replay gets one chance to prove it holds
+            # this exact trade. `apply_restore` decides, and halts with this same message on any
+            # mismatch. See `_adopt_by_replay`.
+            self._replay_candidate = p
+            self._log.warning(
+                f"MT5 holds position T{p.ticket} and there is no record of it. The warm-up replay "
+                f"will be checked against it; any difference halts."
             )
-            return False
+            return True
 
         symbol = getattr(self._mt5, "symbol", "") or ""
         if record.magic != magic or (symbol and record.symbol != symbol):
@@ -849,6 +856,107 @@ class OrderBridge:
         self._pos_risk_usd = record.broker.risk_usd or 0.0
         return True
 
+    def _replay_disagreements(self, p) -> list:
+        """Every way the warm-up replay's position differs from broker position `p`, named.
+        Empty = the same trade. Same one-point price tolerance as the position record."""
+        ex = self._ex
+        tol = max(float(self._point()), 0.0)
+        got_dir = 1 if p.type == 0 else -1
+        if ex._pos_dir == 0:
+            return ["the replay ended FLAT — it never took this trade, or has already closed it"]
+        out = []
+        if ex._pos_dir != got_dir:
+            out.append(f"direction: replay {self._side(ex._pos_dir)}, broker {self._side(got_dir)}")
+        entry = getattr(ex, "_entry", None)
+        if entry is None or abs(float(entry) - float(p.price_open)) > tol:
+            out.append(f"entry: replay {entry}, broker {p.price_open}")
+        getter = getattr(ex, "_current_stop", None)
+        stop = getter() if callable(getter) else None
+        if stop is None or abs(float(stop) - float(p.sl)) > tol:
+            out.append(f"stop: replay {stop}, broker {p.sl}")
+        # Remaining size, so a partial the replay banked and the broker did not is a mismatch.
+        lots = self._intended_open_lots()
+        if lots is None or abs(float(lots) - float(p.volume)) >= 0.005:
+            shown = None if lots is None else round(float(lots), 4)
+            out.append(f"size: replay {shown} lots open, broker {p.volume}")
+        if any(float(lot) > 0 for _price, lot in (getattr(ex, "_adds", None) or [])):
+            out.append("the replay holds scale-in lots the broker does not")
+        return out
+
+    def _adopt_by_replay(self, *, announce: bool) -> bool:
+        """Take over a broker position that has no record, IF the warm-up replay holds the same trade.
+
+        🔴 **Built 2026-09-17.** Both SOS Fade bots halted on a fill of their own limit, so no
+        record was ever written, and a restart refused the trade — leaving it with only its broker
+        stop. The replay is the strategy re-deciding from real bars; if it ends holding the same
+        side, entry, stop and remaining size as the broker, the strategy's own state already
+        describes this trade and managing it is sound.
+
+        ⚠ **Any difference halts, with each difference named** — the same refusal as before this
+        existed. A replay's size is computed on the replay's own equity, so this refuses more
+        often than it adopts; that is the safe direction.
+        """
+        p = self._replay_candidate
+        self._replay_candidate = None
+        diffs = self._replay_disagreements(p)
+        if diffs:
+            self._halt(
+                f"MT5 already holds position T{p.ticket} under magic {self._mt5.magic} at "
+                f"startup, and there is no usable record of it in "
+                f"{position_state.path_for(self._instance_dir)}. The warm-up replay does not hold "
+                f"the same trade: " + "; ".join(diffs) + ". The bot will NOT take it over. The "
+                "position keeps its broker-side stop. Close it by hand, or clear it, before "
+                "restarting."
+            )
+            return False
+        self._pos_ticket = int(p.ticket)
+        self._pos_dir = 1 if p.type == 0 else -1
+        self._pos_entry = float(p.price_open)
+        self._pos_lots = float(p.volume)
+        self._pos_stop = float(p.sl)
+        self._pos_intended = 0.0
+        self._pos_opened_bar = None
+        self._pos_alert_id = None
+        self._pos_risk_usd = (
+            abs(self._pos_entry - self._pos_stop) * self._pos_lots * (self._contract_size() or 0.0)
+        )
+        self._pos_intent = getattr(self._ex, "entry_kind", "primary")
+        self._restored = True
+        self._log.info(
+            f"ADOPTED BY REPLAY | T{p.ticket} {self._side(self._pos_dir)} {p.volume}L @ "
+            f"{p.price_open}, stop {p.sl} — the warm-up replay holds the same trade. Managed from "
+            f"the next bar."
+        )
+        self._ledger.event(
+            "position_adopted_by_replay",
+            ticket=self._pos_ticket,
+            dir=self._pos_dir,
+            lots=self._pos_lots,
+            entry=self._pos_entry,
+            stop=self._pos_stop,
+            stage=getattr(self._ex, "_stage", None),
+            intent=self._pos_intent,
+        )
+        if announce:
+            self._notify(
+                alert(
+                    OK,
+                    "TRADE ADOPTED",
+                    self._message_name(),
+                    joined(
+                        [
+                            f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
+                            f"stop {self._pos_stop}",
+                        ]
+                    ),
+                    "No restart record existed; the warm-up replay holds the same trade, so the "
+                    "bot manages it from the next bar.",
+                ),
+                notify.HEALTH,
+            )
+        self._save_position()
+        return True
+
     def stage_rewarm(self) -> None:
         """Carry an OPEN position across a re-warm. Call BEFORE the strategy is rebuilt.
 
@@ -888,6 +996,8 @@ class OrderBridge:
         Staging at `adopt_broker_state` (which must read the broker before anything else can take
         time) and applying here is what keeps the real position the last word.
         """
+        if self._replay_candidate is not None:
+            return self._adopt_by_replay(announce=announce)
         if self._pending_restore is None:
             return False
         snap = self._pending_restore
@@ -979,6 +1089,11 @@ class OrderBridge:
         adopt a wrong stop; it costs the restore.
         """
         if self._instance_dir is None or self._pos_ticket is None:
+            return
+        if self._ex._pos_dir == 0:
+            # The strategy holds nothing to write down, and its snapshot would raise. The only way
+            # here is a position the strategy does not know about, which `_agrees` halts on next —
+            # a record of it would let a restart adopt a trade nobody is managing.
             return
         try:
             snap = self._ex.snapshot_position()
@@ -1169,6 +1284,10 @@ class OrderBridge:
         dec = self._fast_decision()
 
         positions = self._mt5.get_open_positions()
+        # 🔴 BEFORE anything observes the position — the 2026-09-17 halt on both SOS Fade bots.
+        # See `_primary_fill_awaiting_its_bar`.
+        if self._primary_fill_awaiting_its_bar(positions):
+            return
         self._observe_close(positions, dec, sig, owner="secondary")
         self._observe_open(positions, dec, sig)
         self._observe_vanished()
@@ -1197,6 +1316,48 @@ class OrderBridge:
         # rather than left resting because nothing came back to look at it.
         for slot in (SECONDARY_LONG, SECONDARY_SHORT):
             self._sync_slot(slot, pend if slot == wanted else None, sig)
+
+    def _primary_fill_awaiting_its_bar(self, positions) -> bool:
+        """Is this broker position the PRIMARY's own limit, filled inside a 15-minute bar the
+        strategy has not closed yet? If so the fill clock leaves it alone.
+
+        🔴 **Built 2026-09-17, after both SOS Fade bots halted on their own order.** The fill clock
+        runs every five minutes and, where a 5-minute and a 15-minute bar close together, it runs
+        FIRST (the merge rule in `runner.py`). The primary's emulator only fills its limit when the
+        15-minute bar closes, so for up to one bar the broker holds the position while the
+        strategy is still flat — and this path read that as a position nobody placed, failed to
+        write its restart record ("called while flat") and halted, leaving the trade with only its
+        broker stop.
+
+        ✅ **Matched on TICKET and SIDE against the limit this bridge itself rested.** MT5 carries a
+        triggered pending order's ticket through to its position, and only this bot's magic is
+        listed. The 15-minute `sync` then adopts it through the ordinary path with the emulator in
+        the trade. If the emulator does NOT fill on that bar, `sync` still halts — the
+        disagreement is real then, and this does not hide it.
+
+        ⚠ **A position that matches nothing still halts here**, exactly as before. While deferring,
+        every OTHER resting order is pulled: one position slot, and a second fill would be a trade
+        the strategy has no model of.
+        """
+        if self._pos_ticket is not None or self._ex._pos_dir != 0 or len(positions) != 1:
+            return False
+        p = positions[0]
+        d = 1 if p.type == 0 else -1
+        filled = primary_slot(d)
+        rest = self._rest.get(filled)
+        if rest is None or int(rest.ticket) != int(p.ticket):
+            return False
+        if self._deferred_fill != int(p.ticket):
+            self._deferred_fill = int(p.ticket)
+            self._log.info(
+                f"PRIMARY LIMIT FILLED | T{p.ticket} — the strategy books it when its 15-minute "
+                f"bar closes; the fill clock leaves it alone until then."
+            )
+            self._ledger.event("primary_fill_deferred", ticket=int(p.ticket), dir=d)
+        for slot, held in list(self._rest.items()):
+            if held is not None and slot != filled:
+                self._drop_rest(slot, held, "cancel (the primary filled)")
+        return True
 
     def _fast_decision(self) -> "_FastDec":
         """The re-entry's live stop and targets, read off the strategy.

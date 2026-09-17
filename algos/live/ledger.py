@@ -114,6 +114,9 @@ _DECISION_EVENTS = {
     # A resting order the BROKER removed without filling it (margin, expiry, a hand delete).
     # A decision, not health: it is the answer to "why was there no trade on that setup".
     "order_vanished",
+    # The primary's own limit filled before its 15-minute bar closed; the fill clock left it for
+    # that bar (2026-09-17). About an ORDER, so a decision.
+    "primary_fill_deferred",
     "stop_moved",
     "dry_run_action",
     # a position that existed before this process did, so the strategy never chose it

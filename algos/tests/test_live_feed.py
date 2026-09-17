@@ -128,3 +128,39 @@ def test_unknown_timeframe_is_a_loud_error():
 def test_timeframe_seconds_are_right():
     assert live_feed.timeframe_seconds("M15") == 900
     assert live_feed.timeframe_seconds("H4") == 14400
+
+
+def _m5_across_the_daily_break():
+    """Gold's M5 stream across the 21:00-22:00 UTC break: 20:45, 20:50, 20:55, then 22:00, 22:05
+    (forming). No bars exist inside the break."""
+    times = pd.DatetimeIndex(
+        [
+            "2026-09-16 20:45",
+            "2026-09-16 20:50",
+            "2026-09-16 20:55",
+            "2026-09-16 22:00",
+            "2026-09-16 22:05",
+        ],
+        tz="UTC",
+    )
+    frame = _raw(list(times))
+    frame["time"] = times
+    return frame
+
+
+def test_the_daily_break_is_many_intervals_but_only_two_real_bars(monkeypatch):
+    """2026-09-17: the clock count said 13 missed, the broker had printed two. MUTATION: count
+    intervals in `bars_since_last` -> red."""
+    sys.modules["MetaTrader5"].TIMEFRAME_M5 = 5
+    f = live_feed.BarFeed(_FakeBot(_m5_across_the_daily_break()), "M5")
+    f.last_bar_time = pd.Timestamp("2026-09-16 20:50", tz="UTC")
+    assert f.gap_bars() == 14
+    assert f.bars_since_last(f.gap_bars()) == 2
+
+
+def test_bars_since_last_is_CANNOT_ASK_when_nothing_comes_back():
+    """Rule 1: an empty frame is a dead link as often as a quiet one, so it is never zero."""
+    f = live_feed.BarFeed(_FakeBot(_raw([])), "M15")
+    f.last_bar_time = pd.Timestamp("2026-09-16 20:50", tz="UTC")
+    assert f.bars_since_last(10) is None
+    assert live_feed.BarFeed(_FakeBot(_raw([])), "M15").bars_since_last(10) is None

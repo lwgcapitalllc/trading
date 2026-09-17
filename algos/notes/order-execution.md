@@ -750,3 +750,35 @@ plain epoch int with nothing to mark it. `get_candles` converts through `broker_
 (measured offsets, not assumed). Before the fix on 2026-07-30 every bar was 2–3 hours out behind a
 perfectly valid-looking timestamp — which moves every session boundary a strategy trades off, with
 no error anywhere. Verify a new broker with `compare_feeds.py`; do not assume the offset.
+
+## 🔴 The fill clock halted both SOS Fade bots on their OWN limit (2026-09-17)
+
+**What happened.** 01:36 UTC, the primary short limit (T364105022 live, T379558872 demo) filled at
+4316.98. At 01:40 a 5-minute and a 15-minute bar closed together; the fill clock runs FIRST (the
+merge rule), the strategy had not yet closed the 15-minute bar that fills its limit, so the
+position read as unknown: `Could not snapshot … called while flat`, then `HALTED: MT5 holds a
+position the strategy does not know about`. Both trades were left with only the broker stop. Every
+primary fill on a bot with the re-entry switched on would have done this.
+
+**The fix (`bridge._primary_fill_awaiting_its_bar`).** The fill clock leaves a broker position
+alone when its TICKET and SIDE match the primary limit this bridge rested, pulls every other
+resting order, and lets the 15-minute `sync` adopt it the ordinary way. A position matching nothing
+still halts; an emulator that does not fill on its bar still halts in `sync`. The restart record is
+never attempted while the strategy is flat (`_save_position`).
+
+**Re-adopt by replay (`bridge._adopt_by_replay`).** A broker position with no restart record no
+longer halts at `adopt_broker_state`: after the warm-up, if the replay holds the same side, entry
+and stop (one point) and remaining lots (within 0.005) with no scale-in lots, it is adopted and a
+record written; any difference halts naming each one. ⚠ The replay sizes on its own drifting
+equity, so it refuses more often than it adopts — the safe direction.
+
+**MEASURED 2026-09-17 02:15 UTC** (frozen a6481ce3 code, real instance params, 5,000 demo-feed
+M15 bars): tonight's two trades would NOT be adopted. Replay: short @ 4316.98, stage 2, stop
+already moved to 4301.37 (TP1 touched 01:56, TP2 4285.76 at 02:09), a scale-in lot at 4287.45,
+0.132 / 0.203 lots open against the broker's 0.14 / 0.22. Stop, size and scale-in all differ.
+
+**Also.** The re-entry gap alert no longer fires for gold's daily break — `BarFeed.bars_since_last`
+counts bars the broker actually printed (the re-warm still runs; cannot-ask still alerts). The
+hourly review reads the PROCESS list before calling a missing health record a fault, so a bot
+stopped with a stale `running` status no longer raises it daily (`log_review.running_keys`).
+Extreme Leg has no second bar stream, so it never reaches the fill clock.

@@ -406,8 +406,39 @@ def _suspect_anchor(bot_key: str, state: dict) -> List[Finding]:
     ]
 
 
+def running_keys(keys) -> Optional[set]:
+    """Which of `keys` have a runner process on this box. `None` = the list could not be read.
+
+    🔴 **Added 2026-09-17.** The review decided "supposed to be running" off the status file
+    alone, and a bot stopped without writing `stopped` kept that word for days — so two stopped
+    bots raised "marked running but no health file" every day. The process list is the fact;
+    the status file is a claim about it (rule 7). Same exact-key rule as the watchdog
+    (`bot_registry.is_runner_line`).
+    """
+    import subprocess
+
+    import bot_registry
+
+    try:
+        r = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if r.returncode != 0:
+        return None
+    return bot_registry.runner_keys(r.stdout, keys)
+
+
 def review_bot(
-    bot_key: str, instance_dir: Path, state: dict, now: Optional[datetime] = None
+    bot_key: str,
+    instance_dir: Path,
+    state: dict,
+    now: Optional[datetime] = None,
+    process_running: Optional[bool] = None,
 ) -> List[Finding]:
     """Everything in this bot's record that a person should look at.
 
@@ -416,7 +447,18 @@ def review_bot(
     """
     now = now or datetime.now(timezone.utc)
     findings: List[Finding] = []
-    supposed_to_run = str(state.get("status", "")).lower() not in ("", "stopped", "offline")
+    # ⚠ `process_running`: True/False from the process list, `None` = could not ask — and only a
+    # definite False overrides the status file. A dead process with a stale "running" is the
+    # watchdog's and the dead-man switch's to report, not a missing-record finding here.
+    supposed_to_run = (
+        str(state.get("status", "")).lower()
+        not in (
+            "",
+            "stopped",
+            "offline",
+        )
+        and process_running is not False
+    )
 
     findings.extend(_suspect_anchor(bot_key, state))
 
@@ -956,6 +998,7 @@ def main(argv=None) -> int:
     state = load_state()
     total_new = 0
 
+    running = running_keys(list(_bot_state.BOT_INSTANCES))
     for bot_key, instance_dir in _bot_state.BOT_INSTANCES.items():
         # Its name plus LIVE or demo (`bot_state.bot_label`): two copies of one strategy share a
         # name since 2026-09-11, and a REVIEW finding in the shared health room must say which.
@@ -969,7 +1012,13 @@ def main(argv=None) -> int:
             print(f"{bot_key}: could not read bot_state ({e})")
             bs = {}
 
-        findings = review_bot(bot_key, Path(instance_dir), bs, now=now)
+        findings = review_bot(
+            bot_key,
+            Path(instance_dir),
+            bs,
+            now=now,
+            process_running=None if running is None else bot_key in running,
+        )
         write_flag(Path(instance_dir), bot_key, findings)
 
         seen = state.get(bot_key, [])

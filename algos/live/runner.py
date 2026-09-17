@@ -974,8 +974,17 @@ class LiveRunner:
             f"the fast side. The primary is untouched."
         )
         self.ledger.event("fast_feed_gap", missed_bars=gap, timeframe=self.fast_feed.timeframe)
+        # Asked BEFORE the re-warm moves the bookmark. How many bars the broker really printed in
+        # that window — see `_fast_gap_was_a_market_break`.
+        market_break = self._fast_gap_was_a_market_break(gap)
         self._fast_pending.clear()
         self._rewarm_fast()
+        if market_break:
+            self.log.info(
+                f"The {gap} {self.fast_feed.timeframe} intervals were a market break, not lost "
+                f"bars — no alert."
+            )
+            return
         # ONCE per outage. A feed that has been quiet for an hour is one message, not 360.
         if not self._fast_stale_alerted:
             self._fast_stale_alerted = True
@@ -990,6 +999,24 @@ class LiveRunner:
                     "Nothing to do unless it repeats.",
                 )
             )
+
+    def _fast_gap_was_a_market_break(self, gap: int) -> bool:
+        """Did the broker print almost nothing in the gap, i.e. the market was shut?
+
+        🔴 **2026-09-17: "RE-ENTRY FEED GAP · missed 13 M5 bars" was gold's daily one-hour break**,
+        and it would have fired every trading day. The clock count cannot tell a closed market
+        from dropped bars; the broker's own bar count can. The re-warm still runs either way —
+        only the ALERT is withheld, and only on a positive answer: `None` (cannot ask) alerts,
+        because a feed we cannot read is exactly what the alert is for (rule 1).
+        """
+        ask = getattr(self.fast_feed, "bars_since_last", None)
+        if not callable(ask):
+            return False
+        try:
+            real = ask(gap)
+        except Exception:
+            return False
+        return real is not None and real <= 4
 
     def flush_fast_before(self, close_ms: int) -> None:
         """Step every pending fast bar that OPENS before a primary bar closing at `close_ms`.

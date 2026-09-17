@@ -205,6 +205,7 @@ def test_the_bridge_writes_the_risk_it_holds_into_the_record(tmp_path):
     ex = _FakeExecution()
     ex.snapshot = dict(_SNAP)
     b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3295.0)], execution=ex)
+    ex._pos_dir = 1  # the restored emulator holds the trade; a flat one writes nothing
     position_state.clear(tmp_path)
     b._save_position()
     got = position_state.read(tmp_path)
@@ -368,7 +369,9 @@ def test_a_restored_PRIMARY_still_comes_back_on_the_15_minute_clock(tmp_path):
 
 
 def test_no_record_halts(tmp_path):
+    """Once the warm-up replay has had its chance (2026-09-17) — this one ended flat."""
     b, _, _, _ = _startup(tmp_path, positions=[_held()])
+    b.apply_restore()
     assert b.state is live_bridge.BridgeState.HALTED
     assert "no usable record" in b.halt_reason
 

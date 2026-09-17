@@ -1241,13 +1241,19 @@ def test_a_flag_with_only_history_is_OK(tmp_path):
     assert got["findings"] == []
 
 
-def _run_main(tmp_path, monkeypatch, rows):
-    """`main` on this file's clock — it reads the real one, and the record here is dated NOW."""
+def _run_main(tmp_path, monkeypatch, rows, running=None):
+    """`main` on this file's clock — it reads the real one, and the record here is dated NOW.
+    `running` is what the process list answers (`None` = could not be read)."""
     _write(tmp_path, rows)
     review = lr.review_bot
     monkeypatch.setattr(
-        lr, "review_bot", lambda k, inst, bs, now=None: review(k, inst, bs, now=NOW)
+        lr,
+        "review_bot",
+        lambda k, inst, bs, now=None, process_running=None: review(
+            k, inst, bs, now=NOW, process_running=process_running
+        ),
     )
+    monkeypatch.setattr(lr, "running_keys", lambda keys: running)
     monkeypatch.setattr(lr._bot_state, "BOT_INSTANCES", {"b": tmp_path})
     monkeypatch.setattr(lr._bot_state, "bot_label", lambda k: "Bot")
     monkeypatch.setattr(lr._bot_state, "read_bot", lambda k: RUNNING)
@@ -1281,3 +1287,35 @@ def test_a_finding_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(tmp
     monkeypatch.setattr(lr._bot_state, "read_account", lambda k: 34957946)
     _run_main(tmp_path, monkeypatch, _halted_last())
     assert seen and set(seen) == {34957946}
+
+
+# ── a stale "running" on a bot whose process is gone (2026-09-17) ────────────
+def test_a_STALE_running_status_with_no_process_is_not_a_missing_record_fault(tmp_path):
+    """🔴 Two stopped bots kept `running` in their status file for two days and raised "marked
+    running but no health file" every day. The process list decides. MUTATION: ignore
+    `process_running` -> red."""
+    assert lr.review_bot("b", tmp_path, RUNNING, now=NOW, process_running=False) == []
+
+
+def test_a_running_process_with_no_record_is_still_an_alert(tmp_path):
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW, process_running=True)
+    assert "unreadable" in _keys(found)
+
+
+def test_a_process_list_we_CANNOT_read_falls_back_to_the_status_file(tmp_path):
+    """Rule 1: cannot-ask is not 'not running'."""
+    found = lr.review_bot("b", tmp_path, RUNNING, now=NOW, process_running=None)
+    assert "unreadable" in _keys(found)
+
+
+def test_main_asks_the_PROCESS_LIST_before_calling_a_missing_record_a_fault(
+    tmp_path, monkeypatch, capsys
+):
+    """The wiring half: a bot with no process gets no finding, one with a process does.
+    MUTATION: pass `process_running=None` from `main` -> red."""
+    monkeypatch.setattr(lr, "health_rows", lambda inst, now: ([], "no health file"))
+    _run_main(tmp_path, monkeypatch, [], running=set())
+    assert "b: 0 finding(s)" in capsys.readouterr().out
+    (tmp_path / "state.json").unlink(missing_ok=True)
+    _run_main(tmp_path, monkeypatch, [], running={"b"})
+    assert "b: 1 finding(s)" in capsys.readouterr().out

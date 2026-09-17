@@ -181,3 +181,21 @@ class BarFeed:
             return 0
         delta = (df.index[-1] - self.last_bar_time).total_seconds()
         return max(0, int(delta // self.bar_seconds))
+
+    def bars_since_last(self, span: int) -> Optional[int]:
+        """How many CLOSED bars the broker actually HAS after the last one processed.
+
+        `gap_bars` counts clock intervals, so gold's daily one-hour break reads as 13 missed M5
+        bars when the broker printed none (2026-09-17). This counts real bars, so a caller can
+        tell a market that was shut from a stream that dropped bars. `span` is how many bars to
+        read — pass the `gap_bars` answer; a real gap cannot hold more bars than intervals.
+
+        ⚠ `None` = cannot ask (nothing came back, or no bookmark yet) — never read it as zero.
+        """
+        if self.last_bar_time is None:
+            return None
+        raw = self._mt5.get_candles(self._tf_const(), int(span) + 2, self.symbol)
+        df = to_canonical(raw)
+        if df.empty:
+            return None
+        return int((df.index > self.last_bar_time).sum())

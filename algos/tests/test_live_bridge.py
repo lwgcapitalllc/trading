@@ -500,6 +500,10 @@ class _FakeExecution:
         return self._planned_exit
 
     def snapshot_position(self) -> dict:
+        # 🔴 The real `Execution` REFUSES while flat (2026-09-17). This fake answered anyway, so no
+        # test could see the restart record silently failing on the fill-clock halt. Rule 13.
+        if self._pos_dir == 0:
+            raise ValueError("snapshot_position() called while flat — there is nothing to record")
         return dict(self.snapshot)
 
     def restore_position(self, snap: dict) -> None:
@@ -1301,8 +1305,12 @@ def test_startup_refuses_to_adopt_an_unknown_position(tmp_path):
     ops.positions = [_Pos(1, 0, 3290.0, 0.42, 3280.0)]
     b, ops, _, _ = _bridge(_FakeExecution(), mt5ops=ops, instance_dir=tmp_path)
     b.adopt_broker_state()
+    # Since 2026-09-17 the warm-up replay gets one chance to prove it holds the trade, so the
+    # refusal lands after the warm-up. This replay ended FLAT.
+    b.apply_restore()
     assert b.state is live_bridge.BridgeState.HALTED
     assert "no usable record" in b.halt_reason
+    assert "FLAT" in b.halt_reason
 
 
 def test_startup_clears_stale_resting_orders():
@@ -4320,3 +4328,148 @@ def test_the_tap_is_REINSTALLED_every_bar_because_a_REWARM_replaces_the_account(
     b.refresh_account_room()
     assert _ask(fresh, 500.0, room=100.0) == 0.0
     assert any("SETUP REFUSED" in n for n in notes)
+
+
+# ── the primary's OWN fill, seen first by the fill clock (2026-09-17) ─────────
+#
+# 🔴 Both SOS Fade bots halted at 01:40 UTC on a short their own limit had opened. A 5-minute and a
+# 15-minute bar closed together, the fill clock ran first, and the strategy had not yet closed the
+# bar that fills its limit — so the position read as one nobody placed.
+
+
+def _primary_short_filled_before_its_bar(tmp_path):
+    ex = _FakeExecution(pend_short=_Pend(-1, 4316.98, 14.0, 4352.44))
+    b, ops, ledger, notes = _bridge(ex, instance_dir=tmp_path)
+    b.sync(_Dec(), _Sig())  # the primary's limit rests at the broker
+    ticket = ops.orders[0].ticket
+    ops.positions = [_Pos(ticket, 1, 4316.98, 0.14, 4352.44)]  # ...and fills mid-bar
+    return b, ops, ex, ledger, notes, ticket
+
+
+def test_the_fill_clock_leaves_the_primarys_own_fill_for_its_15_minute_bar(tmp_path):
+    """Tonight's sequence. RED before the fix: `sync_fast` halted with "does not know about".
+    MUTATION: delete the `_primary_fill_awaiting_its_bar` call -> red."""
+    b, ops, ex, ledger, notes, ticket = _primary_short_filled_before_its_bar(tmp_path)
+    b.sync_fast(_fast_step())  # the 5-minute step runs first, strategy still flat
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert not any("ENTRY" in n for n in notes)
+
+    ex._pos_dir, ex._pend_short = -1, None  # the 15-minute bar closes and the emulator fills
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == ticket
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["intent"] == "primary"
+    from position_state import read as read_record
+
+    assert read_record(tmp_path) is not None, "a restart must be able to adopt it"
+
+
+def test_a_position_that_is_not_our_resting_order_still_halts_on_the_fill_clock(tmp_path):
+    b, ops, ex, _l, _n, ticket = _primary_short_filled_before_its_bar(tmp_path)
+    ops.positions = [_Pos(ticket + 50, 1, 4316.98, 0.14, 4352.44)]
+    b.sync_fast(_fast_step())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "does not know about" in b.halt_reason
+
+
+def test_a_fill_on_the_WRONG_side_of_our_ticket_still_halts(tmp_path):
+    b, ops, ex, _l, _n, ticket = _primary_short_filled_before_its_bar(tmp_path)
+    ops.positions = [_Pos(ticket, 0, 4316.98, 0.14, 4352.44)]
+    b.sync_fast(_fast_step())
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_if_the_strategy_does_not_fill_on_its_bar_the_15_minute_step_still_halts(tmp_path):
+    """The deferral must not hide a real disagreement — and it writes no restart record for it."""
+    b, ops, ex, _l, _n, _t = _primary_short_filled_before_its_bar(tmp_path)
+    b.sync_fast(_fast_step())
+    b.sync(_Dec(), _Sig())  # emulator still flat
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "does not know about" in b.halt_reason
+    from position_state import read as read_record
+
+    assert read_record(tmp_path) is None
+
+
+def test_other_resting_orders_are_pulled_while_the_fill_waits(tmp_path):
+    ex = _FakeExecution(
+        pend_short=_Pend(-1, 4316.98, 14.0, 4352.44), pend_long=_Pend(1, 4200.0, 14.0, 4180.0)
+    )
+    b, ops, _ledger, _notes = _bridge(ex, instance_dir=tmp_path)
+    b.sync(_Dec(), _Sig())
+    short = [o for o in ops.orders if not o.buy][0].ticket
+    long_ = [o for o in ops.orders if o.buy][0].ticket
+    ops.positions = [_Pos(short, 1, 4316.98, 0.14, 4352.44)]
+    ops.actions.clear()
+    b.sync_fast(_fast_step())
+    assert b.state is live_bridge.BridgeState.LIVE
+    assert ("cancel", long_) in ops.actions
+    assert ("cancel", short) not in ops.actions
+
+
+# ── re-adopting a recordless position by REPLAY (2026-09-17) ───────────────────
+#
+# Tonight's two trades opened with no restart record. On restart, the warm-up replay is allowed to
+# prove it holds the SAME trade; any difference halts exactly as before.
+
+_TONIGHT = dict(ticket=364105022, type_=1, price_open=4316.98, volume=0.14, sl=4352.44)
+
+
+def _replay_restart(tmp_path, **replay):
+    """Start a bridge on a broker holding tonight's short, with the replay in the given state."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(**_TONIGHT)]
+    ex = _FakeExecution()
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops, instance_dir=tmp_path)
+    b.state = live_bridge.BridgeState.WARMING
+    b.adopt_broker_state()
+    assert b.state is not live_bridge.BridgeState.HALTED, "must wait for the replay"
+    # ...the warm-up replays history into the emulator...
+    ex._pos_dir = replay.get("dir", -1)
+    ex._entry = replay.get("entry", 4316.98)
+    ex._current_stop_value = replay.get("stop", 4352.44)
+    ex._qty = replay.get("qty", 14.0)  # units: 14 oz = 0.14 lots of gold
+    ex._filled_qty = replay.get("filled", 0.0)
+    ex._adds = replay.get("adds", [])
+    ex.snapshot = {"_stage": 0}
+    ok = b.apply_restore()
+    b.begin_live()
+    return b, ok, ledger, notes
+
+
+def test_a_replay_that_holds_the_same_trade_ADOPTS_it(tmp_path):
+    """RED before: `adopt_broker_state` halted on the missing record. MUTATION: return a diff
+    from `_replay_disagreements` unconditionally -> red."""
+    b, ok, ledger, notes = _replay_restart(tmp_path)
+    assert ok and b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == 364105022 and b._pos_dir == -1 and b._pos_lots == 0.14
+    assert "event:position_adopted_by_replay" in ledger.kinds()
+    assert any("TRADE ADOPTED" in n for n in notes)
+    from position_state import read as read_record
+
+    assert read_record(tmp_path) is not None, "from here a restart resumes it the ordinary way"
+
+
+@pytest.mark.parametrize(
+    "replay, named",
+    [
+        ({"dir": 0}, "FLAT"),
+        ({"dir": 1}, "direction"),
+        ({"entry": 4316.50}, "entry"),
+        ({"stop": 4355.00}, "stop"),
+        ({"qty": 16.0}, "size"),
+        ({"filled": 7.0}, "size"),  # the replay banked half; the broker did not
+        ({"adds": [[4330.0, 5.0]]}, "scale-in"),
+    ],
+)
+def test_any_difference_from_the_replay_HALTS_and_says_which(tmp_path, replay, named):
+    b, ok, _ledger, _notes = _replay_restart(tmp_path, **replay)
+    assert not ok
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert named in b.halt_reason
+    assert b._pos_ticket is None
+
+
+def test_a_one_point_rounding_difference_is_still_the_same_trade(tmp_path):
+    b, ok, _l, _n = _replay_restart(tmp_path, entry=4316.981400000001, stop=4352.437800000001)
+    assert ok, b.halt_reason
