@@ -63,6 +63,7 @@ STRATEGY_ATTRS = ("signals", "sequence", "execution", "engine_config")
 EXECUTION_ATTRS = (
     "_pos_dir",          # 0 flat / +1 long / -1 short. Read 10 times; the bridge's main gate.
     "_entry",            # fill price of the open position
+    "_entry_ms",         # entry bar time of the open position; matched against the ledger at warm-up
     "_pend_long",        # resting long order, or None
     "_pend_short",       # resting short order, or None
     "entry_style",       # "resting" | "market" — see ENTRY_STYLES

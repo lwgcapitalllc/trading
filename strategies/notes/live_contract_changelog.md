@@ -115,3 +115,11 @@ broker's stop. The structural test lost the trail and went red on a correct brid
 ONE wrapping helper on the bridge, and accepts it only if the helper can return its argument
 unchanged. **Mutations run, all red:** the stop read replaced by the bridge's own value; the
 helper's pass-through return replaced; the stop-move call handed the old stop instead.
+## `_entry_ms` joined `EXECUTION_ATTRS` (2026-09-17)
+
+The entry BAR time of the open position (0 or `None` while flat). The bridge reads it after every
+warm-up to match a replayed position against a trade the bot's ledger already shows closed, and
+drops the replayed copy instead of waiting it out. SOS Fade (and so b_leg and realign, which
+subclass it) always had it; the extreme leg now exposes it as a property off its open position.
+A strategy that cannot answer is refused at startup; an answer of 0 means "unknown" and keeps the
+old wait.

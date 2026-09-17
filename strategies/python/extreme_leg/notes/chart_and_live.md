@@ -161,3 +161,8 @@ running one clock inert.
 `BRIDGE_OWNED_EXITS` out of the bridge's source rather than importing it** — importing
 `algos.live.bridge` from a strategy test drags in the whole live import graph, and this repo already
 forbids the reverse coupling for the same reason.
+
+## `_entry_ms` — the open trade's entry bar time (2026-09-17)
+
+A read-only property off the open position (`None` while flat), required by the live contract.
+The bridge uses it after a warm-up to recognise a replayed trade the owner already closed by hand.

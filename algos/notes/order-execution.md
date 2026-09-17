@@ -799,6 +799,18 @@ Anything else — history unreadable, no closing deal yet, broker stop/target/st
 program, a partial, deals that do not add up, another of our positions still open — halts as
 before, and the halt now says which.
 
+**A restart or re-warm after a hand close no longer waits out a replayed copy (2026-09-17).** The
+warm-up rebuilds the strategy's position from bars, which know nothing of a hand close, so it used
+to end holding the closed trade and sit in WARMING until that copy's own exit (up to 36h). Now
+`begin_live` — called after EVERY warm-up: startup, link recovery, the feed-gap re-warm and a
+settings reload — asks the bot's own decision ledger (`Ledger.trade_rows_since`) for an `opened`
+row with the same direction, a fill or intended price equal to the replay's entry at display
+precision, written no earlier than the replay's entry bar (`_entry_ms`, now in the live contract),
+AND a `closed` row for that ticket, whatever its reason. On a match the strategy gets the same
+commanded close; WARMING then goes LIVE a bar later when it is flat, and the ledger records
+`warmup_position_dropped`. No match, an unknown entry time or an unreadable ledger keeps the old
+wait. Nothing is ever opened. The fast-feed re-warm does not touch the position, so needs nothing.
+
 ⚠ **Backtest comparison:** exclude or split `closed_by_you` rows — they are the owner's exit, not
 the strategy's. Inside the emulator the same trade ends under its own `CMD` tag a bar later, at
 that bar's open, which is NOT the live exit price.

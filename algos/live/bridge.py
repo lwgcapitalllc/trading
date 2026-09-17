@@ -775,6 +775,9 @@ class OrderBridge:
             return
         if self._ex._pos_dir != 0:
             self.state = BridgeState.WARMING
+            closed = self._warmup_trade_already_closed()
+            if closed is not None and self._flatten_warmup_copy(closed):
+                return
             self._log.warning(
                 "Warmup ended with the strategy holding a simulated position — its entry is in "
                 "the past, so it will NOT be opened live. Waiting for it to close before "
@@ -785,6 +788,90 @@ class OrderBridge:
             )
         else:
             self.state = BridgeState.LIVE
+
+    def _warmup_trade_already_closed(self) -> Optional[dict]:
+        """The CLOSED ledger row of the real trade the warm-up replay is still holding, or None.
+
+        🔴 **Why this exists (2026-09-17).** A replay rebuilds the strategy's position from bars
+        and knows nothing about a trade the owner closed by hand. So a restart, or any re-warm,
+        after a hand close ended holding a copy of a trade that no longer exists, and the bot sat
+        in WARMING placing nothing until that copy's own exit — up to the 36-hour time stop.
+
+        A match needs ALL of: an `opened` row in THIS bot's ledger with the same direction, a
+        broker fill or intended price equal to the replay's entry at the symbol's display
+        precision, written no earlier than the replay's entry bar; and a `closed` row for the
+        same ticket. **Anything unknown is no match** — no entry time, an unreadable ledger, a
+        reader this ledger does not have — so the answer that flattens can only come from a
+        record that says the trade is over. It never opens anything.
+        """
+        read = getattr(self._ledger, "trade_rows_since", None)
+        entry = getattr(self._ex, "_entry", None)
+        entry_ms = getattr(self._ex, "_entry_ms", None)
+        if not callable(read) or entry is None or not entry_ms:
+            return None
+        rows = read(int(entry_ms))
+        if not rows:
+            return None
+        side = self._side(self._ex._pos_dir)
+        digits = self._digits()
+        want = round(float(entry), digits)
+
+        def _ms(row) -> Optional[int]:
+            from datetime import datetime
+
+            try:
+                return int(datetime.fromisoformat(str(row.get("ts"))).timestamp() * 1000)
+            except (TypeError, ValueError):
+                return None
+
+        def _same_price(row) -> bool:
+            for key in ("price", "intended_price"):
+                try:
+                    if round(float(row.get(key)), digits) == want:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+            return False
+
+        opened = {
+            row.get("ticket")
+            for row in rows
+            if row.get("event") == "opened"
+            and row.get("dir") == side
+            and _same_price(row)
+            and (_ms(row) or 0) >= int(entry_ms)
+        }
+        opened.discard(None)
+        for row in reversed(rows):
+            if row.get("event") == "closed" and row.get("ticket") in opened:
+                return row
+        return None
+
+    def _flatten_warmup_copy(self, closed: dict) -> bool:
+        """Tell the rebuilt strategy its replayed trade is over, through the same commanded close a
+        live hand close uses. The bridge stays in WARMING, which already places nothing until the
+        strategy is flat and then goes LIVE — so the copy is gone a bar later and nothing new is
+        needed to hand over. Returns False if the strategy would not take the request."""
+        try:
+            took = bool(self._ex.request_close(MANUAL_CLOSE_REASON))
+        except Exception as e:
+            self._log.error(f"The strategy refused to drop its replayed trade: {e}")
+            took = False
+        if not took:
+            return False
+        self._log.info(
+            f"Warmup ended holding a copy of T{closed.get('ticket')}, which is already closed "
+            f"({closed.get('reason')}). The strategy drops it on its next bar and the bot then "
+            f"trades normally. Nothing is opened."
+        )
+        self._ledger.event(
+            "warmup_position_dropped",
+            ticket=closed.get("ticket"),
+            dir=self._ex._pos_dir,
+            entry=self._ex._entry,
+            reason=closed.get("reason"),
+        )
+        return True
 
     def adopt_broker_state(self) -> None:
         """Read what MT5 already holds for this bot's magic, at startup.

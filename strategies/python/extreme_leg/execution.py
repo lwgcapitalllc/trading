@@ -270,6 +270,12 @@ class ExtremeLegExecution(LivePositionMixin):
         """The open position's fill price, or `None` when flat — never 0.0 (rule 1)."""
         return None if self.pos is None else float(self.pos.entry_price)
 
+    @property
+    def _entry_ms(self) -> Optional[int]:
+        """The open position's entry bar time, or `None` when flat. The bridge matches it against
+        the ledger to drop a replayed copy of a trade already closed by hand."""
+        return None if self.pos is None else int(self.pos.entry_ms)
+
     def request_close(self, reason: str = "commanded") -> bool:
         """Ask the strategy to exit its open trade on the next bar. Returns whether it will.
 

@@ -125,6 +125,9 @@ _DECISION_EVENTS = {
     "dry_run_action",
     # a position that existed before this process did, so the strategy never chose it
     "warmup_position_skipped",
+    # The replay's position matched a trade the ledger already shows closed, so it was dropped
+    # rather than waited out (2026-09-17). About a TRADE, next to its sibling above.
+    "warmup_position_dropped",
     # ── the 2026-08-25 order-reconciliation events. All three are about an ORDER, so they
     # belong in the decision stream next to the setup they came from, not in the health one.
     # a send that did not confirm AND could not be checked: it may or may not be at the broker
@@ -568,6 +571,34 @@ class Ledger:
                 if row.get("event") in _RUN_BOUNDARY:
                     return row
         return None
+
+    def trade_rows_since(self, since_ms: int) -> Optional[list]:
+        """Every `trade` row (opened AND closed) in the decision files dated on or after the UTC
+        day of `since_ms`, oldest file first. Used at the end of a warm-up to ask whether the
+        trade a replay is still holding was already closed for real (2026-09-17).
+
+        ⚠ **`None` means the files could not be READ, `[]` means read and empty** — rule 1. The
+        caller keeps waiting on either, so an unreadable ledger can never flatten a strategy.
+        A torn line is skipped, the same as `last_run_status`.
+        """
+        try:
+            day = datetime.fromtimestamp(int(since_ms) / 1000.0, tz=timezone.utc)
+            first = day.strftime("%Y-%m-%d")
+            rows: list = []
+            for path in sorted(self.dir.glob("decisions-*.jsonl")):
+                m = STREAM_RE.match(path.name)
+                if not m or "-".join(m.group(2, 3, 4)) < first:
+                    continue
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(row, dict) and row.get("kind") == "trade":
+                        rows.append(row)
+            return rows
+        except Exception:
+            return None
 
     def previous_run_was_clean(self) -> Optional[bool]:
         """`True` shut down on purpose, `False` died without a word, `None` nothing on record."""

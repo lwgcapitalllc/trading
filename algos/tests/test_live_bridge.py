@@ -435,6 +435,9 @@ class _FakeExecution:
         self.entry_kind = entry_kind
         self._current_stop_value = current_stop
         self._entry = 0.0
+        # The real `Execution` always has it (0 while flat); the bridge reads it at warm-up end to
+        # match a replayed position against a trade the ledger already shows closed.
+        self._entry_ms = 0
         self._stage = 0
         # The BASE position's size in instrument units, set by the real `Execution` at the entry
         # fill. It is the only thing that bounds a scale-in lot — the add's ceiling is a multiple
