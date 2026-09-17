@@ -4356,3 +4356,38 @@ stop at the 15m 1.0, target 3R, flat $0.20 cost per trade, no slot contention. S
 
 **Verdict:** no 1m structure sequence gives these setups an edge. Runs 27–30 close the no-gap
 entry line; the switch stays off.
+
+---
+
+## Run 31 — 2026-09-17: the no-gap shift read on a 5-MINUTE clock
+
+**Question (Aaron):** use a realign-style confirmation — break of structure then shift of
+structure — as the confluence that lets a no-gap setup trade, read on 1m *or 5m*.
+
+**The 1m half was already answered.** Run 30 searched every sequence of 1–3 fast-frame breaks
+inside the zone, which includes break-then-shift; nothing survived out of sample. The 5m clock
+had never been run, and a slower confirmation is the usual reason a 1m one fails, so it was
+worth one run.
+
+**Method:** the parked branch's own replay (`backtest/tools/nogap_ngs_replay.py`, now taking
+`--fast-min 1|5`), XAUUSD, Vantage cache, 2020-01 → 2026-08, `puprime_ecn` costs, both variants
+on the SAME 5m fast clock so only the switch differs (rule 11). Branch:
+`research/nogap-shift-5m` (commit 28d7f577, off `research/nogap-shift-entry`).
+
+| Variant | Trades | Total |
+|---|---|---|
+| base (no-gap entry OFF) | 155 primaries | **+202.05R** |
+| ngs (no-gap entry ON, 5m) | 131 primaries + 61 no-gap | **+178.26R** |
+
+- The 5m no-gap trades alone: **n61, −17.93R, 19.7% win**, losing in five years of seven.
+- They also **displaced 24 primaries** — the Run 12 queueing effect, one position slot.
+- Every exit was TP1 or the stop; nothing about the fill model is hiding the result.
+
+**On the stricter break-THEN-shift pair at 5m:** not run, and deliberately. A single 5m shift
+already gives only 61 trades in 6.5 years at a 19.7% win rate; requiring an ordered pair would
+leave roughly 20–30, which cannot separate an edge from noise on this record. The honest way to
+answer it is a second instrument, not a tighter filter on this one.
+
+**Verdict:** the 5m confirmation does not rescue the no-gap setup — it loses on its own trades
+and costs primaries on top. Runs 27–31 close the no-gap entry line on XAUUSD 15m. The remaining
+untried routes are unchanged: a second instrument, or a resting limit at 0.618.
