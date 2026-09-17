@@ -334,6 +334,21 @@ class RealignConfig(SosFadeConfig):
     separately, not in the total. Default is `None` until it does.
     """
 
+    realign_mom_days: Optional[int] = None
+    """Refuse a trade pointing the SAME way as gold's move over this many trading days. `None` = off.
+
+    The move is the sign of the last completed day's close against the close N days before it
+    (`strategies/python/daily_momentum.py`, days rolling at 17:00 New York). A trade AGAINST the
+    move, or on a day with no move, is kept. **Fewer than N + 1 completed days REFUSES** — the
+    same unknown-is-not-a-pass rule as the trend gate above. Pine: "Skip trades with the N-day
+    move" (0 = off); refusal code 7.
+
+    MEASURED 2026-09-16 (`realign_optimization.md` → Run 12): at 20 days the worst drawdown fell
+    14.48R → 5.07R and total R 54.09 → 48.50, with the recent half 18R WORSE. It fails the
+    both-halves bar; Aaron chose it anyway ("I like steady better"), so it is built. ⚠ Default
+    stays `None` until a TradingView export with it ON has passed the parity gate.
+    """
+
     # ── inherited defaults this fork must REFUSE ─────────────────────────────────
     exec_secondary: bool = False
     """PINNED OFF — the 1-minute re-entry needs a second bar stream through `run_dual`.
@@ -407,6 +422,11 @@ class RealignConfig(SosFadeConfig):
             raise ValueError(
                 f"realign_trend_minutes ({self.realign_trend_minutes}) must be SLOWER than "
                 f"realign_htf_minutes ({self.realign_htf_minutes})")
+        if self.realign_mom_days is not None and self.realign_mom_days < 1:
+            # 0 is the Pine's "off"; here off is None. Accepting 0 would state a filter that
+            # cannot run — refuse, so a copied Pine value cannot land as a silent no-op.
+            raise ValueError(
+                f"realign_mom_days must be >= 1 or None, got {self.realign_mom_days!r}")
         if self.realign_min_rr is not None and self.realign_min_rr < 0:
             # A negative floor is indistinguishable from `None` in effect but states
             # something false — that a minimum was chosen. Refuse rather than accept it.

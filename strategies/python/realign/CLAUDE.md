@@ -295,6 +295,20 @@ broke a new fork.
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
 
+## The N-day momentum filter — built, OFF, waiting on an export (`realign_mom_days`, 2026-09-16)
+
+- **Refuses a trade WITH gold's N-day move** (and any trade before N + 1 completed days exist).
+  Reads `strategies/python/daily_momentum.py`, the shared module any bot can reuse. Pine input
+  "Skip trades with the N-day move", refusal code 7, exported as `cfg_mom_days` / `px_mom_dir`.
+- **Aaron's call, against the agent's advice: "I like steady better."** At 20 days: worst
+  drawdown 14.48R → 5.07R, total 54.09R → 48.50R, recent half 18R worse. Run 12 of
+  `realign_optimization.md` has every table.
+- 🔴 **Default stays `None` until a TradingView export taken with it at 20 passes
+  `compare_realign.py`.** The committed golden exports predate it, so step 15 reports the column
+  as missing and says nothing about the filter. Then flip the default and re-base the figures.
+- ⚠ **A live bot needs 21 completed trading days of bars before it may trade with this on** —
+  the filter refuses until then. Check the live warm-up length before switching it on there.
+
 ## Two optional filters, both shipped OFF (`realign_min_rr`, `realign_trend_minutes`)
 
 Added 2026-08-13. **Both default to `None`, so no figure anywhere in this file moves.** They exist

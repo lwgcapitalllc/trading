@@ -55,6 +55,8 @@ closeHrNy     = input.int(17, "   ↳ Daily close hour (New York)", minval = 0, 
 
 minStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $"], group = G7, tooltip = "Refuse a setup whose stop is too close to the entry, which would balloon the position.")
 minStopVal  = input.float(0.08, "   ↳ Minimum stop value", minval = 0.0, group = G7, tooltip = "The floor itself - a percent of price or dollars, depending on the mode.")
+// Appended as the LAST int input on purpose — see the saved-values note at the top.
+momDays     = input.int(0, "Skip trades with the N-day move", minval = 0, group = G7, tooltip = "Refuses a trade that points the same way as price's move over the last N trading days, and any trade before N days of history exist. 0 turns it off.")
 
 showMarks     = input.bool(true,  "Mark setups on the chart", group = G8, tooltip = "The trigger triangles and the false-break crosses - the SETUP, not the trade.")
 showPosBox    = input.bool(true,  "Show position box (result)", group = G8, tooltip = "One box per trade: how far it ran in your favour, how far it went against you, and where it ended.")
@@ -573,6 +575,28 @@ if armShort
 
 // [doc 8] ENTRY — at MARKET, on the bar the realignment confirms  -> docs/realign_strategy.md
 
+// [doc 22] The N-day momentum filter — completed New York trading days only  -> docs/realign_strategy.md
+var array<float> dayCloses = array.new<float>()
+var int   dayKey   = 0
+var float dayClose = na
+int _tdMs  = time + 7 * 3600000
+int _tdKey = year(_tdMs, "America/New_York") * 10000 + month(_tdMs, "America/New_York") * 100 + dayofmonth(_tdMs, "America/New_York")
+if _tdKey != dayKey
+    if not na(dayClose)
+        array.push(dayCloses, dayClose)
+        if array.size(dayCloses) > momDays + 1
+            array.shift(dayCloses)
+    dayKey := _tdKey
+dayClose := close
+float momDir = na
+if momDays > 0 and array.size(dayCloses) > momDays
+    float _mret = array.get(dayCloses, array.size(dayCloses) - 1) / array.get(dayCloses, 0) - 1.0
+    momDir := _mret > 0 ? 1.0 : _mret < 0 ? -1.0 : 0.0
+
+// True when the filter refuses a trade in direction `d`: with the move, or not enough days yet.
+f_momBlocks(int d) =>
+    momDays > 0 and (na(momDir) or momDir == d)
+
 f_minStopOk(float dist, float px) =>
     minStopMode == "Off"        ? true :
      minStopMode == "% of price" ? dist >= px * minStopVal / 100.0 :
@@ -601,6 +625,7 @@ var float pendTp2   = na
 // The refusal record, written where the refusal HAPPENS. See [doc 17].
 //   1 stop on the wrong side · 2 minimum stop · 3 target behind entry
 //   4 no retest level · 5 retest expired · 6 invalidated before the fill
+//   7 with the N-day move, or too little history for it
 // ⚠ WRITTEN INLINE, NOT THROUGH A HELPER. A Pine function CANNOT assign to a global, so the
 //   obvious `f_refuse(dir, code)` compiles nowhere — it has to be three assignments at the
 //   point of refusal. Caught before this reached a chart; left stated so it is not re-tried.
@@ -620,7 +645,9 @@ if flat and trigLong and tradeLongs
     float sl   = ctrLowL - slBufTk * syminfo.mintick
     float dist = px - sl
     int rcL = 0
-    if na(px)
+    if f_momBlocks(1)
+        rcL := 7
+    else if na(px)
         rcL := entryMode == "Retest" ? 4 : 1
     else if dist <= 0
         rcL := 1
@@ -632,7 +659,7 @@ if flat and trigLong and tradeLongs
         refBar  := bar_index
         refDir  := 1
         refCode := rcL
-    if not na(px) and dist > 0 and f_minStopOk(dist, px) and not na(tgtLong) and tgtLong > px
+    if rcL == 0 and not na(px) and dist > 0 and f_minStopOk(dist, px) and not na(tgtLong) and tgtLong > px
         float qty = (strategy.equity * riskPct / 100.0) / dist
         float t1  = px + (tgtLong - px) * 0.5
         if entryMode == "Retest"
@@ -660,7 +687,9 @@ if flat and trigShort and tradeShorts
     float sl   = ctrHighS + slBufTk * syminfo.mintick
     float dist = sl - px
     int rcS = 0
-    if na(px)
+    if f_momBlocks(-1)
+        rcS := 7
+    else if na(px)
         rcS := entryMode == "Retest" ? 4 : 1
     else if dist <= 0
         rcS := 1
@@ -672,7 +701,7 @@ if flat and trigShort and tradeShorts
         refBar  := bar_index
         refDir  := -1
         refCode := rcS
-    if not na(px) and dist > 0 and f_minStopOk(dist, px) and not na(tgtShort) and tgtShort < px
+    if rcS == 0 and not na(px) and dist > 0 and f_minStopOk(dist, px) and not na(tgtShort) and tgtShort < px
         float qty = (strategy.equity * riskPct / 100.0) / dist
         float t1  = px - (px - tgtShort) * 0.5
         if entryMode == "Retest"
@@ -932,6 +961,7 @@ if showBlocked and refBar == bar_index and refDir != 0
                  : refCode == 3 ? "target already behind the entry"
                  : refCode == 4 ? "no retest level to rest at"
                  : refCode == 5 ? "retest limit expired unfilled"
+                 : refCode == 7 ? "with the " + str.tostring(momDays) + "-day move"
                  : "invalidated before the fill"
     label.new(bar_index, refDir > 0 ? low : high,
               "REFUSED", tooltip = (refDir > 0 ? "▲ LONG" : "▼ SHORT") + " refused · " + why,

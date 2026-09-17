@@ -2,9 +2,11 @@
 
 **Purpose:** How to test, on any strategy here, whether its trades do better WITH or AGAINST the
 bigger move — and how not to fool yourself doing it.
-**Status:** A technique, measured once (realign, 2026-09-16): it smoothed the curve but failed the
-both-halves test, so it was not shipped. **Not built into any bot
-or engine.** First measurement: `strategies/python/realign/realign_optimization.md` → Run 12.
+**Status:** Measured once (realign, 2026-09-16): it smoothed the curve but failed the both-halves
+test. Aaron chose steadiness, so realign carries it as a setting, OFF until its TradingView export
+passes the gate. Measurement: `strategies/python/realign/realign_optimization.md` → Run 12.
+**The reusable code is `strategies/python/daily_momentum.py`** — feed it each bar, read its
+direction; any bot can use it without a second copy.
 
 ---
 

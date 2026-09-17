@@ -104,6 +104,10 @@ if refBar == bar_index
 plot(_refCode, "px_ref_code", _INV, editable = false)
 plot(_refDir,  "px_ref_dir",  _INV, editable = false)
 
+// ── THE N-DAY MOMENTUM FILTER ────────────────────────────────────────────────────
+// The sign the gate read this bar: blank when the filter is off or has too few days yet.
+plot(momDir, "px_mom_dir", _INV, editable = false)
+
 // ── THE TRADE'S EXCURSIONS — how far it ran either way ───────────────────────────
 // What the position box paints, as numbers. Reporting only; nothing reads them.
 float _best  = na
@@ -146,3 +150,4 @@ plot(timeStopHrs,                      "cfg_time_hrs",   _INV, editable = false)
 plot(retestBars,                       "cfg_retest_bars", _INV, editable = false)
 plot(flatMin,                          "cfg_flat_min",   _INV, editable = false)
 plot(closeHrNy,                        "cfg_close_hr",   _INV, editable = false)
+plot(momDays,                          "cfg_mom_days",   _INV, editable = false)

@@ -83,6 +83,8 @@ class RealignState:
     htf_conf_low: Optional[float] = None
     cht_conf_high: Optional[float] = None
     cht_conf_low: Optional[float] = None
+    # The N-day momentum sign the gate read this bar; `None` = off, or not enough days yet.
+    mom_dir: Optional[int] = None
     # The open position and any resting retest limit, filled by the strategy after the step.
     pos_dir: int = 0
     pos_stop: Optional[float] = None

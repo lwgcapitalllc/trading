@@ -38,6 +38,7 @@ from sos_fade.execution import Decision  # noqa: E402
 from sos_fade.sequence import SosFadeSequence  # noqa: E402
 from sos_fade.signals import SignalAdapter  # noqa: E402
 from sos_fade.strategy import SosFadeStrategy  # noqa: E402
+from daily_momentum import DailyMomentum  # noqa: E402
 from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
 
 from .config import RealignConfig  # noqa: E402
@@ -75,6 +76,9 @@ class RealignStrategy(SosFadeStrategy):
         # frame and the trend frame answer different questions and must not share state.
         self.trend = (HtfStructure(self.config.realign_trend_minutes)
                       if self.config.realign_trend_minutes else None)
+        # The optional N-day momentum read. Off leaves the execution's `mom_dir` unset.
+        self.momentum = (DailyMomentum(self.config.realign_mom_days)
+                         if self.config.realign_mom_days is not None else None)
         self.decisions: List[Decision] = []
         self.states: List = []
 
@@ -112,6 +116,11 @@ class RealignStrategy(SosFadeStrategy):
                     self.execution.trend_dir = 1
                 elif slow.bear_bos or slow.bear_sos:
                     self.execution.trend_dir = -1
+        if self.momentum is not None:
+            # Before the order layer runs: this bar's close only moves the day still forming,
+            # which `direction` never reads, so there is no look-ahead in feeding it first.
+            self.momentum.update(bar_time_ms, b.close)
+            self.execution.mom_dir = self.momentum.direction
         rs = self.tracker.update(bar_time_ms, b.high, b.low,
                                  state.structure.external, state.structure.internal)
         sig = self._signals.update(state)
@@ -145,6 +154,7 @@ class RealignStrategy(SosFadeStrategy):
         rs.htf_conf_low = self.htf.conf_low
         rs.cht_conf_high = getattr(sig, "last_conf_high", None)
         rs.cht_conf_low = getattr(sig, "last_conf_low", None)
+        rs.mom_dir = getattr(ex, "mom_dir", None)
         rs.pos_dir = ex._pos_dir
         rs.pos_stage = getattr(ex, "_stage", 0)
         rs.pos_stop = ex._current_stop() if ex._pos_dir != 0 else None

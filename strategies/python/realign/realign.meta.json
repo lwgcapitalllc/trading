@@ -46,6 +46,13 @@
       "label": "Risk % per trade",
       "unit": "% of balance",
       "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk."
+    },
+    {
+      "name": "realign_mom_days",
+      "group": "Filters",
+      "label": "Skip trades with the N-day move",
+      "unit": "trading days",
+      "desc": "Refuses a trade that points the same way as price's move over the last N trading days, and any trade before N days of history exist. 0 turns it off."
     }
   ]
 }

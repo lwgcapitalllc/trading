@@ -409,6 +409,74 @@ def test_the_order_is_never_cancelled_on_the_bar_it_was_placed():
     assert ex._pend_long is not None
 
 
+# ── the N-day momentum gate ──────────────────────────────────────────────────────
+
+def _market_exec(**over):
+    cfg = dataclasses.replace(RealignConfig(symbol="XAUUSD"), **over)
+    ex = RealignExecution(cfg, initial_capital=10_000.0)
+    ex._opened = []
+    ex._open_position = lambda pend, px, sig, dec, **kw: (  # type: ignore[assignment]
+        ex._opened.append((pend, px)) or True)
+    return ex
+
+
+@pytest.mark.parametrize("mom,d,opens", [
+    (+1, +1, False),   # a long WITH an up move — refused
+    (-1, +1, True),    # a long against a down move — kept
+    (-1, -1, False),   # a short with a down move — refused
+    (+1, -1, True),    # a short against an up move — kept
+    (0, +1, True),     # no move — kept
+    (None, +1, False),  # too little history — refused, never waved through
+])
+def test_the_momentum_gate_refuses_only_trades_with_the_move(mom, d, opens):
+    """Watched RED by flipping `m == d` to `m != d`: every row inverts except the two constants."""
+    ex = _market_exec(realign_mom_days=20)
+    ex.mom_dir = mom
+    target = 110.0 if d > 0 else 90.0
+    stop = 98.0 if d > 0 else 102.0
+    _fire(ex, _Sig(close=100.0), stop=stop, target=target, d=d)
+    assert bool(ex._opened) is opens
+
+
+def test_the_momentum_gate_is_inert_when_off():
+    """Off must not read a direction at all — a stale one left on the object included."""
+    ex = _market_exec()
+    ex.mom_dir = +1
+    _fire(ex, _Sig(close=100.0))
+    assert ex._opened, "the gate refused while switched off"
+
+
+def test_the_shipped_default_leaves_the_momentum_filter_off():
+    """ON only after a TradingView export with it on has passed the gate. Moving this default
+    re-bases every realign figure measured before 2026-09-16."""
+    assert RealignConfig().realign_mom_days is None
+
+
+@pytest.mark.parametrize("bad", [0, -5])
+def test_a_zero_day_momentum_filter_is_refused(bad):
+    """The Pine's 0 means off; here off is None. A 0 copied across must not become a silent no-op."""
+    with pytest.raises(ValueError):
+        RealignConfig(realign_mom_days=bad)
+
+
+def test_the_strategy_feeds_the_gate_before_the_order_layer_runs():
+    """End to end on synthetic bars: with the filter on, every bar's report carries the direction
+    the gate read, and it is None until 21 completed days exist."""
+    import pandas as pd
+
+    idx = pd.date_range("2025-01-06 00:00", periods=12 * 24 * 30, freq="5min")
+    px = pd.Series(range(len(idx)), index=idx, dtype=float) * 0.001 + 2000.0
+    df = pd.DataFrame({"open": px, "high": px + 0.5, "low": px - 0.5, "close": px})
+    s = RealignStrategy(RealignConfig(symbol="XAUUSD", realign_mom_days=20),
+                        initial_capital=10_000.0)
+    s.run(df)
+    dirs = [st.mom_dir for st in s.states]
+    assert dirs[0] is None
+    assert dirs[-1] == 1, "a month of steady rise must read as an up move"
+    first = next(i for i, v in enumerate(dirs) if v is not None)
+    assert first > 12 * 24 * 20, "the direction appeared before 21 days had completed"
+
+
 # ── the parity gate's decoder must not drift from the export block ───────────────
 # 🔴 The gate reads packed columns by a bit scheme written down in TWO files. If the Pine's
 # packing and the Python's decoding drift apart, the gate compares the wrong bits and can go
@@ -440,9 +508,33 @@ def test_every_config_column_the_gate_reads_is_plotted():
     defaults while claiming it came from the export — the one thing the decoder forbids."""
     from realign.tools.compare_realign import _CFG_NUM
 
+    from realign.tools.compare_realign import MOM_CFG, MOM_PX
+
     titles = _plot_titles()
-    missing = [c for c in _CFG_NUM if c not in titles]
+    missing = [c for c in [*_CFG_NUM, MOM_CFG, MOM_PX] if c not in titles]
     assert not missing, f"the gate reads cfg columns the export block never plots: {missing}"
+
+
+@pytest.mark.parametrize("cell,want", [(0.0, None), (20.0, 20)])
+def test_the_gate_reads_the_pines_zero_as_momentum_off(cell, want):
+    """The Pine's 0 is off; a decoder passing it through builds a config that raises, and one
+    that drops it runs the port with the filter at this side's default instead of the export's."""
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    cfg, missing = config_from_export(pd.DataFrame({"cfg_bits": [3.0], "cfg_mom_days": [cell]}))
+    assert cfg.realign_mom_days == want
+    assert "cfg_mom_days" not in missing
+
+
+def test_an_export_older_than_the_filter_is_reported_narrower():
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    cfg, missing = config_from_export(pd.DataFrame({"cfg_bits": [3.0]}))
+    assert cfg.realign_mom_days is None and "cfg_mom_days" in missing
 
 
 def test_the_gate_pins_the_pines_reward_to_risk_guard():

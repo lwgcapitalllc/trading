@@ -795,6 +795,10 @@ stack's own default share rule gave the same book to the cent.
   the recent half loses 17.8R on the account (18R on realign alone), so its gain sits in the past,
   the wrong way round for a filter meant to run forward. On the account it trades 6.7R of profit
   for 2.4R less drawdown. Build it only if Aaron explicitly wants that trade.
+- **Aaron's decision, 2026-09-16: "I like steady better."** Built as `realign_mom_days`, default
+  OFF until a TradingView export with it at 20 passes the gate. The built setting reproduced this
+  run exactly (94 / +48.50R from 2020; 102 / +51.70R from 2018-09-14; off unchanged at
+  163 / +54.09R).
 - The 10% cap refused 3-6 SOS Fade setups per run, but the shared and solo trade counts match, so
   no trade was lost; open risk peaked at 10.07-10.15% (not investigated).
 

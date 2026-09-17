@@ -18,6 +18,9 @@ strategies/
 ├── mt5/            ← MT5 expert advisors (.mq5, MQL5)
 │   └── LondonBreakout.mq5
 ├── python/         ← Python strategy packages — run LOCALLY by the lab's python runner (no VPS)
+│   ├── daily_momentum.py (SHARED, 2026-09-16: the N-day momentum read, completed New York days
+│   │                      only — reuse it, never copy it; realign's filter reads it; the
+│   │                      technique and how to test it: docs/MOMENTUM_FILTER.md)
 │   ├── sos_fade/        (SOS Fade bot; own CLAUDE.md inside)
 │   ├── b_leg/            (B-LEG bot — the late-retrace setup, split out to run parallel to SOS Fade; own CLAUDE.md)
 │   └── loss_recovery/       (NOT a strategy — a RULE that replays a counter-trade over another

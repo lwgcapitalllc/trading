@@ -316,3 +316,22 @@ anchor rises and the step count drops with it. It is what the port and the live 
 do today. A never-loosen rule is arguably safer, but it lives in the ladder those bots SHARE, so it
 is its own change with its own measurement — never slipped in here to make one gate agree.
 
+
+## [22] The N-day momentum filter — completed New York trading days only
+
+**Added 2026-09-16, input "Skip trades with the N-day move", 0 = off (the default).** Refuses a
+trade that points the same way as price's move over the last N trading days. Measured, reasoning
+and the decision to build it: `strategies/python/realign/realign_optimization.md` → Run 12.
+
+- **The day** is the New York date of `time + 7h`, so it rolls at 17:00 New York in both seasons
+  and Sunday's reopen belongs to Monday. The Python twin is `strategies/python/daily_momentum.py`.
+- **Only completed days are read.** The day still forming keeps its close in `dayClose` and is
+  pushed only when the key changes, so today's close never reaches the answer.
+- **The move** is the last completed close against the one N days before it. Up +1, down −1,
+  unchanged 0 (kept).
+- **Fewer than N + 1 completed days refuses** — `momDir` is `na`, not 0, and refusal code 7 is
+  written. A chart's first N trading days therefore take no trades with the filter on.
+- **`dayKey` starts at 0, never `na`** — Pine's `int` has no `na`, and a comparison against one is
+  the trap the export block warns about.
+- ⚠ **The input is the LAST `int` declared.** Adding it anywhere earlier would reset every later
+  int input on a chart already running this script.

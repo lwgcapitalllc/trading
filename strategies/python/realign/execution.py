@@ -158,6 +158,14 @@ class RealignExecution(Execution):
             if getattr(self, "trend_dir", 0) != d:
                 return
 
+        # ── the N-day momentum gate ──────────────────────────────────────────────
+        # Refuses a trade WITH the bigger move. `None` = not enough completed days yet, and is
+        # refused for the same reason as the trend gate's 0. Pine refusal code 7.
+        if cfg.realign_mom_days is not None:
+            m = getattr(self, "mom_dir", None)
+            if m is None or m == d:
+                return
+
         # ── where the order goes ─────────────────────────────────────────────────
         if cfg.realign_entry_mode == "market":
             # The entry is THIS bar's close — the bar the realignment confirmed on.

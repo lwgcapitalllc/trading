@@ -122,6 +122,15 @@ _CFG_NUM = {
     "cfg_close_hr": ("daily_close_hour_ny", int),
 }
 
+# The N-day momentum filter (added 2026-09-16). Read OUTSIDE `_CFG_NUM` because the Pine's
+# 0 means off and must become `None`, never a 0-day filter.
+MOM_CFG = "cfg_mom_days"
+# Its per-bar direction. Compared, and REQUIRED, only on an export that carries `MOM_CFG` —
+# an export older than the filter ran with it off and has nothing to compare. That is scoping
+# by what the export's own Pine could do, not a per-column skip: an export that states the
+# setting and lacks the column is refused like any other.
+MOM_PX = "px_mom_dir"
+
 # EVERY column the diff reads, by its UNPACKED name. `missing_columns_refusal` is checked
 # against this list, so "the decision stream" means one thing here and cannot drift from the
 # loop. 🔴 An export missing a column compares LESS than "PARITY OK" claims — the defect that
@@ -190,6 +199,15 @@ def config_from_export(df: pd.DataFrame) -> Tuple[RealignConfig, List[str]]:
             missing.append(col)
         else:
             vals[field] = cast(round(v)) if cast is int else cast(v)
+
+    # The momentum filter: the Pine's 0 is "off", which is `None` here. An export older than
+    # the filter carries no column — reported as missing, and the setting stays off, which is
+    # what that older Pine ran.
+    mom = get(MOM_CFG)
+    if mom is None:
+        missing.append(MOM_CFG)
+    else:
+        vals["realign_mom_days"] = int(round(mom)) or None
 
     # 🔴 PINNED, and it is this tool's own choice rather than something the export states.
     # The Pine guards entry with `tgtLong > close` and has no input for it, so no `cfg_*`
@@ -282,7 +300,9 @@ def main(argv=None) -> int:
         print(f"⚠ the export ran the '{cfg.realign_trail_frame}' trail frame and this port ships "
               f"'{RealignConfig().realign_trail_frame}'. The port is configured from the CSV, as "
               f"it must be — but every published Realign figure used the shipped one.")
-    refusal = missing_columns_refusal(df, _COMPARED, "realign_strategy_export.pine", f"{tf}m")
+    has_mom = MOM_CFG in df.columns
+    required = _COMPARED + ([MOM_PX] if has_mom else [])
+    refusal = missing_columns_refusal(df, required, "realign_strategy_export.pine", f"{tf}m")
     if refusal:
         print(refusal)
         return 2
@@ -337,6 +357,8 @@ def main(argv=None) -> int:
         ("px_stop_live", lambda st: _n(st.pos_stop), a.price_tol),
         ("px_stage", lambda st: float(st.pos_stage) if st.pos_dir != 0 else float("nan"), 0.0),
     ]
+    if has_mom:
+        checks.append((MOM_PX, lambda st: _n(st.mom_dir), 0.0))
 
     # 🔴 A LATCHED FIELD IS COMPARED ONLY WHILE ITS SETUP IS ARMED ON BOTH SIDES. The Pine keeps
     #    its target, counter extreme and step in `var`s that are never cleared on disarm, so
