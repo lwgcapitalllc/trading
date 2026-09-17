@@ -272,7 +272,7 @@ a live bot. That stopped being true with the **2026-09-03 19:32 UTC promote from
 which is also the first snapshot to carry the budget seam at all.
 
 🔴 **THE SHRINK IS NOT LIVE UNTIL THE NEXT PROMOTE, AND THE TWO HALVES ARRIVE BY DIFFERENT ROUTES.**
-`algos/` reaches the box by `git pull`; `strategies/`, `engines/` and `backtest/` reach it only by
+`algos/` reached the box by `git pull` (until 2026-09-17 — it is frozen too now); `strategies/`, `engines/` and `backtest/` reach it only by
 `promote.py`. So the bridge half of this can be current while the sizing half is a snapshot behind
 — which is exactly the state that produces a *refusing* bot that every doc describes as *shrinking*.
 **Check `bot_version`'s built-from commit before believing either behaviour is live.**

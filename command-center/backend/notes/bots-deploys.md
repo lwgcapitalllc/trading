@@ -811,3 +811,15 @@ action in this router that changes what a live account trades.
 Checks: `tests/test_account_risk.py` — deployed with the restart off, benching deploys nothing, and
 a deploy that cannot start leaves the move standing and says so. Mutations named per test and run
 red on 2026-09-16.
+
+---
+
+## A bot's version now counts its ORDER-SENDING code (2026-09-17)
+
+`bot_versions._SHARED_TREES` gained `algos/live`, `algos/shared` and
+`algos/markets/fx/tools/broker_clock.py`, because a promote now copies them into the snapshot
+(`algos/notes/bot-registries-and-lifecycle.md`). Before this, a change to the bridge reached a live
+bot on a `git pull` and this page never counted it. ⚠ Every bot's version number jumped once on
+this date; that is the history of those folders being counted, not new work. The paths are named
+here, never imported from `algos/` — the subsystem rule — and `algos/tests/test_promote_version.py`
+checks the two lists agree.

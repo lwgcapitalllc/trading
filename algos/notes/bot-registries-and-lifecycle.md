@@ -328,3 +328,37 @@ goes into the ledger's startup row. ⚠ A promote with `--allow-dirty` still rec
 does not fully describe the files — `promote.py` already warns about that at promote time.
 
 Tests: `tests/test_running_commit_label.py` (4; red at HEAD — no such function, and the line read HEAD).
+
+---
+
+## 🔴 The ORDER-SENDING code is frozen too — and a restart cancels a resting order (2026-09-17)
+
+**Found:** `algos/live/` and `algos/shared/` — the runner, the bridge, the sizing check, the kill
+switch reader — ran from the box's working tree, so a `git pull` there changed what a live bot sent
+to the broker with no promote, and the version pin never covered them. The root doc said "a git pull
+cannot move a live bot"; that was true of the strategy half only.
+
+**Now:** `promote.py` copies both folders plus `markets/fx/tools/broker_clock.py` into the snapshot
+(`live_config.ORDER_PATH_ROOTS`, the one list), and the pin covers them. `runner.py` hands the
+whole process to the snapshot's own `runner.py` before importing anything (`_run_from_snapshot`,
+in-process so the PID and the process-list match are unchanged), and `_bind_code` refuses to start
+if the bridge, sizing, `mt5_ops`, `fleet_halt` or `live_config` loaded from anywhere else.
+
+- ⚠ **Data paths go through `shared/repo_paths.py`**, which finds the REPO from inside a snapshot.
+  Kill switch, credentials, bot folders, state and the MT5 lock all live in the one checkout; a
+  snapshot copy looking beside itself would read the kill switch as *not set*.
+- ⚠ **A snapshot promoted before this date keeps its old three-tree pin and runs the repo's order
+  code** until its next promote (`LiveConfig.carries_order_path`). Nothing strands it.
+- ⚠ **A wording change in `algos/live/` now needs a promote**, not just a restart. The Command
+  Center's version count includes these trees (`bot_versions._SHARED_TREES`), so the Bots page's
+  version numbers jumped once.
+- 🔴 **A restart CANCELS every resting order the bot has no record of — its own included** — and
+  re-places at the next bar (`bridge._observe_orphans`). So the promote-and-restart that brings a
+  bot onto this change moves its resting limit. Restart a live bot only when it is flat and has
+  nothing resting.
+
+TESTED: `test_deploy_freeze.py` (5 new), `test_live_runner_startup.py` (2 new),
+`test_promote_version.py` (2 updated) — the handover, the pin and the kill-switch path each went red
+under a mutation. MEASURED: a staged `sos_fade_1` snapshot run in a throwaway box loaded `bridge`,
+`order_sizing`, `live_config`, `fleet_halt` and `notify` from `deployed/`, never the planted repo
+bridge, and read the box's own kill switch.

@@ -104,6 +104,11 @@ def deployment_hash(roots) -> str:
     for root in roots:
         root = Path(root)
         h.update(f"\x00root:{root.name}\x00".encode("utf-8"))
+        if root.is_file():
+            # A loose module shipped on its own (`broker_clock.py`), hashed like a one-file tree.
+            h.update(root.name.encode("utf-8"))
+            h.update(root.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
+            continue
         if not root.is_dir():
             continue
         for py in sorted(root.rglob("*.py")):

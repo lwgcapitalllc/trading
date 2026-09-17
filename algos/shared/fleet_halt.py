@@ -72,7 +72,9 @@ __all__ = ["FleetHaltReading", "flag_path", "read_fleet_halt", "DEFAULT_FLAG_NAM
 # which is the one place a FLEET switch must not be.
 DEFAULT_FLAG_NAME = "FLEET_HALT"
 
-_ALGOS_ROOT = Path(__file__).resolve().parent.parent
+# 🔴 Through `repo_paths`: a bot running from its frozen snapshot must read the ONE switch in the
+# repo, never look for one beside its own copy and find nothing.
+from repo_paths import ALGOS_ROOT as _ALGOS_ROOT  # noqa: E402
 
 
 def flag_path(root: Path | str | None = None) -> Path:

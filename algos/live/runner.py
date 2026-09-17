@@ -53,6 +53,7 @@ import argparse
 import dataclasses
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -60,6 +61,50 @@ import traceback
 from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _run_from_snapshot() -> None:
+    """Hand the whole process to the bot's OWN copy of this file, before anything is imported.
+
+    🔴 **Added 2026-09-17. Until then the order-sending code ran from the box's working tree**, so
+    a `git pull` there changed what a live bot sent to the broker with no promote and no pin. The
+    scheduled task and the coordinator launch THIS path, so this is the one place the switch can
+    happen, and it has to happen before the imports below load a single repo module.
+
+    ⚠ **In-process, never a new process.** The process list is how a running bot is recognised
+    (`bot_registry.is_runner_line`), and a re-exec would change the PID under the coordinator.
+
+    ⚠ **A snapshot promoted before 2026-09-17 has no runner of its own, and nothing changes for
+    it** — it runs this file, as it always did, until its next promote.
+    """
+    if __name__ != "__main__":
+        return
+    here = Path(__file__).resolve()
+    if here.parent.parent.parent.name == "deployed":
+        return  # already the snapshot's copy
+    argv = sys.argv[1:]
+    key = None
+    for i, a in enumerate(argv):
+        if a == "--bot" and i + 1 < len(argv):
+            key = argv[i + 1]
+        elif a.startswith("--bot="):
+            key = a.split("=", 1)[1]
+    if not key or not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", key):
+        return  # argparse below reports it
+    repo = here.parents[2]
+    target = repo / "algos" / "markets" / "fx" / "instances" / key / "deployed" / "algos" / "live"
+    if not (target / "runner.py").is_file():
+        return
+    import runpy
+
+    sys.path[:] = [p for p in sys.path if p and Path(p).resolve() != here.parent]
+    sys.path.insert(0, str(target))
+    sys.argv[0] = str(target / "runner.py")
+    runpy.run_path(str(target / "runner.py"), run_name="__main__")
+    sys.exit(0)
+
+
+_run_from_snapshot()
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parent.parent
@@ -1747,6 +1792,24 @@ class LiveRunner:
             )
         for p in reversed(self.cfg.import_paths):
             sys.path.insert(0, str(p))
+        if self.cfg.carries_order_path:
+            # 🔴 The snapshot carries its own order code, so the code RUNNING must be that copy.
+            # A repo copy here means `_run_from_snapshot` did not hand over, and the pin would be
+            # vouching for files this process is not executing.
+            snap = self.cfg.deployed_dir.resolve()
+            stray = sorted(
+                name
+                for name in ("bridge", "order_sizing", "mt5_ops", "fleet_halt", "live_config")
+                if name in sys.modules
+                and snap
+                not in Path(getattr(sys.modules[name], "__file__", "") or "/").resolve().parents
+            )
+            if stray:
+                raise RuntimeError(
+                    f"Cannot freeze this deployment: {', '.join(stray)} is running from outside "
+                    f"{snap}, while the snapshot carries its own copy. Start the bot through "
+                    f"algos/live/runner.py so it hands over to the snapshot."
+                )
 
     # ── one bot, one process ─────────────────────────────────────────────────
     def already_running(self) -> bool:

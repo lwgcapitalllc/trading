@@ -29,7 +29,9 @@ log = logging.getLogger("REGIME")
 
 
 def _load_update_interval() -> int:
-    cfg_file = Path(__file__).parent / "config.json"
+    from repo_paths import ALGOS_ROOT
+
+    cfg_file = ALGOS_ROOT / "shared" / "config.json"
     if cfg_file.exists():
         with open(cfg_file) as f:
             cfg = json.load(f)

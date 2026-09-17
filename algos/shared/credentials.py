@@ -34,7 +34,9 @@ from typing import Optional
 __all__ = ["telegram_credentials", "credentials_path", "env_name", "get", "require"]
 
 # algos/shared/credentials.py -> algos/credentials.json
-_PATH = Path(__file__).resolve().parent.parent / "credentials.json"
+from repo_paths import ALGOS_ROOT  # noqa: E402 — the REPO's, even from a bot snapshot
+
+_PATH = ALGOS_ROOT / "credentials.json"
 
 _ENV_KEYS = {
     "telegram_token": "LWG_TELEGRAM_TOKEN",

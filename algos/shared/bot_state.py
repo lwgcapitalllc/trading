@@ -33,13 +33,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import bot_registry as _registry  # noqa: E402 — the sibling module, on the path whenever this is
+
 # DERIVED, not hardcoded. This module is imported by algos/live/runner.py, which is
 # dry-run-capable off the VPS — a literal "C:/trading/algos" made every state write fail
 # on a Mac while looking perfectly correct in the source. The VPS resolves this to the
 # same C:/trading/algos it always was.
-ALGOS_ROOT = Path(__file__).resolve().parent.parent
-
-import bot_registry as _registry  # noqa: E402 — the sibling module, on the path whenever this is
+#
+# ⚠ Through `repo_paths`, so a bot running from its frozen snapshot still writes the REPO's state.
+from repo_paths import ALGOS_ROOT  # noqa: E402
 
 # ── Which bots exist: DISCOVERED from their folders, never listed here ─────────────────────────
 #

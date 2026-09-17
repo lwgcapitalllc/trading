@@ -38,7 +38,8 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
-ALGOS_ROOT = Path(__file__).resolve().parent.parent
+from repo_paths import ALGOS_ROOT  # noqa: E402 — the REPO's, even from a bot snapshot
+
 INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 CONFIG_NAME = "config.json"
 

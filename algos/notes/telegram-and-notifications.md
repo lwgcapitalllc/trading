@@ -155,8 +155,8 @@ which message fires and in which thread, and asserted not one word of what any o
 12 tests, all 7 mutations reddening their own named test. It pins the CLAIMS a message makes that
 could be false, never the wording — renaming a label must not redden it.
 
-⚠ **A wording change needs a RESTART but NOT a promote**: `algos/live/` is not in the frozen tree.
-A change to a strategy's confluence `detail` or death sentence is the other way round — that is
+⚠ **A wording change needs a PROMOTE and a restart** since 2026-09-17: `algos/live/` is in the
+frozen tree now (`notes/bot-registries-and-lifecycle.md`). A change to a strategy's confluence `detail` or death sentence is the other way round — that is
 `strategies/python/`, so it needs `promote.py`, and the death sentences are shared with the lab's
 miss report.
 

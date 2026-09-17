@@ -284,6 +284,7 @@ Most-cited code: `shared/alert_format.py`, `live/alerts.py`, `live/runner.py`, `
 Most-cited code: `tools/promote.py`.
 
 - 🔴 The startup line names the commit the snapshot was PROMOTED from, or "unknown" — it printed the box repo's HEAD (2026-09-16)
+- 🔴 The order-sending code (`live/`, `shared/`) is frozen into the snapshot and pinned; a restart cancels a resting order, so restart a live bot only when flat (2026-09-17)
 
 
 ### `notes/shared-and-live-runtime-reference.md` — Shared components and live runtime reference

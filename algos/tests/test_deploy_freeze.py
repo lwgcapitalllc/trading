@@ -251,3 +251,139 @@ def test_the_snapshot_drops_files_deleted_upstream(bot):
     stale.write_text("X = 1")
     assert _promote(bot) == 0
     assert not stale.exists()
+
+
+# ── the ORDER-SENDING code is frozen too (2026-09-17) ───────────────────────────────────────
+#
+# 🔴 Until this date the runner, the bridge and the sizing check ran from the box's working tree:
+# a `git pull` there changed what a live bot sent to the broker, and the pin never looked at them.
+import subprocess  # noqa: E402
+
+_REAL = _REPO / "algos"
+
+
+def _order_path_like(root: Path) -> None:
+    for rel, body in (
+        ("algos/live/runner.py", "RUNNER = 1\n"),
+        ("algos/live/bridge.py", "BRIDGE = 1\n"),
+        ("algos/shared/order_sizing.py", "SIZING = 1\n"),
+        ("algos/markets/fx/tools/broker_clock.py", "CLOCK = 1\n"),
+        ("algos/markets/fx/tools/unrelated_tool.py", "TOOL = 1\n"),
+    ):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(body)
+
+
+def _reload(bot):
+    return live_config.load(bot.bot_key)
+
+
+def test_a_new_snapshot_CARRIES_and_PINS_the_order_code(bot):
+    repo = promote_tool._REPO
+    _order_path_like(repo)
+    assert _promote(bot) == 0
+    fresh = _reload(bot)
+    snap = fresh.deployed_dir
+    assert fresh.carries_order_path
+    assert (snap / "algos" / "live" / "bridge.py").is_file()
+    assert (snap / "algos" / "markets" / "fx" / "tools" / "broker_clock.py").is_file()
+    assert not (snap / "algos" / "markets" / "fx" / "tools" / "unrelated_tool.py").exists()
+    assert snap / "algos" / "live" in fresh.source_roots
+
+    # The repo moving changes nothing...
+    (repo / "algos" / "live" / "bridge.py").write_text("BRIDGE = 2\n")
+    live_version.verify_pin(fresh.source_roots, fresh.strategy_source_hash, frozen=True)
+
+    # ...and an edit to the snapshot's own order code refuses the start.
+    for rel in ("algos/live/bridge.py", "algos/markets/fx/tools/broker_clock.py"):
+        f = snap / rel
+        good = f.read_text()
+        f.write_text("TAMPERED = 1\n")
+        with pytest.raises(live_version.VersionMismatch):
+            live_version.verify_pin(fresh.source_roots, fresh.strategy_source_hash, frozen=True)
+        f.write_text(good)
+
+
+def test_a_snapshot_from_BEFORE_keeps_its_old_pin(bot):
+    """A bot promoted before 2026-09-17 must still start — widening its roots would refuse it
+    for a mismatch nobody made. It is pinned on the old three until its next promote."""
+    assert _promote(bot) == 0  # the fixture repo has no order code, like an old snapshot
+    _order_path_like(promote_tool._REPO)  # the repo gains it afterwards
+    fresh = _reload(bot)
+    assert not fresh.carries_order_path
+    assert len(fresh.source_roots) == 3
+    live_version.verify_pin(fresh.source_roots, fresh.strategy_source_hash, frozen=True)
+
+
+def _mini_box(tmp_path: Path, key: str, *, snapshot: bool) -> Path:
+    """The real runner.py in a throwaway repo, with (optionally) a snapshot runner that says so."""
+    repo = tmp_path / "box"
+    (repo / "algos" / "live").mkdir(parents=True)
+    (repo / "algos" / "live" / "runner.py").write_text((_REAL / "live" / "runner.py").read_text())
+    if snapshot:
+        live = repo / "algos" / "markets" / "fx" / "instances" / key / "deployed" / "algos" / "live"
+        live.mkdir(parents=True)
+        (live / "runner.py").write_text(
+            "import sys\nprint('SNAPSHOT', __file__, sys.argv[1:], sys.path[0])\n"
+        )
+    return repo
+
+
+def test_the_repo_runner_HANDS_OVER_to_the_snapshot(tmp_path):
+    """RED before 2026-09-17: the repo runner imported the repo bridge and ran on."""
+    repo = _mini_box(tmp_path, "demo_bot", snapshot=True)
+    out = subprocess.run(
+        [sys.executable, str(repo / "algos" / "live" / "runner.py"), "--bot", "demo_bot"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+    line = out.stdout.strip()
+    assert line.startswith("SNAPSHOT"), (out.stdout, out.stderr)
+    assert "deployed" in line and "'--bot', 'demo_bot'" in line
+    # The repo's own algos/live must not be first on the path the snapshot imports from.
+    assert line.split()[-1].endswith(str(Path("deployed") / "algos" / "live"))
+
+
+def test_without_a_snapshot_runner_the_repo_runner_carries_on(tmp_path):
+    """An old snapshot (or none) runs the repo file as before — here it gets as far as its imports."""
+    repo = _mini_box(tmp_path, "demo_bot", snapshot=False)
+    out = subprocess.run(
+        [sys.executable, str(repo / "algos" / "live" / "runner.py"), "--bot", "demo_bot"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert "SNAPSHOT" not in out.stdout
+    assert "ModuleNotFoundError" in out.stderr  # the throwaway repo has no live_config
+
+
+def test_a_snapshot_copy_reads_the_REPOS_kill_switch_and_credentials(tmp_path):
+    """🔴 A frozen `fleet_halt` that looked beside itself would find no switch and read 'not set'.
+
+    MUTATION: put `Path(__file__).resolve().parent.parent` back in `fleet_halt.py` — this goes
+    red, naming the snapshot's own algos folder."""
+    repo = tmp_path / "box"
+    shared = repo / "algos" / "markets" / "fx" / "instances" / "demo_bot" / "deployed"
+    shared = shared / "algos" / "shared"
+    shared.mkdir(parents=True)
+    for name in ("repo_paths.py", "fleet_halt.py", "credentials.py"):
+        (shared / name).write_text((_REAL / "shared" / name).read_text())
+    out = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]);"
+            "import fleet_halt, credentials;"
+            "print(fleet_halt.flag_path()); print(credentials.credentials_path())",
+            str(shared),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+    flag, creds = out.stdout.split()
+    assert Path(flag).resolve() == (repo / "algos" / "FLEET_HALT").resolve()
+    assert Path(creds).resolve() == (repo / "algos" / "credentials.json").resolve()

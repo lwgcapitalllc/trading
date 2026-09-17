@@ -67,7 +67,16 @@ import config as cfg
 # `trees_for` shares a resolver with the promote tool — so a tree added there and not here
 # deploys while this page says the bot is up to date, which is the failure this module's own
 # docstring names. Add to both, or to neither.
-_SHARED_TREES = ("engines", "backtest", "execution")
+# ⚠ The last three are the order-sending code, frozen into every snapshot since 2026-09-17
+# (`algos/live/live_config.py::ORDER_PATH_ROOTS`). Named here, never imported — the subsystem rule.
+_SHARED_TREES = (
+    "engines",
+    "backtest",
+    "execution",
+    "algos/live",
+    "algos/shared",
+    "algos/markets/fx/tools/broker_clock.py",
+)
 
 # 🔴 **The strategy side of that list is DERIVED, and this imports the SAME resolver the promote
 # tool uses** (`strategies/python/package_deps.py`) rather than mirroring it. A strategy package

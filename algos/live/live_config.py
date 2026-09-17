@@ -25,12 +25,25 @@ Credentials never appear here. The MT5 login/password/server come from
 from __future__ import annotations
 
 import json
+
+# 🔴 The REPO, even when this file runs from a bot's frozen snapshot (`algos/shared/repo_paths.py`).
+import sys as _sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_INSTANCES = _REPO_ROOT / "algos" / "markets" / "fx" / "instances"
+_SHARED = Path(__file__).resolve().parent.parent / "shared"
+if str(_SHARED) not in _sys.path:
+    _sys.path.append(str(_SHARED))
+from repo_paths import INSTANCES as _INSTANCES  # noqa: E402
+from repo_paths import REPO_ROOT as _REPO_ROOT  # noqa: E402
+
+#: The live runtime a snapshot carries, as `promote.ORDER_PATH_TREES` copies it. Same order.
+ORDER_PATH_ROOTS = (
+    Path("algos") / "live",
+    Path("algos") / "shared",
+    Path("algos") / "markets" / "fx" / "tools" / "broker_clock.py",
+)
 
 # ── what may change under a RUNNING bot ─────────────────────────────────────────
 # Strategy params that the runner will pick up from a rewritten instance config without a
@@ -273,9 +286,23 @@ class LiveConfig:
         return [self.code_root, self.code_root / "strategies" / "python"]
 
     @property
+    def carries_order_path(self) -> bool:
+        """Does this bot's snapshot hold its own runner and bridge? (Promotes from 2026-09-17 on.)"""
+        return self.is_frozen and (self.deployed_dir / ORDER_PATH_ROOTS[0] / "runner.py").is_file()
+
+    @property
     def source_roots(self) -> list[Path]:
-        """Every tree the version pin must hash, in a fixed order (the hash depends on it)."""
-        return [self.strategy_dir, self.code_root / "engines", self.code_root / "backtest"]
+        """Every tree the version pin must hash, in a fixed order (the hash depends on it).
+
+        🔴 **The order-sending code is pinned only where the snapshot CARRIES it** (2026-09-17).
+        A bot promoted before then was pinned over the first three alone, and widening its roots
+        would refuse its next restart for a mismatch nobody made. It runs its order code from the
+        repo until it is promoted again, exactly as it did before.
+        """
+        roots = [self.strategy_dir, self.code_root / "engines", self.code_root / "backtest"]
+        if self.carries_order_path:
+            roots += [self.code_root / rel for rel in ORDER_PATH_ROOTS]
+        return roots
 
     @property
     def repo_root(self) -> Path:

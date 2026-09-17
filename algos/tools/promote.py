@@ -60,7 +60,7 @@ from bridge import (  # noqa: E402
     assert_supported,
 )
 from feed import fast_feed_timeframe  # noqa: E402
-from live_config import deployed_record  # noqa: E402
+from live_config import ORDER_PATH_ROOTS, deployed_record  # noqa: E402
 from package_deps import local_dependencies, snapshot_sources, version_pathspecs  # noqa: E402
 from version import current_commit, deployment_hash  # noqa: E402
 
@@ -124,6 +124,13 @@ def repo_trees(cfg) -> list[tuple[Path, Path]]:
         # be added here in the SAME change.** Nothing derives it and nothing will tell you —
         # except a promote, which is the last place you want to find out.
         (_REPO / "execution", Path("execution")),
+        # 🔴 **ADDED 2026-09-17: THE CODE THAT SENDS THE ORDERS.** Until this date the runner, the
+        # bridge and the sizing check ran from the box's working tree, so a `git pull` there changed
+        # what a live bot sent to the broker with no promote and no pin. Every file these import
+        # at any depth lives in these three, and `broker_clock.py` is the one module `mt5_ops`
+        # borrows from outside them.
+        # ONE list with `LiveConfig.source_roots`, so what is copied and what is pinned cannot drift.
+        *((_REPO / rel, rel) for rel in ORDER_PATH_ROOTS),
     ]
 
 

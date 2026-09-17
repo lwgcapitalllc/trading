@@ -656,3 +656,38 @@ def test_BUILDING_a_conformant_strategy_still_returns_it(tmp_path, monkeypatch):
 
     built, _ = r._build_strategy()
     assert built is strat
+
+
+def _bind(tmp_path, monkeypatch, carries: bool):
+    import types
+
+    # Earlier tests in the same process import `engines` and `backtest`; the older leak guard
+    # would fire on those first and this would test the wrong refusal.
+    clean = {k: v for k, v in sys.modules.items() if k.split(".")[0] not in ("engines", "backtest")}
+    monkeypatch.setattr(sys, "modules", clean)
+
+    snap = tmp_path / "deployed"
+    snap.mkdir(exist_ok=True)
+    cfg = types.SimpleNamespace(
+        is_frozen=True,
+        carries_order_path=carries,
+        deployed_dir=snap,
+        strategy_package="no_such_pkg_here",
+        import_paths=[],
+    )
+    return runner.LiveRunner._bind_code(types.SimpleNamespace(cfg=cfg))
+
+
+def test_a_snapshot_that_carries_its_order_code_REFUSES_a_repo_bridge(tmp_path, monkeypatch):
+    """🔴 2026-09-17. This test process loaded the REPO's bridge, so a bot whose snapshot carries
+    its own must refuse — the pin would be vouching for files it is not running.
+
+    MUTATION: delete the `if self.cfg.carries_order_path:` block in `_bind_code` — red."""
+    assert "bridge" in sys.modules
+    with pytest.raises(RuntimeError, match="bridge"):
+        _bind(tmp_path, monkeypatch, carries=True)
+
+
+def test_a_snapshot_from_before_the_freeze_still_BINDS_with_a_repo_bridge(tmp_path, monkeypatch):
+    """An older snapshot has no order code of its own; the repo bridge is the one it runs."""
+    _bind(tmp_path, monkeypatch, carries=False)

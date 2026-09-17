@@ -104,14 +104,25 @@ def test_a_version_is_the_count_of_commits_touching_the_promoted_trees(repo):
 
 
 def test_a_commit_OUTSIDE_the_promoted_trees_does_not_move_the_version(repo):
-    """`algos/live/` is not promoted — it reaches a bot on a restart, not on a deploy — so a
-    change there must not claim the deployed code moved. This is what makes subtracting two
-    versions the work actually waiting to go out."""
+    """A change nothing copies must not claim the deployed code moved. This is what makes
+    subtracting two versions the work actually waiting to go out."""
     trees = _trees(repo)
     _commit(repo, "engines/e.py", "A = 1\n", "engine")
     before = promote_tool.version_at("HEAD", trees)
-    _commit(repo, "algos/live/runner.py", "A = 2\n", "live")
+    _commit(repo, "algos/notifications/monitor.py", "A = 2\n", "watchdog")
     assert promote_tool.version_at("HEAD", trees) == before
+
+
+def test_the_ORDER_CODE_moves_the_version(repo):
+    """🔴 Since 2026-09-17 the runner and the bridge ship IN the snapshot, so a change to them is
+    work waiting to go out. Before then this was the test above's example of a change that did
+    not count — it reached a live bot on a `git pull`, with no promote and no pin."""
+    trees = _trees(repo)
+    before = promote_tool.version_at("HEAD", trees)
+    _commit(repo, "algos/live/bridge.py", "A = 2\n", "live")
+    _commit(repo, "algos/shared/order_sizing.py", "A = 2\n", "sizing")
+    _commit(repo, "algos/markets/fx/tools/broker_clock.py", "A = 2\n", "clock")
+    assert promote_tool.version_at("HEAD", trees) == before + 3
 
 
 def test_a_commit_INSIDE_the_trees_that_ships_nothing_does_not_move_the_version(repo):
@@ -150,7 +161,16 @@ def test_the_trees_promote_copies_are_PINNED(repo):
     """
     trees = _trees(repo)
     dests = {str(dest).replace("\\", "/") for _, dest in trees}
-    assert dests == {"strategies/python/demo_pkg", "engines", "backtest", "execution"}
+    assert dests == {
+        "strategies/python/demo_pkg",
+        "engines",
+        "backtest",
+        "execution",
+        # The order-sending code, frozen since 2026-09-17.
+        "algos/live",
+        "algos/shared",
+        "algos/markets/fx/tools/broker_clock.py",
+    }
 
 
 def test_the_counted_trees_ARE_the_trees_promote_copies(repo):

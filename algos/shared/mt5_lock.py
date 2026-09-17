@@ -29,7 +29,8 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-ALGOS_ROOT = Path(__file__).resolve().parent.parent
+from repo_paths import ALGOS_ROOT  # noqa: E402 — the REPO's, even from a bot snapshot
+
 LOCK_PREFIX = "mt5_connect"
 
 # How long a connect waits for the lock, and how old a lock must be before a waiter may take it
