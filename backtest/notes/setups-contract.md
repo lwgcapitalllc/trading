@@ -81,3 +81,11 @@ fully ready setup, and a resting limit can be pulled from a setup whose zone is 
 The live alert layer uses it to post one `LIMIT WITHDRAWN` reply. **Reporting only; no stored run
 moves** — `replay_fingerprint.py` 2024-01 → 2026-08 on sos_fade: 62,468 bars and 66 trades
 identical. Detail: `algos/notes/telegram-and-notifications.md`.
+
+## `alert_rate.py` measures the extreme-leg bot too (2026-09-16)
+
+- `--strategy extreme_leg` is listed; a config with no fill-model field is built without one, and
+  a strategy that takes its frame is told it (`--tf 5`).
+- `--server PUPrime-Demo` reads that broker's cached bars without the agent.
+- The extreme-leg figures and why its root waits for the shift:
+  `strategies/python/extreme_leg/notes/setup_alerts.md`.

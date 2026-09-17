@@ -210,6 +210,11 @@ class ExtremeLegExecution(LivePositionMixin):
         # Set by the lab's replay loop and by `run()`. Unused here — carried so the object matches
         # the shape every other strategy's execution layer presents to the runner.
         self.bar_ms: int = 0
+        # The pre-trade setup watch (`setups.py`). REPORTING ONLY — fed by the strategy after the
+        # order is decided, and read by the live signals channel through the two methods below.
+        from .setups import LegSetupWatch
+        self.setup_watch = LegSetupWatch(config)
+        self.setup_key_scheme = LegSetupWatch.key_scheme
 
     @property
     def equity(self) -> float:
@@ -357,6 +362,15 @@ class ExtremeLegExecution(LivePositionMixin):
         dec.long_veto = bool(getattr(st, "blk_long", 0))
         dec.short_veto = bool(getattr(st, "blk_short", 0))
         return dec
+
+    # ── pre-trade setup snapshots (backtest/setups.py) — reporting only ──────────
+    def live_setups(self):
+        """Every armed episode this bot is watching, plus any that ended this bar."""
+        return self.setup_watch.live_setups()
+
+    def drain_setups(self):
+        """`live_setups()`, then forget the ended ones. The live runner calls it once per bar."""
+        return self.setup_watch.drain_setups()
 
     @property
     def is_flat(self) -> bool:

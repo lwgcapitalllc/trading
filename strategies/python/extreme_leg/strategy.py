@@ -284,10 +284,14 @@ class ExtremeLegStrategy:
         self._build_setup(st, bar_state.structure.external)
 
         # 6. The order.
+        was_busy = self.execution.pos is not None
         if self.execution.enter(st):
             st.entered = 1 if st.go_long else -1
         self.execution.arm_breakeven(bar.index, bar.high, bar.low)
         self.execution.record_blocks(st)
+        # 7. Reporting only: what the signals channel says about this bar. Last, and handed the
+        #    finished state, so it cannot reach anything above.
+        self.execution.setup_watch.observe(st, was_busy)
 
         self.states.append(st)
         return st

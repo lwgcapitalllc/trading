@@ -51,6 +51,7 @@ _STRATEGIES = {
     "b_leg": "strategies.python.b_leg",
     "bos": "strategies.python.bos",
     "realign": "strategies.python.realign",
+    "extreme_leg": "strategies.python.extreme_leg",
 }
 
 
@@ -62,6 +63,11 @@ def main(argv=None) -> int:
     ap.add_argument("--start", default="2020-01-01")
     ap.add_argument("--end", default=None)
     ap.add_argument("--warmup", type=int, default=1000)
+    ap.add_argument(
+        "--server",
+        default=None,
+        help="read a broker's cached bars without the agent (e.g. PUPrime-Demo)",
+    )
     ap.add_argument("--show", type=int, default=0, help="print this many sample threads")
     args = ap.parse_args(argv)
 
@@ -80,17 +86,22 @@ def main(argv=None) -> int:
 
     end = args.end or dt.date.today().isoformat()
     print(f"loading {args.symbol} {args.tf}m  {args.start} -> {end} ...", flush=True)
-    df = BarSource().load(args.symbol, args.tf, args.start, end)
+    df = BarSource(server=args.server).load(args.symbol, args.tf, args.start, end)
     if df.empty:
         print("no bars — is the MT5 agent tunnel up on localhost:8766?")
         return 1
     print(f"  {len(df):,} bars  {df.index[0]} -> {df.index[-1]}", flush=True)
 
-    cfg = ConfigCls(fill_model="bar", symbol=args.symbol)
+    fields = {f.name for f in dataclasses.fields(ConfigCls)}
+    # `extreme_leg` has no fill-model setting — it only ever fills at the bar.
+    kw = {"fill_model": "bar"} if "fill_model" in fields else {}
+    cfg = ConfigCls(symbol=args.symbol, **kw)
     if hasattr(cfg, "exec_secondary"):
         # Single-stream replay; the 1m re-entry needs `run_dual`. Same call `run_sweep` makes.
         cfg = dataclasses.replace(cfg, exec_secondary=False)
     strat = StrategyCls(config=cfg, initial_capital=10_000.0)
+    if hasattr(strat, "set_timeframe_minutes"):
+        strat.set_timeframe_minutes(int(args.tf))
 
     if not implements_contract(strat.execution):
         # 🔴 REFUSE rather than reporting zero. A strategy that cannot answer and a strategy with

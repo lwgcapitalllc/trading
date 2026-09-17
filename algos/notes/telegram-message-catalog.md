@@ -216,6 +216,12 @@ Until this is fixed, a change in the broker's overnight cost will pass unnoticed
 
 ### ⚠️ WARNING — nothing has stopped, worth reading
 
+**NO SETUP MESSAGES** — sent once per start by a bot whose strategy cannot report setups (2026-09-16).
+Plain text, no header.
+```
+Realign (demo): no setup messages. Its strategy (RealignStrategy) does not report its setups yet, so the signals room will stay silent for this bot. Trades and health messages are unaffected.
+```
+
 **STALLED** — the process is alive but has not moved through bars.
 ```
 ⚠️ STALLED · SOS Fade · LIVE

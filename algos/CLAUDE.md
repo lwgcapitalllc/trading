@@ -266,6 +266,7 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - 🔴 The live rooms — each ACCOUNT names its own channels; a live bot with none refuses to start (2026-09-13)
 - ✅ The health room's icons collapsed from 14 ad hoc glyphs to 4 named severity levels; every example is in `notes/telegram-message-catalog.md` (2026-09-14)
 - 🔴 A setup's Telegram thread did NOT survive a restart — four identical alerts for one setup in 24 hours, none of the first three closable. The thread bookkeeping now lives on disk and is reconciled at the end of every warm-up (2026-09-16)
+- ✅ Setup messages are ON for every bot; the extreme-leg bot now sends them, and a bot whose strategy cannot says so in the health room (2026-09-16)
 
 ### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room
 

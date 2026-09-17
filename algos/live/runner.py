@@ -1470,11 +1470,22 @@ class LiveRunner:
             )
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(
-                    f"Setup alerts: OFF — {self.cfg.strategy_class} does not implement "
-                    f"live_setups(). It is not that there are no setups; it cannot report any. "
+                    f"Setup alerts: OFF — {self.cfg.strategy_class} does not report its setups "
+                    f"yet. It is not that there are no setups; it cannot report any. "
                     f"See docs/LIVE_SETUP_ALERTS.md."
                 )
                 self.ledger.event("setup_alerts", enabled=False, reason="contract not implemented")
+                # 🔴 **Said in the HEALTH room too, not only in a log nobody reads (2026-09-16).**
+                # Setup messages are ON for every bot by default; a bot whose strategy cannot
+                # produce them is the exception, and a silent signals room reads exactly like a
+                # quiet market — `extreme_leg_demo` logged this line for days before anyone saw
+                # it. Once per start, never per bar.
+                self._notify_health(
+                    f"{self._label}: no setup messages. Its strategy "
+                    f"({self.cfg.strategy_class}) does not report its setups yet, so the signals "
+                    f"room will stay silent for this bot. Trades and health messages are "
+                    f"unaffected."
+                )
                 return
             if not cats:
                 self.log.warning(

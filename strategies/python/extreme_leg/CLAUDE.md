@@ -249,3 +249,9 @@ Most-cited code: `extreme_leg_strategy`.
 
 **Read before touching:** adding a new setting to extreme_leg.meta.json or wondering why the stress tester probes a setting with no effect.
 Most-cited code: `extreme_leg.meta.json`.
+
+### `notes/setup_alerts.md` — Setup messages in the signals room
+
+**Read before touching:** `setups.py`, what this bot sends to the signals room, or its setup key.
+
+- One thread per armed sweep, announced on the 5m shift — measured, and proven not to move a trade (2026-09-16)

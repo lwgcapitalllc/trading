@@ -676,3 +676,27 @@ written for. Each mutation was run alone and each took down exactly its own test
 same reason `test_deadman.py` is. **A bug in this module is silent by construction: every other alarm
 here fails loudly and gets reported, this one fails by having nothing to say, and having nothing to
 say is also what a healthy day looks like.**
+
+---
+
+## Setup messages are ON for every bot — and a bot that cannot give them says so (2026-09-16)
+
+**Aaron's requirement:** every bot added gets setup messages by default, and nothing about the
+channel is SOS-Fade-specific. The live extreme-leg bot logged "Setup alerts: OFF" for days.
+
+- **Why it was off:** not a setting. No bot config lists categories, and "absent" already means all
+  four. The extreme-leg strategy simply never implemented the setup contract
+  (`backtest/setups.py`), so the runner switched the channel off and said so only in its log.
+- **Fixed at the seam:** a bot whose strategy cannot report setups now also sends ONE health message
+  per start ("no setup messages … the signals room will stay silent for this bot"), so a silent
+  signals room can no longer pass for a quiet market.
+- **Fixed for the bot:** the extreme-leg strategy implements the contract
+  (`strategies/python/extreme_leg/setups.py`; detail in that package's
+  `notes/setup_alerts.md`). One thread per armed sweep, announced on the 5m shift.
+- **Still without setup messages:** `b_leg`, `bos`, `realign`. Each subclasses the SOS Fade
+  execution layer with the setup watch switched off, so the inherited contract answers nothing
+  and is deliberately reported as unsupported. Each needs its own description of what its setup
+  IS (its own confluences, key and end reasons) plus an `alert_rate.py` volume check — real work
+  per strategy, not a flag. Until then, any of them started live sends the health message above.
+
+Tests: `algos/tests/test_setup_alerts_every_bot.py` (2, both watched RED at HEAD).
