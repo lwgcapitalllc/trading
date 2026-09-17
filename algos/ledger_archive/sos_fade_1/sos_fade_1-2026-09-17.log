@@ -77,3 +77,9 @@
 2026-09-17 05:00:07,175 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
 2026-09-17 05:00:07,181 [INFO] Equity re-anchored to the account flat between trades: 16,884.34 → 16,508.86
 2026-09-17 07:20:03,740 [ERROR] Order REFUSED (bearish re-entry): [risk_not_authorised] the order would risk 412.72 but 5.0% of the account's 16,508.86 is 825.44. The strategy is sizing off a balance the account does not have -- most likely warm-up equity that compounded away from the broker's.
+2026-09-17 07:25:06,041 [ERROR] HALTED: The strategy believes it is in a position but MT5 has none. Its resting limit filled in the emulator and not at the broker (or the position was closed outside the bot). Every later decision would be computed against a trade that does not exist.
+The last order on this side was REFUSED: [risk_not_authorised] the order would risk 412.72 but 5.0% of the account's 16,508.86 is 825.44. The strategy is sizing off a balance the account does not have -- most likely warm-up equity that compounded away from the broker's.
+2026-09-17 07:30:08,332 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 07:45:02,544 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 08:00:07,067 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 08:15:02,383 [ERROR] Bridge halted — the loop will keep observing but place nothing.
