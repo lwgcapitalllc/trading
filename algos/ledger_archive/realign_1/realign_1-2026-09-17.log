@@ -166,3 +166,38 @@
 2026-09-17 15:10:01,651 [INFO] Priority 3 on this account: waiting 18s for the bots above
 2026-09-17 15:15:01,630 [INFO] Priority 3 on this account: waiting 38s for the bots above
 2026-09-17 15:20:01,876 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-17 15:25:02,169 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-17 15:29:43,422 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-17 15:29:43,424 [INFO] Stop requested — shutting down.
+2026-09-17 15:29:43,424 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-17 15:29:45,057 [INFO] MT5 disconnected.
+2026-09-17 15:30:06,815 [INFO] Realign | RealignStrategy v334 | hash d695af871b02 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:30:07,448 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:30:07,449 [INFO] MT5 connection lock released
+2026-09-17 15:30:07,822 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:30:07,826 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-17 15:30:07,840 [WARNING] Setup alerts: OFF — RealignStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-17 15:30:25,413 [INFO] Warmed 15000 bars (2026-07-03 01:00:00+00:00 → 2026-09-17 15:25:00+00:00) in 15.9s
+2026-09-17 15:30:27,911 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 15:35:09,815 [INFO] Priority 3 on this account: waiting 10s for the bots above
+2026-09-17 15:40:01,871 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-17 15:41:11,532 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-17 15:41:11,533 [INFO] Stop requested — shutting down.
+2026-09-17 15:41:11,535 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-17 15:41:12,533 [INFO] MT5 disconnected.
+2026-09-17 15:41:32,244 [INFO] Realign | RealignStrategy v335 | hash aece8345a827 | commit a46a5abb | frozen | LIVE
+2026-09-17 15:41:33,029 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:41:33,029 [INFO] MT5 connection lock released
+2026-09-17 15:41:33,644 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:41:33,649 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-17 15:41:33,668 [WARNING] Setup alerts: OFF — RealignStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-17 15:41:59,698 [INFO] Warmed 15000 bars (2026-07-03 01:10:00+00:00 → 2026-09-17 15:35:00+00:00) in 19.2s
+2026-09-17 15:42:00,973 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 15:45:02,203 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-17 15:50:01,424 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-17 15:55:01,325 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-17 16:00:01,387 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-17 16:05:07,987 [INFO] Priority 3 on this account: waiting 12s for the bots above
+2026-09-17 16:10:01,367 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-17 16:15:05,149 [INFO] Priority 3 on this account: waiting 35s for the bots above
+2026-09-17 16:20:00,940 [INFO] Priority 3 on this account: waiting 19s for the bots above

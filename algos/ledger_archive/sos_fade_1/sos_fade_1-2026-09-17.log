@@ -123,3 +123,213 @@ The last order on this side was REFUSED: [risk_not_authorised] the order would r
 2026-09-17 13:40:23,106 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-17 13:45:08,974 [INFO] place bullish primary limit 0.15L @ 4304.31 SL 4251.86628 TP none
 2026-09-17 13:45:09,191 [INFO] PENDING PLACED | ticket=380649626 | bullish 0.15L @ 4304.31 | SL=4251.87 TP=none
+2026-09-17 15:29:43,429 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-17 15:29:43,430 [INFO] Stop requested — shutting down.
+2026-09-17 15:29:43,431 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-17 15:29:44,662 [INFO] MT5 disconnected.
+2026-09-17 15:30:05,170 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:30:06,260 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:30:06,261 [INFO] MT5 connection lock released
+2026-09-17 15:30:06,546 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:30:06,603 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:30:49,147 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:30:49,734 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:30:49,735 [INFO] MT5 connection lock released
+2026-09-17 15:30:50,064 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:30:50,097 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:31:08,919 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:31:09,478 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:31:09,479 [INFO] MT5 connection lock released
+2026-09-17 15:31:10,289 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:31:10,308 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:32:08,735 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:32:09,317 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:32:09,317 [INFO] MT5 connection lock released
+2026-09-17 15:32:09,693 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:32:09,708 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:33:08,744 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:33:09,327 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:33:09,327 [INFO] MT5 connection lock released
+2026-09-17 15:33:09,665 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:33:09,681 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:34:28,528 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:34:29,075 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:34:29,080 [INFO] MT5 connection lock released
+2026-09-17 15:34:29,489 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:34:29,501 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:35:07,060 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:35:07,609 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:35:07,609 [INFO] MT5 connection lock released
+2026-09-17 15:35:07,887 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:35:07,897 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:36:06,806 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:36:07,345 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:36:07,347 [INFO] MT5 connection lock released
+2026-09-17 15:36:07,778 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:36:07,791 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:37:07,243 [INFO] SOS Fade | SosFadeStrategy v319 | hash c0e6b2857b48 | commit fe65a2d0 | frozen | LIVE
+2026-09-17 15:37:07,794 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:37:07,794 [INFO] MT5 connection lock released
+2026-09-17 15:37:08,055 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:37:08,065 [ERROR] Startup failed: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 2097, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 775, in _build_strategy
+    self._assert_live_ready(strategy)
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 859, in _assert_live_ready
+    missing = self._repo_live_contract().verify_live_ready(strategy)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_1\deployed\algos\live\runner.py", line 820, in _repo_live_contract
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1073, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1130, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\deployed\\strategies\\python\\live_contract.py'
+
+2026-09-17 15:44:22,374 [INFO] SOS Fade | SosFadeStrategy v321 | hash 217bf933a5b1 | commit a46a5abb | frozen | LIVE
+2026-09-17 15:44:23,002 [INFO] Connected | #700152905 | $16,508.86 | PUPrime-Demo
+2026-09-17 15:44:23,021 [INFO] MT5 connection lock released
+2026-09-17 15:44:23,432 [INFO] Sizing against account balance $16,508.86
+2026-09-17 15:44:23,466 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-17 15:44:23,466 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-17 15:44:23,486 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-17 15:44:23,494 [INFO] Cancelling stale pending order T380649626 from a previous run
+2026-09-17 15:44:23,495 [INFO] cancel stale pending T380649626
+2026-09-17 15:44:25,579 [INFO] PENDING CANCELLED | T380649626
+2026-09-17 15:44:28,827 [INFO] Warmed 5000 bars (2026-07-03 01:00:00+00:00 → 2026-09-17 15:15:00+00:00) in 3.2s
+2026-09-17 15:44:32,657 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 01:10:00+00:00 → 2026-09-17 15:35:00+00:00).
+2026-09-17 15:44:32,658 [INFO] Equity re-anchored to the account after warm-up: 15,178.23 → 16,508.86
+2026-09-17 15:44:32,664 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-17 15:44:33,495 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 15:45:03,793 [INFO] place bullish primary limit 0.15L @ 4304.31 SL 4251.86628 TP none
+2026-09-17 15:45:03,893 [INFO] PENDING PLACED | ticket=380863990 | bullish 0.15L @ 4304.31 | SL=4251.87 TP=none
