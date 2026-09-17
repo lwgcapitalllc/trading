@@ -404,3 +404,13 @@ warnings sit beside it; the count in the label says how many there are.
 ⚠ **The whole finding text goes on the `title`.** The point of the chip is that "why does this bot
 need attention" is answerable without opening a JSONL file on a Windows box over SSH — a chip that
 only says *something is wrong* has moved the question rather than answered it.
+
+## The bots card is grouped BY ACCOUNT (2026-09-16)
+
+Aaron: *"super ugly and confusing."* The flat list read "SOS Fade LIVE" twice with nothing to say
+which account each was on, and printed one account's return on every bot of it. Now
+`pages/overview/BotsCard.tsx`: total balance on top, then one block per account (live first, named
+by its nickname and number, return and balance once on its header), bots on no account last, then
+the VPS background jobs. A bot row is its name and its one-word state only. The best research
+result now names its strategy. ⚠ Two tests had copied the box's FIRST bot, which is currently the
+benched one with no account — they now set the account themselves.

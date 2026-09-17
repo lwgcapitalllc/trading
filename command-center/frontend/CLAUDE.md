@@ -212,7 +212,7 @@ running dev server reads only at startup, so Aaron's app drew every block flying
 ⚠ **Pages still carrying a PRIVATE skeleton** (built on `animate-pulse`, before this existed) —
 migrate each to `Shimmer` when you are next in the file, never as a drive-by across all of them:
 `Backtests` (`RunsTableSkeleton`, also used by `Optimizations`), `Strategies`, `Rulesets`,
-`Overview` (`BotsCardSkeleton`), `StrategyDetail`, `BacktestDetail` (page and chart skeletons).
+`StrategyDetail`, `BacktestDetail` (page and chart skeletons).
 
 ---
 

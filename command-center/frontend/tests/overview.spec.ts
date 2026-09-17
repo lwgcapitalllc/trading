@@ -218,6 +218,8 @@ test.describe('Overview — states the live box cannot produce', () => {
     await mockSnapshot(page, (s) => {
       expect(s.bots.length, 'need a registered bot to blind').toBeGreaterThan(0)
       const only = JSON.parse(JSON.stringify(s.bots[0]))
+      // ⚠ STATED: the box's first bot may be benched (no account), which has no balance to miss.
+      only.account = '11111111'
       only.balance = null
       s.bots = [only]
     })
@@ -235,6 +237,7 @@ test.describe('Overview — states the live box cannot produce', () => {
       // balance is `null` whenever the terminal is not answering, which would make this fleet
       // 2-of-2 silent and the check green for the wrong reason on exactly the days it matters.
       const reporting = JSON.parse(JSON.stringify(s.bots[0]))
+      reporting.account = '11111111'
       reporting.balance = 9_996.99
       // ⚠ The silent one is on ANOTHER account. The total counts ACCOUNTS since 2026-09-11: two
       // bots on one account share one balance, so a copy left on the same account would be

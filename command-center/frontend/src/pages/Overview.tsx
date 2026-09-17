@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Bot,
   Radar,
   FlaskConical,
   BookOpen,
@@ -16,8 +15,6 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
-import { botCondition } from '@/lib/botCondition'
-import { StatusText } from '@/components/BotStatus'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import {
   useBacktestRuns,
@@ -40,10 +37,11 @@ import {
   dayIndexOf as weekDayIndex,
 } from '@/lib/calendar'
 import { StatCard } from '@/components/StatCard'
+import { BotsCard } from './overview/BotsCard'
 import { FleetControls } from '@/components/FleetControls'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
-import type { BotStatus, BacktestSummary, CalendarEvent } from '@/types'
+import type { BacktestSummary, CalendarEvent } from '@/types'
 
 /** A "best result" needs a sample size behind it or profit factor ranks luck.
  *
@@ -66,10 +64,6 @@ function relativeTime(dt: string | Date, nowMs: number): string {
   return `${days}d ago`
 }
 
-function fmt$(n: number): string {
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 /** Profit factor is `gross win / gross loss`, so a run with no losing trade divides by zero.
  *  JSON cannot carry Infinity, so it arrives as null or a huge float depending on the writer —
  *  either way `toFixed` on it is a number nobody can read. */
@@ -79,73 +73,6 @@ function fmtPf(pf: number | null | undefined): string {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
-
-/** A bot on the Overview: the Bots page's own status — one word, a count of anything else and the
- *  rest on hover (`lib/botCondition.ts`) — so the two pages cannot word one fact two ways.
- *  It replaced a word plus up to five tags (2026-09-12). ⚠ It has to be on BOTH pages: a blind or
- *  halted bot presented as a healthy RUNNING row here, and this is the page read first. A bot on NO
- *  account is benched on purpose, never the red of a stopped one. */
-function BotRow({ bot, showKind }: { bot: BotStatus; showKind: boolean }) {
-  const cond = botCondition(bot, { asked: true, onAccount: !!bot.account })
-  const pnl = bot.total_pnl_pct
-  const pnlStr = pnl != null ? (pnl >= 0 ? `+${pnl.toFixed(2)}%` : `${pnl.toFixed(2)}%`) : null
-  const pnlColor =
-    pnl == null ? '' : pnl > 0 ? 'text-pos-text' : pnl < 0 ? 'text-neg-text' : 'text-text-tertiary'
-
-  return (
-    <div className="flex items-center gap-[10px] py-[7px] border-b border-border-subtle/40 last:border-0">
-      <span className="text-[13px] text-text-primary min-w-0 truncate">{bot.name}</span>
-      {/* Live and demo copies share a display name, so the row names its kind — only when the
-          fleet mixes both (otherwise the balance line says it once). A bot with no account is
-          benched and its kind is a fallback rather than a fact, so it gets no tag. */}
-      {showKind && bot.account && (
-        <span
-          className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-pill uppercase tracking-[0.4px] ${
-            bot.account_type === 'live'
-              ? 'bg-warn-muted text-warn-text'
-              : 'bg-bg-sunken text-text-tertiary'
-          }`}
-        >
-          {bot.account_type}
-        </span>
-      )}
-      <span className="flex-1" />
-      {pnlStr && <span className={`text-[11px] font-mono tabular-nums ${pnlColor}`}>{pnlStr}</span>}
-      <StatusText cond={cond} size="list" />
-    </div>
-  )
-}
-
-/** ⚠ `schedule` arrives here because the Bots page's System panel — the only place a job's
- *  timing was written — was deleted on 2026-09-05 as duplicate of this row. It is optional
- *  because the Telegram service is passed through here too and has no schedule. */
-function JobPill({ job }: { job: { name: string; status: string; schedule?: string } }) {
-  const running = job.status === 'RUNNING'
-  // Switched off on purpose gets NO glow and no gold. A "waiting for next trigger" pill on a task
-  // that will never fire says the job is covered when it isn't — and two of the three jobs on the
-  // box are disabled today. Mirrors `JobDot` on the Bots page, deliberately word for word.
-  const disabled = job.status === 'DISABLED'
-  // ⚠ Colour marks the EXCEPTION (2026-09-11): a scheduled job waiting for its trigger is the
-  // normal state, so its name is plain text — six gold names on every visit read as six warnings.
-  // Only a job that will never fire is set apart, dimmed, with the reason on its title.
-  const dotCls = running ? 'bg-pos' : disabled ? 'bg-text-tertiary/30' : 'bg-text-secondary/60'
-  const textCls = disabled ? 'text-text-tertiary line-through' : 'text-text-secondary'
-  const state = running
-    ? 'Running'
-    : disabled
-      ? 'Disabled — will not run until re-enabled on the VPS'
-      : 'Scheduled — waiting for next trigger'
-  const tip = job.schedule ? `${state}\nRuns ${job.schedule}` : state
-  return (
-    <span
-      title={tip}
-      className={`inline-flex items-center gap-[4px] mr-[10px] text-[11px] cursor-default ${textCls}`}
-    >
-      <span className={`inline-block w-[5px] h-[5px] rounded-full flex-shrink-0 ${dotCls}`} />
-      {job.name}
-    </span>
-  )
-}
 
 // A clickable metric row that navigates to its own destination. Used in the
 // Research card so Strategies / Runs / Optimizations / Stress Tests each go to
@@ -180,42 +107,6 @@ function NavStatRow({
         />
       </div>
     </button>
-  )
-}
-
-function BotsCardSkeleton() {
-  return (
-    <div className="animate-pulse">
-      {[...Array(4)].map((_, i) => (
-        <div
-          key={i}
-          className="flex items-center gap-[10px] py-[7px] border-b border-border-subtle/40 last:border-0"
-        >
-          <div className="w-[7px] h-[7px] rounded-full bg-bg-surface-2 flex-shrink-0" />
-          <div className="h-[11px] bg-bg-surface-2 rounded flex-1" />
-          <div className="h-[11px] w-[42px] bg-bg-surface-2 rounded" />
-          <div className="h-[11px] w-[50px] bg-bg-surface-2 rounded" />
-        </div>
-      ))}
-      <div className="flex items-center justify-center gap-[6px] mt-3 pt-3 border-t border-border-subtle/40 text-[11px] text-text-tertiary">
-        <svg className="animate-spin h-[11px] w-[11px] text-accent" fill="none" viewBox="0 0 24 24">
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
-        Connecting to VPS…
-      </div>
-    </div>
   )
 }
 
@@ -290,46 +181,6 @@ export function Overview() {
       runningStressTest: stressTests?.some((s) => s.status.startsWith('running')) ?? false,
     }
   }, [stressTests])
-
-  const bots = snapshot?.bots ?? []
-  const totalBots = bots.length
-  // ⚠ Sum only what was actually REPORTED, and say how many were not. `?? 0` folds "this bot
-  // could not tell me" into the total as a real zero, which understates the fleet with nothing
-  // on screen to show for it — the same "no data ≠ cannot ask" rule the link chip exists for.
-  // 🔴 Summed per ACCOUNT, never per bot (2026-09-11). Every bot on an account reports THAT
-  // account's balance, so adding bots counted each account once per bot on it — MEASURED: two
-  // accounts with two bots each read $32,592.86 for $16,296.43 of money. The Bots page learned
-  // this on 2026-09-04 ("never sum a number across bots that SHARE it"); this card had not. A bot
-  // on NO account is benched: it has no balance to report, so it is not "not reporting" either.
-  const balanceByAccount = new Map<string, number | null>()
-  const kindByAccount = new Map<string, string>()
-  for (const b of bots) {
-    if (!b.account) continue
-    const known = balanceByAccount.get(b.account)
-    if (known == null) balanceByAccount.set(b.account, b.balance ?? null)
-    kindByAccount.set(b.account, b.account_type)
-  }
-  const accountBalances = [...balanceByAccount.values()]
-  const reportedBal = accountBalances.filter((v): v is number => v != null)
-  const totalBalance = reportedBal.reduce((s, v) => s + v, 0)
-  const totalAccounts = accountBalances.length
-  const unreported = totalAccounts - reportedBal.length
-  const liveBots = bots.filter((b) => b.account_type === 'live').length
-  const mixedFleet = liveBots > 0 && liveBots < totalBots
-  const liveAccounts = [...kindByAccount.values()].filter((k) => k === 'live').length
-  const demoAccounts = totalAccounts - liveAccounts
-  const plural = (n: number, word: string) => `${n} ${word} account${n === 1 ? '' : 's'}`
-  const accountLabel =
-    totalAccounts === 0
-      ? ''
-      : liveAccounts === 0
-        ? plural(demoAccounts, 'demo')
-        : demoAccounts === 0
-          ? plural(liveAccounts, 'live')
-          : `${liveAccounts} live · ${demoAccounts} demo`
-  // TanStack keeps the last good snapshot through a failed refetch, so an error and real rows
-  // render together. Say WHEN the rows were true rather than leaving them looking live.
-  const snapshotStale = botsError && !!snapshot
 
   const pipelineRunning = progress?.status === 'running'
 
@@ -423,93 +274,7 @@ export function Overview() {
 
       {/* ── Module Cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-[14px] items-start">
-        {/* ── Bots ──────────────────────────────────────────────── */}
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          {/* Card header — navigates to Bots page */}
-          <button
-            onClick={() => navigate('/bots')}
-            className="w-full flex items-center justify-between px-[15px] py-[10px] border-b border-border-subtle hover:bg-bg-hover transition-colors duration-[120ms] group"
-          >
-            <div className="flex items-center gap-[8px]">
-              <Bot size={14} className="text-text-tertiary" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
-                Bots
-              </span>
-            </div>
-            <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary group-hover:text-text-secondary transition-colors">
-              <span>View all</span>
-              <ChevronRight size={12} />
-            </div>
-          </button>
-
-          <div className="px-[15px] py-[10px]">
-            {botsLoading && <BotsCardSkeleton />}
-
-            {/* A failed refetch leaves the LAST GOOD snapshot on screen — so this says how old
-                these rows are instead of letting them read as live. With no snapshot at all it
-                is the plain failure. */}
-            {botsError &&
-              !botsLoading &&
-              (snapshotStale ? (
-                <p className="flex items-center gap-[6px] text-[11px] text-warn-text mb-[6px] px-[8px] py-[5px] rounded-md bg-warn-muted border border-warn-text/20">
-                  <AlertCircle size={11} className="flex-shrink-0" />
-                  VPS unreachable — showing the snapshot from{' '}
-                  {fmtTime(new Date(snapshot!.fetched_at).getTime())}
-                </p>
-              ) : (
-                <p className="text-[12px] text-neg-text py-3">
-                  VPS connection failed — check SSH access.
-                </p>
-              ))}
-
-            {snapshot && (
-              <>
-                {/* Keyed by `key`, never `name`: a name is a label chosen for a human and two
-                    bots may share one. */}
-                {snapshot.bots.map((bot) => (
-                  <BotRow key={bot.key} bot={bot} showKind={mixedFleet} />
-                ))}
-
-                {snapshot.bots.length === 0 && (
-                  <p className="text-[12px] text-text-tertiary py-2">No bots registered.</p>
-                )}
-
-                {/* The fleet's total. ⚠ A missing balance is not a zero balance: it sums only
-                    what was reported and names the gap in warn, never folds it in as $0. */}
-                {totalAccounts > 0 && (
-                  <div
-                    data-testid="fleet-balance"
-                    className="flex items-baseline gap-[10px] pt-[9px]"
-                  >
-                    <span className="text-[12px] text-text-tertiary flex-1">Balance</span>
-                    <span
-                      className={`text-[11px] ${unreported > 0 ? 'text-warn-text' : 'text-text-tertiary'}`}
-                    >
-                      {unreported > 0
-                        ? `${unreported} of ${totalAccounts} account${totalAccounts === 1 ? '' : 's'} not reporting`
-                        : accountLabel}
-                    </span>
-                    <span className="text-[13px] font-mono tabular-nums text-text-primary">
-                      {reportedBal.length > 0 ? fmt$(totalBalance) : '—'}
-                    </span>
-                  </div>
-                )}
-
-                <div className="mt-[10px] pt-[9px] border-t border-border-subtle/40">
-                  <p className="text-[11px] text-text-tertiary leading-none mb-[5px] uppercase tracking-[0.5px]">
-                    Scheduled
-                  </p>
-                  <div className="flex flex-wrap gap-y-[3px]">
-                    {snapshot.scheduled_jobs.map((j) => (
-                      <JobPill key={j.name} job={j} />
-                    ))}
-                    <JobPill job={snapshot.telegram} />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <BotsCard snapshot={snapshot} isLoading={botsLoading} isError={botsError} />
 
         {/* ── Right column: fleet controls, then Research ───────────
             Fleet controls moved off the Bots page on 2026-09-05 (Aaron's call). That page manages
@@ -725,6 +490,9 @@ export function Overview() {
                     >
                       <span className="text-[12px] text-text-tertiary group-hover:text-text-primary transition-colors">
                         Best result
+                        <span className="ml-[6px] text-text-secondary">
+                          {bestRun.strategy_name}
+                        </span>
                       </span>
                       <div className="flex items-center gap-2">
                         {/* The sample is stated beside the ratio, because profit factor on its own
