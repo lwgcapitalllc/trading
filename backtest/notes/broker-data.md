@@ -283,3 +283,12 @@ strategy default symbol is now `XAUUSD`, closing that path.
 The agent's `/ticks` endpoint landed with A2; `Mt5Agent.ticks()` reads it, and `backtest/data/ticks.py`
 caches by hour. Pull the SMALLEST window that answers the question — gold is ~690k ticks/day (~43MB,
 ~90s), while one 5m bar is ~260KB and under a second.
+
+## ⏳ OPEN TASK — adding one day rewrites the whole cache file (2026-09-17)
+
+`BarCache.save` is a read-modify-write of the entire symbol/timeframe CSV, and a window ending today
+always has one gap (today is never marked covered, on purpose). **Measured: 26.0s of writing per
+page open, 19.2s of it `to_csv`, on one account's two bar loads** — and every backtest, sweep or
+chart reaching today pays the same. Not fixed: the honest fix changes how lab prices are stored,
+which every backtest depends on. The brief, the measurements, the constraints that may not be traded
+away and how to prove a fix: `docs/BAR_CACHE_REWRITE_TASK.md`.
