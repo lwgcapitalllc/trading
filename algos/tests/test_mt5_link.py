@@ -74,6 +74,11 @@ class _Bridge:
         self.staged = 0
         self.restored = 0
 
+    def retry_rejected(self):
+        # The loop calls this every pass since 2026-09-16 (a rejected order re-sent between
+        # bars). The real one returns at once when nothing is waiting, which is this.
+        pass
+
     def begin_live(self):
         self.began += 1
         # Mirrors the real bridge: the halt LATCHES, so a re-warm cannot put a halted bridge

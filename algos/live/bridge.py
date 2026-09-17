@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import math
 import sys
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -65,7 +66,7 @@ from alert_format import CRITICAL, OK, WARNING, alert, joined  # noqa: E402
 
 # The third answer a broker call can give. Its own dependency-free module on purpose — see
 # the note in `algos/shared/broker_result.py` about what importing it from `mt5_ops` broke.
-from broker_result import UNKNOWN  # noqa: E402
+from broker_result import UNKNOWN, is_transient  # noqa: E402
 from order_sizing import (  # noqa: E402
     DEFAULT_MARGIN_SAFETY_PCT,
     plan_order,
@@ -632,6 +633,15 @@ class OrderBridge:
         # One alert per distinct refusal per side. Re-stating an unaffordable setup every bar
         # for the six hours it rests is how a channel gets muted before the day it matters.
         self._refusal_alerted: dict[tuple, str] = {s: "" for s in SLOTS}
+        # 🔴 **A resting order the BROKER rejected for a temporary reason, waiting to be sent again
+        # (2026-09-16).** `sos_fade_demo`'s limit came back 10031 (no connection) and sat off the
+        # book for a whole 15-minute bar. slot -> {"attempt", "due", "pend", "sig"}. Driven by
+        # `retry_rejected()` from the runner's poll loop; see `broker_result.TRANSIENT_RETCODES`.
+        self._retry: dict[tuple, dict] = {}
+        # What was last SAID about a broker rejection per slot, so a flapping link is one message
+        # per cause rather than one per attempt.
+        self._reject_alerted: dict[tuple, str] = {s: "" for s in SLOTS}
+        self._now: Callable[[], float] = time.monotonic
         # Has the ACCOUNT budget run out? Latched so the alert is loud once and then quiet, and
         # so RECOVERY speaks — without the second message, silence would mean either "there is
         # room again" or "still full", and the reader would have to go and look.
@@ -2527,6 +2537,9 @@ class OrderBridge:
             return
         held = self._rest[slot]
         if pend is None:
+            # The strategy no longer wants an order here, so nothing is waiting to be re-sent.
+            self._retry.pop(slot, None)
+            self._reject_alerted[slot] = ""
             if held is not None:
                 self._drop_rest(slot, held, "cancel")
             self._refused[slot] = ""
@@ -3240,6 +3253,7 @@ class OrderBridge:
                 )
             else:
                 self._rest[slot] = _Rest(ticket, pend.edge, lots, pend.sl)
+            self._rejection_cleared(slot, ticket, lots, pend)
             self._ledger.event(
                 "order_placed",
                 dir=direction,
@@ -3279,6 +3293,7 @@ class OrderBridge:
             # `mt5_ops.py` worth finding, and a blank would hide it for as long as it existed.
             said = getattr(self._mt5, "last_refusal", None) or {}
             code = said.get("code") or "unrecorded"
+            retcode = said.get("retcode")
             self._ledger.event(
                 "order_refused",
                 dir=direction,
@@ -3295,7 +3310,159 @@ class OrderBridge:
                 price=pend.edge,
                 stop=pend.sl,
                 sos_bar=getattr(pend, "sos_bar", None),
+                retcode=retcode,
             )
+            if retcode is not None:
+                self._on_broker_rejection(slot, lots, pend, sig, at_market, said, retcode)
+
+    # ── a broker rejection: say so, and re-send it soon when the cause is temporary ─────────
+    #: Seconds to wait before each re-send. Five tries inside ~5 minutes — well inside a 15m bar,
+    #: and the poll loop (10s) is the finest grain there is.
+    RETRY_BACKOFF_S = (10.0, 20.0, 40.0, 80.0, 160.0)
+
+    def _on_broker_rejection(self, slot, lots, pend, sig, at_market, said, retcode) -> None:
+        """The BROKER refused an order we sent. Alert once per cause; schedule a re-send when the
+        cause is temporary and the order is a resting limit.
+
+        ⚠ **A MARKET order is never re-sent.** The strategy booked its fill at the bar's price; an
+        order sent minutes later is a different trade, and the next reconciliation halts on the
+        mismatch — which is the safe answer and is said in the message.
+        ⚠ **A permanent rejection is never re-sent** — the same order gets the same answer.
+        """
+        transient = is_transient(retcode)
+        what = f"{slot_label(slot)} {'market order' if at_market else 'limit'} {lots}L" + (
+            "" if at_market else f" @ {pend.edge}"
+        )
+        reason = said.get("detail") or f"retcode {retcode}"
+        prev = self._retry.get(slot)
+        attempt = prev["attempt"] + 1 if prev and prev["pend"] is pend else 1
+        if at_market:
+            key = f"market:{retcode}"
+            nxt = (
+                "Not re-sent: the strategy already counts this trade as open at the bar's "
+                "price, and a late order would be a different trade. The bot will halt at the "
+                "next check because the broker holds no position — look at the account."
+            )
+        elif not transient:
+            self._retry.pop(slot, None)
+            key = f"permanent:{retcode}"
+            nxt = (
+                "Not re-sent now: this is not a temporary fault, so the same order would be "
+                "refused again. The strategy re-offers it at the next bar close while the setup "
+                "lives."
+            )
+        elif attempt <= len(self.RETRY_BACKOFF_S):
+            wait = self.RETRY_BACKOFF_S[attempt - 1]
+            self._retry[slot] = {
+                "attempt": attempt,
+                "due": self._now() + wait,
+                "pend": pend,
+                "sig": sig,
+            }
+            self._log.warning(
+                f"Broker rejected {what} (retcode {retcode}); re-sending in {wait:.0f}s "
+                f"(try {attempt} of {len(self.RETRY_BACKOFF_S)})."
+            )
+            key = f"transient:{retcode}"
+            nxt = (
+                f"Temporary fault, so it will be re-sent in {wait:.0f}s and retried up to "
+                f"{len(self.RETRY_BACKOFF_S)} times while the setup still wants it. You will "
+                f"hear once more: when it lands, or if it gives up."
+            )
+        else:
+            self._retry.pop(slot, None)
+            key = f"gave_up:{retcode}"
+            nxt = (
+                f"Gave up after {len(self.RETRY_BACKOFF_S)} re-sends. No order is resting. The "
+                f"strategy re-offers it at the next bar close while the setup lives."
+            )
+        if self._reject_alerted.get(slot) == key:
+            return
+        self._reject_alerted[slot] = key
+        self._notify(
+            alert(
+                WARNING,
+                "ORDER REJECTED",
+                self._message_name(),
+                f"The broker rejected the {what} (SL {pend.sl}).\n{reason}",
+                nxt,
+            ),
+            notify.HEALTH,
+        )
+
+    def _rejection_cleared(self, slot, ticket, lots, pend) -> None:
+        """An order landed. If its slot had a rejection on record, say it is fixed — once."""
+        had = self._retry.pop(slot, None)
+        said = self._reject_alerted.get(slot, "")
+        self._reject_alerted[slot] = ""
+        if not said.startswith(("transient:", "gave_up:")):
+            return
+        tries = had["attempt"] if had else None
+        self._notify(
+            alert(
+                OK,
+                "ORDER PLACED AFTER REJECTION",
+                self._message_name(),
+                f"The {slot_label(slot)} order is now at the broker: T{ticket} {lots}L @ "
+                f"{pend.edge}"
+                + (f" (after {tries} re-send{'s' if tries != 1 else ''})." if tries else "."),
+            ),
+            notify.HEALTH,
+        )
+
+    def _wanted_pend(self, slot):
+        """The order the strategy wants in `slot` RIGHT NOW, read the way `sync` reads it."""
+        if slot == PRIMARY_LONG:
+            return self._ex._pend_long
+        if slot == PRIMARY_SHORT:
+            return self._ex._pend_short
+        if slot in (SECONDARY_LONG, SECONDARY_SHORT):
+            pend = getattr(self._ex, "_pend_sec", None)
+            return pend if pend is not None and secondary_slot(pend.dir) == slot else None
+        return None
+
+    def retry_rejected(self) -> None:
+        """Re-send any resting order whose rejection was temporary and whose wait is over.
+
+        Called on every pass of the runner's poll loop, between bars. It re-sends ONLY when
+        nothing has moved since the rejection: the bot is live and flat, nothing rests in the
+        slot, no placement is unresolved, the broker holds no position, and the strategy still
+        holds the very same order. Anything else drops the retry and leaves the slot to the next
+        bar's ordinary reconciliation, which is the path that owns every other decision.
+        """
+        if not self._retry:
+            return
+        now = self._now()
+        for slot, r in list(self._retry.items()):
+            if now < r["due"]:
+                continue
+            pend = self._wanted_pend(slot)
+            still = (
+                self.state is BridgeState.LIVE
+                and self._ex._pos_dir == 0
+                and self._manual_ticket is None
+                and self._rest[slot] is None
+                and not self._unresolved[slot]
+                and pend is r["pend"]
+            )
+            if still:
+                positions = self._mt5.get_open_positions()
+                still = not positions
+            if not still:
+                self._retry.pop(slot, None)
+                self._log.info(
+                    f"Dropped the {slot_label(slot)} re-send: the order or the account has "
+                    f"changed since it was rejected. The next bar decides."
+                )
+                continue
+            self._log.info(
+                f"Re-sending the rejected {slot_label(slot)} order (try {r['attempt']})."
+            )
+            self._sync_slot(slot, pend, r["sig"])
+            cur = self._retry.get(slot)
+            if cur is r:
+                # Neither landed nor rejected again (refused by our own sizing, say): stop.
+                self._retry.pop(slot, None)
 
     def _alert_once(self, code: str, body: str) -> None:
         """Say something ONCE per cause, and log it every time.

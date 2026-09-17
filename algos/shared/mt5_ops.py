@@ -292,14 +292,16 @@ class BotMT5:
         #: records that case explicitly instead of writing a blank field (rule 1).
         self.last_refusal = None
 
-    def _refuse(self, code: str, message: str, level: str = "warning") -> tuple:
+    def _refuse(self, code: str, message: str, level: str = "warning", retcode=None) -> tuple:
         """Log a refusal, record WHICH guard it was, and return the `(None, None)` callers expect.
 
         ⚠ **One helper rather than two lines at each site, because the two must not drift.** A
         refusal that logs without recording is invisible to the ledger — the exact defect this
         closes — and one that records without logging is invisible to whoever is tailing the box.
         """
-        self.last_refusal = {"code": code, "detail": message}
+        # `retcode` is the broker's own number when the BROKER refused, `None` for our own guards
+        # and for a send that got no reply. The bridge decides from it whether to retry.
+        self.last_refusal = {"code": code, "detail": message, "retcode": retcode}
         if level == "error":
             self.log.error(message)
         else:
@@ -562,6 +564,7 @@ class BotMT5:
             REFUSE_BROKER_REJECTED,
             f"Order failed ({sym} {direction} {vol}L @ {price}): {refusal_detail(result)}",
             level="error",
+            retcode=getattr(result, "retcode", None),
         )
 
     # ── Pending (resting limit) orders ────────────────────────────────────────
@@ -1093,6 +1096,7 @@ class BotMT5:
             REFUSE_BROKER_REJECTED,
             f"Pending failed ({sym} {direction} {vol}L @ {price}): {detail}",
             level="error",
+            retcode=getattr(result, "retcode", None),
         )
 
     def _reconcile_pending(self, sym: str, before, vol: float, price: float):

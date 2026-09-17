@@ -2252,6 +2252,10 @@ class LiveRunner:
                                 return 6, f"10 consecutive bar errors, last: {e}"
                             break
 
+                    # Between bars: re-send a resting order the broker rejected for a temporary
+                    # reason (no connection, requote, ...). Its own guards decide; see bridge.
+                    if self.bridge:
+                        self.bridge.retry_rejected()
                     self._check_close_request()
                     self._maybe_reload_runtime()
                     # Same FLAT seam as the reload above, for the same reason: between trades

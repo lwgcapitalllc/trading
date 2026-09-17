@@ -840,3 +840,36 @@ this change.
 - **Takeover gap closed:** when the tracked ticket vanishes and another position under this magic
   is still open, the bridge books the closed trade and HALTS naming the others; it no longer
   adopts one of them as the trade (either clock).
+
+---
+
+## 🔴 A broker REJECTION is alerted, and a temporary one is re-sent within seconds (2026-09-16)
+
+**What happened:** 2026-09-16 19:15:04 UTC, `sos_fade_demo` re-sized its sell limit; the cancel
+worked and the re-place came back **retcode 10031** *"Request rejected due to absence of network
+connection"*. Nothing reached Telegram (the refusal went only to the ledger), and the order was
+off the book until the next 15-minute bar re-placed it at 19:30:05.
+
+**Now:**
+- Every broker rejection sends **ORDER REJECTED** to the health room: the order, the broker's own
+  sentence, and what happens next. Once per side per cause, so a flapping link is one message.
+- The refusal record carries the broker's **retcode** (`mt5_ops` → `last_refusal`).
+- A **temporary** rejection of a **resting limit** is re-sent from the runner's poll loop after
+  10, 20, 40, 80, 160 seconds (5 tries, ~5 minutes). It lands → one **ORDER PLACED AFTER
+  REJECTION**. It never lands → one "gave up", and the next bar tries as it always did.
+- A re-send happens only if nothing moved: bot live and flat, nothing resting or unresolved in
+  that slot, no broker position, and the strategy still holds the SAME order object. Otherwise the
+  retry is dropped and the next bar decides.
+- **Temporary**, from MetaTrader 5's trade-server return codes: 10004 requote, 10020 prices
+  changed, 10021 no quotes, 10024 too many requests, 10028 locked, 10031 no connection
+  (`shared/broker_result.py`). **Not** 10012 timeout — its outcome is unknown and the pending path
+  reconciles it against the book instead. Not 10006/10011 — unspecific. Everything about the
+  order itself (volume, price, stops, money, trading disabled, market closed …) is permanent and
+  never re-sent.
+- **A market order is never re-sent** — the strategy booked its fill at the bar's price, a late
+  order is a different trade, and the next reconciliation halts on the mismatch. The alert says so.
+  ⚠ Open question, not built: whether a market-entry bot (extreme leg) should re-send quickly
+  within a price tolerance rather than halt.
+
+Tests: `tests/test_order_rejection_retry.py` (10; 9 red against HEAD's bridge; the "treat every
+code as temporary" and "ignore a changed order" mutations each redden their own test).

@@ -216,6 +216,21 @@ Until this is fixed, a change in the broker's overnight cost will pass unnoticed
 
 ### ⚠️ WARNING — nothing has stopped, worth reading
 
+**ORDER REJECTED** — the BROKER refused an order we sent (2026-09-16). Once per cause per side.
+A temporary cause (no connection, requote, prices changed, no quotes, too many requests, locked)
+is re-sent on the poll loop; anything else is not.
+```
+⚠️ ORDER REJECTED · SOS Fade · LIVE
+The broker rejected the bearish primary limit 0.14L @ 4316.98 (SL 4352.44).
+Pending failed (XAUUSD.p bearish 0.14L @ 4316.98): retcode=10031 'Request rejected due to absence of network connection' last_error=(1, 'Success')
+Temporary fault, so it will be re-sent in 10s and retried up to 5 times while the setup still wants it. You will hear once more: when it lands, or if it gives up.
+```
+Permanent cause — last line instead reads: *Not re-sent now: this is not a temporary fault, so the
+same order would be refused again. The strategy re-offers it at the next bar close while the setup
+lives.* Five failed re-sends: *Gave up after 5 re-sends. No order is resting. …* A market order:
+*Not re-sent: the strategy already counts this trade as open … The bot will halt at the next check
+because the broker holds no position — look at the account.*
+
 **NO SETUP MESSAGES** — sent once per start by a bot whose strategy cannot report setups (2026-09-16).
 Plain text, no header.
 ```
@@ -314,6 +329,9 @@ Nothing changed here — re-pricing the lab is a separate, deliberate commit.
 ### ✅ OK — a CRITICAL or WARNING state just resolved
 
 ```
+✅ ORDER PLACED AFTER REJECTION · SOS Fade · LIVE
+The bearish primary order is now at the broker: T364071713 0.14L @ 4316.98 (after 1 re-send).
+
 ✅ BACK ONLINE · SOS Fade · LIVE
 It is running again. Nothing to do.
 
