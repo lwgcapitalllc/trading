@@ -818,28 +818,32 @@ export function AccountDrawer({
                         )
                       )}
                       {/* ⚠ Withheld while the box has not answered, and while it HOLDS A TRADE;
-                       *  a RUNNING bot is stopped first (`stopFirst.ts`). */}
-                      <TakeOffButton
-                        testId={`take-off-${b.key}`}
-                        compact
-                        state={off}
-                        display={b.display}
-                        account={account}
-                        running={running}
-                        holding={holding}
-                        unknown={!known}
-                        blocked={takeOff.busy || action !== null}
-                        onPress={() =>
-                          takeOff.press(
-                            b.key,
-                            b.display,
-                            running && onStopThen
-                              ? (then) =>
-                                  onStopThen(b.key, b.display, 'taken off the account', then)
-                              : null
-                          )
-                        }
-                      />
+                       *  a RUNNING bot is stopped first (`stopFirst.ts`). Hidden while a
+                       *  start / stop / restart is under way — its pill is the row's ONLY
+                       *  control then, the same one-button rule as a take-off (2026-09-16). */}
+                      {action === null && (
+                        <TakeOffButton
+                          testId={`take-off-${b.key}`}
+                          compact
+                          state={off}
+                          display={b.display}
+                          account={account}
+                          running={running}
+                          holding={holding}
+                          unknown={!known}
+                          blocked={takeOff.busy}
+                          onPress={() =>
+                            takeOff.press(
+                              b.key,
+                              b.display,
+                              running && onStopThen
+                                ? (then) =>
+                                    onStopThen(b.key, b.display, 'taken off the account', then)
+                                : null
+                            )
+                          }
+                        />
+                      )}
                     </div>
                   </div>
                 )

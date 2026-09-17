@@ -654,6 +654,7 @@ bot."* Each panel had its own copy in its own words: the bot panel's fell back t
 mid-flow with a sentence beside it, the account row showed a Stopping pill beside a greyed button,
 and neither closed.
 
+- **While a row is Starting / Stopping / Restarting, its pill is the ONLY control** — Remove is hidden, not greyed (Aaron, 2026-09-16).
 - 🔴 **One flow, one control**: `useTakeOff` (`pages/Bots/takeOff.ts`) runs it and `TakeOffButton`
   draws it, for the bot panel (`remove-<key>`) and every account-panel row (`take-off-<key>`).
 - **Take off → Stop and take off (Confirm take off for a stopped bot) → Removing…**, then the bot
