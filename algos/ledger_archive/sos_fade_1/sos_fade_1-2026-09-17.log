@@ -366,3 +366,7 @@ FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\mar
 2026-09-17 22:15:09,811 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 06:45:00+00:00 → 2026-09-17 22:10:00+00:00).
 2026-09-17 22:15:09,811 [INFO] Equity re-anchored to the account after warm-up: 15,178.23 → 16,508.86
 2026-09-17 22:15:09,811 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-17 22:26:31,734 [INFO] Equity re-anchored to the account flat between trades: 16,508.86 → 16,508.85
+2026-09-17 22:26:41,768 [INFO] Equity re-anchored to the account flat between trades: 16,508.85 → 16,508.74
+2026-09-17 22:30:02,253 [INFO] place bullish primary limit 0.15L @ 4304.31 SL 4251.86628 TP none
+2026-09-17 22:30:02,331 [INFO] PENDING PLACED | ticket=381149949 | bullish 0.15L @ 4304.31 | SL=4251.87 TP=none
