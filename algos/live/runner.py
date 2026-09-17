@@ -80,8 +80,8 @@ def _run_from_snapshot() -> None:
     if __name__ != "__main__":
         return
     here = Path(__file__).resolve()
-    if here.parent.parent.parent.name == "deployed":
-        return  # already the snapshot's copy
+    if here.parent.parent.parent.name.startswith("deployed"):
+        return  # already a snapshot's copy (or a staged one being rehearsed by promote.py)
     argv = sys.argv[1:]
     key = None
     for i, a in enumerate(argv):
@@ -3386,6 +3386,72 @@ class LiveRunner:
             self.log.warning(f"Heartbeat write failed: {e}")
 
 
+PREFLIGHT_OK = "PREFLIGHT OK"
+
+
+def preflight(bot_key: str) -> int:
+    """Rehearse a start from THIS copy of the code, with no broker. Run by `promote.py`.
+
+    🔴 **Added 2026-09-17, after a promote passed and both SOS Fade bots then failed to start**:
+    the snapshot lacked a file the startup gate reads, and the promote's own check only imported
+    the strategy. This runs the startup steps that depend on the CODE — bind, build the strategy
+    with the deployed settings, the live-readiness gate, the fill-clock wiring, every module the
+    loop imports later — from the copy this file sits in, and refuses if anything the bot runs
+    came from anywhere else.
+
+    ⚠ **What it cannot rehearse is the BROKER**: the connection, the balance (a stand-in is used)
+    and the hedging check. Those are facts about the account, not the code, and the real start
+    still asks them.
+    """
+    import dataclasses
+    import importlib
+    import logging as _logging
+
+    root = _REPO.resolve()
+    cfg = live_config.load(bot_key)
+    cfg = dataclasses.replace(cfg, initial_capital=cfg.initial_capital or 10_000.0)
+    for p in reversed([root, root / "strategies" / "python"]):
+        sys.path.insert(0, str(p))
+
+    shell = LiveRunner.__new__(LiveRunner)
+    shell.cfg, shell.mt5, shell.strategy = cfg, None, None
+    shell.log = _logging.getLogger("preflight")
+    # The hedging answer is a broker fact; the real start asks it.
+    globals()["assert_hedging_for_scale_in"] = lambda *a, **k: None
+    shell.strategy, scfg = shell._build_strategy()
+    shell._build_fast_feed(scfg)
+
+    skipped = []
+    for folder in (root / "algos" / "live", root / "algos" / "shared"):
+        for f in sorted(folder.glob("*.py")):
+            if f.stem in ("__init__", "runner"):
+                continue
+            try:
+                importlib.import_module(f.stem)
+            except ModuleNotFoundError as e:
+                if e.name != "MetaTrader5":
+                    raise
+                skipped.append(f.stem)  # only a machine without a terminal lands here
+
+    from repo_paths import REPO_ROOT
+
+    repo = REPO_ROOT.resolve()
+    stray = []
+    for name, mod in list(sys.modules.items()):
+        f = getattr(mod, "__file__", None)
+        if not f:
+            continue
+        fp = Path(f).resolve()
+        if repo in fp.parents and root not in fp.parents and ".venv" not in fp.parts:
+            stray.append(f"{name} ({fp})")
+    if stray:
+        print("PREFLIGHT FAILED: loaded from outside this copy: " + "; ".join(sorted(stray)))
+        return 1
+    note = f" (not importable here, no MetaTrader5: {', '.join(skipped)})" if skipped else ""
+    print(f"{PREFLIGHT_OK}{note}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Run a Python strategy live on an MT5 terminal.")
     ap.add_argument(
@@ -3401,7 +3467,14 @@ def main(argv=None) -> int:
     mode.add_argument(
         "--live", action="store_true", help="actually place orders — must be typed explicitly"
     )
+    ap.add_argument(
+        "--preflight",
+        action="store_true",
+        help="rehearse a start from this copy of the code, with no broker, then exit",
+    )
     args = ap.parse_args(argv)
+    if args.preflight:
+        return preflight(args.bot)
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)

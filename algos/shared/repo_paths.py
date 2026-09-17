@@ -16,6 +16,7 @@ from pathlib import Path
 
 #: Where a bot's snapshot sits, relative to the repo root.
 INSTANCES_REL = Path("algos") / "markets" / "fx" / "instances"
+_SNAPSHOT_NAMES = ("deployed", "deployed.new", "deployed.old")
 
 
 def repo_root_for(file: str | Path) -> Path:
@@ -26,7 +27,8 @@ def repo_root_for(file: str | Path) -> Path:
     """
     p = Path(file).resolve()
     for parent in p.parents:
-        if parent.name == "deployed" and parent.parent.parent.name == "instances":
+        # `deployed.new` is a promote's staging copy, rehearsed before it is swapped in.
+        if parent.name in _SNAPSHOT_NAMES and parent.parent.parent.name == "instances":
             return parent.parent.parent.parents[len(INSTANCES_REL.parts) - 1]
     # In the repo: algos/<live|shared>/<file>.py
     return p.parents[2]

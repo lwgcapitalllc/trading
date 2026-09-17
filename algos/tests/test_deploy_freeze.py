@@ -391,3 +391,84 @@ def test_a_snapshot_copy_reads_the_REPOS_kill_switch_and_credentials(tmp_path):
     flag, creds = out.stdout.split()
     assert Path(flag).resolve() == (repo / "algos" / "FLEET_HALT").resolve()
     assert Path(creds).resolve() == (repo / "algos" / "credentials.json").resolve()
+
+
+# ── the START-UP REHEARSAL a promote runs before the swap (2026-09-17) ───────────────────────
+#
+# 🔴 A promote passed, was swapped in, and both SOS Fade bots then refused to start: the snapshot
+# lacked the live contract the startup gate reads, and `verify` only imported the strategy.
+import os  # noqa: E402
+import shutil  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def staged_box(tmp_path_factory):
+    """A real bot's staged snapshot, in a throwaway box, built by the real copier."""
+    box = tmp_path_factory.mktemp("box")
+    key = "sos_fade_1"
+    cfg = live_config.load(key)
+    inst = box / "algos" / "markets" / "fx" / "instances" / key
+    staged = inst / "deployed.new"
+    for src, dest in promote_tool.snapshot_files(promote_tool.repo_trees(cfg)):
+        (staged / dest).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, staged / dest)
+    shutil.copy2(live_config.config_path(key), inst / "config.json")
+    return box, cfg, staged
+
+
+def _preflight(staged, key, env=None):
+    return subprocess.run(
+        [sys.executable, str(staged / "algos" / "live" / "runner.py"), "--bot", key, "--preflight"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=str(staged),
+        env=env,
+    )
+
+
+def test_a_whole_snapshot_REHEARSES_a_clean_start(staged_box):
+    box, cfg, staged = staged_box
+    ok, said = promote_tool.rehearse_start(cfg, staged)
+    assert ok, said
+    assert said.startswith("PREFLIGHT OK")
+
+
+def test_the_rehearsal_CATCHES_the_2026_09_17_missing_contract(staged_box):
+    """RED before 2026-09-17: nothing ran the startup gate before the swap."""
+    box, cfg, staged = staged_box
+    f = staged / "strategies" / "python" / "live_contract.py"
+    keep = f.read_bytes()
+    f.unlink()
+    try:
+        ok, said = promote_tool.rehearse_start(cfg, staged)
+    finally:
+        f.write_bytes(keep)
+    assert not ok
+    assert "live_contract" in said
+
+
+def test_the_rehearsal_REFUSES_code_loaded_from_outside_the_copy(staged_box):
+    """A module the copy lacks, found on a path outside it, is the half-applied freeze.
+
+    MUTATION: make the stray check in `runner.preflight` a no-op — red (it prints OK)."""
+    box, cfg, staged = staged_box
+    f = staged / "algos" / "shared" / "account_flows.py"
+    outside = box / "algos" / "shared"
+    outside.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(f, outside / f.name)
+    keep = f.read_bytes()
+    f.unlink()
+    try:
+        env = dict(os.environ, PYTHONPATH=str(outside))
+        out = _preflight(staged, cfg.bot_key, env=env)
+    finally:
+        f.write_bytes(keep)
+        (outside / f.name).unlink()
+    assert out.returncode != 0, out.stdout
+    assert "PREFLIGHT FAILED" in out.stdout and "account_flows" in out.stdout
+
+
+def test_a_snapshot_with_no_runner_is_NOT_called_rehearsed(tmp_path):
+    ok, said = promote_tool.rehearse_start(live_config.load("sos_fade_1"), tmp_path)
+    assert not ok and "no algos" in said

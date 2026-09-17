@@ -368,3 +368,22 @@ runner's startup gate reads `strategies/python/live_contract.py` from beside its
 once frozen — and only strategies that import it had it copied. It now ships with the order code
 (`ORDER_PATH_ROOTS`). The throwaway-box check had stopped at `--help`, before the gate ran; it now
 calls the gate for `sos_fade_demo`, `extreme_leg_demo` and `realign_1`, all reading the snapshot's copy.
+
+### ✅ A promote now REHEARSES the start before the swap (2026-09-17)
+
+`promote.py` runs the STAGED copy's `runner.py --bot <key> --preflight` in a clean process
+(`promote.rehearse_start`) after `verify`, and refuses the swap unless it prints `PREFLIGHT OK`.
+The rehearsal binds to the staged copy, builds the strategy with the deployed settings, runs the
+live-readiness gate and the fill-clock wiring, imports every module in `live/` and `shared/`, and
+fails if anything loaded from outside the copy. The dry run does it too, and the Command Center's
+Deploy button runs `promote.py` without `--no-verify`, so it applies there with no restart needed.
+
+- ⚠ **It cannot rehearse the broker**: the connection, the real balance (a $10,000 stand-in) and the
+  hedging check are account facts the real start still asks.
+- ⚠ Off the box `mt5_ops` cannot import (no MetaTrader5) and the rehearsal SAYS so in its OK line.
+- ⚠ `shared/repo_paths.py` recognises `deployed.new` and `deployed.old` as snapshots too, so the
+  rehearsal reads the real bot folders; `runner._run_from_snapshot` never hands over from any of them.
+
+TESTED: `test_deploy_freeze.py` — a real `sos_fade_1` snapshot rehearses clean; removing the live
+contract (today's crash) is refused; a module loaded from outside the copy is refused (red with the
+check disabled); a copy with no runner is never called rehearsed.

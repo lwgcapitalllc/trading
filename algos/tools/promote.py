@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -446,6 +447,40 @@ def startup_refusals(startup: dict, primary_timeframe: str) -> list:
     return problems
 
 
+def rehearse_start(cfg, root: Path) -> tuple[bool, str]:
+    """Run the STAGED runner's own start-up rehearsal (`runner.py --preflight`), with no broker.
+
+    🔴 **Added 2026-09-17.** `verify` below only imports the strategy, so a snapshot missing a file
+    the startup gate reads passed it, was swapped in, and both SOS Fade bots then refused to start.
+    This runs the staged copy's own startup steps in a clean process and refuses the swap unless
+    it answers `PREFLIGHT OK`.
+
+    ⚠ **A snapshot without its own runner cannot be rehearsed** (only a promote from before this
+    date builds one), and says so rather than passing.
+    """
+    runner = root / "algos" / "live" / "runner.py"
+    if not runner.is_file():
+        return False, f"the staged snapshot has no {runner.relative_to(root)} to rehearse"
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    try:
+        out = subprocess.run(
+            [sys.executable, str(runner), "--bot", cfg.bot_key, "--preflight"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "the start-up rehearsal did not finish within 5 minutes"
+    lines = [ln for ln in out.stdout.splitlines() if ln.strip()]
+    last = lines[-1] if lines else ""
+    if out.returncode == 0 and last.startswith("PREFLIGHT OK"):
+        return True, last
+    tail = "\n".join((out.stdout + out.stderr).strip().splitlines()[-15:])
+    return False, f"exit {out.returncode}\n{tail}"
+
+
 def verify(cfg, root: Path) -> tuple[bool, str]:
     """Import the strategy out of `root` and build it with the promoted parameters.
 
@@ -684,6 +719,14 @@ def main(argv=None) -> int:
             print(textwrap.indent(detail, "    "))
             return 1
         print("  verified: the snapshot imports and builds with the promoted parameters")
+        started, said = rehearse_start(cfg, staging)
+        if not started:
+            shutil.rmtree(staging, ignore_errors=True)
+            print("  ! the staged snapshot would NOT START — nothing was deployed.")
+            print("    The previous deployment is untouched and still running.")
+            print(textwrap.indent(said, "    "))
+            return 1
+        print(f"  rehearsed: {said}")
         report = json.loads(detail or "{}")
         defaulted = report.get("defaulted", {})
         startup = report.get("startup") or {}
