@@ -269,6 +269,7 @@ def _order_path_like(root: Path) -> None:
         ("algos/shared/order_sizing.py", "SIZING = 1\n"),
         ("algos/markets/fx/tools/broker_clock.py", "CLOCK = 1\n"),
         ("algos/markets/fx/tools/unrelated_tool.py", "TOOL = 1\n"),
+        ("strategies/python/live_contract.py", "CONTRACT = 1\n"),
     ):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(body)
@@ -288,6 +289,9 @@ def test_a_new_snapshot_CARRIES_and_PINS_the_order_code(bot):
     assert (snap / "algos" / "live" / "bridge.py").is_file()
     assert (snap / "algos" / "markets" / "fx" / "tools" / "broker_clock.py").is_file()
     assert not (snap / "algos" / "markets" / "fx" / "tools" / "unrelated_tool.py").exists()
+    # 🔴 2026-09-17: the runner's startup gate reads this from beside itself, and a snapshot
+    # without it stopped both SOS Fade bots starting on the box.
+    assert (snap / "strategies" / "python" / "live_contract.py").is_file()
     assert snap / "algos" / "live" in fresh.source_roots
 
     # The repo moving changes nothing...

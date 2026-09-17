@@ -105,7 +105,7 @@ def repo_trees(cfg) -> list[tuple[Path, Path]]:
         (_REPO / rel, Path(rel))
         for rel in local_dependencies(cfg.strategy_package or "", root=py_root)
     ]
-    return [
+    trees = [
         *strategy,
         (_REPO / "engines", Path("engines")),
         (_REPO / "backtest", Path("backtest")),
@@ -130,8 +130,10 @@ def repo_trees(cfg) -> list[tuple[Path, Path]]:
         # at any depth lives in these three, and `broker_clock.py` is the one module `mt5_ops`
         # borrows from outside them.
         # ONE list with `LiveConfig.source_roots`, so what is copied and what is pinned cannot drift.
+        # ⚠ A strategy that imports `live_contract` already has it; `dict` keeps one copy.
         *((_REPO / rel, rel) for rel in ORDER_PATH_ROOTS),
     ]
+    return list(dict((dest.as_posix(), (src, dest)) for src, dest in trees).values())
 
 
 def snapshot_files(trees) -> list[tuple[Path, Path]]:

@@ -170,6 +170,7 @@ def test_the_trees_promote_copies_are_PINNED(repo):
         "algos/live",
         "algos/shared",
         "algos/markets/fx/tools/broker_clock.py",
+        "strategies/python/live_contract.py",
     }
 
 
@@ -202,7 +203,8 @@ def test_the_counted_trees_ARE_the_trees_promote_copies(repo):
     copied = {
         str(dest).replace("\\", "/")
         for _, dest in _trees(repo)
-        if not str(dest).startswith("strategies")
+        # The strategy PACKAGE is derived on both sides; the shared contract is a fixed tree.
+        if not str(dest).startswith("strategies/python/demo_pkg")
     }
     assert copied == counted, (
         f"promote copies {sorted(copied)} but the Command Center counts {sorted(counted)} — "

@@ -43,6 +43,9 @@ ORDER_PATH_ROOTS = (
     Path("algos") / "live",
     Path("algos") / "shared",
     Path("algos") / "markets" / "fx" / "tools" / "broker_clock.py",
+    # What the bridge reads off a strategy. It describes THIS bridge, so it ships with it; the
+    # runner's startup gate reads it from beside itself (`runner._repo_live_contract`).
+    Path("strategies") / "python" / "live_contract.py",
 )
 
 # ── what may change under a RUNNING bot ─────────────────────────────────────────

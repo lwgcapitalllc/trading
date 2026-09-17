@@ -76,6 +76,7 @@ _SHARED_TREES = (
     "algos/live",
     "algos/shared",
     "algos/markets/fx/tools/broker_clock.py",
+    "strategies/python/live_contract.py",
 )
 
 # 🔴 **The strategy side of that list is DERIVED, and this imports the SAME resolver the promote

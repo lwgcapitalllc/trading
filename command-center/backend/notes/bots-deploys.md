@@ -823,3 +823,6 @@ bot on a `git pull` and this page never counted it. ⚠ Every bot's version numb
 this date; that is the history of those folders being counted, not new work. The paths are named
 here, never imported from `algos/` — the subsystem rule — and `algos/tests/test_promote_version.py`
 checks the two lists agree.
+
+⚠ `strategies/python/live_contract.py` joined that list the same day — it describes the bridge and
+ships with it, so a change to it is order-path work waiting to go out.

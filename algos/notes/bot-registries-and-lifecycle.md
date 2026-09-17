@@ -362,3 +362,9 @@ TESTED: `test_deploy_freeze.py` (5 new), `test_live_runner_startup.py` (2 new),
 under a mutation. MEASURED: a staged `sos_fade_1` snapshot run in a throwaway box loaded `bridge`,
 `order_sizing`, `live_config`, `fleet_halt` and `notify` from `deployed/`, never the planted repo
 bridge, and read the box's own kill switch.
+
+🔴 **It stopped both SOS Fade bots starting on its first deploy (2026-09-17, 15:33 UTC).** The
+runner's startup gate reads `strategies/python/live_contract.py` from beside itself — the snapshot,
+once frozen — and only strategies that import it had it copied. It now ships with the order code
+(`ORDER_PATH_ROOTS`). The throwaway-box check had stopped at `--help`, before the gate ran; it now
+calls the gate for `sos_fade_demo`, `extreme_leg_demo` and `realign_1`, all reading the snapshot's copy.

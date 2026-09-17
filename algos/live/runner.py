@@ -804,6 +804,11 @@ class LiveRunner:
         it stood at promote time and is structurally blind to a box pulled ahead of its promote,
         which is the gap this check exists for.
 
+        🔴 **Since 2026-09-17 the bridge is frozen too, and `_REPO` is then the SNAPSHOT** — so this
+        reads the contract shipped with the bridge the bot is actually running, which is the same
+        rule. `promote.py` ships the file for that reason; a snapshot without it stopped both SOS
+        Fade bots starting.
+
         ⚠ **Safe to load early, CHECKED rather than assumed**: that module imports nothing but the
         standard library, so it cannot drag a strategy or engine module in behind it.
         """
