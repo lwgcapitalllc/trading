@@ -105,3 +105,22 @@ The last order on this side was REFUSED: [risk_not_authorised] the order would r
 2026-09-17 12:45:05,953 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-17 13:00:02,089 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-17 13:15:09,093 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 13:30:05,611 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 13:39:40,412 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-17 13:39:40,413 [INFO] Stop requested — shutting down.
+2026-09-17 13:39:40,414 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-17 13:39:41,509 [INFO] MT5 disconnected.
+2026-09-17 13:39:58,141 [INFO] SOS Fade | SosFadeStrategy v199 | hash 844c7329bb86 | commit b93c95e8 | frozen | LIVE
+2026-09-17 13:39:58,711 [INFO] Connected | #34957946 | $10,733.16 | PUPrime-Live
+2026-09-17 13:39:58,712 [INFO] MT5 connection lock released
+2026-09-17 13:39:59,156 [INFO] Sizing against account balance $10,733.16
+2026-09-17 13:39:59,187 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-17 13:39:59,188 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-17 13:39:59,194 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-17 13:40:03,039 [INFO] Warmed 5000 bars (2026-07-02 23:00:00+00:00 → 2026-09-17 13:15:00+00:00) in 3.7s
+2026-09-17 13:40:08,163 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 23:10:00+00:00 → 2026-09-17 13:35:00+00:00).
+2026-09-17 13:40:08,165 [INFO] Equity re-anchored to the account after warm-up: 9,868.06 → 10,733.16
+2026-09-17 13:40:08,171 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-17 13:40:09,192 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 13:45:01,588 [INFO] place bullish primary limit 0.1L @ 4304.31 SL 4251.86628 TP none
+2026-09-17 13:45:01,707 [INFO] PENDING PLACED | ticket=364433843 | bullish 0.1L @ 4304.31 | SL=4251.87 TP=none
