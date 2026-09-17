@@ -1,0 +1,6 @@
+2026-09-17 01:40:07,326 [INFO] POSITION OPENED | T364105022 SHORT 0.14L @ 4316.98 | SL=4352.44
+2026-09-17 01:40:08,450 [WARNING] Could not snapshot the position for the restart record: snapshot_position() called while flat — there is nothing to record
+2026-09-17 01:40:08,451 [ERROR] HALTED: MT5 holds a position the strategy does not know about. It will keep its broker-side stop, but the bot will not manage it.
+2026-09-17 01:45:02,330 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 02:00:07,271 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 02:15:02,981 [ERROR] Bridge halted — the loop will keep observing but place nothing.
