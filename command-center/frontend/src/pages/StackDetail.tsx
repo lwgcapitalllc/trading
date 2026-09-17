@@ -46,7 +46,6 @@ import {
   DrawdownChart,
   DailyPnlChart,
   DirectionBreakdown,
-  PriceChartView,
   SeriesToggle,
   panelCardCls,
   CardHead,
@@ -54,10 +53,11 @@ import {
   PanelRows,
   usePerfCollapsed,
   PerfCollapseToggle,
-  PeriodFilterChip,
   type FallbackMetrics,
   type PanelRow,
-} from '@/pages/BacktestDetail'
+} from '@/components/runAnalysis/panels'
+import { PriceChartView } from '@/components/runAnalysis/PriceChartView'
+import { PeriodFilterChip } from '@/pages/BacktestDetail'
 import { C } from '@/themes/chart'
 import {
   buildRunSettingsView,

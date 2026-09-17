@@ -1106,3 +1106,13 @@ Stress Tests suites both broke on the data rather than on the code, and a test t
 nothing is wrong is indistinguishable from a regression until somebody reads it. ⚠ A cost rule is a
 `<button>`, not a `<label>` — `CostRule` renders its own checkbox glyph so a locked row can be
 disabled.
+
+## The analysis panels are shared — `components/runAnalysis/` (2026-09-17)
+
+The KPI panel, equity, drawdown, daily P&L and direction charts (`panels.tsx`) and the price-chart
+body (`PriceChartView.tsx`) moved VERBATIM out of `pages/BacktestDetail.tsx` so the backtest page,
+the stack page and the account Results page use ONE copy. The moved text was diffed against the
+original: the only differences are `export` and prettier re-wrapping the lines it lengthened.
+`PeriodFilterChip` stays on the backtest page. ⚠ The stack page still builds its run object inline;
+`bookRun.ts` is the same arithmetic for the account page, and folding the stack page onto it is a
+separate change.

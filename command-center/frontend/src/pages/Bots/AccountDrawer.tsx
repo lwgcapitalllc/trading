@@ -32,6 +32,7 @@ import {
   ChevronRight,
   ChevronUp,
   GripVertical,
+  LineChart,
   Loader2,
   Play,
   Plus,
@@ -1080,6 +1081,16 @@ export function AccountDrawer({
         {/* ── the rare things ─────────────────────────────────────────────── */}
         {account !== null && (
           <div className="py-[16px] flex gap-2 flex-wrap">
+            {/* The account's REAL record off MT5's deals — balance, every trade, the analysis
+             *  panels. On every account, demo or live: it reads, it never writes. */}
+            <button
+              data-testid="account-results"
+              title="The balance over time, every real trade on the price chart, and the backtest page's analysis — all off the broker's own deal history."
+              onClick={() => navigate(`/bots/accounts/${account}`)}
+              className={`${actionCls} border-border-default text-text-secondary hover:bg-bg-hover hover:text-text-primary`}
+            >
+              <LineChart size={12} /> Results
+            </button>
             {/* 🔴 ONLY ON A DEMO ACCOUNT (2026-09-11, Aaron: *"backtest these bots should only be
              *  on demo accounts"*). Opens the stack builder filled in with what these bots run.
              *  Disabled, never hidden, under two bots — that is not a stack. */}

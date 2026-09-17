@@ -47,6 +47,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from models import (
     AccountEarnings,
+    AccountHistory,
     AccountStackBasis,
     AccountStackBasisLeg,
     AccountSync,
@@ -100,6 +101,7 @@ from models import (
     TerminalScan,
 )
 from services import (
+    account_history,
     account_stack_basis,
     account_sync,
     bot_account_registry,
@@ -1969,6 +1971,104 @@ def clone_bot(bot_name: str):
     _refresh_bots()
 
     return BotCloneResult(bot_key=new_key, display_name=str(cloned.get("display_name") or new_key))
+
+
+def _history_sources(account: int):
+    """What the account-history service needs from the world: the box, the account's server and
+    the money one price unit is worth. The service decides everything else."""
+    try:
+        registered = bot_account_registry.account_by_number(_registry_path(), account)
+    except Exception:  # noqa: BLE001 — an unreadable registry leaves the bars unpinned
+        registered = None
+    contract_size = None
+    if registered and registered.account_profile:
+        try:
+            # `python_runner` is what puts the monorepo on the import path — imported first, as
+            # `chart_spec` does, or `backtest` is found only when another router happened to load.
+            from services import python_runner  # noqa: F401
+
+            from backtest.fills import PROFILES
+
+            prof = PROFILES.get(registered.account_profile)
+            contract_size = float(prof.contract_size) if prof else None
+        except Exception:  # noqa: BLE001 — no size means R falls back to the bot's own risk
+            contract_size = None
+    server = (registered.server or None) if registered else None
+    return server, contract_size
+
+
+def _read_box_history() -> tuple[Optional[tuple[list[dict], list[dict]]], Optional[str]]:
+    """Every bot folder's deal and trade-opened rows off the box, or `(None, why)` if it cannot say.
+
+    ⚠ The marker must come back: `_ssh` returns whatever stdout held, and a reply without it is
+    not proof the box read anything.
+    """
+    cmd = account_history.box_command(rf"{_VPS_INSTANCES}\{b.instance_dir}" for b in _BOTS)
+    try:
+        raw = _ssh(cmd)
+    except VpsUnreachable as e:
+        return None, str(e) or "ssh failed"
+    except subprocess.TimeoutExpired:
+        return None, "the box did not answer within 30s"
+    if account_history.BOX_MARKER not in raw:
+        return None, "the box's reply did not carry the read's marker"
+    return account_history.parse_rows(raw), None
+
+
+def _account_history(account: int, refresh: bool) -> dict:
+    def build() -> dict:
+        server, contract_size = _history_sources(account)
+        box, box_error = _read_box_history()
+        out = account_history.build_history(
+            account,
+            box=box,
+            box_error=box_error,
+            archive=account_history.read_archive(),
+            contract_size=contract_size,
+            load_bars=account_history.bar_loader(server),
+        )
+        out["contract_size"] = contract_size
+        try:
+            states = _parse_bot_states(_fetch_vps_snapshot())
+        except Exception:  # noqa: BLE001 — cannot ask is None below, never a mismatch
+            states = None
+        out.update(account_history.broker_balance_check(states, account, out.get("balance")))
+        return out
+
+    return account_history.cached(account, build, refresh=refresh)
+
+
+@router.get("/accounts/{account}/history", response_model=AccountHistory)
+async def account_history_view(account: int, refresh: bool = False):
+    """The account's REAL record off MT5's deals: its balance, every trade, and the chart. READ ONLY.
+
+    Rules: `services/account_history.py`. The box is read over SSH in a worker thread, as the
+    chart-spec route does with its own slow build.
+    """
+    import asyncio
+
+    return await asyncio.to_thread(_account_history, account, refresh)
+
+
+@router.get("/accounts/{account}/history/candles")
+async def account_history_candles(
+    account: int, symbol: str, tf: str, from_ms: int, to_ms: int
+) -> dict:
+    """One drill-down window of bars for the account chart — the run chart's ChartPage shape."""
+    import asyncio
+
+    tf_up = tf.upper()
+    if tf_up not in {"M1", "M5", "M15", "M30", "H1", "H4", "D1"}:
+        raise HTTPException(status_code=400, detail=f"unknown timeframe {tf!r}")
+    server, _ = _history_sources(account)
+    return await asyncio.to_thread(
+        account_history.candles_window,
+        account_history.bar_loader(server),
+        symbol,
+        tf_up,
+        from_ms,
+        to_ms,
+    )
 
 
 @router.get("/accounts/{account}/stack-basis", response_model=AccountStackBasis)

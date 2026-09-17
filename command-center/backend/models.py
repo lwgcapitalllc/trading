@@ -984,6 +984,69 @@ class AccountStackBasis(BaseModel):
     notes: list[str] = []
 
 
+class AccountFlow(BaseModel):
+    """One deposit or withdrawal on a broker account — money moved, never a result."""
+
+    ticket: Optional[int] = None
+    time_ms: int
+    date: str
+    amount: float
+    balance_after: float
+    kind: str  # "deposit" | "withdrawal"
+    comment: str = ""
+
+
+class AccountEquityPoint(EquityPoint):
+    """One closed position on the account's balance curve. `equity` is the broker balance after it.
+
+    `twr_equity` is the same moment with every deposit and withdrawal taken out (time-weighted),
+    drawn on the opening deposit's scale — `None` when that return cannot be measured.
+    """
+
+    twr_equity: Optional[float] = None
+
+
+class AccountHistory(BaseModel):
+    """`GET /bots/accounts/{account}/history` — the account's real record off MT5's deals.
+    Rules: `services/account_history.py`.
+
+    ⚠ `status = "no_history"` carries NO figures: nothing on record is not the same as no deals.
+    ⚠ `source` is "box" or "archive" and is always shown — a backup must never look live.
+    ⚠ `chart` is the ChartSpec contract (`ChartPanel/types.ts`), camelCase, passed through as-is
+    exactly as `GET /backtests/runs/{id}/chart-spec` passes it.
+    """
+
+    account: int
+    status: str  # "ok" | "no_history"
+    reason: Optional[str] = None
+    source: Optional[str] = None  # "box" | "archive" | None when nothing was found
+    source_note: Optional[str] = None
+    box_error: Optional[str] = None
+    read_at_ms: int
+    newest_deal_ms: Optional[int] = None
+    deal_count: Optional[int] = None
+    balance: Optional[float] = None
+    capital_in: Optional[float] = None
+    trading_pnl: Optional[float] = None
+    adjustments_total: Optional[float] = None
+    open_positions: Optional[int] = None
+    open_position_costs: Optional[float] = None
+    reconciled: Optional[bool] = None
+    broker_balance: Optional[float] = None
+    broker_balance_matches: Optional[bool] = None  # None = could not check, never "matches"
+    twr_pct: Optional[float] = None
+    twr_reason: Optional[str] = None
+    opening_balance: Optional[float] = None
+    flows: list[AccountFlow] = []
+    equity: list[AccountEquityPoint] = []
+    manual_trades: Optional[int] = None
+    unmatched_plans: Optional[int] = None
+    bars_server: Optional[str] = None
+    bars_note: Optional[str] = None
+    contract_size: Optional[float] = None
+    chart: Optional[dict[str, Any]] = None
+
+
 class BotAccountCapUpdate(BaseModel):
     """Set (or clear) the account-level risk cap across EVERY bot on one account.
 

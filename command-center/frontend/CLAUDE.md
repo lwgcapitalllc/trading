@@ -419,6 +419,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - A blank cell is not a diagnosis — the Bots page's `No MT5 link` chip
 - The affirmation ribbon, and why it holds still
 - Key UI decisions
+- An account's Results page — `/bots/accounts/:account` (2026-09-17)
 
 ### `notes/accounts-broker.md` — Accounts and broker connections
 
@@ -468,6 +469,7 @@ Most-cited code: `lib/chartAxis.ts`, `lib/inputs.ts`, `components/periodWindow.t
 - `useHistoryLimit` takes the run's PARAMS, and omitting them is the defect (2026-08-15)
 - The strategy page leads with a TL;DR; its stacks list became a filter (2026-09-13)
 - The Backtests list and the Backtest detail page — audited 2026-08-06
+- The analysis panels are shared — `components/runAnalysis/` (2026-09-17)
 
 ### `notes/strategies-stacks.md` — Strategies page and multi-leg stacks
 

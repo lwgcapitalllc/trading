@@ -5,6 +5,7 @@ import { TopBar } from '@/components/TopBar'
 import { Overview } from '@/pages/Overview'
 import { SmartMoney } from '@/pages/SmartMoney'
 import { Bots } from '@/pages/Bots'
+import { AccountResults } from '@/pages/Bots/AccountResults'
 import { Calendar } from '@/pages/Calendar'
 import { Strategies } from '@/pages/Strategies'
 import { Rulesets } from '@/pages/Rulesets'
@@ -47,6 +48,7 @@ export default function App() {
                 </>
               )}
               <Route path="/bots" element={<Bots />} />
+              <Route path="/bots/accounts/:account" element={<AccountResults />} />
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/strategies" element={<Strategies />} />
               <Route path="/rulesets" element={<Rulesets />} />

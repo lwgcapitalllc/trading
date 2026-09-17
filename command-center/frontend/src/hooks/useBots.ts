@@ -5,11 +5,14 @@ import {
   useQueryClient,
   type Query,
 } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import { botLabel } from '@/lib/botLabel'
 import { isRestartPending } from '@/lib/botVersion'
+import type { ChartPage } from '@/components/ChartPanel/types'
 import type {
+  AccountHistory,
   AccountStackBasis,
   AccountSync,
   AccountSyncPreview,
@@ -402,6 +405,65 @@ export function useAccountStackBasis(account: number | null) {
     gcTime: 0,
     retry: false,
   })
+}
+
+/**
+ * An account's real record off MT5's deals (`services/account_history.py`). `refresh` asks the
+ * backend to skip its one-minute cache — the box read is an SSH round trip, so the page does not
+ * poll it.
+ */
+export function useAccountHistory(account: number | null) {
+  return useQuery({
+    queryKey: ['account-history', account],
+    queryFn: () => api.get<AccountHistory>(`/bots/accounts/${account}/history`),
+    enabled: account !== null,
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
+export function useRefreshAccountHistory(account: number | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.get<AccountHistory>(`/bots/accounts/${account}/history?refresh=true`),
+    onSuccess: (data) => {
+      qc.setQueryData(['account-history', account], data)
+      toast.success(
+        data.source === 'box' ? 'Read from the trading box' : 'Box unavailable — showing the backup'
+      )
+    },
+    onError: () => toast.error('Could not read the account history'),
+  })
+}
+
+/** The price chart's drill-down for an account — the run chart's `ChartPage`, off the same bars. */
+export function useAccountCandles(account: number | null, symbol: string | null) {
+  return useCallback(
+    async (tf: string, fromMs: number, toMs: number): Promise<ChartPage> => {
+      if (account === null || !symbol)
+        return {
+          candles: [],
+          overlays: [],
+          available: false,
+          feedError: 'no account',
+          dataStartMs: null,
+          hardEdge: false,
+        }
+      const q = `symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
+      const res = await api.get<
+        ChartPage & { data_start_ms: number | null; hard_edge: boolean; feed_error: string | null }
+      >(`/bots/accounts/${account}/history/candles?${q}`)
+      return {
+        candles: res.candles ?? [],
+        overlays: res.overlays ?? [],
+        available: !!res.available,
+        feedError: res.feed_error ?? null,
+        dataStartMs: res.data_start_ms ?? null,
+        hardEdge: !!res.hard_edge,
+      }
+    },
+    [account, symbol]
+  )
 }
 
 /**

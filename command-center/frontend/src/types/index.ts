@@ -654,6 +654,64 @@ export interface AccountStackBasis {
   notes: string[]
 }
 
+/** One deposit or withdrawal — money moved, never a result. Backend `AccountFlow`. */
+export interface AccountFlow {
+  ticket: number | null
+  time_ms: number
+  date: string
+  amount: number
+  balance_after: number
+  kind: 'deposit' | 'withdrawal'
+  comment: string
+}
+
+/** One closed position on an account's balance curve. `equity` is the broker balance after it;
+ *  `twr_equity` is the same moment with deposits and withdrawals taken out, on the opening
+ *  deposit's scale (`null` when that return cannot be measured). */
+export interface AccountEquityPoint extends EquityPoint {
+  twr_equity?: number | null
+}
+
+/**
+ * An account's REAL record off MT5's own deals — `GET /bots/accounts/{n}/history`, backend
+ * `services/account_history.py`.
+ *
+ * ⚠ `status: 'no_history'` carries no figures — nothing recorded is not the same as no deals.
+ * ⚠ `source` is always shown on the page: `'archive'` is the git backup and must never look live.
+ */
+export interface AccountHistory {
+  account: number
+  status: 'ok' | 'no_history'
+  reason: string | null
+  source: 'box' | 'archive' | null
+  source_note: string | null
+  box_error: string | null
+  read_at_ms: number
+  newest_deal_ms: number | null
+  deal_count: number | null
+  balance: number | null
+  capital_in: number | null
+  trading_pnl: number | null
+  adjustments_total: number | null
+  open_positions: number | null
+  open_position_costs: number | null
+  reconciled: boolean | null
+  broker_balance: number | null
+  /** null = could not check, never "matches" */
+  broker_balance_matches: boolean | null
+  twr_pct: number | null
+  twr_reason: string | null
+  opening_balance: number | null
+  flows: AccountFlow[]
+  equity: AccountEquityPoint[]
+  manual_trades: number | null
+  unmatched_plans: number | null
+  bars_server: string | null
+  bars_note: string | null
+  contract_size: number | null
+  chart: ChartSpec | null
+}
+
 /**
  * A broker account a bot can be put ON — the registry row.
  *

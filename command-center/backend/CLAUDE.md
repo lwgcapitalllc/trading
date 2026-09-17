@@ -251,6 +251,7 @@ Most-cited code: `services/stack_risk_budget.py`, `services/bot_account_registry
 - An account's demo/live field is LOCKED on the page — and now on the save route too (2026-09-14)
 - `POST /{bot_name}/clone` — a fresh copy of a bot, for a strategy with nowhere free (2026-09-14)
 - What a BOT made, and why it may not be the account's growth (2026-09-05)
+- An account's REAL record off MT5's deals — `GET /bots/accounts/{account}/history` (2026-09-17)
 
 ### `notes/bots-deploys.md` — Bots page, versions and deploys
 

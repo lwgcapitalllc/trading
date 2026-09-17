@@ -1772,3 +1772,21 @@ breakeven measurement sits in a tinted box under its switch (still on screen in 
 the cap, all server figures; what a move does went to the heading's hover. **The record is four
 tiles** (trades, won · lost, net dollars, net R) with its period beside the heading; nothing closed
 shows dashes, never a measured zero.
+
+## An account's Results page — `/bots/accounts/:account` (2026-09-17)
+
+`pages/Bots/AccountResults.tsx`, opened by **Results** in the account panel (every account, demo or
+live — it only reads). Backend: `backend/notes/accounts-risk.md` → *An account's REAL record*.
+
+- 🔴 **Where the record came from is always on screen** — grey strip for the box, amber for the git
+  backup, with the newest deal's time and the read time.
+- 🔴 **Nothing recorded is its own state** — the server's sentence, no chart.
+- ⚠ **The balance chart is the backtest's equity chart**: the broker balance as the main line,
+  growth with deposits removed as a second line, and each deposit or withdrawal as a grey mark
+  (the chart's new optional `markers`; a backtest passes none).
+- ⚠ **Every analysis panel reads the trades with money moves removed**, re-based on the money put
+  in (`runAnalysis/bookRun.ts`) — a withdrawal would otherwise draw as a drawdown.
+- ⚠ **The R distribution counts trades with no recorded stop beside the chart**, never at 0.
+- ⚠ Price chart is the unchanged panel; drill-down goes to the account's own candles route.
+- ⚠ Not yet driven in a browser: the test browser refused the private port. Checked by typecheck
+  and by the route's JSON against a fixture archive built from real cached gold prices.

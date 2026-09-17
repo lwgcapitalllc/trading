@@ -886,3 +886,39 @@ carry-forward — each named for its own mutation) and 3 in `tests/test_bot_acco
 (`apply_pinned`'s own guard and order, and the endpoint join) — 12 new tests, every one watched RED
 by reverting its line and rerunning before restoring it. Full backend suite: `pytest tests/`
 — 2227 passed, 8 skipped, 5 deselected (up from 2215 passed before this entry).
+
+## An account's REAL record off MT5's deals — `GET /bots/accounts/{account}/history` (2026-09-17)
+
+`services/account_history.py`, served by `routers/bots.py`. Reads every bot's `ledger/deals-*.jsonl`
+(written by `algos/live/ledger.py::deal_history`) off the box in one SSH, falls back to
+`algos/ledger_archive/`, and answers the balance curve, deposits and withdrawals, a ChartSpec with
+every trade, and the reconcile. Drill-down bars: `GET /bots/accounts/{account}/history/candles`.
+
+- 🔴 **Rows are kept by their own `account` field and de-duplicated by deal ticket** — every bot on
+  an account writes the same history, and a bot that moved wrote two.
+- 🔴 **No file is `status: "no_history"` with no figures** — not written is not "no deals".
+- 🔴 **`source` ("box" / "archive") and `newest_deal_ms` are always served**; the box counts as
+  answered only when its reply carries the read's marker.
+- ⚠ **BALANCE and BONUS deals are money moved, CREDIT is skipped** — the split in
+  `algos/shared/account_flows.py`, repeated here (this app may not import `algos/`).
+- ⚠ **Deal times are server clock** → `services/broker_clock.py`, a MIRROR of
+  `algos/markets/fx/tools/broker_clock.py`; a test loads the original by path and compares every hour
+  across two DST changes.
+- ⚠ **Stop and targets come from the bots' `trade/opened` rows**, matched on ticket = position id
+  (the bot records MT5's position ticket and filters deals on `position_id == ticket`), and only
+  within 6h of the entry deal. `tp` 0.0 = no target. No match = manual trade, R `None`.
+- ⚠ **R prefers the bot's own `risk_usd`**, else |entry − stop| × volume × the account profile's
+  contract size. The router imports `python_runner` first so `backtest` is importable — found by
+  driving the route in a bare process; the full app hid it.
+- ⚠ **Worst/best price uses only M1 bars wholly inside the trade, plus its fills** — never past
+  the exit; may understate by the straddling seconds. Bars come from the account's own server's
+  cache, else the attached terminal, and `bars_server` names which.
+- ⚠ **The chart shows one symbol**; a second is named in `bars_note`. Answers cached 60s per account.
+
+Tests: 14 in `tests/test_account_history.py`. 14 mutations run, all red — two survived first (a
+collector that also dropped zero targets; an entry on the minute that no bar could straddle), and
+both tests were fixed. The import-path test was watched red against the unfixed line.
+
+- ⚠ **The rebuilt balance is checked against MT5's live balance (2026-09-17)** — taken from a bot
+  heartbeat that read it on THIS account. Three answers: matches, does not match (the page warns;
+  expected for one poll after a trade closes), or could not check (box down, no bot on the account).
