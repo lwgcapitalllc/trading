@@ -379,10 +379,39 @@ class AccountProfile:
             )
         return self.spread
 
-    def swap_charge(self, direction: int, qty: float, roll_date) -> float:
+    def swap_charge(
+        self, direction: int, qty: float, roll_date, quote_to_account: float = 1.0
+    ) -> float:
+        """Swap for holding `qty` units through `roll_date`, in the ACCOUNT'S currency.
+
+        🔴 **`quote_to_account` IS THE CURRENCY CONVERSION AND IT DEFAULTS TO 1.0 BECAUSE GOLD
+        NEEDS NONE.** `SwapModel.per_lot_per_night` computes `points * contract_size *
+        10**-digits`, which lands in the SYMBOL'S QUOTE currency — not the account's. Every
+        instrument this repo had priced until 2026-09-17 was USD-quoted against a USD account, so
+        the two were the same thing and nothing here converted. On GBPJPY, quoted in yen, the
+        unconverted figure is **156x** the real cost, and nothing refuses it: the number is the
+        right shape and plainly wrong.
+
+        The factor to pass is the strategy's `point_value` — for a pair whose contract is
+        denominated in the BASE currency, one unit through 1.0 of price is exactly one unit of
+        the quote currency, so `point_value` already IS "account currency per unit of quote
+        currency". Gold's 1.0 says the two currencies are the same. GBPJPY's 0.006409188 is
+        1/USDJPY, measured 2026-09-17.
+
+        ⚠ **The default is the compatibility seam, not an opinion.** A caller that does not pass
+        it gets the old behaviour exactly, so no stored result moves; a caller trading a
+        non-USD-quoted symbol MUST pass it. That asymmetry is deliberate — the alternative was a
+        required argument, which would have made every existing call site a migration and buried
+        this note in the diff.
+
+        ⚠ It does NOT vary with time yet. `point_value` is a config constant read once, so a
+        multi-year replay prices every night at one rate. USDJPY ran roughly 100 to 160 across a
+        replayable window, so that is wrong by up to 60% at the ends. See
+        `strategies/python/sos_fade/notes/instrument_profiles.md`.
+        """
         if self.swap is None:
             return 0.0
-        return self.swap.charge(direction, self.lots(qty), roll_date)
+        return self.swap.charge(direction, self.lots(qty), roll_date) * quote_to_account
 
 
 # Verified account profiles. Sources, checked 2026-07-16:

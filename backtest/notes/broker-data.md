@@ -321,3 +321,32 @@ EVERY floor as a bound.
 
 ⚠ **Anything that raises `_SEARCH_FROM` changes what this flag means.** A probe that started in
 1990 would report a real edge for the pairs that currently hit the bound.
+
+## Swap is charged in the SYMBOL'S currency, not the account's (2026-09-17)
+
+`SwapModel.per_lot_per_night` computes `points * contract_size * 10**-digits` and the result lands
+in the **quote currency**, not the account's. Every instrument this repo had priced was USD-quoted
+against a USD account, so the two were the same thing and nothing here converted — the gap has been
+invisible for the life of the project because it has never had a chance to show.
+
+GBPJPY is quoted in yen. MEASURED off PU Prime demo 700152905 on 2026-09-17: swap long **+4.83**,
+short **-20.68** points, contract 100,000, digits 3 — so **+483.00 / -2,068.00 JPY** per lot per
+night unconverted, against a real **+$3.10 / -$13.25**. **156x, and nothing refuses it**: the
+number is the right shape and plainly wrong, which is the dangerous kind.
+
+`AccountProfile.swap_charge` now takes `quote_to_account`, **defaulting to 1.0** so every existing
+call site is byte-identical and no stored result moves. The factor to pass is the strategy's
+`point_value`: for a pair whose contract is denominated in the BASE currency, one unit through 1.0
+of price is exactly one unit of the quote currency, so `point_value` already IS "account currency
+per unit of quote currency". Gold's 1.0 says the two currencies are the same; GBPJPY's 0.006409188
+is 1/USDJPY.
+
+⚠ **Two tests, the yen one watched RED (483.0 against 3.0956) and the gold one green on both
+sides** — the pair exists so a change that fixed the pair while moving gold cannot pass.
+
+⚠ **STILL OPEN: it does not vary with TIME.** `point_value` is a config constant read once, so a
+multi-year replay prices every night at one rate. USDJPY ran roughly 100 to 160 across a replayable
+window, so a fixed rate is wrong by up to 60% at the ends of it, in a cost that compounds every
+night a position is held. The same constant is what sizing divides by, so **it is one fix, not
+two**. Deep history exists for the conversion: USDJPY.p serves M15 and D1 back to at least 2000 on
+PUPrime-Demo, probed 2026-09-17.

@@ -155,3 +155,13 @@ lands on a filled deal and this account has never traded it. See
 `algos/notes/broker-cost-measurement.md`.
 
 GBPUSD has no facts here at all yet — nobody has read its symbol info.
+
+## The swap call site (2026-09-17)
+
+`_charge_swap` now passes `cfg.point_value` into `AccountProfile.swap_charge` as the
+quote-currency conversion. Inert for gold, where it is 1.0. Detail and the measurement:
+`backtest/notes/broker-data.md` → *Swap is charged in the SYMBOL'S currency, not the account's*.
+
+⚠ **Both currency fixes now read the SAME constant** — sizing divides by `point_value`, swap
+multiplies by it. That is the right shape (one rate, one meaning) and it is also why making the
+rate time-varying is a single change rather than two.

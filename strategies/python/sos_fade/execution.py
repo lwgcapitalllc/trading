@@ -3467,7 +3467,10 @@ class Execution:
             return
         self._last_roll_ms = roll_ms
         remaining = self._qty - self._filled_qty + sum(lot[1] for lot in self._adds)
-        self._charge(self._profile.swap_charge(self._pos_dir, remaining, roll_date))
+        # `point_value` converts the broker's quote-currency swap into the account's. It is
+        # 1.0 for gold, so this is inert there; see AccountProfile.swap_charge.
+        self._charge(self._profile.swap_charge(
+            self._pos_dir, remaining, roll_date, self._cfg.point_value))
 
     def _last_rollover_before(self, time_ms: int):
         """(epoch-ms, date) of the most recent daily rollover at/before `time_ms`, or None.

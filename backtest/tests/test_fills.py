@@ -515,3 +515,54 @@ def test_spread_defaults_to_not_priced():
     keeps a profile built before this field existed byte-identical."""
     assert AccountProfile("x", 0.0).spread == 0.0
     assert AccountProfile("x", 0.0).bid_ask_fills is False
+
+
+# ── quote-currency conversion on swap (2026-09-17) ────────────────────────────
+
+
+def test_swap_on_a_NON_usd_quoted_symbol_is_converted_to_the_account_currency():
+    """A yen-quoted pair's swap must be charged in dollars, not in yen.
+
+    `SwapModel.per_lot_per_night` returns `points * contract_size * 10**-digits`, which lands in
+    the SYMBOL'S quote currency. Every instrument this repo priced before 2026-09-17 was
+    USD-quoted against a USD account, so the two were the same thing and nothing converted.
+
+    GBPJPY.p, MEASURED off PU Prime demo 700152905 on 2026-09-17: swap long +4.83, short -20.68
+    points, contract 100,000, digits 3. Unconverted that is +483.00 and -2,068.00 **JPY** per lot
+    per night. At the measured rate (tick value 0.6409188 per 0.001 tick => USDJPY 156.026) the
+    real cost is **+$3.096 and -$13.254**.
+
+    RED WITHOUT THE FIX: `swap_charge` ignored the conversion, so this asserts 3.096 against the
+    483.00 it returned — 156x, and in the direction that makes every held position look
+    catastrophic.
+    """
+    gbpjpy = SwapModel(
+        swap_long_points=4.83,
+        swap_short_points=-20.68,
+        contract_size=100_000.0,
+        digits=3,
+        triple_weekday=2,
+    )
+    p = AccountProfile("puprime_ecn_gbpjpy_test", 1.00, contract_size=100_000.0, swap=gbpjpy)
+    tue = datetime.date(2026, 7, 14)  # not the triple day
+    pv = 0.006409188  # account currency per unit of quote currency
+
+    # One lot held one night, long then short.
+    assert p.swap_charge(1, 100_000, tue, pv) == pytest.approx(3.0956, abs=1e-3)
+    assert p.swap_charge(-1, 100_000, tue, pv) == pytest.approx(-13.2542, abs=1e-3)
+
+    # The unconverted figures, named so the 156x is visible in the test rather than implied.
+    assert p.swap_charge(1, 100_000, tue) == pytest.approx(483.00)
+    assert p.swap_charge(-1, 100_000, tue) == pytest.approx(-2068.00)
+
+
+def test_gold_swap_is_UNCHANGED_because_its_conversion_is_1():
+    """The no-op guard. Gold is USD-quoted against a USD account, so the factor is 1.0 and the
+    default must reproduce the existing charge exactly — this is what lets the conversion land
+    without moving a single stored result. Separate from the test above ON PURPOSE: a change that
+    fixed the yen pair while moving gold would leave that one green."""
+    p = PROFILES["puprime_standard"]
+    tue = datetime.date(2026, 7, 14)
+    assert p.swap_charge(1, 100, tue) == pytest.approx(-79.60)
+    assert p.swap_charge(1, 100, tue, 1.0) == p.swap_charge(1, 100, tue)
+    assert p.swap_charge(1, 1485, tue, 1.0) == pytest.approx(-79.60 * 14.85)
