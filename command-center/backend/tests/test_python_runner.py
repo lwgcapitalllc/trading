@@ -241,7 +241,7 @@ def test_meta_json_matches_the_config_dataclass():
 #     b_leg          117 settings,  98 undocumented
 #     bos           137 settings,  91 undocumented
 #     extreme_leg    26 settings,   0 undocumented
-#     realign       126 settings, 120 undocumented
+#     realign       126 settings, 120 undocumented (119 since 2026-09-16)
 #     sos_fade      116 settings,   0 undocumented
 #
 # ⚠ **It is a RATCHET, not a blanket rule, and that is deliberate.** Turning it on everywhere makes
@@ -251,7 +251,7 @@ def test_meta_json_matches_the_config_dataclass():
 # to be discovered. **Moving a package out of the un-covered list is the unit of work.** Do not add
 # a package to the clean list without running the scan above.
 _DOCUMENTED_PACKAGES = ("sos_fade", "extreme_leg", "loss_recovery")
-_NOT_YET = {"b_leg": 98, "bos": 91, "realign": 120}
+_NOT_YET = {"b_leg": 98, "bos": 91, "realign": 119}
 
 
 @pytest.mark.parametrize("package", _DOCUMENTED_PACKAGES)

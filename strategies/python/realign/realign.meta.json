@@ -13,22 +13,10 @@
       }
     },
     {
-      "text": "It enters at market on that 5-minute bar's close, aiming for the 15-minute swing that stood before the trap."
+      "text": "It enters at market on that 5-minute close, aims for the 15-minute swing before the trap, and stops {realign_sl_buf_tk} ticks past the pullback."
     },
     {
-      "text": "The stop sits {realign_sl_buf_tk} ticks past the pullback's extreme; halfway to the target it moves just past breakeven."
-    },
-    {
-      "text": "Nothing is banked early: at the target the stop lifts, then trails each new swing in {exec_trail_pct}% steps.",
-      "show_if": {
-        "exec_tp1_pct": 0,
-        "exec_tp2_pct": 0,
-        "exec_tp2_stop_mode": "TP1 price",
-        "exec_runner_trail": "Structure + % ratchet"
-      }
-    },
-    {
-      "text": "Nothing is banked early: at the target the stop lifts, then trails each new 15-minute swing.",
+      "text": "Halfway there the stop moves past breakeven; nothing is banked early, and at the target it trails each new 15-minute swing.",
       "show_if": {
         "exec_tp1_pct": 0,
         "exec_tp2_pct": 0,
@@ -68,6 +56,44 @@
       "label": "Skip trades with the N-day move",
       "unit": "trading days",
       "desc": "Refuses a trade that points the same way as price's move over the last N trading days, and any trade before N days of history exist. 0 turns it off."
+    },
+    {
+      "name": "realign_entry_mode",
+      "group": "Entry",
+      "label": "Entry timing",
+      "desc": "When the order goes in once the setup fires: at market on the confirming bar's close, or as a limit waiting for price to come back and retest the break."
+    },
+    {
+      "name": "realign_retest_at",
+      "group": "Entry",
+      "label": "Retest price",
+      "desc": "Where the retest limit rests: the structure level that broke (a setup with no known level is skipped), or halfway between the stop and the confirming close. Used only by the retest entry."
+    },
+    {
+      "name": "realign_retest_bars",
+      "group": "Entry",
+      "label": "Retest wait",
+      "unit": "chart bars",
+      "desc": "How long the retest limit waits before it is cancelled. 12 bars is one hour on the 5-minute chart. Used only by the retest entry."
+    },
+    {
+      "name": "realign_tp_r",
+      "group": "Exit",
+      "label": "Fixed take-profit",
+      "unit": "R",
+      "desc": "Closes the whole trade at this multiple of its risk. Empty keeps the structure-based targets and trail."
+    },
+    {
+      "name": "realign_trail_frame",
+      "group": "Exit",
+      "label": "Trail frame",
+      "desc": "Which chart's confirmed swings the trailing stop follows once the target is hit: the 15-minute trend chart (the design) or the 5-minute entry chart."
+    },
+    {
+      "name": "realign_flat_before_weekend",
+      "group": "Exit",
+      "label": "Flat before the weekend",
+      "desc": "Closes any open trade shortly before gold's Friday close, so nothing is held over the weekend."
     }
   ]
 }

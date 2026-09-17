@@ -340,3 +340,11 @@ strategies keep Sizing Mode → Manual in the same spot.
 - ⚠ A self-sizing package with no mark still runs; the form shows a warning instead of the box.
 - Tests: `tests/test_risk_param_role.py` scans the REAL packages — every runnable self-sizing
   strategy must mark exactly one numeric setting. Watched red by deleting realign's mark.
+
+### Realign's page caught up with its settings (2026-09-16)
+
+Six realign settings added after 2026-09-03 (the retest entry and its two controls, the fixed
+take-profit, the trail frame, the weekend close) had no description, so the page showed raw names.
+They are described now, and the allowance for realign's undocumented settings fell 120 → 119.
+The summary lost the ratchet-trail bullet (the default moved to the plain swing trail) and folded
+the entry and stop bullets together — the summary check counts hidden bullets too, max seven.

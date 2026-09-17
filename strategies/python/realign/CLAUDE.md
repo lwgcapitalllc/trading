@@ -560,3 +560,10 @@ which version is worth entering? An arm reading the whole sequence on one frame 
 it is pinned at 10.0 — the value every figure in this file was measured at. ⚠ **The Pine ships 1.0,
 so the two sides disagreed before this**; R does not depend on it and dollars do, and this bot's
 parity gate (still unbuilt) is what settles which side moves.
+
+## A new setting needs a line in `realign.meta.json` (2026-09-16)
+
+A setting with no label and description there shows as a raw name on the strategy page, and the
+backend test that caps realign's undocumented settings (now 119) goes red. The page summary there
+is capped at seven bullets, hidden ones included, and each bullet's condition must hold at the
+defaults — so a default change means rewriting the bullet it hides.
