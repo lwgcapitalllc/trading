@@ -75,7 +75,7 @@ def run_variant(name, df15, df1, args):
     from strategies.python.sos_fade import LAB_STRATEGY
 
     S, C = LAB_STRATEGY["strategy"], LAB_STRATEGY["config"]
-    over = dict(_VARIANTS[name], exec_sec_fill_tf_min=1)
+    over = dict(_VARIANTS[name], exec_sec_fill_tf_min=args.fast_min)
     if args.tp_r is not None:
         over["exec_ngs_tp_r"] = args.tp_r
     cfg = dataclasses.replace(C(fill_model="bar", symbol=args.symbol), **over)
@@ -120,14 +120,22 @@ def main(argv=None) -> int:
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
     ap.add_argument("--profile", default="puprime_ecn")
+    ap.add_argument(
+        "--fast-min",
+        type=int,
+        default=1,
+        choices=[1, 5],
+        help="the fast clock the no-gap shift is read on",
+    )
     ap.add_argument("--tp-r", type=float, default=None, help="override the no-gap shift target")
     ap.add_argument("--broker-dir", default=str(_ROOT / "backtest/cache/VantageMarkets_Demo"))
     args = ap.parse_args(argv)
     cdir = Path(args.broker_dir)
     df15 = _load(cdir, args.symbol, "M15", args.start, args.end)
-    df1 = _load(cdir, args.symbol, "M1", args.start, args.end)
+    df1 = _load(cdir, args.symbol, f"M{args.fast_min}", args.start, args.end)
     print(
-        f"{args.symbol}  15m {len(df15):,}  1m {len(df1):,}   {df15.index[0]} -> {df15.index[-1]}"
+        f"{args.symbol}  15m {len(df15):,}  fast M{args.fast_min} {len(df1):,}   "
+        f"{df15.index[0]} -> {df15.index[-1]}"
     )
     for name in _VARIANTS if args.variant == "all" else [args.variant]:
         run_variant(name, df15, df1, args)

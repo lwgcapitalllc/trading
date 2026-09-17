@@ -1610,10 +1610,11 @@ class SosFadeConfig:
         but not an error, and raising on it would kill an otherwise valid grid.
         """
         if self.exec_ngs:
-            if int(self.exec_sec_fill_tf_min) != 1:
+            if int(self.exec_sec_fill_tf_min) not in (1, 5):
                 raise ValueError(
-                    "exec_ngs (No-gap shift entry) reads a 1-minute shift and needs the fast "
-                    f"clock at 1 minute; exec_sec_fill_tf_min is {self.exec_sec_fill_tf_min}."
+                    "exec_ngs (No-gap shift entry) reads a fast-clock shift and is only "
+                    "measured at 1 or 5 minutes; exec_sec_fill_tf_min is "
+                    f"{self.exec_sec_fill_tf_min}."
                 )
             if not self.exec_ngs_tp_r > 0:
                 raise ValueError(f"exec_ngs_tp_r must be > 0, got {self.exec_ngs_tp_r}")
