@@ -608,6 +608,7 @@ def build_history(
     now_ms: Optional[int] = None,
     load_bars_key: Optional[str] = None,
     refresh_bars: bool = False,
+    bars_async: bool = False,
 ) -> dict:
     """The whole answer for one account. Pure apart from `load_bars`, which the caller supplies.
 
@@ -658,6 +659,7 @@ def build_history(
     # Bars: the chart's own frame over the whole history, and minute bars across the trades.
     bars_note = None
     bars_server = None
+    bars_pending = False
     candles: list[dict] = []
     if load_bars is not None:
         symbols = sorted({p["symbol"] for p in positions if p["symbol"]})
@@ -674,25 +676,22 @@ def build_history(
                 tuple((p["ticket"], p["entry_ms"], p["exit_ms"]) for p in ours),
             )
             hit = None if refresh_bars else _bars_memo_get(key)
-            if hit is not None:
-                candles, bars_note_b, bars_server, excursions = hit
-                bars_note = bars_note or bars_note_b
-            else:
-                start, end = _span_dates(lo - CHART_PAD_MS, hi + CHART_PAD_MS)
-                candles, err, bars_server = load_bars(symbol, CHART_TIMEFRAME, start, end)
-                bars_note_b = err
-                m1_start, m1_end = _span_dates(lo, hi)
-                m1, m1_err, _ = load_bars(symbol, "M1", m1_start, m1_end)
-                bars_note_b = bars_note_b or m1_err
-                excursions = {p["ticket"]: excursion(p, m1) for p in ours}
-                bars_note = bars_note or bars_note_b
-                # Only an answer that SERVED bars is remembered (a fallback server's included — its
-                # note travels with it); an empty one is a feed failure and the next open retries.
-                if candles and m1:
-                    reaches_now = hi + CHART_PAD_MS >= (now_ms or int(time.time() * 1000))
-                    _bars_memo_put(
-                        key, (candles, bars_note_b, bars_server, excursions), reaches_now
+            if hit is None and bars_async:
+                # The page must not wait ~40s on the bar store: answer now without bars, fill them
+                # in the background, and say so — the page polls until `bars_pending` clears.
+                failed = None if refresh_bars else _bars_failed_get(key)
+                if failed is not None:
+                    hit = ([], failed, None, {})
+                else:
+                    _start_bars_job(
+                        key, lambda: _compute_bars(load_bars, symbol, ours, lo, hi, now_ms, key)
                     )
+                    bars_pending = True
+                    hit = ([], None, None, {})
+            if hit is None:
+                hit = _compute_bars(load_bars, symbol, ours, lo, hi, now_ms, key)
+            candles, bars_note_b, bars_server, excursions = hit
+            bars_note = bars_note or bars_note_b
             for p in ours:
                 p["mae"], p["mfe"] = excursions.get(p["ticket"], (None, None))
 
@@ -746,6 +745,7 @@ def build_history(
         "unmatched_plans": mismatched,
         "bars_server": bars_server,
         "bars_note": bars_note,
+        "bars_pending": bars_pending,
         "chart": chart,
     }
 
@@ -820,6 +820,67 @@ def _bars_memo_get(key):
     return value
 
 
+def _compute_bars(load_bars, symbol, ours, lo, hi, now_ms, key):
+    """The chart's bars and each trade's worst/best price — the slow half. Remembers what it got."""
+    start, end = _span_dates(lo - CHART_PAD_MS, hi + CHART_PAD_MS)
+    candles, err, bars_server = load_bars(symbol, CHART_TIMEFRAME, start, end)
+    m1_start, m1_end = _span_dates(lo, hi)
+    m1, m1_err, _ = load_bars(symbol, "M1", m1_start, m1_end)
+    note = err or m1_err
+    excursions = {p["ticket"]: excursion(p, m1) for p in ours}
+    value = (candles, note, bars_server, excursions)
+    # Only an answer that SERVED bars is remembered (a fallback server's included — its note
+    # travels with it). An empty one is a feed failure: kept briefly for the background path so the
+    # page stops waiting and shows why, and retried after `_BARS_FAILED_TTL_S`.
+    if candles and m1:
+        reaches_now = hi + CHART_PAD_MS >= (now_ms or int(time.time() * 1000))
+        _bars_memo_put(key, value, reaches_now)
+    else:
+        with _cache_lock:
+            _bars_failed[key] = (
+                time.monotonic() + _BARS_FAILED_TTL_S,
+                note or "no bars were served",
+            )
+    return value
+
+
+_BARS_FAILED_TTL_S = 60
+_bars_failed: dict = {}
+_bars_jobs: set = set()
+
+
+def _bars_failed_get(key):
+    with _cache_lock:
+        hit = _bars_failed.get(key)
+    if hit is None or time.monotonic() > hit[0]:
+        return None
+    return hit[1]
+
+
+def _start_bars_job(key, fn) -> None:
+    """Run `fn` in a background thread unless one is already running for `key`."""
+    with _cache_lock:
+        if key in _bars_jobs:
+            return
+        _bars_jobs.add(key)
+        _bars_failed.pop(key, None)
+
+    def run():
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 — a failed job must never kill the thread silently
+            with _cache_lock:
+                _bars_failed[key] = (
+                    time.monotonic() + _BARS_FAILED_TTL_S,
+                    f"{type(exc).__name__}: {exc}"[:300],
+                )
+        finally:
+            with _cache_lock:
+                _bars_jobs.discard(key)
+
+    threading.Thread(target=run, name="account-bars", daemon=True).start()
+
+
 def _bars_memo_put(key, value, reaches_now: bool) -> None:
     expires = time.monotonic() + _BARS_LIVE_TTL_S if reaches_now else None
     with _cache_lock:
@@ -835,8 +896,10 @@ def cached(account: int, build: Callable[[], dict], refresh: bool = False) -> di
         if hit and not refresh and now - hit[0] < _CACHE_TTL_S:
             return hit[1]
     out = build()
-    with _cache_lock:
-        _cache[account] = (now, out)
+    # An answer still waiting on its bars is not kept: the page's next poll must see them arrive.
+    if not out.get("bars_pending"):
+        with _cache_lock:
+            _cache[account] = (now, out)
     return out
 
 

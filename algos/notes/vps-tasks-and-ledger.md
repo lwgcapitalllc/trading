@@ -953,3 +953,7 @@ chart, and the git copy is the fallback if MT5's own history is ever gone.
 - ⚠ The runner's call is wrapped on its own, so a failed mirror can never cost the account return.
 - Reaches a live bot only through a promote. Added to `ledger.STREAM_RE`, the sync's path pattern
   and the commit-msg exemption in the same change — miss one and the stream silently never commits.
+- ⚠ **`tools/mark_trade.py --closed` (2026-09-17)** — for a trade already closed, so the mark does
+  not claim the bot still manages it (the default, and the only option before this date, says it
+  does). `--ticket` repeats to mark several in one record. Used on the four 2026-08-10 commission
+  probes, which the account page had been scoring as Aaron's own manual trades.

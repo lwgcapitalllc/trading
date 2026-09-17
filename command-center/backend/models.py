@@ -1045,6 +1045,9 @@ class AccountHistory(BaseModel):
     unmatched_plans: Optional[int] = None
     bars_server: Optional[str] = None
     bars_note: Optional[str] = None
+    # True while the chart's bars and the trades' worst/best prices are still loading in the
+    # background; the page polls until it clears. The rest of the answer is complete.
+    bars_pending: bool = False
     contract_size: Optional[float] = None
     chart: Optional[dict[str, Any]] = None
 

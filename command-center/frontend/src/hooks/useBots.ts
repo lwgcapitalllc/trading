@@ -418,6 +418,8 @@ export function useAccountHistory(account: number | null) {
     queryFn: () => api.get<AccountHistory>(`/bots/accounts/${account}/history`),
     enabled: account !== null,
     staleTime: 60_000,
+    // The price bars arrive after the rest of the answer; ask again until they have.
+    refetchInterval: (q) => (q.state.data?.bars_pending ? 4_000 : false),
     retry: false,
   })
 }

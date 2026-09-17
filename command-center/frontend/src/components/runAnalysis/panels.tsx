@@ -380,6 +380,19 @@ export function maxDrawdownPctOf(
 // never experienced, and dragged this ratio down by the same factor. Measured on the shipped
 // sos_fade run: 0.11 (red, "poor") against a static $10k, 2.25 ("good") against the peak.
 
+/** Why `computeCalmar` cannot answer, or `null` when it can. Same order as the guards below. */
+export function calmarReason(equity: EquityPoint[], balance: number | null): string | null {
+  if (balance == null || balance <= 0) return 'set an account balance'
+  if (equity.length < 2) return 'not enough closed trades yet'
+  const first = equity[0].date?.slice(0, 10)
+  const last = equity[equity.length - 1].date?.slice(0, 10)
+  if (!first || !last) return 'the trades carry no dates'
+  if ((new Date(last).getTime() - new Date(first).getTime()) / 86_400_000 < 1) {
+    return 'under a day of trading'
+  }
+  return null
+}
+
 export function computeCalmar(equity: EquityPoint[], balance: number | null): number | null {
   if (balance == null || balance <= 0 || equity.length < 2) return null
   const firstDate = equity[0].date?.slice(0, 10)
@@ -406,8 +419,11 @@ export function calmarCls(c: number | null): string {
   return 'text-neg-text'
 }
 
-export function calmarLabel(c: number | null): string {
-  if (c == null) return 'set an account balance'
+export function calmarLabel(c: number | null, reason?: string | null): string {
+  // ⚠ `null` has THREE causes and one label conflated them: no balance, too few trades, and a
+  // span under a day. `reason` says which (2026-09-17, seen as "set an account balance" on a live
+  // account with one closed trade).
+  if (c == null) return reason ?? 'set an account balance'
   if (!Number.isFinite(c)) return 'no drawdown to divide by'
   if (c >= 3.0) return 'excellent'
   if (c >= 1.5) return 'good'
@@ -715,6 +731,7 @@ export function deriveKpis(
   // Capital-based scores rebase the equity to `balance` (the ruleset's account_size, or the
   // what-if slider). Both compute off the same stored run — no re-run, no backend.
   const calmar = computeCalmar(equity, balance)
+  const calmarWhy = calmarReason(equity, balance)
   // Expectancy. $/trade is always available; R needs per-trade risk, which stored trades
   // don't carry (profit only), so expectancy_r is not computable — left out honestly.
   const expectancyUsd =
@@ -741,9 +758,14 @@ export function deriveKpis(
   // that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak, because the
   // account had grown 33x away from the balance the denominator was frozen at.
   // Null only when no balance is available (no ruleset / no trades).
+  // 🔴 The series STARTS at the opening balance (2026-09-17). `rebaseEquity` yields one value per
+  // trade, so the peak used to start at the FIRST TRADE's equity — a run whose first trade loses
+  // never counted that loss as a drawdown, and a one-trade book could not be measured at all
+  // ("This run stored no equity curve", seen on the live account page). The opening balance is a
+  // real peak: money was there and then it was not.
   const ddWorst =
-    balance != null && balance > 0 && equity.length >= 2
-      ? maxDrawdownPctOf(rebaseEquity(equity, balance))
+    balance != null && balance > 0 && equity.length >= 1
+      ? maxDrawdownPctOf([balance, ...rebaseEquity(equity, balance)])
       : null
   const maxDdPct = ddWorst != null ? ddWorst.pct * 100 : null
   // The dollars of that SAME episode — what the card's caption describes. A different, usually
@@ -770,6 +792,7 @@ export function deriveKpis(
     worstStreak,
     recoveryFactor,
     calmar,
+    calmarWhy,
     expectancyUsd,
     zScore,
     pfValue,
@@ -1122,6 +1145,7 @@ export function PerformancePanel({
     worstDay,
     worstStreak,
     calmar,
+    calmarWhy,
     expectancyUsd,
     zScore,
     pfValue,
@@ -1557,7 +1581,7 @@ export function PerformancePanel({
             <div className="mb-1">{heroDelta(d.calmar, dc.calmar, fmtRatio, 'higher')}</div>
           ) : (
             <div className="text-[11px] text-text-tertiary leading-snug mt-2">
-              {calmarLabel(calmar)}
+              {calmarLabel(calmar, calmarWhy)}
             </div>
           )}
           {!collapsed && rows(trustedRows)}

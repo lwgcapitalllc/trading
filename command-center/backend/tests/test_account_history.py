@@ -485,8 +485,16 @@ def test_a_trade_the_record_marks_as_not_the_strategys_stays_in_the_balance_only
 def _fresh_bars_memo():
     """The bars memo is module-global; a test must never see another test's loader."""
     ah._bars_memo.clear()
+    ah._bars_failed.clear()
     yield
+    for _ in range(200):  # let any background bar job finish before the next test
+        if not ah._bars_jobs:
+            break
+        import time as _t
+
+        _t.sleep(0.01)
     ah._bars_memo.clear()
+    ah._bars_failed.clear()
 
 
 def test_the_bars_are_loaded_once_per_trade_set_and_again_on_refresh(archive):
@@ -560,3 +568,76 @@ def test_the_growth_line_leaves_from_the_balance_trading_began_on():
     point = out["equity"][0]
     assert point["equity"] == pytest.approx(10_411.48)
     assert point["twr_equity"] == pytest.approx(10_411.48)
+
+
+def _build_async(archive_root, loader, refresh=False):
+    return ah.build_history(
+        ACCOUNT,
+        box=None,
+        box_error="x",
+        archive=ah.read_archive(archive_root),
+        contract_size=100.0,
+        load_bars=loader,
+        now_ms=0,
+        bars_async=True,
+        refresh_bars=refresh,
+    )
+
+
+def _wait_jobs():
+    import time as _t
+
+    for _ in range(500):
+        if not ah._bars_jobs:
+            return
+        _t.sleep(0.01)
+    raise AssertionError("background bar job never finished")
+
+
+def test_the_page_answers_before_the_bars_and_gets_them_on_the_next_poll(archive):
+    """RED with the background branch removed: the first answer waited on the bars (they came
+    back in it, `bars_pending` False) — the ~40s first open Aaron saw, measured 2026-09-17."""
+    import threading
+
+    gate = threading.Event()
+
+    def slow(symbol, tf, start, end):
+        gate.wait(5)
+        return _loader(symbol, tf, start, end)
+
+    first = _build_async(archive, slow)
+    assert first["bars_pending"] is True
+    assert first["chart"]["candles"] == []
+    assert first["balance"] == pytest.approx(14_894.0)
+    gate.set()
+    _wait_jobs()
+    second = _build_async(archive, slow)
+    assert second["bars_pending"] is False
+    assert second["chart"]["candles"]
+    assert any(t.get("maePrice") is not None for t in second["chart"]["trades"])
+
+
+def test_a_background_feed_failure_ends_the_wait_and_says_why(archive):
+    """RED when a failed background load was not recorded: every poll restarted the job and the
+    page waited forever with no reason shown."""
+    calls = []
+
+    def failing(symbol, tf, start, end):
+        calls.append(tf)
+        return [], "agent down", None
+
+    assert _build_async(archive, failing)["bars_pending"] is True
+    _wait_jobs()
+    after = _build_async(archive, failing)
+    assert after["bars_pending"] is False and "agent down" in after["bars_note"]
+    assert len(calls) == 2
+
+
+def test_an_answer_still_waiting_on_bars_is_not_cached():
+    """RED when `cached` kept pending answers: the page's poll got the bar-less answer back for
+    a minute."""
+    ah._cache.clear()
+    answers = iter([{"bars_pending": True}, {"bars_pending": False}])
+    assert ah.cached(999, lambda: next(answers))["bars_pending"] is True
+    assert ah.cached(999, lambda: next(answers))["bars_pending"] is False
+    ah._cache.clear()

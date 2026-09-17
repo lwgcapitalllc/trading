@@ -699,6 +699,8 @@ export interface AccountHistory {
   open_position_costs: number | null
   reconciled: boolean | null
   excluded_trades: number | null
+  /** The price bars are still loading in the background; poll until false. */
+  bars_pending: boolean
   excluded_pnl: number | null
   twr_pct: number | null
   twr_reason: string | null

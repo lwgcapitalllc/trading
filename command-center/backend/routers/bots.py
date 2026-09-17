@@ -2028,6 +2028,7 @@ def _account_history(account: int, refresh: bool) -> dict:
             load_bars=account_history.bar_loader(server),
             load_bars_key=server,
             refresh_bars=refresh,
+            bars_async=True,
         )
         out["contract_size"] = contract_size
         return out

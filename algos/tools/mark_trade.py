@@ -14,7 +14,10 @@ that is deliberately all it is.
 ⚠ **It marks by TICKET**, because the ticket is the one thing the ledger and the broker statement
 share. Whoever joins the two later can find it.
 
-Companion to `close_orphans.py`, which closes AND marks. Use this one when the trade is staying.
+Companion to `close_orphans.py`, which closes AND marks. Use this one when the trade is staying —
+or, with `--closed`, for a trade that is ALREADY closed (a probe, a hand trade found later). Without
+the flag the record says the bot still manages the trade, which is false for a closed one
+(found 2026-09-17 marking the four 2026-08-10 commission probes). Repeat `--ticket` to mark several.
 """
 
 import argparse
@@ -34,7 +37,12 @@ INSTANCES = Path(__file__).resolve().parents[2] / "algos" / "markets" / "fx" / "
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bot", required=True)
-    ap.add_argument("--ticket", type=int, required=True)
+    ap.add_argument("--ticket", type=int, required=True, action="append")
+    ap.add_argument(
+        "--closed",
+        action="store_true",
+        help="the trade is already closed, so no bot is managing it",
+    )
     ap.add_argument("--why", required=True, help="one sentence: what put this trade on the book")
     a = ap.parse_args()
 
@@ -48,15 +56,17 @@ def main() -> None:
         "kind": "event",
         "event": "trade_not_strategy_performance",
         "counts_as_strategy_performance": False,
-        "still_managed_by_the_bot": True,
-        "ticket": a.ticket,
+        "still_managed_by_the_bot": not a.closed,
+        **({"ticket": a.ticket[0]} if len(a.ticket) == 1 else {"tickets": a.ticket}),
         "why": a.why,
         "marked_by": "algos/tools/mark_trade.py",
     }
     path = d / f"decisions-{now:%Y-%m-%d}.jsonl"
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
-    print(f"T{a.ticket} marked in {path.name}: not strategy performance, still managed.")
+    state = "already closed" if a.closed else "still managed"
+    names = ", ".join(f"T{t}" for t in a.ticket)
+    print(f"{names} marked in {path.name}: not strategy performance, {state}.")
 
 
 if __name__ == "__main__":

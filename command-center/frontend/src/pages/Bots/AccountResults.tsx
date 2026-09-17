@@ -329,7 +329,8 @@ export function AccountResults() {
         return (
           <PriceChartView
             spec={h.chart ?? undefined}
-            isLoading={false}
+            // The bars load in the background after the rest of the page (see useAccountHistory).
+            isLoading={h.bars_pending}
             isError={false}
             requestCandles={symbol ? requestCandles : undefined}
             height={ht}

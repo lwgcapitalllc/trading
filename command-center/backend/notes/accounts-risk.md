@@ -937,3 +937,8 @@ both tests were fixed. The import-path test was watched red against the unfixed 
 - ⚠ **The growth line is scaled on the balance at the FIRST TRADE, not the first deposit.** The live
   account's first transfer was $451.97 and it traded on $10,311.48; scaling on the deposit drew the
   line at ~$470 beside a $10.7k balance.
+- ⚠ **The bars load in the BACKGROUND (2026-09-17).** A first open answers in ~2.8s with the
+  balance, the figures and no chart, `bars_pending` true, and a thread fills the memo; the page polls
+  every 4s and the bars arrived in ~20s on both real accounts. A pending answer is never cached. A
+  failed background load is remembered for 60s with its reason, so the page stops waiting and says
+  why instead of restarting the job on every poll.

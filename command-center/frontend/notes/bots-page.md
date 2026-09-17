@@ -1813,3 +1813,5 @@ live — it only reads). Backend: `backend/notes/accounts-risk.md` → *An accou
   table, the sizing timeline and the logs. The backtest page has no trade list, so neither does
   this page. The Charts heading moved from the backtest page into `runAnalysis/panels.tsx`
   unchanged.
+- The account page shows the Price tab as loading while the backend fills the bars in the
+  background, and asks again every 4s until they arrive (about 20s on the real accounts).

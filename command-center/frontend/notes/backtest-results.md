@@ -1121,3 +1121,12 @@ separate change.
   It used every overlay line's values too, so an overlay below the balance (the account page's
   growth line, a stack's strategy leg) moved the split off the start line and painted a winning
   curve red. Seen on the live account page; the shared chart is also the backtest's and the stack's.
+- 🔴 **The Risked card's drawdown series now STARTS at the opening balance (2026-09-17).** It used
+  one value per trade, so the peak began at the FIRST TRADE's equity: a run whose first trade loses
+  never counted that loss as a drawdown, and a one-trade book could not be measured at all (it read
+  "This run stored no equity curve" on the live account page). ⚠ **This moves the worst-drawdown
+  percentage shown on any run whose first trade loses** — the stored backtest figures are untouched,
+  only what the card computes.
+- ⚠ **The Calmar label says WHICH cause (2026-09-17).** One string covered no balance, too few
+  trades and a span under a day; a live account with one trade read "set an account balance", an
+  instruction that could not be followed. `calmarReason` names the cause and the card prints it.
