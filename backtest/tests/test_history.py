@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from backtest.data.history import (
+    _SEARCH_FROM,
     HistoryFloorError,
     HistoryFloors,
     assert_bar_spacing,
@@ -189,6 +190,37 @@ def test_describe_reports_how_it_knows(tmp_path):
     assert d["broker"] == "FakeBroker-Demo"
     assert d["earliest_date"] == f.floor("XAUUSD", 15).isoformat()
     assert d["timeframe_minutes"] == 15
+
+
+def test_history_deeper_than_the_probe_is_reported_as_a_BOUND_not_an_edge(tmp_path):
+    """A floor at the search bound means the probe STOPPED LOOKING, not that it found an edge.
+
+    RED WITHOUT THE FIX: `describe()` used to word every floor the same way, so this broker —
+    whose bars go back to 1995, well past where the probe starts — was described as having "no
+    real 15-minute bars before 2000-01-01". That is an assertion the probe never established.
+    Observed for real on GBPJPY, 2026-09-17. Without `bounded_by_search` the first assert raises
+    KeyError and the note assert fails on the word "no".
+    """
+    f = _floors(FakeAgent(intraday_from="1995-01-01", daily_from="1995-01-01"), tmp_path)
+    d = f.describe("XAUUSD", 15)
+
+    assert d["earliest_date"] == _SEARCH_FROM.isoformat()
+    assert d["bounded_by_search"] is True
+    assert "at least as far back as" in d["note"]
+    assert "STOPS LOOKING" in d["note"]
+    # The claim it must NOT make.
+    assert "has no real" not in d["note"]
+
+
+def test_a_real_measured_edge_still_says_so(tmp_path):
+    """The other branch, so the fix above cannot pass by wording EVERY floor as a bound."""
+    f = _floors(FakeAgent(intraday_from="2018-09-14"), tmp_path)
+    d = f.describe("XAUUSD", 15)
+
+    assert d["earliest_date"] != _SEARCH_FROM.isoformat()
+    assert d["bounded_by_search"] is False
+    assert "has no real" in d["note"]
+    assert "at least as far back as" not in d["note"]
 
 
 # ── spacing backstop (pure) ─────────────────────────────────────────────────────

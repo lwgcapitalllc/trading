@@ -292,3 +292,32 @@ page open, 19.2s of it `to_csv`, on one account's two bar loads** — and every 
 chart reaching today pays the same. Not fixed: the honest fix changes how lab prices are stored,
 which every backtest depends on. The brief, the measurements, the constraints that may not be traded
 away and how to prove a fix: `docs/BAR_CACHE_REWRITE_TASK.md`.
+
+## A history floor at the search bound is a BOUND, not an edge (2026-09-17)
+
+`probe()` starts its binary search at `_SEARCH_FROM` (2000-01-01) and returns that date
+immediately when real bars already exist there — the correct answer to "how far back can I go",
+but it means *the probe stopped looking*, not *history ends here*.
+
+`describe()` worded both outcomes identically, so it asserted an edge it had never found.
+Observed on GBPJPY on 2026-09-17: **"GBPJPY has no real 15-minute bars before 2000-01-01"**,
+when the truth is that the probe never reached the earliest bar at all.
+
+That is rule 4 — never write a guessed number into a doc — arriving through a TOOL rather than a
+person, which is the harder direction to catch, because the reader has every reason to trust a
+measurement and no way to see that this one hit a wall instead.
+
+`describe()` now returns `bounded_by_search`, and the two cases read differently:
+
+- bounded — *"…has real 15-minute bars at least as far back as 2000-01-01 … which is where the
+  probe STOPS LOOKING, so the true earliest bar may be earlier. This is a bound, not a measured
+  edge."*
+- measured — the original wording, unchanged. XAUUSD still reads "no real 15-minute bars before
+  2018-09-13", which IS an edge the probe found.
+
+⚠ Two tests, and both were watched RED before the fix went in: the bounded case died on
+`KeyError: 'bounded_by_search'`, and the second test exists so the fix cannot pass by wording
+EVERY floor as a bound.
+
+⚠ **Anything that raises `_SEARCH_FROM` changes what this flag means.** A probe that started in
+1990 would report a real edge for the pairs that currently hit the bound.

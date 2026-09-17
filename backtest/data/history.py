@@ -338,10 +338,28 @@ class HistoryFloors:
             "verified": entry.get("probed")
             or _SEED.get((server, _norm(symbol)), {}).get("verified", ""),
             "source": "probed" if measured else "seed",
+            # 🔴 A FLOOR AT `_SEARCH_FROM` IS NOT A MEASUREMENT — it is the probe reporting that
+            # history was still there when it STOPPED LOOKING. `probe()` returns the search bound
+            # early in exactly that case. Wording both outcomes the same way made the tool assert
+            # an edge it never found: GBPJPY read "no real 15-minute bars before 2000-01-01" on
+            # 2026-09-17 when what had actually happened was that the probe never reached one.
+            # That is rule 4 (never write a guessed number into a doc) arriving through a tool
+            # rather than a person, which is the harder direction to catch.
+            "bounded_by_search": fl == _SEARCH_FROM,
             "note": (
-                f"{_norm(symbol)} has no real {minutes}-minute bars before {fl.isoformat()} on "
-                f"{server or 'this broker'}. Earlier requests are served COARSER bars mislabelled "
-                f"as {minutes}m, which would produce a plausible but fictional backtest."
+                (
+                    f"{_norm(symbol)} has real {minutes}-minute bars at least as far back as "
+                    f"{fl.isoformat()} on {server or 'this broker'} — which is where the probe "
+                    f"STOPS LOOKING, so the true earliest bar may be earlier. This is a bound, "
+                    f"not a measured edge."
+                )
+                if fl == _SEARCH_FROM
+                else (
+                    f"{_norm(symbol)} has no real {minutes}-minute bars before {fl.isoformat()} "
+                    f"on {server or 'this broker'}. Earlier requests are served COARSER bars "
+                    f"mislabelled as {minutes}m, which would produce a plausible but fictional "
+                    f"backtest."
+                )
             ),
         }
 
