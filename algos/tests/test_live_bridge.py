@@ -4731,3 +4731,46 @@ def test_the_same_on_the_fill_clock(tmp_path):
     b.sync_fast(_fast_step())
     assert b.state is live_bridge.BridgeState.HALTED
     assert b._pos_ticket is None
+
+
+# ── a RE-ENTRY is authorised at its own reduced share (2026-09-17) ───────────────────────
+#
+# 🔴 A re-entry sizes at a fraction of the primary's risk, and the order check compared it against
+# the FULL share. Both SOS Fade bots refused a half-size re-entry at 02:20 CDT, then halted when
+# the emulator's copy filled.
+def _reentry_bridge():
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExSized(SoloAccount(balance=10_000.0))
+    ex.cfg.exec_sec_risk_pct = 50.0
+    ex.planned_full_exit_price = lambda pend: None  # the bridge halts on a strategy without it
+    b, ops, _, _ = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: 10_000.0
+    b.refresh_account_room()
+    return b, ops
+
+
+def test_a_HALF_SIZE_reentry_reaches_the_broker():
+    """$500 re-entry on a $1,000 share at a 50% re-entry fraction — exactly what the strategy asks.
+
+    RED before the fix: refused `risk_not_authorised`, the 2026-09-17 alert."""
+    b, ops = _reentry_bridge()
+    b._sync_slot(live_bridge.SECONDARY_LONG, _Pend(1, 3300.0, 50.0, 3290.0), _Sig())
+    assert b._refused[live_bridge.SECONDARY_LONG] == "", b._refused[live_bridge.SECONDARY_LONG]
+    assert len(ops.orders) == 1
+
+
+def test_a_FULL_SIZE_reentry_is_refused_it_is_twice_what_was_authorised():
+    """The fraction must tighten the check, not switch it off."""
+    b, ops = _reentry_bridge()
+    b._sync_slot(live_bridge.SECONDARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    assert "risk_not_authorised" in b._refused[live_bridge.SECONDARY_LONG]
+    assert not ops.orders
+
+
+def test_a_HALF_SIZE_primary_is_still_refused():
+    """The fraction belongs to the re-entry slot only."""
+    b, ops = _reentry_bridge()
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 50.0, 3290.0), _Sig())
+    assert "risk_not_authorised" in b._refused[live_bridge.PRIMARY_LONG]
+    assert not ops.orders

@@ -2633,7 +2633,7 @@ class OrderBridge:
             self._refusal_alerted[slot] = ""
             return
 
-        plan = self._plan(direction, pend)
+        plan = self._plan(direction, pend, intent=slot[0])
         if not plan.ok:
             self._record_refusal(slot, plan, pend)
             if held is not None:
@@ -3028,7 +3028,7 @@ class OrderBridge:
             return
         account.max_lots = min(self._configured_max_lots, float(broker_max))
 
-    def _plan(self, direction: int, pend, *, risk_authorised: bool = True):
+    def _plan(self, direction: int, pend, *, risk_authorised: bool = True, intent: str = "primary"):
         """How many lots, or why not. See `algos/shared/order_sizing.py` for the reasoning.
 
         🔴 **`risk_authorised=False` IS FOR AN ORDER THE RISK PERCENTAGE DID NOT SIZE, AND A
@@ -3074,7 +3074,7 @@ class OrderBridge:
             # 2026-08-07 fix: the emulator compounds its warm-up replay, so its equity had drifted
             # to ~$4,423 against a real $2,000 and it sized every order off the fiction.
             account_equity=self._account_balance(),
-            risk_pct=(getattr(cfg, "exec_risk_pct", None) if risk_authorised else None),
+            risk_pct=(self._authorised_risk_pct(cfg, intent) if risk_authorised else None),
             free_margin=self._mt5.free_margin(),
             margin_for=lambda lots: self._mt5.margin_for(side, lots, pend.edge),
             margin_safety_pct=self._margin_safety_pct,
@@ -3092,6 +3092,22 @@ class OrderBridge:
         # (a collapsed stop, an unaffordable margin, a size below the broker minimum) before it
         # starts talking about what OTHER bots are holding.
         return self._account_cap_check(plan, spec)
+
+    @staticmethod
+    def _authorised_risk_pct(cfg, intent: str) -> Optional[float]:
+        """The percentage of the account THIS order was sized to risk.
+
+        🔴 **A re-entry sizes at a fraction of the primary's percentage** (the strategy's
+        re-entry risk setting), so checking it against the full percentage refused every re-entry
+        as "sizing off a balance the account does not have" — 2026-09-17, both SOS Fade bots,
+        each order exactly half its share, then a halt when the emulator's copy filled. The
+        fraction is read off the same config the strategy multiplies by, so the two cannot drift;
+        a strategy without the setting has no fraction, which is 100.
+        """
+        pct = getattr(cfg, "exec_risk_pct", None)
+        if pct is None or intent != "secondary":
+            return pct
+        return float(pct) * float(getattr(cfg, "exec_sec_risk_pct", 100.0)) / 100.0
 
     def _account_cap_check(self, plan, spec):
         """Does this order fit inside the whole ACCOUNT's risk budget?

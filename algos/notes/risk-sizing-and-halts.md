@@ -348,6 +348,16 @@ third pinning that an orphan under our own magic is still COUNTED.
 answer* and *the book carries something unmeasurable* call for different work, and a pre-existing
 test caught it. Two failures must never share one message.
 
+### 🔴 Every RE-ENTRY was refused at the order check too (2026-09-17)
+
+**FOUND on the box, 02:20 CDT:** both SOS Fade bots refused a bearish re-entry as
+`risk_not_authorised` — each order exactly HALF the bot's share — then halted when the emulator's
+copy filled. A re-entry sizes at the re-entry risk fraction (50 by default) of the primary's
+percentage; the check compared it against the full percentage. The 2026-09-15 fix below covered a
+shrink to the ROOM, not this. ✅ The bridge now authorises a re-entry slot at the same fraction the
+strategy multiplies by (`OrderBridge._authorised_risk_pct`); a full-size re-entry is still refused,
+and so is a half-size primary. TESTED: three tests in `test_live_bridge.py`, red without the fix.
+
 ### 🔴 The shrink above could NEVER reach a broker — and the pool, the half-share minimum and the priority order (2026-09-15)
 
 **Aaron's rule:** the cap bounds the risk OPEN at any moment, not the sum of the bots' shares, so
