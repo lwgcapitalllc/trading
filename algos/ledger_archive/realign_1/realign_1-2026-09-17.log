@@ -269,3 +269,9 @@
 2026-09-17 20:45:00,667 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-17 20:50:00,650 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-17 20:55:00,614 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-17 22:05:06,692 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-17 22:05:06,706 [INFO] Sizing against account balance $16,508.86
+2026-09-17 22:05:15,473 [INFO] Warmed 15000 bars (2026-07-03 06:35:00+00:00 → 2026-09-17 22:00:00+00:00) in 8.5s
+2026-09-17 22:10:06,127 [INFO] Priority 3 on this account: waiting 14s for the bots above
+2026-09-17 22:15:00,681 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-17 22:20:00,559 [INFO] Priority 3 on this account: waiting 19s for the bots above

@@ -356,3 +356,13 @@ FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\mar
 2026-09-17 19:30:05,315 [INFO] PENDING PLACED | ticket=381086223 | bullish 0.15L @ 4304.31 | SL=4251.87 TP=none
 2026-09-17 20:15:07,084 [INFO] cancel bullish primary limit T381086223
 2026-09-17 20:15:07,165 [INFO] PENDING CANCELLED | T381086223
+2026-09-17 22:05:02,124 [WARNING] 13 M5 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-17 22:05:04,671 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 06:35:00+00:00 → 2026-09-17 22:00:00+00:00).
+2026-09-17 22:05:04,671 [INFO] The 13 M5 intervals were a market break, not lost bars — no alert.
+2026-09-17 22:15:06,302 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-17 22:15:06,302 [INFO] Sizing against account balance $16,508.86
+2026-09-17 22:15:08,014 [INFO] Warmed 5000 bars (2026-07-03 06:45:00+00:00 → 2026-09-17 22:00:00+00:00) in 1.6s
+2026-09-17 22:15:09,811 [INFO] Fast feed bookmarked at 2026-09-17 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-17 22:15:09,811 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 06:45:00+00:00 → 2026-09-17 22:10:00+00:00).
+2026-09-17 22:15:09,811 [INFO] Equity re-anchored to the account after warm-up: 15,178.23 → 16,508.86
+2026-09-17 22:15:09,811 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
