@@ -3115,6 +3115,14 @@ class LiveRunner:
             deals = terminal.account_deals() if terminal is not None else None
             result = account_return(deals, balance)
             self._flows_cache = (balance, now, result)
+            # Mirror the history for the Bots page and its git backup — only once it has rebuilt
+            # the broker's balance to the cent, so a partial read never reaches the archive.
+            # Isolated: a failure here must never cost the return this method exists to state.
+            if deals is not None and result.reason is None:
+                try:
+                    self.ledger.deal_history(deals, self.cfg.account)
+                except Exception as e:
+                    self.log.warning(f"Deal history not mirrored: {e}")
             if result.reason != getattr(self, "_flows_reason", None):
                 if result.reason:
                     self.log.warning(f"Account return not stated: {result.reason}.")

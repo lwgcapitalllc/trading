@@ -16,10 +16,11 @@ now refuses to install one. Aaron's 2026-08-05 requirement (*"at least twice a d
 twelve times over by a machine that is always on, which the laptop that used to carry it was
 not.
 
-**Three kinds of file are fetched**, all per-day, all committed the same way:
+**Four kinds of file are fetched**, all per-day, all committed the same way:
 
   * `<bot>/ledger/decisions-YYYY-MM-DD.jsonl` — why it traded, or did not
   * `<bot>/ledger/health-YYYY-MM-DD.jsonl`    — starts, stops, crashes, link outages, pulses
+  * `<bot>/ledger/deals-YYYY-MM-DD.jsonl`     — MT5's own deal history for the bot's account
   * `<bot>/<bot>-YYYY-MM-DD.log`              — the prose log, where the tracebacks are
 
 **Today's files are fetched too, and they are still being written.** A copy taken mid-append can
@@ -101,7 +102,7 @@ from log_backup import LEDGER_RE  # noqa: E402,F401  — one definition of a led
 # impossible rather than unlikely, and it is why widening this to a second shape widened the
 # ANCHOR too rather than loosening it.
 REMOTE_PATH_RE = re.compile(
-    r"^[A-Za-z0-9._-]+/(?:ledger/(?:decisions|health)-\d{4}-\d{2}-\d{2}\.jsonl"
+    r"^[A-Za-z0-9._-]+/(?:ledger/(?:decisions|health|deals)-\d{4}-\d{2}-\d{2}\.jsonl"
     r"|[A-Za-z0-9._-]+-\d{4}-\d{2}-\d{2}\.log)$"
 )
 

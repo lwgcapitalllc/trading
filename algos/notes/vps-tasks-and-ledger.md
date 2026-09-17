@@ -934,3 +934,22 @@ run freed 1.8 GB. Measurements and the two checks: `scheduler/SCHEDULER_GUIDE.md
   four months to do its damage the first time. Re-raise it only for a NEW source of memory pressure.
 - ⚠ **It touches nothing a bot uses** — MEASURED on its first run: both live bots kept running,
   broker link up, no restart.
+
+## ✅ The deal stream — MT5's own account history, backed up hourly (2026-09-17)
+
+Each bot mirrors its account's full MT5 deal history (trades, deposits, withdrawals) into
+`ledger/deals-YYYY-MM-DD.jsonl`, one file per deal day on the broker server's clock, and the hourly
+sync commits it like the other two streams. It feeds the Command Center's account equity and trade
+chart, and the git copy is the fallback if MT5's own history is ever gone.
+
+- ⚠ **Written only after the history rebuilt the broker's balance to the cent** (the same check the
+  account return runs), so a partial read or another account's history never lands here.
+- ⚠ **A snapshot, not an append** — a day's file is rewritten whole only when it differs, and rows
+  carry no wall-clock stamp, so an unchanged history writes nothing.
+- ⚠ **Every bot on an account writes the same history.** A reader de-duplicates by deal ticket and
+  filters by the row's account number, never by which bot's folder it came from.
+- ⚠ **A missing file is "not written", never "no deals".** A bot that has not reconciled since the
+  change was promoted writes nothing at all.
+- ⚠ The runner's call is wrapped on its own, so a failed mirror can never cost the account return.
+- Reaches a live bot only through a promote. Added to `ledger.STREAM_RE`, the sync's path pattern
+  and the commit-msg exemption in the same change — miss one and the stream silently never commits.

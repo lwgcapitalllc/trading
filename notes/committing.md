@@ -32,7 +32,7 @@ broker statement contains it. The hook classified the `.jsonl` as code and deman
 alone.** Measured: the sync refused with 2026-08-04 outstanding, and it went through the moment the
 exemption landed. ⚠ **It is a PATH, not `*.jsonl`** — the extension is generic, and a future
 `.jsonl` carrying a contract would be waved through the way `*.meta.json` explicitly is not, while
-`*/ledger/decisions-*.jsonl` can only ever be this. **The standing lesson is about guardrails, not
+`*/ledger/decisions-*.jsonl` can only ever be this. ⚠ **Three streams are exempt since 2026-09-17** — decisions, health, and `deals` (the account's MT5 history, `algos/notes/vps-tasks-and-ledger.md`); a new stream needs its line here in the same change. **The standing lesson is about guardrails, not
 about this file: a rule that fires on a robot's commit has no human to read its message, so it does
 not nag — it silently stops the job.** When you add a check, ask what it does to the things that
 commit without a person watching.

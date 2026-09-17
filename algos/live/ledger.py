@@ -7,7 +7,7 @@ the stop was staged to, or that the limit rested for nine bars and was never tou
 that is recoverable after the fact — if it is not written as it happens, the question is
 unanswerable forever.
 
-## Two files, two questions
+## Three files, three questions
 
 Split 2026-08-05 on Aaron's instruction — *"I need them to be very clear, and I need nothing to
 be overlapping on each other."* One file per day per stream:
@@ -16,6 +16,7 @@ be overlapping on each other."* One file per day per stream:
 |---|---|---|
 | `decisions-YYYY-MM-DD.jsonl` | **why did it trade, or not trade?** | `bar`, `blocked`, `missed`, `trade`, and the broker-facing order events |
 | `health-YYYY-MM-DD.jsonl` | **is the process alive and behaving?** | starts, stops, crashes, link outages, re-warms, config changes, halts, and a periodic `pulse` |
+| `deals-YYYY-MM-DD.jsonl` | **what does the BROKER say happened on the account?** | MT5's own deal history, trades and deposits alike, mirrored by `deal_history` (added 2026-09-17) |
 
 **The dividing line is the SUBJECT, not the severity.** A record about a setup or an order goes
 to decisions; a record about the process that runs them goes to health. That is why
@@ -66,18 +67,20 @@ becomes a thin adapter over it.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 DECISIONS = "decisions"
 HEALTH = "health"
+DEALS = "deals"
 
 # The filename shapes this package writes. `tools/log_backup.py` imports these rather than
 # restating them — one definition of what a ledger file is called, or the backup job and the
 # writer drift and the drift shows up as a day that silently never gets committed.
-STREAM_RE = re.compile(r"^(decisions|health)-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
+STREAM_RE = re.compile(r"^(decisions|health|deals)-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 
 # 🔴 The routing table. An event named here goes to the DECISION stream; everything else goes to
 # HEALTH. Default-to-health is deliberate: an unclassified event is a process observation until
@@ -540,6 +543,56 @@ class Ledger:
         never tell you for how long, or that it happened at all once it recovers.
         """
         self._write(HEALTH, "pulse", fields)
+
+    # ── the deal stream: the broker's own history of the account ─────────────
+    def deal_history(self, deals: Iterable[Any], account: int) -> int:
+        """Mirror the account's MT5 deal history into `deals-YYYY-MM-DD.jsonl`, one file per day.
+
+        **Why (Aaron, 2026-09-17):** the Bots page draws an account's equity and its real trades
+        from MT5, and the git archive is the fallback if MT5's copy is ever gone. This stream is
+        what the hourly sync commits for that.
+
+        ⚠ **A SNAPSHOT, not an append.** A deal never changes once booked, so the day's file is
+        rewritten whole and only when its content differs — writing again is a no-op. No
+        wall-clock `ts` on a row for the same reason: it would make every write a change.
+
+        ⚠ **The day is the deal's own `time_msc` on the BROKER SERVER's clock**, which is how MT5
+        stamps it. Consistent, which is all the file split needs; a reader converts.
+
+        ⚠ The caller writes this only after the history rebuilt the broker's balance to the
+        cent, so a partial read, or another account's, never lands here. Returns the number of
+        files rewritten. NEVER RAISES.
+        """
+        try:
+            by_day: Dict[str, list] = {}
+            for d in deals:
+                row = d._asdict() if hasattr(d, "_asdict") else dict(vars(d))
+                ms = int(row.get("time_msc") or 0) or int(row.get("time") or 0) * 1000
+                day = datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+                by_day.setdefault(day, []).append(
+                    {"bot": self.bot_key, "kind": "deal", "account": int(account), **row}
+                )
+            cache = getattr(self, "_deal_days", {})
+            written = 0
+            for day, rows in by_day.items():
+                rows.sort(key=lambda r: (int(r.get("time_msc") or 0), int(r.get("ticket") or 0)))
+                text = "".join(json.dumps(r, default=str) + "\n" for r in rows)
+                if cache.get(day) == text:
+                    continue
+                path = self.dir / f"{DEALS}-{day}.jsonl"
+                if not (path.exists() and path.read_text(encoding="utf-8") == text):
+                    tmp = path.with_suffix(".jsonl.tmp")
+                    tmp.write_text(text, encoding="utf-8")
+                    # Windows refuses a replace while the sync is copying the file; the next
+                    # refresh retries, because the cache is only updated on success.
+                    os.replace(tmp, path)
+                    written += 1
+                cache[day] = text
+            self._deal_days = cache
+            return written
+        except Exception as e:
+            print(f"ledger: deal history write failed ({e})")
+            return 0
 
     # ── reading back ─────────────────────────────────────────────────────────
     def last_run_status(self) -> Optional[Dict[str, Any]]:
