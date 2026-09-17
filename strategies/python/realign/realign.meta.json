@@ -13,10 +13,13 @@
       }
     },
     {
-      "text": "It enters at market on that 5-minute close, aims for the 15-minute swing before the trap, and stops {realign_sl_buf_tk} ticks past the pullback."
+      "text": "It enters at market on that 5-minute close, aiming for the 15-minute swing before the trap, one trade at a time at {exec_risk_pct}% risk."
     },
     {
-      "text": "Halfway there the stop moves past breakeven; nothing is banked early, and at the target it trails each new 15-minute swing.",
+      "text": "The stop sits {realign_sl_buf_tk} ticks past the pullback's extreme; halfway to the target it moves just past breakeven."
+    },
+    {
+      "text": "Nothing is banked early: at the target the stop lifts, then trails each new 15-minute swing.",
       "show_if": {
         "exec_tp1_pct": 0,
         "exec_tp2_pct": 0,
@@ -36,9 +39,6 @@
         "exec_time_stop_mode": "Before TP1 only",
         "exec_min_stop_mode": "% of price"
       }
-    },
-    {
-      "text": "Each trade risks {exec_risk_pct}% of the account, sized off its stop distance, and it holds one trade at a time."
     }
   ],
   "params": [

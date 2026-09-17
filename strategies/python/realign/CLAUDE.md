@@ -567,3 +567,5 @@ A setting with no label and description there shows as a raw name on the strateg
 backend test that caps realign's undocumented settings (now 119) goes red. The page summary there
 is capped at seven bullets, hidden ones included, and each bullet's condition must hold at the
 defaults — so a default change means rewriting the bullet it hides.
+⚠ Keep a line about settings the bullet's condition does not cover OUT of a conditional bullet — the
+page hides the whole bullet. That is why breakeven sits in the always-shown stop bullet.

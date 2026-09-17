@@ -347,4 +347,4 @@ Six realign settings added after 2026-09-03 (the retest entry and its two contro
 take-profit, the trail frame, the weekend close) had no description, so the page showed raw names.
 They are described now, and the allowance for realign's undocumented settings fell 120 → 119.
 The summary lost the ratchet-trail bullet (the default moved to the plain swing trail) and folded
-the entry and stop bullets together — the summary check counts hidden bullets too, max seven.
+the risk line into the entry bullet (breakeven stays in the always-shown stop bullet) — the summary check counts hidden bullets too, max seven.
