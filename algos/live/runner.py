@@ -90,6 +90,21 @@ from fleet_halt import read_fleet_halt  # noqa: E402  (algos/shared/fleet_halt.p
 from ledger import Ledger  # noqa: E402
 from version import VersionMismatch, current_commit, verify_pin  # noqa: E402
 
+
+def running_commit(cfg) -> str:
+    """The commit the code THIS PROCESS RUNS came from, or "unknown" — never a wrong one.
+
+    🔴 **2026-09-16, `sos_fade_demo`: the startup line said `commit c8cdd64e` while the code
+    fingerprint matched `4f87809d`.** It read the box repo's HEAD, and a frozen bot does not run
+    the repo — it runs the `deployed/` snapshot, which a `git pull` never moves. So for a frozen
+    bot the answer is the commit `promote.py` recorded in `deployed.json`. A bot running straight
+    from the repo (not frozen) really does run HEAD, so HEAD is the honest answer there.
+    """
+    if cfg.is_frozen:
+        return (getattr(cfg, "promoted_commit", "") or "").strip() or "unknown"
+    return current_commit(cfg.repo_root) or "unknown"
+
+
 _stop_requested = False
 
 # How often a lost terminal link is retried. `BotMT5.connect()` already burns up to ~40s on its
@@ -1943,7 +1958,7 @@ class LiveRunner:
                 )
             )
             return 7, reason
-        commit = current_commit(self.cfg.repo_root)
+        commit = running_commit(self.cfg)
         try:
             self._bind_code()
             self.source_hash = verify_pin(
@@ -1973,7 +1988,7 @@ class LiveRunner:
             )
         self.log.info(
             f"{self.cfg.display_name} | {self.cfg.strategy_class} {self.cfg.version_label} "
-            f"| hash {self.source_hash[:12]} | commit {commit or '?'} "
+            f"| hash {self.source_hash[:12]} | commit {commit} "
             f"| {'frozen' if self.cfg.is_frozen else 'REPO'} "
             f"| {'DRY RUN' if self.dry_run else 'LIVE'}"
         )

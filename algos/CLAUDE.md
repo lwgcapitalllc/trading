@@ -283,6 +283,8 @@ Most-cited code: `shared/alert_format.py`, `live/alerts.py`, `live/runner.py`, `
 **Read before touching:** Adding, renaming, cloning or registering a bot.
 Most-cited code: `tools/promote.py`.
 
+- 🔴 The startup line names the commit the snapshot was PROMOTED from, or "unknown" — it printed the box repo's HEAD (2026-09-16)
+
 
 ### `notes/shared-and-live-runtime-reference.md` — Shared components and live runtime reference
 

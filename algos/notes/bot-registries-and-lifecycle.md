@@ -291,3 +291,15 @@ mutation named in its docstring and run red on 2026-09-16. Three fixtures were b
 snapshot while testing guards further down the start; they now build the snapshot directory the
 check actually looks at, because a fixture describing a state production cannot reach is rule 13
 from the other end.
+
+## 🔴 The startup line's commit is the PROMOTED commit, or "unknown" (2026-09-16)
+
+`sos_fade_demo`'s startup line said `commit c8cdd64e` while its code fingerprint matched a
+snapshot promoted from `4f87809d`. The runner read the box repo's HEAD — which a `git pull` moves
+while the frozen `deployed/` snapshot stays put. Now a frozen bot prints the commit `promote.py`
+recorded in `deployed.json` (`promoted_commit`), and **"unknown"** when there is no record. A bot
+running from the repo (not frozen) still prints HEAD, because that is what it runs. The same value
+goes into the ledger's startup row. ⚠ A promote with `--allow-dirty` still records HEAD, which then
+does not fully describe the files — `promote.py` already warns about that at promote time.
+
+Tests: `tests/test_running_commit_label.py` (4; red at HEAD — no such function, and the line read HEAD).
