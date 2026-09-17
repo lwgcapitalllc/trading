@@ -4553,3 +4553,51 @@ not separate the winners. ⚠ **It is not a clean refutation**, because Realign 
 stops behind the counter shift, which changes R and therefore which outcomes count as wins. Both
 differences are real. But the honest reading is that the remaining case for it rests on the STOP,
 not on the pattern — and that is a smaller claim than the one this line started with.
+
+---
+
+## Run 35 — 2026-09-17: the REALIGN trigger as the no-gap entry — the first positive on this line
+
+**Question (Aaron):** build the Realign pattern as the no-gap confirmation, with Realign's own
+stop, and measure it.
+
+**Method:** `backtest/tools/nogap_realign_entry.py` (branch `research/nogap-shift-5m`, commit
+c53a4ab6). Against Run 32's 195 no-gap setups. The trigger is Realign's, on the **5m SWING
+stream** — `realign_long_source="swing"`, the 5m's own external structure, NOT the engine's
+internal events, which is the distinction `strategies/python/realign/CLAUDE.md` says inverts the
+result:
+
+1. a counter-direction external break (against the trade), then
+2. a with-trend external shift — that second event is the trigger.
+
+Entry market at the trigger bar's close, next 1m bar. Stop the counter-move extreme +
+`realign_sl_buf_tk` (20 ticks = $0.20). The setup is abandoned if the 15m 1.0 is touched first.
+Flat $0.20 per trade, charged on winners and losers. XAUUSD, 2020-01 → 2026-08.
+
+**It fired on 77 of the 195 setups (39%)** — against the 73% the bare 1m break fired on in Run 33,
+so the pair IS the selective filter Run 33 said was missing.
+
+| Target | Trades | Total | Win | 2020–23 | 2024–26 | Without best 3 |
+|---|---|---|---|---|---|---|
+| **the 15m 0.0 extreme** | 77 | **+50.21R** | **77.9%** | **+37.29R** | **+12.92R** | **+34.44R** |
+| fixed 3R | 77 | −13.63R | 19.5% | −8.28R | −5.34R | −22.60R |
+| fixed 2R | 77 | −9.67R | 28.6% | −6.32R | −3.34R | −15.64R |
+
+🔴 **THE HYPOTHESIS GOING IN WAS WRONG, AND THE REASON MATTERS.** Runs 33–34 argued the case for
+Realign rested on its tighter stop. **It is not tighter** — median 105% of SOS Fade's risk on the
+same setups, $10.50 against $10.78. The stop is a wash. **The edge is the TARGET.** The same 77
+trades, same entries, same stops, lose money at a fixed 3R and at a fixed 2R, and make +50R
+taken at the structural extreme. That is a high-win-rate, ~1.1R-average-win profile, which is a
+different animal from SOS Fade's primary and is why every fixed-R test in Runs 27–34 missed it.
+
+**Why this one is worth believing more than the others.** It holds in both halves at nearly
+identical win rates (77.8% / 78.3%), it survives deleting the best three trades, and the entry
+rule was specified in advance by an existing strategy rather than found by searching. ⚠ Against
+that: 77 trades over 6.5 years, and it is the first positive after eight negative runs on the
+same record, so some of it may be the multiple-testing that Run 34 was careful about.
+
+🔴 **NOT YET A RESULT THAT CAN BE TRADED, AND MUST NOT BE QUOTED AS ONE.** This is a standalone
+screen — no slot contention, no broker cost profile, no interaction with the primary, which in
+Runs 29 and 31 cost 24 primaries. **The next step, and the only one that decides it, is the same
+bot replay Runs 29/31 used:** wire this trigger and the extreme target into the fast clock and
+run `base` against it on one clock.
