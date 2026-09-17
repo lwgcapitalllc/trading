@@ -2764,3 +2764,13 @@ export function DailyPnlChart({
     </ResponsiveContainer>
   )
 }
+
+// ── Section label ─────────────────────────────────────────────────────────────
+
+export function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
+      {children}
+    </h2>
+  )
+}

@@ -101,6 +101,7 @@ import {
   PerfCollapseToggle,
   PerformancePanel,
   RegimeLegend,
+  SectionLabel,
   SeriesToggle,
   SizedCurveLegend,
   SizedEquityCurveChart,
@@ -1039,16 +1040,6 @@ function LogsSection({
         </div>
       )}
     </div>
-  )
-}
-
-// ── Section label ─────────────────────────────────────────────────────────────
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
-      {children}
-    </h2>
   )
 }
 

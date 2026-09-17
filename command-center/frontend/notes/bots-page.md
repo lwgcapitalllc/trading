@@ -1800,3 +1800,16 @@ live — it only reads). Backend: `backend/notes/accounts-risk.md` → *An accou
   a bot read it on that account); nothing is said while the snapshot is still loading. Deposits and
   withdrawals on one day are one marker ("Net +$9,859.51 (3 moves)") — they sat on one x and their
   labels printed over each other.
+
+- **Account results: laid out like a backtest run page (2026-09-17, Aaron: "look identical to
+  backtest same flow").** Top to bottom it now follows the backtest page: the backtest's header
+  (back link, title, grey chips for account number and symbol, plus the kind badge, and Refresh
+  where the backtest keeps Rerun), then the source line and the warning box where the backtest
+  puts its running and failed banners, then the backtest's Performance header and cards with the
+  account's six figures as the cards' ribbon, then **Charts** in the shared tab panel with the
+  same tabs (Equity / Price / Breakdown) and the same fullscreen. Breakdown adds R distribution
+  under the backtest's three charts. The price chart is built only while its tab is open.
+  Left out because only a backtest has them: the settings side panel, the Sized tab, the regime
+  table, the sizing timeline and the logs. The backtest page has no trade list, so neither does
+  this page. The Charts heading moved from the backtest page into `runAnalysis/panels.tsx`
+  unchanged.
