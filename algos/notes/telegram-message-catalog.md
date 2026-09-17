@@ -525,3 +525,11 @@ Made $348.60
 Exit 4291.98
 The bot has flattened its own record and keeps trading.
 ```
+
+### Trades room — a stop the owner tightened (2026-09-17)
+
+Replied under the trade's ENTRY message, once per level:
+
+```
+✋ STOP MOVED BY YOU · 4301.37
+```

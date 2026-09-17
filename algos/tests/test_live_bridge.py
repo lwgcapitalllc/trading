@@ -3693,6 +3693,8 @@ def _scaled_position(base_sl=3280.0, add_sl=3270.0, pos_stop=3280.0):
     ex = _FakeExecution(pos_dir=1, qty=1.0, filled=0.0, adds=[[3295.0, 0.5]])
     b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
     b._pos_ticket = 555
+    # A real open position always has its side set; the stop rules read it (2026-09-17).
+    b._pos_dir = 1
     b._pos_stop = pos_stop
     return b, ops, ledger, notes
 
@@ -4448,6 +4450,7 @@ def _replay_restart(tmp_path, **replay):
     ex._qty = replay.get("qty", 14.0)  # units: 14 oz = 0.14 lots of gold
     ex._filled_qty = replay.get("filled", 0.0)
     ex._adds = replay.get("adds", [])
+    ex._sl = 4352.44  # the frozen entry stop — R's yardstick
     ex.snapshot = {"_stage": 0}
     ok = b.apply_restore()
     b.begin_live()
@@ -4473,7 +4476,7 @@ def test_a_replay_that_holds_the_same_trade_ADOPTS_it(tmp_path):
         ({"dir": 0}, "FLAT"),
         ({"dir": 1}, "direction"),
         ({"entry": 4316.50}, "entry"),
-        ({"stop": 4355.00}, "stop"),
+        ({"stop": 4350.00}, "stop"),  # the broker's 4352.44 is LOOSER on a short
         ({"qty": 16.0}, "size"),
         ({"filled": 7.0}, "size"),  # the replay banked half; the broker did not
         ({"adds": [[4330.0, 5.0]]}, "scale-in"),
@@ -4588,14 +4591,140 @@ def test_anything_but_a_proven_full_hand_close_still_HALTS_and_says_why(tmp_path
     assert ex.close_requested is None
 
 
-def test_a_hand_close_with_another_of_our_positions_still_open_is_NOT_booked_as_yours(tmp_path):
-    """⚠ What happens NEXT is pre-existing and not this change's: the other position is adopted
-    as the trade on the same bar. Pinned here only that the hand-close path stays out of it."""
-    b, ops, ex, ledger, _n, _t = _held_short(tmp_path)
-    ops.positions = [_Pos(9999, 1, 4320.0, 0.07, 4352.44)]
-    ops.origin = {"opened": 0.14, "closed": {0: 0.14}}
+def test_a_replay_whose_stop_is_LOOSER_than_the_brokers_adopts_the_owners_stop(tmp_path):
+    """The owner tightened it while the bot was down. RED before: halted on "stop"."""
+    b, ok, _l, _n = _replay_restart(tmp_path, stop=4360.0)
+    assert ok, b.halt_reason
+    assert b._hand_stop == 4352.44 and b._pos_stop == 4352.44
+    assert b._pos_risk_usd == pytest.approx((4352.44 - 4316.98) * 0.14 * 100)
+
+
+# ── a stop the OWNER moves at the broker (2026-09-17) ─────────────────────────
+
+
+def _broker_stop(ops, ticket, sl):
+    ops.positions = [_Pos(ticket, 1, 4316.98, 0.14, sl)]
+
+
+def test_a_hand_TIGHTENED_stop_is_kept_and_announced_once(tmp_path):
+    """RED before: the next strategy ratchet (still looser) overwrote it with 4340.
+    MUTATION: skip `_observe_hand_stop` -> red."""
+    b, ops, ex, ledger, notes, ticket = _held_short(tmp_path)
+    _broker_stop(ops, ticket, 4301.37)
+    ops.actions.clear()
+    b.sync(_Dec(stop=4340.0), _Sig())  # the strategy ratchets, but not as far
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert not any(a[0] == "move_sl" for a in ops.actions), ops.actions
+    assert notes[-1] == "✋ STOP MOVED BY YOU · 4301.37"
+    assert "event:stop_moved_by_hand" in ledger.kinds()
+    from position_state import read as read_record
+
+    assert read_record(tmp_path).broker.stop == 4301.37
+
+    n = len(notes)
+    b.sync(_Dec(stop=4330.0), _Sig())
+    assert len(notes) == n, "announced once"
+    assert not any(a[0] == "move_sl" for a in ops.actions)
+
+
+def test_the_strategy_takes_over_once_ITS_stop_is_tighter_still(tmp_path):
+    b, ops, ex, _l, _n, ticket = _held_short(tmp_path)
+    _broker_stop(ops, ticket, 4301.37)
+    b.sync(_Dec(stop=4340.0), _Sig())
+    ops.actions.clear()
+    b.sync(_Dec(stop=4295.0), _Sig())
+    assert ("move_sl", ticket, 4295.0, None) in ops.actions
+
+
+def test_a_hand_LOOSENED_stop_halts_and_says_so(tmp_path):
+    b, ops, ex, _l, _n, ticket = _held_short(tmp_path)
+    _broker_stop(ops, ticket, 4360.0)
+    ops.actions.clear()
     b.sync(_Dec(stop=4352.44), _Sig())
-    assert [kw for k, kw in ledger.rows if k == "closed"][0]["reason"] != (
-        live_bridge.MANUAL_CLOSE_REASON
-    )
-    assert ex.close_requested is None
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "LOOSER" in b.halt_reason and "4360.0" in b.halt_reason
+    assert not any(a[0] == "move_sl" for a in ops.actions)
+
+
+def test_a_REMOVED_stop_halts(tmp_path):
+    b, ops, ex, _l, _n, ticket = _held_short(tmp_path)
+    _broker_stop(ops, ticket, 0.0)
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_a_target_set_never_sends_a_looser_stop_than_the_owners(tmp_path):
+    b, ops, ex, _l, _n, ticket = _held_short(tmp_path)
+    _broker_stop(ops, ticket, 4301.37)
+    b.sync(_Dec(stop=4340.0), _Sig())
+    assert b._effective_stop(4340.0) == 4301.37
+    assert b._effective_stop(4290.0) == 4290.0
+    assert b._effective_stop(None) is None
+
+
+def test_a_stop_out_AT_THE_OWNERS_STOP_is_booked_as_such_and_trading_goes_on(tmp_path):
+    """The strategy's own stop is looser, so it still holds the trade: without this it halts."""
+    b, ops, ex, ledger, notes, ticket = _held_short(tmp_path)
+    _broker_stop(ops, ticket, 4301.37)
+    b.sync(_Dec(stop=4340.0), _Sig())
+    ops.positions, ops.deal = [], (4301.37, 217.3)
+    ops.origin = {"opened": 0.14, "closed": {4: 0.14}}
+    b.sync(_Dec(stop=4340.0), _Sig())
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    closed = [kw for k, kw in ledger.rows if k == "closed"][0]
+    assert closed["reason"] == live_bridge.HAND_STOP_EXIT_REASON
+    assert closed["price"] == 4301.37
+    assert ex.close_requested is not None
+
+
+def test_a_broker_stop_out_with_NO_hand_stop_still_halts(tmp_path):
+    b, ops, ex, _l, _n, ticket = _held_short(tmp_path)
+    ops.positions, ops.deal = [], (4352.44, -496.4)
+    ops.origin = {"opened": 0.14, "closed": {4: 0.14}}
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "its stop" in b.halt_reason
+
+
+def test_a_hand_TIGHTENED_add_stop_is_kept():
+    b, ops, _, _ = _scaled_position(base_sl=3285.0, add_sl=3290.0, pos_stop=3285.0)
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)
+    assert not any(a[0] == "move_sl" and a[1] == 556 for a in ops.actions)
+
+
+def test_a_hand_LOOSENED_add_stop_halts():
+    """RED before: the bot quietly moved it back and carried on."""
+    b, ops, _, _ = _scaled_position(base_sl=3285.0, add_sl=3270.0, pos_stop=3285.0)
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)  # the bot sets it to 3285
+    ops.positions[1] = _Pos(556, 0, 3295.0, 0.5, 3260.0)  # ...and it is dragged away
+    ops.actions.clear()
+    b._sync_stop(_Dec(stop=3285.0), ops.positions)
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "T556" in b.halt_reason
+
+
+# ── the tracked trade vanishes while another of ours stays open (2026-09-17) ──
+
+
+def test_a_vanished_trade_with_another_position_left_HALTS_and_adopts_nothing(tmp_path):
+    """RED before: the other position was adopted as the trade on the same bar, silently."""
+    b, ops, ex, _l, _n, ticket = _held_short(tmp_path)
+    ops.positions = [_Pos(9999, 1, 4320.0, 0.07, 4352.44)]
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "T9999" in b.halt_reason and "will not take them over" in b.halt_reason
+    assert b._pos_ticket is None
+
+
+def test_the_same_on_the_fill_clock(tmp_path):
+    ex = _FakeExecution(pend_sec=_Pend(1, 3270.0, 20.0, 3260.0), entry_kind="secondary")
+    b, ops, _ledger, _ = _bridge(ex, instance_dir=tmp_path)
+    b.sync_fast(_fast_step())
+    ops.positions = [_Pos(ops.orders[0].ticket, 0, 3270.0, 0.20, 3260.0)]
+    ex._pos_dir, ex._pend_sec = 1, None
+    ex.snapshot = {"_stage": 0}
+    b.sync_fast(_fast_step())
+    ops.positions = [_Pos(8888, 0, 3275.0, 0.10, 3260.0)]
+    b.sync_fast(_fast_step())
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert b._pos_ticket is None

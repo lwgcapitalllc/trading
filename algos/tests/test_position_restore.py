@@ -390,10 +390,26 @@ def test_a_stop_moved_by_hand_halts_rather_than_being_adopted(tmp_path):
     does not know about, and the bot cannot tell a hand edit from a bug. Adopting the broker's
     number would compute every later ratchet off a level the strategy never chose."""
     _record(tmp_path, stop=3280.0)
-    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3285.0)])
+    # LOOSER on this long: more risk than the trade was sized for (2026-09-17 split the two).
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3275.0)])
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "3280.0" in b.halt_reason and "3285.0" in b.halt_reason
+    assert "3280.0" in b.halt_reason and "3275.0" in b.halt_reason
     assert "NOT be adopted" in b.halt_reason
+
+
+def test_a_stop_TIGHTENED_by_hand_is_adopted_as_the_owners(tmp_path):
+    """Less risk is not a reason to abandon the trade (2026-09-17). RED before: halted.
+    MUTATION: drop `hand_tightened` -> red."""
+    _record(tmp_path, stop=3280.0)
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3285.0)])
+    assert b.state is not live_bridge.BridgeState.HALTED, b.halt_reason
+    assert b._pos_stop == 3285.0 and b._hand_stop == 3285.0
+
+
+def test_a_tightened_stop_together_with_ANOTHER_difference_still_halts(tmp_path):
+    _record(tmp_path, stop=3280.0)
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3285.0, lots=0.5)])
+    assert b.state is live_bridge.BridgeState.HALTED
 
 
 def test_a_record_for_a_different_bot_halts(tmp_path):
@@ -538,3 +554,29 @@ def test_a_snapshot_that_raises_during_a_rewarm_does_not_halt(tmp_path):
     b.stage_rewarm()
     assert b._pending_restore is None
     assert b.state is not live_bridge.BridgeState.HALTED
+
+
+def test_a_restored_stop_TIGHTER_than_the_strategys_stays_the_floor(tmp_path):
+    """The record stores the broker's stop. If that is tighter than the strategy's own after the
+    restore, the owner set it, and the first ratchet must not loosen it (2026-09-17).
+    MUTATION: drop the floor in `apply_restore` -> red."""
+    _record(tmp_path, stop=3285.0)
+    ex = _FakeExecution(current_stop=3280.0)
+    ex.snapshot = dict(_SNAP)
+    b, ops, _, _ = _startup(tmp_path, positions=[_held(stop=3285.0)], execution=ex)
+    ex._pos_dir = 1
+    assert b.apply_restore()
+    assert b._hand_stop == 3285.0
+    ops.actions.clear()
+    b._sync_stop(type("D", (), {"stop": 3282.0})(), ops.positions)
+    assert not any(a[0] == "move_sl" for a in ops.actions)
+
+
+def test_a_restored_stop_EQUAL_to_the_strategys_sets_no_floor(tmp_path):
+    _record(tmp_path, stop=3280.0)
+    ex = _FakeExecution(current_stop=3280.0)
+    ex.snapshot = dict(_SNAP)
+    b, _ops, _, _ = _startup(tmp_path, positions=[_held(stop=3280.0)], execution=ex)
+    ex._pos_dir = 1
+    assert b.apply_restore()
+    assert b._hand_stop is None

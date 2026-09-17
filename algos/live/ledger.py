@@ -119,6 +119,8 @@ _DECISION_EVENTS = {
     "primary_fill_deferred",
     # The OWNER closed the trade by hand and it was booked as his (2026-09-17). About a TRADE.
     "manual_close",
+    # The owner moved the open trade's stop CLOSER at the broker and it was kept (2026-09-17).
+    "stop_moved_by_hand",
     "stop_moved",
     "dry_run_action",
     # a position that existed before this process did, so the strategy never chose it

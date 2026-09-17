@@ -174,6 +174,20 @@ _BROKER_CLOSE_REASONS = {4: "its stop", 5: "its target", 6: "a margin stop-out"}
 #: The commanded close fills on the bar AFTER the one that reads it, so two is the ordinary case.
 _MANUAL_FLATTEN_BARS = 3
 
+#: The exit reason for a trade the broker stopped out AT A STOP THE OWNER TIGHTENED (2026-09-17).
+#: Its own value for the same reason as `MANUAL_CLOSE_REASON`: the strategy did not choose it.
+HAND_STOP_EXIT_REASON = "stopped_at_your_stop"
+
+
+def _tighter(direction: int, a, b) -> bool:
+    """Is stop `a` strictly closer to price (less risk) than stop `b`, on a trade in `direction`?
+    A zero stop — none set at the broker — is never tighter than anything."""
+    if not a or not direction:
+        return False
+    if not b:
+        return True
+    return float(a) > float(b) if direction > 0 else float(a) < float(b)
+
 
 #: Every place an order can rest, as (INTENT, side).
 #:
@@ -650,6 +664,11 @@ class OrderBridge:
         self._manual_ticket: Optional[int] = None
         self._manual_flatten_bars = 0
         self._vanished_because = ""
+        # A stop the OWNER tightened at the broker, kept as a floor under the strategy's own
+        # (2026-09-17); `None` = none. `_add_stop_sent` is the stop this bridge last sent each
+        # scale-in lot, so a lot the owner LOOSENED can be told from one awaiting a ratchet.
+        self._hand_stop: Optional[float] = None
+        self._add_stop_sent: dict = {}
         # Set when a scale-in lot refuses to close, read by `_why_not_scaled` so the halt that
         # follows names the real cause instead of the generic duplicate-orders one. Deliberately
         # NOT cleared on a later bar: the lot is still open until somebody closes it by hand.
@@ -841,6 +860,15 @@ class OrderBridge:
             return False
 
         diffs = position_state.disagreements(record, p, point=self._point())
+        # A stop the OWNER tightened while the bot was down is less risk, not a reason to refuse
+        # the trade (2026-09-17). Only a stop-only difference, and only in that direction.
+        hand_tightened = (
+            len(diffs) == 1
+            and diffs[0].startswith("stop:")
+            and _tighter(record.broker.dir, getattr(p, "sl", None), record.broker.stop)
+        )
+        if hand_tightened:
+            diffs = []
         if diffs:
             self._halt(
                 f"The recorded position T{record.ticket} and the one MT5 holds do not match: "
@@ -860,6 +888,9 @@ class OrderBridge:
         self._pos_entry = record.broker.entry
         self._pos_lots = record.broker.lots
         self._pos_stop = record.broker.stop
+        if hand_tightened:
+            self._pos_stop = float(p.sl)
+            self._hand_stop = float(p.sl)
         # NOT known across a restart, and each is left at the value that reads as "unknown"
         # rather than at a plausible stand-in. `_pos_intended` would otherwise report a slippage
         # of zero, which is a measurement nobody took; `_pos_opened_bar` counts from wherever
@@ -895,7 +926,10 @@ class OrderBridge:
             out.append(f"entry: replay {entry}, broker {p.price_open}")
         getter = getattr(ex, "_current_stop", None)
         stop = getter() if callable(getter) else None
-        if stop is None or abs(float(stop) - float(p.sl)) > tol:
+        # A broker stop TIGHTER than the replay's is the owner's and is kept (2026-09-17).
+        if stop is None or (
+            abs(float(stop) - float(p.sl)) > tol and not _tighter(got_dir, p.sl, stop)
+        ):
             out.append(f"stop: replay {stop}, broker {p.sl}")
         # Remaining size, so a partial the replay banked and the broker did not is a mismatch.
         lots = self._intended_open_lots()
@@ -937,11 +971,20 @@ class OrderBridge:
         self._pos_entry = float(p.price_open)
         self._pos_lots = float(p.volume)
         self._pos_stop = float(p.sl)
+        getter = getattr(self._ex, "_current_stop", None)
+        replay_stop = getter() if callable(getter) else None
+        if replay_stop is not None and self._moved(p.sl, replay_stop):
+            self._hand_stop = float(p.sl)  # the replay check only lets a TIGHTER one through
         self._pos_intended = 0.0
         self._pos_opened_bar = None
         self._pos_alert_id = None
+        # R is measured off the stop the trade OPENED with (the strategy's frozen 1R yardstick),
+        # never off a stop that has since moved. `0.0` = unknown, so no R is printed.
+        first = float(getattr(self._ex, "_sl", 0.0) or 0.0)
         self._pos_risk_usd = (
-            abs(self._pos_entry - self._pos_stop) * self._pos_lots * (self._contract_size() or 0.0)
+            abs(self._pos_entry - first) * self._pos_lots * (self._contract_size() or 0.0)
+            if first
+            else 0.0
         )
         self._pos_intent = getattr(self._ex, "entry_kind", "primary")
         self._restored = True
@@ -1040,6 +1083,17 @@ class OrderBridge:
             )
             return False
         self._restored = True
+        # A recorded stop TIGHTER than the strategy's own is one the owner set (the record stores
+        # the stop the broker held). Keep it as the floor, or the first ratchet after a restart
+        # would loosen it (2026-09-17).
+        getter = getattr(self._ex, "_current_stop", None)
+        own = getter() if callable(getter) else None
+        if (
+            own is not None
+            and _tighter(self._pos_dir, self._pos_stop, own)
+            and self._moved(self._pos_stop, own)
+        ):
+            self._hand_stop = float(self._pos_stop)
         # 🔴 **WHICH LEG OWNS THIS TRADE HAS TO COME BACK TOO, AND IT WAS THE ONE FIELD THAT DID
         # NOT (fixed 2026-09-02, with the blanket re-entry refusal).** `_pos_intent` is stamped at
         # the FILL and defaults to `"primary"` at construction, so a restart holding a RE-ENTRY
@@ -1195,6 +1249,8 @@ class OrderBridge:
         if self.state is BridgeState.HALTED:
             return
         self._observe_close(positions, dec, sig, owner="primary")
+        if self.state is BridgeState.HALTED:
+            return  # see `_observe_close` — never adopt what is left behind
         # AFTER `_observe_close` and BEFORE `_observe_open`, and both halves of that are load-bearing.
         # After the close, so a bar that ends one trade and opens another has released the ticket
         # before this asks whether we hold one. Before the open, so the position this places is
@@ -1249,6 +1305,8 @@ class OrderBridge:
             # BEFORE the stop, matching the emulator's own order: it banks the rung, then moves
             # the stop behind what is left. Reversed, a stop staged for the post-bank size would
             # be sent while the broker still holds the pre-bank size.
+            if not self._observe_hand_stop(positions):
+                return
             self._sync_partials(positions)
             self._sync_stop(dec, positions)
             # AFTER the stop, and the order is load-bearing: one MT5 instruction carries both
@@ -1322,6 +1380,8 @@ class OrderBridge:
         if self._primary_fill_awaiting_its_bar(positions):
             return
         self._observe_close(positions, dec, sig, owner="secondary")
+        if self.state is BridgeState.HALTED:
+            return
         self._observe_open(positions, dec, sig)
         self._observe_vanished()
         self._observe_orphans()
@@ -1334,6 +1394,8 @@ class OrderBridge:
         if self._ex._pos_dir != 0:
             self._cancel_all_rest("a position is open")
             if self._pos_intent == "secondary":
+                if not self._observe_hand_stop(positions):
+                    return
                 self._sync_partials(positions)
                 self._sync_stop(dec)
                 # 🔴 **THE ONE THAT MATTERS TODAY.** The armed bot's only rung that banks at a
@@ -1463,10 +1525,13 @@ class OrderBridge:
             else:
                 manual = True
                 reason = MANUAL_CLOSE_REASON
+                if self._hand_stop is not None and not self._closed_by_hand_at_all():
+                    reason = HAND_STOP_EXIT_REASON
         held = None
         if self._pos_opened_bar is not None and getattr(sig, "index", None) is not None:
             held = sig.index - self._pos_opened_bar
         side = "LONG" if self._pos_dir > 0 else "SHORT"
+        gone = self._pos_ticket
         self._log.info(
             f"POSITION CLOSED | T{self._pos_ticket} {side} @ {price} | "
             f"P&L ${pnl:,.2f}" + (f" ({r:+.2f}R)" if r is not None else "")
@@ -1493,7 +1558,10 @@ class OrderBridge:
             entry_price=self._pos_entry,
             intended_price=self._pos_intended,
         )
-        if manual:
+        if manual and reason == HAND_STOP_EXIT_REASON:
+            self._notify_exit(price, pnl, r, "your stop", sig)
+            self._begin_manual_flatten()
+        elif manual:
             self._notify(
                 alerts.format_manual_close(
                     symbol=self._mt5.symbol,
@@ -1519,8 +1587,19 @@ class OrderBridge:
         # leaving it would put a dead trade in front of the next person reading the instance
         # directory. `_restored` is cleared too: the NEXT position is an ordinary live fill.
         self._restored = False
+        self._hand_stop = None
         if self._instance_dir is not None:
             position_state.clear(self._instance_dir)
+        if positions:
+            # 🔴 2026-09-17: the ticket this bot was managing is gone and something else under its
+            # magic is still open. `_observe_open` used to adopt that as the trade on the same
+            # bar, silently. It is not the trade this bot sized or placed.
+            self._halt(
+                f"T{gone} closed and {len(positions)} other position(s) under this bot's magic "
+                f"are still open ({', '.join('T' + str(int(q.ticket)) for q in positions)}). They "
+                f"are not the trade this bot was managing, so it will not take them over. They "
+                f"keep their broker-side stops."
+            )
 
     # ── a trade the OWNER closed by hand (2026-09-17) ────────────────────────
     def _why_not_manual(self, positions) -> str:
@@ -1543,6 +1622,15 @@ class OrderBridge:
         if not closed:
             return "the deal history holds no closing deal for it yet"
         broker = {c: v for c, v in closed.items() if c in _BROKER_CLOSE_REASONS and v > 0}
+        if (
+            self._hand_stop is not None
+            and set(broker) == {4}
+            and not any(
+                v > 0 for c, v in closed.items() if c not in _BROKER_CLOSE_REASONS and c != 3
+            )
+            and abs(broker[4] - float(self._pos_lots)) < 0.005
+        ):
+            return ""  # stopped out at the owner's tighter stop: `_observe_close` books it so
         if broker:
             names = ", ".join(_BROKER_CLOSE_REASONS[c] for c in sorted(broker))
             return f"the broker closed it ({names}) and the strategy did not"
@@ -1560,6 +1648,12 @@ class OrderBridge:
                 f"{sum(closed.values()):.2f} closed"
             )
         return ""
+
+    def _closed_by_hand_at_all(self) -> bool:
+        ask = getattr(self._mt5, "close_origin", None)
+        origin = ask(self._pos_ticket) if callable(ask) else None
+        closed = (origin or {}).get("closed") or {}
+        return any(v > 0 for c, v in closed.items() if c in _MANUAL_CLOSE_REASONS)
 
     def _begin_manual_flatten(self) -> None:
         """Tell the STRATEGY the trade is over, and stand down until it agrees.
@@ -1582,10 +1676,12 @@ class OrderBridge:
         self._manual_flatten_bars = 0
         self._manual_ticket = self._pos_ticket
         self._log.info(
-            f"CLOSED BY YOU | T{self._pos_ticket} — booked as a hand close; the strategy closes its "
-            f"own record on its next bar and the bot keeps trading."
+            f"CLOSED OUTSIDE THE STRATEGY | T{self._pos_ticket} — by you, or at the stop you set; "
+            f"the strategy closes its own record on its next bar and the bot keeps trading."
         )
-        self._ledger.event("manual_close", ticket=self._pos_ticket)
+        self._ledger.event(
+            "manual_close", ticket=self._pos_ticket, at_hand_stop=self._hand_stop is not None
+        )
 
     def _manual_flatten_waiting(self) -> bool:
         """Is the strategy still catching up with a hand close? Clears itself once it is flat."""
@@ -2112,6 +2208,8 @@ class OrderBridge:
         # silence this one — a latch that outlives its cause is a guard that has stopped guarding.
         self._partial_alerted = ""
         self._vanished_because = ""
+        self._hand_stop = None
+        self._add_stop_sent = {}
         # ONE balance read, shared by the record and the message below. Two reads of a moving
         # number would let the ledger and the Telegram alert disagree about the same trade.
         realised = self._realised_risk_pct()
@@ -3628,7 +3726,7 @@ class OrderBridge:
         one ratchet above protects the BASE and would leave every add riding its original stop —
         under-protected, silently, with the base's own record looking perfectly correct.
         """
-        want = getattr(dec, "stop", None)
+        want = self._effective_stop(getattr(dec, "stop", None))
         if want is None or self._pos_ticket is None:
             return
         if self._moved(self._pos_stop, want):
@@ -3646,6 +3744,64 @@ class OrderBridge:
                 # disagrees.
                 self._save_position()
         self._sync_add_stops(want, positions)
+
+    def _effective_stop(self, want):
+        """The stop the broker should hold: the strategy's, or the owner's if that is tighter.
+        `None` in = `None` out (the strategy has not said)."""
+        if want is None:
+            return None
+        if self._hand_stop is not None and _tighter(self._pos_dir, self._hand_stop, want):
+            return self._hand_stop
+        return want
+
+    def _observe_hand_stop(self, positions) -> bool:
+        """Did the OWNER move the base position's stop at the broker? False = halted.
+
+        🔴 **Built 2026-09-17.** The bot compared the strategy's stop with the stop IT had last
+        sent, never with the broker's, so a hand-tightened stop was overwritten — loosened — the
+        next time the strategy's own stop moved. Now the broker's stop is read every bar:
+
+        - **tighter** than the last one this bot sent: kept, and from here it is a floor — the
+          strategy's stop only replaces it once the strategy's is tighter still. A thread reply
+          says so, once per level.
+        - **looser** (or removed): HALT. That is more risk than the trade was sized for.
+
+        ⚠ The strategy's own book is not edited (rule 22 — `execution.py` is parity-gated). A
+        broker stop-out at the hand stop is booked by `_observe_close` under
+        `HAND_STOP_EXIT_REASON`, and the strategy is flattened the same way as a hand close.
+        """
+        if self._pos_ticket is None or not positions:
+            return True
+        p = next((q for q in positions if int(q.ticket) == self._pos_ticket), None)
+        if p is None:
+            return True
+        have = getattr(p, "sl", None)
+        if not self._moved(have, self._pos_stop):
+            return True
+        if not _tighter(self._pos_dir, have, self._pos_stop):
+            self._halt(
+                f"The stop on T{self._pos_ticket} was moved to {have or 'none'}, further from price "
+                f"than the {self._pos_stop} this bot set. A LOOSER stop is more risk than the "
+                f"trade was sized for, so the bot will not trade on under it. Put it back, or "
+                f"close the trade."
+            )
+            return False
+        self._log.info(
+            f"STOP MOVED BY YOU | T{self._pos_ticket} {self._pos_stop} → {have}. Kept: the "
+            f"strategy's stop replaces it only once it is tighter still."
+        )
+        self._ledger.event(
+            "stop_moved_by_hand", ticket=self._pos_ticket, was=self._pos_stop, now=have
+        )
+        self._hand_stop = float(have)
+        self._pos_stop = float(have)
+        self._notify(
+            alert("✋", "STOP MOVED BY YOU", f"{float(have):.{self._digits()}f}"),
+            notify.TRADE,
+            reply_to=self._pos_alert_id,
+        )
+        self._save_position()
+        return True
 
     def _sync_add_stops(self, want, positions) -> None:
         """Ratchet every OTHER position under our magic onto the same stop.
@@ -3675,13 +3831,29 @@ class OrderBridge:
         for p in positions:
             if int(p.ticket) == self._pos_ticket:
                 continue
-            if not self._moved(getattr(p, "sl", None), want):
+            have = getattr(p, "sl", None)
+            sent = self._add_stop_sent.get(int(p.ticket))
+            if (
+                sent is not None
+                and self._moved(have, sent)
+                and not _tighter(self._pos_dir, have, sent)
+            ):
+                self._halt(
+                    f"The stop on scale-in lot T{int(p.ticket)} was moved to {have}, further from "
+                    f"price than the {sent} this bot set. A LOOSER stop is more risk than the "
+                    f"strategy sized for, so the bot will not trade on under it."
+                )
+                return
+            if _tighter(self._pos_dir, have, want):
+                continue  # tightened by hand: never loosened back (2026-09-17)
+            if not self._moved(have, want):
                 continue
             ok = self._exec(
                 lambda t=int(p.ticket): self._mt5.move_sl(t, want),
                 f"move stop T{int(p.ticket)} {getattr(p, 'sl', None)} → {want} (scale-in lot)",
             )
             if ok:
+                self._add_stop_sent[int(p.ticket)] = want
                 self._ledger.event(
                     "stop_moved",
                     ticket=int(p.ticket),
@@ -3852,7 +4024,9 @@ class OrderBridge:
         rule 1, and the same reading `_sync_add_stops` gives an empty list.
         """
         want = self._wanted_take_profit()
-        stop = getattr(dec, "stop", None)
+        # The stop that TRAVELS with the target is the one `_sync_stop` just kept — a hand-tightened
+        # stop included — or this instruction would loosen it in the act of setting a target.
+        stop = self._effective_stop(getattr(dec, "stop", None))
         if want is None or stop is None or self._pos_ticket is None or not positions:
             return
         for p in positions:

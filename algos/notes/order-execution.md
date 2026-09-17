@@ -813,3 +813,30 @@ the strategy's value — which can LOOSEN a stop you tightened. A target change 
 too. Scale-in lots are compared with the broker every bar, so a hand move on one is undone on the
 next bar. No halt while running; a RESTART halts, because the record's stop disagrees with the
 broker's.
+
+## ✋ A stop the OWNER moves at the broker, and a trade that vanishes beside another (2026-09-17)
+
+**Supersedes the "stop moved by hand" paragraph above**, which described the behaviour before
+this change.
+
+- **The broker's stop is read every bar** (`bridge._observe_hand_stop`), against the stop this bot
+  last sent. **Tighter** is kept as a floor (`_hand_stop`): the strategy's stop replaces it only
+  once the strategy's is tighter still (`_effective_stop`, also used for the stop that travels
+  with a target). First sight posts `✋ STOP MOVED BY YOU · <price>` into the trade thread and
+  rewrites the restart record. **Looser, or removed, halts** and says so.
+- **Scale-in lots:** a stop tighter than the wanted one is left alone; one moved looser than the
+  stop this bot last sent that lot (`_add_stop_sent`) halts.
+- **A broker stop-out at the owner's stop** — the strategy's own stop is looser, so it still holds
+  the trade — is booked as `stopped_at_your_stop` (real fill, R off the entry stop) and the
+  strategy is flattened through the commanded close, as for a hand close. With no hand stop, a
+  broker stop-out the strategy did not take still halts.
+- ⚠ **The strategy's own book is NOT edited** (rule 22: `execution.py` is parity-gated). Its
+  emulator keeps its own stop and ends the trade under `CMD` a bar later; the bridge is what makes
+  the owner's stop the one that governs, and the ledger reason is what keeps comparison honest.
+- **Restart:** a record, or a replay, whose ONLY difference is a broker stop tighter than its own
+  is adopted with that stop as the floor; a looser one still halts. A restored record stop tighter
+  than the strategy's own is kept as the floor too. A replay-adopted trade's R is measured off the
+  strategy's frozen entry stop, never a moved one.
+- **Takeover gap closed:** when the tracked ticket vanishes and another position under this magic
+  is still open, the bridge books the closed trade and HALTS naming the others; it no longer
+  adopts one of them as the trade (either clock).
