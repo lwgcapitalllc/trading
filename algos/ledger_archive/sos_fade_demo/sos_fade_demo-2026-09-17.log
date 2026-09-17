@@ -59,3 +59,21 @@
 2026-09-17 04:01:38,319 [INFO] Equity re-anchored to the account after warm-up: 9,749.12 → 10,733.16
 2026-09-17 04:01:38,327 [WARNING] Warmup ended with the strategy holding a simulated position — its entry is in the past, so it will NOT be opened live. Waiting for it to close before placing anything.
 2026-09-17 04:01:39,141 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 04:35:36,961 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-17 04:35:36,962 [INFO] Stop requested — shutting down.
+2026-09-17 04:35:36,962 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-17 04:35:37,549 [INFO] MT5 disconnected.
+2026-09-17 04:35:50,821 [INFO] SOS Fade | SosFadeStrategy v199 | hash 844c7329bb86 | commit d35dbcd3 | frozen | LIVE
+2026-09-17 04:35:51,350 [INFO] Connected | #34957946 | $10,733.16 | PUPrime-Live
+2026-09-17 04:35:51,351 [INFO] MT5 connection lock released
+2026-09-17 04:35:51,552 [INFO] Sizing against account balance $10,733.16
+2026-09-17 04:35:51,580 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-17 04:35:51,580 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-17 04:35:51,586 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-17 04:35:54,105 [INFO] Warmed 5000 bars (2026-07-02 13:00:00+00:00 → 2026-09-17 04:15:00+00:00) in 2.4s
+2026-09-17 04:35:57,162 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-02 13:05:00+00:00 → 2026-09-17 04:30:00+00:00).
+2026-09-17 04:35:57,164 [INFO] Equity re-anchored to the account after warm-up: 9,749.12 → 10,733.16
+2026-09-17 04:35:57,173 [INFO] Warmup ended holding a copy of T364105022, which is already closed (closed_by_you). The strategy drops it on its next bar and the bot then trades normally. Nothing is opened.
+2026-09-17 04:35:57,915 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 05:00:03,592 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
+2026-09-17 05:00:03,594 [INFO] Equity re-anchored to the account flat between trades: 10,977.28 → 10,733.16
