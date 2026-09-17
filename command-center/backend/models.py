@@ -1034,8 +1034,6 @@ class AccountHistory(BaseModel):
     open_positions: Optional[int] = None
     open_position_costs: Optional[float] = None
     reconciled: Optional[bool] = None
-    broker_balance: Optional[float] = None
-    broker_balance_matches: Optional[bool] = None  # None = could not check, never "matches"
     twr_pct: Optional[float] = None
     twr_reason: Optional[str] = None
     opening_balance: Optional[float] = None

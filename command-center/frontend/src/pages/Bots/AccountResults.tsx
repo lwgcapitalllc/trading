@@ -19,6 +19,7 @@ import {
   useAccountCandles,
   useAccountHistory,
   useRefreshAccountHistory,
+  useBotSnapshot,
   useRegisteredAccounts,
 } from '@/hooks/useBots'
 import {
@@ -140,6 +141,13 @@ export function AccountResults() {
   const refresh = useRefreshAccountHistory(account)
   const { data: registry } = useRegisteredAccounts()
   const reg = registry?.find((r) => r.account === account)
+  // MT5's live balance, off the Bots page's own snapshot — which shows a bot's balance only when it
+  // was read on the account that bot is on. Three answers: matches, does not, or cannot say (null).
+  const { data: snap, isLoading: snapLoading } = useBotSnapshot()
+  const brokerBalance =
+    snap?.bots.find((b) => Number(b.account) === account && b.balance != null)?.balance ?? null
+  const brokerMatches =
+    brokerBalance == null || h?.balance == null ? null : Math.abs(brokerBalance - h.balance) <= 0.01
   const symbol = h?.chart?.instrument || null
   const requestCandles = useAccountCandles(account, symbol)
 
@@ -156,12 +164,23 @@ export function AccountResults() {
   const { run, fallback } = useMemo(() => runFromBook(scored), [scored])
   const markers = useMemo(() => {
     if (!h) return []
-    return h.flows.map((f) => {
-      const next = points.find((p) => (p.exit_ms ?? 0) >= f.time_ms)
+    // One marker per DAY: moves on one day sit on one x and their labels printed over each other.
+    const byDay = new Map<string, { date: string; time_ms: number; net: number; n: number }>()
+    for (const f of h.flows) {
+      const day = f.date.slice(0, 10)
+      const g = byDay.get(day) ?? { date: f.date, time_ms: f.time_ms, net: 0, n: 0 }
+      g.net += f.amount
+      g.n += 1
+      g.time_ms = Math.max(g.time_ms, f.time_ms)
+      byDay.set(day, g)
+    }
+    return [...byDay.values()].map((g) => {
+      const next = points.find((p) => (p.exit_ms ?? 0) >= g.time_ms)
+      const verb = g.n > 1 ? `Net ${g.net >= 0 ? '+' : '-'}` : g.net >= 0 ? 'In ' : 'Out '
       return {
-        date: f.date,
+        date: g.date,
         tradeIndex: next?.index ?? (points.length ? points[points.length - 1].index : 1),
-        label: `${f.amount >= 0 ? 'In' : 'Out'} ${money(Math.abs(f.amount))}`,
+        label: `${verb}${money(Math.abs(g.net))}${g.n > 1 ? ` (${g.n} moves)` : ''}`,
         // Grey: money moved is neither a result nor something to click.
         color: C.axisTick,
       }
@@ -255,7 +274,8 @@ export function AccountResults() {
 
           {(h.reconciled === false ||
             (h.excluded_trades ?? 0) > 0 ||
-            h.broker_balance_matches !== true ||
+            brokerMatches === false ||
+            (brokerMatches == null && !snapLoading) ||
             (h.open_positions ?? 0) > 0 ||
             (h.adjustments_total ?? 0) !== 0 ||
             (h.unmatched_plans ?? 0) > 0 ||
@@ -273,14 +293,14 @@ export function AccountResults() {
                   chart, and left out of the figures below.
                 </div>
               )}
-              {h.broker_balance_matches === false && (
+              {brokerMatches === false && (
                 <div>
                   The rebuilt balance does not match MT5's live balance of{' '}
-                  {money(h.broker_balance, false)}. If a trade just closed, refresh in a minute;
+                  {money(brokerBalance, false)}. If a trade just closed, refresh in a minute;
                   otherwise a figure on this page is wrong.
                 </div>
               )}
-              {h.broker_balance_matches == null && (
+              {brokerMatches == null && !snapLoading && (
                 <div>Could not check the rebuilt balance against MT5's live balance.</div>
               )}
               {(h.open_positions ?? 0) > 0 && (

@@ -2026,13 +2026,10 @@ def _account_history(account: int, refresh: bool) -> dict:
             archive=account_history.read_archive(),
             contract_size=contract_size,
             load_bars=account_history.bar_loader(server),
+            load_bars_key=server,
+            refresh_bars=refresh,
         )
         out["contract_size"] = contract_size
-        try:
-            states = _parse_bot_states(_fetch_vps_snapshot())
-        except Exception:  # noqa: BLE001 — cannot ask is None below, never a mismatch
-            states = None
-        out.update(account_history.broker_balance_check(states, account, out.get("balance")))
         return out
 
     return account_history.cached(account, build, refresh=refresh)

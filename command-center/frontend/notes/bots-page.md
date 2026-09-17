@@ -1796,3 +1796,7 @@ live — it only reads). Backend: `backend/notes/accounts-risk.md` → *An accou
   price chart and is filtered out of every panel; a warning line names how many and what they made.
   The page also warns when the rebuilt balance does not match MT5's live one, and separately when it
   could not check.
+- The account page compares its rebuilt balance to the Bots snapshot's live balance (shown only when
+  a bot read it on that account); nothing is said while the snapshot is still loading. Deposits and
+  withdrawals on one day are one marker ("Net +$9,859.51 (3 moves)") — they sat on one x and their
+  labels printed over each other.

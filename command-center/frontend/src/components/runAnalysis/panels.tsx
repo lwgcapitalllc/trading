@@ -1826,8 +1826,11 @@ export function EquityCurveChart({
   // The colour-split offset must map to the FILLED SHAPE's bounding box — the data extremes incl.
   // startEq, NOT the padded axis domain. Using the padded domain drifts the green/red boundary off
   // the start line and bleeds a faint red tint into the positive region.
-  const dMin = Math.min(startEq, min)
-  const dMax = Math.max(startEq, max)
+  // ⚠ The BALANCE line's own values only: an overlay line below it (a growth line, a strategy leg)
+  // widened this range and moved the split off the start line, painting a winning curve red.
+  const eqValues = data.map((d) => d.equity)
+  const dMin = Math.min(startEq, ...eqValues)
+  const dMax = Math.max(startEq, ...eqValues)
   const startOffset = Math.min(1, Math.max(0, (dMax - startEq) / (dMax - dMin || 1)))
   const eqTicks = byDate
     ? monthTicks(anchorX, chartData[chartData.length - 1].x)

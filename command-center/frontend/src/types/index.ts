@@ -698,11 +698,8 @@ export interface AccountHistory {
   open_positions: number | null
   open_position_costs: number | null
   reconciled: boolean | null
-  broker_balance: number | null
   excluded_trades: number | null
   excluded_pnl: number | null
-  /** null = could not check, never "matches" */
-  broker_balance_matches: boolean | null
   twr_pct: number | null
   twr_reason: string | null
   opening_balance: number | null

@@ -1116,3 +1116,8 @@ original: the only differences are `export` and prettier re-wrapping the lines i
 `PeriodFilterChip` stays on the backtest page. ⚠ The stack page still builds its run object inline;
 `bookRun.ts` is the same arithmetic for the account page, and folding the stack page onto it is a
 separate change.
+
+- 🔴 **The equity chart's green/red split is measured on the BALANCE line's values only (2026-09-17).**
+  It used every overlay line's values too, so an overlay below the balance (the account page's
+  growth line, a stack's strategy leg) moved the split off the start line and painted a winning
+  curve red. Seen on the live account page; the shared chart is also the backtest's and the stack's.

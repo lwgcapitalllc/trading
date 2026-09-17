@@ -460,21 +460,6 @@ def test_the_money_per_price_unit_resolves_in_a_process_that_loaded_nothing_else
     assert out.stdout.strip().splitlines()[-1] == "100.0", out.stderr[-500:]
 
 
-def test_the_rebuilt_balance_is_checked_against_the_broker_only_on_this_account():
-    """RED when the account filter was dropped: another account's balance graded this one."""
-    from services.account_history import broker_balance_check as check
-
-    states = {
-        "other": {"observed_account": 1, "balance": 50.0},
-        "mine": {"observed_account": 7, "balance": 1000.004},
-    }
-    assert check(states, 7, 1000.0) == {"broker_balance": 1000.0, "broker_balance_matches": True}
-    assert check(states, 7, 990.0)["broker_balance_matches"] is False
-    assert check(states, 9, 1000.0)["broker_balance_matches"] is None
-    assert check(None, 7, 1000.0)["broker_balance_matches"] is None
-    assert check({"x": {"observed_account": 7, "balance": None}}, 7, 1.0)["broker_balance"] is None
-
-
 def test_a_trade_the_record_marks_as_not_the_strategys_stays_in_the_balance_only():
     """RED when `attach_plans` ignored the marker: the 2026-08-25 duplicate-order incident's four
     positions ($3,344.80) scored as manual trades in the account's strategy figures."""
@@ -494,3 +479,84 @@ def test_a_trade_the_record_marks_as_not_the_strategys_stays_in_the_balance_only
     attach_plans(positions, opens)
     assert [p["excluded"] for p in positions] == ["dupes", "dupes", "hand", None]
     assert all(p["bot"] is None and p["stop"] is None for p in positions)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_bars_memo():
+    """The bars memo is module-global; a test must never see another test's loader."""
+    ah._bars_memo.clear()
+    yield
+    ah._bars_memo.clear()
+
+
+def test_the_bars_are_loaded_once_per_trade_set_and_again_on_refresh(archive):
+    """RED with the memo lookup removed from `build_history`: the second open loaded the bars
+    again (4 loads, not 2) — the 42-second half of every page open, measured 2026-09-17. The
+    excursions must come back identical from the memo, and Refresh must load again."""
+    calls = []
+
+    def counting(symbol, tf, start, end):
+        calls.append(tf)
+        return _loader(symbol, tf, start, end)
+
+    first = _build(archive, loader=counting)
+    assert len(calls) == 2
+    second = _build(archive, loader=counting)
+    assert len(calls) == 2
+    assert second["chart"]["trades"] == first["chart"]["trades"]
+    ah.build_history(
+        ACCOUNT,
+        box=None,
+        box_error="x",
+        archive=ah.read_archive(archive),
+        contract_size=100.0,
+        load_bars=counting,
+        now_ms=0,
+        refresh_bars=True,
+    )
+    assert len(calls) == 4
+
+
+def test_a_failed_bar_load_is_not_remembered(archive):
+    """RED when the memo stored empty answers: a feed outage stuck for good."""
+    calls = []
+
+    def failing(symbol, tf, start, end):
+        calls.append(tf)
+        return [], "agent down", None
+
+    _build(archive, loader=failing)
+    _build(archive, loader=failing)
+    assert len(calls) == 4
+
+
+def test_the_growth_line_leaves_from_the_balance_trading_began_on():
+    """RED with the growth line scaled on the opening deposit: the live account's shape — $451.97
+    in, $10,311.48 by the first trade — drew the line at ~$470 beside a $10.7k balance."""
+    rows = [
+        _deal(1, _server_ms(2026, 9, 1, 9), type_=2, profit=451.97),
+        _deal(2, _server_ms(2026, 9, 2, 9), type_=2, profit=9_859.51),
+        _deal(3, _server_ms(2026, 9, 3, 9), type_=1, entry=0, pos=9, vol=0.1, price=2000.0),
+        _deal(
+            4,
+            _server_ms(2026, 9, 3, 12),
+            type_=0,
+            entry=1,
+            pos=9,
+            vol=0.1,
+            price=1990.0,
+            profit=100.0,
+        ),
+    ]
+    out = ah.build_history(
+        ACCOUNT,
+        box=(rows, []),
+        box_error=None,
+        archive=([], [], False),
+        contract_size=100.0,
+        load_bars=None,
+        now_ms=0,
+    )
+    point = out["equity"][0]
+    assert point["equity"] == pytest.approx(10_411.48)
+    assert point["twr_equity"] == pytest.approx(10_411.48)

@@ -927,3 +927,13 @@ both tests were fixed. The import-path test was watched red against the unfixed 
   `mark_trade.py`). It stays in the balance and on the chart, because the money was real; the page
   names how many and what they made. Measured on demo 700152905: 5 trades, +$4,518.23, which the
   panels had been counting as manual trades.
+- ⚠ **Account page speed (2026-09-17).** Measured: 51s per open, 42s of it the bar store fetching
+  today's bars and rewriting its whole file, twice. The bars and each trade's worst/best price are now
+  remembered per trade set (Refresh recomputes; a window reaching today expires after 15 min; an
+  empty answer is never remembered). Repeat opens measured at 2.8–3.2s; the first open after a new
+  trade or a backend restart is still ~40s. The live-balance check moved to the page (it reuses the
+  Bots snapshot), dropping a 6s box read. ⚠ The real fix — the bar store rewriting its whole file on
+  a one-day gap — lives in `backtest/data/`, which this feature did not touch.
+- ⚠ **The growth line is scaled on the balance at the FIRST TRADE, not the first deposit.** The live
+  account's first transfer was $451.97 and it traded on $10,311.48; scaling on the deposit drew the
+  line at ~$470 beside a $10.7k balance.

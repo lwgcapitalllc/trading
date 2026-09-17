@@ -558,7 +558,7 @@ def _trade_row(p: dict) -> dict:
 
 
 def _equity_point(
-    i: int, p: dict, r: Optional[float], contract_size: Optional[float], opening: Optional[float]
+    i: int, p: dict, r: Optional[float], contract_size: Optional[float], twr_scale: Optional[float]
 ) -> dict:
     fav = adv = None
     if contract_size and p.get("mfe") is not None and p.get("mae") is not None:
@@ -580,9 +580,9 @@ def _equity_point(
         "adverse": round(adv, 2) if adv is not None else None,
         "costs_usd": p["costs"],
         "r": round(r, 4) if r is not None else None,
-        # Growth with every deposit and withdrawal taken out, drawn on the opening deposit's scale.
-        "twr_equity": round(opening * p["twr_growth"], 2)
-        if opening is not None and p.get("twr_growth") is not None
+        # Growth with every deposit and withdrawal taken out, on the balance's scale at trade one.
+        "twr_equity": round(twr_scale * p["twr_growth"], 2)
+        if twr_scale is not None and p.get("twr_growth") is not None
         else None,
     }
 
@@ -606,6 +606,8 @@ def build_history(
     contract_size: Optional[float],
     load_bars: Optional[BarLoader],
     now_ms: Optional[int] = None,
+    load_bars_key: Optional[str] = None,
+    refresh_bars: bool = False,
 ) -> dict:
     """The whole answer for one account. Pure apart from `load_bars`, which the caller supplies.
 
@@ -665,23 +667,45 @@ def build_history(
         if symbol and positions:
             lo = min(p["entry_ms"] for p in positions)
             hi = max(p["exit_ms"] for p in positions)
-            start, end = _span_dates(lo - CHART_PAD_MS, hi + CHART_PAD_MS)
-            candles, err, bars_server = load_bars(symbol, CHART_TIMEFRAME, start, end)
-            if err:
-                bars_note = err
-            m1_start, m1_end = _span_dates(lo, hi)
-            m1, m1_err, _ = load_bars(symbol, "M1", m1_start, m1_end)
-            if m1_err and not bars_note:
-                bars_note = m1_err
-            for p in positions:
-                if p["symbol"] != symbol:
-                    continue
-                p["mae"], p["mfe"] = excursion(p, m1)
+            ours = [p for p in positions if p["symbol"] == symbol]
+            key = (
+                symbol,
+                load_bars_key,
+                tuple((p["ticket"], p["entry_ms"], p["exit_ms"]) for p in ours),
+            )
+            hit = None if refresh_bars else _bars_memo_get(key)
+            if hit is not None:
+                candles, bars_note_b, bars_server, excursions = hit
+                bars_note = bars_note or bars_note_b
+            else:
+                start, end = _span_dates(lo - CHART_PAD_MS, hi + CHART_PAD_MS)
+                candles, err, bars_server = load_bars(symbol, CHART_TIMEFRAME, start, end)
+                bars_note_b = err
+                m1_start, m1_end = _span_dates(lo, hi)
+                m1, m1_err, _ = load_bars(symbol, "M1", m1_start, m1_end)
+                bars_note_b = bars_note_b or m1_err
+                excursions = {p["ticket"]: excursion(p, m1) for p in ours}
+                bars_note = bars_note or bars_note_b
+                # Only an answer that SERVED bars is remembered (a fallback server's included — its
+                # note travels with it); an empty one is a feed failure and the next open retries.
+                if candles and m1:
+                    reaches_now = hi + CHART_PAD_MS >= (now_ms or int(time.time() * 1000))
+                    _bars_memo_put(
+                        key, (candles, bars_note_b, bars_server, excursions), reaches_now
+                    )
+            for p in ours:
+                p["mae"], p["mfe"] = excursions.get(p["ticket"], (None, None))
 
     opening = book["flows"][0]["balance_after"] if book["flows"] else None
+    # The growth line is drawn on the balance's own scale AT THE FIRST TRADE, so both lines leave the
+    # same point. Scaling on the opening deposit drew the live account's line at $470 beside a
+    # $10,733 balance, because the first transfer in was $451.97 and trading began on $10,311.48.
+    first = positions[0] if positions else None
+    g1 = first.get("twr_growth") if first else None
+    twr_scale = first["balance_after"] / g1 if g1 else None
     rs = [r_multiple(p, contract_size) for p in positions]
     equity = [
-        _equity_point(i, p, r, contract_size, opening)
+        _equity_point(i, p, r, contract_size, twr_scale)
         for i, (p, r) in enumerate(zip(positions, rs))
     ]
     trades = [_trade_row(p) for p in positions]
@@ -775,6 +799,35 @@ _cache: dict[int, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
 
 
+# 🔴 The bars are the slow half of an account page (measured 2026-09-17: 42s of a 51s open), because
+# a window reaching today makes the backtest bar store fetch the newest bars and rewrite its whole
+# file, twice. They depend only on WHICH trades there are, so they are remembered per trade set and
+# recomputed when a trade opens or closes, or on Refresh. A window still reaching into the present
+# is remembered for `_BARS_LIVE_TTL_S` only, so the chart's right edge keeps moving.
+_BARS_LIVE_TTL_S = 15 * 60
+_BARS_MEMO_MAX = 16
+_bars_memo: dict = {}
+
+
+def _bars_memo_get(key):
+    with _cache_lock:
+        hit = _bars_memo.get(key)
+    if hit is None:
+        return None
+    expires, value = hit
+    if expires is not None and time.monotonic() > expires:
+        return None
+    return value
+
+
+def _bars_memo_put(key, value, reaches_now: bool) -> None:
+    expires = time.monotonic() + _BARS_LIVE_TTL_S if reaches_now else None
+    with _cache_lock:
+        if key not in _bars_memo and len(_bars_memo) >= _BARS_MEMO_MAX:
+            _bars_memo.pop(next(iter(_bars_memo)))
+        _bars_memo[key] = (expires, value)
+
+
 def cached(account: int, build: Callable[[], dict], refresh: bool = False) -> dict:
     now = time.monotonic()
     with _cache_lock:
@@ -806,31 +859,3 @@ def candles_window(load_bars: BarLoader, symbol: str, tf: str, from_ms: int, to_
         "hard_edge": False,
         "overlays": [],
     }
-
-
-def broker_balance_check(states: Optional[dict], account: int, rebuilt: Optional[float]) -> dict:
-    """Does the rebuilt balance match the balance MT5 reports right now? THREE answers (rule 1).
-
-    `broker_balance_matches` is True/False only when a bot's heartbeat read the balance ON THIS
-    account (`observed_account`, off the same terminal call) — `None` when nobody could say:
-    the box was unreachable, no bot is on the account, or the history rebuilt nothing.
-    ⚠ A mismatch within one poll of a trade closing is expected: the deal files are rewritten on
-    the next refresh after the balance moves.
-    """
-    out = {"broker_balance": None, "broker_balance_matches": None}
-    if not states or rebuilt is None:
-        return out
-    for state in states.values():
-        try:
-            if int(state.get("observed_account")) != int(account):
-                continue
-            bal = state.get("balance")
-            if bal is None:
-                continue
-            bal = float(bal)
-        except (TypeError, ValueError):
-            continue
-        out["broker_balance"] = round(bal, 2)
-        out["broker_balance_matches"] = abs(bal - rebuilt) <= RECONCILE_TOLERANCE
-        return out
-    return out
