@@ -102,9 +102,15 @@ XAUUSD_VANTAGE = InstrumentFacts(
 #
 # 🔴 TWO THINGS HERE DO NOT BEHAVE LIKE GOLD AND BOTH CHANGE THE STRATEGY.
 #   1. SWAP IS SEVERELY ASYMMETRIC: long +4.83, short -20.68 per lot per night. A long is PAID
-#      to hold; a short bleeds. At this strategy's ~4-day median hold a short pays about $83/lot
-#      against a long earning about $19. Gold's short swap is a credit, so a cost intuition
-#      carried over from gold is not just wrong here, it is wrong with the sign flipped.
+#      to hold; a short bleeds. Those are POINTS, not dollars: converted they are +$3.10 and
+#      -$13.25 per lot per night, so at a ~4-day median hold a short pays about $53/lot against
+#      a long earning about $12. Gold's short swap is a credit, so a cost intuition carried over
+#      from gold is not just wrong here, it is wrong with the sign flipped.
+#   🔴 AND NOTHING IN `backtest/fills.py` DOES THAT CONVERSION. `SwapModel.per_lot_per_night`
+#      returns the SYMBOL'S QUOTE CURRENCY while calling itself account-currency — always the
+#      same thing until now, because every instrument here is USD-quoted. On this pair it would
+#      overstate swap by 156x and refuse nothing. Fix it at the seam, for every non-USD-quoted
+#      instrument at once, before pricing any of them. See notes/instrument_profiles.md.
 #   2. POINT VALUE IS NOT CONSTANT. Gold's 1.0 of price is always $1.00. Here it is
 #      yen-denominated, so it moves with USDJPY: `tick_value` read 0.6409188 per 0.001 tick on
 #      2026-09-17, i.e. ~640.92 per 1.0 of price per lot AT THAT MOMENT. The figure below is a

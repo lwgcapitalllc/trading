@@ -55,17 +55,47 @@ boundary when history reaches it, and then words the result as "no real bars bef
 
 ### Two things that do not behave like gold, and both change the strategy
 
-1. **Swap is severely asymmetric: long +4.83, short -20.68 per lot per night.** A long is PAID
-   to hold; a short bleeds. At this strategy's ~4-day median hold a short pays about $83/lot
-   against a long earning about $19. Gold's short swap is a CREDIT — so a cost intuition
-   carried over from gold is not merely wrong here, it is wrong with the sign flipped. Expect
-   the fit to prefer longs. Aaron's call, 2026-09-17: run both directions and let it show,
-   rather than constraining up front.
+1. **Swap is severely asymmetric: long +4.83, short -20.68 points per lot per night.** A long
+   is PAID to hold; a short bleeds. Converted properly (see the currency bug below) that is
+   **+$3.10 and -$13.25 per lot per night**, so at this strategy's ~4-day median hold a short
+   pays about **$53/lot** against a long earning about **$12/lot**. Gold's short swap is a
+   CREDIT — so a cost intuition carried over from gold is not merely wrong here, it is wrong
+   with the sign flipped. Expect the fit to prefer longs. Aaron's call, 2026-09-17: run both
+   directions and let it show, rather than constraining up front.
+   ⚠ An earlier draft of this note read those points as DOLLARS and quoted $83 and $19. That
+   was the very mistake the section below describes, made by hand.
 2. **Point value is not constant.** Gold's 1.0 of price is always $1.00. Here it is
    yen-denominated and moves with USDJPY — `tick_value` read 0.6409188 per 0.001 tick on
    2026-09-17, about 640.92 per 1.0 of price per lot at that moment. **OPEN: a multi-year
    backtest cannot hold it fixed without mis-sizing every trade far from that rate.** Decide
    where the runner sources it before believing any result. Rule 15.
+
+## 🔴 THE BLOCKER: the cost model has no currency conversion
+
+**Commission IS measured now — $1.00 per lot per side, read off a real round trip on demo
+700152905 on 2026-09-17 (2 deals, 0.02 lots, -$0.02), the same rate gold pays on this tier.**
+That is not what stops the pair running.
+
+`SwapModel.per_lot_per_night` computes `points * contract_size * 10**-digits` and its docstring
+calls the result "account-currency". **It is not. It is the SYMBOL'S QUOTE CURRENCY.** Every
+instrument this repo has ever priced is USD-quoted, so quote and account currency have always
+been the same thing and the gap has never shown.
+
+GBPJPY is quoted in yen. The model would return **483 and -2068** and the caller would spend
+them as dollars — **overstating swap by 156x**, the USDJPY rate. Nothing in the path converts,
+and nothing refuses either: the numbers are the right shape and plainly wrong.
+
+⚠ **This is rule 15 exactly** — *ask what a value's UNIT is on each side of a boundary, and
+which line converts it*. There is no such line. It is not GBPJPY-specific: any non-USD-quoted
+instrument hits it, so it has to be fixed once, at the seam, before ANY of them can be priced.
+
+⚠ **And the conversion is not a constant.** USDJPY moved from roughly 100 to 160 over the
+window a backtest would replay. A fixed rate is wrong by up to 60% at the ends, in a cost that
+compounds every night a position is held. The honest fix sources the rate per bar, the same way
+`point_value` has to (the other open item above — they are the same problem, and fixing one
+should fix both).
+
+**Until that exists, a GBPJPY run must refuse.** It does.
 
 ## Why GBPJPY still refuses to run
 
