@@ -101,3 +101,7 @@ The last order on this side was REFUSED: [risk_not_authorised] the order would r
 2026-09-17 12:00:03,410 [ERROR] Bridge halted — the loop will keep observing but place nothing.
 2026-09-17 12:00:03,438 [INFO] Equity re-anchored to the account flat between trades: 10,517.80 → 10,733.16
 2026-09-17 12:15:01,023 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 12:30:08,821 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 12:45:05,953 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 13:00:02,089 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-17 13:15:09,093 [ERROR] Bridge halted — the loop will keep observing but place nothing.
