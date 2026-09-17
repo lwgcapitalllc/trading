@@ -331,8 +331,17 @@ to say. A snapshot now carries `paused_by` — the rules keeping its order off t
 hour, HTF filter) — and the thread posts `⏸ LIMIT WITHDRAWN` with the rule, once. The next order
 is always reported as `🔁 LIMIT MOVED`, even at the same price, because the reader was told it was
 gone; the marker rides the saved `sent` set, so a restart keeps it. ⚠ **A pull with no named rule
-stays silent** — the cancel-and-replace churn Aaron asked to hear nothing about. ⚠ The two price
-refusals (tight stop, quiet market) do not fill `paused_by` yet. ⚠ **Reaches a bot only on promote**
+stays silent** — the cancel-and-replace churn Aaron asked to hear nothing about.
+✅ **Every named pull is covered since the same evening** (Aaron kept WITHDRAWN and asked for the
+rest). sos_fade names: divergence veto, final hour, short-hold hour window (its own label, no longer
+read as the final hour), HTF breakout / bias filter, flat-by-close window, stop too tight, market
+too quiet, limit deeper than the short-hold maximum, and no room under the account risk cap (at
+placement and at the fill). The reasons are set in `_place_entries` from the same booleans that
+removed the order, not recomputed. ⚠ **Still silent, by design:** no edge to rest on (no gap in the
+zone), an arm source switched off, a wrong-way fib, an already-traded leg — none is a rule to wait
+out — and a broker-side cancel. ⚠ `b_leg`, `bos` and `realign` replace `_place_entries` and name
+nothing. ⚠ **The extreme leg has no setup alerts at all** (its log says "Setup alerts: OFF"), so it
+has no thread to withdraw. ⚠ **Reaches a bot only on promote**
 (the field lives in `backtest/` and the strategy); the runner half reaches it by pull and is inert
 until then. **MEASURED** trades unchanged: `replay_fingerprint.py` 2024-01 → 2026-08, 66 trades
 identical.

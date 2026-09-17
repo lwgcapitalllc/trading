@@ -285,23 +285,102 @@ def test_a_caller_that_FORGETS_the_price_flags_fails_loudly():
 
 
 # ── an order the strategy PULLED while the setup lives on (2026-09-16) ───────────────────────
-def test_the_final_hour_is_reported_as_WHY_an_order_is_off_the_book_before_the_zone_is_tagged():
-    """🔴 sos_fade_demo, 20:15 UTC: the final-hour rule pulled a resting sell limit on a setup
-    whose zone was not yet tagged, so `blocked_by` (ready setups only) was empty and the thread
-    had no reason to give. `paused_by` carries it regardless of readiness.
-
-    RED without `paused_by`: the key is absent. MUTATION: gate it on `zone_met` and it reddens.
-    """
-    m = _MissWatch()
-    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
-    ctx = _ex()._setup_context(_sig(), m, True, arm_swp=True, arm_div=False,
-                               veto=False, late=True, htf_any=False, tight=False, quiet=False)
-    assert ctx["blocked_by"] == ()
-    assert ctx["paused_by"] == ("Final hour (16:00-18:00 New York)",)
+from strategies.python.sos_fade.execution import Decision  # noqa: E402
 
 
-def test_nothing_is_reported_as_withholding_an_order_when_no_rule_is():
-    assert _ctx(_ex())["paused_by"] == ()
+def _pull_ex(gates=(False, True, True, False, False, False, False), armed=(False, False),
+             **cfg_kw):
+    """An Execution whose arm decision is PINNED, so only the reporting path is under test.
+
+    `_armed` and `_record_blocks` are replaced: the arm rules have their own suites, and the
+    question here is only which name a pulled order is reported under."""
+    ex = _ex(**cfg_kw)
+
+    def armed_fn(sig, seq, dec, le, se):
+        ex._blk_gates = gates
+        return armed
+
+    ex._armed = armed_fn
+    ex._record_blocks = lambda *a: None
+    return ex
+
+
+def _place(ex, is_long=False, veto=False):
+    sig = _sig(is_long)
+    sig.fibo_p1, sig.fibo_p7, sig.ny_hour = 99.0, 101.0, 10
+    sig.fibo_ash_ms = sig.fibo_asl_ms = None
+    dec = Decision(index=1)
+    dec.long_veto = dec.short_veto = veto
+    seq = SimpleNamespace(l_sos_bar=7, s_sos_bar=7)
+    edge = 100.0 if is_long else 94.0
+    ex._place_entries(sig, seq, dec, edge if is_long else None, None if is_long else edge)
+    return ex._pull_why[0 if is_long else 1]
+
+
+def _watching(ex, slot=1):
+    ex._setup_ctx[slot] = dict(key="K", side=-1 if slot else 1, confluences=(), zone=None,
+                               stop=None, blocked_by=(), tradeable=True, announce_resting=True)
+    return [s for s in ex.live_setups() if s.key == "K"][0]
+
+
+def test_the_FINAL_HOUR_names_itself_on_a_pulled_order_even_before_the_zone_is_tagged():
+    """🔴 sos_fade_demo, 2026-09-16 20:15 UTC. RED without the pull reasons: paused_by is empty."""
+    ex = _pull_ex(gates=(True, True, True, False, False, False, False))
+    assert _place(ex) == ("Final hour (16:00-18:00 New York)",)
+    snap = _watching(ex)
+    assert snap.state == "watching"
+    assert snap.paused_by == ("Final hour (16:00-18:00 New York)",)
+
+
+def test_the_VETO_and_the_HTF_filter_name_themselves():
+    ex = _pull_ex(gates=(False, True, True, False, True, False, False))
+    assert _place(ex, veto=True) == ("Divergence / extreme-RSI veto", "HTF breakout / bias filter")
+
+
+def test_the_SHORT_HOLD_window_is_not_mislabelled_as_the_final_hour():
+    """RED if the variant's window is folded into `late` for the message."""
+    ex = _pull_ex(exec_short_hold=True, exec_sh_block_from=9, exec_sh_block_to=11)
+    assert _place(ex) == ("Short-hold hour window",)
+
+
+def test_a_TIGHT_stop_names_itself_when_the_side_was_armed():
+    """MUTATION: drop `_price_reasons` from the else-branch and this reddens."""
+    ex = _pull_ex(armed=(False, True), exec_min_stop_val=10.0)
+    assert _place(ex) == ("Stop too tight for your minimum",)
+    assert ex._pend_short is None
+
+
+def test_a_QUIET_market_names_itself_when_the_side_was_armed():
+    ex = _pull_ex(armed=(False, True), atr=0.01)
+    assert _place(ex) == ("Market too quiet to fade",)
+
+
+def test_NO_ROOM_under_the_account_cap_names_itself_at_placement():
+    ex = _pull_ex(armed=(False, True))
+    ex._fit_to_budget = lambda qty, entry, stop: 0.0
+    assert _place(ex) == ("No room under the account risk cap",)
+
+
+def test_NO_ROOM_at_the_fill_names_itself():
+    """The account can also refuse at the fill; the order is dropped and the setup lives on."""
+    ex = _ex()
+    ex._account.request_fill = lambda *a, **k: 0.0
+    pend = SimpleNamespace(dir=-1, sl=100.0, qty=1.0)
+    assert ex._open_position(pend, 94.0, _sig(False), Decision(index=1)) is False
+    assert ex._pull_why[1] == ("No room under the account risk cap",)
+
+
+def test_a_side_whose_ARM_SOURCE_is_off_is_not_a_pause():
+    """Not a rule the reader can wait out — the setup can never trade. RED if it names anything."""
+    ex = _pull_ex(gates=(True, True, False, False, False, False, False))
+    assert _place(ex) == ()
+
+
+def test_nothing_is_named_while_an_order_RESTS():
+    ex = _pull_ex(armed=(False, True))
+    assert _place(ex) == ()
+    assert ex._pend_short is not None
+    assert _watching(ex).paused_by == ()
 
 
 def test_the_key_scheme_is_declared_so_a_promote_that_renames_setups_is_noticed():
@@ -309,3 +388,12 @@ def test_the_key_scheme_is_declared_so_a_promote_that_renames_setups_is_noticed(
     written in. RED if the attribute is removed: the live side would read "" for both."""
     assert Execution.setup_key_scheme == "time-v1"
     assert _ex()._setup_key(False, 7, 7_000).endswith(":S:t7000")
+
+
+def test_a_RESTING_order_never_carries_a_pause_reason():
+    """A reason left over from a refused fill must not ride a snapshot whose order is back.
+    MUTATION: pass `_pull_why` through regardless of state and this reddens."""
+    ex = _pull_ex(armed=(False, True))
+    _place(ex)
+    ex._pull_why[1] = ("No room under the account risk cap",)
+    assert _watching(ex).paused_by == ()

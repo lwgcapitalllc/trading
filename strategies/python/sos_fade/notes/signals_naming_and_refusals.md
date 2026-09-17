@@ -286,8 +286,10 @@ Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID
 - `Execution.setup_key_scheme = "time-v1"` tells the live alert layer how `_setup_key` spells a key.
   🔴 **Change it whenever the key format changes.** The promote from bar-number keys to time keys
   closed a live short's Telegram thread on `sos_fade_demo` because the two could not be compared.
-- `_setup_context` now also returns `paused_by`: veto, final hour and HTF filter whenever the arm is
-  met, whether or not the zone is tagged. `live_setups()` passes it only while nothing rests.
-  ⚠ Tight-stop and quiet-market refusals are not in it yet.
+- `_place_entries` records per side (`_pull_why`, cleared every `step`) which named rule kept the
+  order off the book: veto, final hour, short-hold window, HTF filter, flat-by-close, tight stop,
+  quiet market, too deep, no account room (also set by a refused fill). `live_setups()` passes it
+  as `paused_by` only while nothing rests. Unarmed for a structural reason names nothing. The
+  forks that replace `_place_entries` name nothing.
 - Reporting only: `replay_fingerprint.py` 2024-01 → 2026-08 — bars and 66 trades IDENTICAL.
   Detail: `algos/notes/telegram-and-notifications.md`.

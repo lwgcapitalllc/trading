@@ -78,6 +78,20 @@ def _nearest(shallow, deep, deep_dist, shallow_dist):
     return deep if deep_dist < shallow_dist else shallow
 
 
+#: The names a pulled order is reported under in the signals channel (`SetupSnapshot.paused_by`).
+#: The first three match the BLOCKED wording in `_setup_context`, so one rule reads the same in
+#: both messages.
+_PULL_VETO = "Divergence / extreme-RSI veto"
+_PULL_LATE = "Final hour (16:00-18:00 New York)"
+_PULL_SH_HOURS = "Short-hold hour window"
+_PULL_HTF = "HTF breakout / bias filter"
+_PULL_FLAT = "Flat-by-close window"
+_PULL_TIGHT = "Stop too tight for your minimum"
+_PULL_QUIET = "Market too quiet to fade"
+_PULL_DEEP = "Limit deeper than the short-hold maximum"
+_PULL_NO_ROOM = "No room under the account risk cap"
+
+
 @dataclass
 class Fill:
     """One order fill this bar — an entry or a (partial) exit."""
@@ -904,6 +918,10 @@ class Execution:
         # back, so no decision can move — proven by replay, not by this comment.
         self._setup_ctx: List[Optional[dict]] = [None, None]
         self._setup_done: List[SetupSnapshot] = []
+        #: Per side, the strategy's own rules that kept this bar's order OFF the book — set only
+        #: by `_place_entries` and `_open_position`, from the same booleans that removed it, and
+        #: cleared at the top of every `step`. Reporting only: read by `live_setups()` alone.
+        self._pull_why: List[Tuple[str, ...]] = [(), ()]
         # What an alert calls this bot. Overwritten by the STRATEGY that owns this object,
         # because three strategies share this execution layer and its own class name would
         # label all of them "Execution". The default is honest rather than blank: an unnamed
@@ -1240,6 +1258,7 @@ class Execution:
 
         # Before anything reads a bar number. See `_same_leg` for why a number is not enough.
         self._remember_bar(sig)
+        self._pull_why = [(), ()]
 
         # Tell the account WHEN it is, unless a shared stack's simulator already owns the clock.
         # Without this a standalone run stamps every budget and venue-ceiling record with a null
@@ -1884,17 +1903,6 @@ class Execution:
 
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
-        # The rules keeping an order off the book RIGHT NOW, whether or not the zone is tagged —
-        # a resting limit is placed before price reaches the band, so `blocked` above (ready
-        # setups only) cannot say why one was pulled. Reporting only; see `SetupSnapshot.paused_by`.
-        paused = []
-        if arm_met:
-            if veto:
-                paused.append("Divergence / extreme-RSI veto")
-            if late:
-                paused.append("Final hour (16:00-18:00 New York)")
-            if htf_any:
-                paused.append("HTF breakout / bias filter")
 
         return {
             "key": self._setup_key(is_long, m.sos_bar, m.sos_ms),
@@ -1926,7 +1934,6 @@ class Execution:
             "zone": zone,
             "stop": proj_stop,
             "blocked_by": tuple(blocked),
-            "paused_by": tuple(paused),
         }
 
     def _book_setup_end(self, ctx: Optional[dict], state: str, reason: str,
@@ -1985,7 +1992,7 @@ class Execution:
                 blocked_by=ctx["blocked_by"],
                 tradeable=ctx["tradeable"],
                 announce_resting=ctx["announce_resting"],
-                paused_by=() if resting else ctx.get("paused_by", ()),
+                paused_by=() if resting else self._pull_why[slot],
             ))
         return out
 
@@ -2098,8 +2105,15 @@ class Execution:
         self._record_blocks(sig, seq, dec, long_edge, short_edge)
 
         # deliberate deviation: no NEW entry inside the flat-by-close window (real runs)
-        if cfg.flat_by_close and self._in_flat_window(sig):
+        flat_window = bool(cfg.flat_by_close and self._in_flat_window(sig))
+        if flat_window:
             long_armed = short_armed = False
+        # Reporting only: which named rule kept each side off the book. Read off the gates
+        # `_armed` just decided with, so it cannot describe a rule that did not act.
+        self._pull_why = [
+            self._gate_reasons(sig, dec, True, long_armed, flat_window),
+            self._gate_reasons(sig, dec, False, short_armed, flat_window),
+        ]
 
         # One snapshot for both sides — they read the same live fib, and taking it once is what
         # guarantees a long and a short placed on this bar report the identical leg.
@@ -2115,10 +2129,13 @@ class Execution:
                     and not self._too_deep(sig, long_edge, True):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 qty = self._fit_to_budget(qty, long_edge, sl)
+                if qty <= 0:
+                    self._pull_why[0] = (_PULL_NO_ROOM,)
                 self._pend_long = _Pending(
                     1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar, fib) if qty > 0 else None
             else:
                 self._pend_long = None
+                self._pull_why[0] = self._price_reasons(sig, long_edge, True)
         else:
             self._pend_long = None
 
@@ -2132,13 +2149,57 @@ class Execution:
                     and not self._too_deep(sig, short_edge, False):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 qty = self._fit_to_budget(qty, short_edge, sl)
+                if qty <= 0:
+                    self._pull_why[1] = (_PULL_NO_ROOM,)
                 self._pend_short = _Pending(
                     -1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar, fib) if qty > 0 else None
             else:
                 self._pend_short = None
+                self._pull_why[1] = self._price_reasons(sig, short_edge, False)
         else:
             self._pend_short = None
 
+
+    def _gate_reasons(self, sig, dec, is_long: bool, armed: bool,
+                      flat_window: bool) -> Tuple[str, ...]:
+        """The named rules that kept one side UNARMED this bar — reporting only.
+
+        ⚠ **Only rules a reader can act on or wait out.** A setup with no edge (nothing to rest a
+        limit on), an arm source switched off, a wrong-way fib or an already-traded leg is not a
+        pause, so it names nothing and the thread stays silent — the setup is either not ready
+        or already over.
+        """
+        if armed or self._blk_gates is None:
+            return ()
+        cfg = self._cfg
+        late, arm_ok_l, arm_ok_s, htf_l, htf_s, bias_l, bias_s = self._blk_gates
+        if not (arm_ok_l if is_long else arm_ok_s):
+            return ()
+        veto = (dec.long_veto if is_long else dec.short_veto) and cfg.exec_respect_veto
+        out = []
+        if veto:
+            out.append(_PULL_VETO)
+        if late:
+            out.append(_PULL_LATE)
+        if self._sh_hour_block(sig):
+            out.append(_PULL_SH_HOURS)
+        if (htf_l or bias_l) if is_long else (htf_s or bias_s):
+            out.append(_PULL_HTF)
+        if flat_window:
+            out.append(_PULL_FLAT)
+        return tuple(out)
+
+    def _price_reasons(self, sig, edge, is_long: bool) -> Tuple[str, ...]:
+        """Why an ARMED side still placed nothing — the same helpers placement just asked."""
+        tight, quiet = self._price_blocks(sig, edge, is_long)
+        out = []
+        if tight:
+            out.append(_PULL_TIGHT)
+        if quiet:
+            out.append(_PULL_QUIET)
+        if self._too_deep(sig, edge, is_long):
+            out.append(_PULL_DEEP)
+        return tuple(out)
 
     def _too_deep(self, sig, edge: Optional[float], is_long: bool) -> bool:
         """Would this limit rest deeper into the retrace than the short-hold variant allows?
@@ -2625,8 +2686,10 @@ class Execution:
                 self._pend_sec = None
             elif pend.dir > 0:
                 self._pend_long = None
+                self._pull_why[0] = (_PULL_NO_ROOM,)
             else:
                 self._pend_short = None
+                self._pull_why[1] = (_PULL_NO_ROOM,)
             return False
         self._pos_dir = pend.dir
         self._entry_kind = kind
