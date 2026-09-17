@@ -69,7 +69,28 @@ for i in range(len(df5)):
 ev_bar = np.array([e[0] for e in ev5])
 print(f"5m swing events: {len(ev5)}", flush=True)
 
-trades = []
+VARIANTS = {
+    "any counter event": lambda is_shift: True,
+    "counter BREAK only": lambda is_shift: not is_shift,
+    "counter SHIFT only": lambda is_shift: is_shift,
+}
+# Targets. `f` is a fraction of the 15m fib leg measured from the extreme: 0.0 IS the extreme,
+# 0.382 stops short of it, and a negative f runs past it. `R` targets are fixed multiples of
+# the trade's own risk. Both are swept because Run 35 showed the two answer differently.
+TARGETS = [
+    ("fib 0.5", ("f", 0.5)),
+    ("fib 0.382", ("f", 0.382)),
+    ("fib 0.236", ("f", 0.236)),
+    ("the extreme", ("f", 0.0)),
+    ("0.27 past it", ("f", -0.27)),
+    ("0.618 past it", ("f", -0.618)),
+    ("1R", ("R", 1.0)),
+    ("2R", ("R", 2.0)),
+    ("3R", ("R", 3.0)),
+    ("4R", ("R", 4.0)),
+]
+
+all_trades = {k: [] for k in VARIANTS}
 for (d, _sos), v in rows_in.items():
     stop15, extreme, t0 = v["stop"], v["extreme"], v["t0"]
     half = (stop15 + extreme) / 2.0
@@ -84,63 +105,68 @@ for (d, _sos), v in rows_in.items():
         t_dead = ms1[min(len(ms1) - 1, i0 + HORIZON - 1)]
     b0, b1 = np.searchsorted(ms5, t0), np.searchsorted(ms5, t_dead, side="right")
     sel = np.where((ev_bar >= b0) & (ev_bar < b1))[0]
-    # the pattern: a counter break, THEN a with-trend shift
-    counter_bar = None
-    trig = None
-    for j in sel:
-        bar, ed, is_shift = ev5[j]
-        if ed == -d:
-            counter_bar = bar  # newest counter break replaces the old one
-        elif ed == d and is_shift and counter_bar is not None:
-            trig = (counter_bar, bar)
-            break
-    if trig is None:
-        continue
-    cb, tb = trig
-    entry = c5[tb]
-    # the counter-move extreme, between the counter break and the trigger
-    seg = slice(cb, tb + 1)
-    sl = (l5[seg].min() - BUF) if d == 1 else (h5[seg].max() + BUF)
-    risk = abs(entry - sl)
-    if risk <= 0:
-        continue
-    k0 = np.searchsorted(ms1, ms5[tb]) + 1  # enter on the next 1m bar
-    out = {}
-    for label, tgt in (
-        ("extreme", extreme),
-        ("3R", entry + d * 3 * risk),
-        ("2R", entry + d * 2 * risk),
-    ):
-        r = None
-        for i in range(k0, min(len(ms1), k0 + HORIZON)):
-            if (d == 1 and lo1[i] <= sl) or (d == -1 and hi1[i] >= sl):
-                r = -(risk + COST) / risk  # the cost hits the loser too
+    for vname, accepts in VARIANTS.items():
+        # the pattern: a counter event, THEN a with-trend shift
+        counter_bar, trig = None, None
+        for j in sel:
+            bar, ed, is_shift = ev5[j]
+            if ed == -d:
+                if accepts(is_shift):
+                    counter_bar = bar  # the newest QUALIFYING counter event wins
+            elif ed == d and is_shift and counter_bar is not None:
+                trig = (counter_bar, bar)
                 break
-            if (d == 1 and hi1[i] >= tgt) or (d == -1 and lo1[i] <= tgt):
-                r = (abs(tgt - entry) - COST) / risk
-                break
-        out[label] = r if r is not None else 0.0
-    trades.append({"t0": t0, "risk": risk, "wide": abs(half - stop15), **out})
+        if trig is None:
+            continue
+        cb, tb = trig
+        entry = c5[tb]
+        # the counter-move extreme, between the counter event and the trigger
+        seg = slice(cb, tb + 1)
+        sl = (l5[seg].min() - BUF) if d == 1 else (h5[seg].max() + BUF)
+        risk = abs(entry - sl)
+        if risk <= 0:
+            continue
+        k0 = np.searchsorted(ms1, ms5[tb]) + 1  # enter on the next 1m bar
+        out = {}
+        for label, (kind, val) in TARGETS:
+            tgt = (extreme + val * (stop15 - extreme)) if kind == "f" else (entry + d * val * risk)
+            if (d == 1 and tgt <= entry) or (d == -1 and tgt >= entry):
+                out[label] = None  # already behind price - not a trade, not a loss
+                continue
+            r = None
+            for i in range(k0, min(len(ms1), k0 + HORIZON)):
+                if (d == 1 and lo1[i] <= sl) or (d == -1 and hi1[i] >= sl):
+                    r = -(risk + COST) / risk  # the cost hits the loser too
+                    break
+                if (d == 1 and hi1[i] >= tgt) or (d == -1 and lo1[i] <= tgt):
+                    r = (abs(tgt - entry) - COST) / risk
+                    break
+            out[label] = r if r is not None else 0.0
+        all_trades[vname].append({"t0": t0, "risk": risk, "wide": abs(half - stop15), **out})
 
-n = len(trades)
-print(f"\nno-gap setups: {len(rows_in)}   Realign trigger fired on: {n}  ({n / len(rows_in):.0%})")
-if not n:
-    raise SystemExit(0)
-tight = np.array([t["risk"] for t in trades])
-wide = np.array([t["wide"] for t in trades])
-print(
-    f"Realign's stop vs SOS Fade's: median {np.median(tight / wide):.0%} of the risk "
-    f"(${np.median(tight):.2f} against ${np.median(wide):.2f})"
-)
-
-for label in ("extreme", "3R", "2R"):
-    rs = np.array([t[label] for t in trades])
-    tr = np.array([t[label] for t in trades if t["t0"] < SPLIT_MS])
-    te = np.array([t[label] for t in trades if t["t0"] >= SPLIT_MS])
-    print(f"\ntarget = {label}")
+for vname, trades in all_trades.items():
+    n = len(trades)
+    print(f"\n{'=' * 78}\n{vname}   fired on {n} of {len(rows_in)} setups ({n / len(rows_in):.0%})")
+    if not n:
+        continue
+    tight = np.array([t["risk"] for t in trades])
+    wide = np.array([t["wide"] for t in trades])
+    print(f"  stop size vs SOS Fade's: median {np.median(tight / wide):.0%}")
     print(
-        f"  all      n{n:<4} total {rs.sum():+7.2f}R  mean {rs.mean():+.3f}  "
-        f"win {np.mean(rs > 0):5.1%}  without best 3 {np.sort(rs)[:-3].sum():+7.2f}R"
+        f"\n  {'target':<16}{'n':>5}{'total':>10}{'win':>8}"
+        f"{'2020-23':>12}{'2024-26':>12}{'no best 3':>11}"
     )
-    print(f"  2020-23  n{len(tr):<4} total {tr.sum():+7.2f}R  win {np.mean(tr > 0):5.1%}")
-    print(f"  2024-26  n{len(te):<4} total {te.sum():+7.2f}R  win {np.mean(te > 0):5.1%}")
+    for label, _ in TARGETS:
+        rs = np.array([t[label] for t in trades if t[label] is not None])
+        if len(rs) < 10:
+            print(f"  {label:<16}{len(rs):>5}   (too few to read)")
+            continue
+        tr = np.array([t[label] for t in trades if t[label] is not None and t["t0"] < SPLIT_MS])
+        te = np.array([t[label] for t in trades if t[label] is not None and t["t0"] >= SPLIT_MS])
+        both = "  <-" if (len(tr) and len(te) and tr.sum() > 0 and te.sum() > 0) else ""
+        print(
+            f"  {label:<16}{len(rs):>5}{rs.sum():>+10.1f}{np.mean(rs > 0):>8.1%}"
+            f"{tr.sum():>+12.1f}{te.sum():>+12.1f}"
+            f"{np.sort(rs)[:-3].sum():>+11.1f}{both}"
+        )
+print("\n  <- marks a target positive in BOTH halves of the record.")
