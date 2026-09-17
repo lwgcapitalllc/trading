@@ -200,12 +200,14 @@ def config_from_export(df: pd.DataFrame) -> Tuple[RealignConfig, List[str]]:
         else:
             vals[field] = cast(round(v)) if cast is int else cast(v)
 
-    # The momentum filter: the Pine's 0 is "off", which is `None` here. An export older than
-    # the filter carries no column — reported as missing, and the setting stays off, which is
-    # what that older Pine ran.
+    # The momentum filter: the Pine's 0 is "off", which is `None` here. 🔴 An export older than
+    # the filter carries no column, and its Pine could not run the filter — so it is set OFF
+    # explicitly, never left at this side's default. The default is ON (20) since 2026-09-16;
+    # inheriting it would replay the older exports WITH a filter their chart never had.
     mom = get(MOM_CFG)
     if mom is None:
         missing.append(MOM_CFG)
+        vals["realign_mom_days"] = None
     else:
         vals["realign_mom_days"] = int(round(mom)) or None
 

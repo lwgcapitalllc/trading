@@ -334,7 +334,7 @@ class RealignConfig(SosFadeConfig):
     separately, not in the total. Default is `None` until it does.
     """
 
-    realign_mom_days: Optional[int] = None
+    realign_mom_days: Optional[int] = 20
     """Refuse a trade pointing the SAME way as gold's move over this many trading days. `None` = off.
 
     The move is the sign of the last completed day's close against the close N days before it
@@ -345,8 +345,10 @@ class RealignConfig(SosFadeConfig):
 
     MEASURED 2026-09-16 (`realign_optimization.md` → Run 12): at 20 days the worst drawdown fell
     14.48R → 5.07R and total R 54.09 → 48.50, with the recent half 18R WORSE. It fails the
-    both-halves bar; Aaron chose it anyway ("I like steady better"), so it is built. ⚠ Default
-    stays `None` until a TradingView export with it ON has passed the parity gate.
+    both-halves bar; Aaron chose it anyway ("I like steady better"). **ON at 20 since
+    2026-09-16**, after its TradingView export (filter at 20, 8 setups refused) passed the parity
+    gate. 🔴 Every realign figure before that date was measured with it OFF — pass `None` to
+    reproduce one.
     """
 
     # ── inherited defaults this fork must REFUSE ─────────────────────────────────

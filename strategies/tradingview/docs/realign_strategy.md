@@ -319,7 +319,7 @@ is its own change with its own measurement — never slipped in here to make one
 
 ## [22] The N-day momentum filter — completed New York trading days only
 
-**Added 2026-09-16, input "Skip trades with the N-day move", 0 = off (the default).** Refuses a
+**Added 2026-09-16, input "Skip trades with the N-day move", 0 = off; the default is 20.** Refuses a
 trade that points the same way as price's move over the last N trading days. Measured, reasoning
 and the decision to build it: `strategies/python/realign/realign_optimization.md` → Run 12.
 

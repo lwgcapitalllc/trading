@@ -1,5 +1,9 @@
 {
-  "csv": ["VANTAGE_XAUUSD_M5_21327bars.csv", "VANTAGE_XAUUSD_M5_21328bars_retest.csv"],
+  "csv": [
+    "VANTAGE_XAUUSD_M5_21327bars.csv",
+    "VANTAGE_XAUUSD_M5_21328bars_retest.csv",
+    "VANTAGE_XAUUSD_M5_20069bars_mom20.csv"
+  ],
   "gate": "tools/compare_realign.py",
   "warmup": 0,
   "broker": "Vantage",
@@ -7,11 +11,12 @@
   "timeframe": "M5",
   "bars": {
     "VANTAGE_XAUUSD_M5_21327bars.csv": 21327,
-    "VANTAGE_XAUUSD_M5_21328bars_retest.csv": 21328
+    "VANTAGE_XAUUSD_M5_21328bars_retest.csv": 21328,
+    "VANTAGE_XAUUSD_M5_20069bars_mom20.csv": 20069
   },
   "harness": "strategies/tradingview/realign_strategy_export.pine",
   "taken": "2026-09-16",
-  "_why_warmup": "0 means the GATE's own: it derives 1,000 bars (the 15m frame is aggregated from the 5m, so it needs its own swings before anything is compared) and compares the 20,326 after it.",
-  "_what_it_ran": "Shipped Pine inputs on the first file (market entry); the second is identical except Entry = Retest at the Level, expiry 12 bars. 15m external, trail on the EXTERNAL frame, time stop before TP1 at 36h. The gate configures the port from each export's own cfg columns and pins the reward-to-risk floor at 0.0 to match the Pine's guard.",
-  "_exercise_check": "Market file: 10 triggers (7 long, 3 short), 9 trades, no resting orders. Retest file: 9 fills, 1 limit expired unfilled, 1 refused with the limit exactly on the target. NEVER reached in either: a limit cancelled because price hit the stop first, a trigger with no retest level, and a second false break on the same side while one is live (18 times in 2020-2026, none here; mutating that rule leaves both green). Refusal codes are exported but not compared."
+  "_why_warmup": "0 means the GATE's own: it derives 1,000 bars (the 15m frame is aggregated from the 5m, so it needs its own swings before anything is compared) and compares the rest.",
+  "_what_it_ran": "Shipped Pine inputs on the first file (market entry); the second is identical except Entry = Retest at the Level, expiry 12 bars. Both predate the N-day momentum filter, carry no cfg_mom_days, and are replayed with it OFF. The third (2026-06-07 -> 2026-09-17) ran the market entry with 'Skip trades with the N-day move' = 20 — the shipped setting since 2026-09-16. 15m external, trail on the EXTERNAL frame, time stop before TP1 at 36h. The gate configures the port from each export's own cfg columns and pins the reward-to-risk floor at 0.0 to match the Pine's guard.",
+  "_exercise_check": "Market file: 10 triggers (7 long, 3 short), 9 trades, no resting orders. Retest file: 9 fills, 1 limit expired unfilled, 1 refused with the limit exactly on the target. Momentum file: 8 setups refused by the filter (code 7), the momentum sign compared on 14,368 bars (up and down both present), 2 trades. NEVER reached in any: a limit cancelled because price hit the stop first, a trigger with no retest level, a momentum reading of exactly 0, and a second false break on the same side while one is live (18 times in 2020-2026, none here; mutating that rule leaves all green). Refusal codes are exported but not compared."
 }

@@ -81,6 +81,7 @@ def test_a_market_entry_states_its_stop_on_the_bar_it_opens():
     a missing one — so an unset stop halts the bot on trade one. MUTATION: remove the
     `dec.stop = ...` line and this reads None."""
     ex = RealignExecution(RealignConfig(symbol="XAUUSD"), initial_capital=10_000.0)
+    ex.mom_dir = -1   # a down move, so the shipped momentum filter keeps this long
 
     class _Sig:
         index, time_ms = 100, 1_600_000_000_000

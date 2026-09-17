@@ -75,11 +75,12 @@ exactly, and a different risk default puts a different net under the same trades
 settings to defaults", picks up 5. ⚠ **No declaration moved**, so no other saved input shifts.
 ⚠ `b_leg_strategy.pine` and `bos_strategy.pine` still ship 10, and their Python ports pin 10.
 
-## `realign_strategy.pine` — "Skip trades with the N-day move" (2026-09-16, OFF by default)
+## `realign_strategy.pine` — "Skip trades with the N-day move" (2026-09-16, default 20)
 
 A new `7 · Filters` input, **declared as the LAST `int`** so no saved chart value shifts. It
 refuses a trade that points the same way as price's N-day move, and any trade before N + 1
 completed New York days exist (refusal code 7, tagged on the chart). The twin exports
 `cfg_mom_days` and `px_mom_dir`; realign's twin is now 52 plots of 64. Doc entry `[22]` in
-`docs/realign_strategy.md`. ⚠ **Take the next realign export with it at 20** — the committed
-golden exports predate it, so the gate has never compared the filter.
+`docs/realign_strategy.md`. **Parity green the same day on an export taken at 20** (now the third
+realign golden); the default moved 0 → 20 after it. ⚠ A chart already running the script keeps its
+saved 0 until "Reset settings to defaults".

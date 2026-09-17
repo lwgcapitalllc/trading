@@ -298,8 +298,10 @@ class _Sig:
 
 
 def _exec(**over):
+    # The momentum filter is OFF here: these tests are about order placement, and no bar has
+    # fed the filter a direction, so leaving it on would refuse every order they place.
     cfg = dataclasses.replace(RealignConfig(symbol="XAUUSD"),
-                              realign_entry_mode="retest", **over)
+                              **{"realign_entry_mode": "retest", "realign_mom_days": None, **over})
     ex = RealignExecution(cfg, initial_capital=10_000.0)
     ex._opened = []
     ex._open_position = lambda pend, px, sig, dec, **kw: (  # type: ignore[assignment]
@@ -357,6 +359,7 @@ def test_the_market_entry_still_opens_at_the_close():
     cfg = RealignConfig(symbol="XAUUSD")
     assert cfg.realign_entry_mode == "market", "the shipped default moved"
     ex = RealignExecution(cfg, initial_capital=10_000.0)
+    ex.mom_dir = -1   # a down move, so the shipped momentum filter keeps this long
     ex._opened = []
     ex._open_position = lambda pend, px, sig, dec, **kw: (
         ex._opened.append((pend, px)) or True)
@@ -412,7 +415,7 @@ def test_the_order_is_never_cancelled_on_the_bar_it_was_placed():
 # ── the N-day momentum gate ──────────────────────────────────────────────────────
 
 def _market_exec(**over):
-    cfg = dataclasses.replace(RealignConfig(symbol="XAUUSD"), **over)
+    cfg = dataclasses.replace(RealignConfig(symbol="XAUUSD"), **{"realign_mom_days": None, **over})
     ex = RealignExecution(cfg, initial_capital=10_000.0)
     ex._opened = []
     ex._open_position = lambda pend, px, sig, dec, **kw: (  # type: ignore[assignment]
@@ -446,10 +449,24 @@ def test_the_momentum_gate_is_inert_when_off():
     assert ex._opened, "the gate refused while switched off"
 
 
-def test_the_shipped_default_leaves_the_momentum_filter_off():
-    """ON only after a TradingView export with it on has passed the gate. Moving this default
-    re-bases every realign figure measured before 2026-09-16."""
-    assert RealignConfig().realign_mom_days is None
+def test_the_shipped_default_runs_the_20_day_momentum_filter():
+    """ON since its export passed the gate (2026-09-16). Moving this default re-bases every
+    realign figure again, and the Pine input default must move with it."""
+    assert RealignConfig().realign_mom_days == 20
+    pine = (_ROOT / "strategies" / "tradingview" / "realign_strategy.pine").read_text(encoding="utf-8")
+    assert 'momDays     = input.int(20, "Skip trades with the N-day move"' in pine
+
+
+def test_an_export_older_than_the_filter_replays_with_it_off():
+    """🔴 The older golden exports carry no momentum column and their Pine could not filter.
+    Falling back to this side's default (20) would replay them WITH the filter — the gate goes
+    red about a rule the chart never had, or worse, green about the wrong book."""
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    cfg, _missing = config_from_export(pd.DataFrame({"cfg_bits": [3.0]}))
+    assert cfg.realign_mom_days is None
 
 
 @pytest.mark.parametrize("bad", [0, -5])
