@@ -123,9 +123,21 @@ live sizing is currency-correct and the backtest's is not — on GBPJPY the two 
 same setup completely differently. That is a lab-vs-live divergence in the one number that
 decides how much money is at stake.
 
-**The fix is to fold the point value into the sizing formula**, mirroring what the live side
-already does. At gold's 1.0 it is provably a no-op, so no existing result moves — but it is a
-change to a LIVE strategy's sizing line and must be treated as one.
+**FIXED 2026-09-17.** All four sizing sites now go through one helper, `_qty_for_risk`, which
+divides by `dist * point_value` — mirroring what the live side already does. At gold's 1.0 the
+denominator is the old one, so it is arithmetically the same expression.
+
+Proof it moved nothing on gold, in the order it was taken:
+
+- The Pine parity gate is GREEN with the change in place — `scripts/check_engine_gates.py`,
+  sos_fade against `VANTAGE_XAUUSD_M15_20220bars.csv` at **warm-up 468**, exit 0, all 21 gates.
+- The gate's output is BYTE-IDENTICAL before and after the change, checked by reverting the four
+  lines and re-running.
+- 104 tests green in `tests/test_execution.py`.
+- ⚠ **The warm-up matters and cost an hour.** Run by hand at warm-up 0 or 100 the same export
+  reports a mismatch — the engines are still cold. `check_engine_gates.py` is the invocation that
+  knows each export's warm-up, and a hand-run gate that disagrees with it is the hand-run being
+  wrong. Do not conclude "the gate is red" from a bare command line.
 
 ### A worked example of how easy this is to get wrong
 

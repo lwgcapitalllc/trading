@@ -1606,3 +1606,54 @@ def test_the_strategy_does_NOT_overwrite_a_clock_a_SHARED_STACK_owns():
     ex._account.now = 12345
     ex.step(_sig(7, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     assert ex._account.now == 12345, "the simulator's clock must survive a leg stepping"
+
+
+# ── currency conversion in sizing (2026-09-17) ──────────────────────────────────
+
+
+def test_dollar_risk_is_the_STATED_risk_when_point_value_is_not_1():
+    """A non-USD-quoted instrument must risk what the setting says, not a multiple of it.
+
+    `dist` is a price distance in the SYMBOL'S quote currency; `equity` is in the ACCOUNT'S.
+    Sizing used to divide one by the other and ignore `point_value`, while risk is booked as
+    `qty * dist * point_value` — so the dollars actually at stake were the stated risk TIMES
+    `point_value`. Gold's is 1.0, so the two agreed and six years of runs never showed it.
+
+    GBPJPY's measured per-unit value is 0.006409188 (tick value 0.6409188 off PU Prime demo
+    700152905, 2026-09-17, divided by tick size 0.001 and contract 100,000).
+
+    RED WITHOUT THE FIX: sizing returns 200/3.82 = 52.36 units, so the risk booked is
+    52.36 * 3.82 * 0.006409188 = $1.28 against the $200.00 asked for — 156x too small, and in
+    the opposite direction on an instrument whose point value is above 1.
+
+    ⚠ Equity is deliberately small so the answer stays under the 100-lot venue ceiling; at a
+    larger balance the clamp would mask the formula, which is the trap the two tests above
+    already document.
+    """
+    pv = 0.006409188
+    ex = Execution(_cfg(exec_risk_pct=10.0, point_value=pv), initial_capital=2_000.0)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+
+    dist = 103.82 - 100.0          # long edge (0.618) to stop (1.0)
+    assert abs(ex._qty - (200.0 / (dist * pv))) < 1e-6
+    # The property that actually matters: dollars at risk == the stated percentage of equity.
+    assert abs(ex._qty * dist * pv - 200.0) < 1e-9
+
+
+def test_gold_sizing_is_UNCHANGED_by_the_conversion():
+    """The no-op guard: at `point_value = 1.0` the new denominator is the old one.
+
+    This is what lets the fix land on a live strategy's sizing line without moving a single
+    stored result. It is a separate test from the one above ON PURPOSE — a change that broke
+    gold while fixing the yen pair would leave that one green.
+
+    MUTATION: dividing by `dist * point_value ** 2` reds the test above and leaves this one
+    green, which is exactly why both are needed.
+    """
+    ex = Execution(_cfg(exec_risk_pct=10.0), initial_capital=100_000.0)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+
+    assert ex._cfg.point_value == 1.0
+    assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6

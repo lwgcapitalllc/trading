@@ -1223,7 +1223,7 @@ class Execution:
         if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
-                qty = (self.equity * risk_pct / 100.0) / dist
+                qty = self._qty_for_risk(risk_pct, dist)
                 qty = self._fit_to_budget(qty, arm.l_edge, arm.l_sl)
                 # ⚠ An unaffordable long falls THROUGH to the short check rather than returning
                 # nothing. Only one side can be taken, and refusing the pair because the first
@@ -1241,7 +1241,7 @@ class Execution:
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
             if self._stop_clears_floor(dist, arm.s_edge):
-                qty = (self.equity * risk_pct / 100.0) / dist
+                qty = self._qty_for_risk(risk_pct, dist)
                 qty = self._fit_to_budget(qty, arm.s_edge, arm.s_sl)
                 if qty > 0:
                     return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2,
@@ -2081,6 +2081,39 @@ class Execution:
         if ms is not None:
             self._account.now = int(ms)
 
+    def _qty_for_risk(self, risk_pct: float, dist: float) -> float:
+        """Units to put `risk_pct` of equity behind a stop `dist` away, in PRICE terms.
+
+        🔴 **`point_value` IS THE CONVERSION AND LEAVING IT OUT COSTS REAL MONEY.** `dist` is a
+        price distance, so it is in the SYMBOL'S quote currency; `equity` is in the ACCOUNT'S.
+        Dividing one by the other only lands on a tradeable size when the two currencies are the
+        same AND one unit moves one currency unit per 1.0 of price — which is exactly gold, at
+        `point_value = 1.0`.
+
+        The four sizing sites used to divide by `dist` alone. Risk is then booked as
+        `qty * dist * point_value` (`_finalise_trade`), so the dollars actually at stake were the
+        intended risk MULTIPLIED by `point_value`. At 1.0 the two agree, which is why six years
+        of gold runs never showed it. On any instrument whose `point_value` is not 1.0 every
+        trade is mis-sized by that factor.
+
+        ⚠ **R never noticed, which is how this survived.** P&L is
+        `(exit-entry) * dir * qty * point_value` and risk is `qty * dist * point_value`, so both
+        terms cancel in the ratio and R is algebraically immune. Every R figure in this repo
+        stays good; dollars, lots, dollar drawdown and per-lot costs did not.
+
+        ⚠ **`algos/shared/order_sizing.py` has always done this correctly** — it sizes off the
+        broker's own tick value, which is already in the account's currency. The live bot and the
+        lab therefore disagreed on any non-USD-quoted symbol, in the one number that decides how
+        much money is at risk. This closes that gap from the lab's side.
+
+        Returns 0.0 rather than raising when the denominator is not positive: a zero size places
+        nothing, and every caller already treats 0 as "no room".
+        """
+        denom = dist * self._cfg.point_value
+        if denom <= 0:
+            return 0.0
+        return (self.equity * risk_pct / 100.0) / denom
+
     def _fit_to_budget(self, qty: float, entry: float, stop: float) -> float:
         """Shrink a size to what the ACCOUNT can still afford. 0.0 = place nothing.
 
@@ -2127,7 +2160,7 @@ class Execution:
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7   # deep 0.382 / shallow 0.0
             if self._stop_clears_floor(dist, long_edge) \
                     and not self._too_deep(sig, long_edge, True):
-                qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
+                qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
                 qty = self._fit_to_budget(qty, long_edge, sl)
                 if qty <= 0:
                     self._pull_why[0] = (_PULL_NO_ROOM,)
@@ -2147,7 +2180,7 @@ class Execution:
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7
             if self._stop_clears_floor(dist, short_edge) \
                     and not self._too_deep(sig, short_edge, False):
-                qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
+                qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
                 qty = self._fit_to_budget(qty, short_edge, sl)
                 if qty <= 0:
                     self._pull_why[1] = (_PULL_NO_ROOM,)
