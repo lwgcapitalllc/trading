@@ -807,6 +807,14 @@ async def _handle_complete(
 
         asyncio.create_task(stress_tester.trigger_auto_stress_test(run_id, firm_ids))
 
+    # Build the price chart now, in the background, so it is ready by the time the page asks.
+    # Fire-and-forget: the build takes ~36 s on a 6.7-year M5 run and must not hold up "Complete".
+    from services import chart_spec
+
+    task = asyncio.create_task(asyncio.to_thread(chart_spec.prebuild_chart_spec, run_id))
+    _BACKGROUND_TASKS.add(task)  # the loop holds tasks weakly; keep it alive until it finishes
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
     _write_progress(
         {
             "job_id": job_id,
@@ -822,6 +830,9 @@ async def _handle_complete(
             "error_message": None,
         }
     )
+
+
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
 # ── Main poller ────────────────────────────────────────────────────────────────

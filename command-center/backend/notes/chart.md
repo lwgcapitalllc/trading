@@ -1023,3 +1023,23 @@ themselves (`SHALLOW_FEED`) and the real value is asserted once, against its own
 fails on an unrelated config change is a test nobody trusts the next time it speaks** — and the
 tempting repair, editing 1 to 5 in each, would have left four copies of the number where there had
 been one.
+
+## The chart is built when the run finishes, and its layers build side by side (2026-09-16)
+
+**MEASURED on run `8dfc3a7c41b8` (Realign, 6.7 years of M5, 475,933 bars).** First open of the
+price chart took **257 s** through the server and **143 s** built alone. About 135 s of that was
+the six engine layers replayed one after another: candlesticks 40 s, gaps 35 s, liquidity 21 s,
+order blocks 17 s, structure 14 s, VWAP 4 s. Candle loading was 8 s.
+
+- **The six layers now run in their own processes** (`_build_layers`), so the build costs the
+  slowest layer rather than the sum: **36 s**, and the rebuilt spec compared **identical** (whole
+  JSON, `==`) to the one the old code wrote. The overlay order is kept, because the panel draws in
+  list order. A pool that cannot start falls back to one-by-one, logged.
+- **A finished backtest starts its chart build in the background** (`_handle_complete` →
+  `prebuild_chart_spec`), so the page reads the cache. Optimizer and sweep child runs do not pass
+  through that path and are not pre-built — they would cost 36 s of six cores each.
+- **One build per run at a time.** A page opened mid-build waits on the same per-run lock and
+  reads the cache the background build wrote, instead of starting a second build.
+- ⚠ The remaining cost sits inside the canonical engines (the candlestick engine's per-bar
+  lookups, the gap engine's exemption scan). Speeding those up is an engine change and needs its
+  parity gate re-run on a real export — not done here.

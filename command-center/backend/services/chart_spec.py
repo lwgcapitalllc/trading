@@ -33,6 +33,8 @@ import json
 import logging
 import os
 import re
+import threading
+from concurrent.futures import ProcessPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -955,13 +957,40 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     if not row:
         return None
 
-    run_dir = LAB_RESULTS_DIR / run_id
-    spec_path = run_dir / "chart_spec.json"
-    if spec_path.exists() and not refresh:
-        try:
-            return json.loads(spec_path.read_text())
-        except (ValueError, OSError):
-            pass  # rebuild on a corrupt cache
+    # 🔴 One build per run at a time. A run's chart starts building in the background the moment
+    # it completes (`prebuild_chart_spec`), so a page opened mid-build must WAIT for that build and
+    # read its cache — not start a second 36 s build beside it.
+    with _run_lock(run_id):
+        run_dir = LAB_RESULTS_DIR / run_id
+        spec_path = run_dir / "chart_spec.json"
+        if spec_path.exists() and not refresh:
+            try:
+                return json.loads(spec_path.read_text())
+            except (ValueError, OSError):
+                pass  # rebuild on a corrupt cache
+        return _build_chart_spec_locked(run_id, row, run_dir, spec_path)
+
+
+_RUN_LOCKS: dict[str, threading.Lock] = {}
+_RUN_LOCKS_GUARD = threading.Lock()
+
+
+def _run_lock(run_id: str) -> threading.Lock:
+    with _RUN_LOCKS_GUARD:
+        return _RUN_LOCKS.setdefault(run_id, threading.Lock())
+
+
+def prebuild_chart_spec(run_id: str) -> None:
+    """Build a finished run's chart in the background, so the page never waits for it.
+
+    Best-effort: a failure here is logged and the page simply builds on first open, as before."""
+    try:
+        build_chart_spec(run_id)
+    except Exception:
+        log.exception("chart_spec: background build failed for %s", run_id)
+
+
+def _build_chart_spec_locked(run_id: str, row: dict, run_dir: Path, spec_path: Path) -> dict:
 
     runner = row.get("runner") or "ninjatrader"
     instrument = row["instrument"]
@@ -1032,50 +1061,19 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         daily = _build_candles(instrument, warmup_start, row["end_date"], "D1", runner, bar_server)
         overlays, indicators = _build_structure(candles, trades, daily, params)
 
-    # Market-structure overlays (BOS/CHoCH/swings) from the CANONICAL engine, computed on the
-    # displayed candles. Generic — runs for every run that has candles, tagged into the four
-    # structure Layers groups (default OFF in the panel). Best-effort: [] on any failure.
-    overlays = overlays + build_market_structure_overlays(candles)
-
     blocks = _build_blocks(run_dir, candles)
     misses, miss_noise = _build_misses(run_dir, candles)
 
-    # Fair value gaps — but ONLY the ones that were live when something happened. The anchors are
-    # every trade ENTRY, every blocked setup and every missed setup, so the layer answers "where were
-    # the gaps when this fired?" rather than papering the chart with every gap the run ever saw. The
-    # gaps themselves are mpc_jarvis.pine's (see fvg_overlays.py — the strategy runs a different,
-    # stricter set). Best-effort: [] on any failure, and [] when the run has no trades/blocks/misses
-    # in the window, which is what keeps the toggle off an NT8/MT5 chart.
+    # Every overlay layer is anchored to the trades, blocked setups and missed setups — the ones
+    # that were live when something happened, not every one the run ever saw. Why each layer is
+    # anchored the way it is lives in its own module and in `notes/chart.md`.
     anchors = (
         [t["entryTime"] for t in trades] + [b["time"] for b in blocks] + [m["time"] for m in misses]
     )
-    overlays = overlays + build_fvg_overlays(candles, anchors, base_tf)
-
-    # Order blocks — the same anchor rule, for the same reason, off the canonical OB engine (see
-    # ob_overlays.py). Measured on run `75ccc776d10c`: 2,567 blocks created over the window, 579 of
-    # them live when something fired. Unlike the gaps there is no settings fork to warn about — the
-    # strategy files dropped order blocks entirely in 2026-07, so mpc_jarvis.pine is the only
-    # source; equally, a drawn block never explains an entry, because the bot reads none.
-    overlays = overlays + build_ob_overlays(candles, anchors)
-
-    # Liquidity levels — the pools that were live when something fired, and WHICH OF THEM PRICE HAD
-    # ALREADY TAKEN. Same anchor rule again, and it is doing more work here than for the gaps: a
-    # 6.5-year run creates 35,028 levels (measured) against ~2,800 gaps, because the H4 tier rolls six
-    # times a day, so drawing them all would have silently truncated the oldest at the per-group cap.
-    # Anchored it is 8,174, of which 4,608 are swept — and the swept ones are the read.
-    # Three groups rather than one (Daily/Weekly · Sessions · H4), because the tiers differ by an
-    # order of magnitude in volume; see liquidity_overlays.py.
-    overlays = overlays + build_liquidity_overlays(candles, anchors)
-
-    # Candlestick reversals — ONE candle repainted per setup, and the only layer here whose anchor
-    # set is NARROWER than the `anchors` above: trades and 3/3 misses only, no blocked setups. See
-    # `reversal_anchors` for why that is the feature rather than a filter.
-    overlays = overlays + build_candle_overlays(candles, reversal_anchors(trades, misses))
-
-    # Session VWAP — a main-pane line off the canonical engine, default OFF. It is the one layer
-    # here that needs the bar's VOLUME, so it returns None (no toggle) whenever the run's bars
-    # carry none; see vwap_overlays.py for why a missing volume is a refusal rather than a zero.
-    vwap = build_vwap_indicator(candles)
+    layer_overlays, vwap = _build_layers(
+        candles, anchors, reversal_anchors(trades, misses), base_tf
+    )
+    overlays = overlays + layer_overlays
     if vwap:
         indicators = indicators + [vwap]
 
@@ -1117,6 +1115,64 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         base_tf,
     )
     return spec
+
+
+def _build_layers(
+    candles: list[dict], anchors: list, rev_anchors: list, base_tf: str
+) -> tuple[list[dict], Optional[dict]]:
+    """The chart's six engine layers, each in its OWN PROCESS. Returns (overlays, vwap).
+
+    🟢 **MEASURED 2026-09-16 on run `8dfc3a7c41b8` (6.7 years of M5, 475,933 bars): the build
+    was 143 s, and ~135 s of it was these six replays run one after another** — candlesticks
+    40 s, gaps 35 s, liquidity 21 s, order blocks 17 s, structure 14 s, VWAP 4 s. They share
+    nothing but the candles, so they run side by side and the build costs the slowest one.
+
+    ⚠ **The overlay ORDER is kept** — structure, gaps, blocks, liquidity, candles — because the
+    panel draws in list order. ⚠ **A pool that cannot start falls back to one-by-one**, logged:
+    every layer is best-effort already, and a slow chart beats no chart."""
+    jobs = (
+        # Market-structure overlays (BOS/CHoCH/swings) from the CANONICAL engine, computed on the
+        # displayed candles. Generic — runs for every run that has candles, tagged into the four
+        # structure Layers groups (default OFF in the panel). Best-effort: [] on any failure.
+        (build_market_structure_overlays, (candles,)),
+        # Fair value gaps — but ONLY the ones that were live when something happened. The anchors are
+        # every trade ENTRY, every blocked setup and every missed setup, so the layer answers "where were
+        # the gaps when this fired?" rather than papering the chart with every gap the run ever saw. The
+        # gaps themselves are mpc_jarvis.pine's (see fvg_overlays.py — the strategy runs a different,
+        # stricter set). Best-effort: [] on any failure, and [] when the run has no trades/blocks/misses
+        # in the window, which is what keeps the toggle off an NT8/MT5 chart.
+        (build_fvg_overlays, (candles, anchors, base_tf)),
+        # Order blocks — the same anchor rule, for the same reason, off the canonical OB engine (see
+        # ob_overlays.py). Measured on run `75ccc776d10c`: 2,567 blocks created over the window, 579 of
+        # them live when something fired. Unlike the gaps there is no settings fork to warn about — the
+        # strategy files dropped order blocks entirely in 2026-07, so mpc_jarvis.pine is the only
+        # source; equally, a drawn block never explains an entry, because the bot reads none.
+        (build_ob_overlays, (candles, anchors)),
+        # Liquidity levels — the pools that were live when something fired, and WHICH OF THEM PRICE HAD
+        # ALREADY TAKEN. Same anchor rule again, and it is doing more work here than for the gaps: a
+        # 6.5-year run creates 35,028 levels (measured) against ~2,800 gaps, because the H4 tier rolls six
+        # times a day, so drawing them all would have silently truncated the oldest at the per-group cap.
+        # Anchored it is 8,174, of which 4,608 are swept — and the swept ones are the read.
+        # Three groups rather than one (Daily/Weekly · Sessions · H4), because the tiers differ by an
+        # order of magnitude in volume; see liquidity_overlays.py.
+        (build_liquidity_overlays, (candles, anchors)),
+        # Candlestick reversals — ONE candle repainted per setup, and the only layer here whose anchor
+        # set is NARROWER than the `anchors` above: trades and 3/3 misses only, no blocked setups. See
+        # `reversal_anchors` for why that is the feature rather than a filter.
+        (build_candle_overlays, (candles, rev_anchors)),
+        # Session VWAP — a main-pane line off the canonical engine, default OFF. It is the one layer
+        # here that needs the bar's VOLUME, so it returns None (no toggle) whenever the run's bars
+        # carry none; see vwap_overlays.py for why a missing volume is a refusal rather than a zero.
+        (build_vwap_indicator, (candles,)),
+    )
+    try:
+        with ProcessPoolExecutor(max_workers=len(jobs)) as pool:
+            results = [f.result() for f in [pool.submit(fn, *args) for fn, args in jobs]]
+    except Exception:
+        log.exception("chart_spec: layer pool failed — building the layers one by one")
+        results = [fn(*args) for fn, args in jobs]
+    *overlay_lists, vwap = results
+    return [o for lst in overlay_lists for o in lst], vwap
 
 
 #: The overlay groups every leg computes for ITSELF, anchored to that leg's own trades / blocked /

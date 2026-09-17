@@ -319,7 +319,7 @@ def test_build_chart_spec_actually_PASSES_the_tag_to_the_builder():
     import inspect
     import textwrap
 
-    tree = ast.parse(textwrap.dedent(inspect.getsource(chart_spec.build_chart_spec)))
+    tree = ast.parse(textwrap.dedent(inspect.getsource(chart_spec._build_chart_spec_locked)))
     calls = [
         n
         for n in ast.walk(tree)

@@ -358,6 +358,7 @@ Most-cited code: `services/fvg_overlays.py`, `services/ob_overlays.py`, `service
 - `chart_spec` carries what the trade BEFORE a re-entry did (2026-08-21)
 - The commit-gate probe writes PER-WORKER files (2026-08-21)
 - The re-entry's fill feed is 5m, and `EXTRA_FEEDS` holds a COPY on purpose (2026-08-21)
+- The chart is built when the run finishes, and its layers build side by side (2026-09-16)
 
 ### `notes/costs-brokers.md` — Costs, brokers, symbols and the news filter
 
