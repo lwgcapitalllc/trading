@@ -314,3 +314,17 @@ while moving its defaults; removed. ⚠ **Before assigning any benched bot, load
 strategy's config once** — a folder created from a session on another branch can carry that
 branch's settings. The same pass moved its window to 72h, its trail to structure-only and stated the
 20-day momentum filter (`strategies/python/realign/realign_optimization.md` → Runs 12-13).
+
+---
+
+## 🔴 The startup line's commit is the PROMOTED commit, or "unknown" (2026-09-16)
+
+`sos_fade_demo`'s startup line said `commit c8cdd64e` while its code fingerprint matched a
+snapshot promoted from `4f87809d`. The runner read the box repo's HEAD — which a `git pull` moves
+while the frozen `deployed/` snapshot stays put. Now a frozen bot prints the commit `promote.py`
+recorded in `deployed.json` (`promoted_commit`), and **"unknown"** when there is no record. A bot
+running from the repo (not frozen) still prints HEAD, because that is what it runs. The same value
+goes into the ledger's startup row. ⚠ A promote with `--allow-dirty` still records HEAD, which then
+does not fully describe the files — `promote.py` already warns about that at promote time.
+
+Tests: `tests/test_running_commit_label.py` (4; red at HEAD — no such function, and the line read HEAD).
