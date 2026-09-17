@@ -44,7 +44,7 @@ class InstrumentFacts:
 
     symbol: str                 # the broker's own symbol string, suffix included
     mintick: float              # one price tick, from the broker's symbol info
-    point_value: float          # cash value of 1.0 of price, per contract
+    point_value: float          # cash value of 1.0 of price, PER UNIT (not per lot)
     daily_close_hour_ny: int    # the venue's daily rollover hour, New York time
     account_profile: str        # key into backtest.fills.PROFILES — MEASURED costs only
     bar_minutes: int            # the frame this instrument's profile is fitted on
@@ -120,7 +120,12 @@ XAUUSD_VANTAGE = InstrumentFacts(
 GBPJPY_PUPRIME = InstrumentFacts(
     symbol="GBPJPY.p",
     mintick=0.001,
-    point_value=640.92,   # ⚠ SNAPSHOT 2026-09-17, moves with USDJPY — see the note above
+    # 🔴 PER UNIT, NOT PER LOT. `config.py` defines this as "1.0 of price = 1 unit", and gold's
+    #   1.0 is per OUNCE, not per 100-oz lot. Read the broker's tick value and divide by BOTH the
+    #   tick size AND the contract size: 0.6409188 / (0.001 * 100,000) = 0.006409188. An earlier
+    #   draft of this file wrote 640.92, the per-LOT figure — 100,000x too large, and in a field
+    #   that multiplies straight into risk. Rule 15, in the file that was warning about rule 15.
+    point_value=0.006409188,   # ⚠ SNAPSHOT 2026-09-17, moves with USDJPY — see the note above
     daily_close_hour_ny=17,
     # 🔴 DELIBERATELY NOT A REAL PROFILE KEY, so any run REFUSES rather than borrowing a number.
     #   Commission is charged on a filled DEAL and never appears on a symbol specification, and

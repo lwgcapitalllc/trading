@@ -97,6 +97,44 @@ should fix both).
 
 **Until that exists, a GBPJPY run must refuse.** It does.
 
+## 🔴 THE SECOND BLOCKER: position sizing drops the point value entirely
+
+Traced 2026-09-17 through the whole money path, and this one is worse than the swap bug.
+
+Size is computed as `qty = equity * risk_pct / 100 / dist`, where `dist` is a price distance.
+**The point value is not in that formula.** Risk is then booked as
+`qty * dist * point_value` — so the dollars actually put at risk are
+**the intended risk multiplied by the point value**.
+
+Gold's point value is 1.0, so the two have always agreed and the omission has never once shown.
+Any instrument whose point value is not 1.0 mis-sizes every trade by exactly that factor.
+
+⚠ **R SURVIVES IT, WHICH IS WHY IT COULD SIT HERE UNSEEN.** P&L is
+`(exit-entry) * dir * qty * point_value` and risk is `qty * dist * point_value`; the point value
+and the quantity cancel in the ratio, so **R is algebraically immune to this bug** — proved by
+substitution, not assumed. Every R figure this repo has ever quoted stays good. Dollars, lots,
+dollar drawdown, the account risk cap and every per-lot cost do not.
+
+⚠ **THE LIVE SIDE ALREADY GETS THIS RIGHT AND THE TWO WOULD DISAGREE.**
+`algos/shared/order_sizing.py` sizes off the broker's own tick value, which is already in the
+account's currency, and its module docstring was written anticipating exactly this pair: *"a
+`point_value = 1.0` inherited from gold is wrong by a factor of ~150 (see the USDJPY test)."* So
+live sizing is currency-correct and the backtest's is not — on GBPJPY the two would size the
+same setup completely differently. That is a lab-vs-live divergence in the one number that
+decides how much money is at stake.
+
+**The fix is to fold the point value into the sizing formula**, mirroring what the live side
+already does. At gold's 1.0 it is provably a no-op, so no existing result moves — but it is a
+change to a LIVE strategy's sizing line and must be treated as one.
+
+### A worked example of how easy this is to get wrong
+
+The first draft of this file recorded GBPJPY's point value as **640.92** — the per-LOT figure.
+`config.py` defines it **per UNIT**: gold's 1.0 is per ounce, not per 100-ounce lot. The right
+value is `tick_value / (tick_size * contract_size)` = **0.006409188**, and the draft was
+**100,000x** too large, in a field that multiplies straight into risk. Written into the very
+file that was warning about rule 15.
+
 ## Why GBPJPY still refuses to run
 
 Its `account_profile` names a key that does not exist in `backtest/fills.py`, on purpose, so a
