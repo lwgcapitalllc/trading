@@ -5,7 +5,7 @@
 **Status:** ✅ **COMPLETE — the extraction roadmap has nothing left on it.** Kept, and heavily referenced (9 files, including `.claude/commands/audit-engines.md` and 7 engine CLAUDE.md files), because it is the record of HOW each engine was extracted and what each parity gate was run on. Finished work, still load-bearing.
 
 **Progress:** ALL 8 SMC-port engines done (regime, market_structure, fibonacci, order_blocks, sessions, liquidity, vwap, svp) · **5 off-roadmap engines done — news, fair_value_gaps, rsi_divergence, equal_highs_lows, candlesticks — for 13 in total** (⚠ corrected 2026-08-12: this line said "1 off-roadmap engine" and had not been updated as four more landed; count with `ls engines`, never from this sentence) — see "Off-roadmap engines" below. The 2026-07-09 re-sync (liquidity monthly-removal + fibonacci TP3-reset-drop/extend-guard/macro-seed) is now **committed** (`d367b6d`), every engine back at 100% Pine parity. A **fresh 2026-07-10 re-paste** of `mpc_jarvis.pine` (524-line staged diff) was audited: **NO engine is stale.** Every engine-affecting change is either visual (swing-label hide toggle, VWAP polyline→plot, KZ/session display windows, session-H/L input consolidation, iBOS/iSOS label reposition) or already-aligned (macro fib run-guard opened to all-timeframes tracking, which the Python engine was already doing unconditionally). **TWO NEW blocks** appeared. One is engine work (now BUILT), one is strategy work (not built): (a) **FAIR VALUE GAPS (FVG)** — a 3-candle displacement gap detector (persists until tapped, FIFO cap); a genuine event detector → **✅ built + Pine-parity-validated 2026-07-10 as `engines/fair_value_gaps/`** (12 unit tests green; `compare_fvg.py --warmup 20` exit 0 on a real `VANTAGE_XAUUSD, 5m` export). The small **`fiboHalfReached`** fib add-on (inbound 0.5 touch) was **✅ built + parity-validated into `engines/fibonacci/`** the same day (2 new tests; `compare_fib.py --warmup 1002` exit 0). **Both ready to commit with the mpc re-paste.** (b) **SOS FADE SEQUENCE** — a stateful sweep→SOS→fib-entry machine (continuation mode, Cycle-Fib POI, FVG confluence) that **REPLACES the old SETUP GRADING candidate**; it *decides trades*, so it is **strategy-tier, NOT an engine** — it belongs in `strategies/` (MT5/NT8) or a Python bot, and now has both its engine dependencies (FVG + `fiboHalfReached`) in place. **market_structure sync chain NOT triggered** (only label colour/position changed; no detection change). See "Audit findings — 2026-07-10" below.
-**Last reviewed:** 2026-08-20 — audit of `700f7f6` + `2952fea` (the tied-extreme swing-label fix). 🔴 **The market_structure sync chain WAS triggered** (a real detection change: on a tied extreme the post-break rescan now keeps the ORIGINAL anchor instead of moving to the later bar, so `bull_bos_l_loc` / `bear_bos_h_loc` change on tie bars). ✅ **All five chain members are already in sync** — `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all carry both guards, all 17 Pine copies carry them (verified by count, not by trusting the commit message), and the `algos/shared/` shim needs no edit because the fix adds no public field. ✅ **Only ONE Python file in the repo contains the scan** (`engines/market_structure/engine.py`) — the "strategies import the engine and embed no copy" claim is verified, not assumed. **No engine is stale and no new un-extracted block appeared.**
+**Last reviewed:** 2026-09-17 — audit of `98c0bc3d` (liquidity tiers gated by chart timeframe). 🟢 **No engine is stale, no harness is stale and no new un-extracted block appeared.** The change decides WHERE each tier DRAWS, never when a level is created or swept, and the per-tier switches it sets already exist on the Python engine as caller flags. **market_structure sync chain NOT triggered** — the diff never enters the structure block. One divergence flagged rather than fixed: the Python engine has no coarse-chart guard, which reaches a display overlay only and no strategy. Prior entry: 2026-09-10 (`4c807f0`, table and 1m drawing only, no engine affected).
 
 ✅ **ONE HARNESS WAS DRIFTED — FIXED 2026-08-20, AWAITING A COMPILE. COUNTING THE GUARDS IS WHAT MISSED IT.** `indicators/engines/fib_export.pine` carries both tie guards — so a per-file guard COUNT says it is patched — but its embedded structure block **has never contained the fallback-promotion `else` branch** that landed in the 2026-07-08 structure re-sync (`f2a8411`) and that `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all have (`git log -S'fallback_is_hh'` on that path returns nothing — it never had it, this is not a regression from today). ⚠ **The guard itself is NOT inert, and an earlier draft of this entry said it was — that was wrong.** The file DOES promote on the normal path (`st.last_conf_high := st.ash`, before the guard), so on every bar carrying an active swing high the guard reads a correctly-promoted value and behaves exactly as in the reference. `indicators/engines/CLAUDE.md` already recorded that the ordering was checked per file, and that check was right as far as it went. **The divergence is narrower and older than "the guard is inert": it is the `st.ash IS na` path only** — where the reference promotes `last_conf_high := highest_val` and prints an HH/LH label, and this harness promoted nothing and printed nothing, leaving a stale `last_conf_high` for the guard to compare against. ⚠ **`ob_export.pine` does NOT embed this scan at all** (zero `lowest_val`), so it is not affected — checked, not assumed. ⚠ **Consequence to weigh before the next `compare_fib.py` run: the fib gate grades Python fibonacci against a Pine whose STRUCTURE differs from canonical**, so a green there is a green against the wrong upstream on any bar the fallback branch would have fired. **The standing lesson: a guard COUNT proves presence, never placement — and placement was the whole difficulty of this fix.**
 
@@ -141,6 +141,46 @@ Downstream engines (like the fibs) read another engine's **public output** only 
 Everything else is ported. The other forward work is *consumption*, not extraction: give each engine
 an `algos/shared/` shim when a bot first uses it, wire the news `coverage_start_ms` into the backtest
 lab, and build the backtest-first bots per `docs/BOT_DEVELOPMENT_METHOD.md`.
+
+---
+
+## Audit findings — 2026-09-17 (`/audit-engines`, clean tree, one commit since: `98c0bc3d`) 🟢 NO ENGINE AFFECTED
+
+**`98c0bc3d` gates WHERE liquidity tiers DRAW, by chart timeframe — it changes no detection.** Four
+tiers now hide on charts whose candle is longer than the level's own period: H4 above the 4-hour
+chart, the session H/L sets above intraday, and PWC follows the weekly gate the PWH/PWL pair already
+used (it drew on the monthly). The stated reason is a display defect, not a signal one — on a bigger
+chart a level's taken/untaken state cannot update until that candle closes, so a line price had
+already run through kept reading as untouched. The PWC condition also stops waiting a whole chart
+bar below the weekly, where the value is last week's close and final from the week's first tick. One
+line is a pure tidy (a repeated timeframe test swapped for the flag already holding it).
+
+- **`liquidity/` — IN PARITY.** It already carries a per-tier on/off for all five tiers as
+  constructor flags; the Pine change sets those flags' DEFAULTS from the chart timeframe, which is a
+  concept a bar-stream engine does not have and should not grow. On intraday — where every consumer
+  runs — all tiers are ON on both sides, so nothing moves.
+- **PWC timing needs no engine edit.** Python already creates PWC on the week roll, i.e. the first
+  bar of the new week, which is what the new Pine does below the weekly chart. The Pine moved toward
+  the engine here, not away.
+- **market_structure sync chain NOT triggered.** The diff does not enter the structure block
+  (`mpc_jarvis.pine` 3174–3690); no swing-confirm, break, seed, `choch_lock` or inside-bar rule is
+  touched. `structure_engine.pine`, `structure_engine_export.pine` and
+  `engines/market_structure/engine.py` all stay current.
+- **No harness is stale** — no logic change landed in any block, so no `*_export.pine` needs a
+  re-paste and no `compare_*.py` needs a re-run for this commit.
+- **No new un-extracted block.** The only new section header since the baseline is the gating rule
+  itself; every functional block in the file still maps to one of the 13 canonical engines.
+
+### ⚠ One divergence this commit makes explicit — flagged, not stale
+The Pine now says a tier is meaningless on a chart coarser than its own period. **The Python engine
+has no such guard**: fed a daily or weekly bar stream it still buckets H4 and session levels off
+timestamps and emits them. That is pre-existing behaviour, not something this commit broke, and no
+STRATEGY consumer is exposed — every caller is an intraday research tool under `backtest/tools/`.
+The one consumer that could hit it is the Command Center's liquidity overlay
+(`command-center/backend/services/liquidity_overlays.py`), a **display** layer that follows the
+backtest chart's timeframe, so the cost is a misleading drawn line and never a trade. **Not fixed
+here** — this audit is report-only, and the fix belongs with whoever next needs liquidity above
+intraday, with a gate column in the same change.
 
 ---
 
@@ -362,6 +402,14 @@ Continuation is still disabled; Internal Fib is still deleted from the Pine. **N
 block.** `engines/market_structure/tests` 17 green.
 
 🔴 **THAT CLAIM EXPIRED. Re-scanned 2026-09-09 over 7,185 lines and it no longer holds — see *Audit findings — 2026-09-09* below.** A coverage claim is pinned to a LINE COUNT and nothing re-checks it; this one read as current for a fortnight after it stopped being true.
+
+---
+
+## Audit findings — 2026-08-20 (`700f7f6` + `2952fea`, the tied-extreme swing-label fix) 🔴 SYNC CHAIN TRIGGERED, ALL MEMBERS ALREADY IN SYNC
+
+*(Preserved verbatim from this file's `Last reviewed:` header, which was its only copy until 2026-09-17 — the 2026-09-17 audit would otherwise have overwritten it.)*
+
+audit of `700f7f6` + `2952fea` (the tied-extreme swing-label fix). 🔴 **The market_structure sync chain WAS triggered** (a real detection change: on a tied extreme the post-break rescan now keeps the ORIGINAL anchor instead of moving to the later bar, so `bull_bos_l_loc` / `bear_bos_h_loc` change on tie bars). ✅ **All five chain members are already in sync** — `mpc_jarvis.pine`, `structure_engine.pine`, `structure_engine_export.pine` and `engines/market_structure/engine.py` all carry both guards, all 17 Pine copies carry them (verified by count, not by trusting the commit message), and the `algos/shared/` shim needs no edit because the fix adds no public field. ✅ **Only ONE Python file in the repo contains the scan** (`engines/market_structure/engine.py`) — the "strategies import the engine and embed no copy" claim is verified, not assumed. **No engine is stale and no new un-extracted block appeared.**
 
 ---
 
