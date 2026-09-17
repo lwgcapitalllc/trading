@@ -76,3 +76,4 @@
 2026-09-17 04:36:21,254 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-17 05:00:07,175 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
 2026-09-17 05:00:07,181 [INFO] Equity re-anchored to the account flat between trades: 16,884.34 → 16,508.86
+2026-09-17 07:20:03,740 [ERROR] Order REFUSED (bearish re-entry): [risk_not_authorised] the order would risk 412.72 but 5.0% of the account's 16,508.86 is 825.44. The strategy is sizing off a balance the account does not have -- most likely warm-up equity that compounded away from the broker's.
