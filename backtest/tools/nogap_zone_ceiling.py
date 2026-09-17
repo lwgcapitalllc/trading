@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """The ceiling on the 195 genuine no-gap setups (see nogap_zone_funnel.py).
 
+🔴 A first version asked "never touched the 1.0 within 5 days AND made xR", which counted a
+setup that ran 3R and retraced to the 1.0 a week later as a LOSER. As a trade that is a win
+and the position is long gone. The question is what price did BEFORE the 1.0 was touched,
+and the two answers differ hugely: 43 winners against 99.
+
 Enter blind at the 0.5, stop at the 15m 1.0, walk 1m bars forward from ARRIVAL in the zone
 until the 1.0 is touched or 5 trading days pass. A bar holding both counts as STOPPED.
 """
@@ -35,38 +40,21 @@ for (d, _sos), v in rows_in.items():
     if risk <= 0:
         continue
     i0 = np.searchsorted(ms1, t0)
-    best, stopped = 0.0, False
+    best = 0.0
     for i in range(i0, min(len(ms1), i0 + HORIZON)):
-        if d == 1:
-            if lo[i] <= stop:
-                stopped = True
-                break
-            best = max(best, (hi[i] - half) / risk)
-        else:
-            if hi[i] >= stop:
-                stopped = True
-                break
-            best = max(best, (half - lo[i]) / risk)
-    rows.append((stopped, best))
+        if (d == 1 and lo[i] <= stop) or (d == -1 and hi[i] >= stop):
+            break  # the 1.0 - everything after it is a different trade
+        best = max(best, (hi[i] - half) / risk if d == 1 else (half - lo[i]) / risk)
+    rows.append(best)
 
-n = len(rows)
-print(f"\nno-gap setups measured: {n}")
-print(
-    f"  hit the 1.0 first:        {sum(1 for s, _ in rows if s):4d}  "
-    f"({sum(1 for s, _ in rows if s) / n:5.1%})"
-)
-print(
-    f"  never hit the 1.0:        {sum(1 for s, _ in rows if not s):4d}  "
-    f"({sum(1 for s, _ in rows if not s) / n:5.1%})"
-)
-print("\nreversed off the zone and made, before the 1.0 was touched:")
-for r in (1, 2, 3):
-    k = sum(1 for s, b in rows if not s and b >= r)
-    print(f"  {r}R or better: {k:4d}  ({k / n:5.1%})")
+b = np.array(rows)
+n = len(b)
+print(f"\n{n} no-gap setups. How far price ran BEFORE the 1.0 was touched:")
+for r in (1, 2, 3, 4):
+    print(f"  reached {r}R: {int((b >= r).sum()):4d}  ({(b >= r).mean():5.1%})")
 for r in (2, 3):
-    k = sum(1 for s, b in rows if not s and b >= r)
     print(
-        f"\nblind 0.5 entry, stop 1.0, target {r}R: "
-        f"{sum(float(r) if (not s and b >= r) else -1.0 for s, b in rows):+.1f}R over {n}"
-        f"   (break-even needs {1 / (1 + r):.0%}, actual {k / n:.1%})"
+        f"\n  blind 0.5 entry, stop 1.0, target {r}R: "
+        f"{float((b >= r).sum() * r - (b < r).sum()):+.1f}R over {n}"
+        f"   (break-even {1 / (1 + r):.0%}, actual {(b >= r).mean():.1%})"
     )
