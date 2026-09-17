@@ -271,3 +271,26 @@ FileNotFoundError: [Errno 2] No such file or directory: 'C:\\trading\\algos\\mar
 2026-09-17 15:44:36,587 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-17 15:45:06,852 [INFO] place bullish primary limit 0.1L @ 4304.31 SL 4251.86628 TP none
 2026-09-17 15:45:06,936 [INFO] PENDING PLACED | ticket=364491063 | bullish 0.1L @ 4304.31 | SL=4251.87 TP=none
+2026-09-17 19:23:48,299 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-17 19:23:48,311 [INFO] Stop requested — shutting down.
+2026-09-17 19:23:48,311 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-17 19:23:49,243 [INFO] MT5 disconnected.
+2026-09-17 19:24:09,811 [INFO] SOS Fade | SosFadeStrategy v322 | hash d7891f61f050 | commit 1bb3c3ba | frozen | LIVE
+2026-09-17 19:24:10,364 [INFO] Connected | #34957946 | $10,733.16 | PUPrime-Live
+2026-09-17 19:24:10,365 [INFO] MT5 connection lock released
+2026-09-17 19:24:10,677 [INFO] Sizing against account balance $10,733.16
+2026-09-17 19:24:10,716 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-17 19:24:10,717 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-17 19:24:10,723 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-17 19:24:10,724 [INFO] Cancelling stale pending order T364491063 from a previous run
+2026-09-17 19:24:10,724 [INFO] cancel stale pending T364491063
+2026-09-17 19:24:10,807 [INFO] PENDING CANCELLED | T364491063
+2026-09-17 19:24:13,862 [INFO] Warmed 5000 bars (2026-07-03 04:45:00+00:00 → 2026-09-17 19:00:00+00:00) in 2.9s
+2026-09-17 19:24:18,080 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 04:50:00+00:00 → 2026-09-17 19:15:00+00:00).
+2026-09-17 19:24:18,081 [INFO] Equity re-anchored to the account after warm-up: 9,868.06 → 10,733.16
+2026-09-17 19:24:18,097 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-17 19:24:18,949 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-17 19:30:00,822 [INFO] place bullish primary limit 0.1L @ 4304.31 SL 4251.86628 TP none
+2026-09-17 19:30:00,943 [INFO] PENDING PLACED | ticket=364543855 | bullish 0.1L @ 4304.31 | SL=4251.87 TP=none
+2026-09-17 20:15:05,340 [INFO] cancel bullish primary limit T364543855
+2026-09-17 20:15:05,423 [INFO] PENDING CANCELLED | T364543855
