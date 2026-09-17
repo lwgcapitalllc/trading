@@ -1250,6 +1250,26 @@ CLAUDE.md gets at most one index line.
   timing), which is NOT the strategy's own standard error (is the edge distinguishable from zero).
   Both are printed so they cannot be confused. Read-only: it writes nothing and moves no baseline.
 
+- **`tools/realign_inverse.py`** (2026-09-17) — Aaron's question: Realign loses most of its trades,
+  so why not take the OPPOSITE side? **Answered: no, and the free-book mirror WINS 74.7% of its
+  trades while losing money**, which is the whole lesson. Flipping the trade flips the PAYOFF too —
+  the inverse risks the old target distance to win the old stop distance, so it wins small and often
+  and loses big and rarely.
+  🔴 **It reuses `realign_control.py`'s scripted tracker at the same `strategy.tracker` seam**, for
+  the same reason that tool gives: every mirrored trigger goes through the shipped sizing, ladder,
+  trail, time stop, costs and one position slot, so the arms differ in exactly one thing. Do not
+  build a second exit ladder here.
+  ⚠ **Two arms answering two different questions.** MIRROR is the honest inverse — same bar, side
+  flipped, **stop where the target was and target where the stop was** — so its R is measured
+  against a different risk distance and is NOT the real book's R negated. SIGN-FLIP is `sum(-R)`
+  over the real book: untradeable, but it is the CEILING of the idea, so its losing settles every
+  weaker version.
+  ⚠ **Mirrored trade counts are lower than real ones** (83 against 113 of 219 triggers): the flipped
+  stop is far away, the trade holds far longer, and the single slot refuses more triggers.
+  ⚠ **Market entry only** — a mirrored trigger has no retest level to rest at, and the tool REFUSES
+  a retest config rather than inventing one. Read-only; it moves no baseline and is wired to no bot.
+  Numbers and the asserted control: `strategies/python/realign/realign_optimization.md` → Run 14.
+
 - **`tools/realign_trade_profile.py`** (2026-09-16) — do the Realign losers have anything in common?
   Buckets the trades by every feature knowable AT ENTRY (side, New York hour, weekday, reward:risk,
   stop size, retest depth) and by exit reason, with win/loss/scratch counts. **Answered: no.** Median

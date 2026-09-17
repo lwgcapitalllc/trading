@@ -862,3 +862,59 @@ with the 20-day move. It smooths the curve but fails the both-halves test, so th
 | 2 | **The drawdown disagrees with the chart and is undiagnosed by measurement** — 17.79% (≈19.5R) in the Strategy Tester against 15.52R here. | 🔴 **OPEN.** The candidate is that the chart fills a gapped stop at the next bar's open while the bar-replay model fills at the stop price, which would make the Python **optimistic** — the direction that matters. Same total R with a deeper drawdown is that signature, but a signature is not a measurement. |
 | 3 | **~2.5 points of win-rate gap remain** after the costed/free mix-up was corrected. | ⚠ **OPEN and small.** Scratch classification is the candidate — 11 of 162 counted separately at \|r\| ≤ 0.02, against a tester that asks only whether P&L > 0. **Not measured.** |
 | 4 | **Runners give back profit before the trail closes them** (measured 2026-09-16, fitting window, charged, shipped book). The seven trades that peaked past 9R gave back 1.0-5.5R each; the two largest peaked at 22.75R and 21.89R and booked 18.24R and 18.02R. | ⏸ **PARKED by Aaron, 2026-09-16 — after demo.** A fixed far target was REJECTED: only two trades ever reached 20R, so a 20R exit is fitted to them and adds at most +3.7R, while 10R and 15R exits lose 10R and 6R on the trades that reached them. **The candidate is a trail that TIGHTENS once a trade is deep in profit** (a threshold sweep, e.g. past 10R), or a momentum read that says a move is reversing — Aaron has the same give-back on every strategy, so build it as a shared exit lever, not a realign one. Scratch measurement: peak favourable move per trade vs R booked. |
+
+### Run 14 — take the OPPOSITE side of every trigger (2026-09-17)
+
+**Question (Aaron):** "if my realign loses seventy percent of the time, why do I not just take the
+trade in the opposite direction of what I'm trying to take right now?"
+
+**Tool:** `backtest/tools/realign_inverse.py` — new, and it reuses `realign_control.py`'s one seam
+(`strategy.tracker`) rather than re-simulating anything, for the same reason: a second exit ladder
+would make the arms differ in two ways instead of one. Two arms, answering two different questions.
+
+- **MIRROR** — the honest inverse. Every trigger replayed at the same bar, side flipped, **stop
+  where the target was and target where the stop was**, through the real execution: same sizing,
+  same three-stage ladder, same runner trail, same time stop, same costs, same one position slot.
+  Its R is measured against a different risk distance, so it is NOT the real book's R negated.
+- **SIGN-FLIP** — the fantasy, `sum(-R)` over the real book. Untradeable (it pays you the negative
+  of an outcome whose risk you never took) but it is the CEILING of the idea.
+
+```
+python backtest/tools/realign_inverse.py --symbol XAUUSD --tf 5 \
+    --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 [--profile puprime_standard]
+```
+
+| book | arm | trades | sum R | avg R | win% | PF | maxDD |
+|---|---|---|---|---|---|---|---|
+| charged (`puprime_standard`) | REAL | 113 | **+82.41R** | +0.729 | 38.9% | 2.80 | 6.19R |
+| charged | SIGN-FLIP | 113 | **−82.41R** | −0.729 | 61.1% | 0.36 | 87.88R |
+| charged | **MIRROR** | 83 | **−8.97R** | −0.108 | 39.8% | 0.51 | 10.66R |
+| free | REAL | 113 | +88.02R | +0.779 | 54.9% | 3.00 | 6.00R |
+| free | SIGN-FLIP | 113 | −88.02R | −0.779 | 45.1% | 0.33 | 93.19R |
+| free | **MIRROR** | 83 | **−7.37R** | −0.089 | 74.7% | 0.58 | 9.65R |
+
+✅ **CONTROL: the REAL arm reproduces `axis_sweep.py`'s shipped control exactly** — 113 trades,
++82.41R charged, same bars, same profile, same capital. (Win% differs between the two tools because
+`axis_sweep` counts a scratch separately: 26.5% there, 38.9% here.)
+
+🔴 **THE ANSWER IS NO, AND THE FREE MIRROR IS THE LINE TO REMEMBER: it wins 74.7% of its trades and
+still loses money.** That is Aaron's intuition delivered in full and it does not pay, because
+flipping the trade flips the PAYOFF too — the inverse risks the old target distance to make the old
+stop distance, so it wins small and often and loses big and rarely. The repo already had this on
+record from the other direction: Run 5's 1R-target row wins 50% and loses money.
+
+⚠ **The premise was also false.** Realign does not lose 70% of the time in money terms — it makes
++82.41R after costs at PF 2.80. There is nothing here to invert.
+
+⚠ **83 mirrored trades against 113 real ones, and the gap is not noise** — the flipped stop is far
+away, so a mirrored trade holds far longer and the single position slot refuses more of the 219
+triggers. Same effect the control tool documents.
+
+⚠ **Market entry only.** A mirrored trigger carries no retest level (the real one's is a structure
+price on the other side), so the tool REFUSES a retest config rather than inventing one.
+
+⚠ **This is a measurement, not a strategy. Nothing is wired to a bot.**
+
+🔴 **The baseline rows in *The basis* above are STALE against today's code** — they say 160 trades /
++56.39R charged; `axis_sweep.py` on that exact documented command returns 113 / +82.41R today. Not
+diagnosed here, and it is the next thing to chase before anyone quotes a Realign number.
