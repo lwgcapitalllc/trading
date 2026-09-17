@@ -4432,20 +4432,25 @@ commit db3c4ce3. XAUUSD, Vantage cache, 2020-01 → 2026-08.
 | — **NO fair-value gap on arrival** | **204** |
 | — and the primary never traded that leg | **195** |
 
-### What those 195 did
+### What those 195 did — CORRECTED 2026-09-17, see Run 34
 
-| | Setups | Share |
-|---|---|---|
-| hit the 1.0 first | 152 | 77.9% |
-| never hit the 1.0 | 43 | 22.1% |
-| reversed and made **1R** | 43 | 22.1% |
-| reversed and made **2R** | 39 | 20.0% |
-| reversed and made **3R** | **34** | **17.4%** |
+🔴 **The first table here was wrong and its numbers are struck through below.** It asked
+"never touched the 1.0 within five days AND made xR", which books a setup that ran 3R and
+retraced to the 1.0 a week later as a LOSER. As a trade that is a win and the position closed
+long before. The question is what price did BEFORE the 1.0 was touched.
 
-**What it means.** Blind entry at the 0.5 loses 78R at a 2R target and 59R at 3R. Break-even
-needs 33% at 2R and 25% at 3R; the raw zone gives 20.0% and 17.4%. So a confirmation rule must
-discard roughly a third of the 152 losers while keeping nearly all 34 winners just to reach flat.
-Runs 27–31 measured three rules (1m main shift, 1m internal shift, 5m shift) and none came close.
+| | Setups | Share | ~~was~~ |
+|---|---|---|---|
+| reached **1R** before the 1.0 | **99** | **50.8%** | ~~43 / 22.1%~~ |
+| reached **2R** before the 1.0 | **66** | **33.8%** | ~~39 / 20.0%~~ |
+| reached **3R** before the 1.0 | **49** | **25.1%** | ~~34 / 17.4%~~ |
+| reached 4R before the 1.0 | 34 | 17.4% | — |
+
+**What it means, and it is the opposite of what the first version said.** Blind entry at the 0.5
+makes **+3.0R at a 2R target and +1.0R at 3R** — the raw zone is a coin flip, not a loser.
+Break-even needs 33% at 2R and 25% at 3R; the zone gives 33.8% and 25.1%. **So a confirmation
+rule does not have to rescue a broken setup. It only has to beat a coin flip.** That is a far
+lower bar than the retracted version claimed, and it is why the line stayed open through Run 34.
 
 **What this does NOT close.** Every run so far stops at the 15m 1.0, which makes R the whole half
 of the zone. The Realign bot's trigger stops behind the **last counter shift on the 5m**, which is
@@ -4497,3 +4502,54 @@ break — it is a counter-direction break followed by a with-trend shift, and it
 counter shift rather than at the 15m 1.0. The pair should fire far less often than 73%, and the
 tight stop makes 3R a much shorter distance. That is a different trade from anything in Runs
 27–33 and it has not been measured.
+
+---
+
+## Run 34 — 2026-09-17: do the WINNERS share a lower-frame pattern? — no
+
+**Question (Aaron):** of the setups that reversed, do they all have a structure pattern in common
+on the lower frames? Run this before assuming Realign is that pattern.
+
+**It also corrected Run 32.** See the struck-through table there: the ceiling had asked "never
+touched the 1.0 within five days", which books a 3R winner that retraced a week later as a loser.
+On the correct question — what price did BEFORE the 1.0 — the zone is **break-even blind**, not a
+59R loser, and there are **49 winners at 3R, not 34**. Every conclusion below sits on the
+corrected figures.
+
+**Method:** `backtest/tools/nogap_winner_patterns.py` (branch `research/nogap-shift-5m`, commit
+fa1cd933). Winners are the 49 that reached 3R before the 1.0; losers the other 146. For each
+setup, every structure event on the 1m and 5m — swing and internal, break and shift, with and
+against the trade — is collected **from arrival in the zone until price is +0.5R toward the
+extreme**, and never past it. That cutoff is the whole design: an event inside the move is
+hindsight, which is the defect Run 28 was retracted for. Median 5 events per setup. All 16 event
+types and all 256 ordered pairs were tried, reported on 2020–2023 and checked on 2024–2026.
+
+Baseline win rate: **28.6% in 2020–23** (n119), **19.7% in 2024–26** (n76).
+
+| Best patterns by 2020–23 lift | 2020–23 | 2024–26 |
+|---|---|---|
+| 1m internal shift with > 1m internal break with | n17 29.4% **+0.8pp** | n11 9.1% −10.6pp |
+| 1m internal break against > 1m internal break against | n24 29.2% **+0.6pp** | n24 8.3% −11.4pp |
+| 1m internal break against > 1m internal break with | n27 25.9% −2.6pp | n15 13.3% −6.4pp |
+| 1m swing break against > 5m internal shift with | n16 25.0% −3.6pp | n9 22.2% +2.5pp |
+| 5m internal shift with | n17 23.5% −5.0pp | n11 18.2% −1.6pp |
+
+- 86 patterns had 15+ trades in the search half and 8+ in the check half.
+- **The best lift in the search half was +0.8pp.** Two patterns cleared the baseline at all, both
+  by under a point, and both then fell 10pp below it out of sample.
+- **Zero patterns beat the baseline by 5pp in both halves.**
+
+**Verdict: the 49 winners do NOT share a lower-frame structure pattern.** This is not a weak
+signal needing a better search — the whole distribution sits at or below the baseline, which is
+what it looks like when the lower frames carry no information about which zone visits reverse.
+The search was deliberately generous (272 candidates against 49 winners), and that generosity is
+why the flat result is worth something: an edge of any size would have shown up somewhere and
+then held.
+
+**What this means for Realign.** It lowers the prior considerably. Realign's trigger is one of
+the 256 pairs tested here — a counter-direction break followed by a with-trend shift — and it did
+not separate the winners. ⚠ **It is not a clean refutation**, because Realign also (a) reads the
+5m's own swing stream with its own confirmation rules rather than a bare event pair, and (b)
+stops behind the counter shift, which changes R and therefore which outcomes count as wins. Both
+differences are real. But the honest reading is that the remaining case for it rests on the STOP,
+not on the pattern — and that is a smaller claim than the one this line started with.
