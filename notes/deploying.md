@@ -6,6 +6,51 @@ CLAUDE.md gets at most one index line.
 
 ---
 
+## Before you promote — prove the change is INERT (2026-09-17)
+
+**A promote is the only thing that changes what a live bot trades, so it is the only moment where
+"I think this is safe" is worth nothing.** `backtest/tools/replay_fingerprint.py` settles it in
+**22 seconds** (MEASURED 2026-09-17, 2.5 years / 62,468 M15 bars — two runs, so under a minute).
+
+```bash
+# 1. BEFORE the change (or on a clean checkout of what is currently deployed)
+python3 backtest/tools/replay_fingerprint.py capture /tmp/pre.json \
+    --start 2024-01-01 --end 2026-08-23
+
+# 2. AFTER the change
+python3 backtest/tools/replay_fingerprint.py compare /tmp/pre.json \
+    --start 2024-01-01 --end 2026-08-23
+```
+
+`bars ... IDENTICAL` **and** `trades ... IDENTICAL` is the only green. Anything else means the
+promote WILL move what the bot does — which may be exactly what you intended, but you now know it
+instead of finding out live.
+
+🔴 **IT FINGERPRINTS EVERY TRADE, NOT A TOTAL.** Two different books post the same net P&L, so a
+totals check is not a check. It also fingerprints the BAR STREAM, which a trade list cannot see: a
+run producing identical trades off a subtly different bar sequence is still a changed run, and the
+next strategy through that loop is the one that finds out.
+
+⚠ **It catches what the unit tests structurally cannot.** They run on small synthetic frames; the
+defects that reach a live bot are the ones that only appear over years of real bars — a float that
+rounds differently, a bar boundary off by one, a volume that becomes 0.0 instead of None.
+
+⚠ **`--allow-strategy-change` waives a REFUSAL, so only pass it when proving a strategy edit
+inert** — which is the whole point here. The tool then says so in its own output, and everything
+after that line is a claim rather than a guarantee. Read it that way.
+
+⚠ **Compare only against a fingerprint taken on the SAME window, instrument and settings.** The
+file records all three and `compare` refuses a mismatch, because a green comparison across two
+different bases is exactly the false reassurance this exists to prevent.
+
+**Worked example — the 2026-09-17 currency fix.** Four sizing lines and one swap call changed in
+`strategies/python/sos_fade/execution.py`. Both fingerprints came back identical over 62,468 bars,
+66 trades each side, which is what made that promote safe to recommend. The argument that it
+*should* be inert (gold's conversion factor is 1.0) was available the whole time and was not the
+evidence; this was.
+
+---
+
 ## VPS Deploy Workflow
 
 **Pulling does NOT change what a bot trades — promoting does.** Since 2026-08-03 a live bot
