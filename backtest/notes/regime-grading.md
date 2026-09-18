@@ -247,3 +247,70 @@ null. Run 5 never ran this test - the number was adopted on a single comparison.
 
 And the labels separate nothing on this bot either: trending +0.53R over 141 trades,
 transitioning +0.56R over 26, a shuffle reproducing the spread 32% of the time.
+
+---
+
+## Head to head: shipped engine vs candidate — 2026-09-17
+
+One run per bot, both labels scored on the SAME 12,372 bars, the same forward outcomes and the
+same shuffle test. `backtest/reports/regime_headtohead_sosfade/` and `..._xleg/` (gitignored;
+the command is the one above with `--trades` pointed at each bot's export).
+
+### Against the market — the candidate wins, and not narrowly
+
+| | biggest bucket | forward efficiency, lowest to highest bucket | forward move, lowest to highest |
+|---|---|---|---|
+| shipped | 78% of bars | 0.206 - 0.213, every range overlapping | 3.25 - 3.53 |
+| candidate | 16% of bars | 0.168 - 0.236, ranges separated | 2.41 - 4.51 |
+
+The shipped engine's shuffle test also reads 0.0% on three outcomes, and that is the trap: with
+12,000 rows a 0.007 difference in forward efficiency is detectable and useless. **Significance
+and magnitude are different questions and only the second one can gate a bot.** The candidate's
+spread is a factor of 1.4 on forward efficiency and a factor of 1.9 on forward move.
+
+🔴 **The ordering is the opposite of what the shipped labels imply.** The QUIET, mean-reverting
+market is followed by the LARGEST subsequent moves (+4.5 ATR) and the highest forward
+efficiency; the FAST, persisting market is followed by the smallest (+2.4 ATR). Consistent
+across all four outcomes. A gate built on "trade when it is trending" is pointed backwards.
+
+### Against money — nothing works, on either bot, old or new
+
+| | reversal bot (274 trades) | extreme leg (170 trades) |
+|---|---|---|
+| shipped labels | shuffle matches 27.6% | shuffle matches 32.0% |
+| candidate labels | shuffle matches 59.2% | shuffle matches 93.0% |
+
+The candidate is WORSE here, and the reason is arithmetic rather than quality: nine cells over
+170-274 trades is ~20-30 trades a cell, so every range swallows every other. Scoring one scale
+at a time instead of the nine-cell join does not rescue it either - on both bots every band of
+every reading, shipped or candidate, overlaps every other band.
+
+### The one apparent exception, and why it is noise
+
+The extreme leg showed a real-looking link between its outcome and the shipped engine's
+momentum-swing input: -0.168 (-0.311 to -0.019), clear of zero, with the lowest third of
+readings averaging +0.92R against +0.25R for the highest. That is the only money link anywhere
+in this study, and it is in a reading the market half of the study calls useless.
+
+**It does not survive being split in half.** First 85 trades: -0.259 (-0.467 to -0.054), lowest
+third +1.30R against +0.09R. Second 85 trades, from 2023-01-26: -0.061 (-0.264 to +0.152),
+lowest third +0.53R against +0.40R. Nothing. Six readings were tested against two bots, so one
+result clearing 5% by chance is roughly what twelve comparisons produce, and the split
+confirms it.
+
+### Verdict
+
+**The candidate ships as a market DESCRIPTION and must not ship as a money GATE.** It is a
+genuinely better description of what gold does next, on every test, by a margin that is
+practical and not merely detectable. It does not predict either bot's trade outcome, and
+neither does the engine it replaces.
+
+The spec's named failure condition is met for the gating question, and the honest answer is the
+one it committed to: **market condition does not gate these two strategies.** That is not the
+same as saying market condition is irrelevant - the market half of the study says loudly that
+it is not - it says these two entry rules have already priced in whatever the condition
+carries, which is what a selective entry is supposed to do.
+
+What this leaves the extreme leg's shipped market cut: free, unproven, and now known to be
+pointed at the wrong end of the reading. Leaving it on costs nothing measurable. Nothing here
+justifies adding a second gate like it to any other bot.
