@@ -127,13 +127,12 @@ GBPJPY_PUPRIME = InstrumentFacts(
     #   that multiplies straight into risk. Rule 15, in the file that was warning about rule 15.
     point_value=0.006409188,   # ⚠ SNAPSHOT 2026-09-17, moves with USDJPY — see the note above
     daily_close_hour_ny=17,
-    # 🔴 DELIBERATELY NOT A REAL PROFILE KEY, so any run REFUSES rather than borrowing a number.
-    #   Commission is charged on a filled DEAL and never appears on a symbol specification, and
-    #   this account has no GBPJPY deal to read. Gold's $1.00/side/lot was CONFIRMED off real
-    #   deals on 2026-09-17 (demo 700152905: 24 deals, 6.48 lots, -$6.48; live 34957946: 2 deals,
-    #   0.28 lots, -$0.28 — both exactly 1.00/lot/deal), which finally measures what
-    #   `backtest/fills.py` says nobody had read. It does NOT establish the FX rate.
-    account_profile="puprime_ecn_gbpjpy_COMMISSION_UNMEASURED",
+    # ✅ MEASURED AND LIVE since 2026-09-17. This key pointed at a deliberately nonexistent
+    #   profile until commission was read off a real filled round trip (2 deals, 0.02 lots,
+    #   -$0.02 on demo 700152905) — commission lands on a DEAL and never on a symbol
+    #   specification, so a trade was the only way to read it. Spread and swap were measured the
+    #   same day. See `backtest/fills.py` → `puprime_ecn_gbpjpy`.
+    account_profile="puprime_ecn_gbpjpy",
     bar_minutes=15,
 )
 

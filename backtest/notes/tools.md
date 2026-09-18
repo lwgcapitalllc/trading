@@ -1292,3 +1292,20 @@ CLAUDE.md gets at most one index line.
   removal** — the generalisation, not a Realign quirk.
   ⚠ Read-only; writes nothing and moves no baseline. Anything it surfaces is a hypothesis needing a
   REPLAY and its own pre-declared window, never a filter applied by dropping rows.
+
+## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)
+
+Runs one config on two instruments with costs ON and OFF, and prints the four-way table. Written
+for Run 37 (`strategies/python/sos_fade/sos_fade_optimization.md`) and kept so that result can be
+re-run rather than believed.
+
+🔴 **The two controls are the point, and a run without them answers nothing.**
+
+1. **The same untuned config on the ORIGINAL instrument.** Without it, a loss on the new pair is
+   indistinguishable from a broken baseline. Run 37's baseline makes +72.30R on gold, which is
+   what turns "it loses on GBPJPY" into "the setup does not travel".
+2. **Costs OFF.** Without it, a loss is indistinguishable from a cost-model problem. GBPJPY lost
+   18.73R on a frictionless book, so no broker, spread or swap change could rescue it.
+
+⚠ **An in-sample loss needs no walk-forward** — you cannot overfit your way *to* a loss. Reach for
+out-of-sample when a result is POSITIVE.

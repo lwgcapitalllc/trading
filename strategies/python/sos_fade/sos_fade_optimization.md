@@ -4658,3 +4658,57 @@ coin flip out of sample.
 instrument. Every run 27–36 sits on one symbol on one timeframe, and the whole line has now been
 searched hard enough on that record that another pass over it will find noise before it finds
 anything else.
+
+## Run 37 — 2026-09-17: does SOS Fade TRAVEL to GBPJPY? — no, and it is the SIGNAL, not the tuning
+
+**The question.** Aaron: *"I want to run our SOS Fade strategy on more instruments… the raw
+strategy edge is not there anymore because we have optimized it specifically to gold."* So: strip
+gold's tuning back to an untuned baseline, and see whether the underlying setup has an edge on
+GBPJPY.
+
+**Basis.** GBPJPY.p and XAUUSD.p, M15, 2020-01-01 → 2026-09-01, 166,080 bars, warm-up 500,
+$10,000 start, PU Prime ECN costs on both (GBPJPY's spread/swap/commission all MEASURED
+2026-09-17 — see `backtest/notes/broker-data.md`). GBPJPY priced through the per-bar USDJPY
+conversion (`backtest/data/fx.py`, 108.97 → 158.72 across the window). Re-run it with
+`backtest/tools/gbpjpy_travel_test.py`.
+
+| config | instrument | trades | total | maxDD | win |
+|---|---|---|---|---|---|
+| gold-tuned | XAUUSD | 157 | **+169.75R** | −7.69R | 50.9% |
+| untuned baseline | XAUUSD | 159 | **+72.30R** | −7.17R | 59.6% |
+| untuned baseline | GBPJPY | 67 | **−22.33R** | −23.11R | 34.6% |
+| gold-tuned | GBPJPY | 62 | **−25.73R** | −25.84R | 17.1% |
+
+**The answer is no, and the control is what makes it an answer rather than an opinion.** The
+untuned baseline is NOT a broken config — it makes **+72.30R** on gold, with a better win rate
+than the tuned one and the same drawdown. It simply does not work on GBPJPY. So the failure is not
+"we stripped too much"; the setup itself does not travel.
+
+🔴 **AND IT IS NOT THE COSTS.** Re-run with costs switched off entirely:
+
+| | costs OFF | costs ON | cost drag |
+|---|---|---|---|
+| GBPJPY | **−18.73R** | −22.33R | 3.6R |
+| XAUUSD | +79.19R | +72.30R | 6.9R |
+
+**GBPJPY loses 18.73R on a free, frictionless book.** No cost model, spread, swap or commission
+change is going to rescue it, and neither would a cheaper broker. The signal has no edge on this
+pair.
+
+⚠ **An in-sample loss is the strongest negative available** — there is no walk-forward to wait
+for, because you cannot overfit your way *to* a loss. This needed no out-of-sample split to
+settle.
+
+⚠ **Frequency is half of gold's too**: 67 trades against 159 over the identical window. Even a
+marginal edge here would not deliver the sample the portfolio was supposed to gain from it, which
+was the whole point of the exercise.
+
+⚠ **What this does NOT say.** It is one pair, one timeframe, one entry model. It says nothing
+about GBPUSD (unmeasured — no cost profile exists yet), nothing about another timeframe, and
+nothing about a structure-based setup on FX in general. It says THIS setup, on THIS pair, has no
+edge to tune.
+
+**Worth keeping from the exercise even so:** the gold tuning is worth **+97.45R** over the untuned
+baseline (169.75 vs 72.30), which is the first time that has been measured as a number rather than
+assumed. The tuning is real and earned, not curve-fit noise — the baseline it is measured against
+is itself profitable.

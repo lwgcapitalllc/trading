@@ -391,3 +391,20 @@ absence and a deliberate 1.0 read identically at the call site and mean very dif
 
 ⚠ 13 tests, offline (the source is injected). Three mutations run, each killing exactly one test:
 allowing backwards extrapolation, accepting a non-positive close, and accepting an empty series.
+
+## `puprime_ecn_gbpjpy` — the first non-USD-quoted profile (2026-09-17)
+
+Every figure MEASURED on 2026-09-17 off demo 700152905:
+
+- **commission $1.00/side/lot** — read off a real filled round trip (2 deals, 0.02 lots, −$0.02),
+  not off a fees page. Same rate gold pays on this tier, confirmed the same day off 24 demo deals
+  and 2 live ones.
+- **spread 0.015** — the MEDIAN over 956,001 stored ticks across 3 days, flat in every session.
+- **swap +4.83 / −20.68 points**, contract 100,000, digits 3, triple-swap Wednesday.
+
+⚠ **THE CONVERSION IS NOT OPTIONAL ON THIS PROFILE.** `swap_charge` must be passed the
+quote-to-account rate or it returns YEN — +483.00 / −2,068.00 per lot per night, 156x the real
+cost, with nothing to refuse it. `sos_fade/execution.py` passes it; a new consumer must too.
+
+⚠ **It is the first profile in this file whose symbol is not quoted in the account's currency**, so
+it is the one that will catch the next place a conversion was forgotten.

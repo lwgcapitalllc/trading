@@ -546,6 +546,23 @@ _SPREAD_XAUUSD_VANTAGE = 0.22
 # this broker's own products — see `UNMEASURED_SWAP` for the measurement. The raw tiers therefore
 # refuse BOTH costs nobody has read on them. **A tier is measured, or it refuses; there is no third
 # state and no borrowing.** Question 3 in `docs/BROKER_QUESTIONS.md` is what turns one back on.
+# GBPJPY.p on PU Prime ECN — MEASURED 2026-09-17 off demo 700152905. Contract 100,000 and
+# digits 3, so PU Prime's own formula gives 4.83 * 100000 * 10^-3 = +483.00 JPY/lot/night long and
+# -2,068.00 short. ⚠ THOSE ARE YEN. The account is USD, so a caller MUST pass the quote-to-account
+# rate into `swap_charge` — see that method and `backtest/data/fx.py`.
+_GBPJPY_SWAP = SwapModel(
+    swap_long_points=4.83,
+    swap_short_points=-20.68,
+    contract_size=100_000.0,
+    digits=3,
+    triple_weekday=2,
+)
+
+# MEDIAN over 956,001 stored ticks across 3 days (2026-09-17), flat in every session bar the
+# 21:00 UTC rollover hour, where the median is 0.19 and p99 is 0.31. ⚠ The 120-second live sample
+# taken the same evening read 0.18 — it landed in that hour. A snapshot is not a spread.
+_SPREAD_GBPJPY_PUPRIME_ECN = 0.015
+
 PROFILES = {
     "puprime_standard": AccountProfile(
         "puprime_standard",
@@ -622,6 +639,37 @@ PROFILES = {
         swap=UNMEASURED_SWAP,
         spread=SPREAD_UNMEASURED,
         server="PUPrime-Demo",
+    ),
+    # ── GBPJPY on PU Prime ECN — the first NON-USD-QUOTED profile in this file ──────────
+    # 🔴 EVERY FIGURE HERE WAS MEASURED ON 2026-09-17 off demo 700152905 (C:\MT5_Demo), and this
+    # is the first profile whose symbol is not quoted in the account's currency. See
+    # `backtest/notes/broker-data.md`.
+    #   commission  $1.00/side/lot — read off a real filled round trip (2 deals, 0.02 lots,
+    #               -$0.02), not off a fees page. The same rate gold pays on this tier, which was
+    #               confirmed the same day off 24 demo deals and 2 live ones.
+    #   spread      0.015 (15 points) — the MEDIAN over 956,001 STORED TICKS across 3 days, flat
+    #               in every session. ⚠ A 120-SECOND LIVE SAMPLE READ 0.18, eighteen times higher,
+    #               because it landed in the 21:00 UTC rollover hour. `--history-days` is what
+    #               settles a spread; `--sample` sees one session and this pair proves it.
+    #   swap        +4.83 long / -20.68 short, contract 100,000, digits 3, rollover3days 3 ->
+    #               our Monday-based triple_weekday=2.
+    # 🔴 THE SWAP IS SEVERELY ASYMMETRIC AND THE SIGN IS OPPOSITE TO GOLD'S. A long is PAID to
+    # hold (+$3.10/lot/night converted); a short BLEEDS (-$13.25). Gold's short swap is a credit,
+    # so any cost intuition carried over from it is wrong with the sign flipped.
+    # ⚠ **THE CONVERSION IS NOT OPTIONAL HERE.** `swap_charge` must be passed the quote-to-account
+    # rate or it returns YEN — +483.00 / -2,068.00 per lot per night, 156x the real cost, with
+    # nothing to refuse it. `strategies/python/sos_fade/execution.py` passes it; a new consumer
+    # must too. `backtest/data/fx.py` sources it per bar.
+    "puprime_ecn_gbpjpy": AccountProfile(
+        "puprime_ecn_gbpjpy",
+        1.00,
+        contract_size=100_000.0,
+        mintick=0.001,
+        swap=_GBPJPY_SWAP,
+        spread=_SPREAD_GBPJPY_PUPRIME_ECN,
+        server="PUPrime-Demo",
+        account=700152905,
+        symbol_suffix=".p",
     ),
     "vantage_demo": AccountProfile(
         "vantage_demo",

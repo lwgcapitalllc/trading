@@ -192,3 +192,18 @@ broken feed and the configured constant is used instead, which is its own test.
 **Proof it moved nothing.** All 21 parity gates green, 668 tests green in this package, and
 `replay_fingerprint.py` reports **62,468 bars and 66 trades IDENTICAL** against a baseline
 captured before ANY of the 2026-09-17 currency work — sizing, swap and this accessor combined.
+
+## The answer, for this pair (2026-09-17)
+
+`GBPJPY_PUPRIME` now points at a real, fully measured cost profile and the pair runs. The result
+is **Run 37 in `sos_fade_optimization.md`: it does not travel.** Untuned baseline −22.33R on
+GBPJPY against +72.30R on gold, and −18.73R even with costs switched off — so it is the signal,
+not the tuning and not the costs.
+
+⚠ **Keep the profile and the machinery anyway.** The measurement is the asset: the next instrument
+costs a cost profile and one command now, instead of the day this one took. Everything built here
+— the profile layer, the currency conversion, the rate series, the travel test — is
+instrument-agnostic and none of it was specific to GBPJPY.
+
+⚠ **GBPUSD is NOT answered by this.** It has no cost profile and nobody has read its symbol info.
+It is also USD-quoted, so it needs no rate conversion at all — a simpler case than this one.
