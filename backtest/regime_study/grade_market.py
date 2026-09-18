@@ -49,6 +49,29 @@ def _label_at(df: pd.DataFrame, i: int, long_multiple: int) -> str:
     return classify_regime(short, long_df)
 
 
+def _candidate_label_at(df: pd.DataFrame, i: int, long_multiple: int) -> str:
+    """The candidate's label at bar `i`, on bars up to `i` only.
+
+    `long_multiple` is accepted and unused: the candidate reads ONE frame, where the shipped
+    engine reads two. The parameter stays in the signature so both labellers are called
+    identically by `walk` — a labeller that had to be special-cased at the call site is one
+    a future third labeller would have to be special-cased against too.
+    """
+    from backtest.regime_study.candidate import classify
+
+    lo = max(0, i + 1 - _WINDOW)
+    return classify(df.iloc[lo : i + 1]) or "UNKNOWN"
+
+
+#: Every labeller the walk records, by the column it writes. Adding a labeller here is the only
+#: change needed to have it graded beside the others - on the SAME rows, the same forward
+#: outcomes and the same shuffle test, which is the only way two labels can be compared at all.
+LABELLERS = {
+    "engine_label": _label_at,
+    "candidate_label": _candidate_label_at,
+}
+
+
 def _minutes(df: pd.DataFrame) -> int:
     """The frame's bar size in minutes, measured off the index rather than trusted from a flag."""
     deltas = df.index.to_series().diff().dropna()
@@ -83,7 +106,8 @@ def walk(
         row.update(measures.read_all(window))
         row.update(outcomes)
         if with_label:
-            row["engine_label"] = _label_at(df, i, long_multiple)
+            for column, labeller in LABELLERS.items():
+                row[column] = labeller(df, i, long_multiple)
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -115,16 +139,21 @@ def score(walked: pd.DataFrame) -> dict:
                 pair[name].to_numpy(), pair[outcome].to_numpy(), blocks=True
             )
 
-    if "engine_label" in walked.columns:
+    for column in LABELLERS:
+        if column not in walked.columns:
+            continue
+        # `out["label"]` keeps the shipped engine at the top level so every file written before
+        # the candidate existed still reads the same way; the candidate gets its own block.
+        # Renaming the old key would silently break every comparison against a stored baseline,
+        # which is root rule 11 - what recreates a run for comparison carries everything that
+        # decides what it is measured on.
+        into = out["label"] if column == "engine_label" else out.setdefault(column, {})
         for outcome in forward.OUTCOMES:
             if outcome not in walked.columns:
                 continue
-            frame = walked[["engine_label", outcome]].dropna()
-            groups = {
-                str(label): part[outcome].to_numpy()
-                for label, part in frame.groupby("engine_label")
-            }
-            out["label"][outcome] = {
+            frame = walked[[column, outcome]].dropna()
+            groups = {str(label): part[outcome].to_numpy() for label, part in frame.groupby(column)}
+            into[outcome] = {
                 "groups": {k: mean_ci(v, blocks=True) for k, v in groups.items()},
                 "differ": permutation_spread(groups),
             }
@@ -153,24 +182,24 @@ def bucket_table(walked: pd.DataFrame, reading: str, outcome: str, count: int = 
     return rows
 
 
-def label_share(walked: pd.DataFrame) -> dict[str, float]:
+def label_share(walked: pd.DataFrame, column: str = "engine_label") -> dict[str, float]:
     """How often each label fires. A label that never appears cannot gate anything, and a label
     covering 90% of bars is not describing a condition — both are invisible in a table of
     averages, and both have shipped in this repo before."""
-    if "engine_label" not in walked.columns or walked.empty:
+    if column not in walked.columns or walked.empty:
         return {}
-    counts = walked["engine_label"].value_counts()
+    counts = walked[column].value_counts()
     return {str(k): float(v) / float(len(walked)) for k, v in counts.items()}
 
 
-def flip_rate(walked: pd.DataFrame) -> float | None:
+def flip_rate(walked: pd.DataFrame, column: str = "engine_label") -> float | None:
     """How often the label changes from one sampled bar to the next.
 
     🔴 **THE NUMBER THAT DECIDES WHETHER A GATE IS USABLE AT ALL.** A condition that changes every
     few bars is not a condition, and a bot gated on it is turned on and off inside a single move —
     which costs money in a way no average-outcome table would ever reveal.
     """
-    if "engine_label" not in walked.columns or len(walked) < 2:
+    if column not in walked.columns or len(walked) < 2:
         return None
-    labels = walked["engine_label"].to_numpy()
+    labels = walked[column].to_numpy()
     return float(np.mean(labels[1:] != labels[:-1]))

@@ -219,3 +219,31 @@ names.
 Ten tests in `backtest/tests/test_regime_candidate.py`, four of them watched go red by
 mutating the line they guard: the rule-1 `None` guard, the band edges, the degenerate-price
 refusal and the causality truncation.
+
+
+## The other bot's trades, and what its shipped gate is actually worth — 2026-09-17
+
+The extreme leg is the only bot whose money passes through a market label, so it is the one
+that matters. Its trades were exported twice over the same eight years, once with the market
+cut ON (shipped) and once OFF, using `backtest/tools/trade_export.py`. The two books differ by
+exactly 24 trades and nothing else - no trade appears in the gated book that is absent from
+the ungated one, so there was no queue displacement and the comparison is a clean subtraction.
+
+| | trades | sumR | avgR | worst losing run |
+|---|---|---|---|---|
+| market cut OFF | 170 | +88.9 | +0.52 | 8.13R |
+| market cut ON (shipped) | 146 | +87.3 | +0.60 | 6.00R |
+
+**The 8.13R -> 6.00R in the strategy's own Run 5 reproduces exactly**, on a different broker
+feed and a fuller window. That is a real check on this harness as well as on that result.
+
+🔴 **It is not, however, significant.** Dropping 24 trades AT RANDOM from the ungated book gets
+to 6.00R or better **10.9%** of the time (20,000 draws, median 8.00R). One in nine. The 24
+refused trades were worth +1.5R between them, +0.064R each - indistinguishable from zero.
+
+**So the shipped gate is free, not proven.** It costs no return, which is why leaving it on is
+defensible; believing it CAUSES the smaller drawdown is not, on 24 trades against a one-in-nine
+null. Run 5 never ran this test - the number was adopted on a single comparison.
+
+And the labels separate nothing on this bot either: trending +0.53R over 141 trades,
+transitioning +0.56R over 26, a shuffle reproducing the spread 32% of the time.

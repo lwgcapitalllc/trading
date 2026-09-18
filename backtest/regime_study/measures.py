@@ -177,6 +177,21 @@ def engine_momentum_swing(df: pd.DataFrame) -> float | None:
     return _finite(_rsi_range(df))
 
 
+def candidate_persistence(df: pd.DataFrame) -> float | None:
+    """The candidate's stickiness scale: the variance ratio RANKED against its own past.
+
+    Imported lazily because `candidate.py` reads `volatility_percentile` from this module, and
+    a module-level import here would close the circle. The lazy call is not a workaround for a
+    layering mistake — the candidate is built ON the readings, and this registry entry exists
+    so the candidate is scored by exactly the graders that score everything else, on the same
+    rows and the same forward outcomes. Scoring it any other way would make the comparison
+    against the shipped engine a comparison of two harnesses.
+    """
+    from backtest.regime_study.candidate import persistence_percentile
+
+    return persistence_percentile(df)
+
+
 # ── the registry ─────────────────────────────────────────────────────────────────
 # Adding a candidate reading means adding one entry here and nothing else: the graders, the CLI
 # and the output files all read this dict. That is the seam — a future engine's readings get
@@ -201,6 +216,11 @@ READINGS: dict[str, dict] = {
     "range_position": {
         "fn": range_position,
         "label": "where price sits in its recent range",
+        "family": "candidate",
+    },
+    "candidate_persistence": {
+        "fn": candidate_persistence,
+        "label": "candidate: do moves stick, vs how much they usually do",
         "family": "candidate",
     },
     "engine_trend_strength": {

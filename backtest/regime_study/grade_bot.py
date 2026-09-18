@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from . import measures
-from .grade_market import _label_at, _minutes
+from .grade_market import LABELLERS, _minutes
 from .stats import mean_ci, permutation_spread, quantile_buckets, spearman_ci
 
 _WINDOW = 1200
@@ -70,24 +70,26 @@ def tag(
         df = df.tz_localize(None)
 
     rows = []
-    label_cache: dict[int, str] = {}
+    label_cache: dict[tuple[str, int], str] = {}
     for stamp, r in zip(stamps, trades[r_col].astype(float)):
         row = {"entry": stamp, "r": float(r)}
         i = _condition_index(df, stamp)
         if i is None:
             row.update({name: None for name in measures.READINGS})
             if with_label:
-                row["engine_label"] = "UNKNOWN"
+                row.update(dict.fromkeys(LABELLERS, "UNKNOWN"))
             rows.append(row)
             continue
         lo = max(0, i + 1 - _WINDOW)
         row.update(measures.read_all(df.iloc[lo : i + 1]))
         if with_label:
             # Memoised per bar: two trades inside one condition bar share a label by definition,
-            # and the classifier walks its whole frame on every call.
-            if i not in label_cache:
-                label_cache[i] = _label_at(df, i, long_multiple)
-            row["engine_label"] = label_cache[i]
+            # and a labeller walks its whole frame on every call.
+            for column, labeller in LABELLERS.items():
+                key = (column, i)
+                if key not in label_cache:
+                    label_cache[key] = labeller(df, i, long_multiple)
+                row[column] = label_cache[key]
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -105,13 +107,21 @@ def score(tagged: pd.DataFrame) -> dict:
             "bands": bands(pair, name),
         }
 
-    if "engine_label" in tagged.columns:
-        frame = tagged[["engine_label", "r"]].dropna()
-        groups = {str(label): part["r"].to_numpy() for label, part in frame.groupby("engine_label")}
-        out["label"] = {
+    for column in LABELLERS:
+        if column not in tagged.columns:
+            continue
+        frame = tagged[[column, "r"]].dropna()
+        groups = {str(label): part["r"].to_numpy() for label, part in frame.groupby(column)}
+        block = {
             "groups": {k: mean_ci(v, blocks=False) for k, v in groups.items()},
             "differ": permutation_spread(groups),
         }
+        # The shipped engine keeps the top-level key it has always had, so a stored baseline
+        # still reads the same way (root rule 11); a new labeller gets its own block.
+        if column == "engine_label":
+            out["label"] = block
+        else:
+            out[column] = block
     return out
 
 
