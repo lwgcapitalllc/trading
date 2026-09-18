@@ -4755,3 +4755,113 @@ say structure-based trading fails on FX.
 gold, where the edge demonstrably lives, rather than on a third pair. The honest routes to more
 trades named in the root CLAUDE.md are another leg, another instrument or another timeframe — and
 "another instrument" has now been measured twice and come back no.
+
+---
+
+## Run 37 — 2026-09-17: the RETURN into the zone — the opposite direction to Runs 27–36
+
+**Question (Aaron):** 374 setups came back into the tradable zone. Runs 27–36 all traded the way
+OUT of the zone. Trade the way BACK IN instead — from the extreme down to the level price shifted
+out from, or deeper. *"I'm pretty sure on the one minute chart you could see a shift of structure
+back down into the zone it shifted from."*
+
+**The trade.** 15m gives the leg (the Structure fib's own anchors) and therefore the zone. Price
+must be within 25% of the leg span of the extreme — up in the air, not already back at the zone.
+On the 1m, the first counter-direction shift of structure is the entry, **but only after price has
+STALLED** (Aaron's "dance in the air"). ⚠ The stall test is precise and must be quoted precisely:
+over the last N 1m bars, the leg-direction extreme must sit in the FIRST HALF of that window — so
+the high was made early and has not been beaten since. That is a proxy for "no new extreme
+recently", not a literal bars-since-new-high counter, and the two are not identical. Stop
+behind the furthest point price reached. Target the 0.618 or the 0.786 retracement into the leg.
+
+**Method:** scratch scripts, this session, XAUUSD PU Prime cache, 2018-09 → 2026-09, 189,284 15m
+bars and 2,835,061 1m bars. No lookahead: a 15m bar opening at `t` is read only from `t+15m`, and
+a 1m bar holding both stop and target counts as STOPPED. $0.20 flat per trade unless stated.
+Split 2018-09 → 2022-09 / 2022-09 → 2026-09.
+
+### First answer: NO — and two wrong stops on the way there
+
+🔴 **The first pass put the stop behind the 1m shift, not behind the extreme. Aaron corrected it:**
+*"I never said to put the stop behind the SOS I said to put it behind the furtherest point price
+reached."* He was right, and the correction changed every number below. An earlier pass also
+measured a different trade entirely — a 1:1 fade back to the broken level, not the bot's own zone —
+and is not reported here.
+
+With the stop corrected but **no filter on the size of the move**, 18 variants (3 targets x 2
+nearness x 3 stall lengths) were all negative, on 1,000+ trades in the main cells. Gross of costs
+it was also flat (+1.2R over 1,026 trades), so costs were not the cause.
+
+**The mechanism, and it is why every unfiltered version fails.** Waiting longer genuinely raises
+the chance price comes back — win rate climbs 35% → 38% → 40% → 42% with the wait, monotonically.
+But every bar you wait, price has already drifted toward the zone, so reward-to-risk falls
+2.05 → 1.84 → 1.70 → 1.04 over the same sweep. **They cancel at every setting.** That is a fairly
+priced retracement, not a mistunable one.
+
+### Then Aaron's filter, and it changes the result
+
+**Aaron:** *"the distance between where it shifted from to the extreme has to be worth it... the
+shift to the extreme has to be equal to or greater than from the shift to where the sweep was."*
+
+With B = the level the shift broke and S = the sweep the break came off, require
+**(extreme − B) ≥ ratio × (B − S)**. 41.5% of legs clear 1:1; 19.9% clear 2:1. ⚠ Those counts are
+over distinct leg SHAPES, not distinct setups — an extending leg is counted more than once.
+
+| Filter | 0.618 target | 0.786 target |
+|---|---|---|
+| off | n340 +18.8R (+0.055/tr) | n330 −16.8R |
+| 0.75x | n165 **+16.4R** (+0.099) | n163 **+16.3R** (+0.100) |
+| **1.0x** | n137 **+17.4R** (+0.127) | n137 **+20.0R** (+0.146) |
+| 1.5x | n92 **+11.8R** (+0.128) | n91 **+9.8R** (+0.108) |
+| **2.0x** | n74 **+13.3R** (+0.180) | n73 **+17.3R** (+0.236) |
+
+All at a 4-hour stall. **Every filtered cell is positive in BOTH halves — eight out of eight.**
+
+**Two reasons to believe it beyond the totals**, since no single cell clears two standard errors:
+
+1. **Dose-response.** Per-trade expectancy rises monotonically as the filter tightens: +0.055 with
+   no filter → +0.10 at 0.75x → +0.13/+0.15 at 1:1 → +0.18/+0.24 at 2:1.
+2. **The stall curve became a shape.** Without the filter the wait sweep was a random walk with one
+   lucky cell. With it, all four independent slices (2 ratios x 2 targets) show the same hump —
+   climb, peak at 3–4 hours, fall away past 6. A spike does not repeat four times in the same place.
+
+⚠ **Against it:** 73–137 trades over 8 years, t ≈ 1.0, and this is the first positive after ten
+negative runs on the same record, so multiple testing is a live concern (Run 34's warning applies
+to this run too).
+
+### Cross-instrument check
+
+⚠ **IT DID NOT CONFIRM, AND THE TEST WAS CONFOUNDED.** Only XAUUSD has 1m bars cached, so the
+14 other instruments were run with a **5m entry frame** — changing the instrument AND the entry
+frame at once. Fifteen symbols (metals, JPY and USD majors, four indices, Brent), same rule, same
+2.0x filter, same 4-hour stall, GROSS of costs so they compare (per-instrument costs are
+UNMEASURED and may not be borrowed from gold).
+
+| | Trades | Total | Cells positive |
+|---|---|---|---|
+| 14 non-gold instruments | 904 | **−37.2R** | 12 / 28 |
+| XAUUSD on the **5m** entry frame | 38 | **−16.2R** | 0 / 2 |
+| XAUUSD on the **1m** entry frame | 147 | **+30.6R** | 2 / 2 |
+
+- Best non-gold cell was GER40 (n17, +12.5R / +16.0R, both halves positive, t≈2.0). One instrument
+  in fifteen on 17 trades, in a sweep of 30 cells — that is what multiple testing looks like, and
+  it is not evidence.
+- 🔴 **Gold flips sign between the two entry frames on otherwise identical rules.** So this sweep
+  cannot separate "the idea does not travel" from "the idea needs a 1m entry", and it must not be
+  quoted as having settled either.
+
+**The decisive test, not yet run:** 1m bars for two or three other instruments, then this identical
+rule. The box and its data terminal were up when this was written, so it is available; it is a
+multi-hour pull of years of 1m data.
+
+### What this does NOT establish
+
+🔴 **NOT A TRADEABLE RESULT YET.** This is a standalone screen: no slot contention, no broker cost
+profile, and no interaction with the primary, which in Runs 29 and 31 cost 24 primaries. The trade
+is also a SELL while the primary is waiting to BUY the same leg at overlapping prices — on one
+account that is a hedge, not a stack, and it needs a rule for which bot holds the leg before any of
+this becomes a bot. **Two steps remain and neither has run:** the 1m cross-instrument test above, and
+the same bot replay Runs 29/31 used, with slot contention and a real cost profile.
+
+**Honest standing, 2026-09-17:** one instrument, one entry frame, 73–137 trades, a real
+dose-response on Aaron's filter, and a cross-check that came back negative but confounded. Not
+dead, not proven, and not tradeable.

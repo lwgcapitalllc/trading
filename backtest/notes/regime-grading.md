@@ -100,3 +100,86 @@ the thing that ships. A test asserts they still match the engine's own arithmeti
 
 Reads bars and a finished trade list; writes a report. It never re-runs a strategy, never touches
 `engines/`, `algos/` or any stored baseline, and cannot change the run it is grading.
+
+---
+
+## First measured baseline — 2026-09-17
+
+Command that produced it:
+
+```
+python3 backtest/tools/regime_grade.py --symbol XAUUSD.p --tf 240 \
+  --start 2018-07-25 --end 2026-09-15 --horizon 30 \
+  --trades <trades.csv from a fresh sos_fade 15m+5m replay> \
+  --out backtest/reports/regime_grade_20260917
+```
+
+Scope: 12,593 four-hour gold bars, 2018-07-25 -> 2026-09-15, forward horizon 30 bars.
+274 SOS Fade trades over the same window, replayed with the regime filter OFF so the
+labels grade the trades without having changed them.
+
+**Caveat on the data.** The study ran on the LIVE broker's gold feed (PU Prime, the `.p`
+symbol), not the backtest broker named in `backtest/CLAUDE.md`. The attached terminal only
+serves the live symbol, so a re-run on the backtest broker is still owed before any number
+here is treated as final.
+
+### What the labels are worth against the market
+
+| label | bars | share | avg forward efficiency |
+|---|---|---|---|
+| TRENDING | 9,814 | 78% | 0.208 (0.198 - 0.217) |
+| TRANSITIONING | 2,356 | 19% | 0.203 (0.187 - 0.218) |
+| RANGING | 194 | 1.5% | 0.213 (0.177 - 0.247) |
+| UNKNOWN | 199 | 1.6% | 0.169 |
+
+The three labels are indistinguishable on the thing they are named after, and the
+"ranging" label is followed by marginally MORE directional travel than the "trending"
+one. The label is also degenerate: nearly four bars in five are called trending.
+
+### What the labels are worth against money
+
+| label | trades | avg R | range |
+|---|---|---|---|
+| TRENDING | 225 | +0.82 | +0.33 to +1.46 |
+| TRANSITIONING | 41 | +1.32 | -0.18 to +3.43 |
+| RANGING | 8 | -0.28 | too few to range |
+
+Shuffle test: a spread this wide arises from randomly reshuffled labels **27.6%** of the
+time. The label ordering is therefore not evidence of anything. Note also that the best
+label here is TRANSITIONING - the opposite of the cut adopted for the extreme leg bot in
+its Run 5. Different bot, so not a contradiction, but it means the Run 5 result has no
+support from this study and should be re-checked on the extreme leg's own trade list.
+
+### The readings, ranked
+
+Against the market, over 12.3k-12.5k rows (Spearman, moving-block bootstrap, 95%):
+
+- Volatility percentile is the strongest single reading: -0.223 on forward volatility
+  change, -0.215 on forward excursion, -0.158 on forward move, -0.072 on forward
+  efficiency. All four clear of zero, all four consistent in sign.
+- Where price sits in its recent range is second: +0.210, +0.117, +0.089, +0.053. All
+  four clear of zero.
+- The variance ratio is weaker but consistent: three of four clear of zero, all negative.
+- The engine's own three inputs are the worst of the seven. Its trend-strength and
+  momentum-swing readings straddle zero on forward efficiency, forward move and (for
+  momentum swing) everything. Its volatility ratio tracks future volatility (+0.160) and
+  nothing else.
+
+Against money, all seven have a rank correlation whose range straddles zero, so no
+reading is a continuous predictor of trade outcome on 274 trades. Two show a band
+ordering worth a second look:
+
+- Where price sits in its recent range: bottom third +0.45R, middle +0.75R, top +1.39R -
+  monotone, though the outer bands' ranges overlap.
+- The engine's volatility ratio: the middle band (0.87-1.01) averages +0.50R against
+  +1.87R below it. That is a band effect, not a threshold effect, and the shipped
+  thresholds sit nowhere near it.
+
+### Verdict
+
+The shipped engine's labels cannot currently be used to decide whether a bot should
+trade. They do not separate market behaviour, they do not separate money, and one of the
+three labels covers 78% of all bars. Nothing here says market conditions are irrelevant -
+two of the four candidate readings do carry a real, if modest, signal against the market.
+It says the current three-input score and its round-number thresholds are not the way to
+extract it.
