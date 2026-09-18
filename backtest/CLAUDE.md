@@ -307,6 +307,7 @@ listed below under the notes file that now holds it.
 - MEASURED 2026-09-17: the three shipped labels separate neither market behaviour nor money, and 78% of bars are called trending
 - `tools/trade_export.py` — replay ANY registered strategy for its entry times and R, when the rich report's shape does not fit (2026-09-17)
 - `replay/registry.py` — which packages declare the contract, in ONE place; being in it is not a promise every tool can drive it (2026-09-17)
+- `regime_study/candidate.py` — the candidate reading: two scales, bands ranked against the instrument's own past, nothing fitted. NOT an engine, no strategy imports it (2026-09-17)
 
 ### `notes/setups-contract.md` — The setups.py contract
 

@@ -183,3 +183,39 @@ three labels covers 78% of all bars. Nothing here says market conditions are irr
 two of the four candidate readings do carry a real, if modest, signal against the market.
 It says the current three-input score and its round-number thresholds are not the way to
 extract it.
+
+
+---
+
+## The candidate reading — 2026-09-17
+
+`backtest/regime_study/candidate.py`. **It is not an engine and no strategy imports it.** It
+sits under `backtest/` so that it cannot reach a live bot before the graders have scored it;
+it moves into `engines/regime/` only if it wins, and the engine keeps exactly one
+implementation either way.
+
+Three changes from the shipped engine, each with a measurement behind it:
+
+1. **Two scales, never collapsed into one.** How fast the market is moving relative to its own
+   history, and whether moves persist or unwind. The shipped engine folds three inputs into
+   one score and then one of five names, and 78% of bars came out with the same name.
+2. **Bands are thirds of the instrument's own trailing history**, not hand-picked constants
+   shared by every instrument. Equal populations by construction, so the degenerate bucket is
+   impossible. Nothing is fitted, so nothing can go stale, and the reading needs no
+   per-instrument file.
+3. **The two readings are the two that survived eight years.** Trend efficiency looked strong
+   on 2024-2026 and is weak across the full window - it was in the plan and was dropped when
+   the full-history numbers came in.
+
+⚠ **The bands are RELATIVE.** In a permanently calm year "fast" still fires a third of the
+time. That is the right shape for "should this bot trade now, compared with how this market
+usually is" and the wrong shape for a question about absolute danger.
+
+⚠ **The variance ratio is RANKED, not read against its textbook value of 1.0.** Measured over
+eight years of gold the quantity never centres on 1.0 - its middle third ran 0.985 to 1.133 -
+so a band drawn at the textbook value would not split this market into the parts the theory
+names.
+
+Ten tests in `backtest/tests/test_regime_candidate.py`, four of them watched go red by
+mutating the line they guard: the rule-1 `None` guard, the band edges, the degenerate-price
+refusal and the causality truncation.
