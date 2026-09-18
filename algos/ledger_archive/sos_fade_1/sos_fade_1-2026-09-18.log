@@ -2,3 +2,5 @@
 2026-09-18 06:15:09,547 [INFO] PENDING CANCELLED | T381149949
 2026-09-18 06:15:10,236 [INFO] Equity re-anchored to the account flat between trades: 16,508.74 → 16,508.69
 2026-09-18 16:30:40,708 [INFO] Equity re-anchored to the account flat between trades: 16,508.69 → 16,508.58
+2026-09-18 21:36:42,474 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-18 21:39:23,143 [INFO] Trading is allowed on this account again.

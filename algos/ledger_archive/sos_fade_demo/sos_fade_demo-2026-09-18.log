@@ -3,3 +3,5 @@
 2026-09-18 00:45:13,561 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 09:15:00+00:00 → 2026-09-18 00:40:00+00:00).
 2026-09-18 06:15:02,389 [INFO] cancel bullish primary limit T364558565
 2026-09-18 06:15:02,486 [INFO] PENDING CANCELLED | T364558565
+2026-09-18 21:36:37,390 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-18 21:39:08,021 [INFO] Trading is allowed on this account again.
