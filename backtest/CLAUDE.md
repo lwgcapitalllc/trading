@@ -295,6 +295,15 @@ listed below under the notes file that now holds it.
 
 - Tools
 
+### `notes/regime-grading.md` — Grading the market-condition engine
+
+**Read before touching:** `backtest/regime_study/`, or quoting any number it prints.
+
+- Why "is the classifier accurate" has no answer, and the two questions that replace it
+- 🔴 The bar-level bootstrap is a MOVING BLOCK one — the naive version's range is ~5-10x too narrow
+- A trade is graded on the last bar that had already CLOSED, never the bar containing its entry
+- Read the range, never the middle number — a range crossing zero means the reading told us nothing
+
 ### `notes/setups-contract.md` — The setups.py contract
 
 **Read before touching:** a strategy's blocked/missed-setup reporting.
