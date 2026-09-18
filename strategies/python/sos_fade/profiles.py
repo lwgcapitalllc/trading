@@ -136,7 +136,24 @@ GBPJPY_PUPRIME = InstrumentFacts(
     bar_minutes=15,
 )
 
-# ⚠ GBPUSD has NO InstrumentFacts here ON PURPOSE.
+# GBPUSD — MEASURED 2026-09-17 off PU Prime demo 700152905, symbol GBPUSD.p.
+#   digits 5, point 0.00001, contract 100,000, volume 0.01-100, broker minimum stop 0.
+#   Spread 0.00004 (0.4 pip) over 562,362 stored ticks, FLAT in every hour including the rollover.
+#   Swap -1.03 long / -1.14 short: BOTH SIDES PAY, unlike gold and unlike GBPJPY.
+#   Real M15 and M5 bars back to at least 2000-01-01 (a probe BOUND, not a measured edge).
+# ✅ **USD-QUOTED, so `point_value` is 1.0 EXACTLY and no rate conversion applies** — tick value
+#   1.0 / (tick size 0.00001 * contract 100,000). This is the simple case: contrast GBPJPY above,
+#   where the same field is 1/USDJPY and moves with the market.
+GBPUSD_PUPRIME = InstrumentFacts(
+    symbol="GBPUSD.p",
+    mintick=0.00001,
+    point_value=1.0,
+    daily_close_hour_ny=17,
+    account_profile="puprime_ecn_gbpusd",
+    bar_minutes=15,
+)
+
+# ⚠ Any FURTHER instrument has no InstrumentFacts here ON PURPOSE.
 #   Nobody has read its symbol info off a broker, and `backtest/fills.py` carries no
 #   cost profile for it. Writing plausible numbers here
 #   would be rule 4 exactly: a guess in a doc that sends the next reader away from the

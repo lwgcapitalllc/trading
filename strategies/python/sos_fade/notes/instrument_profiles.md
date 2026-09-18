@@ -207,3 +207,23 @@ instrument-agnostic and none of it was specific to GBPJPY.
 
 ⚠ **GBPUSD is NOT answered by this.** It has no cost profile and nobody has read its symbol info.
 It is also USD-quoted, so it needs no rate conversion at all — a simpler case than this one.
+
+## GBPUSD, and the FX question closed (2026-09-17)
+
+`GBPUSD_PUPRIME` added, fully measured. It is the SIMPLE case and is worth reading next to
+`GBPJPY_PUPRIME` for exactly that reason: same broker, same tier, same contract size, and
+**GBPUSD is USD-quoted so its `point_value` is 1.0 EXACTLY and no rate conversion applies**, while
+GBPJPY's is 1/USDJPY and moves with the market. The pair of them is the fastest way to tell which
+case a new instrument is in.
+
+**Result: Run 38 — it does not travel either.** −6.32R with costs, −4.69R without, 71 trades, on
+the same window where the untuned baseline makes +72.30R on gold.
+
+⚠ **The two pairs fail DIFFERENTLY and that is the finding.** GBPJPY fails on hit rate (34.6%);
+GBPUSD keeps a normal hit rate (53.8%) and still loses, because its range is small relative to its
+stop distance so the runner never earns its R. One common cause — the setup is calibrated to
+gold's volatility structure — explains both, and no parameter fixes either.
+
+**So the instrument layer stays and the FX ambition stops.** Everything built here is
+instrument-agnostic and the next instrument now costs one measurement session plus one command.
+What it does NOT buy is a reason to expect a third pair to behave differently.

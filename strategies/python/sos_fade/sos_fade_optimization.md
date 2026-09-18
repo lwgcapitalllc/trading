@@ -4712,3 +4712,46 @@ edge to tune.
 baseline (169.75 vs 72.30), which is the first time that has been measured as a number rather than
 assumed. The tuning is real and earned, not curve-fit noise — the baseline it is measured against
 is itself profitable.
+
+## Run 38 — 2026-09-17: GBPUSD too — it does not travel either, and FX is answered
+
+**The question.** Run 37 killed GBPJPY. Aaron's original ask named GBPUSD as well, and it is the
+SIMPLER case: USD-quoted, so `point_value` is 1.0 exactly and no rate conversion applies at all.
+
+**Basis.** GBPUSD.p M15, 2020-01-01 → 2026-09-01, warm-up 500, $10,000, PU Prime ECN costs all
+MEASURED 2026-09-17 off demo 700152905 — commission **$1.00/side/lot** (real filled round trip),
+spread **0.00004** (0.4 pip, over 562,362 stored ticks, FLAT in every hour including the
+rollover), swap **−1.03 / −1.14** (both sides pay, unlike gold and unlike GBPJPY). Re-run with
+`backtest/tools/gbpusd_travel_test.py`.
+
+| config | costs | trades | total | maxDD | win | longs | shorts |
+|---|---|---|---|---|---|---|---|
+| untuned baseline | OFF | 71 | **−4.69R** | −5.39R | 54.5% | −4.36R | −0.32R |
+| untuned baseline | ON | 71 | **−6.32R** | −6.94R | 53.8% | −5.19R | −1.13R |
+| gold-tuned | ON | 58 | **−11.97R** | −12.49R | 34.2% | −3.95R | −8.02R |
+
+**Negative, and again it is not the costs** — −4.69R on a frictionless book. Same shape as Run 37:
+the untuned baseline makes **+72.30R on gold** over this identical window, so the config is sound
+and the pair is not.
+
+⚠ **A 53.8% win rate that still loses is the informative part.** The setup finds turns on GBPUSD
+about as often as it does on gold (54.5% raw vs 62.3%); what it cannot do is make the winners pay
+for the losers. This pair's daily range is small relative to its stop distance, so the runner never
+gets far enough to earn its R. That is a structural mismatch with a stop-based reversal model, not
+a parameter that was set wrong — and it is the reason no amount of tuning would fix it.
+
+⚠ **The two pairs fail differently, which strengthens the conclusion rather than weakening it.**
+GBPJPY fails on hit rate (34.6%); GBPUSD fails on payoff at a normal hit rate. One common cause —
+the setup is calibrated to gold's volatility structure — explains both.
+
+**FX is answered for this strategy: it does not travel.** Two pairs, both negative in-sample,
+both negative with costs removed, against a baseline profitable on gold over the same bars.
+
+⚠ **What is still NOT answered:** another timeframe, another leg, or a different entry model on
+FX. This says the SOS Fade reversal setup does not travel to these two pairs at M15. It does not
+say structure-based trading fails on FX.
+
+**Recommendation on the table for Aaron:** spend the next effort on another LEG or TIMEFRAME on
+gold, where the edge demonstrably lives, rather than on a third pair. The honest routes to more
+trades named in the root CLAUDE.md are another leg, another instrument or another timeframe — and
+"another instrument" has now been measured twice and come back no.

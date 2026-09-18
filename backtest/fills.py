@@ -546,6 +546,25 @@ _SPREAD_XAUUSD_VANTAGE = 0.22
 # this broker's own products — see `UNMEASURED_SWAP` for the measurement. The raw tiers therefore
 # refuse BOTH costs nobody has read on them. **A tier is measured, or it refuses; there is no third
 # state and no borrowing.** Question 3 in `docs/BROKER_QUESTIONS.md` is what turns one back on.
+# GBPUSD.p on PU Prime ECN — MEASURED 2026-09-17 off demo 700152905. Contract 100,000, digits 5,
+# so -1.03 * 100000 * 10^-5 = -$1.03/lot/night long and -$1.14 short. ⚠ Unlike GBPJPY this pair is
+# USD-QUOTED, so the figures are already in the account's currency and NO conversion applies —
+# `point_value` is 1.0 exactly (tick value 1.0 / (tick size 1e-5 * contract 100,000)).
+# ⚠ BOTH SIDES PAY, unlike gold (whose short swap is a credit) and unlike GBPJPY (whose long is).
+_GBPUSD_SWAP = SwapModel(
+    swap_long_points=-1.03,
+    swap_short_points=-1.14,
+    contract_size=100_000.0,
+    digits=5,
+    triple_weekday=2,
+)
+
+# MEDIAN over 562,362 stored ticks across 3 days (2026-09-17): 4 points = 0.00004, i.e. 0.4 pip.
+# ⚠ FLAT IN EVERY HOUR INCLUDING THE ROLLOVER — p99 is 4 points too, and the 21:00 UTC band shows
+# no widening at all. That is the opposite of both gold and GBPJPY and is why the figure needed
+# measuring rather than assuming from a sibling.
+_SPREAD_GBPUSD_PUPRIME_ECN = 0.00004
+
 # GBPJPY.p on PU Prime ECN — MEASURED 2026-09-17 off demo 700152905. Contract 100,000 and
 # digits 3, so PU Prime's own formula gives 4.83 * 100000 * 10^-3 = +483.00 JPY/lot/night long and
 # -2,068.00 short. ⚠ THOSE ARE YEN. The account is USD, so a caller MUST pass the quote-to-account
@@ -639,6 +658,25 @@ PROFILES = {
         swap=UNMEASURED_SWAP,
         spread=SPREAD_UNMEASURED,
         server="PUPrime-Demo",
+    ),
+    # ── GBPUSD on PU Prime ECN — MEASURED 2026-09-17, demo 700152905 ────────────────────
+    #   commission  $1.00/side/lot — read off a real filled round trip (2 deals, 0.02 lots,
+    #               -$0.02). Third symbol confirmed at this rate on this tier.
+    #   spread      0.00004 (4 points, 0.4 pip) — median over 562,362 stored ticks across 3 days,
+    #               and FLAT in every hour including the rollover.
+    #   swap        -1.03 long / -1.14 short, contract 100,000, digits 5 — both sides pay.
+    # ⚠ USD-QUOTED, so no currency conversion applies and `point_value` is 1.0 exactly. Contrast
+    #   `puprime_ecn_gbpjpy` directly above, where omitting the conversion is a 156x error.
+    "puprime_ecn_gbpusd": AccountProfile(
+        "puprime_ecn_gbpusd",
+        1.00,
+        contract_size=100_000.0,
+        mintick=0.00001,
+        swap=_GBPUSD_SWAP,
+        spread=_SPREAD_GBPUSD_PUPRIME_ECN,
+        server="PUPrime-Demo",
+        account=700152905,
+        symbol_suffix=".p",
     ),
     # ── GBPJPY on PU Prime ECN — the first NON-USD-QUOTED profile in this file ──────────
     # 🔴 EVERY FIGURE HERE WAS MEASURED ON 2026-09-17 off demo 700152905 (C:\MT5_Demo), and this

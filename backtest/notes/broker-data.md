@@ -408,3 +408,21 @@ cost, with nothing to refuse it. `sos_fade/execution.py` passes it; a new consum
 
 ⚠ **It is the first profile in this file whose symbol is not quoted in the account's currency**, so
 it is the one that will catch the next place a conversion was forgotten.
+
+## `puprime_ecn_gbpusd` — the SIMPLE case, for contrast (2026-09-17)
+
+MEASURED off demo 700152905: commission **$1.00/side/lot** (real round trip — the third symbol
+confirmed at this rate on this tier), spread **0.00004** (0.4 pip over 562,362 stored ticks), swap
+**−1.03 / −1.14**.
+
+⚠ **USD-QUOTED, so `point_value` is 1.0 exactly and no conversion applies** — tick value 1.0 /
+(tick size 1e-5 × contract 100,000). It sits directly below `puprime_ecn_gbpjpy` in `PROFILES` on
+purpose: same broker, same tier, same contract size, and one needs the currency conversion while
+the other does not. Reading them together is the fastest way to see which case you are in.
+
+⚠ **Its spread is FLAT in every hour, including the 21:00 UTC rollover** — the opposite of both
+gold and GBPJPY, and the reason the figure had to be measured rather than inherited from a sibling.
+
+⚠ **Both swap sides PAY**, unlike gold (short is a credit) and unlike GBPJPY (long is a credit).
+Three symbols on one tier, three different swap shapes. "Swap is a fact about the symbol" holds;
+"swap looks like its neighbour's" does not.
