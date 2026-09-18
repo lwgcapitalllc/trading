@@ -304,6 +304,9 @@ listed below under the notes file that now holds it.
 - 🔴 The bar-level bootstrap is a MOVING BLOCK one — the naive version's range is ~5-10x too narrow
 - A trade is graded on the last bar that had already CLOSED, never the bar containing its entry
 - Read the range, never the middle number — a range crossing zero means the reading told us nothing
+- MEASURED 2026-09-17: the three shipped labels separate neither market behaviour nor money, and 78% of bars are called trending
+- `tools/trade_export.py` — replay ANY registered strategy for its entry times and R, when the rich report's shape does not fit (2026-09-17)
+- `replay/registry.py` — which packages declare the contract, in ONE place; being in it is not a promise every tool can drive it (2026-09-17)
 
 ### `notes/setups-contract.md` — The setups.py contract
 

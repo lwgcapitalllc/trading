@@ -50,16 +50,18 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from backtest.replay.registry import STRATEGIES as _REGISTRY  # noqa: E402
+
 NY = ZoneInfo("America/New_York")
 
-# The strategy packages this tool knows how to drive. Each one declares LAB_STRATEGY
-# (the lab's own contract), so we read the class + config from there rather than
-# hardcoding either — a new Python strategy becomes runnable here for free.
-_STRATEGIES = {
-    "sos_fade": "strategies.python.sos_fade",
-    "b_leg": "strategies.python.b_leg",
-    "realign": "strategies.python.realign",
-}
+# The names THIS tool can report on — a subset of `backtest/replay/registry.py`, narrowed on
+# purpose. Everything below the replay here reads a per-bar decision log and a setup
+# population, which the SOS Fade family exposes and the extreme leg does not. Offering a name
+# this file cannot finish would crash after the replay rather than before it, which on an
+# eight-year run costs an hour to discover. Use `tools/trade_export.py` for a strategy that is
+# in the registry but not here.
+_SUPPORTED = ("sos_fade", "b_leg", "realign")
+_STRATEGIES = {k: v for k, v in _REGISTRY.items() if k in _SUPPORTED}
 
 
 # ── market context ───────────────────────────────────────────────────────────────
@@ -362,9 +364,11 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
 
+    import dataclasses
     import importlib
 
     from backtest.data.source import BarSource
+    from backtest.replay.build import build_strategy
 
     mod = importlib.import_module(_STRATEGIES[args.strategy])
     spec = mod.LAB_STRATEGY
@@ -381,7 +385,26 @@ def main(argv=None) -> int:
     print(f"  {len(df):,} bars  {df.index[0]} -> {df.index[-1]}", flush=True)
     _assert_timeframe(df, args.tf)
 
-    cfg = ConfigCls(fill_model=args.fill_model, symbol=args.symbol)
+    # `fill_model` lives on the CONFIG for some strategies and nowhere for others — the SOS
+    # Fade family carries it, the extreme leg expresses costs through a `cost_profile` on the
+    # strategy instead. `LAB_STRATEGY` is an open contract, so the field cannot be assumed.
+    # The rule is `backtest/replay/build.py`'s, for its reason: a strategy that cannot express
+    # the fill model and is not being asked for a non-default one is constructed exactly as
+    # before, and one that cannot express it while the run STATED a costed fill REFUSES. The
+    # alternative — dropping the flag quietly — is a run that prints `fill=tick` and charged
+    # nothing, which is the defect the lab already shipped once.
+    cfg_fields = {f.name for f in dataclasses.fields(ConfigCls)}
+    cfg_kwargs: dict = {"symbol": args.symbol}
+    if "fill_model" in cfg_fields:
+        cfg_kwargs["fill_model"] = args.fill_model
+    elif args.fill_model != "bar":
+        raise SystemExit(
+            f"{ConfigCls.__name__} has no fill model setting, so this run cannot charge "
+            f"costs, but --fill-model {args.fill_model} asked it to. Running anyway would "
+            f"report a costed run that charged nothing. Run it at the zero-cost default, or "
+            f"give the strategy a cost profile first."
+        )
+    cfg = ConfigCls(**cfg_kwargs)
     # The config is a FROZEN dataclass (deliberately — a strategy input must not drift
     # mid-run), so overrides are collected and applied with one `replace`.
     patch: dict = {}
@@ -430,7 +453,7 @@ def main(argv=None) -> int:
     if note:
         print(f"  {note}")
 
-    strat = StrategyCls(config=cfg, initial_capital=args.capital)
+    strat = build_strategy(StrategyCls, cfg, initial_capital=args.capital)
 
     if wants_secondary:
         if not hasattr(strat, "run_dual"):
