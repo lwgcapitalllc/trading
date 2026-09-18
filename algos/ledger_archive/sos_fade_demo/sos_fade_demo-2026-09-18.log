@@ -1,3 +1,5 @@
 2026-09-18 00:45:10,217 [WARNING] fast bar opening at 1789692000000 arrived after the 15m context had advanced to 1789692300000. Stepping it would read a context from its own future. Re-warm the fast feed instead. — re-warming the fast feed.
 2026-09-18 00:45:13,561 [INFO] Fast feed bookmarked at 2026-09-18 00:44:59.999000+00:00 — the 15m context is already past it.
 2026-09-18 00:45:13,561 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-03 09:15:00+00:00 → 2026-09-18 00:40:00+00:00).
+2026-09-18 06:15:02,389 [INFO] cancel bullish primary limit T364558565
+2026-09-18 06:15:02,486 [INFO] PENDING CANCELLED | T364558565
