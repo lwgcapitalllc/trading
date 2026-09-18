@@ -197,3 +197,21 @@
 2026-09-18 16:10:01,306 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-18 16:15:01,153 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-18 16:20:01,273 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-18 16:25:01,175 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-18 16:30:01,373 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-18 16:30:40,019 [INFO] MIRRORING ENTRY | the strategy opened LONG at 4377.69 SL 4342.58; sending it to the broker at market
+2026-09-18 16:30:40,019 [INFO] place bullish primary MARKET 0.11L SL 4342.58 TP none
+2026-09-18 16:30:40,286 [INFO] ORDER FILLED | ticket=382437086 | bullish 0.11L @ 4376.59 | SL=4342.58 TP=none
+2026-09-18 16:30:40,301 [INFO] MARKET ENTRY FILLED | T382437086 bullish 0.11L @ 4376.59 | SL=4342.58
+2026-09-18 16:30:40,301 [INFO] POSITION OPENED | T382437086 LONG 0.11L @ 4376.59 | SL=4342.58
+2026-09-18 16:35:03,229 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-18 16:35:20,009 [INFO] move stop T382437086 4342.58 → 4372.605
+2026-09-18 16:40:01,602 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-18 16:45:01,361 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-18 16:50:01,026 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-18 16:55:01,123 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-18 17:00:01,220 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-18 17:05:01,186 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-18 17:10:01,231 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-18 17:15:01,263 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-18 17:20:01,493 [INFO] Priority 3 on this account: waiting 19s for the bots above
