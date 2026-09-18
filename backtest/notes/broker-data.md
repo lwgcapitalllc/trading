@@ -350,3 +350,44 @@ window, so a fixed rate is wrong by up to 60% at the ends of it, in a cost that 
 night a position is held. The same constant is what sizing divides by, so **it is one fix, not
 two**. Deep history exists for the conversion: USDJPY.p serves M15 and D1 back to at least 2000 on
 PUPrime-Demo, probed 2026-09-17.
+
+## The conversion is a SERIES, not a number — `data/fx.py` (2026-09-17)
+
+Closes the "does not vary with time" item above.
+
+**Why a series.** A rate is not a constant. MEASURED off `USDJPY.p` daily bars on PUPrime-Demo,
+2026-09-17: **108.56** (2020-01-02) → **130.16** (2022-06-01) → **142.00** (2024-01-02) →
+**155.10** (2026-09-15). Pricing a six-year replay at one reading is wrong by ~30% at the far
+end — in sizing, which divides by the rate, and in every cost, which multiplies by it. The error
+is largest exactly where the window is longest, which is where a backtest is most believed.
+
+**Cross-check, two independent sources agreeing.** The broker's own tick value for `GBPJPY.p`
+implies USDJPY **156.026** (0.6409188 USD per 0.001 yen on 100,000 units, read 2026-09-17), and
+the `USDJPY.p` daily bar for 2026-09-15 reads **155.10**. Different endpoints, different
+mechanisms, same answer.
+
+`RateSeries` wraps the conversion pair's bars and hands out a `time_ms -> rate` callable — the
+shape `Execution.set_rate_provider` takes. `invert=True` turns a quoted pair into the direction
+the account needs (a USD account pricing a yen-quoted symbol holds USDJPY and needs USD-per-JPY).
+
+### The two directions are NOT symmetric, and that is the design
+
+- **Forward across a gap: CARRY.** A weekend has no bars and the rate genuinely did not move for
+  anyone holding through it, so the last close is the right answer.
+- **Backward before the first bar: REFUSE.** That is extrapolation. A flat rate reached backwards
+  is a plausible number, raises no error, and is wrong — which is worse than a stopped run.
+
+⚠ **No bars REFUSES rather than defaulting to 1.0.** A 1.0 fallback would price a yen-quoted
+instrument as though it were dollars: the exact bug this module exists to end, reintroduced as a
+convenience.
+
+⚠ **A non-positive close is refused at CONSTRUCTION.** Sizing divides by the rate, so a zero is
+an infinite position; it dies where the message can name the cause rather than downstream as an
+order nobody can explain.
+
+⚠ `constant_rate(1.0)` exists so *"this instrument needs no conversion"* is a thing a caller SAYS
+rather than a thing it omits — same reasoning as the cost sentinels in `fills.py`. A silent
+absence and a deliberate 1.0 read identically at the call site and mean very different things.
+
+⚠ 13 tests, offline (the source is injected). Three mutations run, each killing exactly one test:
+allowing backwards extrapolation, accepting a non-positive close, and accepting an empty series.
