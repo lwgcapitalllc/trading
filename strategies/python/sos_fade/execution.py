@@ -793,6 +793,11 @@ class Execution:
         self._ext_low = 0.0
         self._legs: List[dict] = []        # per-rung exit ledger of the OPEN trade (reporting only)
         self._risk_usd = 0.0
+        # Quote-to-account conversion. `None` means NOBODY HAS INSTALLED A RATE, which is not the
+        # same as a rate of zero - `_pv()` falls back to the configured constant rather than
+        # treat an unasked rate as a measured one. See `_pv` and `set_rate_provider`.
+        self._rate_provider = None
+        self._pv_now = None
         self._filled_qty = 0.0             # how much of the position has exited
         # Scale-in lots: [entry_price, qty_still_open] per add. Separate LOTS rather than extra
         # `_qty` because `_exit_portion` prices the position off one `_entry` — growing `_qty`
@@ -1255,6 +1260,11 @@ class Execution:
     # ── main step ───────────────────────────────────────────────────────────────
     def step(self, sig, seq) -> Decision:
         dec = Decision(index=sig.index)
+
+        # The conversion rate for THIS bar, asked once so a bar cannot price two of its own
+        # fills differently. Inert with no provider installed - see `_pv`.
+        if self._rate_provider is not None:
+            self._pv_now = self._rate_provider(sig.time_ms)
 
         # Before anything reads a bar number. See `_same_leg` for why a number is not enough.
         self._remember_bar(sig)
@@ -2081,6 +2091,41 @@ class Execution:
         if ms is not None:
             self._account.now = int(ms)
 
+    def _pv(self) -> float:
+        """The quote-to-account conversion for the bar being processed RIGHT NOW.
+
+        🔴 **WHY THIS IS A METHOD AND NOT `cfg.point_value`.** For a USD-quoted instrument the
+        factor is 1.0 forever and a constant is correct. For anything else it is an EXCHANGE RATE,
+        and a rate is not a constant: USDJPY ran roughly 100 to 160 across a window this strategy
+        would replay, so pricing six years of trades at one reading is wrong by up to 60% at the
+        ends - in sizing, which divides by it, and in every cost, which multiplies by it.
+
+        Each call site reads it at ITS OWN moment, which is what makes the model right rather
+        than merely variable: sizing converts at the entry, a fill converts when it fills, swap
+        converts at the rollover it is charged for. That is what a broker actually does.
+
+        ⚠ **With no provider installed this returns `cfg.point_value` and the class is
+        byte-identical** - which is how this landed without moving a single stored result. The
+        provider is opt-in per run, never a default, because a run that silently started
+        converting would re-price every historical comparison.
+
+        ⚠ **A provider must never return 0 or a negative.** Sizing divides by it, so a zero rate
+        is an infinite position. This returns the configured constant rather than pass a bad rate
+        on, and `_qty_for_risk` refuses a non-positive denominator behind it.
+        """
+        pv = self._pv_now
+        if pv is None or pv <= 0:
+            return self._cfg.point_value
+        return pv
+
+    def set_rate_provider(self, fn) -> None:
+        """Install a `time_ms -> rate` callable, or None to go back to the constant.
+
+        Opt-in per run - see `_pv`. Asked once per BAR rather than once per read, so a single bar
+        cannot price two of its own fills at two different rates.
+        """
+        self._rate_provider = fn
+
     def _qty_for_risk(self, risk_pct: float, dist: float) -> float:
         """Units to put `risk_pct` of equity behind a stop `dist` away, in PRICE terms.
 
@@ -2109,7 +2154,7 @@ class Execution:
         Returns 0.0 rather than raising when the denominator is not positive: a zero size places
         nothing, and every caller already treats 0 as "no room".
         """
-        denom = dist * self._cfg.point_value
+        denom = dist * self._pv()
         if denom <= 0:
             return 0.0
         return (self.equity * risk_pct / 100.0) / denom
@@ -2129,7 +2174,7 @@ class Execution:
         this returns the desired size untouched and no stored result — or parity gate — moves.
         """
         return self._account.affordable_qty(
-            self._leg, entry, stop, self._cfg.point_value, qty)
+            self._leg, entry, stop, self._pv(), qty)
 
     # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
@@ -2711,7 +2756,7 @@ class Execution:
         # The gate runs HERE, at the fill — a resting limit reserves nothing until it fills.
         # The account scales the leg's own desired size (pend.qty) to the room; solo → full size.
         granted = self._account.request_fill(
-            self._leg, pend.dir, fill_price, pend.sl, pend.qty, self._cfg.point_value)
+            self._leg, pend.dir, fill_price, pend.sl, pend.qty, self._pv())
         if granted <= 0.0:
             # refused (no room / below floor): don't open, drop this order, let the strategy
             # re-arm next bar if the setup still holds. No traded-SOS latch is set (see below).
@@ -2806,7 +2851,7 @@ class Execution:
         self._add_last_px = None
         self._add_tp_level = None
         self._sos_bar_open = pend.sos_bar
-        self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
+        self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._pv()
         self._entry_equity = self._equity_realized      # R yardstick baseline
         # Costs are charged AFTER the R baseline is snapshotted, so they land inside the trade's
         # own P&L (and its R) rather than being quietly excluded from it.
@@ -3063,7 +3108,7 @@ class Execution:
         describe the BASE position, which is not one lot closer to finished because an add
         banked.
         """
-        d, pv = self._pos_dir, self._cfg.point_value
+        d, pv = self._pos_dir, self._pv()
         oid = ("L" if d > 0 else "S") + "-ATP"   # named before the loop; each lot's record takes it
         pnl, closed = 0.0, 0.0
         for i, lot in enumerate(self._adds):
@@ -3180,7 +3225,7 @@ class Execution:
         # than a resting limit (a TP rung). Only the market ones can slip — see _charge_slippage.
         # It defaults True because every caller that does not pass it is a force-close.
         d = self._pos_dir
-        pnl = (price - self._entry) * d * qty * self._cfg.point_value
+        pnl = (price - self._entry) * d * qty * self._pv()
         # 🔴 A TP RUNG DOES NOT TOUCH THE ADDS; A STOP OR FORCE-CLOSE TAKES THEM IN FULL. That is
         # what the Pine does and it is the reason this is not pro-rata: `L-TP1`/`L-TP2` are
         # `from_entry = "Long"`, so they can only ever close the BASE entry, while each add
@@ -3208,7 +3253,7 @@ class Execution:
                 closing = lot[1]
                 if closing <= 1e-12:
                     continue
-                lot_pnl = (price - lot[0]) * d * closing * self._cfg.point_value
+                lot_pnl = (price - lot[0]) * d * closing * self._pv()
                 pnl += lot_pnl
                 lot[1] = 0.0
                 self._charge_commission(closing)   # the add pays its own exit side too
@@ -3251,7 +3296,7 @@ class Execution:
         pnl = self._equity_at_entry_delta()
         r = pnl / self._risk_usd if self._risk_usd > 0 else 0.0
         avg_exit = (self._exit_notional / self._exit_qty) if self._exit_qty > 1e-12 else self._entry
-        d, pv = self._pos_dir, self._cfg.point_value
+        d, pv = self._pos_dir, self._pv()
         mfe_price = self._ext_high if d > 0 else self._ext_low
         mae_price = self._ext_low if d > 0 else self._ext_high
         mfe_usd = (mfe_price - self._entry) * d * self._qty * pv
@@ -3383,7 +3428,7 @@ class Execution:
         s = self._spread()
         if s <= 0 or getattr(self._profile, "bid_ask_fills", False):
             return
-        self._charge(-(s / 2.0) * abs(qty) * self._cfg.point_value)
+        self._charge(-(s / 2.0) * abs(qty) * self._pv())
 
     # ── the ask side of the book (AccountProfile.bid_ask_fills) ───────────────────
     def _ask_adj(self, direction: int, *, entry: bool) -> float:
@@ -3430,7 +3475,7 @@ class Execution:
         if not ticks:
             return
         cfg = self._cfg
-        self._charge(-(ticks * cfg.mintick * abs(qty) * cfg.point_value))
+        self._charge(-(ticks * cfg.mintick * abs(qty) * self._pv()))
 
     def _charge_swap(self, sig) -> None:
         """Charge financing for every rollover this bar crosses while a position is open.
@@ -3470,7 +3515,7 @@ class Execution:
         # `point_value` converts the broker's quote-currency swap into the account's. It is
         # 1.0 for gold, so this is inert there; see AccountProfile.swap_charge.
         self._charge(self._profile.swap_charge(
-            self._pos_dir, remaining, roll_date, self._cfg.point_value))
+            self._pos_dir, remaining, roll_date, self._pv()))
 
     def _last_rollover_before(self, time_ms: int):
         """(epoch-ms, date) of the most recent daily rollover at/before `time_ms`, or None.
@@ -3606,7 +3651,7 @@ class Execution:
         # FILLS, and re-placing while one rests re-uses the same entry id, which replaces it.
         if self._stage < 2 or len(self._adds) >= cfg.exec_scale_max_adds:
             return
-        d, pv = self._pos_dir, cfg.point_value
+        d, pv = self._pos_dir, self._pv()
         stop = self._current_stop()
 
         # Only add again once the trail has moved PAST the stop the last add was sized against.
@@ -4003,14 +4048,14 @@ class Execution:
         """
         cfg = self._cfg
         remaining = self._qty - self._filled_qty
-        if self._profile is None or remaining <= 0 or cfg.point_value <= 0:
+        if self._profile is None or remaining <= 0 or self._pv() <= 0:
             return 0.0
         spent_usd = -self._costs_usd
         exit_usd = self._profile.commission(remaining)
         s = self._spread()
         if s > 0 and not getattr(self._profile, "bid_ask_fills", False):
-            exit_usd += (s / 2.0) * remaining * cfg.point_value
-        return (spent_usd + exit_usd) / (remaining * cfg.point_value)
+            exit_usd += (s / 2.0) * remaining * self._pv()
+        return (spent_usd + exit_usd) / (remaining * self._pv())
 
     def _be_buffer(self, *, hold_ok: bool = True) -> Optional[float]:
         """How far past the ENTRY the staged (breakeven) stop sits, as a positive price offset.

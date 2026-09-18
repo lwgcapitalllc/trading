@@ -1657,3 +1657,60 @@ def test_gold_sizing_is_UNCHANGED_by_the_conversion():
 
     assert ex._cfg.point_value == 1.0
     assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6
+
+
+# ── the rate can vary per bar (2026-09-17) ──────────────────────────────────────
+
+
+def test_a_rate_provider_is_asked_ONCE_PER_BAR_and_drives_sizing():
+    """An exchange rate is not a constant, so the conversion must be able to move with the bars.
+
+    The provider is `time_ms -> rate`. It is asked once per bar rather than once per read, so a
+    single bar cannot price two of its own fills at two different rates — that would be a
+    difference with no cause in the market.
+
+    RED WITHOUT THE SEAM: `set_rate_provider` does not exist (AttributeError), and sizing reads
+    the frozen config constant, so the asserted size is off by the rate.
+    """
+    seen = []
+
+    def rate(time_ms):
+        seen.append(time_ms)
+        return 0.5                      # deliberately not 1.0 and not the config's value
+
+    ex = Execution(_cfg(exec_risk_pct=10.0, point_value=0.25), initial_capital=2_000.0)
+    ex.set_rate_provider(rate)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+
+    dist = 103.82 - 100.0
+    # The PROVIDER's 0.5 is used, not the config's 0.25.
+    assert abs(ex._qty - (200.0 / (dist * 0.5))) < 1e-6
+    assert abs(ex._qty * dist * 0.5 - 200.0) < 1e-9
+    # Once per bar, in bar order — not once per read.
+    assert seen == [0, 900_000]
+
+
+def test_no_provider_means_the_CONFIG_constant_not_a_zero():
+    """`None` is "nobody installed a rate", never "the rate is zero".
+
+    Sizing divides by this, so a zero would be an infinite position. The fallback is the
+    configured constant, which is also what makes every existing run byte-identical.
+    """
+    ex = Execution(_cfg(exec_risk_pct=10.0, point_value=1.0), initial_capital=100_000.0)
+    assert ex._pv() == 1.0
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6
+
+
+def test_a_provider_returning_a_BAD_rate_falls_back_rather_than_sizing_on_it():
+    """A zero or negative rate is a broken feed, not a market fact. Passing it through would
+    divide by zero in sizing — an infinite position, which is the worst possible failure mode
+    for a bad input. It falls back to the configured constant instead."""
+    ex = Execution(_cfg(exec_risk_pct=10.0, point_value=1.0), initial_capital=100_000.0)
+    ex.set_rate_provider(lambda t: 0.0)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    assert ex._pv() == 1.0
+    assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6

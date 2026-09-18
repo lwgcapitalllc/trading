@@ -165,3 +165,30 @@ quote-currency conversion. Inert for gold, where it is 1.0. Detail and the measu
 ⚠ **Both currency fixes now read the SAME constant** — sizing divides by `point_value`, swap
 multiplies by it. That is the right shape (one rate, one meaning) and it is also why making the
 rate time-varying is a single change rather than two.
+
+## The conversion can now vary per bar (2026-09-17)
+
+Every one of the 14 places that converted price into money read `cfg.point_value` directly — a
+frozen constant. Correct for gold, where the factor is 1.0 forever. Wrong for anything else,
+because there the factor is an EXCHANGE RATE and USDJPY ran roughly 100 to 160 across a window
+this strategy would replay.
+
+`Execution._pv()` is now the single read, and `set_rate_provider(fn)` installs a `time_ms -> rate`
+callable. **The provider is asked once per BAR, not once per read**, so one bar cannot price two
+of its own fills at two different rates — a difference with no cause in the market.
+
+Each site still reads it at ITS OWN moment, which is what makes the model right rather than merely
+variable: sizing converts at the entry, a fill converts when it fills, swap converts at the
+rollover it is charged for. That is what a broker actually does.
+
+⚠ **Opt-in per run, never a default.** With no provider the accessor returns `cfg.point_value` and
+the class is byte-identical. A run that silently started converting would re-price every
+historical comparison.
+
+⚠ **`None` means nobody installed a rate — it is NOT a rate of zero.** Sizing divides by this, so
+a zero would be an infinite position. A provider returning zero or a negative is treated as a
+broken feed and the configured constant is used instead, which is its own test.
+
+**Proof it moved nothing.** All 21 parity gates green, 668 tests green in this package, and
+`replay_fingerprint.py` reports **62,468 bars and 66 trades IDENTICAL** against a baseline
+captured before ANY of the 2026-09-17 currency work — sizing, swap and this accessor combined.
