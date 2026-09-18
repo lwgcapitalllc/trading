@@ -4758,7 +4758,7 @@ trades named in the root CLAUDE.md are another leg, another instrument or anothe
 
 ---
 
-## Run 37 — 2026-09-17: the RETURN into the zone — the opposite direction to Runs 27–36
+## Run 39 — 2026-09-17: the RETURN into the zone — the opposite direction to Runs 27–36
 
 **Question (Aaron):** 374 setups came back into the tradable zone. Runs 27–36 all traded the way
 OUT of the zone. Trade the way BACK IN instead — from the extreme down to the level price shifted

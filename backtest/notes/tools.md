@@ -8,6 +8,33 @@ CLAUDE.md gets at most one index line.
 
 ## Tools
 
+- **`tools/zone_return_audit.py`** (new 2026-09-17, Run 39) — trades the **RETURN into** the
+  tradable zone, the opposite direction to Runs 27-36, which all traded the way OUT of it. The
+  15m Structure fib gives the leg and the zone; the entry is the first counter-direction shift of
+  structure on the lower frame once price has STALLED near the extreme; the stop sits behind the
+  furthest point price reached and the target is a retracement into the leg.
+  🔴 **Its reason for existing is Aaron's filter, and that is the reusable part**: require the
+  shift-to-extreme run to be at least `--ratios` times the sweep-to-shift run. Unfiltered the
+  trade is a fair coin *for a mechanical reason worth knowing before designing any retracement
+  entry* — waiting longer raises the win rate and lowers reward-to-risk by the same amount, at
+  every setting, so the two cancel. The filter is the only thing measured here that breaks the
+  cancellation.
+  ⚠ **The stall test is a PROXY and its docstring says so**: over the last N bars the
+  leg-direction extreme must sit in the FIRST HALF of the window. That is not a literal
+  bars-since-new-extreme counter and must not be quoted as one.
+  ⚠ **Runs GROSS of costs by default**, so instruments compare — per-instrument costs are
+  UNMEASURED and gold's may not be borrowed onto them (rule 4). It also takes at most **one trade
+  per leg shape**, so an extending leg does not book several attempts.
+  ⚠ **The `legs passing` column counts distinct leg SHAPES, not setups** — an extending leg is
+  counted more than once, so the percentage is meaningful and the raw count is inflated.
+  🔴 **What it has NOT established, and the tool cannot tell you**: no slot contention, no broker
+  cost profile, no interaction with the primary — and the trade it finds is a SELL while the
+  primary waits to BUY the same leg at overlapping prices, which on one account is a hedge rather
+  than a stack. The 15-instrument sweep came back −37.2R but was **confounded**: only XAUUSD has
+  1m bars cached, so it changed the entry frame and the instrument together, and gold itself flips
+  sign between a 1m and a 5m entry. Full record and every number: `strategies/python/sos_fade/
+  sos_fade_optimization.md` → Run 39.
+
 - **`tools/internal_break_audit.py`** (2026-08-23) — does an INTERNAL break against the trade
   predict a bad entry? Aaron's observation from the price chart on a losing re-entry, asked two
   ways because it is really two rules: **refuse the setup**, or **take it and leave at flat**.

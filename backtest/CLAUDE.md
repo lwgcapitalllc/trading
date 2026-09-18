@@ -294,6 +294,7 @@ listed below under the notes file that now holds it.
 **Read before touching:** using, extending, or trusting the output of any script under backtest/tools/.
 
 - Tools
+- `tools/zone_return_audit.py` — the RETURN into the zone, and the filter that stops the win rate and the reward-to-risk cancelling (2026-09-17, Run 39)
 
 ### `notes/regime-grading.md` — Grading the market-condition engine
 
