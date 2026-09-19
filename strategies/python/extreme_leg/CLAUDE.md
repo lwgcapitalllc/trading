@@ -17,6 +17,29 @@ implementations AGREE, never that either is RIGHT, and says nothing about a bran
 The 6.6-year figures in this file were measured on the Python alone and are **not** covered by it.
 **Last reviewed:** 2026-09-01
 
+
+## Flat before the close — NEW on 2026-09-19, and this bot had nothing before it
+
+**`flat_mode`** (`"Off"` / `"Friday only"` / `"Every day"`, shipped Off), plus `flat_min`,
+`close_hour_ny` and `flat_holidays`. The clock is `strategies/python/time_flat.py`, shared with
+SOS Fade and realign — this bot is an independent implementation and inherited neither of their
+rules, which is why it had no answer to "is the market about to close" at all.
+
+- 🔴 **NO PINE INPUT BACKS IT, so the parity gate is blind to it** — the same position
+  `skip_transitioning` is in. It is only safe because the shipped value is Off: with the switch
+  off this bot replays byte-identically to every figure in `extreme_leg_optimization.md`.
+- **The exit is a request filled at the NEXT bar's open**, through `resolve()`, so it is booked,
+  costed and recorded like every other exit. `exit_delay_bars = 1`, and the shared rule refuses a
+  window with no room for that fill — on the last bar before a break there is no next bar.
+- ⚠ **MEASURED, and both modes lose AND both deepen the drawdown**: 2020-01-02 → 2026-08-06,
+  charged `puprime_standard`, control asserted at the shipped 125tr/+50.93R — Off 125tr
+  **+50.93R** maxDD 7.40R; Friday only 125tr +46.16R maxDD **8.15R**; Every day 127tr +26.83R
+  maxDD **10.37R**. There is no reading of that table in which the rule is protective here.
+  Detail: `strategies/notes/flat-before-the-close.md`.
+- ⚠ **It does not refuse a new ENTRY inside the window**, unlike the SOS Fade family. This bot
+  enters at the bar's close, so a setup arming at 16:50 is opened and closed at the next open for
+  a spread. **Open question, not an oversight** — measure it before adding it.
+
 ---
 
 ## Registering in the lab — and what running the scanner found

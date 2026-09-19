@@ -204,6 +204,11 @@ class ExtremeLegExecution(LivePositionMixin):
         # reason. Deliberately NOT in `_POSITION_FIELDS`: a request's home is the process that
         # was asked, and one surviving a restart would flatten the first trade of the next run.
         self._close_request: Optional[str] = None
+        # The shared flat-before-the-close clock. Built LAZILY, on the first bar, because the
+        # rule refuses a window it could never fire inside and that check needs the BAR SIZE —
+        # which this bot discovers from the feed rather than being told. `False` is "not built
+        # yet"; `None` is "built, and the switch is off". Two states, two values (rule 1).
+        self._flat_rule = False
         # Set by `ExtremeLegStrategy.__init__` so `step()` can drive the strategy's own pipeline.
         # `None` in a bare-execution test, which is why `step` says so rather than crashing.
         self._strategy = None
@@ -292,6 +297,49 @@ class ExtremeLegExecution(LivePositionMixin):
             return False
         self._close_request = reason or "commanded"
         return True
+
+    def arm_time_flat(self, time_ms: int, bar_minutes: Optional[int]) -> None:
+        """Ask to be flat before tonight's close, if the switch is on and the window is open.
+
+        Called by the strategy AFTER the bar's entry decision, so the request lands in
+        `_close_request` and fills at the NEXT bar's open — the same one-bar market-order delay
+        every other exit here takes, and the same ordering Realign's weekend flat uses. Arming it
+        before the entry would close a position on the bar the window was only just entered, which
+        is a fill no live bot could have made.
+
+        ⚠ **It does NOT refuse a new entry inside the window.** The SOS Fade family does refuse
+        one, and whether this bot should is an open question rather than an oversight: this bot
+        enters at the bar's close, so a setup arming at 16:50 would be opened and then closed at
+        the next open for the cost of a spread. Measure it before adding it.
+
+        ⚠ **`bar_minutes` of `None` means the feed has not shown a second bar yet**, so the frame
+        is unknown and the rule cannot be built. It is skipped for that one bar rather than
+        guessed at — a rule built on a guessed frame is a rule with the wrong window.
+        """
+        if self._flat_rule is None or self.pos is None or self._close_request is not None:
+            return
+        if self._flat_rule is False:
+            if bar_minutes is None:
+                return
+            from time_flat import TimeFlatConfig, TimeFlatRule
+            cfg = self._cfg
+            if cfg.flat_mode == "Off":
+                self._flat_rule = None
+                return
+            self._flat_rule = TimeFlatRule(
+                TimeFlatConfig(
+                    mode=cfg.flat_mode,
+                    minutes_before=cfg.flat_min,
+                    close_hour_ny=cfg.close_hour_ny,
+                    holidays=cfg.flat_holidays,
+                ),
+                bar_minutes=int(bar_minutes),
+                # 1 — this bot arms a request that fills at the NEXT bar's open, so the window
+                # must leave a bar of room or the fill lands after the break.
+                exit_delay_bars=1,
+            )
+        if self._flat_rule.due(time_ms):
+            self._close_request = "flat-by-close"
 
     #: How an exit REASON becomes the tag the bridge reads. The suffix decides whether the bridge
     #: has to act, so this table is a live-behaviour decision and not a naming one.

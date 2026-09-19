@@ -35,25 +35,35 @@
     },
     {
       "text": "Then the 5-minute chart must turn the other way within {swept_minutes} minutes, against the 15-minute trend.",
-      "show_if": { "req_counter_trend": true }
+      "show_if": {
+        "req_counter_trend": true
+      }
     },
     {
       "text": "It enters at market as that bar closes. The stop goes just past the extreme of the last {extreme_minutes} minutes."
     },
     {
       "text": "The whole trade comes off halfway to the next 15-minute swing. The stop is never moved before that.",
-      "show_if": { "tp_frac": 0.5, "use_breakeven": false }
+      "show_if": {
+        "tp_frac": 0.5,
+        "use_breakeven": false
+      }
     },
     {
       "text": "It skips a setup unless that swing is at least {min_r} times as far away as the stop."
     },
     {
       "text": "It never opens a trade on a Friday, or while the market is stuck between a trend and a range.",
-      "show_if": { "skip_friday": true, "skip_transitioning": true }
+      "show_if": {
+        "skip_friday": true,
+        "skip_transitioning": true
+      }
     },
     {
       "text": "It risks {exec_risk_pct}% of the account per trade and holds one trade at a time.",
-      "show_if": { "size_mode": "Risk % of equity" }
+      "show_if": {
+        "size_mode": "Risk % of equity"
+      }
     }
   ],
   "params": [
@@ -332,6 +342,39 @@
       "show_if": {
         "skip_news": true
       }
+    },
+    {
+      "name": "flat_mode",
+      "group": "Sessions & time",
+      "widget": "switch",
+      "label": "Flat before the close",
+      "choices": ["Off", "Friday only", "Every day"],
+      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. Off by default — and this bot has no TradingView twin for it, so a run with it on is compared against nothing."
+    },
+    {
+      "name": "flat_min",
+      "group": "Sessions & time",
+      "label": "↳ Flat how many minutes before the close",
+      "unit": "minutes",
+      "desc": "How far ahead of the close the position is given up. It must be larger than one bar, because the exit is a market order filled at the next bar's open — a shorter window could only fire on the session's last bar, after which there is no next bar until the market reopens. Read only when Flat before the close is on."
+    },
+    {
+      "name": "close_hour_ny",
+      "group": "Sessions & time",
+      "label": "↳ Daily close hour (New York)",
+      "unit": "hour",
+      "desc": "Gold closes 17:00 New York. Changing this moves what Flat before the close means. Read only when Flat before the close is on."
+    },
+    {
+      "name": "flat_holidays",
+      "group": "Sessions & time",
+      "widget": "toggle",
+      "label": "↳ Also flatten before holiday closes",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     }
   ]
 }

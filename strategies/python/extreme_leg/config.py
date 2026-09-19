@@ -17,6 +17,15 @@ at the bottom for the three that had to be taken back out.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+import sys
+
+# `time_flat` is the SHARED clock (see the flat-before-the-close block below). The same sys.path
+# hop `execution.py` and `strategy.py` already make — `strategies/python/` is a plain directory
+# rather than an installed package, so a sibling module is reached this way throughout this repo.
+_PYPKGS = Path(__file__).resolve().parents[1]
+if str(_PYPKGS) not in sys.path:
+    sys.path.insert(0, str(_PYPKGS))
 
 
 @dataclass
@@ -110,6 +119,20 @@ class ExtremeLegConfig:
     news_before_min: int = 30
     news_after_min: int = 30
 
+    # ── Flat before the close — a Python-side DEVIATION, off by default ──────────
+    # 🔴 **NO PINE INPUT BACKS THESE, SO THE PARITY GATE IS BLIND TO THEM.** That is the same
+    # position `skip_transitioning` is in, and it is only safe because the shipped value is
+    # "Off": with the switch off this bot replays byte-identically to every figure in
+    # `extreme_leg_optimization.md`, and the gate compares the strategy it has always compared.
+    # Turning it on in the lab compares against nothing — say so beside any number taken that way.
+    #
+    # The clock itself is `strategies/python/time_flat.py`, shared with SOS Fade and Realign, so
+    # "flat before the close" means ONE thing across this repo rather than three.
+    flat_mode: str = "Off"          # "Off" / "Friday only" / "Every day" — spelled as the Pine
+    flat_min: int = 15              # minutes before the close the position is given up
+    close_hour_ny: int = 17         # gold closes 17:00 New York
+    flat_holidays: bool = True      # also flatten ahead of an early or holiday close
+
     # ── Platform facts — NOT Pine inputs, and no `cfg_*` column carries them ──
     # These are the Strategy Properties tab and the account behind it. The parity harness leaves
     # every one of them alone; a run that changed one would be comparing two different accounts.
@@ -127,6 +150,16 @@ class ExtremeLegConfig:
     # out was to run the scanner rather than to read the registration and agree with it.
 
     def __post_init__(self) -> None:
+        # Refuse an unrecognised mode rather than treating it as Off. A strategy enum is matched
+        # by exact string, so a typo here would disable the switch while the strategy page kept
+        # showing it set — the shape this repo names "on but inert".
+        from time_flat import MODES as _FLAT_MODES
+        if self.flat_mode not in _FLAT_MODES:
+            raise ValueError(
+                f"'Flat before the close' is {self.flat_mode!r}, which is not one of "
+                f"{_FLAT_MODES}. It is matched exactly, so an unrecognised value would leave the "
+                f"switch silently off while the page showed it on."
+            )
         if self.size_mode not in ("Risk % of equity", "Fixed contracts"):
             raise ValueError(
                 f"size_mode must be 'Risk % of equity' or 'Fixed contracts', "

@@ -288,6 +288,9 @@ class ExtremeLegStrategy:
         if self.execution.enter(st):
             st.entered = 1 if st.go_long else -1
         self.execution.arm_breakeven(bar.index, bar.high, bar.low)
+        # 6b. Flat before the close, if the switch is on. AFTER the entry, so the request fills
+        #     at the next bar's open rather than closing a position opened on this one.
+        self.execution.arm_time_flat(bar.timestamp_ms, self._tf_min)
         self.execution.record_blocks(st)
         # 7. Reporting only: what the signals channel says about this bar. Last, and handed the
         #    finished state, so it cannot reach anything above.

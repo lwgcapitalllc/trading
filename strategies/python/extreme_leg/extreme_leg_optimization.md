@@ -468,3 +468,28 @@ more trades that does not touch the entry rule, and it is untested. Aaron's call
 *"I will test on more instruments later."* ⚠ Sample size was always meant to arrive at the
 PORTFOLIO level rather than the strategy level — this run is the measurement saying it cannot
 come from this strategy's chart.
+
+---
+
+# Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)
+
+**Question:** close every trade 15 minutes before the weekend (and optionally before every daily
+close, and before bank holidays). What does it cost?
+
+**Answer for this bot, 2020-01-02 -> 2026-08-06, charged `puprime_standard`:**
+
+| mode | trades | sum R | max DD |
+|---|---|---|---|
+| Off *(shipped)* | 125 | **+50.93R** | 7.40R |
+| Friday only | 125 | +46.16R | 8.15R |
+| Every day | 127 | +26.83R | 10.37R |
+
+**Verdict: both modes lose AND both deepen the drawdown** — 7.40R -> 8.15R -> 10.37R. There is no reading of this table in which the rule is protective here. Cutting winners short removes what was paying for the losers; the losers stay.\n\n🔴 **This bot had no flat-before-the-close rule at all before this run** — it is an independent implementation and inherited none of the SOS Fade family's. The settings are new, they ship Off, and the control row above reproduced the shipped baseline exactly (125 trades, +50.93R, asserted with `--expect-trades/--expect-r`), which is what proves the wiring changed nothing.\n\n⚠ **No Pine input backs it**, so a run with it on is compared against nothing — the same position `skip_transitioning` is in.\n\n⚠ **It does not refuse a new ENTRY inside the window.** This bot enters at the bar's close, so a setup arming at 16:50 is opened and closed at the next open for a spread. Open question, not an oversight.
+
+Full cross-bot table, the raw session-gap measurement behind it, the shared implementation and
+the two defects the build caught: **`strategies/notes/flat-before-the-close.md`**. The switch is
+`flat_mode` and it ships **Off**.
+
+    python3 backtest/tools/axis_sweep.py --strategy extreme_leg --symbol XAUUSD --tf 5 \
+        --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
+        --profile puprime_standard --axis "flat_mode=Off,Friday only,Every day"
