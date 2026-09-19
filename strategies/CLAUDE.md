@@ -271,6 +271,16 @@ Most-cited code: `test_live_contract.py`, `extreme_leg/tests/test_live_seams.py`
 - The contract gained `full_exit_price`, and it is REQUIRED (2026-09-09)
 - The contract gained `planned_full_exit_price`, and it is REQUIRED (2026-09-09)
 
+### `notes/flat-before-the-close.md` — The flat-before-the-close switch and what it costs
+
+**Read before touching:** turning `flat_mode` on for any bot, quoting a number from it, or giving a new strategy one.
+
+- ONE clock for every bot: `strategies/python/time_flat.py`, `flat_mode` = Off / Friday only / Every day, shipped **Off** everywhere and spelled as `realign_strategy.pine` spells it.
+- ⚠ **MEASURED 2026-09-19 and it is expensive on all three bots** — across SOS Fade, the extreme leg and realign: +330.2R shipped, +209.9R on Friday only, +128.1R on Every day, 2020-2026 with costs charged.
+- 🔴 **It does not reliably buy drawdown.** Only SOS Fade's falls; the extreme leg's gets 40% DEEPER. Never write this rule up as a risk improvement.
+- `flat_by_close` is retired-but-working (promoted to "Every day"); `realign_flat_before_weekend` is **gone**, and the parity gate's two-booleans-for-one-dropdown translation went with it.
+- The holiday calendar is GENERATED (Good Friday by computus, observed Christmas/New Year, Thanksgiving) and validated against all 18 extended breaks in the measured M1 tape — never a typed list.
+
 ### `notes/pine_gotchas.md` — TradingView Pine gotchas
 
 **Read before touching:** before writing or debugging any TradingView `strategy()` file.
