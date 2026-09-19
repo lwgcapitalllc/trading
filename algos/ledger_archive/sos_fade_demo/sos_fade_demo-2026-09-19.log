@@ -2,3 +2,7 @@
 2026-09-19 21:56:01,529 [INFO] Trading is allowed on this account again.
 2026-09-19 22:04:13,008 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
 2026-09-19 22:04:58,087 [INFO] Trading is allowed on this account again.
+2026-09-19 22:43:22,173 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-19 22:44:07,235 [INFO] Trading is allowed on this account again.
+2026-09-19 22:49:38,411 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-19 22:50:08,736 [INFO] Trading is allowed on this account again.
