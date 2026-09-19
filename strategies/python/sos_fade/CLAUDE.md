@@ -350,6 +350,27 @@ defaults now describe the bot that trades.
 - ⚠ **`b_leg`, `bos` and `realign` inherit this field and PIN 10.0**, so none of them moved.
 - ⚠ **The golden export ran at 10** and the gate reads risk off it, so parity is untouched.
 
+
+## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
+
+**`flat_mode` is the setting: `"Off"` / `"Friday only"` / `"Every day"`, shipped Off.** The clock
+behind it is `strategies/python/time_flat.py`, shared with the extreme leg and realign, so "flat
+before the close" means ONE thing in this repo rather than three. It also covers the early and
+holiday closes the old rule had never heard of.
+
+- **`flat_by_close` still works and is promoted to `"Every day"`** — every stored run, sweep and
+  `--set` keeps reproducing its recorded number. ⚠ **Setting BOTH is refused**, never merged.
+- 🔴 **This class closes at THIS bar's CLOSE, and that is the one exit here that does not wait for
+  the next bar's open.** It is `_flat_closes_now`, a seam a fork may override — realign does, and
+  arms a market order instead. The two grade different R, which is why the timing is a seam and
+  not a shared assumption.
+- ⚠ **MEASURED 2026-09-19, and both modes lose**: 2020-01-02 → 2026-08-06, charged
+  `puprime_standard`, 1m re-entry pinned off on both sides — Off 155tr **+196.88R** maxDD 10.34R;
+  Friday only 155tr +105.40R maxDD 8.02R; Every day 155tr +65.04R maxDD 5.76R. **This is the one
+  bot whose drawdown actually falls**, and its return falls further: R per R of drawdown goes
+  19.0 → 13.1 → 11.3. Detail and the cross-bot table: `strategies/notes/flat-before-the-close.md`.
+- ⚠ **No Pine input backs it on this bot**, so a run with it on is compared against nothing.
+
 ---
 
 ## The notes — read the matching file BEFORE touching its code

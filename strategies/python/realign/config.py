@@ -212,30 +212,25 @@ class RealignConfig(SosFadeConfig):
     remaining stages were priced off a structural target that is no longer the target.
     """
 
-    realign_flat_before_weekend: bool = False
-    """Close any open trade `flat_by_close_min` before the FRIDAY close (gold 17:00 New York).
-
-    Aaron, 2026-09-15: *"what if we don't hold to weekends? ... fifteen minutes before the
-    market close, we close the trade."*
-
-    The parent already has the DAILY version (`flat_by_close`, off) and the New-York-hour
-    plumbing behind it, including DST — `_in_flat_window` is reused here rather than
-    re-derived, so the two rules cannot drift into two opinions about when the close is.
-    This one differs from it in exactly one way: it fires on Friday only.
-
-    ⚠ The weekday is read off the UTC timestamp, which is correct HERE and would not be in
-    general: 16:45 New York on a Friday is 20:45 or 21:45 UTC depending on DST, and both are
-    still Friday. A window closer to midnight NY would need the converted date.
-
-    ⚠ The close is a MARKET order filled at the next bar's open, the same one-bar delay every
-    other exit here uses. On the last bar of the week there IS no next bar, so the position is
-    carried to the Sunday open instead — which is the one case this rule exists to prevent.
-    `flat_by_close_min` must therefore stay comfortably larger than one bar. Measured at the
-    shipped 15 minutes on the 5m frame (3 bars of room), and NOT measured at any other value.
-
-    ⚠ **Off, and it costs money on the 15m trail** (Run 10): 139 trades +40.36R against +49.49R
-    without it, and a DEEPER drawdown (17.45R vs 11.38R). It was free on the 5m trail.
-    """
+    # 🔴 **`realign_flat_before_weekend` WAS RETIRED HERE.** It said "Friday only" in boolean,
+    # beside an inherited `flat_by_close` that said "Every day" in boolean, while this fork's own
+    # Pine (`realign_strategy.pine`) has always had ONE three-position input. Two flags for one
+    # dropdown is why `compare_realign.py` needed a translation step and why this repo ended up
+    # with two different flat-before-the-close rules. **Use the inherited `flat_mode`**
+    # ("Off" / "Friday only" / "Every day"), backed by `strategies/python/time_flat.py`, which
+    # also covers the holiday closes neither original rule knew about.
+    #
+    # Aaron, 2026-09-15: *"what if we don't hold to weekends? ... fifteen minutes before the
+    # market close, we close the trade."*
+    #
+    # ⚠ **Off, and MEASURED to cost money on the 15m trail.** 2020-01-02 → 2026-08-06, charged
+    # `puprime_standard`: shipped 113 trades +82.41R maxDD 6.19R; "Friday only" 114 trades
+    # +58.34R maxDD 6.43R; "Every day" 115 trades +36.26R maxDD 6.41R. **Both lose, and neither
+    # reduces the drawdown** — the thing the rule is usually justified by.
+    #
+    # ⚠ The exit is a MARKET order filled at the next bar's open — this fork's own timing, see
+    # `execution._flat_closes_now`. The shared rule refuses a window that is not larger than one
+    # bar, so the last-bar-of-the-week hazard cannot be configured back in.
 
     realign_trail_frame: str = "external"
     """WHICH FRAME'S CONFIRMED SWINGS THE RUNNER TRAIL ANCHORS ON. **"external" — the 15m.**

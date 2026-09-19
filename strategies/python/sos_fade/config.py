@@ -21,6 +21,15 @@ not Pine inputs — they live here too so the strategy stays instrument-agnostic
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+import sys
+
+# `time_flat` is the SHARED flat-before-the-close clock. `strategies/python/` is a plain
+# directory rather than an installed package, so a sibling module is reached by this sys.path
+# hop — the same one `execution.py` makes.
+_PYPKGS = Path(__file__).resolve().parents[1]
+if str(_PYPKGS) not in sys.path:
+    sys.path.insert(0, str(_PYPKGS))
 
 # The legal `exec_time_stop_mode` values, named once so `__post_init__`, the parity
 # harness and the meta file cannot drift into three different opinions about them.
@@ -1417,10 +1426,26 @@ class SosFadeConfig:
 
     # ── Deliberate deviations from the Pine (docs/SOS_FADE_SPEC.md) ─────────────
     # OFF for the parity check (to match the Pine, which holds the runner overnight);
-    # ON for real runs. Force-flat all trades `flat_by_close_min` before the daily close.
-    flat_by_close: bool = False
+    # ON for real runs. Force-flat all trades `flat_by_close_min` before the close.
+    #
+    # 🔴 **`flat_mode` IS THE SETTING. `flat_by_close` IS THE OLD BOOLEAN AND IT STILL WORKS.**
+    # The switch has three positions, not two — off, before the WEEKEND only, and before EVERY
+    # daily close — and the boolean could only say the first and last. `realign_strategy.pine`
+    # has had the three-position input all along (`flatMode`, spelled exactly as it is here);
+    # the Python side modelled it as two separate booleans on two different classes, which is how
+    # "flat before the close" came to mean three different rules in one repo. The clock behind it
+    # is now `strategies/python/time_flat.py`, shared with the extreme leg, and it also covers the
+    # holiday closes the old rule had never heard of.
+    #
+    # ⚠ **Setting BOTH is refused, never merged.** `__post_init__` promotes a lone
+    # `flat_by_close=True` to `"Every day"` so every stored run, sweep and `--set` keeps working
+    # and reproducing; setting both is a config with two opinions and there is no reading of it
+    # that is not a guess.
+    flat_mode: str = "Off"             # "Off" / "Friday only" / "Every day"
+    flat_by_close: bool = False        # DEPRECATED alias for flat_mode="Every day"
     flat_by_close_min: int = 15
     daily_close_hour_ny: int = 17      # gold closes 17:00 New York
+    flat_holidays: bool = True         # also flatten ahead of an early or holiday close
 
     # ── Fill & cost model (A2) — the other deliberate deviation ──────────────────
     # "bar"  = the Pine's own intrabar GUESS, zero costs. The parity harness MUST run this:
@@ -1585,6 +1610,29 @@ class SosFadeConfig:
         the time stop is Off; every combo is then identical and inert, which is a wasted sweep
         but not an error, and raising on it would kill an otherwise valid grid.
         """
+        # ── the flat-before-the-close switch ────────────────────────────────────
+        # The old boolean is PROMOTED, never merged. A run, a sweep or a `--set` that predates
+        # `flat_mode` keeps working and keeps reproducing its recorded number; a config that sets
+        # both is two opinions about one switch and every reading of it is a guess, so it is
+        # refused by name rather than resolved by precedence.
+        from time_flat import MODES as _FLAT_MODES
+        if self.flat_mode not in _FLAT_MODES:
+            raise ValueError(
+                f"flat_mode is {self.flat_mode!r}, which is not one of {_FLAT_MODES}. It is "
+                f"matched exactly, so an unrecognised value would leave the switch silently off "
+                f"while the strategy page showed it on."
+            )
+        if self.flat_by_close:
+            if self.flat_mode != "Off":
+                raise ValueError(
+                    f"both flat_by_close=True and flat_mode={self.flat_mode!r} are set. "
+                    f"flat_by_close is the retired two-position form of flat_mode and means "
+                    f"'Every day'; setting both says two things about one switch. Drop "
+                    f"flat_by_close and set flat_mode alone."
+                )
+            # `object.__setattr__` because this dataclass is frozen — the same route every
+            # other normalisation in this file takes.
+            object.__setattr__(self, "flat_mode", "Every day")
         if self.exec_short_hold:
             # Validated ONLY when the variant is on, the same way the re-entry and recovery knobs
             # are: an optimizer may sweep one of these while the toggle is fixed off, and every

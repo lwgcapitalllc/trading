@@ -936,3 +936,28 @@ currently holds, so `=none` hit the integer branch and died. **The moment a filt
 it off stops being sweepable**, which is the one comparison anyone would want. Fixed in `_coerce`.
 **Nothing in the inverse measurement above changes** — it was always run on shipped defaults, and
 the REAL arm still matches the control exactly.
+
+---
+
+# Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)
+
+**Question:** close every trade 15 minutes before the weekend (and optionally before every daily
+close, and before bank holidays). What does it cost?
+
+**Answer for this bot, 2020-01-02 -> 2026-08-06, charged `puprime_standard`:**
+
+| mode | trades | sum R | max DD |
+|---|---|---|---|
+| Off *(shipped)* | 113 | **+82.41R** | 6.19R |
+| Friday only | 114 | +58.34R | 6.43R |
+| Every day | 115 | +36.26R | 6.41R |
+
+**Verdict: both modes lose and neither reduces the drawdown** — 6.19R -> 6.43R / 6.41R. This **confirms Run 10 on a moved baseline**, which is the strongest thing the entry contains: Run 10 measured the same direction on the old 113-trade book, and the book has moved twice since.\n\n🔴 **`realign_flat_before_weekend` WAS RETIRED in this change.** It said 'Friday only' in boolean beside an inherited `flat_by_close` that said 'Every day' in boolean, while this fork's own Pine has ONE three-position input. `compare_realign.py` needed a translation step to bridge them, and that translation was the gate's evidence that the two implementations disagreed about the SHAPE of the setting. One field now, spelled as the Pine spells it, and the translation is gone.
+
+Full cross-bot table, the raw session-gap measurement behind it, the shared implementation and
+the two defects the build caught: **`strategies/notes/flat-before-the-close.md`**. The switch is
+`flat_mode` and it ships **Off**.
+
+    python3 backtest/tools/axis_sweep.py --strategy realign --symbol XAUUSD --tf 5 \
+        --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
+        --profile puprime_standard --axis "flat_mode=Off,Friday only,Every day"

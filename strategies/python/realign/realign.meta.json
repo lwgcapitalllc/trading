@@ -90,10 +90,27 @@
       "desc": "Which chart's confirmed swings the trailing stop follows once the target is hit: the 15-minute trend chart (the design) or the 5-minute entry chart."
     },
     {
-      "name": "realign_flat_before_weekend",
+      "name": "flat_mode",
       "group": "Exit",
-      "label": "Flat before the weekend",
-      "desc": "Closes any open trade shortly before gold's Friday close, so nothing is held over the weekend."
+      "label": "Flat before the close",
+      "widget": "switch",
+      "choices": ["Off", "Friday only", "Every day"],
+      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. MEASURED 2020-2026 with costs charged: Off +82.41R, Friday only +58.34R, Every day +36.26R \u2014 and neither setting reduced the drawdown."
+    },
+    {
+      "name": "flat_by_close_min",
+      "group": "Exit",
+      "label": "\u21b3 Flat how many minutes before the close",
+      "unit": "minutes",
+      "desc": "How far ahead of the close the position is given up. It must be larger than one bar, because the exit is a market order filled at the next bar's open \u2014 a shorter window could only fire on the session's last bar, after which there is no next bar until the market reopens. Read only when Flat before the close is on."
+    },
+    {
+      "name": "flat_holidays",
+      "group": "Exit",
+      "label": "\u21b3 Also flatten before holiday closes",
+      "widget": "toggle",
+      "options": { "off": "No", "on": "Yes" },
+      "desc": "Covers the early closes and market holidays too \u2014 Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     }
   ]
 }

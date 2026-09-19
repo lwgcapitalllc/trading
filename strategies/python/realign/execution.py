@@ -96,25 +96,44 @@ class RealignExecution(Execution):
         self._arm_weekend_flat(sig)
         return dec
 
-    def _arm_weekend_flat(self, sig) -> None:
-        """Request a close before the weekend, if the lever is on and we are in the window.
+    #: 1 — this fork's flat exit is a market order filled at the NEXT bar's open, so the window
+    #: must leave a bar of room. See `_arm_weekend_flat`.
+    _flat_exit_delay_bars = 1
 
-        Set AFTER the parent's step, so it lands in `_pending_close` for the NEXT bar's open —
-        the same one-bar market-order delay the parent's own daily flat-by-close uses. Setting
-        it earlier would have this bar's Phase A close a position on the bar the window was
-        only just entered, which is a fill a live bot could not have made.
+    def _flat_closes_now(self, sig) -> bool:
+        """Never on this bar's close — see `_arm_weekend_flat`.
+
+        The parent flattens at the bar's CLOSE. This fork enters at market and takes every exit
+        at the next bar's open, so it arms a request instead and books the exit through the same
+        path a stop or a target takes. Answering True here as well would close the position twice
+        by two routes, and the two routes grade different R.
         """
-        cfg = self._cfg
-        if not cfg.realign_flat_before_weekend or self._pos_dir == 0:
+        return False
+
+    def _arm_weekend_flat(self, sig) -> None:
+        """Request a close before the break, if the switch is on and we are in the window.
+
+        🔴 **THE FRIDAY TEST AND THE CLOCK BOTH MOVED OUT TO `strategies/python/time_flat.py`.**
+        What used to live here was a second opinion about when the market closes, sitting beside
+        the parent's daily one, and the two could drift. It is now one shared rule with three
+        positions — and `realign_strategy.pine` has had exactly that three-position input
+        (`flatMode`) since it was written, so the Python side has stopped being the odd one out.
+
+        ⚠ **What this method still owns is the TIMING of the exit, and that is a real difference
+        from the parent.** Set AFTER the parent's step, so it lands in `_pending_close` for the
+        NEXT bar's open — this fork enters at market and exits the same way. The parent's daily
+        path closes at THIS bar's close instead. Both are deliberate; see the parent's `step`.
+
+        ⚠ **On the last bar before the break there is no next bar**, so a position armed too late
+        rides the gap — the one case the rule exists to prevent. The shared rule refuses a window
+        that is not larger than one bar, which is the guard, and 15 minutes on the 5m frame leaves
+        three bars of room.
+        """
+        if self._pos_dir == 0:
             return
         if self._pending_close is not None:
             return                      # something already decided this bar; do not override it
-        # Friday in UTC. See the config for why UTC is the right clock for THIS window.
-        # ⚠ The epoch began on a THURSDAY, so the shift is +3 to put Monday at 0 — `+4` reads
-        # one day early and flattens on Thursday, which is a rule that looks like it works.
-        if (sig.time_ms // 86_400_000 + 3) % 7 != 4:
-            return
-        if self._in_flat_window(sig):
+        if self._flat_due(sig):
             self._pending_close = ("weekend-flat", "TIME")
 
     def _expire_retest(self, sig) -> None:

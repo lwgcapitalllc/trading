@@ -41,6 +41,18 @@ Full record, commands and tables: `realign_optimization.md` → **Run 7**. The r
 main (last section). Earlier: 2026-09-10 — swing length and adding to winners pinned to the Pine;
 the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
+
+## Flat before the close — one field now, spelled as this fork's Pine spells it
+
+🔴 **`realign_flat_before_weekend` IS GONE. Use the inherited `flat_mode`** (`"Off"` /
+`"Friday only"` / `"Every day"`, shipped Off), backed by `strategies/python/time_flat.py`.
+🔴 **This fork exits at the NEXT bar's open**: `_flat_closes_now` returns False here and
+`_arm_weekend_flat` arms the request, because the parent closes at the bar's close and the two
+grade different R.
+⚠ **MEASURED 2026-09-19, charged, and it confirms Run 10 on a moved baseline — both modes lose
+and neither reduces the drawdown.** Numbers, the retired field's story and the cross-bot table:
+`strategies/notes/flat-before-the-close.md`.
+
 ---
 
 ## What it trades

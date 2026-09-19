@@ -4865,3 +4865,28 @@ the same bot replay Runs 29/31 used, with slot contention and a real cost profil
 **Honest standing, 2026-09-17:** one instrument, one entry frame, 73–137 trades, a real
 dose-response on Aaron's filter, and a cross-check that came back negative but confounded. Not
 dead, not proven, and not tradeable.
+
+---
+
+# Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)
+
+**Question:** close every trade 15 minutes before the weekend (and optionally before every daily
+close, and before bank holidays). What does it cost?
+
+**Answer for this bot, 2020-01-02 -> 2026-08-06, charged `puprime_standard`:**
+
+| mode | trades | sum R | max DD |
+|---|---|---|---|
+| Off *(shipped)* | 155 | **+196.88R** | 10.34R |
+| Friday only | 155 | +105.40R | 8.02R |
+| Every day | 155 | +65.04R | 5.76R |
+
+**Verdict: both modes lose, and this is the ONE bot whose drawdown actually falls.** 10.34R -> 5.76R on the daily rule — but return falls further, so R per R of drawdown goes 19.0 -> 13.1 -> 11.3. If the switch is ever going on anywhere, *Friday only here* is the least-bad version: the weekend is the only break whose gap tail justifies it (p99 $61.87 against $9.67 nightly). It still costs **46% of this book**, so it is a preference purchase and must never be written up as a risk improvement.\n\n⚠ **The 1-minute re-entry is pinned OFF on both sides** — the sweep harness replays one frame and refuses to run it. Matched, so the comparison stands; the absolute R does not describe the shipped bot.
+
+Full cross-bot table, the raw session-gap measurement behind it, the shared implementation and
+the two defects the build caught: **`strategies/notes/flat-before-the-close.md`**. The switch is
+`flat_mode` and it ships **Off**.
+
+    python3 backtest/tools/axis_sweep.py --strategy sos_fade --symbol XAUUSD --tf 15 \
+        --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
+        --profile puprime_standard --pin exec_secondary=False --axis "flat_mode=Off,Friday only,Every day"

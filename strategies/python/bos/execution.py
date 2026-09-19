@@ -380,7 +380,7 @@ class BosExecution(Execution):
                                 late, bias_l, bias_s, veto_l, veto_s)
 
         # deliberate deviation (real runs only): no NEW entry inside the flat-by-close window
-        if cfg.flat_by_close and self._in_flat_window(sig):
+        if self._flat_due(sig):
             long_armed = short_armed = False
 
         if long_armed:

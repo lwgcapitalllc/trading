@@ -1286,16 +1286,35 @@
       "hidden": true
     },
     {
+      "name": "flat_mode",
+      "group": "Sessions & time",
+      "widget": "switch",
+      "label": "Flat before the close",
+      "short": "Flat before close",
+      "choices": ["Off", "Friday only", "Every day"],
+      "desc": "Close everything shortly before the market shuts instead of holding through the break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. Off by default, and that was tested: holding makes far more money, because the few trades that run overnight are the big winners and the overnight fee is tiny by comparison."
+    },
+    {
+      "name": "flat_holidays",
+      "group": "Sessions & time",
+      "widget": "toggle",
+      "label": "\u21b3 Also flatten before holiday closes",
+      "short": "Holiday closes",
+      "options": { "off": "No", "on": "Yes" },
+      "desc": "Covers the early closes and market holidays too \u2014 Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
+    },
+    {
       "name": "flat_by_close",
       "group": "Sessions & time",
       "widget": "toggle",
-      "label": "Flat by close",
-      "short": "Flat by close",
+      "label": "Flat by close (retired)",
+      "short": "Flat by close (retired)",
       "options": {
         "off": "Overnight",
         "on": "Force flat"
       },
-      "desc": "Close everything before the daily close instead of holding overnight. Off by default, and that was tested: holding makes far more money, because the few trades that run overnight are the big winners and the overnight fee is tiny by comparison."
+      "desc": "RETIRED \u2014 use Flat before the close instead, which has three positions where this had two. Left in place so an older saved run still loads and still reproduces its recorded number; switching it on is read as Every day, and setting both is refused.",
+      "hidden": true
     },
     {
       "name": "flat_by_close_min",
@@ -1304,9 +1323,7 @@
       "short": "Flatten this early",
       "unit": "minutes before close",
       "desc": "How many minutes before the daily close to force everything flat.",
-      "show_if": {
-        "flat_by_close": true
-      },
+      "desc_extra": "It must be larger than one bar.",
       "guide": ["Hold closer to the bell", "Exit earlier, more of the close avoided"]
     },
     {

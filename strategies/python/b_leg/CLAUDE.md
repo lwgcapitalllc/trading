@@ -247,6 +247,16 @@ not currently reach the shared floor check the gate hangs off — but *"it overr
 claim about one call site and the sibling `bos` disproved it the same day. **A pin costs one
 line; discovering an inherited entry filter costs a run nobody can explain.**
 
+
+## Flat before the close — inherited, and the field it reads changed
+
+The parent's flat rule now runs off `flat_mode` (`"Off"` / `"Friday only"` / `"Every day"`,
+shipped Off) and the shared clock in `strategies/python/time_flat.py`. This fork's own use of it
+is unchanged — it still refuses a NEW entry inside the window — but it asks `self._flat_due(sig)`
+rather than reading the old boolean directly, so a fork cannot end up with its own opinion about
+when the market closes. ⚠ **Never measured on this bot.** The figures that exist are SOS Fade's,
+realign's and the extreme leg's, in `strategies/notes/flat-before-the-close.md`; all three lose.
+
 ---
 
 ## Its chips say `B-LEG` on the price chart (2026-09-02)

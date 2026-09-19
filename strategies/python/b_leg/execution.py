@@ -117,7 +117,7 @@ class BLegExecution(Execution):
         dec.short_edge = bleg.s_bot if bleg_s_arm else None
 
         # deliberate deviation (real runs only): no NEW entry inside the flat-by-close window
-        if cfg.flat_by_close and self._in_flat_window(sig):
+        if self._flat_due(sig):
             bleg_l_arm = bleg_s_arm = False
 
         self._pend_long = None

@@ -29,11 +29,15 @@
     },
     {
       "text": "It rests a limit order at the halfway point of that first break and waits up to {bleg_max_days} trading days for price to come back.",
-      "show_if": { "exec_bleg": true }
+      "show_if": {
+        "exec_bleg": true
+      }
     },
     {
       "text": "The stop sits at the start of that break. The first target is its far end; the second is the move's furthest point.",
-      "show_if": { "exec_sl_buf_tk": 0 }
+      "show_if": {
+        "exec_sl_buf_tk": 0
+      }
     },
     {
       "text": "Nothing is banked early: the stop moves to breakeven at the first target, then trails behind the swings.",
@@ -45,15 +49,23 @@
     },
     {
       "text": "A trade short of its first target after {exec_time_stop_hrs} hours is closed. A close back past the break's start drops the setup.",
-      "show_if": { "exec_time_stop_mode": "Before TP1 only" }
+      "show_if": {
+        "exec_time_stop_mode": "Before TP1 only"
+      }
     },
     {
       "text": "It stands aside where SOS Fade would trade that side itself, skips the last hour before the daily close, and takes each setup once.",
-      "show_if": { "exec_aplus": true, "exec_no_late_day": true }
+      "show_if": {
+        "exec_aplus": true,
+        "exec_no_late_day": true
+      }
     },
     {
       "text": "Each trade risks {exec_risk_pct}% of the account, one at a time. Unlike SOS Fade, it never adds to a winner or re-enters.",
-      "show_if": { "exec_scale_in": false, "exec_secondary": false }
+      "show_if": {
+        "exec_scale_in": false,
+        "exec_secondary": false
+      }
     }
   ],
   "params": [
@@ -210,6 +222,25 @@
         "on": "SOS Fade stands the B leg down"
       },
       "desc": "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own."
+    },
+    {
+      "name": "flat_mode",
+      "group": "Sessions & time",
+      "widget": "switch",
+      "label": "Flat before the close",
+      "choices": ["Off", "Friday only", "Every day"],
+      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. Off by default."
+    },
+    {
+      "name": "flat_holidays",
+      "group": "Sessions & time",
+      "widget": "toggle",
+      "label": "↳ Also flatten before holiday closes",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     }
   ]
 }

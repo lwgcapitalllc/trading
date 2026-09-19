@@ -26,11 +26,17 @@
   "tldr": [
     {
       "text": "Once the trend has turned, each new break in the trend's direction arms a setup for up to {bos_max_days} trading days.",
-      "show_if": { "bos_which": "All" }
+      "show_if": {
+        "bos_which": "All"
+      }
     },
     {
       "text": "It rests a limit order {bos_entry_fib} of the way back along the move that broke, with the stop {bos_sl_atr}× the average bar size away.",
-      "show_if": { "bos_use_fvg": false, "bos_fib_anchor": "Break leg", "bos_sl_model": "ATR" }
+      "show_if": {
+        "bos_use_fvg": false,
+        "bos_fib_anchor": "Break leg",
+        "bos_sl_model": "ATR"
+      }
     },
     {
       "text": "Nothing is banked early: the whole position comes off at the far end of that move, or at its stop.",
@@ -52,11 +58,16 @@
     },
     {
       "text": "It places no order while price is on the wrong side of the session's average price, or from 16:00 to 18:00 New York.",
-      "show_if": { "bos_vwap_req": "Trend's side", "exec_no_late_day": true }
+      "show_if": {
+        "bos_vwap_req": "Trend's side",
+        "exec_no_late_day": true
+      }
     },
     {
       "text": "It skips a setup whose stop would sit closer than {exec_min_stop_val}% of price to the entry.",
-      "show_if": { "exec_min_stop_mode": "% of price" }
+      "show_if": {
+        "exec_min_stop_mode": "% of price"
+      }
     },
     {
       "text": "It risks {exec_risk_pct}% of the account per trade, holds one trade at a time, and trades each break once, up to {bos_max_per_regime} per trend."
@@ -402,6 +413,25 @@
       "label": "Close an open trade on opposing divergence",
       "group": "Runner",
       "desc": "On = close the trade when a divergence confirms against it, rather than waiting for the stop or a target."
+    },
+    {
+      "name": "flat_mode",
+      "group": "Sessions & time",
+      "widget": "switch",
+      "label": "Flat before the close",
+      "choices": ["Off", "Friday only", "Every day"],
+      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. Off by default."
+    },
+    {
+      "name": "flat_holidays",
+      "group": "Sessions & time",
+      "widget": "toggle",
+      "label": "↳ Also flatten before holiday closes",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     }
   ]
 }

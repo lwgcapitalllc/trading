@@ -1391,7 +1391,7 @@ class Execution:
             ):
                 self._pending_close = ("opp-SOS", "CLOSE")
             # deliberate deviation: force-flat before the daily close (real runs only)
-            elif self._cfg.flat_by_close and self._in_flat_window(sig):
+            elif self._flat_closes_now(sig):
                 # The ONE force-close that fills at this bar's CLOSE rather than the next open,
                 # and it is not an inconsistency: it has no `strategy.close()` behind it (there is
                 # no such input in any Pine file) and its whole purpose is to be FLAT before the
@@ -2183,7 +2183,7 @@ class Execution:
         self._record_blocks(sig, seq, dec, long_edge, short_edge)
 
         # deliberate deviation: no NEW entry inside the flat-by-close window (real runs)
-        flat_window = bool(cfg.flat_by_close and self._in_flat_window(sig))
+        flat_window = self._flat_due(sig)
         if flat_window:
             long_armed = short_armed = False
         # Reporting only: which named rule kept each side off the book. Read off the gates
@@ -4322,16 +4322,64 @@ class Execution:
         return (block_l, block_s)
 
     # ── flat-by-close deviation window ───────────────────────────────────────────
-    def _in_flat_window(self, sig) -> bool:
+    #: How many bars late this class's flat exit FILLS. 0 here: `_flat_closes_now` books it at
+    #: the bar's own close. A fork that arms a market order instead raises it to 1, and the
+    #: shared rule then refuses a window too narrow to get out before the break.
+    _flat_exit_delay_bars = 0
+
+    def _flat_closes_now(self, sig) -> bool:
+        """Does the flat switch close the position on THIS bar's close?
+
+        True here, and that is the one exit in this class that does not wait for the next bar's
+        open. It has no `strategy.close()` behind it (no Pine file has this input) and its whole
+        purpose is to be FLAT before the close — deferring it by a bar would carry the position
+        through the break it exists to prevent, and would pay the swap it was switched on to
+        avoid.
+
+        🔴 **It is a separate question from `_flat_due` because a FORK MAY ANSWER IT DIFFERENTLY,
+        and one already does.** Realign enters at market and exits at the next bar's open all the
+        way through; it overrides this to False and arms its own request instead. Folding the two
+        questions together is what previously produced two whole flat-before-the-close rules —
+        the timing difference is real, so it gets its own seam rather than its own rule.
+        """
+        return self._flat_due(sig)
+
+    def _flat_due(self, sig) -> bool:
+        """Is this bar inside the flatten window the switch asked for?
+
+        🔴 **THE CLOCK MOVED OUT TO `strategies/python/time_flat.py` AND THIS IS NOW ONE LINE OF
+        DELEGATION.** The rule that used to live here answered a DAILY question only, and Realign
+        had grown a second, Friday-shaped answer of its own beside it with different fill timing —
+        so this repo held two opinions about when the market closes, and the extreme leg held
+        none. The shared module is the single one, and it also knows about the early and holiday
+        closes neither of the originals had ever heard of.
+
+        ⚠ **The window is rebuilt when the BAR SIZE changes**, not cached once. A 15m replay and a
+        1m secondary stream both reach this object, and a window sized for one is the wrong window
+        for the other — the shared rule refuses a window that could never fire, which is a refusal
+        that must be asked on the frame actually being stepped.
+        """
         cfg = self._cfg
-        # Minutes until the daily close (gold 17:00 NY). The minute-of-hour is read off the
-        # UTC timestamp directly: every NY offset is a whole number of hours, so minutes past
-        # the hour are the same in both zones and need no tz conversion.
-        close_h = cfg.daily_close_hour_ny
-        if sig.ny_hour >= close_h:
+        if cfg.flat_mode == "Off":
             return False
-        mins_left = (close_h - sig.ny_hour) * 60 - (sig.time_ms // 60_000) % 60
-        return 0 < mins_left <= cfg.flat_by_close_min
+        bar_min = max(1, int(self.bar_ms // 60_000))
+        if getattr(self, "_flat_rule_bar_min", None) != bar_min:
+            from time_flat import TimeFlatConfig, TimeFlatRule
+            self._flat_rule = TimeFlatRule(
+                TimeFlatConfig(
+                    mode=cfg.flat_mode,
+                    minutes_before=cfg.flat_by_close_min,
+                    close_hour_ny=cfg.daily_close_hour_ny,
+                    holidays=cfg.flat_holidays,
+                ),
+                bar_minutes=bar_min,
+                # 0 — this family's daily flat closes at THIS bar's own close (see
+                # `_flat_closes_now`), so no lead bar is needed. Realign overrides that and
+                # passes its own timing below.
+                exit_delay_bars=self._flat_exit_delay_bars,
+            )
+            self._flat_rule_bar_min = bar_min
+        return self._flat_rule.due(sig.time_ms)
 
     def _time_stop_due(self, sig) -> bool:
         """Has this position been open longer than `exec_time_stop_hrs`, and does the mode

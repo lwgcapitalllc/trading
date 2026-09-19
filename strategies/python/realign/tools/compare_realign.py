@@ -185,11 +185,12 @@ def config_from_export(df: pd.DataFrame) -> Tuple[RealignConfig, List[str]]:
                 missing.append(f"cfg_enum1 digit {place} = {idx}, which names no option")
                 continue
             if field == "__flat_mode":
-                # One Pine dropdown, two Python flags — Friday-only lives on this fork and the
-                # daily one is inherited. Both are set explicitly so neither can be left at a
-                # default the export never chose.
-                vals["realign_flat_before_weekend"] = options[idx] == "Friday only"
-                vals["flat_by_close"] = options[idx] == "Every day"
+                # ✅ **ONE PINE DROPDOWN, ONE PYTHON FIELD, AND THE SPELLINGS MATCH.** This used
+                # to translate the Pine's three-position input into two Python booleans on two
+                # different classes, because that is what the Python side had. It now sets the
+                # field straight across — the translation was the gate's evidence that the two
+                # implementations disagreed about the SHAPE of the setting, not just its value.
+                vals["flat_mode"] = options[idx]
             else:
                 vals[field] = options[idx]
 
