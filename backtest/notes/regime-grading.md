@@ -314,3 +314,60 @@ carries, which is what a selective entry is supposed to do.
 What this leaves the extreme leg's shipped market cut: free, unproven, and now known to be
 pointed at the wrong end of the reading. Leaving it on costs nothing measurable. Nothing here
 justifies adding a second gate like it to any other bot.
+
+---
+
+## Swapping the candidate IN as the extreme leg's market cut — 2026-09-19
+
+The head-to-head above left one question open: the candidate DESCRIBES the market better, so
+does it GATE better? That cannot be answered by filtering an exported trade list — with one
+position slot a refused setup lets the next one in, so the gated book is not a subset (root
+`CLAUDE.md`, Run 12, and 3 of the 110 trades below are indeed absent from the ungated book).
+Only a real replay answers it. `backtest/regime_study/swap_cut.py` runs three of them.
+
+**The refusal rule was pre-registered in that file's docstring before the run**, and is the
+STRUCTURAL analogue of the shipped one rather than the best-scoring cell: the shipped cut
+refuses the ambiguous middle it calls TRANSITIONING, so the candidate refuses the middle third
+of its persistence scale. The study found no ordering among the candidate's nine cells on
+money, so picking a cell after seeing the result would be fitting to 170 trades.
+
+```
+python backtest/regime_study/swap_cut.py --symbol XAUUSD.p \
+  --start 2018-09-14 --end 2026-09-15
+```
+
+567,328 five-minute bars. All three cuts were asked at the same 650 setups.
+
+| cut | refused | trades | sumR | avgR | worst losing run |
+|---|---|---|---|---|---|
+| off | 0 | 170 | +88.9 | +0.52 | 8.13R |
+| shipped | 46 | 146 | +87.3 | +0.60 | 6.00R |
+| candidate | 202 | 110 | +46.8 | +0.43 | 9.61R |
+
+**The first two rows reproduce the 2026-09-17 table exactly**, which is a check on this harness
+as well as on that result — the swap path and the export path agree on the runs they share.
+
+🔴 **The candidate is a WORSE gate, and it is not close on magnitude.** It refuses 4.4x as many
+setups as the shipped cut, gives up **42R of the 88.9R the ungated book makes**, and leaves the
+worst losing run LONGER than taking every trade (9.61R vs 8.13R). It buys nothing in either
+direction it might have bought something.
+
+⚠ **It is not SIGNIFICANTLY worse, and that is the honest reading.** Dropping 60 trades at
+random from the ungated book reaches +46.8R or less **15.2%** of the time, and a worst run of
+9.61R or deeper **13.7%** of the time (20,000 draws, median +57.5R and 7.00R). So the candidate
+looks like a bad random thinning rather than a proven harmful filter. **At 170 trades this
+study cannot tell a gate that hurts from one that is merely expensive**, which is the same
+ceiling that stopped the shipped cut being provable in the other direction.
+
+**Standing conclusion, unchanged and now tested from the other side: market condition does not
+gate this strategy.** The shipped cut stays on because it is free; the candidate does not go
+near it. The candidate remains what the head-to-head made it — a better DESCRIPTION of the
+market, with no demonstrated use as a permission switch.
+
+⚠ **NOTHING IN `strategies/python/extreme_leg/` WAS TOUCHED.** The strategy holds its market cut
+as an instance attribute built in its own `__init__`; the harness replaces that one object
+after construction. The candidate cannot reach a live bot by being here — a bot builds its own.
+
+Eight tests in `backtest/tests/test_swap_cut.py`, four watched go red by mutating the line they
+guard (each mutation applied ALONE — applying all four at once masks two of them, because a
+starved buffer makes the band comparison unreachable).
