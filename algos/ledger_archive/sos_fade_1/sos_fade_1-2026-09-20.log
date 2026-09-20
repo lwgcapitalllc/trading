@@ -9,3 +9,4 @@
 2026-09-20 22:15:12,901 [INFO] Fast feed bookmarked at 2026-09-20 22:14:59.999000+00:00 — the 15m context is already past it.
 2026-09-20 22:15:12,901 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-06 10:45:00+00:00 → 2026-09-20 22:10:00+00:00).
 2026-09-20 22:15:12,901 [INFO] Equity re-anchored to the account after warm-up: 15,177.98 → 16,508.58
+2026-09-20 23:08:43,415 [INFO] Equity re-anchored to the account flat between trades: 16,508.58 → 16,455.84
