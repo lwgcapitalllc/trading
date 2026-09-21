@@ -1,0 +1,1399 @@
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+/>
+<style>
+  :root {
+    --ground: #eceff2;
+    --panel: #fbfcfd;
+    --ink: #131a22;
+    --ink-2: #4e5c6b;
+    --rule: #d3dae1;
+    --grid: #e4e9ee;
+    --gold: #a8741a;
+    --gold-soft: #f4e8d0;
+    --bull: #178a66;
+    --bull-soft: #ddf1e9;
+    --bear: #cc3d34;
+    --bear-soft: #f8e1df;
+    --focus: #2f6fd6;
+    --fog: rgba(19, 26, 34, 0.055);
+    --display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+    --body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --ground: #0e1318;
+      --panel: #151c23;
+      --ink: #e4e9ee;
+      --ink-2: #8d9ba9;
+      --rule: #27313b;
+      --grid: #1b232b;
+      --gold: #d8ab4f;
+      --gold-soft: #3a2f17;
+      --bull: #3dbb8e;
+      --bull-soft: #15332a;
+      --bear: #ea6a5f;
+      --bear-soft: #3a1d1b;
+      --focus: #6fa2f2;
+      --fog: rgba(228, 233, 238, 0.05);
+    }
+  }
+  :root[data-theme='dark'] {
+    --ground: #0e1318;
+    --panel: #151c23;
+    --ink: #e4e9ee;
+    --ink-2: #8d9ba9;
+    --rule: #27313b;
+    --grid: #1b232b;
+    --gold: #d8ab4f;
+    --gold-soft: #3a2f17;
+    --bull: #3dbb8e;
+    --bull-soft: #15332a;
+    --bear: #ea6a5f;
+    --bear-soft: #3a1d1b;
+    --focus: #6fa2f2;
+    --fog: rgba(228, 233, 238, 0.05);
+  }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .wrap {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding-inline: clamp(16px, 3vw, 32px);
+    padding-block: 20px 40px;
+    display: grid;
+    gap: 14px;
+  }
+  h1,
+  h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: clamp(28px, 3.4vw, 40px);
+    letter-spacing: 0.01em;
+    line-height: 1.05;
+  }
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  p {
+    margin: 0;
+  }
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .num,
+  .mono {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 32px;
+    align-items: end;
+    justify-content: space-between;
+  }
+  .brand {
+    display: grid;
+    gap: 6px;
+    max-width: 68ch;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .lede {
+    color: var(--ink-2);
+  }
+  .meter {
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+    text-align: right;
+  }
+  .count {
+    font-family: var(--display);
+    font-size: 34px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .count .of {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink-2);
+    margin-left: 6px;
+    font-family: var(--body);
+  }
+  .split {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot.take {
+    background: var(--bull);
+  }
+  .dot.skip {
+    background: var(--bear);
+    margin-left: 8px;
+  }
+  .status {
+    font-size: 12px;
+    font-family: var(--mono);
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    color: var(--ink-2);
+  }
+  .status[data-state='saved'] {
+    color: var(--bull);
+    border-color: var(--bull);
+  }
+  .status[data-state='local'],
+  .status[data-state='readonly'],
+  .status[data-state='error'] {
+    color: var(--bear);
+    border-color: var(--bear);
+  }
+
+  .tape {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .tape button {
+    width: 30px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-2);
+    cursor: pointer;
+    padding: 0;
+  }
+  .tape button[data-mark='take'] {
+    background: var(--bull-soft);
+    border-color: var(--bull);
+    color: var(--bull);
+  }
+  .tape button[data-mark='skip'] {
+    background: var(--bear-soft);
+    border-color: var(--bear);
+    color: var(--bear);
+  }
+  .tape button[aria-current='true'] {
+    outline: 2px solid var(--gold);
+    outline-offset: 1px;
+    color: var(--ink);
+  }
+
+  .desk {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 14px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .desk {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .meter {
+      justify-items: start;
+      text-align: left;
+    }
+  }
+  .chart-card,
+  .ticket {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+  }
+  .chart-card {
+    display: grid;
+    gap: 0;
+    min-width: 0;
+  }
+  .chart-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pill {
+    font-family: var(--display);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    font-size: 14px;
+    padding: 2px 10px;
+    border-radius: 4px;
+  }
+  .pill.short {
+    background: var(--bear-soft);
+    color: var(--bear);
+  }
+  .pill.long {
+    background: var(--bull-soft);
+    color: var(--bull);
+  }
+  .sid {
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .when {
+    color: var(--ink-2);
+    font-size: 14px;
+  }
+  .toggles {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .toggles label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .toggles input {
+    accent-color: var(--gold);
+  }
+  .chart {
+    position: relative;
+    height: clamp(340px, 62vh, 720px);
+    width: 100%;
+  }
+  .chart-msg {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ink-2);
+    padding: 24px;
+    text-align: center;
+  }
+  .fog {
+    position: absolute;
+    top: 0;
+    bottom: 28px;
+    z-index: 3;
+    pointer-events: none;
+    background: repeating-linear-gradient(135deg, var(--fog) 0 8px, transparent 8px 16px);
+    border-left: 1px dashed var(--gold);
+    display: grid;
+    place-items: center;
+  }
+  .fog span {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold);
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .legend {
+    list-style: none;
+    margin: 0;
+    padding: 10px 14px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+  .legend li {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .sw {
+    width: 18px;
+    height: 0;
+    border-top: 2px solid;
+  }
+  .sw.gold {
+    border-color: var(--gold);
+  }
+  .sw.dot {
+    border-top-style: dotted;
+    border-color: var(--ink-2);
+  }
+  .sw.dash {
+    border-top-style: dashed;
+    border-color: var(--ink-2);
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .tag.g {
+    color: var(--gold);
+  }
+  .tag.b {
+    color: var(--bull);
+  }
+  .tag.r {
+    color: var(--bear);
+  }
+
+  .ticket {
+    display: grid;
+    gap: 0;
+  }
+  .ticket > section {
+    padding: 14px 16px;
+    display: grid;
+    gap: 10px;
+  }
+  .ticket > section + section {
+    border-top: 1px solid var(--rule);
+  }
+  dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 12px;
+    align-items: baseline;
+  }
+  dt {
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+  dd {
+    margin: 0;
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+  }
+  dd small {
+    color: var(--ink-2);
+    font-size: 11.5px;
+    margin-left: 6px;
+  }
+  dd.rr {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .choice {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .big {
+    height: 52px;
+    border-radius: 6px;
+    border: 1.5px solid var(--rule);
+    background: var(--panel);
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .big kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 400;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 4px;
+    opacity: 0.7;
+  }
+  .big.take {
+    color: var(--bull);
+  }
+  .big.skip {
+    color: var(--bear);
+  }
+  .big.take[aria-pressed='true'] {
+    background: var(--bull);
+    border-color: var(--bull);
+    color: var(--panel);
+  }
+  .big.skip[aria-pressed='true'] {
+    background: var(--bear);
+    border-color: var(--bear);
+    color: var(--panel);
+  }
+  .big:hover {
+    border-color: currentColor;
+  }
+  fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  legend {
+    font-size: 13px;
+    color: var(--ink-2);
+    margin-bottom: 6px;
+    padding: 0;
+    width: 100%;
+  }
+  legend span {
+    opacity: 0.7;
+  }
+  .opt {
+    position: relative;
+  }
+  .opt input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .opt span {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .opt input:checked + span {
+    background: var(--gold-soft);
+    border-color: var(--gold);
+    color: var(--ink);
+  }
+  .opt input:focus-visible + span {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  textarea {
+    width: 100%;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--ground);
+    padding: 8px 10px;
+    resize: vertical;
+    min-height: 54px;
+  }
+  .note-l {
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .nav button {
+    border: 1px solid var(--rule);
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  .nav button:hover {
+    border-color: var(--ink-2);
+  }
+  .nav .next {
+    font-weight: 600;
+  }
+  .hint {
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .done {
+    background: var(--bull-soft);
+    color: var(--ink);
+    border: 1px solid var(--bull);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .export {
+    background: var(--panel);
+    border: 1px solid var(--bear);
+    border-radius: 8px;
+    padding: 10px 16px;
+  }
+  .export summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .export p {
+    color: var(--ink-2);
+    margin: 6px 0;
+  }
+  footer {
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .big,
+    .tape button,
+    .opt span {
+      transition:
+        background-color 0.12s,
+        border-color 0.12s,
+        color 0.12s;
+    }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow" id="eyebrow">Blind replay</p>
+      <h1 id="h1">__TITLE__</h1>
+      <p class="lede">
+        Every chart stops the moment price first reaches level 2 — nothing after that is on this
+        page. Decide as you would live: take it or skip it.
+      </p>
+    </div>
+    <div class="meter" aria-live="polite">
+      <div class="count">
+        <span id="n-marked" class="num">0</span
+        ><span class="of">of <span id="n-total">0</span> marked</span>
+      </div>
+      <div class="split">
+        <span class="dot take"></span><span id="n-take" class="num">0</span> take
+        <span class="dot skip"></span><span id="n-skip" class="num">0</span> skip
+      </div>
+      <div id="status" class="status" data-state="pending">Connecting…</div>
+    </div>
+  </header>
+
+  <nav class="tape" id="tape" aria-label="Setups — jump to one"></nav>
+
+  <main class="desk">
+    <section class="chart-card" aria-label="Chart">
+      <div class="chart-head">
+        <span id="dir" class="pill"></span>
+        <span id="sid" class="sid"></span>
+        <span id="when" class="when"></span>
+        <div class="toggles">
+          <label><input type="checkbox" id="toggle-int" checked /> Internal structure</label>
+          <label
+            ><input type="checkbox" id="toggle-levels" checked /> Session &amp; day levels</label
+          >
+        </div>
+      </div>
+      <div class="chart" id="chart">
+        <div class="fog" id="fog" hidden><span>What happened next is hidden</span></div>
+      </div>
+      <ul class="legend">
+        <li><span class="tag g">1 2 3 4</span> the setup</li>
+        <li><span class="sw gold"></span> entry at 2</li>
+        <li>
+          <span class="tag b">HH HL BOS SOS</span><span class="tag r">LH LL BOS SOS</span> structure
+          (i = internal)
+        </li>
+        <li><span class="sw dash"></span> external break</li>
+        <li><span class="sw dot"></span> session / day level</li>
+        <li><span class="tag g">gold level</span> the one that was swept</li>
+      </ul>
+    </section>
+
+    <aside class="ticket" aria-label="Setup and decision">
+      <section>
+        <h2>The setup</h2>
+        <dl id="facts"></dl>
+      </section>
+      <section>
+        <h2>Aggressive plan</h2>
+        <dl id="plan"></dl>
+      </section>
+      <section>
+        <h2>Your call</h2>
+        <div class="choice">
+          <button id="btn-take" class="big take" type="button" aria-pressed="false">
+            Take <kbd>T</kbd>
+          </button>
+          <button id="btn-skip" class="big skip" type="button" aria-pressed="false">
+            Skip <kbd>S</kbd>
+          </button>
+        </div>
+        <fieldset id="entry">
+          <legend>Which entry would you use? <span>(optional)</span></legend>
+          <label class="opt"
+            ><input type="radio" name="entry" id="entry-at2" value="at2" /><span
+              >At 2 — aggressive</span
+            ></label
+          >
+          <label class="opt"
+            ><input type="radio" name="entry" id="entry-sos" value="sos" /><span
+              >Wait for the SOS</span
+            ></label
+          >
+          <label class="opt"
+            ><input type="radio" name="entry" id="entry-either" value="either" /><span
+              >Either</span
+            ></label
+          >
+        </fieldset>
+        <fieldset id="reasons">
+          <legend>What decided it? <span>(any)</span></legend>
+        </fieldset>
+        <label class="note-l" for="note">Note</label>
+        <textarea
+          id="note"
+          rows="2"
+          placeholder="Anything you'd want remembered about this one"
+        ></textarea>
+        <div class="nav">
+          <button id="prev" type="button">← Previous</button>
+          <button id="next" class="next" type="button">Next →</button>
+        </div>
+        <p class="hint">Keys: <b>T</b> take · <b>S</b> skip · <b>←</b> <b>→</b> move</p>
+      </section>
+    </aside>
+  </main>
+
+  <section class="done" id="done" hidden>
+    All setups marked. Tell Claude <b>“marks are in”</b> — it will compare your picks with what
+    actually happened.
+  </section>
+  <details class="export" id="export" hidden>
+    <summary>Copy your marks</summary>
+    <p>
+      This view can't save to Claude, so your marks are kept in this browser only. Copy the text
+      below into the chat when you're done.
+    </p>
+    <textarea id="export-text" readonly rows="6"></textarea>
+  </details>
+  <footer>
+    What happened after each chart is not in this page. Only Claude holds the outcomes, and it opens
+    them after you finish.
+  </footer>
+</div>
+
+<script type="application/json" id="deck-data">
+  /*__DECK_JSON__*/
+</script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+  ;(function () {
+    'use strict'
+    var DATA = JSON.parse(document.getElementById('deck-data').textContent)
+    var SETUPS = DATA.setups || []
+    var DECK = String(DATA.generated || 'deck').replace(/[^A-Za-z0-9_\-.~:@+]/g, '-')
+    var LS_MARKS = 'blind-replay:marks:' + DECK
+    var LS_POS = 'blind-replay:pos:' + DECK
+    var TZ = DATA.tz || 'America/New_York'
+    var REASONS = [
+      'Clean loaded level',
+      'Strong sweep',
+      'Good reward to risk',
+      'With the higher-timeframe trend',
+      'Level not really loaded',
+      'Weak or unclear sweep',
+      'Poor reward to risk',
+      'Against the higher-timeframe trend',
+      'Messy structure',
+      'Wrong time of day / news',
+    ]
+
+    var state = { i: 0, marks: {}, store: 'pending' }
+    function lsGet(k) {
+      try {
+        return localStorage.getItem(k)
+      } catch (e) {
+        return null
+      }
+    }
+    function lsSet(k, v) {
+      try {
+        localStorage.setItem(k, v)
+      } catch (e) {
+        /* storage blocked */
+      }
+    }
+    try {
+      state.marks = JSON.parse(lsGet(LS_MARKS) || '{}') || {}
+    } catch (e) {
+      state.marks = {}
+    }
+    var savedPos = parseInt(lsGet(LS_POS) || '0', 10)
+    if (savedPos >= 0 && savedPos < SETUPS.length) state.i = savedPos
+
+    var $ = function (id) {
+      return document.getElementById(id)
+    }
+    $('n-total').textContent = SETUPS.length
+    if (DATA.symbol || DATA.tf)
+      $('eyebrow').textContent = [DATA.symbol, DATA.tf, 'blind'].filter(Boolean).join(' · ')
+
+    var money = function (p) {
+      return p == null
+        ? '—'
+        : Number(p).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+    var fmtNY = new Intl.DateTimeFormat('en-GB', {
+      timeZone: TZ,
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+    var when = function (t) {
+      return t == null ? '' : fmtNY.format(new Date(t * 1000))
+    }
+    function decisionLabel(s) {
+      var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(s.decision_ny || '')
+      if (!m) return s.decision_ny || ''
+      var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
+      var day = d.toLocaleDateString('en-GB', {
+        timeZone: 'UTC',
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+      return day + ' · ' + m[4] + ':' + m[5] + ' New York'
+    }
+    function nyOffset(t) {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: TZ,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }).formatToParts(new Date(t * 1000))
+      var g = function (k) {
+        for (var j = 0; j < parts.length; j++) if (parts[j].type === k) return +parts[j].value
+        return 0
+      }
+      return Math.round(
+        (Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) -
+          t * 1000) /
+          1000
+      )
+    }
+
+    /* ---------- reasons & tape ---------- */
+    REASONS.forEach(function (r, k) {
+      var lab = document.createElement('label')
+      lab.className = 'opt'
+      var inp = document.createElement('input')
+      inp.type = 'checkbox'
+      inp.id = 'reason-' + k
+      inp.value = r
+      var sp = document.createElement('span')
+      sp.textContent = r
+      lab.appendChild(inp)
+      lab.appendChild(sp)
+      $('reasons').appendChild(lab)
+      inp.addEventListener('change', function () {
+        edit(function (m) {
+          var set = (m.reasons || []).filter(function (x) {
+            return x !== r
+          })
+          if (inp.checked) set.push(r)
+          m.reasons = set
+        })
+      })
+    })
+    SETUPS.forEach(function (s, k) {
+      var b = document.createElement('button')
+      b.type = 'button'
+      b.textContent = k + 1
+      b.id = 'tape-' + k
+      b.addEventListener('click', function () {
+        go(k)
+      })
+      $('tape').appendChild(b)
+    })
+
+    /* ---------- chart ---------- */
+    var chart = null,
+      candles = null,
+      extra = [],
+      planLines = []
+    function colors() {
+      var cs = getComputedStyle(document.documentElement)
+      var v = function (n) {
+        return cs.getPropertyValue(n).trim()
+      }
+      return {
+        panel: v('--panel'),
+        ink: v('--ink'),
+        ink2: v('--ink-2'),
+        rule: v('--rule'),
+        grid: v('--grid'),
+        gold: v('--gold'),
+        bull: v('--bull'),
+        bear: v('--bear'),
+      }
+    }
+    function makeChart() {
+      if (!window.LightweightCharts) {
+        var msg = document.createElement('div')
+        msg.className = 'chart-msg'
+        msg.textContent =
+          "The chart library didn't load, so the chart can't be drawn. The setup details on the right still work."
+        $('chart').appendChild(msg)
+        return
+      }
+      chart = LightweightCharts.createChart($('chart'), {
+        autoSize: true,
+        crosshair: { mode: 0 },
+        timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 18 },
+        rightPriceScale: { scaleMargins: { top: 0.08, bottom: 0.08 } },
+        localization: {
+          priceFormatter: function (p) {
+            return money(p)
+          },
+        },
+      })
+      candles = chart.addCandlestickSeries({
+        borderVisible: false,
+        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+      })
+      chart.timeScale().subscribeVisibleLogicalRangeChange(placeFog)
+      theme()
+    }
+    function theme() {
+      if (!chart) return
+      var C = colors()
+      chart.applyOptions({
+        layout: {
+          background: { type: 'solid', color: C.panel },
+          textColor: C.ink2,
+          fontFamily: 'JetBrains Mono, ui-monospace, Menlo, monospace',
+          fontSize: 11,
+        },
+        grid: { vertLines: { color: C.grid }, horzLines: { color: C.grid } },
+        rightPriceScale: { borderColor: C.rule },
+        timeScale: { borderColor: C.rule },
+      })
+      candles.applyOptions({
+        upColor: C.bull,
+        downColor: C.bear,
+        wickUpColor: C.bull,
+        wickDownColor: C.bear,
+      })
+      draw()
+    }
+    function seg(t0, t1, p, color, style, title) {
+      if (!(t1 > t0)) return
+      var ls = chart.addLineSeries({
+        color: color,
+        lineWidth: 1,
+        lineStyle: style,
+        priceLineVisible: false,
+        lastValueVisible: !!title,
+        title: title || '',
+        crosshairMarkerVisible: false,
+        pointMarkersVisible: false,
+        autoscaleInfoProvider: function () {
+          return null
+        },
+      })
+      ls.setData([
+        { time: t0, value: p },
+        { time: t1, value: p },
+      ])
+      extra.push(ls)
+    }
+    function draw() {
+      var s = SETUPS[state.i]
+      if (!chart || !s || !s.bars || !s.bars.length) return
+      extra.forEach(function (x) {
+        chart.removeSeries(x)
+      })
+      extra = []
+      planLines.forEach(function (x) {
+        candles.removePriceLine(x)
+      })
+      planLines = []
+      var C = colors(),
+        bars = s.bars,
+        n = bars.length
+      var off = nyOffset(bars[n - 1][0])
+      var T = function (t) {
+        return t + off
+      }
+      var first = bars[0][0],
+        last = bars[n - 1][0]
+      var clamp = function (t) {
+        return Math.min(Math.max(t, first), last)
+      }
+      candles.setData(
+        bars.map(function (b) {
+          return { time: T(b[0]), open: b[1], high: b[2], low: b[3], close: b[4] }
+        })
+      )
+      var showInt = $('toggle-int').checked,
+        showLv = $('toggle-levels').checked
+      var mk = []
+      ;(s.swings || []).forEach(function (w) {
+        if (w.scale === 'int' && !showInt) return
+        if (w.t < first || w.t > last) return
+        var high = w.label === 'HH' || w.label === 'LH'
+        var up = w.label === 'HH' || w.label === 'HL'
+        mk.push({
+          time: T(w.t),
+          position: high ? 'aboveBar' : 'belowBar',
+          shape: 'circle',
+          size: w.scale === 'int' ? 0.2 : 0.5,
+          color: w.scale === 'int' ? C.ink2 : up ? C.bull : C.bear,
+          text: (w.scale === 'int' ? 'i' : '') + w.label,
+        })
+      })
+      ;(s.breaks || []).forEach(function (b) {
+        if (b.scale === 'int' && !showInt) return
+        if (b.t < first || b.t > last) return
+        var col = b.dir === 'bull' ? C.bull : C.bear
+        mk.push({
+          time: T(b.t),
+          position: b.dir === 'bull' ? 'aboveBar' : 'belowBar',
+          shape: 'square',
+          size: 0.2,
+          color: b.scale === 'int' ? C.ink2 : col,
+          text: (b.scale === 'int' ? 'i' : '') + b.label,
+        })
+        if (b.scale === 'ext' && b.t_from != null && b.p != null)
+          seg(T(clamp(b.t_from)), T(b.t), b.p, col, 2)
+      })
+      var marks = s.marks || {}
+      Object.keys(marks).forEach(function (k) {
+        var m = marks[k]
+        if (!m || m.t == null || m.t < first || m.t > last) return
+        var top = (s.direction === 'short') === (k === '1' || k === '2')
+        mk.push({
+          time: T(m.t),
+          position: top ? 'aboveBar' : 'belowBar',
+          shape: top ? 'arrowDown' : 'arrowUp',
+          color: C.gold,
+          text: k,
+          size: 1,
+        })
+      })
+      mk.sort(function (a, b) {
+        return a.time - b.time
+      })
+      candles.setMarkers(mk)
+      if (marks['2'] && marks['2'].t != null)
+        seg(T(clamp(marks['2'].t)), T(last), marks['2'].p, C.gold, 1)
+      if (showLv)
+        (s.levels || []).forEach(function (L) {
+          var t0 = clamp(L.t_from == null ? first : L.t_from),
+            t1 = clamp(L.t_taken == null ? last : L.t_taken)
+          var swept = s.sweep && L.name === s.sweep.name && Math.abs(L.p - s.sweep.p) < 0.006
+          seg(T(t0), T(t1), L.p, swept ? C.gold : C.ink2, swept ? 0 : 1, L.name)
+        })
+      var pl = s.plan || {}
+      var add = function (price, color, style, title, width) {
+        if (price == null) return
+        planLines.push(
+          candles.createPriceLine({
+            price: price,
+            color: color,
+            lineWidth: width,
+            lineStyle: style,
+            axisLabelVisible: true,
+            title: title,
+          })
+        )
+      }
+      add(pl.entry, C.gold, 0, 'Entry at 2', 2)
+      add(pl.stop, C.bear, 2, 'Stop', 1)
+      add(pl.target, C.bull, 2, 'Target', 1)
+      // open on the whole setup: from a little before its earliest mark to the decision bar
+      var earliest = last
+      Object.keys(marks).forEach(function (k) {
+        var m = marks[k]
+        if (m && m.t != null && m.t >= first) earliest = Math.min(earliest, m.t)
+      })
+      var fromIdx = 0
+      for (var j = 0; j < n; j++) {
+        if (bars[j][0] >= earliest) {
+          fromIdx = j
+          break
+        }
+      }
+      chart
+        .timeScale()
+        .setVisibleLogicalRange({ from: Math.max(0, Math.min(fromIdx - 24, n - 120)), to: n + 18 })
+      placeFog()
+    }
+    function placeFog() {
+      var fog = $('fog'),
+        s = SETUPS[state.i]
+      if (!chart || !s) {
+        fog.hidden = true
+        return
+      }
+      var x = chart.timeScale().logicalToCoordinate(s.bars.length - 1)
+      var right = $('chart').clientWidth - chart.priceScale('right').width()
+      if (x == null || x + 6 >= right) {
+        fog.hidden = true
+        return
+      }
+      fog.hidden = false
+      fog.style.left = x + 4 + 'px'
+      fog.style.width = Math.max(0, right - x - 4) + 'px'
+    }
+
+    /* ---------- ticket ---------- */
+    function row(dl, label, value, sub, cls) {
+      var dt = document.createElement('dt')
+      dt.textContent = label
+      var dd = document.createElement('dd')
+      dd.textContent = value
+      if (cls) dd.className = cls
+      if (sub) {
+        var sm = document.createElement('small')
+        sm.textContent = sub
+        dd.appendChild(sm)
+      }
+      dl.appendChild(dt)
+      dl.appendChild(dd)
+    }
+    function renderTicket() {
+      var s = SETUPS[state.i]
+      if (!s) return
+      var short = s.direction === 'short'
+      $('dir').textContent = short ? 'SHORT' : 'LONG'
+      $('dir').className = 'pill ' + (short ? 'short' : 'long')
+      $('sid').textContent = s.id
+      $('when').textContent = decisionLabel(s)
+      var f = $('facts')
+      f.textContent = ''
+      var m = s.marks || {}
+      var name = {
+        1: short ? '1 · top' : '1 · bottom',
+        2: '2 · level',
+        3: '3',
+        4: short ? '4 · low' : '4 · high',
+      }
+      ;['1', '2', '3', '4'].forEach(function (k) {
+        if (m[k]) row(f, name[k], money(m[k].p), when(m[k].t))
+      })
+      if (s.sweep) row(f, 'Swept', s.sweep.name + ' ' + money(s.sweep.p), when(s.sweep.t))
+      var p = $('plan')
+      p.textContent = ''
+      var pl = s.plan || {}
+      row(p, 'Entry', money(pl.entry))
+      row(p, 'Stop', money(pl.stop))
+      row(p, 'Target', money(pl.target))
+      if (pl.entry != null && pl.stop != null) row(p, 'Risk', money(Math.abs(pl.stop - pl.entry)))
+      row(p, 'Reward : risk', pl.rr == null ? '—' : Number(pl.rr).toFixed(2), null, 'rr')
+      var mark = state.marks[s.id] || {}
+      $('btn-take').setAttribute('aria-pressed', String(mark.decision === 'take'))
+      $('btn-skip').setAttribute('aria-pressed', String(mark.decision === 'skip'))
+      ;['at2', 'sos', 'either'].forEach(function (v) {
+        $('entry-' + v).checked = mark.entry === v
+      })
+      REASONS.forEach(function (r, k) {
+        $('reason-' + k).checked = (mark.reasons || []).indexOf(r) >= 0
+      })
+      if (document.activeElement !== $('note')) $('note').value = mark.note || ''
+      $('prev').disabled = state.i === 0
+      $('next').textContent = state.i === SETUPS.length - 1 ? 'Last one' : 'Next →'
+      $('next').disabled = state.i === SETUPS.length - 1
+    }
+    function renderProgress() {
+      var take = 0,
+        skip = 0
+      SETUPS.forEach(function (s, k) {
+        var d = (state.marks[s.id] || {}).decision
+        if (d === 'take') take++
+        else if (d === 'skip') skip++
+        var b = $('tape-' + k)
+        if (d) b.setAttribute('data-mark', d)
+        else b.removeAttribute('data-mark')
+        b.setAttribute('aria-current', String(k === state.i))
+        b.setAttribute('aria-label', 'Setup ' + (k + 1) + (d ? ', ' + d : ', not marked'))
+      })
+      $('n-marked').textContent = take + skip
+      $('n-take').textContent = take
+      $('n-skip').textContent = skip
+      $('done').hidden = take + skip < SETUPS.length || SETUPS.length === 0
+      var ex = $('export')
+      if (state.store === 'local' || state.store === 'readonly') {
+        ex.hidden = false
+        $('export-text').value = JSON.stringify({ deck: DECK, marks: state.marks })
+      } else ex.hidden = true
+    }
+    function status(kind, text) {
+      var el = $('status')
+      el.setAttribute('data-state', kind)
+      el.textContent = text
+    }
+    function go(k) {
+      if (k < 0 || k >= SETUPS.length) return
+      flushNote()
+      state.i = k
+      lsSet(LS_POS, String(k))
+      renderTicket()
+      renderProgress()
+      draw()
+    }
+
+    /* ---------- marks & saving ---------- */
+    var db = null,
+      writing = {},
+      queued = {},
+      noteTimer = null
+    function edit(fn) {
+      var s = SETUPS[state.i]
+      if (!s) return
+      var m = Object.assign({}, state.marks[s.id] || {})
+      fn(m)
+      m.updatedAt = new Date().toISOString()
+      state.marks[s.id] = m
+      lsSet(LS_MARKS, JSON.stringify(state.marks))
+      renderTicket()
+      renderProgress()
+      save(s.id, state.i)
+    }
+    function save(id, order) {
+      if (!db || state.store === 'readonly') return
+      var m = state.marks[id]
+      queued[id] = {
+        id: id,
+        order: order,
+        deck: DECK,
+        decision: m.decision || null,
+        entry: m.entry || null,
+        reasons: m.reasons || [],
+        note: m.note || '',
+        updatedAt: m.updatedAt,
+      }
+      if (writing[id]) return
+      writing[id] = true
+      status('pending', 'Saving…')
+      ;(async function () {
+        var retried = false
+        while (queued[id]) {
+          var body = queued[id]
+          queued[id] = null
+          try {
+            await db
+              .collection('decks/' + DECK + '/marks')
+              .doc(id)
+              .set(body)
+          } catch (e) {
+            var code = e && e.code
+            if (code === 'unavailable' && !retried) {
+              retried = true
+              queued[id] = queued[id] || body
+              await new Promise(function (r) {
+                setTimeout(r, 800 + Math.random() * 800)
+              })
+              continue
+            }
+            if (code === 'invalid_argument') {
+              state.store = 'readonly'
+              status('readonly', 'View only — marks stay in this browser')
+              renderProgress()
+              break
+            }
+            status('error', "Couldn't save — your marks are kept in this browser")
+            state.store = 'local'
+            renderProgress()
+            break
+          }
+        }
+        writing[id] = false
+        if (state.store === 'db') status('saved', 'Saved for Claude')
+      })()
+    }
+    function flushNote() {
+      if (!noteTimer) return
+      clearTimeout(noteTimer)
+      noteTimer = null
+      commitNote()
+    }
+    function commitNote() {
+      var v = $('note').value
+      var s = SETUPS[state.i]
+      if (!s) return
+      if ((state.marks[s.id] || {}).note === v) return
+      edit(function (m) {
+        m.note = v
+      })
+    }
+    $('note').addEventListener('input', function () {
+      clearTimeout(noteTimer)
+      noteTimer = setTimeout(function () {
+        noteTimer = null
+        commitNote()
+      }, 800)
+    })
+    $('note').addEventListener('blur', flushNote)
+    $('btn-take').addEventListener('click', function () {
+      edit(function (m) {
+        m.decision = m.decision === 'take' ? null : 'take'
+      })
+    })
+    $('btn-skip').addEventListener('click', function () {
+      edit(function (m) {
+        m.decision = m.decision === 'skip' ? null : 'skip'
+      })
+    })
+    ;['at2', 'sos', 'either'].forEach(function (v) {
+      $('entry-' + v).addEventListener('change', function () {
+        edit(function (m) {
+          m.entry = v
+        })
+      })
+    })
+    $('prev').addEventListener('click', function () {
+      go(state.i - 1)
+    })
+    $('next').addEventListener('click', function () {
+      go(state.i + 1)
+    })
+    $('toggle-int').addEventListener('change', draw)
+    $('toggle-levels').addEventListener('change', draw)
+    document.addEventListener('keydown', function (e) {
+      var tag = (e.target && e.target.tagName) || ''
+      if (
+        tag === 'TEXTAREA' ||
+        (tag === 'INPUT' && e.target.type === 'text') ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey
+      )
+        return
+      var k = e.key.toLowerCase()
+      if (k === 't') {
+        e.preventDefault()
+        $('btn-take').click()
+      } else if (k === 's') {
+        e.preventDefault()
+        $('btn-skip').click()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        go(state.i + 1)
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        go(state.i - 1)
+      }
+    })
+    window.addEventListener('resize', placeFog)
+    if (window.matchMedia)
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', theme)
+    new MutationObserver(theme).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
+
+    makeChart()
+    renderTicket()
+    renderProgress()
+    draw()
+
+    var use = window.claude && window.claude.use
+    if (!use) {
+      state.store = 'local'
+      status('local', 'Saved on this device only')
+      renderProgress()
+      return
+    }
+    window.claude.use('db').then(function (handle) {
+      if (!handle) {
+        state.store = 'local'
+        status('local', 'Saved on this device only')
+        renderProgress()
+        return
+      }
+      db = handle
+      state.store = 'db'
+      status('saved', 'Saved for Claude')
+      db.collection('decks/' + DECK + '/marks').onSnapshot(
+        function (snap) {
+          snap.docs.forEach(function (d) {
+            var b = d.data()
+            if (!b) return
+            var mine = state.marks[d.id]
+            if (queued[d.id] || writing[d.id]) return
+            if (!mine || !mine.updatedAt || (b.updatedAt && b.updatedAt >= mine.updatedAt))
+              state.marks[d.id] = {
+                decision: b.decision || null,
+                entry: b.entry || null,
+                reasons: b.reasons || [],
+                note: b.note || '',
+                updatedAt: b.updatedAt,
+              }
+          })
+          lsSet(LS_MARKS, JSON.stringify(state.marks))
+          // marks made on this device before the store answered go up once
+          SETUPS.forEach(function (s, k) {
+            var mine = state.marks[s.id]
+            if (!mine || !mine.decision) return
+            var there = snap.docs.filter(function (d) {
+              return d.id === s.id
+            })[0]
+            if (!there) save(s.id, k)
+          })
+          renderTicket()
+          renderProgress()
+        },
+        function () {
+          state.store = 'local'
+          status('error', 'Lost the connection — marks are kept in this browser')
+          renderProgress()
+        }
+      )
+    })
+  })()
+</script>

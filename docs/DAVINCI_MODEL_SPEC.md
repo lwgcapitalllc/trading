@@ -530,6 +530,73 @@ mean the same hours on every chart (a 2-day max hold, where the study above hold
   data nothing here has seen: the user's forward journal — every setup, taken or skipped — or their
   losing and skipped trades (question 12).
 
+### Confluence test 2026-09-16 — the sweep at the stab and the SOS entry, cost-free
+
+`python backtest/tools/loaded_level_confluence.py` (modes `fetch` / `readback` / `run` / `review`;
+rules in its docstring, record in `backtest/notes/tools.md`). Two new trades state the rule: 16 Sep
+2026 (5m, external structure) and Example 8 redrawn on 3m with internal structure (4–8 Sep). The
+stab at 2 takes liquidity — any session high or the previous day's high. Aggressive entry at 2, stop
+at 1. Conservative entry at the first bearish SOS after the sweep, stop just above the stab high.
+Target 4. **Run cost-free at the user's request** (no spread, commission or swap): win rate and
+pure price R. PU Prime, both directions, sized like the user's trades, reward floor 1.0 at the level.
+
+- **Read-back — the detector finds every point of both trades within about $0.70.** 16 Sep: 1 =
+  4,402.52 (Fri 09:55 NY), 2 = 4,355.37, 4 = 4,253.61; aggressive +2.11R (+2.20R on the user's
+  numbers). The SOS matching the user's conservative entry printed at 14:10 (broke 4,324.22), +1.63R
+  on their numbers — but an earlier SOS at 10:00, before any sweep, lost 1R. The London high
+  (4,360.92) went at 13:55; the previous day's high went the evening before. 4–8 Sep on 3m:
+  aggressive +5.01R, conservative +1.90R; its sweep (previous day's high 4,435.20) came 27 minutes
+  BEFORE price touched the level.
+- **32 cells declared** (external/internal structure × 5m/3m × entry × sweep required or ignored ×
+  target 4 or pool past 4), bar t ≥ 2.95 and z ≥ 2 on 2020-01 → 2025-08. **The 16 external cells:
+  0 pass; best t +0.62, best z +0.61.**
+- 5m, sweep + SOS, target 4: 237 trades (3.5 a month), 41.8% wins at average R:R 2.17, +0.055R a
+  trade, halves −3.6 / +16.7. Worked trade by trade its break-even win rate is 41.0%, and every cell
+  sits within about a point of its own. ⚠ 1/(1 + average R:R) says 31.6% and flatters every cell by
+  5–10 points, because the winners cluster at the smaller R:R.
+- **The sweep barely moves the aggressive entry on 5m** (+0.021R a trade with it, −0.041R without)
+  and not at all on 3m (−0.041R / −0.046R). **Waiting for the SOS lifts the win rate (about 31% →
+  42%) and shrinks the payoff to match**; no conservative cell separates from random (z ≤ 0.61).
+  🔴 **CORRECTED THE SAME DAY — the "+0.021R with the sweep" carried a one-tick look-ahead.** The
+  aggressive cells counted a session or day high sitting exactly AT the level as the sweep, and that
+  high is only taken when price trades through the level, after the limit has filled. In round 2,
+  446 of the 881 at-2 trades relied on nothing else. Without it, at 2 with the sweep is −0.058R a
+  trade (830 trades, t −1.09): **the sweep does not help the aggressive entry.** Round 1's cells
+  were not re-run; read their sweep-required aggressive rows as flattered.
+- ⚠ Last 12 months (already used, and holds the user's trades — never a gate): 5m aggressive with
+  the sweep −0.35R a trade (t −3.3) — a sweep on the touch bar meant continuation, not reversal.
+- 🔴 **Internal structure is NOT tested.** The study's detector reads every swing as printed two
+  bars before it is known; the engine's internal swing highs arrive 2–19 bars late (median 4) and
+  internal lower highs 1–155 (median 11), so an internal top or level would sit on the wrong bar. It
+  needs a swing-source seam in `loaded_level_study.py`; `--scale internal` refuses until then.
+- ⚠ **The rules as written miss parts of the user's own trades** — a sweep on the push INTO the level
+  (before the touch), an SOS that prints before the sweep, and a different lower high than the user's
+  (the detector takes the first sized one stabbed). These surfaced alongside the results, so any
+  change to them is a new rule with no clean window left to judge it.
+- **Blind review lists, no outcomes** (1 Jun → 16 Sep 2026): 116 setups exist on 5m and 128 on 3m;
+  each file holds the 60 most recent plus the user's trades the rule leaves out —
+  `backtest/reports/loaded_level_confluence/review_external_{5m,3m}_2026-06-01_to_09-16.csv`
+  (git-ignored), outcomes in the matching `_OUTCOMES` files. **The user's TAKE/SKIP marks are the
+  next input** (question 12).
+- **Round 2, same day — the sweep made mandatory, and entry confirmations** (the user's asks). The
+  sweep: a session high or the previous day's high taken from 2 hours before price first reaches 2
+  through the entry. Five declared cells, 5m, target 4, cost-free, bar t ≥ 2.33 and z ≥ 2 —
+  **none passes** (win rate against its trade-by-trade break-even):
+  - at 2: 881 trades, 30.8% vs 33.2%, −0.043R;
+  - a 5m close back below 2: 15.4% vs 15.2%, −0.038R;
+  - a 15m close: 16.9% vs 16.7%, −0.007R;
+  - a 1-minute SOS: 28.6% vs 29.3%, −0.040R;
+  - a 5m SOS: 41.8% vs 41.3%, +0.062R, t +0.72.
+- **A confirmation does not pick better setups — it moves the entry to a worse price.** On the stabs
+  each one keeps, the confirmation's own trade loses 0.08–0.11R a trade. The at-2 trade looks strong
+  on those same stabs (+0.09 to +0.56R) only because "kept" requires that price had not already hit
+  the stop — known only after the at-2 order filled.
+- ⚠ Last 12 months (not a gate): every cell negative; the 1-minute SOS −0.375R (z −3.10).
+- **Blind replay deck** for the user's TAKE/SKIP: 60 sweep-required 5m setups from 2022–2025 (seed
+  20260916, decisions at least 7 days apart), each chart stopped where price first reaches 2;
+  outcomes in a separate file. Page built by `backtest/tools/blind_replay.py`. It supersedes the
+  two review spreadsheets above, which leak outcomes to anyone who looks the dates up.
+
 ---
 
 ## Build order (revised after video 1)

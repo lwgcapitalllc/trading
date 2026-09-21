@@ -454,6 +454,44 @@ CLAUDE.md gets at most one index line.
   Fade, 115 / +53.6R against 113 / +58.5R for the extreme leg — not exactly, because the documented
   runs used other windows or cost settings. No documented baseline moves: a standalone tool that
   changes neither bot.
+- **`tools/loaded_level_confluence.py`** (new 2026-09-16) — the Loaded Level setup with the user's
+  two confluences: the stab takes liquidity (a session high or the previous day's high), and a
+  conservative entry at the first bearish SOS after the sweep (stop above the stab high) beside the
+  aggressive entry at the level. Imports the study. Modes: `fetch` (extends the PU Prime M1/M5/M15
+  caches through the data layer and never parses pre-2020 bars), `readback` (one trade, point by
+  point), `run` (the declared cells, cost-free, gated) and `review` (blind TAKE/SKIP lists, outcomes
+  in a separate file). 3m is resampled UP from M1.
+  **MEASURED 2026-09-16, PU Prime `XAUUSD.p`, 2020-01 → 2025-08, COST-FREE at the user's request:
+  0 of 16 external cells pass (t ≥ 2.95, z ≥ 2); best t +0.62, best z +0.61.** Numbers:
+  `docs/DAVINCI_MODEL_SPEC.md` → *Confluence test*. The 5m run was re-run by a second session and is
+  identical.
+  🔴 **`--scale internal` refuses**: the study's detector reads every swing as printed two bars
+  before it is known, and the engine's internal swings arrive 1–155 bars late — a swing-source seam
+  in `loaded_level_study.py` is needed first. ⚠ Cost-free figures overstate every cell; charge costs
+  before anything goes near money. ⚠ Break-even as 1/(1 + average R:R) flatters by 5–10 points —
+  worked trade by trade, every cell sits within a point of its win rate. No documented baseline
+  moves: new tool, nothing else edited.
+  **Round 2 (same day, mode `entries`):** the sweep is mandatory, taken from 2h before the touch
+  through the entry. Entries: at 2, a 5m close, a 15m close, a 1m SOS (walked on 1m bars) and a 5m
+  SOS. **0 of 5 pass cost-free (best t +0.72).** 🔴 **The "selection" a confirmation seems to add is
+  look-ahead**: a stab counts as kept only if the at-2 stop had not been hit before the
+  confirmation, and that is known only after the at-2 order filled. The confirmation's own trades on
+  those stabs lose 0.08–0.11R. Mode `replay` writes the blind deck (60 setups, 2022–2025, seed
+  20260916, decisions ≥ 7 days apart) and its outcomes to SEPARATE files.
+  🔴 **A one-tick look-ahead, found and corrected the same day:** the at-2 entry counted a named high
+  sitting exactly AT the level as its sweep, and that high is taken only after the limit fills. 446
+  of 881 trades relied on nothing else. `entries` now prints the corrected at-2 row, labelled as a
+  correction: 830 trades, −0.058R, t −1.09. Round 1's sweep-required aggressive cells carry the
+  same flaw and were not re-run. **The deck's decision bar is rebuilt from M1 and ends AT the
+  touch**; swings, breaks and level-taken stamps not known by the touch minute are dropped. 34
+  setups whose only sweep was that at-level high were replaced from the same seeded stream.
+- **`tools/blind_replay.py`** + **`tools/blind_replay_page.html`** (new 2026-09-16) — builds a
+  BLIND take/skip page from any study's replay deck (shape in the docstring). Each chart stops at
+  its decision bar. Marks save to the published artifact's store under `decks/<generated>/marks/<id>`,
+  with the viewer's browser as the fallback, and outcomes never enter the page. 🔴 **The build
+  refuses a deck that shows anything after a decision bar or carries an outcome-looking key** —
+  watched both ways on a made-up deck: the clean deck built, and the leaking one exited 1, naming
+  both leaks. No documented baseline moves: new tools, nothing else edited.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when
