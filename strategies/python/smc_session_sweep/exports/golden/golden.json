@@ -1,0 +1,15 @@
+{
+  "csv": ["VANTAGE_XAUUSD_M5_20597bars.csv"],
+  "gate": "tools/compare_smc_session_sweep.py",
+  "warmup": 500,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M5",
+  "bars": 20597,
+  "harness": "strategies/tradingview/smc_session_sweep_strategy_export.pine",
+  "taken": "2026-09-20",
+  "_why_warmup": "500 is generous, not required — the gate is green at 100, 500, 1000 and 2000 with the same 10 trades, so there is no cold-start divergence to mask. It is kept at 500 to match the other strategies here.",
+  "_what_it_ran": "The shipped defaults: confirmation OFF, first target 3.5R, 80% banked there, 4% risk, $4 minimum stop, both sessions, both directions, execution hours on.",
+  "_exercise_check": "10 trades, 22 armed bars. ⚠ Refusal codes 1, 5, 7 and 9 never fired, and FOUR features never ran at all — breakeven on an opposite shift, the time stop, the at-the-zone entry mode and the no-gap entry mode. The gate names every one of them on every run.",
+  "_fed_not_compared": "The 15m direction stream and the 1m confirmation stream are FED from the export's own columns — a minute bar is not recoverable from a five-minute chart. engines/market_structure/ is what proves them, and this gate never will. Previous-day and previous-week levels are fed for the same reason."
+}

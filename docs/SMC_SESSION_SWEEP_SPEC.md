@@ -371,10 +371,15 @@ to come down to about **2.3%**. That is a separate decision and it has not been 
 2. Read a handful of setups on the chart against the indicator's own drawing — the state
    panel reports which gate the sequence is sitting on.
 3. A control run (`trigger_edge.py` shape) on the sweep-plus-confirmation trigger alone.
-4. ✅ **The export twin landed 2026-08-17** (`smc_session_sweep_strategy_export.pine`, stage 3 of
-   six). Still needed: the bar-level CSV, the Python port under `strategies/python/`, and a
-   `compare_*.py` gate. `docs/STRATEGY_WORKFLOW.md` has the six stages.
+4. ✅ **DONE 2026-09-20 — stages 3 to 6 all landed.** The export twin (2026-08-17), a real
+   20,597-bar M5 CSV, the Python decision core under `strategies/python/smc_session_sweep/`, and
+   `tools/compare_smc_session_sweep.py` at **exit 0**, green at warm-ups 100/500/1000/2000 with
+   10 trades on both sides. Full coverage caveats: that package's own CLAUDE.md.
 
-⚠ Step 4 is a real lift here and nothing else in the repo has needed it: this strategy
-reads THREE bar streams (1m, 5m, 15m) and `backtest/optimizer.run_sweep` replays one
-frame, `run_dual` two. The lab cannot sweep it as built.
+🔴 **The lab still cannot run it, and that is now the ONE thing in the way.** This strategy reads
+THREE bar streams (1m confirmation, 5m zones, 15m direction) and `backtest/optimizer.run_sweep`
+replays one frame, `run_dual` two. **So there is still no sweep, no optimization and no backtest
+number**, and the port declares no `LAB_STRATEGY` rather than registering something that cannot
+replay. ⚠ **Switching the confirmation off does not drop the 1-minute stream** — cancel-on-flip
+and breakeven-on-shift both read it. Two routes, both Aaron's call: teach `backtest/` a third
+frame, or move the confirmation to 5-minute and re-gate.
