@@ -1,2 +1,5 @@
 2026-09-21 14:45:06,939 [INFO] place bearish primary limit 0.37L @ 4369.93 SL 4391.88386 TP none
 2026-09-21 14:45:07,136 [INFO] PENDING PLACED | ticket=384370386 | bearish 0.37L @ 4369.93 | SL=4391.88 TP=none
+2026-09-21 18:45:10,282 [WARNING] fast bar opening at 1790016000000 arrived after the 15m context had advanced to 1790016300000. Stepping it would read a context from its own future. Re-warm the fast feed instead. — re-warming the fast feed.
+2026-09-21 18:45:15,563 [INFO] Fast feed bookmarked at 2026-09-21 18:44:59.999000+00:00 — the 15m context is already past it.
+2026-09-21 18:45:15,563 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-07 08:15:00+00:00 → 2026-09-21 18:40:00+00:00).
