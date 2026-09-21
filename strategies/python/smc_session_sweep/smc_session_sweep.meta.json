@@ -1,0 +1,318 @@
+{
+  "tldr": "A session hunts the previous session's high or low, and this trades the reversal off it. London hunts Asia; New York hunts London. The 15-minute trend decides which way it will trade, the sweep is the trigger, and the order rests in the nearest untouched 5-minute gap. One trade per session, first target at 3.5 times risk with four fifths banked there, the last fifth running to yesterday's or last week's level.",
+  "edge": "This is the course model the SMC material calls its most-traded and most profitable play — London sweeping Asia, measured there at a profit factor near 3 with an average winner 6.8 times the risk. Our own six chart runs did NOT reproduce that: the win rate never left 16.7-20.1% against a break-even near 17.6%, and every run's profit sat in one to three trades. The gap is setup SELECTION, not trade management, and the filters that close it (order blocks as entry objects, zone quality grading, the news blackout) are NOT built. Read any number off this bot as a measurement of our version, never of the model it copies.",
+  "steps": [
+    {
+      "label": "1",
+      "title": "Trend",
+      "detail": "The 15-minute swing structure decides the only side traded that day."
+    },
+    {
+      "label": "2",
+      "title": "Sweep",
+      "detail": "The new session must trade through the previous session's high or low. The level is frozen at the session open and never moves."
+    },
+    {
+      "label": "3",
+      "title": "Confirmation",
+      "detail": "Optional: the lower timeframe flips to agree, after the sweep. Ships OFF."
+    },
+    {
+      "label": "4",
+      "title": "Zone",
+      "detail": "The nearest untouched gap on the far side of price. An order rests at its near edge."
+    },
+    {
+      "label": "5",
+      "title": "Exit",
+      "detail": "Four fifths at 3.5 times risk, the rest to yesterday's or last week's level, stop to breakeven on the way."
+    }
+  ],
+  "params": {
+    "pb_dir_tf": {
+      "label": "Direction — trend timeframe",
+      "desc": "Which timeframe decides long or short. Only trades that way. The course uses 15. ⚠ It must be a whole multiple of the bar frame this run replays — a finer timeframe cannot be rebuilt from a coarser one, and the run REFUSES rather than quietly using the chart's.",
+      "group": "1 · What arms the trade",
+      "core": true,
+      "widget": "select",
+      "choices": ["5", "15", "30", "60", "240"]
+    },
+    "pb_trade_ldn": {
+      "label": "Trade London (sweeps the Asian high/low)",
+      "desc": "London hunts Asia's high and low.",
+      "group": "1 · What arms the trade",
+      "core": true,
+      "widget": "toggle"
+    },
+    "pb_trade_ny": {
+      "label": "Trade New York (sweeps the London high/low)",
+      "desc": "New York hunts London's high and low.",
+      "group": "1 · What arms the trade",
+      "core": true,
+      "widget": "toggle"
+    },
+
+    "pb_require_conf": {
+      "label": "Require a lower-timeframe change of character",
+      "desc": "On: after the level is taken, wait for the smaller timeframe to turn our way. Off: enter on the sweep alone, at worse prices. The course has this ON. It ships OFF because that is what the chart is trading — turn it on to compare.",
+      "group": "2 · The shift of structure",
+      "core": true,
+      "widget": "toggle"
+    },
+    "pb_conf_tf": {
+      "label": "Confirmation timeframe",
+      "desc": "The timeframe watched for a change of character. The course uses 1. It stays live even with confirmation switched off, because two other rules read it: cancel-on-an-opposite-shift and stop-to-breakeven-on-an-opposite-shift. 🔴 It MUST equal the bar frame this run replays — the confirmation is read off the replayed bars themselves, so a 1-minute confirmation needs a 1-minute replay. The run refuses by name otherwise.",
+      "group": "2 · The shift of structure",
+      "core": true,
+      "widget": "select",
+      "choices": ["1", "3", "5", "15"]
+    },
+    "pb_conf_when": {
+      "label": "When the shift must happen",
+      "desc": "Before: wait for the turn, then leave an order sitting in the gap. At: wait for price to reach the gap, then the turn, then buy at market. ⚠ Never exercised by the parity gate — no export has run it.",
+      "group": "2 · The shift of structure",
+      "widget": "select",
+      "choices": ["Before the zone (rest a limit)", "At the zone (enter at market)"],
+      "show_if": { "pb_require_conf": true }
+    },
+    "exec_be_on_shift": {
+      "label": "Stop to breakeven when the confirmation timeframe shifts AGAINST the trade",
+      "desc": "Moves the stop to the entry price as soon as the smaller timeframe turns against you. ⚠ Never fired in the gated export, so parity says nothing about it.",
+      "group": "2 · The shift of structure",
+      "widget": "toggle"
+    },
+
+    "pb_poi_tf": {
+      "label": "Point of interest — timeframe the zone is found on",
+      "desc": "Which timeframe the entry gap is found on. The course uses 5. Off means no gap is needed at all — you enter at market the moment the confirmation timeframe turns, with the stop behind the sweep. Off does nothing unless confirmation is required.",
+      "group": "3 · The entry zone",
+      "core": true,
+      "widget": "select",
+      "choices": ["Off", "1", "3", "5", "15"]
+    },
+    "pb_poi_untouched": {
+      "label": "Untouched zones only",
+      "desc": "On: skip any gap price has already traded back into. Off takes more trades at worse prices.",
+      "group": "3 · The entry zone",
+      "widget": "toggle",
+      "show_if": { "pb_poi_tf": ["1", "3", "5", "15"] }
+    },
+
+    "exec_tp1_mode": {
+      "label": "Target 1 — what the first target IS",
+      "desc": "Fixed R puts the first target at a multiple of your risk, which is what the course does. Nearest level uses yesterday's or last week's high or low.",
+      "group": "4 · Targets",
+      "core": true,
+      "widget": "select",
+      "choices": ["Fixed R", "Nearest liquidity level"]
+    },
+    "exec_tp1_r": {
+      "label": "First target (R)",
+      "desc": "How many times your risk the first target sits at. 5 is the course's number; this ships at 3.5, which is what the chart is trading. Neither is measured.",
+      "unit": "R",
+      "group": "4 · Targets",
+      "core": true,
+      "step": 0.5,
+      "guide": ["fewer, larger winners", "more, smaller winners"],
+      "show_if": { "exec_tp1_mode": "Fixed R" }
+    },
+    "exec_tp1_pct": {
+      "label": "% banked at the first target",
+      "desc": "How much comes off at the first target. 0 = take nothing and ride it all to the second. At 80 the runner is a fifth of the position, so the second target moves the result far less than the first one does.",
+      "unit": "%",
+      "group": "4 · Targets",
+      "core": true,
+      "step": 5
+    },
+    "exec_use_tp1": {
+      "label": "Previous day's low / high is a target",
+      "desc": "Use yesterday's high or low as a target. Rebuilt from the replayed bars on a 17:00 New York day boundary, which was measured against the chart rather than assumed.",
+      "group": "4 · Targets",
+      "widget": "toggle"
+    },
+    "exec_use_tp2": {
+      "label": "Previous week's low / high is a target",
+      "desc": "Use last week's high or low as a target. ⚠ It cannot exist until a full week of bars has closed, so a run shorter than that silently has one fewer target.",
+      "group": "4 · Targets",
+      "widget": "toggle"
+    },
+
+    "exec_use_windows": {
+      "label": "Only execute inside the course's hours",
+      "desc": "Only take trades during the hours below. Orders waiting outside them are cancelled.",
+      "group": "5 · Execution hours",
+      "core": true,
+      "widget": "toggle"
+    },
+    "exec_win_ldn": {
+      "label": "London hours (New York clock)",
+      "desc": "New York clock. Our London session starts at 3am, so the first hour of the default 2am-5am window can never trade — that hour is the Frankfurt open, and Frankfurt is a session this strategy does not model.",
+      "group": "5 · Execution hours",
+      "widget": "time",
+      "show_if": { "exec_use_windows": true }
+    },
+    "exec_win_ny": {
+      "label": "New York hours (New York clock)",
+      "desc": "New York clock. Our New York session starts at 8am, so the first hour of the default 7am-10am window can never trade. Effective window is 8am-10am.",
+      "group": "5 · Execution hours",
+      "widget": "time",
+      "show_if": { "exec_use_windows": true }
+    },
+
+    "pb_trade_longs": {
+      "label": "Trade longs",
+      "desc": "Off means shorts only.",
+      "group": "6 · What trades, and how big",
+      "widget": "toggle"
+    },
+    "pb_trade_shorts": {
+      "label": "Trade shorts",
+      "desc": "Off means longs only. ⚠ Every measured run of this strategy leaned short through a market that tripled, so this switch is the crudest form of the missing higher-timeframe trend filter.",
+      "group": "6 · What trades, and how big",
+      "widget": "toggle"
+    },
+    "exec_size_mode": {
+      "label": "Position sizing",
+      "desc": "Risk % makes every trade worth the same. Fixed uses the same size whatever the stop. Use Risk % unless you are copying another script.",
+      "group": "6 · What trades, and how big",
+      "widget": "select",
+      "choices": ["Risk % of equity", "Fixed contracts"]
+    },
+    "exec_risk_pct": {
+      "label": "Risk % per trade",
+      "desc": "How much of the account is lost if the stop is hit. This ships at 4, which is aggressive — drop it to 1 to read the SHAPE of the equity curve rather than its size. ⚠ With the $4 stop floor, 4% on gold at 3,500 is still 35 times the account in notional.",
+      "unit": "%",
+      "group": "6 · What trades, and how big",
+      "core": true,
+      "step": 0.25,
+      "guide": ["smaller swings", "larger swings"],
+      "show_if": { "exec_size_mode": "Risk % of equity" }
+    },
+    "exec_fixed_qty": {
+      "label": "Contracts",
+      "desc": "Fixed position size, in contracts. ⚠ The parity gate REFUSES an export taken in this mode — the chart's export carries no size column, so a run in fixed contracts cannot be checked against it.",
+      "unit": "contracts",
+      "group": "6 · What trades, and how big",
+      "step": 0.01,
+      "show_if": { "exec_size_mode": "Fixed contracts" }
+    },
+
+    "pb_struct_len": {
+      "label": "Structure pivot length",
+      "desc": "How the swing highs and lows are first found. Mostly affects warm-up. Leave it alone.",
+      "group": "7 · Choices the method leaves open",
+      "step": 1
+    },
+    "exec_zone_entry": {
+      "label": "Where the limit rests in the zone",
+      "desc": "Near edge fills most often; far edge gets a better price but often misses.",
+      "group": "7 · Choices the method leaves open",
+      "widget": "select",
+      "choices": ["Proximal edge", "Midpoint", "Distal edge"]
+    },
+    "exec_stop_from": {
+      "label": "Stop sits behind…",
+      "desc": "The gap puts the stop just past the gap. The sweep puts it past the high or low the session made, so gap size stops mattering.",
+      "group": "7 · Choices the method leaves open",
+      "widget": "select",
+      "choices": ["The gap", "The sweep extreme"]
+    },
+    "exec_sl_buf_tk": {
+      "label": "Stop buffer beyond the zone (ticks)",
+      "desc": "How far past the edge the stop sits. On gold a tick is one cent, so 20 is twenty cents.",
+      "unit": "ticks",
+      "group": "7 · Choices the method leaves open",
+      "step": 1
+    },
+    "exec_cancel_bars": {
+      "label": "Cancel an unfilled limit after N bars",
+      "desc": "0 keeps the order until the session ends. It is always cancelled at the end of its session anyway.",
+      "unit": "bars",
+      "group": "7 · Choices the method leaves open",
+      "step": 1
+    },
+    "exec_cancel_flip": {
+      "label": "Cancel on a direction flip or an opposite shift",
+      "desc": "Pull a waiting order when the trend turns the other way.",
+      "group": "7 · Choices the method leaves open",
+      "widget": "toggle"
+    },
+    "exec_be_at_tp1": {
+      "label": "Stop to breakeven when the first target is reached",
+      "desc": "Moves the stop to the entry price once the first target prints.",
+      "group": "7 · Choices the method leaves open",
+      "widget": "toggle"
+    },
+    "exec_be_buf_tk": {
+      "label": "Breakeven buffer (ticks)",
+      "desc": "How far past the entry the breakeven stop sits, so you bank a few ticks instead of exactly nothing.",
+      "unit": "ticks",
+      "group": "7 · Choices the method leaves open",
+      "step": 1
+    },
+    "exec_tp_fallback_r": {
+      "label": "Fallback target (R) when no liquidity target is valid",
+      "desc": "If no level works as a target, use this many times risk instead. 0 = skip the trade.",
+      "unit": "R",
+      "group": "7 · Choices the method leaves open",
+      "step": 0.5,
+      "show_if": { "exec_tp1_mode": "Nearest liquidity level" }
+    },
+    "exec_min_rr": {
+      "label": "Minimum reward:risk to the first target",
+      "desc": "A target nearer than this is treated as unusable. ⚠ Never fired in the gated export.",
+      "group": "7 · Choices the method leaves open",
+      "step": 0.25
+    },
+
+    "exec_min_stop_mode": {
+      "label": "Minimum stop distance",
+      "desc": "Refuse a trade whose stop is too close to the entry. A tiny stop means a huge position, not small risk.",
+      "group": "8 · Safety filters that REFUSE a setup",
+      "core": true,
+      "widget": "select",
+      "choices": ["Off", "% of price", "Fixed $", "x ATR(14)"]
+    },
+    "exec_min_stop_val": {
+      "label": "Minimum stop floor (unit = mode above)",
+      "desc": "The smallest stop allowed, in the unit picked above. $4 of gold, and this one IS measured: trades whose stop was under $4 averaged -1.43R instead of -1R, and every loss worse than -3R in six years came from that band. Above $4 the average loser flattens near -1.1R, so a bigger floor just costs trades.",
+      "group": "8 · Safety filters that REFUSE a setup",
+      "core": true,
+      "step": 0.01,
+      "show_if": { "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"] }
+    },
+    "pb_poi_max_atr": {
+      "label": "Maximum distance to the zone (x ATR14)",
+      "desc": "Refuse a gap further from price than this many average bar ranges. 0 = no limit. ⚠ Shipped at 0, so it has never fired and the parity gate says nothing about it.",
+      "group": "8 · Safety filters that REFUSE a setup",
+      "step": 0.5
+    },
+    "exec_time_stop_hrs": {
+      "label": "Time stop (hours, 0 = off)",
+      "desc": "Close a trade open this long that has not reached its first target. 0 = off. ⚠ Shipped off, so it has never fired.",
+      "unit": "hours",
+      "group": "8 · Safety filters that REFUSE a setup",
+      "step": 1
+    },
+
+    "tick_size": {
+      "label": "Tick size",
+      "desc": "The instrument's smallest price move — one cent on gold. A platform fact, not a strategy choice.",
+      "group": "9 · Instrument",
+      "step": 0.01
+    },
+    "qty_step": {
+      "label": "Lot step",
+      "desc": "The venue's quantity step. A computed size is TRUNCATED down to it, never rounded — measured off every fill in the gated export. A platform fact, not a strategy choice.",
+      "group": "9 · Instrument",
+      "step": 0.01
+    },
+    "initial_capital": {
+      "label": "Starting balance",
+      "desc": "What the run starts with. Position size is a percentage of the running equity, so this sets the scale of every dollar figure and none of the R figures.",
+      "unit": "$",
+      "group": "9 · Instrument",
+      "step": 1000
+    }
+  }
+}

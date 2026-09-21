@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 from .config import SessionSweepConfig
 
-__all__ = ["SessionSweepCore", "BarInput", "BarOutput"]
+__all__ = ["SessionSweepCore", "BarInput", "BarOutput", "SweepTrade"]
 
 _TZ_ASIA = ZoneInfo("Asia/Tokyo")
 _TZ_LDN = ZoneInfo("Europe/London")
@@ -83,10 +83,14 @@ class BarInput:
     high: float
     low: float
     close: float
-    dir_dir: int            # px_dir       — the direction timeframe's structure direction
-    dir_shifts: int         # px_dir_shifts
+    dir_dir: int            # px_dir — the direction timeframe's structure direction
     conf_dir: int           # px_conf_dir
-    conf_shifts: int        # px_conf_shifts — a COUNTER, never a flag; see the note below
+    #: Did the confirmation timeframe's shift COUNTER go up on this bar? The Pine exports the
+    #: counter and compares it with its own previous value, because a boolean read back through
+    #: `request.security` stays true. The delta is the only thing any rule reads, so the delta is
+    #: what crosses this boundary — and the counter's ORIGIN, which differs between a full-history
+    #: Pine run and an export window, never gets a chance to be mistaken for a disagreement.
+    conf_shifted: bool
     pdh: float              # previous day's high  (request.security "D", lookahead on)
     pdl: float
     pwh: float              # previous week's high
@@ -134,6 +138,32 @@ class BarOutput:
     px_exec: int = 0
     px_closed_r: float = NAN
     px_atr14: float = NAN
+
+
+@dataclass
+class SweepTrade:
+    """A completed trade, entry to full close — REPORTING ONLY, no decision reads it.
+
+    The field names are `backtest.output`'s contract, so a lab run builds its equity curve, KPIs
+    and engine trades off this without re-deriving anything. `exit_price` is the quantity-weighted
+    mean of the ladder's partial exits, and `stop_distance` is the 1R the trade was SIZED against
+    — the stop frozen at placement, never the breakeven stop it may have exited on.
+    """
+
+    dir: int
+    entry_index: int
+    entry_price: float
+    exit_index: int
+    qty: float
+    risk_usd: float
+    pnl_usd: float
+    r: float
+    entry_ms: int = 0
+    exit_ms: int = 0
+    costs_usd: float = 0.0
+    exit_price: float = 0.0
+    stop_distance: float = 0.0
+    exit_reason: str = ""
 
 
 @dataclass
@@ -223,6 +253,7 @@ class SessionSweepCore:
         self.pos_qty = NAN
         self.pos_time: Optional[int] = None
         self.pos_stop0 = NAN
+        self._entry_index = 0
         self.t1_done = False
         self.be_shift_done = False
         self.pnl_at_fill = 0.0
@@ -237,8 +268,14 @@ class SessionSweepCore:
         self._broker_two_legs = False
         self._broker_t1_done = False
 
-        self._conf_shifts_prev: Optional[int] = None
         self._pos_size_prev = 0.0
+
+        #: Completed trades, in close order. Reporting only.
+        self.trades: List[SweepTrade] = []
+        self._exit_qty = 0.0
+        self._exit_notional = 0.0
+        self._exit_reason = ""
+        self._bar_ms = 0
 
     # ── indicators ────────────────────────────────────────────────────────────────────
 
@@ -377,7 +414,7 @@ class SessionSweepCore:
             # `strategy.close()` is a MARKET order: it fills at the next bar's open, never at the
             # close that asked for it. One bar of delay, same as every other order here.
             self._pending_close = False
-            self._close_all(b.open)
+            self._close_all(b.open, "time stop")
             return
         d = 1 if self.pos_size > 0 else -1
         stop = self._broker_stop
@@ -387,7 +424,7 @@ class SessionSweepCore:
         if hit_stop:
             # Both levels inside one bar resolves to the stop — see this module's docstring.
             px = min(stop, b.open) if d == 1 else max(stop, b.open)
-            self._close_all(px)
+            self._close_all(px, "stop")
             return
 
         if self._broker_two_legs and not self._broker_t1_done and not _isna(self._broker_t1):
@@ -400,17 +437,51 @@ class SessionSweepCore:
         if self.pos_size != 0 and not _isna(run):
             if (b.high >= run) if d == 1 else (b.low <= run):
                 px = max(run, b.open) if d == 1 else min(run, b.open)
-                self._close_all(px)
+                self._close_all(px, "target")
 
-    def _close_part(self, px: float, frac: float) -> None:
+    def _close_part(self, px: float, frac: float, reason: str = "target 1") -> None:
+        d = 1 if self.pos_size > 0 else -1
         qty = abs(self.pos_size) * frac
-        self.net_profit += (px - self.pos_entry) * qty * self.pos_dir
-        self.pos_size -= qty * self.pos_dir
+        self.net_profit += (px - self.pos_entry) * qty * d
+        self.pos_size -= qty * d
+        self._exit_qty += qty
+        self._exit_notional += px * qty
+        self._exit_reason = reason
 
-    def _close_all(self, px: float) -> None:
+    def _close_all(self, px: float, reason: str = "stop") -> None:
+        d = 1 if self.pos_size > 0 else -1
         qty = abs(self.pos_size)
-        self.net_profit += (px - self.pos_entry) * qty * self.pos_dir
+        self.net_profit += (px - self.pos_entry) * qty * d
         self.pos_size = 0.0
+        self._exit_qty += qty
+        self._exit_notional += px * qty
+        self._exit_reason = reason
+        self._book_trade(d)
+
+    def _book_trade(self, direction: int) -> None:
+        qty = self._exit_qty
+        if qty <= 0:
+            return
+        exit_px = self._exit_notional / qty
+        risk = self.pos_dist * self.pos_qty
+        pnl = self.net_profit - self.pnl_at_fill
+        self.trades.append(SweepTrade(
+            dir=direction,
+            entry_index=self._entry_index,
+            entry_price=self.pos_entry,
+            exit_index=self._i,
+            qty=self.pos_qty,
+            risk_usd=risk,
+            pnl_usd=pnl,
+            r=(pnl / risk) if risk > 0 else 0.0,
+            entry_ms=self.pos_time or 0,
+            exit_ms=self._bar_ms,
+            exit_price=exit_px,
+            stop_distance=self.pos_dist,
+            exit_reason=self._exit_reason,
+        ))
+        self._exit_qty = 0.0
+        self._exit_notional = 0.0
 
     # ── one bar ───────────────────────────────────────────────────────────────────────
 
@@ -418,6 +489,7 @@ class SessionSweepCore:
         cfg = self.cfg
         tick = self.tick
         self._pos_size_prev = self.pos_size
+        self._bar_ms = b.time_ms
 
         # ⚠ The bar index advances BEFORE the broker runs, because `placed_bar < self._i` is what
         # encodes the one-bar order delay. Advancing it afterwards made every order one bar late
@@ -471,13 +543,7 @@ class SessionSweepCore:
                 self.swept_lo = True
                 self.swp_lo = b.low if _isna(self.swp_lo) else min(self.swp_lo, b.low)
 
-        # ⚠ A COUNTER, not a flag. A boolean read back through `request.security` stays true, so
-        # "it JUST shifted" is only recoverable by comparing the count with its own previous bar.
-        new_conf_shift = (
-            self._conf_shifts_prev is not None
-            and b.conf_shifts is not None
-            and b.conf_shifts > self._conf_shifts_prev
-        )
+        new_conf_shift = b.conf_shifted
 
         in_win_ldn = _in_session(b.time_ms, cfg.exec_win_ldn, _TZ_NY)
         in_win_ny = _in_session(b.time_ms, cfg.exec_win_ny, _TZ_NY)
@@ -674,6 +740,7 @@ class SessionSweepCore:
             self.pos_qty = abs(self.pos_size)
             self.pos_dist = abs(self.pos_stop - self.pos_entry)
             self.pos_time = b.time_ms
+            self._entry_index = self._i
             self.pnl_at_fill = self.net_profit
             self.t1_done = False
             self.be_shift_done = False
@@ -773,5 +840,4 @@ class SessionSweepCore:
         self._in_asia_prev = in_asia
         self._in_ldn_prev = in_ldn
         self._raw_sess_prev = raw_sess
-        self._conf_shifts_prev = b.conf_shifts
         return out

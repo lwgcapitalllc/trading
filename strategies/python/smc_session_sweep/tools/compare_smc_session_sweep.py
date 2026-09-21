@@ -34,17 +34,16 @@ if str(_ROOT) not in sys.path:
 
 from strategies.python.smc_session_sweep.config import SessionSweepConfig  # noqa: E402
 from strategies.python.smc_session_sweep.core import BarInput, SessionSweepCore  # noqa: E402
+from strategies.python.smc_session_sweep.levels import PrevPeriodLevels  # noqa: E402
+from strategies.python.smc_session_sweep.structure import derive_stream  # noqa: E402
 
 #: Fed to the port, never compared. Each one names WHY, so nobody promotes it to evidence.
+#: ⚠ The direction stream LEFT this table on 2026-09-20 — it is now derived from the chart's own
+#: bars and compared like everything else. The confirmation stream stays here only while the
+#: export's confirmation timeframe is FINER than its chart.
 FED = {
-    "px_dir": "15m structure — not derivable from a 5m chart",
-    "px_dir_shifts": "15m structure — not derivable from a 5m chart",
-    "px_conf_dir": "1m structure — not derivable from a 5m chart",
-    "px_conf_shifts": "1m structure — not derivable from a 5m chart",
-    "px_pdh": "request.security 'D' with lookahead on",
-    "px_pdl": "request.security 'D' with lookahead on",
-    "px_pwh": "request.security 'W' with lookahead on",
-    "px_pwl": "request.security 'W' with lookahead on",
+    "px_conf_dir": "confirmation timeframe is finer than the chart — not recoverable from it",
+    "px_conf_shifts": "confirmation timeframe is finer than the chart — not recoverable from it",
 }
 
 #: Compared as exact integers — a bitfield or an enum, where "close" is meaningless.
@@ -118,6 +117,17 @@ def _f(v):
         return float("nan")
 
 
+def _counter_rose(rows, i: int, col: str) -> bool:
+    """Pine's `shifts > shifts[1]` — the only thing any rule reads off a shift counter."""
+    if i == 0:
+        return False
+    a = _f(rows[i - 1][col])
+    b = _f(rows[i][col])
+    if a != a or b != b:
+        return False
+    return b > a
+
+
 def _same(a: float, b: float, tol: float) -> bool:
     na_a = a != a
     na_b = b != b
@@ -154,8 +164,10 @@ def load(path: Path):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("csv", nargs="?", default="engines/VANTAGE_XAUUSD, 5_73331.csv")
-    ap.add_argument("--warmup", type=int, default=500,
-                    help="bars replayed but NOT compared, so engine warm-up is not read as a defect")
+    ap.add_argument("--warmup", type=int, default=2100,
+                    help="bars replayed but NOT compared. ⚠ The floor is one WEEK at the chart's "
+                         "frame (2,016 bars at 5m): the previous-week level cannot exist before "
+                         "one has closed, and comparing it there reports a warm-up as a defect")
     ap.add_argument("--max-report", type=int, default=12)
     args = ap.parse_args()
 
@@ -166,6 +178,34 @@ def main() -> int:
 
     cfg = SessionSweepConfig.from_export(rows[len(rows) // 2])
     core = SessionSweepCore(cfg)
+
+    times = [int(float(r["time"])) * 1000 for r in rows]
+    opens = [_f(r["open"]) for r in rows]
+    highs = [_f(r["high"]) for r in rows]
+    lows = [_f(r["low"]) for r in rows]
+    closes = [_f(r["close"]) for r in rows]
+
+    # ── the chart's own frame, measured off the data rather than assumed ──────────────
+    chart_min = min((times[i + 1] - times[i]) for i in range(len(times) - 1)) // 60_000
+    dir_min = int(cfg.pb_dir_tf)
+    conf_min = int(cfg.pb_conf_tf)
+
+    # The DIRECTION stream is DERIVED from the chart's bars and then compared, not fed.
+    dir_stream = derive_stream(times, opens, highs, lows, closes, dir_min, chart_min,
+                               cfg.pb_struct_len)
+    # The CONFIRMATION stream is derived only when the chart is fine enough to carry it.
+    conf_derived = conf_min % chart_min == 0
+    conf_stream = (
+        derive_stream(times, opens, highs, lows, closes, conf_min, chart_min, cfg.pb_struct_len)
+        if conf_derived else None
+    )
+    if conf_derived:
+        FED.pop("px_conf_dir", None)
+        FED.pop("px_conf_shifts", None)
+    dir_bad = []
+    conf_bad = []
+    lvl_bad = []
+    levels = PrevPeriodLevels()
 
     mismatches = {}
     compared = 0
@@ -178,12 +218,31 @@ def main() -> int:
         b = BarInput(
             time_ms=int(float(r["time"])) * 1000,
             open=_f(r["open"]), high=_f(r["high"]), low=_f(r["low"]), close=_f(r["close"]),
-            dir_dir=int(_f(r["px_dir"])) if r["px_dir"] else 0,
-            dir_shifts=int(_f(r["px_dir_shifts"])) if r["px_dir_shifts"] else 0,
-            conf_dir=int(_f(r["px_conf_dir"])) if r["px_conf_dir"] else 0,
-            conf_shifts=int(_f(r["px_conf_shifts"])) if r["px_conf_shifts"] else 0,
-            pdh=_f(r["px_pdh"]), pdl=_f(r["px_pdl"]), pwh=_f(r["px_pwh"]), pwl=_f(r["px_pwl"]),
+            dir_dir=dir_stream.direction[i],
+            conf_dir=(conf_stream.direction[i] if conf_derived
+                      else (int(_f(r["px_conf_dir"])) if r["px_conf_dir"] else 0)),
+            conf_shifted=(conf_stream.shifted[i] if conf_derived
+                          else _counter_rose(rows, i, "px_conf_shifts")),
+            pdh=levels.pdh, pdl=levels.pdl, pwh=levels.pwh, pwl=levels.pwl,
         )
+        # The levels advance BEFORE the core steps — the order the strategy uses, so the gate
+        # cannot pass on an ordering the lab path does not have.
+        levels.update(times[i], highs[i], lows[i])
+        b.pdh, b.pdl, b.pwh, b.pwl = levels.pdh, levels.pdl, levels.pwh, levels.pwl
+        if i < args.warmup:
+            # ⚠ Inside the warm-up the PINE's own levels are used, and that is not an
+            # accommodation: a real run has history BEFORE its window, and this export is a
+            # slice. The port cannot know the previous week's high in its first week, so giving
+            # it what a longer run would have seen is the difference between reproducing the
+            # strategy and reproducing the export's left edge. The derived values are still
+            # computed on every bar and compared on every bar after the warm-up.
+            # 🔴 It matters because the first trade's second target is STICKY: a warm-up-only
+            # difference otherwise leaks into `px_exec` for the rest of the run.
+            for attr, col in (("pdh", "px_pdh"), ("pdl", "px_pdl"),
+                              ("pwh", "px_pwh"), ("pwl", "px_pwl")):
+                v = _f(r[col])
+                if v == v:
+                    setattr(b, attr, v)
         out = core.step(b)
 
         if int(_f(r["px_exec"])) & 2:
@@ -194,6 +253,22 @@ def main() -> int:
         if i < args.warmup:
             continue
         compared += 1
+
+        # The derived streams are diffed against the Pine's OWN columns, not against the port —
+        # a comparator that agrees with the thing it is checking is not a comparator.
+        if r["px_dir"] and int(_f(r["px_dir"])) != dir_stream.direction[i]:
+            dir_bad.append((i, r["time"], r["px_dir"], dir_stream.direction[i]))
+        # ⚠ The shift COUNTER's origin differs — request.security runs over the symbol's full
+        # history, so the Pine's count starts partway up. The INCREMENT is what any rule reads
+        # and the increment is what is compared.
+        if _counter_rose(rows, i, "px_dir_shifts") != dir_stream.shifted[i]:
+            dir_bad.append((i, r["time"], "shift", dir_stream.shifted[i]))
+        for col, got in (("px_pdh", levels.pdh), ("px_pdl", levels.pdl),
+                         ("px_pwh", levels.pwh), ("px_pwl", levels.pwl)):
+            if not _same(_f(r[col]), got, cfg.tick_size * 1.5):
+                lvl_bad.append((i, r["time"], r[col], got))
+        if conf_derived and r["px_conf_dir"] and int(_f(r["px_conf_dir"])) != conf_stream.direction[i]:
+            conf_bad.append((i, r["time"], r["px_conf_dir"], conf_stream.direction[i]))
         blk_hist[int(_f(r["px_blk_s"]))] += 1
         blk_hist[int(_f(r["px_blk_l"]))] += 1
         pine_exec = int(_f(r["px_exec"]))
@@ -244,6 +319,22 @@ def main() -> int:
     missing = [c for c in BLOCK_WHY if c not in blk_hist]
     if missing:
         print(f"              ⚠ never fired, so proven by nothing: {missing}")
+
+    print("derived streams (computed from the chart's bars, then compared):")
+    print(f"              direction {dir_min}m from a {chart_min}m chart — "
+          + (f"⚠ {len(dir_bad)} disagreement(s)" if dir_bad else "agrees on every compared bar"))
+    if conf_derived:
+        print(f"              confirmation {conf_min}m from a {chart_min}m chart — "
+              + (f"⚠ {len(conf_bad)} disagreement(s)" if conf_bad else "agrees on every compared bar"))
+    else:
+        print(f"              confirmation {conf_min}m — NOT derivable from a {chart_min}m chart, fed")
+    print("              previous day / week levels rebuilt from the chart — "
+          + (f"⚠ {len(lvl_bad)} disagreement(s)" if lvl_bad else "agree on every compared bar"))
+    if dir_bad or conf_bad or lvl_bad:
+        for label, bad in (("px_dir", dir_bad), ("px_conf_dir", conf_bad), ("levels", lvl_bad)):
+            for bar, t, pine, port in bad[:args.max_report]:
+                print(f"    {label} bar {bar:<6} t={t}  pine={pine!s:<10} port={port!s:<10}")
+        return 1
 
     if not mismatches:
         print("\nPARITY GREEN — every compared column agrees on every compared bar.")
