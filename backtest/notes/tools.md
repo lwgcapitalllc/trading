@@ -1550,6 +1550,11 @@ CLAUDE.md gets at most one index line.
   2020-25 terciles and checked on the recent year with the same cut-offs. Only the confirmation
   entry held (+0.51R vs +0.15R per trade, but 17% of setups); verified on three recent trades with a
   fresh 1m engine. Detail in the ledger.
+  **`--v1 [--symbol XAGUSD_p]` (same day):** the frozen checklist as written; gold adds PU Prime ECN
+  on a bid chart (spread moves a buy limit's fill and a sell's exits), commission and swap via
+  `backtest.reprice.rollovers_between`. Gold TP2 +0.140R / +0.165R after costs; silver cost-free
+  +0.03R — does not confirm. ⚠ `clean_reopens` clips with a $2 floor tuned for gold, so on silver it
+  clipped 1 bar in 6.7 years — effectively off.
   ⚠ Read-only; moves no baseline.
 
 ## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)

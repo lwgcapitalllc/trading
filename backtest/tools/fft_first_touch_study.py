@@ -84,7 +84,8 @@ from backtest.data.resample import resample_up  # noqa: E402
 from backtest.replay.loop import iter_bars  # noqa: E402
 from backtest.replay.stack import EngineConfig, EngineStack  # noqa: E402
 
-CACHE = ROOT / "backtest" / "cache" / "PUPrime_Demo" / "XAUUSD_p__M1.csv"
+CACHE_DIR = ROOT / "backtest" / "cache" / "PUPrime_Demo"
+SYMBOL = "XAUUSD_p"  # --symbol swaps it; only gold carries the reserved pre-2020 test set
 RESERVED_BEFORE = pd.Timestamp("2020-01-01")
 WARMUP_DAYS = 31  # engines run from --start; trades count only after this
 REPS = 20
@@ -101,9 +102,12 @@ HOLDOUT = ("2018-09-14", "2020-01-01")
 
 
 def load_1m(start: str, end: str, holdout: bool = False) -> pd.DataFrame:
-    if not holdout and pd.Timestamp(start) < RESERVED_BEFORE:
+    if SYMBOL == "XAUUSD_p" and not holdout and pd.Timestamp(start) < RESERVED_BEFORE:
         sys.exit("gold before 2020-01-01 is the reserved test set — refused")
-    df = pd.read_csv(CACHE, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
+    path = CACHE_DIR / f"{SYMBOL}__M1.csv"
+    if not path.exists():
+        sys.exit(f"no cached M1 bars at {path}")
+    df = pd.read_csv(path, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
     df = df[(df["time"] >= start) & (df["time"] < end)].set_index("time")
     return df.astype(float)
 
@@ -1571,6 +1575,125 @@ def second_sweep_report(recent):
                 print(ifmt(f"{lname}: {label}", mcell(sub, ctrl, f"sw|{lname}|{label}")))
 
 
+def v1_costed(t, rH, rL, profile, tgt_key):
+    """Version 1 (2026-09-21) through PU Prime ECN: charts are BID, so a buy limit at 61.8 fills only
+    once the bid trades one spread below it (the ask reaches it), and a sell's stop and target
+    trigger one spread early (the ask reaches them). Commission both sides; swap per rollover held
+    (17:00 NY, the triple night on the profile's day). R is the planned risk: 61.8 to the 1.0."""
+    from backtest.reprice import rollovers_between
+
+    lv, d = t["lv"], t["d"]
+    sp = profile.spread
+    entry, stop, tgt = lv["E1"], lv["1.0"], lv[tgt_key]
+    if t["open_fill"]:
+        return None  # a gap-through fill at the open — a handful; kept out of the costed book
+    if d == 1:
+        j = through_fill(rH, rL, t["m"], d, entry, sp, lv["TP1"], False)
+        if j is None:
+            return "nofill"
+        r = walk(rH, rL, j, d, stop, tgt, False)
+    else:
+        j = t["m"]
+        r = walk(rH, rL, j, d, stop - sp, tgt - sp, False)
+    if r is None:
+        return None
+    risk = abs(entry - stop)
+    gross = abs(tgt - entry) / risk if r[0] else -1.0
+    comm = 2 * profile.commission_per_side_per_lot / profile.contract_size
+
+    def ms(i):
+        return int(pd.Timestamp(_T1[i]).tz_localize("UTC").value // 10**6)
+
+    swap = sum(
+        profile.swap.charge(d, 1.0, day) / profile.contract_size
+        for day in rollovers_between(ms(j), ms(r[2]), 17)
+    )
+    return dict(
+        gross=gross,
+        net=gross + (swap - comm) / risk,
+        cost=(comm - swap) / risk,
+        win=r[0],
+        risk=risk,
+    )
+
+
+_T1 = None  # the 1m clock of the last run, for v1_costed's swap dates
+
+
+def v1_report(windows, costs):
+    """Version 1 frozen (2026-09-21): first touch, gates, no weekend, 5m first leg, 61.8 limit, stop
+    1.0, TP2 (TP1 beside it). Cost-free with the random control; then, for gold, through PU Prime
+    ECN. Nothing here is tuned — it is the checklist in notes/fft_ledger.md, run as written."""
+    global _T1
+    from backtest.fills import PROFILES
+
+    for name, a, b in windows:
+        touches, _, raw, _ = run(a, b)
+        _T1 = raw.index.to_numpy()
+        rH, rL = raw["high"].to_numpy(), raw["low"].to_numpy()
+        ctrl = Control(raw)
+        rows = [t for t in touches if t["kind"] == "first" and gated(t, max_bos=0)]
+        items = []
+        for t in rows:
+            lv = t["lv"]
+            r = managed(
+                rH,
+                rL,
+                t["m"],
+                t["d"],
+                t["fill"],
+                lv["1.0"],
+                lv["TP1"],
+                lv["TP2"],
+                t["open_fill"],
+                lv["TP3"],
+            )
+            if r is not None:
+                items.append((t, r))
+        cut = pd.Timestamp(a) + (pd.Timestamp(b) - pd.Timestamp(a)) / 2
+        print(f"\n=== {SYMBOL} {name} — VERSION 1, before costs")
+        print(IHDR)
+        for label, keep, tag in (
+            ("buys and sells", lambda t: True, "v1|all"),
+            ("buys", lambda t: t["d"] == 1, "v1|b"),
+            ("sells", lambda t: t["d"] == -1, "v1|s"),
+            ("first half", lambda t: t["t"] < cut, "v1|h1"),
+            ("second half", lambda t: t["t"] >= cut, "v1|h2"),
+            ("  A+ (a liquidity sweep on the way in)", lambda t: t["swept"], "v1|sw"),
+        ):
+            print(ifmt(label, mcell([(t["d"], r) for t, r in items if keep(t)], ctrl, tag)))
+        if items:
+            months = max((pd.Timestamp(b) - pd.Timestamp(a)).days / 30.44, 1)
+            print(
+                f"  median stop {np.median([r['risk'] for _, r in items]):.3f} in price; "
+                f"{len(items) / months:.1f} setups a month"
+            )
+        if not costs:
+            continue
+        prof = PROFILES["puprime_ecn"]
+        print(
+            f"\n  THROUGH PU PRIME ECN — spread ${prof.spread:.2f} (bid chart), commission "
+            f"${prof.commission_per_side_per_lot:.2f}/side/lot, swap per rollover"
+        )
+        for tk in ("TP2", "TP1"):
+            res = [v1_costed(t, rH, rL, prof, tk) for t in rows]
+            got = [x for x in res if isinstance(x, dict)]
+            nofill = sum(1 for x in res if x == "nofill")
+            if not got:
+                continue
+            g = float(np.mean([x["gross"] for x in got]))
+            nt = float(np.mean([x["net"] for x in got]))
+            w = sum(x["win"] for x in got) / len(got)
+            tot = float(np.sum([x["net"] for x in got]))
+            _, dd = _curve([x["net"] for x in got])
+            cst = float(np.mean([x["cost"] for x in got]))
+            print(
+                f"  {tk}: {len(got)} trades ({nofill} buy limits never reached by the ask), win {100 * w:.1f}%, "
+                f"avgR {g:+.3f} before costs -> {nt:+.3f} after ({cst:.3f}R a trade); "
+                f"total {tot:+.2f}R, max DD {dd:.2f}R"
+            )
+
+
 def scalein_report(recent):
     """The user's scale-in (2026-09-21), FROZEN before the run: one trade's risk split 50/50 — half on
     the 61.8 limit (stop 1.0), half added only when the 1m breaks back after the touch (stop at the
@@ -1676,6 +1799,16 @@ def main():
         help="the sniper-zone entry vs the 61.8 entry, with break-even at TP1",
     )
     ap.add_argument(
+        "--v1",
+        action="store_true",
+        help="version 1 as frozen in notes/fft_ledger.md; gold adds PU Prime ECN costs",
+    )
+    ap.add_argument(
+        "--symbol",
+        default="XAUUSD_p",
+        help="cache symbol for --v1 (XAGUSD_p = silver: no measured costs, cost-free)",
+    )
+    ap.add_argument(
         "--second-sweep",
         dest="second_sweep",
         action="store_true",
@@ -1730,6 +1863,18 @@ def main():
         return
     if a.second_sweep:
         second_sweep_report(("2025-09-01", "2026-09-17"))
+        return
+    if a.v1:
+        global SYMBOL
+        SYMBOL = a.symbol
+        if SYMBOL == "XAUUSD_p":
+            windows = [
+                ("2020-01 -> 2025-08", "2020-01-01", "2025-09-01"),
+                ("recent year", "2025-09-01", "2026-09-17"),
+            ]
+        else:  # another market: its whole cached history is new data for this rule
+            windows = [("2020-01 -> 2026-09, all of it", "2020-01-01", "2026-09-17")]
+        v1_report(windows, costs=(SYMBOL == "XAUUSD_p"))
         return
     if a.holdout:
         touches, _, raw, t0 = run(*HOLDOUT, holdout=True)

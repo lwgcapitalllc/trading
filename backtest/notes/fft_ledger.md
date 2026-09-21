@@ -127,6 +127,25 @@ the fill). **It lifts the TP1 hit rate in both windows:** first leg 85.9% vs 77.
 vs +0.15R dev, +0.29R vs +0.13R recent — never worse. The swept level sitting at/past 61.8 adds
 nothing (10 / 3 trades). About 4 in 10 first-leg setups have a sweep.
 
+## Version 1 through real costs, and on silver (2026-09-21, `--v1`)
+
+**Gold, PU Prime ECN** ($0.12 spread on a BID chart — a buy limit fills only when the ask reaches
+61.8, a sell's stop and target trigger a spread early — $1/side/lot commission, swap per 17:00 NY
+rollover). TP2: dev 152 trades, 71.1%, **+0.149R → +0.140R after costs** (0.009R a trade), total
++21.3R, max DD 3.9R; recent 29 trades, 72.4%, **+0.172R → +0.165R**, total +4.8R, DD 4.0R. 5 buy
+limits in dev never reached by the ask. **Costs barely touch it** — the stop is ~$6-16, so $0.14 of
+spread and commission is under 0.01R. TP1 after costs: +0.030R / +0.128R.
+⚠ Recent year by half: 13 trades at 92.3% then 17 at 58.8% (−0.05R) — too few to call, watch it.
+
+**Silver (XAGUSD.p, all of 2020-01 → 2026-09, new data for this rule, COST-FREE — silver's costs are
+unmeasured and gold's may not be borrowed):** 179 trades, TP2 63.7% vs 61.7% break-even, **+0.03R**
+(random −0.03R); first half +0.08R, second half −0.01R; the sweep adds nothing (+0.01R). **Barely
+positive before costs — silver does NOT confirm the gold edge.** On a ~$0.16 silver stop any real
+spread likely turns it negative. Either the edge is gold-specific or gold's +0.15R is partly luck.
+
+**What version 1 is worth on gold:** ~2.3 setups a month × +0.14R ≈ +4R a year after costs, against
+a worst drawdown of ~4R. Real but small — about one year of profit per worst drawdown.
+
 ## Setup frequency and what a bad run looks like (plan A, first leg)
 
 2.4 setups a month in dev, 2.7 recent. Longest losing streak 3 (both windows, TP2). Worst drawdown
