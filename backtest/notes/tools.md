@@ -1489,6 +1489,68 @@ CLAUDE.md gets at most one index line.
   removal** — the generalisation, not a Realign quirk.
   ⚠ Read-only; writes nothing and moves no baseline. Anything it surfaces is a hypothesis needing a
   REPLAY and its own pre-declared window, never a filter applied by dropping rows.
+- **`tools/fft_first_touch_study.py`** (new 2026-09-21) — the user's FFT (first fib touch) claim:
+  15m + 5m trend with the trade, 1m against it with no 1m break in the trade's direction since the
+  fib's 0.0 extreme, a resting limit at the 5m Structure fib's 0.618 on the leg's FIRST touch (the
+  engine's own latch), stop at 1.0, target TP1 (0.5); the user said ~90% reach 0.5. Variants: fill
+  at 0.702, stop at 0.886, TP2, sniper zone / 5m FVG overlapping 0.618-0.702, no gates, and the
+  second touch of the same leg after the first reached TP1. Engines on cleaned PU Prime M1 resampled
+  to 5m/15m; outcomes walked on raw M1 (fill minute: stop only; a later minute hitting both = loss).
+  Benchmark: with no costs the break-even win rate IS the random-walk hit rate, risk/(risk+reward) —
+  **76.4% for 0.618 → 0.5 with the stop at 1.0** — plus random entries in the same month and NY hour,
+  same side and dollar bracket, 20 per trade, seeded per trade so every table agrees.
+  **MEASURED 2026-09-21, before costs, 2020-01-01 → 2025-08-31 (2,005,828 M1 bars):** the user's rule
+  586 trades, **78.5% vs 76.4% break-even vs 75.3% random, z +1.78, +0.028R**; buys alone 76.0%
+  (−0.004R — the side the user described has no edge), sells 81.4%. Both halves ~78%. Fill at 0.702
+  fills 331 of 586 and is no better. Second touch (334) **82.6%** — beats the first, against the
+  claim, though it is a selected sample (only legs that already reached TP1). Best of ~30 cells:
+  sniper zone in the entry zone, TP2 — 69.0% vs 61.8%, z +2.77, +0.117R — a best-of-many, not a
+  finding. **2025-09-01 → 2026-09-16 (fixed rules, not a clean window — see
+  `structure-pattern-test-set`):** 97 trades, 73.2% vs 76.4%, −0.042R; sniper + TP2 64.9% vs 61.8%
+  (n 57). Median bracket 2020-25: stop $5.12, TP1 $1.58 — the ECN spread alone (~$0.12) is ~0.02R, the
+  size of the whole dev edge. ⚠ The 2018-09 → 2019-12 test set was NOT touched: nothing earned it.
+  Gates, step by step (2020-25, TP1): no gates 76.6% → 15m+5m agree 76.7% → 1m against 78.2% → no 1m
+  break with the trade 78.5%; the stricter "1m PRINTED a break against since the extreme" is 579 of
+  the 586 (78.6%). Three recent fills were re-checked with fresh engines per timeframe: all gates agree.
+  **Same day, the user's two changes** — drop setups whose leg spans a weekend, and the 5m may have
+  at most ONE continuation BOS since the shift ("more is exhaustion"). 2020-25, TP1: no weekend 572
+  at 78.1% (the 14 weekend setups won 92.9%); **at most 1 BOS 300 at 77.0% — WORSE**, the dropped
+  2+ BOS won 79.4%. By count, 0/1/2/3/4+ BOS = 80.9/72.7/81.5/74.0/81.6% — a zigzag, no exhaustion.
+  Recent year: at most 1 BOS 53 at 77.4% vs 72.9% for all. **The one split that holds everywhere is
+  0 BOS — the first pullback after the 5m shift:** 2020-25 157 at 80.9% (TP2 71.3% vs 61.8%, z
+  +2.35, +0.154R), before 2023 82.7% / 2023 on 78.9%, buys 80.3% / sells 81.5%; recent year 30 at
+  86.7% (TP2 73.3%). The 1-BOS bucket is below break-even in both windows (72.7%, 65.2%). Still a
+  best-of-many on small n; the BOS count was re-derived with a fresh 5m engine on four fills (0/1/2/3)
+  and matched each.
+  🔴 **HOLDOUT SPENT 2026-09-21 — the frozen claim FAILED.** Claim (frozen in the docstring before the
+  run): the 0-BOS rule beats break-even AND random with avgR > 0 on BOTH TP1 and TP2. PU Prime M1
+  2018-09-14 → 2019-12-31, 31 trades: **TP1 74.2% vs 76.4% break-even, −0.029R — fails**; TP2 67.7%
+  vs 61.8%, +0.096R, z +0.86 — ok. Context, any BOS (93): TP1 78.5% +0.027R, TP2 64.5% +0.044R — the
+  same ~78% the wider rule shows everywhere. ⚠ TP2 on 0 BOS was positive in all three windows
+  (+0.154R / +0.186R / +0.096R) but it was not the declared claim alone; no clean gold window is
+  left to confirm it. Do not re-run `--holdout` to tune.
+  **`--entries [--through X]` (same day) — the user's SNIPER-ZONE entry**: a limit at the sniper
+  zone's near edge on its first touch (the engine's latch), stop at its far edge, FFT TP1/TP2, plus
+  break-even at TP1 (all to TP2, or half off at TP1), against the 61.8 entry managed the same way.
+  Zone position: any / overlapping 61.8-70.2 / starting at or past 61.8 (the user's rule). "Wholly
+  inside 61.8-70.2" had 0 trades: off one swing low the sniper zone (0.118 of its leg) cannot fit
+  in the 0.084-wide band. 🔴 **Median stop ~$1, so a TOUCH fill flatters it** — `--through` makes a
+  limit fill only once price trades X through it. User's rule, 0 BOS, 2020-25: touch 75 trades
+  42.7% to TP1 vs 27.5% break-even (+0.66R); **$0.10 through 68 at 36.8% vs 27.5%, z +2.54,
+  +0.40R**; $0.25 through 65 at 33.8%. Every other sniper row loses its edge at $0.10.
+  **Recent year ($0.10 through): 20 trades 30.0% vs 29.2%, −0.07R — not confirmed.** Break-even at
+  TP1 never beat simply holding to TP2 (2020-25 user row: TP2 +0.81R, BE +0.46R, half +0.43R, TP1
+  +0.40R). No clean gold window is left for any of this; a result here is a lead at most.
+  **`--sweet` (same day):** sniper zone overlapping 61.8-88.6 (need not fit), by BOS count and by
+  where its edges sit on the FFT fib, both windows. No single placement holds in both; first/second
+  leg + overlap + TP2 does (+0.36R / +0.17R) and 3+ BOS loses in both. **Every combination and its
+  numbers: `notes/fft_ledger.md`** — the running record the user asked for.
+  **`--improve` (same day):** five refinements fixed before testing — TP3, impulse strength (5m leg /
+  ATR14), 15m discount (the 15m FFT fib), pullback speed, and a 1m-confirmation entry — judged on
+  2020-25 terciles and checked on the recent year with the same cut-offs. Only the confirmation
+  entry held (+0.51R vs +0.15R per trade, but 17% of setups); verified on three recent trades with a
+  fresh 1m engine. Detail in the ledger.
+  ⚠ Read-only; moves no baseline.
 
 ## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)
 
