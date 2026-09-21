@@ -2,3 +2,13 @@
 2026-09-21 14:45:08,504 [INFO] PENDING PLACED | ticket=365405527 | bearish 0.24L @ 4369.93 | SL=4391.88 TP=none
 2026-09-21 20:15:08,658 [INFO] cancel bearish primary limit T365405527
 2026-09-21 20:15:08,736 [INFO] PENDING CANCELLED | T365405527
+2026-09-21 22:05:05,961 [WARNING] 13 M5 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-21 22:05:10,761 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-07 10:35:00+00:00 → 2026-09-21 22:00:00+00:00).
+2026-09-21 22:05:10,807 [INFO] The 13 M5 intervals were a market break, not lost bars — no alert.
+2026-09-21 22:15:02,802 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-21 22:15:02,802 [INFO] Sizing against account balance $10,733.16
+2026-09-21 22:15:05,333 [INFO] Warmed 5000 bars (2026-07-07 10:45:00+00:00 → 2026-09-21 22:00:00+00:00) in 2.5s
+2026-09-21 22:15:07,898 [INFO] Fast feed bookmarked at 2026-09-21 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-21 22:15:07,898 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-07 10:45:00+00:00 → 2026-09-21 22:10:00+00:00).
+2026-09-21 22:15:07,898 [INFO] Equity re-anchored to the account after warm-up: 9,868.06 → 10,733.16
+2026-09-21 22:15:07,898 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
