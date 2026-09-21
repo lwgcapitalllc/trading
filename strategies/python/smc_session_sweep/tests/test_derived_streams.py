@@ -164,3 +164,44 @@ def test_the_core_books_a_trade_per_closed_position():
             closes += 1
     assert len(core.trades) == closes
     assert closes > 0, "the export closed no trades — this test would prove nothing"
+
+
+_GOLDEN_CONF5 = _GOLDEN.parent / "VANTAGE_XAUUSD_M5_conf5_20633bars.csv"
+
+
+def test_the_lab_path_reproduces_the_pine_trade_for_trade():
+    """The lab driver — engine stack and all — books exactly the Pine's trades.
+
+    This is the END-TO-END claim, and it is a different route from the parity gate: the gate
+    drives the core directly with streams it derives itself, while this drives
+    `SessionSweepStrategy` through `backtest.replay`'s own engine stack, which supplies the
+    confirmation from the CHART-frame structure engine. Two routes, one answer.
+
+    RED when: the strategy drops the first bar while measuring the chart's frame (the trade list
+    shifts), or reads the confirmation off the wrong engine (the R column changes).
+    """
+    if not _GOLDEN_CONF5.exists():  # pragma: no cover - the export is committed
+        pytest.skip(f"golden export missing: {_GOLDEN_CONF5}")
+    pd = pytest.importorskip("pandas")
+    from backtest.replay import iter_bars
+    from backtest.replay.stack import EngineStack
+    from strategies.python.smc_session_sweep.strategy import SessionSweepStrategy
+
+    rows = [r for r in csv.DictReader(_GOLDEN_CONF5.open()) if r["px_state"]]
+    df = pd.DataFrame(
+        {k: [float(r[k]) for r in rows] for k in ("open", "high", "low", "close")},
+        index=pd.to_datetime([int(float(r["time"])) for r in rows], unit="s", utc=True),
+    )
+    cfg = SessionSweepConfig.from_export(rows[len(rows) // 2])
+    assert cfg.pb_conf_tf == "5", "this export must confirm on the chart's own frame"
+
+    strat = SessionSweepStrategy(cfg, initial_capital=cfg.initial_capital)
+    stack = EngineStack(strat.engine_config())
+    for bar in iter_bars(df):
+        strat.step(stack.step(bar))
+
+    pine_r = [float(r["px_closed_r"]) for r in rows if r["px_closed_r"]]
+    lab_r = [t.r for t in strat.execution.trades]
+    assert len(lab_r) == len(pine_r) > 0, f"lab booked {len(lab_r)}, pine closed {len(pine_r)}"
+    for i, (a, b) in enumerate(zip(lab_r, pine_r)):
+        assert abs(a - b) < 0.01, f"trade {i}: lab {a:.3f}R vs pine {b:.3f}R"

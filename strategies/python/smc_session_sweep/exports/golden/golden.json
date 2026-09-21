@@ -1,15 +1,15 @@
 {
-  "csv": ["VANTAGE_XAUUSD_M5_20597bars.csv"],
+  "csv": ["VANTAGE_XAUUSD_M5_conf5_20633bars.csv", "VANTAGE_XAUUSD_M5_20597bars.csv"],
   "gate": "tools/compare_smc_session_sweep.py",
   "warmup": 2100,
   "broker": "Vantage",
   "symbol": "XAUUSD",
   "timeframe": "M5",
-  "bars": 20597,
+  "bars": 20633,
   "harness": "strategies/tradingview/smc_session_sweep_strategy_export.pine",
   "taken": "2026-09-20",
   "_why_warmup": "2,100 is a FLOOR, not a taste: the previous-week level cannot exist before a full week of bars has closed (2,016 at 5m), and comparing it inside that week reports a warm-up as a defect. Inside the warm-up the gate feeds the export's own day/week levels, because a real run has history before its window and this export is a slice \u2014 the derived values are still computed and compared on every bar after it.",
-  "_what_it_ran": "The shipped defaults: confirmation OFF, first target 3.5R, 80% banked there, 4% risk, $4 minimum stop, both sessions, both directions, execution hours on.",
-  "_exercise_check": "10 trades, 22 armed bars. \u26a0 Refusal codes 1, 5, 7 and 9 never fired, and FOUR features never ran at all \u2014 breakeven on an opposite shift, the time stop, the at-the-zone entry mode and the no-gap entry mode. The gate names every one of them on every run.",
-  "_fed_not_compared": "ONLY the 1-minute confirmation stream. The 15-minute direction stream and both previous-period levels are now REBUILT from the export's own 5-minute bars and compared like everything else. A 1-minute stream cannot be rebuilt from a 5-minute chart, which is why it is the one thing left \u2014 and why moving the confirmation to 5 minutes would close the gate completely, on a new export."
+  "_what_it_ran": "TWO exports of the same chart, and the FIRST is the one to run. It confirms on 5 minutes, which is the whole point: every stream the strategy reads is then rebuilt from the replayed bars and compared, and NOTHING is fed. The second confirms on 1 minute \u2014 the chart's shipped setting \u2014 and is kept because it gates that config, with the 1-minute stream fed. Both are the shipped defaults otherwise: confirmation OFF, first target 3.5R, 80% banked there, 4% risk, $4 minimum stop, both sessions, both directions, execution hours on.",
+  "_exercise_check": "10 trades on the 5m-confirmation export, reproduced bar for bar by the LAB path as well as by the gate: -1.0 x9 and +4.03, total -4.97R. \u26a0 Refusal codes 1, 5, 7 and 9 never fired, and FOUR features never ran \u2014 breakeven on an opposite shift, the time stop, the at-the-zone entry mode and the no-gap entry mode. The gate names every one on every run.",
+  "_fed_not_compared": "NOTHING, on the 5-minute-confirmation export. On the 1-minute one, only the confirmation stream \u2014 a 1-minute bar cannot be rebuilt from a 5-minute chart by any means."
 }

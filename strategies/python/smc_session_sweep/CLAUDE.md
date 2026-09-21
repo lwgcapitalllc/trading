@@ -17,7 +17,7 @@ condition, not unconditionally.** Read the condition before quoting anything.
 | 1 Spec | `docs/SMC_SESSION_SWEEP_SPEC.md` | ✅ |
 | 2 Pine | `strategies/tradingview/smc_session_sweep_strategy.pine` | ✅ |
 | 3 Export twin | `..._export.pine` | ✅ |
-| 4 Real CSV | `exports/golden/VANTAGE_XAUUSD_M5_20597bars.csv` | ✅ taken 2026-09-20 |
+| 4 Real CSV | two, in `exports/golden/` — `…conf5_20633bars.csv` (nothing fed) and `…20597bars.csv` (1m confirmation) | ✅ both 2026-09-20 |
 | 5 Python port | `config.py`, `core.py`, `structure.py`, `levels.py`, `strategy.py` | ✅ **runs in the lab** |
 | 6 Parity gate | `tools/compare_smc_session_sweep.py` | ✅ **exit 0** |
 
@@ -44,11 +44,14 @@ off the replayed bars themselves, so:
 wrong frame and reporting a different strategy from the one the chart trades.
 
 🔴 **So the SHIPPED config — confirmation on 1 minute — needs a 1-minute replay.** Running it on
-5-minute bars means moving the confirmation to 5, which is a real strategy change: it needs its
-own TradingView export and its own green gate before any number off it is believed. ⚠ **A
-5-minute-confirmation run has already been done locally and produced 10 trades at −4.97R over the
-3.5-month window. That figure is UNGATED at that config and must not be quoted as a result** — it
-is evidence the wiring works, nothing more.
+5-minute bars means moving the confirmation to 5, which is a real strategy change.
+
+✅ **That change is now GATED, on its own export taken 2026-09-20.** With the confirmation on the
+chart's own frame, **nothing is fed at all** — every stream the strategy reads is rebuilt from the
+replayed bars and compared, and the gate is green on 18,533 of 20,633 bars. The LAB path
+reproduces the Pine **trade for trade**: 10 trades, −1.0R nine times and +4.03R once, **−4.97R**
+total, identical on both sides. ⚠ That figure is a real measurement now, and it is also 3.5 months
+and 10 trades — a window, not an edge.
 
 ---
 
@@ -69,14 +72,14 @@ eleven-code block ladder, both sides' entry/stop/distance/targets — armed AND 
 minimum-stop floor, position sizing, the order lifecycle, the exit ladder, and the R of every
 closed trade.
 
-✅ **The 15-minute direction stream and both previous-period levels are now DERIVED and compared,
-not fed.** That is new on 2026-09-20 and it is most of the gate's new reach.
+✅ **On the 5-minute-confirmation export the gate feeds NOTHING.** Both structure streams and both
+previous-period levels are rebuilt from the replayed bars and compared. That is the complete
+version of this gate and it is the one to run.
 
-🔴 **Silent about ONE thing: the 1-minute confirmation stream.** `px_conf_*` is still fed, because
-a 1-minute bar cannot be recovered from a 5-minute chart by any means. It comes from
-`engines/market_structure/`, which carries its own gate; that file proves it and this one never
-will. ⚠ **An export taken with the confirmation on 5 minutes would close this last hole**, and it
-is the single most valuable thing a new export could do.
+⚠ **On the 1-minute-confirmation export the confirmation stream is still fed**, because a
+1-minute bar cannot be recovered from a 5-minute chart by any means. It comes from
+`engines/market_structure/`, which carries its own gate. That export is kept because it is the
+config the CHART trades.
 
 🔴 **FOUR features never ran in the window, so the gate says nothing about them**, and it prints
 all four on every run: breakeven on an opposite shift, the time stop, the at-the-zone entry mode,
