@@ -23,6 +23,7 @@ STRATEGIES: dict[str, str] = {
     "b_leg": "strategies.python.b_leg",
     "realign": "strategies.python.realign",
     "extreme_leg": "strategies.python.extreme_leg",
+    "fft": "strategies.python.fft",
 }
 
 

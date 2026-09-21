@@ -127,6 +127,14 @@ the fill). **It lifts the TP1 hit rate in both windows:** first leg 85.9% vs 77.
 vs +0.15R dev, +0.29R vs +0.13R recent — never worse. The swept level sitting at/past 61.8 adds
 nothing (10 / 3 trades). About 4 in 10 first-leg setups have a sweep.
 
+## The bot (2026-09-21, `strategies/python/fft/`)
+
+**Built and matched to this study trade for trade** (`strategies/python/fft/tools/compare_study.py`):
+157/157 trades and 2,644/2,644 first touches 2020-25, 34/34 and 494/494 in the last year. One
+position at a time costs nothing (0 of 191 trades overlap; median trade ~1 hour). Through PU Prime
+ECN with bid/ask fills: **+0.149R a trade over 152 (2020-25), +0.136R over 34 (last year).** Risk 5%
+a trade (the user). Not deployed yet.
+
 ## Version 1 through real costs, and on silver (2026-09-21, `--v1`)
 
 **Gold, PU Prime ECN** ($0.12 spread on a BID chart — a buy limit fills only when the ask reaches

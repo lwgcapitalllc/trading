@@ -55,6 +55,8 @@ EXPECTED_CLASS_NAMES = {
     # file is the fix that keeps not working: a roster stated once per file is still stated N times
     # across the repo, and nothing makes anyone read this one.
     "ExtremeLegStrategy",
+    # Added 2026-09-21 with `strategies/python/fft`, in the same change as the package.
+    "FftStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\

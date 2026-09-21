@@ -23,6 +23,8 @@ strategies/
 │   │                      technique and how to test it: docs/MOMENTUM_FILTER.md)
 │   ├── sos_fade/        (SOS Fade bot; own CLAUDE.md inside)
 │   ├── b_leg/            (B-LEG bot — the late-retrace setup, split out to run parallel to SOS Fade; own CLAUDE.md)
+│   ├── fft/              (FFT first fib touch, 1-minute bars; NO Pine twin by decision — proven against its
+│   │                      study instead; own CLAUDE.md)
 │   └── loss_recovery/       (NOT a strategy — a RULE that replays a counter-trade over another
 │                             strategy's losses. LAB ONLY, `enabled` defaults False, no Pine twin
 │                             and therefore no parity gate. Own CLAUDE.md)

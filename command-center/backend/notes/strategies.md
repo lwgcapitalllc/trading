@@ -348,3 +348,16 @@ take-profit, the trail frame, the weekend close) had no description, so the page
 They are described now, and the allowance for realign's undocumented settings fell 120 → 119.
 The summary lost the ratchet-trail bullet (the default moved to the plain swing trail) and folded
 the risk line into the entry bullet (breakeven stays in the always-shown stop bullet) — the summary check counts hidden bullets too, max seven.
+
+## FFT joined the roster and the documented-settings check on arrival (2026-09-21)
+
+`FftStrategy` (`strategies/python/fft/`, the FFT first-fib-touch bot) went into
+`tests/test_strategies.py`'s `EXPECTED_CLASS_NAMES` in the SAME commit as the package — the first
+new strategy to do so without the three roster tests going red first. `fft` also went straight into
+`tests/test_python_runner.py`'s `_DOCUMENTED_PACKAGES`, so every one of its settings must carry a
+`desc` in `fft.meta.json` from day one rather than joining the `_NOT_YET` ratchet.
+
+⚠ **It declares `suggested_bar_value: 1`, and the single-run form cannot offer that.** The form's
+bar-size presets are hard-coded (5/15/30/60/240) and it does not read the declaration; the backend
+and the replay accept a 1-minute job, and the strategy refuses any other frame by name. Until the
+form reads `suggested_bar_value`, an FFT lab run needs the frame set by hand.

@@ -1,0 +1,125 @@
+{
+  "_comment": "Editor UI metadata for FFT (First Fib Touch). Overlaid onto the schema built from FftConfig. UI ONLY — it never touches a trade decision. Click Scan Strategies after editing. There is no Pine file behind this strategy (1-minute bars cannot be exported from TradingView), so labels follow docs/FFT_SPEC.md's settings table rather than a Pine input panel. Descriptions are short and plain: what the setting does and what each choice means. The evidence behind each default lives in backtest/notes/fft_ledger.md.",
+  "edge": "The first pullback into the 61.8 after the 5-minute trend turns, with the 15-minute trend behind it and the 1-minute still pulling back — bought or sold on the first touch and held to the 38.2.",
+  "steps": [
+    {
+      "label": "01 · Trend",
+      "title": "15m and 5m agree",
+      "detail": "The 15-minute trend and the 5-minute trend point the same way, and the 5-minute is on its first leg since it turned."
+    },
+    {
+      "label": "02 · Pullback",
+      "title": "The 1m pulls back against them",
+      "detail": "The 1-minute trend runs the other way and has not broken back in the trade's direction since the 5-minute leg's high or low."
+    },
+    {
+      "label": "03 · Touch",
+      "title": "First touch of the 61.8",
+      "detail": "A limit rests at the 61.8 of the 5-minute fib. Only the first touch of each leg counts; a leg that crosses a weekend is skipped."
+    },
+    {
+      "label": "04 · Exit",
+      "title": "Stop at the 1.0, target the 38.2",
+      "detail": "The stop sits at the start of the leg and the target at the 38.2. Nothing is moved in between."
+    }
+  ],
+  "tldr": [
+    { "text": "Trades gold on 1-minute bars; the 5-minute and 15-minute are built from them." },
+    {
+      "text": "Buys (or sells) the first touch of the 61.8 on the 5-minute's first leg, with the 15-minute trend behind it and the 1-minute pulling back."
+    },
+    { "text": "Stop at the fib's 1.0, target the 38.2, one trade at a time." }
+  ],
+  "params": [
+    {
+      "name": "exec_longs",
+      "group": "What trades",
+      "core": true,
+      "label": "Trade longs",
+      "desc": "Take buy setups."
+    },
+    {
+      "name": "exec_shorts",
+      "group": "What trades",
+      "core": true,
+      "label": "Trade shorts",
+      "desc": "Take sell setups."
+    },
+    {
+      "name": "size_mode",
+      "group": "Sizing",
+      "core": true,
+      "label": "Position sizing",
+      "choices": ["Risk % of equity", "Fixed contracts"],
+      "desc": "Risk % of equity makes every trade the same size in risk terms. Fixed contracts uses the same quantity whatever the stop is."
+    },
+    {
+      "name": "exec_risk_pct",
+      "role": "risk_pct",
+      "group": "Sizing",
+      "core": true,
+      "unit": "%",
+      "label": "   ↳ Risk % per trade",
+      "desc": "How much of the account each trade risks, measured from the 61.8 to the stop.",
+      "show_if": { "size_mode": "Risk % of equity" }
+    },
+    {
+      "name": "fixed_qty",
+      "group": "Sizing",
+      "label": "   ↳ Contracts",
+      "desc": "The quantity used when sizing is set to fixed contracts.",
+      "show_if": { "size_mode": "Fixed contracts" }
+    },
+    {
+      "name": "max_bos",
+      "group": "The setup",
+      "core": true,
+      "label": "Max 5m continuation BOS",
+      "desc": "How many times the 5-minute may have broken structure again since it turned. 0 is the first leg only; -1 allows any number."
+    },
+    {
+      "name": "req_15m",
+      "group": "The setup",
+      "label": "15m trend must agree",
+      "widget": "toggle",
+      "desc": "Only trade in the direction of the 15-minute trend."
+    },
+    {
+      "name": "req_1m_against",
+      "group": "The setup",
+      "label": "1m against, no 1m break",
+      "widget": "toggle",
+      "desc": "The 1-minute trend must be running against the trade and must not have broken in the trade's direction since the leg's high or low."
+    },
+    {
+      "name": "skip_closure_legs",
+      "group": "The setup",
+      "label": "Skip a leg across a market closure",
+      "widget": "toggle",
+      "desc": "Skip a setup whose leg crosses a weekend or holiday, and never leave the order resting into one."
+    },
+    {
+      "name": "stop_level",
+      "group": "Stop & target",
+      "core": true,
+      "label": "Stop level",
+      "choices": ["1.0", "88.6"],
+      "desc": "Where the stop sits on the 5-minute fib. 1.0 is the start of the leg; 88.6 is tighter."
+    },
+    {
+      "name": "target",
+      "group": "Stop & target",
+      "core": true,
+      "label": "Target",
+      "choices": ["TP2 38.2", "TP1 50"],
+      "desc": "Where the trade takes profit on the 5-minute fib. TP2 is further and pays more per trade; TP1 is hit more often."
+    },
+    {
+      "name": "second_touch",
+      "group": "Stop & target",
+      "label": "Trade the second touch when flat",
+      "widget": "toggle",
+      "desc": "Also take the leg's second touch of the 61.8, once the first reached TP1 and no trade is open. Off: it is recorded but not traded."
+    }
+  ]
+}

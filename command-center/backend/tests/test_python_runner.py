@@ -250,7 +250,7 @@ def test_meta_json_matches_the_config_dataclass():
 # packages are locked clean, and the three others are named here with their counts rather than left
 # to be discovered. **Moving a package out of the un-covered list is the unit of work.** Do not add
 # a package to the clean list without running the scan above.
-_DOCUMENTED_PACKAGES = ("sos_fade", "extreme_leg", "loss_recovery")
+_DOCUMENTED_PACKAGES = ("sos_fade", "extreme_leg", "loss_recovery", "fft")
 _NOT_YET = {"b_leg": 98, "bos": 91, "realign": 119}
 
 
