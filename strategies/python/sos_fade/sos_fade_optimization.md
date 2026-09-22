@@ -4904,5 +4904,16 @@ the two defects the build caught: **`strategies/notes/flat-before-the-close.md`*
 
 - **The R rung loses at every distance.** Deeper drawdown and worse return per drawdown than the fib target.
 - **Grid `opt_2d74db78e9`, 108 combos:** target 1 at Auto/0.5/0.382/0, target 2 at Auto/0.382/0, and 0/25/50% banked at each. **Every pinned level lost to Auto.** Best profit factor was Auto/Auto with nothing banked (4.22). Pinning target 1 at 0.382 or 0.5 dropped it to 1.7–2.7, and target 1 at the 0 fib to about 2.3, with the win rate falling from 54% to 44%.
-- The grid stores no trades, so the Auto/Auto combos that bank at target 2 are being re-run in full for an R ranking. Result to follow below.
+- **Banking at target 2 too, re-run in full and ranked in R (2026-09-21), Auto levels, basis as above:**
+
+| Target 1 / Target 2 banked | Run | Total R | Max DD (R) | Return/DD |
+|---|---|---|---|---|
+| 0 / 25% | `dd339c103d9e` | 220.4 | 6.95 | 31.7 |
+| 0 / 50% | `ee3dab91aab1` | 205.9 | 6.60 | 31.2 |
+| 25% / 25% | `17cb0cc33654` | 198.6 | 5.98 | 33.2 |
+| 25% / 50% | `8c98553fd421` | 184.1 | 5.79 | 31.8 |
+| 50% / 25% | `2b48fcc775c0` | 176.9 | 5.69 | 31.1 |
+| 50% / 50% | `31fb4cb2dae7` | 102.8 | 8.32 | 12.4 |
+
+- **Verdict: bank 50% at target 1 and nothing at target 2 (33.6).** Banking at target 2 never adds return per drawdown. At 50/50 nothing is left to run, and it collapses.
 - **0.236 was not built.** Every earlier rung lost, and adding it is a fib engine change with its own parity gate.
