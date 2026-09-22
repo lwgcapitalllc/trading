@@ -35,3 +35,5 @@
 2026-09-22 03:18:33,796 [INFO] Equity re-anchored to the account after warm-up: 9,533.24 → 10,914.72
 2026-09-22 03:18:33,831 [INFO] Warmup ended holding a copy of T365501068, which is already closed (closed at the broker, no close row in the ledger). The strategy drops it on its next bar and the bot then trades normally. Nothing is opened.
 2026-09-22 03:18:34,766 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-22 03:45:03,685 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
+2026-09-22 03:45:03,685 [INFO] Equity re-anchored to the account flat between trades: 11,431.90 → 10,914.72
