@@ -814,6 +814,71 @@ def test_the_gap_trigger_refuses_when_the_setup_has_no_gap_to_enter_on():
     assert out.l_armed is False and out.l_edge is None
 
 
+def test_the_gap_gone_fallback_is_inert_when_it_is_off():
+    """The shipped book. With the fallback Off, a remembered entry price must change NOTHING —
+    a gap that is gone is still a refusal.
+
+    MUTATION: drop the mode test in `update`, so the fallback applies unconditionally, and this
+    goes red on the first assert."""
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low")
+    assert cfg.exec_sec_poi_fallback == "Off"
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=None, poi_last_l=102.8, **_GAP_KW)
+    assert out.l_armed is False and out.l_edge is None
+
+
+def test_the_gap_gone_fallback_rests_at_the_price_the_setup_already_published():
+    """Aaron's case, 2026-09-22: the primary took the gap, price came back to that entry, and the
+    gap itself no longer qualifies. With the fallback on, the re-entry rests where the primary
+    entered — the SAME price, never a re-derived one.
+
+    MUTATION: hand the fallback `_poi_edge_l` instead of `_poi_last_l` and the edge comes back
+    None, because the live edge is exactly what is missing here."""
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low", exec_sec_poi_fallback="Primary entry")
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=None, poi_last_l=102.8, **_GAP_KW)
+    assert out.l_armed is True
+    assert out.l_edge == 102.8          # the primary's own entry, remembered
+    assert out.l_sl == 101.5            # stop rule unchanged by the fallback
+
+
+def test_the_gap_gone_fallback_never_overrides_a_gap_that_is_still_there():
+    """A live gap wins. The fallback is a LAST resort, so where both exist the published edge is
+    the one that prices the trade — otherwise switching it on would silently re-price the trades
+    the gap half already takes.
+
+    MUTATION: make the fallback assign unconditionally and this goes red at 102.8 vs 102.2."""
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low", exec_sec_poi_fallback="Primary entry")
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=102.2, poi_last_l=102.8, **_GAP_KW)
+    assert out.l_edge == 102.2
+
+
+def test_the_gap_gone_fallback_still_obeys_the_primary_precondition():
+    """It widens WHERE a re-entry may rest, never WHICH setups qualify. A primary that never
+    reached breakeven still leaves no re-entry, remembered price or not.
+
+    MUTATION: apply the fallback after the gate instead of to the edge and this goes red."""
+    cfg = SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
+                        exec_sec_stop="swing low", exec_sec_poi_fallback="Primary entry")
+    kw = dict(_GAP_KW, be_sos_l=None)
+    out = SecondaryArm(cfg).update(_m1_quiet(conf_low=101.5), _SIG_LONG, _SEQ_LONG,
+                                   poi_edge_l=None, poi_last_l=102.8, **kw)
+    assert out.l_armed is False
+
+
+def test_an_unknown_fallback_value_refuses_rather_than_running_the_shipped_book():
+    """A typo must not read as 'Off'. Same rule as every other enum here: never let *cannot*
+    and *chose not to* be one value."""
+    import pytest
+    with pytest.raises(ValueError, match="exec_sec_poi_fallback"):
+        SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_trigger="FVG in zone",
+                      exec_sec_poi_fallback="primary entry")
+
+
 def test_the_gap_trigger_refuses_when_the_1m_swing_has_not_confirmed_yet():
     """No stop anchor is the same class of answer as no entry — refuse. Sizing is risk divided by
     stop distance, so an unnoticed fallback here is the 54-lot defect wearing a different hat."""
@@ -1537,7 +1602,7 @@ def test_the_contract_kills_exactly_the_rows_the_tests_above_pin():
     # each entry method's OWN stop rule is dead wherever that method is not in play. The gap's
     # pair survives the combined value because the gap half is still running there; the shift's
     # does not, because the structure shift is the plain value alone.
-    for n in ("exec_gap_be_r", "exec_gap_be_keep_r"):
+    for n in ("exec_gap_be_r", "exec_gap_be_keep_r", "exec_sec_poi_fallback"):
         assert dead_under(n) == {"Structure shift", "Reclaim Entry"}, n
     for n in ("exec_shift_be_r", "exec_shift_be_keep_r"):
         assert dead_under(n) == triggers - {"Structure shift"}, n
@@ -1547,7 +1612,7 @@ def test_the_contract_kills_exactly_the_rows_the_tests_above_pin():
     assert dead == {"exec_rec_require", "exec_rec_stop", "exec_rec_tp_r", "exec_rec_tp1_pct",
                       "exec_rec_be_r", "exec_rec_be_keep_r", "exec_rec_entry_mode",
                       "exec_sec_require", "exec_sec_stop", "exec_sec_tp_r", "exec_sec_tp1_pct",
-                      "exec_gap_be_r", "exec_gap_be_keep_r",
+                      "exec_gap_be_r", "exec_gap_be_keep_r", "exec_sec_poi_fallback",
                       "exec_shift_be_r", "exec_shift_be_keep_r",
                       "exec_sec_retrace", "exec_sl_deep"}, sorted(dead)
     # ⚠ The reason is still REQUIRED on every one, even though the editor no longer prints it
