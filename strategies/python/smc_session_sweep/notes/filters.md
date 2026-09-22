@@ -28,3 +28,24 @@ Reading:
 - The news calendar on this machine covers 2021-01 onward only; before that the filter cannot ask
   and allows every trade. So its +2.4R came from the covered years alone.
 - Next: test gap age on data it has never seen, with costs, before it goes anywhere near a chart.
+
+## Run 2 — 2026-09-21, is the gap-age filter real? (`tools/measure_filters.py`)
+
+Costs charged per trade after the replay: PU Prime ECN, measured, $0.14/oz round trip. No swap.
+Halves split at 2022-09-01. "Unseen" = bars after 2026-08-23, after the filter was chosen.
+
+| Feed | Run | Net R | Net PF | Max DD | 2018–22 net R | 2022–26 net R | Unseen |
+|---|---|---|---|---|---|---|---|
+| Vantage | baseline | +3.6 (71 tr) | 1.07 | -11.4 | +10.5 (17) | -6.9 (54) | no bars |
+| Vantage | age 10 / 30 / 60 / 100 | +12.5 (65) | 1.28 | -8.1 | +6.2 (13) | +6.2 (52) | no bars |
+| Vantage | age 200 | +4.1 (66) | 1.09 | -12.2 | +5.2 (14) | -1.1 (52) | no bars |
+| PU Prime | baseline | +3.8 (76) | 1.07 | -16.3 | +13.1 (19) | -9.3 (57) | -3.1 (3) |
+| PU Prime | age 60 | +11.3 (67) | 1.24 | -8.1 | +9.9 (14) | +1.4 (53) | -2.0 (2) |
+
+Reading:
+- NOT a tuned point: every limit from 10 to 100 bars gives the same trades. The kept gaps are all
+  under 10 bars old; the dropped ones are all over 100. The filter is a clean split, not a dial.
+- It holds on a second broker's feed after costs (+3.8R → +11.3R).
+- ⚠ It does NOT help in both halves: it costs ~4R in 2018–22 and earns it back in 2022–26.
+- 🔴 The strategy itself is still not tradeable. On the live broker's feed, 2022–26, with the filter,
+  it made +1.4R over 53 trades (PF 1.04). The four unseen weeks lost on both runs (2–3 trades — noise).
