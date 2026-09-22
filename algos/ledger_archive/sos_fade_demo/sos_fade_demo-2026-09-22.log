@@ -1,3 +1,20 @@
 2026-09-22 00:45:09,090 [INFO] move stop T365501068 4391.88 → 4369.63
 2026-09-22 01:10:10,009 [ERROR] HALTED: The strategy believes it is in a position but MT5 has none. Its resting limit filled in the emulator and not at the broker (or the position was closed outside the bot). Every later decision would be computed against a trade that does not exist.
 2026-09-22 01:15:02,813 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-22 01:30:09,907 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-22 01:38:33,098 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-22 01:38:33,098 [INFO] Stop requested — shutting down.
+2026-09-22 01:38:33,098 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-22 01:38:33,930 [INFO] MT5 disconnected.
+2026-09-22 01:42:33,011 [INFO] SOS Fade | SosFadeStrategy v323 | hash 5d47248899a7 | commit fa797704 | frozen | LIVE
+2026-09-22 01:42:33,559 [INFO] Connected | #34957946 | $10,914.72 | PUPrime-Live
+2026-09-22 01:42:33,559 [INFO] MT5 connection lock released
+2026-09-22 01:42:33,888 [INFO] Sizing against account balance $10,914.72
+2026-09-22 01:42:33,904 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-22 01:42:33,904 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-22 01:42:33,919 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-22 01:42:38,591 [INFO] Warmed 5000 bars (2026-07-07 14:00:00+00:00 → 2026-09-22 01:15:00+00:00) in 4.5s
+2026-09-22 01:42:42,803 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-07 14:10:00+00:00 → 2026-09-22 01:35:00+00:00).
+2026-09-22 01:42:42,803 [INFO] Equity re-anchored to the account after warm-up: 10,034.99 → 10,914.72
+2026-09-22 01:42:42,819 [WARNING] Warmup ended with the strategy holding a simulated position — its entry is in the past, so it will NOT be opened live. Waiting for it to close before placing anything.
+2026-09-22 01:42:44,055 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
