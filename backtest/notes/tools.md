@@ -25,6 +25,12 @@ CLAUDE.md gets at most one index line.
   that timestamp falls in. Rule 15 (what is this value's UNIT on each side of the boundary) and
   rule 1 (the clamp made *out of range* and *the last bar* one value). ⚠ **Re-run before quoting a
   per-year figure this tool produced for any run with `exec_secondary` on.**
+  - 🔴 **THE SAME TWO-CLOCK TRAP SURVIVED THE FIRST FIX, in `bars_held`.** A re-entry's entry and
+    exit indices BOTH count fast-feed bars, so their difference is a number of 5m bars sitting in a
+    column this tool's own archived README calls 15m bars. It is now **left EMPTY for a re-entry**
+    — a blank says *cannot state it in this frame*, which is true, where a number says something
+    false that nothing downstream can catch — and a new **`hours_held`** beside it is exact for
+    every trade on any frame. **Finding one instance of a unit bug is not finding the unit bug.**
   - `trades.csv` now carries **`kind`** (primary / secondary). Without it no reader could tell a
     15m setup from its re-entry, and the two are sized, stopped and targeted differently.
   - **`--server`** picks the broker cache to replay, same flag and meaning as `axis_sweep.py`'s.

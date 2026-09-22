@@ -593,7 +593,23 @@ def main(argv=None) -> int:
                 "entry_price": round(t.entry_price, 2),
                 "exit_price": round(t.exit_price, 2),
                 "stop_distance": round(t.stop_distance, 2),
-                "bars_held": t.exit_index - t.entry_index,
+                # 🔴 THE SAME TWO-CLOCK TRAP AS THE DATE ABOVE, AND IT SURVIVED THE FIRST FIX.
+                # A re-entry's `entry_index` and `exit_index` both count bars on the FAST feed, so
+                # their difference is a number of 5m bars sitting in a column every reader (and
+                # this tool's own archived README) calls 15m bars. **Left EMPTY for those trades
+                # rather than filled with the wrong unit** — a blank says *cannot state it in this
+                # frame*, which is true, where a number says something false in a way nothing can
+                # catch. `hours_held` beside it is exact for every trade whatever frame it ran on.
+                "bars_held": (
+                    t.exit_index - t.entry_index
+                    if getattr(t, "kind", "primary") == "primary"
+                    else ""
+                ),
+                "hours_held": (
+                    round((t.exit_ms - t.entry_ms) / 3_600_000.0, 2)
+                    if t.exit_ms and t.entry_ms
+                    else ""
+                ),
                 "mfe_usd": round(t.mfe_usd, 2),
                 "mae_usd": round(t.mae_usd, 2),
                 "mfe_r": round(t.mfe_usd / t.risk_usd, 3) if t.risk_usd else 0.0,
