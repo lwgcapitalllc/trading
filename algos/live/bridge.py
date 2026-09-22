@@ -1479,6 +1479,17 @@ class OrderBridge:
         self._observe_close(positions, dec, sig, owner="secondary")
         if self.state is BridgeState.HALTED:
             return
+        if (
+            self._pos_ticket is not None
+            and self._pos_intent == "primary"
+            and not any(p.ticket == self._pos_ticket for p in positions)
+        ):
+            # 🔴 **The 2026-09-22 live halt.** A PRIMARY position gone from the broker is booked by
+            # `sync`, which asks who closed it (`_why_not_manual`). This clock does not book it,
+            # so running `_agrees` here sees "strategy holds, broker empty" and halts on a hand
+            # close before the one path that can recognise it ever runs. Wait for the 15-minute
+            # close: the broker is flat, so there is nothing to protect, and this places nothing.
+            return
         self._observe_open(positions, dec, sig)
         self._observe_vanished()
         self._observe_orphans()

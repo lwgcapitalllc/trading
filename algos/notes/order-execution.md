@@ -799,6 +799,13 @@ Anything else — history unreadable, no closing deal yet, broker stop/target/st
 program, a partial, deals that do not add up, another of our positions still open — halts as
 before, and the halt now says which.
 
+🔴 **The 5-minute clock halted on a hand close anyway (live, 2026-09-22).** On a bot with the
+re-entry on, the fill clock runs every 5 minutes and also checks agreement, but only the 15-minute
+clock books a PRIMARY's close and asks who closed it. A hand close at 01:0x was seen first at
+01:10 by the fill clock, which halted with the generic "MT5 has none" and never asked. Now the fill
+clock returns when a primary's ticket has gone from the broker and leaves it to the 15-minute close
+(broker is flat, nothing placed meanwhile). Test: `test_a_hand_close_seen_FIRST_by_the_fill_clock_…`.
+
 **A restart or re-warm after a hand close no longer waits out a replayed copy (2026-09-17).** The
 warm-up rebuilds the strategy's position from bars, which know nothing of a hand close, so it used
 to end holding the closed trade and sit in WARMING until that copy's own exit (up to 36h). Now

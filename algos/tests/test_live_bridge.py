@@ -4550,6 +4550,23 @@ def test_a_FULL_hand_close_is_booked_as_yours_and_the_bot_keeps_trading(tmp_path
     assert any(a[0] == "place" for a in ops.actions), "it trades again"
 
 
+def test_a_hand_close_seen_FIRST_by_the_fill_clock_waits_for_the_15_minute_close(tmp_path):
+    """The 2026-09-22 live halt: the owner closed a primary short at 01:0x, the 5-minute clock
+    reached it at 01:10 — before the 15-minute clock that books primaries — and halted with
+    "MT5 has none", never asking who closed it. RED before: HALTED on the `sync_fast` call.
+    MUTATION: delete the vanished-primary return in `sync_fast` -> red."""
+    b, ops, ex, ledger, _n, ticket = _held_short(tmp_path)
+    _closed_by_hand(ops)
+    b.sync_fast(_fast_step())
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert not [kw for k, kw in ledger.rows if k == "closed"], "the primary clock books it"
+
+    b.sync(_Dec(stop=4352.44), _Sig())
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    closed = [kw for k, kw in ledger.rows if k == "closed"][0]
+    assert closed["reason"] == live_bridge.MANUAL_CLOSE_REASON and closed["ticket"] == ticket
+
+
 def test_a_hand_close_cancels_the_orders_tied_to_the_trade(tmp_path):
     b, ops, ex, _l, _n, _t = _held_short(tmp_path)
     b._rest[live_bridge.secondary_slot(-1)] = live_bridge._Rest(555, 4320.0, 0.07, 4352.44)
