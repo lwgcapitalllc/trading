@@ -51,7 +51,14 @@ import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { DATE_INDICATOR_CLS } from '@/lib/inputs'
 import { brokerName } from '@/lib/brokerName'
-import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
+import {
+  isNt8Runner,
+  platformBusyReason,
+  runnerScope,
+  runnerMarket,
+  runningJobFor,
+  RUNNER_LABEL,
+} from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
 import { DEFAULT_FOREX_RULESET_ID } from '@/lib/stressRuleset'
 import type {
@@ -1463,6 +1470,9 @@ function RunStressTestModal({
 }) {
   const runTest = useRunStressTest()
   const { data: rulesets } = useRulesets()
+  // A job can take the platform while this is open; the button follows it rather than a 409.
+  const { data: runningJob } = useRunningVpsJob()
+  const busy = platformBusyReason(runningJob, run.runner)
 
   // 🔴 The STRICTEST ruleset, not `evaluations[0]`. The auto-trigger has always picked the tightest
   // drawdown limit (excluding personal/demo, whose `max_loss_eod = 0` is a sentinel and would win a
@@ -1627,7 +1637,8 @@ function RunStressTestModal({
                 }
               )
             }}
-            disabled={runTest.isPending}
+            disabled={runTest.isPending || !!busy}
+            title={busy ?? undefined}
             className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"
           >
             {runTest.isPending ? 'Starting…' : 'Run Stress Test'}
@@ -3871,6 +3882,7 @@ export function BacktestDetail() {
       ? (stressLock?.futures ?? false)
       : (stressLock?.forex ?? false)
   const jobBusy = !!runningJobFor(runningJob, run?.runner)?.running
+  const stressBusy = platformBusyReason(runningJob, run?.runner)
 
   // Rerun / full-backtest. For an optimizer combo with no inheritable ruleset the backend replies
   // status="needs_ruleset" instead of starting — we then open a picker and re-fire with the choice.
@@ -4149,15 +4161,18 @@ export function BacktestDetail() {
                     return (
                       <button
                         onClick={() =>
-                          !stressBlocked && !tooFewForStress && setShowStressModal(true)
+                          !stressBlocked &&
+                          !tooFewForStress &&
+                          !stressBusy &&
+                          setShowStressModal(true)
                         }
-                        disabled={stressBlocked || tooFewForStress}
+                        disabled={stressBlocked || tooFewForStress || !!stressBusy}
                         title={
                           tooFewForStress
                             ? `Needs ≥${MIN_TRADES_FOR_STRESS} trades to stress test — this run has ${tc}. Get more trades from more data first (longer period, more instruments, or a smaller timeframe).`
                             : stressBlocked
                               ? `A ${runnerMarket(run?.runner)} stress test is already running`
-                              : undefined
+                              : (stressBusy ?? undefined)
                         }
                         className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
                       >

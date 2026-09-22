@@ -344,3 +344,14 @@ Both detail pages use an identical `ProgressCard` sub-component with:
 `useElapsed(startIso, endIso, running)` — counts up live when `running`, freezes at final duration when done, and returns **`null`** when a finished job has no `completed_at` (the caller draws `—`). ⚠ It must never fall back to `Date.now()` for a finished job: a failed optimization then reads `Ran for 74h` and keeps climbing, which is how a job that died on Tuesday looked like a job still running.
 
 Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBacktest().mutate(run.run_id)`. Spinner activates on the specific row via `retryRun.variables === run.run_id`. `e.stopPropagation()` prevents the row-click navigation from firing.
+
+## Stress Test greys out while its platform is busy (2026-09-22)
+
+Stress Test on a run page and on a stack page, and the Run button inside both stress forms, now
+grey out while that platform's slot is taken, with the reason on hover ("A Python job is already
+running…"). Before, a Python stack could hold the slot while Stress Test stayed pressable, and its
+one outcome was a 409. The reason comes from one helper in `src/lib/runner.ts`, worded like the
+backend's refusal. Rerun, Optimize and "Run this free" already followed the same flag.
+⚠ A browser test that opens a stress form off the REAL lab must state the platform free: whether a
+job is running is the live lab's state, and `stress.spec.ts` went red on a day a stack was running.
+Pinned in `tests/stress-busy.spec.ts` (run page); the stack page is type-checked, not browser-driven.
