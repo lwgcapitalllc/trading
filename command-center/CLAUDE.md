@@ -81,6 +81,10 @@ shape is to STAMP each run with the commit that produced it**, so a stale result
 instead of a guard deciding when to interrupt work. Neither is built; this paragraph is the whole
 of the protection.
 
+🔴 **The flip side: ANY `.py` edit under `backend/` — a test file included — restarts the server and
+kills every running job** ("Backend restarted mid-run"). Check `GET /backtests/running-job` before
+editing there. *(2026-09-22: a test edit killed a user's 4-strategy stack mid-replay.)*
+
 ⚠ **This is the same failure shape the doc-size guard's own notes name: silence read as
 checked.** A run made on stale code has a green status, a full chart and a KPI row. Nothing in a
 result can show you which code produced it.

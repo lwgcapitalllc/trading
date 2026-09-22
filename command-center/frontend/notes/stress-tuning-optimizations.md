@@ -354,4 +354,6 @@ one outcome was a 409. The reason comes from one helper in `src/lib/runner.ts`, 
 backend's refusal. Rerun, Optimize and "Run this free" already followed the same flag.
 ⚠ A browser test that opens a stress form off the REAL lab must state the platform free: whether a
 job is running is the live lab's state, and `stress.spec.ts` went red on a day a stack was running.
-Pinned in `tests/stress-busy.spec.ts` (run page); the stack page is type-checked, not browser-driven.
+Pinned in `tests/stress-busy.spec.ts` on both the run page and the stack page, each watched red. Both
+helpers wait for the button to EXIST before asking if it is enabled: a stack replaying in the same
+backend slows every page past a 5s check.

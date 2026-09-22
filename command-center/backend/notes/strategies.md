@@ -371,3 +371,10 @@ Iterating the object gave bare strings and one `.get` on a string raised, so the
 malformed, which its docstring always promised is a no-op. The file was converted to the contract
 (content unchanged; the summary split into four lines with its numbers read from the settings, and
 its risk setting marked). Tests: `tests/test_param_meta_shape.py`.
+
+## A retired setting is hidden for that reason, not for "never swept" (2026-09-22)
+
+`tests/test_param_gates.py` listed "Flat by close" among the settings that must stay visible because
+no valid sweep stands behind hiding them. It was then RETIRED for "Flat before the close" (2d7abd03)
+and hidden, and the test went red. Retirement is a second, separate reason to hide; it is pinned on
+its own, with the replacement asserted visible.

@@ -312,9 +312,24 @@ test.describe('Backtest detail — captions and rules', () => {
     // A short answer made `active` false, and `active` false renders as "Charging nothing" with
     // the reader's boxes still ticked — the same failure the isError fix exists to have stopped,
     // one branch over.
+    // 🔴 A run charged NOTHING, not just the newest python one. The pill renders only while
+    // re-pricing can still ADD a charge, and runs are charged by default since 2026-08-24 — so
+    // `runs.find(python)` went red the day the newest run was a charged one (2026-09-22), with the
+    // page right and the fixture wrong. The list carries no cost layers, so each candidate is
+    // opened, OLDEST first: the uncharged runs are the ones from before that default.
     const runs = await getJson<BacktestSummary[]>('/backtests/runs')
-    const run = runs.find((r) => r.status === 'complete' && r.runner === 'python')
-    if (!run) test.skip(true, 'needs a completed python run')
+    const candidates = runs
+      .filter((r) => r.status === 'complete' && r.runner === 'python' && (r.trade_count ?? 0) > 0)
+      .reverse()
+    let run: BacktestSummary | undefined
+    for (const r of candidates) {
+      const detail = await getJson<{ cost_layers: string[] | null }>(`/backtests/runs/${r.run_id}`)
+      if (Array.isArray(detail.cost_layers) && detail.cost_layers.length === 0) {
+        run = r
+        break
+      }
+    }
+    if (!run) test.skip(true, 'needs a completed python run that was charged nothing')
 
     await page.route(
       (u) => u.pathname.includes('/repriced'),
@@ -339,7 +354,9 @@ test.describe('Backtest detail — captions and rules', () => {
     await page.locator('button', { hasText: 'Spread' }).first().click()
 
     await expect(page.locator('button', { hasText: /unpriced/ })).toBeVisible()
-    await expect(page.getByText(/came back unpriced/)).toBeVisible()
+    // The sentence was reworded in 446a95e4 ("came back unpriced" → this); the rule it states —
+    // a short answer charges NOTHING rather than a partial book — is unchanged.
+    await expect(page.getByText(/could not be priced, so nothing is charged/)).toBeVisible()
   })
 
   test('a failed run offers exactly ONE Retry, and it is not on the banner', async ({ page }) => {

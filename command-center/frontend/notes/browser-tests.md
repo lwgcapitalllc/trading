@@ -331,3 +331,10 @@ hand-written fixture drifts from the backend's model and then pins a shape the s
 inside 30s (measured: the mocked route was hit exactly once), and **`page.goto` is a full page
 load** that destroys the query cache entirely. Any test about *stale data still on screen* must
 therefore wait out the real poll — which is why one test is 65s and says so.
+
+## A fixture picked by "the newest run of a kind" rots when a default changes (2026-09-22)
+
+The re-price test in `backtests.spec.ts` took the newest complete python run. Since charging became
+the default (2026-08-24) the newest is a charged run, on which the re-price pill correctly never
+renders — so the test went red with the page right. It now opens candidates OLDEST first and takes
+one charged nothing. **Pick a live fixture by the property the check needs, never by recency.**

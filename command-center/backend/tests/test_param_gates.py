@@ -344,9 +344,19 @@ def test_a_param_that_was_never_SWEPT_is_not_hidden_on_the_strength_of_never_mov
         "aplus_window",
         "exec_sec_once_per_setup",
         "exec_sec_retrace",
-        "flat_by_close",
     ):
         assert not by[n].get("hidden"), f"{n} has no valid sweep behind it and must stay visible"
+
+
+def test_a_RETIRED_setting_is_hidden_and_its_replacement_is_not():
+    """`flat_by_close` sat in the list above until 2026-09-22, and went red the day it was
+    RETIRED (2d7abd03) for the three-way `flat_mode`. Retired is not "proven by a sweep" — it is
+    a second, separate reason to hide, and the one it replaced must then be the visible control.
+    MUTATION: hide `flat_mode` too, and the reader has no way left to set the close rule."""
+    by = {p["name"]: p for p in _params()}
+    assert by["flat_by_close"].get("hidden")
+    assert "RETIRED" in by["flat_by_close"]["desc"]
+    assert not by["flat_mode"].get("hidden")
 
 
 def test_the_money_number_is_never_hidden():
