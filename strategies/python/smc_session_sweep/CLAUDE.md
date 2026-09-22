@@ -8,6 +8,9 @@ Neither is restated here.
 **Status:** 🟡 **Parity GREEN 2026-09-20, and REGISTERED in the lab the same day — on a frame
 condition, not unconditionally.** Read the condition before quoting anything.
 
+⚠ **Seven setup filters with no Pine input exist, all OFF and forced off by the gate.** What each
+measured, and which one survived: `notes/filters.md`.
+
 ---
 
 ## What exists, and what does not

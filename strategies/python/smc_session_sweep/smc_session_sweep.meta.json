@@ -51,7 +51,6 @@
       "core": true,
       "widget": "toggle"
     },
-
     "pb_require_conf": {
       "label": "Require a lower-timeframe change of character",
       "desc": "On: after the level is taken, wait for the smaller timeframe to turn our way. Off: enter on the sweep alone, at worse prices. The course has this ON. It ships OFF because that is what the chart is trading — turn it on to compare.",
@@ -73,7 +72,9 @@
       "group": "2 · The shift of structure",
       "widget": "select",
       "choices": ["Before the zone (rest a limit)", "At the zone (enter at market)"],
-      "show_if": { "pb_require_conf": true }
+      "show_if": {
+        "pb_require_conf": true
+      }
     },
     "exec_be_on_shift": {
       "label": "Stop to breakeven when the confirmation timeframe shifts AGAINST the trade",
@@ -81,7 +82,6 @@
       "group": "2 · The shift of structure",
       "widget": "toggle"
     },
-
     "pb_poi_tf": {
       "label": "Point of interest — timeframe the zone is found on",
       "desc": "Which timeframe the entry gap is found on. The course uses 5. Off means no gap is needed at all — you enter at market the moment the confirmation timeframe turns, with the stop behind the sweep. Off does nothing unless confirmation is required.",
@@ -95,9 +95,10 @@
       "desc": "On: skip any gap price has already traded back into. Off takes more trades at worse prices.",
       "group": "3 · The entry zone",
       "widget": "toggle",
-      "show_if": { "pb_poi_tf": ["1", "3", "5", "15"] }
+      "show_if": {
+        "pb_poi_tf": ["1", "3", "5", "15"]
+      }
     },
-
     "exec_tp1_mode": {
       "label": "Target 1 — what the first target IS",
       "desc": "Fixed R puts the first target at a multiple of your risk, which is what the course does. Nearest level uses yesterday's or last week's high or low.",
@@ -114,7 +115,9 @@
       "core": true,
       "step": 0.5,
       "guide": ["fewer, larger winners", "more, smaller winners"],
-      "show_if": { "exec_tp1_mode": "Fixed R" }
+      "show_if": {
+        "exec_tp1_mode": "Fixed R"
+      }
     },
     "exec_tp1_pct": {
       "label": "% banked at the first target",
@@ -136,7 +139,6 @@
       "group": "4 · Targets",
       "widget": "toggle"
     },
-
     "exec_use_windows": {
       "label": "Only execute inside the course's hours",
       "desc": "Only take trades during the hours below. Orders waiting outside them are cancelled.",
@@ -149,16 +151,19 @@
       "desc": "New York clock. Our London session starts at 3am, so the first hour of the default 2am-5am window can never trade — that hour is the Frankfurt open, and Frankfurt is a session this strategy does not model.",
       "group": "5 · Execution hours",
       "widget": "time",
-      "show_if": { "exec_use_windows": true }
+      "show_if": {
+        "exec_use_windows": true
+      }
     },
     "exec_win_ny": {
       "label": "New York hours (New York clock)",
       "desc": "New York clock. Our New York session starts at 8am, so the first hour of the default 7am-10am window can never trade. Effective window is 8am-10am.",
       "group": "5 · Execution hours",
       "widget": "time",
-      "show_if": { "exec_use_windows": true }
+      "show_if": {
+        "exec_use_windows": true
+      }
     },
-
     "pb_trade_longs": {
       "label": "Trade longs",
       "desc": "Off means shorts only.",
@@ -186,7 +191,9 @@
       "core": true,
       "step": 0.25,
       "guide": ["smaller swings", "larger swings"],
-      "show_if": { "exec_size_mode": "Risk % of equity" }
+      "show_if": {
+        "exec_size_mode": "Risk % of equity"
+      }
     },
     "exec_fixed_qty": {
       "label": "Contracts",
@@ -194,9 +201,10 @@
       "unit": "contracts",
       "group": "6 · What trades, and how big",
       "step": 0.01,
-      "show_if": { "exec_size_mode": "Fixed contracts" }
+      "show_if": {
+        "exec_size_mode": "Fixed contracts"
+      }
     },
-
     "pb_struct_len": {
       "label": "Structure pivot length",
       "desc": "How the swing highs and lows are first found. Mostly affects warm-up. Leave it alone.",
@@ -256,7 +264,9 @@
       "unit": "R",
       "group": "7 · Choices the method leaves open",
       "step": 0.5,
-      "show_if": { "exec_tp1_mode": "Nearest liquidity level" }
+      "show_if": {
+        "exec_tp1_mode": "Nearest liquidity level"
+      }
     },
     "exec_min_rr": {
       "label": "Minimum reward:risk to the first target",
@@ -264,7 +274,6 @@
       "group": "7 · Choices the method leaves open",
       "step": 0.25
     },
-
     "exec_min_stop_mode": {
       "label": "Minimum stop distance",
       "desc": "Refuse a trade whose stop is too close to the entry. A tiny stop means a huge position, not small risk.",
@@ -279,7 +288,9 @@
       "group": "8 · Safety filters that REFUSE a setup",
       "core": true,
       "step": 0.01,
-      "show_if": { "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"] }
+      "show_if": {
+        "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"]
+      }
     },
     "pb_poi_max_atr": {
       "label": "Maximum distance to the zone (x ATR14)",
@@ -294,7 +305,6 @@
       "group": "8 · Safety filters that REFUSE a setup",
       "step": 1
     },
-
     "tick_size": {
       "label": "Tick size",
       "desc": "The instrument's smallest price move — one cent on gold. A platform fact, not a strategy choice.",
@@ -313,6 +323,54 @@
       "unit": "$",
       "group": "9 · Instrument",
       "step": 1000
+    },
+    "htf_trend_tf": {
+      "label": "Slower trend must agree",
+      "desc": "🔴 NOT IN THE PINE — no chart can produce it, so the parity gate forces it off and says so on every run. Turning it on makes this a DIFFERENT strategy from the one the chart trades, and a number off it may not be compared with a gated one. A second, slower trend read that must agree before anything trades. Every measured run of this strategy leaned short through a market that tripled; this is the direct test of whether that is the whole problem. ⚠ It must be a whole multiple of the replayed bar frame.",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "core": true,
+      "widget": "select",
+      "choices": ["Off", "60", "240"]
+    },
+    "poi_max_age_bars": {
+      "label": "Refuse a gap older than N bars",
+      "desc": "🔴 NOT IN THE PINE — forced off by the parity gate. 0 = no limit. The course grades a point of interest by whether it belongs to the move that swept; an old gap price happens to be near is a different object from the one the sweep created.",
+      "unit": "bars",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "step": 1,
+      "guide": ["only fresh gaps", "any gap"]
+    },
+    "poi_min_size_atr": {
+      "label": "Refuse a gap thinner than N x ATR(14)",
+      "desc": "🔴 NOT IN THE PINE — forced off by the parity gate. 0 = no limit. A thin gap means a thin stop, which the minimum-stop floor already refuses — this refuses it as a QUALITY judgement instead, and the two will overlap.",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "step": 0.1
+    },
+    "poi_max_size_atr": {
+      "label": "Refuse a gap fatter than N x ATR(14)",
+      "desc": "🔴 NOT IN THE PINE — forced off by the parity gate. 0 = no limit. A very wide gap is usually a news candle rather than an imbalance anyone will defend.",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "step": 0.5
+    },
+    "ob_confluence": {
+      "label": "Gap must sit on an order block",
+      "desc": "🔴 NOT IN THE PINE — forced off by the parity gate. Refuse unless the gap overlaps a live order block on its own side. Measured 2026-09-21: cut 71 trades to 10 and lost money.",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "widget": "toggle"
+    },
+    "news_before_min": {
+      "label": "News blackout — minutes before",
+      "desc": "🔴 NOT IN THE PINE — forced off by the parity gate. Stand aside this long before a high-impact USD release. The calendar only covers the dates this machine has cached; outside them the filter cannot ask and allows the trade.",
+      "unit": "min",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "step": 5
+    },
+    "news_after_min": {
+      "label": "News blackout — minutes after",
+      "desc": "🔴 NOT IN THE PINE — forced off by the parity gate. Stand aside this long after a high-impact USD release.",
+      "unit": "min",
+      "group": "11 · PINE-LESS filters (measure, do not assume)",
+      "step": 5
     }
   }
 }

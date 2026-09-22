@@ -32,7 +32,7 @@ _ROOT = Path(__file__).resolve().parents[4]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from strategies.python.smc_session_sweep.config import SessionSweepConfig  # noqa: E402
+from strategies.python.smc_session_sweep.config import PINE_LESS, SessionSweepConfig  # noqa: E402
 from strategies.python.smc_session_sweep.core import BarInput, SessionSweepCore  # noqa: E402
 from strategies.python.smc_session_sweep.levels import PrevPeriodLevels  # noqa: E402
 from strategies.python.smc_session_sweep.structure import derive_stream  # noqa: E402
@@ -105,6 +105,10 @@ BLOCK_WHY = {
     9: "no target far enough away to be worth the risk",
     10: "already in a trade, an order waiting, or this session already traded",
     11: "outside the execution hours",
+    12: "the slower trend disagrees (PINE-LESS, off in any gated run)",
+    13: "the gap failed the quality grading (PINE-LESS, off in any gated run)",
+    14: "inside a news blackout (PINE-LESS, off in any gated run)",
+    15: "the gap sits on no order block (PINE-LESS, off in any gated run)",
 }
 
 
@@ -320,6 +324,11 @@ def main() -> int:
     if missing:
         print(f"              ⚠ never fired, so proven by nothing: {missing}")
 
+    forced = [f for f in PINE_LESS if getattr(cfg, f) not in ("Off", 0, 0.0)]
+    print("pine-less filters (no chart can produce them, so the gate FORCES them off):")
+    print("              " + ", ".join(PINE_LESS))
+    print("              " + ("⚠ " + ", ".join(forced) + " were NOT off — the gate is comparing two strategies"
+                              if forced else "all off, so the gated run IS the shipped run"))
     print("derived streams (computed from the chart's bars, then compared):")
     print(f"              direction {dir_min}m from a {chart_min}m chart — "
           + (f"⚠ {len(dir_bad)} disagreement(s)" if dir_bad else "agrees on every compared bar"))

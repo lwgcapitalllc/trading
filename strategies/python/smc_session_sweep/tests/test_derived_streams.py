@@ -205,3 +205,54 @@ def test_the_lab_path_reproduces_the_pine_trade_for_trade():
     assert len(lab_r) == len(pine_r) > 0, f"lab booked {len(lab_r)}, pine closed {len(pine_r)}"
     for i, (a, b) in enumerate(zip(lab_r, pine_r)):
         assert abs(a - b) < 0.01, f"trade {i}: lab {a:.3f}R vs pine {b:.3f}R"
+
+
+def _replay_core(cfg, **extra):
+    """Drive the core off the golden export with extra per-bar inputs; return trades booked."""
+    rows = _rows()
+    core = SessionSweepCore(cfg)
+    t, o, h, low, c = _series(rows)
+    dir_stream = derive_stream(t, o, h, low, c, 15, 5, cfg.pb_struct_len)
+    lv = PrevPeriodLevels()
+    for i, r in enumerate(rows):
+        lv.update(t[i], h[i], low[i])
+        core.step(BarInput(
+            time_ms=t[i], open=o[i], high=h[i], low=low[i], close=c[i],
+            dir_dir=dir_stream.direction[i],
+            conf_dir=int(float(r["px_conf_dir"])) if r["px_conf_dir"] else 0,
+            conf_shifted=False,
+            pdh=lv.pdh, pdl=lv.pdl, pwh=lv.pwh, pwl=lv.pwl,
+            **extra,
+        ))
+    return len(core.trades)
+
+
+def test_a_news_blackout_refuses_and_an_unknown_calendar_does_not():
+    """True refuses every setup; None ("could not ask") must trade exactly as the baseline.
+
+    RED when: the blackout refusal is removed from the ladder (the True assert fails, 10 != 0), or
+    the check is written `is not False` so an unknown calendar refuses (the baseline itself drops
+    to zero). Both mutations watched fail 2026-09-21.
+    """
+    rows = _rows()
+    cfg = SessionSweepConfig.from_export(rows[len(rows) // 2])
+    base = _replay_core(cfg)
+    assert base > 0, "the baseline closed no trades — this test would prove nothing"
+    assert _replay_core(cfg, news_blackout=True) == 0
+    assert _replay_core(cfg, news_blackout=None) == base
+    assert _replay_core(cfg, news_blackout=False) == base
+
+
+def test_the_order_block_filter_refuses_without_a_block_and_is_inert_when_off():
+    """No live block anywhere refuses every setup; a block covering all prices refuses none.
+
+    RED when: the order-block refusal is removed from the ladder, or the overlap test is inverted
+    — either way the no-block run trades (10 != 0). Both mutations watched fail 2026-09-21.
+    """
+    rows = _rows()
+    cfg = SessionSweepConfig.from_export(rows[len(rows) // 2])
+    base = _replay_core(cfg)
+    cfg.ob_confluence = True
+    assert _replay_core(cfg, ob_bull=(), ob_bear=()) == 0
+    everywhere = ((1e9, 0.0),)
+    assert _replay_core(cfg, ob_bull=everywhere, ob_bear=everywhere) == base

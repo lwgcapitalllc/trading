@@ -23,6 +23,8 @@ from typing import Any, Optional
 
 from backtest.replay.stack import EngineConfig
 
+from strategies.python.extreme_leg.filters import REFUSE, UNKNOWN, NewsCut
+
 from .config import SessionSweepConfig
 from .core import BarInput, SessionSweepCore
 from .levels import PrevPeriodLevels
@@ -85,11 +87,18 @@ class SessionSweepStrategy:
         self.execution = _Execution(self.core)
         self.levels = PrevPeriodLevels()
         self._dir_stream: Optional[ResampledStructure] = None
+        self._htf_stream: Optional[ResampledStructure] = None
         self._chart_min: Optional[int] = None
         #: The first bar, HELD rather than dropped. The chart's frame is only knowable once two
         #: timestamps exist, and a strategy that quietly skips bar 0 is a strategy whose first
         #: session is missing from every run it will ever produce.
         self._held = None
+        #: The news filter is the extreme leg's own, reused rather than rebuilt — same policy
+        #: (high-impact USD, holidays blocked), same three-way answer. Its counts are the proof it
+        #: was connected: `asked` says it ran, `unknown_count` says how often it could not see.
+        self.news: Optional[NewsCut] = None
+        if cfg.news_before_min > 0 or cfg.news_after_min > 0:
+            self.news = NewsCut(cfg.news_before_min, cfg.news_after_min, "XAUUSD")
 
     # ── the lab's contract ────────────────────────────────────────────────────────────
 
@@ -101,7 +110,8 @@ class SessionSweepStrategy:
         stack builds only what its config asks for, so this costs no per-bar work for engines this
         strategy never consults.
         """
-        return EngineConfig(major_length=self.config.pb_struct_len)
+        return EngineConfig(major_length=self.config.pb_struct_len,
+                            order_blocks=self.config.ob_confluence)
 
     def step(self, bar_state):
         bar = bar_state.bar
@@ -119,6 +129,10 @@ class SessionSweepStrategy:
             self._dir_stream = ResampledStructure(
                 int(self.config.pb_dir_tf), self._chart_min, self.config.pb_struct_len
             )
+            if self.config.htf_trend_tf != "Off":
+                self._htf_stream = ResampledStructure(
+                    int(self.config.htf_trend_tf), self._chart_min, self.config.pb_struct_len
+                )
             held, self._held = self._held, None
             self._feed(held)          # the held bar goes through FIRST, in order
 
@@ -132,7 +146,22 @@ class SessionSweepStrategy:
         # ⚠ The levels advance BEFORE the core steps, so a bar sees the previous period's
         # extreme — the same thing `lookahead_on` gives the Pine, and no bar that has not closed.
         self.levels.update(ms, bar.high, bar.low)
+        htf_dir = 0
+        if self._htf_stream is not None:
+            htf_dir, _ = self._htf_stream.update(ms, bar.open, bar.high, bar.low, bar.close)
         lv = self.levels
+        ob_bull = ob_bear = None
+        if self.config.ob_confluence:
+            obe = bar_state.order_blocks
+            if obe is None:
+                raise RuntimeError("the order-block filter is on but the stack built no order "
+                                   "blocks — refusing rather than letting every setup through")
+            ob_bull = tuple((o.top, o.bottom) for o in obe.active_bull)
+            ob_bear = tuple((o.top, o.bottom) for o in obe.active_bear)
+        blackout = None
+        if self.news is not None:
+            ans = self.news.ask(bar.index, ms)
+            blackout = None if ans == UNKNOWN else (ans == REFUSE)
         return self.core.step(BarInput(
             time_ms=ms,
             open=bar.open, high=bar.high, low=bar.low, close=bar.close,
@@ -140,12 +169,18 @@ class SessionSweepStrategy:
             conf_dir=bar_state.snapshot.direction,
             conf_shifted=bool(ev.bull_sos or ev.bear_sos),
             pdh=lv.pdh, pdl=lv.pdl, pwh=lv.pwh, pwl=lv.pwl,
+            htf_dir=htf_dir,
+            ob_bull=ob_bull, ob_bear=ob_bear,
+            news_blackout=blackout,
         ))
 
     # ── the refusals ──────────────────────────────────────────────────────────────────
 
     def _check_reachable(self, chart_min: int) -> None:
-        for name, tf in (("direction", self.config.pb_dir_tf), ("confirmation", self.config.pb_conf_tf)):
+        pairs = [("direction", self.config.pb_dir_tf), ("confirmation", self.config.pb_conf_tf)]
+        if self.config.htf_trend_tf != "Off":
+            pairs.append(("slower trend", self.config.htf_trend_tf))
+        for name, tf in pairs:
             minutes = int(tf)
             if minutes % chart_min != 0:
                 raise ValueError(

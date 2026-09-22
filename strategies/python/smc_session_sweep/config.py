@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 __all__ = ["SessionSweepConfig", "TP1_MODES", "SIZE_MODES", "CONF_WHEN", "ZONE_ENTRY",
-           "STOP_FROM", "MIN_STOP_MODES"]
+           "STOP_FROM", "MIN_STOP_MODES", "PINE_LESS"]
 
 TP1_MODES = ("Fixed R", "Nearest liquidity level")
 SIZE_MODES = ("Risk % of equity", "Fixed contracts")
@@ -29,6 +29,11 @@ CONF_WHEN = ("Before the zone (rest a limit)", "At the zone (enter at market)")
 ZONE_ENTRY = ("Proximal edge", "Midpoint", "Distal edge")
 STOP_FROM = ("The gap", "The sweep extreme")
 MIN_STOP_MODES = ("Off", "% of price", "Fixed $", "x ATR(14)")
+
+#: Fields with NO Pine input behind them. The parity gate forces each back to its default and
+#: says so, because a field the export cannot carry is a field the gate can never check.
+PINE_LESS = ("htf_trend_tf", "poi_max_age_bars", "poi_min_size_atr", "poi_max_size_atr",
+             "ob_confluence", "news_before_min", "news_after_min")
 
 
 @dataclass
@@ -91,6 +96,52 @@ class SessionSweepConfig:
     exec_min_stop_val: float = 4.0              # execMinStopVal
     pb_poi_max_atr: float = 0.0                 # pbPoiMaxAtr
     exec_time_stop_hrs: float = 0.0             # execTimeStopHrs
+
+    # ══ FILTERS THE PINE DOES NOT HAVE ═══════════════════════════════════════════════
+    # 🔴 Every field below is PINE-LESS, and that is a different KIND of setting from every
+    # other one here. No chart can produce them, so no export carries them and the parity gate
+    # can never check them — `from_export()` forces them back to these defaults and the gate
+    # prints that it did. They all ship OFF, so the shipped bot IS the gated bot until somebody
+    # turns one on deliberately.
+    #
+    # ⚠ **Turning one on makes the run a different strategy from the chart**, and a number off
+    # it may not be compared with a number from a gated run. They exist to be MEASURED — the
+    # strategy's problem is which setups it takes, and these are the two cheapest tests of that.
+    #
+    # ⚠ Their refusal codes are 12 to 15, appended AFTER the Pine's eleven rather than inserted
+    # in the order they logically belong. Inserting would renumber the Pine's codes and every
+    # `px_blk_*` comparison with them.
+
+    #: A SECOND, slower trend read that must agree before anything trades. "Off", or minutes.
+    #: Every measured run of this strategy leaned short through a market that tripled; this is
+    #: the direct test of whether that is the whole problem.
+    htf_trend_tf: str = "Off"
+
+    #: Refuse a gap older than this many bars at the moment the setup arms. 0 = no limit. The
+    #: course grades a point of interest by whether it belongs to the move that swept — an old
+    #: gap price happens to be near is a different object from the one the sweep created.
+    poi_max_age_bars: int = 0
+
+    #: Refuse a gap thinner than this many ATR(14). 0 = no limit. A thin gap means a thin stop,
+    #: which the floor already refuses — this one refuses it as a QUALITY judgement rather than
+    #: as a risk one, and the two will overlap.
+    poi_min_size_atr: float = 0.0
+
+    #: Refuse a gap fatter than this many ATR(14). 0 = no limit. A very wide gap is usually a
+    #: news candle rather than an imbalance somebody will defend.
+    poi_max_size_atr: float = 0.0
+
+    #: Refuse unless the gap OVERLAPS a live order block of the same side, read off the canonical
+    #: `engines/order_blocks/`. The course's strongest point of interest is a gap sitting on the
+    #: block the move left behind; a gap on its own is the weaker half of that pair.
+    ob_confluence: bool = False
+
+    #: Stand aside this many minutes before / after a high-impact USD release, through the
+    #: canonical `engines/news/`. Both 0 = off. ⚠ The calendar is git-ignored and per-machine and
+    #: covers only the dates its cache holds; outside them the filter cannot ask, allows the
+    #: trade, and COUNTS that it could not — see `strategy.py`.
+    news_before_min: int = 0
+    news_after_min: int = 0
 
     # ── platform facts the Pine reads off the symbol, not inputs. They belong to the RUN.
     tick_size: float = 0.01                     # syminfo.mintick — gold is one cent
@@ -165,6 +216,8 @@ class SessionSweepConfig:
             exec_min_stop_val=num("cfg_min_stop_val"),
             pb_poi_max_atr=num("cfg_poi_max_atr"),
             exec_time_stop_hrs=num("cfg_time_stop"),
+            # Every PINE_LESS field is left at its default — OFF — on purpose. No chart can
+            # produce them, so a gate that let one through would be comparing two strategies.
         )
 
     # ⚠ The execution-hour STRINGS have no `cfg_*` column — a string cannot cross a CSV. The twin

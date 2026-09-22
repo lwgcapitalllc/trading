@@ -95,6 +95,16 @@ class BarInput:
     pdl: float
     pwh: float              # previous week's high
     pwl: float
+    #: The SLOWER trend read, when the Pine-less higher-timeframe filter is on. 0 means "not
+    #: asked" — which is what it is when the filter is off, and never a claim that trend is flat.
+    htf_dir: int = 0
+    #: Live order blocks as (top, bottom) pairs, when the order-block filter is on. None means
+    #: "not asked", never "there are none" — an empty tuple is the measured answer "none live".
+    ob_bull: Optional[tuple] = None
+    ob_bear: Optional[tuple] = None
+    #: Is this bar inside a news blackout? True / False when the calendar could answer, None when
+    #: it could not (off, no cache, or a date the cache does not cover). None ALLOWS the trade.
+    news_blackout: Optional[bool] = None
 
 
 @dataclass
@@ -229,6 +239,8 @@ class SessionSweepCore:
 
         # ── the gap scan's live zone list (the Pine's five parallel arrays)
         self._zones: List[_Zone] = []
+        self.bull_born: Optional[int] = None
+        self.bear_born: Optional[int] = None
 
         # ── orders, position, book
         self.pend: Optional[_Order] = None
@@ -254,6 +266,7 @@ class SessionSweepCore:
         self.pos_time: Optional[int] = None
         self.pos_stop0 = NAN
         self._entry_index = 0
+        self._q_top = self._q_bot = self._q_top_s = self._q_bot_s = NAN
         self.t1_done = False
         self.be_shift_done = False
         self.pnl_at_fill = 0.0
@@ -336,6 +349,8 @@ class SessionSweepCore:
 
         bull_t = bull_b = bear_t = bear_b = NAN
         bull_tap = bear_tap = False
+        #: The chosen zones' BIRTH bar — Pine never needed it, the quality filter does.
+        self.bull_born = self.bear_born = None
         close = self._closes[-1]
         for z in self._zones:
             if untouched_only and z.tapped:
@@ -343,9 +358,11 @@ class SessionSweepCore:
             if z.bull and z.top < close:
                 if _isna(bull_t) or z.top > bull_t:
                     bull_t, bull_b, bull_tap = z.top, z.bot, z.tapped
+                    self.bull_born = z.born
             if (not z.bull) and z.bot > close:
                 if _isna(bear_b) or z.bot < bear_b:
                     bear_t, bear_b, bear_tap = z.top, z.bot, z.tapped
+                    self.bear_born = z.born
         return bull_t, bull_b, bear_t, bear_b, bull_tap, bear_tap
 
     # ── step 5, targets ───────────────────────────────────────────────────────────────
@@ -482,6 +499,50 @@ class SessionSweepCore:
         ))
         self._exit_qty = 0.0
         self._exit_notional = 0.0
+
+    def _zone_quality_ok(self, direction: int, atr14: Optional[float]) -> bool:
+        """The Pine-less grading of the chosen gap: how OLD it is and how TALL.
+
+        ⚠ Every check returns True when its dial is 0, and 0 is the default — so this is inert
+        on a gated run. ⚠ It also returns True when the input it needs is missing (no ATR yet,
+        no birth bar recorded): a filter that cannot ask must not refuse, or the warm-up becomes
+        a silent no-trade window nobody can see.
+        """
+        cfg = self.cfg
+        born = self.bull_born if direction == 1 else self.bear_born
+        top = self._q_top if direction == 1 else self._q_top_s
+        bot = self._q_bot if direction == 1 else self._q_bot_s
+
+        if cfg.poi_max_age_bars > 0 and born is not None:
+            if self._i - born > cfg.poi_max_age_bars:
+                return False
+        if (cfg.poi_min_size_atr > 0 or cfg.poi_max_size_atr > 0):
+            if atr14 is None or atr14 <= 0 or _isna(top) or _isna(bot):
+                return True
+            size = abs(top - bot) / atr14
+            if cfg.poi_min_size_atr > 0 and size < cfg.poi_min_size_atr:
+                return False
+            if cfg.poi_max_size_atr > 0 and size > cfg.poi_max_size_atr:
+                return False
+        return True
+
+    def _on_order_block(self, direction: int, b: BarInput) -> bool:
+        """Does the chosen gap overlap a live order block on its own side?
+
+        ⚠ A missing read (the stack was built without order blocks) returns True rather than
+        refusing — the same rule as the quality check: a filter that cannot ask must not refuse.
+        The strategy builds the stack WITH order blocks whenever this filter is on, so on a real
+        run that branch is never taken.
+        """
+        blocks = b.ob_bull if direction == 1 else b.ob_bear
+        if blocks is None:
+            return True
+        top = self._q_top if direction == 1 else self._q_top_s
+        bot = self._q_bot if direction == 1 else self._q_bot_s
+        if _isna(top) or _isna(bot):
+            return False
+        lo, hi = min(top, bot), max(top, bot)
+        return any(ob_bot <= hi and ob_top >= lo for ob_top, ob_bot in blocks)
 
     # ── one bar ───────────────────────────────────────────────────────────────────────
 
@@ -692,10 +753,25 @@ class SessionSweepCore:
                 return 8
             if _isna(t1):
                 return 9
+
+            # ── the PINE-LESS filters. Every one is OFF by default, so a gated run never
+            #    reaches them; they sit BEFORE the slot check so a refusal names the QUALITY
+            #    reason rather than reporting "no slot".
+            if cfg.htf_trend_tf != "Off" and b.htf_dir != direction:
+                return 12
+            if not self._zone_quality_ok(direction, atr14):
+                return 13
+            if b.news_blackout is True:
+                return 14
+            if cfg.ob_confluence and not self._on_order_block(direction, b):
+                return 15
+
             if busy:
                 return 10
             return 0
 
+        self._q_top, self._q_bot = l_z_top, l_z_bot
+        self._q_top_s, self._q_bot_s = s_z_top, s_z_bot
         s_blk = block(-1)
         l_blk = block(1)
         arm_short = s_blk == 0
