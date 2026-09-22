@@ -441,11 +441,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // spelled), and the select renders at the top of the form. What follows only READS it.
   // Three answers, not two. `null` = the agent could not be asked, which must not render as a
   // mismatch — same three-state rule the MT5 health dot follows.
-  const brokerMatches: boolean | null = !broker
-    ? null
-    : !attachedProfile
-      ? null
-      : broker.id === attachedProfile.id
+  // ⚠ The profile's OWN `attached`, never `id === attachedProfile.id`: profiles are per tier AND
+  // per instrument since 2026-09 (ECN has gold, GBPJPY and GBPUSD on one login), so all three are
+  // the attached terminal and an id comparison called two of them a different broker.
+  const brokerMatches: boolean | null = !broker ? null : !attachedProfile ? null : broker.attached
   // A tier whose spread has never been read carries the refusal sentinel rather than a number,
   // and the backend REFUSES to run it charged. The modal has to say so before the button is
   // pressed — a 400 arriving after a click is the answer in the wrong place.
