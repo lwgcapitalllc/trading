@@ -221,3 +221,52 @@ def test_an_UNASKED_box_does_not_refuse_an_NT8_job(fresh_db, monkeypatch):
 
     monkeypatch.setattr(nt8_switch, "_state", None)
     ensure_platform_idle("ninjatrader")  # must not raise
+
+
+# ── The platform a refusal NAMES (2026-09-22) ─────────────────────────────────────────
+#
+# Aaron, a Python stack running and NT8 off for weeks, pressed Stress Test on a Python run and
+# was told "409 An NT8 job is already running". The refusal was right — Python jobs share one
+# slot — and the NAME was wrong: the stress gate kept its own two-way MT5-or-NT8 label.
+@pytest.mark.parametrize(
+    "runner,phrase",
+    [("python", "A Python job"), ("mt5", "An MT5 job"), ("ninjatrader", "An NT8 job")],
+)
+def test_the_platform_lock_names_the_platform_that_is_busy(fresh_db, monkeypatch, runner, phrase):
+    """MUTATION: restore `An {label}` — the python case reads "An Python job" and reddens."""
+    from fastapi import HTTPException
+    from routers._locks import ensure_platform_idle
+
+    monkeypatch.setattr(lab_db, "has_running_job", lambda r: True)
+    with pytest.raises(HTTPException) as exc:
+        ensure_platform_idle(runner)
+    assert exc.value.status_code == 409
+    assert exc.value.detail.startswith(f"{phrase} is already running")
+
+
+def test_a_python_stress_test_blocked_by_a_python_job_SAYS_python(client, monkeypatch):
+    """Watched RED against HEAD: the detail read "An NT8 job is already running" for a Python
+    run whose only busy neighbour was a Python stack."""
+    from types import SimpleNamespace
+
+    from services import gradable
+
+    target = SimpleNamespace(
+        is_stack=False,
+        runner="python",
+        strategy=None,
+        trade_count=200,
+        kind="run",
+        target_id="r1",
+    )
+    monkeypatch.setattr(gradable, "resolve", lambda **kw: target)
+    monkeypatch.setattr(
+        lab_db, "running_stress_test_markets", lambda: {"forex": False, "futures": False}
+    )
+    monkeypatch.setattr(lab_db, "has_running_job", lambda r: r == "python")
+    resp = client.post(
+        "/stress-tests/run",
+        json={"run_id": "r1", "ruleset_id": None, "include_walk_forward": True},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"].startswith("A Python job is already running"), resp.text

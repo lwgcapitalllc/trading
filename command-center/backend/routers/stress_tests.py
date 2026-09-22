@@ -28,6 +28,8 @@ from services.stress_tester import (
     walk_forward_feasibility,
 )
 
+from routers._locks import platform_job
+
 #: The ruleset a FOREX stress test is graded against when the request names none (Aaron,
 #: 2026-09-16). "Personal Forex — 55% Drawdown" — see `notes/runs.md` for why 55.
 DEFAULT_FOREX_RULESET_ID = "personal_forex_risk"
@@ -257,7 +259,8 @@ async def trigger_stress_test(body: StressTestCreate):
     if (body.include_walk_forward or include_sensitivity) and lab_db.has_running_job(runner):
         raise HTTPException(
             409,
-            f"An {'MT5' if runner == 'mt5' else 'NT8'} job is already running — walk-forward and sensitivity require the platform to be idle",
+            f"{platform_job(runner)} is already running — walk-forward and sensitivity require "
+            "the platform to be idle",
         )
 
     st_id = uuid.uuid4().hex[:16]
