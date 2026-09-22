@@ -1,0 +1,19 @@
+2026-09-22 14:37:48,927 [ERROR] FFT is already running as PID 10992. Refusing to start a second copy — two processes on one account would both size a full position off the same setup. Stop that one first if this is deliberate.
+2026-09-22 14:38:11,745 [INFO] FFT | FftStrategy v363 | hash 1aecf44d224a | commit 6678ac81 | frozen | LIVE
+2026-09-22 14:38:13,007 [INFO] Connected | #700152905 | $16,455.20 | PUPrime-Demo
+2026-09-22 14:38:13,007 [INFO] MT5 connection lock released
+2026-09-22 14:38:13,591 [INFO] Sizing against account balance $16,455.20
+2026-09-22 14:38:13,612 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-22 14:38:13,628 [WARNING] Setup alerts: OFF — FftStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-22 14:39:09,501 [INFO] Warmed 45000 bars (2026-08-06 19:57:00+00:00 → 2026-09-22 14:37:00+00:00) in 51.1s
+2026-09-22 14:39:09,516 [INFO] Equity re-anchored to the account after warm-up: 18,204.70 → 16,455.20
+2026-09-22 14:39:10,660 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-22 14:40:02,323 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-22 14:45:03,261 [INFO] Priority 4 on this account: waiting 57s for the bots above
+2026-09-22 14:50:02,598 [INFO] Priority 4 on this account: waiting 37s for the bots above
+2026-09-22 14:55:04,879 [INFO] Priority 4 on this account: waiting 35s for the bots above
+2026-09-22 15:00:02,406 [INFO] Priority 4 on this account: waiting 58s for the bots above
+2026-09-22 15:05:02,982 [INFO] Priority 4 on this account: waiting 37s for the bots above
+2026-09-22 15:10:02,901 [INFO] Priority 4 on this account: waiting 37s for the bots above
+2026-09-22 15:15:02,539 [INFO] Priority 4 on this account: waiting 57s for the bots above
+2026-09-22 15:20:02,453 [INFO] Priority 4 on this account: waiting 38s for the bots above
