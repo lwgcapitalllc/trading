@@ -62,6 +62,17 @@ MEASURED 2026-09-22 (187 trades: 153 dev, 34 recent; win 71.1%, +0.148R):
      sweeps (already 1.5x). Chance of 10/10 in DEV from a random 10: 3%; across nine features ~1 in 4.
   C  FAIL — every cut lowers total R: dev +23.2R held vs +1.7 / +6.1 / +11.0 / +14.3R at
      15 / 30 / 60 / 120 min; recent +4.5R vs +1.5 / 0.0 / -0.3 / +2.0R.
+
+PART D — THE EQT LEAD ON OTHER MARKETS (`--market`), FROZEN 2026-09-22 BEFORE ANY RUN:
+  The FFT bot itself, every shipped rule, on PU Prime 1m `EURUSD_p` and `NAS100`, 2020-01-01 ->
+  2026-09-22, COST-FREE (neither market's costs are measured), raw bars as the lab replays them.
+  EQT exactly as in part B. Test: mean R with EQT minus without, one-sided permutation p (10,000
+  shuffles, seed 7). HOLDS on a market at a gain > 0 and p < 0.05; CONFIRMED when it holds on
+  both, or p < 0.0125 on one with the same sign on the other — the bar the three earlier leads
+  were held to (fft_ledger.md). Run once per market; the result is written up whatever it says.
+  MEASURED 2026-09-22 — NOT CONFIRMED. EURUSD 237 trades, -0.062R (the ledger's -0.062R: the
+  method reproduces), EQT 4 trades, 2 won, -0.13R vs the rest, p 0.58. NAS100 247 trades, +0.062R,
+  EQT 7 trades, 6 won, +0.33R vs the rest, p 0.13 — the lead's direction, not past the bar.
 """
 
 from __future__ import annotations  # noqa: E402
@@ -333,11 +344,79 @@ def time_exit(df: pd.DataFrame, tb: pd.DataFrame, n: int) -> np.ndarray:
     return out
 
 
+def market(symbol: str, shuffles: int = 10_000) -> None:
+    """PART D — the bot on another market, cost-free, and the EQT lead's frozen test."""
+    from services import python_runner as pr
+
+    from backtest.replay import build_strategy
+
+    path = ROOT / "backtest" / "cache" / "PUPrime_Demo" / f"{symbol}__M1.csv"
+    df = pd.read_csv(path, parse_dates=["time"]).set_index("time")
+    df = df[(df.index >= START) & (df.index < pd.Timestamp(END) + pd.Timedelta(days=1))].astype(
+        float
+    )
+    df = df[~df.index.duplicated()].sort_index()
+    _, entry = pr._resolve("FftStrategy")
+    params = {k: v for k, v in PARAMS.items()}
+    s = build_strategy(
+        entry["strategy"],
+        pr._build_config(entry["config"], params, symbol),
+        initial_capital=10_000.0,
+        timeframe_minutes=1,
+    )
+    pr._replay("study", s, df, len(df))
+    tr = sorted(s.execution.trades, key=lambda t: t.entry_ms)
+    tc = sorted((u for u in s.touches if u.traded), key=lambda u: u.ts_ms)
+    assert len(tr) == len(tc) and all(u.dir == t.dir for u, t in zip(tc, tr)), "trade/touch pairing"
+    tb = pd.DataFrame(
+        [
+            dict(
+                entry_ms=t.entry_ms,
+                dir=t.dir,
+                entry=t.entry_price,
+                stop=u.levels["1.0"],
+                tp2=u.levels["TP2"],
+                r=t.r,
+            )
+            for t, u in zip(tr, tc)
+        ]
+    )
+    ft = feat_5m(df, tb)
+    on = ft.EQT.values.astype(bool)
+    r = tb.r.values
+    gain = r[on].mean() - r[~on].mean() if on.any() and (~on).any() else np.nan
+    rng = np.random.default_rng(7)
+    k = int(on.sum())
+    null = (
+        np.array(
+            [
+                (lambda m: r[m].mean() - r[~m].mean())(
+                    np.isin(np.arange(len(r)), rng.choice(len(r), k, replace=False))
+                )
+                for _ in range(shuffles)
+            ]
+        )
+        if 0 < k < len(r)
+        else np.array([np.nan])
+    )
+    p = float((null >= gain).mean()) if np.isfinite(gain) else np.nan
+    print(
+        f"{symbol}: {len(tb)} trades, win {(r > 0).mean():.1%}, avgR {r.mean():+.3f} | EQT {k} trades "
+        f"avgR {r[on].mean() if k else float('nan'):+.3f} (win {(r[on] > 0).mean() if k else float('nan'):.0%}) "
+        f"vs {r[~on].mean():+.3f} — gain {gain:+.3f}R, one-sided p {p:.4f}, "
+        f"{'HOLDS' if gain > 0 and p < 0.05 else 'does not hold'}"
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", default=str(ROOT / "backtest" / "reports" / "fft_confluence.pkl"))
     ap.add_argument("--shuffles", type=int, default=5000)
+    ap.add_argument("--market", help="PART D only: EURUSD_p or NAS100 (a PU Prime M1 cache name)")
     a = ap.parse_args()
+    if a.market:
+        market(a.market)
+        return
     df = bars()
     cp = Path(a.cache)
     if cp.exists():

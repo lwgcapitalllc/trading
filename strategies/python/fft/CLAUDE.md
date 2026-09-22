@@ -32,6 +32,10 @@ never promoted, never run against a broker.
   1.0 = off, refused above 2.0). Sized at PLACEMENT from the same label, so it moves no trade and no
   R, only size: every dollar, drawdown % and profit-factor figure measured before it is at 1x.
   ⚠ In-sample lead. ⚠ The account's half-size floor is half of the BIGGER size (3.75% of room).
+- **The equal-level label (`eq_target`, 2026-09-22) is REPORTING ONLY**: an active 5m equal high
+  (buy) / low (sell) between the 61.8 and TP2 at the touch, from MPC Jarvis's default engine. It is
+  the study's EQT exactly (`tests/test_fft.py` checks it against `fft_confluence_study.feat_5m`);
+  lead 4 in the forward log. Unproven: 11/11 on gold, not confirmed on EURUSD or NAS100.
 - **The A+ sweep label reads live levels only, and the touch minute only to the 61.8.** Until
   2026-09-21 it counted levels already taken and still drawn, and the touch minute past the fill —
   copied faithfully from the study, which had the same defect (rule 14). Reporting only; no trade moves.

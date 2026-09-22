@@ -43,6 +43,7 @@ for _p in (_ROOT, _ROOT / "engines", _ROOT / "engines" / "market_structure"):
 
 import pandas as pd  # noqa: E402
 from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
+from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
 from market_structure import Bar, StructureEngine  # noqa: E402
 from time_flat import NY, HolidayCalendar  # noqa: E402
 
@@ -169,6 +170,10 @@ class FftStrategy:
         self._candles5: Dict[int, Candle] = {}
         self._order5: deque = deque()
         self._swept: Dict[int, Tuple[Tuple[float, ...], Tuple[float, ...]]] = {}
+        # The 5m equal highs / lows, MPC Jarvis's defaults — the `eq_target` label only.
+        self._eq = EqualHighsLowsEngine()
+        self._eqh: Tuple[float, ...] = ()
+        self._eql: Tuple[float, ...] = ()
         self._last_break = {1: -1, -1: -1}
         self._last_closure = -1
         self._prev_ms: Optional[int] = None
@@ -234,6 +239,8 @@ class FftStrategy:
             self._nb[1] = 0 if ext.bull_sos else self._nb[1] + 1
         if ext.bear_bos:
             self._nb[-1] = 0 if ext.bear_sos else self._nb[-1] + 1
+        ev = self._eq.update(c.index, c.high, c.low, c.close)
+        self._eqh, self._eql = tuple(ev.active_eqh), tuple(ev.active_eql)
         self._candles5[c.index] = c
         self._order5.append(c.index)
         lq = s.liquidity
@@ -425,6 +432,7 @@ class FftStrategy:
             fill_price=fill.price if traded else None,
             swept=self._swept_since(r, ts, d, high, low),
             nbos15=self.nbos15,
+            eq_target=self._eq_target(d, lv),
         )
         self.touches.append(setup)
         order = (decided or {}).get("order")
@@ -453,6 +461,14 @@ class FftStrategy:
         return f._first
 
     # ── the A+ label ─────────────────────────────────────────────────────────
+    def _eq_target(self, d: int, lv: Dict[str, float]) -> bool:
+        """An equal level on the TARGET side between the 61.8 and TP2 — resting stops price is
+        drawn to. Equal highs for a buy, equal lows for a sell. Reporting only."""
+        e, t2 = lv["E1"], lv["TP2"]
+        if d == 1:
+            return any(e < p <= t2 for p in self._eqh)
+        return any(t2 <= p < e for p in self._eql)
+
     def _swept_since(self, r: Row5, ts: int, d: int, high: float, low: float) -> bool:
         """Did the pullback take a day / session / H4 level on its own side between the leg's
         extreme and bar `i`? The study's `sweep()`: levels swept on the closed 5m candles after the

@@ -182,6 +182,23 @@ def test_the_sweep_size_scales_only_the_sweep_setup():
     assert _sized_buy(True, 1.0) == pytest.approx(plain)
 
 
+
+def test_the_equal_level_label_reads_only_the_target_side_between_the_618_and_tp2():
+    """Equal highs for a buy, equal lows for a sell, strictly past the 61.8 and up to TP2.
+    Mutation: the side swapped (lows for a buy) → the buy reads False; went RED 2026-09-22."""
+    s = FftStrategy()
+    buy = {"E1": 100.0, "TP2": 110.0}
+    s._eqh, s._eql = (105.0,), (95.0,)
+    assert s._eq_target(1, buy) is True
+    s._eqh = (115.0,)
+    assert s._eq_target(1, buy) is False
+    sell = {"E1": 100.0, "TP2": 90.0}
+    s._eqh, s._eql = (95.0,), (92.0,)
+    assert s._eq_target(-1, sell) is True
+    s._eql = (88.0,)
+    assert s._eq_target(-1, sell) is False
+
+
 # ── the order layer ──────────────────────────────────────────────────────────
 def _ex(profile=None, capital=10_000.0) -> FftExecution:
     return FftExecution(FftConfig(), initial_capital=capital, profile=profile)
@@ -436,3 +453,35 @@ def test_the_sweep_size_moves_no_trade_and_sizes_each_sweep_trade_up():
     assert len(touched) == len(trades) and any(u.swept for u in touched)
     assert [t.qty for t in trades] == [1.5 if u.swept else 1.0 for u in touched]
 
+
+
+
+@pytest.mark.skipif(not _CACHE.exists(), reason="no PU Prime M1 cache on this machine")
+def test_the_equal_level_label_matches_the_study_that_found_it():
+    """The bot's label is the study's EQT (`backtest/tools/fft_confluence_study.py`) on the same bars
+    — the same engine, the same last-closed 5m candle, the same band — so the forward log grades
+    the lead that was measured, not a cousin of it."""
+    import importlib.util
+
+    import pandas as pd
+
+    sys.path.insert(0, str(_ROOT / "backtest" / "tools"))
+    from loaded_level_study import clean_reopens
+
+    spec = importlib.util.spec_from_file_location(
+        "fft_confluence_study", _ROOT / "backtest" / "tools" / "fft_confluence_study.py"
+    )
+    study = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(study)
+    df = pd.read_csv(_CACHE, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
+    df = df[(df.time >= "2025-06-01") & (df.time < "2025-12-01")].set_index("time").astype(float)
+    clean, _ = clean_reopens(df)
+    s = FftStrategy(FftConfig(max_bos=-1, req_15m=False)).run(clean)
+    touches = [u for u in s.touches if u.kind == "first"]
+    tb = pd.DataFrame(
+        [dict(entry_ms=u.ts_ms, dir=u.dir, entry=u.levels["E1"], stop=u.levels["1.0"],
+              tp2=u.levels["TP2"]) for u in touches]
+    )
+    got = [u.eq_target for u in touches]
+    assert len(got) > 100 and any(got), "the comparison must cover labels of both values"
+    assert got == list(study.feat_5m(clean, tb).EQT)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""forward_log.py — grade FFT's three unproven leads on every trade the bot takes, going forward.
+"""forward_log.py — grade FFT's four unproven leads on every trade the bot takes, going forward.
 
 The leads (backtest/notes/fft_ledger.md → *Mining the losers*) were found on 2020-26 gold, so that
 data can no longer prove them. This tool grades them on trades AFTER they were found — the demo
@@ -13,6 +13,10 @@ account's period — without any of them being switched on:
                                     4-hour level on its side, not taken before, between the leg's
                                     extreme and the touch (the corrected label, 2026-09-21); the
                                     tally shows the sweep trades against the rest.
+  lead 4   an equal level ahead     each trade is marked if an active 5m equal high (buy) / equal
+                                    low (sell) sat between the 61.8 and TP2 at the touch — 11 of
+                                    11 won 2020-26, not past the luck bar (2026-09-22, the ledger's
+                                    *best trades* section); the tally shows them against the rest.
 
 ⚠ **This is a REPLAY, not a log the trading box writes.** The bot is deterministic and matched to
 the study trade for trade (`compare_study.py`), so replaying the demo period's 1-minute bars
@@ -89,6 +93,7 @@ def rows(start: str, end: str | None, csv: Path) -> list[dict]:
         got = [x for x in s.touches if x.traded and x.dir == t.dir and x.ts_ms <= t.entry_ms]
         n15 = got[-1].nbos15 if got else -1
         swept = bool(got[-1].swept) if got else False
+        eqt = bool(got[-1].eq_target) if got else False
         ny = pd.Timestamp(t.entry_ms, unit="ms", tz="UTC").tz_convert("America/New_York")
         first = tp1_first(df, t, tp1)
         r1 = abs(tp1 - t.entry_price) / t.stop_distance
@@ -102,6 +107,7 @@ def rows(start: str, end: str | None, csv: Path) -> list[dict]:
                 bos15=n15,
                 session=session(ny.hour),
                 sweep=swept,
+                eq_ahead=eqt,
                 tp1_first=first,
                 lead1_skip=n15 >= OVEREXTENDED_15M_BOS,
                 lead2_r=round((r1 if first else -1.0) if asia else t.r, 3),
@@ -141,6 +147,12 @@ def main() -> int:
         f"lead 3 — a sweep before the entry: {len(sw)} trades, {int((sw.r > 0).sum())} won, "
         f"{sw.r.mean() if len(sw) else 0:+.3f}R a trade vs {rest.r.mean() if len(rest) else 0:+.3f}R "
         f"for the other {len(rest)}"
+    )
+    eq, other = df[df.eq_ahead], df[~df.eq_ahead]
+    print(
+        f"lead 4 — an equal level between the entry and TP2: {len(eq)} trades, "
+        f"{int((eq.r > 0).sum())} won, {eq.r.mean() if len(eq) else 0:+.3f}R a trade vs "
+        f"{other.r.mean() if len(other) else 0:+.3f}R for the other {len(other)}"
     )
     if a.csv:
         df.to_csv(a.csv, index=False)

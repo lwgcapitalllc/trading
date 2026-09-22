@@ -80,6 +80,10 @@ class Setup:
     # The 15m trend's continuation BOS since its shift at the touch (-1 before there is a trend) —
     # the study's `n15`, matched by `tools/compare_study.py`. What the overextension skip reads.
     nbos15: int = -1
+    # An active opposite-side 5m equal level (equal highs for a buy) between the 61.8 and TP2, as of
+    # the last 5m candle closed before the touch — the lead in `backtest/notes/fft_ledger.md` (11
+    # trades 2020-26, all winners, unproven). Reporting only; the forward log grades it.
+    eq_target: bool = False
 
 
 @dataclass

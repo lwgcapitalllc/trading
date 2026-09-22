@@ -410,6 +410,10 @@ recent 34). CLEAN = TP2 with never more than 0.30R against (65 trades); FAST = T
   NOT proven: t 1.97; a random 10 dev trades all win 3% of the time, so one of nine features doing it
   by luck is ~1 in 4. ⚠ The frozen Welch t scored it 7.22 and "passed" it — a statistic that divides
   by a winners-only group's zero spread; replaced by a pooled t in the tool.
+- **The EQT lead on other markets, frozen, cost-free — NOT CONFIRMED** (`--market`): EURUSD 4 EQT
+  trades, 2 won, −0.13R vs the rest (p 0.58); NAS100 7, 6 won, +0.33R (p 0.13). Same direction on
+  NAS100 only. The bot now RECORDS the label (`eq_target`) and `tools/forward_log.py` grades it as
+  lead 4 on demo trades — nothing trades on it.
 - **A time exit FAILS:** winners and losers both take ~1 hour (median 59 / 60 min), so a cut at
   15 / 30 / 60 / 120 min lowers total R in both windows (dev +23.2R held vs +1.7 to +14.3R).
 
