@@ -416,3 +416,22 @@ on the page, so a pick that just follows it would beat random without the eye ad
 5. **Waiting for the 1m to break back after the 61.8 touch** triples the return per trade but takes
    one setup in six. Filters on impulse size, 15m discount and pullback speed added nothing.
 6. Costs are still owed: on a ~$1 sniper stop the spread alone is ~0.1R per trade.
+
+## The lab run reconciled to the gate, trade by trade (2026-09-22)
+
+Lab run **038101714bd9**: 2020-01-01 → 2026-09-22, 1m, PU Prime ECN with bid/ask fills,
+commission and swap. **187 trades, 71.1% won, +0.148R a trade, +27.7R, max DD 19.2%.** Every trade
+is accounted for (scratch script, not kept: the gate's own sides run over the lab's window):
+
+- **Lab vs the bot on the same RAW bars: 187 / 187, identical exits.** The lab plumbing is exact.
+- **Raw vs cleaned bars: one trade apart** — 2020-06-22 15:00 buy, taken on cleaned bars only
+  (a clipped reopen spike moves a 5m BOS). The lab and the live bot read raw bars; the gate reads cleaned.
+- **Study 191 (cost-free) → 186 costed, after the warm-up month.** 5 study buys never fill because
+  the ask never reaches the 61.8; 18 more fill 1-14 minutes LATER on the ask, so they only look
+  different when matched by minute. Every difference is a buy, as bid/ask fills predict.
+- The arithmetic: 191 − 5 = 186, + 2 in the warm-up month = 188 on cleaned bars, − 1 on raw = **187**.
+
+⚠ The "191" is 157 + 34 from two gate windows that OVERLAP by a month (2025-08 → 2025-09); it is
+the cost-free count, and it is not the lab's target. Compare a costed lab run against the costed side.
+⚠ Earlier FFT lab runs on 5m bars (e.g. 2db0e08a8ccc) read 0 trades and are void — see
+`backtest/notes/architecture.md`, "A strategy is told the frame it is replayed on".
