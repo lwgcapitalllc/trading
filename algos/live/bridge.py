@@ -845,6 +845,34 @@ class OrderBridge:
         for row in reversed(rows):
             if row.get("event") == "closed" and row.get("ticket") in opened:
                 return row
+        return self._closed_at_broker(opened)
+
+    def _closed_at_broker(self, tickets) -> Optional[dict]:
+        """No `closed` row — does the BROKER's own history prove one of these trades is over?
+
+        🔴 **Why (2026-09-22).** A halt can stop a close being booked: the fill clock halted on a
+        hand close before the 15-minute clock could write its row, so the ledger held `opened`
+        and nothing else, and every restart rebuilt the trade and waited out its copy. The broker
+        is the other record of the same fact. **Only a full close counts** — history read, the
+        closing deals summing to the opening ones, and that ticket not open now. Unreadable, no
+        closing deal, a partial, or still open is no match, and the old wait stands.
+        """
+        ask = getattr(self._mt5, "close_origin", None)
+        if not callable(ask) or not tickets:
+            return None
+        still_open = {int(p.ticket) for p in (self._mt5.get_open_positions() or [])}
+        for ticket in sorted(tickets, reverse=True):
+            if int(ticket) in still_open:
+                continue
+            origin = ask(int(ticket))
+            if not origin:
+                continue
+            opened = float(origin.get("opened") or 0.0)
+            closed = origin.get("closed") or {}
+            out = sum(float(v) for v in closed.values())
+            if opened <= 0 or abs(out - opened) >= 0.005:
+                continue
+            return {"ticket": ticket, "reason": "closed at the broker, no close row in the ledger"}
         return None
 
     def _flatten_warmup_copy(self, closed: dict) -> bool:

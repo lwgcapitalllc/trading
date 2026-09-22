@@ -818,6 +818,12 @@ commanded close; WARMING then goes LIVE a bar later when it is flat, and the led
 `warmup_position_dropped`. No match, an unknown entry time or an unreadable ledger keeps the old
 wait. Nothing is ever opened. The fast-feed re-warm does not touch the position, so needs nothing.
 
+🔴 **No close row at all now falls back to the broker's history (2026-09-22).** A halt can stop a
+close being booked (the fill-clock halt above did), leaving `opened` and nothing else, so every
+restart waited out the rebuilt copy. `_closed_at_broker` now asks the broker for that ticket's deals:
+history read, closing deals equal to the opening ones, ticket not open now. Only then is the copy
+dropped; unreadable, partial or still open keeps the wait. Tests: `test_warmup_hand_closed.py`.
+
 ⚠ **Backtest comparison:** exclude or split `closed_by_you` rows — they are the owner's exit, not
 the strategy's. Inside the emulator the same trade ends under its own `CMD` tag a bar later, at
 that bar's open, which is NOT the live exit price.
