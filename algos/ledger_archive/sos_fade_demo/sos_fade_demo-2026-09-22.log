@@ -1,0 +1,3 @@
+2026-09-22 00:45:09,090 [INFO] move stop T365501068 4391.88 → 4369.63
+2026-09-22 01:10:10,009 [ERROR] HALTED: The strategy believes it is in a position but MT5 has none. Its resting limit filled in the emulator and not at the broker (or the position was closed outside the bot). Every later decision would be computed against a trade that does not exist.
+2026-09-22 01:15:02,813 [ERROR] Bridge halted — the loop will keep observing but place nothing.
