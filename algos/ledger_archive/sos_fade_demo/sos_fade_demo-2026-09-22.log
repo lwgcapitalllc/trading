@@ -18,3 +18,20 @@
 2026-09-22 01:42:42,803 [INFO] Equity re-anchored to the account after warm-up: 10,034.99 → 10,914.72
 2026-09-22 01:42:42,819 [WARNING] Warmup ended with the strategy holding a simulated position — its entry is in the past, so it will NOT be opened live. Waiting for it to close before placing anything.
 2026-09-22 01:42:44,055 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-22 03:18:08,596 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-22 03:18:08,596 [INFO] Stop requested — shutting down.
+2026-09-22 03:18:08,596 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-22 03:18:09,251 [INFO] MT5 disconnected.
+2026-09-22 03:18:27,185 [INFO] SOS Fade | SosFadeStrategy v324 | hash e5e03f3a3c71 | commit a058aa09 | frozen | LIVE
+2026-09-22 03:18:27,719 [INFO] Connected | #34957946 | $10,914.72 | PUPrime-Live
+2026-09-22 03:18:27,719 [INFO] MT5 connection lock released
+2026-09-22 03:18:27,982 [INFO] Sizing against account balance $10,914.72
+2026-09-22 03:18:27,998 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-22 03:18:27,998 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-22 03:18:28,013 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-22 03:18:30,529 [INFO] Warmed 5000 bars (2026-07-07 15:45:00+00:00 → 2026-09-22 03:00:00+00:00) in 2.4s
+2026-09-22 03:18:33,796 [INFO] Fast feed bookmarked at 2026-09-22 03:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-22 03:18:33,796 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-07 15:45:00+00:00 → 2026-09-22 03:10:00+00:00).
+2026-09-22 03:18:33,796 [INFO] Equity re-anchored to the account after warm-up: 9,533.24 → 10,914.72
+2026-09-22 03:18:33,831 [INFO] Warmup ended holding a copy of T365501068, which is already closed (closed at the broker, no close row in the ledger). The strategy drops it on its next bar and the bot then trades normally. Nothing is opened.
+2026-09-22 03:18:34,766 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
