@@ -14,9 +14,13 @@ CLAUDE.md gets at most one index line.
   `entry_index` counts bars on the FAST feed (467k M5 bars on a 2020→2026 run) while `df` is the
   M15 frame (156k) — two units, one reader. An index past the end hit an `else df.index[-1]`
   clamp and stamped the FINAL BAR of the run; an index that happened to fit named the wrong 15m
-  bar, which is worse, because it looks plausible. **MEASURED on a 2020→2026 replay: 60 of 242
-  trades carried the last bar's timestamp**, filing all 60 under 2026. **Totals were never
-  affected — every per-year, per-session, per-hour and regime split was.** A row is now dated off
+  bar, which is worse, because it looks plausible. **MEASURED on a 2020→2026 replay by re-running it either
+  side of the fix: ALL 87 re-entries were mis-dated and ZERO primaries were.** 60 of them carried
+  the final bar's timestamp, which filed them under 2026; the other 27 landed on a plausible-looking
+  wrong 15m bar, which is the worse half — nothing about those rows looks off. **Totals were never
+  affected — every per-year, per-session, per-hour and regime split was.** How far off: on that run
+  2026 read 83 trades / +55.4R against a true 25 / +27.2R, and the Late session read 70 trades
+  against 13, because the final bar closed at 23:45. **Every year moved.** A row is now dated off
   the trade's own `entry_ms`, which is frame-independent, and the regime is read at the 15m bar
   that timestamp falls in. Rule 15 (what is this value's UNIT on each side of the boundary) and
   rule 1 (the clamp made *out of range* and *the last bar* one value). ⚠ **Re-run before quoting a
