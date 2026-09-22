@@ -556,9 +556,16 @@ def _apply_param_meta(params: list[dict], meta_path: Path) -> list[dict]:
         return params
 
     meta_list = meta.get("params", []) if isinstance(meta, dict) else []
+    # ⚠ A `params` OBJECT keyed by name (smc_session_sweep, 2026-09-22) iterates as bare key
+    # strings, and one `.get` on a string took down Scan Strategies for EVERY strategy. The
+    # contract is a list of objects; anything else is malformed, which is a no-op, as promised.
+    if not isinstance(meta_list, list):
+        return params
     order: dict[str, int] = {}
     by_name: dict[str, dict] = {}
     for i, m in enumerate(meta_list):
+        if not isinstance(m, dict):
+            continue
         name = m.get("name")
         if not name:
             continue

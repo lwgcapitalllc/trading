@@ -122,6 +122,9 @@ than assumed.
   strategies.
 - **`core.py` holds the Pine's OWN gap arithmetic, transcribed** — it is not a second engine, and
   `engines/fair_value_gaps/` stays canonical for anything that is not this gate.
+- **`smc_session_sweep.meta.json` takes the SAME shape as every other strategy's**: `params` a
+  LIST of `{"name": ...}`, `tldr` a list of `{text, show_if}` lines. Written as an object and a
+  paragraph, it made Scan Strategies answer 500 for every strategy until 2026-09-22.
 - **Re-run the gate on the golden export before committing a change here**, and read the coverage
   table rather than the exit code.
 

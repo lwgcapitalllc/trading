@@ -361,3 +361,13 @@ new strategy to do so without the three roster tests going red first. `fft` also
 bar-size presets are hard-coded (5/15/30/60/240) and it does not read the declaration; the backend
 and the replay accept a 1-minute job, and the strategy refuses any other frame by name. Until the
 form reads `suggested_bar_value`, an FFT lab run needs the frame set by hand.
+
+## A meta file in the wrong SHAPE took down Scan Strategies for every strategy (2026-09-22)
+
+`smc_session_sweep.meta.json` stated `params` as an object keyed by setting name and `tldr` as one
+paragraph; every other strategy states a LIST of `{"name": ...}` and a list of `{text, show_if}`.
+Iterating the object gave bare strings and one `.get` on a string raised, so the scan route answered
+500 for everyone. `_apply_param_meta` now treats a non-list `params` or a non-object entry as
+malformed, which its docstring always promised is a no-op. The file was converted to the contract
+(content unchanged; the summary split into four lines with its numbers read from the settings, and
+its risk setting marked). Tests: `tests/test_param_meta_shape.py`.

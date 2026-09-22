@@ -57,6 +57,9 @@ EXPECTED_CLASS_NAMES = {
     "ExtremeLegStrategy",
     # Added 2026-09-21 with `strategies/python/fft`, in the same change as the package.
     "FftStrategy",
+    # Added 2026-09-22. `smc_session_sweep` landed 2026-09-20 and was never listed because its
+    # meta file crashed the scan, so these tests errored instead of going red on the roster.
+    "SessionSweepStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\
