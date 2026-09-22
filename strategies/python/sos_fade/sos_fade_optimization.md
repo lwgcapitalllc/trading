@@ -3437,6 +3437,15 @@ lost. There is no cell where a looser gate paid for itself.
 and taking it systematically loses money.** The stop got swept because the setup was failing, and
 re-entering is buying the same idea a second time at a worse place in its life.
 
+✅ **THOSE FOUR DATES WERE CHECKED AGAINST THE 2026-09-22 MIS-DATING BUG AND THEY SURVIVE IT.**
+`run_report.py` dated re-entry rows off a fast-feed bar index read against the 15m frame, so a
+re-entry usually carried the FINAL BAR of the run (`backtest/notes/tools.md`). **The test is the
+spread**: under that bug roughly seven re-entries in ten land on one date at the end of the window,
+and these four sit in 2021, 2024 and twice in 2025, with none in the run's final month. A broken
+stamp cannot look like that. The harness here was a scratch script off a lab bar load in any case,
+and the lab dates every trade by its own timestamp. ⚠ The verdict never rested on the dates — it is
+7 trades, −0.68R, 2 wins / 4 full losses, and counts and R were never affected by that bug.
+
 ⚠ **The zone-deep lever does NOTHING on top of "Stopped only" — 1.0 and 0.886 give the identical
 book to the cent.** The swept-stop legs were never blocked by the zone; they were blocked by the
 breakeven gate alone. **Two levers that sound like the same story are not the same lever, and
