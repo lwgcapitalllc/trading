@@ -1625,3 +1625,28 @@ re-run rather than believed.
 
 ⚠ **An in-sample loss needs no walk-forward** — you cannot overfit your way *to* a loss. Reach for
 out-of-sample when a result is POSITIVE.
+
+## `exit_study.py` — what gets us out nearer the peak? — a give-back cap, and nothing else (2026-09-22)
+
+**The question.** SOS Fade keeps 44% of the profit its trades ever show, and the leak is not the runner trail: trades reaching 5R keep 97% of their peak, while trades reaching 1-3R showed 123R and kept 11R (lab run `ea46142df097`). The band below the trail's arming point is where the money goes.
+
+**What it does.** Replays the baseline book, runs structure, liquidity, the Asia volume line, divergence and candlesticks over the same bars, then walks each trade through its own hold and prices every candidate exit at the NEXT bar's open. ⚠ **CHEAP MODE, stated in its own docstring:** one book re-walked, so an exit that frees the position slot earlier gets no credit for the trade that would have queued behind it. It ranks candidates; it decides nothing.
+
+**MEASURED 2026-09-22, XAUUSD.p M15, 2020-01-01 -> 2025-08-31, `puprime_ecn` charged, secondary pinned off — 129 trades, 317R of best case, 127R kept:**
+
+| Rule | Total R | Worst DD | Ret/DD | Fired on |
+|---|---|---|---|---|
+| hold (control) | 127.0 | 7.69 | 16.5 | — |
+| **give back at most 50% of a peak >= 1.5R** | 109.7 | 4.37 | **25.1** | 46 |
+| **give back at most 50% of a peak >= 2R** | 120.5 | 4.97 | **24.2** | 35 |
+| give back at most 50% of a peak >= 3R | 125.6 | 5.78 | 21.7 | 20 |
+| opposing CHoCH | 94.6 | 6.64 | 14.2 | 19 |
+| liquidity level ahead | 45.6 | 4.56 | 10.0 | 80 |
+| opposing divergence | 63.2 | 6.71 | 9.4 | 15 |
+| Asia volume line | 51.1 | 6.64 | 7.7 | 56 |
+| reversal candle | 33.1 | 4.64 | 7.1 | 92 |
+
+- 🔴 **The give-back cap is the only family that beats holding, and it is not close** — 25.1 against 16.5, bought by cutting the worst drawdown from 7.69R to 4.37R for 17R of the 127R.
+- 🔴 **Tighter is NOT better.** Capping the give-back at 25% or 33% loses on every band; the trade needs room to breathe. The winner keeps HALF of the peak.
+- 🔴 **Every engine-driven reversal exit LOSES to holding, including the two asked for by name.** The liquidity levels and the Asia volume line fire early and often (80 and 56 of 129 trades) and hand back half the book. This agrees with the opposing-CHoCH result already on record (`recovery_report.py --exits`, 16.2R -> 9.7R) and with the 0-of-240 result in `killzone_edge_search.py`. ⚠ **These levels are worth testing as TARGETS, where the level is known in advance; they do not work as reversal signals.**
+- ⚠ **Nothing here is a setting yet.** The winner has to be built and replayed with the position slot on before any of it is believed — the slot changes which rule wins, not just its score.

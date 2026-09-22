@@ -291,6 +291,8 @@ listed below under the notes file that now holds it.
 
 ### `notes/tools.md` — Tools
 
+- `exit_study.py` (2026-09-22) — a give-back cap is the only exit that beats holding; every engine-driven reversal exit, liquidity levels and the volume line included, loses.
+
 **Read before touching:** using, extending, or trusting the output of any script under backtest/tools/.
 
 - Tools
