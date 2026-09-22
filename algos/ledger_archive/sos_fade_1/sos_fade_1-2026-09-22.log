@@ -49,3 +49,4 @@
 2026-09-22 13:53:08,801 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\bot_state.json.8576.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\bot_state.json'
 2026-09-22 18:15:03,842 [INFO] POSITION CLOSED | T384899607 SHORT @ 4356.86 | P&L $482.85 (+0.59R)
 2026-09-22 18:15:06,198 [INFO] Equity re-anchored to the account flat between trades: 16,011.25 → 15,765.48
+2026-09-22 18:34:45,620 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_sec_poi_fallback: None → 'Off', exec_tp1_level: None → 'Auto', exec_tp1_r: None → -1.0, exec_tp2_level: None → 'Auto', flat_holidays: None → True, flat_mode: None → 'Off'. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).

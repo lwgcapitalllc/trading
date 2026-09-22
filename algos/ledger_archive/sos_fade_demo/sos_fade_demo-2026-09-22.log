@@ -37,3 +37,4 @@
 2026-09-22 03:18:34,766 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-22 03:45:03,685 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
 2026-09-22 03:45:03,685 [INFO] Equity re-anchored to the account flat between trades: 11,431.90 → 10,914.72
+2026-09-22 18:34:45,992 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_sec_poi_fallback: None → 'Off', exec_tp1_level: None → 'Auto', exec_tp1_r: None → -1.0, exec_tp2_level: None → 'Auto', flat_holidays: None → True, flat_mode: None → 'Off'. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).

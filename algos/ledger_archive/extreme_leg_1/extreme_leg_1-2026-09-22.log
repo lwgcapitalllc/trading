@@ -88,3 +88,8 @@
 2026-09-22 18:00:06,416 [INFO] Priority 2 on this account: waiting 14s for the bots above
 2026-09-22 18:06:22,962 [INFO] Equity re-anchored to the account flat between trades: 16,455.20 → 15,765.48
 2026-09-22 18:15:06,232 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-22 18:30:05,699 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-22 18:34:41,976 [ERROR] Config changed in ways that CANNOT be applied to a running bot: close_hour_ny: None → 17, flat_holidays: None → True, flat_min: None → 15, flat_mode: None → 'Off'. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-22 18:45:07,145 [INFO] Priority 2 on this account: waiting 13s for the bots above
+2026-09-22 19:00:04,175 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-22 19:15:04,422 [INFO] Priority 2 on this account: waiting 16s for the bots above
