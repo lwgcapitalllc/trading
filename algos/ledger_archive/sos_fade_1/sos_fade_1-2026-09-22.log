@@ -28,3 +28,7 @@
 2026-09-22 04:20:04,865 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
 2026-09-22 04:20:04,865 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
 2026-09-22 04:20:07,787 [INFO] Warmed 5000 bars (2026-07-07 16:45:00+00:00 → 2026-09-22 04:00:00+00:00) in 2.8s
+2026-09-22 04:20:10,943 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-07 16:50:00+00:00 → 2026-09-22 04:15:00+00:00).
+2026-09-22 04:20:10,943 [INFO] Equity re-anchored to the account after warm-up: 14,372.69 → 16,455.47
+2026-09-22 04:20:10,959 [INFO] Restored position T384899607 — SHORT 0.37 lots @ 4369.93, stop 4369.63, stage 1, opened by the primary. It will be managed from the next bar.
+2026-09-22 04:20:12,569 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
