@@ -85,6 +85,30 @@
       "max": 6
     },
     {
+      "name": "exec_tp1_level",
+      "group": "Exit ladder",
+      "label": "Target 1 level",
+      "desc": "Which fib the first target sits on. Auto = the shipped rule: a deep entry aims at 0.5, a shallow one at 0.382. Naming a level pins it for every trade. A level behind the entry is not a target, and that trade keeps the Auto level.",
+      "choices": ["Auto", "0.0", "0.382", "0.5", "0.618", "0.702", "0.786", "0.886", "1.0"],
+      "guide": ["Nearer target, hit more often", "Further target, hit less often"]
+    },
+    {
+      "name": "exec_tp2_level",
+      "group": "Exit ladder",
+      "label": "Target 2 level",
+      "desc": "Which fib the second target sits on. Auto = a deep entry aims at 0.382, a shallow one at the swing extreme.",
+      "choices": ["Auto", "0.0", "0.382", "0.5", "0.618", "0.702", "0.786", "0.886", "1.0"],
+      "guide": ["Nearer target, hit more often", "Further target, hit less often"]
+    },
+    {
+      "name": "exec_tp1_r",
+      "group": "Exit ladder",
+      "unit": "R",
+      "label": "First target, in R",
+      "desc": "Where the first target sits, measured in multiples of what the trade is risking. -1 = off, and the target stays on the level the setup gives it. 1 = one times the risk, on every trade.",
+      "guide": ["Bank nearer the entry, more often", "Bank further out, less often"]
+    },
+    {
       "name": "exec_risk_pct",
       "role": "risk_pct",
       "group": "Sizing",

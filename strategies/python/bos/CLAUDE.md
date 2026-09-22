@@ -406,3 +406,7 @@ so. Comment-only.
 `sos_fade`'s default moved 10 → 5 to match its live share; `BosConfig` inherits the field, so it
 is pinned at 10.0 — the value `bos_strategy.pine` ships. Nothing this bot trades moved. ⚠ Its
 golden gate reads risk off the export, so it could never have caught the inheritance either way.
+
+## SOS Fade target-level settings inherited (2026-09-20)
+
+This strategy builds on the SOS Fade config, so it inherits three new exit-ladder settings: "Target 1 level", "Target 2 level" and "First target, in R". They are off by default and change nothing here. They are listed in this meta file so the lab page shows them rather than silently accepting them. They have not been measured for this strategy. SOS Fade results: `strategies/python/sos_fade/sos_fade_optimization.md` Run 40.

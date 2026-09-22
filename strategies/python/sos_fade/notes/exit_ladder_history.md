@@ -872,3 +872,11 @@ setting tested on the primary LOST money, at about three R destroyed per R rescu
 ⚠ **Parity is unaffected while they ship off** — nothing can arm, so `compare_strategy.py` sees the
 decisions it always did. The moment any of the four goes positive, Python and Pine are trading
 different ladders: there is no TradingView side for any of them.
+
+## Target levels and an R-priced first target — added 2026-09-20
+
+- **Three settings, all off by default:** "Target 1 level", "Target 2 level" (pin a fib rung, or Auto for the shipped deep/shallow rule) and "First target, in R" (-1 = off).
+- A pinned level behind the entry is not a target, so that trade keeps its Auto level. The strategy counts these fallbacks. ⚠ **The sweep does not surface that count,** so a pinned winner must be re-checked on a single run.
+- **Defaults change nothing.** MEASURED 2026-09-21: the grid combo with every new setting at default matched run `ea46142df097` to the cent (244 trades, same net and drawdown).
+- Ported to both Pine files and to the gate's input list. ⚠ **The parity gate has NOT run on these branches.** It needs a fresh TradingView export with the new inputs set, and nothing may reach a live bot before it runs.
+- Results: `sos_fade_optimization.md` → Run 40.

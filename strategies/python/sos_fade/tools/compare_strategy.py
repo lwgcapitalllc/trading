@@ -53,6 +53,13 @@ _HTF_REQ = {0: "Ignore", 1: "Must agree", 2: "Must not oppose", 3: "Must oppose 
 # is new, so older exports stay readable rather than silently mapping to the new default.
 _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratchet"}
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
+# The `cfg_tp1_level` / `cfg_tp2_level` plot encoding, mirroring the ternary in
+# sos_fade_strategy_export.pine. A Pine plot carries a number, so the strings are
+# ordinals and THE TWO LISTS MUST MOVE TOGETHER — a level inserted in the middle on one
+# side renames every level after it on the other, silently.
+_TP_LEVEL_ORDINAL = {0: "Auto", 1: "0.0", 2: "0.382", 3: "0.5", 4: "0.618",
+                     5: "0.702", 6: "0.786", 7: "0.886", 8: "1.0"}
+
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 _TIME_STOP = {0: "Off", 1: "Before TP1 only", 2: "Always"}
 _SCALE_TP = {0: "Ride", 1: "Prev week H/L", 2: "Prev day H/L", 3: "H4 H/L"}
@@ -204,6 +211,25 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         v = get(col)
         if v is not None:
             vals[field] = float(v)
+    # Which fib each rung sits on (added 2026-09-20). Same shape and same reasoning as every
+    # guard below: an export with no column was taken from a Pine whose rungs were hardcoded, so
+    # both were the deep/shallow rule and "absent ⇒ Auto" is a FACT about those exports.
+    # ⚠ Plotted as an ORDINAL because a Pine plot carries numbers, not strings — the encoding is
+    # in the export Pine next to the plot and the two must move together.
+    for col, field in (("cfg_tp1_level", "exec_tp1_level"), ("cfg_tp2_level", "exec_tp2_level")):
+        lv = get(col)
+        vals[field] = "Auto" if lv is None else _TP_LEVEL_ORDINAL.get(int(round(lv)), "Auto")
+    # The primary's R-priced first rung (added 2026-09-20). Same shape and same reasoning as the
+    # three guards below: an export with no column was taken from a Pine that had no such input,
+    # so its first rung WAS the fib level and "absent ⇒ -1.0 (off)" is a FACT about those exports
+    # rather than a guess.
+    # 🔴 Do NOT "improve" this to fall back on the base config. It is harmless only while the
+    # shipped default is -1.0, and the moment that moves it would price every archived export's
+    # first rung off risk when its Pine priced it off the fib — banking at a different price on
+    # trades the export banked elsewhere, and reporting the harness's own configuration as an
+    # exit-ladder bug. That is the `eqExemptFvg` failure, which cost three days.
+    t1r = get("cfg_tp1_r")
+    vals["exec_tp1_r"] = -1.0 if t1r is None else float(t1r)
     # Minimum stop distance (added 2026-07-30) — an ENTRY filter that can refuse a setup on
     # PRICE. An export with no column predates it, and the parent shipped the mode "Off" from
     # the day it was added, so "absent ⇒ Off" is a FACT about those exports rather than a

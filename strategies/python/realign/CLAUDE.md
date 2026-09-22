@@ -596,3 +596,7 @@ is capped at seven bullets, hidden ones included, and each bullet's condition mu
 defaults — so a default change means rewriting the bullet it hides.
 ⚠ Keep a line about settings the bullet's condition does not cover OUT of a conditional bullet — the
 page hides the whole bullet. That is why breakeven sits in the always-shown stop bullet.
+
+## SOS Fade target-level settings inherited (2026-09-20)
+
+This strategy builds on the SOS Fade config, so it inherits three new exit-ladder settings: "Target 1 level", "Target 2 level" and "First target, in R". They are off by default and change nothing here. They are listed in this meta file so the lab page shows them rather than silently accepting them. They have not been measured for this strategy. SOS Fade results: `strategies/python/sos_fade/sos_fade_optimization.md` Run 40.

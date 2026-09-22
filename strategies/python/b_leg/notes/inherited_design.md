@@ -110,3 +110,7 @@ through.
 
 ⚠ **EXISTING B-LEG RUNS NEED A RERUN.** The ladder is written into the run's own equity curve at
 replay time, so *Rebuild chart* cannot supply it.
+
+## SOS Fade target-level settings inherited (2026-09-20)
+
+This strategy builds on the SOS Fade config, so it inherits three new exit-ladder settings: "Target 1 level", "Target 2 level" and "First target, in R". They are off by default and change nothing here. They are listed in this meta file so the lab page shows them rather than silently accepting them. They have not been measured for this strategy. SOS Fade results: `strategies/python/sos_fade/sos_fade_optimization.md` Run 40.

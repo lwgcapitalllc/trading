@@ -37,6 +37,22 @@ _TIME_STOP_MODES = frozenset({"Off", "Before TP1 only", "Always"})
 _NOGAP_ARMS = frozenset({"Any", "Sweep + RSI div"})
 
 
+# The fib rungs a target may be pinned to, mapped to the `Signals` field carrying that price.
+# "Auto" is the shipped deep/shallow rule and is handled in `execution._ladder_levels`, not here.
+# ⚠ 0.236 is absent because the canonical fib engine does not emit it — see `exec_tp1_level`.
+_TP_LEVELS = {
+    "Auto": None,
+    "0.0": "fibo_p7",      # the swing extreme — the furthest target that exists
+    "0.382": "fibo_p1",
+    "0.5": "fibo_p2",
+    "0.618": "fibo_p3",
+    "0.702": "fibo_p4",
+    "0.786": "fibo_p5",
+    "0.886": "fibo_p6",
+    "1.0": "fibo_p10",     # the leg origin
+}
+
+
 @dataclass(frozen=True)
 class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (sos_fade_strategy.pine 4159-4183) ──────────────
@@ -353,6 +369,53 @@ class SosFadeConfig:
     #   absent column as 0.0 rather than as this default** — which is the only thing keeping an
     #   archived export replayable now that the shipped value is non-zero.
     exec_min_atr_pct: float = 0.08     # "Minimum market volatility (% of price)"
+    exec_tp1_level: str = "Auto"       # "Target 1 level"
+    exec_tp2_level: str = "Auto"       # "Target 2 level"
+    #   WHICH FIB EACH RUNG SITS ON. "Auto" (default) is the shipped rule and every stored figure
+    #   reproduces on it: a DEEP entry (at or below 0.618) targets 0.5 then 0.382, a SHALLOW one
+    #   targets 0.382 then 0.0 (the swing extreme). Naming a ratio pins that rung to it for every
+    #   trade, deep or shallow alike.
+    #
+    #   🔴 IT EXISTS BECAUSE THE TWO RUNGS WERE THE ONLY PART OF THIS LADDER NOBODY COULD ASK A
+    #   QUESTION ABOUT. The percentages have been tunable since the start and the levels were
+    #   hardcoded in two places. Aaron, 2026-09-20: *"idk what is the best TP1 and TP2"* — which
+    #   is a measurement, and until now there was nothing to measure.
+    #
+    #   ⚠ **0.236 IS NOT ON THIS LIST AND IT WAS ASKED FOR.** The ladder emitted by the canonical
+    #   fib engine is 0.0 / 0.382 / 0.5 / 0.618 / 0.702 / 0.786 / 0.886 / 1.0 and 0.236 is not in
+    #   it. Adding one is an ENGINE change (`engines/fibonacci/`) shared with every other consumer
+    #   and needs that engine's own parity gate on a fresh export — not a strategy setting. Listed
+    #   here so the next reader finds the reason rather than the absence.
+    #   ⚠ **A level BEHIND the entry cannot be a target**, and which levels those are depends on
+    #   where each trade filled, so it cannot be refused at construction. A rung that is not
+    #   beyond the entry falls back to the Auto level FOR THAT TRADE and is counted in
+    #   `Execution.tp_level_fallbacks` — never silently, because a run where most trades ignored
+    #   the setting would otherwise report as a measurement of it.
+    #   ⚠ Both default to "Auto", so `compare_strategy.py` sees the primary ladder it always did.
+    exec_tp1_r: float = -1.0           # "First target, in R"
+    #   WHERE THE FIRST RUNG SITS, PRICED OFF THE TRADE'S OWN RISK. -1.0 (default) is OFF and the
+    #   rung stays the frozen 15m fib level every shipped figure was measured on. A positive
+    #   number replaces that level with `entry + R x the frozen entry stop distance`, and
+    #   `exec_tp1_pct` still decides how much comes off there.
+    #
+    #   🔴 IT EXISTS BECAUSE THE PRIMARY'S TWO RUNGS ARE FIB PRICES AND A FIB PRICE IS NOT A
+    #   DISTANCE. MEASURED on run `ea46142df097` (244 trades, 2020-01-01 -> 2026-09-20): the first
+    #   rung sat at a median 1.10R but ranged 0.31R to 5.57R, and 102 of the 244 trades had it
+    #   BELOW 1R. So "bank a slice at the first target" and "bank a slice at 1R" are two different
+    #   instructions, and until now only the first was expressible. Aaron, 2026-09-20: *"what I'm
+    #   asking for is at one R taking a percentage off the table... those are two different
+    #   things"* — they are, and this is the second one.
+    #
+    #   ⚠ Priced off `_sl`, the FROZEN entry stop, exactly like `exec_be_arm_r` above and for the
+    #   same reason: 1R must keep meaning the risk the trade was SIZED against, or the target
+    #   creeps outward every time the stop ratchets.
+    #   ⚠ The SECOND rung is deliberately left where the fib put it. One R rung is the decision
+    #   that was asked for; moving both is a different one and needs its own measurement.
+    #   ⚠ A PRIMARY only. The re-entry (`exec_sec_tp_r`), the reclaim (`exec_rec_tp_r`) and the
+    #   short-hold fork (`exec_sh_tp_r`) already have their own R rungs and keep reading those —
+    #   this is the fourth branch of one shared convention, not a second implementation of it.
+    #   ⚠ Off by default, so every stored run reproduces unchanged and `compare_strategy.py` sees
+    #   the primary decisions it always did.
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart
@@ -1750,6 +1813,21 @@ class SosFadeConfig:
                 f"exec_be_keep_r must sit in [0, 1), got {self.exec_be_keep_r!r}. At 1.0 the "
                 f"'protected' stop IS the original stop, so the feature would read as switched "
                 f"on and change nothing.")
+        for _f, _v in (("exec_tp1_level", self.exec_tp1_level),
+                       ("exec_tp2_level", self.exec_tp2_level)):
+            if _v not in _TP_LEVELS:
+                raise ValueError(
+                    f"{_f} must be one of {sorted(_TP_LEVELS)}, got {_v!r}. 0.236 is deliberately "
+                    f"absent — the canonical fib engine does not emit it; see the note on "
+                    f"exec_tp1_level.")
+        if not (self.exec_tp1_r == -1.0 or self.exec_tp1_r > 0):
+            # Refuse rather than clamp, the same rule every other R rung here follows. Zero would
+            # put the primary's first target ON the entry, and a negative that is not the -1
+            # sentinel would put it on the losing side of it — both are orders nothing should
+            # rest, and silently correcting either would measure a run on settings nobody chose.
+            raise ValueError(
+                f"exec_tp1_r must be -1 (use the frozen 15m fib TP1) or a positive R multiple, "
+                f"got {self.exec_tp1_r!r}. Zero would put the first target ON the entry.")
         if self.exec_secondary and not (self.exec_sec_tp_r == -1.0 or self.exec_sec_tp_r > 0):
             raise ValueError(
                 f"exec_sec_tp_r must be -1 (use the 15m 0.5 fib) or a positive R multiple, got "

@@ -93,3 +93,7 @@ objection in `strategies/python/realign/realign_optimization.md` → Run 13). Th
 lost "Chosen, not measured." — it has now been swept. Only default VALUES moved, so no saved input
 shifts, but a chart already running the script keeps its old values until "Reset settings to
 defaults". Parity green the same day on an export at these defaults (the fourth realign golden).
+
+## SOS Fade: target levels and an R-priced first target (2026-09-20)
+
+`sos_fade_strategy.pine` and its export twin gain three exit-ladder inputs: "Target 1 level", "Target 2 level" and "First target, in R". All are off by default, so the chart is unchanged. They mirror `strategies/python/sos_fade`. ⚠ **They have not been through the parity gate.** It needs a fresh export with the inputs set.

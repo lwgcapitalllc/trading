@@ -4890,3 +4890,19 @@ the two defects the build caught: **`strategies/notes/flat-before-the-close.md`*
     python3 backtest/tools/axis_sweep.py --strategy sos_fade --symbol XAUUSD --tf 15 \
         --server VantageMarkets_Demo --start 2020-01-02 --end 2026-08-06 --split 2023-05-01 \
         --profile puprime_standard --pin exec_secondary=False --axis "flat_mode=Off,Friday only,Every day"
+
+## Run 40 — 2026-09-20/21: where to bank — fib level, R rung and bank size, ranked in R
+
+**Basis:** run `ea46142df097` — XAUUSD.p M15, 2020-01-01 → 2026-09-20, puprime_ecn, consistent sizing, 100-lot cap. Ranked on per-trade R with no compounding (return ÷ max drawdown), because the lot cap makes net dollars fiction after early 2025.
+
+| Setting | Total R | Max DD (R) | Return/DD |
+|---|---|---|---|
+| Baseline, bank nothing | 234.9 | 7.39 | 31.8 |
+| Bank 50% at fib target 1 | 191.4 | 5.69 | **33.6** |
+| Bank 25% at fib target 1 | 213.1 | 6.42 | 33.2 |
+| First target at 0.5R / 1R / 1.5R | — | — | ≈15 / ≈19–20 / ≈15 |
+
+- **The R rung loses at every distance.** Deeper drawdown and worse return per drawdown than the fib target.
+- **Grid `opt_2d74db78e9`, 108 combos:** target 1 at Auto/0.5/0.382/0, target 2 at Auto/0.382/0, and 0/25/50% banked at each. **Every pinned level lost to Auto.** Best profit factor was Auto/Auto with nothing banked (4.22). Pinning target 1 at 0.382 or 0.5 dropped it to 1.7–2.7, and target 1 at the 0 fib to about 2.3, with the win rate falling from 54% to 44%.
+- The grid stores no trades, so the Auto/Auto combos that bank at target 2 are being re-run in full for an R ranking. Result to follow below.
+- **0.236 was not built.** Every earlier rung lost, and adding it is a fib engine change with its own parity gate.

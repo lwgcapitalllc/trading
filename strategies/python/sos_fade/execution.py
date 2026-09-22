@@ -49,6 +49,7 @@ from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSn
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
 from engines.fibonacci.geometry import fib_level
 
+from .config import _TP_LEVELS
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
 
 
@@ -899,6 +900,11 @@ class Execution:
         self._announce_latch_s: Optional[int] = None
 
         self.trades: List[Trade] = []
+        #: How many rungs fell back to the Auto fib level because the level the config NAMED was
+        #: not beyond that trade's entry. Reporting-only (parity-safe, nothing reads it back), and
+        #: it exists so a sweep cannot report a level as measured when most trades ignored it.
+        #: Counted per RUNG placed, so one setup can add two.
+        self.tp_level_fallbacks = 0
         # Blocked setups (reporting only — see BlockedSetup). `_blk_keys` is the Pine's
         # per-side dedupe latch (`sosBar*10 + code`): one entry per setup per REASON, so a
         # setup blocked for twenty bars is one record — but a reason SET that CHANGES is a
@@ -2201,8 +2207,7 @@ class Execution:
             sl = self._sl_anchor(sig, long_edge, True) - cfg.exec_sl_buf_tk * cfg.mintick
             dist = long_edge - sl
             deep = long_edge <= sig.fibo_p3       # at/below 0.618
-            tp1 = sig.fibo_p2 if deep else sig.fibo_p1   # deep 0.5 / shallow 0.382
-            tp2 = sig.fibo_p1 if deep else sig.fibo_p7   # deep 0.382 / shallow 0.0
+            tp1, tp2 = self._ladder_levels(sig, deep, long_edge, 1)
             if self._stop_clears_floor(dist, long_edge) \
                     and not self._too_deep(sig, long_edge, True):
                 qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
@@ -2221,8 +2226,7 @@ class Execution:
             sl = self._sl_anchor(sig, short_edge, False) + cfg.exec_sl_buf_tk * cfg.mintick
             dist = sl - short_edge
             deep = short_edge >= sig.fibo_p3
-            tp1 = sig.fibo_p2 if deep else sig.fibo_p1
-            tp2 = sig.fibo_p1 if deep else sig.fibo_p7
+            tp1, tp2 = self._ladder_levels(sig, deep, short_edge, -1)
             if self._stop_clears_floor(dist, short_edge) \
                     and not self._too_deep(sig, short_edge, False):
                 qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
@@ -3839,6 +3843,42 @@ class Execution:
             return self._tp2, self._tp1
         return self._tp1, self._tp2
 
+    def _ladder_levels(self, sig, deep: bool, entry: float, dir_: int):
+        """The two fib prices this setup's rungs sit on — (tp1, tp2).
+
+        🔴 **ONE FUNCTION BECAUSE IT WAS TWO COPIES.** The long and short blocks each carried the
+        same hardcoded deep/shallow pair, which is how a lever gets added to one side only. Both
+        call this now, so a change lands on both or neither.
+
+        "Auto" is the shipped rule and reproduces every stored figure: a DEEP entry (at or below
+        0.618) targets 0.5 then 0.382, a SHALLOW one targets 0.382 then 0.0. A named ratio pins
+        that rung for every trade — see `exec_tp1_level`.
+
+        ⚠ **A LEVEL BEHIND THE ENTRY CANNOT BE A TARGET, and which levels those are is a property
+        of the FILL, not of the config** — a 0.5 rung is a target for an entry at 0.786 and is
+        behind one that filled at 0.382. So it cannot be refused at construction. Such a rung
+        falls back to the Auto level for that trade and is COUNTED: a run where the setting was
+        mostly ignored must not report as a measurement of the setting. `tp_level_fallbacks` is
+        reporting-only — nothing reads it back, so it is parity-safe.
+        """
+        auto1 = sig.fibo_p2 if deep else sig.fibo_p1
+        auto2 = sig.fibo_p1 if deep else sig.fibo_p7
+        out = []
+        for chosen, auto in ((self._cfg.exec_tp1_level, auto1),
+                             (self._cfg.exec_tp2_level, auto2)):
+            attr = _TP_LEVELS.get(chosen)
+            if attr is None:
+                out.append(auto)
+                continue
+            price = getattr(sig, attr, None)
+            # `is None` and not falsy: a price of 0.0 is a price. Rule 1.
+            if price is None or (price - entry) * dir_ <= 0:
+                self.tp_level_fallbacks += 1
+                out.append(auto)
+            else:
+                out.append(price)
+        return out[0], out[1]
+
     def _first_rung(self, *, dir_: int, entry: float, stop: float, kind: str,
                     src: Optional[str], fib_tp1: float) -> float:
         """Where this trade's FIRST rung sits, for a trade of this KIND entered at `entry`.
@@ -3863,6 +3903,19 @@ class Execution:
         tp = fib_tp1
         d = 1 if dir_ > 0 else -1
         dist = abs(entry - stop)
+        if kind == "primary" and getattr(self._cfg, "exec_tp1_r", -1.0) > 0 and dist > 0:
+            # PRIMARY, R-PRICED: the first rung sits a multiple of the trade's own frozen risk
+            # from the entry, replacing the fib level. The fib rung is a PRICE and price says
+            # nothing about distance — measured on run `ea46142df097`, the primary's first rung
+            # sat anywhere from 0.31R to 5.57R, so banking "at the first target" banked at a
+            # different risk multiple on every trade. See `exec_tp1_r` in config.py.
+            # ⚠ The SECOND rung is left where the fib put it, deliberately — same as short-hold
+            # below. It still stages the stop, so erasing it would change the stop ladder as
+            # well as the bank, which is a second decision.
+            # ⚠ Ordered BEFORE short-hold so that fork keeps winning when both are set: its whole
+            # point is that the entire position comes off at its own target, and a rung this
+            # one moved underneath it would be a ladder neither setting describes.
+            tp = entry + d * self._cfg.exec_tp1_r * dist
         if kind == "primary" and self._cfg.exec_short_hold and self._cfg.exec_sh_tp_r > 0:
             # SHORT-HOLD: the whole position comes off at a multiple of its own risk, replacing
             # the fib ladder for this trade. Priced the same way the re-entry below prices its

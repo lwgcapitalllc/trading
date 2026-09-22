@@ -59,6 +59,9 @@ bool eqExemptFvg = input.bool(true, "   ↳ A gap on an EQ level survives the FV
 string execSlLevel = input.string("0.886", "Stop fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = G6, tooltip = "How far back the stop sits. 1.0 is the widest and safest; the tighter levels can put the stop almost on the entry.")
 bool  execSlDeep  = input.bool(false, "   ↳ Entries at 0.786 or deeper stop at 1.0", group = G6, active = execSlLevel != "1.0", tooltip = "On = an entry filling at 0.786 or deeper puts its stop right back at the start of the move, giving it more room.")
 float execSlBufTk = input.float(0.0,  "Stop buffer beyond the level (ticks)",  group = G6, tooltip = "Extra room beyond the stop level, in ticks, so a wick through it does not take you out.", minval = 0)
+string execTp1Level = input.string("Auto", "Target 1 level", options = ["Auto", "0.0", "0.382", "0.5", "0.618", "0.702", "0.786", "0.886", "1.0"], group = G6, tooltip = "Which fib the first target sits on. Auto = the shipped rule: a deep entry aims at 0.5, a shallow one at 0.382. Naming a level pins it for every trade. A level behind the entry is not a target and that trade keeps the Auto level.")
+string execTp2Level = input.string("Auto", "Target 2 level", options = ["Auto", "0.0", "0.382", "0.5", "0.618", "0.702", "0.786", "0.886", "1.0"], group = G6, tooltip = "Which fib the second target sits on. Auto = a deep entry aims at 0.382, a shallow one at the swing extreme.")
+float execTp1R    = input.float(-1,   "First target, in R",            group = G6, minval = -1, step = 0.25, tooltip = "Where the first target sits, measured in multiples of the trade's own risk. -1 = off, and the target stays on the fib level. 1 = one times what the trade is risking.")
 float execTp1Pct  = input.float(0,    "TP1 size %",                    group = G6, minval = 0, maxval = 100, tooltip = "How much of the position the first target banks. 0 = bank nothing and ride it all. Touching it still moves the stop to breakeven.")
 float execTp2Pct  = input.float(0,    "TP2 size %",                    group = G6, minval = 0, maxval = 100, tooltip = "How much of the position the second target banks. 0 = bank nothing. Touching it still lifts the stop and hands the rest to the trail.")
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = G6, minval = 0, tooltip = "How far past the entry the breakeven stop sits, so a scratch still covers costs.")
@@ -3767,12 +3770,27 @@ bool shortDeep = not na(shortEdge) and shortEdge >= fiboP3
 bool bLegLongArm  = execBLeg and execLongs  and not longArmed  and bLegL_on and not bLegL_tap and not lateDayBlock and not na(bLegL_top) and not na(bLegL_inv) and not na(bLegL_tgt) and strategy.position_size == 0 and (na(tradedBLegL) or bLegL_bar != tradedBLegL)
 bool bLegShortArm = execBLeg and execShorts and not shortArmed and bLegS_on and not bLegS_tap and not lateDayBlock and not na(bLegS_bot) and not na(bLegS_inv) and not na(bLegS_tgt) and strategy.position_size == 0 and (na(tradedBLegS) or bLegS_bar != tradedBLegS)
 
+// ── Which fib a rung sits on (2026-09-20) ────────────────────────────────
+// ONE function, called by the long and the short block alike — the deep/shallow pair used to be
+// written out in both, which is how a lever gets added to one side only.
+// A level BEHIND the entry is not a target, and which levels those are depends on where the trade
+// filled, so it cannot be refused in the input panel: such a rung keeps the Auto level.
+f_tpLevel(string choice, float autoPx, float entry, int d) =>
+    float px = choice == "0.0"   ? fiboP7  : choice == "0.382" ? fiboP1  :
+               choice == "0.5"   ? fiboP2  : choice == "0.618" ? fiboP3  :
+               choice == "0.702" ? fiboP4  : choice == "0.786" ? fiboP5  :
+               choice == "0.886" ? fiboP6  : choice == "1.0"   ? fiboP10 : na
+    na(px) or (px - entry) * d <= 0 ? autoPx : px
+
 // ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
 if longArmed
     lSL  := f_slAnchor(longEdge, true) - execSlBuf
     float slDist = longEdge - lSL
-    lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
-    lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
+    lTP1 := f_tpLevel(execTp1Level, longDeep ? fiboP2 : fiboP1, longEdge,  1)   // Auto: deep → 0.5, shallow → 0.382
+    // R-priced first rung — replaces the fib level, leaves TP2 where the fib put it. Off at -1.
+    // Priced off the FROZEN entry risk (slDist), so the target cannot creep as the stop ratchets.
+    lTP1 := execTp1R > 0 and slDist > 0 ? longEdge + execTp1R * slDist : lTP1
+    lTP2 := f_tpLevel(execTp2Level, longDeep ? fiboP1 : fiboP7, longEdge,  1)   // Auto: deep → 0.382, shallow → 0.0
     if slDist > 0 and slDist >= f_minStopFloor(longEdge) and f_marketHasRange(longEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
@@ -3788,8 +3806,10 @@ else if strategy.position_size == 0 and not bLegLongArm
 if shortArmed
     sSL  := f_slAnchor(shortEdge, false) + execSlBuf
     float slDist = sSL - shortEdge
-    sTP1 := shortDeep ? fiboP2 : fiboP1
-    sTP2 := shortDeep ? fiboP1 : fiboP7
+    sTP1 := f_tpLevel(execTp1Level, shortDeep ? fiboP2 : fiboP1, shortEdge, -1)
+    // Mirror of the long above — see the note there.
+    sTP1 := execTp1R > 0 and slDist > 0 ? shortEdge - execTp1R * slDist : sTP1
+    sTP2 := f_tpLevel(execTp2Level, shortDeep ? fiboP1 : fiboP7, shortEdge, -1)
     if slDist > 0 and slDist >= f_minStopFloor(shortEdge) and f_marketHasRange(shortEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
