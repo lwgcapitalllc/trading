@@ -8,6 +8,30 @@ CLAUDE.md gets at most one index line.
 
 ## Tools
 
+- **`tools/run_report.py` — TWO FIXES AND TWO NEW FLAGS (2026-09-22).**
+  🔴 **IT DATED EVERY RE-ENTRY TRADE OFF THE WRONG CLOCK, AND HAD DONE SINCE RE-ENTRIES WERE
+  WIRED IN (2026-08-16).** The row was dated `df.index[t.entry_index]`, but a re-entry's
+  `entry_index` counts bars on the FAST feed (467k M5 bars on a 2020→2026 run) while `df` is the
+  M15 frame (156k) — two units, one reader. An index past the end hit an `else df.index[-1]`
+  clamp and stamped the FINAL BAR of the run; an index that happened to fit named the wrong 15m
+  bar, which is worse, because it looks plausible. **MEASURED on a 2020→2026 replay: 60 of 242
+  trades carried the last bar's timestamp**, filing all 60 under 2026. **Totals were never
+  affected — every per-year, per-session, per-hour and regime split was.** A row is now dated off
+  the trade's own `entry_ms`, which is frame-independent, and the regime is read at the 15m bar
+  that timestamp falls in. Rule 15 (what is this value's UNIT on each side of the boundary) and
+  rule 1 (the clamp made *out of range* and *the last bar* one value). ⚠ **Re-run before quoting a
+  per-year figure this tool produced for any run with `exec_secondary` on.**
+  - `trades.csv` now carries **`kind`** (primary / secondary). Without it no reader could tell a
+    15m setup from its re-entry, and the two are sized, stopped and targeted differently.
+  - **`--server`** picks the broker cache to replay, same flag and meaning as `axis_sweep.py`'s.
+    Without it the tool could only replay the attached terminal's broker, so an offline machine
+    could not run it at all.
+  - **`--cost-profile`** charges a named account's measured costs. In bar mode it is the ONLY way
+    this tool can charge anything — `--fill-model tick` needs a tick stream, which a bar cache
+    does not have — and an uncosted run flatters a tight-stop re-entry against a wide-stop
+    primary. Omitted = the zero-cost replay every stored figure from this tool was produced with,
+    so nothing re-prices.
+
 - **`tools/zone_return_audit.py`** (new 2026-09-17, Run 39) — trades the **RETURN into** the
   tradable zone, the opposite direction to Runs 27-36, which all traded the way OUT of it. The
   15m Structure fib gives the leg and the zone; the entry is the first counter-direction shift of

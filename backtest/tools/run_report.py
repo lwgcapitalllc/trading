@@ -352,6 +352,18 @@ def main(argv=None) -> int:
         "rather than silently running the default, which would make the run a lie.",
     )
     ap.add_argument(
+        "--cost-profile",
+        default=None,
+        help="charge a named account's measured costs (e.g. puprime_ecn). Omit for the "
+        "zero-cost replay every stored figure from this tool was produced with.",
+    )
+    ap.add_argument(
+        "--server",
+        default=None,
+        help="broker cache to replay (e.g. VantageMarkets_Demo). Omit only when the terminal you "
+        "have attached IS the one you mean. Same flag, same meaning as axis_sweep.py's.",
+    )
+    ap.add_argument(
         "--no-regime",
         action="store_true",
         help="skip the regime tag (faster; drops the 'what market' answer)",
@@ -378,7 +390,8 @@ def main(argv=None) -> int:
     end = args.end or dt.date.today().isoformat()
 
     print(f"loading {args.symbol} {args.tf}m  {start} -> {end} ...", flush=True)
-    df = BarSource().load(args.symbol, args.tf, start, end)
+    src = BarSource(server=args.server) if args.server else BarSource()
+    df = src.load(args.symbol, args.tf, start, end)
     if df.empty:
         print("no bars returned — is the MT5 agent tunnel up on localhost:8766?")
         return 1
@@ -453,7 +466,24 @@ def main(argv=None) -> int:
     if note:
         print(f"  {note}")
 
-    strat = build_strategy(StrategyCls, cfg, initial_capital=args.capital)
+    # `--cost-profile` charges a named account's MEASURED spread, commission and swap. In bar
+    # mode that is the only way this tool can charge anything: `fill_model="tick"` needs a tick
+    # stream, which an offline cache does not have, and a run that quietly charged nothing while
+    # comparing a tight-stop re-entry against a wide-stop primary would flatter the tighter one.
+    # Omitted = constructed exactly as before, which is what every stored figure from this tool
+    # was produced with. `build_strategy` REFUSES a profile a strategy cannot take.
+    build_kw: dict = {"initial_capital": args.capital}
+    if args.cost_profile:
+        from backtest.fills import PROFILES
+
+        if args.cost_profile not in PROFILES:
+            raise SystemExit(
+                f"--cost-profile {args.cost_profile!r}: not a known profile. Known: "
+                f"{sorted(PROFILES)}"
+            )
+        build_kw["cost_profile"] = PROFILES[args.cost_profile]
+        print(f"  charging costs: {args.cost_profile}")
+    strat = build_strategy(StrategyCls, cfg, **build_kw)
 
     if wants_secondary:
         if not hasattr(strat, "run_dual"):
@@ -472,7 +502,9 @@ def main(argv=None) -> int:
         print(
             f"loading {args.symbol} {fill_tf}m for the secondary  {start} -> {end} ...", flush=True
         )
-        df1m = BarSource().load(args.symbol, fill_tf, start, end)
+        # The SAME source as the 15m feed — a fast feed from another broker would replay one
+        # broker's re-entries against another's setups.
+        df1m = src.load(args.symbol, fill_tf, start, end)
         if df1m.empty:
             raise SystemExit(
                 f"exec_secondary=True but no {fill_tf}m bars came back for that window. Refusing "
@@ -514,7 +546,21 @@ def main(argv=None) -> int:
     regime_cache: dict = {}
     rows: list[dict] = []
     for t in trades:
-        ts = df.index[t.entry_index] if t.entry_index < len(df.index) else df.index[-1]
+        # 🔴 DATE THE ROW OFF THE TRADE'S OWN TIMESTAMP, NEVER OFF ITS BAR NUMBER. A re-entry's
+        # `entry_index` counts bars on the FAST feed (467k 5m bars), the frame here counts 15m
+        # bars (156k), and the two were read as one — so an index past the end fell to the clamp
+        # below and stamped the LAST BAR of the run, while an index that happened to fit silently
+        # named the wrong 15m bar. MEASURED 2026-09-22 on a 2020→2026 replay: **60 of 242 trades**
+        # carried the final bar's time, which put every one of them in 2026 in the per-year table.
+        # Totals were never affected; every per-year, per-session and per-hour split was, for as
+        # long as this tool has replayed re-entries (since 2026-08-16). Rule 15 — ask what a
+        # value's UNIT is on each side of a boundary.
+        # `entry_ms` is the trade's own UTC stamp and is frame-independent. 0 means a strategy
+        # that never set it, which falls back to the old reading rather than inventing a date.
+        if getattr(t, "entry_ms", 0):
+            ts = pd.Timestamp(t.entry_ms, unit="ms")
+        else:
+            ts = df.index[t.entry_index] if t.entry_index < len(df.index) else df.index[-1]
         ny = ts.tz_localize("UTC").tz_convert(NY) if ts.tzinfo is None else ts.astimezone(NY)
         rows.append(
             {
@@ -525,8 +571,22 @@ def main(argv=None) -> int:
                 "weekday": ny.strftime("%a"),
                 "hour_ny": f"{ny.hour:02d}",
                 "session": _session(ny.hour),
-                "regime": "off" if args.no_regime else _regime_at(df, t.entry_index, regime_cache),
+                # The regime is read at the 15m bar this trade's own TIMESTAMP falls in — the
+                # same correction as the date above, for the same reason: a re-entry's bar
+                # number belongs to the fast feed and means nothing on this frame.
+                "regime": "off"
+                if args.no_regime
+                else _regime_at(
+                    df,
+                    min(
+                        max(int(df.index.searchsorted(ts, side="right")) - 1, 0), len(df.index) - 1
+                    ),
+                    regime_cache,
+                ),
                 "dir": "long" if t.dir > 0 else "short",
+                # Which ENTRY took this trade. Without it a reader cannot tell the 15m setup from
+                # its re-entry, and the two are sized, stopped and targeted differently.
+                "kind": getattr(t, "kind", "primary"),
                 "r": round(t.r, 3),
                 "grade": _grade(t.r, band),
                 "pnl_usd": round(t.pnl_usd, 2),
