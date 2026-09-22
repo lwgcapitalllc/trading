@@ -556,6 +556,13 @@ class FftStrategy:
         # off and the 15m against, the count belongs to the other side and says nothing here.
         if cfg.skip_15m_overextended and self.dir15 == d and self.nbos15 >= OVEREXTENDED_15M_BOS:
             return no("bos15")
+        # The touch's own label, asked now: at the touch the minute is clamped to the 61.8, so its
+        # prices drop out and the answer depends only on this row — the one the touch will read.
+        swept = (cfg.only_sweep or cfg.sweep_risk_x != 1.0) and self._swept_since(
+            r, ts, d, lv["E1"], lv["E1"]
+        )
+        if cfg.only_sweep and not swept:
+            return no("no_sweep")
         c = self._candles5.get(r.ext_loc)
         if c is None:
             return no("ext_unknown")
@@ -579,7 +586,7 @@ class FftStrategy:
         target = lv[LEVEL_KEY[cfg.target]]
         if (entry - stop) * d <= 0 or (target - entry) * d <= 0:
             return no("unsized")
-        qty = self.execution.size(entry, stop)
+        qty = self.execution.size(entry, stop, mult=cfg.sweep_risk_x if swept else 1.0)
         if qty is None:
             return no("unsized")
         if qty <= 0:

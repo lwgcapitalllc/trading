@@ -368,6 +368,31 @@ in). Page: https://claude.ai/artifact/VJbyecKjWZRfRmkHG6TYwy (marks save to its 
 `blind_replay_grade.py` on `FFT_r`, and read the takes within sweep / no-sweep as well: the sweep is
 on the page, so a pick that just follows it would beat random without the eye adding anything.
 
+## Sweep-only — the A+ label as a filter (2026-09-22, the bot, lab path)
+
+The bot's "Only sweep setups" setting, replayed exactly as the lab replays it: PU Prime `XAUUSD.p`
+1m, 2020-01-01 → 2026-09-22, ECN bid/ask fills + commission + swap, 5%, TP2. Lab runs 08c84d0de04f
+(all) and 82868e38f223 (sweep only). R columns from the same replay; sizing never changes which
+trades are taken here (one slot, no shared budget), so the weighted rows are exact in R.
+
+| | trades | win | avg R | total R | worst DD | return/DD | 2020-25 | last yr |
+|---|---|---|---|---|---|---|---|---|
+| all setups | 187 | 71.1% | +0.148 | +27.71R | 4.11R | 6.7 | +23.22R | +4.49R |
+| **sweep only** | 53 | 83.0% | +0.325 | +17.21R | 3.21R | **5.4** | +15.49R | +1.72R |
+| all, sweeps at 1.5x | 187 | | | +36.31R | 5.01R | 7.2 | +30.97R | +5.35R |
+| all, sweeps at 2x | 187 | | | +44.92R | 6.43R | 7.0 | +38.71R | +6.20R |
+
+- 🔴 **Sweep-only is WORSE per unit of drawdown (5.4 vs 6.7).** The 134 non-sweep trades average
+  +0.078R — thin but positive — and skipping them costs 38% of the total R for 0.9R less drawdown.
+- **Sizing the sweeps up beats filtering on them** (7.2 at 1.5x), but by a small margin, and the
+  label's lead was found on these same bars. A candidate for demo, not a result.
+- The filter decides at placement what the touch then records: 53/53 traded touches labelled sweep,
+  0 of 525 refusals (`tests/test_fft.py`).
+- **SHIPPED 2026-09-22 at the user's call: every setup taken, sweeps at 1.5x** ("Sweep setup size"
+  default 1.5). The sweep-only filter stays OFF.
+- Lab run 046197075b55 at the shipped 1.5x, same basis as 08c84d0de04f (1x), both from $10,000: the
+  same 187 trades, PF 1.407 vs 1.375, max drawdown **23.5% vs 19.2%**, net +$41,651 vs +$24,923.
+
 ## Tested and NOT profitable — do not re-test
 - **After a stop-out, does price come back?** (2026-09-21, version 1, cost-free.) Within 24h of the
   stop, 58% of 2020-25 losses (26/45) went back to TP1 and 51% on to TP2; last year 5/10 and 4/10.

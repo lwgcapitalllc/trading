@@ -8,7 +8,9 @@ never promoted, never run against a broker.
 ## The rules that are easy to break
 
 - **1-minute bars only.** The 1m trend is a rule, and the 5m and 15m are built from the 1m in
-  `frames.py`. `set_timeframe_minutes` refuses anything else.
+  `frames.py`. `set_timeframe_minutes` refuses anything else — and since 2026-09-22 every lab path
+  reaches it: `build_strategy(..., timeframe_minutes=frame_minutes(df))` (the single run, the sweep,
+  the stack leg). Before that, a run on 5m or 15m bars finished green with zero trades.
 - **Every decision is made at a 1m close, for the next minute.** The order decided at 10:03's close
   is the one that meets 10:04's prices. Never decide and fill inside one minute.
 - **A 5m/15m candle is handed out the moment it is known closed** — on its last minute, or when a
@@ -22,6 +24,14 @@ never promoted, never run against a broker.
 - **"Skip after 4+ 15m BOS" is a setting, OFF by the user's decision** (2026-09-21). The count is
   the study's `n15` — a shift resets it to 0 — and only the 15m trend BEHIND the trade is read. It is
   an unproven lead; `tools/forward_log.py` grades it (and the other two leads) on demo trades.
+- **"Only sweep setups" is a setting, OFF** (2026-09-22). It asks the sweep label at PLACEMENT: at
+  the touch the minute is clamped to the 61.8, so the label depends only on the 5m row the order was
+  decided on. Checked on 2020-26 real bars: 53/53 traded touches labelled sweep, 0/525 refusals.
+  Measured result: `backtest/notes/fft_ledger.md` → *Sweep-only*.
+- 🔴 **A sweep setup trades at 1.5x by default — the user's call, 2026-09-22** ("Sweep setup size",
+  1.0 = off, refused above 2.0). Sized at PLACEMENT from the same label, so it moves no trade and no
+  R, only size: every dollar, drawdown % and profit-factor figure measured before it is at 1x.
+  ⚠ In-sample lead. ⚠ The account's half-size floor is half of the BIGGER size (3.75% of room).
 - **The A+ sweep label reads live levels only, and the touch minute only to the 61.8.** Until
   2026-09-21 it counted levels already taken and still drawn, and the touch minute past the fill —
   copied faithfully from the study, which had the same defect (rule 14). Reporting only; no trade moves.
@@ -73,6 +83,8 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
 - The lab's run forms offer 1 minute and open on it for FFT (2026-09-22). A run on any other frame
   now FAILS with FFT's own reason; until then it finished "complete, 0 trades" (run 2db0e08a8ccc),
   because the lab never called the frame check. See `backtest/notes/architecture.md`.
+  ✅ **The lab run, ECN costs, 5%, sweeps at 1x, 2020-01-01 → 2026-09-22 (run 08c84d0de04f): 187
+  trades, PF 1.375, max drawdown 19.19%** — in line with the gate's 152 + 34 costed trades.
 - Run `/live-safety` before anything under `algos/`.
 - Once it trades: `tools/forward_log.py --start <first demo day>` grades the three leads by replay.
   Check its trade list against the account's history first — a fill the replay does not see is the

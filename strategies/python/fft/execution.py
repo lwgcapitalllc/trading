@@ -253,9 +253,10 @@ class FftExecution(LivePositionMixin):
             return float("nan")
         return (self.equity * cfg.exec_risk_pct / 100.0) / (risk * cfg.point_value)
 
-    def size(self, entry: float, stop: float) -> Optional[float]:
+    def size(self, entry: float, stop: float, mult: float = 1.0) -> Optional[float]:
         """The order's size. `None` = no size (a zero stop distance); `0.0` = the account's risk
-        budget has no room for it right now.
+        budget has no room for it right now. `mult` scales the risk-sized quantity BEFORE the
+        budget sees it (a sweep setup's 1.5x), so the account judges the size actually wanted.
 
         🔴 **The budget is decided HERE, at PLACEMENT, never at the fill** — SOS Fade's
         `_fit_to_budget`, for the same reason: a live order is already resting at the broker by
@@ -264,7 +265,7 @@ class FftExecution(LivePositionMixin):
         size follows the room minute by minute. Inert with no budget stated — every backtest and
         the study gate — so it returns the risk-sized quantity untouched.
         """
-        qty = self._qty(abs(entry - stop))
+        qty = self._qty(abs(entry - stop)) * mult
         if not math.isfinite(qty) or qty <= 0:
             return None
         return self._account.affordable_qty(self._leg, entry, stop, self._cfg.point_value, qty)
