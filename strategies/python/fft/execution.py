@@ -253,6 +253,22 @@ class FftExecution(LivePositionMixin):
             return float("nan")
         return (self.equity * cfg.exec_risk_pct / 100.0) / (risk * cfg.point_value)
 
+    def size(self, entry: float, stop: float) -> Optional[float]:
+        """The order's size. `None` = no size (a zero stop distance); `0.0` = the account's risk
+        budget has no room for it right now.
+
+        🔴 **The budget is decided HERE, at PLACEMENT, never at the fill** — SOS Fade's
+        `_fit_to_budget`, for the same reason: a live order is already resting at the broker by
+        the fill, so shrinking or refusing the emulator's copy there leaves the two holding
+        different books and the bridge halts. Every minute re-decides the order, so the resting
+        size follows the room minute by minute. Inert with no budget stated — every backtest and
+        the study gate — so it returns the risk-sized quantity untouched.
+        """
+        qty = self._qty(abs(entry - stop))
+        if not math.isfinite(qty) or qty <= 0:
+            return None
+        return self._account.affordable_qty(self._leg, entry, stop, self._cfg.point_value, qty)
+
     def build_order(
         self,
         direction: int,
@@ -263,9 +279,11 @@ class FftExecution(LivePositionMixin):
         key: Tuple[int, int],
         kind: str,
         levels: Dict[str, float],
+        qty: Optional[float] = None,
     ) -> Optional[dict]:
-        qty = self._qty(abs(entry - stop))
-        if not math.isfinite(qty) or qty <= 0:
+        if qty is None:
+            qty = self.size(entry, stop)
+        if qty is None or not math.isfinite(qty) or qty <= 0:
             return None
         pend = _Pending(
             dir=direction,

@@ -233,6 +233,7 @@ def main() -> int:
             )
 
     # ── 3. costs ──
+    live_ok = True
     if a.costs:
         from backtest.fills import PROFILES
 
@@ -245,6 +246,21 @@ def main() -> int:
             f"   {len(rs)} trades, win {wins / max(len(rs), 1):.1%}, avgR {np.mean(rs):+.3f}, "
             f"total {np.sum(rs):+.2f}R   (ledger: +0.140R 2020-25, +0.165R last year)"
         )
+        # The LIVE shape: the runner builds the bot with NO cost profile, so the "Broker for live
+        # fills" setting must reproduce this run exactly — or the demo trades something other than
+        # what this section measured.
+        import fft
+
+        sl = bot_side(raw, config=fft.FftConfig(fill_profile="puprime_ecn"))
+
+        def book(s):
+            return [(t.entry_ms, t.exit_ms, round(t.r, 9)) for t in s.execution.trades]
+
+        live_ok = book(sl) == book(sc)
+        print(
+            f"   built as the live runner builds it (no cost profile, the fill setting): "
+            f"same trades and R? {'yes' if live_ok else 'NO'}"
+        )
 
     extra_ok = len(extra) <= (1 - TRADE_MATCH) * len(v1)
     ok = (
@@ -256,6 +272,7 @@ def main() -> int:
         and n15_ok >= N15_MATCH * max(len(both), 1)
         and sw_ok >= SWEPT_MATCH * max(len(both), 1)
         and over_ok
+        and live_ok
     )
     print(
         f"\n{'MATCH OK' if ok else 'MISMATCH'} — trades {len(matched)}/{len(v1)} (need "
@@ -265,6 +282,7 @@ def main() -> int:
         f"(need {TOUCH_MATCH:.0%} of each), 15m BOS {n15_ok}/{len(both)} (need {N15_MATCH:.0%}), sweep label {sw_ok}/{len(both)} "
         f"(need {SWEPT_MATCH:.0%})"
         + ("" if not a.overextended else f", skip ON removes exactly the 4+ trades: {over_ok}")
+        + ("" if not a.costs else f", live-shaped run books the costed run: {live_ok}")
     )
     return 0 if ok else 1
 

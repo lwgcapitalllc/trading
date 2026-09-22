@@ -25,6 +25,16 @@ never promoted, never run against a broker.
 - **The A+ sweep label reads live levels only, and the touch minute only to the 61.8.** Until
   2026-09-21 it counted levels already taken and still drawn, and the touch minute past the fill —
   copied faithfully from the study, which had the same defect (rule 14). Reporting only; no trade moves.
+- 🔴 **Live, the bot must be told its broker — "Broker for live fills".** The runner builds every
+  strategy with NO cost profile, so without the setting a buy limit fills on the chart's bid while
+  the broker fills on the ask: 23 of 76 buys 2020-25 (0 of 16 last year) touched the 61.8 on the bid
+  in a minute the ask did not, the emulator held a trade the broker never filled, and the bridge
+  halts on exactly that. With it the live bot books the costed gate's trades exactly (checked by
+  `compare_study.py --costs`). Blank in the lab — a run's own costs win.
+- 🔴 **The shared account's budget sizes the order at PLACEMENT** (`FftExecution.size`, SOS Fade's
+  `_fit_to_budget` reasoning). Sized only at the fill, a live order already resting full-size at the
+  broker would be refused or shrunk in the emulator alone, and the bridge halts. No room = the touch
+  is refused as `room`. Inert with no budget stated, so no backtest moves.
 - **No order rests into a weekend or an early-close holiday break** (`_next_minute_shut`). ⚠ The
   shared calendar marks Thanksgiving Day closed; PU Prime trades it until ~13:00 New York. So a plain
   "tomorrow is a holiday" is NOT refused here — only a weekend-length break, or an early close
@@ -45,14 +55,21 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
 - **MEASURED 2026-09-21:** 2020-01 → 2025-09: 157/157 trades, 157/157 outcomes, 2,644/2,644 first
   touches, 15m BOS count and sweep label. 2025-08 → 2026-09: 34/34, 34/34, 494/494. Skip on: 146
   and 26 trades, exactly the study's 157 − 11 and 34 − 8. Through PU Prime ECN with bid/ask fills:
-  +0.149R a trade over 152 (2020-25), +0.136R over 34 (last year).
+  +0.149R a trade over 152 (2020-25), +0.136R over 34 (last year). Re-run after the two live
+  fixes: unchanged, and the bot built as the runner builds it books those runs exactly.
 - ⚠ Both share the engines, so an engine defect passes both. **The user's chart check of recent bot
   trades is the step that checks the rule is right** — not yet done.
 
 ## Before demo
 
-- The instance config needs `warmup_bars` of about **45,000** — the study warmed 31 days; the
-  template's 5,000 is 3.5 days of 1m bars, and the 15m trend would start half-cold.
+- **The instance is `algos/markets/fx/instances/fft_1/`** (2026-09-21): demo 700152905, 5%, magic
+  770131, priority 4, "Broker for live fills" = puprime_ecn, `warmup_bars` **45,000** — the study
+  warmed 31 days; 5,000 is 3.5 days of 1m bars and the 15m trend would start half-cold. ⚠ The
+  warm-up is ONE unpaginated MT5 fetch and only fewer than 200 bars refuses, so a short answer
+  passes silently: read the bot's `Warmed N bars (first → last)` line on its first start.
+- ⚠ **That account's shares already sum past its 10% cap before FFT** (5 + 5 + 2.5; 17.5 with FFT).
+  First come first served is the user's call: FFT is shrunk to the room left, down to half its own
+  size, and refused below that.
 - The single-run form in the lab offers no 1-minute bar size (hard-coded presets); a lab run needs
   the frame set by hand until that form reads `suggested_bar_value`.
 - Run `/live-safety` before anything under `algos/`.

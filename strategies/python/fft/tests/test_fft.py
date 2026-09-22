@@ -195,6 +195,51 @@ def test_with_bid_ask_fills_a_buy_limit_needs_the_ask_to_reach_it():
     assert ex2.resolve(1, T0, 101.0, 102.0, 100.0 - prof.spread) is not None
 
 
+def test_the_fill_profile_setting_prices_a_live_buy_on_the_ask():
+    """The live runner builds the bot with NO cost profile, so the setting must supply one — or
+    the bid touching the 61.8 fills a trade the broker's ask never reached and the bridge halts.
+    Mutation: drop the `fill_profile` lookup in `FftStrategy.__init__` → the bid touch fills."""
+    from backtest.fills import PROFILES
+
+    half = PROFILES["puprime_ecn"].spread / 2
+    live = FftStrategy(FftConfig(fill_profile="puprime_ecn"))  # the runner's call: no profile
+    _rest_buy(live.execution)
+    assert live.execution.resolve(1, T0, 101.0, 102.0, 100.0 - half) is None
+    chart = FftStrategy(FftConfig())
+    _rest_buy(chart.execution)
+    assert chart.execution.resolve(1, T0, 101.0, 102.0, 100.0 - half) is not None
+
+
+def test_an_unknown_fill_profile_is_refused():
+    with pytest.raises(ValueError, match="not a broker profile"):
+        FftStrategy(FftConfig(fill_profile="puprime_ecm"))
+
+
+def test_a_shared_account_sizes_the_order_when_placed_not_when_filled():
+    """Live, the bridge states the account's free risk before each minute. The order must be sized
+    to it when PLACED, so the broker's resting order and the emulator's are one size.
+    Mutation: drop `affordable_qty` from `size` → 50 oz rests, the fill refuses, RED."""
+    ex = _ex()
+    ex._account.external_room = 300.0  # $300 free; the trade wants $500 (5% of $10,000)
+    _rest_buy(ex)
+    assert ex.pend.qty == pytest.approx(30.0)  # $300 over a $10 stop
+    assert ex.resolve(1, T0, 101.0, 102.0, 99.5) is not None
+    assert ex.pos.qty == pytest.approx(30.0)
+    tight = _ex()
+    tight._account.external_room = 100.0  # under half its own share: no order at all
+    assert tight.size(100.0, 90.0) == 0.0
+
+
+def test_no_room_on_the_account_is_its_own_refusal():
+    """Mutation: fold a 0.0 size into `unsized` → the setup reads as a zero stop distance."""
+    import pandas as pd
+
+    ts = int(pd.Timestamp("2026-03-24 15:00", tz="UTC").value // 10**6)
+    s = _ready_to_buy(0, on=False)
+    s.execution._account.external_room = 0.0
+    assert s._decide(50, ts)["why"] == "room"
+
+
 def test_one_position_at_a_time():
     ex = _ex()
     _rest_buy(ex)

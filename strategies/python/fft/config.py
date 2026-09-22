@@ -70,6 +70,16 @@ class FftConfig:
     # ── Platform facts — not rules ───────────────────────────────────────────
     point_value: float = 1.0
     symbol: str = "XAUUSD"
+    # The broker whose bid/ask the bot judges its OWN fills against when nothing hands it a cost
+    # profile — which is the LIVE bot: the runner builds every strategy with none. "" = the chart's
+    # bid, as the cost-free study. A profile name = that broker's measured costs with bid/ask fills
+    # on, exactly what `tools/compare_study.py` priced the costed gate with: a buy limit fills only
+    # when the ASK reaches it, and a short's stop and target trigger on the ask — as the broker does.
+    # 🔴 Without it a live FFT HALTS: 23 of 76 buys in 2020-25 touched the 61.8 on the bid in a
+    # minute the ask did not (0 of 16 in the last year), so the emulator held a trade the broker had
+    # not filled and the bridge's agreement check stops the bot (2026-09-21). A run that passes its
+    # own cost profile (the lab) keeps that one; this is used only when there is none.
+    fill_profile: str = ""
 
     def __post_init__(self) -> None:
         # Refuse rather than fall back: every choice is matched by exact string, so a typo would

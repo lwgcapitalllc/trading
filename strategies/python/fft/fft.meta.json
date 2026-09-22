@@ -127,6 +127,13 @@
       "label": "Trade the second touch when flat",
       "widget": "toggle",
       "desc": "Also take the leg's second touch of the 61.8, once the first reached TP1 and no trade is open. Off: it is recorded but not traded."
+    },
+    {
+      "name": "fill_profile",
+      "group": "Fill & costs",
+      "label": "Broker for live fills",
+      "desc": "For the live bot. The broker whose buy price (the ask) decides when a buy limit fills, so the bot and the broker fill the same order in the same minute. Leave it blank in the lab: a run's own cost settings are used instead.",
+      "choices": ["", "puprime_ecn"]
     }
   ]
 }

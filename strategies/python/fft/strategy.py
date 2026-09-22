@@ -74,7 +74,23 @@ WHY = {
     "busy": "rule 10 — an FFT trade is already open",
     "second_off": "second touch — switched off",
     "unsized": "no size — the stop distance is zero",
+    "room": "the account's risk cap has no room — other bots hold the budget",
 }
+
+
+def _fill_profile(name: str):
+    """The broker profile the `fill_profile` setting names, with bid/ask fills ON — the exact
+    profile the costed gate ran (`tools/compare_study.py`). An unknown name refuses: a typo would
+    otherwise fill on the bid while the setting said the ask."""
+    import dataclasses
+
+    from backtest.fills import PROFILES
+
+    if name not in PROFILES:
+        raise ValueError(
+            f"FFT fill profile {name!r} is not a broker profile; known: {', '.join(sorted(PROFILES))}"
+        )
+    return dataclasses.replace(PROFILES[name], bid_ask_fills=True)
 
 
 @dataclass
@@ -117,6 +133,8 @@ class FftStrategy:
         record_bars: bool = False,
     ) -> None:
         self.config = config or FftConfig()
+        if cost_profile is None and self.config.fill_profile:
+            cost_profile = _fill_profile(self.config.fill_profile)
         self.execution = FftExecution(
             self.config,
             initial_capital=initial_capital,
@@ -561,7 +579,14 @@ class FftStrategy:
         target = lv[LEVEL_KEY[cfg.target]]
         if (entry - stop) * d <= 0 or (target - entry) * d <= 0:
             return no("unsized")
-        order = self.execution.build_order(d, entry, stop, target, key=key, kind=kind, levels=lv)
+        qty = self.execution.size(entry, stop)
+        if qty is None:
+            return no("unsized")
+        if qty <= 0:
+            return no("room")
+        order = self.execution.build_order(
+            d, entry, stop, target, qty=qty, key=key, kind=kind, levels=lv
+        )
         if order is None:
             return no("unsized")
         out["order"] = order
