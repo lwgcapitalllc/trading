@@ -1585,6 +1585,16 @@ CLAUDE.md gets at most one index line.
   trade moves (the label gates nothing); the ledger's sweep figures are re-measured — the corrected
   sweep is the strongest FFT lead (2020-25 +0.37R vs +0.07R a trade, p 0.01).
 
+- **`tools/fft_confluence_study.py`** (new 2026-09-22) — the user's ask: what do FFT's best trades
+  (least heat, fastest to TP2) share, and does any indicator part not yet tried on FFT help? Replays
+  the bot on the lab path, reads nine engine features before each fill (order blocks, VWAP, Asia point
+  of control, RSI divergence, equal levels on either side, candle patterns, the day's regime label),
+  scores SIZE and SKIP against a shuffled luck bar and both windows, and tests a time exit. Plan and
+  result in its docstring; the record is `fft_ledger.md`. ⚠ **Its gate uses a POOLED t**: FFT's R is
+  two-valued, so a winners-only group has zero spread and a Welch t explodes (it "passed" a lead at
+  7.22 that pools to 1.97). ⚠ Caches the trade table in `backtest/reports/fft_confluence.pkl` —
+  delete it after a bot change.
+
 ## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)
 
 Runs one config on two instruments with costs ON and OFF, and prints the four-way table. Written

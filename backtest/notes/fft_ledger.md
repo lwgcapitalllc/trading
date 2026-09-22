@@ -393,6 +393,26 @@ trades are taken here (one slot, no shared budget), so the weighted rows are exa
 - Lab run 046197075b55 at the shipped 1.5x, same basis as 08c84d0de04f (1x), both from $10,000: the
   same 187 trades, PF 1.407 vs 1.375, max drawdown **23.5% vs 19.2%**, net +$41,651 vs +$24,923.
 
+## The best trades, and every indicator part not yet tried (2026-09-22, `backtest/tools/fft_confluence_study.py`)
+
+Frozen before any feature was computed; the bot's 187 trades on the lab path (dev 153 to 2025-08,
+recent 34). CLEAN = TP2 with never more than 0.30R against (65 trades); FAST = TP2 within 30 min (42).
+
+- **What the clean winners share:** the sweep (37% of clean winners vs 17% of losers — already sized
+  1.5x) and an equal level between the entry and TP2 (11% vs 0%). Nothing else separates them.
+- **Nine features, none past the luck bar** (pooled t, bar 2.78): order block in the entry-to-stop
+  zone (in ~90% of all trades, t −0.35), VWAP side (−1.50), Asia point of control behind the entry
+  (+1.40 dev, reversed last year), 1m RSI divergence in the pullback (+0.22), equal level past the
+  stop (+0.44), a reversal candle before the fill (+0.15), a trending day (+0.34), a high-volatility
+  day (never occurs).
+- **LEAD — an equal high (for a buy; equal low for a sell) between the entry and TP2:** 11 trades in
+  6.7 years, **11 winners**, heat 0.22R vs 0.55R. 6 of the 11 are sweeps and already trade at 1.5x.
+  NOT proven: t 1.97; a random 10 dev trades all win 3% of the time, so one of nine features doing it
+  by luck is ~1 in 4. ⚠ The frozen Welch t scored it 7.22 and "passed" it — a statistic that divides
+  by a winners-only group's zero spread; replaced by a pooled t in the tool.
+- **A time exit FAILS:** winners and losers both take ~1 hour (median 59 / 60 min), so a cut at
+  15 / 30 / 60 / 120 min lowers total R in both windows (dev +23.2R held vs +1.7 to +14.3R).
+
 ## Tested and NOT profitable — do not re-test
 - **After a stop-out, does price come back?** (2026-09-21, version 1, cost-free.) Within 24h of the
   stop, 58% of 2020-25 losses (26/45) went back to TP1 and 51% on to TP2; last year 5/10 and 4/10.
