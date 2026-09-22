@@ -351,6 +351,23 @@ defaults now describe the bot that trades.
 - ⚠ **The golden export ran at 10** and the gate reads risk off it, so parity is untouched.
 
 
+## A re-entry when the GAP IS GONE — measured, and it ships OFF (2026-09-22)
+
+`exec_sec_poi_fallback` ∈ {Off, **Primary entry**}, **default Off and inert**. On, a gap re-entry
+whose gap no longer qualifies rests at the price the setup already published as its entry edge —
+the level the primary itself entered at, remembered per SETUP and cleared on a new break.
+
+- ⚠ **MEASURED AND IT IS NOT AN EDGE. Run 41** (`sos_fade_optimization.md`), 2020-01-01 →
+  2026-08-06, puprime_ecn charged: shipped **242 trades / +267.86R / 8.37R max drawdown**, on
+  **250 / +281.56R / 8.14R**. 🔴 **One trade is +10.64R of the +13.69R** — drop it and the other 11
+  are worth +0.04R, which is +3.05R over six and a half years. Negative in 2021 and 2026.
+- ✅ **No displacement, checked trade by trade: all 155 primaries are IDENTICAL in both runs.** A
+  re-entry arms only while flat and only after its primary has closed, so it cannot queue in front
+  of one the way Run 12's loosenings did.
+- 🔴 **It is NOT the no-gap pool of Runs 27–36 and must not be read as it.** Those are setups the
+  primary never traded; this is setups it did trade, where the primary's own fill mitigated the gap.
+- ⚠ **No Pine counterpart, so the parity gate is structurally blind to it** — lab finding only.
+
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 
 **`flat_mode` is the setting: `"Off"` / `"Friday only"` / `"Every day"`, shipped Off.** The clock

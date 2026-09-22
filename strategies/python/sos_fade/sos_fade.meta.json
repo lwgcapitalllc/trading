@@ -1097,6 +1097,21 @@
       "desc": "What the first (15-minute) trade on that setup must have done before a re-entry is allowed. Breakeven (default) = it reached TP1. Any close = it traded and is now closed, win or lose. Stopped only = it was stopped out without reaching TP1 — the case where your stop gets swept and price then runs without you. None = no first trade required. Lab only."
     },
     {
+      "name": "exec_sec_poi_fallback",
+      "group": "↳ FVG / Structure shift only",
+      "label": "Re-entry when the gap is gone",
+      "short": "Gap gone",
+      "choices": ["Off", "Primary entry"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "Reclaim Entry"]
+      },
+      "disable_note": "No effect unless the gap trigger is in play — the other two rest on a fast-feed move and on the deep edge, neither of which reads a gap.",
+      "desc": "What a re-entry rests on once the gap itself has been used up. Off (default, and what the bot trades today) means no gap, no re-entry: the first trade consumed the gap, so there is no longer a price to rest at. Primary entry rests the limit back at the price this setup already entered at. It only reaches setups the first trade actually took and that then passed the re-entry's own precondition, so it is NOT the no-gap pool measured in September 2026, where the first trade never traded at all and every entry rule tried on it lost. UNMEASURED as of 22 September 2026 — leave it Off until it has a run behind it. Lab only; no TradingView equivalent, so the parity check can never see it."
+    },
+    {
       "name": "exec_sec_stop",
       "group": "↳ FVG / Structure shift only",
       "label": "Re-entry stop sits at",

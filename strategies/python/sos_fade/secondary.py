@@ -299,8 +299,19 @@ class SecondaryArm:
                poi_edge_l: Optional[float] = None,
                poi_edge_s: Optional[float] = None,
                bar_high: Optional[float] = None,
-               bar_low: Optional[float] = None) -> SecArm:
+               bar_low: Optional[float] = None,
+               poi_last_l: Optional[float] = None,
+               poi_last_s: Optional[float] = None) -> SecArm:
         cfg = self._cfg
+        # `exec_sec_poi_fallback` — the gap is gone, so rest at the price this setup already
+        # published as its entry edge. Applied HERE, once, before anything reads the edge, so the
+        # latch in 3b and the `_leg_ok` test below can never disagree about whether a side has a
+        # price. ⚠ OFF is the shipped book exactly: the two names stay the arguments themselves.
+        if getattr(cfg, "exec_sec_poi_fallback", "Off") == "Primary entry":
+            if poi_edge_l is None:
+                poi_edge_l = poi_last_l
+            if poi_edge_s is None:
+                poi_edge_s = poi_last_s
         _trig = getattr(cfg, "exec_sec_trigger", "Structure shift")
         # Both may be true at once under the combined value. They stay two independent booleans
         # rather than one mode, so every block below reads the question it actually cares about

@@ -4917,3 +4917,69 @@ the two defects the build caught: **`strategies/notes/flat-before-the-close.md`*
 
 - **Verdict: bank 50% at target 1 and nothing at target 2 (33.6).** Banking at target 2 never adds return per drawdown. At 50/50 nothing is left to run, and it collapses.
 - **0.236 was not built.** Every earlier rung lost, and adding it is a fib engine change with its own parity gate.
+
+## Run 41 — 2026-09-22: the gap is GONE — may a re-entry rest at the price the primary entered?
+
+**Question (Aaron):** *"if I manually close a trade and price comes back to entry I am disqualified
+for a secondary trade... should this be like this?"* — and then, narrowing it himself: *"what if the
+only signal is at the original entry point? There's nothing deeper. Have we ever measured that?"*
+
+**What it actually asks, in the bot's terms.** The gap re-entry rests at the PRIMARY's own
+point-of-interest price, which is recomputed every bar and goes `None` the moment the gap stops
+qualifying — and a primary that took that gap is usually what mitigated it. So the setup can be
+alive, price back at the entry, and the re-entry has no price to rest on. Nothing in the bot
+remembered the level.
+
+🔴 **THIS IS NOT THE NO-GAP POOL OF RUNS 27–36 AND MUST NOT BE READ AS IT.** Those runs measured
+setups the primary NEVER TRADED — price arrived in the zone with no gap on arrival — and every
+entry rule tried on them lost. This population is the opposite: the gap was real, the primary
+took it, and the door is the existing `exec_sec_require` precondition. Nothing in Runs 27–36
+covers it, which is why it was measured rather than argued from them.
+
+**Built as `exec_sec_poi_fallback` ∈ {Off, Primary entry}, default Off** — the switch is inert
+until set, so no stored figure moves. On, it rests the re-entry at the price the setup already
+published as its entry edge (`Execution._poi_last_*`, remembered per SETUP, cleared on a new
+break). It never re-derives the gap rules, and a live gap always wins over the memory.
+
+**Method:** `backtest/tools/run_report.py --server VantageMarkets_Demo --cost-profile puprime_ecn
+--start 2020-01-01 --end 2026-08-06 --no-regime`, twice, once with
+`--set "exec_sec_poi_fallback=Primary entry"`. XAUUSD, 155,807 M15 bars against 467,364 M5 bars
+(the shipped fill clock), PU Prime ECN costs charged — the same bars-and-costs pairing as Run 29.
+
+| | Trades | Total R | Max DD (R) | Return/DD |
+|---|---|---|---|---|
+| shipped (fallback Off) | 242 (155 primary / 87 re-entry) | **+267.86** | 8.37 | 32.0 |
+| fallback = Primary entry | 250 (155 primary / 95 re-entry) | **+281.56** | 8.14 | 34.6 |
+
+**The 12 trades it adds:** 7 wins, 4 losses, 1 scratch, median **+0.47R**, total **+10.68R**. It
+also replaces 4 existing re-entries with earlier ones, worth **+3.01R** between them. Net **+13.69R**
+over 6.5 years.
+
+🔴 **ONE TRADE IS +10.64R OF THE +13.69R.** Drop it and the remaining 11 trades are worth **+0.04R**,
+and the whole change is **+3.05R over six and a half years** — noise. By year it is negative in
+2021 (−2.38R) and 2026 (−1.00R), and under +1.2R in every year except 2025. **That is the same
+shape as the gap half itself**, which this file already records as one trade away from losing
+money, and two fragile features stacked is not an edge.
+
+✅ **NO DISPLACEMENT, and it was checked trade by trade rather than assumed:** all **155 primaries
+are identical** in both runs — same times, same prices, same R. The re-entry can only arm while
+flat and after the setup's primary has closed, so it cannot queue in front of a primary the way
+Run 12's loosenings did. Drawdown does not worsen (8.37R → 8.14R).
+
+**Verdict: no edge demonstrated. The switch ships Off and stays Off.** It is kept, tested and
+documented so the question is answered rather than re-asked, and so a later run can re-measure it
+on more data. Nothing about the shipped book changes.
+
+⚠ **No parity gate covers any of this** — the Pine has no re-entry, so `compare_strategy.py` has
+never entered this branch and never will. Lab finding only.
+
+🔴 **THE FIRST PAIR OF RUNS WAS DISCARDED, AND THE REASON IS WORTH MORE THAN THE RESULT.**
+`run_report.py` dated every trade off `df.index[t.entry_index]`, but a re-entry's `entry_index`
+counts bars on the FAST feed (467k M5 bars) while that frame is M15 (156k) — two units, one
+reader, and an index past the end fell to an `else df.index[-1]` clamp. **MEASURED: 60 of 242
+trades carried the final bar's timestamp**, which filed every one of them under 2026. Totals were
+never affected; every per-year, per-session and per-hour split the tool has printed since
+re-entries were wired in (2026-08-16) was. Rule 15 — ask what a value's UNIT is on each side of a
+boundary — and rule 1, because the clamp made *out of range* and *the last bar* the same value.
+Both runs above use the corrected tool, which dates a row off the trade's own `entry_ms` and now
+writes a `kind` column so primaries and re-entries can be told apart.
