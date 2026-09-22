@@ -46,3 +46,4 @@
 2026-09-22 08:00:09,516 [INFO] move stop T384899607 4356.6907 → 4356.7833
 2026-09-22 08:30:03,572 [INFO] move stop T384899607 4356.7833 → 4356.7972
 2026-09-22 08:45:02,387 [INFO] move stop T384899607 4356.7972 → 4356.8643
+2026-09-22 13:53:08,801 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\bot_state.json.8576.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\bot_state.json'
