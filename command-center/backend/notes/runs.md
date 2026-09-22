@@ -809,3 +809,9 @@ because the in-memory bug planter cannot reach a test file (root `CLAUDE.md`).
 streamed as bytes with no model, and its contract is append-only because every run's spec is cached
 for ever. A test fails the day that route gains a model. `GET /stress-tests/running-lock` gained
 `StressLock` rather than an exemption — a missing model is a gap, not a reason.
+
+## A run on a frame its strategy cannot read FAILS (2026-09-22)
+
+The single-run runner hands the loaded frame's bar size to the strategy as it builds it (see
+`backtest/notes/architecture.md`), so FFT on 5m bars now fails with its own reason instead of
+completing on 0 trades (run 2db0e08a8ccc). Pinned in `tests/test_python_runner.py`, watched red.

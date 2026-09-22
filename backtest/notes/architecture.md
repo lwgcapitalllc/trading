@@ -378,3 +378,17 @@ attribute also assigned the shared bar state; the name rebound to the shared bar
 ## Sweep combos pickle by class path, not by reference (2026-09-20)
 
 `Combo` rebuilds its config in the worker from module, class name and init field values. The reason is that the Command Center purges and re-imports strategy packages, which leaves a config instance whose class is no longer the one registered under its name, and pickle refuses that. `init=False` fields are not passed back in. A config that is not a dataclass still pickles the plain way. The sweep also takes an optional second bar frame for strategies with a faster fill clock. Detail: `command-center/backend/notes/optimizer.md`.
+
+## A strategy is told the frame it is replayed on (2026-09-22)
+
+`build_strategy` takes an optional bar size and hands it to any strategy that has a
+`set_timeframe_minutes` hook. The single run, the sweep and the stack leg all pass
+`frame_minutes(df)`: the smallest gap between bars in the frame that LOADED, not the size that was
+asked for (rule 3). Leaving it out builds the strategy exactly as before.
+
+**Why:** FFT refuses anything but 1-minute bars in that hook, and no lab path called it. Run
+2db0e08a8ccc replayed it on 5m bars and finished "complete, 0 trades". Fed 5m bars, its "1m" trend
+IS the 5m trend, so the rule needing the 1m to run against the 5m can never pass. Now the run
+fails with FFT's own reason. Extreme leg's hook only records the frame and its own replay resets
+it from the data, so stating it changes none of its results. **Mutations run, all red:** the hook
+call removed, each of the three callers' argument removed, first gap read instead of smallest.

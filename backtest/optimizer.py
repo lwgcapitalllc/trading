@@ -188,11 +188,15 @@ def _replay_one(
     row is byte-identical to what it has always been.
     """
     from backtest.output import build_kpis
-    from backtest.replay import EngineStack, build_strategy, iter_bars
+    from backtest.replay import EngineStack, build_strategy, frame_minutes, iter_bars
 
     _refuse_unreplayable(combo.config, fast_df, strategy_cls)
     strategy = build_strategy(
-        strategy_cls, combo.config, initial_capital=capital, cost_profile=cost_profile
+        strategy_cls,
+        combo.config,
+        initial_capital=capital,
+        cost_profile=cost_profile,
+        timeframe_minutes=frame_minutes(df),
     )
     # TWO-STREAM COMBO. When the config wants the re-entry layer and the caller supplied the
     # second frame, the strategy's OWN dual driver runs the combo — the merge rule lives in

@@ -496,3 +496,44 @@ def test_a_nonpositive_ceiling_is_REFUSED_not_read_as_unlimited(bad):
     with pytest.raises(ValueError) as e:
         python_runner._max_lots({"max_lots": bad})
     assert "greater than 0" in str(e.value)
+
+
+# ── The frame the strategy is handed (2026-09-22) ────────────────────────────────────────
+#
+# Run 2db0e08a8ccc replayed FFT — a 1-minute strategy — on 5m bars and finished "complete" with 0
+# trades. Its own frame check existed and nothing in the lab called it.
+def _drive_fft_on(monkeypatch, minutes):
+    import pandas as pd
+
+    import backtest.data.source as bar_source
+
+    class _Source:
+        def __init__(self, server=None):
+            pass
+
+        def load(self, symbol, tf, start, end):
+            idx = pd.date_range("2026-09-01", periods=6, freq=f"{minutes}min", tz="UTC")
+            return pd.DataFrame(
+                {"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}, index=idx
+            )
+
+    monkeypatch.setattr(bar_source, "BarSource", _Source)
+    monkeypatch.setattr(python_runner, "bar_server", lambda spec: "PUPrime-Demo")
+    monkeypatch.setattr(python_runner, "_cost_profile", lambda spec: None)
+    monkeypatch.setattr(python_runner, "_set", lambda *a, **k: None)
+    spec = {
+        "strategy_class": "FftStrategy",
+        "instrument": "XAUUSD.p",
+        "bar_type": "Minute",
+        "bar_value": minutes,
+        "start_date": "2026-09-01",
+        "end_date": "2026-09-02",
+    }
+    python_runner._execute("job_frame_test", spec)
+
+
+def test_a_one_minute_strategy_on_5m_bars_FAILS_instead_of_completing_on_zero_trades(monkeypatch):
+    """RED against HEAD: `_execute` ran to the end and the run read `complete, 0 trades`.
+    Watched red with `timeframe_minutes=` removed from this runner's `build_strategy` call."""
+    with pytest.raises(ValueError, match="FFT runs on 1-minute bars"):
+        _drive_fft_on(monkeypatch, 5)

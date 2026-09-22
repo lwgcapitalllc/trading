@@ -17,6 +17,13 @@ packages: the account is the single seam every strategy's sizing already reaches
 honours it and no two strategies can disagree about what it means. Clamping there is also what
 keeps the emulator and the broker holding the SAME quantity — clamping the ORDER instead is the
 bug root `CLAUDE.md` rule 17 was written about.
+
+`timeframe_minutes` is the bar spacing the run will replay, handed to any strategy that declares
+`set_timeframe_minutes`. That hook is where a strategy REFUSES a frame it cannot read (FFT needs
+1-minute bars and raises on anything else). Until 2026-09-22 no lab path called it: FFT on 5m
+bars ran "complete" with 0 trades, because its 1m-against-5m rule compares one series with
+itself and can never pass. Pass the spacing of the frame actually LOADED (`frame_minutes`), not
+the one requested — rule 3. Leaving it out constructs the strategy exactly as before.
 """
 
 from __future__ import annotations
@@ -24,13 +31,29 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
-__all__ = ["build_strategy", "UNSTATED"]
+__all__ = ["build_strategy", "frame_minutes", "UNSTATED"]
 
 #: "the caller expressed no opinion", which is NOT the same value as "no ceiling". `max_lots=None`
 #: is a real instruction meaning *do not clamp this run at all*; leaving the parameter out means
 #: *use whatever the account defaults to* (100 lots). Collapsing the two would make a run that
 #: never mentioned a ceiling indistinguishable from one that deliberately removed it — rule 1.
 UNSTATED: Any = object()
+
+
+def frame_minutes(df) -> int | None:
+    """The bar spacing of a loaded frame, in minutes: the smallest gap between two bars.
+
+    `None` when it cannot be read (not a time-indexed frame, fewer than two bars, or no positive
+    gap) — never a guess. The smallest gap, not the first: the first may span a weekend.
+    """
+    index = getattr(df, "index", None)
+    if not hasattr(index, "to_series") or len(index) < 2:
+        return None
+    gap = index.to_series().diff().min()
+    if not hasattr(gap, "total_seconds") or gap != gap:  # a plain-number index, or NaT
+        return None
+    minutes = int(gap.total_seconds() // 60)
+    return minutes if minutes > 0 else None
 
 
 def build_strategy(
@@ -42,7 +65,25 @@ def build_strategy(
     account=None,
     leg: str | None = None,
     max_lots: Any = UNSTATED,
+    timeframe_minutes: int | None = None,
 ) -> Any:
+    strategy = _construct(
+        strategy_cls,
+        config,
+        initial_capital=initial_capital,
+        cost_profile=cost_profile,
+        account=account,
+        leg=leg,
+        max_lots=max_lots,
+    )
+    if timeframe_minutes is not None and hasattr(strategy, "set_timeframe_minutes"):
+        # Raises for a frame the strategy cannot read — and a refusal is the point: the run
+        # fails with the strategy's own reason instead of completing on 0 trades.
+        strategy.set_timeframe_minutes(int(timeframe_minutes))
+    return strategy
+
+
+def _construct(strategy_cls, config, *, initial_capital, cost_profile, account, leg, max_lots):
     own_account = False
     if max_lots is not UNSTATED:
         # A stated venue lot ceiling. It lives on the ACCOUNT, which is the one seam every

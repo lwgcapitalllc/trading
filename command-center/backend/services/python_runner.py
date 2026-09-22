@@ -404,7 +404,7 @@ def _max_lots(spec: dict):
 def _execute(job_id: str, spec: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.output import build_results
-    from backtest.replay import build_strategy
+    from backtest.replay import build_strategy, frame_minutes
 
     class_name = spec.get("strategy_class")
     found = _resolve(class_name)
@@ -439,6 +439,9 @@ def _execute(job_id: str, spec: dict) -> None:
         initial_capital=capital,
         cost_profile=_cost_profile(spec),
         max_lots=_max_lots(spec),
+        # The spacing of the bars that CAME BACK, so a strategy that cannot read this frame
+        # refuses here rather than finishing on 0 trades (FFT on 5m did, 2026-09-22).
+        timeframe_minutes=frame_minutes(df),
     )
 
     # ONE question, asked of `run_feeds` by both this runner and the pre-flight floor check.

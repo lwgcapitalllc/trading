@@ -644,3 +644,92 @@ def test_the_ceiling_RESIZES_a_fill_rather_than_refusing_it():
     built.execution.step(0)
     assert built.execution.granted == 50.0, "an oversized ask was not resized to the ceiling"
     assert built.execution._account.lot_capped, "the clamp was not recorded"
+
+
+# ── The frame a strategy is handed (2026-09-22) ─────────────────────────────────────────
+#
+# FFT needs 1-minute bars and says so in `set_timeframe_minutes`, but no lab path called it: run
+# 2db0e08a8ccc replayed it on 5m bars and finished "complete" with 0 trades. These pin that the
+# build seam hands the frame over, that the stack path passes it, and that saying nothing
+# constructs exactly as before.
+class _FrameStrategy(_FakeStrategy):
+    """Records the frame it is told, and refuses anything but `accepts` — the FFT shape."""
+
+    accepts = 1
+
+    def __init__(self, config=None, initial_capital=0.0, account=None, leg="strat"):
+        super().__init__(config, initial_capital, account, leg)
+        self.told: list = []
+
+    def set_timeframe_minutes(self, minutes: int) -> None:
+        self.told.append(minutes)
+        if minutes != self.accepts:
+            raise ValueError(f"needs {self.accepts}m bars, was handed {minutes}m")
+
+
+def _bars(minutes: int, n: int = 6, start: str = "2026-09-18 20:00") -> pd.DataFrame:
+    idx = pd.date_range(start, periods=n, freq=f"{minutes}min")
+    return pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}, index=idx)
+
+
+def test_a_stated_frame_reaches_the_strategy_and_a_wrong_one_is_REFUSED():
+    """RED when `timeframe_minutes` is accepted and dropped — the run then completes on a frame
+    the strategy cannot read. Watched red with the hook call deleted from `build_strategy`."""
+    built = build_strategy(
+        _FrameStrategy, {"entry_bar": 0}, initial_capital=1000.0, timeframe_minutes=1
+    )
+    assert built.told == [1]
+    with pytest.raises(ValueError, match="needs 1m bars, was handed 5m"):
+        build_strategy(
+            _FrameStrategy, {"entry_bar": 0}, initial_capital=1000.0, timeframe_minutes=5
+        )
+
+
+def test_saying_nothing_about_the_frame_never_calls_the_hook():
+    """The control: a caller with no frame to state gets the strategy it always got."""
+    built = build_strategy(_FrameStrategy, {"entry_bar": 0}, initial_capital=1000.0)
+    assert built.told == []
+
+
+def test_a_strategy_with_no_frame_hook_is_built_as_before():
+    built = build_strategy(
+        _FakeStrategy, {"entry_bar": 0}, initial_capital=1000.0, timeframe_minutes=5
+    )
+    assert isinstance(built, _FakeStrategy)
+
+
+def test_a_stack_leg_is_told_the_frame_of_its_own_bars():
+    """The stack path. RED with `timeframe_minutes=` removed from `build_leg`: a 5m leg of a
+    1m-only strategy would then join the stack and trade nothing."""
+    from backtest.portfolio.account import SoloAccount
+
+    leg = build_leg(
+        "a",
+        _FrameStrategy,
+        {"entry_bar": 0},
+        _bars(1),
+        account=SoloAccount(balance=1.0),
+        initial_capital=1.0,
+    )
+    assert leg.strategy.told == [1]
+    with pytest.raises(ValueError, match="was handed 5m"):
+        build_leg(
+            "a",
+            _FrameStrategy,
+            {"entry_bar": 0},
+            _bars(5),
+            account=SoloAccount(balance=1.0),
+            initial_capital=1.0,
+        )
+
+
+def test_frame_minutes_reads_the_smallest_gap_not_the_first():
+    """A frame that opens across a weekend: its FIRST gap is 2+ days, its bars are 5 minutes."""
+    from backtest.replay import frame_minutes
+
+    friday = _bars(5, n=1, start="2026-09-18 20:55")
+    weekend = pd.concat([friday, _bars(5, start="2026-09-21 00:00")])
+    assert frame_minutes(weekend) == 5
+    assert frame_minutes(_bars(1)) == 1
+    assert frame_minutes(_bars(5, n=1)) is None, "one bar has no spacing — say so, never guess"
+    assert frame_minutes(pd.DataFrame()) is None

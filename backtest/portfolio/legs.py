@@ -25,7 +25,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backtest.replay import EngineStack, build_strategy, iter_bars  # noqa: E402
+from backtest.replay import EngineStack, build_strategy, frame_minutes, iter_bars  # noqa: E402
 
 __all__ = ["DualFeedLeg", "FeedBar", "StrategyLeg", "build_leg"]
 
@@ -192,6 +192,7 @@ def build_leg(
         cost_profile=cost_profile,
         account=account,
         leg=name,
+        timeframe_minutes=frame_minutes(df),
     )
     if df_fast is not None and getattr(strategy, "make_dual_clock", None) is not None:
         return DualFeedLeg(name, strategy, df, df_fast)

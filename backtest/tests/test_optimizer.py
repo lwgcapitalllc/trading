@@ -279,3 +279,40 @@ def test_extract_survives_the_process_pool(fake_pkg, df, tmp_path):
         extract=_first_pnl,
     )
     assert [r["extra"] for r in parallel] == [10.0, 20.0, 30.0]
+
+
+def test_a_sweep_REFUSES_a_frame_its_strategy_cannot_read(df):
+    """Run 2db0e08a8ccc replayed FFT, a 1-minute strategy, on 5m bars: 0 trades and "complete".
+    A sweep must refuse the same way a single run does, with the strategy's own reason. Watched
+    red with `timeframe_minutes=` removed from `_replay_one`'s `build_strategy` call."""
+    import dataclasses
+
+    from backtest.optimizer import _replay_one
+
+    @dataclasses.dataclass
+    class _Cfg:
+        multiplier: float = 1.0
+
+    class _Exec:
+        trades: list = []
+        bar_ms = 0
+
+    class _OneMinuteOnly:
+        """Runs to the end untold, so the mutation reads DID NOT RAISE — a 0-trade row."""
+
+        def __init__(self, config, initial_capital=0.0):
+            self.config = config
+            self.execution = _Exec()
+
+        def engine_config(self):
+            return None
+
+        def step(self, bar_state):
+            pass
+
+        def set_timeframe_minutes(self, minutes):
+            if minutes != 1:
+                raise ValueError(f"needs 1m bars, was handed {minutes}m")
+
+    with pytest.raises(ValueError, match="was handed 15m"):
+        _replay_one(_OneMinuteOnly, df, 1000.0, Combo(params={}, config=_Cfg()))
