@@ -436,6 +436,8 @@ Most-cited code: `compare_strategy.py`, `tests/test_secondary.py`, `algos/live/b
 
 ### `notes/exit_ladder_history.md` — Exit ladder — dated build and measurement history
 
+🔵 **MEASURED 2026-09-21, not adopted:** banking half the trade at the first fib target beats the shipped ladder on return per drawdown in R (33.6 against 31.8) by cutting the worst drawdown from 7.39R to 5.69R. Pinning either target to another fib level loses, across all 108 combinations. Run 40 in `sos_fade_optimization.md`; the default is unchanged and the parity gate has not run on it.
+
 **Read before touching:** changing any exit-ladder lever and needing the measurement that set its default.
 Most-cited code: `compare_strategy.py`, `sos_fade_strategy.pine`, `backtest/output.py`, `promote.py`, `execution.py`, `config.py`.
 
