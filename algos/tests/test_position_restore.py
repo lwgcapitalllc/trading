@@ -580,3 +580,83 @@ def test_a_restored_stop_EQUAL_to_the_strategys_sets_no_floor(tmp_path):
     ex._pos_dir = 1
     assert b.apply_restore()
     assert b._hand_stop is None
+
+
+# ── the FLAT-state watch record (2026-09-22) ─────────────────────────────────
+#
+# A different file from the one above, for the opposite state. `position.json` is deleted the
+# moment the bot goes flat; this one only starts mattering then, because what it carries is a
+# setup whose trade the OWNER closed by hand. Losing it costs one possible re-entry, which is
+# why nothing here halts — the exact opposite of every test above.
+
+
+class _WatchExecution(_FakeExecution):
+    """An emulator that offers the watch seam. The record is opaque to the bridge, so a fake
+    one is honest here for the same reason `_SNAP` is."""
+
+    def __init__(self, watch=None):
+        super().__init__()
+        self.watch = watch
+        self.restored = None
+
+    def snapshot_setup_watch(self):
+        return self.watch
+
+    def restore_setup_watch(self, record):
+        self.restored = record
+        return bool(record)
+
+
+def test_a_watch_record_round_trips(tmp_path):
+    position_state.write_watch(tmp_path, {"version": 1, "long": {"sos_ms": 17, "tp1": 105.0}})
+    assert position_state.read_watch(tmp_path) == {
+        "version": 1,
+        "long": {"sos_ms": 17, "tp1": 105.0},
+    }
+
+
+def test_writing_None_CLEARS_rather_than_leaving_an_empty_record(tmp_path):
+    """ "Nothing is being watched" and "nothing was ever written" must be the same state on disk.
+    An empty record would read to the next person as a live watch."""
+    position_state.write_watch(tmp_path, {"long": {"sos_ms": 17, "tp1": 105.0}})
+    assert position_state.watch_path_for(tmp_path).exists()
+
+    position_state.write_watch(tmp_path, None)
+
+    assert not position_state.watch_path_for(tmp_path).exists()
+    assert position_state.read_watch(tmp_path) is None
+
+
+def test_a_torn_watch_record_reads_as_none_and_never_raises(tmp_path):
+    """Unlike the POSITION record, this one cannot put the bot in a trade it does not know
+    about — so an unreadable file costs a re-entry and must never stop a bot from starting."""
+    position_state.watch_path_for(tmp_path).write_text('{"watch": {"long"', encoding="utf-8")
+    assert position_state.read_watch(tmp_path) is None
+
+    position_state.watch_path_for(tmp_path).write_text('{"watch": "nonsense"}', encoding="utf-8")
+    assert position_state.read_watch(tmp_path) is None
+
+
+def test_the_bridge_writes_the_watch_and_hands_it_back_after_a_restart(tmp_path):
+    """The round trip that matters: one bot records what it is watching, a restarted one picks
+    it up. MUTATION: make `save_setup_watch` a no-op and the restored record is None."""
+    watch = {"version": 1, "long": {"sos_bar": 4, "sos_ms": 1700, "tp1": 105.0}}
+    b, _, _, _ = _bridge(_WatchExecution(watch), instance_dir=tmp_path)
+    b.save_setup_watch()
+
+    fresh_ex = _WatchExecution()
+    fresh, _, _, _ = _bridge(fresh_ex, instance_dir=tmp_path)
+    fresh.restore_setup_watch()
+
+    assert fresh_ex.restored == watch
+
+
+def test_an_emulator_without_the_seam_records_nothing_and_does_not_raise(tmp_path):
+    """`LAB_STRATEGY` is an open contract and the seam is optional — a bot whose emulator
+    predates it must still start, and must not leave a file behind."""
+    b, _, _, _ = _bridge(_FakeExecution(), instance_dir=tmp_path)
+
+    b.save_setup_watch()
+    b.restore_setup_watch()
+
+    assert not position_state.watch_path_for(tmp_path).exists()

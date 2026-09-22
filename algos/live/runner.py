@@ -2134,6 +2134,10 @@ class LiveRunner:
             self.bridge.apply_restore()
             if self.bridge.state is BridgeState.HALTED:
                 return 4, "bridge halted while restoring its open position"
+            # AFTER the warm-up for the same reason, and after `apply_restore` so a halt there
+            # is reported against the position rather than against this. It never halts and
+            # never opens anything — see `OrderBridge.restore_setup_watch`.
+            self.bridge.restore_setup_watch()
             self.bridge.begin_live()
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")

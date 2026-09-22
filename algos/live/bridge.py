@@ -1282,6 +1282,58 @@ class OrderBridge:
             )
         return True
 
+    def save_setup_watch(self) -> None:
+        """Write down what the strategy is still watching while FLAT. Never raises.
+
+        🔴 **THE POINT IS THAT IT OUTLIVES THE POSITION.** `position.json` is deleted the moment
+        the bot goes flat, and the one thing this carries — a setup whose trade the OWNER closed
+        by hand before it reached its first target — only starts mattering then. Without it a
+        restart in that window silently closes a re-entry door the person would have had, and
+        this bot restarts often (four times on 2026-09-22 alone).
+
+        ⚠ Called on every bar rather than only on a change: the record is two small numbers per
+        side, and a "write it when it changes" rule needs a second piece of state to know that,
+        which is the sort of bookkeeping that goes wrong quietly. `write_watch(None)` clears.
+
+        ⚠ A strategy with no such state is not an error — the method is optional, and a bot whose
+        emulator does not offer it simply records nothing.
+        """
+        if self._instance_dir is None:
+            return
+        snapshot = getattr(self._ex, "snapshot_setup_watch", None)
+        if not callable(snapshot):
+            return
+        try:
+            position_state.write_watch(self._instance_dir, snapshot())
+        except Exception as e:
+            self._log.warning(f"Could not record the setup watch: {e}")
+
+    def restore_setup_watch(self) -> None:
+        """Hand back what was being watched while flat. Call AFTER the warm-up. Never raises.
+
+        ⚠ **AFTER, for `apply_restore`'s reason**: the warm-up replays thousands of bars through
+        this same emulator, and a new break of structure in that replay clears the watch. Applied
+        before it, this would be overwritten by a fiction every time.
+
+        ⚠ **It never halts.** A watch that cannot be restored costs one possible re-entry; it can
+        never open a position or move a stop, which is why it is not held to `restore_position`'s
+        standard.
+        """
+        if self._instance_dir is None:
+            return
+        restore = getattr(self._ex, "restore_setup_watch", None)
+        if not callable(restore):
+            return
+        try:
+            record = position_state.read_watch(self._instance_dir)
+            if record and restore(record):
+                self._log.info(
+                    "Carried a setup watch across the restart: a trade you closed by hand can "
+                    "still open its re-entry if price reaches that trade's first target."
+                )
+        except Exception as e:
+            self._log.warning(f"Could not restore the setup watch: {e}")
+
     def _save_position(self) -> None:
         """Write the open position down, so a restart can pick it up. Never raises.
 
@@ -1444,6 +1496,10 @@ class OrderBridge:
             # 15-minute bar it never saw.
             self._sync_slot(PRIMARY_LONG, self._ex._pend_long, sig)
             self._sync_slot(PRIMARY_SHORT, self._ex._pend_short, sig)
+            # The FLAT-state record, written here because here is where the bot is flat. Its
+            # counterpart `position.json` has just been deleted by the close that got us here,
+            # and what this carries only begins to matter afterwards. See `save_setup_watch`.
+            self.save_setup_watch()
 
     def sync_fast(self, step) -> None:
         """Reconcile the RE-ENTRY, on the fill clock. **G18 stage 2.**

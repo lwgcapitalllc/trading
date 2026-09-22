@@ -386,9 +386,18 @@ every commanded exit carries — including the hand close `algos/live/bridge.py`
 - ⚠ **It opens a door price actually REACHED; it never invents one.** If price never gets there
   the watch expires with the setup, and it only ever arms from stage 0 (a trade already past TP1
   stamped the door open before the person touched it).
-- ⚠ **NOT carried across a restart.** The bot re-warms from bars, which cannot know a person
-  closed anything — so a restart loses the watch and the door stays shut. A missed re-entry, never
-  an extra one.
+- ✅ **IT SURVIVES A RESTART as of 2026-09-22** — `snapshot_setup_watch()` /
+  `restore_setup_watch()`, written by the live bridge to `<instance>/setup_watch.json` and handed
+  back AFTER the warm-up. It had to be its own file: `position.json` is deleted the moment the bot
+  goes flat, which is exactly when this begins to matter. The bot restarted four times on the day
+  this was written, so a memory-only watch was shut most of the time it was needed.
+- 🔴 **A restored side must carry the leg's TIME, and one without it is DROPPED.** Bar numbering is
+  local to one run, so the old number names a different bar after a re-warm — restoring on it would
+  open a door on a setup nobody was watching. `_same_leg` is the one reader, the same helper the
+  one-trade-per-leg latch uses.
+- ⚠ **Nothing on this path halts.** An unreadable or missing record costs one possible re-entry and
+  can never open a position or move a stop — deliberately the opposite default from the POSITION
+  record, which halts, because that one can put the bot in a trade it does not know about.
 - ⚠ **No parity gate covers any of this** — the Pine has no commanded close and no re-entry.
   `tests/test_commanded_close.py` is the whole of the evidence; 5 tests, 2 mutations.
 - ⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package.

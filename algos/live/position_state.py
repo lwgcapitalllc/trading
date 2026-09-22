@@ -173,6 +173,76 @@ def write(
         return False
 
 
+#: The FLAT-state record's file. Its own file, not a block inside `position.json`, because the
+#: two live in opposite states: `position.json` is deleted the moment the bot goes flat, and
+#: everything here only matters once it is.
+WATCH_FILENAME = "setup_watch.json"
+
+
+def watch_path_for(instance_dir) -> Path:
+    return Path(instance_dir) / WATCH_FILENAME
+
+
+def write_watch(instance_dir, record: Optional[Dict[str, Any]]) -> bool:
+    """Record what the strategy is still WATCHING while flat, or clear it when there is nothing.
+
+    The record is opaque here, exactly as `strategy` is in `write`: it comes from
+    `Execution.snapshot_setup_watch()` and goes straight back to `restore_setup_watch()`. This
+    module stays free of opinions about what a watch is.
+
+    ⚠ **`None` CLEARS rather than writing an empty record**, so "nothing is being watched" and
+    "nothing was ever written" are the same state on disk — which is the truth, and leaves no
+    stale artefact for the next reader.
+
+    Returns False on failure rather than raising, for `write`'s reason: this is a convenience,
+    and it must never be able to stop the trading loop.
+    """
+    target = watch_path_for(instance_dir)
+    if record is None:
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception:
+            return False
+        return True
+    payload = {
+        "written": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "watch": record,
+    }
+    tmp = target.with_suffix(".json.tmp")
+    try:
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+        return True
+    except Exception:
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+        return False
+
+
+def read_watch(instance_dir) -> Optional[Dict[str, Any]]:
+    """The recorded watch, or None — absent, unreadable, torn or the wrong shape.
+
+    ⚠ **Unlike `read`, a failure here is NOT a halt and must not be treated as one.** A lost
+    watch costs one possible re-entry; it can never put the bot in a position it does not know
+    about, which is the whole reason `read`'s failures are so strict. The strategy applies its
+    own checks to whatever comes back.
+    """
+    try:
+        raw = json.loads(watch_path_for(instance_dir).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    watch = raw.get("watch") if isinstance(raw, dict) else None
+    return watch if isinstance(watch, dict) else None
+
+
 def _entry_risk(value) -> Optional[float]:
     """The recorded entry risk, or `None` for NOT RECORDED — absent, a boolean, not a number, zero,
     negative, NaN or infinite. Optional by design: a record that cannot state its entry risk is

@@ -1066,6 +1066,62 @@ class Execution:
         self._close_requested = reason or "commanded"
         return True
 
+    def snapshot_setup_watch(self) -> Optional[dict]:
+        """What this bot is still watching WHILE FLAT, so a restart does not forget it.
+
+        Today that is one thing: a setup whose primary a PERSON closed before it reached its
+        first target (`_check_cmd_watch`). `None` when there is nothing to remember, which the
+        caller writes as "no file" rather than as an empty record.
+
+        🔴 **IT IS A SEPARATE RECORD FROM `position.json` BECAUSE IT LIVES IN THE OPPOSITE
+        STATE.** That file describes an OPEN position and is deleted the moment the bot goes
+        flat — which is exactly when this begins to matter. Folding one into the other would
+        mean either keeping a position record for a position that does not exist, or losing
+        this every time a trade closes.
+
+        ⚠ **Each side carries the leg's TIME beside its bar number**, and the time is the half
+        that survives: bar numbering is local to one run. See `_same_leg`.
+        """
+        def _one(watch):
+            if watch is None:
+                return None
+            return {"sos_bar": watch[0], "sos_ms": watch[1], "tp1": watch[2]}
+
+        if self._cmd_watch_l is None and self._cmd_watch_s is None:
+            return None
+        return {"version": 1, "long": _one(self._cmd_watch_l), "short": _one(self._cmd_watch_s)}
+
+    def restore_setup_watch(self, record: Optional[dict]) -> bool:
+        """Take a record from `snapshot_setup_watch` back. Call AFTER the warm-up.
+
+        Returns True if anything was restored. **Call it after the replay**, for the same reason
+        `restore_position` is applied there: the warm-up drives this same object through
+        thousands of bars and would clear the watch on the first new break it replays.
+
+        🔴 **A SIDE WITHOUT A LEG TIME IS DROPPED RATHER THAN RESTORED ON ITS BAR NUMBER.** The
+        numbering is rebuilt by the warm-up, so the old number now names a different bar — it
+        would open a re-entry door on a setup nobody was watching. Dropping it costs a possible
+        re-entry, which is the safe direction and the same one the missing watch had before this
+        existed. ⚠ An unreadable record is treated the same way and never raises: this is a
+        convenience, and it must not be able to stop a bot from starting.
+        """
+        if not isinstance(record, dict):
+            return False
+        took = False
+        for side, attr in (("long", "_cmd_watch_l"), ("short", "_cmd_watch_s")):
+            one = record.get(side)
+            if not isinstance(one, dict):
+                continue
+            sos_ms, tp1 = one.get("sos_ms"), one.get("tp1")
+            if sos_ms is None or tp1 is None:
+                continue
+            try:
+                setattr(self, attr, (one.get("sos_bar"), int(sos_ms), float(tp1)))
+            except (TypeError, ValueError):
+                continue
+            took = True
+        return took
+
     def snapshot_position(self) -> dict:
         """Everything needed to carry on managing the open trade, as plain JSON types."""
         if self._pos_dir == 0:
@@ -2482,12 +2538,14 @@ class Execution:
         getting it wrong is a re-entry on a setup nobody is watching.
         """
         watch = self._cmd_watch_l
-        if watch is not None and seq.l_sos_bar == watch[0] and sig.high >= watch[1]:
-            self._be_sos_l = watch[0]
+        if (watch is not None and self._same_leg(watch[0], watch[1], seq.l_sos_bar)
+                and sig.high >= watch[2]):
+            self._be_sos_l = seq.l_sos_bar
             self._cmd_watch_l = None
         watch = self._cmd_watch_s
-        if watch is not None and seq.s_sos_bar == watch[0] and sig.low <= watch[1]:
-            self._be_sos_s = watch[0]
+        if (watch is not None and self._same_leg(watch[0], watch[1], seq.s_sos_bar)
+                and sig.low <= watch[2]):
+            self._be_sos_s = seq.s_sos_bar
             self._cmd_watch_s = None
 
     def _entry_edges(self, sig, seq) -> Tuple[Optional[float], Optional[float]]:
@@ -3411,11 +3469,16 @@ class Execution:
             # before the person closed it, so there is nothing left to watch.
             # ⚠ It opens a door price actually reached; it never invents one. If price never gets
             # there the watch simply expires with the setup.
+            # ⚠ The leg is identified by TIME as well as by bar number, and the time is the half
+            # that survives a restart — a bar number belongs to one run's numbering. Same pair,
+            # same reason, as `_traded_sos_l_ms`; `_same_leg` is the one reader of both.
             if by_request and self._stage == 0 and self._tp1:
+                sos_ms = (self._bar_ms.get(self._sos_bar_open)
+                          if self._sos_bar_open is not None else None)
                 if d > 0:
-                    self._cmd_watch_l = (self._sos_bar_open, float(self._tp1))
+                    self._cmd_watch_l = (self._sos_bar_open, sos_ms, float(self._tp1))
                 else:
-                    self._cmd_watch_s = (self._sos_bar_open, float(self._tp1))
+                    self._cmd_watch_s = (self._sos_bar_open, sos_ms, float(self._tp1))
         self._account.close_position(self._leg)   # P&L already booked; free the reservation
         self._pos_dir = 0
         self._qty = 0.0
