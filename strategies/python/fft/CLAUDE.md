@@ -70,8 +70,9 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
 - ⚠ **That account's shares already sum past its 10% cap before FFT** (5 + 5 + 2.5; 17.5 with FFT).
   First come first served is the user's call: FFT is shrunk to the room left, down to half its own
   size, and refused below that.
-- The single-run form in the lab offers no 1-minute bar size (hard-coded presets); a lab run needs
-  the frame set by hand until that form reads `suggested_bar_value`.
+- The lab's run forms offer 1 minute and open on it for FFT (2026-09-22). A run on any other frame
+  now FAILS with FFT's own reason; until then it finished "complete, 0 trades" (run 2db0e08a8ccc),
+  because the lab never called the frame check. See `backtest/notes/architecture.md`.
 - Run `/live-safety` before anything under `algos/`.
 - Once it trades: `tools/forward_log.py --start <first demo day>` grades the three leads by replay.
   Check its trade list against the account's history first — a fill the replay does not see is the

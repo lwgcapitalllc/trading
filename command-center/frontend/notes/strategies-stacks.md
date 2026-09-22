@@ -687,3 +687,13 @@ dev server that lands on 5174 because 5173 is taken is unreachable and fails as
 wrong. ⚠ **And Vite binds `localhost` as IPv6 here**, so `curl 127.0.0.1:5173` answers nothing
 while the server is up and serving; probe `http://[::1]:5173`. **Both of those cost time and
 neither is a defect** — write them down rather than rediscovering them.
+
+## Both run forms offer 1 minute, and the single run opens on the measured frame (2026-09-22)
+
+The single-run form's bar list for a python or MT5 strategy was 5m and up, so FFT (1m only) could
+not be asked for its own frame and every run of it read 0 trades. It now offers 1m, opens on the
+frame the strategy states it was measured on, marks that option "· measured", and always lists it
+even when it is not a preset. A strategy that states none keeps the old default. The stack form's
+list gained 1m too: FFT's leg already defaulted to 1, but with no 1m option the select DREW 5m
+while the leg sent 1. Pinned in `tests/run-bar-size.spec.ts` (real backend, never presses Run),
+both tests watched red against the old form.

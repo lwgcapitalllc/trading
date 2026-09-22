@@ -24,6 +24,9 @@ import type { StackMode, StackRiskBudgetRequest } from '@/types'
 const pct = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 4 })
 
 const BAR_PRESETS: [number, string][] = [
+  // 1m since 2026-09-22: FFT states 1m, and a select with no matching option DRAWS 5m while the
+  // leg still sends 1 — the screen and the run disagreed about the frame.
+  [1, '1m'],
   [5, '5m'],
   [15, '15m'],
   [30, '30m'],

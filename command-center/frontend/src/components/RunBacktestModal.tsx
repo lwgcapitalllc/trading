@@ -288,8 +288,19 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [endDate, setEndDate] = useState(() => today())
 
   // ── Bar size ─────────────────────────────────────────────────────────────────
-  const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [5, 15, 30, 60, 240]
-  const [barValue, setBarValue] = useState(isNt8 ? 5 : scope === 'python' ? 15 : 60)
+  // 1m is offered off NinjaTrader too since 2026-09-22: FFT runs on 1-minute bars only, and this
+  // list could not ask for them — every FFT run landed on 5m or coarser and read 0 trades.
+  const BAR_PRESETS = isNt8 ? [1, 3, 5, 15, 30] : [1, 5, 15, 30, 60, 240]
+  // The frame the strategy was measured on is the starting value, and is always offered even
+  // when it is not a preset. `null` = it declared none, so the old per-runner default stands.
+  const measuredBar = strategy.suggested_bar_value ?? null
+  const barOptions =
+    measuredBar != null && !BAR_PRESETS.includes(measuredBar)
+      ? [...BAR_PRESETS, measuredBar].sort((a, b) => a - b)
+      : BAR_PRESETS
+  const [barValue, setBarValue] = useState(
+    () => measuredBar ?? (isNt8 ? 5 : scope === 'python' ? 15 : 60)
+  )
 
   // ── Sizing mode — how the engine sizes each trade from the room left ───────────
   // A self-sizing strategy sizes its own trades off its own risk % param — the engine never
@@ -847,9 +858,10 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                   onChange={(e) => setBarValue(Number(e.target.value))}
                   className={inputCls}
                 >
-                  {BAR_PRESETS.map((v) => (
+                  {barOptions.map((v) => (
                     <option key={v} value={v}>
                       {barLabel(v)}
+                      {v === measuredBar ? ' · measured' : ''}
                     </option>
                   ))}
                 </select>
