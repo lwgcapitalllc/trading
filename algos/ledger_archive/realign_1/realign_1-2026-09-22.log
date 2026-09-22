@@ -249,3 +249,28 @@
 2026-09-22 19:10:01,263 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-22 19:15:01,545 [INFO] Priority 3 on this account: waiting 38s for the bots above
 2026-09-22 19:20:01,330 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-22 19:25:01,107 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-22 19:30:01,520 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-22 19:35:01,852 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-22 19:40:01,752 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-22 19:40:50,091 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-22 19:40:50,091 [INFO] Stop requested — shutting down.
+2026-09-22 19:40:50,091 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-22 19:40:51,034 [INFO] MT5 disconnected.
+2026-09-22 19:41:10,782 [INFO] Realign | RealignStrategy v378 | hash c840870463f7 | commit aa69fb04 | frozen | LIVE
+2026-09-22 19:41:11,318 [INFO] Connected | #700152905 | $15,765.48 | PUPrime-Demo
+2026-09-22 19:41:11,318 [INFO] MT5 connection lock released
+2026-09-22 19:41:11,907 [INFO] Sizing against account balance $15,765.48
+2026-09-22 19:41:11,924 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-22 19:41:11,940 [WARNING] Setup alerts: OFF — RealignStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-22 19:41:28,462 [INFO] Warmed 15000 bars (2026-07-08 09:10:00+00:00 → 2026-09-22 19:35:00+00:00) in 14.5s
+2026-09-22 19:41:28,493 [INFO] Equity re-anchored to the account after warm-up: 15,708.40 → 15,765.48
+2026-09-22 19:41:29,540 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-22 19:45:00,820 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-22 19:50:01,668 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-22 19:55:01,621 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-22 20:00:01,727 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-22 20:05:01,220 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-22 20:10:01,228 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-22 20:15:00,826 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-22 20:20:00,843 [INFO] Priority 3 on this account: waiting 19s for the bots above
