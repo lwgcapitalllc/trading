@@ -247,6 +247,21 @@ record — written before the rename and stamped with the old name — was left 
 
 ---
 
+## `fft_1` — the FFT bot's first instance (registered BENCHED 2026-09-21)
+
+The first 1-MINUTE bot (`strategies/python/fft/`), meant for demo **700152905** at 5%, magic
+**770131**, priority 4, cap 10.0. Registered benched, in the order above: promote on the box, then
+assign. ⚠ **That account's shares already sum past its cap before FFT joins** (extreme_leg_1 5 +
+sos_fade_1 5 + realign_1 2.5 = 12.5; 17.5 with FFT) — first come first served, the user's call.
+⚠ `warmup_bars` is **45,000** in one unpaginated `copy_rates_from_pos`, and `warm()` refuses only
+below 200 — read its `Warmed N bars` line on the first start before trusting its 15m trend.
+⚠ **Found on the way, not fixed (other bots' configs):** `realign_1` still carries
+`realign_flat_before_weekend`, which its repo code no longer has, so its NEXT promote builds a bot
+that refuses its own settings; `b_leg_demo` does not pin `flat_mode` / `flat_holidays`. Both red in
+`test_live_runner_startup` / `test_bot_bench` on `main` before FFT was added.
+
+---
+
 ## A bot that was never deployed REFUSES to start (2026-09-16)
 
 🔴 **This was a warning at every startup for months and nobody read it.** A bot with no snapshot of
