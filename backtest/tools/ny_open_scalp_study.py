@@ -175,7 +175,7 @@ def levels(tp: K.Tape) -> Levels:
     t0 = time.time()
     ow = or_window()
     se, vw = SessionEngine(), VwapEngine()
-    ms = tp.raw.index.asi8 // 10**6
+    ms = tp.raw.index.values.astype("datetime64[ms]").astype(np.int64)  # unit-safe under pandas 3
     h, lo, c, v = (tp.raw[k].to_numpy() for k in ("high", "low", "close", "volume"))
     orh, orl, vwap = (np.full(tp.n, np.nan) for _ in range(3))
     missing_vol = 0

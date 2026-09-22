@@ -596,7 +596,7 @@
     <div class="brand">
       <p class="eyebrow" id="eyebrow">Blind replay</p>
       <h1 id="h1">__TITLE__</h1>
-      <p class="lede">
+      <p class="lede" id="lede">
         Every chart stops the moment price first reaches level 2 — nothing after that is on this
         page. Decide as you would live: take it or skip it.
       </p>
@@ -633,8 +633,11 @@
         <div class="fog" id="fog" hidden><span>What happened next is hidden</span></div>
       </div>
       <ul class="legend">
-        <li><span class="tag g">1 2 3 4</span> the setup</li>
-        <li><span class="sw gold"></span> entry at 2</li>
+        <li>
+          <span class="tag g" id="legend-marks">1 2 3 4</span>
+          <span id="legend-marks-text">the setup</span>
+        </li>
+        <li><span class="sw gold"></span> <span id="legend-entry">entry at 2</span></li>
         <li>
           <span class="tag b">HH HL BOS SOS</span><span class="tag r">LH LL BOS SOS</span> structure
           (i = internal)
@@ -651,7 +654,7 @@
         <dl id="facts"></dl>
       </section>
       <section>
-        <h2>Aggressive plan</h2>
+        <h2 id="plan-title">Aggressive plan</h2>
         <dl id="plan"></dl>
       </section>
       <section>
@@ -665,22 +668,9 @@
           </button>
         </div>
         <fieldset id="entry">
-          <legend>Which entry would you use? <span>(optional)</span></legend>
-          <label class="opt"
-            ><input type="radio" name="entry" id="entry-at2" value="at2" /><span
-              >At 2 — aggressive</span
-            ></label
-          >
-          <label class="opt"
-            ><input type="radio" name="entry" id="entry-sos" value="sos" /><span
-              >Wait for the SOS</span
-            ></label
-          >
-          <label class="opt"
-            ><input type="radio" name="entry" id="entry-either" value="either" /><span
-              >Either</span
-            ></label
-          >
+          <legend>
+            <span id="entry-q">Which entry would you use?</span> <span>(optional)</span>
+          </legend>
         </fieldset>
         <fieldset id="reasons">
           <legend>What decided it? <span>(any)</span></legend>
@@ -731,7 +721,16 @@
     var LS_MARKS = 'blind-replay:marks:' + DECK
     var LS_POS = 'blind-replay:pos:' + DECK
     var TZ = DATA.tz || 'America/New_York'
-    var REASONS = [
+    // A deck may carry its own wording (`page` in blind_replay.py's docstring). Every default
+    // below is the Loaded Level deck's, so a deck without `page` renders exactly as before.
+    var PAGE = DATA.page || {}
+    var ENTRIES = PAGE.entries || [
+      { value: 'at2', label: 'At 2 — aggressive' },
+      { value: 'sos', label: 'Wait for the SOS' },
+      { value: 'either', label: 'Either' },
+    ]
+    var LEVEL_MARK = 'level_mark' in PAGE ? PAGE.level_mark : '2'
+    var REASONS = PAGE.reasons || [
       'Clean loaded level',
       'Strong sweep',
       'Good reward to risk',
@@ -771,6 +770,31 @@
       return document.getElementById(id)
     }
     $('n-total').textContent = SETUPS.length
+    ;[
+      ['lede', 'intro'],
+      ['legend-marks', 'legend_marks'],
+      ['legend-marks-text', 'legend_marks_text'],
+      ['legend-entry', 'legend_entry'],
+      ['plan-title', 'plan_title'],
+      ['entry-q', 'entry_question'],
+    ].forEach(function (x) {
+      if (PAGE[x[1]] != null) $(x[0]).textContent = PAGE[x[1]]
+    })
+    ENTRIES.forEach(function (e) {
+      var lab = document.createElement('label')
+      lab.className = 'opt'
+      var inp = document.createElement('input')
+      inp.type = 'radio'
+      inp.name = 'entry'
+      inp.id = 'entry-' + e.value
+      inp.value = e.value
+      var sp = document.createElement('span')
+      sp.textContent = e.label
+      lab.appendChild(inp)
+      lab.appendChild(sp)
+      $('entry').appendChild(lab)
+    })
+    if (!ENTRIES.length) $('entry').hidden = true
     if (DATA.symbol || DATA.tf)
       $('eyebrow').textContent = [DATA.symbol, DATA.tf, 'blind'].filter(Boolean).join(' · ')
 
@@ -1015,13 +1039,14 @@
       Object.keys(marks).forEach(function (k) {
         var m = marks[k]
         if (!m || m.t == null || m.t < first || m.t > last) return
-        var top = (s.direction === 'short') === (k === '1' || k === '2')
+        var top =
+          m.pos != null ? m.pos === 'above' : (s.direction === 'short') === (k === '1' || k === '2')
         mk.push({
           time: T(m.t),
           position: top ? 'aboveBar' : 'belowBar',
           shape: top ? 'arrowDown' : 'arrowUp',
           color: C.gold,
-          text: k,
+          text: m.label || k,
           size: 1,
         })
       })
@@ -1029,8 +1054,8 @@
         return a.time - b.time
       })
       candles.setMarkers(mk)
-      if (marks['2'] && marks['2'].t != null)
-        seg(T(clamp(marks['2'].t)), T(last), marks['2'].p, C.gold, 1)
+      if (LEVEL_MARK && marks[LEVEL_MARK] && marks[LEVEL_MARK].t != null)
+        seg(T(clamp(marks[LEVEL_MARK].t)), T(last), marks[LEVEL_MARK].p, C.gold, 1)
       if (showLv)
         (s.levels || []).forEach(function (L) {
           var t0 = clamp(L.t_from == null ? first : L.t_from),
@@ -1052,7 +1077,7 @@
           })
         )
       }
-      add(pl.entry, C.gold, 0, 'Entry at 2', 2)
+      add(pl.entry, C.gold, 0, PAGE.entry_line || 'Entry at 2', 2)
       add(pl.stop, C.bear, 2, 'Stop', 1)
       add(pl.target, C.bull, 2, 'Target', 1)
       // open on the whole setup: from a little before its earliest mark to the decision bar
@@ -1117,16 +1142,20 @@
       var f = $('facts')
       f.textContent = ''
       var m = s.marks || {}
-      var name = {
-        1: short ? '1 · top' : '1 · bottom',
-        2: '2 · level',
-        3: '3',
-        4: short ? '4 · low' : '4 · high',
-      }
-      ;['1', '2', '3', '4'].forEach(function (k) {
-        if (m[k]) row(f, name[k], money(m[k].p), when(m[k].t))
+      var names = PAGE.marks || [
+        { key: '1', long: '1 · bottom', short: '1 · top' },
+        { key: '2', long: '2 · level', short: '2 · level' },
+        { key: '3', long: '3', short: '3' },
+        { key: '4', long: '4 · high', short: '4 · low' },
+      ]
+      names.forEach(function (n) {
+        if (m[n.key]) row(f, short ? n.short : n.long, money(m[n.key].p), when(m[n.key].t))
       })
       if (s.sweep) row(f, 'Swept', s.sweep.name + ' ' + money(s.sweep.p), when(s.sweep.t))
+      else if (PAGE.no_sweep) row(f, 'Swept', PAGE.no_sweep)
+      ;(s.facts || []).forEach(function (x) {
+        row(f, x.label, x.value)
+      })
       var p = $('plan')
       p.textContent = ''
       var pl = s.plan || {}
@@ -1138,8 +1167,8 @@
       var mark = state.marks[s.id] || {}
       $('btn-take').setAttribute('aria-pressed', String(mark.decision === 'take'))
       $('btn-skip').setAttribute('aria-pressed', String(mark.decision === 'skip'))
-      ;['at2', 'sos', 'either'].forEach(function (v) {
-        $('entry-' + v).checked = mark.entry === v
+      ENTRIES.forEach(function (e) {
+        $('entry-' + e.value).checked = mark.entry === e.value
       })
       REASONS.forEach(function (r, k) {
         $('reason-' + k).checked = (mark.reasons || []).indexOf(r) >= 0
@@ -1289,10 +1318,10 @@
         m.decision = m.decision === 'skip' ? null : 'skip'
       })
     })
-    ;['at2', 'sos', 'either'].forEach(function (v) {
-      $('entry-' + v).addEventListener('change', function () {
+    ENTRIES.forEach(function (e) {
+      $('entry-' + e.value).addEventListener('change', function () {
         edit(function (m) {
-          m.entry = v
+          m.entry = e.value
         })
       })
     })

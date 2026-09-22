@@ -161,11 +161,18 @@ def five_minute_run(df5: pd.DataFrame):
         sw_lo = [x.price for x in lq.mitigated if x.rule == "sweep_low"] if lq else []
         sw_hi = [x.price for x in lq.mitigated if x.rule == "sweep_high"] if lq else []
         act_lo = (
-            sorted((x.price for x in lq.active if x.rule == "sweep_low"), reverse=True)[:3]
+            sorted(
+                (x.price for x in lq.active if x.rule == "sweep_low" and not x.mitigated),
+                reverse=True,
+            )[:3]
             if lq
             else []
         )
-        act_hi = sorted(x.price for x in lq.active if x.rule == "sweep_high")[:3] if lq else []
+        act_hi = (
+            sorted(x.price for x in lq.active if x.rule == "sweep_high" and not x.mitigated)[:3]
+            if lq
+            else []
+        )
         d = f.direction
         lv = f.levels
         z_hi, z_lo = max(lv["E1"], lv["E2"]), min(lv["E1"], lv["E2"])
@@ -384,12 +391,17 @@ def run(start: str, end: str, holdout: bool = False):
                 got += r["sw_lo"] if d == 1 else r["sw_hi"]
         r = rows[k - 1]
         a = first_min[k]
+        # ⚠ Two defects fixed 2026-09-21 (found by fft_blind_deck.py disagreeing on 11 of 60): the
+        # live levels included ones ALREADY taken and still drawn — a sell counted highs sitting
+        # $6-16 below its own fill as swept — and the touch minute's whole range counted, so a
+        # level reached only after the fill was a sweep "before" it. Live = not yet mitigated, and
+        # the touch minute counts only as far as the 61.8.
         if d == 1:
-            lo = cL[a : m + 1].min()
+            lo = max(cL[a : m + 1].min(), e1)
             got += [p for p in r["act_lo"] if lo < p]
             deep = any(p <= e1 for p in got)
         else:
-            hi = cH[a : m + 1].max()
+            hi = min(cH[a : m + 1].max(), e1)
             got += [p for p in r["act_hi"] if hi > p]
             deep = any(p >= e1 for p in got)
         return bool(got), bool(deep)

@@ -492,6 +492,27 @@ CLAUDE.md gets at most one index line.
   refuses a deck that shows anything after a decision bar or carries an outcome-looking key** —
   watched both ways on a made-up deck: the clean deck built, and the leaking one exited 1, naming
   both leaks. No documented baseline moves: new tools, nothing else edited.
+  **2026-09-21: the page's wording comes from the deck** (`page` in the docstring — intro, legend,
+  plan title, entry choices, reasons, fact rows, the "no sweep" row), plus per-setup `facts` and a
+  mark's own `label` / `pos`. Every default is the Loaded Level wording, so its deck renders as it
+  did; checked by building that deck with the old and new template (both scripts parse; the browser
+  here refuses local pages, so not visually compared).
+- **`tools/chart_context.py`** (new 2026-09-21) — records what the engines DREW off each stack
+  snapshot (structure breaks, swing labels, liquidity levels with created / taken / evicted bars) for
+  a replay chart, never a second detection. The Loaded Level tool still has its own copy of the logic.
+- **`tools/fft_blind_deck.py`** (new 2026-09-21) — the FFT blind deck: 60 version-1 trades of
+  2020-02 → 2025-08, seeded, 7+ days apart, each 5m chart cut at the first 61.8 touch, the sweep read
+  off the engine's own level log up to the touch. Outcomes to `backtest/reports/fft_blind/outcomes.csv`.
+  Take-everything baseline 38 / 60, +1.48R. Moves no baseline.
+- 🔴 **`clean_reopens` (`loaded_level_study.py`) clipped NOTHING under pandas 3 until 2026-09-21.** It
+  read `index.asi8 // 10**9` as seconds, which holds only for nanosecond timestamps; the repo's
+  `.venv` (pandas 3.0.5) parses the caches to microseconds, so no gap was ever a reopen and it printed
+  "reopen spikes clipped 0" like a clean market. The Command Center's venv (pandas 2) was right — so a
+  result depended on which Python ran it: gold 2020-25 clipped 97 under one and 0 under the other, 157
+  FFT trades against 156. Now unit-safe; `tests/test_clean_reopens_units.py` watched RED in µs / ms / s
+  and green in ns before the fix. ⚠ **The same line shape was in `killzone_study.py` and
+  `ny_open_scalp_study.py` (`// 10**6` as ms) and is fixed too, untested**; results either recorded
+  before today are right only if run under pandas 2 — not checked.
 - **`tools/loaded_level_scan.py`** (new 2026-08-13) — counts the LOADED LEVEL / "Da Vinci" setup
   (`docs/DAVINCI_MODEL_SPEC.md`, extracted from 16 Inter Equity Trading videos into
   `education/learned/`) and scores it against a matched random control. A level is *loaded* when
@@ -1556,6 +1577,13 @@ CLAUDE.md gets at most one index line.
   +0.03R — does not confirm. ⚠ `clean_reopens` clips with a $2 floor tuned for gold, so on silver it
   clipped 1 bar in 6.7 years — effectively off.
   ⚠ Read-only; moves no baseline.
+  🔴 **The A+ sweep label was wrong until 2026-09-21, in this study AND the FFT bot** (the bot was
+  matched to it). `sweep()` tested the fill bar against the nearest live levels INCLUDING ones already
+  taken and still drawn, and read the touch minute's whole range, past the fill. Found because
+  `fft_blind_deck.py`, reading the sweep a third way, disagreed on 11 of 60 setups. Fixed: levels not
+  yet taken, the touch minute only to the 61.8; study, bot and deck now agree on every setup. No
+  trade moves (the label gates nothing); the ledger's sweep figures are re-measured — the corrected
+  sweep is the strongest FFT lead (2020-25 +0.37R vs +0.07R a trade, p 0.01).
 
 ## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)
 

@@ -123,7 +123,9 @@ def clean_reopens(df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     """Clip a reopen bar's spike to its own close and the previous close. Causal: uses only the
     bar itself and bars before it. Returns the cleaned frame and what was clipped."""
     o, h, lo, c = (df[k].to_numpy().copy() for k in ("open", "high", "low", "close"))
-    secs = df.index.asi8 // 10**9
+    # in SECONDS whatever unit pandas parsed to: `asi8 // 10**9` assumed nanoseconds, and pandas 3
+    # parses to microseconds, so no gap was ever a reopen (2026-09-21, test_clean_reopens_units)
+    secs = df.index.values.astype("datetime64[s]").astype(np.int64)
     rng = h - lo
     fixed = []
     for i in range(1, len(df)):

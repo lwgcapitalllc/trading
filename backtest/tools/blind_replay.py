@@ -12,7 +12,17 @@ THE SHAPE (one JSON object):
      "marks": {"1": {"t","p"}, "2": {...}, ...},        # any keys; drawn as labels
      "swings": [{"t","p","label","scale"}], "breaks": [{"t","t_from","p","label","dir","scale"}],
      "levels": [{"name","p","t_from","t_taken"}], "sweep": {"name","p","t"},
-     "plan": {"entry","stop","target","rr"}}]}
+     "facts": [{"label","value"}],                      # optional extra rows under "The setup"
+     "plan": {"entry","stop","target","rr"}}],
+   "page": {...}}                                       # optional — the deck's own wording
+
+  A mark may carry "label" (drawn instead of its key) and "pos" ("above" | "below"; without it the
+  Loaded Level rule places 1 and 2 on the setup's side). `page` (added 2026-09-21 for the FFT deck)
+  may set: intro, legend_marks, legend_marks_text, legend_entry, plan_title, entry_line,
+  entry_question, entries ([{value, label}]; [] hides the question), reasons ([...]), marks
+  ([{key, long, short}] — the fact rows), level_mark (the mark whose line runs to the decision; null
+  for none), no_sweep (the row shown when a setup has no sweep). ⚠ Every default is the Loaded Level
+  deck's wording, so a deck without `page` renders exactly as it did before.
 
 🔴 The build REFUSES a setup that leaks the future: any bar, mark, swing, break, level or sweep time
    after its last bar, or any outcome-looking key on a setup. A blind page that is not blind looks
@@ -55,6 +65,11 @@ def leaks(setup: dict) -> list[str]:
     problems += [f"outcome-looking key '{k}'" for k in OUTCOME_KEYS & set(setup)]
     problems += [
         f"outcome-looking key 'plan.{k}'" for k in OUTCOME_KEYS & set(setup.get("plan") or {})
+    ]
+    problems += [
+        f"outcome-looking fact '{x.get('label')}'"
+        for x in setup.get("facts") or []
+        if str(x.get("label", "")).strip().lower() in OUTCOME_KEYS
     ]
     return problems
 

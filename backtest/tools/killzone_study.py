@@ -274,7 +274,7 @@ def check_engine(tp: Tape, zones: list) -> None:
     """CHECK 0 — the engine's kill-zone flags against this tool's minute windows, every bar."""
     t0 = time.time()
     se = SessionEngine()
-    ms = tp.raw.index.asi8 // 10**6
+    ms = tp.raw.index.values.astype("datetime64[ms]").astype(np.int64)  # unit-safe under pandas 3
     hi, lo = tp.raw["high"].to_numpy(), tp.raw["low"].to_numpy()
     eng = np.zeros((3, tp.n), bool)
     for i in range(tp.n):

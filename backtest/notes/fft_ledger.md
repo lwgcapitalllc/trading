@@ -122,10 +122,11 @@ plan with it: TP2 +29.3R vs +24.2R (DD 4.8 vs 3.8) dev, +6.5R vs +5.6R (DD same)
 add, on 28 trades.
 
 **Liquidity sweep** (a day / session / H4 level on the pullback side taken between the 5m extreme and
-the fill). **It lifts the TP1 hit rate in both windows:** first leg 85.9% vs 77.4% no sweep (dev, 64 vs
-93), 100% vs 80% (recent, 10 vs 20); any leg 83.1% vs 76.6% / 84.6% vs 68.6%. To TP2, first leg: +0.16R
-vs +0.15R dev, +0.29R vs +0.13R recent — never worse. The swept level sitting at/past 61.8 adds
-nothing (10 / 3 trades). About 4 in 10 first-leg setups have a sweep.
+the fill). 🔴 **SUPERSEDED — the label behind these figures counted levels that were already taken, and
+the touch minute past the fill** (found and fixed 2026-09-21; see *The sweep label, corrected*). As
+first measured: first leg TP1 85.9% vs 77.4% (dev, 64 vs 93), 100% vs 80% (recent, 10 vs 20); TP2
++0.16R vs +0.15R dev, +0.29R vs +0.13R recent. The "swept level at/past 61.8" rows (10 / 3 trades)
+were the look-ahead itself and do not exist on the corrected label.
 
 ## The bot (2026-09-21, `strategies/python/fft/`)
 
@@ -134,6 +135,13 @@ nothing (10 / 3 trades). About 4 in 10 first-leg setups have a sweep.
 position at a time costs nothing (0 of 191 trades overlap; median trade ~1 hour). Through PU Prime
 ECN with bid/ask fills: **+0.149R a trade over 152 (2020-25), +0.136R over 34 (last year).** Risk 5%
 a trade (the user). Not deployed yet.
+
+**Added 2026-09-21:** the "Skip after 4+ 15m BOS" setting, **off** (the user's call). The gate now
+also matches the 15m BOS count (2,644 / 2,644 and 494 / 494) and the corrected sweep label (the same),
+and with the setting on the bot takes exactly its trades minus the 4+ ones: 146 = 157 − 11, and
+26 = 34 − 8, the study's own counts. `strategies/python/fft/tools/forward_log.py` grades all three
+leads on any window of demo trades by replay; on the last year it reproduces lead 1's 8 (5 won) and
+lead 2's +0.8R.
 
 ## Version 1 through real costs, and on silver (2026-09-21, `--v1`)
 
@@ -160,7 +168,219 @@ a worst drawdown of ~4R. Real but small — about one year of profit per worst d
 3.8R (both). Losing months: 20 of 61 in dev, 3 of 10 recent — about one month in three. Plan for
 twice the measured drawdown before costs and small-sample error: ~8R.
 
+## The pullback's path into the 61.8 (2026-09-21, version 1, cost-free, TP2)
+
+- **A small bounce off the 50%** (≥ 0.05 of the leg) before the 61.8: in 55% of losers vs 62% of
+  winners; better in 2020-25 (+0.230R vs +0.066R), worse last year (+0.103R vs +0.213R). No signal.
+- **A deep bounce off the 50% back to the 38.2** before the 61.8: in 42% of losers vs 33% of winners,
+  and WEAKER IN BOTH WINDOWS — 49 trades +0.090R vs +0.196R (2020-25), 19 trades +0.022R vs +0.294R
+  (last year). A LEAD, not proven: those trades are still positive, so skipping them lowers the total
+  (21.2R vs 24.2R; 4.4R vs 4.8R). Candidate for a B grade, not a filter.
+- **A sniper zone wholly in front of the 61.8** on a first leg: 3 of 191 trades. Explains nothing.
+- **Trade 2026-02-04 21:14 NY (buy, loss)**, which the user would have skipped: 15m had 4 continuation
+  BOS (median 1), the entry sat at 0.82 of the 15m fib (94th pct) and the 5m leg's START sat at 1.13 of
+  the 15m fib (97th pct). The first two were already tested and did not help; the leg-start depth has
+  not been. Awaiting the user's exact definition before any test.
+
+## The user's "overextended trend, deep dive, then shift" pattern (2026-09-21, frozen before the run)
+
+From the user's chart of the 2026-02-04 21:14 NY loss: the 15m made 4 bullish BOS, dipped through its
+protected low without a 15m close below (an "almost SOS"), the 5m shifted bullish, the FFT buy failed,
+and the 15m then shifted bearish. Rule: 15m continuation BOS since its shift ≥ N AND the 5m leg's
+start at/through the 15m fib's 1.0 (or past its 88.6). Version 1 trades, TP2, cost-free.
+
+| flag | 2020-25 flagged | skip → rest | last year flagged | skip → rest |
+|---|---|---|---|---|
+| 15m ≥ 4 BOS alone | 11, 55%, −0.118R | 146, +0.175R, +25.5R total (vs +24.2) | 8, 62%, +0.011R | 26, +0.182R, +4.7R (vs +4.8) |
+| 15m ≥ 3 BOS alone | 22, 77%, +0.250R | worse | 10, 70%, +0.132R | flat |
+| dive through the 15m 1.0 alone | 83, 76%, +0.228R | worse | 14, 64%, +0.040R | better |
+| ≥ 4 BOS + through the 15m 1.0 | 6, 50%, −0.191R | 151, +0.168R, +25.3R | 2, 50%, −0.191R | 32, +0.163R, +5.2R |
+| ≥ 4 BOS + past the 15m 88.6 | 10, 50%, −0.191R | +26.1R | 4, 75%, +0.213R | +4.0R |
+
+**Reading:** the part that holds is the OVEREXTENSION — 4+ 15m BOS is weak in both windows (19
+trades, ~58% win). The deep dive is not a warning on its own: more than half of all first legs start
+at or through the 15m low, and in 2020-25 those did better. Not proven (z ≈ −1.2 on 19 trades), but
+skipping 4+ BOS costs nothing measurable in total R. Earlier `--legs15` split at ≤1 vs 2+ and missed it.
+
+## Mining the losers (2026-09-21, frozen before the run, version 1, cost-free)
+
+- **Anatomy:** 15 of 45 losers 2020-25 (33%) touched TP1 first and then turned to the stop; 5 of 10
+  last year.
+- **Exits on every trade** (avgR / total / worst DD / total per DD): TP2 +0.154 / +24.2R / 3.8 / 6.3
+  and +0.142 / +4.8R / 3.8 / 1.3 — TP1 +0.059 / +9.2R / 3.9 / 2.4 and +0.116 / +4.0R / 2.4 / 1.7 —
+  half at TP1 + half to TP2 +0.106 / +16.7R / 3.1 / 5.4 and +0.129 / +4.4R / 2.9 / 1.5 — half at TP1 +
+  rest at break-even +0.052 / +8.1R and +0.130 / +4.4R. **TP2 stays**; half-and-half smooths the curve
+  a little and gives up a third of 2020-25's profit.
+- **Feature scan** — 12 entry-time features × (skip, or TP1 instead of TP2), luck bar from 2,000
+  shuffles, 24 tests so ~1.2 false passes expected. **One passed: Asia entries (18:00-02:59 NY) →
+  take TP1**, +2.1R on 37 trades (p 0.02) and +0.8R on 8 last year. One pass is what luck alone
+  gives; a lead only (plausible: Asia's range is smaller). **15m ≥ 4 BOS → skip: +1.3R, p 0.08, and
+  −0.1R last year — did NOT clear the bar.** Every other feature cost R as a skip.
+- The 55 losers, with levels and flags, were listed for the user to review on the chart.
+
+## ⚠ Five results below were re-run with the reopen clip working (2026-09-21)
+
+Round 2, the 03-27 pattern, "with the sweep", the 23.6 target and the other-market test first ran
+under pandas 3, where `clean_reopens` silently clipped nothing (backtest/notes/tools.md). Re-run with
+it working: gold 2020-25 has 157 trades (156 without the clip), every figure moved by at most ~1R,
+and every verdict held. The figures below are the re-run's; the side-flipped accidental run was not
+re-run and is marked as such.
+
+## Mining the losers, round 2 — sniper position, day, the 1-hour (2026-09-21, frozen, cost-free)
+
+10 more features × (skip, or TP1 instead), 5,000 shuffles; 20 tests (~1 false pass expected), 44
+loser tests this session. **No leads.** Share of 2020-25 losers vs winners carrying each:
+
+- 5m sniper zone overlapping 61.8-70.2: 69% vs 68% — wholly deeper than 70.2: 31% vs 31% — shallower
+  than 61.8: 0% vs 1% — every setup had a same-side zone. Last year deeper-than-70.2 was 5 of 10
+  losers vs 17% of winners (skip +2.5R), but it costs −7.6R over 2020-25 — noise on 10 losers.
+- 1h trend against the trade: 33% vs 41% (a skip costs −13.4R) — 1h trend with it on 3+ BOS: 7% vs
+  6% — entry in the wrong half of the 1h leg: 51% vs 53%.
+- A 1h leg's high/low between the entry and TP2: 1 trade in 190 — the 1h leg's end almost always sits
+  past the 5m extreme, so this could not be judged. It checks the 1h leg's ends only, not every 1h swing.
+- Monday 13% vs 12%, Friday 20% vs 26%.
+- Every skip lost R over 2020-25. The losers carry nothing the winners do not.
+
+## The user's 2026-03-27 10:03 sell — a strong 5m counter-run, then one shift (2026-09-21, frozen)
+
+The user's read of the loss: the 15m bearish on 4 BOS; the 5m had turned UP and made 3 bullish BOS;
+one bearish shift; the FFT sold its first leg and lost. The count was checked against the chart: the
+engine reads 3 prior 5m BOS and 15m 4 BOS on this trade, as the user did. Version 1, TP2, cost-free.
+
+- **By the prior 5m run's BOS count** (n / win / avgR): 2020-25 0: 61 / 77% / +0.25 — 1: 39 / 64% /
+  +0.04 — 2: 26 / 69% / +0.12 — 3+: 31 / 71% / +0.15. Last year 0: 12 / 83% / +0.35 — 1: 12 / 67% /
+  +0.08 — 2: 3 — 3+: 7 / 57% / −0.08. Not monotonic; a strong counter-run is not a warning on its own.
+- **Skip prior 3+:** −4.6R 2020-25 (p 0.44), +0.5R last year — FAIL.
+- **Prior 3+ AND 15m 4+ (the full pattern):** 2 trades 2020-25, 1 last year (this one) — 3 in 6.7
+  years, 1 win. Cannot be measured. The 15m 4+ BOS skip would already have skipped this trade.
+- **Leg ended on a liquidity grab** (a day / session / H4 level on the target side taken on the
+  extreme's 5m candle or the two before): 54 trades 2020-25, 70% / +0.14R; skipping costs −7.5R (p
+  0.40), −1.9R last year — FAIL. It did NOT flag this trade: here the H4 low (4420.87) went at 06:40,
+  27 minutes before the leg's low (4404.39, 07:07).
+- **The day's facts:** the 1.0 (4475.10) was exactly the Asia high; price ran to 4509 through it. The
+  Asia low (4375.57) held; London's low (4404.39) and New York's (4412.69 by 10:00) were higher lows.
+
+## "With the sweep, not against it" — the user's liquidity read (2026-09-21, frozen, user's go)
+
+From the 03-27 sell: the London low was swept the day before, Asia held above it, and highs (sessions,
+previous day, equal highs, a trend line of lower highs) sat untaken above — so the draw was up and the
+sell was against it. Levels: session / previous-day / 4-hour highs and lows (wick sweeps), equal
+highs/lows from the canonical 5m engine; closed 5m bars before the fill's. The trend line is NOT
+measured (no engine draws one). Version 1, TP2, cost-free; skip the flagged ("against") trades.
+
+- **R0 against the last sweep** (the last bar that took a level took one on the target side only):
+  4h in — 2020-25 97 against, 70% / +0.13R vs 60 with, 73% / +0.19R, skip −13.0R (p 0.34); last year
+  against did BETTER (25, 76% / +0.23R vs 9, 56%). 4h out — against 106, 75% / +0.21R vs 51, 65% /
+  +0.05R, skip −21.8R; last year 18, 67% vs 16, 75%. **FAIL** both ways.
+- **R1 the user's points 1+2** (the last sweep before the 5m leg's start was target-side, none taken
+  on that side since): 4h in — flags 1 trade in 6.7 years (a sell leg almost always takes a 4-hour
+  low on the way down), so unmeasurable. 4h out — 23, 74% / +0.20R, better than the rest; skip −4.5R;
+  last year 6, 67%. **FAIL.**
+- **R2 points 1+2+3** (+ more untaken levels behind the stop than ahead of the target): 4h out — 15,
+  80% / +0.29R in 2020-25, among the best trades; last year 3, 1 won. **FAIL.** 4h in: 1 trade.
+- It flags the 03-27 sell (4h out: R0, R1, R2; 4h in: R0 only), not the 02-04 buy.
+- ⚠ The first run had the side flipped (it flagged WITH-the-sweep trades); caught because the 03-27
+  check disagreed with that day's known sweeps, then fixed and re-run with the rules unchanged. That
+  accidental run (before the clip fix, not re-run) is itself a finding, NOT tested for: with 4h in, trades whose leg started after a
+  sweep on the STOP side (a sell leg after highs were taken — "with the sweep") went 86, 64% / +0.04R
+  vs 80% / +0.29R (2020-25, p 0.02) and 68% vs 75% last year. The opposite of the principle, found by
+  accident after ~50 tests — not a lead to act on.
+- About 55 loser tests this session; the standing leads were Asia → TP1 and the 15m 4+ BOS skip —
+  and, once its label was corrected, the sweep (below).
+
+## A 23.6 target instead of the 38.2 (2026-09-21, frozen before the run, version 1)
+
+The 23.6 is not on the Structure fib's ladder; built as 0.0 + 0.236 × (1.0 − 0.0), checked against the
+ladder's own 38.2. From the 61.8 with the stop at 1.0 it pays 1.0R (the 38.2 pays 0.62R). Same 157 /
+34 setups; after PU Prime ECN costs (spread, commission, swap per rollover) and one position at a
+time, since a longer hold can block the next touch. Figures: n / avgR / total / worst DD / total per DD.
+
+| Exit | 2020-25 | Last year | Win rate (cost-free) |
+|---|---|---|---|
+| 38.2 (version 1) | 157 / +0.132 / +20.7R / 4.2 / 5.0 | 34 / +0.137 / +4.7R / 3.6 / 1.3 | 71% / 71% |
+| 23.6 | 157 / +0.119 / +18.7R / 6.7 / 2.8 | 34 / +0.288 / +9.8R / 3.0 / 3.3 | 57% / 65% |
+| 0.0 (old TP3) | 157 / +0.058 / +9.1R / 14.4 / 0.6 | 34 / +0.155 / +5.3R / 5.2 / 1.0 | 41% / 44% |
+| Half 38.2 + half 23.6 | 157 / +0.126 / +19.7R / 5.2 / 3.8 | 34 / +0.212 / +7.2R / 3.2 / 2.2 | 57% / 65% |
+| Half 38.2, rest to 23.6 at break-even | 157 / +0.134 / +21.0R / 4.6 / 4.5 | 34 / +0.168 / +5.7R / 3.2 / 1.8 | 71% / 71% |
+
+- **All four FAIL** the frozen bar (beat version 1 on total and total per drawdown in both windows,
+  and a paired bootstrap p < 0.05 on 2020-25): p 0.58 / 0.81 / 0.59 / 0.45.
+- **The 23.6 wins only last year** (22 of 24 TP2 winners ran on to it, in a strongly trending gold
+  year). Over 2020-25 only 89 of 112 did: it lost 2.0R and the worst drawdown rose from 4.2R to 6.7R.
+- Edge over random entries on the same bracket is about the same for both targets (38.2 +0.15 vs
+  +0.04 random; 23.6 +0.13 vs +0.02), so the target changes the payoff shape, not the edge.
+- The 23.6 holds about twice as long (median 96 vs 55 minutes in 2020-25): more swap on buys and the
+  10% pool tied up longer.
+- The break-even scale-out is a wash in 2020-25 (+0.3R) and +1.0R last year: nothing proven, extra
+  moving parts. **The 38.2 stays.**
+
+## The sweep label, corrected — and the sweep becomes the strongest lead (2026-09-21)
+
+**Found by `backtest/tools/fft_blind_deck.py`**, which reads the sweep a third way (the engine's own
+level log, cut at the touch) and disagreed with the study on 11 of 60 setups — all 11 the study's
+"swept" and the deck's "none". Two defects, in the study's `sweep()` AND the bot's A+ label (the bot
+was matched to the study, so it copied both): (1) the fill bar was checked against the nearest live
+levels INCLUDING ones already taken and still drawn — one sell counted highs $6-16 below its own fill;
+(2) the touch minute's whole range counted, so a level reached only after the fill was a sweep
+"before" it. Fixed: levels not yet taken, and the touch minute only as far as the 61.8. After the fix
+the study, the bot and the deck agree on every setup (2,644 / 2,644 first touches 2020-25, 494 / 494
+last year, 60 / 60 in the deck). It moves no trade — the label never gated one.
+
+Version 1, TP2, cost-free, the corrected label:
+
+- **2020-25:** 45 of 157 trades had a sweep (29%, not ~41%) — TP2 84.4% vs 66.1%, **+0.366R vs
+  +0.069R a trade** (5,000 shuffles, p 0.01); TP1 88.9% vs 77.7%.
+- **Last year:** 8 of 34 — TP2 75% vs 69%, +0.213R vs +0.120R (p 0.29). Same direction, 8 trades.
+- **EURUSD and NAS100** (frozen before the run; new data): EURUSD 38 of 231, 63% vs 57%, +0.022R vs
+  −0.078R (p 0.28); NAS100 41 of 241, 76% vs 64%, +0.223R vs +0.043R (p 0.08). Same direction on both,
+  neither past p 0.05 — NOT confirmed by the frozen bar, but the most consistent lead measured here:
+  four samples, four the same way.
+- ⚠ Found by fixing a defect, not by searching outcomes — the definition is the one pre-declared
+  before any run today — but it still sits among ~60 tests this session. The earlier loser scan's
+  "A+ sweep" feature used the flawed label.
+
+## The three leads on EURUSD and NAS100 (2026-09-21, frozen before the run)
+
+FFT version 1 exactly, PU Prime 1m, 2020-01 → 2026-09, cost-free; EURUSD in pips so the reopen clip's
+$2 floor means 2 pips. Check: gold 2020-25 through the same script reproduces 157 trades, lead 1
++1.3R, lead 2 +2.1R. Bar: HOLDS at gain > 0 and p < 0.05; CONFIRMED on both markets, or p < 0.0125 on
+one with the same sign on the other.
+
+- **Base edge:** gold +0.154R (random +0.014R); **EURUSD −0.062R (58% win, random +0.005R) — FFT
+  does not work there**; NAS100 +0.074R (66%, random +0.001R), first half +0.12R, second +0.03R. The
+  leads are relative tests, so they still read where the base is flat.
+- **Lead 1, skip after 4+ 15m BOS:** EURUSD 15 flagged, −0.03R vs −0.06R, +0.4R (p 0.54); NAS100 13
+  flagged, −0.25R vs +0.09R, +3.3R (p 0.064). Same direction on both; **not confirmed.**
+- **Lead 2, Asia entries → TP1:** EURUSD 42, +1.7R (p 0.38); NAS100 23, +0.5R (p 0.25). Same
+  direction; **not confirmed.**
+- **Lead 3, the sweep:** above. **Not confirmed**, same direction on both.
+- Six of six lead-market results point the leads' way; none clears p 0.05. Evidence, not proof.
+  Route 2 (the forward log) is what can settle them.
+
+## The blind take/skip deck (2026-09-21, `backtest/tools/fft_blind_deck.py`)
+
+60 of the 157 version-1 trades of 2020-02 → 2025-08, seed 20260921, 7+ days apart, shuffled; each
+chart is PU Prime 5m cut at the first touch of the 61.8, with the 5m leg's 1.0 and 0.0, the engines'
+structure and levels, the sweep or "none", and the 15m BOS count. **Take-everything baseline: 38 of
+60 reached TP2 (63%), +1.48R** — below the pool's 71% by the luck of the draw. 14 of 60 show a sweep.
+Outcomes: `backtest/reports/fft_blind/outcomes.csv` (git-ignored; never opened before the marks are
+in). Page: https://claude.ai/artifact/VJbyecKjWZRfRmkHG6TYwy (marks save to its store). Grade with
+`blind_replay_grade.py` on `FFT_r`, and read the takes within sweep / no-sweep as well: the sweep is
+on the page, so a pick that just follows it would beat random without the eye adding anything.
+
 ## Tested and NOT profitable — do not re-test
+- **After a stop-out, does price come back?** (2026-09-21, version 1, cost-free.) Within 24h of the
+  stop, 58% of 2020-25 losses (26/45) went back to TP1 and 51% on to TP2; last year 5/10 and 4/10.
+  Within 4h only 33% / 24%, and 1/10 last year. Before TP1, price first ran a median **0.62R past the
+  stop** (75th pct 1.30R) — a deep run, not a wick through the 1.0.
+- **Wider stop** (same entry and TP2): 1.13 → +0.098R vs +0.154R (2020-25), +0.031R vs +0.142R (last
+  year); 1.272 → +0.075R / −0.039R. The win rate rises, the profit per trade falls in both windows.
+- **Stop-sweep RE-ENTRY** (frozen before the run): after the stop, enter on the first 1m break back
+  in the trade's direction within 24h, stop at the sweep's extreme, target the original TP1 / TP2;
+  variant B also needs the close back beyond the 1.0. **Loses in all 8 cells**: 2020-25 A −0.26R /
+  −0.28R (n 36/42), B −0.24R / −0.24R (n 27/33), every one under break-even and under random entries
+  (z −0.5 to −1.1); last year the same (n 5-8). The "come back" above is how far gold moves in a day,
+  not a tradeable sweep.
 
 - **5m 3+ BOS since the shift** (sniper, overlapping 61.8-88.6): dev −0.32R, recent −0.37R. Late legs lose.
 - **Sniper zone starting BEFORE 61.8** (entry 0.5-0.618): dev −0.11R, recent −0.12R.
