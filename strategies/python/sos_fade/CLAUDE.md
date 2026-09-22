@@ -368,6 +368,31 @@ the level the primary itself entered at, remembered per SETUP and cleared on a n
   primary never traded; this is setups it did trade, where the primary's own fill mitigated the gap.
 - ⚠ **No Pine counterpart, so the parity gate is structurally blind to it** — lab finding only.
 
+## A close a PERSON asked for is not a stop-out, and the setup is still watched (2026-09-22)
+
+Aaron, 2026-09-22: *"if I manually close a trade and price comes back to entry I am disqualified
+for a secondary trade."* Two defects behind that, both fixed here, both keyed on the `-CMD` tag
+every commanded exit carries — including the hand close `algos/live/bridge.py` adopts as
+`closed_by_you`.
+
+- 🔴 **A hand close before TP1 was stamped into the STOPPED latch**, so the RECLAIM re-entry —
+  built and measured for primaries the market stopped at the deep edge — could arm on a trade
+  nothing stopped, at a price nothing was stopped at. It is now recorded as CLOSED only, which is
+  what the looser "Any close" door reads and is true.
+- 🔴 **The bot stopped following the trade the moment the person closed it**, so a first target
+  reached an hour later was never seen and the re-entry's breakeven door never opened.
+  `_check_cmd_watch` keeps watching the setup and opens that door when price reaches **that
+  trade's own first target** — the question the trade would have asked if left alone.
+- ⚠ **It opens a door price actually REACHED; it never invents one.** If price never gets there
+  the watch expires with the setup, and it only ever arms from stage 0 (a trade already past TP1
+  stamped the door open before the person touched it).
+- ⚠ **NOT carried across a restart.** The bot re-warms from bars, which cannot know a person
+  closed anything — so a restart loses the watch and the door stays shut. A missed re-entry, never
+  an extra one.
+- ⚠ **No parity gate covers any of this** — the Pine has no commanded close and no re-entry.
+  `tests/test_commanded_close.py` is the whole of the evidence; 5 tests, 2 mutations.
+- ⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package.
+
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 
 **`flat_mode` is the setting: `"Off"` / `"Friday only"` / `"Every day"`, shipped Off.** The clock

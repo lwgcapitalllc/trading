@@ -86,6 +86,94 @@ def test_it_outranks_the_time_stop_so_the_record_names_the_person_not_the_clock(
     assert ex.trades[0].exit_reason == "L-CMD"
 
 
+# ── what the setup remembers afterwards (2026-09-22) ──────────────────────────
+def _drift_alive(ex, first, count, high=104.6, low=103.95):
+    """Drift with the 15m setup STILL ALIVE, so the watch below is not cleared by a new break.
+    `_drift` above hands in a flat sequence, which retires the setup on the first bar."""
+    last = None
+    for i in range(first, first + count):
+        last = ex.step(_sig(i, 104.2, high, low, 104.3), _seq_long_ready())
+    return last
+
+
+def test_a_hand_close_before_the_first_target_is_not_recorded_as_a_stop_out():
+    """🔴 The RECLAIM re-entry is built for a primary the market stopped at the deep edge, and it
+    reads one latch to find them. Booking a close the owner asked for into that latch arms it on a
+    trade nothing stopped, at a price nothing was stopped at.
+
+    MUTATION: drop the `-CMD` test in `_finalise_trade` and the stopped latch fills in, which is
+    what this asserts is empty."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+
+    assert ex.trades[0].exit_reason == "L-CMD"
+    assert ex.prim_lost_sos_l is None, "a close somebody asked for was booked as a stop-out"
+    assert ex.prim_closed_sos_l == 1, "it is still a CLOSE — the looser door reads this"
+    assert ex.be_sos_l is None, "it never reached its first target, so no door yet"
+
+
+def test_price_reaching_the_target_after_a_hand_close_opens_the_reentry_door():
+    """Aaron's case. The trade is closed by hand at a scratch; price then goes on to the level
+    that trade would have banked at. Holding it would have opened the re-entry's door, so being
+    out of it by choice must not close that door.
+
+    MUTATION: delete the `_check_cmd_watch` call in `step` and the door never opens."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+    assert ex.be_sos_l is None, "fixture drifted — the door was already open"
+
+    ex.step(_sig(7, 104.3, 105.2, 104.1, 105.0), _seq_long_ready())   # high tags TP1 = 105.0
+
+    assert ex.be_sos_l == 1
+
+
+def test_the_door_stays_SHUT_when_price_never_reaches_that_target():
+    """The watch opens a door price actually reached. It never invents one — otherwise a hand
+    close would buy a re-entry the trade itself had not earned."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 6, high=104.99)      # everything stops one cent short of TP1
+
+    assert ex.be_sos_l is None
+
+
+def test_the_watch_dies_with_the_setup_that_set_it():
+    """A new break of structure is a new setup. A watch left pointing at the old one would open a
+    door on a leg nobody was watching — the defect the per-setup latches next to it exist for.
+
+    MUTATION: key the watch on the side instead of the SOS bar and this goes red."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+
+    ex.step(_sig(7, 104.2, 104.6, 103.95, 104.3), _seq_long_ready(sos_bar=7))   # a NEW break
+    ex.step(_sig(8, 104.3, 105.2, 104.1, 105.0), _seq_long_ready(sos_bar=7))    # tags 105.0
+
+    assert ex.be_sos_l is None
+
+
+def test_a_REAL_stop_out_is_still_recorded_as_one():
+    """The control. The change must separate a hand close from a stop-out, not stop recording
+    stop-outs — the reclaim re-entry depends on this latch filling in."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    ex.step(_sig(2, 104.2, 104.3, 99.5, 100.2), _seq_long_ready())    # through the 100.0 stop
+
+    assert ex._pos_dir == 0, "fixture drifted — the stop did not fill"
+    assert ex.prim_lost_sos_l == 1
+    assert ex.prim_closed_sos_l == 1
+
+
 # ── what it must NOT do ───────────────────────────────────────────────────────
 def test_asking_while_FLAT_refuses_rather_than_latching():
     """A request that quietly waited would fire on whatever the strategy opened next — a trade
