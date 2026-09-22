@@ -374,3 +374,7 @@ A read is now exempt only when, inside one function, every binding of the name i
 `self` attribute that the module ONLY ever assigns a freshly built structure engine. Any other
 binding of the name or the attribute and the read counts again. **Mutations run, both red:** the
 attribute also assigned the shared bar state; the name rebound to the shared bar before the read.
+
+## Sweep combos pickle by class path, not by reference (2026-09-20)
+
+`Combo` rebuilds its config in the worker from module, class name and init field values. The reason is that the Command Center purges and re-imports strategy packages, which leaves a config instance whose class is no longer the one registered under its name, and pickle refuses that. `init=False` fields are not passed back in. A config that is not a dataclass still pickles the plain way. The sweep also takes an optional second bar frame for strategies with a faster fill clock. Detail: `command-center/backend/notes/optimizer.md`.

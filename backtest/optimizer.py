@@ -32,12 +32,55 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 
+def _rebuild_combo(params: Dict[str, Any], module_name: str, qualname: str, values: dict):
+    """Rebuild a Combo in the WORKER, resolving the config class through the worker's own import.
+
+    Paired with `Combo.__reduce__`. Kept module-level because pickle has to be able to name it.
+    """
+    import importlib
+
+    obj: Any = importlib.import_module(module_name)
+    for part in qualname.split("."):
+        obj = getattr(obj, part)
+    return Combo(params=params, config=obj(**values))
+
+
 @dataclasses.dataclass(frozen=True)
 class Combo:
     """One point in the sweep: the params that varied (the label) + the config to actually run."""
 
     params: Dict[str, Any]
     config: Any
+
+    def __reduce__(self):
+        """Cross a process boundary as FIELD VALUES plus the config class's NAME, never as a
+        reference to the parent's class object.
+
+        🔴 A dataclass instance pickles by reference, and the backend REPLACES strategy classes
+        while a sweep is in flight: `services/strategy_import.py` drops and re-imports the whole
+        `strategies.python` namespace before every scan and every run, so that what you read is
+        what is on disk. A grid builds its configs from one import and then spends minutes loading
+        bars; anything that re-imports in that window makes the name stop resolving to the object
+        the combos hold, and the whole sweep dies at the first pickle with "it's not the same
+        object as". Measured 2026-09-20: grid `opt_2d74db78e9`, 108 combos, zero ran.
+
+        Rebuilding is also the HONEST model. A worker is a separate process that imports the
+        package itself; it never shared a class object with the parent, and the old behaviour only
+        worked when the two happened to be looking at the same one.
+
+        ⚠ `init=False` fields are NOT carried — the class recomputes them in `__post_init__`, and
+        a derived value shipped as a keyword would raise. ⚠ The field VALUES still pickle normally,
+        so a config holding a nested instance of another re-imported class has the same problem one
+        level down; nothing here does today, and the failure would name that class.
+        Anything that is not a dataclass falls back to ordinary pickling.
+        """
+        if not dataclasses.is_dataclass(self.config):
+            return (self.__class__, (self.params, self.config))
+        cls = type(self.config)
+        values = {
+            f.name: getattr(self.config, f.name) for f in dataclasses.fields(self.config) if f.init
+        }
+        return (_rebuild_combo, (self.params, cls.__module__, cls.__qualname__, values))
 
 
 # Per-worker state. A process pool initializer fills this ONCE per worker, so the bar frame and the
@@ -46,7 +89,13 @@ _W: Dict[str, Any] = {}
 
 
 def _init_worker(
-    monorepo_root: str, module_path: str, df, capital: float, cost_profile=None, extract=None
+    monorepo_root: str,
+    module_path: str,
+    df,
+    capital: float,
+    cost_profile=None,
+    extract=None,
+    fast_df=None,
 ) -> None:
     """Runs once per worker process. Its args are plain values (str/float/DataFrame) on purpose:
     they are unpickled BEFORE this body runs, so they must not need `sys.path` to already be set.
@@ -60,6 +109,7 @@ def _init_worker(
     _W.update(
         strategy_cls=entry["strategy"],
         df=df,
+        fast_df=fast_df,
         capital=capital,
         cost_profile=cost_profile,
         extract=extract,
@@ -74,14 +124,16 @@ def _run_in_worker(combo: Combo) -> dict:
         combo,
         _W.get("cost_profile"),
         _W.get("extract"),
+        _W.get("fast_df"),
     )
 
 
-def _refuse_unreplayable(config) -> None:
+def _refuse_unreplayable(config, fast_df=None, strategy_cls=None) -> None:
     """Refuse a config this sweep structurally cannot run.
 
-    A sweep replays ONE frame. `sos_fade`'s `exec_secondary` (default ON since 2026-08-07)
-    needs a second, 1-minute stream via `run_dual`, and there is nowhere here to get one. The
+    A sweep replays ONE frame unless the caller HANDS IT A SECOND (`fast_df`, added 2026-09-20).
+    `sos_fade`'s `exec_secondary` (default ON since 2026-08-07) needs that second stream via
+    `run_dual`; without it there is nowhere here to get one. The
     dangerous option is not refusing — it is replaying single-stream, because every combo then
     comes back primary-only and is ranked against a baseline that HAS re-entries, and the winner
     is handed to a validation run that does too. That is a comparison whose two sides were
@@ -90,17 +142,36 @@ def _refuse_unreplayable(config) -> None:
     Same call `reprice.py` makes about `bid_ask_fills`: a thing this shape cannot compute is
     REFUSED and NAMED, never approximated.
     """
-    if getattr(config, "exec_secondary", False):
+    if getattr(config, "exec_secondary", False) and fast_df is None:
         raise ValueError(
             "exec_secondary is on and a sweep cannot run it: the 1m re-entry needs a second bar "
             "stream (run_dual) and this replays one frame. Every combo would be primary-only "
             "while the run it is compared against is not. Set exec_secondary=False for the "
             "sweep, or give the sweep a 1m frame."
         )
+    if (
+        getattr(config, "exec_secondary", False)
+        and strategy_cls is not None
+        and not hasattr(strategy_cls, "run_dual")
+    ):
+        # A fast frame was supplied to a strategy that has no second-stream driver. Refusing
+        # rather than ignoring the frame: silently replaying single-stream is the exact failure
+        # the branch above exists to stop, and arriving at it by the other road makes it no safer.
+        raise ValueError(
+            f"{getattr(strategy_cls, '__name__', strategy_cls)} sets exec_secondary=True and a "
+            f"fast frame was supplied, but it has no run_dual() to step the second stream. Every "
+            f"combo would be primary-only."
+        )
 
 
 def _replay_one(
-    strategy_cls, df, capital: float, combo: Combo, cost_profile=None, extract=None
+    strategy_cls,
+    df,
+    capital: float,
+    combo: Combo,
+    cost_profile=None,
+    extract=None,
+    fast_df=None,
 ) -> dict:
     """Replay the whole frame under one config and return {params, kpis}.
 
@@ -119,10 +190,26 @@ def _replay_one(
     from backtest.output import build_kpis
     from backtest.replay import EngineStack, build_strategy, iter_bars
 
-    _refuse_unreplayable(combo.config)
+    _refuse_unreplayable(combo.config, fast_df, strategy_cls)
     strategy = build_strategy(
         strategy_cls, combo.config, initial_capital=capital, cost_profile=cost_profile
     )
+    # TWO-STREAM COMBO. When the config wants the re-entry layer and the caller supplied the
+    # second frame, the strategy's OWN dual driver runs the combo — the merge rule lives in
+    # `dual_clock.DualClock` and a second copy of *which bar steps when* is the exact shape that
+    # has already produced two silent disagreements in this repo.
+    # ⚠ It sets `bar_ms` and calls `finalize` itself, so this path must NOT do either again —
+    # which is why it returns here rather than falling through to the single-stream loop below.
+    # ⚠ `warmup=0`, matching the single-stream path, which steps the whole frame. A sweep grades
+    # combos against each other and every one of them is graded on the same bars.
+    if getattr(combo.config, "exec_secondary", False) and fast_df is not None:
+        strategy.run_dual(df, fast_df, warmup=0)
+        trades = strategy.execution.trades
+        row = {"params": dict(combo.params), "kpis": build_kpis(trades, initial_capital=capital)}
+        if extract is not None:
+            row["extra"] = extract(strategy)
+        return row
+
     if len(df.index) > 1:
         strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
@@ -171,6 +258,7 @@ def run_sweep(
     should_cancel: Optional[Callable[[], bool]] = None,
     cost_profile=None,
     extract: Optional[Callable[[Any], Any]] = None,
+    fast_df=None,
 ) -> List[dict]:
     """Replay `df` once per combo and return [{params, kpis}] — one row per combo, in combo order.
 
@@ -185,6 +273,12 @@ def run_sweep(
     validation run that is not — which is the same defect this parameter exists to close on the
     single-run path. It is a frozen dataclass, so it pickles to the worker processes unchanged.
 
+    `fast_df` is the SECOND bar frame, for a strategy whose config asks for a faster stream
+    (sos_fade's `exec_secondary`). Supplied, each such combo runs through the strategy's own
+    `run_dual` and books the same re-entries a single run does; omitted, a config that wants one
+    is REFUSED rather than replayed single-stream — see `_refuse_unreplayable`. It must cover the
+    same window as `df`, and it pickles to the workers exactly as `df` does.
+
     `extract` is an optional callable handed each combo's FINISHED strategy; its return value
     arrives on that row as `extra`. It must be a module-level function — it is pickled to the
     workers — and it should return small, plain data, since whatever it builds is shipped back
@@ -197,7 +291,11 @@ def run_sweep(
     # through, serial or pooled), but there it raises inside a WORKER — the message survives, and
     # a grid that dies one combo in after starting N processes reads like a crash rather than a
     # refusal. Checking combo 0 is enough: a sweep varies params, never the strategy.
-    _refuse_unreplayable(combos[0].config)
+    # Checking combo 0 is enough: a sweep varies params, never the strategy. `strategy_cls` is
+    # deliberately NOT available here — this function is handed a module path, not a class, and
+    # importing the strategy in the parent just to type-check it would undo the one-import-per-
+    # worker property. The run_dual check therefore happens in the worker, at `_replay_one`.
+    _refuse_unreplayable(combos[0].config, fast_df)
 
     total = len(combos)
     workers = max_workers if max_workers is not None else default_workers(total)
@@ -214,6 +312,7 @@ def run_sweep(
             should_cancel,
             cost_profile,
             extract,
+            fast_df,
         )
 
     results: List[Optional[dict]] = [None] * total
@@ -221,7 +320,7 @@ def run_sweep(
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_worker,
-        initargs=(root, module_path, df, initial_capital, cost_profile, extract),
+        initargs=(root, module_path, df, initial_capital, cost_profile, extract, fast_df),
     ) as pool:
         futures = {pool.submit(_run_in_worker, c): i for i, c in enumerate(combos)}
         pending = set(futures)
@@ -241,7 +340,16 @@ def run_sweep(
 
 
 def _sweep_serial(
-    module_path, root, df, combos, capital, progress, should_cancel, cost_profile=None, extract=None
+    module_path,
+    root,
+    df,
+    combos,
+    capital,
+    progress,
+    should_cancel,
+    cost_profile=None,
+    extract=None,
+    fast_df=None,
 ) -> List[dict]:
     """The single-worker path — also what the tests drive, since it needs no pickling or spawn."""
     import importlib
@@ -255,7 +363,7 @@ def _sweep_serial(
     for i, combo in enumerate(combos, 1):
         if should_cancel is not None and should_cancel():
             break
-        out.append(_replay_one(strategy_cls, df, capital, combo, cost_profile, extract))
+        out.append(_replay_one(strategy_cls, df, capital, combo, cost_profile, extract, fast_df))
         if progress is not None:
             progress(i, len(combos))
     return out

@@ -165,3 +165,12 @@ are different answers.
 params are fixed+swept, 50+ keys on a Python strategy) and moved its `job_status` call off the
 event loop — for NT8/MT5 that is an HTTP round trip over the SSH tunnel, polled every 3 seconds.
 ⚠ It is a **projection**, not a deletion: the full params stay on the row.
+
+## A grid can now tune a strategy whose re-entry layer is on (2026-09-20)
+
+- **Before this, the sweep refused any grid whose config wanted the second, faster bar stream.** SOS Fade ships with its re-entry on, so none of its settings could be tuned at all.
+- The sweep now loads ONE extra frame and hands it to every combo that asks for it. A grid that sweeps the re-entry's own fill clock is refused by name, because one frame cannot serve two clocks.
+- **A grid must also survive the strategy re-import.** The backend purges and re-imports every strategy package before each scan and run. A combo pickled to a worker after that purge failed with "not the same object as …" (grid `opt_2d74db78e9`, 2026-09-20, 0 of 108 combos ran). A combo now pickles its config as class path plus values and is rebuilt in the worker. Fix: `backtest/optimizer.py`.
+- ⚠ **A grid job lives in memory. A backend restart kills it as crashed, and so does saving any backend `.py` file,** because uvicorn is started with reload. Measured 2026-09-21: the rerun died at 11 of 108 when the backend restarted.
+- ⚠ **Grid combos store no trade list.** Ranking a grid in R means re-running the shortlist as full runs, where each trade's R sits in `equity_curve.json`.
+- TESTED: `backtest/tests/test_combo_pickles_after_reimport.py` (two tests watched red on the production error), `backtest/tests/test_sweep_second_stream.py`. MEASURED: grid `opt_2d74db78e9` completed all 108 combos.

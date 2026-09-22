@@ -845,6 +845,35 @@ def _execute_opt(job_id: str, spec: dict) -> None:
             message=f"combo {done} / {total}",
         )
 
+    # THE SECOND BAR STREAM (2026-09-20). A combo whose config wants the re-entry layer needs a
+    # faster frame, exactly as the single-run path above does — and before this the sweep simply
+    # REFUSED such a grid, which made every parameter of this strategy untunable while its
+    # shipped default was on. Asked of the CONFIGS, not the spec: a strategy default the grid
+    # never overrode is only visible post-merge, the same reason the single-run path asks there.
+    fast_df = None
+    wants = [c.config for c in combos if run_feeds.uses_secondary(c.config)]
+    if wants:
+        clocks = {run_feeds.extra_feed_minutes(run_feeds.SECONDARY_FLAG, c) for c in wants}
+        if len(clocks) > 1:
+            # ONE frame cannot serve two fill clocks, and picking either would replay half the
+            # grid on a feed it was not configured for while reporting both as measured. Refuse
+            # and name it — the same call `_refuse_unreplayable` makes one layer down.
+            raise ValueError(
+                f"this grid sweeps the re-entry fill clock ({sorted(clocks)} minutes) and a sweep "
+                f"loads ONE extra frame. Split it into one grid per clock."
+            )
+        fill_tf = clocks.pop()
+        _set(job_id, pct=6, message=f"loading {symbol} {fill_tf}m bars for the re-entry…")
+        fast_df = BarSource(server=bar_server(spec)).load(
+            symbol, fill_tf, spec["start_date"], spec["end_date"]
+        )
+        if fast_df.empty:
+            raise ValueError(
+                f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
+                f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
+                f"history for this window (or turn the secondary off for the sweep)."
+            )
+
     _set(job_id, pct=8, message=f"sweeping {len(combos)} combos…")
     rows = run_sweep(
         module_path=f"strategies.python.{pkg_name}",
@@ -855,6 +884,7 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         progress=_progress,
         should_cancel=lambda: _cancelled(job_id),
         cost_profile=_cost_profile(spec),
+        fast_df=fast_df,
     )
 
     if _cancelled(job_id):
