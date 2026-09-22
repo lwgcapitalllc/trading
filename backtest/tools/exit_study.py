@@ -27,7 +27,24 @@ THE RULES TESTED, declared before any result:
   choch           leave when structure breaks against the trade (a CHoCH our way is a reversal)
                   — engines/market_structure. ⚠ Prior art says this LOSES (notes/tools.md).
   div             leave on a divergence against the trade — engines/rsi_divergence.
-  candle          leave on a reversal candle against the trade — engines/candlesticks.
+  sos+bos         AARON'S DEFINITION (2026-09-22): a shift of structure against the trade and
+                  THEN a break of structure the same way. The shift alone is only half of it.
+  engulf          a BIG engulfing against the trade — the pattern at the chart's own settings
+                  (`candlesticks.CHART_PRESET`), with a body >= 2x the last 20 bars' median.
+                  ⚠ Size is the signal; the bare pattern fires on almost every bar.
+  level2/level3   price reaches a major level (previous day/week high-low, session extremes)
+                  and closes back off it, twice or three times — "hitting it over and over".
+  level+turn      the confluence: a level rejected AND structure shifting or a big engulfing
+                  on the same bar.
+
+🔴 THE REVERSAL RULES READ A CHART OF THEIR OWN, SET BY --signal-tf. The trade is found on the
+15m chart, but a 15m reversal is confirmed long after the turn: by the time the bar closes the
+give-back has already happened. So `choch`, `div` and `candle` run on their own faster frame
+(1m or 5m) and are checked on every one of ITS bars inside the hold, with the exit still priced
+at the next bar's open of that same frame. `liq` and `poc` stay on the trade's frame — both are
+session levels, and the level is the same price whatever chart draws it.
+⚠ A FAST FRAME IS NOT FREE: it fires earlier AND more often, and both effects land in the same
+number. That is the point of running all three frames side by side rather than one.
 
 EVERY RULE EXITS AT THE NEXT BAR'S OPEN, never at the close of the bar that fired it. That is
 the one-bar order delay every fill model in this repo is built on, and pricing a fill at the
@@ -70,6 +87,12 @@ SERVER = "PUPrime-Demo"  # pinned: cache-only, no MT5 tunnel needed
 PROFILE = "puprime_ecn"  # the only PU Prime tier with a MEASURED XAUUSD spread
 TF = 15
 
+# A body this many times the last 20 bars' median counts as "big" (his word for the engulfing
+# that matters). Declared here, before any result, rather than tuned until something wins.
+_BIG_BODY_X = 2.0
+# How near price must come to a level to count as touching it, as a share of that bar's range.
+_TOUCH_BAND = 0.25
+
 
 @dataclasses.dataclass
 class Walk:
@@ -108,11 +131,11 @@ def _replay(df, start: str, end: str, capital: float, warmup: int):
 
 
 def _engine_track(df):
-    """One pass of the engines over the same bars. Returns per-bar-index snapshots.
+    """One pass of the engines over these bars. Returns per-bar-index snapshots.
 
     Canonical engines only — this package replays `engines/`, it never reimplements one.
     """
-    from candlesticks import CandlestickEngine
+    from candlesticks import CHART_PRESET, CandlestickEngine
     from liquidity import LiquidityEngine
     from market_structure import StructureEngine
     from market_structure.types import Bar
@@ -123,7 +146,9 @@ def _engine_track(df):
     liq = LiquidityEngine()
     svp = SvpEngine()
     rsi = RsiDivergenceEngine()
-    cse = CandlestickEngine()
+    # The chart settings actually read on the charts, not the engine's Pine-mirroring
+    # defaults — a "reversal candle" measured at trend=5 fires on almost every bar.
+    cse = CandlestickEngine(**CHART_PRESET)
 
     has_volume = "volume" in df.columns
     track: List[dict] = []
@@ -150,17 +175,29 @@ def _engine_track(df):
         cs_ev = cse.update(i, float(o[i]), float(h[i]), float(lo[i]), float(c[i]))
 
         ext = ms_ev.external
+        # "A BIG engulfing" — the pattern alone is not the signal he reads, the SIZE is.
+        # Big = a body at least `_BIG_BODY_X` times the median body of the last 20 bars.
+        body = abs(float(c[i]) - float(o[i]))
+        j0 = max(0, i - 20)
+        bodies = sorted(abs(float(c[k]) - float(o[k])) for k in range(j0, i + 1))
+        med = bodies[len(bodies) // 2] if bodies else 0.0
+        big = med > 0 and body >= med * _BIG_BODY_X
         track.append(
             {
                 "bull_sos": bool(getattr(ext, "bull_sos", False)),
                 "bear_sos": bool(getattr(ext, "bear_sos", False)),
+                "bull_bos": bool(getattr(ext, "bull_bos", False)),
+                "bear_bos": bool(getattr(ext, "bear_bos", False)),
                 "levels": tuple(
                     float(getattr(x, "price", float("nan"))) for x in (liq_ev.active or ())
                 ),
                 "poc": poc,
                 "div": tuple(bool(d.is_bullish) for d in (rsi_ev.detected or ())),
-                "bull_candle": bool(getattr(cs_ev, "bullish", ())),
-                "bear_candle": bool(getattr(cs_ev, "bearish", ())),
+                "bull_engulf": big and cs_ev.has("bullish_engulfing"),
+                "bear_engulf": big and cs_ev.has("bearish_engulfing"),
+                "high": float(h[i]),
+                "low": float(lo[i]),
+                "close": float(c[i]),
             }
         )
     return track
@@ -187,8 +224,71 @@ def _rules(peak_bands: Tuple[float, ...], giveback: Tuple[float, ...]) -> List[s
     for t in peak_bands:
         for p in giveback:
             names.append(f"give{int(p * 100)}@{t:g}R")
-    names += ["liq", "poc", "choch", "div", "candle"]
+    names += ["liq", "poc", "choch", "sos+bos", "engulf", "div", "level2", "level3", "level+turn"]
     return names
+
+
+def walk_reversals(fdf, ftrack, tr, dist, cost_r) -> Dict[str, float]:
+    """The three signal rules on their OWN frame, priced at that frame's next bar open."""
+    import numpy as np
+
+    d = 1 if tr.dir > 0 else -1
+    entry = float(tr.entry_price)
+    stamps = fdf.index.view("int64") // 1_000_000
+    i0 = int(np.searchsorted(stamps, int(tr.entry_ms), side="left"))
+    i1 = int(np.searchsorted(stamps, int(tr.exit_ms), side="right")) - 1
+    o = fdf["open"].to_numpy()
+    fired: Dict[str, float] = {}
+    if i1 <= i0:
+        return fired
+    # His definition, in his words: a SHIFT of structure against us, then a BREAK of structure
+    # the same way, confirms the reversal. The shift alone is only half of it.
+    # ⚠ The engine flags a SHIFT as a break too (a shift IS a break that also flips the trend),
+    # so "then a break" has to mean a LATER bar or the rule silently collapses into `choch`.
+    # Measured 2026-09-22: without this the two columns were identical, 9 fires each.
+    shift_bar: Optional[int] = None
+    # A level he names — previous day/week high-low, session extremes — is "hit over and over"
+    # when price reaches it repeatedly and cannot go through. Counted per level price.
+    touches: Dict[float, int] = {}
+    for i in range(i0, min(i1, len(ftrack) - 1) + 1):
+        t = ftrack[i]
+        nxt = float(o[i + 1]) if i + 1 <= i1 else float(tr.exit_price)
+        r = (nxt - entry) * d / dist - cost_r
+        against_sos = t["bull_sos"] if d < 0 else t["bear_sos"]
+        against_bos = t["bull_bos"] if d < 0 else t["bear_bos"]
+        against_engulf = t["bull_engulf"] if d < 0 else t["bear_engulf"]
+        if against_sos and shift_bar is None:
+            shift_bar = i
+        if "choch" not in fired and against_sos:
+            fired["choch"] = r
+        if "sos+bos" not in fired and shift_bar is not None and i > shift_bar and against_bos:
+            fired["sos+bos"] = r
+        if "engulf" not in fired and against_engulf:
+            fired["engulf"] = r
+        if "div" not in fired and any(b == (d < 0) for b in t["div"]):
+            fired["div"] = r
+
+        # Touch counting: price reaches into a band around the level and closes back off it.
+        band = (t["high"] - t["low"]) * _TOUCH_BAND
+        rejected = False
+        for lv in t["levels"]:
+            if lv != lv or band <= 0:
+                continue
+            reached = t["low"] - band <= lv <= t["high"] + band
+            if not reached:
+                continue
+            closed_off = abs(t["close"] - lv) > band
+            if closed_off:
+                touches[lv] = touches.get(lv, 0) + 1
+                rejected = True
+                if "level2" not in fired and touches[lv] >= 2:
+                    fired["level2"] = r
+                if "level3" not in fired and touches[lv] >= 3:
+                    fired["level3"] = r
+        # The confluence he described: a level being hit again AND the structure turning there.
+        if "level+turn" not in fired and rejected and (against_sos or against_engulf):
+            fired["level+turn"] = r
+    return fired
 
 
 def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
@@ -242,13 +342,6 @@ def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
             p = float(t["poc"])
             if (p - entry) * d > 0 and (p - here) * d <= 0:
                 fired["poc"] = r_at(nxt)
-        if "choch" not in fired and (t["bull_sos"] if d < 0 else t["bear_sos"]):
-            fired["choch"] = r_at(nxt)
-        if "div" not in fired and any(b == (d < 0) for b in t["div"]):
-            fired["div"] = r_at(nxt)
-        if "candle" not in fired and (t["bull_candle"] if d < 0 else t["bear_candle"]):
-            fired["candle"] = r_at(nxt)
-
     return Walk(float(tr.r), peak_r, fired)
 
 
@@ -270,6 +363,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--end", default=EXPLORE_END)
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--capital", type=float, default=10_000.0)
+    ap.add_argument(
+        "--signal-tf",
+        type=int,
+        default=5,
+        choices=(1, 5, 15),
+        help="the chart the reversal rules read (the trade is still found on 15m)",
+    )
     ap.add_argument("--spend-test-set", action="store_true")
     args = ap.parse_args(argv)
 
@@ -298,12 +398,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     giveback = (0.25, 0.33, 0.5)
     walks = [walk_trade(df, track, t, peak_bands, giveback) for t in trades]
 
+    if args.signal_tf == TF:
+        fdf, ftrack = df, track
+    else:
+        print(f"loading {SYMBOL} {args.signal_tf}m for the reversal rules ...", flush=True)
+        from backtest.data.source import BarSource
+
+        fdf = BarSource(server=SERVER).load(SYMBOL, args.signal_tf, args.start, args.end)
+        if fdf.empty:
+            print(f"no {args.signal_tf}m bars — the cache holds none for this window.")
+            return 1
+        print(f"  {len(fdf):,} bars; running the engines over them ...", flush=True)
+        ftrack = _engine_track(fdf)
+    for tr, w in zip(trades, walks):
+        dist = float(tr.stop_distance) or 1.0
+        cost_r = (float(tr.costs_usd or 0.0) / float(tr.risk_usd)) if tr.risk_usd else 0.0
+        w.by_rule.update(walk_reversals(fdf, ftrack, tr, dist, cost_r))
+
     reached = sum(1 for w in walks if w.peak_r >= 1)
     best_case = sum(w.peak_r for w in walks)
     print(
         f"\n{len(walks)} trades, {reached} reached 1R, best case {best_case:.0f}R, "
         f"kept {sum(w.actual_r for w in walks):.0f}R"
     )
+    print(f"reversal rules read the {args.signal_tf}m chart; levels read {TF}m")
     print("\nrule            total R   worst DD   ret/DD   fired on")
     rows = []
     for rule in _rules(peak_bands, giveback):

@@ -1660,3 +1660,23 @@ out-of-sample when a result is POSITIVE.
 - 🔴 **Tighter is NOT better.** Capping the give-back at 25% or 33% loses on every band; the trade needs room to breathe. The winner keeps HALF of the peak.
 - 🔴 **Every engine-driven reversal exit LOSES to holding, including the two asked for by name.** The liquidity levels and the Asia volume line fire early and often (80 and 56 of 129 trades) and hand back half the book. This agrees with the opposing-CHoCH result already on record (`recovery_report.py --exits`, 16.2R -> 9.7R) and with the 0-of-240 result in `killzone_edge_search.py`. ⚠ **These levels are worth testing as TARGETS, where the level is known in advance; they do not work as reversal signals.**
 - ⚠ **Nothing here is a setting yet.** The winner has to be built and replayed with the position slot on before any of it is believed — the slot changes which rule wins, not just its score.
+
+### The reversal definitions Aaron gave, measured (2026-09-22)
+
+The first pass used the candlestick engine's Pine-mirroring defaults and called any of 15 patterns a "reversal" — a doji included — which fired on 127 of 129 trades and measured nothing. Re-run on HIS definitions, with the chart's own settings (`candlesticks.CHART_PRESET`), reversal rules reading the 5m chart, same 129 trades, `puprime_ecn` charged:
+
+| Rule | Total R | Worst DD | Ret/DD | Fired on |
+|---|---|---|---|---|
+| give back at most 50% of a peak >= 1.5R | 109.7 | 4.37 | **25.1** | 46 |
+| level touched twice and rejected | 45.0 | 2.13 | 21.1 | 117 |
+| shift of structure against us (5m) | 80.6 | 4.77 | 16.9 | 40 |
+| hold (control) | 127.0 | 7.69 | 16.5 | — |
+| level touched three times | 47.8 | 3.13 | 15.3 | 107 |
+| shift of structure THEN a later break | 97.6 | 6.81 | 14.3 | 15 |
+| level rejected AND structure turning | 44.5 | 4.11 | 10.8 | 55 |
+| big engulfing against us (body >= 2x the last 20 bars' median) | 45.9 | 5.45 | 8.4 | 67 |
+
+- 🔴 **Ret/DD IS the risk-normalised comparison, and it is the only fair one here** — several of these rules cut the drawdown by cutting the book. At a common 4.37R drawdown the give-back cap makes 109.7R, the structure shift 73.8R, holding 72.2R and the level rule 92.3R. Raising risk on a lower-drawdown rule does not rescue it, which is the answer to "smaller targets and up the risk".
+- ⚠ **A rule that fires on 117 of 129 trades is not a signal, it is an early exit with a story.** Both level rules and the 1m candle rule are in that class: high ret/DD bought by halving the return.
+- ⚠ **A shift of structure IS a break of structure in the engine** (a shift is a break that also flips the trend), so "shift then break" collapses into "shift" unless the break is required on a LATER bar. It did collapse — identical columns, 9 fires each — until that was fixed. With it fixed the rule fires on 15 of 129 and scores below holding.
+- **The confluence version scores worse than either half**, because waiting for both arrives after the give-back has happened.
