@@ -17,3 +17,5 @@
 2026-09-21 22:15:11,194 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
 2026-09-21 22:30:03,675 [INFO] place bearish primary limit 0.37L @ 4369.93 SL 4391.88386 TP none
 2026-09-21 22:30:03,816 [INFO] PENDING PLACED | ticket=384899607 | bearish 0.37L @ 4369.93 | SL=4391.88 TP=none
+2026-09-21 23:45:08,936 [INFO] PRIMARY LIMIT FILLED | T384899607 — the strategy books it when its 15-minute bar closes; the fill clock leaves it alone until then.
+2026-09-21 23:45:08,983 [INFO] POSITION OPENED | T384899607 SHORT 0.37L @ 4369.93 | SL=4391.88
