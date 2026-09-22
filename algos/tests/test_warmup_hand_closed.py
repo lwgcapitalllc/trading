@@ -192,3 +192,59 @@ def test_a_hand_close_in_session_then_a_rewarm_stays_flat(tmp_path):
     b.sync(_Dec(), _Sig())
     assert b.state is live_bridge.BridgeState.LIVE
     assert b.state is not live_bridge.BridgeState.HALTED
+
+
+# ── no closed row, but the BROKER says the trade is over (2026-09-22) ─────────
+#
+# The live case: the fill clock halted on a hand close before the 15-minute clock could book it,
+# so the ledger holds the `opened` row and no `closed` row. Every restart then rebuilt the short
+# and waited up to 36 hours for a copy of a trade the broker had already closed.
+#
+# RED before: the first test sat in WARMING with no close requested.
+# MUTATION: skip the broker fallback in `_warmup_trade_already_closed` -> the first goes red;
+# drop the size check -> the partial case goes red; drop the open-position check -> the
+# still-open case goes red.
+
+
+def _restart_asking_broker(tmp_path, origin, positions=()):
+    ex = _replay_holding()
+    b, ops, _ledger, _n = _bridge(ex, ledger=_box_ledger(tmp_path, [_BOX_OPENED]))
+    ops.origin = origin
+    ops.positions = list(positions)
+    b.state = live_bridge.BridgeState.LIVE
+    b.begin_live()
+    return b, ops, ex
+
+
+def test_no_closed_row_but_the_broker_shows_it_fully_closed_drops_the_copy(tmp_path):
+    b, ops, ex = _restart_asking_broker(tmp_path, {"opened": 0.14, "closed": {0: 0.14}})
+    assert ex.close_requested == live_bridge.MANUAL_CLOSE_REASON
+    assert _dropped(tmp_path)
+    assert ops.actions == [], "nothing is opened"
+    assert b.state is live_bridge.BridgeState.WARMING  # goes LIVE when the strategy is flat
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        None,  # history could not be read
+        {"opened": 0.14, "closed": {}},  # read, and no closing deal
+        {"opened": 0.14, "closed": {0: 0.07}},  # only part of it closed
+        {"opened": 0.0, "closed": {0: 0.14}},  # no opening deal found: deals do not add up
+    ],
+)
+def test_no_closed_row_and_the_broker_cannot_prove_it_closed_still_waits(tmp_path, origin):
+    b, _ops, ex = _restart_asking_broker(tmp_path, origin)
+    assert b.state is live_bridge.BridgeState.WARMING
+    assert ex.close_requested is None and not _dropped(tmp_path)
+
+
+def test_no_closed_row_and_the_ticket_is_still_open_at_the_broker_still_waits(tmp_path):
+    from test_live_bridge import _Pos
+
+    b, _ops, ex = _restart_asking_broker(
+        tmp_path,
+        {"opened": 0.14, "closed": {0: 0.14}},
+        positions=[_Pos(364105022, 1, 4316.98, 0.14, 4352.44)],
+    )
+    assert ex.close_requested is None and not _dropped(tmp_path)
