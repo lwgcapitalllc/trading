@@ -24,6 +24,9 @@ STOP_LEVELS = ("1.0", "88.6")
 TARGETS = ("TP2 38.2", "TP1 50")
 SIZE_MODES = ("Risk % of equity", "Fixed contracts")
 
+# "Overextended": the 15m trend has made this many continuation BOS since its shift, or more.
+OVEREXTENDED_15M_BOS = 4
+
 # The label each choice resolves to on the canonical Structure fib's ladder.
 LEVEL_KEY = {"1.0": "1.0", "88.6": "E4", "TP2 38.2": "TP2", "TP1 50": "TP1"}
 
@@ -44,6 +47,12 @@ class FftConfig:
     # split that held in every window the study measured. -1 = any number.
     max_bos: int = 0
     req_15m: bool = True
+    # Skip a setup when the 15m trend behind it has made 4+ continuation BOS since its shift — "the
+    # 15m is overextended" (the user, 2026-09-21, from the 02-04 and 03-27 losses). OFF by the
+    # user's decision: weak in both windows (2020-25 11 trades at 55%, last year 8 at 62%) but as a
+    # skip +1.3R / −0.1R, p 0.08 — not past the luck bar. Here so it can be switched on and so the
+    # forward log grades it either way (`tools/forward_log.py`). The 4 is the only cut measured.
+    skip_15m_overextended: bool = False
     req_1m_against: bool = True
     skip_closure_legs: bool = True
 

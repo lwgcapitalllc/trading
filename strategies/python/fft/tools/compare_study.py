@@ -18,10 +18,17 @@ It reports three things, strictest first:
               latching the two sides must agree on before any gate is even asked.
   3. COSTS    with --costs, the bot's trades through PU Prime ECN with bid/ask fills, against the
               ledger's +0.140R (2020-25) / +0.165R (last year).
+  4. 15m BOS  the 15m trend's continuation BOS count at every first touch both sides found — what
+              the overextension skip reads. With --overextended, the bot is run again with the skip
+              ON and must take exactly its own trades minus those at 4+ (no trade overlaps another in
+              version 1, so skipping one frees no slot for another).
 
 EXIT 0 when the bot takes at least 95% of the study's trades AND takes no more than 5% extra, agrees
 on at least 98% of the matched outcomes, and the two sides' first touches overlap by at least 95%
-BOTH ways. ⚠ The extra-trade and bot-side-touch limits were added after the gate was MUTATED
+BOTH ways, and the 15m BOS count and the sweep label each agree on at least 98% of those touches
+(the label was never compared before 2026-09-21, when both sides were found counting levels already
+taken; and with
+--overextended, the skip removes exactly the 4+ trades). ⚠ The extra-trade and bot-side-touch limits were added after the gate was MUTATED
 (2026-09-21): with the bot's 15m rule forced to pass, it took 22 trades the study refuses, named
 every one "study refused: 15m" — and still exited 0, because only MISSING trades were counted. ⚠ Green says the two AGREE; the
 engines are shared, so an engine defect passes both — the user's chart check is what covers that.
@@ -34,6 +41,7 @@ Usage:
   python strategies/python/fft/tools/compare_study.py                      # 2020-01 -> 2025-09
   python strategies/python/fft/tools/compare_study.py --start 2025-08-01 --end 2026-09-17
   python strategies/python/fft/tools/compare_study.py --costs
+  python strategies/python/fft/tools/compare_study.py --overextended
 """
 
 from __future__ import annotations
@@ -55,6 +63,8 @@ import pandas as pd  # noqa: E402
 TRADE_MATCH = 0.95
 OUTCOME_MATCH = 0.98
 TOUCH_MATCH = 0.95
+N15_MATCH = 0.98
+SWEPT_MATCH = 0.98
 
 
 def _ms(ts) -> int:
@@ -78,13 +88,13 @@ def study_side(start: str, end: str):
     return v1, firsts, raw, count_from
 
 
-def bot_side(raw: pd.DataFrame, profile=None):
+def bot_side(raw: pd.DataFrame, profile=None, config=None):
     from loaded_level_study import clean_reopens
 
     import fft
 
     clean, _ = clean_reopens(raw)
-    s = fft.FftStrategy(cost_profile=profile).run(clean)
+    s = fft.FftStrategy(config=config, cost_profile=profile).run(clean)
     return s
 
 
@@ -94,6 +104,9 @@ def main() -> int:
     ap.add_argument("--end", default="2025-09-01")
     ap.add_argument("--costs", action="store_true", help="also run the bot through PU Prime ECN")
     ap.add_argument("--show", type=int, default=15, help="list this many mismatches of each kind")
+    ap.add_argument(
+        "--overextended", action="store_true", help="also run the bot with the 15m 4+ BOS skip ON"
+    )
     a = ap.parse_args()
 
     v1, firsts, raw, count_from = study_side(a.start, a.end)
@@ -168,6 +181,57 @@ def main() -> int:
         f"   study {len(sf)}   bot {len(bot_touch)}   both {len(both)} ({len(both) / max(len(sf), 1):.1%})"
     )
 
+    # ── 4. the 15m BOS count ──
+    n15_ok = sum(1 for k in both if bot_touch[k].nbos15 == firsts[k]["n15"])
+    print("\n4. 15m BOS COUNT at the first touches both found (what the overextension skip reads)")
+    print(f"   agrees on {n15_ok} of {len(both)} ({n15_ok / max(len(both), 1):.1%})")
+    for k in [k for k in both if bot_touch[k].nbos15 != firsts[k]["n15"]][: a.show]:
+        print(
+            f"     ≠ {pd.Timestamp(k[0], unit='ms')} study {firsts[k]['n15']}, "
+            f"bot {bot_touch[k].nbos15}"
+        )
+    sw_ok = sum(1 for k in both if bool(bot_touch[k].swept) == bool(firsts[k]["swept"]))
+    print(
+        f"   the sweep label (A+) agrees on {sw_ok} of {len(both)} ({sw_ok / max(len(both), 1):.1%})"
+    )
+    for k in [k for k in both if bool(bot_touch[k].swept) != bool(firsts[k]["swept"])][: a.show]:
+        print(
+            f"     ≠ {pd.Timestamp(k[0], unit='ms')} study {firsts[k]['swept']}, "
+            f"bot {bot_touch[k].swept}"
+        )
+    over_ok = True
+    if a.overextended:
+        import fft
+        from fft.config import OVEREXTENDED_15M_BOS
+
+        def nbos15_of(run, t) -> int:
+            """The 15m count on the touch this trade filled from: the last traded touch before it
+            on its side — one position at a time, so it can be no other."""
+            got = [x for x in run.touches if x.traded and x.dir == t.dir and x.ts_ms <= t.entry_ms]
+            return got[-1].nbos15 if got else -1
+
+        off = {(t.entry_ms, t.dir) for t in ex.trades if t.entry_ms >= cf}
+        flagged = {
+            (t.entry_ms, t.dir)
+            for t in ex.trades
+            if t.entry_ms >= cf and nbos15_of(s, t) >= OVEREXTENDED_15M_BOS
+        }
+        so = bot_side(raw, config=fft.FftConfig(skip_15m_overextended=True))
+        on = {(t.entry_ms, t.dir) for t in so.execution.trades if t.entry_ms >= cf}
+        study_flag = sum(1 for k, v in v1.items() if v["t"]["n15"] >= OVEREXTENDED_15M_BOS)
+        over_ok = on == off - flagged
+        refused = sum(1 for x in so.touches if x.why == "bos15" and x.ts_ms >= cf)
+        print("\n   with the skip ON:")
+        print(
+            f"   bot trades {len(on)} = {len(off)} - {len(flagged)} at 4+ BOS? "
+            f"{'yes' if over_ok else 'NO'}   (study trades at 4+: {study_flag}; "
+            f"touches refused 'bos15': {refused})"
+        )
+        for k in sorted((on ^ (off - flagged)))[: a.show]:
+            print(
+                f"     ≠ {pd.Timestamp(k[0], unit='ms')} {'only ON' if k in on else 'only expected'}"
+            )
+
     # ── 3. costs ──
     if a.costs:
         from backtest.fills import PROFILES
@@ -189,13 +253,18 @@ def main() -> int:
         and agree >= OUTCOME_MATCH * max(len(matched), 1)
         and len(both) >= TOUCH_MATCH * len(sf)
         and len(both) >= TOUCH_MATCH * len(bot_touch)
+        and n15_ok >= N15_MATCH * max(len(both), 1)
+        and sw_ok >= SWEPT_MATCH * max(len(both), 1)
+        and over_ok
     )
     print(
         f"\n{'MATCH OK' if ok else 'MISMATCH'} — trades {len(matched)}/{len(v1)} (need "
         f"{TRADE_MATCH:.0%}), extra bot trades {len(extra)} (allowed "
         f"{int((1 - TRADE_MATCH) * len(v1))}), outcomes {agree}/{len(matched)} (need "
         f"{OUTCOME_MATCH:.0%}), touches {len(both)} of study {len(sf)} / bot {len(bot_touch)} "
-        f"(need {TOUCH_MATCH:.0%} of each)"
+        f"(need {TOUCH_MATCH:.0%} of each), 15m BOS {n15_ok}/{len(both)} (need {N15_MATCH:.0%}), sweep label {sw_ok}/{len(both)} "
+        f"(need {SWEPT_MATCH:.0%})"
+        + ("" if not a.overextended else f", skip ON removes exactly the 4+ trades: {over_ok}")
     )
     return 0 if ok else 1
 

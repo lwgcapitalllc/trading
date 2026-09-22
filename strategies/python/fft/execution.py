@@ -77,6 +77,9 @@ class Setup:
     why: Optional[str]
     fill_price: Optional[float]
     swept: bool
+    # The 15m trend's continuation BOS since its shift at the touch (-1 before there is a trend) —
+    # the study's `n15`, matched by `tools/compare_study.py`. What the overextension skip reads.
+    nbos15: int = -1
 
 
 @dataclass

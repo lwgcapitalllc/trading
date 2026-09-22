@@ -85,6 +85,13 @@
       "desc": "Only trade in the direction of the 15-minute trend."
     },
     {
+      "name": "skip_15m_overextended",
+      "group": "The setup",
+      "label": "Skip after 4+ 15m BOS",
+      "widget": "toggle",
+      "desc": "Skip a setup when the 15-minute trend behind it has already broken structure 4 or more times since it turned. Off by default: these trades looked weaker in testing, but not by enough to prove it."
+    },
+    {
       "name": "req_1m_against",
       "group": "The setup",
       "label": "1m against, no 1m break",

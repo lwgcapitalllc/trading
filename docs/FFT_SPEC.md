@@ -103,6 +103,7 @@ keeps it ON**, because the study and the students' indicator both have it on.
 | Fib adopts internal swings | on | — |
 | Max 5m continuation BOS | 0 | 1, any |
 | 15m trend must agree | on | off |
+| Skip after 4+ 15m BOS | off | on — an unproven lead (weak both windows, p 0.08), graded by the forward log |
 | 1m against, no 1m break | on | off |
 | Skip a leg across a market closure | on | off |
 | Stop level | 1.0 | 88.6 |

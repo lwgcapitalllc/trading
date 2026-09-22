@@ -89,6 +89,39 @@ def test_only_one_minute_bars_are_accepted():
         FftStrategy().set_timeframe_minutes(5)
 
 
+def test_the_15m_overextension_skip_is_off_by_default():
+    """The user's decision, 2026-09-21: present, not on — the lead is unproven."""
+    assert FftConfig().skip_15m_overextended is False
+
+
+def _ready_to_buy(nbos15: int, on: bool) -> FftStrategy:
+    """A strategy whose every other rule passes a buy at the 61.8 on the next minute."""
+    from fft.frames import Candle
+    from fft.strategy import Row5
+
+    s = FftStrategy(FftConfig(skip_15m_overextended=on))
+    zero, one = 110.0, 95.0
+    lv = {k: zero + r * (one - zero) for k, r in (("E1", 0.618), ("E2", 0.702), ("E4", 0.886))}
+    lv.update({"1.0": one, "TP1": zero + 0.5 * (one - zero), "TP2": zero + 0.382 * (one - zero)})
+    lv["TP3"] = zero
+    s.row5 = Row5(
+        index=10, close=103.0, dir=1, sdir=1, levels=lv, e1_done=False, origin=2, ext_loc=8, nbos=0
+    )
+    s._candles5[8] = Candle(8, T0, 104.0, zero, 103.0, 106.0, 40, 44, 42, 40)
+    s.dir15, s.nbos15, s.dir1 = 1, nbos15, -1
+    return s
+
+
+def test_the_15m_overextension_skip_refuses_at_four_bos_and_not_three():
+    """Mutation: `>` for `>=` in the gate → the 4-BOS setup is traded; went RED 2026-09-21."""
+    import pandas as pd
+
+    ts = int(pd.Timestamp("2026-03-24 15:00", tz="UTC").value // 10**6)  # a Tuesday, mid-session
+    assert _ready_to_buy(4, on=True)._decide(50, ts)["why"] == "bos15"
+    assert _ready_to_buy(3, on=True)._decide(50, ts)["order"] is not None
+    assert _ready_to_buy(6, on=False)._decide(50, ts)["order"] is not None
+
+
 # ── the order layer ──────────────────────────────────────────────────────────
 def _ex(profile=None, capital=10_000.0) -> FftExecution:
     return FftExecution(FftConfig(), initial_capital=capital, profile=profile)

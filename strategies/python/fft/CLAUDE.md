@@ -19,6 +19,12 @@ never promoted, never run against a broker.
   exact switches; do not "tidy" them to match other bots.
 - **A buy limit the bid reached but the ask did not keeps resting** until it fills or TP1 prints —
   only with bid/ask fills on. That is how the study's costed run priced it.
+- **"Skip after 4+ 15m BOS" is a setting, OFF by the user's decision** (2026-09-21). The count is
+  the study's `n15` — a shift resets it to 0 — and only the 15m trend BEHIND the trade is read. It is
+  an unproven lead; `tools/forward_log.py` grades it (and the other two leads) on demo trades.
+- **The A+ sweep label reads live levels only, and the touch minute only to the 61.8.** Until
+  2026-09-21 it counted levels already taken and still drawn, and the touch minute past the fill —
+  copied faithfully from the study, which had the same defect (rule 14). Reporting only; no trade moves.
 - **No order rests into a weekend or an early-close holiday break** (`_next_minute_shut`). ⚠ The
   shared calendar marks Thanksgiving Day closed; PU Prime trades it until ~13:00 New York. So a plain
   "tomorrow is a holiday" is NOT refused here — only a weekend-length break, or an early close
@@ -32,10 +38,13 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
 - **The rule layer:** `tools/compare_study.py` runs the bot and
   `backtest/tools/fft_first_touch_study.py` over the same cleaned PU Prime 1m bars and matches every
   trade, outcome and first touch. EXIT 0 needs ≥95% of study trades, ≤5% extra, ≥98% outcomes,
-  ≥95% touches both ways. ⚠ The extra-trade limit exists because the gate was mutated (15m rule
-  forced on) and first exited 0 anyway.
+  ≥95% touches both ways, and ≥98% agreement on the 15m BOS count and the sweep label; `--overextended`
+  also proves the skip removes exactly the 4+ trades. ⚠ The extra-trade limit exists because the gate
+  was mutated (15m rule forced on) and first exited 0 anyway; the 15m-count check was mutated too (the
+  count never reset on a shift → 211 / 494, exit 1).
 - **MEASURED 2026-09-21:** 2020-01 → 2025-09: 157/157 trades, 157/157 outcomes, 2,644/2,644 first
-  touches. 2025-08 → 2026-09: 34/34, 34/34, 494/494. Through PU Prime ECN with bid/ask fills:
+  touches, 15m BOS count and sweep label. 2025-08 → 2026-09: 34/34, 34/34, 494/494. Skip on: 146
+  and 26 trades, exactly the study's 157 − 11 and 34 − 8. Through PU Prime ECN with bid/ask fills:
   +0.149R a trade over 152 (2020-25), +0.136R over 34 (last year).
 - ⚠ Both share the engines, so an engine defect passes both. **The user's chart check of recent bot
   trades is the step that checks the rule is right** — not yet done.
@@ -47,3 +56,7 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
 - The single-run form in the lab offers no 1-minute bar size (hard-coded presets); a lab run needs
   the frame set by hand until that form reads `suggested_bar_value`.
 - Run `/live-safety` before anything under `algos/`.
+- Once it trades: `tools/forward_log.py --start <first demo day>` grades the three leads by replay.
+  Check its trade list against the account's history first — a fill the replay does not see is the
+  one thing it cannot know. ⚠ It replays RAW bars (as the lab and live bot see them), so it can
+  differ from the gate, which feeds both sides cleaned bars.

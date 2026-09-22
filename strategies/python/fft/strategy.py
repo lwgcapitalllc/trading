@@ -46,7 +46,7 @@ from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
 from market_structure import Bar, StructureEngine  # noqa: E402
 from time_flat import NY, HolidayCalendar  # noqa: E402
 
-from .config import LEVEL_KEY, FftConfig  # noqa: E402
+from .config import LEVEL_KEY, OVEREXTENDED_15M_BOS, FftConfig  # noqa: E402
 from .execution import FftExecution, Setup  # noqa: E402
 from .frames import Candle, ClockFrame  # noqa: E402
 
@@ -65,6 +65,7 @@ WHY = {
     "trend5": "rule 1 — the 5m trend is not the fib's direction",
     "bos": "rule 2 — not the 5m first leg",
     "trend15": "rule 3 — the 15m trend is not with the trade",
+    "bos15": "setting — the 15m trend has made 4+ BOS since its shift (overextended)",
     "dir1": "rule 4 — the 1m trend is not against the trade",
     "brk1": "rule 5 — the 1m broke in the trade's direction since the extreme",
     "closure": "rule 9 — the market shut inside the leg",
@@ -143,6 +144,8 @@ class FftStrategy:
 
         self.row5: Optional[Row5] = None
         self.dir15 = 0
+        self._nb15 = {1: 0, -1: 0}
+        self.nbos15 = -1  # the 15m trend's continuation BOS since its shift; -1 before a trend
         self.dir1 = 0
         self._nb = {1: 0, -1: 0}
         self._candles5: Dict[int, Candle] = {}
@@ -241,18 +244,32 @@ class FftStrategy:
             ext_loc=f.ash_loc if d == 1 else f.asl_loc,
             nbos=self._nb[d],
             active_lo=tuple(
-                sorted((x.price for x in lq.active if x.rule == "sweep_low"), reverse=True)[:3]
+                sorted(
+                    (x.price for x in lq.active if x.rule == "sweep_low" and not x.mitigated),
+                    reverse=True,
+                )[:3]
             )
             if lq
             else (),
-            active_hi=tuple(sorted(x.price for x in lq.active if x.rule == "sweep_high")[:3])
+            active_hi=tuple(
+                sorted(x.price for x in lq.active if x.rule == "sweep_high" and not x.mitigated)[:3]
+            )
             if lq
             else (),
         )
 
     def _on_15m(self, c: Candle) -> None:
-        self._eng15.update(Bar(index=c.index, open=c.open, high=c.high, low=c.low, close=c.close))
+        ext = self._eng15.update(
+            Bar(index=c.index, open=c.open, high=c.high, low=c.low, close=c.close)
+        ).external
+        # The study's `structure_run`, line for line: a shift sets the BOS flag too, so it resets
+        # the count to 0 rather than adding one; the count read is the trend in force.
+        if ext.bull_bos:
+            self._nb15[1] = 0 if ext.bull_sos else self._nb15[1] + 1
+        if ext.bear_bos:
+            self._nb15[-1] = 0 if ext.bear_sos else self._nb15[-1] + 1
         self.dir15 = self._eng15.dir
+        self.nbos15 = self._nb15[self.dir15] if self.dir15 != 0 else -1
 
     def _close_candles(self, cs5, cs15) -> None:
         for c in cs5:
@@ -389,6 +406,7 @@ class FftStrategy:
             why=why,
             fill_price=fill.price if traded else None,
             swept=self._swept_since(r, ts, d, high, low),
+            nbos15=self.nbos15,
         )
         self.touches.append(setup)
         order = (decided or {}).get("order")
@@ -430,6 +448,12 @@ class FftStrategy:
         f = self._f5
         if f._key is not None and not f._emitted and f.window_of(ts) == f._key:
             low, high = min(low, f.building_low), max(high, f.building_high)
+        # Live levels only (not yet taken), and the touch minute only as far as the 61.8 — the
+        # study's `sweep()` after its 2026-09-21 fix; before it, both counted levels already gone.
+        if d == 1:
+            low = max(low, r.levels["E1"])
+        else:
+            high = min(high, r.levels["E1"])
         if d == 1:
             return any(low < p for p in r.active_lo)
         return any(high > p for p in r.active_hi)
@@ -510,6 +534,10 @@ class FftStrategy:
             return no("bos")
         if cfg.req_15m and self.dir15 != d:
             return no("trend15")
+        # Only the 15m trend BEHIND the trade can be overextended in its favour; with the 15m rule
+        # off and the 15m against, the count belongs to the other side and says nothing here.
+        if cfg.skip_15m_overextended and self.dir15 == d and self.nbos15 >= OVEREXTENDED_15M_BOS:
+            return no("bos15")
         c = self._candles5.get(r.ext_loc)
         if c is None:
             return no("ext_unknown")
