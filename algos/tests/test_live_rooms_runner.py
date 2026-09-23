@@ -77,6 +77,11 @@ def world(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(_bs(), "_ACCOUNTS", reg)
     monkeypatch.setattr(_bs(), "_accounts_cache", None, raising=False)
+    # ⚠ The SECOND committed file this fixture has to hold off (2026-09-23): a setup message is
+    # copied to any extra room its account names in `markets/fx/signal_copies.json`, and 34957946
+    # names one. Without this line the promise in the docstring above is broken and every signal
+    # here posts twice — pointed at a path that does not exist, exactly like the registry.
+    monkeypatch.setattr(notify, "SIGNAL_COPIES", tmp_path / "no_copies.json")
     monkeypatch.setattr(
         creds_mod,
         "_cache",

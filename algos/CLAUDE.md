@@ -268,6 +268,8 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - ✅ The health room's icons collapsed from 14 ad hoc glyphs to 4 named severity levels; every example is in `notes/telegram-message-catalog.md` (2026-09-14)
 - 🔴 A setup's Telegram thread did NOT survive a restart — four identical alerts for one setup in 24 hours, none of the first three closable. The thread bookkeeping now lives on disk and is reconciled at the end of every warm-up (2026-09-16)
 - ✅ Setup messages are ON for every bot; the extreme-leg bot now sends them, and a bot whose strategy cannot says so in the health room (2026-09-16)
+- ✅ A second room may get a COPY of an account's SETUPS — `markets/fx/signal_copies.json`, setups only, never fills, and it takes effect at the bot's next PROMOTE (2026-09-23)
+- ✅ The REV SETUP student feed — `tools/rev_setup_feed.py` renders the bot's own decision records for a students' channel from a per-event WHITELIST, so no lot size, dollar risk or P&L can be published; off until switched on (2026-09-23)
 
 ### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room
 

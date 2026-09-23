@@ -700,3 +700,89 @@ channel is SOS-Fade-specific. The live extreme-leg bot logged "Setup alerts: OFF
   per strategy, not a flag. Until then, any of them started live sends the health message above.
 
 Tests: `algos/tests/test_setup_alerts_every_bot.py` (2, both watched RED at HEAD).
+
+## A SECOND room may get a COPY of the setups, and only the setups (2026-09-23)
+
+**The ask (the user, 2026-09-23):** the rev-setup bot's setup messages land in the room its own
+account names, and he wanted the same messages in HIS signals room as well — a second reader for
+the same setups, with the fills left exactly where they are. He asked twice, after being told the
+notifier is Aaron's file and that his own standing rule says hands off, and told me to do it.
+
+**What was built:** `markets/fx/signal_copies.json` maps an account to extra rooms, and
+`shared/notify.py::send_telegram_id` posts the same text to each of them after the message's own
+room has taken it. Enabled today for 34957946 → the other owner's signals room.
+
+- 🔴 **SIGNAL ONLY, checked in the code.** A setup is an opinion about where price is; a fill is
+  somebody's money. The whole per-account routing design above exists so a live fill never reaches
+  a room the wrong person reads, so `kind` is tested at the copy and a trades or health room
+  written into that file still receives nothing. That is the property the tests are weighted
+  toward, not the copy working.
+- ⚠ **The copy is FLAT.** A `reply_to` id belongs to the chat it was posted in, so replaying one in
+  another room is either refused by Telegram or files the follow-up under a stranger's message.
+  The copy room gets each message loose; the thread stays in the bot's own room.
+- ⚠ **A courtesy, never a substitute.** It runs only after the primary succeeded, it cannot change
+  the message id the follow-ups reply to, and a dead copy room prints once and is otherwise
+  ignored. A live account that names no signals room still sends NOTHING, copy list or not.
+- ⚠ **Its own file rather than a field on the account's row, and that is the interesting part.**
+  `command-center/.../bot_account_registry.upsert_account` REPLACES a row when somebody edits that
+  account on the page, keeping only the `_`-prefixed prose keys — so a field the page does not know
+  about would be dropped the next time anyone touched the account, silently, and found months later
+  by a room that had quietly stopped receiving. Adding it to the page instead means the dataclass,
+  the API model and the form, and the payload still wipes what it does not send.
+- 🔴 **IT NEEDS A PROMOTE, and the data arriving on the box is not enough.** `algos/shared` is in
+  `live_config.ORDER_PATH_ROOTS`, so every promoted bot runs this module from its own frozen
+  snapshot. The file is read live through `repo_paths` (an edit needs no restart), but a bot
+  promoted before today copies nothing until its next promote.
+- ⚠ **A test that sends a SIGNAL for a real account must point the copies file at nowhere**, the
+  way the registry already is. `test_live_rooms_runner.py`'s fixture promised "nothing here reads
+  the committed channels" and this gave it a second committed file to hold off — one extra post in
+  one assertion, caught in the suite.
+
+Tests: `algos/tests/test_signal_copies.py` (13; two mutations watched RED — removing the copy call
+reddens the six that assert a copy arrives, and removing the `kind` guard reddens the two that
+assert fills and health never copy).
+
+## The REV SETUP student feed — the bot's own behaviour, with the money removed (2026-09-23)
+
+**The ask (the user, 2026-09-23):** his students run the MPC JARVIS indicator on their own charts,
+and when they are away from the chart he wants the channel (MPC Signals, `-1004314325555`) to tell
+them what the BOT is doing — a rev setup forming, where the entry would be, the limit going on, the
+stop being moved, how it ended. Named **REV SETUP**, which is what the students are taught to call
+it. *"The bot itself that we built. Because the bot has its own set of rules when taking a trade,
+those are the things that I want captured."*
+
+**Built as `algos/tools/rev_setup_feed.py`** with `markets/fx/rev_feed.json`, shipped `enabled:
+false`. It reads the bot's `decisions-YYYY-MM-DD.jsonl` and renders its own lines.
+
+- 🔴 **It does NOT forward the bot's messages, and that is the whole design.** Those carry the lot
+  size and the dollar risk (see *THE RESTING MESSAGE CARRIES ITS LOT SIZE* above), so forwarding
+  them publishes an owner's position sizing — and his balance by arithmetic — to a class. The feed
+  renders from a per-event **whitelist** (`_RENDER`), so a field nobody listed cannot be published:
+  a record that grows a field tomorrow is left out rather than leaked.
+- ⚠ **No promote needed, which is why it is a tool and not a change to the bot.** `algos/shared`
+  and `algos/live` are frozen into each bot's snapshot, so anything added to the bot's own
+  messaging reaches a running bot only at its next promote. This reads files already being written.
+- **The forming half comes from the per-bar records.** A bar carries each side's stage
+  (`sos_fade/sequence.py`: 1 sweep, 2 shift confirmed, 3 the 50%, 4 the 61.8%), so a stage RISING
+  is the "setup forming" event. Stage 1 is not published — it fires constantly.
+- 🔴 **Three things only real rows taught it** (MEASURED against `sos_fade_1`, 2026-09-22): a
+  market add's `price` is the ESTIMATE the size came from and `fill_price` is where it traded
+  (4332.00 against 4320.58, so publishing `price` states a price the bot never traded); one trail
+  move writes ONE RECORD PER LEG, so the same sentence arrived twice; and four of that day's seven
+  stop moves were 1c-13c of trail, hence a `$1` floor that publishes the three that mattered.
+- ⚠ **A failed send rolls back EVERY cursor, not just the line count.** Rolling back one left the
+  stage and last-stop cursors ahead, and the retry then suppressed the unsent message as a
+  duplicate — caught by its own test, not in production.
+- ⚠ A run that cannot run says so in the HEALTH room, never in the student channel.
+
+What a real day renders (2026-09-22, eight messages):
+
+    REV SETUP | XAUUSD SHORT | stage 3 of 4: retraced to the 50%. Potential entry 4369.93.
+    REV SETUP | XAUUSD SHORT | stage 4 of 4: retraced to the 61.8% - in the entry zone. ...
+    REV SETUP | XAUUSD | Stop moved 4391.88 -> 4369.63.
+    REV SETUP | XAUUSD SHORT | ADDED at 4320.58. Stop 4357.86.
+    REV SETUP | XAUUSD | OUT at 4356.86. +0.59R.
+
+Still open: the scheduled task on the box (it runs on demand until then), and the `enabled` flag.
+
+Tests: `algos/tests/test_rev_setup_feed.py` (18; five mutations watched RED, listed in its docstring).
