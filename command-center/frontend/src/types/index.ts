@@ -1199,6 +1199,11 @@ export interface BotPromoteResult {
   ok: boolean
   output: string
   restarted: boolean
+  /** Nothing the bot LOADS had changed, so nothing was deployed and it was left running.
+   *  🔴 Its own field rather than an inference from `restarted`: a deploy that shipped real code
+   *  without a restart is also `restarted: false`, and reading that as "nothing to do" would tell
+   *  somebody a waiting restart was unnecessary. */
+  nothing_new: boolean
 }
 
 /** One step of a deploy run as a background job, reported by the backend as it enters it.

@@ -386,7 +386,14 @@ export function VersionBanner({
       </>
     )
   } else if (finished && !failed) {
-    if (!finished.result?.restarted) {
+    // 🔴 **Checked BEFORE `restarted`, because both are false here and only one of them is the
+    // reason (2026-09-23).** Falling through would print *restart it to pick it up* over a bot
+    // that is already running this exact code — telling the reader to do the very thing this
+    // branch exists to have avoided.
+    if (finished.result?.nothing_new) {
+      caption = `Already running this code — nothing was deployed and ${botLabel} was left alone.`
+      captionTone = 'text-pos-text font-semibold'
+    } else if (!finished.result?.restarted) {
       caption = `Deployed — restart ${botLabel} to pick it up.`
       captionTone = 'text-amber-300'
     } else if (confirmState === 'unconfirmed') {

@@ -271,6 +271,25 @@ export function useBotVersions(botNames: string[]) {
  * re-read here means the job and the version change on the same render, on every surface, with no
  * per-surface guard.
  */
+/**
+ * Deploys whose FINISH this tab has already acted on, by job id.
+ *
+ * 🔴 **Why by id and not by watching the transition (2026-09-23).** The reconciliation below used
+ * to fire only when this poller personally saw a job go `running` → finished. That is an EDGE, and
+ * a tab that was not mounted, not focused, or opened a second after the deploy landed never sees
+ * it — so the version was never re-read and the row went on drawing the reading it took BEFORE the
+ * deploy. Aaron deployed a bot twice inside three minutes on exactly that: *"the FFT badge still
+ * said v373 behind"*. A job id is a FACT about the deploy rather than about who was watching, so
+ * every surface converges on one reading however it got there.
+ *
+ * ⚠ **Module scope, not a ref.** The row's pill and the deploy panel are separate components over
+ * ONE query, and a per-component memory would let one of them re-read while the other did not.
+ *
+ * ⚠ **It only ever grows**, and by one entry per deploy — a tab open for a week holds a handful of
+ * short strings. Bounding it would be inventing a limit to solve a problem nobody has.
+ */
+const _settledDeploys = new Set<string>()
+
 export function usePromoteJobs(botNames: string[]) {
   const qc = useQueryClient()
   return useQueries({
@@ -284,18 +303,19 @@ export function usePromoteJobs(botNames: string[]) {
             { silent: true }
           )
           const prev = qc.getQueryData<BotPromoteJob | null>(key)
-          if (
-            prev?.status === 'running' &&
-            next &&
-            next.job_id === prev.job_id &&
-            next.status !== 'running'
-          ) {
+          if (next && next.status !== 'running' && !_settledDeploys.has(next.job_id)) {
+            _settledDeploys.add(next.job_id)
             qc.invalidateQueries({ queryKey: ['bots', 'params', name] })
             qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
             // Resolves once the re-read lands, failed or not — it never throws.
             await qc.invalidateQueries({ queryKey: ['bots', 'version', name] })
-            if (next.status === 'done') toast.success(`${name}: deployed`)
-            else toast.error(`${name}: deploy failed — see the panel`)
+            // ⚠ The TOAST still needs the transition, and that asymmetry is the point. Re-reading
+            // a stale version is always right; announcing a deploy this tab was not open for is
+            // telling somebody something just happened when it did not.
+            if (prev?.status === 'running' && next.job_id === prev.job_id) {
+              if (next.status === 'done') toast.success(`${name}: deployed`)
+              else toast.error(`${name}: deploy failed — see the panel`)
+            }
           }
           return next
         },

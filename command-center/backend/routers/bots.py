@@ -4990,6 +4990,13 @@ _PROMOTE_FAIL = "===PROMOTE_FAILED==="
 # deploy moves it to, each a bare int or `?`. Parsed rather than scraped out of the prose for
 # the reason the OK/FAIL markers exist: a reworded `print` must not change what this reads.
 _VERSION_MARK = "##VERSIONS"
+# 🔴 `promote.py` prints `##NOTHING-NEW` INSTEAD of deploying when the snapshot it staged is the
+# one the bot is already running (2026-09-23). Read as a marker, never out of the prose, for the
+# reason above — and the DECISION it carries is the important half: the bot must not be stopped
+# and restarted for a snapshot identical to the one it has. A deploy did exactly that on
+# 2026-09-23, three minutes after the real one, and it cancelled the order the bot had just
+# placed. See `algos/tools/promote.py::nothing_new`.
+_NOOP_MARK = "##NOTHING-NEW"
 _PROMOTE_UNKNOWN = (
     "\n⚠ promote.py did not report an exit status. Nothing here can say whether it "
     "deployed — check the VPS before assuming either way."
@@ -5038,9 +5045,12 @@ def _run_promote(
     pull: bool,
     allow_dirty: bool,
     stage: Callable[[str], None] = _no_stage,
-) -> tuple[bool | None, str, tuple[int | None, int | None]]:
-    """Run promote.py on the VPS. Returns `(ok, output, versions)`; `ok` is **None** when the
-    run did not report one, which is a third answer and never rounded to False silently.
+) -> tuple[bool | None, str, tuple[int | None, int | None], bool]:
+    """Run promote.py on the VPS. Returns `(ok, output, versions, nothing_new)`; `ok` is **None**
+    when the run did not report one, which is a third answer and never rounded to False silently.
+
+    ⚠ **`nothing_new` is a successful outcome, not a failure.** promote.py exits 0 and has brought
+    the record up to date; what it has NOT done is rewrite the snapshot or ask for a restart.
 
     🔴 The result used to be sniffed out of the PROSE — `"pinned" in out` for a promote,
     `"dry run" in out` for a preview. `promote.py` has always returned a real exit code (0
@@ -5080,9 +5090,12 @@ def _run_promote(
     clean = "\n".join(
         ln
         for ln in out.splitlines()
-        if _PROMOTE_OK not in ln and _PROMOTE_FAIL not in ln and not ln.startswith(_VERSION_MARK)
+        if _PROMOTE_OK not in ln
+        and _PROMOTE_FAIL not in ln
+        and not ln.startswith(_VERSION_MARK)
+        and not ln.startswith(_NOOP_MARK)
     ).strip()
-    return ok, clean, _parse_versions(out)
+    return ok, clean, _parse_versions(out), _NOOP_MARK in out
 
 
 @router.post("/{bot_name}/promote/preview", response_model=BotPromoteResult)
@@ -5096,14 +5109,16 @@ def preview_bot_promote(bot_name: str, req: BotPromoteRequest):
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        ok, out, _ = _run_promote(bot_key, dry_run=True, pull=req.pull, allow_dirty=req.allow_dirty)
+        ok, out, _, idle = _run_promote(
+            bot_key, dry_run=True, pull=req.pull, allow_dirty=req.allow_dirty
+        )
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     if ok is None:
         return BotPromoteResult(ok=False, output=out + _PROMOTE_UNKNOWN)
-    return BotPromoteResult(ok=ok, output=out)
+    return BotPromoteResult(ok=ok, output=out, nothing_new=idle)
 
 
 @router.post("/{bot_name}/promote", response_model=BotPromoteResult)
@@ -5115,14 +5130,14 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        reported, out, versions = _run_promote(
+        reported, out, versions, idle = _run_promote(
             bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty
         )
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    return _finish_promote(bot_key, req, reported, out, versions)
+    return _finish_promote(bot_key, req, reported, out, versions, nothing_new=idle)
 
 
 def _finish_promote(
@@ -5132,6 +5147,7 @@ def _finish_promote(
     out: str,
     versions: tuple[int | None, int | None],
     stage: Callable[[str], None] = _no_stage,
+    nothing_new: bool = False,
 ) -> BotPromoteResult:
     """Everything a promote does AFTER promote.py has answered: the alert, the thread root, the
     stop and the start. Shared by the one-shot endpoint and the job, so the two cannot come to
@@ -5146,6 +5162,31 @@ def _finish_promote(
 
     ok = reported
     restarted = False
+    # 🔴 **NOTHING NEW TO LOAD: SAY SO AND LEAVE THE BOT ALONE (2026-09-23).** promote.py has
+    # already refused to rewrite a snapshot identical to the one the bot is running and has brought
+    # its record up to date; stopping and starting the process here would cancel whatever it has
+    # resting and bring it back on the same code. That is exactly what a second deploy did on
+    # 2026-09-23, three minutes after the real one — it cancelled the limit the bot had just placed
+    # and put an identical one back a minute later.
+    #
+    # ⚠ **The message is its own shape, not the PROMOTED one with different words.** "v373 → v373 ·
+    # deployed / Restarting it now" was true of nothing that happened, and a reader acting on it
+    # would go looking for a restart that never came.
+    if ok and nothing_new:
+        _notify_telegram(
+            alert(
+                "ℹ️",
+                "NOTHING TO DEPLOY",
+                _bot_label(bot_key),
+                "It is already running this code, so nothing was deployed and it was left alone.",
+                "Its record now names the current commit, so the page will stop asking.",
+            ),
+            bot_key=bot_key,
+        )
+        # ⚠ The stop/start/confirm steps are simply never ENTERED. `_job_close` marks every step
+        # still pending as `skipped`, which is the state that already means *this did not happen*
+        # — marking them here would be a second way of saying it, able to disagree with the first.
+        return BotPromoteResult(ok=True, output=out, restarted=False, nothing_new=True)
     if ok:
         # 🔴 SENT BEFORE THE RESTART, and the ordering is the feature rather than a detail.
         # A deploy produces THREE messages from TWO machines — this one, then the bot's own
@@ -5375,10 +5416,12 @@ def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
             return next((k for k, s in job["stages"].items() if s["state"] == "active"), None)
 
     try:
-        reported, out, versions = _run_promote(
+        reported, out, versions, idle = _run_promote(
             bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty, stage=stage
         )
-        result = _finish_promote(bot_key, req, reported, out, versions, stage=stage)
+        result = _finish_promote(
+            bot_key, req, reported, out, versions, stage=stage, nothing_new=idle
+        )
         if result.ok and result.restarted:
             stage("confirm")
             if not _await_new_version(bot_key, before or None):

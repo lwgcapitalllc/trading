@@ -264,6 +264,7 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - Every Deploy button in this app was dead for eight days (2026-08-12)
 - A bot's VERSION — the number the page showed was never written (2026-08-07)
 - A promote as a JOB — the steps the deploy panel draws (2026-09-10)
+- 🔴 A deploy with NOTHING to deploy still stopped and restarted the bot, and the badge that asked for it was drawing a pre-deploy reading (2026-09-23)
 - Stopping a bot ASKS it to stop (2026-08-07)
 - `_BOTS` is DISCOVERED from the bot folders (2026-09-13)
 - The "needs review" flag — the one thing this page could not see

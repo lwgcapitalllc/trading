@@ -123,8 +123,10 @@ function version(
  * by step — rather than jumping straight to an answer.
  */
 type JobPlan = {
-  /** `done` (default), `refused` (promote.py said no), or `raised` (the box dropped mid-stop). */
-  outcome?: 'done' | 'refused' | 'raised'
+  /** `done` (default), `refused` (promote.py said no), `raised` (the box dropped mid-stop), or
+   *  `nothing-new` (the staged snapshot IS what the bot is running, so nothing was deployed and
+   *  the bot was left alone — 2026-09-23). */
+  outcome?: 'done' | 'refused' | 'raised' | 'nothing-new'
   restarted?: boolean
   confirm?: 'done' | 'unconfirmed'
   /** Stop advancing with this step ACTIVE, for ever. A check about what the panel looks like
@@ -137,9 +139,11 @@ const STEP_KEYS = ['pull', 'build', 'stop', 'start', 'confirm'] as const
 
 function jobFrames(plan: JobPlan): BotPromoteJob[] {
   const outcome = plan.outcome ?? 'done'
-  const restarted = plan.restarted ?? true
-  // How far the job gets before it ends.
-  const reach = outcome === 'refused' ? 1 : outcome === 'raised' ? 2 : restarted ? 4 : 1
+  const idle = outcome === 'nothing-new'
+  const restarted = idle ? false : (plan.restarted ?? true)
+  // How far the job gets before it ends. A `nothing-new` run stops after the BUILD: the stop,
+  // start and confirm steps are never entered, and `_job_close` marks them `skipped`.
+  const reach = outcome === 'refused' || idle ? 1 : outcome === 'raised' ? 2 : restarted ? 4 : 1
   const frame = (active: number): BotPromoteJob => ({
     job_id: 'pj_test',
     bot: 'sos_fade_demo',
@@ -158,15 +162,19 @@ function jobFrames(plan: JobPlan): BotPromoteJob[] {
   const last = frames[frames.length - 1]
   const settled: BotPromoteJob = {
     ...last,
-    status: outcome === 'done' ? 'done' : 'failed',
+    status: outcome === 'done' || idle ? 'done' : 'failed',
     result:
       outcome === 'raised'
         ? null
         : {
-            ok: outcome === 'done',
+            ok: outcome === 'done' || idle,
             restarted: outcome === 'done' && restarted,
-            output:
-              outcome === 'refused'
+            // ⚠ A real field on the wire, not an inference from `restarted`: a deploy that shipped
+            // code without a restart is also `restarted: false`.
+            nothing_new: idle,
+            output: idle
+              ? 'nothing new for the bot to load — the snapshot is already what it is running.'
+              : outcome === 'refused'
                 ? 'Refusing to promote — the staged snapshot does not import\n  pinned 556bf70c18b7'
                 : 'pinned 556bf70c18b7 (a9bf348, 2026-08-07)',
           },
@@ -180,7 +188,7 @@ function jobFrames(plan: JobPlan): BotPromoteJob[] {
         i < reach
           ? 'done'
           : i === reach
-            ? outcome === 'done'
+            ? outcome === 'done' || idle
               ? s.key === 'confirm'
                 ? plan.confirm === 'unconfirmed'
                   ? 'unconfirmed'
@@ -231,16 +239,31 @@ async function mockBot(
     /** The bot has NEVER been deployed — no frozen snapshot, so it imports from the box's own
      *  checkout and a pull there changes what it trades. */
     unfrozen?: boolean
+    /** A deploy that ALREADY FINISHED before the page opened — nobody was watching it land.
+     *
+     *  🔴 The state the version badge used to be stuck in (2026-09-23). The finish was reconciled
+     *  only when the page's own poller SAW the job go `running` → finished, so a tab opened a
+     *  second later never re-read the version and the row went on drawing its pre-deploy reading.
+     *  Aaron deployed a bot a second time on exactly that. */
+    settledOnOpen?: boolean
   } = {}
 ) {
   await pinSnapshot(page, !!opts.live, opts.bot)
   let promoted = false
-  let frames: BotPromoteJob[] | null = opts.runningOnOpen ? jobFrames(opts) : null
-  let idx = 0
+  let frames: BotPromoteJob[] | null =
+    opts.runningOnOpen || opts.settledOnOpen ? jobFrames(opts) : null
+  // A deploy that finished before the page opened is answered SETTLED from the very first read.
+  let idx = opts.settledOnOpen ? (frames?.length ?? 1) - 1 : 0
   let held = !!opts.runningOnOpen
+  // 🔴 **The FIRST version read always describes the state BEFORE the deploy**, whatever the job
+  // route has already answered. Without this the check passes on ordering luck: if the version
+  // fetch happens to land after the first job read it sees the new state with no re-read at all,
+  // which is precisely the bug — a check that cannot fail on the defect it names.
+  let versionReads = 0
   const posts: string[] = []
   const after = (): BotVersionCompare | null => {
-    if (!cmp || !promoted) return cmp
+    if (!cmp) return cmp
+    if (!promoted && !opts.settledOnOpen) return cmp
     const at = opts.landsAt ?? cmp.local_version ?? 0
     const behind = Math.max(0, (cmp.local_version ?? 0) - at)
     return {
@@ -254,8 +277,10 @@ async function mockBot(
   await page.route('**/api/bots/*/version', async (r) => {
     if (promoted && opts.reReadDelayMs)
       await new Promise((ok) => setTimeout(ok, opts.reReadDelayMs))
+    versionReads++
+    const landed = opts.settledOnOpen ? versionReads > 1 : promoted
     return r.fulfill({
-      json: version(after(), opts.runningCode ?? null, !opts.unfrozen || promoted),
+      json: version(landed ? after() : cmp, opts.runningCode ?? null, !opts.unfrozen || landed),
     })
   })
   await page.route('**/api/bots/*/promote/job', (r) => {
@@ -270,6 +295,10 @@ async function mockBot(
     }
     if (!frames) return r.fulfill({ json: null })
     if (held) return r.fulfill({ json: frames[0] })
+    if (opts.settledOnOpen) {
+      promoted = true
+      return r.fulfill({ json: frames[frames.length - 1] })
+    }
     const f = frames[Math.min(idx, frames.length - 1)]
     idx++
     if (f.status === 'done') promoted = true
@@ -1138,3 +1167,63 @@ test('a version the box would not give is UNREAD on the row and the panel — an
 // roll-up anybody builds: a count that names a condition without naming its subject has moved the
 // question rather than answered it, and a zero must stay a plain span, because a button that
 // navigates nowhere reads as a broken page.
+
+// ── A deploy nobody watched land, and a deploy with nothing to ship (2026-09-23) ─────────────
+//
+// 🔴 **Both were live on 2026-09-23 and they COMPOUND, which is why they are one section.** A bot
+// was deployed, came back correctly on the new code, and its badge went on saying behind — so it
+// was deployed a second time three minutes later. That second run staged byte-identical code,
+// announced `v373 → v373 · deployed · Restarting it now`, and stopped and restarted the bot
+// anyway, cancelling the limit order it had placed ninety seconds earlier. Aaron: *"the FFT badge
+// still said v373 behind… how else was I allowed to redeploy"*.
+//
+// A stale badge asks for a deploy that is not needed; nothing downstream refuses it. Fixing one
+// leaves the other standing, so both are pinned here.
+
+test('a deploy that finished before the page opened still clears the badge', async ({ page }) => {
+  /**
+   * 🔴 The stale half. The page's watcher reconciled a deploy only when it personally saw the job
+   * go `running` → finished — an EDGE — so a tab that was not mounted, not focused, or opened a
+   * second late never re-read the version and drew its pre-deploy answer indefinitely. Nothing
+   * else polls that query: it refreshes on a restart-pending reading or not at all.
+   *
+   * ⚠ **The first version read here answers PRE-deploy whatever the job route has said**, so this
+   * cannot pass on ordering luck. It goes green only if something actually asked again.
+   *
+   * MUTATION: reconcile on the `running` → finished transition again (drop the job-id set) → red,
+   * the banner stuck on "21 versions behind" with the deploy long finished.
+   */
+  await mockBot(page, compare({ deployed_version: 100, local_version: 121, versions_behind: 21 }), {
+    settledOnOpen: true,
+    landsAt: 121,
+  })
+  await openConfigure(page)
+
+  await expect(banner(page)).toContainText('v121', { timeout: 20_000 })
+  await expect(banner(page)).not.toContainText('versions behind')
+  await expect(rowPill(page)).not.toHaveAttribute('data-state', 'behind')
+})
+
+test('a deploy with NOTHING NEW says so, and never asks for a restart', async ({ page }) => {
+  /**
+   * 🔴 The permissive half, from the reader's side. With nothing to ship, the panel used to fall
+   * through to `restarted === false` and print *Deployed — restart it to pick it up* over a bot
+   * already running that exact code: it told you to do the one thing this outcome exists to have
+   * avoided, which is how a pointless deploy becomes two.
+   *
+   * MUTATION: check `restarted` before `nothing_new` in the caption chain → red on the restart
+   * sentence, which is the wording that was there.
+   */
+  const { posts } = await mockBot(
+    page,
+    compare({ deployed_version: 121, local_version: 121, versions_behind: 0 }),
+    { outcome: 'nothing-new', landsAt: 121 }
+  )
+  await openConfigure(page)
+  await banner(page).getByTestId('deploy-button').click()
+
+  await expect(banner(page)).toContainText('Already running this code', { timeout: 20_000 })
+  await expect(banner(page)).toContainText('was left alone')
+  await expect(banner(page)).not.toContainText('restart')
+  expect(posts.length, 'the deploy really ran').toBe(1)
+})
