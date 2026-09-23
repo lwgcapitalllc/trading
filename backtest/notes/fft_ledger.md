@@ -414,8 +414,137 @@ recent 34). CLEAN = TP2 with never more than 0.30R against (65 trades); FAST = T
   trades, 2 won, −0.13R vs the rest (p 0.58); NAS100 7, 6 won, +0.33R (p 0.13). Same direction on
   NAS100 only. The bot now RECORDS the label (`eq_target`) and `tools/forward_log.py` grades it as
   lead 4 on demo trades — nothing trades on it.
+- 🔴 **More depth (2026-09-22, `--depth`, frozen) — the equal-level lead is most likely a STREAK.**
+  Gold's 69 equal-level touches FFT does not trade win 58% vs 62% without (p 0.82), and no gate group
+  shows it. Nine more markets: equal-level touches win 64.9% vs 61.7% (661 of 31,630 touches,
+  +0.049R, p 0.10, up on 7 of 9) — a small tilt, not proven. Out of sample the would-be setup's own
+  trades (all FFT rules + an equal level) win 39 of 58 (67%), break-even ~62% before costs — about
+  FFT's normal edge. Gold 2018-19 supports it (12 touches, 83%, p 0.02). **Do not build a standalone
+  setup on it.**
 - **A time exit FAILS:** winners and losers both take ~1 hour (median 59 / 60 min), so a cut at
   15 / 30 / 60 / 120 min lowers total R in both windows (dev +23.2R held vs +1.7 to +14.3R).
+
+## NAS100 as a second instrument — uncorrelated, and it still makes the book WORSE (2026-09-23)
+
+The other route to the dollar target. Both sides cost-free on the identical version-1 rule, PU Prime
+1m, 2020-01-01 → 2026-09-11 (the window both feeds cover). ⚠ **NAS100 has NO measured spread or swap
+anywhere in this repo** — `backtest/fills.py` prices gold, cable and pound-yen only — so a costed
+comparison was impossible and gold's numbers may not be borrowed. That turned out not to matter: it
+fails before costs.
+
+**They ARE genuinely independent — that was never the problem.**
+
+- monthly R correlation **+0.037** over 80 months;
+- 10 months where both lost, against **9.3** that independence predicts — dead on;
+- only **8 of 190** gold trades (4.2%) have a NAS100 trade open at the same time, 4 (2.1%) same side.
+
+**But uncorrelated is not the same as additive.** Return per unit of drawdown, which is scale-free
+and therefore the only number that survives a change of risk setting:
+
+| stream | n | total R | avg R | max DD | return/DD |
+|---|---|---|---|---|---|
+| **gold** | 190 | +28.4R | +0.149 | 3.82R | **7.43** |
+| NAS100, all | 241 | +17.9R | +0.074 | 8.29R | **2.15** |
+| NAS100, buys only | 117 | +17.3R | **+0.148** | 4.91R | 3.52 |
+| NAS100, sells only | 124 | +0.6R | +0.005 | 10.88R | **0.05** |
+
+- **NAS100's sells are the whole problem**: +0.6R of profit carrying a 10.88R drawdown. They are
+  noise with a long losing run attached, and they are half the trades.
+- **NAS100's buys earn the same per-trade edge as gold** (+0.148 vs +0.149) — but on a 4.91R drawdown
+  for 17.3R, so their quality is less than half gold's. ⚠ Buys-only is a POST-HOC split on the same
+  window, and NASDAQ rose hard across it, so read it as drift until an untouched window says otherwise.
+
+🔴 **THE PORTFOLIO TEST — at the risk that holds combined drawdown at gold's own 3.82R:**
+
+| book | total R at equal drawdown |
+|---|---|
+| **gold alone** | **+28.4R** |
+| gold + NAS100 buys | +23.0R |
+| gold + NAS100 all | +16.1R |
+
+**Adding NAS100 costs you R at every risk setting, even in its best form.** Return/DD falls 7.43 →
+6.02 (buys) → 4.22 (all). Diversification cannot rescue a stream whose own return per drawdown is
+half the book's; it dilutes instead. **The repo's philosophy line "stacking only reduces drawdown if
+the strategies are actually independent" needs its other half: independence is necessary and NOT
+sufficient — the added stream must also be comparable in quality.**
+
+**Verdict: NAS100 is out.** Not for correlation, which is excellent — for quality.
+
+**Where that leaves the dollar target.** Three routes were tested and two are now closed: the sniper
+(costs, above) and a second instrument (this section). The only one left is running gold harder — the
+swept setups at 2x (+44.92R, return/DD 7.0, barely below the shipped 1.5x's 7.2) plus the second
+touch when flat (~+21%) — which reaches roughly 54R, the ~53R the $100,390 solo figure needs, and
+lands drawdown near 33% against the extreme leg's 27.72%. **There is no free route to it.**
+
+## What drawdown each dollar target costs — the exact ladder (2026-09-23)
+
+The user asked what drawdown reaches the extreme leg's solo **$100,390**. Answered exactly, not
+derived loosely: the per-trade R sequence and stop prices are stored in each lab run's
+`equity_curve.json`, so the fixed-fractional path is reconstructable for ANY risk setting and sweep
+multiple.
+
+**The model is validated on three runs, one of them PREDICTED before it finished:**
+
+| run | stored net | model net | stored DD | model DD |
+|---|---|---|---|---|
+| 08c84d0de04f (sweeps 1x, 5%) | $24,922.93 | $24,922.66 | 19.19% | 19.19% |
+| 046197075b55 (sweeps 1.5x, 5%) | $41,650.76 | $41,650.37 | 23.50% | 23.50% |
+| **5eaf0eb0f790 (sweeps 2x, 5%)** | **$65,205.21** | **$65,218** (predicted) | **29.5%** | **29.5%** |
+
+That third row is the one that earns the model trust — the figure was computed from the 1.5x trade
+list before the 2x run completed. It also gives 2x's other numbers: **PF 1.414** (vs 1.407 at 1.5x,
+1.375 at 1x — the sweep label is genuinely predictive) but **Sharpe 0.748** (vs 0.782), so sizing up
+buys money and lumpiness together.
+
+**The ladder, $10,000 start, 187 trades, PU Prime ECN:**
+
+| sweep x | risk 5% | 6% | 7% | 8% | 9% | 10% |
+|---|---|---|---|---|---|---|
+| 1.0 | $24.9k / 19.2% | $33.4k / 22.8% | $43.4k / 26.5% | $54.9k / 30.0% | $68.0k / 33.5% | $82.8k / 37.0% |
+| 1.5 | $41.7k / 23.5% | $58.8k / 27.8% | $80.3k / 32.0% | $106.9k / 36.0% | $139.2k / 39.9% | $177.6k / 43.6% |
+| 2.0 | $65.2k / 29.5% | $96.6k / 34.7% | $138.2k / 39.7% | $192.2k / 44.5% | $255.3k / 49.0% ⚠ | $320.1k / 53.3% ⚠ |
+
+⚠ the venue lot ceiling binds on 2 trades — past there the dollars stop describing a tradeable
+account (rule 17).
+
+**Second touch when flat, measured (lab `4b19d1ff1847`, sweeps 1.5x, 5%):** 233 trades (+46),
+net **$63,173.36**, DD **29.25%**, PF 1.375, Sharpe 0.774. The model reproduces it to $13 and the
+drawdown exactly — a fourth confirmation.
+
+**🔴 The answer: ~35% drawdown, and NOTHING on the board beats it.**
+
+| config | total R | net @5% | DD @5% | risk for $100,390 | its DD |
+|---|---|---|---|---|---|
+| **second touch off, sweeps 1.5x (shipped)** | +36.3R | $41,660 | 23.5% | 7.77% | **35.1%** |
+| second touch off, sweeps 2.0x | +44.9R | $65,218 | 29.5% | 6.10% | 35.3% |
+| second touch ON, sweeps 1.5x | +44.2R | $63,186 | 29.2% | 6.20% | 35.3% |
+| second touch ON, sweeps 2.0x | +51.8R | $89,341 | 36.6% | 5.27% | **38.2%** |
+
+🔴 **Every lever lands on the same ~35%, and stacking BOTH makes it worse (38.2%).** R per point of
+drawdown falls monotonically as levers are added — 1.545 → 1.522 → 1.514 → 1.415. **The shipped
+config is the highest-QUALITY version of this strategy; every lever trades quality for size.** A
+dollar target is priced by return-per-drawdown (~7 here) and cannot be rearranged around by sizing.
+
+**If one lever must be chosen, take the SECOND TOUCH over the 2x sweep size.** They are
+indistinguishable on the target (6.20% → 35.3% vs 6.10% → 35.3%), but the second touch gets there on
+**233 trades instead of 187** and with a better Sharpe (0.774 vs 0.748), whereas 2x just bets harder
+on the 53 trades carrying a label whose lead was found in-sample. More trades is the more robust way
+to the same number. (2x does hold a better profit factor, 1.414 vs 1.375 — that is the trade.)
+
+
+| route to $100,390 | risk/trade | max drawdown |
+|---|---|---|
+| sweeps 1.5x (as shipped) | **7.77%** | **35.1%** |
+| sweeps 2.0x | **6.10%** | **35.3%** |
+| sweep sizing off | 11.08% | 40.6% |
+
+- **Sizing the sweeps up does not buy a cheaper path to a fixed dollar target** — 35.1% vs 35.3%. It
+  lets the same money be made at lower per-trade risk, nothing more. Return per drawdown is ~7
+  whatever the multiple, and that ratio is what prices the target.
+- **Keeping the sweep sizing is still right**: switching it off costs 5 points of drawdown (40.6%).
+- **The binding constraint is the ACCOUNT CAP, not the drawdown.** 7.77% a trade against a 10% cap
+  leaves 2.23% for two bots currently on 5% each — **$100k from FFT means FFT runs alone.**
+- For reference the extreme leg reaches the same $100,390 at **27.72%** while sharing the account.
 
 ## Tested and NOT profitable — do not re-test
 - **After a stop-out, does price come back?** (2026-09-21, version 1, cost-free.) Within 24h of the

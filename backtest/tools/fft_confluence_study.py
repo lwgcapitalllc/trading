@@ -73,6 +73,38 @@ PART D — THE EQT LEAD ON OTHER MARKETS (`--market`), FROZEN 2026-09-22 BEFORE 
   MEASURED 2026-09-22 — NOT CONFIRMED. EURUSD 237 trades, -0.062R (the ledger's -0.062R: the
   method reproduces), EQT 4 trades, 2 won, -0.13R vs the rest, p 0.58. NAS100 247 trades, +0.062R,
   EQT 7 trades, 6 won, +0.33R vs the rest, p 0.13 — the lead's direction, not past the bar.
+
+PART E — MORE DEPTH FOR THE EQUAL-LEVEL LEAD (`--depth`), FROZEN 2026-09-22 BEFORE ANY RUN.
+  The user: "I want to test that more ... I just need more depth." The bot takes ~1.5 of these a
+  year on gold, so depth comes from the touches it does NOT take and from other markets.
+  UNIT  every FIRST 61.8 touch `fft_first_touch_study.py` records (cleaned PU Prime 1m, COST-FREE,
+        counted after its 31-day warm-up), scored at the bot's bracket — entry 61.8, stop 1.0,
+        TP2 38.2: R = reward/risk on a win, -1 on a loss, the study's own walk.
+  EQ    the bot's label exactly: `feat_5m` on the study's own cleaned bars at the touch minute.
+  CELLS the bot's four gates — 15m with the trade, 1m against and clean, first 5m leg, leg not
+        across a closure — 16 cells. Shuffles move EQ labels only WITHIN a cell (10,000, seed 7),
+        so EQ touches cannot win merely by sitting in easier cells. Test statistic: mean R with EQ
+        minus without; one-sided p.
+  E1  GOLD 2020-01-01 -> 2026-09-22, only the touches FFT does NOT trade (any gate failed) — the 10
+      trades that found the lead are excluded by construction. PASS: gain > 0 and p < 0.05.
+  E2  NINE MORE MARKETS, all first touches, 2020-01-01 -> 2026-09-22 (or the broker's floor):
+      XAGUSD.p EURUSD.p NAS100 GBPUSD.p USDJPY.p AUDUSD.p DJ30 GER40 UK100. POOLED, shuffles within
+      market x cell. PASS: pooled gain > 0 at p < 0.05 AND gain > 0 on at least 6 of the 9.
+  E3  GOLD 2018-09-14 -> 2019-12-31, ONCE (FFT's reserved window; EQ never looked at there): all
+      first touches. Supporting only — PASS: gain > 0.
+  Reported beside each: the touches passing ALL FFT gates with EQ (the would-be setup's own
+  trades) — count and win rate. CONFIRMED only if E1 and E2 both pass.
+  MEASURED 2026-09-22 — NOT CONFIRMED: E1 FAILS, so no E2 result can confirm it.
+  E1  gold's 69 untraded EQ touches win 58.0% vs 62.3% without, -0.071R, p 0.82. EQ is no better
+      in ANY gate group (15m against 55% vs 61%; 1m not ready 62.5% vs 62.8%; later leg 56% vs 63%).
+  E2  FAILS on p: pooled 9 markets 31,630 touches, EQ 661 win 64.9% vs 61.7%, +0.049R, p 0.097;
+      gain > 0 on 7 of 9 (UK100 +0.292R p 0.01 from its 2023-08-25 floor, USDJPY +0.094R, DJ30
+      +0.086R, NAS100 +0.079R, EURUSD, silver, AUDUSD ~0; GBPUSD -0.022R, GER40 -0.014R).
+      A small general tilt, suggestive and unproven — nothing like the 10/10.
+  E3  gold 2018-19: 12 EQ touches win 83% vs 60%, +0.383R, p 0.02 — the one supporting window.
+  The would-be setup's OWN trades out of sample (all FFT gates + EQ, all nine markets and gold
+  2018-19): 39 of 58 won (67%) — TP2 breaks even at ~62% before costs. About FFT's usual edge;
+  the 10/10 on gold 2020-26 was most likely a streak.
 """
 
 from __future__ import annotations  # noqa: E402
@@ -408,12 +440,144 @@ def market(symbol: str, shuffles: int = 10_000) -> None:
     )
 
 
+TP2 = ("61.8", "1.0", "TP2 38.2")
+DEPTH_MARKETS = [
+    "XAGUSD_p",
+    "EURUSD_p",
+    "NAS100",
+    "GBPUSD_p",
+    "USDJPY_p",
+    "AUDUSD_p",
+    "DJ30",
+    "GER40",
+    "UK100",
+]
+# The broker's MEASURED 1-minute floor where it is later than START (history_floors.json).
+DEPTH_START = {"UK100": "2023-08-25"}
+
+
+def touch_table(cache_symbol: str, start: str, end: str, holdout: bool = False) -> pd.DataFrame:
+    """PART E's unit: every first 61.8 touch the study records, with its TP2 R, its gate cell and
+    the bot's EQ label on the study's own cleaned bars."""
+    sys.path.insert(0, str(ROOT / "backtest" / "tools"))
+    import fft_first_touch_study as S
+    from loaded_level_study import clean_reopens
+
+    S.SYMBOL = cache_symbol
+    touches, _, raw, _ = S.run(start, end, holdout)
+    clean, _ = clean_reopens(raw)
+    count_from = pd.Timestamp(start) + pd.Timedelta(days=S.WARMUP_DAYS)
+    first = [
+        t for t in touches if t["kind"] == "first" and TP2 in t["res"] and t["t"] >= count_from
+    ]
+    rows = []
+    for t in first:
+        res = t["res"][TP2]
+        rows.append(
+            dict(
+                entry_ms=int(t["t"].value // 10**6),
+                dir=int(t["d"]),
+                entry=t["lv"]["E1"],
+                stop=t["lv"]["1.0"],
+                tp2=t["lv"]["TP2"],
+                r=(res["reward"] / res["risk"]) if res["win"] else -1.0,
+                win=bool(res["win"]),
+                g15=bool(t["g15"]),
+                g1=bool(t["g1dir"] and t["g1clean"]),
+                leg0=t["nbos"] == 0,
+                open_=not t["weekend"],
+            )
+        )
+    tb = pd.DataFrame(rows)
+    tb["EQ"] = feat_5m(clean, tb).EQT.values.astype(bool)
+    tb["gated"] = tb.g15 & tb.g1 & tb.leg0 & tb.open_
+    tb["cell"] = (
+        tb.g15.astype(int) * 8
+        + tb.g1.astype(int) * 4
+        + tb.leg0.astype(int) * 2
+        + tb.open_.astype(int)
+    )
+    tb["market"] = cache_symbol
+    return tb
+
+
+def strat_test(tb: pd.DataFrame, shuffles: int = 10_000, by=("market", "cell")) -> tuple:
+    """Mean R with EQ minus without, and its one-sided p with EQ labels shuffled within cells."""
+    r = tb.r.values
+    eq = tb.EQ.values
+    if eq.sum() == 0 or (~eq).sum() == 0:
+        return np.nan, np.nan
+    obs = r[eq].mean() - r[~eq].mean()
+    groups = [np.asarray(ix) for ix in tb.groupby(list(by)).indices.values()]
+    rng = np.random.default_rng(7)
+    hits = 0
+    lab = eq.copy()
+    for _ in range(shuffles):
+        for g in groups:
+            lab[g] = rng.permutation(eq[g])
+        hits += (r[lab].mean() - r[~lab].mean()) >= obs
+    return obs, hits / shuffles
+
+
+def depth_line(name: str, tb: pd.DataFrame, shuffles: int) -> float:
+    gain, p = strat_test(tb, shuffles)
+    e, n = tb[tb.EQ], tb[~tb.EQ]
+    g = tb[tb.gated & tb.EQ]
+    print(
+        f"  {name:22s} {len(tb):6d} touches | EQ {len(e):4d} win {e.win.mean():5.1%} {e.r.mean():+.3f}R"
+        f" vs {n.win.mean():5.1%} {n.r.mean():+.3f}R | gain {gain:+.3f}R p {p:.4f}"
+        f" | all-gates EQ {len(g):3d} win {g.win.mean() if len(g) else float('nan'):5.1%}"
+    )
+    return gain
+
+
+def depth(shuffles: int) -> None:
+    out = ROOT / "backtest" / "reports" / "fft_depth"
+    out.mkdir(parents=True, exist_ok=True)
+
+    def cached(name, *args, **kw):
+        f = out / f"{name}.pkl"
+        if f.exists():
+            return pickle.load(open(f, "rb"))
+        tb = touch_table(*args, **kw)
+        pickle.dump(tb, open(f, "wb"))
+        return tb
+
+    print("PART E — cost-free, TP2, first touches; shuffles within gate cells")
+    gold = cached("XAUUSD_p", "XAUUSD_p", START, END)
+    e1 = gold[~gold.gated]
+    print("E1 gold, touches FFT does NOT trade:")
+    g1 = depth_line("XAUUSD.p ungated", e1, shuffles)
+    depth_line("XAUUSD.p gated (ref)", gold[gold.gated], 1000)
+    print("E2 nine more markets:")
+    tabs, pos = [], 0
+    for m in DEPTH_MARKETS:
+        try:
+            tb = cached(m, m, DEPTH_START.get(m, START), END)
+        except SystemExit as e:
+            print(f"  {m:22s} not run — {e}")
+            continue
+        pos += depth_line(m, tb, shuffles) > 0
+        tabs.append(tb)
+    pooled = pd.concat(tabs, ignore_index=True)
+    gp = depth_line(f"POOLED {len(tabs)} markets", pooled, shuffles)
+    print(f"  gain > 0 on {pos} of {len(tabs)} markets")
+    print("E3 gold 2018-09-14 -> 2019-12-31 (once):")
+    old = cached("XAUUSD_p_2018_19", "XAUUSD_p", "2018-09-14", "2020-01-01", holdout=True)
+    depth_line("XAUUSD.p 2018-19", old, shuffles)
+    _ = (g1, gp)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache", default=str(ROOT / "backtest" / "reports" / "fft_confluence.pkl"))
     ap.add_argument("--shuffles", type=int, default=5000)
     ap.add_argument("--market", help="PART D only: EURUSD_p or NAS100 (a PU Prime M1 cache name)")
+    ap.add_argument("--depth", action="store_true", help="PART E: the equal-level lead, deeper")
     a = ap.parse_args()
+    if a.depth:
+        depth(a.shuffles)
+        return
     if a.market:
         market(a.market)
         return
