@@ -660,3 +660,110 @@ def test_an_emulator_without_the_seam_records_nothing_and_does_not_raise(tmp_pat
     b.restore_setup_watch()
 
     assert not position_state.watch_path_for(tmp_path).exists()
+
+
+# ── the thread and the yardstick survive a restart (2026-09-22) ──────────────────────────────
+#
+# Both are OPTIONAL fields, and both are the same shape of fact: something only the bridge knows,
+# which `stop` cannot be used to recover because `stop` is rewritten on every ratchet.
+
+
+def test_the_opening_stop_and_the_thread_survive_the_round_trip(tmp_path):
+    """MUTATION: leave either out of the written record → red."""
+    position_state.write(
+        tmp_path,
+        bot="sos_fade_demo",
+        symbol="XAUUSD.s",
+        magic=770115,
+        ticket=901,
+        broker=position_state.BrokerFacts(
+            dir=1, lots=0.42, entry=3290.0, stop=3295.0, stop_opened=3280.0
+        ),
+        strategy=_SNAP,
+        alert_id=4471,
+    )
+    got = position_state.read(tmp_path)
+    assert got.broker.stop_opened == 3280.0
+    assert got.alert_id == 4471
+
+
+def test_a_record_written_before_these_fields_still_reads(tmp_path):
+    """Every open trade's record on the box when this landed has neither. Reading one as NO record
+    would HALT the bot holding it — which is why `VERSION` was not bumped for them.
+
+    MUTATION: require either field, or bump VERSION → red.
+    """
+    _record(tmp_path)
+    got = position_state.read(tmp_path)
+    assert got is not None
+    assert got.broker.stop_opened is None and got.alert_id is None
+
+
+def test_an_unusable_opening_stop_or_thread_id_reads_as_NOT_RECORDED(tmp_path):
+    """Rule 1 on both. A string, a bool, a zero or a NaN is not a measurement, and a Telegram id
+    that is not a positive integer is not something anything can reply to.
+
+    MUTATION: parse either with a bare `float()` / `int()` → red.
+    """
+    for bad in ("3280", True, 0, -5.0, float("nan")):
+        _record(tmp_path)
+        raw = json.loads(position_state.path_for(tmp_path).read_text())
+        raw["broker"]["stop_opened"] = bad
+        raw["alert_id"] = bad
+        position_state.path_for(tmp_path).write_text(json.dumps(raw), encoding="utf-8")
+        got = position_state.read(tmp_path)
+        assert got is not None, bad
+        assert got.broker.stop_opened is None and got.alert_id is None, bad
+
+
+def test_a_restored_trade_keeps_REPLYING_INTO_ITS_OWN_THREAD(tmp_path):
+    """🔴 The defect this closes. The bot goes on managing a restored trade, and until now every
+    message about it — the stop moves, the banks, the exit — landed loose in the room, detached
+    from the fill it was about.
+
+    MUTATION: clear `_pos_alert_id` on restore, as the code did before → red.
+    """
+    position_state.write(
+        tmp_path,
+        bot="",
+        symbol="XAUUSD",
+        magic=770115,
+        ticket=901,
+        broker=position_state.BrokerFacts(
+            dir=1, lots=0.42, entry=3290.0, stop=3280.0, risk_usd=420.0, stop_opened=3280.0
+        ),
+        strategy=_SNAP,
+        alert_id=4471,
+    )
+    b, _, _, _ = _startup(tmp_path, positions=[_held()])
+    assert b.state is not live_bridge.BridgeState.HALTED
+    assert b._pos_alert_id == 4471
+    assert b._pos_stop0 == 3280.0
+
+
+def test_a_restore_from_an_older_record_quotes_no_R_on_a_stop_move(tmp_path):
+    """The other half of rule 1: no yardstick means no R, never 0.00R off a stop that has moved."""
+    _record(tmp_path, stop=3295.0)
+    b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3295.0)])
+    assert b.state is not live_bridge.BridgeState.HALTED
+    assert b._pos_stop0 == 0.0
+    assert b._pos_alert_id is None
+
+
+def test_the_bridge_writes_the_thread_and_the_opening_stop_into_the_record(tmp_path):
+    """The write half: a restart can only keep what was written down.
+
+    MUTATION: leave either out of the bridge's record → red.
+    """
+    _record_with_risk(tmp_path, 420.0)
+    ex = _FakeExecution()
+    ex.snapshot = dict(_SNAP)
+    b, _, _, _ = _startup(tmp_path, positions=[_held()], execution=ex)
+    ex._pos_dir = 1  # the restored emulator holds the trade; a flat one writes nothing
+    b._pos_stop0 = 3280.0
+    b._pos_alert_id = 4471
+    position_state.clear(tmp_path)
+    b._save_position()
+    got = position_state.read(tmp_path)
+    assert got is not None
+    assert got.broker.stop_opened == 3280.0 and got.alert_id == 4471

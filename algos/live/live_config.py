@@ -167,6 +167,21 @@ class LiveConfig:
     # sharing the login. 100 would let one setup commit the whole account, which is how the
     # 2026-08-07 order got as far as the broker deleting it at the fill.
     margin_safety_pct: float = 50.0
+    # ── how chatty the trade's own thread is (2026-09-22) ───────────────────
+    # How much the locked R must IMPROVE before the bot sends another stop-move message into the
+    # trade's Telegram thread. A structure trail ratchets on most bars a winner runs, so an
+    # unthrottled version would put a dozen near-identical messages under one trade — and the room
+    # that carries FILLS is the one you then learn to ignore.
+    #
+    # ⚠ **The BREAKEVEN crossing ignores this and always sends.** It happens once per trade, it is
+    # the move that changes what the trade can still cost, and it is the one Aaron asked for by
+    # name. This setting only paces the trail and tighten messages that follow it.
+    #
+    # ⚠ **Every bot takes the default and NO instance config states it.** That is deliberate: a
+    # live bot runs a FROZEN `deployed/` snapshot, and a key its snapshot has never heard of is
+    # REFUSED at load — so a default here reaches every bot on its next promote with no config
+    # edit anywhere, and a bot that wants a different pace can state it once that promote lands.
+    trail_alert_step_r: float = 0.5
     # ── the ACCOUNT-level risk cap (G10) ────────────────────────────────────
     # The most open risk EVERY bot on this account may hold at once, as a % of the live balance,
     # measured to each position's CURRENT broker-side stop — so a stop moved to breakeven frees

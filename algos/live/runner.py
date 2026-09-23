@@ -2116,6 +2116,9 @@ class LiveRunner:
                 instance_dir=self.cfg.instance_dir,
                 # The fills and halts say "SOS Fade · LIVE", not the bot key — see `_label`.
                 name_for_messages=lambda: self._label,
+                # How much the locked R must improve before another stop-move message goes into
+                # the trade's thread. Every bot takes the default; see `live_config`.
+                trail_alert_step_r=self.cfg.trail_alert_step_r,
             )
             # SAY which state the account-level cap is in, every start. An absent guard is
             # silent by construction, and "no cap" and "a cap that is not working" look

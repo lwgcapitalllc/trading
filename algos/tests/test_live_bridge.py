@@ -4791,3 +4791,204 @@ def test_a_HALF_SIZE_primary_is_still_refused():
     b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 50.0, 3290.0), _Sig())
     assert "risk_not_authorised" in b._refused[live_bridge.PRIMARY_LONG]
     assert not ops.orders
+
+
+# ── how a trade is MANAGED, in the trade's own thread (2026-09-22) ────────────────────────────
+#
+# Aaron: *"right now we are only told when we enter a trade and whether we won or lost but nothing
+# about break even and nothing about how the trade is being managed... I need that to be
+# consistently applied as a rule of thumb to any bots I create."*
+#
+# The seam is deliberately THIS file and not a strategy: every bot's runner builds one of these,
+# so a bot written next year inherits the whole set with no wiring. The classification is from the
+# entry price and the two stops, which is why it needs nothing from the strategy at all.
+#
+# **PROVED BY MUTATION, 2026-09-22.** Two, each taking down exactly what it should:
+#   * the stop-move send removed from `_sync_stop` → six red, all of them the silence this ends.
+#     `event:stop_moved` still went to the ledger in every one of them, which is the defect in one
+#     line: the fact was recorded, and nobody reads a ledger on a phone.
+#   * the throttle's step comparison removed → `..._has_not_earned_the_step_says_NOTHING` and
+#     `..._measured_from_the_LAST_MESSAGE...` red, i.e. a message on every one-point ratchet.
+
+
+def _in_trade(stop=3280.0, entry=3290.0, lots=0.42, ticket=555):
+    """One open long, already adopted, with its entry message in the thread."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(ticket, 0, entry, lots, stop)]
+    b, ops, ledger, notes = _bridge(_FakeExecution(pos_dir=1), mt5ops=ops)
+    b.sync(_Dec(stop=stop), _Sig())
+    notes.clear()  # drop the ENTRY message; these tests are about what comes after it
+    return b, ops, ledger, notes
+
+
+def test_a_stop_reaching_entry_is_ANNOUNCED_and_it_used_to_be_silent():
+    """🔴 The defect. The ledger has always recorded `stop_moved`; nobody reads the ledger on a
+    phone. The trade Aaron is holding moved out of risk and the thread said nothing."""
+    b, ops, ledger, notes = _in_trade()
+    b.sync(_Dec(stop=3290.0), _Sig())
+    assert "event:stop_moved" in ledger.kinds()
+    assert len(notes) == 1
+    assert notes[0].startswith("🛡 STOP AT BREAKEVEN")
+
+
+def test_a_management_message_REPLIES_to_the_entry_and_goes_to_the_TRADES_room():
+    """A fill and everything that happens to it belong in one thread and one room. A stop move in
+    the health room would sit among restarts and link blips."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(555, 0, 3290.0, 0.42, 3280.0)]
+    notes, kinds, replies = [], [], []
+
+    def _notify(text, kind, reply_to=None):
+        notes.append(text)
+        kinds.append(kind)
+        replies.append(reply_to)
+        return len(notes)
+
+    b = live_bridge.OrderBridge(
+        ops, _FakeExecution(pos_dir=1), _FakeLedger(), _Log(), notify=_notify, dry_run=False
+    )
+    b.state = live_bridge.BridgeState.LIVE
+    b.sync(_Dec(stop=3280.0), _Sig())  # the entry message, id 1
+    b.sync(_Dec(stop=3290.0), _Sig())
+    assert kinds[-1] == "trade"
+    assert replies[-1] == 1
+
+
+def test_a_trail_that_has_not_earned_the_step_says_NOTHING():
+    """🔴 The throttle is the feature. A structure trail ratchets on most bars a winner runs, and
+    a dozen near-identical messages under one trade is how the room carrying fills gets muted."""
+    b, ops, ledger, notes = _in_trade()
+    b.sync(_Dec(stop=3290.0), _Sig())  # breakeven — always sends
+    notes.clear()
+    b.sync(_Dec(stop=3291.0), _Sig())  # +0.10R on a 10-point risk: below the 0.5R step
+    assert "event:stop_moved" in ledger.kinds()  # the stop DID move
+    assert notes == []  # and the room was not told about a 1-point ratchet
+
+
+def test_a_trail_that_HAS_earned_the_step_sends_and_says_what_it_locked():
+    b, ops, ledger, notes = _in_trade()
+    b.sync(_Dec(stop=3290.0), _Sig())
+    notes.clear()
+    b.sync(_Dec(stop=3296.0), _Sig())  # +0.60R, past the 0.5R step
+    assert len(notes) == 1
+    assert notes[0].startswith("🪜 STOP TRAILED")
+    assert "locking +0.60R" in notes[0]
+
+
+def test_the_step_is_measured_from_the_LAST_MESSAGE_not_from_the_last_move():
+    """Three 0.3R ratchets in a row are 0.9R of locked profit. Comparing each move against the
+    one before it would report none of them; against the last thing SAID, the third one sends."""
+    b, ops, ledger, notes = _in_trade()
+    b.sync(_Dec(stop=3290.0), _Sig())
+    notes.clear()
+    for stop in (3293.0, 3296.0, 3299.0):
+        b.sync(_Dec(stop=stop), _Sig())
+    assert len(notes) == 1
+    assert "locking +0.60R" in notes[0]
+
+
+def test_a_trade_with_no_recorded_opening_stop_gets_ONE_message_and_then_goes_quiet():
+    """Rule 1 with nowhere to hide: without the yardstick there is no R, so there is nothing to
+    throttle on. Flooding the room and saying nothing are both wrong; one message is the answer,
+    and it is transitional — every trade opened from here records its opening stop."""
+    b, ops, ledger, notes = _in_trade()
+    b._pos_stop0 = 0.0  # a trade restored from a record written before the field existed
+    b.sync(_Dec(stop=3290.0), _Sig())
+    b.sync(_Dec(stop=3296.0), _Sig())
+    b.sync(_Dec(stop=3299.0), _Sig())
+    assert len(notes) == 1
+    assert "R" not in notes[0].replace("STOP AT BREAKEVEN", "")
+
+
+def test_the_opening_stop_is_frozen_at_the_fill_and_never_follows_the_ratchet():
+    """The 1R yardstick. If it tracked `_pos_stop` every later R would be divided by the distance
+    the stop had LOCKED — the identical defect `risk_usd` was fixed for on 2026-09-12."""
+    b, ops, ledger, notes = _in_trade()
+    b.sync(_Dec(stop=3290.0), _Sig())
+    b.sync(_Dec(stop=3300.0), _Sig())
+    assert b._pos_stop0 == 3280.0
+
+
+def test_a_new_trade_does_not_inherit_the_last_trades_announced_R():
+    """A latch that outlives its cause is a guard that has stopped guarding — the same rule the
+    partial alert already follows. Carried over, this trade's first trail would wait for an R the
+    PREVIOUS trade had already reached."""
+    b, ops, ledger, notes = _in_trade()
+    b.sync(_Dec(stop=3300.0), _Sig())  # locks +1.0R on the first trade
+    assert b._stop_r_said == 1.0
+    ops.positions = []  # it closed
+    b.sync(_Dec(), _Sig())
+    assert b._stop_r_said is None and b._pos_stop0 == 0.0
+
+
+def test_a_banked_partial_is_announced_with_what_is_still_running():
+    """Size coming off is the trade being managed. It was recorded and never said."""
+    b, ops, ledger, notes = _in_trade(lots=0.42)
+    b._notify_partial_banked(banked=0.17, before=0.42, after=0.25)
+    assert notes[-1].startswith("💰 PART BANKED")
+    assert "0.25 still running" in notes[-1]
+
+
+def test_a_scale_in_counts_what_the_BROKER_GAINED_not_what_was_asked_for():
+    """Rule 3. An add can be refused for size or rejected outright, and a message counting the
+    REQUEST would announce size the account does not hold."""
+    b, ops, ledger, notes = _in_trade(lots=0.42)
+    b._notify_scaled_in(added=0.20, now=0.62, price=3305.0, stop=3296.0)
+    assert notes[-1].startswith("➕ ADDED TO POSITION")
+    assert "Added 0.20 lots at about 3,305.00" in notes[-1]
+    assert "0.62 lots now open" in notes[-1]
+
+
+def test_an_unreadable_position_book_cannot_be_read_as_a_scale_in():
+    """`get_open_positions` answers `[]` for *nothing open* and for *could not ask*, and this path
+    always has a base position — so a zero BEFORE-read is the second one. Subtracting from it
+    would report the whole position as size just added. Rule 1, through a subtraction."""
+    b, ops, ledger, notes = _in_trade()
+    assert b._our_lots(None) == 0.0
+    assert b._our_lots([]) == 0.0
+
+
+def test_a_message_that_throws_cannot_cost_a_stop_move():
+    """The broker's stop is already where it belongs by the time the notifier runs. A formatting
+    bug must not halt a bot mid-trade."""
+    b, ops, ledger, notes = _in_trade()
+
+    def _boom(text, kind, reply_to=None):
+        raise RuntimeError("telegram is down")
+
+    b._notify = _boom
+    b.sync(_Dec(stop=3290.0), _Sig())
+    assert ("move_sl", 555, 3290.0, None) in ops.actions
+    assert b.state is not live_bridge.BridgeState.HALTED
+
+
+def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site():
+    """Rule 7: the ledger event proves nothing about the message. This drives the real
+    reconciliation rather than the notifier, so a refactor that drops the send is caught here.
+
+    MUTATION: remove the send from `_sync_partials` → red with only the entry message in the room.
+    """
+    b, ops, ledger, notes = _open_bank(qty=1.0, filled=0.5, held=1.0)
+    notes.clear()
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert "event:partial_banked" in ledger.kinds()
+    banked = [n for n in notes if n.startswith("💰 PART BANKED")]
+    assert len(banked) == 1
+    assert "Took 0.50 of 1.00 lots off · 0.50 still running" in banked[0]
+
+
+def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_book():
+    """The entry message stated a size and a risk, and this makes both stale. Rule 3 is the other
+    half: the figure is the difference between two reads of the broker's own book, so a refused
+    or rejected add announces nothing rather than size the account does not hold.
+
+    MUTATION: report `pend.qty` instead of the difference → red on the lots.
+    """
+    b, ops, ledger, notes = _scaled_bridge(base_qty=100.0, base_lots=1.0)
+    b._ex._adds = [[3300.0, 20.0]]
+    notes.clear()
+    _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
+    added = [n for n in notes if n.startswith("➕ ADDED TO POSITION")]
+    assert len(added) == 1
+    assert "Added 0.20 lots at about 3,300.00" in added[0]
+    assert "1.20 lots now open" in added[0]

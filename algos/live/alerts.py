@@ -557,7 +557,7 @@ def format_scaled_in(
     *,
     lots_added: float,
     lots_now: float,
-    price: float,
+    price: Optional[float] = None,
     stop: Optional[float] = None,
     symbol: str = "",
     digits: int = 2,
@@ -572,10 +572,18 @@ def format_scaled_in(
 
     ⚠ **`price` is where the STRATEGY added, which is the arming bar's close, not the broker's
     fill.** The bridge sends an add at market and does not read the deal back, so this is an
-    estimate and the word "about" is load-bearing. Rule 3.
+    estimate and the word "about" is load-bearing. Rule 3. **`None` prints no price at all** —
+    a ladder can arm two lots on one bar, and one of their two prices standing for both would be
+    a number nobody measured.
+
+    ⚠ **The LOTS are what the broker's own book gained, not what was asked for.** Rule 3 from the
+    other side: an add can be refused for size or rejected outright, and a message counting the
+    request would report size the account does not hold.
     """
-    lines = [f"Added {lots_added:.2f} lots at about {_price(price, digits)}", ""]
-    lines[1] = f"{lots_now:.2f} lots now open"
+    added = f"Added {lots_added:.2f} lots"
+    if price is not None:
+        added += f" at about {_price(price, digits)}"
+    lines = [added, f"{lots_now:.2f} lots now open"]
     if stop is not None:
         lines[1] += f" · every lot on the same stop {_price(stop, digits)}"
     return alert("➕", "ADDED TO POSITION", symbol if not threaded else "", *lines)

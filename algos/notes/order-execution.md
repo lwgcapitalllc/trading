@@ -898,3 +898,28 @@ off the book until the next 15-minute bar re-placed it at 19:30:05.
 
 Tests: `tests/test_order_rejection_retry.py` (10; 9 red against HEAD's bridge; the "treat every
 code as temporary" and "ignore a changed order" mutations each redden their own test).
+
+
+---
+
+## ✅ The three management seams now SPEAK, not just record (2026-09-22)
+
+`_sync_stop`, `_sync_partials` and `_mirror_strategy_add` each wrote a decision-ledger event and
+sent nothing. Each now also posts into the trade's own Telegram thread, at the same line, under the
+same conditions — after the broker has confirmed, before the bridge's own record is overwritten.
+
+- **`_sync_stop`** — the message is sent between the ledger event and `self._pos_stop = want`,
+  because it needs BOTH stops and must never describe one the account is not holding.
+- **`_sync_partials`** — sent before `self._pos_lots = want`, for the same reason, and it states no
+  price: this path reconciles a SIZE and never reads the deal back, so a price here would be one
+  nobody measured. It says instead that the fill was at market on a closed bar, which is the
+  documented divergence from the lab's rung fill.
+- **`_mirror_strategy_add`** — the lots reported are the DIFFERENCE between two reads of the
+  broker's own book, never `pend.qty`. An add can be refused for size or rejected outright, and a
+  message counting the request would announce size the account does not hold (rule 3). A zero
+  before-read is CANNOT ASK, not an empty account, so nothing is claimed (rule 1).
+
+⚠ **Every send is wrapped and can only cost the message.** By the time any of them runs the broker
+already holds the change; a formatting bug must not be able to halt a bot mid-trade.
+
+Wording, throttle and what a restart keeps: `notes/telegram-and-notifications.md`.

@@ -106,6 +106,13 @@ watched — while two comments claimed the lists agreed. **A list stated twice i
   alone, where it used to mark every bot stopped.
 - ⚠ `tests/test_bot_bench.py` asserts every roster IS the folders, and that the Command Center keeps
   no hand list and types no real key.
+- ✅ **A new bot's Telegram messages are NOT something anyone has to ask for (2026-09-22).** The
+  fill, the stop reaching breakeven, the stop trailing, size banked, size added and the outcome all
+  come from `live/bridge.py` — the one layer every bot's runner builds — and are classified from
+  prices rather than from any strategy's own stages, so a bot written next year inherits the whole
+  set with no wiring and no config key. Aaron: *"if I create a bot, I shouldn't have to go say, hey,
+  create telegram messages for it. It should be part of how we do work."* Detail and the throttle:
+  `notes/telegram-and-notifications.md`.
 
 ## Documentation Rules — Non-Negotiable
 
@@ -268,6 +275,7 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - ✅ The health room's icons collapsed from 14 ad hoc glyphs to 4 named severity levels; every example is in `notes/telegram-message-catalog.md` (2026-09-14)
 - 🔴 A setup's Telegram thread did NOT survive a restart — four identical alerts for one setup in 24 hours, none of the first three closable. The thread bookkeeping now lives on disk and is reconciled at the end of every warm-up (2026-09-16)
 - ✅ Setup messages are ON for every bot; the extreme-leg bot now sends them, and a bot whose strategy cannot says so in the health room (2026-09-16)
+- ✅ A trade's thread now says how it is being MANAGED — breakeven, trail, tighten, size banked, size added — and EVERY bot gets it because the bridge sends it from prices, not from a strategy's stages. The trail is throttled to 0.5R of fresh profit per message; the breakeven crossing always sends. A restart keeps the thread and the 1R yardstick (2026-09-22)
 
 ### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room
 
